@@ -565,6 +565,15 @@ describePostgres("row-level security (PostgreSQL)", () => {
     drainUnscopedDatabaseAccess();
   });
 
+  it("reports a bypass key that no longer matches until db:migrate runs again", async () => {
+    expect((await describeRowSecurity(db)).systemBlocked).toBeUndefined();
+    await owner.prisma
+      .$executeRaw`UPDATE rakazo_private.rls_bypass_keys SET digest = sha256('stale')`;
+    expect((await describeRowSecurity(db)).systemBlocked).toBe(true);
+    await provisionRuntimeRole(migrationUrl!, runtimeUrl!);
+    expect((await describeRowSecurity(db)).systemBlocked).toBeUndefined();
+  });
+
   it("ignores a bypass a tenant session turns on without the key", async () => {
     const client = await app.pool.connect();
     try {

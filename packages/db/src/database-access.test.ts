@@ -59,6 +59,12 @@ describe("rowSecurityWarning", () => {
     expect(rowSecurityWarning({ enforced: true, role: "rakazo_app" })).toBeUndefined();
   });
 
+  it("says to rerun db:migrate when the bypass key is stale", () => {
+    expect(rowSecurityWarning({ enforced: true, role: "rakazo_app", systemBlocked: true })).toMatch(
+      /db:migrate/,
+    );
+  });
+
   it("names the login and why it bypasses the policies", () => {
     expect(
       rowSecurityWarning({ enforced: false, role: "rakazo", reason: "is a superuser" }),

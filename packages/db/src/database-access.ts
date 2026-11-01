@@ -1,7 +1,7 @@
 import { createHash, createHmac, pbkdf2Sync, randomBytes } from "node:crypto";
 import { Client, escapeIdentifier, escapeLiteral } from "pg";
 import type { PrismaClient } from "./generated/prisma/client.js";
-import { rlsBypassKey } from "./row-security.js";
+import { rlsBypassKey, runAsSystem } from "./row-security.js";
 
 /**
  * NOLOGIN group role created by the row-level security migration. It holds the
@@ -253,6 +253,8 @@ export interface RowSecurityStatus {
   enforced: boolean;
   role: string;
   reason?: string;
+  /** The bypass key does not match the one `pnpm db:migrate` registered. */
+  systemBlocked?: boolean;
 }
 
 /** Whether the connected login is actually subject to the row-level security policies. */
@@ -276,10 +278,17 @@ export async function describeRowSecurity(prisma: PrismaClient): Promise<RowSecu
       : row.owns
         ? "owns the tables"
         : undefined;
-  return { enforced: !reason, role: row.role, ...(reason ? { reason } : {}) };
+  if (reason) return { enforced: false, role: row.role, reason };
+  const [system] = await runAsSystem(
+    "check the row-level security bypass key",
+    () => prisma.$queryRaw<Array<{ ok: boolean }>>`SELECT app_rls_bypass() AS ok`,
+  );
+  return { enforced: true, role: row.role, ...(system?.ok ? {} : { systemBlocked: true }) };
 }
 
 export function rowSecurityWarning(status: RowSecurityStatus): string | undefined {
+  if (status.systemBlocked)
+    return "Background work across Spaces is blocked: DATABASE_URL's password changed since `pnpm db:migrate` last ran. Run it again.";
   if (status.enforced) return undefined;
   return `Row-level security is not enforced: the app connects as ${status.role}, which ${status.reason}. Point DATABASE_URL at a runtime login and DATABASE_MIGRATION_URL at the owner (docs/self-host-configuration.md#database-roles).`;
 }
