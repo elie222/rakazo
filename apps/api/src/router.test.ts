@@ -4461,6 +4461,22 @@ describe("OpenAI-compatible model probes", () => {
     expect(JSON.stringify(response)).not.toContain("fake-session-secret");
   });
 
+  it("sends a saved key with Anthropic headers for the Anthropic Messages protocol", async () => {
+    const { client, fetch, load } = fixture();
+    load.mockResolvedValue(
+      JSON.stringify({ kind: "openai_compatible", baseUrl, apiKey: "fake-saved-key" }),
+    );
+    const response = await client.models.probeOpenAiCompatible({
+      baseUrl,
+      apiProtocol: "anthropic-messages",
+    });
+    const headers = new Headers(fetch.mock.calls[0]?.[1]?.headers);
+    expect(headers.get("x-api-key")).toBe("fake-saved-key");
+    expect(headers.get("anthropic-version")).toBe("2023-06-01");
+    expect(headers.get("authorization")).toBeNull();
+    expect(response).toEqual({ models: ["test-model"] });
+  });
+
   it("never uses another user's credential id for probe secrets", async () => {
     const { client, fetch, credentials, load } = fixture();
     credentials.push({

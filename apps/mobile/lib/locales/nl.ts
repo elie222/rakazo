@@ -521,6 +521,10 @@ export const NL_MESSAGES: Record<string, string> = {
   "Saved.": "Opgeslagen.",
   "Search models": "Modellen zoeken",
   "Server URL": "Server-URL",
+  Protocol: "Protocol",
+  "Chat Completions": "Chat Completions",
+  Responses: "Responses",
+  "Anthropic Messages": "Anthropic Messages",
   "Server found. Enter a model name.": "Server gevonden. Voer een modelnaam in.",
   "Setup help": "Installatiehulp",
   "Show less": "Minder tonen",
@@ -1208,6 +1212,14 @@ export const NL_MESSAGES: Record<string, string> = {
   "1 free month earned": "1 gratis maand verdiend",
   "{count} free months earned": "{count} gratis maanden verdiend",
   "Submit a plugin": "Plugin indienen",
+  Board: "Bord",
+  "To do": "Te doen",
+  "In progress": "Bezig",
+  "In review": "In beoordeling",
+  Blocked: "Geblokkeerd",
+  "Won't do": "Wordt niet gedaan",
+  "Could not move the ticket": "Kon ticket niet verplaatsen",
+  "No tickets yet.": "Nog geen tickets.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

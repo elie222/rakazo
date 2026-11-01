@@ -1,5 +1,11 @@
 import { useLingui } from "@lingui/react/macro";
-import type { Me, ModelHeaderRow, SettingsScope, ThinkingLevel } from "@rakazo/contracts";
+import type {
+  Me,
+  ModelApiProtocol,
+  ModelHeaderRow,
+  SettingsScope,
+  ThinkingLevel,
+} from "@rakazo/contracts";
 import {
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
   cloudflareModelRouting,
@@ -17,10 +23,10 @@ import {
 } from "@rakazo/contracts";
 import type { ConnectionFormFields } from "@rakazo/core";
 import {
-  COMPATIBLE_THINKING_LEVELS,
   clampCatalogThinkingLevel,
   compatibleConnectionReady,
   compatibleModelRows,
+  compatibleThinkingLevels,
   connectionFormFields,
   connectionFormModelId,
   connectionMaxTokensField,
@@ -103,6 +109,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
   const [accountId, setAccountId] = useState("");
   const [gatewayId, setGatewayId] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  const [apiProtocol, setApiProtocol] = useState<ModelApiProtocol>("chat-completions");
   const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
   const [reasoning, setReasoning] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
@@ -224,6 +231,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
   function applyFields(fields: ConnectionFormFields) {
     setEnabledModelIds(fields.enabledModelIds);
     setBaseUrl(fields.baseUrl);
+    setApiProtocol(fields.apiProtocol);
     setReasoning(fields.reasoning);
     setThinkingLevel(fields.thinkingLevel);
     setMaxTokens(fields.maxTokens);
@@ -366,12 +374,24 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     invalidatePreflight();
   }
 
+  function updateApiProtocol(nextProtocol: ModelApiProtocol) {
+    setApiProtocol(nextProtocol);
+    setThinkingLevel(
+      clampCatalogThinkingLevel(
+        thinkingLevel,
+        reasoning ? compatibleThinkingLevels(nextProtocol) : [],
+      ) as ThinkingLevel | null,
+    );
+    resetOpenAiCompatibleProbe();
+    invalidatePreflight();
+  }
+
   function stageCompatibleModelId(nextModelId: string) {
     setModelId(nextModelId);
     setThinkingLevel(
       clampCatalogThinkingLevel(
         credential?.modelId === nextModelId ? credential.thinkingLevel : null,
-        reasoning ? COMPATIBLE_THINKING_LEVELS : [],
+        reasoning ? compatibleThinkingLevels(apiProtocol) : [],
       ) as ThinkingLevel | null,
     );
   }
@@ -428,6 +448,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       request: (input) =>
         rpc.models.probeOpenAiCompatible({
           ...input,
+          apiProtocol,
           headers: modelHeadersInput(headerRows),
           credentialId: credential?.id,
         }),
@@ -523,6 +544,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
         modelId,
         enabledModelIds,
         baseUrl,
+        apiProtocol,
         headerRows,
         reasoning,
         thinkingLevel,
@@ -640,6 +662,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     acceptsKey,
     accountId,
     apiKey,
+    apiProtocol,
     baseUrl,
     beginSelectedSubscriptionSignIn,
     busy,
@@ -721,6 +744,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     testOAuthConnection,
     thinkingLevel,
     updateApiKey,
+    updateApiProtocol,
     updateBaseUrl,
     usingServerCredentials,
   };

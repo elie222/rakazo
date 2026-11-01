@@ -314,8 +314,8 @@ function OrganicAvatar({
             } as CSSProperties
           }
         >
-          {/* Only the shown layer morphs. A late <animate> joins the svg clock mid-loop. */}
-          {!reducedMotion && (mode === "working") === isWorking ? (
+          {/* Only a working body morphs. A late <animate> joins the svg clock mid-loop. */}
+          {!reducedMotion && mode === "working" && isWorking ? (
             <animate
               attributeName="d"
               values={`${shapeA};${shapeB};${shapeA}`}

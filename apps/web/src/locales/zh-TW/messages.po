@@ -784,6 +784,10 @@ msgstr "已回答：{answer}"
 msgid "Anthropic API"
 msgstr "Anthropic API"
 
+#: src/pages/model-settings/compatible-model-fields.tsx
+msgid "Anthropic Messages"
+msgstr ""
+
 #: src/pages/Paywall.tsx
 msgid "Any model, with your own key"
 msgstr "使用自己的金鑰連接任何模型"
@@ -1214,6 +1218,10 @@ msgstr "圖表渲染失敗：{error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Chat"
+msgstr ""
+
+#: src/pages/model-settings/compatible-model-fields.tsx
+msgid "Chat Completions"
 msgstr ""
 
 #: src/pages/shell/composer-mentions.tsx
@@ -4565,6 +4573,10 @@ msgstr "程式：{name}"
 msgid "Protected input"
 msgstr "受保護的輸入"
 
+#: src/pages/model-settings/compatible-model-fields.tsx
+msgid "Protocol"
+msgstr ""
+
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -4940,6 +4952,10 @@ msgstr "調整機器人側邊欄大小"
 #: src/pages/ResizableSidePanel.tsx
 msgid "Resize panel"
 msgstr "調整面板大小"
+
+#: src/pages/model-settings/compatible-model-fields.tsx
+msgid "Responses"
+msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Restart to update"

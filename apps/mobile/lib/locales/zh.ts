@@ -640,6 +640,10 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Sending…": "正在发送…",
   Server: "服务器",
   "Server URL": "服务器地址",
+  Protocol: "协议",
+  "Chat Completions": "Chat Completions",
+  Responses: "Responses",
+  "Anthropic Messages": "Anthropic Messages",
   "Setup help": "设置帮助",
   Share: "分享",
   "Share {name}": "分享 {name}",
@@ -1225,6 +1229,14 @@ export const ZH_MESSAGES: Record<string, string> = {
   "1 free month earned": "已获得 1 个月免费",
   "{count} free months earned": "已获得 {count} 个月免费",
   "Submit a plugin": "提交插件",
+  Board: "看板",
+  "To do": "待办",
+  "In progress": "进行中",
+  "In review": "审核中",
+  Blocked: "已阻塞",
+  "Won't do": "不做",
+  "Could not move the ticket": "无法移动工单",
+  "No tickets yet.": "还没有工单。",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

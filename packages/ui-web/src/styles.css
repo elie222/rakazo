@@ -185,10 +185,6 @@
   transition: opacity 180ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.rakazo-organic-avatar-body-idle {
-  animation: rakazo-organic-idle 5.6s ease-in-out infinite;
-}
-
 .rakazo-organic-avatar-body-working {
   opacity: 0;
 }
@@ -215,22 +211,6 @@
 
 .rakazo-organic-avatar[data-working="true"] .rakazo-organic-avatar-eyes-working {
   opacity: 1;
-}
-
-.rakazo-organic-avatar[data-eye-pattern="0"] .rakazo-organic-avatar-eyes-idle {
-  animation: rakazo-eyes-idle-0 5.8s ease-in-out infinite;
-}
-
-.rakazo-organic-avatar[data-eye-pattern="1"] .rakazo-organic-avatar-eyes-idle {
-  animation: rakazo-eyes-idle-1 6.4s ease-in-out -1.7s infinite;
-}
-
-.rakazo-organic-avatar[data-eye-pattern="2"] .rakazo-organic-avatar-eyes-idle {
-  animation: rakazo-eyes-idle-2 5.2s ease-in-out -3.1s infinite;
-}
-
-.rakazo-organic-avatar[data-eye-pattern="3"] .rakazo-organic-avatar-eyes-idle {
-  animation: rakazo-eyes-idle-3 6.8s ease-in-out -2.3s infinite;
 }
 
 .rakazo-organic-avatar[data-eye-pattern="0"] .rakazo-organic-avatar-eyes-working {
@@ -282,13 +262,11 @@
   animation: rakazo-organic-ring 1.35s ease-in-out infinite;
 }
 
-/* Offscreen or hidden avatars and the faded-out layer hold their pose instead of drawing frames. */
+/* Idle, offscreen and hidden avatars hold still: SVG motion repaints on the main thread. */
 .rakazo-organic-avatar[data-paused="true"] .rakazo-organic-avatar-body,
 .rakazo-organic-avatar[data-paused="true"] .rakazo-organic-avatar-eyes,
 .rakazo-organic-avatar[data-working="false"] .rakazo-organic-avatar-body-working,
-.rakazo-organic-avatar[data-working="false"] .rakazo-organic-avatar-eyes-working,
-.rakazo-organic-avatar[data-working="true"] .rakazo-organic-avatar-body-idle,
-.rakazo-organic-avatar[data-working="true"] .rakazo-organic-avatar-eyes-idle {
+.rakazo-organic-avatar[data-working="false"] .rakazo-organic-avatar-eyes-working {
   animation-play-state: paused;
 }
 
@@ -299,16 +277,6 @@
   }
   50% {
     transform: translateY(-3px) scaleX(0.98);
-  }
-}
-
-@keyframes rakazo-organic-idle {
-  0%,
-  100% {
-    transform: translateY(1.2px) scale(1.012, 0.988);
-  }
-  50% {
-    transform: translateY(-1.4px) scale(0.988, 1.012);
   }
 }
 
@@ -475,118 +443,6 @@
   }
   91% {
     transform: translate(0, 5%) scale(1.06, 0.9);
-  }
-}
-
-@keyframes rakazo-eyes-idle-0 {
-  0%,
-  32%,
-  100% {
-    transform: translate(0, 0) scaleY(1);
-  }
-  35% {
-    transform: translate(0, 0) scaleY(0.08);
-  }
-  38% {
-    transform: translate(0, 0) scaleY(1);
-  }
-  48%,
-  62% {
-    transform: translate(3px, -0.5px) scaleY(1);
-  }
-  70%,
-  84% {
-    transform: translate(-2.5px, 0.5px) scaleY(1);
-  }
-  89% {
-    transform: translate(0, 0) scaleY(0.12);
-  }
-  91% {
-    transform: translate(0, 0) scaleY(1);
-  }
-}
-
-@keyframes rakazo-eyes-idle-1 {
-  0%,
-  25%,
-  100% {
-    transform: translate(0, 0) scaleY(1);
-  }
-  32%,
-  48% {
-    transform: translate(-3px, -1px) scaleY(1);
-  }
-  54% {
-    transform: translate(0, 0) scaleY(0.08);
-  }
-  56% {
-    transform: translate(0, 0) scaleY(1);
-  }
-  59% {
-    transform: translate(0, 0) scaleY(0.08);
-  }
-  61% {
-    transform: translate(0, 0) scaleY(1);
-  }
-  68%,
-  82% {
-    transform: translate(2.5px, 0.5px) scaleY(1);
-  }
-}
-
-@keyframes rakazo-eyes-idle-2 {
-  0%,
-  28%,
-  100% {
-    transform: translate(0, 0) scaleY(1);
-  }
-  36%,
-  52% {
-    transform: translate(0.5px, -1.8px) scaleY(1.05);
-  }
-  58% {
-    transform: translate(0, 0) scaleY(0.08);
-  }
-  60% {
-    transform: translate(0, 0) scaleY(1);
-  }
-  68%,
-  85% {
-    transform: translate(3px, 0) scaleY(1);
-  }
-  92% {
-    transform: translate(0, 0) scaleY(0.1);
-  }
-  94% {
-    transform: translate(0, 0) scaleY(1);
-  }
-}
-
-@keyframes rakazo-eyes-idle-3 {
-  0%,
-  24%,
-  100% {
-    transform: translate(0, 0) scaleY(1);
-  }
-  30%,
-  46% {
-    transform: translate(-2.5px, 1.2px) scaleY(0.95);
-  }
-  52% {
-    transform: translate(0, 0) scaleY(0.08);
-  }
-  54% {
-    transform: translate(0, 0) scaleY(1);
-  }
-  62%,
-  78% {
-    transform: translate(2.8px, -1px) scaleY(1);
-  }
-  86% {
-    transform: translate(0, 0) scaleY(0.08);
-  }
-  88% {
-    transform: translate(0, 0) scaleY(1);
   }
 }
 

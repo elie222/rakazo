@@ -500,6 +500,10 @@ export const ES_MESSAGES: Record<string, string> = {
   "Replace API key": "Reemplazar clave de API",
   "Saved.": "Guardado.",
   "Server URL": "URL del servidor",
+  Protocol: "Protocolo",
+  "Chat Completions": "Chat Completions",
+  Responses: "Responses",
+  "Anthropic Messages": "Anthropic Messages",
   "Server found. Enter a model name.": "Servidor encontrado. Introduce un nombre de modelo.",
   "Setup help": "Ayuda de configuración",
   "Sign in": "Iniciar sesión",
@@ -1157,6 +1161,14 @@ export const ES_MESSAGES: Record<string, string> = {
   "Use email code": "Usar código por correo",
   "Use password": "Usar contraseña",
   "{count} messages with {peer}": "{count} mensajes con {peer}",
+  Board: "Tablero",
+  "To do": "Por hacer",
+  "In progress": "En curso",
+  "In review": "En revisión",
+  Blocked: "Bloqueado",
+  "Won't do": "No se hará",
+  "Could not move the ticket": "No se pudo mover el ticket",
+  "No tickets yet.": "Aún no hay tickets.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

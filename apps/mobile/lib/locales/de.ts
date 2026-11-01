@@ -528,6 +528,10 @@ export const DE_MESSAGES: Record<string, string> = {
   "Saved.": "Gespeichert.",
   "Search models": "Modelle suchen",
   "Server URL": "Server-URL",
+  Protocol: "Protokoll",
+  "Chat Completions": "Chat Completions",
+  Responses: "Responses",
+  "Anthropic Messages": "Anthropic Messages",
   "Server found. Enter a model name.": "Server gefunden. Gib einen Modellnamen ein.",
   "Setup help": "Einrichtungshilfe",
   "Show less": "Weniger anzeigen",
@@ -1216,6 +1220,14 @@ export const DE_MESSAGES: Record<string, string> = {
   "1 free month earned": "1 Gratismonat verdient",
   "{count} free months earned": "{count} Gratismonate verdient",
   "Submit a plugin": "Plugin einreichen",
+  Board: "Board",
+  "To do": "Zu erledigen",
+  "In progress": "In Arbeit",
+  "In review": "In Prüfung",
+  Blocked: "Blockiert",
+  "Won't do": "Wird nicht gemacht",
+  "Could not move the ticket": "Ticket konnte nicht verschoben werden",
+  "No tickets yet.": "Noch keine Tickets.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

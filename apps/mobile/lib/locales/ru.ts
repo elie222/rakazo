@@ -659,6 +659,10 @@ export const RU_MESSAGES: Record<string, string> = {
   "Sending…": "Отправка…",
   Server: "Сервер",
   "Server URL": "URL-адрес сервера",
+  Protocol: "Протокол",
+  "Chat Completions": "Chat Completions",
+  Responses: "Responses",
+  "Anthropic Messages": "Anthropic Messages",
   "Setup help": "Помощь по настройке",
   Share: "Поделиться",
   "Share {name}": "Поделиться {name}",
@@ -1247,6 +1251,14 @@ export const RU_MESSAGES: Record<string, string> = {
   "1 free month earned": "Получен 1 бесплатный месяц",
   "{count} free months earned": "Бесплатных месяцев получено: {count}",
   "Submit a plugin": "Предложить плагин",
+  Board: "Доска",
+  "To do": "К выполнению",
+  "In progress": "В работе",
+  "In review": "На проверке",
+  Blocked: "Заблокировано",
+  "Won't do": "Не будем делать",
+  "Could not move the ticket": "Не удалось переместить тикет",
+  "No tickets yet.": "Тикетов пока нет.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

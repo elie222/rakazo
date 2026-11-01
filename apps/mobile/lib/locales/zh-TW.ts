@@ -615,6 +615,10 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Sending…": "正在傳送…",
   Server: "伺服器",
   "Server URL": "伺服器網址",
+  Protocol: "通訊協定",
+  "Chat Completions": "Chat Completions",
+  Responses: "Responses",
+  "Anthropic Messages": "Anthropic Messages",
   "Setup help": "設定說明",
   Share: "分享",
   "Share {name}": "分享 {name}",
@@ -1222,6 +1226,14 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "1 free month earned": "已獲得 1 個月免費",
   "{count} free months earned": "已獲得 {count} 個月免費",
   "Submit a plugin": "提交外掛程式",
+  Board: "看板",
+  "To do": "待辦",
+  "In progress": "進行中",
+  "In review": "審查中",
+  Blocked: "受阻",
+  "Won't do": "不處理",
+  "Could not move the ticket": "無法移動工單",
+  "No tickets yet.": "還沒有工單。",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "與{peer}的 {count} 則訊息" };
