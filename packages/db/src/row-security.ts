@@ -382,7 +382,12 @@ export function withRowLevelSecurity(prisma: PrismaClient, bypassKey = ""): Pris
         if (model && filter) {
           const delegate = Reflect.get(prisma, model[0]!.toLowerCase() + model.slice(1));
           const first = operation === "findUnique" ? "findFirst" : "findFirstOrThrow";
-          return Reflect.apply(delegate[first], delegate, [{ ...args, where: filter }]);
+          return withTransactionRetry(
+            () =>
+              Reflect.apply(delegate[first], delegate, [
+                { ...args, where: filter },
+              ]) as Promise<unknown>,
+          );
         }
         // Fluent relation reads (`findUnique(...).messages()`) keep Prisma's own
         // shape, so they run in a short transaction that sets the context first.

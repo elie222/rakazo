@@ -47,6 +47,34 @@ describe("withRowLevelSecurity", () => {
     expect(query).toHaveBeenCalledTimes(2);
   });
 
+  it("runs a findUnique rewritten as findFirst again after a deadlock", async () => {
+    let rewritten: { query: { $allOperations: AllOperations } } | undefined;
+    const findFirst = vi
+      .fn()
+      .mockRejectedValueOnce(deadlock())
+      .mockResolvedValueOnce({ id: "row" });
+    withRowLevelSecurity({
+      _runtimeDataModel: { models: { UsageRecord: { fields: [{ name: "id" }] } } },
+      usageRecord: { findFirst },
+      $extends: (value: typeof rewritten) => {
+        rewritten = value;
+        return value;
+      },
+    } as unknown as PrismaClient);
+
+    const result = runAsSystem("test fixture", () =>
+      rewritten!.query.$allOperations({
+        model: "UsageRecord",
+        operation: "findUnique",
+        args: { where: { id: "row" } },
+        query: vi.fn(),
+      }),
+    );
+
+    await expect(result).resolves.toEqual({ id: "row" });
+    expect(findFirst).toHaveBeenCalledTimes(2);
+  });
+
   it("leaves a statement inside a transaction to whoever opened it", async () => {
     const error = deadlock();
     const query = vi.fn().mockRejectedValue(error);
