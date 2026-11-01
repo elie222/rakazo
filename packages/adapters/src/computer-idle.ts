@@ -28,6 +28,7 @@ import { getLogger } from "@rakazo/logging";
 import { activeCodingAgent } from "./coding-agent-activity.js";
 import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
 import { screenLeaseIdForRun, toComputerRef } from "./computer-lifecycle.js";
+import { BrowserStillRunningError } from "./computer-screens.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
 import { HomeSaveConflictError } from "./home-object-store.js";
 import { sandboxAllowanceUsedUp } from "./sandbox-allowance.js";
@@ -901,7 +902,9 @@ export function sleepDeferReason(error: unknown): string | undefined {
             : "too_many_files"
           : error instanceof HomeSaveConflictError
             ? "saved_elsewhere"
-            : undefined;
+            : error instanceof BrowserStillRunningError
+              ? "browser_running"
+              : undefined;
 }
 
 /**

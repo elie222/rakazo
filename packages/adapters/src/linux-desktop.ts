@@ -13,6 +13,7 @@ import type {
 import type { DesktopEnvironment } from "@rakazo/core/node/desktop-runtime";
 import {
   BROWSER_APPLICATIONS,
+  BROWSER_STILL_RUNNING_EXIT,
   browserLauncherPath,
   browserProfilePathForScreen,
   desktopControlCommand,
@@ -26,6 +27,7 @@ import {
   stopAllDesktopBrowsersCommand,
 } from "@rakazo/core/node/desktop-runtime";
 import {
+  BrowserStillRunningError,
   BrowserStoppedReleaseError,
   ComputerScreenUnavailableError,
   screenSessionKey,
@@ -80,6 +82,7 @@ export class LinuxDesktop {
     context.signal.throwIfAborted();
     const result = await this.host.run(computer, command, context);
     if (result.code === 75) throw new ComputerScreenUnavailableError();
+    if (result.code === BROWSER_STILL_RUNNING_EXIT) throw new BrowserStillRunningError();
     if (result.code !== 0) {
       if (result.stderr?.trim()) throw new Error(result.stderr);
       const output = result.stdout.trim().split("\n").at(-1)?.slice(0, 300);

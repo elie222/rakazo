@@ -285,6 +285,9 @@ export function browserCloseProgram() {
   return CLOSE_BROWSER;
 }
 
+/** Exit status of a browser stop that found a browser open on the profile again. */
+export const BROWSER_STILL_RUNNING_EXIT = 76;
+
 export function stopBrowserCommand(screenId: string, env = DEFAULT_DESKTOP_ENV) {
   return stopBrowserProfileCommand(
     browserProfilePathForScreen(screenId, env),
@@ -304,7 +307,7 @@ export function stopBrowserProfileCommand(profile: string, pidFile: string) {
     `fi`,
     // A supervisor may have replaced the selected PID while it was closing.
     // Rediscover once before removing lock state rather than on every close poll.
-    `if browser_running; then echo 'browser still running' >&2; exit 1; fi`,
+    `if browser_running; then echo 'browser still running' >&2; exit ${BROWSER_STILL_RUNNING_EXIT}; fi`,
     `rm -f ${pidFile}`,
     `rm -f ${shellQuote(profile)}/SingletonLock ${shellQuote(profile)}/SingletonCookie ${shellQuote(profile)}/SingletonSocket`,
   ].join("\n");
@@ -318,6 +321,7 @@ function stopProfileDirectoriesCommand(profileList: string) {
   return [
     "set -eu",
     "failed=0",
+    "running=0",
     "mkdir -p /tmp/rakazo",
     `for profile in ${profileList}; do`,
     '  [ -d "$profile" ] || continue',
@@ -327,9 +331,10 @@ function stopProfileDirectoriesCommand(profileList: string) {
     '    *) hash=$(basename -- "$profile") ;;',
     "  esac",
     '  pid_file="/tmp/rakazo/browser-pid-$hash"',
-    `  bash -eu -c ${shellQuote(`profile=$1; pid_file=$2;\n${stop}`)} desktop "$profile" "$pid_file" || failed=1`,
+    `  bash -eu -c ${shellQuote(`profile=$1; pid_file=$2;\n${stop}`)} desktop "$profile" "$pid_file" || { [ "$?" -eq ${BROWSER_STILL_RUNNING_EXIT} ] && running=1 || failed=1; }`,
     "done",
     '[ "$failed" -eq 0 ] || exit 1',
+    `[ "$running" -eq 0 ] || exit ${BROWSER_STILL_RUNNING_EXIT}`,
   ].join("\n");
 }
 

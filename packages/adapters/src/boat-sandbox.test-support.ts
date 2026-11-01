@@ -38,7 +38,11 @@ import { ResponseError } from "@boatdev/sdk";
 import { parse } from "shell-quote";
 import { vi } from "vitest";
 import type { BoatSandboxSdk } from "./boat-sandbox.js";
-import { BOAT_COMPUTER_SNAPSHOT, BoatSandboxProvider } from "./boat-sandbox.js";
+import {
+  BOAT_COMPUTER_SNAPSHOT,
+  BOAT_WRITABLE_WORKSPACE_COMMAND,
+  BoatSandboxProvider,
+} from "./boat-sandbox.js";
 import { shouldSkipPortableWorkspaceFile } from "./computer-workspace.js";
 import { desktopCommandResponder, simpleCommand } from "./linux-desktop.test-support.js";
 import { workspaceArchive } from "./workspace-archive.test-support.js";
@@ -53,12 +57,19 @@ export type BoatRecovery =
   | "recover_unsupported"
   | "reset_failed";
 
+interface FakeFile {
+  content: Uint8Array;
+  executable: boolean;
+  /** Like a git pack: Boat's file API cannot overwrite it. */
+  readOnly?: boolean;
+}
+
 interface FakeSandbox {
   sandbox: Sandbox;
   env: Record<string, string>;
-  files: Map<string, { content: Uint8Array; executable: boolean }>;
+  files: Map<string, FakeFile>;
   /** The disk as of Boat's last good snapshot. */
-  snapshot: Map<string, { content: Uint8Array; executable: boolean }>;
+  snapshot: Map<string, FakeFile>;
   recovery: BoatRecovery;
   /** Set while Boat's storage under the sandbox is broken; whether a resume mends it. */
   damaged?: "resume_heals" | "persists";
@@ -202,7 +213,7 @@ export class FakeBoatApi implements BoatSandboxSdk {
     return this.sandboxes.get(id)?.sandbox.state;
   }
 
-  files(id: string): Map<string, { content: Uint8Array; executable: boolean }> {
+  files(id: string): Map<string, FakeFile> {
     return this.require(id).files;
   }
 
@@ -429,6 +440,13 @@ export class FakeBoatApi implements BoatSandboxSdk {
     const content = Uint8Array.from(Buffer.from(fileWriteRequest.content, "base64"));
     if (content.byteLength > 5 * 1024 * 1024) {
       throw boatError(400, "sandbox_direct_failed", "File exceeds the inline write limit");
+    }
+    if (box.files.get(fileWriteRequest.path)?.readOnly) {
+      throw boatError(
+        400,
+        "sandbox_direct_failed",
+        `EACCES: permission denied, open '${fileWriteRequest.path}'`,
+      );
     }
     box.files.set(fileWriteRequest.path, { content, executable: false });
     return {
@@ -683,6 +701,13 @@ export class FakeBoatApi implements BoatSandboxSdk {
       return finished({});
     }
 
+    if (command === BOAT_WRITABLE_WORKSPACE_COMMAND) {
+      for (const [filePath, file] of box.files) {
+        if (filePath.startsWith(`${BOAT_WORKSPACE}/`) && file.readOnly)
+          box.files.set(filePath, { ...file, readOnly: false });
+      }
+      return finished({});
+    }
     const parsed = parse(command, (name) => box.env[name] ?? "");
     const argv = parsed.filter((token): token is string => typeof token === "string");
     if (argv[0] === "chmod") {

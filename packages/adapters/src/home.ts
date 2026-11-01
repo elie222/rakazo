@@ -410,7 +410,12 @@ async function ensureContainedDirectory(root: string, candidate: string) {
       current = await realpath(next);
     } catch (error) {
       if (!isMissing(error)) throw error;
-      await mkdir(next);
+      // A concurrent request can make the folder first; a dangling link still fails realpath.
+      await mkdir(next).catch((failure: unknown) => {
+        if (!(failure instanceof Error && "code" in failure && failure.code === "EEXIST")) {
+          throw failure;
+        }
+      });
       current = await realpath(next);
     }
     assertContained(resolvedRoot, current);

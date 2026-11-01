@@ -1613,6 +1613,29 @@ describe("BoatSandboxProvider", () => {
     expect(run).toHaveBeenCalledOnce();
   });
 
+  it("restores over read-only files a kept disk already holds", async () => {
+    const { api, provider, computer } = await boat();
+    const pack = "/home/user/rakazo-home/repo/.git/objects/pack/pack-1.idx";
+    api.files(computer.id).set(pack, {
+      content: Uint8Array.from([1]),
+      executable: false,
+      readOnly: true,
+    });
+    async function* files() {
+      yield { path: "repo/.git/objects/pack/pack-1.idx", content: Uint8Array.from([2]) };
+    }
+
+    await provider.importWorkspace(computer, files(), context);
+
+    expect(api.files(computer.id).get(pack)?.content).toEqual(Uint8Array.from([2]));
+  });
+
+  it("lists a folder that is not there as empty", async () => {
+    const { provider, computer } = await boat();
+
+    expect(await provider.listFiles(computer, "deleted", context)).toEqual([]);
+  });
+
   it.each([
     ["exit 1", { exitCode: 1, timedOut: false }, "could not list Boat workspace (exit 1)"],
     ["timeout", { exitCode: 124, timedOut: true }, "could not list Boat workspace (timed out)"],
