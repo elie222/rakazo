@@ -61,6 +61,7 @@ model User {
   ticketComments              TicketComment[]              @relation("TicketCommentAuthorUser")
   pushToken                   PushToken?
   trustedLinkSites            TrustedLinkSite[]
+  feedbackReports             FeedbackReport[]
   emailSends                  EmailSend[]
   signupSurvey                SignupSurvey?
   computerRuns                ComputerRun[]
@@ -409,6 +410,7 @@ model Space {
   mcpOAuthSessions            McpOAuthSession[]
   modelOAuthSessions          ModelOAuthSession[]
   purchases                   Purchase[]
+  feedbackReports             FeedbackReport[]
   botMcpServers              BotMcpServer[]
   messagingIdentities         MessagingIdentity[]
   actionApprovalRules         ActionApprovalRule[]
@@ -589,6 +591,27 @@ model UserModelCredential {
 
 /// A site one user opens from chat links without the external-link prompt, in every space.
 /// Never consulted for what a bot may fetch: those are action approval rules.
+/// A problem or suggestion a user asked their bot to send to the people who run this server.
+/// The ids point at where it happened; the description is written to leave out personal details.
+model FeedbackReport {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spaceId     String
+  space       Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  botId       String
+  threadId    String
+  runId       String
+  /// "bug" or "feedback".
+  kind        String
+  description String
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("feedback_reports")
+}
+
 model TrustedLinkSite {
   id        String   @id @default(cuid())
   userId    String
