@@ -107,6 +107,7 @@ export function ThreadComposerDock({
       >
         <View
           pointerEvents="box-none"
+          style={{ flexShrink: 1 }}
           onLayout={(event) => {
             controlsHeight.current = event.nativeEvent.layout.height + composerRestingPadding;
             report();
