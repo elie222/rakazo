@@ -69,6 +69,8 @@ test.afterAll(async () => {
 test.beforeEach(async () => {
   // The fake docker logs $PWD, which is the resolved path (macOS /var is a symlink).
   userData = await realpath(await mkdtemp(path.join(tmpdir(), "rakazo-desktop-stack-")));
+  // Setup otherwise follows the machine's language; these specs read its English text.
+  await writeFile(path.join(userData, "ui-locale.txt"), "en\n");
 });
 
 test.afterEach(async () => {

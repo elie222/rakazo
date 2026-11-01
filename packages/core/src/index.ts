@@ -97,6 +97,7 @@ export * from "./thread-scroll.js";
 export * from "./thread-subscription.js";
 export * from "./time-separators.js";
 export * from "./tool-activity.js";
+export * from "./translate.js";
 export * from "./ui-locale.js";
 export * from "./unread-divider.js";
 export * from "./user-error.js";
