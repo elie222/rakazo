@@ -111,8 +111,8 @@ async function openMobileSpace(spaceId: string | undefined, open: () => void) {
   open();
 }
 
-/** Whether this launch has saved its language to the account (see the inbox load). */
-let localeReported = false;
+/** The account this launch has saved its language to (see the inbox load). */
+let localeReportedFor: string | null = null;
 
 export default function HomeRoute() {
   const { split } = useSplitView();
@@ -267,10 +267,10 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
       setSpaces((current) => retainInboxValue(current, navigation.spaces));
       setMe((current) => retainInboxValue(current, nextMe));
       // Emails follow the app's language, so the account keeps the one this app runs in. Once
-      // per launch: polls must not undo a language picked on another device since. A server
-      // that predates it leaves `locale` out.
-      if (!localeReported && nextMe.locale !== undefined) {
-        localeReported = true;
+      // per account and launch: polls must not undo a language picked on another device since.
+      // A server that predates it leaves `locale` out.
+      if (localeReportedFor !== nextMe.userId && nextMe.locale !== undefined) {
+        localeReportedFor = nextMe.userId;
         if (nextMe.locale !== getActiveUiLocale()) {
           void rpc("preferences/update", { locale: getActiveUiLocale() }).catch(() => undefined);
         }
