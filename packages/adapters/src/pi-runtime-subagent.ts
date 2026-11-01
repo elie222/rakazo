@@ -1,5 +1,6 @@
 import { Agent } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
+import { isToolPauseResult, terminatingReplyText } from "./approval-effect.js";
 import { withAutomatedLabels } from "./automated-messages.js";
 import { DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
 import { withCloudflareAuth } from "./cloudflare-ai-gateway.js";
@@ -259,7 +260,21 @@ export async function executeSubagent(
 
   let streamed = "";
   let lastPush = 0;
+  // A tool result that ended the child's turn carries the reply the parent must read.
+  let terminatedReply: string | undefined;
   nested.subscribe((event) => {
+    if (
+      event.type === "tool_execution_end" &&
+      event.result.terminate === true &&
+      !isToolPauseResult(event.result)
+    ) {
+      terminatedReply = terminatingReplyText(event.result) ?? terminatedReply;
+    }
+    if (event.type === "message_start" && event.message.role === "assistant") {
+      // A later assistant turn supersedes the carried reply, except the empty aborted
+      // message of a turn the terminating result itself ended.
+      if (event.message.stopReason !== "aborted") terminatedReply = undefined;
+    }
     if (event.type === "tool_execution_start") {
       if (host.toolCallBudget.exceeded) return;
       const toolName = "toolName" in event && event.toolName ? String(event.toolName) : "a tool";
@@ -328,7 +343,14 @@ export async function executeSubagent(
     // completed stop rather than a failed subagent chip.
     const budgetExceeded = host.toolCallBudget.exceeded;
     const error = nested.state.errorMessage || providerFailureText(nested.state.messages.at(-1));
-    if (error && !budgetExceeded) {
+    // The child's own terminating result aborted it mid-batch; the reply that result
+    // carries is the helper's result, not a failure. A pause, a spent shared budget
+    // and a stop of the whole run still report as before.
+    const endedReply =
+      terminatedReply && !nestedHost.pausePending && !host.signal.aborted && !budgetExceeded
+        ? terminatedReply
+        : undefined;
+    if (error && !budgetExceeded && !endedReply) {
       const message = sanitizeProviderError(subagentModel.provider, error);
       host.queue.push({
         type: "subagent",
@@ -343,10 +365,15 @@ export async function executeSubagent(
     const budgetMessage = budgetExceeded
       ? toolCallBudgetExceededMessage(host.toolCallBudget.limit)
       : undefined;
-    const result =
-      budgetMessage && streamed.trim()
+    const result = budgetMessage
+      ? streamed.trim()
         ? `${streamed.trim()}\n\n${budgetMessage}`
-        : budgetMessage || streamed || assistantText(nested.state.messages.at(-1)) || "done.";
+        : budgetMessage
+      : endedReply
+        ? streamed.trim()
+          ? `${streamed.trim()}\n\n${endedReply}`
+          : endedReply
+        : streamed || assistantText(nested.state.messages.at(-1)) || "done.";
     const clipped = clipToolResultText(result, 12_000);
     host.queue.push({
       type: "subagent",

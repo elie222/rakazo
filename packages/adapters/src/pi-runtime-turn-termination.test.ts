@@ -1,6 +1,6 @@
 import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
-import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
+import type { AgentRunRequest, AgentRuntimeEvent, AgentSteeringMessage } from "@rakazo/adapter-kit";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const providerState = vi.hoisted(() => ({
@@ -116,7 +116,26 @@ const tools: AgentRunRequest["tools"] = [
   },
 ];
 
-function request(executeTool: AgentRunRequest["executeTool"]): AgentRunRequest {
+const subagentTools: AgentRunRequest["tools"] = [
+  ...tools,
+  {
+    name: "run_subagent",
+    description: "Run a short-lived helper inside this turn",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        task: { type: "string" },
+      },
+    },
+    readOnly: false,
+  },
+];
+
+function request(
+  executeTool: AgentRunRequest["executeTool"],
+  overrides?: Partial<AgentRunRequest>,
+): AgentRunRequest {
   return {
     botId: "bot",
     threadId: "thread",
@@ -127,6 +146,7 @@ function request(executeTool: AgentRunRequest["executeTool"]): AgentRunRequest {
     tools,
     model: { provider: primary.provider, id: primary.id, apiKey: "fake-key" },
     executeTool,
+    ...overrides,
   } as unknown as AgentRunRequest;
 }
 
@@ -272,4 +292,102 @@ it("keeps the tool-call budget reply ahead of a terminating result", async () =>
     type: "done",
     text: "I stopped after reaching the limit of 2 tool calls in this turn. Send another message to continue.",
   });
+});
+
+it("returns the refusal a subagent's mixed batch ended on as its result", async () => {
+  const { executeTool, names } = refusingExecutor();
+  providerState.stream
+    .mockImplementationOnce(() =>
+      toolCalls(primary, [
+        {
+          type: "toolCall",
+          id: "parent-1",
+          name: "run_subagent",
+          arguments: { name: "helper", task: "Change the model." },
+        },
+      ]),
+    )
+    .mockImplementationOnce(() =>
+      toolCalls(primary, [
+        { type: "toolCall", id: "child-1", name: "update_bot", arguments: { model: "other" } },
+      ]),
+    )
+    .mockImplementationOnce(() =>
+      toolCalls(primary, [
+        { type: "toolCall", id: "child-2", name: "update_bot", arguments: { model: "other" } },
+        { type: "toolCall", id: "child-3", name: "list_files", arguments: { path: "" } },
+      ]),
+    )
+    .mockImplementation(() => reply(primary, "The helper could not change the model."));
+  const events = await run(request(executeTool, { tools: subagentTools }));
+
+  expect(names).toEqual(["update_bot", "update_bot", "list_files"]);
+  // Parent prompt, two child turns, parent final reply; the child makes no third request.
+  expect(providerState.stream).toHaveBeenCalledTimes(4);
+  expect(events.filter((event) => event.type === "subagent" && event.status !== "running")).toEqual(
+    [
+      {
+        type: "subagent",
+        agentId: expect.any(String),
+        name: "helper",
+        task: "Change the model.",
+        status: "completed",
+        result: REFUSAL,
+      },
+    ],
+  );
+  // The parent bot reads the refusal as the run_subagent result, not a failed helper.
+  const parentContext = providerState.stream.mock.calls.at(-1)?.[1] as {
+    messages: Array<{
+      role: string;
+      toolName?: string;
+      content?: Array<{ type: string; text?: string }>;
+    }>;
+  };
+  const helperResult = parentContext.messages
+    .filter((message) => message.role === "toolResult" && message.toolName === "run_subagent")
+    .at(-1);
+  expect(helperResult?.content?.[0]?.text).toContain(REFUSAL);
+  expect(helperResult?.content?.[0]?.text).not.toContain("Subagent failed");
+  expect(events.at(-1)).toEqual({ type: "done", text: "The helper could not change the model." });
+});
+
+it("keeps a follow-up queued during the mixed batch unclaimed", async () => {
+  const { executeTool } = refusingExecutor();
+  let claims = 0;
+  const claimSteering = vi.fn(async (): Promise<AgentSteeringMessage[]> => {
+    claims += 1;
+    // Nothing is queued before the mixed batch; a user follow-up lands while it runs.
+    return claims >= 3
+      ? [
+          {
+            id: "steer-1",
+            messageId: "message-1",
+            text: "Also check the calendar.",
+            origin: "user",
+          },
+        ]
+      : [];
+  });
+  providerState.stream
+    .mockImplementationOnce(() =>
+      toolCalls(primary, [
+        { type: "toolCall", id: "call-1", name: "update_bot", arguments: { model: "other" } },
+      ]),
+    )
+    .mockImplementationOnce(() =>
+      toolCalls(primary, [
+        { type: "toolCall", id: "call-2", name: "update_bot", arguments: { model: "other" } },
+        { type: "toolCall", id: "call-3", name: "list_files", arguments: { path: "" } },
+      ]),
+    )
+    .mockImplementation(() => reply(primary, "Trying again anyway."));
+  const events = await run(request(executeTool, { claimSteering }));
+
+  // Only the run's start and the turn before the batch claim; the turn the refusal
+  // ends never claims, so the follow-up stays queued for the next run.
+  expect(claimSteering).toHaveBeenCalledTimes(2);
+  expect(events).not.toContainEqual({ type: "steered", fromRunUser: true });
+  expect(texts(events)).toEqual([REFUSAL]);
+  expect(events.at(-1)).toEqual({ type: "done", text: REFUSAL });
 });

@@ -26,7 +26,11 @@ import {
   modelFallbackFailure,
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
-import { isToolPauseResult, uncertainEffectResult } from "./approval-effect.js";
+import {
+  isToolPauseResult,
+  terminatingReplyText,
+  uncertainEffectResult,
+} from "./approval-effect.js";
 import { automated, withAutomatedLabels } from "./automated-messages.js";
 import { withCloudflareAuth } from "./cloudflare-ai-gateway.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
@@ -369,6 +373,8 @@ export class PiAgentRuntime implements AgentRuntime {
         const hasBackups = Boolean(request.fallbackModels?.length);
         let agent: Agent;
         let activeStreamTarget = host.activeModel;
+        // A tool result that ended the turn carries the reply the user must still see.
+        let terminatedReply: string | undefined;
         const fallbackState: FallbackStreamState = {
           request,
           getActive: () => activeStreamTarget,
@@ -467,6 +473,10 @@ export class PiAgentRuntime implements AgentRuntime {
           },
           prepareNextTurnWithContext: async () => {
             if (!request.claimSteering) return undefined;
+            // The turn is ending at a terminating result that aborted the agent; no
+            // model request would answer a follow-up claimed now, and a completed run
+            // deletes its claimed steering. Leave the message queued for the next run.
+            if (terminatedReply && !host.pausePending) return undefined;
             const steering = await request.claimSteering([...seenSteeringIds]);
             if (steering.length === 0) return undefined;
             seenSteeringIds.push(...steering.map((item) => item.id));
@@ -592,8 +602,6 @@ export class PiAgentRuntime implements AgentRuntime {
         // Text streamed before this point is tool-turn narration. Only text after
         // it counts as the final reply, including when the completed message omits it.
         let streamedBeforePendingFinal = 0;
-        // A tool result that ended the turn carries the reply the user must still see.
-        let terminatedReply: string | undefined;
         agent.subscribe(async (event) => {
           if (
             event.type === "tool_execution_end" &&
@@ -1140,17 +1148,6 @@ function createGate(max: number) {
       waiters.shift()?.();
     },
   };
-}
-
-/** The reply a terminating tool result carries, when its content holds text. */
-function terminatingReplyText(result: {
-  content: ReadonlyArray<{ type: string; text?: unknown }>;
-}): string | undefined {
-  const text = result.content
-    .flatMap((part) => (part.type === "text" && typeof part.text === "string" ? [part.text] : []))
-    .join("\n")
-    .trim();
-  return text || undefined;
 }
 
 function createQueue(): EventQueue {

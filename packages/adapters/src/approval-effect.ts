@@ -378,6 +378,17 @@ export function isTerminatingReplyResult(result: unknown): boolean {
   );
 }
 
+/** The reply a terminating tool result carries, when its content holds text. */
+export function terminatingReplyText(result: {
+  content: ReadonlyArray<{ type: string; text?: unknown }>;
+}): string | undefined {
+  const text = result.content
+    .flatMap((part) => (part.type === "text" && typeof part.text === "string" ? [part.text] : []))
+    .join("\n")
+    .trim();
+  return text || undefined;
+}
+
 export function isApprovalPausedResult(result: unknown): result is ApprovalPausedToolResult {
   return isToolPauseResult(result);
 }
