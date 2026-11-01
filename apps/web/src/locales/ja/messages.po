@@ -5638,6 +5638,18 @@ msgstr "{trialDays}日間の無料トライアルを開始"
 msgid "Start recording"
 msgstr "録画を開始"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}d late"
+msgstr "{count}日遅れて開始"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}h late"
+msgstr "{count}時間遅れて開始"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}m late"
+msgstr "{count}分遅れて開始"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "開始中"

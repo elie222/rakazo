@@ -5638,6 +5638,18 @@ msgstr "{trialDays}일 무료 체험 시작"
 msgid "Start recording"
 msgstr "작업 녹화 시작"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}d late"
+msgstr "{count}일 늦게 시작됨"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}h late"
+msgstr "{count}시간 늦게 시작됨"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}m late"
+msgstr "{count}분 늦게 시작됨"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "시작 중"

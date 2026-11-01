@@ -5638,6 +5638,18 @@ msgstr "התחלת תקופת ניסיון חינם של {trialDays} ימים"
 msgid "Start recording"
 msgstr "התחלת הקלטה"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}d late"
+msgstr "{count, plural, one {התחיל באיחור של יום} other {התחיל באיחור של # ימים}}"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}h late"
+msgstr "התחיל באיחור של {count} שע׳"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}m late"
+msgstr "התחיל באיחור של {count} דק׳"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "מתחיל"

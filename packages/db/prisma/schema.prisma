@@ -953,6 +953,8 @@ model Run {
   // Server-side first visible output, preserved across attempts and resumes.
   firstResponseAt      DateTime?
   startedAt            DateTime?
+  // The occurrence a recurring timer run was due at, recorded at its first start only when it started late.
+  lateSince            DateTime?
   completedAt          DateTime?
   botOutcomeReturnedAt DateTime?
   messagingMirroredAt  DateTime?

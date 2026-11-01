@@ -5638,6 +5638,18 @@ msgstr "Начать бесплатный пробный период на {tria
 msgid "Start recording"
 msgstr "Начать запись"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}d late"
+msgstr "Запущено с опозданием на {count} дн."
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}h late"
+msgstr "Запущено с опозданием на {count} ч"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}m late"
+msgstr "Запущено с опозданием на {count} мин"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "Запуск"

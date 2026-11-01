@@ -5638,6 +5638,18 @@ msgstr "{trialDays} günlük ücretsiz denemeyi başlat"
 msgid "Start recording"
 msgstr "Kaydı başlat"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}d late"
+msgstr "{count} gün gecikmeyle başladı"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}h late"
+msgstr "{count} sa gecikmeyle başladı"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}m late"
+msgstr "{count} dk gecikmeyle başladı"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "Başlıyor"

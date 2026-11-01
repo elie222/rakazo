@@ -205,4 +205,24 @@ describe("routine history", () => {
       messageId: "group-reply",
     });
   });
+  it("returns the due time recorded on a run that started late", async () => {
+    const { prisma, runs } = fixture();
+    runs.mockResolvedValue(
+      [new Date("2026-01-02T08:00:00Z"), null].map((lateSince, i) => ({
+        id: `run-${i}`,
+        botId: "bot-1",
+        threadId: "thread-1",
+        thread: { groupId: null },
+        status: "completed",
+        error: null,
+        lateSince,
+        createdAt: at,
+        startedAt: at,
+        completedAt: at,
+      })),
+    );
+    const history = await listRoutineRuns(prisma, actor, "routine-1");
+    expect(RoutineHistorySchema.parse(history)).toEqual(history);
+    expect(history.runs.map((run) => run.lateSince)).toEqual(["2026-01-02T08:00:00.000Z", null]);
+  });
 });
