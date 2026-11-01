@@ -133,7 +133,10 @@ export function accountRoutes(ctx: RouterContext) {
         await deps.prisma.user.update({
           where: { id: context.actor.userId },
           // An avatar style from an older app is accepted and ignored: there is only one.
-          data: input.timezone === undefined ? {} : { timezone: input.timezone },
+          data: {
+            ...(input.timezone === undefined ? {} : { timezone: input.timezone }),
+            ...(input.locale === undefined ? {} : { locale: input.locale }),
+          },
         });
         return meDto(deps, context.actor);
       }),

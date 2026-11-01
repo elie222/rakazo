@@ -2,6 +2,7 @@ import { ORPCError } from "@orpc/server";
 import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import { parsePluginSource, previewPluginInstall } from "@rakazo/adapters";
 import {
+  emailLocale,
   pluginSubmissionAdminEmail,
   pluginSubmissionReceivedEmail,
   pluginSubmissionReviewedEmail,
@@ -133,7 +134,7 @@ export function pluginSubmissionRoutes(
       ? await deps.prisma.pluginSubmission.findUniqueOrThrow({ where: { id: pending.id } })
       : await deps.prisma.pluginSubmission.create({ data });
     if (confirmations(email) <= CONFIRMATIONS_PER_EMAIL_PER_DAY) {
-      sendLater(deps, pluginSubmissionReceivedEmail(email));
+      sendLater(deps, pluginSubmissionReceivedEmail(email, emailLocale(null, c.req.raw.headers)));
     }
     if (!updated) {
       const reviewUrl = new URL("/admin/plugins", deps.webOrigin).href;
@@ -202,9 +203,18 @@ export async function reviewPluginSubmission(
   });
   if (decided.count === 0)
     throw new ORPCError("CONFLICT", { message: "Changed or already reviewed. Reload to see it." });
+  // The decision is saved: the author's language (English without an account) only shapes the email.
   sendLater(
     deps,
-    pluginSubmissionReviewedEmail({ email: row.email, name: row.name, status, reason }),
+    deps.prisma.user
+      .findUnique({ where: { email: row.email }, select: { locale: true } })
+      .catch(() => null)
+      .then((author) =>
+        pluginSubmissionReviewedEmail(
+          { email: row.email, name: row.name, status, reason },
+          emailLocale(author?.locale),
+        ),
+      ),
   );
   return pluginSubmissionDto(
     await deps.prisma.pluginSubmission.findUniqueOrThrow({ where: { id: row.id } }),

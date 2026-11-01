@@ -1,3 +1,4 @@
+import { translate } from "@rakazo/core";
 import { useSyncExternalStore } from "react";
 import { DE_MESSAGES, PEER_MESSAGE_FORMS as DE_PEER_FORMS } from "./locales/de";
 import { ES_MESSAGES, PEER_MESSAGE_FORMS as ES_PEER_FORMS } from "./locales/es";
@@ -42,11 +43,7 @@ export function dateLocaleForUi(locale: UiLocale = activeLocale): string {
 }
 
 export function t(message: string, values?: Record<string, string | number>): string {
-  const template = catalogs[activeLocale]?.[message] ?? message;
-  if (!values) return template;
-  return template.replace(/\{([A-Za-z0-9_]+)\}/g, (match, key: string) =>
-    Object.hasOwn(values, key) ? String(values[key]) : match,
-  );
+  return translate(catalogs[activeLocale], message, values);
 }
 
 export function useI18n(): { locale: UiLocale; t: typeof t } {
