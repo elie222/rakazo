@@ -181,9 +181,6 @@ export async function detectPurchase(
     found = { ...unchecked, steps: [] };
   }
   if (!found) return undefined;
-  // The wallet owner approved paying at a site this run typed the approved card or pay token into.
-  // The exemption is spent on the first purchase click it covers, so a second purchase there asks.
-  if (ctx.state.walletHosts.delete(found.site)) return undefined;
   return {
     steps: found.steps,
     site: found.site,

@@ -357,8 +357,12 @@ export async function prepareToolRequest(
     const purchase = approved ?? (await detectPurchase(ctx, name, rest));
     if (purchase) {
       args = { ...rest, purchaseApproval: purchase };
-      request.purchase = purchase;
-      request.fleetSummary = purchaseCardSummary(purchase);
+      // The wallet owner approved paying at a site this run typed the approved card or pay token into: the
+      // click still carries the approval to the page, with no card. Spent on the first purchase click there.
+      if (approved || !ctx.state.walletHosts.delete(purchase.site)) {
+        request.purchase = purchase;
+        request.fleetSummary = purchaseCardSummary(purchase);
+      }
     }
     if (purchase || given !== undefined) request.effectRequest = args;
   }

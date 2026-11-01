@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { PurchaseApproval } from "./purchase-gate.js";
 import { detectPurchase, purchaseApprovalOf, purchaseCardSummary } from "./purchase-gate.js";
 import type { RunContext } from "./run-context.js";
+import type { ToolRequest } from "./run-tool-request.js";
+import { prepareToolRequest } from "./run-tool-request.js";
 
 const CHECKED = "The button label and total are read from the page. The bot has not checked them.";
 const found = {
@@ -146,17 +148,28 @@ describe("purchase detection for the page tools", () => {
     expect(check).not.toHaveBeenCalled();
   });
 
-  it("exempts a site only when this run typed an approved wallet card or token into it", async () => {
-    const check = vi.fn(async () => ({ purchase: found }));
-    const args = { actions: [{ kind: "click", x: 1, y: 2 }] };
+  it("shows no card only where this run typed an approved wallet card or token, and still approves the click", async () => {
+    const check = vi.fn(async () => ({ purchase: { ...found, steps: [0] } }));
     const ctx = contextWith(check);
-    expect(await detectPurchase(ctx, "computer_act", args)).toBeDefined();
+    const prepare = async () => {
+      const request = {
+        name: "browser_act",
+        args: { actions: [{ kind: "click", ref: "e1" }] },
+      } as unknown as ToolRequest;
+      expect(await prepareToolRequest(ctx, request)).toBeUndefined();
+      return request;
+    };
+    expect((await prepare()).purchase).toBeDefined();
     ctx.state.walletHosts.add("other.example.test");
-    expect(await detectPurchase(ctx, "computer_act", args)).toBeDefined();
+    expect((await prepare()).purchase).toBeDefined();
     ctx.state.walletHosts.add("shop.example.test");
-    expect(await detectPurchase(ctx, "computer_act", args)).toBeUndefined();
+    const exempt = await prepare();
+    expect(exempt.purchase).toBeUndefined();
+    expect(exempt.fleetSummary).toBeUndefined();
+    // The page helper refuses an unapproved purchase click, so the exempt click carries its approval.
+    expect(exempt.args.purchaseApproval).toMatchObject({ steps: [0], site: "shop.example.test" });
     // It is spent: a second purchase on that host asks.
-    expect(await detectPurchase(ctx, "computer_act", args)).toBeDefined();
+    expect((await prepare()).purchase).toBeDefined();
     expect([...ctx.state.walletHosts]).toEqual(["other.example.test"]);
   });
 
