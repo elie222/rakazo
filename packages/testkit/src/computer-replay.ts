@@ -163,12 +163,15 @@ export async function runComputerReplay(
   }
 }
 
-/** The controls a snapshot tree lists, as "- role "name" [ref]" lines (the model's text carries no other copy). */
+/**
+ * The controls a snapshot tree lists, as "- role "name" [..., ref=eN]" lines from a live computer or
+ * "- role "name" [eN]" lines from the in-process page (the model's text carries no other copy).
+ */
 export function controlsInTree(tree: unknown): Array<{ name: string; ref: string }> {
   return String(tree ?? "")
     .split("\n")
     .flatMap((line) => {
-      const match = /^- [^"]*?("(?:[^"\\]|\\.)*") \[(e\d+)\]/.exec(line);
+      const match = /^\s*- \S+ ("(?:[^"\\]|\\.)*") \[(?:(?:[^\]]*, )?ref=)?(e\d+)\]/.exec(line);
       return match ? [{ name: JSON.parse(match[1]!) as string, ref: match[2]! }] : [];
     });
 }
