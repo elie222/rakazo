@@ -13,7 +13,7 @@ import {
   PgSpaceKeyStore,
 } from "./content-keys.js";
 import { PrismaClient } from "./generated/prisma/client.js";
-import { installDbContext, withRowLevelSecurity } from "./row-security.js";
+import { installDbContext, rlsBypassKey, withRowLevelSecurity } from "./row-security.js";
 import { withTextSanitization } from "./text-sanitization.js";
 
 export type Db = PrismaClient;
@@ -108,7 +108,10 @@ export function createDb(
   // Row-level security wraps everything else, so its findUnique rewrite still runs
   // through content encryption. Text is cleaned for Postgres before any of them see it.
   const prisma = withTextSanitization(
-    withRowLevelSecurity(withContentEncryption(client, contentKeys)),
+    withRowLevelSecurity(
+      withContentEncryption(client, contentKeys),
+      rlsBypassKey(connectionString),
+    ),
   );
   return { prisma, pool, contentKeys };
 }

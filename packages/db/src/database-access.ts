@@ -1,6 +1,7 @@
 import { createHash, createHmac, pbkdf2Sync, randomBytes } from "node:crypto";
 import { Client, escapeIdentifier, escapeLiteral } from "pg";
 import type { PrismaClient } from "./generated/prisma/client.js";
+import { rlsBypassKey, runAsSystem } from "./row-security.js";
 
 /**
  * NOLOGIN group role created by the row-level security migration. It holds the
@@ -44,7 +45,23 @@ export async function provisionRuntimeRole(
   const owner = new Client({ connectionString: migrationUrl });
   await owner.connect();
   try {
-    return await provisionWith(owner, runtimeUrl);
+    const provisioned = await provisionWith(owner, runtimeUrl);
+    if (provisioned.warning) return provisioned;
+    // A key from a password the login does not have would lock out the running release.
+    const runtime = new Client({ connectionString: runtimeUrl });
+    const connected = await runtime.connect().then(
+      () => true,
+      () => false,
+    );
+    await runtime.end().catch(() => undefined);
+    if (!connected) return { warning: RUNTIME_LOGIN_FAILED_WARNING };
+    if (!rlsBypassKey(runtimeUrl)) {
+      // With no digest stored, the policies accept the keyless bypass this login sends.
+      await owner.query("DELETE FROM rakazo_private.rls_bypass_keys");
+      return { warning: NO_BYPASS_KEY_WARNING };
+    }
+    await storeBypassKey(owner, runtimeUrl);
+    return {};
   } finally {
     await owner.end();
   }
@@ -140,6 +157,25 @@ async function provisionWith(owner: Client, runtimeUrl: string): Promise<{ warni
   return {};
 }
 
+const RUNTIME_LOGIN_FAILED_WARNING =
+  "Could not log in with DATABASE_URL, so its row-level security bypass key was not registered.";
+
+const NO_BYPASS_KEY_WARNING =
+  "DATABASE_URL has no password, so SQL run for one tenant could turn on the cross-tenant bypass. Give the runtime login a password.";
+
+/** Lets the runtime login's system context through the policies (see rlsBypassKey). */
+async function storeBypassKey(owner: Client, runtimeUrl: string): Promise<void> {
+  // One statement, so the table is never empty, which would accept the bypass alone.
+  await owner.query(
+    `WITH stored AS (
+       INSERT INTO rakazo_private.rls_bypass_keys (digest) VALUES (sha256(convert_to($1, 'UTF8')))
+       ON CONFLICT (digest) DO NOTHING
+     )
+     DELETE FROM rakazo_private.rls_bypass_keys WHERE digest <> sha256(convert_to($1, 'UTF8'))`,
+    [rlsBypassKey(runtimeUrl)],
+  );
+}
+
 /**
  * The SCRAM-SHA-256 verifier PostgreSQL would store for `password`. Sending it
  * instead of the password keeps the plaintext out of server logs and audit trails.
@@ -217,6 +253,8 @@ export interface RowSecurityStatus {
   enforced: boolean;
   role: string;
   reason?: string;
+  /** The bypass key does not match the one `pnpm db:migrate` registered. */
+  systemBlocked?: boolean;
 }
 
 /** Whether the connected login is actually subject to the row-level security policies. */
@@ -240,10 +278,17 @@ export async function describeRowSecurity(prisma: PrismaClient): Promise<RowSecu
       : row.owns
         ? "owns the tables"
         : undefined;
-  return { enforced: !reason, role: row.role, ...(reason ? { reason } : {}) };
+  if (reason) return { enforced: false, role: row.role, reason };
+  const [system] = await runAsSystem(
+    "check the row-level security bypass key",
+    () => prisma.$queryRaw<Array<{ ok: boolean }>>`SELECT app_rls_bypass() AS ok`,
+  );
+  return { enforced: true, role: row.role, ...(system?.ok ? {} : { systemBlocked: true }) };
 }
 
 export function rowSecurityWarning(status: RowSecurityStatus): string | undefined {
+  if (status.systemBlocked)
+    return "Background work across Spaces is blocked: DATABASE_URL's password changed since `pnpm db:migrate` last ran. Run it again.";
   if (status.enforced) return undefined;
   return `Row-level security is not enforced: the app connects as ${status.role}, which ${status.reason}. Point DATABASE_URL at a runtime login and DATABASE_MIGRATION_URL at the owner (docs/self-host-configuration.md#database-roles).`;
 }
