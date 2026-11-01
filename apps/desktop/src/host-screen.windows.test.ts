@@ -3,7 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { HostScreen } from "@rakazo/adapters/host-screen";
+import { agentDesktopCli } from "@rakazo/adapters/agent-desktop-host-screen";
+import type { HostScreen, HostScreenAction } from "@rakazo/adapters/host-screen";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   createDesktopHostScreen,
@@ -59,11 +60,65 @@ describe.runIf(process.platform === "win32" && process.env.CI)("Windows screen c
     console.log(JSON.stringify({ ...written, observation: written.observation?.tree }));
     expect(written).toMatchObject({ completed: 1 });
     expect(written.observation?.tree).toContain("Hello from Rakazo");
-    for (const action of [
+    const run = agentDesktopCli({
+      command: () =>
+        screenDriverInstaller({
+          dir: path.join(dir, "bin"),
+          fetch: (url) => fetch(url),
+          release: SCREEN_DRIVER_RELEASES.win32,
+        })(),
+      home: path.join(dir, "home"),
+    });
+    const windows = (await run(["list-windows"], scope.signal)).data as Array<{
+      id: string;
+      app_name: string;
+    }>;
+    const id = windows.find((window) => window.app_name.toLowerCase() === "notepad.exe")!.id;
+    const edit = await run(
+      ["find", "--window-id", id, "--role", "menuitem", "--name=Edit", "--exact", "--first"],
+      scope.signal,
+    );
+    console.log("DIAG find", JSON.stringify(edit));
+    const ref = (edit.data as { matches?: Array<{ ref_id?: string }> })?.matches?.[0]?.ref_id;
+    if (ref) {
+      console.log("DIAG click", JSON.stringify(await run(["click", "--", ref], scope.signal)));
+      await sleep(500);
+      console.log(
+        "DIAG surfaces",
+        JSON.stringify(await run(["list-surfaces", "--app", "notepad"], scope.signal)),
+      );
+      for (const scopeArgs of [
+        ["--window-id", id],
+        ["--app", "notepad"],
+      ])
+        console.log(
+          "DIAG menu",
+          JSON.stringify(
+            await run(
+              [
+                "find",
+                ...scopeArgs,
+                "--surface",
+                "menu",
+                "--name=Select All",
+                "--exact",
+                "--first",
+              ],
+              scope.signal,
+            ),
+          ),
+        );
+      console.log(
+        "DIAG escape",
+        JSON.stringify(await run(["press", "--window-id", id, "--", "escape"], scope.signal)),
+      );
+    }
+    const actions: HostScreenAction[] = [
       { kind: "key", key: "end" },
       { kind: "scroll", direction: "down" },
       { kind: "menu", path: ["Edit", "Select All"] },
-    ] as const) {
+    ];
+    for (const action of actions) {
       const result = await screen.act(scope, "notepad", [action]);
       console.log(JSON.stringify({ action, completed: result.completed, error: result.error }));
     }
