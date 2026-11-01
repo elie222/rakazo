@@ -18,7 +18,7 @@ export async function hostedModelCreditObserver(
   const membership = await organizationForMember(prisma, scope);
   if (!membership) throw new Error("Model credit account is unavailable");
   const account = await creditAccount(prisma, membership.organizationId);
-  if (account.mode !== "credits")
+  if (account.mode !== "credits" && account.balanceMicros <= 0n)
     throw new HostedModelCreditsRequiredError(HOSTED_MODEL_CREDITS_REQUIRED_ERROR);
   return {
     beforeCall: (call) =>
