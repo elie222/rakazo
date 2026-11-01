@@ -76,8 +76,8 @@ export function ComposerError({
         return;
       }
       const topElement = document.elementFromPoint(
-        rect.left + rect.width / 2,
-        rect.top + rect.height / 2,
+        (Math.max(0, rect.left) + Math.min(window.innerWidth, rect.right)) / 2,
+        (Math.max(0, rect.top) + Math.min(window.innerHeight, rect.bottom)) / 2,
       );
       if (topElement && (topElement === element || element.contains(topElement))) {
         presentedRunErrorIdRef.current = currentRunErrorId;
@@ -96,7 +96,9 @@ export function ComposerError({
     const observer =
       element && typeof IntersectionObserver !== "undefined"
         ? new IntersectionObserver((entries) => {
-            intersecting = entries.some((entry) => entry.isIntersecting);
+            const entry = entries.filter((entry) => entry.target === element).at(-1);
+            if (!entry) return;
+            intersecting = entry.isIntersecting;
             if (intersecting) recordIfPresented();
             else stopRechecking();
           })
