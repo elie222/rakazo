@@ -186,7 +186,8 @@ export async function removeDeletedBotWorkspaces(
 
 /**
  * Run best-effort cleanup for at most budgetMs. Its commands are aborted at the deadline, and
- * a provider that ignores the abort still cannot hold the caller past it.
+ * a provider that ignores the abort still cannot hold the caller past it. Running out of time is
+ * not a failure: every boot lists deleted bots' folders again and removes what is left.
  */
 export async function withCleanupDeadline(
   context: AdapterContext,
@@ -198,10 +199,15 @@ export async function withCleanupDeadline(
     () => deadline.abort(new Error("team bot folder cleanup ran out of time")),
     budgetMs,
   );
-  const expired = new Promise<never>((_, reject) => {
-    deadline.signal.addEventListener("abort", () => reject(deadline.signal.reason), {
-      once: true,
-    });
+  const expired = new Promise<void>((resolve) => {
+    deadline.signal.addEventListener(
+      "abort",
+      () => {
+        getLogger().warn("team bot folder cleanup ran out of time");
+        resolve();
+      },
+      { once: true },
+    );
   });
   const signal = AbortSignal.any([context.signal, deadline.signal]);
   try {
