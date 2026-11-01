@@ -133,6 +133,24 @@ vi.mock("@rakazo/ui-web", async () => {
         createElement("input", { id, value, placeholder, readOnly: true }),
     ],
     ["Textarea", () => null],
+    [
+      "Checkbox",
+      ({
+        id,
+        checked,
+        onCheckedChange,
+      }: {
+        id?: string;
+        checked?: boolean;
+        onCheckedChange?: (checked: boolean) => void;
+      }) =>
+        createElement("button", {
+          id,
+          type: "button",
+          "aria-pressed": String(checked === true),
+          onClick: () => onCheckedChange?.(!checked),
+        }),
+    ],
     ["toast", { success: vi.fn(), error: vi.fn() }],
   ]);
 });
@@ -311,6 +329,55 @@ it("opens a server's form and saves it in place, sending blank values to keep wh
         endpoint: "https://mcp.example.test/mcp",
         headers: { Authorization: "", "X-Team": "" },
       }),
+    });
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("saves a server that must keep tool results whole", async () => {
+  const server = {
+    id: "srv_1",
+    slug: "docs",
+    name: "docs",
+    description: "",
+    transport: "streamable_http",
+    endpoint: "https://mcp.example.test/mcp",
+    command: null,
+    hasArgs: false,
+    envKeys: [],
+    fileKeys: [],
+    headerKeys: [],
+    oauthStatus: "none",
+    oauthClientId: null,
+    hasSecret: false,
+    health: { status: "unknown" },
+    enabled: true,
+  } as unknown as McpServer;
+  mocks.list.mockReset().mockResolvedValue([server]);
+  mocks.update.mockReset().mockResolvedValue(server);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(overlay("srv_1")));
+    await vi.waitFor(() =>
+      expect(host.querySelector<HTMLInputElement>("#mcp-name")?.value).toBe("docs"),
+    );
+    const box = host.querySelector<HTMLButtonElement>("#mcp-verbatim-results");
+    expect(box?.getAttribute("aria-pressed")).toBe("false");
+    await act(async () => box?.click());
+    await vi.waitFor(() =>
+      expect(host.querySelector("#mcp-verbatim-results")?.getAttribute("aria-pressed")).toBe(
+        "true",
+      ),
+    );
+    const save = Array.from(host.querySelectorAll("button")).find(
+      (item) => item.textContent === "Save",
+    );
+    await act(async () => save?.click());
+    expect(mocks.update).toHaveBeenCalledWith({
+      id: "srv_1",
+      config: expect.objectContaining({ verbatimResults: true }),
     });
   } finally {
     await act(async () => root.unmount());

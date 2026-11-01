@@ -3394,6 +3394,10 @@ msgstr "à l'instant"
 msgid "Keep memories"
 msgstr "Conserver les mémoires"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Keep tool results whole"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr "clé"
@@ -5987,6 +5991,11 @@ msgstr "Ce serveur n'a pas demandé l'autorisation du navigateur."
 #: src/pages/McpServersOverlay.tsx
 msgid "This server is already connected. Disconnect it first to authorize again."
 msgstr "Ce serveur est déjà connecté. Déconnectez-le d'abord pour l'autoriser à nouveau."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model."
+msgstr ""
 
 #: src/pages/model-settings/connection-controls.tsx
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."

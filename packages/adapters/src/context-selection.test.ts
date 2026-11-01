@@ -1,4 +1,4 @@
-import { MODEL_CONTEXT_TOO_SMALL_ERROR } from "@rakazo/core";
+import { MODEL_CONTEXT_TOO_SMALL_ERROR, VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import {
   ContextBudgetError,
@@ -85,6 +85,59 @@ describe("bounded context selection", () => {
     expect(() =>
       selectContext([call, result, result, user("steering")], { budget, strategy: "retrieval" }),
     ).toThrow("Duplicate tool result");
+  });
+  it("keeps an opted-in MCP result whole and fails when that result cannot fit", () => {
+    const link = "https://sessions.example.test/join/abc";
+    const body = `${"before ".repeat(800)}${link}${" after".repeat(800)}`;
+    const call = {
+      role: "assistant",
+      content: [
+        {
+          type: "toolCall",
+          id: "call",
+          name: "connectors_execute_tool",
+          arguments: { id: "srv_mail:get_message" },
+        },
+      ],
+    };
+    const result = {
+      role: "toolResult",
+      toolCallId: "call",
+      toolName: "connectors_execute_tool",
+      content: body,
+    };
+    const options = {
+      budget,
+      strategy: "retrieval" as const,
+      protectedIndexes: [0],
+      verbatimMcpServers: { ids: ["srv_mail"], slugs: ["mail"] },
+    };
+    expect(() => selectContext([call, result, user("steering")], options)).toThrow(
+      VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR,
+    );
+    expect(result.content).toContain(link);
+    const fitting = selectContext([call, result, user("steering")], {
+      ...options,
+      budget: { ...budget, contextWindow: 20_000 },
+    });
+    expect(JSON.stringify(fitting.messages)).toContain(link);
+    expect(JSON.stringify(fitting.messages)).not.toContain("Tool result truncated");
+  });
+  it("blames a whole MCP result only when shortening it would make the turn fit", () => {
+    const call = {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "call", name: "mcp__mail__get_message", arguments: {} }],
+    };
+    const result = { role: "toolResult", toolCallId: "call", content: "x ".repeat(2_000) };
+    const huge = user("y ".repeat(20_000));
+    expect(() =>
+      selectContext([call, result, huge], {
+        budget,
+        strategy: "retrieval",
+        protectedIndexes: [0, 2],
+        verbatimMcpServers: { ids: [], slugs: ["mail"] },
+      }),
+    ).toThrow("Required context exceeds the model context budget");
   });
   it("keeps and shortens the unread tool step after steering", () => {
     const oldCall = {

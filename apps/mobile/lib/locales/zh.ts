@@ -114,6 +114,8 @@ export const ZH_MESSAGES: Record<string, string> = {
     "此连接的请求限额过低。请选择其他模型。",
   "This model's context window is too small. Choose another model.":
     "此模型的上下文窗口太小。请选择其他模型。",
+  "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.":
+    "此服务器的工具结果放不进该模型。请关闭该服务器的“完整保留工具结果”，或选择其他模型。",
   "{provider} took too long to respond. Try again.": "{provider}响应超时。请重试。",
   "{provider} is overloaded right now. Try again in a moment.":
     "{provider}当前负载过高。请稍后再试。",
@@ -1229,6 +1231,14 @@ export const ZH_MESSAGES: Record<string, string> = {
   "1 free month earned": "已获得 1 个月免费",
   "{count} free months earned": "已获得 {count} 个月免费",
   "Submit a plugin": "提交插件",
+  Board: "看板",
+  "To do": "待办",
+  "In progress": "进行中",
+  "In review": "审核中",
+  Blocked: "已阻塞",
+  "Won't do": "不做",
+  "Could not move the ticket": "无法移动工单",
+  "No tickets yet.": "还没有工单。",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

@@ -19,6 +19,7 @@ import {
   resolveCompletionMaxTokens,
 } from "./pi-runtime-limits.js";
 import { withoutThinkingFrom } from "./thinking-signatures.js";
+import { isVerbatimMcpResult, toolCallIdentity } from "./verbatim-mcp-result.js";
 
 /** Minimum whole-result window, unless the full model budget requires clipping. */
 const RECENT_TOOL_RESULTS_TO_KEEP = 3;
@@ -487,13 +488,24 @@ export function createRuntimeContextPolicy(
       recentToolResults.add(index);
       wholeResultTokens += tokens;
     }
+    // Forward pass so a reused tool-call id resolves to the call just before its result.
+    const latestCalls = new Map<string, unknown>();
+    const keptWhole = messages.map((message) => {
+      if (message.role === "assistant")
+        for (const part of message.content)
+          if (part.type === "toolCall") latestCalls.set(part.id, part);
+      if (message.role !== "toolResult") return false;
+      const call = toolCallIdentity(latestCalls.get(message.toolCallId), message.toolName);
+      return isVerbatimMcpResult(call.name, call.arguments, request.verbatimMcpServers);
+    });
     const shortenOlderResults = (keepRecent: boolean) =>
       messages.map((message, index) => {
         if (
           message.role !== "toolResult" ||
           index >= latestToolCall ||
           (keepRecent && recentToolResults.has(index)) ||
-          (message.toolName !== undefined && UNSHORTENED_TOOL_RESULTS.has(message.toolName))
+          (message.toolName !== undefined && UNSHORTENED_TOOL_RESULTS.has(message.toolName)) ||
+          keptWhole[index]
         )
           return message;
         const source = text(message);
@@ -530,6 +542,7 @@ export function createRuntimeContextPolicy(
       budget,
       strategy,
       protectedIndexes,
+      verbatimMcpServers: request.verbatimMcpServers,
       cacheWarmth: predictedCache,
       recentExchanges:
         retainShortHistory || standaloneHistoryFallback ? messages.length : 8 + laterUserMessages,

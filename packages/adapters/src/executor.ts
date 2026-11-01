@@ -32,6 +32,7 @@ import {
   userTurnMessageForRun,
 } from "@rakazo/core";
 import {
+  availableInSpace,
   effectiveMemoryScope,
   isPartialReplyClientNonce,
   isTooManyDatabaseConnections,
@@ -206,6 +207,25 @@ import {
 import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
 import { createWebProvider } from "./web-provider-factory.js";
+
+/** Same reach as the MCP connector: usable servers assigned to the bot or shared with every bot. */
+async function verbatimMcpServersForRun(
+  prisma: ExecutorDeps["prisma"],
+  scope: { botId: string; spaceId: string; userId: string },
+) {
+  if (!prisma.mcpServer?.findMany) return undefined;
+  const servers = await prisma.mcpServer.findMany({
+    where: {
+      verbatimResults: true,
+      enabled: true,
+      ...availableInSpace(scope),
+      AND: [{ OR: [{ allBots: true }, { assignments: { some: { botId: scope.botId } } }] }],
+    },
+    select: { id: true, slug: true },
+  });
+  if (!servers?.length) return undefined;
+  return { ids: servers.map((server) => server.id), slugs: servers.map((server) => server.slug) };
+}
 
 export function createRunExecutor(executorDeps: ExecutorDeps) {
   const contextStrategy = executorDeps.contextStrategy ?? DEFAULT_CONTEXT_STRATEGY;
@@ -1480,6 +1500,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           return;
         }
 
+        const verbatimMcpServers = await verbatimMcpServersForRun(deps.prisma, {
+          botId: bot.id,
+          spaceId: run.spaceId,
+          userId: run.userId,
+        });
         // The running model is not its own backup, unless another account serves it.
         const fallbackModels = (await loadBackups()).filter(
           (candidate) =>
@@ -1515,6 +1540,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           const runtimeEvents = deps.runtime.run(
             {
               botId: bot.id,
+              verbatimMcpServers,
               threadId: thread.id,
               runId,
               routineId: run.routineId,

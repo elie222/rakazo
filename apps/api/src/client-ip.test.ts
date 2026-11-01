@@ -51,6 +51,7 @@ describe("createClientIpResolver", () => {
     expect(
       await resolve({ peer: "172.20.0.3", forwarded: "192.0.2.66, 203.0.113.5, 10.1.2.3" }),
     ).toBe("203.0.113.5");
+    expect(await resolve({ peer: "172.20.0.3", forwarded: "10.9.9.9, 10.1.2.3" })).toBe("10.9.9.9");
   });
 
   it("falls back to the peer for a malformed chain", async () => {
@@ -148,7 +149,10 @@ describe("createClientIpResolver", () => {
   });
 
   it("trusts no proxy for none", async () => {
-    const resolve = createClientIpResolver({ trustedProxies: ["none"], header });
+    const resolve = createClientIpResolver(
+      { trustedProxies: ["none"], header },
+      { resolve: async () => ["127.0.0.1"] },
+    );
     expect(await resolve({ peer: "127.0.0.1", forwarded: "203.0.113.5" })).toBe("127.0.0.1");
   });
 

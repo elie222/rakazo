@@ -437,6 +437,24 @@ async function saveConnection() {
   await act(async () => save.click());
 }
 
+it("drops the saved model at another endpoint and restores it at the saved one", async () => {
+  await remount(() => renderConnection());
+  await change("OpenAI-compatible server URL", "https://other.example.test/v1");
+  await saveConnection();
+  expect(
+    rpcCalls.some(
+      ([procedure, input]) =>
+        procedure === "models/connect" &&
+        (input as { modelId?: string }).modelId === "model-fixture",
+    ),
+  ).toBe(false);
+  await change("OpenAI-compatible server URL", `${savedEndpoint}/`);
+  await saveConnection();
+  expect(rpcCalls.find(([procedure]) => procedure === "models/connect")?.[1]).toMatchObject({
+    modelId: "model-fixture",
+  });
+});
+
 it("offers the wire protocol on the compatible form and sends the saved choice", async () => {
   saved.apiProtocol = "anthropic-messages";
   try {

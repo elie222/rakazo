@@ -3922,7 +3922,8 @@ describe("computer terminal and file transfer", () => {
   const controlled = {
     controlHolder: "user",
     controlLeaseId: "lease-1",
-    controlLeaseExpiresAt: new Date(Date.now() + 60_000),
+    // Fixed far future: a lease relative to module load expires before a slow suite reaches it.
+    controlLeaseExpiresAt: new Date("2999-01-01T00:00:00Z"),
     controlBotId: "bot-1",
   };
 

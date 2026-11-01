@@ -3394,6 +3394,10 @@ msgstr "방금"
 msgid "Keep memories"
 msgstr "기억은 유지"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Keep tool results whole"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr "key"
@@ -5987,6 +5991,11 @@ msgstr "이 서버는 브라우저 인증을 요청하지 않았습니다."
 #: src/pages/McpServersOverlay.tsx
 msgid "This server is already connected. Disconnect it first to authorize again."
 msgstr "이 서버는 이미 연결되어 있습니다. 다시 인증하려면 먼저 연결을 해제하세요."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model."
+msgstr ""
 
 #: src/pages/model-settings/connection-controls.tsx
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."

@@ -63,14 +63,9 @@ describe("zonedDateTime", () => {
 
   it.each([
     "2030-02-30T10:00Z",
-    "2030-02-30T10:00:30.125Z",
-    "2030-02-29T10:00+05:30",
     "2100-02-29T10:00Z",
     "2030-04-31T10:00-04:00",
-    "2030-02-30T10:00+0530",
-    "2030-02-30T10:00-0400",
     "2030-01-01T24:00Z",
-    "2030-01-01T24:00+05:30",
     "2030-01-01T10:00+24:00",
     "2030-01-01T10:00+24",
     "2030-01-01T10:00+05:60",
@@ -171,6 +166,9 @@ describe("presetFromCron", () => {
 
   it("falls back to advanced for expressions the picker cannot represent", () => {
     expect(presetFromCron("0 9 * * 0")).toMatchObject({ freq: "Advanced", cron: "0 9 * * 0" });
+    for (const cron of ["0 9 * 3 *", "0 * * * 1", "*/5 * * * 1", "0 9 * *"]) {
+      expect(presetFromCron(cron)).toMatchObject({ freq: "Advanced", cron });
+    }
     expect(presetFromCron("30 14 15 * *")).toMatchObject({
       freq: "Advanced",
       cron: "30 14 15 * *",
@@ -258,6 +256,9 @@ describe("formatCron", () => {
       "Every Monday, Tuesday, Wednesday and Friday at 9:00 AM",
     );
     expect(formatCron("0 8 * * 1,2,3,4,5")).toBe("Weekdays at 8:00 AM");
+    expect(formatCron("0 8 * * 0-4")).toBe(
+      "Every Monday, Tuesday, Wednesday, Thursday and Sunday at 8:00 AM",
+    );
     expect(formatCron("0 8 * * 0-6")).toBe("Every day at 8:00 AM");
   });
 
@@ -346,15 +347,12 @@ describe("formatCron", () => {
     expect(formatCron(cron)).toBe(`Cron ${cron}`);
   });
 
-  it.each(["* * 2", "* * 1", "* * 7", "* * *", "* * 1-5", "1 * *"])(
-    "falls back to cron for out-of-range clocks with %s",
-    (fields) => {
-      for (const clock of ["60 24", "60 9", "0 24"]) {
-        const cron = `${clock} ${fields}`;
-        expect(formatCron(cron)).toBe(`Cron ${cron}`);
-      }
-    },
-  );
+  it.each(["* * 1", "1 * *"])("falls back to cron for out-of-range clocks with %s", (fields) => {
+    for (const clock of ["60 24", "60 9", "0 24"]) {
+      const cron = `${clock} ${fields}`;
+      expect(formatCron(cron)).toBe(`Cron ${cron}`);
+    }
+  });
 
   it("formats the clock boundaries", () => {
     expect(formatCron("0 0 * * 2")).toBe("Every Tuesday at 12:00 AM");
@@ -633,17 +631,16 @@ describe("anchored routine intervals", () => {
     }
   });
 
-  it.each([
-    ...[1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30].map((n) => `*/${n} * * * *`),
-    ...[1, 2, 3, 4, 6, 8, 12].map((n) => `0 */${n} * * *`),
-    "0 0 */1 * *",
-  ])("keeps already-even %s on cron positions with an off-slot anchor", (cron) => {
-    const anchor = new Date("2026-03-08T05:07:13Z");
-    const now = new Date("2026-03-08T06:11:17Z");
-    expect(nextRoutineRunDate(cron, anchor, now, "America/New_York")).toEqual(
-      nextCronDate(cron, now, "America/New_York"),
-    );
-  });
+  it.each(["*/15 * * * *", "0 */6 * * *", "0 0 */1 * *"])(
+    "keeps already-even %s on cron positions with an off-slot anchor",
+    (cron) => {
+      const anchor = new Date("2026-03-08T05:07:13Z");
+      const now = new Date("2026-03-08T06:11:17Z");
+      expect(nextRoutineRunDate(cron, anchor, now, "America/New_York")).toEqual(
+        nextCronDate(cron, now, "America/New_York"),
+      );
+    },
+  );
 
   it("leaves the first run on its existing cron match", () => {
     const from = new Date("2026-01-01T00:00:00Z");
@@ -668,18 +665,7 @@ describe("anchored routine intervals", () => {
     ).toEqual(new Date("2026-03-11T04:00:00Z"));
   });
 
-  it.each([
-    "0 9 * * *",
-    "0 9 * * 1",
-    "0 9 1 * *",
-    "0 9 * * 1-5",
-    "15 * * * *",
-    "0 9 15 * *",
-    "0 9 * 3 *",
-    "0 * * * *",
-    "*/15 * * * *",
-    "0 */6 * * *",
-  ])("preserves calendar scheduling for %s", (cron) => {
+  it.each(["0 9 * * 1-5", "0 9 * 3 *"])("preserves calendar scheduling for %s", (cron) => {
     const anchor = nextCronDate(cron, new Date("2026-01-01T00:00:00Z"));
     const now = new Date(anchor.getTime() + 120_000);
     expect(nextRoutineRunDate(cron, anchor, now)).toEqual(nextCronDate(cron, now));

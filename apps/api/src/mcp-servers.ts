@@ -42,6 +42,7 @@ export function mcpServerDto(
     availableIn?: Array<{ spaceId: string }>;
     allBots?: boolean;
     enabled: boolean;
+    verbatimResults?: boolean;
     revision: number;
     healthStatus: string;
     healthMessage: string | null;
@@ -74,6 +75,7 @@ export function mcpServerDto(
     oauthStatus: oauth.status,
     oauthClientId: oauth.clientId,
     enabled: row.enabled,
+    verbatimResults: row.verbatimResults ?? false,
     revision: row.revision,
     health: mcpServerHealthDto(row),
     availability: spaceAvailability({ ...row, allSpaces: row.allSpaces ?? false }),
@@ -349,6 +351,7 @@ export function createMcpServers(
           : {}) as Prisma.InputJsonValue,
         secretId: stored?.id,
         enabled: input.enabled,
+        verbatimResults: input.verbatimResults,
       },
     });
   };

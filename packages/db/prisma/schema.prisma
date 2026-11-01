@@ -1603,6 +1603,8 @@ model McpServer {
   installId     String?
   install       CapabilityInstall? @relation(fields: [installId], references: [id], onDelete: Cascade)
   enabled       Boolean           @default(true)
+  /// Tool results from this server stay whole. A result that cannot fit fails the turn.
+  verbatimResults Boolean         @default(false)
   revision      Int               @default(1)
   /// Last launch/discovery outcome: unknown | installing | ok | error.
   healthStatus    String          @default("unknown")

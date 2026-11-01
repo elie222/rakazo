@@ -122,6 +122,8 @@ export const NL_MESSAGES: Record<string, string> = {
     "De aanvraaglimiet van deze verbinding is te laag. Kies een ander model.",
   "This model's context window is too small. Choose another model.":
     "Het contextvenster van dit model is te klein. Kies een ander model.",
+  "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.":
+    "Het toolresultaat van deze server past niet in het model. Zet Toolresultaten heel houden uit voor die server, of kies een ander model.",
   "{provider} took too long to respond. Try again.":
     "{provider} deed er te lang over om te antwoorden. Probeer het opnieuw.",
   "{provider} is overloaded right now. Try again in a moment.":
@@ -1212,6 +1214,14 @@ export const NL_MESSAGES: Record<string, string> = {
   "1 free month earned": "1 gratis maand verdiend",
   "{count} free months earned": "{count} gratis maanden verdiend",
   "Submit a plugin": "Plugin indienen",
+  Board: "Bord",
+  "To do": "Te doen",
+  "In progress": "Bezig",
+  "In review": "In beoordeling",
+  Blocked: "Geblokkeerd",
+  "Won't do": "Wordt niet gedaan",
+  "Could not move the ticket": "Kon ticket niet verplaatsen",
+  "No tickets yet.": "Nog geen tickets.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

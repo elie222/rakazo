@@ -78,12 +78,12 @@ jobs:
           path: apps/desktop/e2e/screenshots
           if-no-files-found: ignore
 
-  # Lint, typecheck and unit tests share one runner so a run installs once. A deploy needs this job,
-  # so like Postgres journeys it checks its own changed areas to reach its main lock in push order.
-  # Pull requests typecheck and test only the packages their files touch and the packages that
-  # depend on them, unless a change sits outside the package graph; main always runs everything.
-  checks:
-    name: Checks
+  # A deploy needs these jobs, so like Postgres journeys they check their own changed areas to reach
+  # their main locks in push order. Pull requests typecheck and test only the packages their files
+  # touch and the packages that depend on them, unless a change sits outside the package graph;
+  # main always runs everything.
+  static-checks:
+    name: Lint and typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 25
     concurrency:
@@ -136,23 +136,6 @@ jobs:
         with:
           path: .turbo/cache
           key: turbo-check-${{ github.sha }}
-      - name: Install age for the encrypted backup round trip
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends age
-      - name: Unit tests
-        if: steps.areas.outputs.all_packages != 'false'
-        run: pnpm test
-      - name: Unit tests for affected packages
-        if: steps.areas.outputs.all_packages == 'false'
-        env:
-          TURBO_SCM_BASE: HEAD^1
-        run: |
-          affected="$(pnpm exec turbo ls --affected --output=json | jq -r '.packages.items[].path + "/"')"
-          mapfile -t packages < <(printf "%s" "$affected")
-          # These read other packages' files without importing them, so the package graph misses them.
-          pnpm exec vitest run "${packages[@]}" \
-            infra/updater/src/compose-env.test.ts \
-            packages/adapters/src/lark-lazy-loading.test.ts \
-            packages/testkit/src/ios-screenshot-catalog.test.ts
       - name: Host operations safety tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 infra/compose/host-safeguards.test.py
@@ -168,6 +151,62 @@ jobs:
       - name: App Store review submission tests
         if: steps.areas.outputs.all_packages != 'false'
         run: node --test .github/scripts/app-store-review.test.mjs
+
+  # The unit suite is CPU-bound, so three runners finish in about a third of the time.
+  unit-tests-shard:
+    name: Unit tests (${{ matrix.shard }}/3)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    timeout-minutes: 20
+    concurrency:
+      group: ci-unit-${{ matrix.shard }}-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - id: areas
+        if: github.event_name == 'pull_request'
+        run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+        env:
+          DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
+      - name: Install age for the encrypted backup round trip
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends age
+      - name: Unit tests
+        if: steps.areas.outputs.all_packages != 'false'
+        run: pnpm run test --shard=${{ matrix.shard }}/3
+      - name: Unit tests for affected packages
+        if: steps.areas.outputs.all_packages == 'false'
+        env:
+          TURBO_SCM_BASE: HEAD^1
+        run: |
+          affected="$(pnpm exec turbo ls --affected --output=json | jq -r '.packages.items[].path + "/"')"
+          mapfile -t packages < <(printf "%s" "$affected")
+          # These read other packages' files without importing them, so the package graph misses them.
+          pnpm exec vitest run "${packages[@]}" \
+            infra/updater/src/compose-env.test.ts \
+            packages/adapters/src/lark-lazy-loading.test.ts \
+            packages/testkit/src/ios-screenshot-catalog.test.ts \
+            --shard=${{ matrix.shard }}/3
+
+  # The required check and the deploy gate, under one stable name.
+  checks:
+    name: Checks
+    needs: [static-checks, unit-tests-shard]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.static-checks.result }}" = success && test "${{ needs.unit-tests-shard.result }}" = success
 
   native-computer:
     name: Native computer (${{ matrix.os }})
