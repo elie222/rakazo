@@ -1349,4 +1349,17 @@ it("stops the running reply on Escape, but lets Escape close the mention picker 
   type(textarea, "@");
   pressEscape();
   expect(onStop).toHaveBeenCalledTimes(1);
+
+  type(textarea, "/sum");
+  expect(container?.querySelector('[aria-label="Skill summarize"]')).not.toBeNull();
+  pressEscape();
+  expect(onStop).toHaveBeenCalledTimes(1);
+  expect(container?.querySelector('[aria-label="Skill summarize"]')).toBeNull();
+
+  act(() =>
+    textarea.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", repeat: true, bubbles: true }),
+    ),
+  );
+  expect(onStop).toHaveBeenCalledTimes(1);
 });

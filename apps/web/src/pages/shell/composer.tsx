@@ -845,13 +845,23 @@ export const Composer = memo(function Composer({
                   return;
                 }
                 if (
-                  event.key === "Escape" &&
-                  running &&
-                  !sending &&
-                  !talk.recording?.locked &&
-                  !event.nativeEvent.isComposing &&
-                  !(event.shiftKey || event.ctrlKey || event.metaKey || event.altKey)
-                ) {
+                  event.key !== "Escape" ||
+                  event.repeat ||
+                  event.nativeEvent.isComposing ||
+                  event.keyCode === 229 ||
+                  event.shiftKey ||
+                  event.ctrlKey ||
+                  event.metaKey ||
+                  event.altKey
+                )
+                  return;
+                // An open picker closes first; a held Escape never goes on to stop the reply.
+                if (showSlashPicker) {
+                  event.preventDefault();
+                  setSlashQuery(null);
+                  return;
+                }
+                if (running && !sending && !talk.recording?.locked) {
                   event.preventDefault();
                   void onStop();
                 }
