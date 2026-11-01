@@ -1049,6 +1049,7 @@ describe("passkeys", () => {
       where: { userId, revokedAt: null },
       data: { revokedAt: expect.any(Date) },
     });
+    expect(f.prisma.$transaction).not.toHaveBeenCalledWith(expect.any(Array));
   });
 
   it("keeps a verified account's passkeys on code sign-in", async () => {
