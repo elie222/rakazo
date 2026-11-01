@@ -14,8 +14,8 @@ const parts = richParts(text);
     part.kind === "link" ? (
       <a
         href={part.href}
-        {...(part.href.startsWith("http")
-          ? { target: "_blank", rel: "noreferrer" }
+        {...(part.href.startsWith("http") && !part.href.startsWith("https://rakazo.com")
+          ? { target: "_blank", rel: "nofollow noopener noreferrer" }
           : {})}
       >
         {part.label}

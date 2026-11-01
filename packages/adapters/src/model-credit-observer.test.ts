@@ -17,8 +17,8 @@ beforeEach(() => {
 });
 
 describe("hosted model credit gate", () => {
-  it("refuses BYOK accounts even if old owner and subscription records exist", async () => {
-    vi.mocked(creditAccount).mockResolvedValue({ mode: "byok" } as never);
+  it("refuses an unfunded BYOK account even if old owner and subscription records exist", async () => {
+    vi.mocked(creditAccount).mockResolvedValue({ mode: "byok", balanceMicros: 0n } as never);
     const findUnique = vi.fn(async () => ({ ownerUserId: scope.userId, status: "active" }));
     await expect(
       hostedModelCreditObserver(
@@ -28,6 +28,10 @@ describe("hosted model credit gate", () => {
     ).rejects.toThrow("Connect your own API key");
     expect(findUnique).not.toHaveBeenCalled();
     expect(reserveModelCredits).not.toHaveBeenCalled();
+  });
+  it("lets a BYOK account with a balance reserve credits", async () => {
+    vi.mocked(creditAccount).mockResolvedValue({ mode: "byok", balanceMicros: 1n } as never);
+    await expect(hostedModelCreditObserver({} as never, scope)).resolves.toBeDefined();
   });
   it("requires a reservation before a funded-mode account may use the server key", async () => {
     vi.mocked(creditAccount).mockResolvedValue({ mode: "credits" } as never);
