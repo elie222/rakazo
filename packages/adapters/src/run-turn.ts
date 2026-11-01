@@ -76,7 +76,13 @@ import {
 } from "./silent-reply.js";
 import { takeoverCheckpointOf } from "./takeover-resume.js";
 import { appendToolCompletionAudit, toolCompletionFromResult } from "./tool-completion-audit.js";
-import { advanceToolCallLoopGuard, loopGuardStopText } from "./tool-loop.js";
+import {
+  advanceOverLimitActionCalls,
+  advanceToolCallLoopGuard,
+  loopGuardStopText,
+  MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS,
+  overLimitStopText,
+} from "./tool-loop.js";
 import {
   assistantTurnSeparator,
   botMessageOutcomeFromMidTurn,
@@ -481,7 +487,15 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   tryFlushPendingTools(reply);
   const loopGuard = advanceToolCallLoopGuard(ctx.state.toolCallStreak, event.name, event.args);
   ctx.state.toolCallStreak = loopGuard.streak;
-  if (loopGuard.stuck) {
+  ctx.state.overLimitActionCalls = advanceOverLimitActionCalls(
+    ctx.state.overLimitActionCalls,
+    event.name,
+    event.args,
+  );
+  if (
+    loopGuard.stuck ||
+    ctx.state.overLimitActionCalls >= MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS
+  ) {
     await stopStuckToolLoop(ctx, event.name);
     return true;
   }
@@ -532,7 +546,12 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
   }
   await ctx.computer.checkpoint.flush();
   ctx.state.terminalCheckpointComplete = true;
-  const stuckText = loopGuardStopText(humanizeToolName(toolName), ctx.state.toolCallStreak);
+  const overLimit = ctx.state.overLimitActionCalls;
+  const humanName = humanizeToolName(toolName);
+  const stuckText =
+    overLimit >= MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS
+      ? overLimitStopText(humanName, overLimit)
+      : loopGuardStopText(humanName, ctx.state.toolCallStreak);
   await ctx.settleRunningHelpers();
   const stopped = await deps.events.finalizeRun({
     spaceId: run.spaceId,

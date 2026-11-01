@@ -14,6 +14,14 @@ import {
 } from "./computer-tools.js";
 
 describe("computer tool bridge", () => {
+  it("tells the model how to recover from an over-limit batch", () => {
+    const batch = Array.from({ length: 30 }, () => ({ kind: "click", x: 1, y: 1 }));
+    expect(() => parseComputerActions(batch)).toThrow(
+      "computer_act accepts at most 24 actions but got 30; none ran. Send the first 24 or fewer now, then the rest in a separate call.",
+    );
+    expect(() => parseComputerActions(batch.slice(0, 24))).not.toThrow();
+  });
+
   it("normalizes a bounded batch into provider-neutral actions", () => {
     expect(
       parseComputerActions([

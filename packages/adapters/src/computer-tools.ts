@@ -4,6 +4,7 @@ import type {
   ComputerObservation,
 } from "@rakazo/adapter-kit";
 import { scrollDirection } from "@rakazo/core";
+import { MAX_ACTIONS_PER_CALL } from "./tool-loop.js";
 
 /** Identical visual actions that leave the frame unchanged before computer_act stops repeating them. */
 export const MAX_CONSECUTIVE_UNCHANGED_VISUAL_ACTIONS = 3;
@@ -28,7 +29,11 @@ export function parseComputerActions(value: unknown): ComputerAction[] {
   if (!Array.isArray(value) || value.length === 0) {
     throw new Error("computer_act requires at least one action");
   }
-  if (value.length > 24) throw new Error("computer_act accepts at most 24 actions");
+  if (value.length > MAX_ACTIONS_PER_CALL) {
+    throw new Error(
+      `computer_act accepts at most ${MAX_ACTIONS_PER_CALL} actions but got ${value.length}; none ran. Send the first ${MAX_ACTIONS_PER_CALL} or fewer now, then the rest in a separate call.`,
+    );
+  }
   const actions = value.flatMap((raw): ComputerAction[] => {
     if (!raw || typeof raw !== "object") throw new Error("computer action must be an object");
     const action = raw as Record<string, unknown>;
