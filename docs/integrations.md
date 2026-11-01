@@ -42,7 +42,8 @@ you confirm mid-run, for example) see the same session until the run ends. Two r
 such a session, and each closes when its run ends or after about ten minutes without a call. A
 paused step can be resumed only while the run continues in the same Rakazo instance, within that
 window and within the server's own pause window (Executor keeps a pause for about four minutes).
-Past those bounds, the next call opens a fresh session.
+After ten idle minutes, or when the run continues on another instance, the next call opens a fresh
+session.
 
 ## Choose which bots use what
 
