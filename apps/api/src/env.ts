@@ -28,6 +28,9 @@ import { monitoringPseudonymSecret } from "@rakazo/logging";
 
 export { resolveCloudAgentProvider, resolveSandboxProvider } from "@rakazo/adapters";
 
+/** Where a local development stack serves the web client. */
+const DEFAULT_WEB_ORIGIN = "http://127.0.0.1:5173";
+
 export interface AppEnv {
   passwordAuth?: boolean;
   /** Opt-in Have I Been Pwned check for new passwords. Default off: it calls an outside service. */
@@ -214,6 +217,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
         }
       : undefined;
   const authSecret = resolveAuthSecret(source);
+  const webOrigin = resolveWebOrigin(source.WEB_ORIGIN, DEFAULT_WEB_ORIGIN, "WEB_ORIGIN");
   const sandboxProvider = resolveSandboxProvider(source);
   const cloudAgentProvider = resolveCloudAgentProvider(source);
   const deploymentModel = resolveDeploymentModel(source);
@@ -226,8 +230,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     realtimeDatabaseUrl: source.REALTIME_DATABASE_URL ?? required(source, "DATABASE_URL"),
     desktopStackToken: optional(source.RAKAZO_DESKTOP_STACK_TOKEN),
     authSecret,
-    authUrl: source.BETTER_AUTH_URL ?? source.WEB_ORIGIN ?? "http://127.0.0.1:5173",
-    webOrigin: source.WEB_ORIGIN ?? "http://127.0.0.1:5173",
+    authUrl: resolveWebOrigin(source.BETTER_AUTH_URL, webOrigin, "BETTER_AUTH_URL"),
+    webOrigin,
     passkeyAppleAppIds: list(source.PASSKEY_APPLE_APP_IDS),
     passkeyAndroidCertFingerprints: androidCertFingerprints(source.PASSKEY_ANDROID_CERT_SHA256),
     privacyPolicyUrl: optional(source.PRIVACY_POLICY_URL),
@@ -337,6 +341,22 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     browserMonitoring: browserMonitoringFromEnv(source),
     crispWebsiteId: parseCrispWebsiteId(source.CRISP_WEBSITE_ID),
   };
+}
+
+/**
+ * An origin used to build absolute links. Trailing slashes are dropped so
+ * `${webOrigin}/path` cannot produce `https://host//path`; providers reject a
+ * double-slash redirect URI as a mismatch against the one registered with them.
+ */
+function resolveWebOrigin(value: string | undefined, fallback: string, name: string): string {
+  const origin = (optional(value) ?? fallback).replace(/\/+$/, "");
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error();
+  } catch {
+    throw new Error(`${name} must be an absolute http(s) URL`);
+  }
+  return origin;
 }
 
 function required(source: NodeJS.ProcessEnv, key: string): string {
