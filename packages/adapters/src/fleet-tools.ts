@@ -1219,7 +1219,7 @@ function singleLine(value: string): string {
 const CARD_TITLE_ESCAPED = new RegExp(CARD_TITLE_ESCAPED_CHARACTERS, "g");
 
 /** A name in a card title, which renders as Markdown: one line, and no links or emphasis. */
-function cardName(value: string): string {
+export function cardName(value: string): string {
   return singleLine(value).replace(CARD_TITLE_ESCAPED, "\\$&");
 }
 

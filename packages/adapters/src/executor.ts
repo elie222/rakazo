@@ -1249,6 +1249,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           toolCallStreak: { key: undefined, count: 0 },
           tainted: initiallyTainted,
           earlierAttempt: undefined,
+          walletHosts: new Set(),
           handedOff: false,
           terminalCheckpointComplete: false,
         };

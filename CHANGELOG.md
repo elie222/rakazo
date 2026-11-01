@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- A bot now asks before a click on a website that completes a payment or purchase, in every approval mode including Never ask, and runs it only after **Allow once**; the card shows the site, the button and the total as the page words them. Before, a bot could submit a card form without asking. Until the computer image is updated, every page click and Enter shows a generic payment card (safe but noisy); update the image together with the supervisor and API.
 - `RAKAZO_LOCAL_MAX_TOKENS` is now the output limit a local model is asked for. It was only a ceiling, so
   every request still asked for 4096 tokens and a longer reply was cut off and retried. The limit stays
   within a quarter of `RAKAZO_LOCAL_CONTEXT_WINDOW`, and a max-tokens value set on the connection

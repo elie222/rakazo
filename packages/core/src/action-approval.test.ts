@@ -418,6 +418,15 @@ describe("planActionGate", () => {
     }
   });
 
+  it("asks for a purchase in every mode, past an allow rule, and still refuses a block", () => {
+    for (const mode of ["never", "auto", "ask"] as const) {
+      expect(gate(mode, { purchase: true, consequential: false })).toBe("ask");
+      expect(gate(mode, { purchase: true, resolved: allowed })).toBe("ask");
+      expect(gate(mode, { purchase: true, mandatory: true, steerable: true })).toBe("ask");
+      expect(gate(mode, { purchase: true, resolved: blocked })).toBe("deny");
+    }
+  });
+
   it("runs reads in every mode", () => {
     for (const mode of ["never", "auto", "ask"] as const) {
       expect(gate(mode, { consequential: false })).toBe("allow");

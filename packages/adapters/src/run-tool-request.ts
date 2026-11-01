@@ -21,6 +21,13 @@ import { sanitizeConnectorError } from "./connector-safety.js";
 import { isFleetApprovalTool, prepareFleetRequest } from "./fleet-tools.js";
 import { assertConnectorToolArgs, CATALOG_EXECUTE } from "./lazy-tool-catalog.js";
 import { paidRequestEffect, restorePaidRequest } from "./paid-request.js";
+import type { PurchaseApproval } from "./purchase-gate.js";
+import {
+  detectPurchase,
+  PURCHASE_CHECKED_TOOLS,
+  purchaseApprovalOf,
+  purchaseCardSummary,
+} from "./purchase-gate.js";
 import type { RunContext } from "./run-context.js";
 import { isRunTainted, neverAsks } from "./run-context.js";
 import {
@@ -51,6 +58,8 @@ export interface ToolRequest {
   fleetSummary: FleetCardSummary | undefined;
   /** Gated like a consequential action, even when the tool alone is not. */
   heldForApproval: boolean;
+  /** This page tool call completes a purchase, which a person approves each time. */
+  purchase: PurchaseApproval | undefined;
 }
 
 type ToolError = { error: string };
@@ -260,6 +269,7 @@ export async function resolveToolRequest(
     replayEffectToolName,
     fleetSummary: undefined,
     heldForApproval: false,
+    purchase: undefined,
   };
 }
 
@@ -337,6 +347,44 @@ export async function prepareToolRequest(
     ) {
       return { error: "connection request is no longer pending" };
     }
+  }
+  if (PURCHASE_CHECKED_TOOLS.has(name)) {
+    // The approval is written here from what the page says; a model-supplied one is dropped, and an
+    // approved replay keeps the one the user saw.
+    const { purchaseApproval: given, ...rest } = args;
+    const approved = nextApprovedTool === name ? purchaseApprovalOf(given) : undefined;
+    args = approved ? args : rest;
+    // A desktop press has no check on the page right before it, as a browser_act click does: one the user
+    // approved goes ahead only while the page still shows what the card did. A card that named nothing
+    // (the check failed) has nothing to compare.
+    if (
+      name === "computer_act" &&
+      approved &&
+      (approved.site || approved.label || approved.amount)
+    ) {
+      const now = await detectPurchase(ctx, name, rest);
+      if (
+        !now ||
+        now.site !== approved.site ||
+        now.label !== approved.label ||
+        now.amount !== approved.amount
+      )
+        return {
+          error:
+            "The page changed since the user approved this purchase, so nothing was pressed. Look at the screen and try again.",
+        };
+    }
+    const purchase = approved ?? (await detectPurchase(ctx, name, rest));
+    if (purchase) {
+      args = { ...rest, purchaseApproval: purchase };
+      // The wallet owner approved paying at a site this run typed the approved card or pay token into: the
+      // click still carries the approval to the page, with no card. Spent on the first purchase click there.
+      if (approved || !ctx.state.walletHosts.delete(purchase.site)) {
+        request.purchase = purchase;
+        request.fleetSummary = purchaseCardSummary(purchase);
+      }
+    }
+    if (purchase || given !== undefined) request.effectRequest = args;
   }
   request.args = args;
   if (name === "respond_agent_connection" || name === "update_bot" || isFleetApprovalTool(name))
