@@ -18,8 +18,9 @@ there.
 From then on, messages you send there go to that bot's chat, and its replies come back to you there.
 The conversation is the same one you see in the Rakazo app.
 
-In direct messages, voice notes are transcribed when a voice provider that supports transcription
-is connected in **Voice** settings; otherwise the bot receives the audio as a file.
+In direct messages, a voice note the chat app delivers as an audio file (Telegram, for example)
+is transcribed when a voice provider that supports transcription is connected in **Voice**
+settings; without one, the bot receives the audio file.
 
 To stop, choose **Unlink**.
 
