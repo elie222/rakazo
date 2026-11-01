@@ -281,8 +281,27 @@ function compactionHarness(
           }
       : options.memoryConfig;
   const prisma = {
+    $queryRaw: vi.fn(
+      async (
+        _strings: TemplateStringsArray,
+        batchSize: number,
+        threadId: string,
+        previousCursor: number | null,
+        previousGeneration: number,
+      ) => {
+        if (
+          thread.id !== threadId ||
+          thread.historyCompactedUpToSeq !== previousCursor ||
+          thread.historyCompactionGeneration !== previousGeneration
+        ) {
+          return [];
+        }
+        thread.historyCompactionRetryAfterSeq = thread.nextMessageSeq + batchSize;
+        return [{ historyCompactionRetryAfterSeq: thread.historyCompactionRetryAfterSeq }];
+      },
+    ),
     thread: {
-      findUniqueOrThrow: vi.fn(async () => thread),
+      findUniqueOrThrow: vi.fn(async () => ({ ...thread })),
       updateMany: vi.fn(
         async (args: {
           where: {
@@ -1046,6 +1065,41 @@ describe("compactHistory", () => {
     await compactAfterTurns(harness, 2);
     expect(harness.runtime.run).toHaveBeenCalledTimes(3);
     expect(harness.thread.historyCompactedUpToSeq).toBe(149);
+  });
+
+  it("schedules the retry from messages received during summarization", async () => {
+    const harness = compactedThread();
+    harness.runtime.run.mockImplementation(async function* () {
+      harness.thread.nextMessageSeq += COMPACTION_BATCH_SIZE;
+      yield { type: "done", text: oversized };
+    });
+    const sink = installCompactionLogger();
+
+    try {
+      await compactHistory(harness.deps, "thread-1");
+      expect(harness.thread.historyCompactionRetryAfterSeq).toBe(150 + 2 * COMPACTION_BATCH_SIZE);
+      expect(sink.events).toContainEqual(
+        expect.objectContaining({
+          "history.compact.retry_after_seq": 150 + 2 * COMPACTION_BATCH_SIZE,
+        }),
+      );
+      await compactHistory(harness.deps, "thread-1");
+      expect(harness.runtime.run).toHaveBeenCalledOnce();
+    } finally {
+      silenceLogger();
+    }
+  });
+
+  it("does not schedule a retry when the history generation changes meanwhile", async () => {
+    const harness = compactedThread();
+    harness.runtime.run.mockImplementation(async function* () {
+      harness.thread.historyCompactionGeneration += 1;
+      yield { type: "done", text: oversized };
+    });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    expect(harness.thread.historyCompactionRetryAfterSeq).toBeNull();
   });
 
   it("does not schedule a retry when another job advanced the cursor meanwhile", async () => {

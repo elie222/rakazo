@@ -418,20 +418,21 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
     throw new Error(`history.compact summarizer returned no summary for thread ${threadId}`);
   }
   if (summary.length > MAX_COMPACTED_SUMMARY_CHARS) {
-    const retryAfterSeq = thread.nextMessageSeq + COMPACTION_BATCH_SIZE;
-    const deferred = await deps.prisma.thread.updateMany({
-      where: {
-        id: threadId,
-        historyCompactedUpToSeq: previousCursor,
-        historyCompactionGeneration: previousGeneration,
-      },
-      data: { historyCompactionRetryAfterSeq: retryAfterSeq },
-    });
-    if (deferred.count > 0) {
+    const [deferred] = await deps.prisma.$queryRaw<
+      Array<{ historyCompactionRetryAfterSeq: number }>
+    >`
+      UPDATE "threads"
+      SET "historyCompactionRetryAfterSeq" = "nextMessageSeq" + ${COMPACTION_BATCH_SIZE}
+      WHERE "id" = ${threadId}
+        AND "historyCompactedUpToSeq" IS NOT DISTINCT FROM ${previousCursor}
+        AND "historyCompactionGeneration" = ${previousGeneration}
+      RETURNING "historyCompactionRetryAfterSeq"
+    `;
+    if (deferred) {
       getLogger().warn("history.compact summary too large; retry scheduled", {
         "thread.id": threadId,
         "history.compact.summary_chars": summary.length,
-        "history.compact.retry_after_seq": retryAfterSeq,
+        "history.compact.retry_after_seq": deferred.historyCompactionRetryAfterSeq,
       });
     }
     return;
