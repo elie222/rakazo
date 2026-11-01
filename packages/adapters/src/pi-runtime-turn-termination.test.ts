@@ -91,6 +91,34 @@ function toolCalls(target: Model<"openai-completions">, calls: ScriptedCall[]) {
   return result;
 }
 
+/** Stream one assistant message that narrates first, then calls every given tool. */
+function narratedToolCalls(
+  target: Model<"openai-completions">,
+  text: string,
+  calls: ScriptedCall[],
+) {
+  const response = message(target, [{ type: "text", text }, ...calls], "toolUse");
+  const result = new AssistantMessageEventStream();
+  result.push({ type: "start", partial: { ...response, content: [], stopReason: "stop" } });
+  result.push({ type: "text_delta", contentIndex: 0, delta: text, partial: response });
+  calls.forEach((call, index) => {
+    result.push({
+      type: "toolcall_start",
+      contentIndex: index + 1,
+      partial: { ...response, content: [] },
+    });
+    result.push({
+      type: "toolcall_end",
+      contentIndex: index + 1,
+      toolCall: call,
+      partial: response,
+    });
+  });
+  result.push({ type: "done", reason: "toolUse", message: response });
+  result.end(response);
+  return result;
+}
+
 function reply(target: Model<"openai-completions">, text: string) {
   const response = message(target, [{ type: "text", text }], "stop");
   const result = new AssistantMessageEventStream();
@@ -390,4 +418,47 @@ it("keeps a follow-up queued during the mixed batch unclaimed", async () => {
   expect(events).not.toContainEqual({ type: "steered", fromRunUser: true });
   expect(texts(events)).toEqual([REFUSAL]);
   expect(events.at(-1)).toEqual({ type: "done", text: REFUSAL });
+});
+
+it("keeps a subagent's refusal in its result after long narration", async () => {
+  const { executeTool } = refusingExecutor();
+  const narration = "Checking the settings. ".repeat(600);
+  providerState.stream
+    .mockImplementationOnce(() =>
+      toolCalls(primary, [
+        {
+          type: "toolCall",
+          id: "parent-1",
+          name: "run_subagent",
+          arguments: { name: "helper", task: "Change the model." },
+        },
+      ]),
+    )
+    .mockImplementationOnce(() =>
+      narratedToolCalls(primary, narration, [
+        { type: "toolCall", id: "child-1", name: "update_bot", arguments: { model: "other" } },
+      ]),
+    )
+    .mockImplementationOnce(() =>
+      toolCalls(primary, [
+        { type: "toolCall", id: "child-2", name: "update_bot", arguments: { model: "other" } },
+        { type: "toolCall", id: "child-3", name: "list_files", arguments: { path: "" } },
+      ]),
+    )
+    .mockImplementation(() => reply(primary, "The helper could not change the model."));
+  expect(narration.length).toBeGreaterThan(12_000);
+  const events = await run(request(executeTool, { tools: subagentTools }));
+
+  const finished = events.filter(
+    (event) => event.type === "subagent" && event.status !== "running",
+  ) as Array<{ result?: string }>;
+  expect(finished.at(-1)?.result?.endsWith(REFUSAL)).toBe(true);
+  const parentContext = providerState.stream.mock.calls.at(-1)?.[1] as {
+    messages: Array<{ role: string; toolName?: string; content?: Array<{ text?: string }> }>;
+  };
+  const helperResult = parentContext.messages
+    .filter((entry) => entry.role === "toolResult" && entry.toolName === "run_subagent")
+    .at(-1)?.content?.[0]?.text;
+  expect(helperResult).toContain(REFUSAL);
+  expect(helperResult?.length).toBeLessThanOrEqual(12_000);
 });

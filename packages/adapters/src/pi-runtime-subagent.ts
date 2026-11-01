@@ -365,16 +365,22 @@ export async function executeSubagent(
     const budgetMessage = budgetExceeded
       ? toolCallBudgetExceededMessage(host.toolCallBudget.limit)
       : undefined;
-    const result = budgetMessage
-      ? streamed.trim()
-        ? `${streamed.trim()}\n\n${budgetMessage}`
-        : budgetMessage
-      : endedReply
-        ? streamed.trim()
-          ? `${streamed.trim()}\n\n${endedReply}`
-          : endedReply
-        : streamed || assistantText(nested.state.messages.at(-1)) || "done.";
-    const clipped = clipToolResultText(result, 12_000);
+    const label = `Result from your helper "${name}" (not a message from the user):\n`;
+    // The parent clips label and result together, so the result gets what is left.
+    const limit = 12_000 - label.length;
+    // A stop message or the terminating reply must survive clipping: only the narration
+    // before it is shortened.
+    const tail = budgetMessage ?? endedReply;
+    const narration = streamed.trim();
+    const room = tail ? limit - tail.length - 2 : limit;
+    const clipped = tail
+      ? narration && room > 1
+        ? `${clipToolResultText(narration, room - 1)}\n\n${tail}`
+        : tail
+      : clipToolResultText(
+          streamed || assistantText(nested.state.messages.at(-1)) || "done.",
+          limit,
+        );
     host.queue.push({
       type: "subagent",
       agentId,
@@ -384,7 +390,7 @@ export async function executeSubagent(
       result: clipped,
     });
     // The parent bot reads this as a tool result; say plainly that it is the helper talking.
-    return `Result from your helper "${name}" (not a message from the user):\n${clipped}`;
+    return `${label}${clipped}`;
   } catch (error) {
     const message = sanitizeError(error instanceof Error ? error.message : String(error));
     host.queue.push({
