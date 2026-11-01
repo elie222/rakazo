@@ -17,11 +17,14 @@ const include = [
 
 // Files that mock modules, stub globals, or change the environment keep a fresh module graph;
 // the rest share one per worker, which skips re-importing the same modules for every file.
+// Database runs give every file its own database, so they never share.
 const mutatesSharedState =
   /vi\.(mock|doMock|stubGlobal|stubEnv|resetModules|useFakeTimers|spyOn)\(|globalThis\.\w+ *=[^=]|(globalThis|global|window)\[[^\]]+\] *=[^=]|process\.env(\.\w+|\[[^\]]+\]) *=[^=]|delete process\.env|defineProperty\((globalThis|global|window|document|navigator|process)|process\.chdir|@vitest-environment/;
 const isolated = include
   .flatMap((pattern) => globSync(pattern))
-  .filter((file) => mutatesSharedState.test(readFileSync(file, "utf8")));
+  .filter(
+    (file) => process.env.COPY_TEST_DATABASE || mutatesSharedState.test(readFileSync(file, "utf8")),
+  );
 
 export default defineConfig({
   resolve: {
