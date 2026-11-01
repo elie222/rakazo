@@ -7,6 +7,7 @@ import {
   createCallSendTracker,
   createInterimBargeIn,
   errorStatus,
+  isApprovalAskBlock,
   isCallBargeIn,
   isFarewell,
   isSecretAskBlock,
@@ -106,6 +107,8 @@ let micOpen = false;
 let bargedIn = false;
 /** A turn is in flight: its reply must be spoken even if the mic reopened meanwhile. */
 let awaitingReply = false;
+/** The run whose approval card the caller was sent to answer on screen. */
+let approvalRunId: string | null = null;
 /** Counting down an interim phrase heard over the reply, before it counts as cutting in. */
 const interim = createInterimBargeIn(() => {
   if (state?.phase !== "speaking") return;
@@ -159,6 +162,7 @@ export function startCall(call: {
   micOpen = false;
   bargedIn = false;
   awaitingReply = false;
+  approvalRunId = null;
   state = {
     botId: call.botId,
     botName: call.botName,
@@ -269,6 +273,7 @@ function dropCall(): void {
   micOpen = false;
   bargedIn = false;
   awaitingReply = false;
+  approvalRunId = null;
   unsubSpeech?.();
   unsubDictation?.();
   unsubSpeech = null;
@@ -586,6 +591,22 @@ async function handleTranscript(text: string) {
   const callFeed = feed;
   const turnCallId = callId;
   const closing = isFarewell(text);
+  // An approval is only answered on screen, next to its details; a spoken reply would be refused.
+  if (
+    askMessage?.blocks.some(
+      (block) => block.kind === "ask" && block.status !== "answered" && isApprovalAskBlock(block),
+    )
+  ) {
+    // The caption covers a card the call never read; once tapped, it must not pass for the reply.
+    spokenMessageIds.add(askMessage.id);
+    approvalRunId = askMessage.runId ?? null;
+    awaitingReply = approvalRunId !== null;
+    if (closing) hangUpAfterReply = true;
+    set({ heard: "", caption: t`Approve or deny it on screen.` });
+    void listen();
+    return;
+  }
+  approvalRunId = null;
   awaitingReply = true;
   set({ heard: text, phase: "thinking", exchanges: [...exchanges, { role: "user", text }] });
   if (closing) {
@@ -643,7 +664,7 @@ function watchInterim(text: string) {
 }
 
 /**
- * Speak whatever the call's bot said last. A call never speaks tool activity: the
+ * Speak the bot's reply to the caller's latest turn. A call never speaks tool activity: the
  * card's phase indicator is the only feedback, so nothing talks over the caller.
  */
 function reactToThread() {
@@ -660,23 +681,39 @@ function reactToThread() {
   if (state.phase === "listening" && !awaitingReply) return;
   const { botId } = state;
   const messages = thread?.messages ?? [];
-  const lastBot = [...messages].reverse().find((message) => message.role === "bot");
+  // Only what the bot wrote after the caller's latest turn answers it. A run that stopped on a
+  // card keeps its live progress message after the card; that is not a reply.
+  const turnIndex = messages.findLastIndex((message) => message.role === "user");
+  const lastBot = messages
+    .slice(turnIndex + 1)
+    .findLast(
+      (message) =>
+        message.role === "bot" &&
+        !(message.id.startsWith("progress:") && replyFinished(message)) &&
+        (!approvalRunId || message.runId === approvalRunId),
+    );
   if (lastBot && !spokenMessageIds.has(lastBot.id) && replyFinished(lastBot)) {
     const text = speechFromBlocks(lastBot.blocks);
     const ask = lastBot.blocks.find((block) => block.kind === "ask" && block.status !== "answered");
     const secretAsk = ask && isSecretAskBlock(ask);
+    const approvalAsk = ask && isApprovalAskBlock(ask);
     if (text) {
       // Never spoken again, interrupted or not.
       spokenMessageIds.add(lastBot.id);
-      awaitingReply = false;
+      // An approval is answered on screen, which sends no turn: keep waiting for the reply
+      // its run writes next.
+      approvalRunId = approvalAsk ? (lastBot.runId ?? null) : null;
+      awaitingReply = approvalRunId !== null;
       set({ exchanges: [...state.exchanges, { role: "bot", text }], heard: "" });
       spokenMemory.remember(text);
       void speaker.speak(
         secretAsk
           ? `${text}. ${t`Hang up first, then enter the code on screen.`}`
-          : ask
-            ? `${text}. ${t`Say yes or no, or answer in a sentence.`}`
-            : text,
+          : approvalAsk
+            ? `${text}. ${t`Approve or deny it on screen.`}`
+            : ask
+              ? `${text}. ${t`Say yes or no, or answer in a sentence.`}`
+              : text,
         { botId, messageId: lastBot.id },
       );
       return;

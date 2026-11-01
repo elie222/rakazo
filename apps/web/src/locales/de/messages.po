@@ -844,6 +844,10 @@ msgstr "Freigaben"
 msgid "Approve"
 msgstr "Genehmigen"
 
+#: src/lib/call-session.ts
+msgid "Approve or deny it on screen."
+msgstr "Genehmige oder lehne es auf dem Bildschirm ab."
+
 #: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
 msgstr "Genehmige diesen Server, damit dein Agent seine Tools verwenden kann."
@@ -3100,11 +3104,11 @@ msgstr "Auflegen"
 
 #: src/lib/call-session.ts
 msgid "Hang up first, then enter the code on screen."
-msgstr ""
+msgstr "Lege zuerst auf und gib dann den Code auf dem Bildschirm ein."
 
 #: src/lib/call-session.ts
 msgid "Hang up, then enter the code on screen."
-msgstr ""
+msgstr "Lege auf und gib dann den Code auf dem Bildschirm ein."
 
 #: src/pages/RoutineEditor.tsx
 msgid "header"

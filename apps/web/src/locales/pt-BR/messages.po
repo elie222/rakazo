@@ -844,6 +844,10 @@ msgstr "Aprovações"
 msgid "Approve"
 msgstr "Aprovar"
 
+#: src/lib/call-session.ts
+msgid "Approve or deny it on screen."
+msgstr "Aprove ou negue na tela."
+
 #: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
 msgstr "Aprove este servidor para permitir que seu agente use suas ferramentas."
@@ -3100,11 +3104,11 @@ msgstr "Desligar"
 
 #: src/lib/call-session.ts
 msgid "Hang up first, then enter the code on screen."
-msgstr ""
+msgstr "Desligue primeiro e depois digite o código na tela."
 
 #: src/lib/call-session.ts
 msgid "Hang up, then enter the code on screen."
-msgstr ""
+msgstr "Desligue e depois digite o código na tela."
 
 #: src/pages/RoutineEditor.tsx
 msgid "header"

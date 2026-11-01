@@ -844,6 +844,10 @@ msgstr "审批"
 msgid "Approve"
 msgstr "批准"
 
+#: src/lib/call-session.ts
+msgid "Approve or deny it on screen."
+msgstr "请在屏幕上批准或拒绝。"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
 msgstr "批准此服务器后，Agent 才能使用它的工具。"

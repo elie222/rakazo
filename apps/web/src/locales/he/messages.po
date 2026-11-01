@@ -844,6 +844,10 @@ msgstr "אישורים"
 msgid "Approve"
 msgstr "אישור"
 
+#: src/lib/call-session.ts
+msgid "Approve or deny it on screen."
+msgstr "יש לאשר או לדחות על המסך."
+
 #: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
 msgstr "יש לאשר את השרת הזה כדי שהסוכן יוכל להשתמש בכלים שלו."
