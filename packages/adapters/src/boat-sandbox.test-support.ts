@@ -133,6 +133,8 @@ export class FakeBoatApi implements BoatSandboxSdk {
   attachReconnects = 0;
   /** Answer attaches as a sandbox agent too old to stream output does. */
   attachOutdated = false;
+  /** Answers a command that reads its stdin from a private file, given that file's content. */
+  withInput: (command: string, input: string) => Partial<CommandResponse> = () => ({});
   private created = 0;
   private readonly uploads = new Map<string, { sandboxId: string; path: string }>();
   private readonly downloads = new Map<string, { sandboxId: string; path: string }>();
@@ -660,6 +662,16 @@ export class FakeBoatApi implements BoatSandboxSdk {
       }
       const argv = parse(sourced[2]!).filter((token): token is string => typeof token === "string");
       return finished(simpleCommand(argv, env));
+    }
+
+    // `exec 0< FILE || exit 1; rm -f -- FILE; command`
+    const withInput = command.match(/^exec 0< ('[^']*') \|\| exit 1; rm -f -- \1; ([\s\S]*)$/);
+    if (withInput) {
+      const inputFile = String(parse(withInput[1]!)[0]);
+      const file = box.files.get(inputFile);
+      if (!file) return finished({ exitCode: 1, stderr: "No such file or directory\n" });
+      box.files.delete(inputFile);
+      return finished(this.withInput(withInput[2]!, Buffer.from(file.content).toString("utf8")));
     }
 
     const directory = command.match(/^directory=(.*)$/m)?.[1];

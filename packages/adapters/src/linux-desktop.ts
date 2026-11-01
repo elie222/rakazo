@@ -6,6 +6,8 @@ import type {
   ComputerActionRequest,
   ComputerInput,
   ComputerRef,
+  PageBrowserCommand,
+  PageBrowserResult,
   ScreenRequest,
   ScreenSession,
   TerminalRequest,
@@ -53,7 +55,22 @@ export interface LinuxDesktopHost {
     context: AdapterContext,
   ): Promise<{ code: number; stdout: string; stderr?: string }>;
   screenUrl(computer: ComputerRef, port: number, context: AdapterContext): Promise<string>;
+  /**
+   * Runs a command with `input` on its stdin, never in its command line, which other processes
+   * and the provider's logs can read. Providers with the page browser installed implement it.
+   */
+  runWithInput?(
+    computer: ComputerRef,
+    command: string,
+    input: string,
+    timeoutMs: number,
+    context: AdapterContext,
+  ): Promise<{ code: number; stdout: string }>;
 }
+
+/** The supervisor's limit on one page-browser call, which the helper's own waits fit inside. */
+const PAGE_BROWSER_TIMEOUT_MS = 25_000;
+const PAGE_BROWSER_MAX_OUTPUT = 512 * 1024;
 
 /** Point a bot's commands at its own screen, as Docker computers do, unless the caller chose a display. */
 export function onBotScreen(
@@ -226,6 +243,44 @@ export class LinuxDesktop {
         ? {}
         : { observation: await this.observeLayout(computer, layout, context) }),
     };
+  }
+
+  /** The page tools on this screen's Chrome, through the computer image's helper. */
+  async pageBrowser(
+    computer: ComputerRef,
+    request: PageBrowserCommand,
+    context: AdapterContext,
+  ): Promise<PageBrowserResult> {
+    if (!this.host.runWithInput) throw new Error("This computer has no page browser.");
+    const { layout, env } = await this.ensure(computer, context);
+    const result = await this.host.runWithInput(
+      computer,
+      [
+        `DISPLAY=${layout.display}`,
+        `RAKAZO_CDP_PORT=${layout.debugPort}`,
+        // Uploads are confined to the bot's home, which is the workspace here.
+        `HOME=${shellQuote(env.workspaceDir)}`,
+        "RAKAZO_BROWSER_ARGS_STDIN=1",
+        "/usr/local/bin/rakazo-page-browser",
+        request.command,
+      ].join(" "),
+      // Origin-bound fills carry saved logins and cards.
+      `${JSON.stringify(request)}\n`,
+      PAGE_BROWSER_TIMEOUT_MS,
+      context,
+    );
+    if (result.code === 124) {
+      throw new Error(
+        `Page browser timed out; the page may be busy or blocked by a dialog. ${
+          request.command === "act"
+            ? "Inspect the screen before continuing."
+            : "Retry once before using other tools."
+        }`,
+      );
+    }
+    if (result.code !== 0 || Buffer.byteLength(result.stdout) > PAGE_BROWSER_MAX_OUTPUT)
+      throw new Error("Page browser unavailable or interrupted");
+    return JSON.parse(result.stdout) as PageBrowserResult;
   }
 
   async stopBrowsers(computer: ComputerRef, context: AdapterContext) {
