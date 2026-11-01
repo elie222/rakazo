@@ -110,5 +110,10 @@ async function dispatchTool(
 }
 
 function isToolError(result: unknown): boolean {
-  return typeof result === "object" && result !== null && "error" in result;
+  if (typeof result !== "object" || result === null) return false;
+  if ("error" in result) return true;
+  // A repeated owner-settings refusal ends the turn without an error key; the
+  // refused marker in its details still makes it a failed call for the audit.
+  const details = (result as { details?: unknown }).details;
+  return typeof details === "object" && details !== null && "refused" in details;
 }
