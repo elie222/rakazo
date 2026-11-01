@@ -26,6 +26,7 @@ import {
   stopAllDesktopBrowsersCommand,
 } from "@rakazo/core/node/desktop-runtime";
 import {
+  BrowserStillRunningError,
   BrowserStoppedReleaseError,
   ComputerScreenUnavailableError,
   screenSessionKey,
@@ -227,7 +228,13 @@ export class LinuxDesktop {
 
   async stopBrowsers(computer: ComputerRef, context: AdapterContext) {
     const env = await this.host.environment(computer, context);
-    await this.run(computer, stopAllDesktopBrowsersCommand(env), context);
+    await this.run(computer, stopAllDesktopBrowsersCommand(env), context).catch(
+      (error: unknown) => {
+        if (error instanceof Error && error.message.includes("browser still running"))
+          throw new BrowserStillRunningError();
+        throw error;
+      },
+    );
   }
 
   async releaseScreen(computer: ComputerRef, context: AdapterContext) {
