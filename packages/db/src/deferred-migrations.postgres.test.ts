@@ -24,6 +24,8 @@ dbTests("deferred migrations", () => {
   const laterTable = `deferred_later_${stamp}`;
   const laterAdded = `29990101000003_add_${stamp}`;
   const laterDropped = `29990101000004_drop_${stamp}`;
+  const lockTable = `deferred_lock_${stamp}`;
+  const lockAdded = `29990101000005_lock_${stamp}`;
   const freshSchema = `deferred_fresh_${stamp}`;
   const dir = mkdtempSync(path.join(tmpdir(), "deferred-migrations-"));
   let client: Client;
@@ -53,8 +55,9 @@ dbTests("deferred migrations", () => {
   afterAll(async () => {
     await client.query(`DROP TABLE IF EXISTS "${table}"`);
     await client.query(`DROP TABLE IF EXISTS "${laterTable}"`);
+    await client.query(`DROP TABLE IF EXISTS "${lockTable}"`);
     await client.query("DELETE FROM _prisma_migrations WHERE migration_name = ANY($1)", [
-      [added, dropped, broken, laterAdded, laterDropped],
+      [added, dropped, broken, laterAdded, laterDropped, lockAdded],
     ]);
     await client.query('DELETE FROM "_deferred_migrations" WHERE name = ANY($1)', [
       [dropped, laterDropped],
@@ -99,5 +102,30 @@ dbTests("deferred migrations", () => {
     expect(await columns(laterTable)).toEqual(["gone", "id"]);
     await deployMigrations({ migrationUrl: databaseUrl!, dbPackageDir, migrationsDir: dir });
     expect(await columns(laterTable)).toEqual(["id"]);
+  });
+
+  it("retries a migration that lost a lock to a running query", async () => {
+    await client.query(`CREATE TABLE "${lockTable}" (id INT)`);
+    migration(
+      lockAdded,
+      `SET lock_timeout = '200ms';\nALTER TABLE "${lockTable}" ADD COLUMN extra INT;\n`,
+    );
+    const reader = new Client({ connectionString: databaseUrl });
+    await reader.connect();
+    await reader.query("BEGIN");
+    await reader.query(`LOCK TABLE "${lockTable}" IN ACCESS SHARE MODE`);
+    const released = new Promise((resolve) => setTimeout(resolve, 1_000)).then(async () => {
+      await reader.query("COMMIT");
+      await reader.end();
+    });
+
+    await deployMigrations({
+      migrationUrl: databaseUrl!,
+      dbPackageDir,
+      migrationsDir: dir,
+      lockRetryDelaysMs: [2_000],
+    });
+    await released;
+    expect(await columns(lockTable)).toEqual(["extra", "id"]);
   });
 });
