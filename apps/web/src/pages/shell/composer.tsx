@@ -179,6 +179,7 @@ export const Composer = memo(function Composer({
       void onSend(text, [], newClientId())
         .then((accepted) => {
           if (accepted === false) appendDictation(text);
+          else recordMessageSent();
         })
         .catch(() => appendDictation(text));
     },
