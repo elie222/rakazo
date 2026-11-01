@@ -240,6 +240,8 @@ describe("composeSupportsWaitTimeout", () => {
     ["2.17.0", true],
     ["v2.29.7", true],
     ["3.0.0", true],
+    ["5.6.1\r\n", true],
+    ["Docker Compose version v5.6.1\r\n", true],
     ["2.16.9", false],
     ["1.29.2", false],
     ["", false],
@@ -255,6 +257,39 @@ describe("runDocker", () => {
   });
   const node = process.execPath;
   const options = { cwd: process.cwd(), env: { PATH: process.env.PATH ?? "" }, timeoutMs: 10_000 };
+
+  it("preserves the Windows plugin discovery directory when running Compose", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "rakazo-compose-discovery-"));
+    roots.push(root);
+    const programFiles = path.join(root, "Program Files");
+    const plugins = path.join(programFiles, "Docker", "cli-plugins");
+    mkdirSync(plugins, { recursive: true });
+    writeFileSync(path.join(plugins, "docker-compose.exe"), "fake plugin");
+    // Mirror Docker's Windows plugin lookup in an offline child process. It must
+    // find the plugin through ProgramFiles even with an absolute docker.exe path.
+    const env = dockerSpawnEnv(
+      "win32",
+      { SystemRoot: process.env.SystemRoot, ProgramFiles: programFiles },
+      "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe",
+    );
+    const result = await runDocker(
+      node,
+      [
+        "-e",
+        `const fs = require('node:fs');
+         const path = require('node:path');
+         const plugin = path.join(process.env.ProgramFiles ?? '', 'Docker', 'cli-plugins', 'docker-compose.exe');
+         if (!fs.existsSync(plugin)) {
+           process.stderr.write("docker: 'compose' is not a docker command");
+           process.exit(1);
+         }
+         process.stdout.write('5.6.1\\r\\n');`,
+      ],
+      { ...options, env },
+    );
+    expect(result).toEqual({ code: 0, stdout: "5.6.1\r\n", stderr: "" });
+    expect(composeSupportsWaitTimeout(result.stdout)).toBe(true);
+  });
 
   it.skipIf(process.platform === "win32")(
     "lets a CLI outside Rancher find its credential helper after a GUI launch",
