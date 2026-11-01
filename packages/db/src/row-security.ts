@@ -170,18 +170,21 @@ export function rlsBypassKey(connectionString: string | undefined): string {
   return password ? createHmac("sha256", password).update("rakazo rls bypass").digest("hex") : "";
 }
 
-// As pg reads them: query parameters win over the URL's userinfo.
+// As pg-connection-string reads them: query parameters win over the URL's userinfo, and a
+// stray `%` is escaped first.
 function credentials(connectionString: string | undefined): { user: string; password: string } {
-  let url: URL;
+  let normalized = connectionString ?? "";
+  if (/ |%[^a-f0-9]|%[a-f0-9][^a-f0-9]/i.test(normalized))
+    normalized = encodeURI(normalized).replace(/%25(\d\d)/g, "%$1");
   try {
-    url = new URL(connectionString ?? "");
+    const url = new URL(normalized);
+    return {
+      user: url.searchParams.get("user") || decodeURIComponent(url.username),
+      password: url.searchParams.get("password") || decodeURIComponent(url.password),
+    };
   } catch {
     return { user: "", password: "" };
   }
-  return {
-    user: url.searchParams.get("user") ?? decodeURIComponent(url.username),
-    password: url.searchParams.get("password") ?? decodeURIComponent(url.password),
-  };
 }
 
 // By login, for runAsSystemInTransaction, which only has the transaction's connection.

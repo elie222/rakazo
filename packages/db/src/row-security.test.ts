@@ -7,6 +7,8 @@ describe("rlsBypassKey", () => {
     expect(key).toMatch(/^[0-9a-f]{64}$/);
     expect(rlsBypassKey("postgres://app@db/rakazo?password=secret")).toBe(key);
     expect(rlsBypassKey("postgres://app:other@db/rakazo?password=secret")).toBe(key);
+    expect(rlsBypassKey("postgres://app:secret@db/rakazo?password=")).toBe(key);
+    expect(rlsBypassKey("postgres://app:s%cret@db/rakazo")).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it("is empty without a password", () => {
