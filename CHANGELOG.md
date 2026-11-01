@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Security
 
+- Row-level security's system bypass now needs a key that only the app holds, so SQL running for one Space can no longer give itself access to every Space. `db:migrate` sets it up on upgrade with no new configuration. Installs whose runtime database login has no password keep the old behavior, and `db:migrate` warns about it.
 - Hosts hardened with `harden-host.sh` now drop inbound IPv4 TCP packets that carry IP options and turn off multipath TCP, and production Caddy no longer listens with multipath TCP. This blocks the known path to CVE-2026-98432, a remote Linux kernel bug, until a fixed kernel is running. Rerun `harden-host.sh` and recreate Caddy now, then install the fixed kernel and reboot as soon as your distribution ships it. The host check now reports updates waiting for a reboot ([production](docs/self-host-production.md)).
 - Dropping a connection partway through a WebSocket upgrade no longer crashes the server. Before, this took down the API (through the Local Computer Access device socket) or the web server that Compose runs (through the screen proxy) for every user, and it worked even without screen access.
 - Logs redact more sensitive data. Header values echoed in error messages, stacks and reasons are replaced with fixed text, the host audit shipper redacts sensitive free text before it truncates it, and caller IP and user agent are kept only on security events.
