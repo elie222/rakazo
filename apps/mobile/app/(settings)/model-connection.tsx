@@ -297,8 +297,13 @@ export default function ModelConnection() {
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
     setHeaderRows(null);
-    // A new endpoint starts with no ticks; the saved endpoint gets its saved list back.
+    // A new endpoint starts with no model or ticks; the saved endpoint gets its saved ones back.
     setEnabledModelIds(savedCompatibleModelIds(credential, nextBaseUrl));
+    stageCompatibleModelId(
+      savedCompatibleEndpointMatches(nextBaseUrl, credential?.baseUrl)
+        ? (credential?.modelId ?? "")
+        : "",
+    );
     resetOpenAiCompatibleProbe();
     clearFeedback();
   }
