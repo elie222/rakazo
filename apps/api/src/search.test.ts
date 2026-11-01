@@ -5,7 +5,12 @@ import { Prisma } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { querySpaceSearch } from "./search.js";
 
-const actor: Actor = { spaceId: "space-test", userId: "user-test" };
+const actor: Actor = {
+  spaceId: "space-test",
+  userId: "user-test",
+  email: "user@example.test",
+  isDeploymentOwner: false,
+};
 
 function fixture(count: number) {
   const artifacts = Array.from({ length: count }, (_, index) => ({

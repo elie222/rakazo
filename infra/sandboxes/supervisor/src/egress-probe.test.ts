@@ -186,7 +186,7 @@ describe("egress probe", () => {
     );
     expect(error.constructor).toBe(Error);
     expect(error.message).toBe(
-      "No SANDBOX_COMPUTER_DNS server answered from a restricted computer network; set servers reachable from there, such as public resolvers (see docs/self-host.md)",
+      "No SANDBOX_COMPUTER_DNS server answered from a restricted computer network; set servers reachable from there, such as public resolvers (see docs/self-host-docker-computers.md)",
     );
     expect(container.remove).toHaveBeenCalledWith({ force: true });
     expect(network.remove).toHaveBeenCalledOnce();

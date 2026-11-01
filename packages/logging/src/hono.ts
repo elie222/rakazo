@@ -1,5 +1,5 @@
 import type { MiddlewareHandler } from "hono";
-import { getLogContext } from "./context.js";
+import { enrichLogContext, getLogContext } from "./context.js";
 import { correlationBindings, establishRequestCorrelation } from "./correlation.js";
 import { formatTraceparent } from "./ids.js";
 import { getLogger } from "./logger.js";
@@ -26,12 +26,17 @@ export function requestLogging(logger?: Logger): MiddlewareHandler {
         const failure = c.error ?? thrown;
         if (failure) log.error("http.request.failed", failure);
         const status = failure && c.res.status < 400 ? 500 : c.res.status;
+        const context = getLogContext();
         // A client that disconnected never sees the status, so its 5xx is not a server failure.
         const level =
-          status >= 500 && !c.req.raw.signal.aborted ? "error" : status >= 400 ? "warn" : "info";
+          status >= 500 && !c.req.raw.signal.aborted && !context["error.expected"]
+            ? "error"
+            : status >= 400
+              ? "warn"
+              : "info";
         log[level]("http.request.completed", {
           // Completion records stay searchable without creating a second collector issue.
-          "error.report": !failure && !getLogContext()["error.reported"],
+          "error.report": !failure && !context["error.reported"],
           "http.method": c.req.method,
           "http.route": matchedRoute(c.req.path, c.req.routePath),
           "http.status": status,
@@ -40,6 +45,14 @@ export function requestLogging(logger?: Logger): MiddlewareHandler {
       }
     });
   };
+}
+
+/**
+ * The handler answers 5xx for a condition it already logged as a warning (a provider outage, the
+ * user's own provider account), so the request's completion is a warning too, not a report.
+ */
+export function markExpectedFailure(): void {
+  enrichLogContext({ "error.expected": true });
 }
 
 function matchedRoute(path: string, routePath: string): string {

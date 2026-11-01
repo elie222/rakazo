@@ -38,7 +38,7 @@ async function* generate<T>(items: T[]): AsyncGenerator<T> {
 }
 
 const createdAt = "2026-01-02T03:04:05.000Z";
-const botRecord = (id: string): AccountExportRecord => ({
+const botRecord = (id: string): Extract<AccountExportRecord, { type: "bot" }> => ({
   type: "bot",
   id,
   name: "Chief",

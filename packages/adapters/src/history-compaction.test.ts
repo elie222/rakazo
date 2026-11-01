@@ -10,9 +10,11 @@ import type { PrismaClient } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger, wrapJobPayload } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import {
+  COMPACTION_BATCH_SIZE,
   compactHistory,
   formatCompactedSummary,
   formatRecalledMemory,
+  HISTORY_WINDOW_SIZE,
   historyWindowSize,
   MAX_COMPACTED_SUMMARY_CHARS,
   MAX_SUMMARIZE_PROMPT_CHARS,
@@ -237,6 +239,7 @@ function compactionHarness(
     historyCompactedUpToSeq?: number | null;
     historyCompactionSummary?: string | null;
     historyCompactionGeneration?: number;
+    historyCompactionRetryAfterSeq?: number;
     wasCleared?: boolean;
     resolveModel?: (scope: {
       userId: string;
@@ -266,6 +269,8 @@ function compactionHarness(
     historyCompactedUpToSeq: options.historyCompactedUpToSeq ?? (null as number | null),
     historyCompactionSummary: options.historyCompactionSummary ?? (null as string | null),
     historyCompactionGeneration: options.historyCompactionGeneration ?? 0,
+    historyCompactionRetryAfterSeq:
+      options.historyCompactionRetryAfterSeq ?? (null as number | null),
   };
   const memoryConfig =
     options.memoryConfig === undefined
@@ -276,8 +281,27 @@ function compactionHarness(
           }
       : options.memoryConfig;
   const prisma = {
+    $queryRaw: vi.fn(
+      async (
+        _strings: TemplateStringsArray,
+        batchSize: number,
+        threadId: string,
+        previousCursor: number | null,
+        previousGeneration: number,
+      ) => {
+        if (
+          thread.id !== threadId ||
+          thread.historyCompactedUpToSeq !== previousCursor ||
+          thread.historyCompactionGeneration !== previousGeneration
+        ) {
+          return [];
+        }
+        thread.historyCompactionRetryAfterSeq = thread.nextMessageSeq + batchSize;
+        return [{ historyCompactionRetryAfterSeq: thread.historyCompactionRetryAfterSeq }];
+      },
+    ),
     thread: {
-      findUniqueOrThrow: vi.fn(async () => thread),
+      findUniqueOrThrow: vi.fn(async () => ({ ...thread })),
       updateMany: vi.fn(
         async (args: {
           where: {
@@ -285,7 +309,7 @@ function compactionHarness(
             historyCompactedUpToSeq: number | null;
             historyCompactionGeneration: number;
           };
-          data: { historyCompactedUpToSeq: number; historyCompactionSummary: string };
+          data: Partial<typeof thread>;
         }) => {
           if (
             thread.historyCompactedUpToSeq !== args.where.historyCompactedUpToSeq ||
@@ -293,8 +317,7 @@ function compactionHarness(
           ) {
             return { count: 0 };
           }
-          thread.historyCompactedUpToSeq = args.data.historyCompactedUpToSeq;
-          thread.historyCompactionSummary = args.data.historyCompactionSummary;
+          Object.assign(thread, args.data);
           return { count: 1 };
         },
       ),
@@ -481,6 +504,7 @@ describe("compactHistory", () => {
     expect(harness.runtime.run).toHaveBeenCalledOnce();
     const [request] = harness.runtime.run.mock.calls[0]!;
     expect(request.instructions).toContain("Current date and time");
+    expect(request.instructions).toContain(`under ${MAX_COMPACTED_SUMMARY_CHARS} characters`);
     expect(request.tools).toEqual([]);
     expect(request.model).toEqual({
       provider: "openrouter",
@@ -514,6 +538,7 @@ describe("compactHistory", () => {
       data: {
         historyCompactedUpToSeq: 49,
         historyCompactionSummary: "Summary of 50 messages.",
+        historyCompactionRetryAfterSeq: null,
       },
     });
   });
@@ -972,10 +997,116 @@ describe("compactHistory", () => {
     expect(harness.thread.historyCompactedUpToSeq).toBeLessThan(49);
   });
 
-  it("keeps the cursor unchanged when the summary exceeds the safe context budget", async () => {
-    const harness = compactionHarness({ deploymentModelKey: "openrouter-key" });
+  async function compactAfterTurns(harness: ReturnType<typeof compactionHarness>, turns: number) {
+    for (let turn = 0; turn < turns; turn += 1) {
+      for (const role of ["user", "bot"]) {
+        const seq = harness.thread.nextMessageSeq++;
+        harness.messages.push({ seq, role, blocks: [{ kind: "text", text: `message ${seq}` }] });
+      }
+      if (
+        shouldEnqueueCompaction(
+          harness.thread.nextMessageSeq,
+          harness.thread.historyCompactedUpToSeq,
+          HISTORY_WINDOW_SIZE,
+          COMPACTION_BATCH_SIZE,
+        )
+      ) {
+        await compactHistory(harness.deps, "thread-1");
+      }
+    }
+  }
+  const threadMessages = (from: number, count: number) =>
+    Array.from({ length: count }, (_, index) => ({
+      seq: from + index,
+      role: index % 2 === 0 ? "user" : "bot",
+      blocks: [{ kind: "text" as const, text: `message ${from + index}` }],
+    }));
+  const compactedThread = () =>
+    compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      historyCompactedUpToSeq: 49,
+      historyCompactionSummary: "Earlier summary.",
+      messages: threadMessages(0, 150),
+    });
+  const oversized = "x".repeat(MAX_COMPACTED_SUMMARY_CHARS + 1);
+  const summarizerReplies = (harness: ReturnType<typeof compactionHarness>, texts: string[]) => {
+    let call = 0;
     harness.runtime.run.mockImplementation(async function* () {
-      yield { type: "done", text: "x".repeat(MAX_COMPACTED_SUMMARY_CHARS + 1) };
+      yield { type: "done", text: texts[Math.min(call++, texts.length - 1)]! };
+    });
+  };
+
+  it("waits for a batch of new messages after an oversized summary, then compacts again", async () => {
+    const harness = compactedThread();
+    summarizerReplies(harness, [oversized, "Summary that fits."]);
+    const sink = installCompactionLogger();
+
+    try {
+      await compactAfterTurns(harness, 1);
+    } finally {
+      silenceLogger();
+    }
+
+    expect(harness.runtime.run).toHaveBeenCalledOnce();
+    expect(harness.thread.historyCompactedUpToSeq).toBe(49);
+    expect(harness.thread.historyCompactionSummary).toBe("Earlier summary.");
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        message: "history.compact summary too large; retry scheduled",
+        "thread.id": "thread-1",
+        "history.compact.retry_after_seq": 202,
+      }),
+    );
+
+    await compactAfterTurns(harness, 24);
+    expect(harness.runtime.run).toHaveBeenCalledOnce();
+
+    await compactAfterTurns(harness, 2);
+    expect(harness.runtime.run).toHaveBeenCalledTimes(3);
+    expect(harness.thread.historyCompactedUpToSeq).toBe(149);
+  });
+
+  it("schedules the retry from messages received during summarization", async () => {
+    const harness = compactedThread();
+    harness.runtime.run.mockImplementation(async function* () {
+      harness.thread.nextMessageSeq += COMPACTION_BATCH_SIZE;
+      yield { type: "done", text: oversized };
+    });
+    const sink = installCompactionLogger();
+
+    try {
+      await compactHistory(harness.deps, "thread-1");
+      expect(harness.thread.historyCompactionRetryAfterSeq).toBe(150 + 2 * COMPACTION_BATCH_SIZE);
+      expect(sink.events).toContainEqual(
+        expect.objectContaining({
+          "history.compact.retry_after_seq": 150 + 2 * COMPACTION_BATCH_SIZE,
+        }),
+      );
+      await compactHistory(harness.deps, "thread-1");
+      expect(harness.runtime.run).toHaveBeenCalledOnce();
+    } finally {
+      silenceLogger();
+    }
+  });
+
+  it("does not schedule a retry when the history generation changes meanwhile", async () => {
+    const harness = compactedThread();
+    harness.runtime.run.mockImplementation(async function* () {
+      harness.thread.historyCompactionGeneration += 1;
+      yield { type: "done", text: oversized };
+    });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    expect(harness.thread.historyCompactionRetryAfterSeq).toBeNull();
+  });
+
+  it("does not schedule a retry when another job advanced the cursor meanwhile", async () => {
+    const harness = compactedThread();
+    harness.runtime.run.mockImplementation(async function* () {
+      harness.thread.historyCompactedUpToSeq = 99;
+      yield { type: "done", text: oversized };
     });
     const sink = installCompactionLogger();
 
@@ -985,17 +1116,49 @@ describe("compactHistory", () => {
       silenceLogger();
     }
 
-    expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
+    expect(harness.runtime.run).toHaveBeenCalledOnce();
+    expect(harness.thread.historyCompactionRetryAfterSeq).toBeNull();
+    expect(sink.events.filter((event) => event.level === "warn")).toEqual([]);
+  });
+
+  it("clears a retry point when a job from the same cursor compacts", async () => {
+    const harness = compactedThread();
+    let call = 0;
+    harness.runtime.run.mockImplementation(async function* () {
+      call += 1;
+      if (call === 1) {
+        await compactHistory(harness.deps, "thread-1");
+        yield { type: "done", text: "Summary that fits." };
+      } else {
+        yield { type: "done", text: call === 2 ? oversized : "Next summary." };
+      }
+    });
+    installCompactionLogger();
+
+    try {
+      await compactHistory(harness.deps, "thread-1");
+    } finally {
+      silenceLogger();
+    }
+    expect(harness.thread.historyCompactedUpToSeq).toBe(99);
+
+    await compactHistory(harness.deps, "thread-1");
+
+    expect(harness.runtime.run).toHaveBeenCalledTimes(3);
+    expect(harness.thread.historyCompactedUpToSeq).toBe(149);
+  });
+
+  it("stops after one oversized summary when nothing has been compacted yet", async () => {
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      messages: threadMessages(0, 150),
+    });
+    summarizerReplies(harness, [oversized]);
+
+    await compactAfterTurns(harness, 5);
+
+    expect(harness.runtime.run).toHaveBeenCalledOnce();
     expect(harness.thread.historyCompactedUpToSeq).toBeNull();
-    expect(sink.events).toContainEqual(
-      expect.objectContaining({
-        level: "error",
-        message: "history.compact failed permanently",
-        "thread.id": "thread-1",
-        "history.compact.reason": "summary_too_large",
-        "history.compact.retryable": false,
-      }),
-    );
   });
 
   it("re-enqueues itself while a full batch of backlog still remains", async () => {

@@ -70,9 +70,6 @@ export class GraphileJobPublisher implements JobPublisher {
       jobKey: job.replaceKey,
       maxAttempts: job.maxAttempts,
       ...(jobKeyMode ? { jobKeyMode } : {}),
-      // Each delivery drains the whole outbox, and a reply still being sent does not hold
-      // back the next reply to the same conversation, so drains run one at a time.
-      ...(job.name === "messaging.deliver" ? { queueName: "messaging.deliver" } : {}),
     });
     if (
       task === INTERACTIVE_RUN_TASK &&
@@ -191,7 +188,6 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
     private readonly options: {
       concurrency?: number;
       pollInterval?: number;
-      noHandleSignals?: boolean;
       /** Fetch due jobs in batches so idle slots share one poll instead of each polling. */
       localQueueSize?: number;
       /** Omit for a worker that handles every task (tests and embedded hosts). */
@@ -261,7 +257,9 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       pgPool: this.pgPool,
       concurrency: this.options.concurrency ?? 4,
       pollInterval: this.options.pollInterval ?? 500,
-      noHandleSignals: this.options.noHandleSignals,
+      // Graphile kills the process by re-raising SIGTERM once its own jobs stop, before the
+      // host's shutdown has handed back the runs it executes outside Graphile.
+      noHandleSignals: true,
       taskList,
       ...(this.options.localQueueSize
         ? { preset: { worker: { localQueue: { size: this.options.localQueueSize } } } }
@@ -337,7 +335,7 @@ const MAINTENANCE_LOCAL_QUEUE_SIZE = 10;
 /** Long agent turns cannot occupy the capacity reserved for other workloads. */
 export function createReservedGraphileJobWorkerHost(
   pool: Pool,
-  options: { concurrency?: number; pollInterval?: number; noHandleSignals?: boolean } = {},
+  options: { concurrency?: number; pollInterval?: number } = {},
 ): JobWorkerHost {
   const hosts = (["interactive", "background", "maintenance"] as const).map(
     (workload) =>

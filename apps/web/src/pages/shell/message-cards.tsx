@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useLinkPrompt } from "@rakazo/chat-ui/web";
 import type { MessageBlock } from "@rakazo/contracts";
 import { appConnectedInput, waitForConnection } from "@rakazo/core";
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
@@ -243,6 +244,7 @@ function ChartCanvas({
 }) {
   const { t } = useLingui();
   const ref = useRef<HTMLDivElement>(null);
+  const linkDialog = useLinkPrompt(ref);
   const [error, setError] = useState<string | null>(null);
   const [meta, setMeta] = useState<{
     title?: string;
@@ -309,7 +311,8 @@ function ChartCanvas({
           ))}
         </div>
       ) : null}
-      <div ref={ref} className="[&_svg]:max-w-full" />
+      <div ref={ref} className="overflow-hidden [contain:paint] [&_svg]:max-w-full" />
+      {linkDialog}
     </div>
   );
 }

@@ -13,15 +13,15 @@ import {
   Text,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { glassHeaderOptions } from "../components/glass-title";
 import { InlineImageAttachment } from "../components/inline-image-attachment";
 import { NativeActionButton } from "../components/native-action-button";
+import { SheetCloseButton } from "../components/sheet-close-button";
 import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { openMobileArtifact } from "../lib/artifact-open";
 import { useI18n } from "../lib/i18n";
-import { isInlineImageMimeType } from "../lib/inline-image";
+import { isInlineImageBlock } from "../lib/inline-image";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
@@ -29,7 +29,6 @@ import { errorText } from "../lib/user-error";
 /** View-only bot-to-bot exchange, opened from a Messaged / Message from chip in a bot's chat. */
 export default function PeerChat() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const sideInsets = useSideInsets();
   const { t } = useI18n();
   const styles = useThemedStyles(createStyles);
@@ -85,6 +84,9 @@ export default function PeerChat() {
       <Stack.Screen
         options={{
           ...glassHeaderOptions(""),
+          headerBackVisible: false,
+          headerTitleAlign: "center",
+          headerLeft: () => <SheetCloseButton onPress={() => router.back()} />,
           headerTitle: () => (
             <View style={styles.pill}>
               <Text
@@ -135,26 +137,36 @@ export default function PeerChat() {
         ) : (
           chat.messages.map((item, index) => {
             const sent = item.direction === "sent";
+            const hasInlineImages = item.blocks?.some(isInlineImageBlock);
+            const bubbleStyle = [styles.bubble, sent && styles.sentBubble];
             return (
               <View
                 key={`${item.messageId}-${index}`}
-                style={[styles.bubble, sent ? styles.sent : styles.received]}
+                style={[
+                  styles.message,
+                  sent ? styles.sent : styles.received,
+                  hasInlineImages ? { gap: 8 } : bubbleStyle,
+                ]}
               >
-                <Text
-                  style={[
-                    styles.speaker,
-                    { color: (sent ? params.botColor : params.peerBotColor) ?? tokens.foreground },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {sent ? botName : peerName}
-                </Text>
-                <ChatMarkdown palette={tokens} colorScheme={colorScheme}>
-                  {item.text}
-                </ChatMarkdown>
+                <View style={hasInlineImages ? bubbleStyle : undefined}>
+                  <Text
+                    style={[
+                      styles.speaker,
+                      {
+                        color: (sent ? params.botColor : params.peerBotColor) ?? tokens.foreground,
+                      },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {sent ? botName : peerName}
+                  </Text>
+                  <ChatMarkdown palette={tokens} colorScheme={colorScheme}>
+                    {item.text}
+                  </ChatMarkdown>
+                </View>
                 {item.blocks?.map((block, index) => {
                   if (block.kind !== "file" && block.kind !== "image") return null;
-                  if (block.kind === "image" && isInlineImageMimeType(block.mimeType))
+                  if (isInlineImageBlock(block))
                     return (
                       <InlineImageAttachment
                         key={index}
@@ -177,21 +189,25 @@ export default function PeerChat() {
                       />
                     );
                   return (
-                    <NativeActionButton
-                      key={index}
-                      label={block.name}
-                      prominence="plain"
-                      onPress={() =>
-                        void openMobileArtifact(
-                          { botId },
-                          block.artifactId,
-                          block.name,
-                          block.mimeType,
-                        ).catch((error) =>
-                          Alert.alert(t("Could not open file"), errorText(error, t("Try again."))),
-                        )
-                      }
-                    />
+                    <View key={index} style={hasInlineImages ? bubbleStyle : undefined}>
+                      <NativeActionButton
+                        label={block.name}
+                        prominence="plain"
+                        onPress={() =>
+                          void openMobileArtifact(
+                            { botId },
+                            block.artifactId,
+                            block.name,
+                            block.mimeType,
+                          ).catch((error) =>
+                            Alert.alert(
+                              t("Could not open file"),
+                              errorText(error, t("Try again.")),
+                            ),
+                          )
+                        }
+                      />
+                    </View>
                   );
                 })}
               </View>
@@ -199,13 +215,6 @@ export default function PeerChat() {
           })
         )}
       </ScrollView>
-      <View style={[styles.close, { paddingBottom: Math.max(16, insets.bottom) }]}>
-        <NativeActionButton
-          label={t("Close Chat")}
-          onPress={() => router.back()}
-          prominence="quiet"
-        />
-      </View>
     </View>
   );
 }
@@ -224,15 +233,21 @@ function createStyles() {
       paddingVertical: 8,
     },
     name: { ...typeScale.footnote, fontWeight: "600", flexShrink: 1 },
-    close: { alignItems: "center", paddingTop: 16 },
     screen: { flex: 1, backgroundColor: native.page },
     content: { flexGrow: 1, paddingHorizontal: 16, paddingVertical: 16, gap: 10 },
     center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
     muted: { color: tokens.mutedForeground, ...typeScale.body, textAlign: "center" },
     retry: { color: tokens.link, ...typeScale.body },
-    bubble: { maxWidth: "85%", borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9 },
-    sent: { alignSelf: "flex-end", backgroundColor: tokens.accent },
-    received: { alignSelf: "flex-start", backgroundColor: tokens.muted },
+    message: { maxWidth: "85%" },
+    bubble: {
+      borderRadius: 20,
+      paddingHorizontal: 14,
+      paddingVertical: 9,
+      backgroundColor: tokens.muted,
+    },
+    sent: { alignSelf: "flex-end" },
+    received: { alignSelf: "flex-start" },
+    sentBubble: { backgroundColor: tokens.accent },
     speaker: { color: tokens.mutedForeground, ...typeScale.footnote, marginBottom: 4 },
   });
 }

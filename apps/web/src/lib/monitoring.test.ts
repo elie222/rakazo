@@ -170,6 +170,20 @@ describe("browser monitoring", () => {
     expect(sentry.init).not.toHaveBeenCalled();
   });
 
+  it("stays off in a desktop build that does not report errors", async () => {
+    vi.resetModules();
+    const fresh = await import("./monitoring");
+    vi.stubGlobal("window", { rakazoDesktop: { monitoring: { enabled: async () => false } } });
+    try {
+      expect(
+        await fresh.startMonitoring(respond({ dsn: "https://key@errors.example.com/8" })),
+      ).toBe(false);
+      expect(sentry.init).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("stays off when the SDK fails to start", async () => {
     sentry.init.mockImplementation(() => {
       throw new Error("init failed");
@@ -299,6 +313,7 @@ describe("browser monitoring", () => {
         "Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
         "NotFoundError",
       ),
+      "Object Not Found Matching Id:1, MethodName:update, ParamCount:4",
     ])
       expect(beforeSend({}, { originalException }), String(originalException)).toBeNull();
     expect(

@@ -431,15 +431,20 @@ describe("private-host transport", () => {
   it("cancels unread probe, save, and delete bodies", async () => {
     const sockets = new Set<Socket>();
     const server = createServer((request, response) => {
+      // A local tool can probe any listening loopback port; only Supermemory calls
+      // are answered and count towards the sockets the client must release.
+      if (!/^\/v[34]\//.test(request.url ?? "")) {
+        request.resume();
+        response.writeHead(404).end();
+        return;
+      }
+      sockets.add(request.socket);
+      request.socket.on("close", () => sockets.delete(request.socket));
       request.resume();
       response.writeHead(request.url?.includes("search") ? 500 : 200, {
         "content-type": "application/json",
       });
       response.flushHeaders();
-    });
-    server.on("connection", (socket) => {
-      sockets.add(socket);
-      socket.on("close", () => sockets.delete(socket));
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const port = (server.address() as AddressInfo).port;

@@ -11,8 +11,21 @@ test("a new space auto-completes onboarding, is renamed in its settings, and is 
   const sidebar = page.locator("aside").first();
   await openNewSpace(page);
   const dialog = page.getByRole("dialog", { name: "New space" });
-  await dialog.getByLabel("Name").fill("Typo space");
-  await dialog.getByRole("button", { name: "Create space", exact: true }).click();
+  const name = dialog.getByLabel("Name");
+  await name.fill("Typo space");
+  const windowKeys = await page.evaluateHandle(() => {
+    const keys: string[] = [];
+    window.addEventListener("keydown", (event) => keys.push(event.key));
+    return keys;
+  });
+  // These synthetic keyboard events exercise the browser event flags; they do not start an OS IME.
+  for (const composition of [{ isComposing: true }, { keyCode: 229 }]) {
+    await name.dispatchEvent("keydown", { key: "Enter", ...composition });
+    await name.dispatchEvent("keydown", { key: "Escape", ...composition });
+    expect(await windowKeys.evaluate((keys) => keys.includes("Escape"))).toBe(false);
+    await expect(dialog.getByRole("button", { name: "Create space", exact: true })).toBeEnabled();
+  }
+  await name.press("Enter");
 
   // Model is already connected, so onboarding skips the form and lands in Chief.
   await completeOnboarding(page);

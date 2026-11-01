@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   backOffRoutineAfterAccountError,
   clearRoutineBackoff,
-  isModelAccountRefusal,
+  modelAccountRefusal,
   routineAccountBackoffMs,
 } from "./routine-backoff.js";
 
@@ -48,7 +48,7 @@ function fakeRoutine(overrides: Partial<Row> = {}) {
   return { row, deps, enqueue, lock };
 }
 
-describe("isModelAccountRefusal", () => {
+describe("modelAccountRefusal", () => {
   it.each([
     [
       "a rejected key",
@@ -62,7 +62,21 @@ describe("isModelAccountRefusal", () => {
     ["an exhausted balance", "Your credit balance is too low to access the API."],
     ["a model the provider no longer serves", "404: model not found"],
   ])("counts %s", (_label, message) => {
-    expect(isModelAccountRefusal(new ModelAccountError(message))).toBe(true);
+    expect(modelAccountRefusal(new ModelAccountError(message))).toEqual({});
+  });
+
+  it("holds until a quota's named reset", () => {
+    const reset = Date.now() + 10 * 60 * MINUTE;
+    const message = `429 ${JSON.stringify({
+      error: {
+        message: "Rate limit exceeded: free-models-per-day",
+        code: 429,
+        metadata: { headers: { "X-RateLimit-Reset": String(reset) } },
+      },
+    })}`;
+    expect(modelAccountRefusal(new ModelAccountError(message))).toEqual({
+      resetAt: new Date(reset),
+    });
   });
 
   it.each([
@@ -72,7 +86,7 @@ describe("isModelAccountRefusal", () => {
     ["an output limit", new ModelOutputError("The model hit its output limit")],
     ["a plain server error", new Error("401 Unauthorized")],
   ])("does not count %s", (_label, error) => {
-    expect(isModelAccountRefusal(error)).toBe(false);
+    expect(modelAccountRefusal(error)).toBeUndefined();
   });
 });
 
@@ -121,6 +135,30 @@ describe("backOffRoutineAfterAccountError", () => {
     await backOffRoutineAfterAccountError(deps, "routine-1", NOW);
 
     expect(row.nextRunAt).toEqual(new Date(NOW.getTime() + 5 * MINUTE));
+  });
+
+  it("holds a frequent routine until the provider's reset, at most a day", async () => {
+    const { row, deps, enqueue } = fakeRoutine();
+    const reset = new Date("2026-03-03T00:00:00.000Z");
+
+    await backOffRoutineAfterAccountError(deps, "routine-1", NOW, reset);
+
+    expect(row.accountFailures).toBe(1);
+    // The routine's first minute after the reset.
+    const resume = new Date("2026-03-03T00:01:00.000Z");
+    expect(row.nextRunAt).toEqual(resume);
+    expect(enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "routine.wakeup", availableAt: resume }),
+    );
+
+    const monthly = fakeRoutine({ crons: [], watch: { kind: "files" } });
+    await backOffRoutineAfterAccountError(
+      monthly.deps,
+      "routine-1",
+      NOW,
+      new Date("2026-04-01T00:00:00.000Z"),
+    );
+    expect(monthly.row.nextRunAt).toEqual(new Date(NOW.getTime() + 24 * 60 * MINUTE));
   });
 
   it("does not schedule a paused routine", async () => {

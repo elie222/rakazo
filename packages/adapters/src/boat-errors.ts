@@ -59,7 +59,8 @@ const UNSENT_CODES = new Set([
   "ENETUNREACH",
   "UND_ERR_CONNECT_TIMEOUT",
 ]);
-const TRANSIENT_STATUSES = new Set([500, 502, 503, 504]);
+// 520-526 and 530 come from Cloudflare in front of Boat when it gets no usable answer from Boat.
+const TRANSIENT_STATUSES = new Set([500, 502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 530]);
 
 /**
  * Keep HTTP failures actionable without changing the SDK's status-based recovery contract.
@@ -99,6 +100,10 @@ export function wrapBoatCall<Args extends unknown[], Result>(
       }
       // Boat's proxy reached the sandbox but gave up waiting for its answer.
       if (wrapped.code === "sandbox_direct_failed" && /\btimeout\b/i.test(wrapped.message)) {
+        throw new SandboxUnresponsiveError(wrapped.message, { cause: wrapped });
+      }
+      // Boat is still applying another change, such as a keep-alive; a later stop succeeds.
+      if (wrapped.code === "stop_failed" && /\bis updating\b/i.test(wrapped.message)) {
         throw new SandboxUnresponsiveError(wrapped.message, { cause: wrapped });
       }
       throw wrapped;

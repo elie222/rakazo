@@ -266,7 +266,11 @@ describe("ComposioConnector over the fake Composio client", () => {
     await expect(
       run(connector, "COMPOSIO_MULTI_EXECUTE_TOOL", { tools: [listing("ca_other")] }, ctx),
     ).resolves.toEqual([
-      { type: "error", message: "Toolkit for DROPBOX_LIST_FOLDERS is not enabled in this session" },
+      {
+        type: "error",
+        message:
+          "The account requested for DROPBOX_LIST_FOLDERS is not connected to this workspace.",
+      },
     ]);
     expect(fake.executions).toEqual([]);
   });

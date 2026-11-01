@@ -9,6 +9,7 @@ import {
   TemporarilyUnavailableError,
   TooManyRequestsError,
 } from "@modelcontextprotocol/sdk/server/auth/errors.js";
+import { McpError } from "@modelcontextprotocol/sdk/types.js";
 import type {
   AdapterContext,
   ConnectorCall,
@@ -59,13 +60,14 @@ import {
   DEFAULT_MCP_INSTALL_TIMEOUT_MS,
   defaultMcpPackagesRoot,
   ensureMcpPackage,
+  isNpxCommand,
   parseNpxLaunch,
 } from "./mcp-package-installer.js";
 import type { McpServerHealthUpdate } from "./mcp-server-health.js";
 import { needsMcpOAuthClient, recordMcpServerHealth } from "./mcp-server-health.js";
 import { McpSession, mcpStdioRefusal } from "./mcp-transport.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
-import { ConnectorRedirectError } from "./remote-mcp.js";
+import { ConnectorRedirectError, isMcpSessionGoneError } from "./remote-mcp.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
 
 type SessionEntry = {
@@ -151,6 +153,11 @@ function expectedFailure(error: unknown, depth = 0): ExpectedFailure | undefined
     if (error.code === -1 || (error.code !== undefined && error.code >= 400 && error.code < 500))
       return "reconnect";
   }
+  // On a live session the next connect renews the token, so only wait briefly.
+  if (isRejectedTokenError(error)) return "unreachable";
+  // JSON-RPC reserves -32000 to -32099 for server errors, such as a proxy's failed upstream.
+  if (error instanceof McpError && error.code <= -32000 && error.code >= -32099)
+    return "unreachable";
   if (error instanceof ConnectorRedirectError) return "reconnect";
   // The server's own OAuth endpoint failed or is overloaded; it usually recovers by itself.
   if (
@@ -171,6 +178,14 @@ function expectedFailure(error: unknown, depth = 0): ExpectedFailure | undefined
     if (kind) return kind;
   }
   return undefined;
+}
+
+/** JSON-RPC codes a server answers with HTTP 200, not 401, for an access token it no longer
+ * accepts before its stated expiry, so the SDK never refreshes it (RingCentral: -32302). */
+const REJECTED_TOKEN_CODES = new Set([-32302]);
+
+function isRejectedTokenError(error: unknown): boolean {
+  return error instanceof McpError && REJECTED_TOKEN_CODES.has(error.code);
 }
 
 /** A redacted connect failure that keeps whether it was expected, which its message loses. */
@@ -262,18 +277,6 @@ function unavailableTool(server: McpServer, reason: string): ConnectorTool {
   };
 }
 
-/** Whether the server rejected the request because it no longer knows the session. */
-function sessionGone(error: unknown): boolean {
-  if (!(error instanceof StreamableHTTPError)) return false;
-  return (
-    error.code === 404 ||
-    (error.code === 400 &&
-      /\bBad Request: (?:Server not initialized|No valid session ID(?: provided| or initialization request)?|Mcp-Session-Id header is required)(?="|$)/i.test(
-        error.message,
-      ))
-  );
-}
-
 /** Runtime MCP connector. Authorization is re-checked against the bot assignment on every call. */
 /**
  * Stale allowlist entries are filtered out below with no error. Discovery already has the
@@ -292,6 +295,11 @@ export function allowlistDrift(
     offered: names.size,
     stringAllowedCount: stringAllowed.length,
   };
+}
+
+/** A server every agent may use acts as an assignment that allows all its tools. */
+function sharedAssignment<Server extends { id: string }>(server: Server) {
+  return { serverId: server.id, allowAllTools: true, allowedTools: [] as unknown, server };
 }
 
 function reportAllowlistDrift(
@@ -394,7 +402,16 @@ export class McpConnector implements ConnectorProvider {
   }
 
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
-    const tools = await this.authorizedTools(context);
+    const startedAt = Date.now();
+    let tools: ConnectorTool[];
+    try {
+      tools = await this.authorizedTools(context);
+    } catch (error) {
+      // The registry logs and drops a connector that throws, so the run would lose every
+      // assigned server's tools with nothing in the thread to say so.
+      await this.recordDiscoveryFailure(undefined, error, context, startedAt, []);
+      throw error;
+    }
     if (tools.length <= DIRECT_TOOL_LIMIT) return tools;
     // Keep wrappers off "mcp_": see lazyCatalogTools.
     return lazyCatalogTools(catalogToolPrefix("mcp"), "mcp", "MCP", catalogEntries(tools));
@@ -417,16 +434,23 @@ export class McpConnector implements ConnectorProvider {
 
   private async authorizedTools(context: AdapterContext): Promise<ConnectorTool[]> {
     if (!context.botId) return [];
-    const assignments = await this.prisma.botMcpServer.findMany({
-      where: {
-        botId: context.botId,
-        spaceId: context.spaceId,
-        userId: context.userId,
-        // A server no longer available in this space stays assigned but unused until it is again.
-        server: { enabled: true, ...availableInSpace(context) },
-      },
-      include: { server: true },
-    });
+    const usable = { enabled: true, ...availableInSpace(context) };
+    const [assigned, shared] = await Promise.all([
+      this.prisma.botMcpServer.findMany({
+        where: {
+          botId: context.botId,
+          spaceId: context.spaceId,
+          userId: context.userId,
+          // A server no longer available in this space stays assigned but unused until it is again.
+          server: usable,
+        },
+        include: { server: true },
+      }),
+      this.prisma.mcpServer.findMany({
+        where: { ...usable, allBots: true, assignments: { none: { botId: context.botId } } },
+      }),
+    ]);
+    const assignments = [...assigned, ...shared.map(sharedAssignment)];
     const groups = await Promise.all(
       assignments.map(async (assignment): Promise<ConnectorTool[]> => {
         const startedAt = Date.now();
@@ -520,7 +544,8 @@ export class McpConnector implements ConnectorProvider {
                 "connector.id": assignment.server.id,
               },
             );
-          await this.evict(key);
+          // Cleanup must not turn one server's failure into losing every server's tools.
+          await this.evict(key).catch(() => undefined);
           this.unavailable.set(key, reason);
           // A cancelled run says nothing about the server, and an install that outlived the
           // deadline is still on its way.
@@ -563,7 +588,7 @@ export class McpConnector implements ConnectorProvider {
    * there the log line stays the only trace.
    */
   private async recordDiscoveryFailure(
-    slug: string,
+    slug: string | undefined,
     error: unknown,
     context: AdapterContext,
     startedAt: number,
@@ -584,8 +609,8 @@ export class McpConnector implements ConnectorProvider {
         runId: context.runId,
       },
       {
-        name: `mcp__${slug}__discovery`,
-        executionId: `mcp-discovery-${slug}-${context.runId}-${this.discoverySeq++}`,
+        name: slug ? `mcp__${slug}__discovery` : "mcp__discovery",
+        executionId: `mcp-discovery-${slug ?? "all"}-${context.runId}-${this.discoverySeq++}`,
         durationMs: Date.now() - startedAt,
         error,
       },
@@ -618,16 +643,21 @@ export class McpConnector implements ConnectorProvider {
       yield { type: "error", message: "MCP tools require a bot context" };
       return;
     }
-    const assignment = await this.prisma.botMcpServer.findFirst({
-      where: {
-        botId: context.botId,
-        serverId: call.route.resourceId,
-        spaceId: context.spaceId,
-        userId: context.userId,
-        server: { enabled: true, ...availableInSpace(context) },
-      },
-      include: { server: true },
-    });
+    const usable = { enabled: true, ...availableInSpace(context) };
+    const assignment =
+      (await this.prisma.botMcpServer.findFirst({
+        where: {
+          botId: context.botId,
+          serverId: call.route.resourceId,
+          spaceId: context.spaceId,
+          userId: context.userId,
+          server: usable,
+        },
+        include: { server: true },
+      })) ??
+      (await this.prisma.mcpServer
+        .findFirst({ where: { ...usable, id: call.route.resourceId, allBots: true } })
+        .then((server) => (server ? sharedAssignment(server) : null)));
     if (assignment && call.route.toolName === UNAVAILABLE_TOOL) {
       const reason =
         this.unavailable.get(this.sessionKey(assignment.server, context)) ??
@@ -856,7 +886,7 @@ export class McpConnector implements ConnectorProvider {
       try {
         return await use(session);
       } catch (error) {
-        if (attempt !== 0 || !sessionGone(error)) throw error;
+        if (attempt !== 0 || !isMcpSessionGoneError(error)) throw error;
         // Stop reusing the expired session immediately, but let its other requests
         // receive their own responses before closing the shared SDK client.
         if (this.sessions.get(sessionKey)?.session === session) this.sessions.delete(sessionKey);
@@ -985,7 +1015,7 @@ export class McpConnector implements ConnectorProvider {
     credentialDir?: string;
     launchSecrets?: string[];
   }> {
-    const session = new McpSession({ name: `rakazo-${server.slug}` });
+    let session = new McpSession({ name: `rakazo-${server.slug}` });
     let credentialDir: string | undefined;
     const launchSecrets: string[] = [];
     // Hoisted so a throw after the secret is decoded can still hand the material out.
@@ -1022,7 +1052,8 @@ export class McpConnector implements ConnectorProvider {
       let digest = plaintext === undefined ? undefined : credentialDigest(plaintext);
       material = plaintext === undefined ? {} : (JSON.parse(plaintext) as OAuthMaterial);
       const loaded = { material, ...(secret ? { secretId: secret.id } : {}) };
-      const args = Array.isArray(server.args) ? server.args.map(String) : [];
+      // Rows saved before arguments moved into the secret still hold them in plaintext.
+      const args = material.args ?? (Array.isArray(server.args) ? server.args.map(String) : []);
       const env = { ...(material.env ?? {}) };
       const onPersisted = (record: { id: string; ref: string; material: OAuthMaterial }) => {
         ref = record.ref;
@@ -1038,6 +1069,8 @@ export class McpConnector implements ConnectorProvider {
         const refusal = mcpStdioRefusal(command, this.options);
         if (refusal) throw new McpConnectFailure(refusal, "reconnect");
         const npx = parseNpxLaunch(command, args);
+        if (!npx && isNpxCommand(command))
+          throw new McpConnectFailure("This npx command isn't supported here", "reconnect");
         let installedBin: InstalledMcpBin | undefined;
         if (npx) {
           // Install outside the startup timeout, once per package, into the shared volume.
@@ -1150,8 +1183,9 @@ export class McpConnector implements ConnectorProvider {
           timeoutMs: this.options.startupTimeoutMs ?? DEFAULT_MCP_STDIO_STARTUP_TIMEOUT_MS,
         });
       } else {
-        if (!server.endpoint) throw new Error("MCP endpoint is required");
-        const endpoint = new URL(server.endpoint);
+        const url = server.endpoint;
+        if (!url) throw new Error("MCP endpoint is required");
+        const endpoint = new URL(url);
         const localHttp =
           endpoint.protocol === "http:" && isLocalhostOrLoopbackIp(endpoint.hostname);
         const allowPrivateEndpoint = this.options.allowPrivateEndpoint === true;
@@ -1168,21 +1202,31 @@ export class McpConnector implements ConnectorProvider {
           ...(material.headers ?? {}),
           ...(staticToken ? { Authorization: staticToken } : {}),
         };
-        await session.connectRemote({
-          url: server.endpoint,
-          urlPolicy: {
-            allowHttpLocalhost: localHttp,
-            allowLocalHttpCredentials: localHttp,
-            allowPrivateEndpoint,
-          },
-          transport: server.transport === "sse" ? "sse" : "streamable-http",
-          allowLegacySse: server.transport === "sse",
-          headerPolicy: { headers },
-          fallbackToSse: false,
-          authProvider,
-          network: this.options.network,
-          signal: context.signal,
-        });
+        const connect = () =>
+          session.connectRemote({
+            url,
+            urlPolicy: {
+              allowHttpLocalhost: localHttp,
+              allowLocalHttpCredentials: localHttp,
+              allowPrivateEndpoint,
+            },
+            transport: server.transport === "sse" ? "sse" : "streamable-http",
+            allowLegacySse: server.transport === "sse",
+            headerPolicy: { headers },
+            fallbackToSse: false,
+            authProvider,
+            network: this.options.network,
+            signal: context.signal,
+          });
+        try {
+          await connect();
+        } catch (error) {
+          if (!authProvider || !isRejectedTokenError(error)) throw error;
+          await authProvider.replaceRejectedToken();
+          await session.close();
+          session = new McpSession({ name: `rakazo-${server.slug}` });
+          await connect();
+        }
       }
       return {
         session,
@@ -1204,7 +1248,7 @@ export class McpConnector implements ConnectorProvider {
       if (error instanceof McpReauthorizationRequiredError) throw error;
       throw new McpConnectFailure(
         sanitizeConnectorError(error, [...oauthMaterialSecrets(material), ...launchSecrets]),
-        expectedFailure(error),
+        isRejectedTokenError(error) ? "reconnect" : expectedFailure(error),
       );
     }
   }

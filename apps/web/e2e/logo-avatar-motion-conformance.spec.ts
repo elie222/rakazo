@@ -5,7 +5,8 @@ import { logoAvatarFrame } from "../../../packages/core/src/logo-avatar-motion";
 import { logoAvatarTraits } from "../../../packages/core/src/logo-avatar-traits";
 
 const identities = ["inbox-01", "scout-02", "studio-03", "atlas-04", "ledger-05", "muse-06"];
-const activities = ["idle", "reading", "writing", "thinking", "computer"] as const;
+// Web idle avatars hold still (SVG motion repaints on the main thread), so idle is not sampled.
+const activities = ["reading", "writing", "thinking", "computer"] as const;
 test.use({ viewport: { width: 1260, height: 1120 } });
 
 for (const activity of activities)

@@ -556,7 +556,7 @@ export function OnboardingPage() {
   if (step === "loading" || (step === "bot" && !error)) return <PageLoading />;
 
   return (
-    <div className="min-h-full bg-background px-6 py-12">
+    <div className="min-h-full bg-background px-6 py-12" data-rakazo-surface="onboarding">
       <div className="mx-auto w-full max-w-[560px]">
         {step === "survey" ? <SignupSurvey onDone={() => setSurveyDone(true)} /> : null}
         {step === "model" ? (

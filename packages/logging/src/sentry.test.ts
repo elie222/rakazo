@@ -276,4 +276,20 @@ describe("sentry sink", () => {
     expect(events.map((event) => event.exception)).toEqual([undefined, undefined]);
     expect(events[1]!.message).toBe("mail sync failed");
   });
+
+  it("titles a failed request report by its method, route and status", async () => {
+    const { events, transport } = recordingTransport();
+    const logger = createLogger({
+      service: "rakazo-api",
+      sinks: [createSentrySink("rakazo-api", { dsn: DSN }, transport)],
+    });
+    logger.error("http.request.completed", {
+      "http.method": "POST",
+      "http.route": "/api/voice/speak",
+      "http.status": 502,
+    });
+    await logger.flush();
+
+    expect(events[0]?.message).toBe("http.request.completed POST /api/voice/speak 502");
+  });
 });

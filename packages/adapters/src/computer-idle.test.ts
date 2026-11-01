@@ -311,7 +311,7 @@ describe("sandbox idle", () => {
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
 
     expect(harness.home.commit).toHaveBeenCalledOnce();
-    expect(harness.sandbox.execute).toHaveBeenCalledTimes(2);
+    expect(backgroundProbes(harness)).toHaveLength(2);
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
     expect(harness.sandbox.keepAlive).toHaveBeenCalledOnce();
     expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
@@ -323,7 +323,7 @@ describe("sandbox idle", () => {
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
 
     expect(harness.sandbox.inspectBackgroundWork).toHaveBeenCalledTimes(2);
-    expect(harness.sandbox.execute).not.toHaveBeenCalled();
+    expect(backgroundProbes(harness)).toHaveLength(0);
     expect(harness.sandbox.stop).toHaveBeenCalledOnce();
   });
 
@@ -357,6 +357,33 @@ describe("sandbox idle", () => {
     });
     expect(harness.events.append).toHaveBeenCalledWith(
       expect.objectContaining({ type: "computer.status", payload: { status: "suspended" } }),
+    );
+  });
+
+  it("clears a stranded legacy execution binding so an idle computer can suspend", async () => {
+    const harness = idleHarness();
+    harness.prisma.run.findFirst.mockResolvedValue(null);
+    // A pre-lease release left this binding; its run ended and nothing reclaims it.
+    harness.computer.executionRunId = "run-ended";
+    harness.prisma.run.findUnique.mockResolvedValue({ status: "cancelled" });
+    // Like the real database, the suspension claim refuses a computer still bound.
+    const claim = harness.prisma.computer.updateMany;
+    harness.prisma.computer.updateMany = vi.fn(async (args) => {
+      if (
+        args.where.executionRunId !== undefined &&
+        args.where.executionRunId !== harness.computer.executionRunId
+      ) {
+        return { count: 0 };
+      }
+      return claim(args);
+    });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.computer.executionRunId).toBeNull();
+    expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+    expect(harness.prisma.computer.updateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ state: "suspended" }) }),
     );
   });
 
@@ -521,9 +548,7 @@ describe("sandbox idle", () => {
       expect(harness.sandbox.stop).not.toHaveBeenCalled();
       expect(harness.home.commit).not.toHaveBeenCalled();
       expect(harness.computer.providerRef).toBe("computer");
-      expect(harness.prisma.computerRun.updateMany).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ endReason: "gone" }) }),
-      );
+      expect(goneRuns(harness)).toEqual([harness.computer.id]);
       expect(harness.events.append).toHaveBeenCalledWith(
         expect.objectContaining({ type: "computer.status", payload: { status: "suspended" } }),
       );
@@ -639,6 +664,31 @@ describe("sandbox idle", () => {
     );
   });
 
+  it("keeps a computer its provider is slow to stop running and checks again later", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const harness = idleHarness();
+    harness.sandbox.stop.mockRejectedValueOnce(
+      new SandboxUnresponsiveError("Boat sandbox did not reach archived"),
+    );
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
+
+    expect(harness.home.commit).toHaveBeenCalledOnce();
+    expect(harness.computer.homeRevision).toBe("rev-checkpoint");
+    expect(harness.computer.state).toBe("running");
+    expect(harness.computer.providerRef).not.toBeNull();
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        message: "computer.sleep_deferred",
+        reason: "unresponsive",
+      }),
+    );
+    expect(sink.events.some((event) => event.level === "error")).toBe(false);
+  });
+
   it("schedules the next idle check when stopping fails", async () => {
     const harness = idleHarness();
     harness.sandbox.stop.mockRejectedValueOnce(new Error("stop refused"));
@@ -744,14 +794,29 @@ describe("sandbox idle", () => {
     expect(harness.home.commit).not.toHaveBeenCalled();
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
     expect(harness.jobs.enqueue).not.toHaveBeenCalled();
+    expect(goneRuns(harness)).toEqual([harness.computer.id]);
+  });
+
+  it("notes when the provider last reported the computer running", async () => {
+    const runningSince = new Date(Date.now() - 30 * 60_000);
+    const harness = idleHarness({ runningAtProvider: true, runningSince });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
     expect(harness.prisma.computerRun.updateMany).toHaveBeenCalledWith({
-      where: {
-        computerId: harness.computer.id,
-        endedAt: null,
-        startedAt: { lte: expect.any(Date) },
-      },
-      data: { endedAt: expect.any(Date), endReason: "gone" },
+      where: { computerId: harness.computer.id, startedAt: runningSince, endedAt: null },
+      data: { lastSeenAt: expect.any(Date) },
     });
+  });
+
+  it("does not note a computer the provider no longer reports running", async () => {
+    const harness = idleHarness({ runningAtProvider: false, runningSince: new Date() });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.prisma.computerRun.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: { lastSeenAt: expect.any(Date) } }),
+    );
   });
 
   it("ends the computer's run when idle shutdown suspends it", async () => {
@@ -964,6 +1029,23 @@ describe("maximum active lifetime", () => {
     );
   });
 
+  it("keeps a billed computer past the limit while a coding agent works", async () => {
+    const harness = idleHarness({
+      billsWhileRunning: true,
+      runningSince: longAgo,
+      codingAgent: "codex",
+    });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.sandbox.keepAlive).toHaveBeenCalledOnce();
+    expect(backgroundProbes(harness)).toHaveLength(0);
+    expect(harness.jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ availableAt: new Date(now + DEFAULT_SANDBOX_IDLE_MS) }),
+    );
+  });
+
   it("keeps a viewed computer alive within the limit", async () => {
     const harness = idleHarness({ billsWhileRunning: true, runningSince: recently });
 
@@ -1170,6 +1252,122 @@ describe("maximum active lifetime", () => {
   });
 });
 
+describe("monthly computer allowance", () => {
+  const now = new Date("2026-01-20T12:00:00.000Z").getTime();
+
+  beforeEach(() => {
+    vi.stubEnv("SANDBOX_IDLE_MS", undefined);
+    vi.stubEnv("COMPUTER_MAX_ACTIVE_MS", undefined);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(now);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it("saves and stops a computer once the month's allowance is spent, and says so once", async () => {
+    // $5 at the default $0.20 an hour.
+    const harness = idleHarness({
+      billsWhileRunning: true,
+      runningSince: new Date(now - 60_000),
+      backgroundWorkProbeCode: 0,
+      computerHours: 25,
+    });
+    harness.prisma.run.findFirst.mockResolvedValue({ id: "executing" });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.prisma.$queryRaw).toHaveBeenCalled();
+    expect(harness.home.commit).toHaveBeenCalledOnce();
+    expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+    expect(harness.computer.state).toBe("suspended");
+    expect(harness.prisma.computerRun.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ endReason: "allowance" }) }),
+    );
+    expect(harness.prisma.message.create).toHaveBeenCalledOnce();
+    expect(harness.prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          role: "system",
+          blocks: [
+            {
+              kind: "meta",
+              text: "This month's computer allowance is used up. The computer was saved and stopped.",
+            },
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("keeps a busy computer running while allowance is left", async () => {
+    const harness = idleHarness({
+      billsWhileRunning: true,
+      runningSince: new Date(now - 60_000),
+      backgroundWorkProbeCode: 0,
+      computerHours: 24,
+    });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.computer.state).toBe("running");
+  });
+
+  it("leaves a computer whose allowance is spent to a user in control until the lease ends", async () => {
+    const harness = idleHarness({
+      billsWhileRunning: true,
+      runningSince: new Date(now - 60_000),
+      computerHours: 25,
+    });
+    Object.assign(harness.computer, {
+      controlHolder: "user",
+      controlLeaseId: "lease",
+      controlLeaseExpiresAt: new Date(now + 60_000),
+    });
+    harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
+      where.status.in.includes("waiting_takeover") ? { id: "waiting-for-user" } : null,
+    );
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.computer.state).toBe("running");
+  });
+
+  it("stops a computer whose allowance is spent even while a coding agent works", async () => {
+    const harness = idleHarness({
+      billsWhileRunning: true,
+      runningSince: new Date(now - 60_000),
+      codingAgent: "codex",
+      computerHours: 25,
+    });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+    expect(harness.computer.state).toBe("suspended");
+  });
+
+  it("never limits a computer that does not bill while running", async () => {
+    const harness = idleHarness({
+      billsWhileRunning: false,
+      runningSince: new Date(now - 60_000),
+      backgroundWorkProbeCode: 0,
+      computerHours: 500,
+    });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+  });
+});
+
 describe("background work launch and probe", () => {
   const children: ReturnType<typeof spawn>[] = [];
   const markers = new Set<string>();
@@ -1225,6 +1423,43 @@ describe("background work launch and probe", () => {
       await expect.poll(() => probeBackgroundWork(databaseId)).toBe(0);
       // ComputerRef.id is providerRef today; probing that path must not see the DB-id marker.
       expect(await probeBackgroundWork(providerRef)).toBe(1);
+    },
+  );
+
+  it.skipIf(process.platform === "win32").each([true, false])(
+    "sweeps every stale marker with held background work: %s",
+    async (held) => {
+      const markerId = `computer-sweep-${randomUUID()}`;
+      const activeMarker = `/tmp/rakazo-background-${markerId}-run-1-a-held`;
+      const staleMarkers = [
+        `/tmp/rakazo-background-${markerId}-run-1-b-stale`,
+        `/tmp/rakazo-background-${markerId}-run-2-c-stale`,
+      ];
+      for (const marker of [activeMarker, ...staleMarkers]) markers.add(marker);
+
+      if (held) {
+        const active = spawn(
+          "bash",
+          [
+            "-c",
+            BACKGROUND_WORK_LAUNCH,
+            "rakazo-background-launch",
+            markerId,
+            "run-1",
+            "a-held",
+            "exec sleep 30",
+          ],
+          { stdio: "ignore", detached: true },
+        );
+        children.push(active);
+        await expect.poll(() => existsSync(activeMarker)).toBe(true);
+      }
+      for (const marker of staleMarkers) writeFileSync(marker, "");
+
+      expect(await probeBackgroundWork(markerId)).toBe(held ? 0 : 1);
+      for (const marker of staleMarkers) expect(existsSync(marker)).toBe(false);
+      expect(existsSync(activeMarker)).toBe(held);
+      expect(await probeBackgroundWork(markerId)).toBe(held ? 0 : 1);
     },
   );
 
@@ -1509,6 +1744,7 @@ function idleHarness(
     backgroundWorkProbeCode?: number;
     backgroundWorkProbeCodes?: number[];
     backgroundWorkProbeFailed?: boolean;
+    codingAgent?: string;
     exportError?: Error;
     probeError?: Error;
     providerBackgroundWorkStatus?: "active" | "idle" | "unknown";
@@ -1519,6 +1755,9 @@ function idleHarness(
     homeRevisionAt?: Date | null;
     runSinceSave?: boolean;
     takeoverSinceSave?: boolean;
+    runningAtProvider?: boolean;
+    /** Hours an own-key organization's computers ran this month; unset leaves billing off. */
+    computerHours?: number;
   } = {},
 ) {
   const backgroundWorkProbeCodes = [...(options.backgroundWorkProbeCodes ?? [])];
@@ -1535,6 +1774,7 @@ function idleHarness(
     controlLeaseId: null,
     controlLeaseExpiresAt: null,
     controlBotId: null,
+    executionRunId: null as string | null,
     executionBotId: null,
     runningSince: options.runningSince ?? null,
     homeRevisionAt: options.homeRevisionAt ?? null,
@@ -1543,6 +1783,14 @@ function idleHarness(
   const notices = new Map<string, { id: string }>();
   const prisma = {
     $transaction: async <T>(work: (tx: unknown) => Promise<T>): Promise<T> => work(prisma),
+    $queryRaw: vi.fn(async () => [{ kind: "e2b", hours: options.computerHours ?? 0 }]),
+    deploymentSettings: {
+      findUnique: vi.fn(async () => ({ modelCreditsEnabled: options.computerHours !== undefined })),
+    },
+    organization: {
+      findUnique: vi.fn(async () => ({ modelCredits: { mode: "byok" }, billing: null })),
+    },
+    space: { findUnique: vi.fn(async () => ({ organizationId: "organization" })) },
     thread: { update: vi.fn().mockResolvedValue({ nextMessageSeq: 1, nextEventSeq: 1 }) },
     message: {
       findUnique: vi.fn(
@@ -1573,6 +1821,7 @@ function idleHarness(
       findFirst: vi.fn(async ({ where }) =>
         options.runSinceSave && where.updatedAt ? { id: "later-run" } : null,
       ),
+      findUnique: vi.fn(async () => null as { status: string } | null),
       findMany: vi
         .fn()
         .mockResolvedValue(options.takeoverRequestedAt ? [{ id: "waiting-for-user" }] : []),
@@ -1591,6 +1840,7 @@ function idleHarness(
     computerExecutionLease: { findMany: vi.fn().mockResolvedValue([]) },
     agentHome: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     computerRun: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    $executeRaw: vi.fn().mockResolvedValue(1),
     bot: {
       findMany: vi.fn().mockResolvedValue([{ id: "bot", thread: { id: "thread" } }]),
     },
@@ -1598,8 +1848,14 @@ function idleHarness(
   const sandbox = {
     billsWhileRunning:
       options.billsWhileRunning === undefined ? undefined : vi.fn(() => options.billsWhileRunning),
-    execute: vi.fn(async function* () {
+    execute: vi.fn(async function* (_computer: unknown, request: { argv: string[] }) {
       if (options.probeError) throw options.probeError;
+      if (request.argv[3] === "rakazo-coding-agent-probe") {
+        if (options.codingAgent)
+          yield { type: "stdout", data: `${options.codingAgent}\n` } as const;
+        yield { type: "exit", code: options.codingAgent ? 0 : 1 } as const;
+        return;
+      }
       const code = backgroundWorkProbeCodes.shift() ?? options.backgroundWorkProbeCode ?? 1;
       if (code === 1 && !options.backgroundWorkProbeFailed) {
         yield { type: "stdout", data: "rakazo-background-idle\n" } as const;
@@ -1613,6 +1869,9 @@ function idleHarness(
     }),
     stop: vi.fn().mockResolvedValue(undefined),
     ...(options.stoppedAtProvider ? { isStopped: vi.fn().mockResolvedValue(true) } : {}),
+    ...(options.runningAtProvider === undefined
+      ? {}
+      : { isRunning: vi.fn().mockResolvedValue(options.runningAtProvider) }),
     ...(options.providerBackgroundWorkStatus
       ? {
           inspectBackgroundWork: vi.fn().mockResolvedValue(options.providerBackgroundWorkStatus),
@@ -1648,9 +1907,22 @@ function idleHarness(
   };
 }
 
+function backgroundProbes(harness: ReturnType<typeof idleHarness>) {
+  return harness.sandbox.execute.mock.calls.filter(
+    ([, request]) => request.argv[3] === "rakazo-background-probe",
+  );
+}
+
 function processExit(child: ReturnType<typeof spawn>): Promise<number> {
   return new Promise((resolve, reject) => {
     child.on("error", reject);
     child.on("close", (code) => resolve(code ?? 1));
   });
+}
+
+/** The computers whose open run each raw `gone` end closed, in order. */
+function goneRuns(harness: { prisma: { $executeRaw: ReturnType<typeof vi.fn> } }) {
+  return harness.prisma.$executeRaw.mock.calls
+    .filter(([, , reason]) => reason === "gone")
+    .map(([, , , computerId]) => computerId);
 }

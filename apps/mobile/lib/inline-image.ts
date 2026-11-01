@@ -1,3 +1,5 @@
+import type { MessageBlock } from "@rakazo/contracts";
+
 export type ImageSize = { width: number; height: number };
 
 /** Fit an image inside a box, keeping its aspect ratio and never scaling it up. */
@@ -16,6 +18,10 @@ export function isInlineImageMimeType(mimeType: string | undefined): boolean {
   if (!mimeType) return false;
   const type = mimeType.toLowerCase().split(";")[0]?.trim() ?? "";
   return type.startsWith("image/") && type !== "image/svg+xml";
+}
+
+export function isInlineImageBlock(block: MessageBlock): boolean {
+  return block.kind === "image" && !!block.artifactId && isInlineImageMimeType(block.mimeType);
 }
 
 /**

@@ -251,7 +251,7 @@ postgres_state="$(compose "${UP_TIMEOUT}" run --rm --no-deps -T --entrypoint sh 
 if [[ "${postgres_state}" == upgrade ]]; then
   trap - ERR
   git reset --hard "${previous_revision}"
-  echo "Postgres needs its one-time upgrade to 18 before this release deploys; see docs/self-host.md#upgrading-to-postgres-18." >&2
+  echo "Postgres needs its one-time upgrade to 18 before this release deploys; see docs/self-host-upgrading.md#upgrading-to-postgres-18." >&2
   exit 1
 fi
 app_image="$(compose_app_image)"

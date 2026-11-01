@@ -1,7 +1,10 @@
 import type { Socket } from "node:net";
+import { unwrapEnvFromKeyManager } from "@rakazo/adapters";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
+import { stopOnShutdownSignals } from "@rakazo/core/node/shutdown-signals";
 
 loadRootEnv();
+await unwrapEnvFromKeyManager();
 
 import { serve } from "@hono/node-server";
 import { SERVICE_NAMES } from "@rakazo/logging";
@@ -41,8 +44,7 @@ try {
     await stop();
     await logger.flush({ timeoutMs: 2_000 });
   };
-  process.once("SIGTERM", () => void shutdown());
-  process.once("SIGINT", () => void shutdown());
+  stopOnShutdownSignals(shutdown);
 } catch (error) {
   logger.error("api startup failed", error);
   await logger.flush({ timeoutMs: 2_000 });

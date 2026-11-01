@@ -40,6 +40,7 @@ import {
   voicePreferenceTarget,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { markExpectedFailure } from "@rakazo/logging/hono";
 import type { Context, Hono } from "hono";
 import { readBoundedBody } from "./http-body.js";
 import { withSerializableRetry } from "./serializable-retry.js";
@@ -682,5 +683,16 @@ function voiceHttpError(c: Context, error: unknown) {
   const message = error instanceof Error ? error.message : "Voice request failed.";
   // Message only: request bodies, keys and audio never reach the log.
   getLogger().warn("voice request failed", { route: c.req.path, reason: message });
+  if (isVoiceProviderFailure(error)) markExpectedFailure();
   return c.json({ error: message }, 502);
+}
+
+/** Voice adapters raise plain errors for provider refusals and setup problems; anything else is a bug. */
+export function isVoiceProviderFailure(error: unknown) {
+  return (
+    error instanceof Error &&
+    (Object.getPrototypeOf(error) === Error.prototype ||
+      error.name === "AbortError" ||
+      error.name === "TimeoutError")
+  );
 }

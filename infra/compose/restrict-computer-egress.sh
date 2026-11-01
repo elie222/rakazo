@@ -5,7 +5,7 @@
 # but can no longer reach the destinations below. Docker before 28, and DNS
 # servers set for computers or the daemon, forward lookups from the computers'
 # own network, so a private resolver there (a VPC or LAN resolver) needs
-# SANDBOX_COMPUTER_DNS set to public resolvers (docs/self-host.md).
+# SANDBOX_COMPUTER_DNS set to public resolvers (docs/self-host-docker-computers.md).
 # Blocked:
 #   - the Docker host itself (INPUT drop; replies to host-initiated connections
 #     stay open so supervisor control and published screen ports keep working),

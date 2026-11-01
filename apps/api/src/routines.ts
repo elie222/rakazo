@@ -1,6 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import { routineWakeupJob } from "@rakazo/adapter-kit";
-import { parseRoutineWatch, parseRoutineWatchState } from "@rakazo/adapters";
+import { parseRoutineWatch, parseRoutineWatchState, routineRunModelPin } from "@rakazo/adapters";
 import type { Actor, CreateRoutineInput, Routine } from "@rakazo/contracts";
 import { canonicalPiProviderId } from "@rakazo/contracts";
 import {
@@ -8,8 +8,10 @@ import {
   isOneShotRoutineCrons,
   nextCronDateAcrossStrict,
 } from "@rakazo/core";
-import type { Prisma } from "@rakazo/db";
+import type { Prisma, PrismaClient } from "@rakazo/db";
+import { IsolationError } from "@rakazo/db";
 import type { RouterDeps } from "./router.js";
+import type { RouterContext } from "./routes/context.js";
 
 export function assertRoutineSchedule(input: CreateRoutineInput): void {
   if (hasMixedOneShotSchedule(input.crons)) {
@@ -152,4 +154,69 @@ export function createRoutineAnnouncer(deps: RouterDeps) {
     }
   };
   return announceRoutine;
+}
+
+/** The caller's own routine on a bot they may use, the check behind every routine test run. */
+export async function routineTestTarget(
+  prisma: PrismaClient,
+  repos: RouterContext["repos"],
+  actor: Actor,
+  routineId: string,
+) {
+  const routine = await prisma.routine.findFirst({
+    where: { id: routineId, spaceId: actor.spaceId, userId: actor.userId },
+  });
+  if (!routine) throw new IsolationError();
+  const bot = await repos.getBot(actor, routine.botId);
+  if (!bot.thread) throw new IsolationError();
+  return { routine, botId: bot.id, threadId: bot.thread.id };
+}
+
+/**
+ * The run key of a test run. The caller's id keeps another member from ever taking it, and the
+ * previous release wrote `routine-test:<client nonce>` as given, so it can never write this prefix.
+ */
+export function routineTestRunNonce(actor: Actor, clientNonce: string): string {
+  return `routine-run:${actor.userId}:${clientNonce}`;
+}
+
+/** Task + run commit together; a run already saved under the nonce fails the insert. */
+export async function createRoutineTestRun(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  target: Awaited<ReturnType<typeof routineTestTarget>>,
+  prompt: string,
+  nonce: string | undefined,
+) {
+  const { routine, botId, threadId } = target;
+  const task = await tx.task.create({
+    data: {
+      spaceId: actor.spaceId,
+      botId,
+      threadId,
+      userId: actor.userId,
+      prompt,
+      status: "queued",
+    },
+  });
+  const currentModel = await tx.routine.findUnique({
+    where: { id: routine.id },
+    select: { modelProvider: true, modelId: true, thinkingLevel: true },
+  });
+  if (!currentModel) throw new IsolationError();
+  return tx.run.create({
+    data: {
+      spaceId: actor.spaceId,
+      botId,
+      threadId,
+      taskId: task.id,
+      userId: actor.userId,
+      status: "queued",
+      trigger: "routine",
+      routineId: routine.id,
+      ...routineRunModelPin(currentModel),
+      clientNonce: nonce,
+    },
+    select: { id: true, status: true },
+  });
 }

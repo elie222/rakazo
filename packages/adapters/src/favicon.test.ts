@@ -25,6 +25,11 @@ let port = 0;
 
 beforeAll(async () => {
   server = createServer(async (request: IncomingMessage, response: ServerResponse) => {
+    // Local tools can probe any listening loopback port; only testFetch requests count.
+    if (!request.headers["x-test-host"]) {
+      response.writeHead(404).end();
+      return;
+    }
     const key = `${request.headers["x-test-host"]}${request.url}`;
     hits.push(key);
     const route = routes.get(key);
@@ -469,7 +474,7 @@ describe("favicon resolver", () => {
   });
 
   it("reads icons from the first 256 KB of a longer page", async () => {
-    routes.set("long.test/", html(`<link rel="icon" href="/i.png">${"<meta>".repeat(100_000)}`));
+    routes.set("long.test/", html(`<link rel="icon" href="/i.png"><p>${"x".repeat(300_000)}</p>`));
     routes.set("long.test/i.png", image(await png(32, 32)));
     const resolver = createFaviconResolver({ fetch: testFetch, resolveHostname: publicResolver });
 

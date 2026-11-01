@@ -96,6 +96,15 @@ test(
   },
 );
 
+test("an unknown page offers a way home", async ({ page }, testInfo) => {
+  await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
+  await page.goto("/no-such-page");
+  await expect(page.getByRole("heading", { name: "Page not found" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "not-found");
+  await page.getByRole("link", { name: "Go home" }).click();
+  await expect(page.locator('[data-rakazo-surface="welcome"]')).toBeVisible();
+});
+
 test("logout protects bot deep links and sign-in restores the session", async ({
   page,
 }, testInfo) => {

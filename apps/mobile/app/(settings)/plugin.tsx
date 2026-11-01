@@ -258,8 +258,16 @@ export default function PluginScreen() {
   const busy = Boolean(pending);
   const parsed = install ? PluginPreviewSchema.safeParse(install.config) : null;
   const detail = parsed?.success ? parsed.data : preview;
-  // An ignored manifest field loses nothing, so it isn't reported.
-  const notAdded = (detail?.skipped ?? []).filter((entry) => entry.kind !== "unsupported_field");
+  // An ignored manifest field loses nothing, so it isn't reported. A skill left out for repeating
+  // a built-in one says why, since the user still has that skill.
+  const notAdded = [
+    ...(detail?.skipped ?? [])
+      .filter((entry) => entry.kind !== "unsupported_field")
+      .map((entry) => entry.name),
+    ...(detail?.builtinNames ?? []).map((name) =>
+      t("{name} (same name as a built-in skill)", { name }),
+    ),
+  ];
   const connectorCount = detail?.mcpServers.length ?? 0;
   // Without a connector there is nothing to connect, so the page adds the skills instead.
   const skillsOnly = params.skillsOnly === "1";
@@ -565,7 +573,7 @@ export default function PluginScreen() {
 
         {notAdded.length ? (
           <Text style={styles.secondary}>
-            {t("Not added: {list}", { list: notAdded.map((entry) => entry.name).join(", ") })}
+            {t("Not added: {list}", { list: notAdded.join(", ") })}
           </Text>
         ) : null}
       </ScrollView>

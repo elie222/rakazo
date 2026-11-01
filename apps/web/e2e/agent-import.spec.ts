@@ -92,7 +92,7 @@ const document = [
 
 async function openImport(page: Page) {
   await page.goto("/app?settings=general");
-  await page.getByRole("button", { name: "Import an agent", exact: true }).click();
+  await page.getByTestId("agent-import-open").click();
   const panel = page.getByTestId("agent-import");
   await expect(panel.getByTestId("agent-import-choose")).toBeVisible();
   return panel;

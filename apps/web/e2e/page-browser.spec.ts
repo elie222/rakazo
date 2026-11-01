@@ -12,6 +12,12 @@ const helper = path.resolve(
   "../../../infra/sandboxes/computer/rakazo-page-browser",
 );
 
+// The helper drives Chromium through agent-browser; CI installs the pinned binary and sets this.
+test.skip(
+  !process.env.CI && !process.env.RAKAZO_AGENT_BROWSER,
+  "set RAKAZO_AGENT_BROWSER (infra/sandboxes/computer/install-agent-browser.sh)",
+);
+
 test("live page helper preserves identity, masks passwords, and reports partial actions", async () => {
   const profile = await mkdtemp(path.join(os.tmpdir(), "page-browser-test-"));
   const server = http.createServer((_req, res) => {
@@ -56,7 +62,7 @@ test("live page helper preserves identity, masks passwords, and reports partial 
       actions: [
         { kind: "fill", ref: ref(snapshot, "Name"), text: "Example" },
         { kind: "click", ref: ref(snapshot, "Save") },
-        { kind: "click", ref: "missing-ref" },
+        { kind: "click", ref: "e999999999" },
       ],
     });
     expect(result).toMatchObject({ ok: false, completed: 2, uncertain: false });
@@ -154,12 +160,8 @@ test("live page helper preserves identity, masks passwords, and reports partial 
     const other = await context.newPage();
     await other.setContent("<title>Other tab</title><button>Other action</button>");
     await page.bringToFront();
-    // Headless Chromium marks both pages visible/focused. Ambiguity must fail safely.
-    expect(await command("snapshot")).toMatchObject({
-      ok: false,
-      fallback: "computer_act",
-      error: expect.stringContaining("unambiguous"),
-    });
+    // The page tools read the tab last brought to the front, which is the one on screen.
+    expect(await command("snapshot")).toMatchObject({ ok: true, title: "Fixture" });
     await expect(page).toHaveTitle("Fixture");
     await expect(other).toHaveTitle("Other tab");
     // Reading an existing page neither creates nor switches tabs.
@@ -732,7 +734,10 @@ test("live page helper types a purchase's card into a payment provider's frame o
     await expect(card.locator("#number")).toHaveValue("");
     await page.goto(`${merchant}/ads`);
     await expect(card.locator("#number")).toBeVisible();
-    expect((await command("snapshot")).tree).toContain("Embedded frames require desktop tools.");
+    // A frame from another site is read like any other, but never takes the card.
+    const ads = (await command("snapshot")).tree;
+    expect(ads).toContain("https://ads.example.test");
+    expect(ads).not.toContain("Embedded frames require desktop tools.");
     expect(await fill("number", number)).toMatchObject({
       ok: false,
       completed: 0,

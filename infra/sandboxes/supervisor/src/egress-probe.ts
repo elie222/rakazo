@@ -33,7 +33,7 @@ const DNS_UNREACHABLE = 5;
 const DNS_SECONDS = 3;
 
 export const EGRESS_NOT_ENFORCED =
-  "SANDBOX_COMPUTER_EGRESS=restricted is not enforced on this Docker host: run infra/compose/restrict-computer-egress.sh on the host, or set SANDBOX_COMPUTER_EGRESS=open (see docs/self-host.md)";
+  "SANDBOX_COMPUTER_EGRESS=restricted is not enforced on this Docker host: run infra/compose/restrict-computer-egress.sh on the host, or set SANDBOX_COMPUTER_EGRESS=open (see docs/self-host-docker-computers.md)";
 
 /**
  * A completed probe that shows the rules are missing, as opposed to a probe that could not finish
@@ -139,7 +139,7 @@ export async function verifyRestrictedEgress(docker: Docker, image: string, dns?
     }
     if (verdict === "dns-unreachable") {
       throw new Error(
-        "No SANDBOX_COMPUTER_DNS server answered from a restricted computer network; set servers reachable from there, such as public resolvers (see docs/self-host.md)",
+        "No SANDBOX_COMPUTER_DNS server answered from a restricted computer network; set servers reachable from there, such as public resolvers (see docs/self-host-docker-computers.md)",
       );
     }
     if (verdict === "inconclusive") {

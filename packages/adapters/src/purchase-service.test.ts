@@ -206,7 +206,7 @@ describe("resolvePurchaseCardFill", () => {
     expect(number).toEqual({
       text: "4242424242424242",
       origin: "https://shop.example.test",
-      redactions: ["4242424242424242", "4242 4242 4242 4242"],
+      redactions: ["4242424242424242", "4242 4242 4242 4242", "4242-4242-4242-4242"],
     });
     expect(await resolvePurchaseCardFill(env.deps, scope, "purchase-1", "cvc")).toMatchObject({
       text: "123",
@@ -281,6 +281,7 @@ describe("resolvePurchaseCardFill", () => {
     expect(await loadPurchaseRedactions(env.deps, run)).toEqual([
       "4242424242424242",
       "4242 4242 4242 4242",
+      "4242-4242-4242-4242",
     ]);
     expect(await loadPurchaseRedactions(env.deps, { ...run, botId: "bot-2" })).toEqual([]);
   });

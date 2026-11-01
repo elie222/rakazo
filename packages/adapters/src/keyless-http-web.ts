@@ -112,8 +112,9 @@ export class KeylessHttpWebProvider implements WebProvider {
       signal: request.signal ?? context.signal,
     });
     if (!body.trim()) throw new Error(`Failed to fetch content from ${url}`);
+    const mediaType = contentType?.split(";", 1)[0]?.trim().toLowerCase();
     const extracted =
-      contentType?.split(";", 1)[0]?.trim().toLowerCase() === "text/plain"
+      mediaType === "text/plain" || mediaType === "text/markdown"
         ? { title: "Untitled", text: body }
         : extractReadableText(body, url);
     return {

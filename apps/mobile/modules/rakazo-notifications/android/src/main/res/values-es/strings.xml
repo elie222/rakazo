@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_channel_live">Estado de los agentes en vivo</string>
+  <string name="rakazo_channel_messages">Mensajes de agentes</string>
+  <string name="rakazo_channel_scheduled">Tareas programadas</string>
+  <string name="rakazo_channel_attention">Requiere atención</string>
+
+  <string name="rakazo_live_one">%1$s está trabajando</string>
+  <string name="rakazo_live_many">%1$s y %2$d más están trabajando</string>
+  <string name="rakazo_live_working">Trabajando</string>
+
+  <string name="rakazo_scheduled_title">%1$s · Tarea programada</string>
+  <string name="rakazo_replied_group">%1$s respondió en %2$s</string>
+  <string name="rakazo_replied">%1$s respondió</string>
+
+  <string name="rakazo_attention_failed">%1$s tuvo un problema</string>
+  <string name="rakazo_attention_takeover">%1$s te necesita en la pantalla</string>
+  <string name="rakazo_attention_input">%1$s necesita tu respuesta</string>
+</resources>

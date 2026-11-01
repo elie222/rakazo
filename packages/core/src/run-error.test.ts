@@ -16,6 +16,7 @@ import {
   modelFallbackFailure,
   normalizeRunError,
   userRunError,
+  VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR,
 } from "./run-error.js";
 
 describe("normalizeRunError", () => {
@@ -187,6 +188,10 @@ describe("normalizeRunError", () => {
       ],
       ['413: {"message":"Request entity too large"}', tooLong],
       ["Required context exceeds the model context budget", tooLong],
+      [
+        '400: {"message":"Too many images provided.  This model supports up to 3 images","type":"invalid_request_error"}',
+        tooLong,
+      ],
       ["terminated", tookTooLong],
       ["read ECONNRESET", tookTooLong],
       ["socket hang up", tookTooLong],
@@ -302,6 +307,7 @@ describe("normalizeRunError", () => {
           { "@type": "type.googleapis.com/google.rpc.ErrorInfo", reason: "API_KEY_INVALID" },
         ],
       }),
+      '400 {"type":"error","error":{"type":"invalid_request_error","message":"This API key is not scoped to a workspace."}}',
     ])("sends a rejected key to the connection: %s", (details) => {
       expect(normalizeRunError(details)).toMatchObject({
         summary: "Your model provider rejected the API key. Check your connection settings.",
@@ -345,17 +351,18 @@ describe("normalizeRunError", () => {
       expect(normalizeRunError(details)).toMatchObject({ kind: "model", recovery: "model" });
     });
 
-    it.each([MODEL_CONTEXT_TOO_SMALL_ERROR, MODEL_REQUEST_LIMIT_ERROR])(
-      "offers another model for an unusable request budget: %s",
-      (details) => {
-        expect(normalizeRunError(details)).toEqual({
-          summary: details,
-          details,
-          kind: "context",
-          recovery: "model",
-        });
-      },
-    );
+    it.each([
+      MODEL_CONTEXT_TOO_SMALL_ERROR,
+      MODEL_REQUEST_LIMIT_ERROR,
+      VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR,
+    ])("offers another model for an unusable request budget: %s", (details) => {
+      expect(normalizeRunError(details)).toEqual({
+        summary: details,
+        details,
+        kind: "context",
+        recovery: "model",
+      });
+    });
 
     it("says a reply was cut off at the output limit, with the model's fix", () => {
       expect(normalizeRunError(MODEL_OUTPUT_CUT_ERROR)).toEqual({
@@ -385,7 +392,12 @@ describe("normalizeRunError", () => {
       "Failed to parse tool call arguments as JSON",
       '400: {"message":"Failed to parse tool call arguments as JSON","code":"tool_use_failed"}',
       "Tool call validation failed: attempted to call tool 'commentary' which was not in request.tools",
+      "tool call validation failed: attempted to call tool 'commentary' which was not in request.tools",
+      "Parsing failed. The model generated output that could not be parsed. Please adjust your prompt. See 'failed_generation' for more details.",
+      '400 {"type":"error","error":{"type":"api_error","message":"Upstream request failed: [api_error] Upstream response was not valid JSON"}}',
+      "Codex error: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request.",
       MODEL_OUTPUT_LIMIT_ERROR,
+      "Upstream error from Example: HttpError: HTTP 400: Tool calls cutoff by max_tokens.",
     ])("calls unusable model output what it is: %s", (details) => {
       expect(normalizeRunError(details)).toEqual({
         summary: "The model returned an unusable response. Try again.",
@@ -411,7 +423,6 @@ describe("normalizeRunError", () => {
       '400: {"message":"failed to template request: Unexpected message role.","type":"invalid_request_error"}',
       '400: {"message":"Provider returned error","code":400,"metadata":{"raw":"The `uniqueItems` JSON Schema keyword is not supported."}}',
       "Approved tool requests were not fully replayed",
-      "Upstream error from Example: HttpError: HTTP 400: Tool calls cutoff by max_tokens.",
       '500: {"message":"Internal error"}',
       '503: {"message":"The model is unavailable right now."}',
       '503: {"message":"Unsupported model fixture-model"}',
@@ -735,6 +746,29 @@ describe("the one action that fixes a failed run", () => {
     });
   });
 
+  it("waits out a 429 that resets hours from now instead of calling it a rate limit", () => {
+    const daily = (reset: number) =>
+      `429 ${JSON.stringify({
+        error: {
+          message: "Rate limit exceeded: free-models-per-day",
+          code: 429,
+          metadata: {
+            headers: { "X-RateLimit-Remaining": "0", "X-RateLimit-Reset": String(reset) },
+            limit_source: "openrouter_free_tier_daily",
+          },
+        },
+      })}`;
+    const tomorrow = Date.parse("2026-10-02T00:00:00Z");
+    expect(normalizeRunError(daily(tomorrow), undefined, "en", now)).toMatchObject({
+      summary: "Your OpenRouter reached its daily credit limit. Resets Oct 2.",
+      kind: "credit",
+      period: "daily",
+      recovery: "model",
+      resetAt: tomorrow,
+    });
+    expect(action(daily(now + 30_000))).toMatchObject({ kind: "rate" });
+  });
+
   it.each([
     '401: {"message":"Missing Authentication header","code":401}',
     '401: {"message":"User not found.","code":401}',
@@ -777,6 +811,12 @@ describe("the one action that fixes a failed run", () => {
     '400: {"code":"400","message":"Unsupported model fixture-model"}',
     '400: {"error":{"message":"Unknown model: fixture-model"}}',
     '400: {"message":"Unrecognized model fixture-model"}',
+    google({
+      code: 400,
+      message: "This model requires the use of the Computer Use tool.",
+      status: "INVALID_ARGUMENT",
+    }),
+    "Invalid inference request. Check the model's supported parameters and input limits.",
   ])("offers another model when the provider cannot run it: %s", (details) => {
     expect(action(details)).toMatchObject({
       summary: "Your model provider can't run this model.",

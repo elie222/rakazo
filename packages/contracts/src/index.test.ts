@@ -51,6 +51,22 @@ describe("contracts", () => {
     ).toBe(false);
   });
 
+  it("round-trips every wire protocol a compatible connection may select", () => {
+    const input = {
+      provider: "openai-compatible",
+      baseUrl: "http://localhost:8000/v1",
+      modelId: "default",
+    };
+    for (const apiProtocol of ["chat-completions", "responses", "anthropic-messages"] as const) {
+      expect(ModelConnectInputSchema.parse({ ...input, apiProtocol })).toMatchObject({
+        apiProtocol,
+      });
+    }
+    expect(ModelConnectInputSchema.safeParse({ ...input, apiProtocol: "grpc" }).success).toBe(
+      false,
+    );
+  });
+
   it("accepts structured live activity progress", () => {
     expect(MessageBlock.parse({ kind: "progress", text: "Using browser", activity: true })).toEqual(
       { kind: "progress", text: "Using browser", activity: true },
@@ -69,8 +85,11 @@ describe("contracts", () => {
   it("parses bounded model output-token limits", () => {
     expect(parseModelMaxTokens("1")).toBe(1);
     expect(parseModelMaxTokens("131072")).toBe(131072);
+    // Current models emit far more than 128K tokens in one reply (384K and up).
+    expect(parseModelMaxTokens("393216")).toBe(393216);
+    expect(parseModelMaxTokens("2147483647")).toBe(2147483647);
     expect(parseModelMaxTokens("0")).toBeUndefined();
-    expect(parseModelMaxTokens("131073")).toBeUndefined();
+    expect(parseModelMaxTokens("2147483648")).toBeUndefined();
     expect(parseModelMaxTokens("1.5")).toBeUndefined();
   });
 

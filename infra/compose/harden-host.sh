@@ -28,6 +28,7 @@ apt-get install -y --no-install-recommends \
   audispd-plugins \
   fail2ban \
   needrestart \
+  nftables \
   ufw \
   unattended-upgrades
 
@@ -117,7 +118,16 @@ net.ipv6.conf.all.accept_source_route = 0
 net.ipv6.conf.default.accept_redirects = 0
 net.ipv6.conf.default.accept_source_route = 0
 EOF
+if [[ -e /proc/sys/net/mptcp/enabled ]]; then
+  echo 'net.mptcp.enabled = 0' >>/etc/sysctl.d/99-rakazo-hardening.conf
+fi
 sysctl --system >/dev/null
+
+# Internet TCP never needs IPv4 options, and the kernel's handling of them is a recurring source of remote bugs.
+install -m 0644 "$(dirname "$0")/../systemd/rakazo-drop-ip-options.service" /etc/systemd/system/rakazo-drop-ip-options.service
+systemctl daemon-reload
+systemctl enable rakazo-drop-ip-options.service
+systemctl restart rakazo-drop-ip-options.service
 
 if [[ -z "${RAKAZO_DEPLOY_DIR:-}" && -r /etc/rakazo/deploy.env ]]; then
   RAKAZO_DEPLOY_DIR="$(sed -n 's/^RAKAZO_DEPLOY_DIR=//p' /etc/rakazo/deploy.env | tail -1 | tr -d '"')"
@@ -173,7 +183,7 @@ systemctl enable --now apparmor auditd fail2ban unattended-upgrades
 systemctl restart fail2ban
 systemctl reload ssh
 
-# Ship the audit trail off the host only when an operator configured a sink; see docs/self-host.md.
+# Ship the audit trail off the host only when an operator configured a sink; see docs/self-host-observability.md#host-audit-trail.
 AUDIT_ENV=/etc/rakazo/audit-ship.env
 if grep -q '^RAKAZO_AUDIT_SINK_URL=.' "${AUDIT_ENV}" 2>/dev/null; then
   audit_token="$(sed -n 's/^RAKAZO_AUDIT_TOKEN_FILE=//p' "${AUDIT_ENV}" | tail -1 | tr -d '"')"

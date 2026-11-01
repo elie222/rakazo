@@ -2,17 +2,22 @@
 import type { McpServer } from "@rakazo/contracts";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, expect, it, vi } from "vitest";
 import { connectMcpOauth } from "../lib/mcp-connect";
 import { McpServersOverlay } from "./McpServersOverlay";
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), test: vi.fn(), update: vi.fn() }));
-const access = vi.hoisted(() => ({ all: vi.fn(), replace: vi.fn(), bots: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  list: vi.fn(),
+  test: vi.fn(),
+  update: vi.fn(),
+  agents: vi.fn(),
+}));
+const access = vi.hoisted(() => ({ all: vi.fn(), bots: vi.fn() }));
 const api = vi.hoisted(() => ({
-  mcp: { servers: mocks, assignments: { all: access.all, replace: access.replace } },
+  mcp: { servers: mocks, assignments: { all: access.all } },
   bots: { list: access.bots },
 }));
 // One space, so no "Available in" choice appears.
@@ -43,25 +48,32 @@ vi.mock("@lingui/react/macro", () => ({
   }),
 }));
 vi.mock("@rakazo/ui-web", async () => {
-  const { createElement } = await import("react");
+  const { cloneElement, createElement } = await import("react");
   const container = ({ children }: { children: ReactNode }) => createElement("div", null, children);
   return Object.fromEntries([
+    ["BotAvatar", () => null],
     ...[
-      "Badge",
-      "Card",
-      "CardContent",
-      "CardHeader",
-      "CardTitle",
+      "AlertDialog",
+      "AlertDialogContent",
+      "AlertDialogDescription",
+      "AlertDialogFooter",
+      "AlertDialogHeader",
+      "AlertDialogTitle",
+      "AlertDialogCancel",
       "Dialog",
       "DialogClose",
       "DialogContent",
       "DialogHeader",
       "DialogTitle",
+      "DropdownMenu",
+      "DropdownMenuContent",
+      "DropdownMenuSeparator",
       "Field",
       "FieldError",
       "FieldGroup",
       "FieldLabel",
       "FieldTitle",
+      "SectionHeading",
       "Tabs",
       "TabsList",
       "TabsTrigger",
@@ -73,14 +85,72 @@ vi.mock("@rakazo/ui-web", async () => {
         children,
         onClick,
         disabled,
+        "aria-label": label,
       }: {
         children: ReactNode;
         onClick: () => void;
         disabled: boolean;
-      }) => createElement("button", { onClick, disabled }, children),
+        "aria-label"?: string;
+      }) => createElement("button", { onClick, disabled, "aria-label": label }, children),
     ],
-    ["Input", () => null],
+    [
+      "DropdownMenuTrigger",
+      ({ children, render }: { children: ReactNode; render: ReactElement }) =>
+        cloneElement(render, {}, children),
+    ],
+    ...["AlertDialogAction", "DropdownMenuItem"].map((name) => [
+      name,
+      ({
+        children,
+        onClick,
+        disabled,
+      }: {
+        children: ReactNode;
+        onClick: () => void;
+        disabled?: boolean;
+      }) => createElement("button", { onClick, disabled }, children),
+    ]),
+    [
+      "DropdownMenuCheckboxItem",
+      ({
+        children,
+        checked,
+        onCheckedChange,
+      }: {
+        children: ReactNode;
+        checked: boolean;
+        onCheckedChange: (checked: boolean) => void;
+      }) =>
+        createElement(
+          "button",
+          { "aria-checked": checked, onClick: () => onCheckedChange(!checked) },
+          children,
+        ),
+    ],
+    [
+      "Input",
+      ({ id, value, placeholder }: { id?: string; value?: string; placeholder?: string }) =>
+        createElement("input", { id, value, placeholder, readOnly: true }),
+    ],
     ["Textarea", () => null],
+    [
+      "Checkbox",
+      ({
+        id,
+        checked,
+        onCheckedChange,
+      }: {
+        id?: string;
+        checked?: boolean;
+        onCheckedChange?: (checked: boolean) => void;
+      }) =>
+        createElement("button", {
+          id,
+          type: "button",
+          "aria-pressed": String(checked === true),
+          onClick: () => onCheckedChange?.(!checked),
+        }),
+    ],
     ["toast", { success: vi.fn(), error: vi.fn() }],
   ]);
 });
@@ -89,7 +159,7 @@ let client: QueryClient;
 beforeEach(() => {
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   access.all.mockReset().mockResolvedValue([]);
-  access.replace.mockReset().mockResolvedValue([]);
+  mocks.agents.mockReset();
   access.bots.mockReset().mockResolvedValue([]);
 });
 
@@ -120,7 +190,7 @@ it("offers stdio only where the deployment runs it, and still shows existing std
   mocks.list
     .mockReset()
     .mockResolvedValue([
-      { ...server("files"), args: [], envKeys: [], fileKeys: [], headerKeys: [] },
+      { ...server("files"), hasArgs: false, envKeys: [], fileKeys: [], headerKeys: [] },
     ]);
   const host = document.createElement("div");
   const root = createRoot(host);
@@ -132,13 +202,14 @@ it("offers stdio only where the deployment runs it, and still shows existing std
     // Editing an existing stdio server keeps its tab until the edit ends.
     await act(async () => root.render(overlay("files", false)));
     await vi.waitFor(() => expect(host.textContent).toContain("STDIO"));
-    const cancel = Array.from(host.querySelectorAll("button")).find(
-      (item) => item.textContent === "Cancel",
-    );
-    await act(async () => cancel?.click());
+    const button = (label: string) =>
+      Array.from(host.querySelectorAll("button")).find((item) => item.textContent === label);
+    const back = () => host.querySelector<HTMLButtonElement>('button[aria-label="Back"]');
+    await act(async () => back()?.click());
     expect(host.textContent).not.toContain("STDIO");
 
     await act(async () => root.render(overlay()));
+    await act(async () => button("Add server")?.click());
     expect(host.textContent).toContain("STDIO");
   } finally {
     await act(async () => root.unmount());
@@ -226,7 +297,7 @@ it("opens a server's form and saves it in place, sending blank values to keep wh
     transport: "streamable_http",
     endpoint: "https://mcp.example.test/mcp",
     command: null,
-    args: [],
+    hasArgs: false,
     envKeys: [],
     fileKeys: [],
     headerKeys: ["Authorization", "X-Team"],
@@ -264,6 +335,55 @@ it("opens a server's form and saves it in place, sending blank values to keep wh
   }
 });
 
+it("saves a server that must keep tool results whole", async () => {
+  const server = {
+    id: "srv_1",
+    slug: "docs",
+    name: "docs",
+    description: "",
+    transport: "streamable_http",
+    endpoint: "https://mcp.example.test/mcp",
+    command: null,
+    hasArgs: false,
+    envKeys: [],
+    fileKeys: [],
+    headerKeys: [],
+    oauthStatus: "none",
+    oauthClientId: null,
+    hasSecret: false,
+    health: { status: "unknown" },
+    enabled: true,
+  } as unknown as McpServer;
+  mocks.list.mockReset().mockResolvedValue([server]);
+  mocks.update.mockReset().mockResolvedValue(server);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(overlay("srv_1")));
+    await vi.waitFor(() =>
+      expect(host.querySelector<HTMLInputElement>("#mcp-name")?.value).toBe("docs"),
+    );
+    const box = host.querySelector<HTMLButtonElement>("#mcp-verbatim-results");
+    expect(box?.getAttribute("aria-pressed")).toBe("false");
+    await act(async () => box?.click());
+    await vi.waitFor(() =>
+      expect(host.querySelector("#mcp-verbatim-results")?.getAttribute("aria-pressed")).toBe(
+        "true",
+      ),
+    );
+    const save = Array.from(host.querySelectorAll("button")).find(
+      (item) => item.textContent === "Save",
+    );
+    await act(async () => save?.click());
+    expect(mocks.update).toHaveBeenCalledWith({
+      id: "srv_1",
+      config: expect.objectContaining({ verbatimResults: true }),
+    });
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
 it("points a server that cannot register a client at the client ID fields", async () => {
   const remote = {
     id: "srv_1",
@@ -273,7 +393,7 @@ it("points a server that cannot register a client at the client ID fields", asyn
     transport: "streamable_http",
     endpoint: "https://mcp.example.test/mcp",
     command: null,
-    args: [],
+    hasArgs: false,
     envKeys: [],
     fileKeys: [],
     headerKeys: [],
@@ -307,6 +427,9 @@ it("points a server that cannot register a client at the client ID fields", asyn
     expect(button("Save")).toBeDefined();
     expect(advancedOpen()).toBe(true);
 
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('button[aria-label="Back"]')?.click(),
+    );
     // The server now says why, and a sign-in that cannot work is no longer offered.
     await vi.waitFor(() =>
       expect(host.querySelector('[data-testid="mcp-health"]')?.textContent).toContain(
@@ -314,8 +437,6 @@ it("points a server that cannot register a client at the client ID fields", asyn
       ),
     );
     expect(button("Connect OAuth")).toBeUndefined();
-    await act(async () => button("Cancel")?.click());
-    expect(advancedOpen()).toBe(false);
     await act(async () => button("Edit")?.click());
     expect(advancedOpen()).toBe(true);
   } finally {
@@ -323,7 +444,7 @@ it("points a server that cannot register a client at the client ID fields", asyn
   }
 });
 
-it("keeps a stdio server's arguments intact when they were not edited", async () => {
+it("never shows stored stdio arguments and sends none back when they were not edited", async () => {
   const server = {
     id: "srv_2",
     slug: "files",
@@ -332,7 +453,7 @@ it("keeps a stdio server's arguments intact when they were not edited", async ()
     transport: "stdio",
     endpoint: null,
     command: "npx",
-    args: ["-y", "files-server", "/Users/me/My Documents"],
+    hasArgs: true,
     envKeys: [],
     fileKeys: [],
     headerKeys: [],
@@ -355,10 +476,13 @@ it("keeps a stdio server's arguments intact when they were not edited", async ()
       expect(button).toBeDefined();
       return button;
     });
+    const args = host.querySelector<HTMLInputElement>("#mcp-args");
+    expect(args?.value).toBe("");
+    expect(args?.placeholder).toBe("Stored encrypted");
     await act(async () => save?.click());
     expect(mocks.update).toHaveBeenCalledWith({
       id: "srv_2",
-      config: expect.objectContaining({ args: ["-y", "files-server", "/Users/me/My Documents"] }),
+      config: expect.objectContaining({ args: [] }),
     });
   } finally {
     await act(async () => root.unmount());
@@ -431,15 +555,12 @@ it.each([
   const root = createRoot(host);
   try {
     await act(async () => root.render(overlay()));
-    const agentButtons = () =>
-      Array.from(host.querySelectorAll("button")).filter((button) => button.textContent === "Ada");
-    // One in the add form and one on the server's card.
-    await vi.waitFor(() => expect(agentButtons()).toHaveLength(2));
-    for (const button of agentButtons()) {
-      expect(button.disabled).toBe(true);
-      await act(async () => button.click());
-    }
-    expect(access.replace).not.toHaveBeenCalled();
+    const trigger = () =>
+      Array.from(host.querySelectorAll("button")).find((item) => item.textContent === "No bots");
+    await vi.waitFor(() => expect(trigger()?.disabled).toBe(true));
+    for (const item of host.querySelectorAll("button[aria-checked]"))
+      await act(async () => (item as HTMLButtonElement).click());
+    expect(mocks.agents).not.toHaveBeenCalled();
     if (state === "failed") {
       await vi.waitFor(() => expect(host.textContent).toContain("Could not load MCP servers"));
     }
@@ -448,9 +569,14 @@ it.each([
   }
 });
 
-it("lets agent access change once assignments have loaded", async () => {
-  mocks.list.mockReset().mockResolvedValue([server("docs")]);
-  access.bots.mockResolvedValue([{ id: "bot_1", name: "Ada" }]);
+it("narrows a server shared with every agent to the ones left selected", async () => {
+  const shared = { ...server("docs"), allBots: true };
+  mocks.list.mockReset().mockResolvedValue([shared]);
+  mocks.agents.mockResolvedValue({ server: { ...shared, allBots: false }, assignments: [] });
+  access.bots.mockResolvedValue([
+    { id: "bot_1", name: "Ada", color: "#F97316" },
+    { id: "bot_2", name: "Grace", color: "#6366F1" },
+  ]);
   access.all.mockResolvedValue([
     { botId: "bot_1", serverId: "other", allowAllTools: true, allowedTools: [] },
   ]);
@@ -458,20 +584,22 @@ it("lets agent access change once assignments have loaded", async () => {
   const root = createRoot(host);
   try {
     await act(async () => root.render(overlay()));
-    const cardButton = () =>
-      Array.from(host.querySelectorAll("button")).filter(
-        (button) => button.textContent === "Ada",
-      )[1];
-    await vi.waitFor(() => expect(cardButton()?.disabled).toBe(false));
-    await act(async () => cardButton()!.click());
-    // The bot keeps the assignment it already had.
-    expect(access.replace).toHaveBeenCalledWith({
-      botId: "bot_1",
-      assignments: [
-        { botId: "bot_1", serverId: "other", allowAllTools: true, allowedTools: [] },
-        { serverId: "docs", allowAllTools: true, allowedTools: [] },
-      ],
-    });
+    const option = (name: string) =>
+      Array.from(host.querySelectorAll<HTMLButtonElement>("button[aria-checked]")).find(
+        (item) => item.textContent === name,
+      );
+    const trigger = () =>
+      Array.from(host.querySelectorAll("button")).find(
+        (item) => !item.hasAttribute("aria-checked") && item.textContent === "All bots",
+      );
+    await vi.waitFor(() => expect(trigger()?.disabled).toBe(false));
+    expect(option("Grace")?.getAttribute("aria-checked")).toBe("true");
+    mocks.list.mockResolvedValue([{ ...shared, allBots: false }]);
+    await act(async () => option("Ada")!.click());
+    expect(mocks.agents).toHaveBeenCalledWith({ id: "docs", allBots: false, botIds: ["bot_2"] });
+    await vi.waitFor(() => expect(option("All bots")?.getAttribute("aria-checked")).toBe("false"));
+    await act(async () => option("All bots")!.click());
+    expect(mocks.agents).toHaveBeenLastCalledWith({ id: "docs", allBots: true, botIds: [] });
   } finally {
     await act(async () => root.unmount());
   }

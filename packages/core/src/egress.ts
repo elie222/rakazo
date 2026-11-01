@@ -9,7 +9,8 @@ import { parse } from "tldts";
  * This lives behind its own entry point so clients that never decide policy skip the suffix list.
  */
 export function hostSite(hostname: string): string | undefined {
-  return siteOf(hostname, true);
+  const host = normalizedHost(hostname);
+  return host ? (siteOf(host, true) ?? host) : undefined;
 }
 
 /**
@@ -18,15 +19,19 @@ export function hostSite(hostname: string): string | undefined {
  * they control, which would let its subdomains reach their DNS.
  */
 export function registrableDomain(hostname: string): string | undefined {
-  return siteOf(hostname, false);
+  const host = normalizedHost(hostname);
+  return host ? siteOf(host, false) : undefined;
 }
 
-function siteOf(hostname: string, allowPrivateDomains: boolean): string | undefined {
-  const host = hostname.trim().toLowerCase().replace(/\.$/, "");
-  if (!host) return undefined;
-  const parsed = parse(host, { allowPrivateDomains });
+function normalizedHost(hostname: string): string | undefined {
+  return hostname.trim().toLowerCase().replace(/\.$/, "") || undefined;
+}
+
+function siteOf(host: string, allowPrivateDomains: boolean): string | undefined {
+  // URLs accept labels tldts would reject, such as `leak-.example.com`, so its check is off.
+  const parsed = parse(host, { allowPrivateDomains, validateHostname: false });
   if (parsed.isIp || host.startsWith("[")) return host;
-  return parsed.domain ?? host;
+  return parsed.domain ?? undefined;
 }
 
 /** The site an http(s) URL is sent to, or undefined for anything else. */
@@ -45,7 +50,7 @@ const URL_IN_TEXT = /\bhttps?:\/\/[^\s<>"'`]+/gi;
 const EMAIL_IN_TEXT =
   /(?:"(?:[^"\\\r\n]|\\.)*"|(?<![^\s<>()[\]\\,;:"@，；、！？])[^\s<>()[\]\\,;:"@，；、！？]+)@(?:\[[^\]\r\n]+\]|[^\s<>()[\]\\,;:"@，；、！？]+)/g;
 const DOMAIN_IN_TEXT =
-  /(?<![\w@.-])(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,62}[a-z0-9](?![\w-])/gi;
+  /(?<![\p{L}\p{N}\p{M}_@.-])(?:[\p{L}\p{N}](?:[\p{L}\p{N}\p{M}-]{0,61}[\p{L}\p{N}\p{M}])?\.)+\p{L}[\p{L}\p{N}\p{M}-]{0,62}[\p{L}\p{N}\p{M}](?![\p{L}\p{N}\p{M}_-])/gu;
 
 /**
  * The sites a person named in their own words: http(s) links and bare domain names on a known
@@ -61,7 +66,10 @@ export function sitesInText(text: string): Set<string> {
   // A domain-shaped email local part does not name a site either.
   const withoutLinksOrEmails = text.replace(URL_IN_TEXT, " ").replace(EMAIL_IN_TEXT, " ");
   for (const [match] of withoutLinksOrEmails.matchAll(DOMAIN_IN_TEXT)) {
-    const parsed = parse(match.toLowerCase(), { allowPrivateDomains: true });
+    // Internationalized names are compared in the ASCII form a fetched URL's host takes.
+    const hostname = httpUrl(`http://${match}`)?.hostname;
+    if (!hostname) continue;
+    const parsed = parse(hostname, { allowPrivateDomains: true });
     if ((parsed.isIcann || parsed.isPrivate) && parsed.domain) sites.add(parsed.domain);
   }
   return sites;

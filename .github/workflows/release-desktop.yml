@@ -129,6 +129,7 @@ jobs:
         run: pnpm --filter @rakazo/web build && pnpm --filter @rakazo/desktop build
         env:
           RAKAZO_ALLOW_DEV_SECRETS: "1"
+          RAKAZO_DESKTOP_RELEASE: "1"
 
       - name: Require macOS signing and notarization credentials
         if: runner.os == 'macOS'
@@ -454,6 +455,13 @@ jobs:
           )
           for feed in "${feeds[@]}"; do
             grep -Fqx "version: $RELEASE_VERSION" "$feed"
+            # GitHub renames assets with spaces, so every file a feed names must upload under that name.
+            sed -nE 's/^ *(- )?(url|path): +//p' "$feed" | while IFS= read -r file; do
+              if [[ "$file" == */* || ! -f "release-artifacts/$file" ]]; then
+                echo "$feed names $file, which is not a release asset." >&2
+                exit 1
+              fi
+            done
           done
 
           (

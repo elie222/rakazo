@@ -28,17 +28,17 @@ import {
   Input,
   NativeSelect,
   NativeSelectOption,
+  SectionHeading,
   Switch,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
   Textarea,
   Toggle,
 } from "@rakazo/ui-web";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@rakazo/ui-web/components/ui/collapsible";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, Download, Settings, X } from "lucide-react";
+import { Download, Settings, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { Suspense, useEffect, useId, useRef, useState } from "react";
 import { ErrorBoundary, SectionLoadFailed } from "../../components/ErrorBoundary";
@@ -99,8 +99,15 @@ export function ComputerModePicker({
   );
 }
 
+export type BotPanelTab = "computer" | "routines" | "settings";
+
+/** A bot's profile above its Computer, Routines and Advanced tabs. */
 export function BotSettings({
   bot,
+  tab = "settings",
+  onTabChange,
+  computer,
+  routines,
   memoryProviderConfigured,
   onSave,
   onExport,
@@ -109,6 +116,10 @@ export function BotSettings({
   onOpenConnections,
 }: {
   bot: Bot;
+  tab?: BotPanelTab;
+  onTabChange?: (tab: BotPanelTab) => void;
+  computer?: ReactNode;
+  routines?: ReactNode;
   focusModel?: number;
   onOpenConnections?: () => void;
   /** Unused: the skill sections read and save the shared cached skill list. */
@@ -137,17 +148,13 @@ export function BotSettings({
 }) {
   const { t } = useLingui();
   const ids = useId();
-  const [advancedOpen, setAdvancedOpen] = useState(Boolean(focusModel));
   const modelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (focusModel) setAdvancedOpen(true);
-  }, [focusModel]);
-  useEffect(() => {
-    if (focusModel && advancedOpen) {
+    if (focusModel && tab === "settings") {
       modelRef.current?.scrollIntoView?.({ block: "nearest" });
       modelRef.current?.querySelector<HTMLElement>('[id$="-model"]')?.focus();
     }
-  }, [advancedOpen, focusModel]);
+  }, [tab, focusModel]);
   const [name, setName] = useState(bot.name);
   const savedNameRef = useRef(bot.name);
   const [description, setDescription] = useState(bot.description);
@@ -169,10 +176,10 @@ export function BotSettings({
   const [memoryScope, setMemoryScope] = useState(bot.memoryScope);
   const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
   const [crossSpaceCommunication, setCrossSpaceCommunication] = useState(
-    bot.crossSpaceCommunication ?? false,
+    bot.crossSpaceCommunication ?? true,
   );
   useEffect(
-    () => setCrossSpaceCommunication(bot.crossSpaceCommunication ?? false),
+    () => setCrossSpaceCommunication(bot.crossSpaceCommunication ?? true),
     [bot.crossSpaceCommunication],
   );
   const [fleetManagement, setFleetManagement] = useState(bot.fleetManagement);
@@ -501,10 +508,7 @@ export function BotSettings({
 
   return (
     <div data-testid="bot-settings">
-      <div
-        data-testid="bot-profile-header"
-        className="flex flex-col items-center pb-6 pt-2 text-center"
-      >
+      <div data-testid="bot-profile-header" className="flex flex-col items-center pb-5 text-center">
         <div className="flex justify-center pb-4">
           <AvatarStudioPopover
             value={color}
@@ -535,57 +539,61 @@ export function BotSettings({
           }}
         />
       </div>
-      <section className="mt-6">
-        <h3 className="mb-2 text-xs font-medium text-muted-foreground">
-          <Trans>Notifications</Trans>
-        </h3>
-        <div className="flex items-center justify-between gap-3 rounded-xl bg-muted/50 p-4">
-          <div>
-            <label
-              htmlFor={`${ids}-notify-finish`}
-              id={`${ids}-notify-finish-label`}
-              className="text-sm"
-            >
-              <Trans>When it finishes or needs input</Trans>
-            </label>
-          </div>
-          <Switch
-            id={`${ids}-notify-finish`}
-            checked={notifyOnFinish}
-            aria-labelledby={`${ids}-notify-finish-label`}
-            onCheckedChange={(checked) => {
-              setNotifyOnFinish(checked);
-              void enqueueSave({ notifyOnFinish: checked });
-            }}
-          />
-        </div>
-      </section>
-      <ErrorBoundary fallback={<SectionLoadFailed />}>
-        <Suspense fallback={null}>
-          <ScratchpadSection botId={bot.id} />
-        </Suspense>
-      </ErrorBoundary>
-      <ErrorBoundary fallback={<SectionLoadFailed />}>
-        <Suspense fallback={null}>
-          <KnowledgeSection botId={bot.id} />
-        </Suspense>
-      </ErrorBoundary>
-      <Collapsible
-        open={advancedOpen}
-        onOpenChange={setAdvancedOpen}
-        data-testid="bot-settings-advanced"
-        className="mt-6"
-      >
-        <h3 className="mb-0 text-xs font-medium text-muted-foreground">
-          <CollapsibleTrigger className="group flex w-full cursor-pointer min-h-11 items-center justify-between gap-2 text-xs font-medium text-muted-foreground text-start outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+      <Tabs value={tab} onValueChange={(next) => onTabChange?.(next as BotPanelTab)}>
+        <TabsList className="w-full">
+          <TabsTrigger value="computer">
+            <Trans>Computer</Trans>
+          </TabsTrigger>
+          <TabsTrigger value="routines">
+            <Trans>Routines</Trans>
+          </TabsTrigger>
+          <TabsTrigger value="settings">
             <Trans>Advanced</Trans>
-            <ChevronDown
-              aria-hidden="true"
-              className="size-4 text-muted-foreground transition-transform -rotate-90 group-aria-expanded:rotate-0 motion-reduce:transition-none"
-            />
-          </CollapsibleTrigger>
-        </h3>
-        <CollapsibleContent>
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="computer" className="pt-4">
+          {computer}
+        </TabsContent>
+        <TabsContent value="routines" className="pt-4">
+          {routines}
+        </TabsContent>
+        {/* Stays mounted so scratchpad and knowledge drafts survive a tab switch. */}
+        <TabsContent value="settings" keepMounted data-testid="bot-settings-advanced">
+          <section className="mt-6">
+            <SectionHeading variant="label" className="mb-2">
+              <Trans>Notifications</Trans>
+            </SectionHeading>
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-muted/50 p-4">
+              <div>
+                <label
+                  htmlFor={`${ids}-notify-finish`}
+                  id={`${ids}-notify-finish-label`}
+                  className="text-sm"
+                >
+                  <Trans>When it finishes or needs input</Trans>
+                </label>
+              </div>
+              <Switch
+                id={`${ids}-notify-finish`}
+                checked={notifyOnFinish}
+                aria-labelledby={`${ids}-notify-finish-label`}
+                onCheckedChange={(checked) => {
+                  setNotifyOnFinish(checked);
+                  void enqueueSave({ notifyOnFinish: checked });
+                }}
+              />
+            </div>
+          </section>
+          <ErrorBoundary fallback={<SectionLoadFailed />}>
+            <Suspense fallback={null}>
+              <ScratchpadSection botId={bot.id} />
+            </Suspense>
+          </ErrorBoundary>
+          <ErrorBoundary fallback={<SectionLoadFailed />}>
+            <Suspense fallback={null}>
+              <KnowledgeSection botId={bot.id} />
+            </Suspense>
+          </ErrorBoundary>
           <div className="space-y-6 pt-6">
             <div ref={modelRef}>
               <div className="mb-2 flex items-center justify-between text-xs font-medium text-muted-foreground pe-1">
@@ -820,25 +828,25 @@ export function BotSettings({
               </button>
             </div>
           </div>
-        </CollapsibleContent>
-      </Collapsible>
+          {dirty ? (
+            <Button
+              className="sticky bottom-0 mt-5 w-full"
+              disabled={saving}
+              onClick={() => {
+                void enqueueSave({
+                  name,
+                  description,
+                  color,
+                  notifyOnFinish,
+                });
+              }}
+            >
+              <Trans>Save</Trans>
+            </Button>
+          ) : null}
+        </TabsContent>
+      </Tabs>
       {error ? <p className="mt-2 text-[13px] text-destructive">{error}</p> : null}
-      {dirty ? (
-        <Button
-          className="sticky bottom-0 mt-5 w-full"
-          disabled={saving}
-          onClick={() => {
-            void enqueueSave({
-              name,
-              description,
-              color,
-              notifyOnFinish,
-            });
-          }}
-        >
-          <Trans>Save</Trans>
-        </Button>
-      ) : null}
     </div>
   );
 }
@@ -892,6 +900,10 @@ function InlineProfileField({
       onChange={(event) => setDraft(event.target.value)}
       onBlur={commit}
       onKeyDown={(event) => {
+        if (event.nativeEvent.isComposing || event.keyCode === 229) {
+          if (event.key === "Escape") event.stopPropagation();
+          return;
+        }
         if (event.key === "Enter") {
           event.preventDefault();
           commit();
@@ -930,7 +942,9 @@ function SettingsGroup({
 }) {
   return (
     <section>
-      <h3 className="mb-2 text-xs font-medium text-muted-foreground">{label}</h3>
+      <SectionHeading variant="label" className="mb-2">
+        {label}
+      </SectionHeading>
       <div className={`space-y-3 [&>*]:mt-0 ${plain ? "" : "rounded-xl bg-muted/50 p-4"}`}>
         {children}
       </div>

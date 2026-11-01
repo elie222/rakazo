@@ -27,6 +27,7 @@ import { BotAvatar } from "../components/bot-avatar";
 import { GlassIconButton } from "../components/glass-icon-button";
 import { NativeActionButton } from "../components/native-action-button";
 import { NativeSymbol } from "../components/native-symbol";
+import { FORM_COLUMN_WIDTH } from "../lib/adaptive-layout";
 import { rpc, signOut } from "../lib/api";
 import { replaceWithSignIn } from "../lib/auth-routing";
 import type { Plan } from "../lib/billing";
@@ -230,7 +231,7 @@ export default function Paywall() {
             </Text>
           ) : null}
         </View>
-        <View style={[styles.footer, { paddingHorizontal: 24 }]}>
+        <View style={styles.footer}>
           <NativeActionButton
             label={started === "byok" ? t("Connect your AI") : t("Start using Rakazo")}
             onPress={() => {
@@ -400,7 +401,6 @@ export default function Paywall() {
       </ScrollView>
       <View
         style={[
-          styles.footer,
           styles.stickyFooter,
           {
             backgroundColor: tokens.background,
@@ -409,21 +409,23 @@ export default function Paywall() {
           },
         ]}
       >
-        {status.canManage ? (
-          <>
-            <NativeActionButton label={cta} busy={pending} onPress={() => void choose()} />
-            {terms ? (
-              <Text style={[styles.terms, { color: tokens.mutedForeground }]}>{terms}</Text>
-            ) : null}
-          </>
-        ) : (
-          <Text style={[styles.terms, { color: tokens.mutedForeground }]}>
-            {t("Only the owner of this account can choose a plan.")}
-          </Text>
-        )}
-        <View style={styles.legal}>
-          <LegalLink label={t("Terms")} url={TERMS_URL} />
-          <LegalLink label={t("Privacy")} url={AI_PRIVACY_URL} />
+        <View style={styles.footer}>
+          {status.canManage ? (
+            <>
+              <NativeActionButton label={cta} busy={pending} onPress={() => void choose()} />
+              {terms ? (
+                <Text style={[styles.terms, { color: tokens.mutedForeground }]}>{terms}</Text>
+              ) : null}
+            </>
+          ) : (
+            <Text style={[styles.terms, { color: tokens.mutedForeground }]}>
+              {t("Only the owner of this account can choose a plan.")}
+            </Text>
+          )}
+          <View style={styles.legal}>
+            <LegalLink label={t("Terms")} url={TERMS_URL} />
+            <LegalLink label={t("Privacy")} url={AI_PRIVACY_URL} />
+          </View>
         </View>
       </View>
     </View>
@@ -548,7 +550,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   signOut: { ...typeScale.body, paddingVertical: 8 },
-  content: { paddingHorizontal: 24, paddingTop: 12, paddingBottom: 24, gap: 28 },
+  content: {
+    width: "100%",
+    maxWidth: FORM_COLUMN_WIDTH,
+    alignSelf: "center",
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 24,
+    gap: 28,
+  },
   hero: { alignItems: "center", gap: 16 },
   title: { fontSize: 30, lineHeight: 36, fontWeight: "600", textAlign: "center" },
   lead: { ...typeScale.body, textAlign: "center" },
@@ -588,8 +598,14 @@ const styles = StyleSheet.create({
   stepLine: { width: 2, flex: 1, minHeight: 18, marginVertical: 4 },
   stepText: { flex: 1, gap: 2, paddingBottom: 16 },
   stepTitle: { ...typeScale.body, fontWeight: "600" },
-  footer: { gap: 10, alignSelf: "stretch" },
-  stickyFooter: { paddingHorizontal: 24, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
+  footer: {
+    gap: 10,
+    width: "100%",
+    maxWidth: FORM_COLUMN_WIDTH,
+    alignSelf: "center",
+    paddingHorizontal: 24,
+  },
+  stickyFooter: { paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
   terms: { ...typeScale.caption, textAlign: "center" },
   legal: { flexDirection: "row", justifyContent: "center", gap: 24 },
   legalLabel: { ...typeScale.footnote, textDecorationLine: "underline" },

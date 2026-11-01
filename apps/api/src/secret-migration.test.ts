@@ -68,7 +68,7 @@ describe("migration persistence", () => {
   });
   it("compares the original ref so a concurrent update or delete wins", async () => {
     const f = fixture();
-    const row = (await f.repository.rows().next()).value!;
+    const row = (await f.repository.rows()[Symbol.asyncIterator]().next()).value!;
     expect(await f.repository.replace(row, "fake-next")).toBe(true);
     expect(await f.repository.replace(row, "fake-stale")).toBe(false);
     f.tables.secret.splice(0, 1);

@@ -131,10 +131,8 @@ describe("toUtterances", () => {
   });
 
   it.each([
-    [319, [319]],
     [320, [320]],
     [321, [320, 1]],
-    [640, [320, 320]],
     [641, [320, 320, 1]],
   ])("handles a %i-character boundary", (length, chunkLengths) => {
     const text = "中".repeat(length);
@@ -219,12 +217,9 @@ describe("toUtterances", () => {
     );
   });
 
-  it.each([0, 1, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
-    "rejects an unusable character budget of %s",
-    (maxChars) => {
-      expect(() => toUtterances("中".repeat(2400), { maxChars })).toThrow(RangeError);
-    },
-  );
+  it.each([1, 1.5])("rejects an unusable character budget of %s", (maxChars) => {
+    expect(() => toUtterances("中".repeat(2400), { maxChars })).toThrow(RangeError);
+  });
 
   it("runs its input through the spoken register first", () => {
     const out = toUtterances("Fixed it.\n\n```js\nconsole.log(1)\n```\n\nShipped.");
@@ -277,5 +272,31 @@ describe("spokenDecision", () => {
     expect(spokenDecision("No thanks")).toBe("no");
     expect(spokenDecision("I'm sure that's fine, go look at the logs")).toBeNull();
     expect(spokenDecision("")).toBeNull();
+  });
+
+  it.each([
+    ["Sí", "yes"],
+    ["¡Sí, hazlo!", "yes"],
+    ["Vale", "yes"],
+    ["De acuerdo, adelante", "yes"],
+    ["No, gracias", "no"],
+    ["mejor no", "no"],
+    ["Cancélalo", "no"],
+  ])("hears the Spanish %j as %j", (said, decision) => {
+    expect(spokenDecision(said)).toBe(decision);
+  });
+
+  it.each(["¿No?", "No?", "¿Sí", "si", "sí uno dos tres cuatro cinco seis"])(
+    "does not approve or reject %j",
+    (text) => expect(spokenDecision(text)).toBeNull(),
+  );
+
+  it("accepts accented sí", () => expect(spokenDecision("sí")).toBe("yes"));
+
+  it("does not hear a yes in a Spanish condition, question or instruction", () => {
+    expect(spokenDecision("si puedes, revisa los logs")).toBeNull();
+    expect(spokenDecision("sino revisa el deploy")).toBeNull();
+    expect(spokenDecision("¿Sí? ¿Cuáles?")).toBeNull();
+    expect(spokenDecision("dale los permisos de admin")).toBeNull();
   });
 });

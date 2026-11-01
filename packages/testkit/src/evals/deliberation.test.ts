@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Evidence } from "./cases.js";
+import { EMPTY_SETTINGS } from "./cases.js";
 import { DELIBERATION_EVAL_CASES, DELIBERATION_JUDGE_CALIBRATION } from "./deliberation.js";
 
 const scenario = (id: string) => DELIBERATION_EVAL_CASES.find((c) => c.id === id)!;
@@ -17,6 +18,10 @@ function evidence(replies: Array<string | null>, partial: Partial<Evidence> = {}
     pendingApproval: null,
     priorMemory: "",
     toolNames: [],
+    toolCalls: [],
+    finalStep: replies.length,
+    settings: EMPTY_SETTINGS,
+    settingsBefore: EMPTY_SETTINGS,
     messaging: { originThreadId: null, outbound: [] },
     peerExchanges: replies.map((reply, index) => ({ message: `peer ${index + 1}`, reply })),
     ...partial,
