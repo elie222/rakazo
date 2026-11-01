@@ -70,9 +70,6 @@ export class GraphileJobPublisher implements JobPublisher {
       jobKey: job.replaceKey,
       maxAttempts: job.maxAttempts,
       ...(jobKeyMode ? { jobKeyMode } : {}),
-      // No queueName: drains may run in parallel. Each one keeps a
-      // conversation's rows in order through its claim, so a slow provider
-      // holds back only its own lane instead of every deployment's replies.
     });
     if (
       task === INTERACTIVE_RUN_TASK &&

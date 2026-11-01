@@ -7,7 +7,6 @@ import {
   applyMessagingOutboundStatus,
   deliverMessagingOutbound,
   MESSAGING_DM_OUTBOUND_CAP,
-  MESSAGING_DRAIN_PAGE_SIZE,
   MESSAGING_OUTBOUND_MAX_ATTEMPTS,
 } from "./messaging-delivery.js";
 import { messagingPlatformsFromEnv } from "./messaging-platforms.js";
@@ -37,6 +36,37 @@ const messagingRun = {
   trigger: "messaging",
   sourceMessage: { blocks: [{ kind: "text", text: "hi" }] },
 };
+
+type OutboundRowFilter = {
+  status?: string;
+  createdAt?: { lt: Date };
+  identityId?: string | null;
+  threadId?: string;
+  OR?: Array<{ status: string; updatedAt?: { gt: Date } }>;
+};
+
+/** A lane's next pending row, or an earlier row still pending or in flight. */
+function findOutboundRow(rows: Array<Record<string, unknown>>, where: OutboundRowFilter) {
+  const ordered = rows.every((row) => row.createdAt instanceof Date)
+    ? [...rows].sort((a, b) => (a.createdAt as Date).getTime() - (b.createdAt as Date).getTime())
+    : rows;
+  return (
+    ordered.find((row) => {
+      if (where.status && row.status !== where.status) return false;
+      if (where.identityId && row.identityId !== where.identityId) return false;
+      if (where.threadId !== undefined && row.threadId !== where.threadId) return false;
+      if (where.createdAt && !((row.createdAt as Date) < where.createdAt.lt)) return false;
+      if (!where.OR) return true;
+      return where.OR.some((condition) =>
+        condition.status === "pending"
+          ? row.status === "pending"
+          : row.status === "sent" &&
+            row.providerHandle == null &&
+            ((row.updatedAt as Date | undefined) ?? new Date()) > condition.updatedAt!.gt,
+      );
+    }) ?? null
+  );
+}
 
 function createFakeSurface(sendError?: Error) {
   const sendToThread = vi.fn(async () => ({ handle: "handle-out-1" }));
@@ -140,60 +170,24 @@ function createDeps(overrides: {
         if (where?.id) return rows.find((row) => row.id === where.id) ?? null;
         return null;
       }),
-      findMany: vi.fn(
-        async ({
-          where,
-          take,
-        }: {
-          where?: { status?: string; OR?: unknown[] };
-          take?: number;
-        } = {}) => {
-          const now = Date.now();
-          const found = rows.filter((row) => {
-            if (where?.status && row.status !== where.status) return false;
-            if (!where?.OR) return row.status === "pending";
-            const next = row.nextAttemptAt;
-            if (next == null) return true;
-            const nextMs = next instanceof Date ? next.getTime() : new Date(String(next)).getTime();
-            return nextMs <= now;
-          });
-          // The drain reads in send order (orderBy createdAt).
-          const ordered = found.every((row) => row.createdAt instanceof Date)
-            ? found.sort(
-                (a, b) => (a.createdAt as Date).getTime() - (b.createdAt as Date).getTime(),
-              )
-            : found;
-          return take ? ordered.slice(0, take) : ordered;
-        },
-      ),
-      // An earlier row to the same conversation that is still pending or in
-      // flight (see hasUndeliveredEarlierRow).
-      findFirst: vi.fn(
-        async ({
-          where,
-        }: {
-          where: {
-            createdAt: { lt: Date };
-            identityId?: string;
-            threadId?: string;
-            sourceMessageId?: string;
-            OR: Array<{ status: string; updatedAt?: { gt: Date } }>;
-          };
-        }) =>
-          rows.find((row) => {
-            if (where.sourceMessageId && row.sourceMessageId !== where.sourceMessageId)
-              return false;
-            if (where.identityId && row.identityId !== where.identityId) return false;
-            if (where.threadId !== undefined && row.threadId !== where.threadId) return false;
-            if (!((row.createdAt as Date) < where.createdAt.lt)) return false;
-            return where.OR.some((condition) =>
-              condition.status === "pending"
-                ? row.status === "pending"
-                : row.status === "sent" &&
-                  row.providerHandle == null &&
-                  ((row.updatedAt as Date | undefined) ?? new Date()) > condition.updatedAt!.gt,
-            );
-          }) ?? null,
+      findMany: vi.fn(async ({ where }: { where?: { status?: string; OR?: unknown[] } } = {}) => {
+        const now = Date.now();
+        const found = rows.filter((row) => {
+          if (where?.status && row.status !== where.status) return false;
+          if (!where?.OR) return row.status === "pending";
+          const next = row.nextAttemptAt;
+          if (next == null) return true;
+          const nextMs = next instanceof Date ? next.getTime() : new Date(String(next)).getTime();
+          return nextMs <= now;
+        });
+        // The drain reads in send order (orderBy createdAt).
+        const ordered = found.every((row) => row.createdAt instanceof Date)
+          ? found.sort((a, b) => (a.createdAt as Date).getTime() - (b.createdAt as Date).getTime())
+          : found;
+        return ordered;
+      }),
+      findFirst: vi.fn(async ({ where }: { where: OutboundRowFilter }) =>
+        findOutboundRow(rows, where),
       ),
       createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
         let count = 0;
@@ -768,34 +762,8 @@ function createChannelDeps(
           return nextMs <= now;
         });
       }),
-      // An earlier row to the same conversation that is still pending or in
-      // flight (see hasUndeliveredEarlierRow).
-      findFirst: vi.fn(
-        async ({
-          where,
-        }: {
-          where: {
-            createdAt: { lt: Date };
-            identityId?: string;
-            threadId?: string;
-            sourceMessageId?: string;
-            OR: Array<{ status: string; updatedAt?: { gt: Date } }>;
-          };
-        }) =>
-          rows.find((row) => {
-            if (where.sourceMessageId && row.sourceMessageId !== where.sourceMessageId)
-              return false;
-            if (where.identityId && row.identityId !== where.identityId) return false;
-            if (where.threadId !== undefined && row.threadId !== where.threadId) return false;
-            if (!((row.createdAt as Date) < where.createdAt.lt)) return false;
-            return where.OR.some((condition) =>
-              condition.status === "pending"
-                ? row.status === "pending"
-                : row.status === "sent" &&
-                  row.providerHandle == null &&
-                  ((row.updatedAt as Date | undefined) ?? new Date()) > condition.updatedAt!.gt,
-            );
-          }) ?? null,
+      findFirst: vi.fn(async ({ where }: { where: OutboundRowFilter }) =>
+        findOutboundRow(rows, where),
       ),
       createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
         for (const item of data)
@@ -1737,32 +1705,37 @@ describe("drain lanes", () => {
     expect(deps.rows.map((row) => row.status)).toEqual(["pending", "pending"]);
   });
 
-  it("does not queue another drain when the whole page is waiting out a backoff", async () => {
-    const rows = Array.from({ length: MESSAGING_DRAIN_PAGE_SIZE }, (_, index) => ({
-      ...groupRow(`w-${index}`, `t-${index}`, index),
-      nextAttemptAt: new Date(Date.now() + 60_000),
-    }));
-    const deps = createDeps({ run: null, outboundRows: rows });
+  it("sends a reply queued while its conversation's previous send was running", async () => {
+    const deps = createDeps({ run: null, outboundRows: [groupRow("a-1", "t-a", 0)] });
+    deps.sendToThread.mockImplementationOnce(async () => {
+      // Another drain started for this reply, found a-1 in flight, and left it.
+      deps.rows.push(groupRow("a-2", "t-a", 1));
+      return { handle: "h-1" };
+    });
 
     await deliverMessagingOutbound(deps, {}, context);
 
-    // Re-queuing here would repeat the same page forever.
-    expect(deps.sendToThread).not.toHaveBeenCalled();
-    expect(deps.jobs.enqueue).not.toHaveBeenCalled();
+    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
+      { threadId: "t-a", body: "a-1" },
+      { threadId: "t-a", body: "a-2" },
+    ]);
   });
 
-  it("reads one page and queues the rest of the backlog", async () => {
-    const rows = Array.from({ length: MESSAGING_DRAIN_PAGE_SIZE + 1 }, (_, index) =>
-      groupRow(`g-${index}`, `t-${index}`, index),
-    );
-    const deps = createDeps({ run: null, outboundRows: rows });
+  it("does not let a long held conversation starve the others", async () => {
+    const held = Array.from({ length: 100 }, (_, index) => ({
+      ...groupRow(`w-${index}`, "t-held", index),
+      nextAttemptAt: new Date(Date.now() + 60_000),
+    }));
+    const deps = createDeps({
+      run: null,
+      outboundRows: [...held, groupRow("later", "t-other", 1_000)],
+    });
 
     await deliverMessagingOutbound(deps, {}, context);
 
-    expect(deps.sendToThread).toHaveBeenCalledTimes(MESSAGING_DRAIN_PAGE_SIZE);
-    expect(deps.rows.filter((row) => row.status === "pending")).toHaveLength(1);
-    expect(deps.jobs.enqueue).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "messaging.deliver" }),
+    expect(deps.sendToThread).toHaveBeenCalledExactlyOnceWith(
+      { threadId: "t-other", body: "later" },
+      context,
     );
   });
 });

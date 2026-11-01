@@ -31,9 +31,6 @@ export const MESSAGING_DM_OUTBOUND_CAP = 140;
 /** Provider-send attempts before a mirrored row is declared lost. */
 export const MESSAGING_OUTBOUND_MAX_ATTEMPTS = 5;
 
-/** Pending rows read per drain; a full page queues another drain for the rest. */
-export const MESSAGING_DRAIN_PAGE_SIZE = 50;
-
 /** The outbox columns a drain reads and updates. */
 type MessagingOutboundRow = {
   id: string;
@@ -417,64 +414,64 @@ async function sendConnectInvite(
 }
 
 async function drain(deps: MessagingDeliveryDeps, context: AdapterContext): Promise<void> {
-  // One pass reads a page, not the whole backlog: a full page queues the rest
-  // as its own job so the scan stays flat as pending rows accumulate.
   const pending = await deps.prisma.messagingOutbound.findMany({
     where: { status: "pending" },
     orderBy: { createdAt: "asc" },
-    take: MESSAGING_DRAIN_PAGE_SIZE,
   });
-  // Replies to one conversation must stay in order, but unrelated
-  // conversations do not wait for each other: a slow provider holds back only
-  // its own lane instead of every tenant in the deployment.
-  const lanes = new Map<string, MessagingOutboundRow[]>();
+  // Each conversation is its own lane, so a slow provider holds back only
+  // the replies queued behind it.
+  const heads = new Map<string, MessagingOutboundRow>();
   for (const row of pending) {
-    const destination = row.identityId ?? row.threadId ?? row.id;
-    const lane = lanes.get(destination);
-    if (lane) lane.push(row);
-    else lanes.set(destination, [row]);
+    const key = row.identityId ?? row.threadId ?? row.id;
+    if (!heads.has(key)) heads.set(key, row);
   }
-  const claimed = (
-    await Promise.all([...lanes.values()].map((rows) => deliverLane(deps, context, rows)))
-  ).reduce((total, count) => total + count, 0);
-  // Queue the rest only after a pass that claimed something: a full page of
-  // rows waiting out a backoff would otherwise re-queue a drain that finds the
-  // same rows and queues itself again.
-  if (claimed > 0 && pending.length >= MESSAGING_DRAIN_PAGE_SIZE) {
-    await deps.jobs.enqueue(messagingDeliverJob());
-  }
+  const lanes = await Promise.allSettled(
+    [...heads.values()].map((head) => deliverLane(deps, context, head)),
+  );
+  const failed = lanes.find((lane) => lane.status === "rejected");
+  if (failed?.status === "rejected") throw failed.reason;
+}
+
+type Conversation = { identityId: string } | { identityId: null; threadId: string };
+
+function conversationOf(row: MessagingOutboundRow): Conversation | null {
+  if (row.identityId) return { identityId: row.identityId };
+  if (row.threadId) return { identityId: null, threadId: row.threadId };
+  return null;
 }
 
 /**
- * Sends one conversation's rows in order. A row that has to wait (backoff, an
- * earlier part still in flight, a held cap, or a failure) holds back the later
- * rows to the same place only; every other conversation keeps going.
+ * Sends one conversation's rows in order, reading each next row after the
+ * previous send so a reply queued meanwhile is not left behind. Stops at the
+ * first row that has to wait, or that another drain already owns.
  */
 async function deliverLane(
   deps: MessagingDeliveryDeps,
   context: AdapterContext,
-  rows: MessagingOutboundRow[],
-): Promise<number> {
-  let claimed = 0;
-  for (const row of rows) {
+  head: MessagingOutboundRow,
+): Promise<void> {
+  const conversation = conversationOf(head);
+  let row: MessagingOutboundRow | null = head;
+  while (row) {
     const now = Date.now();
-    if (row.nextAttemptAt && row.nextAttemptAt.getTime() > now) return claimed;
-    // A later part of a split reply waits until the earlier parts are out;
-    // another drain may hold one of them in flight.
-    if (await hasUndeliveredEarlierRow(deps, row, now)) return claimed;
-    // Claim before sending: concurrent drains (job keys are per runId) and
-    // crash retries must never deliver the same message twice.
+    if (row.nextAttemptAt && row.nextAttemptAt.getTime() > now) return;
+    if (conversation && (await hasUndeliveredEarlierRow(deps, conversation, row.createdAt, now)))
+      return;
+    // Claim before sending: concurrent drains and crash retries must never
+    // deliver the same message twice.
     const claim = await deps.prisma.messagingOutbound.updateMany({
       where: { id: row.id, status: "pending" },
       data: { status: "sent", nextAttemptAt: null },
     });
-    // Another drain claimed this conversation's oldest row: leave the later
-    // rows behind it instead of overtaking the send it is running.
-    if (claim.count === 0) return claimed;
-    claimed += 1;
-    if (!(await deliverRow(deps, context, row))) return claimed;
+    if (claim.count === 0) return;
+    if (!(await deliverRow(deps, context, row))) return;
+    row = conversation
+      ? await deps.prisma.messagingOutbound.findFirst({
+          where: { status: "pending", ...conversation },
+          orderBy: { createdAt: "asc" },
+        })
+      : null;
   }
-  return claimed;
 }
 
 /** Sends one claimed row. Returns false when later rows to the same place must wait. */
@@ -646,29 +643,26 @@ async function deliverRow(
   }
 }
 
-/** A claimed part still without a handle after this long is treated as abandoned. */
-const MESSAGING_PART_IN_FLIGHT_MS = 2 * 60_000;
+/** A claimed row still without a handle after this long is treated as abandoned. */
+const MESSAGING_ROW_IN_FLIGHT_MS = 2 * 60_000;
 
-/**
- * True when an earlier row to the same place is still pending or in flight, so
- * this row must not overtake it. Covers both the split parts of one reply and a
- * concurrent drain that already claimed the conversation's oldest row.
- */
+/** True while an earlier row to the conversation is still pending or in flight. */
 async function hasUndeliveredEarlierRow(
   deps: MessagingDeliveryDeps,
-  row: MessagingOutboundRow,
+  conversation: Conversation,
+  createdAt: Date,
   now: number,
 ): Promise<boolean> {
   const earlier = await deps.prisma.messagingOutbound.findFirst({
     where: {
-      createdAt: { lt: row.createdAt },
-      ...(row.identityId ? { identityId: row.identityId } : { threadId: row.threadId }),
+      ...conversation,
+      createdAt: { lt: createdAt },
       OR: [
         { status: "pending" },
         {
           status: "sent",
           providerHandle: null,
-          updatedAt: { gt: new Date(now - MESSAGING_PART_IN_FLIGHT_MS) },
+          updatedAt: { gt: new Date(now - MESSAGING_ROW_IN_FLIGHT_MS) },
         },
       ],
     },
