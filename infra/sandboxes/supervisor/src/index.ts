@@ -513,6 +513,9 @@ app.post("/computers/:id/exec", async (c) => {
   });
 });
 
+// The bot's folder in the computer's home that files its page downloads are saved to.
+const downloadFolder = z.string().min(1).max(1024).optional();
+
 app.post("/computers/:id/browser", async (c) => {
   // Read eagerly so the Node HTTP adapter observes disconnects during screen setup too.
   const signal = c.req.raw.signal;
@@ -530,10 +533,12 @@ app.post("/computers/:id/browser", async (c) => {
             const url = new URL(value);
             return /^https?:$/.test(url.protocol) && !url.username && !url.password;
           }),
+        downloads: downloadFolder,
       }),
       z.object({ command: z.literal("snapshot") }),
       z.object({
         command: z.literal("act"),
+        downloads: downloadFolder,
         actions: z
           .array(
             z.discriminatedUnion("kind", [

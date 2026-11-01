@@ -9,6 +9,7 @@ import {
   parseBrowserActions,
   redactBrowserResult,
 } from "./browser-tools.js";
+import { builtinAgentTools } from "./builtin-tools.js";
 import { ComputerBrowserProvider } from "./computer-browser.js";
 import { redactConnectorPayload } from "./connector-safety.js";
 import { FakeBrowserProvider } from "./fake-browser.js";
@@ -926,6 +927,13 @@ describe("browser tools", () => {
     expect(
       await browserSnapshotFromTool(browser, computer, context, {}, { desktopTools: true }),
     ).toMatchObject({ fallback: "computer_act", note: expect.stringContaining("computer_act") });
+  });
+
+  it("keeps the page tools' descriptions short", () => {
+    const length = (name: string) =>
+      builtinAgentTools.find((tool) => tool.name === name)?.description.length ?? Infinity;
+    expect(length("browser_act")).toBeLessThanOrEqual(1400);
+    expect(length("browser_navigate")).toBeLessThanOrEqual(300);
   });
 
   it("hides page browser tools when the computer is not graphical", () => {
