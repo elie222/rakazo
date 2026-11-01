@@ -38,6 +38,7 @@ export function ThreadMessageList({
   failedSendBubbles,
   errorNotice,
   workingFooter,
+  indicatorRightInset,
   loadingNewer,
   showLatest,
 }: {
@@ -58,12 +59,15 @@ export function ThreadMessageList({
   failedSendBubbles: ReactNode;
   errorNotice: ReactNode;
   workingFooter: ReactNode;
+  /** Horizontal padding the screen keeps around the chat, pulled back out of the indicator. */
+  indicatorRightInset: number;
   loadingNewer: boolean;
   showLatest: () => void;
 }) {
   const tokens = mobileTokens();
   const { showPinnedPage, pinnedTarget, pinnedNewerCursor, behavior, state } = scroll;
   const { jumpTarget } = scroll;
+  const scrollIndicatorInsets = { right: -indicatorRightInset };
   const listContentStyle = useMemo(
     () => ({ paddingBottom: headerClearance.padding, paddingTop: bottomInset + 16 }),
     [headerClearance.padding, bottomInset],
@@ -82,6 +86,7 @@ export function ThreadMessageList({
             key={jumpTarget ?? pinnedTarget?.messageId ?? threadKey}
             ref={scroll.pinnedList}
             style={{ flex: 1 }}
+            scrollIndicatorInsets={scrollIndicatorInsets}
             // A pinned page always shows the floating jump button (44pt, 12pt from the
             // bottom), so its last message must be able to scroll clear of it.
             contentContainerStyle={{
@@ -117,6 +122,7 @@ export function ThreadMessageList({
             // This callback tracks every row input, including reply, reaction and highlight state.
             extraData={renderMessageRow}
             style={styles.list}
+            scrollIndicatorInsets={scrollIndicatorInsets}
             // Swiping down hides the keyboard; on iOS it follows the finger.
             keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
             // Inverted, so the bottom padding is the visual top, clear of the transparent header.
