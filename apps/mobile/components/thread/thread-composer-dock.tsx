@@ -1,6 +1,6 @@
 import { replyAttachment } from "@rakazo/core";
 import type { ReactNode } from "react";
-import type { StyleProp, ViewStyle } from "react-native";
+import { useEffect, useRef } from "react";
 import { Image, Platform, Pressable, Text, View } from "react-native";
 import { KeyboardController, useKeyboardHandler } from "react-native-keyboard-controller";
 import Animated, { interpolate, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
@@ -22,7 +22,8 @@ import { ReplyDismissButton } from "../reply-dismiss-button";
  */
 export function ThreadComposerDock({
   hidden,
-  fadeStyle,
+  notice,
+  onHeight,
   replyTarget,
   replyAuthor,
   replyQuote,
@@ -34,7 +35,10 @@ export function ThreadComposerDock({
   children,
 }: {
   hidden: boolean;
-  fadeStyle: StyleProp<ViewStyle>;
+  /** Shown above the reply, as part of the dock. */
+  notice: ReactNode;
+  /** The space the list must keep clear: the dock at rest, not following the keyboard. */
+  onHeight: (height: number) => void;
   replyTarget: MobileMessage | null;
   replyAuthor: string;
   replyQuote: string | null;
@@ -75,105 +79,135 @@ export function ThreadComposerDock({
     paddingBottom: interpolate(keyboardProgress.value, [0, 1], [composerRestingPadding, 12]),
   }));
 
+  const noticeHeight = useRef(0);
+  const controlsHeight = useRef(0);
+  const report = () => onHeight(noticeHeight.current + (hidden ? 0 : controlsHeight.current));
+  useEffect(() => {
+    onHeight(noticeHeight.current + (hidden ? 0 : controlsHeight.current));
+  }, [hidden, onHeight]);
+
   return (
-    <Animated.View
-      style={[{ display: hidden ? "none" : "flex", flexShrink: 1 }, composerKeyboardPadding]}
+    // Floats over the messages, which scroll underneath it; only its controls take touches.
+    <View
+      pointerEvents="box-none"
+      style={{ position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: "100%" }}
     >
-      {/* Fades messages out immediately above the composer. */}
-      <View pointerEvents="none" style={fadeStyle} />
-      {replyTarget ? (
-        <GlassSurface
-          style={{
-            marginTop: 12,
-            borderRadius: 999,
-            paddingStart: 16,
-            paddingEnd: 10,
-            paddingVertical: 8,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 8,
-          }}
-          fallbackStyle={{
-            borderRadius: 14,
-            borderWidth: 1,
-            borderColor: tokens.glassStroke,
-            backgroundColor: tokens.glassFill,
-            paddingStart: 12,
-            paddingEnd: 12,
-            paddingVertical: 10,
-          }}
-        >
-          <ComposerReplyPreview
-            author={replyAuthor}
-            quote={replyQuote}
-            text={previewMessageText(replyTarget)}
-            attachment={replyAttachment(replyTarget.blocks)}
-            threadTarget={threadTarget}
-          />
-          <ReplyDismissButton onPress={onDismissReply} />
-        </GlassSurface>
-      ) : null}
-      {attachmentNotice ? (
-        <Text style={{ color: tokens.warning, marginTop: 12, fontSize: 13 }}>
-          {attachmentNotice}
-        </Text>
-      ) : null}
-      {attachments.length ? (
+      <View
+        pointerEvents="box-none"
+        onLayout={(event) => {
+          noticeHeight.current = event.nativeEvent.layout.height;
+          report();
+        }}
+      >
+        {notice}
+      </View>
+      <Animated.View
+        pointerEvents="box-none"
+        style={[{ display: hidden ? "none" : "flex", flexShrink: 1 }, composerKeyboardPadding]}
+      >
         <View
-          style={{
-            flexDirection: "row",
-            flexWrap: "wrap",
-            gap: 8,
-            marginTop: 12,
+          pointerEvents="box-none"
+          style={{ flexShrink: 1 }}
+          onLayout={(event) => {
+            controlsHeight.current = event.nativeEvent.layout.height + composerRestingPadding;
+            report();
           }}
         >
-          {attachments.map((attachment) => (
-            <View
-              key={attachment.id}
+          {replyTarget ? (
+            <GlassSurface
               style={{
+                marginTop: 12,
+                borderRadius: 999,
+                paddingStart: 16,
+                paddingEnd: 10,
+                paddingVertical: 8,
                 flexDirection: "row",
                 alignItems: "center",
                 gap: 8,
-                borderRadius: 999,
+              }}
+              fallbackStyle={{
+                borderRadius: 14,
                 borderWidth: 1,
-                borderColor: tokens.border,
-                backgroundColor: tokens.card,
-                paddingHorizontal: 12,
-                paddingVertical: 8,
+                borderColor: tokens.glassStroke,
+                backgroundColor: tokens.glassFill,
+                paddingStart: 12,
+                paddingEnd: 12,
+                paddingVertical: 10,
               }}
             >
-              {attachment.previewUri ? (
-                <Image
-                  source={{ uri: attachment.previewUri }}
-                  style={{ width: 28, height: 28, borderRadius: 6 }}
-                />
-              ) : (
-                <NativeSymbol
-                  ios="paperclip"
-                  android="attach"
-                  size={16}
-                  color={tokens.mutedForeground}
-                />
-              )}
-              <Text style={{ color: tokens.foreground, maxWidth: 140 }} numberOfLines={1}>
-                {attachment.name}
-              </Text>
-              <Pressable
-                accessibilityLabel={t("Remove {name}", { name: attachment.name })}
-                onPress={() => onRemoveAttachment(attachment.id)}
-              >
-                <NativeSymbol
-                  ios="xmark"
-                  android="close"
-                  size={14}
-                  color={tokens.mutedForeground}
-                />
-              </Pressable>
+              <ComposerReplyPreview
+                author={replyAuthor}
+                quote={replyQuote}
+                text={previewMessageText(replyTarget)}
+                attachment={replyAttachment(replyTarget.blocks)}
+                threadTarget={threadTarget}
+              />
+              <ReplyDismissButton onPress={onDismissReply} />
+            </GlassSurface>
+          ) : null}
+          {attachmentNotice ? (
+            <Text style={{ color: tokens.warning, marginTop: 12, fontSize: 13 }}>
+              {attachmentNotice}
+            </Text>
+          ) : null}
+          {attachments.length ? (
+            <View
+              style={{
+                flexDirection: "row",
+                flexWrap: "wrap",
+                gap: 8,
+                marginTop: 12,
+              }}
+            >
+              {attachments.map((attachment) => (
+                <View
+                  key={attachment.id}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 8,
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    borderColor: tokens.border,
+                    backgroundColor: tokens.card,
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                  }}
+                >
+                  {attachment.previewUri ? (
+                    <Image
+                      source={{ uri: attachment.previewUri }}
+                      style={{ width: 28, height: 28, borderRadius: 6 }}
+                    />
+                  ) : (
+                    <NativeSymbol
+                      ios="paperclip"
+                      android="attach"
+                      size={16}
+                      color={tokens.mutedForeground}
+                    />
+                  )}
+                  <Text style={{ color: tokens.foreground, maxWidth: 140 }} numberOfLines={1}>
+                    {attachment.name}
+                  </Text>
+                  <Pressable
+                    accessibilityLabel={t("Remove {name}", { name: attachment.name })}
+                    onPress={() => onRemoveAttachment(attachment.id)}
+                  >
+                    <NativeSymbol
+                      ios="xmark"
+                      android="close"
+                      size={14}
+                      color={tokens.mutedForeground}
+                    />
+                  </Pressable>
+                </View>
+              ))}
             </View>
-          ))}
+          ) : null}
+          {children}
         </View>
-      ) : null}
-      {children}
-    </Animated.View>
+      </Animated.View>
+    </View>
   );
 }
