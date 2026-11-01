@@ -19,12 +19,15 @@ internal class PollCompletions(private val seen: MutableSet<String>) {
   private var session: Session? = null
   private val pending = linkedMapOf<String, RunRecord>()
 
-  fun muteBot(botId: String) {
+  // The discard must reach storage before the poller can stop: a restart reloads
+  // only what persisted, and would repost the muted reply once the bot is unmuted.
+  fun muteBot(botId: String, persistSeen: () -> Unit) {
     val muted = pending.values.filter { it.botId == botId && it.groupId == null }
     muted.forEach { run ->
       pending.remove(run.runId)
       seen.add(run.runId)
     }
+    if (muted.isNotEmpty()) persistSeen()
   }
 
   fun useSession(endpoint: String, spaceId: String, token: String, epoch: Long) {

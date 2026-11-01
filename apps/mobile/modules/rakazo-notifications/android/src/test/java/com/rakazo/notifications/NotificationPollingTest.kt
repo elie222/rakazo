@@ -112,7 +112,7 @@ class NotificationPollingTest {
     val recent = (1..20).map { run("new-$it").copy(botId = "other-bot") }
     assertTrue(direct in completions.page(recent))
 
-    completions.muteBot("bot")
+    completions.muteBot("bot") {}
     val afterMute = completions.page(recent)
     assertFalse("the muted reply must be discarded even when absent from recent", direct in afterMute)
     assertTrue(group in afterMute)
@@ -123,6 +123,39 @@ class NotificationPollingTest {
     completions.complete(group, alreadyPosted = { false }) { posted += group.runId }
     completions.complete(other, alreadyPosted = { false }) { posted += other.runId }
     assertEquals(listOf("group", "other"), posted)
+  }
+
+  @Test
+  fun `muting persists the discarded reply so a restart cannot repost it after unmute`() {
+    val seen = mutableSetOf<String>()
+    val completions = PollCompletions(seen)
+    val history = PollHistoryWrites()
+    val writes = mutableListOf<Set<String>>()
+    val persistSeen = { history.persistIfChanged(true, seen) { writes.add(it) } }
+    val muted = run("muted")
+    // The completed run waits for its reply lookup; the poll iteration persisted.
+    assertEquals(listOf(muted), completions.page(listOf(muted)))
+    persistSeen()
+
+    // The user mutes the bot; the poller can stop before another iteration persists.
+    completions.muteBot("bot", persistSeen)
+
+    // A restart rebuilds the seen set from the last persisted snapshot, and the
+    // unmuted bot's run returns on the recent page with notificationsEnabled=true.
+    val restarted = PollCompletions(mutableSetOf<String>().apply { addAll(writes.last()) })
+    assertTrue("restart must keep the muted reply suppressed", restarted.page(listOf(muted)).isEmpty())
+    var notifications = 0
+    restarted.complete(muted, alreadyPosted = { false }) { notifications++ }
+    assertEquals(0, notifications)
+  }
+
+  @Test
+  fun `muting with no discarded direct reply writes no history`() {
+    val completions = PollCompletions(mutableSetOf())
+    completions.page(listOf(run("group").copy(groupId = "group-1")))
+    var writes = 0
+    completions.muteBot("bot") { writes++ }
+    assertEquals(0, writes)
   }
 
   @Test

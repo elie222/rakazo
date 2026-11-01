@@ -72,7 +72,11 @@ class RakazoNotificationService : Service() {
     createChannels(localizedContext(NotificationStorage(this).locale))
     val generation = synchronized(sessionLock) {
       if (intent?.getBooleanExtra(EXTRA_RESET_TOKEN, false) == true) tokenCache.reset()
-      intent?.getStringExtra(EXTRA_MUTED_BOT_ID)?.let(completions::muteBot)
+      intent?.getStringExtra(EXTRA_MUTED_BOT_ID)?.let { botId ->
+        // Only a seeded poll can hold pending replies, and a discard always changes the
+        // seen set, so the mute persists here instead of waiting for the next poll.
+        completions.muteBot(botId) { persistCompleted(seeded = true) }
+      }
       sessionGeneration.incrementAndGet().also {
         if (intent?.action == ACTION_THREAD_CHANGED && (openBotId != null || openThreadId != null)) {
           clearLive()
