@@ -8,6 +8,7 @@ import {
   recordMessageSent,
   resetStarPromptSessionForTests,
   STAR_PROMPT_DISMISSED_KEY,
+  STAR_PROMPT_FIRST_SENT_KEY,
   STAR_PROMPT_SENT_KEY,
 } from "./GitHubStarPrompt";
 
@@ -36,12 +37,24 @@ afterEach(async () => {
 
 const prompt = () => document.querySelector('[aria-label="Star on GitHub"]');
 
-async function send(times: number) {
-  for (let i = 0; i < times; i++) await act(async () => recordMessageSent());
+const START = Date.UTC(2026, 0, 1);
+const LATER = START + 30 * 60_000;
+
+async function send(times: number, now = LATER) {
+  for (let i = 0; i < times; i++) await act(async () => recordMessageSent(now));
 }
 
+it("waits 30 minutes from the first message", async () => {
+  await send(8, START + 29 * 60_000);
+  localStorage.setItem(STAR_PROMPT_FIRST_SENT_KEY, String(START));
+  expect(prompt()).toBeNull();
+  await send(1);
+  await vi.waitFor(() => expect(prompt()).not.toBeNull());
+});
+
 it("asks after the sixth message and never again once dismissed", async () => {
-  await send(5);
+  await send(1, START);
+  await send(4);
   expect(prompt()).toBeNull();
   await send(1);
   // The toaster mounts toasts on its own timers.
@@ -63,7 +76,8 @@ it("asks after the sixth message and never again once dismissed", async () => {
 });
 
 it("asks at most once per session", async () => {
-  await send(6);
+  await send(1, START);
+  await send(5);
   const count = localStorage.getItem(STAR_PROMPT_SENT_KEY);
   await send(2);
   expect(localStorage.getItem(STAR_PROMPT_SENT_KEY)).toBe(count);

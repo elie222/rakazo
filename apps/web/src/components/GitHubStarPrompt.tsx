@@ -5,8 +5,10 @@ import { Star } from "lucide-react";
 // Separate keys so a count written by another tab can never undo a dismissal.
 export const STAR_PROMPT_SENT_KEY = "rakazo.githubStarPrompt.sent";
 export const STAR_PROMPT_DISMISSED_KEY = "rakazo.githubStarPrompt.dismissed";
+export const STAR_PROMPT_FIRST_SENT_KEY = "rakazo.githubStarPrompt.firstSentAt";
 const REPOSITORY_URL = "https://github.com/elie222/rakazo";
 const MESSAGES_BEFORE_ASKING = 5;
+const WAIT_BEFORE_ASKING_MS = 30 * 60_000;
 const TOAST_ID = "github-star-prompt";
 
 let shownThisSession = false;
@@ -17,14 +19,22 @@ function dismiss() {
   } catch {}
 }
 
-/** Counts a sent message and, after five, asks once for a GitHub star until dismissed. */
-export function recordMessageSent(): void {
+/**
+ * Counts a sent message and, after five and 30 minutes since the first, asks once per session
+ * for a GitHub star until dismissed.
+ */
+export function recordMessageSent(now = Date.now()): void {
   if (shownThisSession) return;
   try {
     if (localStorage.getItem(STAR_PROMPT_DISMISSED_KEY) !== null) return;
     const sent = (Number(localStorage.getItem(STAR_PROMPT_SENT_KEY)) || 0) + 1;
     localStorage.setItem(STAR_PROMPT_SENT_KEY, String(sent));
-    if (sent <= MESSAGES_BEFORE_ASKING) return;
+    let firstSentAt = Number(localStorage.getItem(STAR_PROMPT_FIRST_SENT_KEY));
+    if (!firstSentAt) {
+      firstSentAt = now;
+      localStorage.setItem(STAR_PROMPT_FIRST_SENT_KEY, String(now));
+    }
+    if (sent <= MESSAGES_BEFORE_ASKING || now - firstSentAt < WAIT_BEFORE_ASKING_MS) return;
   } catch {
     // Storage that cannot be written could not keep a dismissal, so never ask.
     return;
