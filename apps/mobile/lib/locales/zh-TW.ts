@@ -1236,6 +1236,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Won't do": "不處理",
   "Could not move the ticket": "無法移動工單",
   "No tickets yet.": "還沒有工單。",
+  "Opens the actions for this credential": "開啟此憑證的操作",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "與{peer}的 {count} 則訊息" };

@@ -1239,6 +1239,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Won't do": "不做",
   "Could not move the ticket": "无法移动工单",
   "No tickets yet.": "还没有工单。",
+  "Opens the actions for this credential": "打开此凭据的操作",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

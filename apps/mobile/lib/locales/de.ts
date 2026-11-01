@@ -1230,6 +1230,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Won't do": "Wird nicht gemacht",
   "Could not move the ticket": "Ticket konnte nicht verschoben werden",
   "No tickets yet.": "Noch keine Tickets.",
+  "Opens the actions for this credential": "Öffnet die Aktionen für diese Zugangsdaten",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {
