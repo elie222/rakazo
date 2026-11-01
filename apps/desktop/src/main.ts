@@ -5,7 +5,12 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { HostScreen } from "@rakazo/adapters/host-screen";
 import { startUserDeviceClient } from "@rakazo/adapters/user-device-client";
-import type { DesktopReachability, DesktopSetup, RakazoDesktopDevice } from "@rakazo/contracts";
+import type {
+  DesktopMenuCommand,
+  DesktopReachability,
+  DesktopSetup,
+  RakazoDesktopDevice,
+} from "@rakazo/contracts";
 import { parseServerHeaders } from "@rakazo/contracts";
 import type { Session } from "electron";
 import {
@@ -729,9 +734,61 @@ function installApplicationMenu() {
       }
     },
   };
+  const isMac = process.platform === "darwin";
+  // The page handles these chords itself and stops them, so a key press runs them once; the menu
+  // shows them and runs them on click. The page decides whether each one applies right now.
+  const command = (
+    label: string,
+    accelerator: string,
+    name: DesktopMenuCommand,
+  ): Electron.MenuItemConstructorOptions => ({
+    label,
+    accelerator,
+    click: (_item, window) => {
+      if (window && window === mainWindow)
+        mainWindow.webContents.send("desktop.menu.command", name);
+    },
+  });
+  const newItem = command("New…", "CmdOrCtrl+N", "new");
+  // Electron's own Edit menu, plus Search.
+  const macEdit: Electron.MenuItemConstructorOptions[] = [
+    { type: "separator" },
+    { label: "Speech", submenu: [{ role: "startSpeaking" }, { role: "stopSpeaking" }] },
+  ];
+  const editMenu: Electron.MenuItemConstructorOptions = {
+    label: "Edit",
+    submenu: [
+      { role: "undo" },
+      { role: "redo" },
+      { type: "separator" },
+      { role: "cut" },
+      { role: "copy" },
+      { role: "paste" },
+      ...(isMac ? [{ role: "pasteAndMatchStyle" } as const] : []),
+      { role: "delete" },
+      { role: "selectAll" },
+      { type: "separator" },
+      command("Search…", "CmdOrCtrl+F", "search"),
+      ...(isMac ? macEdit : []),
+    ],
+  };
+  const goMenu: Electron.MenuItemConstructorOptions = {
+    label: "Go",
+    submenu: [
+      command("Back", isMac ? "Cmd+[" : "Alt+Left", "back"),
+      command("Forward", isMac ? "Cmd+]" : "Alt+Right", "forward"),
+      { type: "separator" },
+      command("Next Bot", "Ctrl+Tab", "next-bot"),
+      command("Previous Bot", "Ctrl+Shift+Tab", "previous-bot"),
+      { type: "separator" },
+      command("Command Menu…", "CmdOrCtrl+K", "command-menu"),
+    ],
+  };
   const viewMenu: Electron.MenuItemConstructorOptions = {
     label: "View",
     submenu: [
+      command("Toggle Sidebar", "CmdOrCtrl+B", "toggle-sidebar"),
+      { type: "separator" },
       { role: "resetZoom" },
       { role: "zoomIn" },
       // zoomIn's default accelerator is Cmd/Ctrl+Plus, which needs Shift on US layouts.
@@ -765,8 +822,10 @@ function installApplicationMenu() {
               { role: "quit" },
             ],
           },
-          { role: "editMenu" },
+          { label: "File", submenu: [newItem] },
+          editMenu,
           viewMenu,
+          goMenu,
           {
             label: "Window",
             role: "window",
@@ -783,6 +842,8 @@ function installApplicationMenu() {
           {
             label: "File",
             submenu: [
+              newItem,
+              { type: "separator" },
               openSettings,
               computerAccess,
               revokeComputerAccess,
@@ -794,8 +855,9 @@ function installApplicationMenu() {
               { role: "quit" },
             ],
           },
-          { role: "editMenu" },
+          editMenu,
           viewMenu,
+          goMenu,
           { role: "windowMenu" },
         ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));

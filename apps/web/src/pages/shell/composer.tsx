@@ -842,6 +842,18 @@ export const Composer = memo(function Composer({
                 if (action.type === "send") {
                   event.preventDefault();
                   void send();
+                  return;
+                }
+                if (
+                  event.key === "Escape" &&
+                  running &&
+                  !sending &&
+                  !talk.recording?.locked &&
+                  !event.nativeEvent.isComposing &&
+                  !(event.shiftKey || event.ctrlKey || event.metaKey || event.altKey)
+                ) {
+                  event.preventDefault();
+                  void onStop();
                 }
               }}
               disabled={disabled}

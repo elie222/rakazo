@@ -1330,3 +1330,23 @@ it("accepts file drops in transparent padding only during file drags", () => {
   dispatchDrag(window, "dragend", dataTransfer);
   expect(fieldset.classList.contains("pointer-events-none")).toBe(true);
 });
+
+it("stops the running reply on Escape, but lets Escape close the mention picker first", () => {
+  const onStop = vi.fn(async () => {});
+  const textarea = renderComposer(async () => true, { onStop });
+  const pressEscape = () =>
+    act(() =>
+      textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    );
+
+  pressEscape();
+  expect(onStop).not.toHaveBeenCalled();
+
+  rerenderComposer({ running: true });
+  pressEscape();
+  expect(onStop).toHaveBeenCalledTimes(1);
+
+  type(textarea, "@");
+  pressEscape();
+  expect(onStop).toHaveBeenCalledTimes(1);
+});
