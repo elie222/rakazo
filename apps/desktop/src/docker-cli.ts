@@ -85,6 +85,7 @@ const WIN32_ENV_ALLOWLIST = [
   "APPDATA",
   "LOCALAPPDATA",
   "ProgramData",
+  // Docker discovers Windows CLI plugins relative to ProgramFiles, not docker.exe or PATH.
   "ProgramFiles",
 ];
 
