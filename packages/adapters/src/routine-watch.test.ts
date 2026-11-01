@@ -1132,6 +1132,16 @@ describe("toolResultText", () => {
     ).toBe("one\ntwo");
   });
 
+  it("keeps an error result's text alone instead of repeating its structured copy", () => {
+    expect(
+      toolResultText({
+        content: [{ type: "text", text: "Permission denied for folder Reports" }],
+        structuredContent: { error: "Permission denied for folder Reports" },
+        isError: true,
+      }),
+    ).toBe("Permission denied for folder Reports");
+  });
+
   it("keeps plain strings and other data readable", () => {
     expect(toolResultText("plain")).toBe("plain");
     expect(toolResultText({ b: 1, a: 2 })).toBe('{"a":2,"b":1}');

@@ -633,12 +633,15 @@ async function readTool(
  * beside its structured copy, rather than its `{content:[{type:"text",text}]}`
  * envelope. A text block that only repeated the structured data is dropped on
  * the way in, so any text left is supplemental — the note needs both to keep
- * the details that triggered the routine.
+ * the details that triggered the routine. An error result keeps its text on the
+ * way in, so its text alone is the message.
  */
 export function toolResultText(data: unknown): string {
   if (typeof data === "string") return data;
   const texts = toolResultTextParts(data);
-  const structured = (data as { structuredContent?: unknown } | null)?.structuredContent;
+  const { structuredContent: structured, isError } =
+    (data as { structuredContent?: unknown; isError?: unknown } | null) ?? {};
+  if (isError === true && texts.length) return texts.join("\n");
   if (structured && typeof structured === "object" && !Array.isArray(structured)) {
     const json = stableStringify(structured);
     return texts.length ? `${texts.join("\n")}\n${json}` : json;
