@@ -84,10 +84,16 @@ async function commitOwnInstructions(
   input: {
     instructions: string;
     reason: string;
-    previousInstructions: string;
+    previousInstructions: string | undefined;
   },
 ): Promise<{ ok: true } | { error: string }> {
+  // A checkpoint that predates the baseline leaves the attempt without the text its rewrite
+  // was built from, and an approval proposed back then stored a fresh read instead. Refuse
+  // both rather than guess or overwrite what the rewrite never saw.
+  if (ctx.state.ownInstructionsBaseline === undefined || input.previousInstructions === undefined)
+    return { error: OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR };
   const { deps, run, runId, bot, context } = ctx;
+  const previousInstructions = input.previousInstructions;
   const committed = await deps.prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${run.threadId} FOR UPDATE`;
     await tx.$queryRaw`SELECT id FROM runs WHERE id = ${runId} FOR UPDATE`;
@@ -101,7 +107,7 @@ async function commitOwnInstructions(
         botId: bot.id,
         instructions: input.instructions,
         reason: input.reason,
-        expectedInstructions: input.previousInstructions,
+        expectedInstructions: previousInstructions,
       });
     } catch (error) {
       if (!(error instanceof InstructionConflictError)) throw error;
@@ -116,7 +122,7 @@ async function commitOwnInstructions(
         status: "answered",
         instructionUpdate: {
           botId: bot.id,
-          before: redactSecrets(input.previousInstructions, ctx.secrets),
+          before: redactSecrets(previousInstructions, ctx.secrets),
           after: input.instructions,
           reason: input.reason,
           undoVersionId,
@@ -336,17 +342,14 @@ export const fleetTools: ToolHandlers = {
       ]).catch((error) => getLogger().error("settings update card", error));
     }
     if (argumentGiven(instructions)) {
-      // An older checkpoint predates the baseline; this attempt must not guess.
-      const set =
-        ctx.state.ownInstructionsBaseline === undefined
-          ? ({ error: OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR } as const)
-          : await commitOwnInstructions(ctx, {
-              instructions: String(instructions),
-              reason: "Set in chat",
-              // The text the model worked from, not a fresh read: a change that landed since
-              // the attempt started conflicts instead of being overwritten.
-              previousInstructions: ctx.state.ownInstructionsBaseline,
-            });
+      const set = await commitOwnInstructions(ctx, {
+        instructions: String(instructions),
+        reason: "Set in chat",
+        // The text the model worked from, not a fresh read: a change that landed since the
+        // attempt started conflicts instead of being overwritten, and a checkpoint that
+        // predates the baseline makes the commit itself refuse.
+        previousInstructions: ctx.state.ownInstructionsBaseline,
+      });
       if ("error" in set)
         return call.finish({
           error: `${updated || Object.keys(settings.data).length ? "Your other changes were saved, but your instructions were not: " : ""}${set.error}`,

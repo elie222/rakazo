@@ -1520,7 +1520,13 @@ describe("own instructions through update_bot", () => {
     f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
     f.overwriteInstructionsAfterAttemptStart("Imported profile");
     await f.run();
-    expect(f.results).toEqual([{ error: expect.stringContaining("Instructions changed") }]);
+    expect(f.results).toEqual([
+      {
+        error: expect.stringContaining(
+          "Instructions changed since this run started, so your instructions were not saved",
+        ),
+      },
+    ]);
     expect(f.instructionState.instructions).toBe("Imported profile");
     expect(f.instructionState.instructionHistory).toHaveLength(0);
   });
@@ -1668,6 +1674,28 @@ describe("own instructions through update_bot", () => {
     expect(f.pauseRunForInput).toHaveBeenCalledOnce();
     expect(f.effects).toHaveLength(1);
     expect(f.instructionState.instructions).toBe("Imported profile");
+    expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  it("refuses an approval left pending from before the baseline existed", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
+    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+    f.pauseWithTurnCheckpoint("call-1", savedTurn());
+    await f.run();
+    // Pre-upgrade code stored a fresh read as the expected text, not the baseline, and its
+    // checkpoint has no baseline to restore; approving it must not apply the rewrite.
+    const saved = JSON.parse(f.turnCheckpoints[0]!.result) as Record<string, unknown>;
+    delete saved.ownInstructionsBaseline;
+    f.turnCheckpoints[0]!.result = JSON.stringify(saved);
+    (f.effects[0]!.request as { previousInstructions: string }).previousInstructions =
+      "Imported profile";
+    f.instructionState.instructions = "Imported profile";
+    f.effects[0]!.status = "approved";
+    await f.run();
+    expect(f.instructionState.instructions).toBe("Imported profile");
+    expect(f.effects[0]).toMatchObject({
+      status: "completed",
+      result: { error: expect.stringContaining("cannot safely change its own instructions") },
+    });
     expect(f.instructionState.instructionHistory).toHaveLength(0);
   });
   it("does not apply an approved change after cancellation wins the thread lock", async () => {
