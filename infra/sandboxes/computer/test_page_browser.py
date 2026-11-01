@@ -670,6 +670,14 @@ class CardTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "websocket closed"):
             self.card_fill(browser)
         self.assertTrue(browser.cleared)
+        def lost_first_answer(browser):
+            browser.after_key = None
+            raise TimeoutError("CDP call timed out: Input.insertText")
+
+        browser = CardBrowser(after_key=lost_first_answer)
+        with self.assertRaises(TimeoutError):
+            self.card_fill(browser)
+        self.assertTrue(browser.cleared)
         browser = CardBrowser(after_key=fail, clears=False)
         with self.assertRaisesRegex(secrets.CardFieldUncertain, "could not be confirmed empty"):
             self.card_fill(browser)
