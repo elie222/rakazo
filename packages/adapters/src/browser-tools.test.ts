@@ -615,7 +615,10 @@ describe("browser tools", () => {
         { resolveSecretFill },
       );
       expect(acted).toMatchObject({ ok: false, completed: 0, uncertain: false });
-      expect(JSON.stringify(acted)).toMatch(/not on the site.*browser_navigate/);
+      expect(acted).toMatchObject({
+        error:
+          "This login is saved for https://login.example.test; the page is on https://phish.example.test. Open the saved site with browser_navigate, then fill again.",
+      });
       // A refusal is settled: nothing points the bot at desktop tools or takeover.
       expect(acted).not.toHaveProperty("fallback");
       expect(acted).not.toHaveProperty("note");

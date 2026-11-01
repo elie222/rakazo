@@ -109,12 +109,34 @@ export const secretTools: ToolHandlers = {
     const loginFields =
       destination?.auth.type === "login" ? requestedLoginFields(args.fields) : undefined;
     if (loginFields?.error) return call.finish({ error: loginFields.error });
+    // A saved login whose site was wrong is replaced only from a card answered for this site.
+    let replaces: string | undefined;
     if (destination) {
-      const existing = await findBotSecret(deps.prisma, run, destination.name);
+      const saved = await findBotSecret(deps.prisma, run, destination.name);
+      const existing = saved?.destination;
+      // A login the person chose not to save stays with this run; the bot is told so it doesn't
+      // say it was saved. Field labels only, never values.
+      const runLogin =
+        destination.auth.type === "login"
+          ? await findRunLogin(deps.prisma, deps.secretStore, run, runId, destination.name)
+          : undefined;
+      const held = runLogin?.origin === destination.origin ? runLogin : undefined;
       if (existing && !sameSecretDestination(existing, destination)) {
-        return call.finish({
-          error: "Remove the existing credential before changing its destination.",
-        });
+        if (
+          existing.auth.type !== "login" ||
+          destination.auth.type !== "login" ||
+          !destination.origin.startsWith("https://")
+        ) {
+          return call.finish({
+            error: "Remove the existing credential before changing its destination.",
+          });
+        }
+        if (args.replace !== true && !held) {
+          return call.finish({
+            error: `A login named ${existing.name} is saved for ${existing.origin}. For a different site or account, use another name; ask again with replace true only if ${existing.origin} was the wrong site for this same account, which replaces the saved login.`,
+          });
+        }
+        replaces = saved?.id;
       }
       const conflict = await findCommandVariableConflict(deps.prisma, run, destination);
       if (conflict) {
@@ -122,22 +144,15 @@ export const secretTools: ToolHandlers = {
           error: `Invalid credential destination — name: ${conflict} is already exported as the same variable. Choose another name.`,
         });
       }
-      // A login the person chose not to save stays with this run; the bot is told so it doesn't
-      // say it was saved. Field labels only, never values.
-      const runLogin =
-        destination.auth.type === "login"
-          ? await findRunLogin(deps.prisma, deps.secretStore, run, runId, destination.name)
+      const known = held
+        ? {
+            saved: false,
+            ...destination,
+            fields: held.fields.map(({ label, hidden }) => ({ label, hidden })),
+          }
+        : existing && sameSecretDestination(existing, destination)
+          ? { saved: true, ...botSecretToolView(existing) }
           : undefined;
-      const known =
-        runLogin && runLogin.origin === destination.origin
-          ? {
-              saved: false,
-              ...destination,
-              fields: runLogin.fields.map(({ label, hidden }) => ({ label, hidden })),
-            }
-          : existing
-            ? { saved: true, ...botSecretToolView(existing) }
-            : undefined;
       const submitted = botSecretSubmissionSchema({
         allowPrivateHttpOrigin: allowPrivateHttpSecretOrigins(),
       }).safeParse(applied?.effect.result).data;
@@ -309,6 +324,7 @@ export const secretTools: ToolHandlers = {
           text: String(args.label ?? "Code"),
           input: "secret",
           ...(destination ? { credential: destination } : {}),
+          ...(replaces ? { replaces } : {}),
           ...(loginFields?.labels ? { loginFields: loginFields.labels } : {}),
           purpose: normalizeSecretAskPurpose(args.purpose ? String(args.purpose) : undefined),
           status: "pending",

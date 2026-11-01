@@ -592,7 +592,7 @@ describe("live page helper saved logins and cards", () => {
         "https://other.example.test",
         "password",
       ),
-    ).toThrow(/Refused: The page is not on the site this login was saved for/);
+    ).toThrow(/Refused: This login is saved for https:\/\/other\.example\.test;/);
     expect(() =>
       browser.fill(
         refOf(snap, "Password"),
@@ -607,6 +607,30 @@ describe("live page helper saved logins and cards", () => {
     browser.fill(refOf(snap, "Password"), "fake-password", origin, "password");
     expect((win.document.querySelector("[aria-label=Password]") as HTMLInputElement).value).toBe(
       "fake-password",
+    );
+  });
+
+  it("names only the login's site and the page's on another site, nothing that sends the bot elsewhere", () => {
+    const { win, browser } = installPageHelper(form);
+    const password = refOf(browser.snapshot(), "Password");
+    expect(() =>
+      browser.fill(password, "fake-password", "https://www.portal.example.test/in?a=b", "password"),
+    ).toThrow(
+      new Error(
+        "Refused: This login is saved for https://www.portal.example.test; the page is on https://portal.example.test. Open the saved site with browser_navigate, then fill again.",
+      ),
+    );
+    let message = "";
+    try {
+      browser.fill(password, "fake-password", "https://www.portal.example.test", "password");
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    for (const nudge of ["request_secret", "replace", "this page", "sign in", "fake-password"]) {
+      expect(message).not.toContain(nudge);
+    }
+    expect((win.document.querySelector("[aria-label=Password]") as HTMLInputElement).value).toBe(
+      "",
     );
   });
 

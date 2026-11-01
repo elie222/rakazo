@@ -56,7 +56,7 @@ function secretAskToolSurface() {
             ),
             replace: {
               type: "boolean",
-              description: "Ask the user to replace an existing credential value.",
+              description: "Ask the user to replace a saved value or a login's site.",
             },
             fields: {
               type: "array",
