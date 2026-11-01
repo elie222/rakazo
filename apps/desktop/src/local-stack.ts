@@ -469,9 +469,11 @@ export class LocalStackController {
       this.push({ type: "docker-missing", message: "Docker is not installed on this computer." });
       return;
     }
+    // Only the exit status is used: `--short` was dropped from newer Compose
+    // releases, and failing on the flag looked like Compose was not installed.
     const version = await this.docker(
       binary,
-      ["compose", "version", "--short"],
+      ["compose", "version"],
       COMPOSE_VERSION_TIMEOUT_MS,
       signal,
     );
