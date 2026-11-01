@@ -120,18 +120,6 @@ export async function prepareModelCredential(
   throwIfAborted(input.signal);
   const parsedSecret = parseModelSecret(input.plaintext);
   const requestedModelId = usableModelId(input.modelId);
-  const authError = requestedModelId
-    ? validateModelAuthAvailability(input.provider, requestedModelId, input.plaintext)
-    : undefined;
-  // The backend's live catalog can clear a static OAuth exclusion for the
-  // account this credential signs into (e.g. Codex Spark on ChatGPT plans).
-  if (
-    authError &&
-    requestedModelId &&
-    !(await codexLiveListsModel(codexCatalog, actor.userId, parsedSecret, requestedModelId))
-  ) {
-    throw new ORPCError("BAD_REQUEST", { message: authError });
-  }
   const resolvedCodexModelId =
     canonicalPiProviderId(input.provider) === CHATGPT_OAUTH_PROVIDER &&
     parsedSecret.kind === "oauth"
@@ -142,6 +130,18 @@ export async function prepareModelCredential(
           requestedModelId,
         )
       : requestedModelId;
+  const authError = resolvedCodexModelId
+    ? validateModelAuthAvailability(input.provider, resolvedCodexModelId, input.plaintext)
+    : undefined;
+  // The backend's live catalog can clear a static OAuth exclusion for the
+  // account this credential signs into (e.g. Codex Spark on ChatGPT plans).
+  if (
+    authError &&
+    resolvedCodexModelId &&
+    !(await codexLiveListsModel(codexCatalog, actor.userId, parsedSecret, resolvedCodexModelId))
+  ) {
+    throw new ORPCError("BAD_REQUEST", { message: authError });
+  }
   const defaultModel =
     resolvedCodexModelId ??
     defaultCatalogModelId(input.provider, input.plaintext) ??

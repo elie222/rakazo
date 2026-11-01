@@ -84,12 +84,23 @@ describe("resolveCodexOAuthDefaultModel", () => {
     expect(result).toBe(LUNA);
   });
 
-  it("uses an account model when the static default is unavailable", async () => {
+  it("uses an account model when the requested model is unavailable", async () => {
+    const result = await resolveCodexOAuthDefaultModel(
+      catalog([liveModel(LUNA)]),
+      "user-test",
+      oauthSecret(),
+      SPARK,
+    );
+
+    expect(result).toBe(LUNA);
+  });
+
+  it("uses an account model when no model was requested", async () => {
     const result = await resolveCodexOAuthDefaultModel(
       catalog([liveModel(SPARK)]),
       "user-test",
       oauthSecret(),
-      LUNA,
+      undefined,
     );
 
     expect(result).toBe(SPARK);
