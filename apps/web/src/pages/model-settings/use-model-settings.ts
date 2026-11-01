@@ -20,7 +20,6 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleProbeSuccessMessage,
   savedCompatibleEndpointMatches,
-  savedCompatibleProtocol,
 } from "@rakazo/contracts";
 import type { ConnectionFormFields } from "@rakazo/core";
 import {
@@ -358,24 +357,11 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     return revision === preflightRevisionRef.current;
   }
 
-  /** A staged effort above what the protocol runs clamps down to what it runs. */
-  function clampStagedThinkingLevel(protocol: ModelApiProtocol) {
-    setThinkingLevel(
-      clampCatalogThinkingLevel(
-        thinkingLevel,
-        reasoning ? compatibleThinkingLevels(protocol) : [],
-      ) as ThinkingLevel | null,
-    );
-  }
-
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
     setHeaderRows(null);
     // A new endpoint starts with no ticks; the saved endpoint gets its saved list back.
     setEnabledModelIds(savedCompatibleModelIds(credential, nextBaseUrl));
-    const nextProtocol = savedCompatibleProtocol(credential, nextBaseUrl);
-    setApiProtocol(nextProtocol);
-    clampStagedThinkingLevel(nextProtocol);
     resetOpenAiCompatibleProbe();
     invalidatePreflight();
     setError(null);
@@ -390,7 +376,12 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
 
   function updateApiProtocol(nextProtocol: ModelApiProtocol) {
     setApiProtocol(nextProtocol);
-    clampStagedThinkingLevel(nextProtocol);
+    setThinkingLevel(
+      clampCatalogThinkingLevel(
+        thinkingLevel,
+        reasoning ? compatibleThinkingLevels(nextProtocol) : [],
+      ) as ThinkingLevel | null,
+    );
     resetOpenAiCompatibleProbe();
     invalidatePreflight();
   }

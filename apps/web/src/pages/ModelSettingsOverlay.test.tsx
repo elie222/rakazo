@@ -1049,26 +1049,18 @@ it("offers the three wire protocols only on a custom endpoint, keeping the saved
   }
 });
 
-it("resets the protocol when the endpoint changes and probes with the chosen one", async () => {
+it("keeps the chosen protocol when the endpoint changes and probes with it", async () => {
   models.probeOpenAiCompatible.mockResolvedValue({ models: ["model-a"] });
   const view = await renderCompatible({
     ...compatibleCredential,
     apiProtocol: "anthropic-messages",
   });
   try {
+    await typeInto(baseUrlField(view.container), "http://127.0.0.1:9000/v1");
+    expect(protocolField(view.container).value).toBe("anthropic-messages");
     await click(buttons(view.container, "Find models")[0]);
     expect(models.probeOpenAiCompatible).toHaveBeenLastCalledWith(
       expect.objectContaining({ apiProtocol: "anthropic-messages" }),
-    );
-    await typeInto(baseUrlField(view.container), "http://127.0.0.1:9000/v1");
-    expect(protocolField(view.container).value).toBe("chat-completions");
-    // Retyping the saved endpoint keeps the saved protocol.
-    await typeInto(baseUrlField(view.container), compatibleCredential.baseUrl);
-    expect(protocolField(view.container).value).toBe("anthropic-messages");
-    await typeInto(baseUrlField(view.container), "http://127.0.0.1:9000/v1");
-    await click(buttons(view.container, "Save")[0]);
-    expect(models.connect).toHaveBeenLastCalledWith(
-      expect.objectContaining({ apiProtocol: "chat-completions" }),
     );
   } finally {
     await view.unmount();
@@ -1089,29 +1081,6 @@ it("clamps a staged effort when the protocol switch drops the level", async () =
     expect(models.connect).toHaveBeenLastCalledWith(
       expect.objectContaining({ apiProtocol: "anthropic-messages", thinkingLevel: "high" }),
     );
-  } finally {
-    await view.unmount();
-  }
-});
-
-it("clamps a staged effort when the saved endpoint restores its protocol", async () => {
-  const view = await renderCompatible({
-    ...compatibleCredential,
-    reasoning: true,
-    thinkingLevel: "high",
-    apiProtocol: "anthropic-messages",
-  });
-  try {
-    expect(protocolField(view.container).value).toBe("anthropic-messages");
-    expect(effortField(view.container).value).toBe("high");
-    await chooseProtocol(view.container, "chat-completions");
-    // The top level is only offered by the OpenAI protocols.
-    await selectValue(effortField(view.container), "max");
-    expect(effortField(view.container).value).toBe("max");
-    // An equivalent form of the saved endpoint restores its saved protocol.
-    await typeInto(baseUrlField(view.container), `${compatibleCredential.baseUrl}/`);
-    expect(protocolField(view.container).value).toBe("anthropic-messages");
-    expect(effortField(view.container).value).toBe("high");
   } finally {
     await view.unmount();
   }

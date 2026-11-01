@@ -19,7 +19,6 @@ import {
   OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
-  savedCompatibleProtocol,
 } from "@rakazo/contracts";
 import {
   clampCatalogThinkingLevel,
@@ -295,31 +294,23 @@ export default function ModelConnection() {
   ];
   const apiProtocolLabel = protocolChoices.find((choice) => choice.key === apiProtocol)?.label;
 
-  /** A staged effort above what the protocol runs clamps down to what it runs. */
-  function clampStagedThinkingLevel(protocol: ModelApiProtocol) {
-    setThinkingLevel(
-      clampCatalogThinkingLevel(
-        thinkingLevel,
-        reasoning ? compatibleThinkingLevels(protocol) : [],
-      ) as ThinkingLevel | null,
-    );
-  }
-
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
     setHeaderRows(null);
     // A new endpoint starts with no ticks; the saved endpoint gets its saved list back.
     setEnabledModelIds(savedCompatibleModelIds(credential, nextBaseUrl));
-    const nextProtocol = savedCompatibleProtocol(credential, nextBaseUrl);
-    setApiProtocol(nextProtocol);
-    clampStagedThinkingLevel(nextProtocol);
     resetOpenAiCompatibleProbe();
     clearFeedback();
   }
 
   function updateApiProtocol(nextProtocol: ModelApiProtocol) {
     setApiProtocol(nextProtocol);
-    clampStagedThinkingLevel(nextProtocol);
+    setThinkingLevel(
+      clampCatalogThinkingLevel(
+        thinkingLevel,
+        reasoning ? compatibleThinkingLevels(nextProtocol) : [],
+      ) as ThinkingLevel | null,
+    );
     resetOpenAiCompatibleProbe();
     clearFeedback();
   }

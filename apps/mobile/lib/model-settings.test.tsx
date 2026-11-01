@@ -453,19 +453,12 @@ it("offers the wire protocol on the compatible form and sends the saved choice",
   }
 });
 
-it("resets the protocol when the endpoint changes away and restores it at the saved one", async () => {
+it("keeps the chosen protocol when the endpoint changes", async () => {
   saved.apiProtocol = "anthropic-messages";
   try {
     await remount(() => renderConnection());
     await change("OpenAI-compatible server URL", "https://other.example.test/v1");
-    expect(currentProtocol()).toBe("Chat Completions");
-    await change("OpenAI-compatible server URL", savedEndpoint);
     expect(currentProtocol()).toBe("Anthropic Messages");
-    await change("OpenAI-compatible server URL", "https://other.example.test/v1");
-    await saveConnection();
-    expect(rpcCalls.find(([procedure]) => procedure === "models/connect")?.[1]).toMatchObject({
-      apiProtocol: "chat-completions",
-    });
   } finally {
     saved.apiProtocol = undefined;
   }
@@ -495,28 +488,6 @@ it("clamps a staged effort when the protocol switch drops the level", async () =
       thinkingLevel: "high",
     });
   } finally {
-    saved.reasoning = false;
-    saved.thinkingLevel = undefined;
-  }
-});
-
-it("clamps a staged effort when the saved endpoint restores its protocol", async () => {
-  saved.apiProtocol = "anthropic-messages";
-  saved.reasoning = true;
-  saved.thinkingLevel = "high";
-  try {
-    await remountWithAdvanced(() => renderConnection());
-    expect(currentEffort()).toBe("High");
-    await act(async () => protocolChoice("Chat Completions").click());
-    // The top level is only offered by the OpenAI protocols.
-    await act(async () => protocolChoice("Max").click());
-    expect(currentEffort()).toBe("Max");
-    // An equivalent form of the saved endpoint restores its saved protocol.
-    await change("OpenAI-compatible server URL", `${savedEndpoint}/`);
-    expect(currentProtocol()).toBe("Anthropic Messages");
-    expect(currentEffort()).toBe("High");
-  } finally {
-    saved.apiProtocol = undefined;
     saved.reasoning = false;
     saved.thinkingLevel = undefined;
   }

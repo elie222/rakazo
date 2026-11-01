@@ -1,5 +1,3 @@
-import type { ModelApiProtocol } from "./domain.js";
-
 /** UI preset only; saved connections use the OpenAI-compatible provider. */
 export const OLLAMA_CLOUD_BASE_URL = "https://ollama.com/v1";
 
@@ -93,14 +91,4 @@ export function savedCompatibleEndpointMatches(
   } catch {
     return false;
   }
-}
-
-/** A protocol belongs to its endpoint: the saved endpoint keeps it, any other gets the default. */
-export function savedCompatibleProtocol(
-  saved: { baseUrl?: string; apiProtocol?: ModelApiProtocol } | undefined,
-  baseUrl: string,
-): ModelApiProtocol {
-  return savedCompatibleEndpointMatches(baseUrl, saved?.baseUrl)
-    ? (saved?.apiProtocol ?? "chat-completions")
-    : "chat-completions";
 }
