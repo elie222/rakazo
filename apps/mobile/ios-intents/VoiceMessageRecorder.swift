@@ -19,10 +19,11 @@ struct RecordVoiceMessageIntent: AppIntent {
   func perform() async throws -> some IntentResult {
     guard #available(iOS 18.0, *) else { throw VoiceMessageError.unavailable }
     let recorder = VoiceMessageRecorder.shared
+    // Before deciding, so a second press during the cleanup sees the first one's recording.
+    await recorder.clearStaleActivities()
     if recorder.isRecording {
       await recorder.finish()
     } else {
-      await recorder.clearStaleActivities()
       try recorder.start()
     }
     return .result()
@@ -48,16 +49,15 @@ final class VoiceMessageRecorder {
   private var timer: Task<Void, Never>?
   private var started = Date()
 
-  private var clearedStale = false
+  private var staleCleanup: Task<Void, Never>?
 
   var isRecording: Bool { request != nil }
 
   /// Ends activities an earlier launch left when iOS closed it mid-recording, once per launch, so
   /// a message from this launch that is still sending keeps its island.
   func clearStaleActivities() async {
-    guard !clearedStale else { return }
-    clearedStale = true
-    await VoiceMessageAttributes.endAll()
+    if staleCleanup == nil { staleCleanup = Task { await VoiceMessageAttributes.endAll() } }
+    await staleCleanup?.value
   }
 
   func start() throws {
