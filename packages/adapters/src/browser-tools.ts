@@ -2,6 +2,7 @@ import type {
   AdapterContext,
   AgentToolExecutionResult,
   BrowserActStep,
+  BrowserDownload,
   BrowserProvider,
   ComputerRef,
 } from "@rakazo/adapter-kit";
@@ -42,8 +43,15 @@ export type CardFillStep = {
 /** The model never supplies or sees the token. */
 export type PayTokenFillStep = { kind: "fill_pay_token"; purchase: string };
 export type BrowserActInput = BrowserActStep | SecretFillStep | CardFillStep | PayTokenFillStep;
-/** desktopTools: the run also has computer_act, so a page-tool failure can fall back to it. */
-export type PageToolOptions = { desktopTools?: boolean };
+/**
+ * desktopTools: the run also has computer_act, so a page-tool failure can fall back to it.
+ * downloads: the folder in the computer's home that the page's file downloads are saved to, and the
+ * path the bot's own tools use for a file there.
+ */
+export type PageToolOptions = {
+  desktopTools?: boolean;
+  downloads?: { folder: string; botPath: (path: string) => string };
+};
 export type ResolveSecretFill = (
   step: SecretFillStep,
 ) => Promise<{ text: string; origin: string; hidden: boolean } | { error: string }>;
@@ -80,8 +88,12 @@ export async function browserNavigateFromTool(
     return refusedInput(NAVIGATE_URL_REQUIRED);
   }
   try {
-    const result = await browser.navigate(computer, { url, signal: context.signal }, context);
-    return formatBrowserResult(result, options);
+    const result = await browser.navigate(
+      computer,
+      { url, downloads: options.downloads?.folder, signal: context.signal },
+      context,
+    );
+    return formatBrowserResult(withBotPaths(result, options), options);
   } catch (error) {
     context.signal.throwIfAborted();
     return formatBrowserResult(
@@ -213,8 +225,15 @@ export async function browserActFromTool(
         });
       }
     }
-    const result = await browser.act(computer, { actions, signal: context.signal }, context);
-    return redactBrowserResult(formatBrowserResult(result, options), options.redactions?.() ?? []);
+    const result = await browser.act(
+      computer,
+      { actions, downloads: options.downloads?.folder, signal: context.signal },
+      context,
+    );
+    return redactBrowserResult(
+      formatBrowserResult(withBotPaths(result, options), options),
+      options.redactions?.() ?? [],
+    );
   } catch (error) {
     context.signal.throwIfAborted();
     if (error instanceof BrowserToolInputError)
@@ -345,6 +364,19 @@ export function browserResultForModel<T>(result: T): T | AgentToolExecutionResul
   const text = JSON.stringify(view);
   if (text.length > TOOL_RESULT_TEXT_LIMIT) return result;
   return { kind: "agent_tool_result", content: [{ type: "text", text }], details: result };
+}
+
+function withBotPaths<T extends { downloads?: BrowserDownload[] }>(
+  result: T,
+  { downloads }: PageToolOptions,
+): T {
+  if (!downloads || !Array.isArray(result.downloads)) return result;
+  return {
+    ...result,
+    downloads: result.downloads.map((file) =>
+      typeof file.path === "string" ? { ...file, path: downloads.botPath(file.path) } : file,
+    ),
+  };
 }
 
 function formatBrowserResult<T extends { fallback?: "computer_act"; error?: string }>(
