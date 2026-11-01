@@ -276,10 +276,16 @@ class FrameBrowser:
         if expression == helper.EVAL_HELPERS:
             return True
         if "purchaseIntent(" in expression:
+            if frame.get("check_fails"):
+                raise RuntimeError("Runtime.evaluate failed: Maximum call stack size exceeded")
             ref = json.loads(expression.split("purchaseIntent(", 1)[1].split(",", 1)[0])
             return {"purchase": frame.get("buys", {}).get(ref), "host": urlsplit(frame["url"]).netloc, "frames": False}
         if expression == "location.host":
             return urlsplit(frame["url"]).netloc
+        if "paymentPage(" in expression:
+            if frame.get("signals_fail"):
+                raise RuntimeError("Runtime.evaluate failed: Maximum call stack size exceeded")
+            return {"purchase": frame.get("shows"), "host": urlsplit(frame["url"]).netloc, "frames": False}
         if expression.startswith("({origin: location.origin, host: location.host"):
             parts = urlsplit(frame["url"])
             return {"origin": f"{parts.scheme}://{parts.netloc}", "host": parts.netloc, "url": frame["url"], "title": ""}
@@ -2313,6 +2319,21 @@ class PageBrowserTest(unittest.TestCase):
         result = browser.act([{**approved, "site": urlsplit(SHOP_PAGE).netloc}], "auth")
         self.assertEqual((result["ok"], result["completed"]), (True, 1))
         self.assertEqual([kind for kind, *_ in browser.mouse()], ["mouseMoved", "mousePressed", "mouseReleased"])
+
+    def test_a_pay_button_in_a_frame_whose_check_fails_asks_by_what_that_frame_shows(self):
+        # The frame shows a payment, the page around it does not: the frame's own signals ask.
+        browser = FrameBrowser()
+        browser.frames["auth"].update({"check_fails": True, "shows": FRAME_PAY})
+        refused = browser.act([{"kind": "click", "ref": "f22"}], "auth")
+        self.assertEqual((refused["ok"], refused["completed"], refused["error"]), (False, 0, helper.PURCHASE_REFUSED))
+        self.assertEqual(refused["purchase"]["site"], urlsplit(SHOP_PAGE).netloc)
+        self.assertEqual(browser.mouse(), [])
+        # A frame whose signals cannot be read either asks too.
+        browser = FrameBrowser()
+        browser.frames["auth"].update({"check_fails": True, "signals_fail": True})
+        refused = browser.act([{"kind": "click", "ref": "f22"}], "auth")
+        self.assertEqual((refused["ok"], refused["purchase"]["reason"]), (False, "unreadable"))
+        self.assertEqual(browser.mouse(), [])
 
     def test_a_click_in_a_frame_goes_to_its_spot_in_the_window_on_the_page_session_only(self):
         browser = FrameBrowser()

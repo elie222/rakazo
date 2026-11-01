@@ -2666,7 +2666,9 @@ def click_purchase(client: CdpClient, session_id: str, ref: str, frame: PageFram
         if frame and found and isinstance(found.get("purchase"), dict):
             found = {**found, "host": eval_json(client, session_id, "location.host")}
     except Exception:  # noqa: BLE001
-        buying = signals_or_ask(client, session_id, False)
+        # A frame's failed check answers with what that frame shows first: the pay button is there.
+        buying = ((signals_or_ask(client, frame.session, False, frame.world) if frame else None)
+                  or signals_or_ask(client, session_id, False))
         if not buying:
             return None
         try:
@@ -2681,10 +2683,12 @@ def click_purchase(client: CdpClient, session_id: str, ref: str, frame: PageFram
 UNREADABLE_PURCHASE = {"reason": "unreadable", "label": "", "amount": "", "amountFrom": "page"}
 
 
-def signals_or_ask(client: CdpClient, session_id: str, enter: bool) -> dict[str, Any] | None:
-    """After a failed purchase check: the payment the page itself shows, and a page that cannot be read asks."""
+def signals_or_ask(client: CdpClient, session_id: str, enter: bool,
+                   frame_world: int | None = None) -> dict[str, Any] | None:
+    """After a failed purchase check: the payment the page (or the frame of `frame_world`) itself shows, and a
+    page that cannot be read asks."""
     try:
-        return page_signals(client, session_id, enter, float("inf"), frames=False)
+        return page_signals(client, session_id, enter, float("inf"), frames=False, frame_world=frame_world)
     except Exception:  # noqa: BLE001
         return dict(UNREADABLE_PURCHASE)
 
@@ -2744,10 +2748,10 @@ def desktop_frames(client: CdpClient, session_id: str, deadline: float = float("
 
 
 def page_signals(client: CdpClient, session_id: str, enter: bool, deadline: float,
-                 frames: bool = True) -> dict[str, Any] | None:
+                 frames: bool = True, frame_world: int | None = None) -> dict[str, Any] | None:
     """The purchase the page shows without a spot to look at: in the page itself, else in any of its frames."""
     ask = "window.__rakazoPageBrowser.paymentPage(%s, " + json.dumps(enter) + ")"
-    found = page_purchase(client, session_id, lambda frame: ask % json.dumps(frame))
+    found = page_purchase(client, session_id, lambda frame: ask % json.dumps(frame), frame_world)
     if found and isinstance(found.get("purchase"), dict):
         return found["purchase"]
     for frame_session, _, world in desktop_frames(client, session_id, deadline) if frames else []:
