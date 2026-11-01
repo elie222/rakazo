@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { observationToolResult } from "./computer-tools.js";
 import {
   advanceOverLimitActionCalls,
   advanceToolCallLoopGuard,
@@ -7,7 +8,24 @@ import {
   MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS,
   overLimitStopText,
   toolCallStreakLength,
+  toolResultFingerprint,
 } from "./tool-loop.js";
+
+const answer = (text: string) => toolResultFingerprint({ content: [{ type: "text", text }] });
+const failure = (text = "missing script") => toolResultFingerprint(undefined, new Error(text));
+
+/** The call that stops one command repeated with `seen(call)` as each call's answer, if any. */
+function identicalStopsAt(seen: (call: number) => string | undefined) {
+  let streak = { key: undefined as string | undefined, count: 0 };
+  let previous: string | undefined;
+  for (let call = 1; call <= 60; call += 1) {
+    const result = advanceToolCallLoopGuard(streak, "shell", { command: "cat job.log" }, previous);
+    streak = result.streak;
+    if (result.stuck) return call;
+    previous = seen(call);
+  }
+  return undefined;
+}
 
 describe("advanceToolCallLoopGuard", () => {
   it("allows a parallel Open Connector batch with distinct action inputs", () => {
@@ -23,12 +41,12 @@ describe("advanceToolCallLoopGuard", () => {
     }
   });
 
-  it("stops six consecutive calls with identical inputs", () => {
+  it("stops six consecutive identical calls that return the same tool error", () => {
     let streak = { key: undefined as string | undefined, count: 0 };
     let stuck = false;
 
     for (let index = 0; index < 6; index += 1) {
-      const result = advanceToolCallLoopGuard(streak, "shell", { command: "npm test" });
+      const result = advanceToolCallLoopGuard(streak, "shell", { command: "npm test" }, failure());
       streak = result.streak;
       stuck = result.stuck;
     }
@@ -57,7 +75,12 @@ describe("advanceToolCallLoopGuard", () => {
     const stopText = (command: (call: number) => string) => {
       let streak = { key: undefined as string | undefined, count: 0 };
       for (let call = 1; call < 50; call += 1) {
-        const result = advanceToolCallLoopGuard(streak, "shell", { command: command(call) });
+        const result = advanceToolCallLoopGuard(
+          streak,
+          "shell",
+          { command: command(call) },
+          failure(),
+        );
         streak = result.streak;
         if (result.stuck) return loopGuardStopText("shell", streak);
       }
@@ -79,7 +102,12 @@ describe("advanceToolCallLoopGuard", () => {
       streak = advanceToolCallLoopGuard(streak, "shell", { command: `echo noop-${call}` }).streak;
     }
     for (let call = 0; call < 6; call += 1) {
-      streak = advanceToolCallLoopGuard(streak, "shell", { command: "echo noop-11" }).streak;
+      streak = advanceToolCallLoopGuard(
+        streak,
+        "shell",
+        { command: "echo noop-11" },
+        failure(),
+      ).streak;
     }
     expect(loopGuardStopText("shell", streak)).toContain(" with the same input 6 times in a row");
   });
@@ -105,6 +133,92 @@ describe("advanceToolCallLoopGuard", () => {
       streak = result.streak;
       expect(result.stuck).toBe(false);
     }
+  });
+
+  it.each([
+    ["the same failure", () => failure(), 6],
+    ["the same answer", () => answer("Still loading"), 25],
+    ["an unknown answer", () => undefined, 25],
+    ["a new answer each time", (call: number) => answer(`Downloaded ${call * 10}%`), undefined],
+    // Only the first switch is new; after that both are known.
+    ["alternating failures", (call: number) => failure(call % 2 ? "a" : "b"), 7],
+    ["alternating answers", (call: number) => answer(call % 2 ? "a" : "b"), 26],
+    // The first failure, from call 5, starts the run the sixth failing call stops.
+    ["a failure after four answers", (call: number) => (call <= 4 ? answer("ok") : failure()), 10],
+    // Call 20's new answer starts the run over from it, so its 25th repeat stops.
+    ["an answer that changes at call 20", (call: number) => answer(call < 20 ? "a" : "b"), 44],
+    // A wait with transient errors: the first error starts the run over from call 4.
+    ["one error in a wait", (call: number) => (call === 4 ? failure() : answer("pending")), 28],
+    [
+      "an error every third answer in a wait",
+      (call: number) => (call % 3 === 1 && call > 1 ? failure() : answer("pending")),
+      28,
+    ],
+    // A failing exit code can be a wait too (`sleep 30; test -f done`).
+    [
+      "a failing shell exit code",
+      () => toolResultFingerprint({ stdout: "", stderr: "1 test failed", code: 1 }),
+      25,
+    ],
+  ])("stops an identical repeat that got %s at the expected call", (_, seen, stopsAt) => {
+    expect(identicalStopsAt(seen)).toBe(stopsAt);
+  });
+
+  it.each([
+    ["identical", () => "npm test", 6],
+    ["digits-only", (call: number) => `cat page-${call}.txt`, 25],
+  ])("counts %s calls once per model response", (_, command, limit) => {
+    const stopsAt = (response: (call: number) => number) => {
+      let streak = { key: undefined as string | undefined, count: 0 };
+      for (let call = 1; call <= limit; call += 1) {
+        const result = advanceToolCallLoopGuard(
+          streak,
+          "shell",
+          { command: command(call) },
+          failure(),
+          response(call),
+        );
+        streak = result.streak;
+        if (result.stuck) return call;
+      }
+      return undefined;
+    };
+
+    expect(stopsAt(() => 1)).toBeUndefined();
+    expect(stopsAt((call) => call)).toBe(limit);
+  });
+
+  it("fingerprints what the model saw, not timing details", () => {
+    expect(toolResultFingerprint({ content: [{ type: "text", text: "ok" }], details: 1 })).toBe(
+      toolResultFingerprint({ content: [{ type: "text", text: "ok" }], details: 2 }),
+    );
+    expect(failure("boom")).not.toBe(failure("bang"));
+    expect(toolResultFingerprint({ error: "boom" })).toMatch(/^failed:/);
+    expect(answer("boom")).not.toMatch(/^failed:/);
+  });
+
+  it("fingerprints screen results by frame, not capture time", () => {
+    const screen = (frameId: string, capturedAt: string, unchangedVisualCount: number) =>
+      observationToolResult(
+        {
+          frameId,
+          capturedAt,
+          image: new Uint8Array([1]),
+          mimeType: "image/png",
+          width: 1280,
+          height: 800,
+        },
+        "computer acted",
+        frameId,
+        { unchangedVisualCount },
+      );
+    const first = screen("frame-a", "2026-01-01T00:00:00.000Z", 1);
+    expect(toolResultFingerprint(first)).toBe(
+      toolResultFingerprint(screen("frame-a", "2026-01-01T00:00:05.000Z", 2)),
+    );
+    expect(toolResultFingerprint(first)).not.toBe(
+      toolResultFingerprint(screen("frame-b", "2026-01-01T00:00:05.000Z", 2)),
+    );
   });
 });
 

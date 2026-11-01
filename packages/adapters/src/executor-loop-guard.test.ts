@@ -17,6 +17,7 @@ const REFUSAL =
   "computer_act accepts at most 24 actions but got 30; none ran. Send the first 24 or fewer now, then the rest in a separate call.";
 // Past this many requests the fake model gives up, so a missing guard fails the test instead of hanging it.
 const REQUEST_CAP = 40;
+const REPORT = { path: "downloads/report.csv", kind: "file", size: 1024 };
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -52,12 +53,17 @@ function toolResultTexts(messages: Array<Record<string, unknown>>): string[] {
     );
 }
 
+type Answer = { text?: string; calls?: Array<{ name: string; args: object }> };
+
 /**
  * One real executor turn: real PiAgentRuntime and run loop against a fake OpenAI-compatible
- * server whose every answer is a computer_act call. `sizes` gives the batch size per request;
- * the last size repeats.
+ * server that gives `answer(request)` for each request; an answer without calls ends the turn.
+ * `listing(call)` gives what each listing of `downloads` finds; by default one unchanged file.
  */
-async function runWithBatches(sizes: number[], vary = true) {
+async function runLoop(
+  answer: (request: number) => Answer,
+  { listing = (_call: number) => [REPORT] } = {},
+) {
   vi.stubEnv("RAKAZO_LOCAL_MODELS", "example-model");
   vi.stubEnv("RAKAZO_LOCAL_VISION_MODELS", "example-model");
   vi.stubEnv("RAKAZO_LOCAL_CONTEXT_WINDOW", "120000");
@@ -70,26 +76,25 @@ async function runWithBatches(sizes: number[], vary = true) {
       const n = requests.length;
       const chunk = (delta: object, finish: string | null = null) =>
         `data: ${JSON.stringify({ id: `fixture-${n}`, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
-      const args = JSON.stringify(clickBatch(sizes[Math.min(n - 1, sizes.length - 1)]!, n, vary));
+      const { text, calls = [] } = n > REQUEST_CAP ? { text: "Cap reached" } : answer(n);
       response.writeHead(200, { "content-type": "text/event-stream" });
-      if (n > REQUEST_CAP) {
+      if (calls.length === 0) {
         response.end(
-          `${chunk({ role: "assistant", content: "Cap reached" }, "stop")}data: [DONE]\n\n`,
+          `${chunk({ role: "assistant", content: text ?? "Done." }, "stop")}data: [DONE]\n\n`,
         );
         return;
       }
       response.end(
-        chunk({
-          role: "assistant",
-          tool_calls: [
-            {
-              index: 0,
-              id: `call-${n}`,
+        (text ? chunk({ role: "assistant", content: text }) : "") +
+          chunk({
+            role: "assistant",
+            tool_calls: calls.map((call, index) => ({
+              index,
+              id: `call-${n}-${index}`,
               type: "function",
-              function: { name: "computer_act", arguments: args },
-            },
-          ],
-        }) +
+              function: { name: call.name, arguments: JSON.stringify(call.args) },
+            })),
+          }) +
           chunk({}, "tool_calls") +
           "data: [DONE]\n\n",
       );
@@ -281,10 +286,14 @@ async function runWithBatches(sizes: number[], vary = true) {
   const act = vi.fn(async (_computer: unknown, request: { actions: unknown[] }) => ({
     completed: request.actions.length,
   }));
+  let listings = 0;
+  const listFiles = vi.fn(async (_computer: unknown, path: string) =>
+    path.endsWith("downloads") ? listing(++listings) : [],
+  );
   const sandbox = {
     describe: () => ({ id: "e2b", capabilities: { graphical: true } }),
     act,
-    listFiles: vi.fn(async () => []),
+    listFiles,
     writeFile: vi.fn(async () => undefined),
     releaseScreen: vi.fn(async () => undefined),
     exportWorkspace: vi.fn(async function* () {
@@ -332,6 +341,32 @@ async function runWithBatches(sizes: number[], vary = true) {
   return { requests, act, finalizeRun, finalText };
 }
 
+/** Every answer is a computer_act call. `sizes` gives the batch size per request; the last repeats. */
+const runWithBatches = (sizes: number[], vary = true) =>
+  runLoop((n) => ({
+    calls: [
+      {
+        name: "computer_act",
+        args: clickBatch(sizes[Math.min(n - 1, sizes.length - 1)]!, n, vary),
+      },
+    ],
+  }));
+
+const LISTING = { name: "list_files", args: { path: "downloads" } };
+const unreadable = () => {
+  throw new Error("permission denied");
+};
+
+function expectStoppedAt(calls: number, run: { requests: unknown[]; finalText: string }) {
+  // The stop lands while the runtime may already be sending the next request.
+  expect(run.requests.length).toBeGreaterThanOrEqual(calls);
+  expect(run.requests.length).toBeLessThanOrEqual(calls + 1);
+  expect(run.finalText).toMatch(
+    new RegExp(`^I got stuck calling List files with the same input ${calls} times`),
+  );
+  expect(isLoopGuardStopText(run.finalText)).toBe(true);
+}
+
 describe("over-limit computer_act batches through the run loop", () => {
   it("ends the run after four refused batches in a row", async () => {
     const { requests, act, finalizeRun, finalText } = await runWithBatches([30]);
@@ -370,5 +405,57 @@ describe("over-limit computer_act batches through the run loop", () => {
     expect(act).not.toHaveBeenCalled();
     expect(finalText).toContain("with too many actions 4 times in a row");
     expect(finalText).not.toContain("the same input");
+  }, 30_000);
+});
+
+describe("repeated identical tool calls through the run loop", () => {
+  it("ends the run at the sixth call that fails the same way", async () => {
+    expectStoppedAt(6, await runLoop(() => ({ calls: [LISTING] }), { listing: unreadable }));
+  }, 30_000);
+
+  it("lets the bot wait on an unchanged answer until it changes", async () => {
+    const { requests, finalText } = await runLoop(
+      (n) => (n <= 9 ? { calls: [LISTING] } : { text: "The report is ready." }),
+      { listing: (call) => (call <= 8 ? [] : [REPORT]) },
+    );
+
+    expect(requests).toHaveLength(10);
+    expect(finalText).toBe("The report is ready.");
+  }, 30_000);
+
+  it("ends an unchanged answer at the 25th call, not the sixth", async () => {
+    expectStoppedAt(25, await runLoop(() => ({ calls: [LISTING] })));
+  }, 30_000);
+
+  it("keeps polling while the result changes", async () => {
+    const { requests, finalText } = await runLoop(() => ({ calls: [LISTING] }), {
+      listing: (call) => [{ ...REPORT, size: call * 1024 }],
+    });
+
+    expect(requests).toHaveLength(REQUEST_CAP + 1);
+    expect(isLoopGuardStopText(finalText)).toBe(false);
+  }, 30_000);
+
+  it("keeps going when the model writes before each repeat", async () => {
+    const { requests, finalText } = await runLoop(
+      () => ({ text: "Checking the download again.", calls: [LISTING] }),
+      { listing: unreadable },
+    );
+
+    expect(requests).toHaveLength(REQUEST_CAP + 1);
+    expect(isLoopGuardStopText(finalText)).toBe(false);
+  }, 30_000);
+
+  it("counts identical calls in one answer once", async () => {
+    const batch = await runLoop((n) => (n === 1 ? { calls: Array(6).fill(LISTING) } : {}), {
+      listing: unreadable,
+    });
+    expect(batch.requests).toHaveLength(2);
+    expect(batch.finalText).toBe("Done.");
+
+    expectStoppedAt(
+      6,
+      await runLoop(() => ({ calls: [LISTING, LISTING] }), { listing: unreadable }),
+    );
   }, 30_000);
 });

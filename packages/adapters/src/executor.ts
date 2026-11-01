@@ -206,6 +206,7 @@ import {
 } from "./thread-artifacts.js";
 import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
+import { toolResultFingerprint } from "./tool-loop.js";
 import { createWebProvider } from "./web-provider-factory.js";
 
 /** Same reach as the MCP connector: usable servers assigned to the bot or shared with every bot. */
@@ -1248,6 +1249,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           screen: { lastFrameId: undefined, unchangedVisualStreak: { count: 0 } },
           toolCallStreak: { key: undefined, count: 0 },
           overLimitActionCalls: 0,
+          toolResults: new Map(),
           tainted: initiallyTainted,
           earlierAttempt: undefined,
           handedOff: false,
@@ -1702,7 +1704,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   effects.restoredPending = undefined;
                 if (!completion.paused)
                   effects.pendingTurnCheckpoints.delete(completion.executionId);
-                return appendToolCompletionAudit(
+                const audited = appendToolCompletionAudit(
                   deps,
                   {
                     spaceId: run.spaceId,
@@ -1713,6 +1715,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   completion,
                   runSecrets,
                 );
+                state.toolResults.set(
+                  completion.executionId,
+                  toolResultFingerprint(completion.result, completion.error),
+                );
+                return audited;
               },
               claimSteering: (seenIds) =>
                 claimRunSteering(
