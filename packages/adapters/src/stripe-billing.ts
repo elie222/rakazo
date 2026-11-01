@@ -14,7 +14,8 @@ import {
   BillingCustomerNotFoundError,
   BillingNoMonthlyCreditsError,
 } from "@rakazo/adapter-kit";
-import { ModelCreditAmountSchema } from "@rakazo/contracts";
+import type { BillingCancellationReason } from "@rakazo/contracts";
+import { BILLING_CANCELLATION_REASONS, ModelCreditAmountSchema } from "@rakazo/contracts";
 import { z } from "zod";
 
 export const STRIPE_API_VERSION = "2026-09-30.endive";
@@ -52,6 +53,9 @@ const subscriptionSchema = z.object({
   cancel_at_period_end: z.boolean().nullish(),
   cancel_at: z.number().nullish(),
   ended_at: z.number().nullish(),
+  cancellation_details: z
+    .object({ feedback: z.string().nullish(), comment: z.string().nullish() })
+    .nullish(),
   default_payment_method: z
     .union([
       z.string(),
@@ -797,6 +801,8 @@ function toSnapshot(
   if (!item) throw new Error("Stripe subscription has no items");
   const method = subscription.default_payment_method;
   const fingerprint = typeof method === "object" ? method?.card?.fingerprint : undefined;
+  const reason = cancellationReason(subscription.cancellation_details?.feedback);
+  const comment = subscription.cancellation_details?.comment?.trim();
   return {
     creditAmountCents: creditAmount(subscription.metadata?.rakazo_credit_cents),
     subscriptionId: subscription.id,
@@ -810,7 +816,16 @@ function toSnapshot(
     endedAt: fromSeconds(subscription.ended_at),
     ...(isByokPlan(subscription) ? { byokPlan: true } : {}),
     ...(fingerprint ? { cardFingerprint: fingerprint } : {}),
+    ...(reason ? { cancellationReason: reason } : {}),
+    ...(comment ? { cancellationComment: comment } : {}),
   };
+}
+
+function cancellationReason(
+  feedback: string | null | undefined,
+): BillingCancellationReason | undefined {
+  if (!feedback) return undefined;
+  return BILLING_CANCELLATION_REASONS.find((reason) => reason === feedback) ?? "other";
 }
 
 function fromSeconds(value: number | null | undefined) {

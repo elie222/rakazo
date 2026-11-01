@@ -4,6 +4,7 @@ import type {
   BillingPrice,
   BillingProvider,
   BillingSubscriptionSnapshot,
+  ProductAnalytics,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import {
@@ -94,6 +95,7 @@ export function createBillingService(deps: {
   managedModelsAvailable?: boolean;
   /** The session cookie lives on the web origin, which also proxies /api to this server. */
   webOrigin: string;
+  analytics?: ProductAnalytics;
 }): BillingService {
   const { prisma, provider } = deps;
   const appUrl = `${deps.webOrigin}/app`;
@@ -162,6 +164,7 @@ export function createBillingService(deps: {
       return;
     }
     const live = snapshot;
+    if (live) await reportCancellation(previous, live);
     if (live && hasBillingAccess(live.status))
       await referrals.settle(previous.organizationId, live.cardFingerprint);
     if (!modelCredits || !live) return;
@@ -188,6 +191,28 @@ export function createBillingService(deps: {
         (BYOK_MONTHLY_PRICE_CENTS === null && live.byokPlan && !live.cancelAtPeriodEnd))
     )
       await provider.endByokPlans(customerId);
+  }
+
+  async function reportCancellation(previous: BillingAccount, live: BillingSubscriptionSnapshot) {
+    const { analytics } = deps;
+    if (
+      !analytics ||
+      !(live.cancellationReason || live.cancellationComment) ||
+      (live.cancellationReason === (previous.cancellationReason ?? undefined) &&
+        live.cancellationComment === (previous.cancellationComment ?? undefined))
+    )
+      return;
+    const owner = await prisma.member.findFirst({
+      where: { organizationId: previous.organizationId, role: { contains: "owner" } },
+      orderBy: { createdAt: "asc" },
+      select: { userId: true },
+    });
+    if (!owner) return;
+    analytics.capture(owner.userId, {
+      name: "subscription_cancel_feedback",
+      ...(live.cancellationReason ? { reason: live.cancellationReason } : {}),
+      commented: Boolean(live.cancellationComment),
+    });
   }
 
   async function newCustomer(actor: Actor, organizationId: string) {
