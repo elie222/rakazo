@@ -634,20 +634,31 @@ async function readTool(
  * envelope. A text block that only repeated the structured data is dropped on
  * the way in, so any text left is supplemental — the note needs both to keep
  * the details that triggered the routine. An error result keeps its text on the
- * way in, so its text alone is the message.
+ * way in; when that text already carries every structured value, it alone is
+ * the message, and any diagnostic it lacks keeps the structured copy.
  */
 export function toolResultText(data: unknown): string {
   if (typeof data === "string") return data;
   const texts = toolResultTextParts(data);
   const { structuredContent: structured, isError } =
     (data as { structuredContent?: unknown; isError?: unknown } | null) ?? {};
-  if (isError === true && texts.length) return texts.join("\n");
+  const text = texts.join("\n");
+  if (isError === true && text.trim() && repeatsEveryValue(structured, text)) return text;
   if (structured && typeof structured === "object" && !Array.isArray(structured)) {
     const json = stableStringify(structured);
-    return texts.length ? `${texts.join("\n")}\n${json}` : json;
+    return texts.length ? `${text}\n${json}` : json;
   }
-  if (texts.length) return texts.join("\n");
+  if (texts.length) return text;
   return stableStringify(data ?? null);
+}
+
+/** Whether `text` already contains every value in `data`, so its structured copy adds nothing. */
+function repeatsEveryValue(data: unknown, text: string): boolean {
+  if (data === null || data === undefined) return true;
+  if (typeof data === "object") {
+    return Object.values(data).every((value) => repeatsEveryValue(value, text));
+  }
+  return text.includes(String(data));
 }
 
 function toolResultTextParts(data: unknown): string[] {

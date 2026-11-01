@@ -420,36 +420,60 @@ describe("tickRoutineWatch", () => {
 });
 
 describe("tool results", () => {
-  it("treats an MCP error result as a failed check, not a reading", async () => {
-    const deps = {
-      prisma: {
-        connection: { findMany: vi.fn(async () => []) },
-        spaceSettingOverride: { findUnique: vi.fn(async () => null) },
-        actionApprovalRule: { findMany: vi.fn(async () => []) },
-        userActionApprovalRule: { findMany: vi.fn(async () => []) },
+  it.each([
+    [
+      "its text",
+      { content: [{ type: "text", text: "limit must be a number" }], isError: true },
+      /limit must be a number/,
+    ],
+    [
+      "structured diagnostics when the text is blank",
+      {
+        content: [{ type: "text", text: "" }],
+        structuredContent: { error: "Permission denied" },
+        isError: true,
       },
-      connector: {
-        discoverTools: vi.fn(async () => [
-          { name: "brain_changed", readOnly: true, route: { connectorId: "installed" } },
-        ]),
-        execute: vi.fn(async function* () {
-          yield {
-            type: "result",
-            data: { content: [{ type: "text", text: "limit must be a number" }], isError: true },
-          };
-        }),
+      /Permission denied/,
+    ],
+    [
+      "structured diagnostics the short text does not repeat",
+      {
+        content: [{ type: "text", text: "Request failed" }],
+        structuredContent: { error: "Permission denied", requiredScope: "reports:read" },
+        isError: true,
       },
-    } as unknown as RoutineWatchTickDeps;
-    const routine = {
-      id: "r",
-      spaceId: "s",
-      userId: "u",
-      botId: "b",
-      watch: { kind: "tool", tool: "brain_changed", args: {} },
-      watchState: null,
-    };
-    await expect(checkRoutineWatch(deps, routine)).rejects.toThrow(/limit must be a number/);
-  });
+      /Request failed[\s\S]*reports:read/,
+    ],
+  ])(
+    "treats an MCP error result as a failed check that reports %s",
+    async (_case, data, reported) => {
+      const deps = {
+        prisma: {
+          connection: { findMany: vi.fn(async () => []) },
+          spaceSettingOverride: { findUnique: vi.fn(async () => null) },
+          actionApprovalRule: { findMany: vi.fn(async () => []) },
+          userActionApprovalRule: { findMany: vi.fn(async () => []) },
+        },
+        connector: {
+          discoverTools: vi.fn(async () => [
+            { name: "brain_changed", readOnly: true, route: { connectorId: "installed" } },
+          ]),
+          execute: vi.fn(async function* () {
+            yield { type: "result", data };
+          }),
+        },
+      } as unknown as RoutineWatchTickDeps;
+      const routine = {
+        id: "r",
+        spaceId: "s",
+        userId: "u",
+        botId: "b",
+        watch: { kind: "tool", tool: "brain_changed", args: {} },
+        watchState: null,
+      };
+      await expect(checkRoutineWatch(deps, routine)).rejects.toThrow(reported);
+    },
+  );
 });
 
 describe("tickRoutineWatch on a computer", () => {
