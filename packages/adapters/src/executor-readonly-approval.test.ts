@@ -3040,16 +3040,18 @@ describe("user computer screen control", () => {
       ],
     });
 
-  it("is offered only with a connected Mac", async () => {
-    const mac = fixture({ ...ownRun, userDevices: devices().gateway });
-    await mac.run();
-    expect(mac.offeredTools()).toEqual(
-      expect.arrayContaining(["user_computer_observe", "user_computer_act"]),
-    );
-    const windows = fixture({ ...ownRun, userDevices: devices("win32").gateway });
-    await windows.run();
-    expect(windows.offeredTools()).toContain("user_computer_shell");
-    expect(windows.offeredTools()).not.toContain("user_computer_observe");
+  it("is offered only with a connected Mac or Windows PC", async () => {
+    for (const platform of ["darwin", "win32"]) {
+      const connected = fixture({ ...ownRun, userDevices: devices(platform).gateway });
+      await connected.run();
+      expect(connected.offeredTools()).toEqual(
+        expect.arrayContaining(["user_computer_observe", "user_computer_act"]),
+      );
+    }
+    const linux = fixture({ ...ownRun, userDevices: devices("linux").gateway });
+    await linux.run();
+    expect(linux.offeredTools()).toContain("user_computer_shell");
+    expect(linux.offeredTools()).not.toContain("user_computer_observe");
     const disabled = fixture({
       ...ownRun,
       userDevices: devices().gateway,

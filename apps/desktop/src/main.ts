@@ -20,6 +20,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  nativeImage,
   net,
   powerMonitor,
   safeStorage,
@@ -37,7 +38,11 @@ import { createBadgeHandler } from "./badge.js";
 import { openBrowserAuth } from "./browser-auth.js";
 import { DOCKER_INSTALL_LINKS, isDesktopSetupLink, runDocker } from "./docker-cli.js";
 import { prepareHostComputer } from "./host-computer.js";
-import { createDesktopHostScreen, screenDriverInstaller } from "./host-screen.js";
+import {
+  createDesktopHostScreen,
+  screenDriverInstaller,
+  screenDriverRelease,
+} from "./host-screen.js";
 import { saveLocalComputerHost } from "./local-settings.js";
 import {
   LocalStackController,
@@ -1250,22 +1255,35 @@ app.whenReady().then(async () => {
   } catch {
     /* Local access fails closed; Docker remains available. */
   }
-  hostScreen = createDesktopHostScreen({
-    platform: process.platform,
-    driver: screenDriverInstaller({
-      dir: path.join(userDataDir, "screen-driver", "bin"),
-      fetch: (url) => net.fetch(url),
-    }),
-    home: path.join(userDataDir, "screen-driver", "home"),
-    permissions: {
-      isTrustedAccessibilityClient: (prompt) =>
-        systemPreferences.isTrustedAccessibilityClient(prompt),
-      getMediaAccessStatus: (type) => systemPreferences.getMediaAccessStatus(type),
-      requestScreenCapture: () =>
-        desktopCapturer.getSources({ types: ["window"], thumbnailSize: { width: 0, height: 0 } }),
-    },
-    locked: () => powerMonitor.getSystemIdleState(1) === "locked",
-  });
+  const screenDriver = screenDriverRelease(process.platform);
+  hostScreen =
+    screenDriver &&
+    createDesktopHostScreen({
+      platform: process.platform,
+      driver: screenDriverInstaller({
+        dir: path.join(userDataDir, "screen-driver", "bin"),
+        fetch: (url) => net.fetch(url),
+        release: screenDriver,
+      }),
+      home: path.join(userDataDir, "screen-driver", "home"),
+      permissions: {
+        isTrustedAccessibilityClient: (prompt) =>
+          systemPreferences.isTrustedAccessibilityClient(prompt),
+        getMediaAccessStatus: (type) => systemPreferences.getMediaAccessStatus(type),
+        requestScreenCapture: () =>
+          desktopCapturer.getSources({ types: ["window"], thumbnailSize: { width: 0, height: 0 } }),
+      },
+      locked: () => powerMonitor.getSystemIdleState(1) === "locked",
+      fitImage: (png, maxDimension) => {
+        const image = nativeImage.createFromBuffer(png);
+        const { width, height } = image.getSize();
+        if (!width || !height) return undefined;
+        const fitted = image.resize(
+          width >= height ? { width: maxDimension } : { height: maxDimension },
+        );
+        return { png: fitted.toPNG(), ...fitted.getSize() };
+      },
+    });
   userDevices = createUserDeviceAccess({
     userDataDir,
     cipher: deviceTokenCipher(),
