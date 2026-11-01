@@ -53,7 +53,25 @@ const wide = [
   "```",
 ].join("\n");
 
-const cases: Record<string, string> = { flowchart, sequence, invalid, plain, wide };
+const prose = [
+  "Here is the email I would send:",
+  "",
+  "```text",
+  "Dear Ana,",
+  "",
+  "Thanks for the walkthrough on Thursday. I collected the open questions from the team and grouped them by area, so we can work through them in one pass on our next call instead of trading short replies all week.",
+  "",
+  "The staging deploy still fails on the migration that renames the audit table, and the rollback script references a column we removed in the last release, so I would start there before anything else on the list.",
+  "```",
+  "",
+  "The check that fails:",
+  "",
+  "```ts",
+  'expect(await auditTable.page(1).columns()).toContain("actor_id"); // fails: renamed in migration 0187',
+  "```",
+].join("\n");
+
+const cases: Record<string, string> = { flowchart, sequence, invalid, plain, wide, prose };
 const initialMarkdown = cases[params.get("case") ?? "flowchart"] ?? flowchart;
 
 function Fixture() {

@@ -169,6 +169,20 @@
   margin: 0.65em 0;
 }
 
+/* A fence an author writes prose in (text, txt, plaintext, no language) reads as prose: the body
+   font and wrapped lines, on the same card code uses. The pre sheds the browser's monospaced
+   pre defaults too, or the code inside would inherit them. */
+.rk-chat-markdown .rk-chat-markdown-pre-prose,
+.rk-chat-markdown .rk-chat-markdown-pre-prose code {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.rk-chat-markdown .rk-chat-markdown-pre-prose code {
+  white-space: pre-wrap;
+}
+
 .rk-chat-markdown .rk-chat-markdown-pre-wrap pre {
   margin: 0;
 }

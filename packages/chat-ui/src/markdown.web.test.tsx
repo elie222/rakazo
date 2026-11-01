@@ -746,6 +746,50 @@ describe("web markdown code copy", () => {
   });
 });
 
+describe("web markdown prose fences", () => {
+  const draft =
+    "Dear team, this line of prose is far wider than a bubble, so it wraps instead of scrolling.";
+
+  function renderMarkdown(markdown: string) {
+    const holder = document.createElement("div");
+    holder.innerHTML = renderToStaticMarkup(<ChatMarkdown>{markdown}</ChatMarkdown>);
+    return holder;
+  }
+
+  it.each(["text", "txt", "plaintext", ""])("wraps a fence marked %j as prose", (language) => {
+    const html = renderMarkdown(`\`\`\`${language}\n${draft}\n\`\`\``);
+    expect(html.querySelector("pre")?.className).toBe("rk-chat-markdown-pre-prose");
+  });
+
+  it("keeps a fence with a programming language as code", () => {
+    const html = renderMarkdown("```ts\nconst a = 1;\n```");
+    expect(html.querySelector("pre")?.className).toBe("");
+  });
+
+  it("copies a text fence's code exactly as written", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown>{"```text\nDear team,\n\n  see you Monday.\n```"}</ChatMarkdown>);
+    });
+    const button = container.querySelector("button");
+    expect(button?.getAttribute("aria-label")).toBe("Copy code");
+    await act(async () => {
+      button?.click();
+    });
+    expect(writeText).toHaveBeenCalledWith("Dear team,\n\n  see you Monday.");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    Reflect.deleteProperty(navigator, "clipboard");
+  });
+});
+
 describe("web markdown mentions", () => {
   it("draws a mention the app renders and keeps an unknown one as its name", () => {
     const html = renderToStaticMarkup(
