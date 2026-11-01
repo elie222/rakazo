@@ -1364,7 +1364,7 @@ it("stops the running reply on Escape, but lets Escape close the mention picker 
   expect(onStop).toHaveBeenCalledTimes(1);
 });
 
-it("counts a run error as presented when it scrolls into view", () => {
+it("records an intersecting run error once it is uncovered and stops hit testing", async () => {
   let fire: ((entries: Array<{ isIntersecting: boolean }>) => void) | undefined;
   const onRunErrorPresented = vi.fn();
   const original = globalThis.IntersectionObserver;
@@ -1388,10 +1388,11 @@ it("counts a run error as presented when it scrolls into view", () => {
     y: 10,
     toJSON: () => ({}),
   } as DOMRect;
-  const rectSpy = vi
-    .spyOn(HTMLElement.prototype, "getBoundingClientRect")
-    .mockReturnValue(rect);
-  const pointSpy = vi.fn(() => document.querySelector('[data-testid="composer-error"]'));
+  const rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(rect);
+  let covered = true;
+  const pointSpy = vi.fn(() =>
+    covered ? document.body : document.querySelector('[data-testid="composer-error"]'),
+  );
   Object.defineProperty(document, "elementFromPoint", {
     value: pointSpy,
     configurable: true,
@@ -1409,7 +1410,24 @@ it("counts a run error as presented when it scrolls into view", () => {
     expect(onRunErrorPresented).not.toHaveBeenCalled();
 
     act(() => fire?.([{ isIntersecting: true }]));
+    expect(onRunErrorPresented).not.toHaveBeenCalled();
+    expect(pointSpy).toHaveBeenCalledTimes(1);
+
+    covered = false;
+    await act(async () => {
+      document.body.setAttribute("data-uncovered", "true");
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
     expect(onRunErrorPresented).toHaveBeenCalledExactlyOnceWith("run-1");
+    expect(pointSpy).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      document.body.removeAttribute("data-uncovered");
+      document.dispatchEvent(new Event("transitionend"));
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+    expect(pointSpy).toHaveBeenCalledTimes(2);
 
     // A second entry for the same card does not report it twice.
     act(() => fire?.([{ isIntersecting: true }]));
