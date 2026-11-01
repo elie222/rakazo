@@ -263,6 +263,10 @@ export const fleetTools: ToolHandlers = {
     if (typeof args.previousInstructions === "string") {
       if ((call.nextApprovedTool !== call.name && !call.bypassApproval) || !call.claimedEffect)
         return call.finish({ error: "This instruction change needs the owner's approval." });
+      // A request stored before the baseline kept a fresh read as its expected text. Without
+      // the marker it must not commit, whatever the resumed checkpoint restored.
+      if (args.previousInstructionsFromBaseline !== true)
+        return call.finish({ error: OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR });
       return call.finish(
         await commitOwnInstructions(ctx, {
           instructions: String(args.instructions),

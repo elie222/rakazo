@@ -1606,6 +1606,19 @@ describe("own instructions through update_bot", () => {
     });
     expect(f.instructionState.instructionHistory).toHaveLength(0);
   });
+  /** A saved turn whose pending tool the run no longer offers cannot be restored. */
+  function retireSavedTurnTool(checkpoint: { result: string }) {
+    const saved = JSON.parse(checkpoint.result) as {
+      messages: { content: string | Array<{ type: string; name?: string }> }[];
+    };
+    for (const message of saved.messages) {
+      if (typeof message.content === "string") continue;
+      for (const call of message.content) {
+        if (call.type === "toolCall") call.name = "retired_tool";
+      }
+    }
+    checkpoint.result = JSON.stringify(saved);
+  }
   /** A turn that pauses mid-approval, saved as the real runtime serializes it. */
   function savedTurn(): Omit<TurnCheckpoint, "provider" | "model"> {
     return {
@@ -1697,6 +1710,46 @@ describe("own instructions through update_bot", () => {
       result: { error: expect.stringContaining("cannot safely change its own instructions") },
     });
     expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  it("refuses a pre-baseline pending approval when the saved turn cannot be restored", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
+    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+    f.pauseWithTurnCheckpoint("call-1", savedTurn());
+    await f.run();
+    // As above, but the resume falls back to the canonical replay: the saved turn names a
+    // tool the run no longer offers, so no restoration can bring the baseline back either.
+    const saved = JSON.parse(f.turnCheckpoints[0]!.result) as Record<string, unknown>;
+    delete saved.ownInstructionsBaseline;
+    f.turnCheckpoints[0]!.result = JSON.stringify(saved);
+    retireSavedTurnTool(f.turnCheckpoints[0]!);
+    f.effects[0]!.request = {
+      instructions: first,
+      reason: "Set in chat",
+      previousInstructions: "Imported profile",
+    };
+    f.instructionState.instructions = "Imported profile";
+    f.effects[0]!.status = "approved";
+    f.setCalls([{ args: { instructions: first }, executionId: "call-2" }]);
+    await f.run();
+    expect(f.instructionState.instructions).toBe("Imported profile");
+    expect(f.effects[0]).toMatchObject({
+      status: "completed",
+      result: { error: expect.stringContaining("cannot safely change its own instructions") },
+    });
+    expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  it("applies a current approval when the saved turn cannot be restored", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
+    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+    f.pauseWithTurnCheckpoint("call-1", savedTurn());
+    await f.run();
+    retireSavedTurnTool(f.turnCheckpoints[0]!);
+    f.effects[0]!.status = "approved";
+    f.setCalls([{ args: { instructions: first }, executionId: "call-2" }]);
+    await f.run();
+    expect(f.instructionState.instructions).toBe(first);
+    expect(f.instructionState.instructionHistory).toHaveLength(1);
+    expect(f.effects[0]).toMatchObject({ status: "completed", result: { ok: true } });
   });
   it("does not apply an approved change after cancellation wins the thread lock", async () => {
     const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });

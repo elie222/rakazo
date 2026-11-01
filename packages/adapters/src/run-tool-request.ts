@@ -418,6 +418,8 @@ async function prepareOwnBotUpdate(
     // The text the model worked from, not a fresh read: a change that landed since the
     // attempt started conflicts at approval instead of being overwritten.
     previousInstructions: ctx.state.ownInstructionsBaseline,
+    // Provenance the approved replay checks; requests stored before the baseline lack it.
+    previousInstructionsFromBaseline: true,
   };
   request.heldForApproval = true;
   return undefined;
