@@ -591,6 +591,37 @@ async function handleChannelEvent(
     update: channelName ? { name: channelName } : {},
   });
 
+  // Telegram reports departures one service message at a time; a rosterless
+  // platform has no sweep, so this delta is the only removal signal. Our own
+  // bot leaving ends every membership: nothing more is delivered there. The
+  // event itself carries no conversation — no intro, no run — and it runs before
+  // member discovery, so a departing sender is never invited or announced.
+  if (event.departures) {
+    // Leaving the chat ends membership in every conversation of it: forum topics
+    // are channels of their own (`<provider>:<chat>:<topic>`) on the same mount.
+    const chat = event.threadId.split(":").slice(0, 2).join(":");
+    const chatChannels = await deps.prisma.messagingChannel.findMany({
+      where: {
+        provider: event.provider,
+        OR: [{ threadId: chat }, { threadId: { startsWith: `${chat}:` } }],
+      },
+      select: { id: true },
+    });
+    // The query includes this channel: its thread id is the chat or one of its topics.
+    const channelIds = chatChannels.map((row) => row.id);
+    await deps.prisma.messagingChannelMember.updateMany({
+      where: event.departures.botLeft
+        ? { channelId: { in: channelIds }, status: { in: ["invited", "approved"] } }
+        : {
+            channelId: { in: channelIds },
+            address: { in: event.departures.addresses },
+            status: { in: ["invited", "approved"] },
+          },
+      data: { status: "left" },
+    });
+    return;
+  }
+
   const participants = [...event.participants];
   if (!participants.includes(event.from)) participants.push(event.from);
 
@@ -652,36 +683,6 @@ async function handleChannelEvent(
       },
       data: { status: "left" },
     });
-  }
-
-  // Telegram reports departures one service message at a time; a rosterless
-  // platform has no sweep, so this delta is the only removal signal. Our own
-  // bot leaving ends every membership: nothing more is delivered there. The
-  // event itself carries no conversation — no intro, no run.
-  if (event.departures) {
-    // Leaving the chat ends membership in every conversation of it: forum topics
-    // are channels of their own (`<provider>:<chat>:<topic>`) on the same mount.
-    const chat = event.threadId.split(":").slice(0, 2).join(":");
-    const chatChannels = await deps.prisma.messagingChannel.findMany({
-      where: {
-        provider: event.provider,
-        OR: [{ threadId: chat }, { threadId: { startsWith: `${chat}:` } }],
-      },
-      select: { id: true },
-    });
-    // The query includes this channel: its thread id is the chat or one of its topics.
-    const channelIds = chatChannels.map((row) => row.id);
-    await deps.prisma.messagingChannelMember.updateMany({
-      where: event.departures.botLeft
-        ? { channelId: { in: channelIds }, status: { in: ["invited", "approved"] } }
-        : {
-            channelId: { in: channelIds },
-            address: { in: event.departures.addresses },
-            status: { in: ["invited", "approved"] },
-          },
-      data: { status: "left" },
-    });
-    return;
   }
 
   if (hasUnlinked && !channel.introPostedAt) {

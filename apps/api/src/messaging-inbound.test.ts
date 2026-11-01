@@ -1621,6 +1621,47 @@ describe("createMessagingInboundHandler channel routing", () => {
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["she leaves the group", { addresses: ["777"], botLeft: false }],
+    ["she removes the bot", { addresses: [], botLeft: true }],
+  ])(
+    "invites nobody when a linked sender the channel has not seen departs: %s",
+    async (_case, departures) => {
+      // Alice is linked but has never written in this group; her first event is a departure.
+      const deps = createDeps({ members: [] });
+      Object.assign(deps.prisma.messagingIdentity, {
+        findUnique: vi.fn(async () => ({
+          id: "mi-alice",
+          provider: "telegram",
+          address: "777",
+          userId: "user-a",
+          spaceId: "ws-a",
+          botId: "bot-a",
+          outboundSinceInbound: 0,
+        })),
+      });
+      await createMessagingInboundHandler(deps)({
+        type: "message",
+        provider: "telegram",
+        handle: "-1001234:43",
+        threadId: "telegram:-1001234",
+        isDirect: false,
+        from: "777",
+        fromLabel: "Alice",
+        channelName: "Family",
+        participants: [],
+        content: "",
+        mediaUrl: null,
+        departures,
+      });
+
+      // No "Reply YES" invitation she could never accept, and no member row to answer it.
+      expect(deps.prisma.messagingOutbound.createMany).not.toHaveBeenCalled();
+      expect(deps.prisma.messagingChannelMember.upsert).not.toHaveBeenCalled();
+      expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    },
+  );
+
   it("ends every membership when the Telegram bot itself is removed", async () => {
     const alice = {
       id: "cm-1",
