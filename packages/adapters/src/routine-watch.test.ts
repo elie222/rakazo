@@ -306,6 +306,22 @@ describe("tickRoutineWatch", () => {
     },
   );
 
+  it("keeps the structured data in a change note beside supplemental text", async () => {
+    // The duplicate text was dropped on the way in, so the reader must not let
+    // the leftover note replace the data that triggered the routine.
+    const { deps, routine } = setup({
+      data: {
+        content: [{ type: "text", text: "Query completed." }],
+        structuredContent: { changes: [{ what: "add test note", at: "2026-11-01T09:30:00Z" }] },
+        isError: false,
+      },
+    });
+    routine.watchState = { checkedAt: "x", outcome: "unchanged", fingerprint: "old", detail: null };
+    const result = await checkRoutineWatch(deps, routine);
+    expect(result.state.detail).toContain("Query completed.");
+    expect(result.state.detail).toContain("add test note");
+  });
+
   it.each([new ComputerBusyError(), new DOMException("timed out", "TimeoutError")])(
     "retries temporary provisioning conflicts without losing the baseline",
     async (error) => {
@@ -404,36 +420,81 @@ describe("tickRoutineWatch", () => {
 });
 
 describe("tool results", () => {
-  it("treats an MCP error result as a failed check, not a reading", async () => {
-    const deps = {
-      prisma: {
-        connection: { findMany: vi.fn(async () => []) },
-        spaceSettingOverride: { findUnique: vi.fn(async () => null) },
-        actionApprovalRule: { findMany: vi.fn(async () => []) },
-        userActionApprovalRule: { findMany: vi.fn(async () => []) },
+  it.each([
+    [
+      "its text",
+      { content: [{ type: "text", text: "limit must be a number" }], isError: true },
+      /limit must be a number/,
+    ],
+    [
+      "structured diagnostics when the text is blank",
+      {
+        content: [{ type: "text", text: "" }],
+        structuredContent: { error: "Permission denied" },
+        isError: true,
       },
-      connector: {
-        discoverTools: vi.fn(async () => [
-          { name: "brain_changed", readOnly: true, route: { connectorId: "installed" } },
-        ]),
-        execute: vi.fn(async function* () {
-          yield {
-            type: "result",
-            data: { content: [{ type: "text", text: "limit must be a number" }], isError: true },
-          };
-        }),
+      /Permission denied/,
+    ],
+    [
+      "structured diagnostics the short text does not repeat",
+      {
+        content: [{ type: "text", text: "Request failed" }],
+        structuredContent: { error: "Permission denied", requiredScope: "reports:read" },
+        isError: true,
       },
-    } as unknown as RoutineWatchTickDeps;
-    const routine = {
-      id: "r",
-      spaceId: "s",
-      userId: "u",
-      botId: "b",
-      watch: { kind: "tool", tool: "brain_changed", args: {} },
-      watchState: null,
-    };
-    await expect(checkRoutineWatch(deps, routine)).rejects.toThrow(/limit must be a number/);
-  });
+      /Request failed[\s\S]*reports:read/,
+    ],
+    [
+      "a numeric diagnostic whose digits happen to appear in the text",
+      {
+        content: [{ type: "text", text: "Service returned HTTP 503" }],
+        structuredContent: { error: "Service returned HTTP 503", retryAfterSeconds: 3 },
+        isError: true,
+      },
+      /retryAfterSeconds/,
+    ],
+    [
+      "a text diagnostic whose value happens to appear in the text",
+      {
+        content: [{ type: "text", text: "Permission denied while reading repository" }],
+        structuredContent: {
+          error: "Permission denied while reading repository",
+          requiredScope: "repo",
+        },
+        isError: true,
+      },
+      /requiredScope/,
+    ],
+  ])(
+    "treats an MCP error result as a failed check that reports %s",
+    async (_case, data, reported) => {
+      const deps = {
+        prisma: {
+          connection: { findMany: vi.fn(async () => []) },
+          spaceSettingOverride: { findUnique: vi.fn(async () => null) },
+          actionApprovalRule: { findMany: vi.fn(async () => []) },
+          userActionApprovalRule: { findMany: vi.fn(async () => []) },
+        },
+        connector: {
+          discoverTools: vi.fn(async () => [
+            { name: "brain_changed", readOnly: true, route: { connectorId: "installed" } },
+          ]),
+          execute: vi.fn(async function* () {
+            yield { type: "result", data };
+          }),
+        },
+      } as unknown as RoutineWatchTickDeps;
+      const routine = {
+        id: "r",
+        spaceId: "s",
+        userId: "u",
+        botId: "b",
+        watch: { kind: "tool", tool: "brain_changed", args: {} },
+        watchState: null,
+      };
+      await expect(checkRoutineWatch(deps, routine)).rejects.toThrow(reported);
+    },
+  );
 });
 
 describe("tickRoutineWatch on a computer", () => {
@@ -1114,6 +1175,16 @@ describe("toolResultText", () => {
         ],
       }),
     ).toBe("one\ntwo");
+  });
+
+  it("keeps an error result's text alone instead of repeating its structured copy", () => {
+    expect(
+      toolResultText({
+        content: [{ type: "text", text: "Permission denied for folder Reports" }],
+        structuredContent: { error: "Permission denied for folder Reports" },
+        isError: true,
+      }),
+    ).toBe("Permission denied for folder Reports");
   });
 
   it("keeps plain strings and other data readable", () => {
