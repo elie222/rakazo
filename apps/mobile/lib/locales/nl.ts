@@ -293,6 +293,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Could not share image": "Afbeelding delen mislukt",
   "Loading image…": "Afbeelding laden…",
   "Open image {name}": "Afbeelding {name} openen",
+  "Open {name}": "{name} openen",
   "Tap to open": "Tik om te openen",
   "Could not open message": "Bericht openen mislukt",
   "Could not send answer": "Antwoord verzenden mislukt",

@@ -392,6 +392,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Could not share image": "无法分享图片",
   "Loading image…": "正在加载图片…",
   "Open image {name}": "打开图片 {name}",
+  "Open {name}": "打开 {name}",
   "Tap to open": "点按打开",
   "Could not open message": "无法打开消息",
   "Could not play a sample": "无法播放示例",

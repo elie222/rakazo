@@ -413,6 +413,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not share image": "Не удалось поделиться изображением",
   "Loading image…": "Загрузка изображения…",
   "Open image {name}": "Открыть изображение {name}",
+  "Open {name}": "Открыть {name}",
   "Tap to open": "Нажмите, чтобы открыть",
   "Could not open message": "Не удалось открыть сообщение",
   "Could not play a sample": "Не удалось воспроизвести сэмпл",
