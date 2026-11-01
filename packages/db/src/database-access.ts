@@ -47,7 +47,6 @@ export async function provisionRuntimeRole(
   try {
     const provisioned = await provisionWith(owner, runtimeUrl);
     if (provisioned.warning) return provisioned;
-    if (!rlsBypassKey(runtimeUrl)) return { warning: NO_BYPASS_KEY_WARNING };
     // A key from a password the login does not have would lock out the running release.
     const runtime = new Client({ connectionString: runtimeUrl });
     const connected = await runtime.connect().then(
@@ -56,6 +55,11 @@ export async function provisionRuntimeRole(
     );
     await runtime.end().catch(() => undefined);
     if (!connected) return { warning: RUNTIME_LOGIN_FAILED_WARNING };
+    if (!rlsBypassKey(runtimeUrl)) {
+      // With no digest stored, the policies accept the keyless bypass this login sends.
+      await owner.query("DELETE FROM rakazo_private.rls_bypass_keys");
+      return { warning: NO_BYPASS_KEY_WARNING };
+    }
     await storeBypassKey(owner, runtimeUrl);
     return {};
   } finally {
