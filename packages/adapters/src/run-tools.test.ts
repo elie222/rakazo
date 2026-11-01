@@ -28,7 +28,7 @@ vi.mock("./run-tool-gate.js", async (importOriginal) => ({
   }),
 }));
 
-import { applyTool } from "./run-tools.js";
+import { applyTool, isToolError } from "./run-tools.js";
 
 function dispatchContext(tainted: boolean) {
   return {
@@ -137,5 +137,18 @@ describe("dispatchTool audit outcomes", () => {
         metadata: { effectId: "effect-update_preferences", autoApproved: false },
       },
     ]);
+  });
+});
+
+describe("isToolError", () => {
+  it("counts errors and the internal owner-settings refusal as failures", () => {
+    expect(isToolError({ error: "Denied" })).toBe(true);
+    expect(isToolError({ terminate: true, details: { refused: "owner-settings" } })).toBe(true);
+  });
+
+  it("keeps a connector result that happens to carry a refused field a success", () => {
+    expect(isToolError({ details: { refused: false } })).toBe(false);
+    expect(isToolError({ details: { refused: "owner-settings" } })).toBe(false);
+    expect(isToolError({ terminate: true, details: { refused: "repeat" } })).toBe(false);
   });
 });

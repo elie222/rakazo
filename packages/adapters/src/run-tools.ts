@@ -109,11 +109,17 @@ async function dispatchTool(
   }
 }
 
-function isToolError(result: unknown): boolean {
+export function isToolError(result: unknown): boolean {
   if (typeof result !== "object" || result === null) return false;
   if ("error" in result) return true;
-  // A repeated owner-settings refusal ends the turn without an error key; the
-  // refused marker in its details still makes it a failed call for the audit.
-  const details = (result as { details?: unknown }).details;
-  return typeof details === "object" && details !== null && "refused" in details;
+  // A repeated owner-settings refusal ends the turn without an error key; its marker
+  // still makes it a failed call for the audit. Only that internal terminating result
+  // counts: a connector's own `refused` field is data, not a refusal.
+  const { terminate, details } = result as { terminate?: unknown; details?: unknown };
+  return (
+    terminate === true &&
+    typeof details === "object" &&
+    details !== null &&
+    (details as { refused?: unknown }).refused === "owner-settings"
+  );
 }
