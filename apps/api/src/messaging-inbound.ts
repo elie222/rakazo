@@ -268,7 +268,11 @@ async function storeInboundMedia(
         clientNonce: `messaging-attachment:${event.provider}:${event.handle}:${index}`,
         downloadDeadline,
       });
-      stored.push({ artifact, bytes });
+      // Only audio is transcribed; other files' bytes are not kept past their download.
+      stored.push({
+        artifact,
+        bytes: isAttachmentAudioMimeType(artifact.mimeType) ? bytes : undefined,
+      });
     } catch (error) {
       getLogger().warn("messaging attachment was not stored", {
         reason: error instanceof Error ? error.message : String(error),
