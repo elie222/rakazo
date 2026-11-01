@@ -153,7 +153,8 @@ function expectedFailure(error: unknown, depth = 0): ExpectedFailure | undefined
     if (error.code === -1 || (error.code !== undefined && error.code >= 400 && error.code < 500))
       return "reconnect";
   }
-  if (isRejectedTokenError(error)) return "reconnect";
+  // On a live session the next connect renews the token, so only wait briefly.
+  if (isRejectedTokenError(error)) return "unreachable";
   // JSON-RPC reserves -32000 to -32099 for server errors, such as a proxy's failed upstream.
   if (error instanceof McpError && error.code <= -32000 && error.code >= -32099)
     return "unreachable";
@@ -1259,7 +1260,7 @@ export class McpConnector implements ConnectorProvider {
       if (error instanceof McpReauthorizationRequiredError) throw error;
       throw new McpConnectFailure(
         sanitizeConnectorError(error, [...oauthMaterialSecrets(material), ...launchSecrets]),
-        expectedFailure(error),
+        isRejectedTokenError(error) ? "reconnect" : expectedFailure(error),
       );
     }
   }
