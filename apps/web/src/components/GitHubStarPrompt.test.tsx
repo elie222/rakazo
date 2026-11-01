@@ -8,7 +8,6 @@ import {
   recordMessageSent,
   resetStarPromptSessionForTests,
   STAR_PROMPT_DISMISSED_KEY,
-  STAR_PROMPT_FIRST_SENT_KEY,
   STAR_PROMPT_SENT_KEY,
 } from "./GitHubStarPrompt";
 
@@ -48,8 +47,8 @@ async function send(times: number, now = LATER) {
 }
 
 it("waits 30 minutes from the first message", async () => {
-  await send(8, START + 29 * 60_000);
-  localStorage.setItem(STAR_PROMPT_FIRST_SENT_KEY, String(START));
+  await send(1, START);
+  await send(7, START + 29 * 60_000);
   expect(prompt()).toBeNull();
   await send(1);
   await vi.waitFor(() => expect(prompt()).not.toBeNull());
