@@ -2232,17 +2232,26 @@ describeJourneys("required product journeys", () => {
       prisma.run.count({
         where: { threadId: group.threadId, trigger: "user", botId },
       });
-    const botABefore = await countUserRuns(botA.id);
-    const botBBefore = await countUserRuns(botB.id);
-    const botCBefore = await countUserRuns(botC.id);
-    const botDBefore = await countUserRuns(botD.id);
+    const memberIds = [botA.id, botB.id, botC.id, botD.id];
+    const userRunsBefore = await Promise.all(memberIds.map(countUserRuns));
+    const otherRunsBefore = await prisma.run.count({
+      where: { threadId: group.threadId, trigger: { not: "user" } },
+    });
     await sendGroupAndWait(app, ada, group.id, "hello team");
+    // A message that names nobody reaches every member once; their replies wake no one.
+    expect(await Promise.all(memberIds.map(countUserRuns))).toEqual(
+      userRunsBefore.map((count) => count + 1),
+    );
     expect(
-      (await countUserRuns(botA.id)) +
-        (await countUserRuns(botB.id)) +
-        (await countUserRuns(botC.id)) +
-        (await countUserRuns(botD.id)),
-    ).toBe(botABefore + botBBefore + botCBefore + botDBefore + 1);
+      await prisma.run.count({ where: { threadId: group.threadId, trigger: { not: "user" } } }),
+    ).toBe(otherRunsBefore);
+    const hello = await prisma.run.findMany({
+      where: { threadId: group.threadId, botId: { in: memberIds } },
+      orderBy: { createdAt: "desc" },
+      take: memberIds.length,
+      select: { groupReplyOptional: true },
+    });
+    expect(hello.map((run) => run.groupReplyOptional)).toEqual([true, true, true, true]);
 
     await sendGroupAndWait(app, ada, group.id, "@BotA hand this to Writer for the draft", botA.id);
     const handoffSnap = await rpc<Snap>(app, ada, "threads/get", { groupId: group.id });

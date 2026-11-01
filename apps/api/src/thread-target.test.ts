@@ -8,6 +8,8 @@ import type { ThreadTarget } from "./thread-target.js";
 import {
   cancelSupersededQueuedRuns,
   reactToThreadMessage,
+  replyParentBotId,
+  sendTargetBotIds,
   sendThreadMessage,
   stopThreadRuns,
   threadHead,
@@ -1901,6 +1903,7 @@ describe("sendThreadMessage", () => {
         target,
         {
           text: "Paris",
+          mentions: ["bot-a"],
           clientNonce: "nonce-ask-group-multi",
         },
       ),
@@ -1910,7 +1913,12 @@ describe("sendThreadMessage", () => {
       seq: 1,
       runIds: ["run-waiting-1"],
     });
-    expect(tx.run.updateMany).toHaveBeenCalledTimes(2);
+    expect(tx.run.updateMany).toHaveBeenCalledTimes(3);
+    // The person answered the member's question, so its reply is required.
+    expect(tx.run.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["run-waiting-1"] } },
+      data: { groupReplyOptional: false },
+    });
     expect(tx.run.updateMany).toHaveBeenCalledWith({
       where: expect.objectContaining({ id: "run-waiting-2", status: "waiting_input" }),
       data: expect.objectContaining({ status: "cancelled" }),
@@ -2382,7 +2390,7 @@ describe("sendThreadMessage", () => {
       },
       actor,
       target,
-      { text: "status?", clientNonce: "nonce-group-webhook" },
+      { text: "status?", mentions: ["bot-a"], clientNonce: "nonce-group-webhook" },
     );
 
     expect(result).toMatchObject({ runId: "run-webhook", taskId: "task-webhook" });
@@ -2391,6 +2399,192 @@ describe("sendThreadMessage", () => {
     });
     expect(tx.run.create).not.toHaveBeenCalled();
   });
+  describe("a group message", () => {
+    async function sendToGroup(
+      text: string,
+      mentions?: string[],
+      activeRuns: Array<{ id: string; botId: string; status: string; trigger: string }> = [],
+      replyTo?: { role: string; botId: string | null },
+    ) {
+      let messageSeq = 0;
+      let eventSeq = 0;
+      let nextRun = 0;
+      const tx = {
+        thread: {
+          update: vi.fn(async ({ data }: { data: { nextMessageSeq?: unknown } }) =>
+            data.nextMessageSeq ? { nextMessageSeq: ++messageSeq } : { nextEventSeq: ++eventSeq },
+          ),
+        },
+        message: {
+          create: vi.fn().mockResolvedValue({
+            id: "msg-1",
+            threadId: "thread-1",
+            seq: 1,
+            role: "user",
+            blocks: [{ kind: "text", text }],
+            botId: null,
+            replyToMessageId: null,
+            runId: null,
+            createdAt: new Date(),
+          }),
+          update: vi.fn(),
+          findFirst: vi.fn().mockResolvedValue(
+            replyTo
+              ? {
+                  id: "reply-parent",
+                  blocks: [{ kind: "text", text: "Which colour?" }],
+                  ...replyTo,
+                }
+              : null,
+          ),
+        },
+        run: {
+          findMany: vi
+            .fn()
+            .mockResolvedValueOnce(activeRuns.map((run) => ({ taskId: "task-0", ...run })))
+            .mockResolvedValue([]),
+          findUnique: vi.fn().mockResolvedValue({ status: "queued", startedAt: null }),
+          update: vi.fn(),
+          updateMany: vi.fn(),
+          create: vi.fn(
+            async ({ data }: { data: { botId: string; groupReplyOptional?: boolean } }) => ({
+              id: `run-${++nextRun}`,
+              taskId: `task-${nextRun}`,
+              botId: data.botId,
+              status: "queued",
+            }),
+          ),
+        },
+        task: { create: vi.fn().mockResolvedValue({ id: "task-x" }) },
+        event: {
+          create: vi.fn().mockResolvedValue({ id: "event-1", seq: 1, createdAt: new Date() }),
+        },
+        steeringMessage: { create: vi.fn() },
+        chatGroup: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: "group-1",
+            members: [
+              { bot: { id: "bot-a", name: "Alpha", color: null } },
+              { bot: { id: "bot-b", name: "Beta", color: null } },
+            ],
+          }),
+          update: vi.fn().mockResolvedValue({ id: "group-1" }),
+        },
+        $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
+      };
+      const prisma = {
+        message: { findUnique: vi.fn().mockResolvedValue(null) },
+        $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+      } as unknown as PrismaClient;
+      await sendThreadMessage(
+        {
+          prisma,
+          events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
+          jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
+        },
+        { spaceId: "workspace-1", userId: "user-1" } as Actor,
+        {
+          kind: "group",
+          groupId: "group-1",
+          groupName: "Group",
+          threadId: "thread-1",
+          members: [],
+          memberBotIds: ["bot-a", "bot-b"],
+        } satisfies ThreadTarget,
+        {
+          text,
+          mentions,
+          clientNonce: "nonce-group-fanout",
+          ...(replyTo ? { replyToMessageId: "reply-parent" } : {}),
+        },
+      );
+      return { tx, created: tx.run.create.mock.calls.map(([args]) => args.data) };
+    }
+
+    it("that names nobody wakes every member, each free to stay silent", async () => {
+      const { created } = await sendToGroup("what is the plan?");
+      expect(created.map((run) => run.botId)).toEqual(["bot-a", "bot-b"]);
+      expect(created.map((run) => run.groupReplyOptional)).toEqual([true, true]);
+    });
+
+    it("that names one member wakes only that member, who must reply", async () => {
+      for (const sent of [
+        await sendToGroup("@Beta what is the plan?"),
+        await sendToGroup("what is the plan?", ["bot-b"]),
+      ]) {
+        expect(sent.created.map((run) => run.botId)).toEqual(["bot-b"]);
+        expect(sent.created.map((run) => run.groupReplyOptional)).toEqual([false]);
+      }
+    });
+
+    it("that mentions everyone wakes every member, who must reply", async () => {
+      const { created } = await sendToGroup("@everyone what is the plan?");
+      expect(created.map((run) => run.botId)).toEqual(["bot-a", "bot-b"]);
+      expect(created.map((run) => run.groupReplyOptional)).toEqual([false, false]);
+    });
+
+    it("that only names someone outside the group still reaches every member", async () => {
+      const { created } = await sendToGroup("@Zed what is the plan?");
+      expect(created.map((run) => run.botId)).toEqual(["bot-a", "bot-b"]);
+      expect(created.map((run) => run.groupReplyOptional)).toEqual([true, true]);
+    });
+
+    it("that replies to a member's message goes to that member, who must answer", async () => {
+      const { created } = await sendToGroup("blue", undefined, [], {
+        role: "bot",
+        botId: "bot-b",
+      });
+      expect(created.map((run) => run.botId)).toEqual(["bot-b"]);
+      expect(created.map((run) => run.groupReplyOptional)).toEqual([false]);
+    });
+
+    it("that replies to a member's message but names another goes to the named one", async () => {
+      const { created } = await sendToGroup("@Alpha and you?", undefined, [], {
+        role: "bot",
+        botId: "bot-b",
+      });
+      expect(created.map((run) => run.botId)).toEqual(["bot-a"]);
+    });
+
+    it("that replies to a person's message, or to a bot outside the group, reaches everyone", async () => {
+      for (const replyTo of [
+        { role: "user", botId: null },
+        { role: "bot", botId: "bot-outside" },
+      ]) {
+        const { created } = await sendToGroup("blue", undefined, [], replyTo);
+        expect(created.map((run) => run.botId)).toEqual(["bot-a", "bot-b"]);
+      }
+    });
+
+    it("that replies to a busy member steers that member and wakes no one else", async () => {
+      const busy = { id: "run-busy", botId: "bot-b", status: "running", trigger: "user" };
+      const { created, tx } = await sendToGroup("blue", undefined, [busy], {
+        role: "bot",
+        botId: "bot-b",
+      });
+      expect(created).toEqual([]);
+      expect(tx.run.findMany.mock.calls[0]![0].where.botId).toEqual({ in: ["bot-b"] });
+      expect(tx.steeringMessage.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ botId: "bot-b", runId: "run-busy" }),
+      });
+      expect(tx.run.update).toHaveBeenCalledWith({
+        where: { id: "run-busy" },
+        data: { groupReplyOptional: false },
+      });
+    });
+
+    it("that names a member working on an unnamed message makes its reply required", async () => {
+      const working = { id: "run-old", botId: "bot-a", status: "running", trigger: "user" };
+      const named = await sendToGroup("@Alpha and the budget?", undefined, [working]);
+      expect(named.tx.run.update).toHaveBeenCalledWith({
+        where: { id: "run-old" },
+        data: { groupReplyOptional: false },
+      });
+      const unnamed = await sendToGroup("and the budget?", undefined, [working]);
+      expect(unnamed.tx.run.update).not.toHaveBeenCalled();
+    });
+  });
+
   it("answers a routine run waiting for input from the composer", async () => {
     const waitingAsk = {
       id: "ask-1",
@@ -2564,7 +2758,7 @@ describe("sendThreadMessage", () => {
         },
         actor,
         target,
-        { text: "Paris", clientNonce: "nonce-group-webhook-waiting" },
+        { text: "Paris", mentions: ["bot-a"], clientNonce: "nonce-group-webhook-waiting" },
       ),
     ).resolves.toMatchObject({
       runId: "run-webhook",
@@ -2628,6 +2822,7 @@ describe("sendThreadMessage", () => {
           ])
           .mockResolvedValue([]),
         findUnique: vi.fn().mockResolvedValue({ status: "running", startedAt: new Date() }),
+        update: vi.fn(),
         updateMany: vi.fn(),
         create: vi.fn(),
       },
@@ -2725,6 +2920,7 @@ describe("sendThreadMessage", () => {
           ])
           .mockResolvedValue([]),
         findUnique: vi.fn().mockResolvedValue({ status: "running", startedAt: new Date() }),
+        update: vi.fn(),
         updateMany: vi.fn(),
         create: vi.fn(),
       },
@@ -2769,7 +2965,11 @@ describe("sendThreadMessage", () => {
         },
         actor,
         target,
-        { text: "what about the watch?", clientNonce: "nonce-group-webhook-and-chat" },
+        {
+          text: "what about the watch?",
+          mentions: ["bot-a"],
+          clientNonce: "nonce-group-webhook-and-chat",
+        },
       ),
     ).resolves.toMatchObject({
       runId: "run-user",
@@ -4205,4 +4405,38 @@ describe("helper snapshot settlement", () => {
       });
     },
   );
+});
+
+describe("sendTargetBotIds", () => {
+  const group = {
+    kind: "group" as const,
+    members: [
+      { botId: "bot-a", name: "Alpha" },
+      { botId: "bot-b", name: "Beta" },
+    ],
+  };
+
+  it("sends a reply to a member's message to that member alone", () => {
+    expect(sendTargetBotIds(group, { text: "blue" }, "bot-b")).toEqual(["bot-b"]);
+  });
+
+  it("lets a mention beat the reply target, and ignores a bot outside the group", () => {
+    expect(sendTargetBotIds(group, { text: "@Alpha and you?" }, "bot-b")).toEqual(["bot-a"]);
+    expect(sendTargetBotIds(group, { text: "blue" }, "bot-outside")).toEqual(["bot-a", "bot-b"]);
+    expect(sendTargetBotIds(group, { text: "blue" })).toEqual(["bot-a", "bot-b"]);
+  });
+
+  it("finds the bot a send replies to only for a bot's message", async () => {
+    const findFirst = vi.fn().mockResolvedValue({ botId: "bot-b" });
+    const prisma = { message: { findFirst } } as unknown as PrismaClient;
+    expect(await replyParentBotId(prisma, { threadId: "thread-1" }, {})).toBeUndefined();
+    expect(findFirst).not.toHaveBeenCalled();
+    expect(
+      await replyParentBotId(prisma, { threadId: "thread-1" }, { replyToMessageId: "m-1" }),
+    ).toBe("bot-b");
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { id: "m-1", threadId: "thread-1", role: "bot" },
+      select: { botId: true },
+    });
+  });
 });

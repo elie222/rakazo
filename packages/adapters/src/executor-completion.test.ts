@@ -22,7 +22,10 @@ import {
   TICKET_SILENT_REPLY_GUIDANCE,
 } from "./run-replies.js";
 import {
+  couldBecomeNoResponse,
   isExactNoResponse,
+  isNoResponseReply,
+  isPlaceholderReply,
   NO_RESPONSE,
   stripNoResponseReply,
   stripStrayNoResponse,
@@ -637,5 +640,47 @@ describe("stripStrayNoResponse for runs that must reply", () => {
   ])("leaves %j unchanged", (text) => {
     const blocks = text ? [{ kind: "text" as const, text }] : [];
     expect(stripStrayNoResponse(text, blocks)).toEqual({ assembled: text, blocks });
+  });
+});
+
+describe("isNoResponseReply", () => {
+  it("is true only for the sentinel alone, not for an empty or prose reply", () => {
+    expect(isNoResponseReply(NO_RESPONSE, [])).toBe(true);
+    expect(isNoResponseReply("", [{ kind: "text", text: NO_RESPONSE }])).toBe(true);
+    expect(isNoResponseReply("", [])).toBe(false);
+    expect(isNoResponseReply("Sure, here you go.", [])).toBe(false);
+    expect(isNoResponseReply(NO_RESPONSE, [{ kind: "text", text: "Sure, here you go." }])).toBe(
+      false,
+    );
+  });
+});
+
+describe("couldBecomeNoResponse", () => {
+  it("holds text that is, or may still grow into, the sentinel", () => {
+    for (const text of ["", "N", "NO_", "NO_RESPON", NO_RESPONSE, "NO_RESPONSE NO_RES"]) {
+      expect(couldBecomeNoResponse(text)).toBe(true);
+    }
+  });
+
+  it("lets real text through", () => {
+    for (const text of ["Sure", "No, I can't", "NO_RESPONSE_POLICY", "NO_RESPONSE Sure"]) {
+      expect(couldBecomeNoResponse(text)).toBe(false);
+    }
+  });
+});
+
+describe("isPlaceholderReply", () => {
+  it("is true for whitespace, invisible characters and a lone dot or ellipsis", () => {
+    for (const text of [".", "...", "…", "\u200c", "\u200b\u200c", " \n", "\ufeff", "\u200c."]) {
+      expect(isPlaceholderReply(text, [])).toBe(true);
+    }
+    expect(isPlaceholderReply("", [{ kind: "text", text: "\u200c" }])).toBe(true);
+  });
+
+  it("is false for empty text and for any real mark, letter, digit or emoji", () => {
+    expect(isPlaceholderReply("", [])).toBe(false);
+    for (const text of ["Paris", "ok", "7", "👍", "été", "好", "✓", "—", "-", "?", ". ok"]) {
+      expect(isPlaceholderReply(text, [])).toBe(false);
+    }
   });
 });

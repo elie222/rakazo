@@ -13,7 +13,7 @@ import type { ExecutorDeps } from "./executor-deps.js";
 import type { ReplyState, RunContext } from "./run-context.js";
 import { publishMessage } from "./run-messages.js";
 import { runPromotesMidTurnNarration } from "./run-replies.js";
-import { isExactNoResponse } from "./silent-reply.js";
+import { couldBecomeNoResponse, isExactNoResponse, isPlaceholderText } from "./silent-reply.js";
 import {
   clampUserProgressMessage,
   extractNarrationText,
@@ -122,6 +122,20 @@ export function tryFlushPendingTools(reply: ReplyState) {
     flushPendingTools(reply);
 }
 
+/**
+ * A member a group message named nobody for may answer with the silence sentinel, so what it
+ * has written stays unseen while that is still possible. Once the text turns into a reply it
+ * all shows.
+ */
+export function progressHeldForSilence(ctx: RunContext) {
+  const { reply } = ctx.state;
+  return (
+    ctx.groupReplyOptional &&
+    !reply.hasStreamedText &&
+    (couldBecomeNoResponse(reply.pendingProgress) || isPlaceholderText(reply.pendingProgress))
+  );
+}
+
 export async function flushProgress(ctx: RunContext) {
   const { deps, run, runId, bot, thread } = ctx;
   const { reply } = ctx.state;
@@ -131,7 +145,8 @@ export async function flushProgress(ctx: RunContext) {
     ctx.scripted ||
     !reply.pendingProgress ||
     run.trigger === "routine" ||
-    isBackgroundRunTrigger(run.trigger)
+    isBackgroundRunTrigger(run.trigger) ||
+    progressHeldForSilence(ctx)
   )
     return;
   await deps.events.append({

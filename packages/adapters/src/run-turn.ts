@@ -54,6 +54,7 @@ import {
   flushPendingTools,
   flushProgress,
   nextProgressNonce,
+  progressHeldForSilence,
   publishMidTurnNarration,
   recordExplicitNoResponse,
   showNarrationStatus,
@@ -70,6 +71,8 @@ import { scheduleRoutineRetry } from "./run-routines.js";
 import { applyTool } from "./run-tools.js";
 import { withRuntimeCleanup } from "./runtime-stream.js";
 import {
+  isNoResponseReply,
+  isPlaceholderReply,
   peerReplyWithoutSentinel,
   stripNoResponseReply,
   stripStrayNoResponse,
@@ -269,7 +272,7 @@ async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) 
   if (event.activity && reply.narrationStatusShowing) return;
   // Flush batched text deltas first so an activity line cannot land
   // ahead of text the model streamed before the tool call.
-  if (reply.pendingProgress) {
+  if (reply.pendingProgress && !progressHeldForSilence(ctx)) {
     await deps.events.append({
       spaceId: run.spaceId,
       threadId: thread.id,
@@ -664,6 +667,24 @@ async function publishSubagent(ctx: RunContext, event: RuntimeEvent<"subagent">)
   }
 }
 
+/**
+ * Silence needs the send to still call the reply optional (a person who names the member while
+ * it works makes it required) and nothing of this run already in the chat, such as an ask card.
+ */
+async function groupSilenceStillAllowed(ctx: RunContext) {
+  const { prisma } = ctx.deps;
+  const current = await prisma.run.findUnique({
+    where: { id: ctx.runId },
+    select: { groupReplyOptional: true },
+  });
+  if (current?.groupReplyOptional !== true) return false;
+  const earlier = await prisma.message.findFirst({
+    where: { runId: ctx.runId, role: "bot" },
+    select: { id: true },
+  });
+  return !earlier;
+}
+
 /** The turn ended: apply a scripted runtime's files and memory, then finalize the reply. */
 export async function completeRun(ctx: RunContext) {
   const { deps, run, runId, bot, thread, context } = ctx;
@@ -750,19 +771,34 @@ export async function completeRun(ctx: RunContext) {
   flushPendingTools(reply);
   // Silent-allowed runs can choose an explicit NO_RESPONSE or finish empty.
   // Other runs still drop a stray sentinel at the edges of a real reply.
-  const silentReply = ctx.allowSilentEmptyRun
-    ? stripNoResponseReply(reply.assembled, reply.messageSegments)
-    : (ctx.source.peerMessage?.intent === "request" ||
-          ctx.source.peerMessage?.intent === "question") &&
-        !reply.publishedMidTurnUserMessage
-      ? peerReplyWithoutSentinel(reply.assembled, reply.messageSegments)
-      : stripStrayNoResponse(reply.assembled, reply.messageSegments);
+  // A member a group message named nobody for may end silently, but only by saying so (the
+  // sentinel, or a placeholder such as a lone dot) without having done any work: tool steps or a posted message are still shown, and an
+  // empty finish is not a choice to stay quiet.
+  const groupSilentEnd =
+    ctx.groupReplyOptional &&
+    !ctx.allowSilentEmptyRun &&
+    (isNoResponseReply(reply.assembled, reply.messageSegments) ||
+      isPlaceholderReply(reply.assembled, reply.messageSegments)) &&
+    !reply.publishedMidTurnUserMessage &&
+    !reply.publishedTerminalSubagent &&
+    reply.messageSegments.every((block) => block.kind === "text") &&
+    (await groupSilenceStillAllowed(ctx));
+  const silentReply = groupSilentEnd
+    ? { assembled: "", blocks: [] }
+    : ctx.allowSilentEmptyRun || ctx.groupReplyOptional
+      ? stripNoResponseReply(reply.assembled, reply.messageSegments)
+      : (ctx.source.peerMessage?.intent === "request" ||
+            ctx.source.peerMessage?.intent === "question") &&
+          !reply.publishedMidTurnUserMessage
+        ? peerReplyWithoutSentinel(reply.assembled, reply.messageSegments)
+        : stripStrayNoResponse(reply.assembled, reply.messageSegments);
   let completionBlocks = silentReply.blocks;
   if (!silentReply.assembled || isBackgroundRunTrigger(run.trigger)) {
     // Mid-turn progress already posted durable chat messages; skip the empty
     // "…" fallback so we do not add a junk final bubble.
     completionBlocks = completionMessageSegments(completionBlocks, {
-      allowSilentEmpty: ctx.allowSilentEmptyRun || reply.publishedMidTurnUserMessage,
+      allowSilentEmpty:
+        ctx.allowSilentEmptyRun || reply.publishedMidTurnUserMessage || groupSilentEnd,
       emptyResponseText: ctx.emptyResponseText,
       suppressOutput: ctx.state.handedOff || isBackgroundRunTrigger(run.trigger),
       skipEmptyFallback: reply.publishedTerminalSubagent || reply.publishedMidTurnUserMessage,
@@ -807,11 +843,9 @@ export async function completeRun(ctx: RunContext) {
     leaseFence: ctx.fence,
     outcome: "completed",
     blocks,
-    markUnread: completionMarksUnread(
-      run.trigger,
-      text,
-      ctx.source.peerMessage?.repliesToRequest === true,
-    ),
+    markUnread:
+      !groupSilentEnd &&
+      completionMarksUnread(run.trigger, text, ctx.source.peerMessage?.repliesToRequest === true),
   });
   if (!completed) return;
   ctx.stopHeartbeatAfterCompletion();
