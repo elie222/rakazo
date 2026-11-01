@@ -1,9 +1,13 @@
 import { lookup } from "node:dns/promises";
 import type { LookupFunction } from "node:net";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import {
+  StreamableHTTPClientTransport,
+  StreamableHTTPError,
+} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import {
   ipVersion,
@@ -21,6 +25,7 @@ import { Agent } from "undici";
 import { composioToolBatch } from "./composio-batch.js";
 import { sensitiveQueryParameter } from "./connector-http.js";
 import { combineSignals } from "./connector-safety.js";
+import { credentialDigest } from "./credential-digest.js";
 import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
 import {
   createAddressCheckedLookup,
@@ -50,6 +55,25 @@ export interface RemoteMcpOptions extends RemoteTransportDependencies, RemoteUrl
   endpoint: string;
   headers?: Record<string, string>;
   signal?: AbortSignal;
+  /** Reuse one MCP session for every call that carries the same scope (one run
+   * and one server) instead of opening a session per call. Requires `sessionPool`. */
+  sessionScope?: string;
+  /** Cache holding the reusable sessions. Scope-keyed, so sessions never leak
+   * between runs, users, spaces or servers. */
+  sessionPool?: RemoteMcpSessionCache;
+  /** Lifetime of the reused session: aborting it (the run's signal) closes the
+   * session at once. A per-call `signal` only cancels its own call. */
+  sessionSignal?: AbortSignal;
+}
+
+/** A reusable Streamable HTTP session failed below the protocol: the guarded
+ * fetch could not deliver the request. Unlike a server's own error, this says
+ * nothing about whether the server ran the request. */
+export class RemoteMcpTransportError extends Error {
+  constructor(message: string, options: { cause?: unknown } = {}) {
+    super(message, options);
+    this.name = "RemoteMcpTransportError";
+  }
 }
 
 export class ConnectorRedirectError extends Error {
@@ -68,15 +92,15 @@ const resolveHostname: ResolveHostname = (hostname) =>
   lookup(hostname, { all: true, verbatim: true });
 
 export async function listRemoteMcpTools(options: RemoteMcpOptions): Promise<ConnectorTool[]> {
-  return withRemoteMcpClient(options, async (client, signal) =>
+  const list = async (client: Client, signal: AbortSignal | undefined): Promise<ConnectorTool[]> =>
     (await listMcpTools(client, { signal, timeout: MCP_TIMEOUT_MS })).map((tool) => ({
       name: tool.name,
       description: tool.description ?? tool.title ?? tool.name,
       inputSchema: tool.inputSchema,
       readOnly: tool.annotations?.readOnlyHint,
       batch: composioToolBatch(tool.name),
-    })),
-  );
+    }));
+  return withScopedMcpClient(options, list);
 }
 
 /** Follow `tools/list` cursors, bounded by the shared page and tool caps. */
@@ -99,26 +123,50 @@ export async function callRemoteMcpTool(
   args: Record<string, unknown>,
   projectResult?: (result: unknown) => unknown,
 ): Promise<unknown> {
-  return withRemoteMcpClient(options, async (client, signal) => {
-    const result = await client.callTool({ name: toolName, arguments: args }, undefined, {
-      signal,
-      timeout: MCP_TIMEOUT_MS,
-    });
-    const envelope = {
-      content: result.content,
-      structuredContent: result.structuredContent,
-      isError: result.isError ?? false,
-      _meta: result._meta,
-    };
-    // Providers may extract a bounded domain result before duplicate MCP text
-    // and structured content consume the budget. The final limit still applies.
-    return limitRemoteMcpPayload(projectResult ? projectResult(envelope) : envelope);
+  return withScopedMcpClient(options, (client, signal) =>
+    callMcpTool(client, signal, toolName, args, projectResult),
+  );
+}
+
+async function callMcpTool(
+  client: Client,
+  signal: AbortSignal | undefined,
+  toolName: string,
+  args: Record<string, unknown>,
+  projectResult?: (result: unknown) => unknown,
+): Promise<unknown> {
+  const result = await client.callTool({ name: toolName, arguments: args }, undefined, {
+    signal,
+    timeout: MCP_TIMEOUT_MS,
   });
+  const envelope = {
+    content: result.content,
+    structuredContent: result.structuredContent,
+    isError: result.isError ?? false,
+    _meta: result._meta,
+  };
+  // Providers may extract a bounded domain result before duplicate MCP text
+  // and structured content consume the budget. The final limit still applies.
+  return limitRemoteMcpPayload(projectResult ? projectResult(envelope) : envelope);
+}
+
+/** One client per call, or the run-scoped session when `options` carries one. */
+function withScopedMcpClient<T>(
+  options: RemoteMcpOptions,
+  run: (client: Client, signal: AbortSignal | undefined) => Promise<T>,
+): Promise<T> {
+  if (options.sessionPool && options.sessionScope !== undefined) {
+    return options.sessionPool.withSession(
+      options as RemoteMcpOptions & { sessionScope: string },
+      run,
+    );
+  }
+  return withRemoteMcpClient(options, run);
 }
 
 async function withRemoteMcpClient<T>(
   options: RemoteMcpOptions,
-  run: (client: Client, signal: AbortSignal) => Promise<T>,
+  run: (client: Client, signal: AbortSignal | undefined) => Promise<T>,
 ): Promise<T> {
   const policy = { allowPrivateEndpoint: options.allowPrivateEndpoint };
   const endpoint = await assertSafeRemoteUrl(
@@ -148,6 +196,248 @@ async function withRemoteMcpClient<T>(
     await client.close().catch(() => undefined);
     await safeFetch.close().catch(() => undefined);
   }
+}
+
+/** How long a run-scoped session survives its last call. Also the bound for a
+ * run waiting for user input or takeover: past it, the next call reconnects. */
+export const DEFAULT_MCP_SESSION_IDLE_MS = 10 * 60_000;
+/** Best-effort bound on the terminating DELETE sent while closing a session. */
+const MCP_SESSION_CLOSE_MS = 5_000;
+
+type ScopedMcpSession = {
+  key: string;
+  client: Client;
+  transport: StreamableHTTPClientTransport;
+  safeFetch: SafeRemoteFetch;
+  lastUsedAt: number;
+  inFlight: number;
+  closed: boolean;
+  runSignal?: AbortSignal;
+  detachRunSignal?: () => void;
+};
+
+/** Sessions one Streamable HTTP server-side state can rely on, shared by every
+ * call with the same scope (one run, one server) and closed at run end, after
+ * the idle bound, or when the transport breaks. A cache belongs to the process:
+ * a run that resumes elsewhere just opens a new session. */
+export class RemoteMcpSessionCache {
+  private readonly sessions = new Map<string, ScopedMcpSession>();
+  private readonly connecting = new Map<string, Promise<ScopedMcpSession>>();
+  /** Sessions already dropped from reuse whose last call is still running; the
+   * last of those calls closes them, so a sibling failure never cuts off a
+   * response that may belong to a committed write. */
+  private readonly retiring = new Set<ScopedMcpSession>();
+  private reaper?: ReturnType<typeof setInterval>;
+
+  constructor(
+    /** 0 keeps sessions until `close()`. */
+    private readonly idleMs: number = DEFAULT_MCP_SESSION_IDLE_MS,
+    private readonly now: () => number = Date.now,
+  ) {}
+
+  async withSession<T>(
+    options: RemoteMcpOptions & { sessionScope: string },
+    run: (client: Client, signal: AbortSignal | undefined) => Promise<T>,
+  ): Promise<T> {
+    const key = remoteMcpSessionKey(options);
+    for (let attempt = 0; ; attempt += 1) {
+      const session = await this.sessionFor(key, options);
+      session.inFlight += 1;
+      try {
+        return await run(session.client, options.signal);
+      } catch (error) {
+        // The server rejected the session id before running the request, so a
+        // fresh session can replay it once without doubling a write. Closing the
+        // dead session (a bounded DELETE, then teardown) must not delay the
+        // replay or the error, so it runs in the background.
+        if (attempt === 0 && isMcpSessionGoneError(error)) {
+          void this.drop(session);
+          continue;
+        }
+        if (brokeMcpSession(error)) void this.drop(session);
+        throw error;
+      } finally {
+        session.inFlight -= 1;
+        session.lastUsedAt = this.now();
+        // The last call on a dropped session retires it in the background, so
+        // the replay or the error above is never delayed by the closing DELETE.
+        if (session.inFlight === 0 && this.retiring.delete(session))
+          void closeMcpSession(session).catch(() => undefined);
+      }
+    }
+  }
+
+  /** Close every session; for shutdown. */
+  async close(): Promise<void> {
+    if (this.reaper) clearInterval(this.reaper);
+    this.reaper = undefined;
+    await Promise.allSettled([...this.connecting.values()]);
+    for (let pass = 0; pass < 2; pass += 1) {
+      // A second sweep catches a session whose connect resolved during the first.
+      const sessions = [...this.sessions.values(), ...this.retiring];
+      this.sessions.clear();
+      await Promise.allSettled(sessions.map((session) => closeMcpSession(session)));
+    }
+  }
+
+  /** Close sessions unused for `idleMs`. Returns how many were closed. */
+  async reapIdle(now = this.now()): Promise<number> {
+    if (this.idleMs <= 0) return 0;
+    const idle = [...this.sessions.values()].filter(
+      (session) => session.inFlight === 0 && now - session.lastUsedAt >= this.idleMs,
+    );
+    let closed = 0;
+    for (const session of idle) {
+      // Re-check at drop time: a call that ran while an earlier candidate's
+      // DELETE was in flight renewed this session, so it is no longer idle.
+      if (
+        this.sessions.get(session.key) !== session ||
+        session.inFlight !== 0 ||
+        now - session.lastUsedAt < this.idleMs
+      )
+        continue;
+      closed += 1;
+      await this.drop(session);
+    }
+    return closed;
+  }
+
+  private async sessionFor(key: string, options: RemoteMcpOptions): Promise<ScopedMcpSession> {
+    const existing = this.sessions.get(key);
+    if (existing && !existing.closed) {
+      this.trackUse(existing, options.sessionSignal);
+      return existing;
+    }
+    if (existing) this.sessions.delete(key);
+    let pending = this.connecting.get(key);
+    if (!pending) {
+      pending = this.connectSession(key, options).finally(() => {
+        if (this.connecting.get(key) === pending) this.connecting.delete(key);
+      });
+      this.connecting.set(key, pending);
+      this.startReaper();
+    }
+    const session = await pending;
+    // Another caller's failure may have closed this session between the shared
+    // connect resolving and this caller resuming; connect again instead of
+    // handing out a closed client.
+    if (session.closed) return this.sessionFor(key, options);
+    if (!this.sessions.has(key)) this.sessions.set(key, session);
+    this.trackUse(session, options.sessionSignal);
+    return session;
+  }
+
+  private async connectSession(key: string, options: RemoteMcpOptions): Promise<ScopedMcpSession> {
+    const policy = { allowPrivateEndpoint: options.allowPrivateEndpoint };
+    const endpoint = await assertSafeRemoteUrl(
+      options.endpoint,
+      options.resolveHostname ?? resolveHostname,
+      policy,
+    );
+    const safeFetch = createSafeRemoteFetch(
+      options.fetch,
+      options.resolveHostname ?? resolveHostname,
+      policy,
+    );
+    const transport = new StreamableHTTPClientTransport(endpoint, {
+      requestInit: {
+        headers: options.headers,
+        redirect: "manual",
+      },
+      fetch: async (input, init) => {
+        try {
+          return await safeFetch(input, init);
+        } catch (error) {
+          if (error instanceof ConnectorRedirectError) throw error;
+          throw new RemoteMcpTransportError(
+            error instanceof Error ? error.message : String(error),
+            { cause: error },
+          );
+        }
+      },
+    });
+    const client = new Client({ name: "rakazo", version: "0.1.0" }, { capabilities: {} });
+    const session: ScopedMcpSession = {
+      key,
+      client,
+      transport,
+      safeFetch,
+      lastUsedAt: this.now(),
+      inFlight: 0,
+      closed: false,
+    };
+    try {
+      await client.connect(transport, { signal: options.sessionSignal, timeout: MCP_TIMEOUT_MS });
+    } catch (error) {
+      await closeMcpSession(session).catch(() => undefined);
+      throw error;
+    }
+    return session;
+  }
+
+  private trackUse(session: ScopedMcpSession, signal?: AbortSignal): void {
+    session.lastUsedAt = this.now();
+    // The run's signal is the session's lifetime: closing on it releases the
+    // server-side state as soon as the run is cancelled or torn down. A
+    // per-call signal never reaches here, so aborting one call leaves the
+    // session for the next.
+    if (!signal || signal === session.runSignal) return;
+    session.detachRunSignal?.();
+    session.runSignal = signal;
+    const onAbort = () => void this.drop(session);
+    signal.addEventListener("abort", onAbort, { once: true });
+    session.detachRunSignal = () => signal.removeEventListener("abort", onAbort);
+  }
+
+  /** Stop reusing a session at once, like `McpConnector.evict`: new calls open
+   * a fresh session, but calls still in flight keep their responses — the last
+   * of them closes this one (the terminating DELETE, then teardown). */
+  private async drop(session: ScopedMcpSession): Promise<void> {
+    session.detachRunSignal?.();
+    session.detachRunSignal = undefined;
+    if (this.sessions.get(session.key) === session) this.sessions.delete(session.key);
+    if (session.inFlight > 0) {
+      this.retiring.add(session);
+      return;
+    }
+    await closeMcpSession(session).catch(() => undefined);
+  }
+
+  private startReaper(): void {
+    if (this.reaper || this.idleMs <= 0) return;
+    this.reaper = setInterval(
+      () => void this.reapIdle().catch(() => undefined),
+      Math.max(1_000, Math.min(this.idleMs / 2, 60_000)),
+    );
+    this.reaper.unref?.();
+  }
+}
+
+/** Identity of a reusable session: the run-scope plus everything that decided
+ * how the session was opened, so rotated credentials or a changed policy never
+ * reuse a session opened as someone or somewhere else. */
+function remoteMcpSessionKey(options: RemoteMcpOptions & { sessionScope: string }): string {
+  return JSON.stringify([
+    options.sessionScope,
+    options.endpoint,
+    options.allowPrivateEndpoint === true,
+    credentialDigest(JSON.stringify(options.headers ?? {})),
+  ]);
+}
+
+async function closeMcpSession(session: ScopedMcpSession): Promise<void> {
+  if (session.closed) return;
+  session.closed = true;
+  session.detachRunSignal?.();
+  session.detachRunSignal = undefined;
+  // Ask the server to drop the session (spec: HTTP DELETE with the session id)
+  // before the client teardown aborts every pending request.
+  await Promise.race([
+    session.transport.terminateSession().catch(() => undefined),
+    new Promise((resolve) => setTimeout(resolve, MCP_SESSION_CLOSE_MS).unref?.()),
+  ]);
+  await session.client.close().catch(() => undefined);
+  await session.safeFetch.close().catch(() => undefined);
 }
 
 /** A saved MCP endpoint is stored and shown in plaintext, so its credentials belong in headers. */
@@ -430,4 +720,27 @@ export function limitRemoteMcpPayload(value: unknown): unknown {
     truncated: true,
     content: bytes.toString("utf8", 0, written),
   };
+}
+
+function isConnectionClosedError(error: unknown): boolean {
+  return error instanceof McpError && error.code === ErrorCode.ConnectionClosed;
+}
+
+/** Whether the server rejected the request because it no longer knows the
+ * session: the request never ran there, so a fresh session may replay it. */
+export function isMcpSessionGoneError(error: unknown): boolean {
+  if (!(error instanceof StreamableHTTPError)) return false;
+  return (
+    error.code === 404 ||
+    (error.code === 400 &&
+      /\bBad Request: (?:Server not initialized|No valid session ID(?: provided| or initialization request)?|Mcp-Session-Id header is required)(?="|$)/i.test(
+        error.message,
+      ))
+  );
+}
+
+/** Whether the transport below the protocol broke, so the session — unlike the
+ * server's own tool errors — cannot be trusted for the next call. */
+function brokeMcpSession(error: unknown): boolean {
+  return error instanceof RemoteMcpTransportError || isConnectionClosedError(error);
 }

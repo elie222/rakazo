@@ -36,6 +36,14 @@ Choose an authentication method (**No auth**, **Bearer token** or **API key head
 **Manage MCP servers** lists every server you've added, with **Test connection**, OAuth sign-in, and
 which bots can use each one.
 
+During one bot run, every call to an MCP server added under **Integrations** (Treg, Executor or
+your own MCP URL) reuses one session, so servers that keep state in the session (a paused step
+you confirm mid-run, for example) see the same session until the run ends. Two runs never share
+such a session, and each closes when its run ends or after about ten minutes without a call. A
+paused step can be resumed only while the run continues in the same Rakazo instance, within that
+window and within the server's own pause window (Executor keeps a pause for about four minutes).
+Past those bounds, the next call opens a fresh session.
+
 ## Choose which bots use what
 
 Bots pick the apps they need. To add an MCP server to the bot you're chatting with, open it in
