@@ -98,7 +98,9 @@ returns nothing from other Spaces. A background job that acts for one run, routi
 skill, thread or cloud agent runs as that row's Space and user, so agent tools get the same
 backstop. Security events are written and read only in system scope. Reconcilers, queue sweeps,
 the messaging outbox drain and webhooks run in a named system scope (`runAsSystem` in
-`packages/db`). The job queue's tables (`graphile_worker`) hold job metadata, not Space content:
+`packages/db`). That scope also sends a key derived from the app login's password, which
+`pnpm db:migrate` registers, so SQL that runs for one Space cannot switch itself into system scope.
+An app login without a password in `DATABASE_URL` has no key, and `pnpm db:migrate` warns. The job queue's tables (`graphile_worker`) hold job metadata, not Space content:
 graphile-worker turns on row-level security for them, and `pnpm db:migrate` adds a policy that
 gives the app login every row.
 

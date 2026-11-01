@@ -1,6 +1,7 @@
 import { createHash, createHmac, pbkdf2Sync, randomBytes } from "node:crypto";
 import { Client, escapeIdentifier, escapeLiteral } from "pg";
 import type { PrismaClient } from "./generated/prisma/client.js";
+import { rlsBypassKey } from "./row-security.js";
 
 /**
  * NOLOGIN group role created by the row-level security migration. It holds the
@@ -44,7 +45,9 @@ export async function provisionRuntimeRole(
   const owner = new Client({ connectionString: migrationUrl });
   await owner.connect();
   try {
-    return await provisionWith(owner, runtimeUrl);
+    const provisioned = await provisionWith(owner, runtimeUrl);
+    if (provisioned.warning) return provisioned;
+    return (await storeBypassKey(owner, runtimeUrl)) ? {} : { warning: NO_BYPASS_KEY_WARNING };
   } finally {
     await owner.end();
   }
@@ -138,6 +141,25 @@ async function provisionWith(owner: Client, runtimeUrl: string): Promise<{ warni
     throw error;
   }
   return {};
+}
+
+const NO_BYPASS_KEY_WARNING =
+  "DATABASE_URL has no password, so SQL run for one tenant could turn on the cross-tenant bypass. Give the runtime login a password.";
+
+/** Lets the runtime login's system context through the policies (see rlsBypassKey). */
+async function storeBypassKey(owner: Client, runtimeUrl: string): Promise<boolean> {
+  const key = rlsBypassKey(runtimeUrl);
+  if (!key) return false;
+  // One statement, so the table is never empty, which would accept the bypass alone.
+  await owner.query(
+    `WITH stored AS (
+       INSERT INTO rakazo_private.rls_bypass_keys (digest) VALUES (sha256(convert_to($1, 'UTF8')))
+       ON CONFLICT (digest) DO NOTHING
+     )
+     DELETE FROM rakazo_private.rls_bypass_keys WHERE digest <> sha256(convert_to($1, 'UTF8'))`,
+    [key],
+  );
+  return true;
 }
 
 /**
