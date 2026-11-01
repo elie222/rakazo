@@ -328,6 +328,7 @@ describe("screen page status", () => {
     expect(fetchImpl).toHaveBeenCalledWith("https://app.example.test/novnc/x", {
       cache: "no-store",
       credentials: "omit",
+      headers: {},
       redirect: "manual",
     });
     await expect(
@@ -335,6 +336,15 @@ describe("screen page status", () => {
         throw new TypeError("Network request failed");
       }),
     ).resolves.toBeNull();
+  });
+
+  it("refuses a redirect when it sends the server's headers", async () => {
+    const fetchImpl = vi.fn(async () => ({ status: 200 }) as unknown as Response);
+    await screenPageStatus("https://app.example.test/novnc/x", fetchImpl, undefined, { a: "b" });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://app.example.test/novnc/x",
+      expect.objectContaining({ headers: { a: "b" }, redirect: "error" }),
+    );
   });
 });
 

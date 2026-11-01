@@ -18,6 +18,22 @@ describe("screen proxy response isolation", () => {
     },
   );
 
+  it("lets the sandboxed page send credentials, and only it", () => {
+    const sandboxed = safeScreenProxyResponseHeaders({ "content-type": "text/javascript" }, "null");
+    expect(sandboxed["access-control-allow-origin"]).toBe("null");
+    expect(sandboxed["access-control-allow-credentials"]).toBe("true");
+    expect(sandboxed.vary).toBe("Origin");
+    const other = safeScreenProxyResponseHeaders({}, "https://elsewhere.example");
+    expect(other["access-control-allow-origin"]).toBe("*");
+    expect(other["access-control-allow-credentials"]).toBeUndefined();
+    expect(other.vary).toBe("Origin");
+  });
+
+  it("keeps the upstream Vary values next to Origin", () => {
+    const headers = safeScreenProxyResponseHeaders({ vary: "Accept-Encoding" }, "null");
+    expect(headers.vary).toBe("Accept-Encoding, Origin");
+  });
+
   it("retains upstream restrictions as separate policies that cannot loosen the sandbox", () => {
     const policies = [
       "sandbox allow-same-origin allow-scripts",
@@ -27,6 +43,7 @@ describe("screen proxy response isolation", () => {
       "content-security-policy": [...policies, "sandbox allow-scripts allow-pointer-lock"],
       "access-control-allow-origin": "*",
       "cache-control": "no-transform",
+      vary: "Origin",
     });
     expect(policies).toHaveLength(2);
     expect(
@@ -56,6 +73,7 @@ describe("screen proxy response isolation", () => {
       "x-frame-options": "SAMEORIGIN",
       "content-security-policy": ["sandbox allow-scripts allow-pointer-lock"],
       "access-control-allow-origin": "*",
+      vary: "Origin",
     });
   });
 

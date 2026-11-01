@@ -216,12 +216,15 @@ export async function screenPageStatus(
   url: string,
   fetchImpl: typeof fetch = fetch,
   signal?: AbortSignal,
+  headers: Record<string, string> = {},
 ): Promise<number | null> {
   try {
     const response = await fetchImpl(url, {
       cache: "no-store",
       credentials: "omit",
-      redirect: "manual",
+      headers,
+      // Native fetch may carry configured headers across a redirect; refuse one instead.
+      redirect: Object.keys(headers).length ? "error" : "manual",
       signal,
     });
     void response.body?.cancel().catch(() => undefined);
