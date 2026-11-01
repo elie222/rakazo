@@ -80,7 +80,13 @@ export class LinuxDesktop {
     context.signal.throwIfAborted();
     const result = await this.host.run(computer, command, context);
     if (result.code === 75) throw new ComputerScreenUnavailableError();
-    if (result.code !== 0) throw new Error(result.stderr || "computer desktop operation failed");
+    if (result.code !== 0) {
+      if (result.stderr?.trim()) throw new Error(result.stderr);
+      const output = result.stdout.trim().split("\n").at(-1)?.slice(0, 300);
+      throw new Error("computer desktop operation failed", {
+        cause: new Error(output ? `exit ${result.code}: ${output}` : `exit ${result.code}`),
+      });
+    }
     return result.stdout;
   }
 
