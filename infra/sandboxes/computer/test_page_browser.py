@@ -490,6 +490,31 @@ class RunTest(unittest.TestCase):
         self.assertIn('location.assign("https://next.example.test/a?b=1")', script)
         self.assertIn('"no-referrer"', script)
 
+    def test_a_tab_just_opened_on_the_site_is_read_without_navigating_again(self):
+        browser = FakeAgentBrowser(requests=[])
+        browser.stuck = True
+        with patch.object(helper.time, "sleep"):
+            result = page(browser).navigate("https://portal.example.test/", opened=True)
+        self.assertEqual(result["ok"], True)
+        self.assertIn("Welcome back", result["tree"])
+        self.assertFalse(any("location.assign(" in " ".join(command) for command in browser.sent))
+
+    def test_navigating_from_a_browser_page_opens_the_site_once(self):
+        listing = [{"type": "page", "id": "newtab", "url": "chrome://newtab/"}]
+        opened = [{"type": "page", "id": "site", "url": "https://portal.example.test/"}]
+        browser = FakeAgentBrowser(requests=[])
+        browser.stuck = True
+        with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), patch.object(helper, "wait_for_cdp"), \
+                patch.object(helper, "http_get_json", side_effect=[listing, opened]), \
+                patch.object(helper.urllib.request, "urlopen"), \
+                patch.object(helper, "AgentBrowser", return_value=browser), \
+                patch.object(browser, "use_tab", create=True), \
+                patch.object(helper.time, "sleep"), patch("builtins.print") as printed:
+            self.assertEqual(helper.run(["rakazo-page-browser", "navigate", '{"url": "https://portal.example.test/"}']), 0)
+        self.assertEqual(json.loads(printed.call_args.args[0])["ok"], True)
+        self.assertEqual(browser.sent[0], ["tab", "new", "https://portal.example.test/"])
+        self.assertFalse(any("location.assign(" in " ".join(command) for command in browser.sent))
+
     def test_a_navigation_that_never_reaches_a_new_page_is_left_to_the_desktop(self):
         browser = FakeAgentBrowser()
         browser.stuck = True

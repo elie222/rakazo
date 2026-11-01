@@ -574,17 +574,21 @@ class PageBrowser:
 
     # -- commands ---------------------------------------------------------------------------------
 
-    def navigate(self, url: str) -> dict[str, Any]:
+    def navigate(self, url: str, opened: bool = False) -> dict[str, Any]:
+        """Go to url, or, when `opened`, read the tab that was just opened on it."""
         check_url(url)
         started = time.monotonic()
-        # agent-browser's own `open` holds its session until the load event, up to 25 seconds; the
-        # page is read while it is still loading instead, as the person would see it.
-        _, before = self.ab.batch([["network", "requests", "--clear"],
-                                   ["eval", NAVIGATE.replace("URL", json.dumps(url))]])
-        before = before.get("result") or {}
-        # Scripts run in a page that is being replaced answer late, so the new document's response is
-        # awaited in the request log first. A new fragment of the same page loads no document.
-        same_document = str(before.get("href") or "").split("#")[0] == url.split("#")[0] and "#" in url
+        before: dict[str, Any] = {}
+        same_document = opened
+        if not opened:
+            # agent-browser's own `open` holds its session until the load event, up to 25 seconds; the
+            # page is read while it is still loading instead, as the person would see it.
+            _, before = self.ab.batch([["network", "requests", "--clear"],
+                                       ["eval", NAVIGATE.replace("URL", json.dumps(url))]])
+            before = before.get("result") or {}
+            # Scripts run in a page that is being replaced answer late, so the new document's response is
+            # awaited in the request log first. A new fragment of the same page loads no document.
+            same_document = str(before.get("href") or "").split("#")[0] == url.split("#")[0] and "#" in url
         while not same_document:
             (log,) = self.ab.batch([["network", "requests"]])
             if any(r.get("resourceType") == "Document" and r.get("status") is not None
@@ -597,7 +601,7 @@ class PageBrowser:
             (now,) = self.ab.batch([["eval", "({ timeOrigin: performance.timeOrigin, href: location.href, "
                                               "ready: document.readyState })"]])
             now = now.get("result") or {}
-            moved = now.get("timeOrigin") != before.get("timeOrigin") or (same_document and now.get("href") == url)
+            moved = opened or now.get("timeOrigin") != before.get("timeOrigin") or (same_document and now.get("href") == url)
             if moved and now.get("ready") in ("interactive", "complete"):
                 break
             if time.monotonic() - started > NAVIGATE_SECONDS:
@@ -950,6 +954,7 @@ def run(argv: list[str]) -> int:
     port = cdp_port()
     # Set once the browser answers: before that, no action can have reached the page.
     connected = False
+    opened = False
     try:
         wait_for_cdp(port)
         connected = True
@@ -966,10 +971,13 @@ def run(argv: list[str]) -> int:
             if urlsplit(address).netloc in ("newtab", "new-tab-page"):
                 urllib.request.urlopen(f"http://127.0.0.1:{port}/json/close/{target}", timeout=5.0).close()
             target, address = front_tab(port)
+            # The new tab is already on the site: navigating it again would go unseen by the request log
+            # it has only just started.
+            opened = True
         browser.use_tab(target)
         page = PageBrowser(port, target, browser)
         if command == "navigate":
-            result = page.navigate(str(args.get("url") or ""))
+            result = page.navigate(str(args.get("url") or ""), opened=opened)
         elif command == "snapshot":
             result = page.snapshot()
         else:
