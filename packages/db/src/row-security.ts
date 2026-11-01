@@ -4,6 +4,7 @@ import { getLogger } from "@rakazo/logging";
 import type { Pool, PoolClient } from "pg";
 import type { PrismaClient } from "./generated/prisma/client.js";
 import { Prisma } from "./generated/prisma/client.js";
+import { withTransactionRetry } from "./transaction-retry.js";
 
 /**
  * Who a database operation runs for. Row-level security policies read the
@@ -353,20 +354,23 @@ export function withRowLevelSecurity(prisma: PrismaClient, bypassKey = ""): Pris
   return prisma.$extends({
     query: {
       async $allOperations({ model, operation, args, query, ...rest }) {
+        const internal = (rest as { __internalParams?: InternalParams }).__internalParams;
+        const transaction = internal?.transaction;
+        // A lone statement that lost a deadlock changed nothing, so it can run again; a
+        // transaction's statements are retried by whoever opened the transaction.
+        const run = () => (transaction ? query(args) : withTransactionRetry(() => query(args)));
         const context = storage.getStore();
         if (!context) {
           if (model && ROW_SECURITY_MODELS.has(model)) missingContext(model, operation);
-          return query(args);
+          return run();
         }
-        const internal = (rest as { __internalParams?: InternalParams }).__internalParams;
-        const transaction = internal?.transaction;
         if (transaction?.kind === "batch") {
           throw new Error(
             "Batch $transaction([...]) cannot carry a database context; use an interactive transaction",
           );
         }
         if (transaction || (operation !== "findUnique" && operation !== "findUniqueOrThrow")) {
-          return query(args);
+          return run();
         }
         // Prisma would batch this with other findUnique calls of the same tick and
         // run them all in whichever context came first. findFirst runs at once,
@@ -382,11 +386,13 @@ export function withRowLevelSecurity(prisma: PrismaClient, bypassKey = ""): Pris
         }
         // Fluent relation reads (`findUnique(...).messages()`) keep Prisma's own
         // shape, so they run in a short transaction that sets the context first.
-        const [, result] = await prisma.$transaction(
-          [prisma.$executeRaw(LOCAL_SETTINGS(settingsFor(context, bypassKey))), query(args)],
-          WRAPPED_OPERATION_OPTIONS as never,
-        );
-        return result;
+        return withTransactionRetry(async () => {
+          const [, result] = await prisma.$transaction(
+            [prisma.$executeRaw(LOCAL_SETTINGS(settingsFor(context, bypassKey))), query(args)],
+            WRAPPED_OPERATION_OPTIONS as never,
+          );
+          return result;
+        });
       },
     },
   }) as unknown as PrismaClient;

@@ -1,6 +1,7 @@
 import type { AgentRuntimeEvent, UsageOperationKind } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "./generated/prisma/client.js";
 import { hasFinalModelCost, settleModelCreditsTx } from "./model-credits.js";
+import { withTransactionRetry } from "./transaction-retry.js";
 
 type UsageEvent = Extract<AgentRuntimeEvent, { type: "usage" }>;
 export interface UsageAttribution {
@@ -51,36 +52,38 @@ export async function recordUsage(
     operationKind: attribution.operationKind ?? event.operationKind ?? "answer",
     agentId: event.agentId ?? null,
   };
-  return prisma.$transaction(async (tx) => {
-    await tx.usageRecord.createMany({ data: [data], skipDuplicates: true });
-    const entry = event.callId
-      ? await tx.modelCreditEntry.findUnique({ where: { callId: event.callId } })
-      : null;
-    if (!entry) return;
-    if (
-      entry.userId !== attribution.userId ||
-      entry.spaceId !== attribution.spaceId ||
-      entry.provider !== event.provider ||
-      entry.model !== event.model
-    )
-      throw new Error("Usage attribution does not match its credit reservation");
-    if (!entry.pending && entry.reconciliationState === "complete" && !reconcile) return;
-    let usage = await tx.usageRecord.findUniqueOrThrow({ where: { callId: event.callId! } });
-    if (reconcile) {
-      usage = await tx.usageRecord.update({
-        where: { id: usage.id },
-        data: observation,
+  return withTransactionRetry(() =>
+    prisma.$transaction(async (tx) => {
+      await tx.usageRecord.createMany({ data: [data], skipDuplicates: true });
+      const entry = event.callId
+        ? await tx.modelCreditEntry.findUnique({ where: { callId: event.callId } })
+        : null;
+      if (!entry) return;
+      if (
+        entry.userId !== attribution.userId ||
+        entry.spaceId !== attribution.spaceId ||
+        entry.provider !== event.provider ||
+        entry.model !== event.model
+      )
+        throw new Error("Usage attribution does not match its credit reservation");
+      if (!entry.pending && entry.reconciliationState === "complete" && !reconcile) return;
+      let usage = await tx.usageRecord.findUniqueOrThrow({ where: { callId: event.callId! } });
+      if (reconcile) {
+        usage = await tx.usageRecord.update({
+          where: { id: usage.id },
+          data: observation,
+        });
+      }
+      await settleModelCreditsTx(tx, entry.id, usage.costUsd, reconcile);
+      const complete = hasFinalModelCost(usage);
+      await tx.modelCreditEntry.update({
+        where: { id: entry.id },
+        data: {
+          reconciliationState: complete ? "complete" : "pending",
+          ...(usage.providerRequestId ? { providerRequestId: usage.providerRequestId } : {}),
+          ...(complete ? { nextReconcileAt: null } : {}),
+        },
       });
-    }
-    await settleModelCreditsTx(tx, entry.id, usage.costUsd, reconcile);
-    const complete = hasFinalModelCost(usage);
-    await tx.modelCreditEntry.update({
-      where: { id: entry.id },
-      data: {
-        reconciliationState: complete ? "complete" : "pending",
-        ...(usage.providerRequestId ? { providerRequestId: usage.providerRequestId } : {}),
-        ...(complete ? { nextReconcileAt: null } : {}),
-      },
-    });
-  });
+    }),
+  );
 }
