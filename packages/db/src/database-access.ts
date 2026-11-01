@@ -47,7 +47,17 @@ export async function provisionRuntimeRole(
   try {
     const provisioned = await provisionWith(owner, runtimeUrl);
     if (provisioned.warning) return provisioned;
-    return (await storeBypassKey(owner, runtimeUrl)) ? {} : { warning: NO_BYPASS_KEY_WARNING };
+    if (!rlsBypassKey(runtimeUrl)) return { warning: NO_BYPASS_KEY_WARNING };
+    // A key from a password the login does not have would lock out the running release.
+    const runtime = new Client({ connectionString: runtimeUrl });
+    const connected = await runtime.connect().then(
+      () => true,
+      () => false,
+    );
+    await runtime.end().catch(() => undefined);
+    if (!connected) return { warning: RUNTIME_LOGIN_FAILED_WARNING };
+    await storeBypassKey(owner, runtimeUrl);
+    return {};
   } finally {
     await owner.end();
   }
@@ -143,13 +153,14 @@ async function provisionWith(owner: Client, runtimeUrl: string): Promise<{ warni
   return {};
 }
 
+const RUNTIME_LOGIN_FAILED_WARNING =
+  "Could not log in with DATABASE_URL, so its row-level security bypass key was not registered.";
+
 const NO_BYPASS_KEY_WARNING =
   "DATABASE_URL has no password, so SQL run for one tenant could turn on the cross-tenant bypass. Give the runtime login a password.";
 
 /** Lets the runtime login's system context through the policies (see rlsBypassKey). */
-async function storeBypassKey(owner: Client, runtimeUrl: string): Promise<boolean> {
-  const key = rlsBypassKey(runtimeUrl);
-  if (!key) return false;
+async function storeBypassKey(owner: Client, runtimeUrl: string): Promise<void> {
   // One statement, so the table is never empty, which would accept the bypass alone.
   await owner.query(
     `WITH stored AS (
@@ -157,9 +168,8 @@ async function storeBypassKey(owner: Client, runtimeUrl: string): Promise<boolea
        ON CONFLICT (digest) DO NOTHING
      )
      DELETE FROM rakazo_private.rls_bypass_keys WHERE digest <> sha256(convert_to($1, 'UTF8'))`,
-    [key],
+    [rlsBypassKey(runtimeUrl)],
   );
-  return true;
 }
 
 /**
