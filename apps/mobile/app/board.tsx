@@ -55,6 +55,8 @@ export default function BoardScreen() {
     generation.current += 1;
     try {
       const updated = await rpc("tickets/move", { id: ticket.id, status });
+      // A refresh that started while the move was in flight may have read the old status.
+      generation.current += 1;
       if (live.current)
         setTickets((rows) => [updated, ...rows.filter((row) => row.id !== updated.id)]);
     } catch (cause) {
