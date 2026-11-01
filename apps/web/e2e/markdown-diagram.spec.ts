@@ -91,6 +91,33 @@ test("a wide diagram scrolls on a phone instead of shrinking its text away", asy
   await captureScreenshot(page, testInfo, "markdown-diagram-wide-phone");
 });
 
+test("a text fence reads as wrapped prose beside a scrolling code fence", async ({
+  page,
+}, testInfo) => {
+  await page.goto(`${fixture}?case=prose`);
+  const message = page.getByTestId("diagram-fixture");
+  const fences = message.locator("pre");
+  await expect(fences).toHaveCount(2);
+
+  const metrics = await fences.evaluateAll((blocks) =>
+    blocks.map((block) => ({ scrollWidth: block.scrollWidth, clientWidth: block.clientWidth })),
+  );
+  // The email draft wraps to the card's width; the TypeScript line scrolls sideways.
+  expect(metrics[0]!.scrollWidth).toBeLessThanOrEqual(metrics[0]!.clientWidth);
+  expect(metrics[1]!.scrollWidth).toBeGreaterThan(metrics[1]!.clientWidth);
+
+  const fonts = await message.evaluate((root) => {
+    const codes = root.querySelectorAll("pre code");
+    return [codes[0]!, codes[1]!, root.querySelector("p")!].map(
+      (element) => getComputedStyle(element).fontFamily,
+    );
+  });
+  expect(fonts[0]).toBe(fonts[2]);
+  expect(fonts[1]).not.toBe(fonts[2]);
+
+  await captureScreenshot(page, testInfo, "markdown-prose-fence");
+});
+
 test("Mermaid loads only for a message with a diagram", async ({ page }) => {
   // The library itself, not this package's own mermaid*.ts modules or the fixture.
   const libraryRequests: string[] = [];

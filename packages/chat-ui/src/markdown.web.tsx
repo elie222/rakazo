@@ -35,6 +35,7 @@ import type { ChatMarkdownProps } from "./markdown";
 import {
   closeUnterminatedFence,
   inlineMarkdownImageSrc,
+  isProseFence,
   LinkFaviconsPausedContext,
   linkFaviconOrigin,
   linkLabel,
@@ -105,8 +106,9 @@ function CopyButton({ read, label }: { read: () => string; label: string }) {
 
 function CodeBlock({
   copyable,
+  prose,
   ...props
-}: React.ComponentPropsWithoutRef<"pre"> & { copyable: boolean }) {
+}: React.ComponentPropsWithoutRef<"pre"> & { copyable: boolean; prose: boolean }) {
   const copy = useMarkdownCopy();
   const preRef = useRef<HTMLPreElement>(null);
   // The parser ends a fence's code with a newline the author didn't write.
@@ -114,7 +116,7 @@ function CodeBlock({
 
   return (
     <div className="rk-chat-markdown-pre-wrap">
-      <pre {...props} ref={preRef} />
+      <pre {...props} className={prose ? "rk-chat-markdown-pre-prose" : undefined} ref={preRef} />
       {copyable ? <CopyButton read={readCode} label={copy.copyCode} /> : null}
     </div>
   );
@@ -131,14 +133,19 @@ function codeText(code: MarkdownHast | undefined) {
   return (code?.children ?? []).map((child) => child.value ?? "").join("");
 }
 
-/** The source of a ```mermaid fence, or undefined for any other block. */
-function mermaidFenceSource(node: MarkdownHast | undefined): string | undefined {
-  const code = codeElement(node);
-  const classNames = code?.properties?.className;
+/** The language a fence names, or "" when it names none. */
+function fenceLanguage(node: MarkdownHast | undefined): string {
+  const classNames = codeElement(node)?.properties?.className;
   const language = Array.isArray(classNames)
     ? classNames.find((name) => typeof name === "string" && name.startsWith("language-"))
     : undefined;
-  if (typeof language !== "string" || !isMermaidFence(language.slice("language-".length))) {
+  return typeof language === "string" ? language.slice("language-".length) : "";
+}
+
+/** The source of a ```mermaid fence, or undefined for any other block. */
+function mermaidFenceSource(node: MarkdownHast | undefined): string | undefined {
+  const code = codeElement(node);
+  if (!isMermaidFence(fenceLanguage(node))) {
     return undefined;
   }
   const source = codeText(code);
@@ -175,8 +182,12 @@ function MarkdownPre({
 }: React.ComponentPropsWithoutRef<"pre"> & { node?: MarkdownHast }) {
   const streamingSource = useContext(StreamingSourceContext);
   const diagram = mermaidFenceSource(node);
+  // Prose an author wrote in a fence reads as prose; code keeps the monospaced font.
+  const prose = diagram === undefined && isProseFence(fenceLanguage(node));
   // An empty fence has nothing to copy.
-  const codeBlock = <CodeBlock {...props} copyable={/\S/.test(codeText(codeElement(node)))} />;
+  const codeBlock = (
+    <CodeBlock {...props} copyable={/\S/.test(codeText(codeElement(node)))} prose={prose} />
+  );
   if (diagram === undefined) return codeBlock;
   // Parser offsets identify the fence inside quotes and lists too. Inspect the original source,
   // since a display-only closing fence must never trigger a diagram render.
