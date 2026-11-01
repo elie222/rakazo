@@ -51,10 +51,13 @@ import {
   subscribeThread,
   updateAccountName,
 } from "./api.js";
+import { artifactCacheSession } from "./artifact-cache-session";
 import { resumeLiveNotifications } from "./live-notifications.js";
 import { threadRefreshDelayMs } from "./refresh";
 import {
   clearSessionToken,
+  currentSessionGeneration,
+  replaceSessionTokenIfCurrent,
   restoreSessionToken,
   saveSessionToken,
   snapshotSessionToken,
@@ -253,6 +256,7 @@ describe("mobile API authentication", () => {
     configureUnsentSends({
       request: vi.fn(),
       serverReachable: () => true,
+      passwordChanging: () => false,
       scope: () => null,
       disk: { clear, save: vi.fn() } as unknown as UnsentDisk,
       errorText: String,
@@ -432,6 +436,9 @@ describe("mobile API authentication", () => {
   });
 
   it("uses original password change and deletion endpoints after account-security 404", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) =>
+      key === "rakazo.session_token" ? "fake-session" : null,
+    );
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response("Not found", { status: 404 }))
@@ -536,6 +543,174 @@ describe("mobile API authentication", () => {
     );
   });
 
+  it("keeps the same account's unsent messages and their cache namespace across a password change", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    const clear = vi.fn();
+    configureUnsentSends({
+      request: vi.fn(),
+      serverReachable: () => true,
+      passwordChanging: () => false,
+      scope: () => null,
+      disk: { clear, save: vi.fn() } as unknown as UnsentDisk,
+      errorText: String,
+      notDelivered: vi.fn(),
+    });
+    const namespace = await artifactCacheSession("session-token");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ token: "rotated-token", user: { id: "user-1" } })),
+    );
+
+    await changePassword("old-password", "new-password");
+
+    expect(clear).not.toHaveBeenCalled();
+    expect(await artifactCacheSession("rotated-token")).toBe(namespace);
+    // A restart reads the new token and the namespace that names the queue.
+    expect(store.get("rakazo.session_token")).toBe("rotated-token");
+    expect(JSON.parse(store.get("rakazo.artifact-cache-session") ?? "null")).toEqual({
+      token: "rotated-token",
+      namespace,
+      previous: "session-token",
+    });
+  });
+
+  it("finishes a pending session save before it submits another password change", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    const namespace = await artifactCacheSession("session-token");
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) =>
+      jsonResponse({
+        token:
+          JSON.parse(String(init.body)).newPassword === "new-password" ? "rotated-1" : "rotated-2",
+        user: { id: "user-1" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const keychainFails = () =>
+      vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(async () => {
+        throw new Error("keychain unavailable");
+      });
+    keychainFails();
+    await expect(changePassword("old-password", "new-password")).rejects.toThrow(
+      "keychain unavailable",
+    );
+    expect(store.get("rakazo.session_token")).toBe("session-token");
+
+    // While the earlier session cannot be saved, nothing new is submitted.
+    keychainFails();
+    await expect(changePassword("new-password", "newer-password")).rejects.toThrow(
+      "keychain unavailable",
+    );
+    expect(fetchMock).toHaveBeenCalledOnce();
+
+    await changePassword("new-password", "newer-password");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [, retry] = fetchMock.mock.calls[1]!;
+    expect(new Headers(retry.headers).get("authorization")).toBe("Bearer rotated-1");
+    expect(JSON.parse(String(retry.body))).toMatchObject({
+      currentPassword: "new-password",
+      newPassword: "newer-password",
+    });
+    expect(store.get("rakazo.session_token")).toBe("rotated-2");
+    expect(JSON.parse(store.get("rakazo.artifact-cache-session") ?? "null")).toEqual({
+      token: "rotated-2",
+      namespace,
+      previous: "rotated-1",
+    });
+  });
+
+  it("completes a resubmitted password change after its session save failed, without resending it", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    // The server accepted the first change, so the old password no longer matches.
+    const fetchMock = vi.fn(async () =>
+      fetchMock.mock.calls.length === 1
+        ? jsonResponse({ token: "rotated-token", user: { id: "user-1" } })
+        : jsonResponse({ message: "Invalid password" }, { status: 400 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(async () => {
+      throw new Error("keychain unavailable");
+    });
+    await expect(changePassword("old-password", "new-password")).rejects.toThrow(
+      "keychain unavailable",
+    );
+
+    await changePassword("old-password", "new-password");
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(store.get("rakazo.session_token")).toBe("rotated-token");
+    // A different submission is still sent.
+    await expect(changePassword("new-password", "newer-password")).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("rotates the cache namespace from the token the password change was sent with", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    const namespace = await artifactCacheSession("session-token");
+    let sessionReads = 0;
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+      // One transient keychain failure while the password change starts.
+      if (key === "rakazo.session_token" && ++sessionReads === 1)
+        throw new Error("keychain unavailable");
+      return store.get(key) ?? null;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) =>
+        new Headers(init.headers).get("authorization") === "Bearer session-token"
+          ? jsonResponse({ token: "rotated-token", user: { id: "user-1" } })
+          : jsonResponse({ message: "Unauthorized" }, { status: 401 }),
+      ),
+    );
+
+    await changePassword("old-password", "new-password").catch(() => undefined);
+    // Whether or not that change went through, the saved session still names the queue.
+    expect(await artifactCacheSession(store.get("rakazo.session_token") ?? "")).toBe(namespace);
+
+    await changePassword("old-password", "new-password");
+    expect(store.get("rakazo.session_token")).toBe("rotated-token");
+    expect(await artifactCacheSession("rotated-token")).toBe(namespace);
+  });
+
+  it.each([
+    [
+      "an SSO or passkey session",
+      () => replaceSessionTokenIfCurrent(currentSessionGeneration(), "fake-other"),
+    ],
+    ["sign-out", () => signOut()],
+    ["a restored session", () => restoreSessionToken("fake-other")],
+    ["a server change", () => saveApiBase("https://second-server.example")],
+  ])("still deletes unsent messages for %s", async (_change, change) => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({})),
+    );
+    const clear = vi.fn();
+    configureUnsentSends({
+      request: vi.fn(),
+      serverReachable: () => true,
+      passwordChanging: () => false,
+      scope: () => null,
+      disk: { clear, save: vi.fn() } as unknown as UnsentDisk,
+      errorText: String,
+      notDelivered: vi.fn(),
+    });
+    const namespace = await artifactCacheSession("session-token");
+    try {
+      await change();
+      expect(clear).toHaveBeenCalled();
+      expect(await artifactCacheSession("fake-other")).not.toBe(namespace);
+    } finally {
+      await resetApiBase();
+    }
+  });
+
   it("drops a rotated token when sign-out clears the session before the response", async () => {
     const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
     mockSecureStore(store);
@@ -570,6 +745,18 @@ describe("mobile API authentication", () => {
     await pending;
 
     expect(SecureStore.setItemAsync).toHaveBeenCalledWith("rakazo.session_token", "rotated-token");
+  });
+
+  it("does not change the password when the session token cannot be read", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockRejectedValue(new Error("keychain locked"));
+    const fetchMock = vi.fn(async () => jsonResponse({ token: "rotated-token" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(changePassword("old-password", "new-password")).rejects.toThrow(
+      "Could not change password",
+    );
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("keeps the rotated token in memory and reports a failed keychain write", async () => {

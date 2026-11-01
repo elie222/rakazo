@@ -79,8 +79,9 @@ import {
   clearSessionToken,
   currentSessionGeneration,
   loadSessionToken,
-  replaceSessionTokenIfCurrent,
   restoreSessionToken,
+  rotateSessionTokenIfCurrent,
+  saveRotatedSessionToken,
   saveSessionToken,
   saveVerifiedIntegrationsScope,
   snapshotSessionToken,
@@ -661,20 +662,56 @@ export async function updateAccountName(name: string): Promise<void> {
 
 /** Revoking other sessions also refuses this one until the replacement is saved. */
 let passwordChangesInFlight = 0;
+export function passwordChangeInFlight() {
+  return passwordChangesInFlight > 0;
+}
+/** A hash of the change whose new session is not saved yet; never the passwords themselves. */
+let unsavedPasswordChange: string | undefined;
+
+/** A 53-bit hash, so an unchanged form can be recognized without keeping its passwords. */
+function submissionHash(currentPassword: string, newPassword: string) {
+  const text = JSON.stringify([currentPassword, newPassword]);
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ code, 2654435761);
+    h2 = Math.imul(h2 ^ code, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
 
 export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
   passwordChangesInFlight += 1;
+  const submission = submissionHash(currentPassword, newPassword);
   try {
-    await replaceSessionAfterPasswordChange(currentPassword, newPassword);
+    // An earlier change whose new session was not saved is finished first, so this change is sent
+    // with that session; if it still cannot be saved, nothing new is submitted.
+    const saved = await saveRotatedSessionToken();
+    const finished = unsavedPasswordChange;
+    unsavedPasswordChange = undefined;
+    // The server already accepted this exact change; sending it again would fail.
+    if (saved && finished === submission) return;
+    await replaceSessionAfterPasswordChange(currentPassword, newPassword, submission);
   } finally {
     passwordChangesInFlight -= 1;
   }
 }
 
-async function replaceSessionAfterPasswordChange(currentPassword: string, newPassword: string) {
+async function replaceSessionAfterPasswordChange(
+  currentPassword: string,
+  newPassword: string,
+  submission: string,
+) {
   const apiBase = currentApiBase();
   const generation = currentSessionGeneration();
   const headers = await authHeaders();
+  // The token the server replaces is the one this request carries; a second read could differ.
+  const previousToken = headers.authorization?.slice("Bearer ".length) ?? "";
+  // Without it the cookie jar could still sign the change, and the queue could not move over.
+  if (!previousToken) throw new Error(t("Could not change password"));
   const { response, body, invalidJson } = await fetchMobileJson<unknown>(
     `${apiBase}/api/auth/change-password`,
     {
@@ -705,8 +742,10 @@ async function replaceSessionAfterPasswordChange(currentPassword: string, newPas
     }
   };
   try {
-    if (!(await replaceSessionTokenIfCurrent(generation, token))) return;
+    // The same account on the same server keeps its unsent messages.
+    if (!(await rotateSessionTokenIfCurrent(generation, previousToken, token))) return;
   } catch (error) {
+    unsavedPasswordChange = submission;
     // The replacement is already in memory; resume before the keychain error reaches the UI.
     await maybeResume();
     throw error;
