@@ -35,11 +35,23 @@ export const MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS = 4;
 /** The most actions one `computer_act` or `browser_act` call may carry. */
 export const MAX_ACTIONS_PER_CALL = 24;
 
+/** A double click expands to two computer actions; every other action stays as one. */
+export function computerActionCount(action: unknown): number {
+  if (!action || typeof action !== "object") return 1;
+  const { kind, double } = action as { kind?: unknown; double?: unknown };
+  return kind === "click" && double === true ? 2 : 1;
+}
+
 /** Counts consecutive over-limit `computer_act`/`browser_act` batches; other calls leave it alone. */
 export function advanceOverLimitActionCalls(count: number, name: string, args: unknown): number {
   if (name !== "computer_act" && name !== "browser_act") return count;
   const actions = (args as { actions?: unknown } | null)?.actions;
-  return Array.isArray(actions) && actions.length > MAX_ACTIONS_PER_CALL ? count + 1 : 0;
+  if (!Array.isArray(actions)) return 0;
+  const actionCount =
+    name === "computer_act"
+      ? actions.reduce((total, action) => total + computerActionCount(action), 0)
+      : actions.length;
+  return actionCount > MAX_ACTIONS_PER_CALL ? count + 1 : 0;
 }
 
 /** The longer of the two runs, for the stop message. */

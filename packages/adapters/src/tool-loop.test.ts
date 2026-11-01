@@ -126,6 +126,22 @@ describe("advanceOverLimitActionCalls", () => {
     );
   });
 
+  it("counts expanded computer actions while leaving browser batches unexpanded", () => {
+    const actions = Array.from({ length: 13 }, () => ({
+      kind: "click",
+      x: 1,
+      y: 1,
+      double: true,
+    }));
+    expect(advanceOverLimitActionCalls(3, "computer_act", { actions })).toBe(
+      MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS,
+    );
+    expect(advanceOverLimitActionCalls(3, "computer_act", { actions: actions.slice(0, 12) })).toBe(
+      0,
+    );
+    expect(advanceOverLimitActionCalls(3, "browser_act", { actions })).toBe(0);
+  });
+
   it("ignores other tools and resets on a batch within the limit", () => {
     expect(advanceOverLimitActionCalls(2, "computer_observe", {})).toBe(2);
     expect(advanceOverLimitActionCalls(2, "computer_act", ok)).toBe(0);

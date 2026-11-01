@@ -126,7 +126,14 @@ describe("computer tool bridge", () => {
       parseComputerActions(
         Array.from({ length: 13 }, () => ({ kind: "click", x: 10, y: 10, double: true })),
       ),
-    ).toThrow(/more than 24/);
+    ).toThrow(
+      "computer_act accepts at most 24 actions but got 26 after expansion; none ran. Send fewer now, then the rest in a separate call. A double click counts as two actions.",
+    );
+    expect(
+      parseComputerActions(
+        Array.from({ length: 12 }, () => ({ kind: "click", x: 10, y: 10, double: true })),
+      ),
+    ).toHaveLength(24);
   });
 
   it("returns observations as model-visible image content", () => {
