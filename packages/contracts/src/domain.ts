@@ -1849,6 +1849,19 @@ export const BillingClientSchema = z.literal("mobile").optional();
 /** The deep link the API sends a mobile checkout back to; it closes the in-app browser. */
 export const MOBILE_BILLING_CALLBACK_URL = "rakazo://billing";
 
+/** The fixed choices a customer can give when canceling a subscription. */
+export const BILLING_CANCELLATION_REASONS = [
+  "too_expensive",
+  "missing_features",
+  "switched_service",
+  "unused",
+  "customer_service",
+  "too_complex",
+  "low_quality",
+  "other",
+] as const;
+export type BillingCancellationReason = (typeof BILLING_CANCELLATION_REASONS)[number];
+
 export const BillingStatusSchema = z.object({
   funding: z.enum(["byok", "credits"]).nullable().optional(),
   balanceUsd: z.number().optional(),

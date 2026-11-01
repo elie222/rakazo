@@ -250,6 +250,9 @@ model BillingAccount {
   currentPeriodEndsAt DateTime?
   cancelAtPeriodEnd   Boolean      @default(false)
   endedAt             DateTime?
+  /// What the customer said when canceling, from the billing provider's survey.
+  cancellationReason  String?
+  cancellationComment String?
   subscribedAt        DateTime?
   syncedAt            DateTime?
   /// Held while a recurring checkout opens, so only one opens per organization at a time.
