@@ -78,6 +78,10 @@
         {
           "from": "build/speech/rakazo-speech",
           "to": "speech/rakazo-speech"
+        },
+        {
+          "from": "assets/es.lproj",
+          "to": "es.lproj"
         }
       ],
       "target": [
