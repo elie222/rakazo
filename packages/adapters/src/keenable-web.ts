@@ -36,6 +36,7 @@ const pageSchema = z.object({
 const envelopeSchema = z.object({
   isError: z.boolean().optional(),
   content: z.array(z.object({ type: z.string(), text: z.string().optional() })),
+  structuredContent: z.unknown().optional(),
 });
 
 export type KeenableWebOptions = RemoteTransportDependencies & {
@@ -151,11 +152,17 @@ export class KeenableWebProvider implements WebProvider {
       .join("\n");
     if (envelope.data.isError)
       throw new Error(`Keenable: ${text.slice(0, 1_000) || "tool request failed"}`);
+    // Prefer the structured copy; a server that also serializes it into text
+    // has that duplicate dropped on the way in.
     let data: unknown;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      throw new Error("Invalid Keenable MCP response");
+    if (envelope.data.structuredContent !== undefined) {
+      data = envelope.data.structuredContent;
+    } else {
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error("Invalid Keenable MCP response");
+      }
     }
     const response = schema.safeParse(data);
     if (!response.success) throw new Error("Invalid Keenable MCP response");

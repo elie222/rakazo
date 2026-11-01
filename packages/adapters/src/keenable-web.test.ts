@@ -64,6 +64,36 @@ describe("optional Keenable web provider", () => {
     }
   });
 
+  it("reads the structured copy when the server repeats the text as JSON", async () => {
+    const data = {
+      query: "current question",
+      results: [
+        {
+          url: "https://example.test/page",
+          title: "Source",
+          description: "",
+          snippet: "Useful evidence",
+          published_at: "2026-07-28T00:00:00Z",
+        },
+      ],
+    };
+    const peer = keenableMcpFixture({
+      result: {
+        content: [{ type: "text", text: JSON.stringify(data) }],
+        structuredContent: data,
+        isError: false,
+      },
+    });
+    expect(
+      await webSearchFromTool(new KeenableWebProvider(peer.network), context, {
+        query: "current question",
+        maxResults: 1,
+      }),
+    ).toEqual({
+      results: [{ title: "Source", url: "https://example.test/page", snippet: "Useful evidence" }],
+    });
+  });
+
   it("maps page markdown and caps content at the requested size", async () => {
     const peer = keenableMcpFixture();
     expect(

@@ -306,6 +306,22 @@ describe("tickRoutineWatch", () => {
     },
   );
 
+  it("keeps the structured data in a change note beside supplemental text", async () => {
+    // The duplicate text was dropped on the way in, so the reader must not let
+    // the leftover note replace the data that triggered the routine.
+    const { deps, routine } = setup({
+      data: {
+        content: [{ type: "text", text: "Query completed." }],
+        structuredContent: { changes: [{ what: "add test note", at: "2026-11-01T09:30:00Z" }] },
+        isError: false,
+      },
+    });
+    routine.watchState = { checkedAt: "x", outcome: "unchanged", fingerprint: "old", detail: null };
+    const result = await checkRoutineWatch(deps, routine);
+    expect(result.state.detail).toContain("Query completed.");
+    expect(result.state.detail).toContain("add test note");
+  });
+
   it.each([new ComputerBusyError(), new DOMException("timed out", "TimeoutError")])(
     "retries temporary provisioning conflicts without losing the baseline",
     async (error) => {

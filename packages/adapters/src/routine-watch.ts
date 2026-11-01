@@ -630,11 +630,19 @@ async function readTool(
 
 /**
  * What a tool returned, as text a bot can read: an MCP result's text parts
- * rather than its `{content:[{type:"text",text}]}` envelope.
+ * beside its structured copy, rather than its `{content:[{type:"text",text}]}`
+ * envelope. A text block that only repeated the structured data is dropped on
+ * the way in, so any text left is supplemental — the note needs both to keep
+ * the details that triggered the routine.
  */
 export function toolResultText(data: unknown): string {
   if (typeof data === "string") return data;
   const texts = toolResultTextParts(data);
+  const structured = (data as { structuredContent?: unknown } | null)?.structuredContent;
+  if (structured && typeof structured === "object" && !Array.isArray(structured)) {
+    const json = stableStringify(structured);
+    return texts.length ? `${texts.join("\n")}\n${json}` : json;
+  }
   if (texts.length) return texts.join("\n");
   return stableStringify(data ?? null);
 }
