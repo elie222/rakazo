@@ -23,6 +23,12 @@ describe("secrets-guard", () => {
     expect(resolveScreenProxySecret({ NODE_ENV: "test" })).toBe(
       DEV_SCREEN_PROXY_SECRET_PLACEHOLDER,
     );
+    expect(resolveAuthSecret({ NODE_ENV: "production", VITEST: "true" })).toBe(
+      DEV_AUTH_SECRET_PLACEHOLDER,
+    );
+    expect(resolveAuthSecret({ NODE_ENV: "production", RAKAZO_ALLOW_DEV_SECRETS: "1" })).toBe(
+      DEV_AUTH_SECRET_PLACEHOLDER,
+    );
   });
 
   it("rejects missing secrets outside local/test", () => {
@@ -186,6 +192,13 @@ describe("secrets-guard", () => {
         NODE_ENV: "test",
         SCREEN_PROXY_SECRET: "supervisor-only",
         SANDBOX_SUPERVISOR_TOKEN: "supervisor-only",
+      }),
+    ).toThrow(/must differ/);
+    expect(() =>
+      resolveSupervisorToken({
+        NODE_ENV: "test",
+        SANDBOX_SUPERVISOR_TOKEN: "screen-only",
+        SCREEN_PROXY_SECRET: "screen-only",
       }),
     ).toThrow(/must differ/);
     expect(() =>

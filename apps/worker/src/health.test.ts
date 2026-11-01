@@ -36,6 +36,9 @@ describe("worker health", () => {
       { heartbeat: 0, reconciled: 1_000_000 },
       { heartbeat: 1_000_000, reconciled: 0 },
       { heartbeat: "invalid", reconciled: NaN },
+      { heartbeat: 1_000_000 - 90_001, reconciled: 1_000_000 },
+      { heartbeat: 1_000_000, reconciled: 1_000_000 - 300_001 },
+      { heartbeat: 1_000_000 + 5_001, reconciled: 1_000_000 },
     ]) {
       expect(workerHealthIsFresh(health, 1_000_000)).toBe(false);
     }

@@ -530,31 +530,31 @@ describe("live page helper control lines", () => {
 
 describe("live page helper long dropdowns", () => {
   const years = Array.from(
-    { length: 5000 },
+    { length: 1000 },
     (_, i) => `<option value="y${i}">Year ${i}</option>`,
   ).join("");
   const html = `<label for="y">Year</label><select id="y">${years}</select>`;
 
   it("lists the first options and the chosen one, and counts the rest", () => {
     const { win, browser } = installPageHelper(html);
-    (win.document.getElementById("y") as HTMLSelectElement).selectedIndex = 4200;
+    (win.document.getElementById("y") as HTMLSelectElement).selectedIndex = 840;
     const snap = browser.snapshot();
     const year = snap.elements.find((el) => el.name === "Year") as Snapshot["elements"][number] & {
       optionsTotal?: number;
     };
     expect(year.options).toHaveLength(101);
-    expect(year.options?.at(-1)).toEqual({ label: "Year 4200", value: "y4200", selected: true });
-    expect(year.optionsTotal).toBe(5000);
-    expect(snap.tree).toContain(", and 4899 more");
+    expect(year.options?.at(-1)).toEqual({ label: "Year 840", value: "y840", selected: true });
+    expect(year.optionsTotal).toBe(1000);
+    expect(snap.tree).toContain(", and 899 more");
     expect(JSON.stringify(snap).length).toBeLessThan(30_000);
   });
 
   it("still fills any option by its label and lists only a few when it has none", () => {
     const { win, browser } = installPageHelper(html);
     const ref = refOf(browser.snapshot(), "Year");
-    browser.fill(ref, "Year 4321");
-    expect((win.document.getElementById("y") as HTMLSelectElement).value).toBe("y4321");
-    expect(() => browser.fill(ref, "Year 9999")).toThrow(/Its options: .*, and 4899 more\./);
+    browser.fill(ref, "Year 432");
+    expect((win.document.getElementById("y") as HTMLSelectElement).value).toBe("y432");
+    expect(() => browser.fill(ref, "Year 9999")).toThrow(/Its options: .*, and 899 more\./);
   });
 });
 

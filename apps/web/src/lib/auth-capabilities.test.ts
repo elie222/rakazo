@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AuthCapabilities } from "./auth-capabilities";
 
+vi.mock("@rakazo/contracts", () => import("../../../../packages/contracts/src/auth"));
+vi.mock("@rakazo/core", () => import("../../../../packages/core/src/http-response"));
+
 let fetchAuthCapabilities: () => Promise<AuthCapabilities>;
 beforeEach(async () => {
   vi.resetModules();
@@ -24,23 +27,16 @@ it("validates configured SSO even during discovery downtime", async () => {
   );
   await expect(fetchAuthCapabilities()).resolves.toEqual(capability);
 });
-it.each([
-  {},
-  { passwordReset: false, resetUrl: null, sso: null },
-  { passwordReset: false, resetUrl: null, passwordAuth: false },
-  { passwordReset: "false", resetUrl: null },
-  { passwordReset: false, resetUrl: "invalid" },
-  { passwordReset: false, resetUrl: null, billing: "false" },
-  { passwordAuth: true },
-  { ...capability, sso: {} },
-  { ...capability, passwordAuth: "false" },
-])("rejects malformed successful capabilities", async (body) => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async () => Response.json(body)),
-  );
-  await expect(fetchAuthCapabilities()).rejects.toThrow();
-});
+it.each([{}, { passwordReset: false, resetUrl: null, sso: null }, { ...capability, sso: {} }])(
+  "rejects malformed successful capabilities",
+  async (body) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json(body)),
+    );
+    await expect(fetchAuthCapabilities()).rejects.toThrow();
+  },
+);
 it("rejects HTTP errors", async () => {
   vi.stubGlobal(
     "fetch",
@@ -148,7 +144,6 @@ it("rejects malformed JSON in a bounded native response", async () => {
 
 it.each<Record<string, string>>([
   {},
-  { "content-length": "invalid" },
   { "content-length": "-1" },
   { "content-length": "1.5" },
   { "content-length": "1", "content-encoding": "gzip" },

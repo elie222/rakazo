@@ -66,6 +66,19 @@ it("rejects an out-of-range ticket reference before querying tickets", async () 
   expect(findFirst).not.toHaveBeenCalled();
 });
 
+it("refuses a signed-out caller before querying the board", async () => {
+  const findUnique = vi.fn();
+  const client = createRouterClient(
+    createRouter({
+      prisma: { board: { findUnique } },
+      env: { ticketBoardEnabled: true },
+    } as unknown as RouterDeps),
+    { context: { actor: null } },
+  );
+  await expect(client.boards.get()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  expect(findUnique).not.toHaveBeenCalled();
+});
+
 it.each([false, true])("includes the board capability in me (%s)", async (ticketBoardEnabled) => {
   const prisma = {
     user: {

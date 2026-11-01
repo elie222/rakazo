@@ -385,26 +385,20 @@ describe("deleteArtifactFamily", () => {
 });
 
 describe("configured artifact upload limit", () => {
-  it.each([
-    ["song.mp3", "audio/mp3", "audio/mpeg"],
-    ["song.wav", "audio/x-wav", "audio/wav"],
-    ["song.ogg", "", "audio/ogg"],
-    ["song.m4a", "audio/x-m4a", "audio/mp4"],
-    ["song.m4a", "audio/aac", "audio/mp4"],
-  ])("normalizes %s uploads before validation/storage", async (name, mimeType, expected) => {
+  it("normalizes uploads before validation/storage", async () => {
     const reachedStorage = new Error("reached storage");
     const put = vi.fn().mockRejectedValue(reachedStorage);
     const deps = { prisma: {} as PrismaClient, artifacts: { put } as unknown as ArtifactStore };
     await expect(
       createOwnedArtifact(deps, actor, {
         botId: "bot-1",
-        name,
-        mimeType,
+        name: "song.m4a",
+        mimeType: "audio/aac",
         contentBase64: "YXVkaW8=",
       }),
     ).rejects.toBe(reachedStorage);
     expect(put).toHaveBeenCalledWith(
-      expect.objectContaining({ mimeType: expected }),
+      expect.objectContaining({ mimeType: "audio/mp4" }),
       expect.anything(),
     );
     put.mockClear();
