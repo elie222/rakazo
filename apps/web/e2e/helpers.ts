@@ -106,8 +106,11 @@ export async function openIntegrationsAdd(page: Page, item: string) {
   await page.getByRole("menuitem", { name: item, exact: true }).click();
 }
 
-/** Opens the bot panel from the header pill and shows one tab, leaving an open routine editor. */
-export async function openBotPanelTab(page: Page, name: "Computer" | "Routines" | "Advanced") {
+/**
+ * Opens the bot panel from the header pill and shows one tab, leaving an open routine editor.
+ * `name` is the tab's label in the UI language ("Routines", or "자동 실행" in Korean).
+ */
+export async function openBotPanelTab(page: Page, name: string) {
   const pill = page.getByTestId("bot-settings-trigger");
   const tab = page.getByTestId("bot-settings").getByRole("tab", { name, exact: true });
   if (!(await tab.isVisible())) {
