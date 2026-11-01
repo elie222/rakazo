@@ -1261,6 +1261,22 @@ export const RU_MESSAGES: Record<string, string> = {
   "Won't do": "Не будем делать",
   "Could not move the ticket": "Не удалось переместить тикет",
   "No tickets yet.": "Тикетов пока нет.",
+  "Bot models": "Модели ботов",
+  "1 bot has its own model:": "1 бот использует свою модель:",
+  "{count} bots have their own model:": "Своя модель у ботов ({count}):",
+  "Use space default": "Использовать модель пространства по умолчанию",
+  "Switching…": "Переключение…",
+  "Switch 1 bot to the space default?": "Переключить 1 бота на модель пространства по умолчанию?",
+  "Switch {count} bots to the space default?":
+    "Переключить ботов на модель пространства по умолчанию ({count})?",
+  "Their own model is cleared. You can pick one again in each bot.":
+    "Их собственная модель будет сброшена. Её можно снова выбрать в каждом боте.",
+  Switch: "Переключить",
+  "1 bot now uses the space default.": "1 бот теперь использует модель пространства по умолчанию.",
+  "{count} bots now use the space default.":
+    "Ботов переведено на модель пространства по умолчанию: {count}.",
+  "Could not switch {failedNames}. Try again.":
+    "Не удалось переключить {failedNames}. Попробуйте снова.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

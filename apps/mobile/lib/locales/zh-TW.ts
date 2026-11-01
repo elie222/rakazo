@@ -1236,6 +1236,19 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Won't do": "不處理",
   "Could not move the ticket": "無法移動工單",
   "No tickets yet.": "還沒有工單。",
+  "Bot models": "機器人模型",
+  "1 bot has its own model:": "1 個機器人使用自己的模型：",
+  "{count} bots have their own model:": "{count} 個機器人使用自己的模型：",
+  "Use space default": "使用空間預設模型",
+  "Switching…": "正在切換…",
+  "Switch 1 bot to the space default?": "將 1 個機器人切換為空間預設模型？",
+  "Switch {count} bots to the space default?": "將 {count} 個機器人切換為空間預設模型？",
+  "Their own model is cleared. You can pick one again in each bot.":
+    "將清除機器人的個別模型設定。你可以隨時為各機器人重新選擇模型。",
+  Switch: "切換",
+  "1 bot now uses the space default.": "1 個機器人已改用空間預設模型。",
+  "{count} bots now use the space default.": "{count} 個機器人已改用空間預設模型。",
+  "Could not switch {failedNames}. Try again.": "無法切換 {failedNames}，請再試一次。",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "與{peer}的 {count} 則訊息" };

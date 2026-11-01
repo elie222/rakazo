@@ -1,6 +1,7 @@
 import type { ModelCatalogEntry } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  botsWithOwnModel,
   canUseCompatibleModelAsDefault,
   chatModelChoices,
   clampCatalogThinkingLevel,
@@ -28,6 +29,16 @@ function provider(provider: string): ModelCatalogEntry {
     billing: "",
   };
 }
+
+it("counts only bots that pick both a provider and a model", () => {
+  expect(
+    botsWithOwnModel([
+      { modelProvider: "anthropic", modelId: "claude-opus-5-5" },
+      { modelProvider: null, modelId: null },
+      { modelProvider: "openai-codex", modelId: null },
+    ]),
+  ).toHaveLength(1);
+});
 
 describe("popularModelProvidersFirst", () => {
   it("lists subscriptions and the common API providers first", () => {

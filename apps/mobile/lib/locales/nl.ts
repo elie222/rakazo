@@ -1222,6 +1222,20 @@ export const NL_MESSAGES: Record<string, string> = {
   "Won't do": "Wordt niet gedaan",
   "Could not move the ticket": "Kon ticket niet verplaatsen",
   "No tickets yet.": "Nog geen tickets.",
+  "Bot models": "Botmodellen",
+  "1 bot has its own model:": "1 bot heeft een eigen model:",
+  "{count} bots have their own model:": "{count} bots hebben een eigen model:",
+  "Use space default": "Spacestandaard gebruiken",
+  "Switching…": "Bezig met wisselen…",
+  "Switch 1 bot to the space default?": "1 bot naar de spacestandaard overzetten?",
+  "Switch {count} bots to the space default?": "{count} bots naar de spacestandaard overzetten?",
+  "Their own model is cleared. You can pick one again in each bot.":
+    "Hun eigen model wordt gewist. Je kunt in elke bot opnieuw een model kiezen.",
+  Switch: "Overzetten",
+  "1 bot now uses the space default.": "1 bot gebruikt nu de spacestandaard.",
+  "{count} bots now use the space default.": "{count} bots gebruiken nu de spacestandaard.",
+  "Could not switch {failedNames}. Try again.":
+    "Kon {failedNames} niet overzetten. Probeer het opnieuw.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {
