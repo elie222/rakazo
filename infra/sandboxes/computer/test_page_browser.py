@@ -437,9 +437,12 @@ class AgentBrowserTest(unittest.TestCase):
                    {"type": "page", "id": "settings", "url": "chrome://settings/"},
                    {"type": "page", "id": "front", "url": "https://portal.example.test/"},
                    {"type": "page", "id": "back", "url": "https://other.example.test/"}]
+        with patch.object(helper, "http_get_json", return_value=listing[2:]):
+            self.assertEqual(helper.front_tab(9222), ("front", "https://portal.example.test/"))
         with patch.object(helper, "http_get_json", return_value=listing):
-            self.assertEqual(helper.front_tab(9222), "front")
-        with patch.object(helper, "http_get_json", return_value=listing[:2]):
+            self.assertEqual(helper.front_tab(9222), ("settings", "chrome://settings/"))
+        self.assertTrue(helper.internal("chrome://newtab/"))
+        with patch.object(helper, "http_get_json", return_value=listing[:1]):
             with self.assertRaisesRegex(RuntimeError, "No browser tab"):
                 helper.front_tab(9222)
 

@@ -129,13 +129,27 @@ def wait_for_cdp(port: int, timeout_s: float = 3.0) -> None:
     raise RuntimeError(f"CDP not ready on port {port}: {last_error}")
 
 
-def front_tab(port: int) -> str:
-    """The tab the person sees: Chromium lists tabs by when they were last brought to the front."""
+# Chromium's own pages, such as the new tab page, which agent-browser leaves alone.
+INTERNAL_SCHEMES = ("chrome", "chrome-extension", "chrome-untrusted", "chrome-search", "devtools")
+INTERNAL_PAGE = "The browser is showing one of its own pages, which the page tools cannot read. Open a site with browser_navigate."
+
+
+def front_tab(port: int) -> tuple[str, str]:
+    """The tab the person sees, and its address: Chromium lists tabs by when they were last brought to the front."""
     for target in http_get_json(f"http://127.0.0.1:{port}/json/list"):
-        if isinstance(target, dict) and target.get("type") == "page" and urlsplit(
-                str(target.get("url") or "")).scheme not in ("chrome", "chrome-extension", "chrome-untrusted", "devtools"):
-            return str(target["id"])
+        if isinstance(target, dict) and target.get("type") == "page":
+            return str(target["id"]), str(target.get("url") or "")
     raise RuntimeError("No browser tab is open. Use desktop tools to open one.")
+
+
+def internal(url: str) -> bool:
+    return urlsplit(url).scheme in INTERNAL_SCHEMES
+
+
+def check_url(url: str) -> None:
+    parsed = urlsplit(url)
+    if parsed.scheme not in ("http", "https") or parsed.username or parsed.password:
+        raise RuntimeError("Only HTTP(S) URLs without embedded credentials are supported")
 
 
 class AgentBrowser:
@@ -561,9 +575,7 @@ class PageBrowser:
     # -- commands ---------------------------------------------------------------------------------
 
     def navigate(self, url: str) -> dict[str, Any]:
-        parsed = urlsplit(url)
-        if parsed.scheme not in ("http", "https") or parsed.username or parsed.password:
-            raise RuntimeError("Only HTTP(S) URLs without embedded credentials are supported")
+        check_url(url)
         started = time.monotonic()
         # agent-browser's own `open` holds its session until the load event, up to 25 seconds; the
         # page is read while it is still loading instead, as the person would see it.
@@ -941,8 +953,19 @@ def run(argv: list[str]) -> int:
     try:
         wait_for_cdp(port)
         connected = True
-        target = front_tab(port)
+        target, address = front_tab(port)
         browser = AgentBrowser(port)
+        if internal(address):
+            if command != "navigate":
+                raise RuntimeError(INTERNAL_PAGE)
+            # agent-browser cannot drive Chromium's own pages, so the site opens in a tab of its own,
+            # in front, and an empty new tab page it replaces is closed.
+            url = str(args.get("url") or "")
+            check_url(url)
+            browser.batch([["tab", "new", url]], timeout=NAVIGATE_SECONDS)
+            if urlsplit(address).netloc in ("newtab", "new-tab-page"):
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/json/close/{target}", timeout=5.0).close()
+            target, address = front_tab(port)
         browser.use_tab(target)
         page = PageBrowser(port, target, browser)
         if command == "navigate":
