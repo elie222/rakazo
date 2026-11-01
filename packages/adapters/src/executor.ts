@@ -1500,6 +1500,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           return;
         }
 
+        const verbatimMcpServers = await verbatimMcpServersForRun(deps.prisma, {
+          botId: bot.id,
+          spaceId: run.spaceId,
+          userId: run.userId,
+        });
         // The running model is not its own backup, unless another account serves it.
         const fallbackModels = (await loadBackups()).filter(
           (candidate) =>
@@ -1532,11 +1537,6 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
 
         try {
           if (checkpointLoadError) throw checkpointLoadError;
-          const verbatimMcpServers = await verbatimMcpServersForRun(deps.prisma, {
-            botId: bot.id,
-            spaceId: run.spaceId,
-            userId: run.userId,
-          });
           const runtimeEvents = deps.runtime.run(
             {
               botId: bot.id,
