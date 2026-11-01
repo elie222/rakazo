@@ -634,8 +634,8 @@ async function readTool(
  * envelope. A text block that only repeated the structured data is dropped on
  * the way in, so any text left is supplemental — the note needs both to keep
  * the details that triggered the routine. An error result keeps its text on the
- * way in; when that text already carries every structured value, it alone is
- * the message, and any diagnostic it lacks keeps the structured copy.
+ * way in; when the structured copy only repeats that text, the text alone is the
+ * message, and any other diagnostic keeps the structured copy.
  */
 export function toolResultText(data: unknown): string {
   if (typeof data === "string") return data;
@@ -643,7 +643,7 @@ export function toolResultText(data: unknown): string {
   const { structuredContent: structured, isError } =
     (data as { structuredContent?: unknown; isError?: unknown } | null) ?? {};
   const text = texts.join("\n");
-  if (isError === true && text.trim() && repeatsEveryValue(structured, text)) return text;
+  if (isError === true && text.trim() && repeatsErrorText(structured, text)) return text;
   if (structured && typeof structured === "object" && !Array.isArray(structured)) {
     const json = stableStringify(structured);
     return texts.length ? `${text}\n${json}` : json;
@@ -653,15 +653,17 @@ export function toolResultText(data: unknown): string {
 }
 
 /**
- * Whether `text` already contains every value in `data`, so its structured copy adds nothing.
- * Only strings count as repeated: a number or flag means something only beside its key.
+ * Whether a structured error only repeats the error text: an object whose sole fields are
+ * `error` or `message` strings the text already contains. Any other field is a diagnostic the
+ * note keeps, with its key.
  */
-function repeatsEveryValue(data: unknown, text: string): boolean {
+function repeatsErrorText(data: unknown, text: string): boolean {
   if (data === null || data === undefined) return true;
-  if (typeof data === "object") {
-    return Object.values(data).every((value) => repeatsEveryValue(value, text));
-  }
-  return typeof data === "string" && text.includes(data);
+  if (typeof data !== "object" || Array.isArray(data)) return false;
+  return Object.entries(data).every(
+    ([key, value]) =>
+      (key === "error" || key === "message") && typeof value === "string" && text.includes(value),
+  );
 }
 
 function toolResultTextParts(data: unknown): string[] {

@@ -453,6 +453,18 @@ describe("tool results", () => {
       },
       /retryAfterSeconds/,
     ],
+    [
+      "a text diagnostic whose value happens to appear in the text",
+      {
+        content: [{ type: "text", text: "Permission denied while reading repository" }],
+        structuredContent: {
+          error: "Permission denied while reading repository",
+          requiredScope: "repo",
+        },
+        isError: true,
+      },
+      /requiredScope/,
+    ],
   ])(
     "treats an MCP error result as a failed check that reports %s",
     async (_case, data, reported) => {
