@@ -1810,16 +1810,31 @@ class PageBrowserTest(unittest.TestCase):
         browser = FrameBrowser()
         for ref, frame in (("f22", "auth"), ("f31", "deep"), ("f11", "same")):
             with patch.object(helper, "ensure_helpers"):
-                self.assertEqual(helper.frame_of(browser.client, "top", ref).id, frame)
+                self.assertEqual(helper.frame_of(browser.client, "top", ref, []).id, frame)
+
+    def test_an_action_finds_the_frames_once_and_again_only_for_a_ref_they_do_not_answer_to(self):
+        def lookups(actions):
+            browser = FrameBrowser()
+            self.assertTrue(browser.act(actions, "auth")["ok"])
+            return sum(method == "DOM.getFrameOwner" for method, _, _ in browser.sent)
+        one = lookups([{"kind": "fill", "ref": "f21", "text": "1"}])
+        self.assertEqual(lookups([{"kind": "fill", "ref": "f21", "text": "1"}, {"kind": "fill", "ref": "f22", "text": "2"},
+                                  {"kind": "fill", "ref": "f31", "text": "3"}]), one)
+        browser = FrameBrowser()
+        known = []
+        helper.frame_of(browser.client, "top", "f21", known)
+        browser.frames["auth"]["refs"].discard("f21")
+        browser.frames["same"]["refs"].add("f21")
+        self.assertEqual(helper.frame_of(browser.client, "top", "f21", known).id, "same")
 
     def test_a_ref_no_frame_handed_out_is_stale_and_a_ref_two_frames_claim_is_refused(self):
         browser = FrameBrowser()
         with self.assertRaises(helper.Settled) as stale:
-            helper.frame_of(browser.client, "top", "f999")
+            helper.frame_of(browser.client, "top", "f999", [])
         self.assertEqual(str(stale.exception), helper.STALE_REF)
         browser.frames["same"]["refs"].add("f22")
         with self.assertRaises(helper.Settled) as two:
-            helper.frame_of(browser.client, "top", "f22")
+            helper.frame_of(browser.client, "top", "f22", [])
         self.assertEqual(str(two.exception), helper.TWO_FRAMES)
         # Nothing is done on a ref that two frames claim.
         result = browser.act([{"kind": "click", "ref": "f22"}], "auth")

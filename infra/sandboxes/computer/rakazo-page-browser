@@ -1949,19 +1949,27 @@ def unframed(text: str) -> str:
     return text.replace("[frame ", "[ frame ")
 
 
-def frame_of(client: CdpClient, session_id: str, ref: str) -> PageFrame:
-    """The one frame whose helper handed out ref."""
+def frame_of(client: CdpClient, session_id: str, ref: str, known: list[PageFrame]) -> PageFrame:
+    """The one frame whose helper handed out ref. `known` holds the frames found earlier in this action;
+    they are found again only when none or two of them answer to ref."""
     deadline = time.monotonic() + FRAMES_SECONDS
-    frames, _ = page_frames(client, session_id, deadline)
-    owners = []
-    for frame in frames:
-        try:
-            with time_limit(client, deadline):
-                if eval_json(client, frame.session, f"window.__rakazoPageBrowser.owns({json.dumps(ref)})",
-                             context_id=frame.world) is True:
-                    owners.append(frame)
-        except Exception:  # noqa: BLE001
-            continue
+
+    def owners_of(frames: list[PageFrame]) -> list[PageFrame]:
+        owners = []
+        for frame in frames:
+            try:
+                with time_limit(client, deadline):
+                    if eval_json(client, frame.session, f"window.__rakazoPageBrowser.owns({json.dumps(ref)})",
+                                 context_id=frame.world) is True:
+                        owners.append(frame)
+            except Exception:  # noqa: BLE001
+                continue
+        return owners
+
+    owners = owners_of(known)
+    if len(owners) != 1:
+        known[:] = page_frames(client, session_id, deadline)[0]
+        owners = owners_of(known)
     if not owners:
         raise Settled(STALE_REF)
     if len(owners) > 1:
@@ -2108,13 +2116,14 @@ def frame_site_check(client: CdpClient, frame: PageFrame, step: dict[str, Any]) 
                       "so nothing was filled.")
 
 
-def frame_step(client: CdpClient, session_id: str, step: dict[str, Any], touched: dict[str, PageFrame]) -> bool:
+def frame_step(client: CdpClient, session_id: str, step: dict[str, Any], touched: dict[str, PageFrame],
+               known: list[PageFrame]) -> bool:
     """One step on an element inside a frame, as act takes it on the page itself.
 
     Returns whether the frame's page moved to another document on the last key of a type step.
     """
     kind, ref = step["kind"], step["ref"]
-    frame = frame_of(client, session_id, ref)
+    frame = frame_of(client, session_id, ref, known)
     touched[frame.id] = frame
     if frame.session != session_id:
         # Requests the step sets off in a frame of another process are its session's, and so is a file
@@ -2451,6 +2460,8 @@ def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> di
     navigations = client.navigation_count(session_id)
     # Frames a step acted in, whose own requests the result waits for too.
     touched: dict[str, PageFrame] = {}
+    # The page's frames, found on the first frame step and reused by the next ones.
+    known_frames: list[PageFrame] = []
     completed = 0
     uncertain = False
     # Refs belong to the document that was typed into; a page that moved on keeps none of them.
@@ -2469,7 +2480,7 @@ def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> di
             if is_frame_ref(ref):
                 uncertain = True
                 try:
-                    page_changed = frame_step(client, session_id, step, touched)
+                    page_changed = frame_step(client, session_id, step, touched, known_frames)
                 except TypingStopped as stopped:
                     try:
                         snap = snapshot(client, session_id)
