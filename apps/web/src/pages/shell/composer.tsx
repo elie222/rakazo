@@ -26,6 +26,7 @@ import {
   HoldToTalkStrip,
   useHoldToTalk,
 } from "../../components/composer/HoldToTalk";
+import { recordMessageSent } from "../../components/GitHubStarPrompt";
 import type { ArtifactTarget } from "../../lib/artifact-open";
 import { attachmentPickerAccept } from "../../lib/attachment-picker-accept";
 import { useCallSession } from "../../lib/call-session";
@@ -434,7 +435,10 @@ export const Composer = memo(function Composer({
           ? onSend(text, mentions, clientNonce, imageHandling)
           : onSend(text, mentions, clientNonce))) !== false;
       settleComposerDraftSubmission(draftKey, submission, accepted);
-      if (accepted) return;
+      if (accepted) {
+        recordMessageSent();
+        return;
+      }
     } catch {
       settleComposerDraftSubmission(draftKey, submission, false);
       // A rejected callback leaves acceptance unknown; do not restore a possible send.
