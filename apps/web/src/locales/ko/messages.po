@@ -844,6 +844,10 @@ msgstr "승인"
 msgid "Approve"
 msgstr "승인"
 
+#: src/lib/call-session.ts
+msgid "Approve or deny it on screen."
+msgstr "화면에서 승인하거나 거부하세요."
+
 #: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
 msgstr "이 서버를 승인하면 Bot이 제공되는 도구를 사용할 수 있습니다."

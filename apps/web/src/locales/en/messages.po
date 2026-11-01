@@ -844,6 +844,10 @@ msgstr "Approvals"
 msgid "Approve"
 msgstr "Approve"
 
+#: src/lib/call-session.ts
+msgid "Approve or deny it on screen."
+msgstr "Approve or deny it on screen."
+
 #: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
 msgstr "Approve this server to let your agent use its tools."

@@ -844,6 +844,10 @@ msgstr "Onaylar"
 msgid "Approve"
 msgstr "Onayla"
 
+#: src/lib/call-session.ts
+msgid "Approve or deny it on screen."
+msgstr "Ekranda onayla veya reddet."
+
 #: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
 msgstr "Agent'ının bu sunucunun araçlarını kullanabilmesi için sunucuyu onayla."
@@ -3100,11 +3104,11 @@ msgstr "Aramayı sonlandır"
 
 #: src/lib/call-session.ts
 msgid "Hang up first, then enter the code on screen."
-msgstr ""
+msgstr "Önce aramayı sonlandır, sonra kodu ekrana gir."
 
 #: src/lib/call-session.ts
 msgid "Hang up, then enter the code on screen."
-msgstr ""
+msgstr "Aramayı sonlandır, sonra kodu ekrana gir."
 
 #: src/pages/RoutineEditor.tsx
 msgid "header"

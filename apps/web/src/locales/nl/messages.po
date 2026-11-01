@@ -844,6 +844,10 @@ msgstr "Goedkeuringen"
 msgid "Approve"
 msgstr "Goedkeuren"
 
+#: src/lib/call-session.ts
+msgid "Approve or deny it on screen."
+msgstr "Keur het goed of weiger het op het scherm."
+
 #: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
 msgstr "Keur deze server goed zodat je agent zijn tools kan gebruiken."
