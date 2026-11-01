@@ -29,6 +29,12 @@ describe("stableJsonValue", () => {
     expect(() => stableJsonValue(cyclic)).toThrow("only JSON values");
     expect(() => stableJsonValue(new Date(0))).toThrow("only JSON values");
   });
+
+  it("accepts a value shared by two keys and null-prototype objects", () => {
+    const shared = { a: 1 };
+    expect(stableJsonValue({ x: shared, y: shared })).toBe('{"x":{"a":1},"y":{"a":1}}');
+    expect(stableJsonValue(Object.assign(Object.create(null), { a: 1 }))).toBe('{"a":1}');
+  });
 });
 
 describe("approvalEffectKey", () => {
@@ -83,6 +89,8 @@ describe("toolEffectIdempotencyKey", () => {
     expect(second).toBe(`${first}:1`);
     expect(isToolEffectIdempotencyKey(first, "run-1", "computer_act")).toBe(true);
     expect(isToolEffectIdempotencyKey(second, "run-1", "computer_act")).toBe(true);
+    expect(isToolEffectIdempotencyKey(first, "run-2", "computer_act")).toBe(false);
+    expect(isToolEffectIdempotencyKey(`${first}:1x`, "run-1", "computer_act")).toBe(false);
     expect(
       isToolEffectIdempotencyKey(
         legacyScopedToolEffectIdempotencyKey("run-1", "computer_act", "call_0", args),

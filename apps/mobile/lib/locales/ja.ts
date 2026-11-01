@@ -1245,6 +1245,14 @@ export const JA_MESSAGES: Record<string, string> = {
   "1 free month earned": "1か月分の無料期間を獲得",
   "{count} free months earned": "{count}か月分の無料期間を獲得",
   "Submit a plugin": "プラグインを申請",
+  Board: "ボード",
+  "To do": "未着手",
+  "In progress": "進行中",
+  "In review": "レビュー中",
+  Blocked: "ブロック中",
+  "Won't do": "対応しない",
+  "Could not move the ticket": "チケットを移動できませんでした",
+  "No tickets yet.": "チケットはまだありません。",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "{peer}とのメッセージ{count}件" };

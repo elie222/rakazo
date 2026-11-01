@@ -474,7 +474,7 @@ describe("favicon resolver", () => {
   });
 
   it("reads icons from the first 256 KB of a longer page", async () => {
-    routes.set("long.test/", html(`<link rel="icon" href="/i.png">${"<meta>".repeat(100_000)}`));
+    routes.set("long.test/", html(`<link rel="icon" href="/i.png"><p>${"x".repeat(300_000)}</p>`));
     routes.set("long.test/i.png", image(await png(32, 32)));
     const resolver = createFaviconResolver({ fetch: testFetch, resolveHostname: publicResolver });
 
