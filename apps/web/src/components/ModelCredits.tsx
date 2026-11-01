@@ -421,7 +421,7 @@ export function ModelCreditsSettings({
           onClick={() =>
             void action(async () => {
               const { url } = await rpc.billing.selectFunding({ funding: "byok" });
-              window.location.assign(url ?? "/onboarding");
+              window.location.assign(url ?? "/app?settings=models");
             })
           }
         >
