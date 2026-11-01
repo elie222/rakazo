@@ -2,6 +2,7 @@ import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { rpc } from "./api";
+import { supportsSenderNotifications } from "./live-notifications";
 
 async function notificationsAllowed() {
   // On iOS getPermissionsAsync holds Expo's shared native queue until the system answers,
@@ -19,7 +20,12 @@ export async function registerPushToken() {
     if (!projectId) return;
     const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     if (!token) return;
-    await rpc("notifications/registerPush", { token });
+    await rpc("notifications/registerPush", {
+      token,
+      ...(Platform.OS === "android" && supportsSenderNotifications()
+        ? { presentation: "android_sender" as const }
+        : {}),
+    });
   } catch {
     // Expo Go without an EAS project id and Android builds without a Firebase config
     // cannot mint an Expo push token.

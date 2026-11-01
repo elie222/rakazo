@@ -824,6 +824,8 @@ export interface ArtifactPut {
 }
 
 export interface NotificationMessage {
+  /** Verified sender metadata. Avatar is a bounded JPEG thumbnail, base64 encoded. */
+  sender?: { botId: string; name: string; avatar?: string };
   kind: "completion" | "failure" | "help" | "takeover";
   title: string;
   body: string;

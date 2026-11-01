@@ -3,6 +3,7 @@ import {
   effectiveModelRole,
   hasHostedModelCredits,
   isAutoReviewCheckerConfigured,
+  notificationIdentity,
   PushSessionEndedError,
 } from "@rakazo/adapters";
 import type { ActionApprovalRule, Actor, Me, SettingsScope } from "@rakazo/contracts";
@@ -247,11 +248,24 @@ export function accountRoutes(ctx: RouterContext) {
       }),
     },
     notifications: {
+      identity: authed.notifications.identity.handler(async ({ context, input }) => {
+        const bot = await deps.prisma.bot.findFirst({
+          where: { id: input.botId, spaceId: context.actor.spaceId, userId: context.actor.userId },
+          select: { id: true, name: true, color: true, avatarSet: true },
+        });
+        if (!bot) throw new ORPCError("NOT_FOUND");
+        return notificationIdentity(bot);
+      }),
       registerPush: authed.notifications.registerPush.handler(async ({ context, input }) => {
         const sessionId = context.sessionId;
         if (!sessionId) throw new ORPCError("UNAUTHORIZED");
         try {
-          await deps.pushTokens.save(context.actor.userId, input.token, sessionId);
+          await deps.pushTokens.save(
+            context.actor.userId,
+            input.token,
+            sessionId,
+            input.presentation,
+          );
         } catch (error) {
           if (error instanceof PushSessionEndedError) throw new ORPCError("UNAUTHORIZED");
           throw error;

@@ -140,13 +140,22 @@ class RakazoNotificationService : Service() {
         val working = active.filter(::isWorking).filter { it.notificationsEnabled }
         if (generation != sessionGeneration.get()) return
         val recent = runs(storage.endpoint, token, storage.spaceId, storage.headers, "recent")
+        val portraits = mutableMapOf<String, Bitmap?>()
+        fun portrait(run: RunRecord): Bitmap? = portraits.getOrPut(run.botId) {
+          runCatching {
+            val identity = rpc(storage.endpoint, token, storage.spaceId, storage.headers, "notifications/identity",
+              JSONObject().put("botId", run.botId))
+            senderPortrait(identity)
+          }.getOrNull()
+        }
+        val workingPortrait = working.firstOrNull { !isOpenThread(it) }?.let { portrait(it) }
         val replyLookups = mutableListOf<Pair<RunRecord, Boolean>>()
         val immediate = mutableListOf<Pair<RunRecord, NotificationCopy>>()
         if (!runIfCurrent(generation) {
             recentPageBusy = recent.size >= RECENT_LIMIT && recent.any { it.runId !in knownCompleted }
             val visibleWorking = working.filterNot(::isOpenThread)
             if (visibleWorking.isEmpty()) clearLive() else {
-              showLive(visibleWorking, avatarStyle, copyContext)
+              showLive(visibleWorking, avatarStyle, copyContext, workingPortrait)
             }
             if (!seeded) {
               knownCompleted += recent.map { it.runId }
@@ -179,10 +188,14 @@ class RakazoNotificationService : Service() {
                 .forEach { immediate += it to attentionCopy(copyContext, it) }
             }
             alertedAttention.retainAll(active.map { "${it.runId}:${it.status}" }.toSet())
-            immediate.forEach { (run, copy) -> post(run, copy) }
+
           }
         ) {
           return
+        }
+        for ((run, copy) in immediate) {
+          val image = portrait(run)
+          if (!runIfCurrent(generation) { post(run, copy, image) }) return
         }
         for ((run, scheduled) in replyLookups) {
           if (generation != sessionGeneration.get()) return
@@ -190,6 +203,7 @@ class RakazoNotificationService : Service() {
             latestReply(storage.endpoint, token, storage.spaceId, storage.headers, run)
           }.getOrDefault("")
           if (reply == null) continue
+          val image = portrait(run)
           if (!runIfCurrent(generation) {
               post(
                 run,
@@ -203,6 +217,7 @@ class RakazoNotificationService : Service() {
                   body = reply.ifBlank { run.prompt },
                   channel = if (scheduled) Channels.SCHEDULED else Channels.MESSAGES,
                 ),
+                image,
               )
             }
           ) {
@@ -266,10 +281,11 @@ class RakazoNotificationService : Service() {
       state.getBoolean(SEEN_RUNS_SEEDED, false)
     }
 
-  private fun post(run: RunRecord, copy: NotificationCopy) {
+  private fun post(run: RunRecord, copy: NotificationCopy, portrait: Bitmap?) {
     if (!run.notificationsEnabled || isOpenThread(run)) return
     val notification = builder(copy.channel)
       .setSmallIcon(R.drawable.ic_rakazo_notification)
+      .setLargeIcon(portrait)
       .setContentTitle(copy.title)
       .setContentText(copy.body)
       .setStyle(Notification.BigTextStyle().bigText(copy.body))
@@ -285,7 +301,7 @@ class RakazoNotificationService : Service() {
     manager.notify(run.threadId.hashCode(), notification)
   }
 
-  private fun showLive(active: List<RunRecord>, avatarStyle: String, context: Context) {
+  private fun showLive(active: List<RunRecord>, avatarStyle: String, context: Context, portrait: Bitmap?) {
     val primary = active.first()
     val title = when (active.size) {
       1 -> context.getString(R.string.rakazo_live_one, primary.botName)
@@ -299,6 +315,7 @@ class RakazoNotificationService : Service() {
       .setSmallIcon(
         liveStatusIcon(primary, avatarStyle),
       )
+      .setLargeIcon(portrait)
       .setContentTitle(title)
       .setContentText(body)
       .setStyle(Notification.BigTextStyle().bigText(body))
@@ -391,31 +408,7 @@ class RakazoNotificationService : Service() {
     return createConfigurationContext(configuration)
   }
 
-  private fun createChannels(context: Context) {
-    if (Build.VERSION.SDK_INT < 26) return
-    listOf(
-      NotificationChannel(
-        Channels.LIVE,
-        context.getString(R.string.rakazo_channel_live),
-        NotificationManager.IMPORTANCE_LOW,
-      ),
-      NotificationChannel(
-        Channels.MESSAGES,
-        context.getString(R.string.rakazo_channel_messages),
-        NotificationManager.IMPORTANCE_DEFAULT,
-      ),
-      NotificationChannel(
-        Channels.SCHEDULED,
-        context.getString(R.string.rakazo_channel_scheduled),
-        NotificationManager.IMPORTANCE_DEFAULT,
-      ),
-      NotificationChannel(
-        Channels.ATTENTION,
-        context.getString(R.string.rakazo_channel_attention),
-        NotificationManager.IMPORTANCE_HIGH,
-      ),
-    ).forEach(manager::createNotificationChannel)
-  }
+  private fun createChannels(context: Context) = createAgentNotificationChannels(context)
 
   private fun stop() {
     stopForeground(STOP_FOREGROUND_REMOVE)
@@ -1073,3 +1066,30 @@ private fun JSONObject.requiredString(name: String): String =
 
 private fun JSONObject.optionalString(name: String): String? =
   if (isNull(name)) null else optString(name).takeIf(String::isNotBlank)
+
+internal fun createAgentNotificationChannels(context: Context) {
+  if (Build.VERSION.SDK_INT < 26) return
+  val manager = context.getSystemService(NotificationManager::class.java)
+  listOf(
+    NotificationChannel(
+      Channels.LIVE,
+      context.getString(R.string.rakazo_channel_live),
+      NotificationManager.IMPORTANCE_LOW,
+    ),
+    NotificationChannel(
+      Channels.MESSAGES,
+      context.getString(R.string.rakazo_channel_messages),
+      NotificationManager.IMPORTANCE_DEFAULT,
+    ),
+    NotificationChannel(
+      Channels.SCHEDULED,
+      context.getString(R.string.rakazo_channel_scheduled),
+      NotificationManager.IMPORTANCE_DEFAULT,
+    ),
+    NotificationChannel(
+      Channels.ATTENTION,
+      context.getString(R.string.rakazo_channel_attention),
+      NotificationManager.IMPORTANCE_HIGH,
+    ),
+  ).forEach(manager::createNotificationChannel)
+}

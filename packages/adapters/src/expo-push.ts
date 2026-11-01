@@ -11,7 +11,7 @@ import { pushReceiptJob } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
 import { combineSignals } from "./connector-safety.js";
 import { credentialDigest } from "./credential-digest.js";
-import type { PushTokenStore } from "./push-token-store.js";
+import type { PushRecord, PushTokenStore } from "./push-token-store.js";
 import { readBodyCapped, withAbort } from "./web-ssrf.js";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
@@ -33,6 +33,7 @@ const RESPONSE_TOO_LARGE = "Expo push response is too large.";
 export function expoPushData(message: NotificationMessage, spaceId: string, deliveryId: string) {
   return {
     kind: message.kind,
+    ...(message.sender ? { sender: message.sender } : {}),
     botId: message.botId,
     threadId: message.threadId,
     deliveryId,
@@ -167,8 +168,9 @@ export class ExpoPushProvider implements NotificationProvider {
    * Neither is an Expo acceptance, so callers must not record a reminder.
    */
   async deliver(message: NotificationMessage, context: AdapterContext): Promise<ExpoPushDelivery> {
-    const token = await this.deliverableToken(context.userId);
-    if (!token) return "undeliverable";
+    const registration = await this.deliverableToken(context.userId);
+    if (!registration) return "undeliverable";
+    const token = registration.token;
     const payload = {
       to: token,
       title: capped(message.title, MAX_PUSH_TITLE_CHARS),
@@ -177,8 +179,37 @@ export class ExpoPushProvider implements NotificationProvider {
       tag: message.threadId,
       ...(message.badge === undefined ? {} : { badge: message.badge }),
       data: expoPushData(message, context.spaceId, randomUUID()),
+      ...(message.sender ? { mutableContent: true } : {}),
+      ...(message.kind === "help" || message.kind === "takeover" || message.kind === "failure"
+        ? { priority: "high", channelId: "rakazo_attention" }
+        : { channelId: "rakazo_messages" }),
     };
-    const { status, body } = await this.postWithBackoff(EXPO_PUSH_URL, payload, context.signal);
+    // APNs caps the entire payload, including UTF-8 text and the sender thumbnail.
+    while (Buffer.byteLength(JSON.stringify(payload)) > 3300 && payload.body.length > 0) {
+      payload.body = payload.body.slice(0, Math.floor(payload.body.length / 2));
+    }
+    const deliveryPayload =
+      registration.presentation === "android_sender"
+        ? {
+            to: token,
+            priority: "high",
+            channelId: payload.channelId,
+            collapseId: message.threadId,
+            tag: message.threadId,
+            ...(message.badge === undefined ? {} : { badge: message.badge }),
+            data: {
+              ...payload.data,
+              notificationTitle: payload.title,
+              notificationBody: payload.body,
+              ...(message.badge === undefined ? {} : { notificationBadge: message.badge }),
+            },
+          }
+        : payload;
+    const { status, body } = await this.postWithBackoff(
+      EXPO_PUSH_URL,
+      deliveryPayload,
+      context.signal,
+    );
     const [ticket] = expoPushTickets(body);
     if (status < 300 && body === undefined) {
       throw new Error("Expo push returned an invalid response.");
@@ -252,10 +283,10 @@ export class ExpoPushProvider implements NotificationProvider {
    * row is removed. The token is read again after the lookup so a handover
    * during that wait is not sent.
    */
-  private async deliverableToken(userId: string): Promise<string | undefined> {
+  private async deliverableToken(userId: string): Promise<PushRecord | undefined> {
     const saved = await this.tokens.load(userId);
     if (!saved?.token) return undefined;
-    if (!saved.sessionId) return saved.token;
+    if (!saved.sessionId) return saved;
     if (!this.sessionExpiresAt) return undefined;
     let expiresAt: Date | null;
     try {
@@ -271,7 +302,7 @@ export class ExpoPushProvider implements NotificationProvider {
     }
     const current = await this.tokens.load(userId);
     if (current?.token !== saved.token || current.sessionId !== saved.sessionId) return undefined;
-    return current.token;
+    return current;
   }
 }
 

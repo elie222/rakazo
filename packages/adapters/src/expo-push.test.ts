@@ -858,3 +858,64 @@ describe("expo push access token", () => {
     ).rejects.toThrow(error);
   });
 });
+
+it("carries sender identity, marks actionable notifications high priority, and bounds UTF-8 payloads", async () => {
+  const tokens = new MemoryPushTokenStore();
+  await tokens.save("user-1", "ExponentPushToken[test]");
+  const fetchMock = vi.fn(async () => jsonResponse({ data: { status: "ok" } }));
+  vi.stubGlobal("fetch", fetchMock);
+  await new ExpoPushProvider(tokens).send(
+    {
+      kind: "help",
+      title: "Marketing",
+      body: "🔔".repeat(180),
+      botId: "bot",
+      threadId: "thread",
+      sender: { botId: "bot", name: "Head of Marketing", avatar: "a".repeat(1400) },
+    },
+    notifyContext,
+  );
+  const request = JSON.parse(
+    String((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body),
+  );
+  expect(request.data.sender).toEqual({
+    botId: "bot",
+    name: "Head of Marketing",
+    avatar: "a".repeat(1400),
+  });
+  expect(request).toMatchObject({
+    mutableContent: true,
+    priority: "high",
+    channelId: "rakazo_attention",
+  });
+  expect(Buffer.byteLength(JSON.stringify(request))).toBeLessThanOrEqual(3500);
+});
+
+it("uses data-only delivery only for Android builds that registered sender support", async () => {
+  const tokens = new MemoryPushTokenStore();
+  await tokens.save("user-1", "ExponentPushToken[test]", "", "android_sender");
+  const fetchMock = vi.fn(async () => jsonResponse({ data: { status: "ok" } }));
+  vi.stubGlobal("fetch", fetchMock);
+  await new ExpoPushProvider(tokens).send(
+    {
+      kind: "completion",
+      title: "Marketing",
+      body: "Draft ready",
+      botId: "bot",
+      threadId: "thread",
+      sender: { botId: "bot", name: "Marketing" },
+    },
+    notifyContext,
+  );
+  const request = JSON.parse(
+    String((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body),
+  );
+  expect(request).not.toHaveProperty("title");
+  expect(request).not.toHaveProperty("body");
+  expect(request.data).toMatchObject({
+    notificationTitle: "Marketing",
+    notificationBody: "Draft ready",
+    sender: { botId: "bot", name: "Marketing" },
+  });
+  expect(request.priority).toBe("high");
+});

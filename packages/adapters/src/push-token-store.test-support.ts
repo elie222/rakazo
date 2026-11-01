@@ -6,9 +6,13 @@ export class MemoryPushTokenStore implements PushTokenStore {
   async load(userId: string) {
     return this.rows.get(userId);
   }
-  async save(userId: string, token: string, sessionId = "") {
+  async save(userId: string, token: string, sessionId = "", presentation?: "android_sender") {
     for (const [owner, row] of this.rows) if (row.token === token) this.rows.delete(owner);
-    this.rows.set(userId, { token, ...(sessionId ? { sessionId } : {}) });
+    this.rows.set(userId, {
+      token,
+      ...(sessionId ? { sessionId } : {}),
+      ...(presentation ? { presentation } : {}),
+    });
   }
   async importLegacy(userId: string, token: string, sessionId: string) {
     if (this.rows.has(userId) || [...this.rows.values()].some((row) => row.token === token))

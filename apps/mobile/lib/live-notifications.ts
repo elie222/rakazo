@@ -20,6 +20,7 @@ export const DEFAULT_LIVE_NOTIFICATION_SETTINGS: LiveNotificationSettings = {
 };
 
 type NativeNotifications = {
+  supportsSenderAvatars?: boolean;
   getSettings(): Promise<LiveNotificationSettings>;
   setSettings(
     settings: LiveNotificationSettings,
@@ -236,4 +237,8 @@ export function hasLiveUpdateSettings(): boolean {
 
 export async function openPromotedNotificationSettings(): Promise<void> {
   await nativeNotifications?.openPromotedSettings();
+}
+
+export function supportsSenderNotifications(): boolean {
+  return nativeNotifications?.supportsSenderAvatars === true;
 }

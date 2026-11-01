@@ -13,6 +13,7 @@ import {
   AUTO_REVIEW_PASS,
   autoReviewMinConfidence,
   autoReviewTimeoutMs,
+  incompleteAutoReviewContext,
   MAX_OWNER_WORDS_CHARS,
   reviewArgsTooLong,
   sanitizeAutoReviewReason,
@@ -45,6 +46,13 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
     const modelLabel = `${this.options.providerId}/${this.options.model}`;
     if (reviewArgsTooLong(request)) {
       return { decision: "ask", model: modelLabel, reason: TOO_LONG_TO_REVIEW };
+    }
+    if (incompleteAutoReviewContext(request)) {
+      return {
+        decision: "ask",
+        model: modelLabel,
+        reason: "The full action context needs your review.",
+      };
     }
     try {
       const result = await this.options.provider.decide(

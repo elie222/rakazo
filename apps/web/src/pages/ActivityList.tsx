@@ -1,11 +1,13 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { RunActivityRow, RunStatus } from "@rakazo/contracts";
-import { isAgedStuckWork, isRetryableError } from "@rakazo/core";
+import type { Bot, Group, RunActivityRow, RunStatus } from "@rakazo/contracts";
+import { isAgedStuckWork, isRetryableError, notificationAttention } from "@rakazo/core";
 import {
+  BotAvatar,
   Button,
   Collapsible,
   CollapsibleContent,
+  GroupAvatar,
   Input,
   Label,
   NativeSelect,
@@ -37,6 +39,10 @@ export function statusTone(status: RunActivityRow["status"], updatedAt?: string)
 const NO_RUNS: RunActivityRow[] = [];
 
 type ActivityListProps = {
+  bots?: Bot[];
+  groups?: Group[];
+  onOpenGroup?: (group: Group) => void;
+  onOpenBot?: (bot: Bot) => void;
   onOpenRun: (run: RunActivityRow) => void;
   filters: ActivityListFilters;
   onFiltersChange: (next: ActivityListFilters) => void;
@@ -45,6 +51,10 @@ type ActivityListProps = {
 };
 
 export function ActivityList({
+  bots = [],
+  groups = [],
+  onOpenGroup,
+  onOpenBot,
   onOpenRun,
   filters,
   onFiltersChange,
@@ -85,6 +95,34 @@ export function ActivityList({
     [recentRuns, filters, t],
   );
 
+  const runUnread = (run: RunActivityRow) =>
+    run.groupId
+      ? groups.some((group) => group.id === run.groupId && group.unread)
+      : bots.some((bot) => bot.id === run.botId && bot.unread);
+  const attentionRuns = [...filteredActive, ...filteredRecent].filter(
+    (run) => notificationAttention(run.status, runUnread(run)) === "needs_attention",
+  );
+  const workingRuns = filteredActive.filter(
+    (run) => notificationAttention(run.status) === "working",
+  );
+  const unreadBots = bots.filter(
+    (bot) =>
+      notificationAttention(bot.status, bot.unread, Boolean(bot.runErrorId)) === "unread" &&
+      (!filters.query.trim() ||
+        `${bot.name} ${bot.preview}`.toLowerCase().includes(filters.query.trim().toLowerCase())),
+  );
+  const unreadGroups = groups.filter(
+    (group) =>
+      group.unread &&
+      ![...attentionRuns, ...workingRuns].some((run) => run.groupId === group.id) &&
+      (!filters.query.trim() ||
+        `${group.name} ${group.preview}`
+          .toLowerCase()
+          .includes(filters.query.trim().toLowerCase())),
+  );
+  const readRecent = filteredRecent.filter(
+    (run) => !attentionRuns.includes(run) && !runUnread(run),
+  );
   const filtersOn = activityFiltersActive(filters);
   const hasAnyRuns = activeRuns.length > 0 || recentRuns.length > 0;
   const hasVisibleRuns = filteredActive.length > 0 || filteredRecent.length > 0;
@@ -119,20 +157,68 @@ export function ActivityList({
         </p>
       ) : null}
 
-      {filteredActive.length > 0 ? (
-        <section aria-labelledby="activity-now-heading">
-          <div
-            id="activity-now-heading"
-            className="px-2.5 pb-1 pt-1 text-[12.5px] font-medium text-muted-foreground/80"
-          >
-            <Trans>Now</Trans>
+      {[
+        { title: t`Needs attention`, runs: attentionRuns, id: "attention" },
+        { title: t`Working`, runs: workingRuns, id: "working" },
+      ].map(({ title, runs, id }) =>
+        runs.length ? (
+          <section key={id} aria-label={title}>
+            <div className="px-2.5 pb-1 pt-1 text-[12.5px] font-medium text-muted-foreground">
+              {title}
+            </div>
+            {runs.map((run) => (
+              <ActivityRow
+                key={run.runId}
+                run={run}
+                bot={bots.find((bot) => bot.id === run.botId)}
+                onOpen={() => onOpenRun(run)}
+              />
+            ))}
+          </section>
+        ) : null,
+      )}
+      {(unreadBots.length || unreadGroups.length) &&
+      onOpenBot &&
+      filters.status === "all" &&
+      !filters.dateRange.from &&
+      !filters.dateRange.to ? (
+        <section aria-label={t`Unread`}>
+          <div className="px-2.5 pb-1 pt-1 text-[12.5px] font-medium text-muted-foreground">
+            <Trans>Unread</Trans>
           </div>
-          {filteredActive.map((run) => (
-            <ActivityRow key={run.runId} run={run} onOpen={() => onOpenRun(run)} />
+          {unreadGroups.map((group) => (
+            <button
+              key={group.id}
+              type="button"
+              onClick={() => onOpenGroup?.(group)}
+              className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left hover:bg-accent"
+            >
+              <GroupAvatar members={group.members} size={28} />
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium">{group.name}</span>
+                <span className="block truncate text-xs text-muted-foreground">
+                  {group.preview}
+                </span>
+              </span>
+            </button>
+          ))}
+          {unreadBots.map((bot) => (
+            <button
+              key={bot.id}
+              type="button"
+              onClick={() => onOpenBot(bot)}
+              className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left hover:bg-accent"
+            >
+              <BotAvatar identity={bot.id} color={bot.color} avatarSet={bot.avatarSet} size={28} />
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium">{bot.name}</span>
+                <span className="block truncate text-xs text-muted-foreground">{bot.preview}</span>
+              </span>
+            </button>
           ))}
         </section>
       ) : null}
-      {filteredRecent.length > 0 ? (
+      {readRecent.length > 0 ? (
         <section
           className={filteredActive.length > 0 ? "mt-2" : undefined}
           aria-labelledby="activity-recent-heading"
@@ -143,8 +229,13 @@ export function ActivityList({
           >
             <Trans>Recent</Trans>
           </div>
-          {filteredRecent.map((run) => (
-            <ActivityRow key={run.runId} run={run} onOpen={() => onOpenRun(run)} />
+          {readRecent.map((run) => (
+            <ActivityRow
+              key={run.runId}
+              run={run}
+              bot={bots.find((bot) => bot.id === run.botId)}
+              onOpen={() => onOpenRun(run)}
+            />
           ))}
         </section>
       ) : null}
@@ -327,7 +418,7 @@ function FilterChip({ label, onClear }: { label: string; onClear: () => void }) 
   );
 }
 
-function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void }) {
+function ActivityRow({ run, bot, onOpen }: { run: RunActivityRow; bot?: Bot; onOpen: () => void }) {
   const { t } = useLingui();
   const title = run.groupName ? `${run.botName}, ${run.groupName}` : run.botName;
   const label = statusLabel(run.status);
@@ -341,9 +432,12 @@ function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void 
       onClick={onOpen}
       className="flex w-full gap-3 rounded-xl px-2.5 py-[9px] text-left hover:bg-accent"
     >
-      <span
-        className={`mt-1.5 size-2 shrink-0 rounded-full bg-current ${tone}`}
-        aria-hidden="true"
+      <BotAvatar
+        identity={run.botId}
+        color={bot?.color ?? ""}
+        avatarSet={bot?.avatarSet}
+        status={run.status}
+        size={28}
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">

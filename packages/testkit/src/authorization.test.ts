@@ -234,6 +234,25 @@ describeWithDatabase("API authorization and resource isolation", () => {
     ]);
   });
 
+  it("keeps notification portraits inside the agent owner's account and space", async () => {
+    const owner = await signup(app, `portrait-owner-${stamp}@rakazo.test`, "Owner");
+    const peer = await signup(app, `portrait-peer-${stamp}@rakazo.test`, "Peer");
+    const bot = await rpc<Bot>(app, owner, "bots/create", botInput("Marketing"));
+    const identity = await rpc<{ botId: string; name: string; avatar: string }>(
+      app,
+      owner,
+      "notifications/identity",
+      { botId: bot.id },
+    );
+    expect(identity).toMatchObject({ botId: bot.id, name: "Marketing" });
+    expect(identity.avatar.length).toBeLessThanOrEqual(1400);
+    expect((await raw(app, peer, "notifications/identity", { botId: bot.id })).status).toBe(404);
+    const otherSpace = await rpc<Space>(app, owner, "spaces/create", { name: "Other" });
+    expect(
+      (await raw(app, owner, "notifications/identity", { botId: bot.id }, otherSpace.id)).status,
+    ).toBe(404);
+  });
+
   it("rejects unauthenticated calls to every protected RPC family", async () => {
     const calls = exhaustiveProtectedCalls([
       ["me"],
@@ -419,6 +438,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["usage/summary"],
       ["export/bot", { botId: "missing-bot" }],
       ["export/accountToken"],
+      ["notifications/identity", { botId: "missing-bot" }],
       ["notifications/registerPush", { token: "ExponentPushToken[not-real]" }],
       ["notifications/unregisterPush"],
       ["search/query", { q: "anything" }],

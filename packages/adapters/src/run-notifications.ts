@@ -11,6 +11,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { countUnreadInboxChats } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
+import { notificationIdentity } from "./notification-identity.js";
 
 export async function runNotificationsEnabled(
   prisma: PrismaClient,
@@ -23,7 +24,11 @@ async function runNotice(
   prisma: PrismaClient,
   run: { spaceId: string; userId: string; botId: string; threadId: string },
   routineId?: string | null,
-): Promise<{ enabled: boolean; groupId: string | null }> {
+): Promise<{
+  enabled: boolean;
+  groupId: string | null;
+  bot?: { id: string; name: string; color: string; avatarSet: string };
+}> {
   // A routine carries its own notify setting, which decides on its failures.
   const routine = routineId
     ? await prisma.routine.findUnique({ where: { id: routineId }, select: { notify: true } })
@@ -36,7 +41,7 @@ async function runNotice(
       userId: run.userId,
     },
     select: {
-      bot: { select: { notifyOnFinish: true } },
+      bot: { select: { id: true, name: true, color: true, avatarSet: true, notifyOnFinish: true } },
       thread: { select: { groupId: true } },
     },
   });
@@ -44,6 +49,7 @@ async function runNotice(
   return {
     enabled: routine ? routine.notify : Boolean(source.thread.groupId || source.bot.notifyOnFinish),
     groupId: source.thread.groupId,
+    bot: source.bot,
   };
 }
 
@@ -81,10 +87,17 @@ export async function notifyRun(
     getLogger().error("unread chat count", error);
     return undefined;
   });
+  const sender = notice.bot?.id
+    ? await notificationIdentity(notice.bot).catch(() => ({
+        botId: notice.bot!.id,
+        name: notice.bot!.name,
+      }))
+    : undefined;
   await deps.notifications
     .send(
       {
         ...message,
+        ...(sender ? { sender } : {}),
         ...(notice.groupId ? { groupId: notice.groupId } : {}),
         ...(badge === undefined ? {} : { badge }),
       },
