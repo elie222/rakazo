@@ -442,6 +442,11 @@ msgstr ""
 msgid "A subscription credential is stored securely."
 msgstr "구독 인증 정보가 안전하게 저장되어 있습니다."
 
+#. placeholder {0}: Math.ceil(memoryBytesLeftOut / 1024)
+#: src/pages/KnowledgeSection.tsx
+msgid "About {0} KB of this memory does not fit in what the bot reads."
+msgstr ""
+
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
 msgstr "{label} 정보"
