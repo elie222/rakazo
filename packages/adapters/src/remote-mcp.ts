@@ -7,7 +7,6 @@ import {
 } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import {
   ipVersion,
@@ -61,9 +60,9 @@ export interface RemoteMcpOptions extends RemoteTransportDependencies, RemoteUrl
   /** Cache holding the reusable sessions. Scope-keyed, so sessions never leak
    * between runs, users, spaces or servers. */
   sessionPool?: RemoteMcpSessionCache;
-  /** Lifetime of the reused session: aborting it (the run's signal) closes the
-   * session at once. A per-call `signal` only cancels its own call. */
-  sessionSignal?: AbortSignal;
+  /** The run whose sessions these are: `sessionPool.endRun(runId)` closes them
+   * when the run ends for good. A per-call `signal` only cancels its own call. */
+  sessionRunId?: string;
 }
 
 /** A reusable Streamable HTTP session failed below the protocol: the guarded
@@ -212,14 +211,16 @@ type ScopedMcpSession = {
   lastUsedAt: number;
   inFlight: number;
   closed: boolean;
-  runSignal?: AbortSignal;
-  detachRunSignal?: () => void;
+  /** The client's own transport closed, unlike a server's JSON-RPC error response. */
+  connectionClosed: boolean;
+  /** The run this session belongs to, matched by `endRun`. */
+  runId?: string;
 };
 
 /** Sessions one Streamable HTTP server-side state can rely on, shared by every
- * call with the same scope (one run, one server) and closed at run end, after
- * the idle bound, or when the transport breaks. A cache belongs to the process:
- * a run that resumes elsewhere just opens a new session. */
+ * call with the same scope (one run, one server) and closed at run end
+ * (`endRun`), after the idle bound, or when the transport breaks. A cache
+ * belongs to the process: a run that resumes elsewhere just opens a new session. */
 export class RemoteMcpSessionCache {
   private readonly sessions = new Map<string, ScopedMcpSession>();
   private readonly connecting = new Map<string, Promise<ScopedMcpSession>>();
@@ -254,7 +255,7 @@ export class RemoteMcpSessionCache {
           void this.drop(session);
           continue;
         }
-        if (brokeMcpSession(error)) void this.drop(session);
+        if (brokeMcpSession(session, error)) void this.drop(session);
         throw error;
       } finally {
         session.inFlight -= 1;
@@ -264,6 +265,15 @@ export class RemoteMcpSessionCache {
         if (session.inFlight === 0 && this.retiring.delete(session))
           void closeMcpSession(session).catch(() => undefined);
       }
+    }
+  }
+
+  /** Close every session one run opened. The executor calls this when the run
+   * ends for good on this worker; a run that ended elsewhere, was cancelled
+   * while waiting or never resumed is bounded by the idle reaper instead. */
+  endRun(runId: string): void {
+    for (const session of [...this.sessions.values()]) {
+      if (session.runId === runId) void this.drop(session);
     }
   }
 
@@ -305,7 +315,7 @@ export class RemoteMcpSessionCache {
   private async sessionFor(key: string, options: RemoteMcpOptions): Promise<ScopedMcpSession> {
     const existing = this.sessions.get(key);
     if (existing && !existing.closed) {
-      this.trackUse(existing, options.sessionSignal);
+      existing.lastUsedAt = this.now();
       return existing;
     }
     if (existing) this.sessions.delete(key);
@@ -323,7 +333,7 @@ export class RemoteMcpSessionCache {
     // handing out a closed client.
     if (session.closed) return this.sessionFor(key, options);
     if (!this.sessions.has(key)) this.sessions.set(key, session);
-    this.trackUse(session, options.sessionSignal);
+    session.lastUsedAt = this.now();
     return session;
   }
 
@@ -365,9 +375,18 @@ export class RemoteMcpSessionCache {
       lastUsedAt: this.now(),
       inFlight: 0,
       closed: false,
+      connectionClosed: false,
+      runId: options.sessionRunId,
+    };
+    // The protocol rejects pending work only after this fires, so the flag is set
+    // before any ConnectionClosed error of this session can be classified.
+    const previousOnClose = client.onclose;
+    client.onclose = () => {
+      session.connectionClosed = true;
+      previousOnClose?.();
     };
     try {
-      await client.connect(transport, { signal: options.sessionSignal, timeout: MCP_TIMEOUT_MS });
+      await client.connect(transport, { signal: options.signal, timeout: MCP_TIMEOUT_MS });
     } catch (error) {
       await closeMcpSession(session).catch(() => undefined);
       throw error;
@@ -375,26 +394,10 @@ export class RemoteMcpSessionCache {
     return session;
   }
 
-  private trackUse(session: ScopedMcpSession, signal?: AbortSignal): void {
-    session.lastUsedAt = this.now();
-    // The run's signal is the session's lifetime: closing on it releases the
-    // server-side state as soon as the run is cancelled or torn down. A
-    // per-call signal never reaches here, so aborting one call leaves the
-    // session for the next.
-    if (!signal || signal === session.runSignal) return;
-    session.detachRunSignal?.();
-    session.runSignal = signal;
-    const onAbort = () => void this.drop(session);
-    signal.addEventListener("abort", onAbort, { once: true });
-    session.detachRunSignal = () => signal.removeEventListener("abort", onAbort);
-  }
-
   /** Stop reusing a session at once, like `McpConnector.evict`: new calls open
    * a fresh session, but calls still in flight keep their responses — the last
    * of them closes this one (the terminating DELETE, then teardown). */
   private async drop(session: ScopedMcpSession): Promise<void> {
-    session.detachRunSignal?.();
-    session.detachRunSignal = undefined;
     if (this.sessions.get(session.key) === session) this.sessions.delete(session.key);
     if (session.inFlight > 0) {
       this.retiring.add(session);
@@ -428,8 +431,6 @@ function remoteMcpSessionKey(options: RemoteMcpOptions & { sessionScope: string 
 async function closeMcpSession(session: ScopedMcpSession): Promise<void> {
   if (session.closed) return;
   session.closed = true;
-  session.detachRunSignal?.();
-  session.detachRunSignal = undefined;
   // Ask the server to drop the session (spec: HTTP DELETE with the session id)
   // before the client teardown aborts every pending request.
   await Promise.race([
@@ -722,10 +723,6 @@ export function limitRemoteMcpPayload(value: unknown): unknown {
   };
 }
 
-function isConnectionClosedError(error: unknown): boolean {
-  return error instanceof McpError && error.code === ErrorCode.ConnectionClosed;
-}
-
 /** Whether the server rejected the request because it no longer knows the
  * session: the request never ran there, so a fresh session may replay it. */
 export function isMcpSessionGoneError(error: unknown): boolean {
@@ -739,8 +736,10 @@ export function isMcpSessionGoneError(error: unknown): boolean {
   );
 }
 
-/** Whether the transport below the protocol broke, so the session — unlike the
- * server's own tool errors — cannot be trusted for the next call. */
-function brokeMcpSession(error: unknown): boolean {
-  return error instanceof RemoteMcpTransportError || isConnectionClosedError(error);
+/** Whether the connection below the protocol really broke, so the session —
+ * unlike after a server's own error, including a JSON-RPC response with the
+ * same -32000 code the client uses for closure — cannot be trusted for the
+ * next call. A missed closure is still caught by the server's next 404. */
+function brokeMcpSession(session: ScopedMcpSession, error: unknown): boolean {
+  return session.connectionClosed || error instanceof RemoteMcpTransportError;
 }

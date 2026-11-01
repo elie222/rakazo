@@ -1734,16 +1734,63 @@ describe("installed MCP sessions last for a whole run", () => {
     );
   });
 
-  it("closes the session when its run aborts", async () => {
+  it("keeps the session when an attempt aborts, so the run's next attempt reuses it", async () => {
     const server = statefulMcpServer();
     const provider = providerFor(server);
-    const run = runContext("run-1");
-    await callTool(provider, run.context, "pause", {});
+    // One attempt is one continueRun pass: its own signal, the same run scope.
+    const waiting = runContext("run-1");
+    const pause = await callTool(provider, waiting.context, "pause", {});
+    const executionId = pausedExecutionId(pause);
 
-    run.controller.abort();
+    // The run waits for the owner's answer; withRuntimeCleanup aborts this
+    // attempt's signal on the way out, which must not close the run's session.
+    waiting.controller.abort();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(server.deletes).toEqual([]);
+
+    const resumed = runContext("run-1");
+    const resume = await callTool(provider, resumed.context, "resume", { executionId });
+
+    expect(resume).toMatchObject([{ type: "result" }]);
+    expect(server.initializations()).toBe(1);
+  });
+
+  it("closes the session when its run ends, and only that run's", async () => {
+    const server = statefulMcpServer();
+    const provider = providerFor(server);
+    const first = runContext("run-1");
+    await callTool(provider, first.context, "pause", {});
+    const second = runContext("run-2");
+    const executionId = pausedExecutionId(await callTool(provider, second.context, "pause", {}));
+
+    provider.endRun("run-1");
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(server.deletes).toEqual(["session-1"]);
+    const resume = await callTool(provider, second.context, "resume", { executionId });
+    expect(resume).toMatchObject([{ type: "result" }]);
+    expect(server.initializations()).toBe(2);
+    await provider.close();
+  });
+
+  it("keeps the session after a JSON-RPC error response with code -32000", async () => {
+    const server = statefulMcpServer();
+    const provider = providerFor(server);
+    const { context } = runContext("run-1");
+
+    const pause = await callTool(provider, context, "pause", {});
+    const executionId = pausedExecutionId(pause);
+    // A recoverable server error between pause and resume, answered in a normal
+    // JSON-RPC error response: the connection itself is still healthy.
+    await expect(
+      callTool(provider, context, "resume", { executionId: "other" }),
+    ).resolves.toMatchObject([{ type: "error", message: /Paused execution is unknown/ }]);
+    expect(server.deletes).toEqual([]);
+
+    const resume = await callTool(provider, context, "resume", { executionId });
+
+    expect(resume).toMatchObject([{ type: "result" }]);
+    expect(server.initializations()).toBe(1);
   });
 });
 

@@ -84,7 +84,7 @@ function scopedCall(
   scope: string,
   server: ReturnType<typeof mcpServer>,
   signal?: AbortSignal,
-  sessionSignal?: AbortSignal,
+  runId?: string,
   tool = "do_work",
 ) {
   return callRemoteMcpTool(
@@ -95,7 +95,7 @@ function scopedCall(
       sessionScope: scope,
       sessionPool: pool,
       signal,
-      sessionSignal,
+      sessionRunId: runId,
     },
     tool,
     {},
@@ -118,6 +118,40 @@ describe("run-scoped remote MCP sessions", () => {
       content: [{ text: "ok:session-2" }],
     });
     expect(server.initializations()).toBe(2);
+    await pool.close();
+  });
+
+  it("closes one run's sessions on endRun and leaves other runs open", async () => {
+    const server = statefulServer();
+    const pool = new RemoteMcpSessionCache();
+    await scopedCall(pool, "run-1 srv", server, undefined, "run-1");
+    await scopedCall(pool, "run-2 srv", server, undefined, "run-2");
+
+    pool.endRun("run-1");
+
+    await vi.waitFor(() => expect(server.deletes).toEqual(["session-1"]));
+    await expect(scopedCall(pool, "run-2 srv", server, undefined, "run-2")).resolves.toMatchObject({
+      content: [{ text: "ok:session-2" }],
+    });
+    expect(server.initializations()).toBe(2);
+    await pool.close();
+  });
+
+  it("bounds a run that ended elsewhere by the idle reap, without leftover run state", async () => {
+    const server = statefulServer();
+    const pool = new RemoteMcpSessionCache(40);
+    await scopedCall(pool, "run-1 srv", server, undefined, "run-1");
+
+    // The run finished on another worker: no endRun arrives here, so the idle
+    // bound is what closes this process's session for it.
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    await expect(pool.reapIdle()).resolves.toBe(1);
+    expect(server.deletes).toEqual(["session-1"]);
+
+    // No per-run bookkeeping outlives the session: ending the run now is a no-op.
+    pool.endRun("run-1");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(server.deletes).toEqual(["session-1"]);
     await pool.close();
   });
 
@@ -157,6 +191,32 @@ describe("run-scoped remote MCP sessions", () => {
 
     expect(server.toolCalls).toHaveLength(2);
     expect(server.initializations()).toBe(2);
+    await pool.close();
+  });
+
+  it("keeps a session whose server answered a -32000 JSON-RPC error", async () => {
+    const server = mcpServer(({ message, session, respond }) => {
+      if (message.method === "tools/call") {
+        if (!session) throw new Error("tools/call without a session header");
+        if (message.params?.name === "fail_once") {
+          // A recoverable application error in a JSON-RPC error response: the
+          // connection is healthy, so the session and its server state stay.
+          return respond({ error: { code: -32000, message: "app failed, retry later" } });
+        }
+        return respond({ result: { content: [{ type: "text", text: `ok:${session}` }] } });
+      }
+      return undefined;
+    });
+    const pool = new RemoteMcpSessionCache();
+    await expect(
+      scopedCall(pool, "run-1 srv", server, undefined, undefined, "fail_once"),
+    ).rejects.toThrow(/app failed/);
+    expect(server.deletes).toEqual([]);
+
+    await expect(scopedCall(pool, "run-1 srv", server)).resolves.toMatchObject({
+      content: [{ text: "ok:session-1" }],
+    });
+    expect(server.initializations()).toBe(1);
     await pool.close();
   });
 
@@ -229,8 +289,7 @@ describe("run-scoped remote MCP sessions", () => {
     });
     const pool = new RemoteMcpSessionCache();
     const controller = new AbortController();
-    const run = new AbortController();
-    const hanging = scopedCall(pool, "run-1 srv", server, controller.signal, run.signal);
+    const hanging = scopedCall(pool, "run-1 srv", server, controller.signal);
     await vi.waitFor(() => expect(server.toolCalls).toHaveLength(1));
     controller.abort();
     await expect(hanging).rejects.toThrow();

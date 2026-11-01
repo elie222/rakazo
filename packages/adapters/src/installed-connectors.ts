@@ -124,22 +124,29 @@ export class InstalledConnectorProvider implements ConnectorProvider {
     };
   }
 
-  /** Session reuse only inside one run; discovery and calls outside a run
-   * (settings, verification) keep one session per call. */
+  /** Session reuse only inside one run, lasting the run rather than one
+   * attempt; discovery and calls outside a run (settings, verification) keep
+   * one session per call. */
   private mcpSessionOptions(
     context: AdapterContext,
     install: Pick<InstalledRow, "id">,
   ): {
     sessionScope?: string;
     sessionPool?: RemoteMcpSessionCache;
-    sessionSignal?: AbortSignal;
+    sessionRunId?: string;
   } {
     if (!context.runId) return {};
     return {
       sessionScope: `${context.spaceId} ${context.userId} ${context.runId} ${install.id}`,
       sessionPool: this.mcpSessions,
-      sessionSignal: context.signal,
+      sessionRunId: context.runId,
     };
+  }
+
+  /** Close the run-scoped MCP sessions of a run that ended on this worker;
+   * see `RemoteMcpSessionCache.endRun`. */
+  endRun(runId: string): void {
+    this.mcpSessions.endRun(runId);
   }
 
   /** Close every run-scoped MCP session; for shutdown. */

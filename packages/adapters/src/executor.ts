@@ -31,6 +31,7 @@ import {
   userRunError,
   userTurnMessageForRun,
 } from "@rakazo/core";
+import type { ThreadEvents } from "@rakazo/db";
 import {
   availableInSpace,
   effectiveMemoryScope,
@@ -236,19 +237,41 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
     executorDeps.browser ?? createBrowserProvider(undefined, { sandbox: executorDeps.sandbox });
   const cloudAgent = executorDeps.cloudAgent;
   const resolveConnectedModel = resolveConnectedRunModel.bind(undefined, executorDeps);
+
+  // Run-scoped connector state (installed MCP sessions) outlives one attempt
+  // but not its run, so the session side owns the lifetime: the connector ends
+  // it when this worker observes the run's end, and bounds the rest itself.
+  const endRunConnectorState = (runId: string) => executorDeps.connector?.endRun?.(runId);
+  // Every terminal outcome funnels through finalizeRun — completion, failure,
+  // the tool-loop stop and pre-turn failures — but only the attempt that still
+  // owns the run finalizes it. A fenced-out attempt must not end the run's
+  // state while a newer attempt of this run still needs it; whether it may end
+  // it depends on the run row, not on this attempt. A rejected finalizeRun left
+  // the run unfinished, so its state survives the retry.
+  const events: ThreadEvents = {
+    ...executorDeps.events,
+    finalizeRun: async (input) => {
+      const result = await executorDeps.events.finalizeRun(input);
+      if (result || (await runEndedForThisWorker(executorDeps.prisma, input))) {
+        endRunConnectorState(input.runId);
+      }
+      return result;
+    },
+  };
+  const baseDeps: ExecutorDeps = { ...executorDeps, events };
   return {
     resolveConnectedModel,
     contextStrategy,
-    resolveModel: resolveRunModel.bind(undefined, executorDeps),
-    wakeRoutine: wakeRoutine.bind(undefined, executorDeps),
+    resolveModel: resolveRunModel.bind(undefined, baseDeps),
+    wakeRoutine: wakeRoutine.bind(undefined, baseDeps),
     notifyRoutineRetryAttemptsExhausted: notifyRoutineRetryAttemptsExhausted.bind(
       undefined,
-      executorDeps,
+      baseDeps,
     ),
-    retryRoutineRun: retryRoutineRun.bind(undefined, executorDeps),
+    retryRoutineRun: retryRoutineRun.bind(undefined, baseDeps),
 
     async continueRun(runId: string, workerId: string, onRunStarted?: () => void) {
-      let deps = executorDeps;
+      let deps = baseDeps;
       // A stopping process must not claim work it cannot finish. The row stays
       // queued or expired for a worker that is still running.
       if (deps.shutdownSignal?.aborted) return;
@@ -262,7 +285,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         "space.id": run.spaceId,
         ...(run.userId ? { "user.id": run.userId } : {}),
       });
-      if (isTerminal(run.status as RunStatus)) return;
+      if (isTerminal(run.status as RunStatus)) {
+        // Finalized elsewhere (cancelled while waiting, another worker): this
+        // worker's run-scoped state for it may end now; until a next touch, the
+        // connector's own idle bound holds it.
+        endRunConnectorState(runId);
+        return;
+      }
       let { resumeCheckpoint, heldForTakeover, takeoverResume } = takeoverContinuePlan(run);
 
       const fence = nextFence(run.leaseFence);
@@ -1833,6 +1862,16 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         });
         detachShutdown?.();
         clearInterval(heartbeat);
+        // This attempt stopped working on the run. Whether it paused, lost the
+        // lease, was invalidated by the heartbeat or never finalised, the run
+        // row decides whether this worker's run-scoped state may end: a
+        // terminal run, or one another worker owns, never resumes here, while a
+        // paused or requeued run keeps its sessions for its next attempt. A
+        // successful finalisation already ended the state, and the terminal row
+        // this reads then only repeats that.
+        if (await runEndedForThisWorker(deps.prisma, { runId, leaseOwner: workerId })) {
+          endRunConnectorState(runId);
+        }
         if (!lease.retainComputer) {
           if (computerUse.screenRelease) {
             const releaseContext = computerUse.screenRelease.keepWarm
@@ -1867,4 +1906,26 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
       }
     },
   };
+}
+
+/** Whether a run this attempt could not finalize is over for this worker: it
+ * reached a terminal state or another worker owns it, so its run-scoped state
+ * may end. A run re-claimed by this worker under a newer fence — recovered, or
+ * requeued after a pause — keeps its state for its next attempt. */
+async function runEndedForThisWorker(
+  prisma: ExecutorDeps["prisma"],
+  input: { runId: string; leaseOwner: string },
+): Promise<boolean> {
+  try {
+    const run = await prisma.run.findUnique({
+      where: { id: input.runId },
+      select: { status: true, leaseOwner: true },
+    });
+    if (!run) return true;
+    if (isTerminal(run.status as RunStatus)) return true;
+    return run.leaseOwner !== null && run.leaseOwner !== input.leaseOwner;
+  } catch {
+    // Unknown keeps the state; the connector's idle bound still ends it.
+    return false;
+  }
 }
