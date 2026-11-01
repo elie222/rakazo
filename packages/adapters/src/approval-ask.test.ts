@@ -79,6 +79,7 @@ it("shows the full instruction replacement as a diff with Apply and Dismiss", ()
     {
       botId: "bot-1",
       previousInstructions: "Draft only",
+      previousInstructionsFromBaseline: true,
       instructions: "Draft only\nAsk before sending",
       reason: "Learned preference",
     },
@@ -97,6 +98,8 @@ it("shows the full instruction replacement as a diff with Apply and Dismiss", ()
       { id: "deny", label: "Dismiss" },
     ],
   });
+  // The stored provenance marker is not card copy.
+  expect(JSON.stringify(block)).not.toContain("previousInstructionsFromBaseline");
 });
 
 it("redacts known secrets in instruction approval details and editable metadata", () => {

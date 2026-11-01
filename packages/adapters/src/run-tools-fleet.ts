@@ -29,6 +29,10 @@ import {
   readOwnBotSettings,
 } from "./own-bot-settings.js";
 import type { RunContext } from "./run-context.js";
+import {
+  OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR,
+  OWN_INSTRUCTIONS_CHANGED_ERROR,
+} from "./run-context.js";
 import { mayOpenModelStream } from "./run-lifecycle.js";
 import { persistMessageInTransaction, publishMessage } from "./run-messages.js";
 import { fleetPrepareDeps } from "./run-model.js";
@@ -80,10 +84,16 @@ async function commitOwnInstructions(
   input: {
     instructions: string;
     reason: string;
-    previousInstructions: string;
+    previousInstructions: string | undefined;
   },
 ): Promise<{ ok: true } | { error: string }> {
+  // A checkpoint that predates the baseline leaves the attempt without the text its rewrite
+  // was built from, and an approval proposed back then stored a fresh read instead. Refuse
+  // both rather than guess or overwrite what the rewrite never saw.
+  if (ctx.state.ownInstructionsBaseline === undefined || input.previousInstructions === undefined)
+    return { error: OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR };
   const { deps, run, runId, bot, context } = ctx;
+  const previousInstructions = input.previousInstructions;
   const committed = await deps.prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${run.threadId} FOR UPDATE`;
     await tx.$queryRaw`SELECT id FROM runs WHERE id = ${runId} FOR UPDATE`;
@@ -97,11 +107,12 @@ async function commitOwnInstructions(
         botId: bot.id,
         instructions: input.instructions,
         reason: input.reason,
-        expectedInstructions: input.previousInstructions,
+        expectedInstructions: previousInstructions,
       });
     } catch (error) {
       if (!(error instanceof InstructionConflictError)) throw error;
-      return { error: error.message };
+      // Re-reading cannot rebase this attempt, so point the model at a fresh run.
+      return { error: OWN_INSTRUCTIONS_CHANGED_ERROR };
     }
     if (!undoVersionId) return null;
     return persistMessageInTransaction(tx, run, "bot", [
@@ -111,7 +122,7 @@ async function commitOwnInstructions(
         status: "answered",
         instructionUpdate: {
           botId: bot.id,
-          before: redactSecrets(input.previousInstructions, ctx.secrets),
+          before: redactSecrets(previousInstructions, ctx.secrets),
           after: input.instructions,
           reason: input.reason,
           undoVersionId,
@@ -124,6 +135,7 @@ async function commitOwnInstructions(
     await deps.events
       .notify(run.threadId, committed.eventSeq, committed.firstResponseRunId)
       .catch((error) => getLogger().error("instruction update realtime notification", error));
+  ctx.state.ownInstructionsBaseline = input.instructions;
   return { ok: true };
 }
 
@@ -251,6 +263,10 @@ export const fleetTools: ToolHandlers = {
     if (typeof args.previousInstructions === "string") {
       if ((call.nextApprovedTool !== call.name && !call.bypassApproval) || !call.claimedEffect)
         return call.finish({ error: "This instruction change needs the owner's approval." });
+      // A request stored before the baseline kept a fresh read as its expected text. Without
+      // the marker it must not commit, whatever the resumed checkpoint restored.
+      if (args.previousInstructionsFromBaseline !== true)
+        return call.finish({ error: OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR });
       return call.finish(
         await commitOwnInstructions(ctx, {
           instructions: String(args.instructions),
@@ -276,8 +292,11 @@ export const fleetTools: ToolHandlers = {
         voiceId: true,
       },
     });
-    if (!Object.values(args).some(argumentGiven))
+    if (!Object.values(args).some(argumentGiven)) {
+      // A read does not rebase the baseline: the text it returns has not shaped a model
+      // generation yet, and a truncated read would guard on text the model never saw.
       return call.finish(await readOwnBotSettings(modelDeps, run, live));
+    }
     const settings = await prepareOwnBotSettings(
       modelDeps,
       run,
@@ -330,7 +349,10 @@ export const fleetTools: ToolHandlers = {
       const set = await commitOwnInstructions(ctx, {
         instructions: String(instructions),
         reason: "Set in chat",
-        previousInstructions: live.instructions,
+        // The text the model worked from, not a fresh read: a change that landed since the
+        // attempt started conflicts instead of being overwritten, and a checkpoint that
+        // predates the baseline makes the commit itself refuse.
+        previousInstructions: ctx.state.ownInstructionsBaseline,
       });
       if ("error" in set)
         return call.finish({

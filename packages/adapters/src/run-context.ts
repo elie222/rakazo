@@ -165,6 +165,15 @@ export interface RunState {
    * and so does a later attempt, including one with restored untrusted tool results.
    */
   tainted: boolean;
+  /**
+   * The instructions this attempt's model works from: the attempt-start snapshot its prompt
+   * was built with, restored from the turn checkpoint on resume, and advanced only after a
+   * successful own-instruction write in this attempt. Own instruction writes guard on it, so
+   * a change that landed since the model last saw the text conflicts instead of being
+   * overwritten. Undefined when an older checkpoint predates the baseline: such a resumed
+   * attempt refuses own instruction writes rather than guessing.
+   */
+  ownInstructionsBaseline: string | undefined;
   earlierAttempt: Promise<boolean> | undefined;
   handedOff: boolean;
   terminalCheckpointComplete: boolean;
@@ -327,6 +336,14 @@ export async function isRunTainted(ctx: RunContext) {
   return state.tainted;
 }
 
+/** A change landed after this attempt's snapshot; only a fresh run can apply the rewrite. */
+export const OWN_INSTRUCTIONS_CHANGED_ERROR =
+  "Instructions changed since this run started, so your instructions were not saved. Ask the user to send their request again so a new run starts from the current instructions.";
+
+/** An older checkpoint predates the baseline; a resumed attempt must not guess. */
+export const OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR =
+  "This resumed run cannot safely change its own instructions. Ask the user to send their request again so a new run starts from the current instructions.";
+
 export function nextMutatingEffectOccurrence(
   ctx: RunContext,
   toolName: string,
@@ -357,6 +374,7 @@ export async function persistTurnCheckpoint(ctx: RunContext, executionId?: strin
   if (capture) {
     const saved = JSON.parse(capture());
     saved.effectOccurrences = effects.occurrences;
+    saved.ownInstructionsBaseline = ctx.state.ownInstructionsBaseline;
     await saveRunTurnCheckpoint(deps.prisma, run, workerId, fence, JSON.stringify(saved));
     effects.storedTurnCheckpoint = true;
   } else if (effects.storedTurnCheckpoint) {
@@ -429,6 +447,10 @@ export function restoreTurnCheckpointEffects(
         }
       }
     }
+    // The restored system prompt still carries the instructions it was built from; the
+    // baseline must match it, not the current row. Checkpoints without one (older saves)
+    // leave it undefined, which refuses own instruction writes in this attempt.
+    ctx.state.ownInstructionsBaseline = saved.ownInstructionsBaseline;
     return turnCheckpoint;
   } catch {
     // Incompatible transcripts use the existing canonical approval replay.
