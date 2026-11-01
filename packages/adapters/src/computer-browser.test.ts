@@ -408,6 +408,11 @@ describe("page browser safety", () => {
     expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
       purchase: null,
     });
+    // A page without a host (about:blank, data:, file:) still asks, naming no site.
+    reply = { ...answer, site: "", origin: "null" };
+    expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toMatchObject({
+      purchase: { steps: [1], site: "", label: "Pay $5" },
+    });
     // An older image: the helper does not know the command.
     reply = { ok: false, error: "unknown command: purchase_check", fallback: "computer_act" };
     expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
@@ -442,7 +447,7 @@ describe("page browser safety", () => {
     expect(await provider.purchaseCheck(fake, { actions }, baseContext)).toEqual({
       purchase: null,
     });
-    expect(commands).toHaveLength(11);
+    expect(commands).toHaveLength(12);
   });
 
   it("keeps the page snapshot a settled refusal sends", async () => {

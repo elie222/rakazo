@@ -247,13 +247,14 @@ export class ComputerBrowserProvider implements BrowserProvider {
       | { steps?: unknown; label?: unknown; amount?: unknown; amountFrom?: unknown }
       | null
       | undefined;
-    if (!found || typeof live.site !== "string" || !live.site) return { purchase: null };
+    if (!found) return { purchase: null };
     return {
       purchase: {
         steps: Array.isArray(found.steps)
           ? found.steps.filter((step): step is number => Number.isInteger(step))
           : [],
-        site: live.site,
+        // A page without a host (about:blank, data:, file:) still asks, with the card for an unknown page.
+        site: typeof live.site === "string" ? live.site : "",
         label: typeof found.label === "string" ? found.label : "",
         amount: typeof found.amount === "string" ? found.amount : "",
         amountSource: found.amountFrom === "button" ? "button" : "page",
