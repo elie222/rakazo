@@ -582,6 +582,5 @@
   "Credentials are encrypted and never sent to the model.": "क्रेडेंशियल एन्क्रिप्टेड होते हैं और मॉडल को कभी नहीं भेजे जाते।",
   "Rename section": "अनुभाग का नाम बदलें",
   "Could not rename section": "अनुभाग का नाम नहीं बदला जा सका",
-  "Close Chat": "चैट बंद करें",
   "{count, plural, one {# message with {peer}} other {# messages with {peer}}}": "{count, plural, one {{peer} के साथ # संदेश} other {{peer} के साथ # संदेश}}"
 }

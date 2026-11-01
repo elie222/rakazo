@@ -720,6 +720,5 @@
   "Credentials are encrypted and never sent to the model.": "Las credenciales se cifran y nunca se envían al modelo.",
   "Rename section": "Renombrar sección",
   "Could not rename section": "No se pudo renombrar la sección",
-  "Close Chat": "Cerrar chat",
   "{count, plural, one {# message with {peer}} other {# messages with {peer}}}": "{count, plural, one {# mensaje con {peer}} other {# mensajes con {peer}}}"
 }

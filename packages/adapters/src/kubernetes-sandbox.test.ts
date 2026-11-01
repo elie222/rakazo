@@ -609,9 +609,15 @@ describe("KubernetesSandboxProvider", () => {
       .mockResolvedValue(readyPod);
     const provider = providerFor({ createNamespacedPod: create, readNamespacedPod: read });
     await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
-    expect(create.mock.calls[0]?.[0].body?.spec).toMatchObject({
+    const spec = create.mock.calls[0]?.[0].body?.spec;
+    expect(spec).toMatchObject({
       automountServiceAccountToken: false,
       restartPolicy: "Never",
+    });
+    expect(spec?.containers[0]?.securityContext).toEqual({
+      allowPrivilegeEscalation: false,
+      capabilities: { drop: ["ALL"] },
+      seccompProfile: { type: "RuntimeDefault" },
     });
   });
 
@@ -852,8 +858,10 @@ describe("KubernetesSandboxProvider", () => {
       "10s",
     ]);
     expect(commands.at(-1)).toContain("rm");
+    // Element-wise toEqual on a 2 MiB array takes minutes; compare bytes directly.
+    expect(Buffer.from(files[0]!.content).equals(binary)).toBe(true);
     expect(files).toEqual([
-      { path: "a.txt", content: new Uint8Array(binary) },
+      { path: "a.txt", content: expect.any(Uint8Array) },
       { path: "run.sh", content: new Uint8Array(Buffer.from("#!")), executable: true },
     ]);
   });

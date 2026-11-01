@@ -20,7 +20,7 @@ vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) =>
     createElement("button", { type: "button", onClick: onPress }, label),
 }));
-vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
+vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/inline-image-attachment", () => ({ InlineImageAttachment: () => null }));
 vi.mock("./artifact-open", () => ({ openMobileArtifact: vi.fn() }));
 vi.mock("./api", () => ({ rpc }));
@@ -38,7 +38,21 @@ vi.mock("@rakazo/chat-ui/native", () => ({
 }));
 vi.mock("expo-router", () => ({
   Stack: {
-    Screen: ({ options }: { options: { headerTitle: () => ReactNode } }) => options.headerTitle(),
+    Screen: ({
+      options,
+    }: {
+      options: {
+        headerTitle: () => ReactNode;
+        headerLeft: () => ReactNode;
+        headerTitleAlign?: string;
+      };
+    }) =>
+      createElement(
+        "header",
+        { "data-title-align": options.headerTitleAlign },
+        options.headerTitle(),
+        options.headerLeft(),
+      ),
   },
   useRouter: () => ({ back }),
   useLocalSearchParams: () => ({ botId: "chief", botName: "Chief", peerBotId: "peer" }),
@@ -48,7 +62,27 @@ vi.mock("react-native", () => {
   return {
     StyleSheet: { create: (styles: unknown) => styles },
     ActivityIndicator: () => createElement("progress"),
-    Pressable: view,
+    Pressable: ({
+      children,
+      onPress,
+      accessibilityRole,
+      accessibilityLabel,
+    }: {
+      children?: ReactNode;
+      onPress?: () => void;
+      accessibilityRole?: string;
+      accessibilityLabel?: string;
+    }) =>
+      createElement(
+        "button",
+        {
+          type: "button",
+          role: accessibilityRole,
+          "aria-label": accessibilityLabel,
+          onClick: onPress,
+        },
+        children,
+      ),
     Text: view,
     View: view,
     ScrollView: ({
@@ -126,8 +160,11 @@ it("leaves the position alone once the reader scrolls", async () => {
 it("names both bots in the header and closes the read-only chat", async () => {
   const screen = await open();
   expect(screen.textContent).toContain("Chief⇄Researcher");
-  const close = screen.querySelector<HTMLButtonElement>("button");
-  expect(close?.textContent).toBe("Close Chat");
+  expect(screen.querySelector("header")?.dataset.titleAlign).toBe("center");
+  const close = screen.querySelector<HTMLButtonElement>('header button[aria-label="Close"]');
+  expect(close).not.toBeNull();
+  expect(close?.getAttribute("role")).toBe("button");
+  expect(close?.textContent).toBe("");
   act(() => close?.click());
   expect(back).toHaveBeenCalledOnce();
 });

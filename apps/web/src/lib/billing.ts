@@ -5,17 +5,22 @@ type Price = NonNullable<BillingStatus["price"]>;
 
 /** "$12 / month" from a provider price in minor units. */
 export function formatBillingPrice(price: Price, locale: string): string {
-  const currency = price.currency.toUpperCase();
+  const amount = formatBillingAmount(price.amount, price.currency, locale);
+  const period = billingPeriod(price.interval, price.intervalCount);
+  return t`${amount} / ${period}`;
+}
+
+/** "$12" from an amount in minor units, without cents when it is whole. */
+export function formatBillingAmount(minorUnits: number, code: string, locale: string): string {
+  const currency = code.toUpperCase();
   const digits = new Intl.NumberFormat(locale, { style: "currency", currency }).resolvedOptions()
     .maximumFractionDigits;
-  const value = price.amount / 10 ** (digits ?? 2);
-  const amount = new Intl.NumberFormat(locale, {
+  const value = minorUnits / 10 ** (digits ?? 2);
+  return new Intl.NumberFormat(locale, {
     style: "currency",
     currency,
     minimumFractionDigits: Number.isInteger(value) ? 0 : digits,
   }).format(value);
-  const period = billingPeriod(price.interval, price.intervalCount);
-  return t`${amount} / ${period}`;
 }
 
 function billingPeriod(interval: Price["interval"], count: number): string {

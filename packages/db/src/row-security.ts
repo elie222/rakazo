@@ -110,6 +110,7 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "UserModelCredential",
   "UserVoiceCredential",
   "TrustedLinkSite",
+  "FeedbackReport",
   "PaymentWallet",
   "Purchase",
   "TaughtSkill",
@@ -150,6 +151,7 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "UserActionApprovalRule",
   "UserActionAutoReviewPreference",
   "SecurityEvent",
+  "AuditEvent",
 ]);
 
 /**

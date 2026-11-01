@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { i18n } from "@lingui/core";
-import type { RoutineHistory, RoutineRun } from "@rakazo/contracts";
+import type { ProductEvent, RoutineHistory, RoutineRun, ThreadSnapshot } from "@rakazo/contracts";
+import { runThreadSubscription } from "@rakazo/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -9,11 +10,16 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 
 const routines = vi.hoisted(() => ({ history: vi.fn() }));
+const threads = vi.hoisted(() => ({ get: () => new Promise(() => {}) }));
 vi.mock("../lib/rpc", () => ({
-  rpc: { routines },
-  rpcForSpace: () => ({ routines }),
-  createSpaceRpc: () => ({ routines }),
+  rpc: { routines, threads },
+  rpcForSpace: () => ({ routines, threads }),
+  createSpaceRpc: () => ({ routines, threads }),
   selectedSpaceId: () => null,
+}));
+vi.mock("@rakazo/core", async (original) => ({
+  ...(await original<typeof import("@rakazo/core")>()),
+  runThreadSubscription: vi.fn(async () => {}),
 }));
 vi.mock("@lingui/core/macro", () => ({
   t: (parts: TemplateStringsArray) => parts.join(""),
@@ -30,10 +36,13 @@ vi.mock("@rakazo/ui-web", () => ({
   }: ComponentProps<"button"> & { size?: string; variant?: string }) => (
     <button type="button" {...props} />
   ),
+  SectionHeading: (props: ComponentProps<"h3">) => <h3 {...props} />,
   Spinner: (props: ComponentProps<"svg">) => <svg role="status" {...props} />,
 }));
 
+import { queryClient, useSpaceQueries } from "../lib/query";
 import { RoutineRunHistory } from "./RoutineRunHistory";
+import { useThreadSync } from "./shell/use-thread-sync";
 
 const run: RoutineRun = {
   id: "run-1",
@@ -57,9 +66,11 @@ afterEach(() => {
   routines.history.mockReset();
 });
 
-async function mounted() {
+async function mounted({
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  beside = null as ReactNode,
+} = {}) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -68,6 +79,7 @@ async function mounted() {
       <QueryClientProvider client={client}>
         <MemoryRouter>
           <RoutineRunHistory routineId="routine-1" />
+          {beside}
         </MemoryRouter>
       </QueryClientProvider>,
     ),
@@ -107,6 +119,8 @@ it("shows loading, then the latest runs as rows that open their chat", async () 
     const links = view.container.querySelectorAll("a");
     expect(links).toHaveLength(1);
     expect(links[0]?.getAttribute("href")).toBe("/app/bot-1?m=reply-1");
+    expect(view.rows()[0]?.textContent).not.toContain("No reply");
+    expect(view.rows()[1]?.textContent).toContain("No reply");
     expect(view.button("Load older runs")).toBeUndefined();
   } finally {
     await view.close();
@@ -241,5 +255,77 @@ it("omits error UI for a completed run carrying a stale error", async () => {
     expect(view.container.textContent).not.toContain("Your model provider");
   } finally {
     await view.close();
+  }
+});
+
+/** The open chat's live sync, with just enough wiring to deliver its events. */
+function OpenChat() {
+  const ref = <T,>(current: T) => ({ current });
+  useThreadSync({
+    rpc: { threads },
+    queries: useSpaceQueries(),
+    thread: {
+      snapshotRef: ref(null),
+      commitSnapshot: vi.fn(),
+      bootstrappedThread: ref(null),
+      expandedHistoryThread: ref(null),
+      historyEpoch: ref(0),
+      messageScroll: ref(null),
+      pinnedAroundRef: ref(null),
+    },
+    computerState: { computerRef: ref(null), showCachedComputer: vi.fn() },
+    active: { id: "bot-1", name: "Bot" },
+    inGroup: false,
+    activeBotId: ref("bot-1"),
+    activeGroupId: ref(undefined),
+    botsRef: ref([]),
+    searchParamsRef: ref(new URLSearchParams()),
+    refreshBots: async () => {},
+    notifyBrowserForEvent: vi.fn(),
+  } as unknown as Parameters<typeof useThreadSync>[0]);
+  return null;
+}
+
+it("shows a run as finished as soon as the open chat reports it ended", async () => {
+  vi.useFakeTimers();
+  routines.history
+    .mockResolvedValueOnce(page([{ ...run, status: "running", completedAt: null }]))
+    .mockResolvedValue(page([run]));
+  const view = await mounted({ client: queryClient, beside: <OpenChat /> });
+  try {
+    expect(view.container.textContent).toContain("Running");
+    const subscription = vi.mocked(runThreadSubscription).mock.calls[0]![0];
+    const ended = { type: "run.completed", runId: "run-1", payload: {} } as ProductEvent;
+    await act(async () => {
+      subscription.onEvent(ended, { threadId: "thread-1", cursor: 1 } as ThreadSnapshot);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(routines.history).toHaveBeenCalledTimes(2);
+    expect(view.container.textContent).not.toContain("Running");
+    expect(view.rows()).toHaveLength(1);
+  } finally {
+    await view.close();
+    queryClient.clear();
+  }
+});
+
+it("leaves the history alone when a run it does not list ends", async () => {
+  vi.useFakeTimers();
+  routines.history
+    .mockResolvedValueOnce(page([{ ...run, status: "running", completedAt: null }]))
+    .mockResolvedValue(page([run]));
+  const view = await mounted({ client: queryClient, beside: <OpenChat /> });
+  try {
+    expect(view.container.textContent).toContain("Running");
+    const subscription = vi.mocked(runThreadSubscription).mock.calls[0]![0];
+    const ended = { type: "run.completed", runId: "chat-run", payload: {} } as ProductEvent;
+    await act(async () => {
+      subscription.onEvent(ended, { threadId: "thread-1", cursor: 1 } as ThreadSnapshot);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(routines.history).toHaveBeenCalledTimes(1);
+  } finally {
+    await view.close();
+    queryClient.clear();
   }
 });

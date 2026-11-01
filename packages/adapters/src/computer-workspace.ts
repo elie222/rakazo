@@ -186,7 +186,8 @@ export async function removeDeletedBotWorkspaces(
 
 /**
  * Run best-effort cleanup for at most budgetMs. Its commands are aborted at the deadline, and
- * a provider that ignores the abort still cannot hold the caller past it.
+ * a provider that ignores the abort still cannot hold the caller past it. Running out of time is
+ * not a failure: every boot lists deleted bots' folders again and removes what is left.
  */
 export async function withCleanupDeadline(
   context: AdapterContext,
@@ -195,13 +196,18 @@ export async function withCleanupDeadline(
 ): Promise<void> {
   const deadline = new AbortController();
   const timer = setTimeout(
-    () => deadline.abort(new Error("team bot folder cleanup ran out of time")),
+    () => deadline.abort(new Error("computer cleanup ran out of time")),
     budgetMs,
   );
-  const expired = new Promise<never>((_, reject) => {
-    deadline.signal.addEventListener("abort", () => reject(deadline.signal.reason), {
-      once: true,
-    });
+  const expired = new Promise<void>((resolve) => {
+    deadline.signal.addEventListener(
+      "abort",
+      () => {
+        getLogger().warn("computer cleanup ran out of time");
+        resolve();
+      },
+      { once: true },
+    );
   });
   const signal = AbortSignal.any([context.signal, deadline.signal]);
   try {
@@ -464,21 +470,25 @@ export async function checkpointAndRecordComputerWorkspace(
 
 /**
  * Saves the computer's workspace, then stops it. Nothing on a damaged computer can be read, so it
- * stops without the save and keeps the provider's last good copy; any other save failure throws.
+ * stops without the save and keeps the provider's last good copy; any other save failure throws
+ * before anything is stopped. `onStop` runs just before the provider is asked to stop it.
  */
 export async function checkpointAndStopComputer(
   deps: { home: AgentHomeStore; sandbox: SandboxProvider; prisma: PrismaClient },
   computerRecord: { id: string; homeKey: string; scope: string; spaceId: string },
   computer: ComputerRef,
   context: AdapterContext,
+  onStop?: () => void,
 ): Promise<void> {
   try {
     await checkpointAndRecordComputerWorkspace(deps, computerRecord, computer, context);
   } catch (error) {
     if (!isSandboxDamagedError(error)) throw error;
+    onStop?.();
     await deps.sandbox.stop(computer, context, { discardUnsaved: true });
     return;
   }
+  onStop?.();
   await deps.sandbox.stop(computer, context);
 }
 

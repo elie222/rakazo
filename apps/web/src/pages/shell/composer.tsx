@@ -26,6 +26,7 @@ import {
   HoldToTalkStrip,
   useHoldToTalk,
 } from "../../components/composer/HoldToTalk";
+import { recordMessageSent } from "../../components/GitHubStarPrompt";
 import type { ArtifactTarget } from "../../lib/artifact-open";
 import { attachmentPickerAccept } from "../../lib/attachment-picker-accept";
 import { useCallSession } from "../../lib/call-session";
@@ -178,6 +179,7 @@ export const Composer = memo(function Composer({
       void onSend(text, [], newClientId())
         .then((accepted) => {
           if (accepted === false) appendDictation(text);
+          else recordMessageSent();
         })
         .catch(() => appendDictation(text));
     },
@@ -434,7 +436,10 @@ export const Composer = memo(function Composer({
           ? onSend(text, mentions, clientNonce, imageHandling)
           : onSend(text, mentions, clientNonce))) !== false;
       settleComposerDraftSubmission(draftKey, submission, accepted);
-      if (accepted) return;
+      if (accepted) {
+        recordMessageSent();
+        return;
+      }
     } catch {
       settleComposerDraftSubmission(draftKey, submission, false);
       // A rejected callback leaves acceptance unknown; do not restore a possible send.
@@ -842,6 +847,28 @@ export const Composer = memo(function Composer({
                 if (action.type === "send") {
                   event.preventDefault();
                   void send();
+                  return;
+                }
+                if (
+                  event.key !== "Escape" ||
+                  event.repeat ||
+                  event.nativeEvent.isComposing ||
+                  event.keyCode === 229 ||
+                  event.shiftKey ||
+                  event.ctrlKey ||
+                  event.metaKey ||
+                  event.altKey
+                )
+                  return;
+                // An open picker closes first; a held Escape never goes on to stop the reply.
+                if (showSlashPicker) {
+                  event.preventDefault();
+                  setSlashQuery(null);
+                  return;
+                }
+                if (running && !sending && !talk.recording?.locked) {
+                  event.preventDefault();
+                  void onStop();
                 }
               }}
               disabled={disabled}

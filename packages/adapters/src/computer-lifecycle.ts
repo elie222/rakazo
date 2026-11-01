@@ -8,6 +8,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import {
   computerControlExpireJobKey,
+  SandboxAllowanceUsedError,
   SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
@@ -45,6 +46,7 @@ import {
 } from "./computer-workspace.js";
 import { resolveAgentHomePath } from "./home.js";
 import { ObjectAgentHomeStore } from "./home-object-store.js";
+import { sandboxAllowanceUsedUp } from "./sandbox-allowance.js";
 import {
   isSandboxDamagedError,
   isSandboxGoneError,
@@ -246,6 +248,11 @@ export async function provisionComputer(
       context.signal.throwIfAborted();
     }
   }
+
+  // A computer that bills starts only while its organization has allowance left this month.
+  const startKind = (await deps.sandbox.provisionKind?.()) ?? existing.kind;
+  if (await sandboxAllowanceUsedUp(deps, { spaceId: existing.spaceId, kind: startKind }))
+    throw new SandboxAllowanceUsedError();
 
   // If we first observe abandoned "booting", remember that stamp before waiting. A concurrent
   // reclaim bumps updatedAt while state stays "booting"; fencing the claim on the pre-wait
@@ -947,7 +954,7 @@ function isUniqueConstraintError(error: unknown) {
 export type ComputerReplaceMode = "recover" | "reset" | "update";
 
 export function computerSupportsUpdate(kind: string): boolean {
-  return kind !== "desktop";
+  return kind !== "desktop" && kind !== "wuying" && kind !== "none";
 }
 
 /** Kinds whose provider opens a user terminal through the shared Linux screen gateway. */
@@ -1106,15 +1113,23 @@ export async function replaceComputer(
       where: { id: computerId, state: "suspending", updatedAt: claimStamp },
       data: { state: previousState, ...previousControl },
     });
-  // Re-check after the claim in case a run started between the pre-check and CAS.
-  const activeRun = await deps.prisma.run.findFirst({
-    where: {
-      status: { in: [...ACTIVE_RUN_STATUSES] },
-      bot: { computerId },
-    },
-    select: { id: true },
-  });
-  if (activeRun) {
+  // Re-check after the claim in case a run started between the pre-check and CAS. Under this
+  // operation's maintenance reservation, runs that arrived later wait for it without touching
+  // the computer, so only a live lease means one is still using it.
+  const inUse =
+    existing.maintenanceId === context.operationId
+      ? await deps.prisma.computerExecutionLease.findFirst({
+          where: { computerId, expiresAt: { gt: new Date() } },
+          select: { id: true },
+        })
+      : await deps.prisma.run.findFirst({
+          where: {
+            status: { in: [...ACTIVE_RUN_STATUSES] },
+            bot: { computerId },
+          },
+          select: { id: true },
+        });
+  if (inUse) {
     await releaseClaim();
     throw new ComputerBusyError();
   }

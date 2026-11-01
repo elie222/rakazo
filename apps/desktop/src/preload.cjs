@@ -1,5 +1,14 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+/** Listen for a main-process signal without handing the IPC event to the renderer. */
+function subscribe(channel) {
+  return (listener) => {
+    const handler = () => listener();
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.off(channel, handler);
+  };
+}
+
 contextBridge.exposeInMainWorld("rakazoDesktop", {
   platform: process.platform,
   nativeWindowFrame: process.platform === "win32",
@@ -10,15 +19,25 @@ contextBridge.exposeInMainWorld("rakazoDesktop", {
     managesHostChoice: true,
     requestAccess: () => ipcRenderer.invoke("desktop.computer.requestAccess"),
     revokeAccess: () => ipcRenderer.invoke("desktop.computer.revokeAccess"),
-    onConfigure: (listener) => {
-      const handler = () => listener();
-      ipcRenderer.on("desktop.computer.configure", handler);
-      return () => ipcRenderer.off("desktop.computer.configure", handler);
-    },
+    onConfigure: subscribe("desktop.computer.configure"),
+  },
+  settings: {
+    onOpen: subscribe("desktop.settings.open"),
   },
   device: {
     state: () => ipcRenderer.invoke("desktop.device.state"),
     setAllowed: (allowed) => ipcRenderer.invoke("desktop.device.setAllowed", allowed),
+  },
+  menu: {
+    onCommand: (listener) => {
+      // The IpcRendererEvent stays in the preload: the renderer only sees the command.
+      const handler = (_event, command) => listener(command);
+      ipcRenderer.on("desktop.menu.command", handler);
+      return () => ipcRenderer.off("desktop.menu.command", handler);
+    },
+  },
+  monitoring: {
+    enabled: () => ipcRenderer.invoke("desktop.monitoring.enabled"),
   },
   passkeys: {
     rpIds: () => ipcRenderer.invoke("desktop.passkeys.rpIds"),

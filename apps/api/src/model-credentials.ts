@@ -2,6 +2,7 @@ import { ORPCError } from "@orpc/server";
 import type { CodexLiveCatalog } from "@rakazo/adapters";
 import {
   buildModelConnectPlaintext,
+  CHATGPT_OAUTH_PROVIDER,
   codexLiveListsModel,
   compatibleThinkingLevels,
   defaultCatalogModelId,
@@ -9,6 +10,7 @@ import {
   parseModelSecret,
   prepareAllowedThinkingLevels as prepareModelThinkingLevels,
   providerCatalogCache,
+  resolveCodexOAuthDefaultModel,
   validateModelAuthAvailability,
   verifyCatalogProviderApiKey,
   verifyOpenAiCompatibleApiKey,
@@ -116,26 +118,32 @@ export async function prepareModelCredential(
   codexCatalog: CodexLiveCatalog,
 ) {
   throwIfAborted(input.signal);
+  const parsedSecret = parseModelSecret(input.plaintext);
   const requestedModelId = usableModelId(input.modelId);
-  const authError = requestedModelId
-    ? validateModelAuthAvailability(input.provider, requestedModelId, input.plaintext)
+  const resolvedCodexModelId =
+    canonicalPiProviderId(input.provider) === CHATGPT_OAUTH_PROVIDER &&
+    parsedSecret.kind === "oauth"
+      ? await resolveCodexOAuthDefaultModel(
+          codexCatalog,
+          actor.userId,
+          parsedSecret,
+          requestedModelId,
+        )
+      : requestedModelId;
+  const authError = resolvedCodexModelId
+    ? validateModelAuthAvailability(input.provider, resolvedCodexModelId, input.plaintext)
     : undefined;
   // The backend's live catalog can clear a static OAuth exclusion for the
   // account this credential signs into (e.g. Codex Spark on ChatGPT plans).
   if (
     authError &&
-    requestedModelId &&
-    !(await codexLiveListsModel(
-      codexCatalog,
-      actor.userId,
-      parseModelSecret(input.plaintext),
-      requestedModelId,
-    ))
+    resolvedCodexModelId &&
+    !(await codexLiveListsModel(codexCatalog, actor.userId, parsedSecret, resolvedCodexModelId))
   ) {
     throw new ORPCError("BAD_REQUEST", { message: authError });
   }
   const defaultModel =
-    requestedModelId ??
+    resolvedCodexModelId ??
     defaultCatalogModelId(input.provider, input.plaintext) ??
     usableModelId(deps.env.defaultModel);
   // A compatible connect may enable its new default, so judge it by the secret being saved.

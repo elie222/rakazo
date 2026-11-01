@@ -1,6 +1,13 @@
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
+import {
+  activeBotId,
+  captureScreenshot,
+  completeOnboarding,
+  openBotPanelTab,
+  rpc,
+  signup,
+} from "./helpers";
 
 const screenUrl = "https://screen.example/vnc.html";
 
@@ -37,7 +44,7 @@ test("a retrying computer can be closed and keeps booting without a stale error 
     held.push(route);
   });
 
-  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  await openBotPanelTab(page, "Computer");
   const preview = page.getByTestId("computer-preview");
   await expect(preview).toContainText("Computer failed to boot");
   await expect(page.getByText("error", { exact: true })).toHaveCount(0);
@@ -90,7 +97,7 @@ test("opening a computer refreshes a stale booting snapshot", async ({ page }, t
   await page.route("**/rpc/computer/boot", (route) => {
     boots.push(route);
   });
-  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  await openBotPanelTab(page, "Computer");
   const preview = page.getByTestId("computer-preview");
   await expect(preview).toContainText("Booting live desktop…");
   stale = false;
@@ -122,7 +129,7 @@ test("opening a computer the server reports as booting does not start a second b
     boots.push(route);
   });
 
-  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  await openBotPanelTab(page, "Computer");
   const preview = page.getByTestId("computer-preview");
   await expect(preview).toContainText("Booting live desktop…");
   const bootsBefore = boots.length;
@@ -159,7 +166,7 @@ test("Retry screen clears a failed takeover on a running computer", async ({ pag
     }),
   );
 
-  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  await openBotPanelTab(page, "Computer");
   const preview = page.getByTestId("computer-preview");
   await expect(preview.locator("iframe")).toHaveAttribute("src", screenUrl);
   await preview.hover();

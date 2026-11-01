@@ -1,28 +1,29 @@
 import { DecryptCommand, EncryptCommand, KMSClient } from "@aws-sdk/client-kms";
 import type { KeyProvider, KeyWrapContext, WrappedDataKey } from "@rakazo/adapter-kit";
 
-export interface AwsKmsKeyProviderConfig {
+export type AwsKmsKeyProviderConfig = {
   /** Key ARN, not an alias, which can be repointed without stored keys noticing. */
   keyArn: string;
-  accessKeyId: string;
-  secretAccessKey: string;
-}
+} & ({ accessKeyId: string; secretAccessKey: string } | { profile: string });
 
 const MASTER_KEY_PREFIX = "aws-kms:";
 const KEY_ARN = /^arn:aws[a-z-]*:kms:([a-z0-9-]+):\d{12}:key\/([A-Za-z0-9-]+)$/;
 
 /**
- * Credentials are required rather than taken from the SDK's default chain, so the key
- * manager never borrows credentials configured for something else.
+ * Credentials are named explicitly rather than taken from the SDK's default chain, so the
+ * key manager never borrows credentials configured for something else. A named profile
+ * lets a maintainer's laptop use short-lived `aws login` or SSO credentials.
  */
 export function awsKmsConfigFromEnv(env: NodeJS.ProcessEnv = process.env): AwsKmsKeyProviderConfig {
+  const keyArn = env.AWS_KMS_KEY_ARN?.trim() ?? "";
   const accessKeyId = env.AWS_KMS_ACCESS_KEY_ID?.trim();
   const secretAccessKey = env.AWS_KMS_SECRET_ACCESS_KEY?.trim();
-  if (!accessKeyId || !secretAccessKey)
-    throw new Error(
-      "AWS_KMS_ACCESS_KEY_ID and AWS_KMS_SECRET_ACCESS_KEY are required with AWS KMS",
-    );
-  return { keyArn: env.AWS_KMS_KEY_ARN?.trim() ?? "", accessKeyId, secretAccessKey };
+  const profile = env.AWS_KMS_PROFILE?.trim();
+  if (profile && !accessKeyId && !secretAccessKey) return { keyArn, profile };
+  if (!profile && accessKeyId && secretAccessKey) return { keyArn, accessKeyId, secretAccessKey };
+  throw new Error(
+    "AWS KMS needs either AWS_KMS_ACCESS_KEY_ID and AWS_KMS_SECRET_ACCESS_KEY, or AWS_KMS_PROFILE",
+  );
 }
 
 /**
@@ -48,7 +49,14 @@ export class AwsKmsKeyProvider implements KeyProvider {
       client ??
       new KMSClient({
         region,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        ...("profile" in config
+          ? { profile: config.profile }
+          : {
+              credentials: {
+                accessKeyId: config.accessKeyId,
+                secretAccessKey: config.secretAccessKey,
+              },
+            }),
         maxAttempts: 3,
         requestHandler: { connectionTimeout: 3_000, requestTimeout: 10_000 },
       });

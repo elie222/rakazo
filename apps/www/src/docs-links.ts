@@ -11,7 +11,7 @@ export function rewriteDocsLinks(markdown: string, slug: string): string {
     if (/^(?:[a-z][a-z0-9+.-]*:|#|\/)/i.test(href)) return match;
     const target = new URL(href, source);
     if (target.origin !== REPO.origin) return match;
-    const doc = /^\/docs\/([\w-]+)\.md$/.exec(target.pathname)?.[1];
+    const doc = /^\/docs\/([\w/-]+)\.md$/.exec(target.pathname)?.[1];
     const resolved =
       doc && DOCS_SLUGS.includes(doc)
         ? `${docsPath(doc)}${target.hash}`

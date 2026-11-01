@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type {
   AdapterContext,
+  CommandRequest,
   ComputerAction,
   ComputerActionRequest,
   ComputerInput,
@@ -19,6 +20,7 @@ import {
   desktopUrl,
   managedDesktopCommand,
   releaseDesktopCommand,
+  screenDisplayArgv,
   screenPorts,
   shellQuote,
   stopAllDesktopBrowsersCommand,
@@ -51,6 +53,25 @@ export interface LinuxDesktopHost {
   screenUrl(computer: ComputerRef, port: number, context: AdapterContext): Promise<string>;
 }
 
+/** Point a bot's commands at its own screen, as Docker computers do, unless the caller chose a display. */
+export function onBotScreen(
+  request: CommandRequest,
+  context: AdapterContext,
+  displayStart: number,
+): CommandRequest {
+  if (
+    !context.botId ||
+    !request.argv.length ||
+    Object.hasOwn(request.env ?? {}, "DISPLAY") ||
+    request.unsetEnv?.includes("DISPLAY")
+  )
+    return request;
+  return {
+    ...request,
+    argv: screenDisplayArgv(request.argv, screenSessionKey(context), displayStart),
+  };
+}
+
 /** Provider SDKs supply only command execution, workspace paths, and protected port URLs. */
 export class LinuxDesktop {
   constructor(private readonly host: LinuxDesktopHost) {}
@@ -59,7 +80,13 @@ export class LinuxDesktop {
     context.signal.throwIfAborted();
     const result = await this.host.run(computer, command, context);
     if (result.code === 75) throw new ComputerScreenUnavailableError();
-    if (result.code !== 0) throw new Error(result.stderr || "computer desktop operation failed");
+    if (result.code !== 0) {
+      if (result.stderr?.trim()) throw new Error(result.stderr);
+      const output = result.stdout.trim().split("\n").at(-1)?.slice(0, 300);
+      throw new Error("computer desktop operation failed", {
+        cause: new Error(output ? `exit ${result.code}: ${output}` : `exit ${result.code}`),
+      });
+    }
     return result.stdout;
   }
 

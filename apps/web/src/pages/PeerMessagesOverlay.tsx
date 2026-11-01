@@ -12,11 +12,13 @@ import {
   Spinner,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
+import { XIcon } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { ArtifactFileCard } from "../components/ArtifactFileCard";
 import { desktopBridge } from "../lib/desktop";
 import { useSpaceQueries } from "../lib/query";
 import { rpc } from "../lib/rpc";
+import { TRANSCRIPT_CONTENT_PADDING } from "../lib/transcript-layout";
 import { transcriptIsNearEnd } from "../lib/transcript-scroll";
 import { ArtifactImage } from "./shell/message-cards";
 import { WindowChrome } from "./WindowChrome";
@@ -47,6 +49,7 @@ export function PeerMessagesOverlay({
   onClose: () => void;
 }) {
   const { t } = useLingui();
+  const desktop = desktopBridge();
   const queries = useSpaceQueries();
   const history = useQuery({
     queryKey: [
@@ -90,36 +93,42 @@ export function PeerMessagesOverlay({
         showCloseButton={false}
         className="inset-0 top-0 left-0 flex h-full w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 rounded-none bg-background p-0 text-foreground ring-0 sm:max-w-none"
       >
-        <div className="app-drag flex items-center justify-between gap-4 border-b border-sidebar-border px-[18px] py-3.5">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            {desktopBridge() ? <WindowChrome /> : null}
-            <DialogTitle
-              className="mx-auto flex min-w-0 items-center gap-2 rounded-full bg-muted px-4 py-2 text-[13px] font-medium"
-              dir="auto"
-            >
-              <BotAvatar avatarSet={botAvatarSet} color={botColor} identity={botId} size={20} />
-              <span className="truncate" style={{ color: botColor }}>
-                {botName}
-              </span>
-              <span className="text-muted-foreground" aria-hidden="true">
-                ⇄
-              </span>
-              <BotAvatar
-                avatarSet={peerBotAvatarSet}
-                color={peerBotColor}
-                identity={peerBotId}
-                size={20}
-              />
-              <span className="truncate" style={{ color: peerBotColor }}>
-                {peerBotName}
-              </span>
-            </DialogTitle>
-          </div>
-          <DialogClose
-            aria-label={t`Close Chat`}
-            render={<Button variant="ghost" size="sm" className="app-no-drag" />}
+        <div
+          className={`app-drag grid items-center gap-4 border-b border-sidebar-border px-[18px] py-3.5 ${
+            desktop
+              ? "grid-cols-[72px_minmax(0,1fr)_72px]"
+              : "grid-cols-[1.75rem_minmax(0,1fr)_1.75rem]"
+          }`}
+        >
+          <div>{desktop ? <WindowChrome /> : null}</div>
+          <DialogTitle
+            className="flex min-w-0 max-w-full items-center justify-self-center gap-2 rounded-full bg-muted px-4 py-2 text-[13px] font-medium"
+            dir="auto"
           >
-            <Trans>Close Chat</Trans>
+            <BotAvatar avatarSet={botAvatarSet} color={botColor} identity={botId} size={20} />
+            <span className="truncate" style={{ color: botColor }}>
+              {botName}
+            </span>
+            <span className="text-muted-foreground" aria-hidden="true">
+              ⇄
+            </span>
+            <BotAvatar
+              avatarSet={peerBotAvatarSet}
+              color={peerBotColor}
+              identity={peerBotId}
+              size={20}
+            />
+            <span className="truncate" style={{ color: peerBotColor }}>
+              {peerBotName}
+            </span>
+          </DialogTitle>
+          <DialogClose
+            aria-label={t`Close`}
+            render={
+              <Button variant="ghost" size="icon-sm" className="app-no-drag justify-self-end" />
+            }
+          >
+            <XIcon />
           </DialogClose>
         </div>
 
@@ -158,7 +167,7 @@ export function PeerMessagesOverlay({
             onScroll={(event) => {
               followingEnd.current = transcriptIsNearEnd(event.currentTarget);
             }}
-            className="rk-scroll flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4 py-5 md:px-7 md:py-6"
+            className={`rk-scroll flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto py-5 md:py-6 ${TRANSCRIPT_CONTENT_PADDING}`}
           >
             {conversation.messages.map((peerMessage, index) => {
               const sent = peerMessage.direction === "sent";

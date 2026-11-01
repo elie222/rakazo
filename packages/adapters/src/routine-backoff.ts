@@ -37,18 +37,16 @@ const ACCOUNT_REFUSAL_KINDS = new Set<RunErrorKind>([
 ]);
 
 /**
- * Whether the provider refused the account in a way that stays refused until the user acts.
- * Rate limits, timeouts, unusable output and limits that reset on a date do not count.
+ * Whether the provider refused the account in a way that stays refused until the user acts or
+ * until the reset it named, with that reset. Rate limits, timeouts, unusable output and periodic
+ * limits without a reset time do not count.
  */
-export function isModelAccountRefusal(error: unknown): boolean {
-  if (!(error instanceof ModelAccountError)) return false;
+export function modelAccountRefusal(error: unknown): { resetAt?: Date } | undefined {
+  if (!(error instanceof ModelAccountError)) return undefined;
   const { kind, period, resetAt } = normalizeRunError(error.message);
-  return (
-    kind !== undefined &&
-    ACCOUNT_REFUSAL_KINDS.has(kind) &&
-    (period === undefined || period === "none") &&
-    resetAt === undefined
-  );
+  if (kind === undefined || !ACCOUNT_REFUSAL_KINDS.has(kind)) return undefined;
+  if (resetAt !== undefined) return { resetAt: new Date(resetAt) };
+  return period === undefined || period === "none" ? {} : undefined;
 }
 
 export function routineAccountBackoffMs(failures: number): number {
@@ -61,17 +59,23 @@ export function routineAccountBackoffMs(failures: number): number {
 /**
  * A missing or refused model connection of the user's own fails every run the same way until
  * the user fixes it, so a frequent routine would keep firing against it. Push
- * its next run out by a gap that doubles with each such failure in a row.
+ * its next run out by a gap that doubles with each such failure in a row, or to the reset the
+ * provider named, at most a day away.
  */
 export async function backOffRoutineAfterAccountError(
   deps: RoutineBackoffDeps,
   routineId: string,
   now = new Date(),
+  resetAt?: Date,
 ): Promise<void> {
   await updateSchedule(deps, routineId, "routine.backoff", (routine) => {
     const accountFailures = routine.accountFailures + 1;
     if (!routine.active || !routine.nextRunAt) return { accountFailures };
-    const resumeAt = new Date(now.getTime() + routineAccountBackoffMs(accountFailures));
+    const resumeAt = new Date(
+      resetAt
+        ? Math.min(resetAt.getTime(), now.getTime() + ROUTINE_ACCOUNT_BACKOFF_MAX_MS)
+        : now.getTime() + routineAccountBackoffMs(accountFailures),
+    );
     if (routine.nextRunAt >= resumeAt) return { accountFailures };
     // A timer routine keeps its cadence after the gap; a change trigger just checks again then.
     const nextRunAt =

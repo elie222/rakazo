@@ -1,5 +1,9 @@
 import type { RunErrorKind } from "@rakazo/contracts";
-import { COMPUTER_RATE_LIMIT_ERROR } from "@rakazo/contracts";
+import {
+  COMPUTER_ALLOWANCE_USED_ERROR,
+  COMPUTER_RATE_LIMIT_ERROR,
+  providerQuotaResetAt,
+} from "@rakazo/contracts";
 import { stuckWorkStatusMessages } from "./stuck-work.js";
 
 export const MISSING_TOOL_FINAL_RESPONSE_ERROR =
@@ -17,6 +21,10 @@ export const MODEL_OUTPUT_CUT_ERROR = "The model hit its output limit before fin
 /** The bot's instructions and tools alone do not fit the selected model's context window. */
 export const MODEL_CONTEXT_TOO_SMALL_ERROR =
   "This model's context window is too small. Choose another model.";
+
+/** An MCP server asked to keep tool results whole, and one result still does not fit. */
+export const VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR =
+  "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.";
 
 /** The provider account's request budget cannot fit the agent's mandatory context. */
 export const MODEL_REQUEST_LIMIT_ERROR =
@@ -106,6 +114,7 @@ const APP_RUN_ERRORS = new Set([
   ...MODEL_CONNECTION_RUN_ERRORS,
   MODEL_ACCESS_REQUIRED_RUN_ERROR,
   COMPUTER_RATE_LIMIT_ERROR,
+  COMPUTER_ALLOWANCE_USED_ERROR,
   ...stuckWorkStatusMessages(),
 ]);
 
@@ -182,7 +191,10 @@ export function parseModelFallbackFailure(
  * reply. Never matched against model prose.
  */
 const MODEL_OUTPUT_FAILURE =
-  /^(?:Provider (?:finish_reason|stopped with): |Unhandled stop reason: |Provider returned an empty response\b|Failed to parse tool call arguments as JSON\b|Tool call validation failed\b|The model refused to complete the request\b|This request (?:triggered restrictions on [^\n.]{1,80} and )?was blocked (?:under|as it seems to violate) Anthropic's )/;
+  /^(?:Provider (?:finish_reason|stopped with): |Unhandled stop reason: |Provider returned an empty response\b|Failed to parse tool call arguments as JSON\b|[Tt]ool call validation failed\b|Parsing failed\. The model generated output that could not be parsed\b|Upstream request failed: \[api_error\] Upstream response was not valid JSON\b|The model refused to complete the request\b|(?:Codex error: )?This content was flagged for possible cybersecurity risk\b|This request (?:triggered restrictions on [^\n.]{1,80} and )?was blocked (?:under|as it seems to violate) Anthropic's )/;
+
+/** The provider cut off the model's reply, such as a half-written tool call, at its output limit. */
+const MODEL_OUTPUT_LIMIT_REACHED = /\bcut ?off by max_(?:completion_|output_)?tokens\b/i;
 
 /**
  * Fetch refuses to send a key that is not a valid header value, such as one pasted with a code
@@ -194,7 +206,7 @@ const MALFORMED_KEY_HEADER =
 
 /** The provider says the selected model is gone or cannot serve this kind of request. */
 const MODEL_UNAVAILABLE =
-  /^(?:unsupported|unknown|unrecognized)[ _-]model\b(?![ :]+(?:parameters?|fields?|options?|settings?)\b)|\bmodel\b(?:(?!\.\s)[\s\S]){0,80}?\b(?:not found|does not exist|unavailable|not available|not supported|isn['\u2019]t supported|(?:is|has been) deprecated|does(?: not|n['\u2019]t) support)\b|\bnot supported (?:with|by|for) (?:this|the) model\b|^feature 'tool calls' is not (?:currently )?supported\b/i;
+  /^(?:unsupported|unknown|unrecognized)[ _-]model\b(?![ :]+(?:parameters?|fields?|options?|settings?)\b)|\bmodel\b(?:(?!\.\s)[\s\S]){0,80}?\b(?:not found|does not exist|unavailable|not available|not supported|isn['\u2019]t supported|(?:is|has been) deprecated|does(?: not|n['\u2019]t) support|requires the use of)\b|\bnot supported (?:with|by|for) (?:this|the) model\b|^feature 'tool calls' is not (?:currently )?supported\b|^Invalid inference request\. Check the model's supported parameters\b/i;
 
 /**
  * Keep provider diagnostics available without exposing them in the visible summary. `recovery`
@@ -267,7 +279,11 @@ export function normalizeRunError(
       kind: "output",
     };
   }
-  if (trimmed === MODEL_CONTEXT_TOO_SMALL_ERROR || trimmed === MODEL_REQUEST_LIMIT_ERROR) {
+  if (
+    trimmed === MODEL_CONTEXT_TOO_SMALL_ERROR ||
+    trimmed === MODEL_REQUEST_LIMIT_ERROR ||
+    trimmed === VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR
+  ) {
     return {
       summary: translate(trimmed),
       details,
@@ -324,8 +340,11 @@ export function normalizeRunError(
     /insufficient[_ ](?:quota|balance)|credits?|funds|spend|budget|billing|openrouter_key_limit/i.test(
       signals,
     );
+  // A 429 that resets hours from now is a quota to wait out, not a short rate window.
+  const quotaResetAt = status === 429 ? providerQuotaResetAt(trimmed, now) : undefined;
   if (
     status !== 413 &&
+    quotaResetAt === undefined &&
     (status === 429 ||
       /rate[_ -]limit|too many requests|resource[_ ]?exhausted|request limit reached/i.test(
         signals,
@@ -337,6 +356,7 @@ export function normalizeRunError(
     summary = translate("{provider} is rate limiting requests. Try again shortly.", { provider });
   } else if (
     status === 402 ||
+    quotaResetAt !== undefined ||
     /\b(?:daily|weekly|monthly|usage)[\s\S]{0,30}limit|\b(?:quota|insufficient[_ ](?:quota|credits?|funds|balance)|credit[_ ]balance|(?:no|out of|more) credits?)\b|(?:key|credit|spend|spending|budget|billing)[\s\S]{0,40}(?:limit|exceed|exhaust|insufficient)|(?:limit|insufficient)[\s\S]{0,30}(?:credit|spend|budget)/i.test(
       signals,
     )
@@ -361,7 +381,7 @@ export function normalizeRunError(
         : /key[_ ]limit|\bkey\b[^.]{0,30}\blimit\b/i.test(signals)
     )
       ? "key"
-      : /credit|insufficient_quota/i.test(signals)
+      : /credit|insufficient_quota|free[_ -]tier/i.test(signals)
         ? "credit"
         : "spending";
     // A capped key is fixed by connecting another; an account out of money or quota is not, but
@@ -383,15 +403,18 @@ export function normalizeRunError(
         date.getTime() > now
       ) {
         resetAt = date.getTime();
-        summary = translate("{summary} Resets {date}.", {
-          summary,
-          date: new Intl.DateTimeFormat(locale, {
-            month: "short",
-            day: "numeric",
-            timeZone: "UTC",
-          }).format(date),
-        });
       }
+    }
+    resetAt ??= quotaResetAt;
+    if (resetAt !== undefined) {
+      summary = translate("{summary} Resets {date}.", {
+        summary,
+        date: new Intl.DateTimeFormat(locale, {
+          month: "short",
+          day: "numeric",
+          timeZone: "UTC",
+        }).format(resetAt),
+      });
     }
   } else if (
     typeof payload.param === "string" &&
@@ -403,7 +426,7 @@ export function normalizeRunError(
     summary = translate(MODEL_CONTEXT_TOO_SMALL_ERROR);
   } else if (
     status === 413 ||
-    /context[_ -](?:length|size|window)|maximum context|exceeds the model context|prompt is too long|too many tokens|request too large/i.test(
+    /context[_ -](?:length|size|window)|maximum context|exceeds the model context|prompt is too long|too many (?:tokens|images)|request too large/i.test(
       signals,
     )
   ) {
@@ -417,7 +440,7 @@ export function normalizeRunError(
   } else if (
     status === 401 ||
     ((status === 403 ||
-      /(?:invalid|incorrect)[_ -](?:api[_ -])?key|api[_ -]?key[_ -](?:invalid|expired)|authentication_error|\bauthentication token (?:has|is) expired\b|\binvalidated oauth token\b/i.test(
+      /(?:invalid|incorrect)[_ -](?:api[_ -])?key|api[_ -]?key[_ -](?:invalid|expired)|authentication_error|\bauthentication token (?:has|is) expired\b|\binvalidated oauth token\b|\bapi key is not scoped to a workspace\b/i.test(
         signals,
       )) &&
       /auth|unauthorized|invalid|key/i.test(signals))
@@ -469,7 +492,8 @@ export function normalizeRunError(
   } else if (
     trimmed === MODEL_OUTPUT_LIMIT_ERROR ||
     MODEL_OUTPUT_FAILURE.test(trimmed) ||
-    MODEL_OUTPUT_FAILURE.test(message)
+    MODEL_OUTPUT_FAILURE.test(message) ||
+    MODEL_OUTPUT_LIMIT_REACHED.test(message)
   ) {
     recovery = "model";
     kind = "output";

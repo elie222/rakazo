@@ -3,9 +3,9 @@
 # web: anything beyond the mobile app and agent notes. e2e: web, minus the worker and server
 # adapters, which the browser never loads. server (the Postgres journeys): web, minus www, docs/,
 # and the browser and desktop clients and their UI packages, which no journey loads.
-# native: the desktop app, the computer and sandbox adapters its native tests load, and core's
-# desktop runtime. compose: the Compose files the Postgres upgrade drill copies. CI itself, the root
-# manifest and the lockfile count for every area. Any other file, shared packages included, counts
+# native: the desktop app, the computer, screen and sandbox adapters its native tests load, and
+# core's desktop runtime. compose: the Compose files the Postgres upgrade drill copies. CI itself,
+# the root manifest and the lockfile count for every area. Any other file, shared packages included, counts
 # for web, e2e and server. all_packages: a change outside the workspace packages (root config, CI,
 # scripts, infra, a package manifest) that typecheck and unit tests cannot trace through the package
 # graph, so they run for every package; docs, agent notes and root markdown do not count. Renames
@@ -36,7 +36,7 @@ while IFS= read -r file; do
       ;;
     apps/desktop/* | scripts/pnpm*.mjs | packages/adapter-kit/* | packages/core/src/node/* | \
       packages/adapters/src/*computer* | packages/adapters/src/*desktop* | \
-      packages/adapters/src/*sandbox* | packages/adapters/src/host-* | \
+      packages/adapters/src/*sandbox* | packages/adapters/src/*host-* | \
       packages/adapters/src/home* | packages/adapters/src/native-shell* | \
       packages/adapters/src/page-browser*)
       native=true

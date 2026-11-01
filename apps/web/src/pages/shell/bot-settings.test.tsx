@@ -30,6 +30,9 @@ vi.mock("@lingui/react/macro", () => {
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 vi.mock("@rakazo/ui-web", () => ({
+  SectionHeading: ({ variant, ...props }: ComponentProps<"h3"> & { variant?: string }) => (
+    <h3 data-variant={variant} {...props} />
+  ),
   Button: ({
     variant: _variant,
     size: _size,
@@ -64,6 +67,20 @@ vi.mock("@rakazo/ui-web", () => ({
     onPressedChange?: (pressed: boolean) => void;
     variant?: string;
   }) => <button type="button" {...props} />,
+  Tabs: ({
+    value: _value,
+    onValueChange: _onValueChange,
+    ...props
+  }: ComponentProps<"div"> & { value?: string; onValueChange?: (value: string) => void }) => (
+    <div {...props} />
+  ),
+  TabsList: (props: ComponentProps<"div">) => <div role="tablist" {...props} />,
+  TabsTrigger: ({ value: _value, ...props }: ComponentProps<"button"> & { value: string }) => (
+    <button type="button" role="tab" {...props} />
+  ),
+  TabsContent: ({ value: _value, ...props }: ComponentProps<"div"> & { value: string }) => (
+    <div {...props} />
+  ),
 }));
 vi.mock("../ScratchpadSection", () => ({ ScratchpadSection: () => null }));
 vi.mock("../KnowledgeSection", () => ({ KnowledgeSection: () => null }));
@@ -172,11 +189,6 @@ describe("BotSettings help", () => {
   it("shows the management subtitle without changing the management switch", async () => {
     const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async () => undefined);
     await renderSettings(onSave, { ...bot, fleetManagement: false });
-    const advanced = container.querySelector<HTMLButtonElement>(
-      '[data-testid="bot-settings-advanced"] button[aria-expanded]',
-    );
-
-    expect(advanced?.getAttribute("aria-expanded")).toBe("true");
     const label = [...container.querySelectorAll("label")].find(
       (entry) => entry.textContent === "Manage the bots it creates",
     );
@@ -467,35 +479,19 @@ it("uses section headings without repeating notification or model row labels", a
     (node) => node.textContent === "Notifications",
   );
   expect(heading).toBeDefined();
-  expect(heading?.className).toContain("mb-2 text-xs font-medium text-muted-foreground");
+  expect(heading?.dataset.variant).toBe("label");
   const notification = container.querySelector('label[id$="-notify-finish-label"]');
   expect(notification?.textContent?.trim()).toBe("When it finishes or needs input");
   const model = container.querySelector('label[for$="-model"]');
   expect(model?.className).toBe("sr-only");
 });
 
-it("renders Advanced as a muted unfilled disclosure with an expanded state", async () => {
-  await renderSettings(vi.fn(async () => undefined));
-  const trigger = container.querySelector<HTMLButtonElement>(
-    '[data-testid="bot-settings-advanced"] button[aria-expanded]',
-  )!;
-  expect(trigger.className).toContain("text-xs font-medium text-muted-foreground");
-  expect(trigger.className).not.toMatch(/bg-muted|rounded-xl|px-4|text-sm/);
-  expect(trigger.querySelector("svg")?.getAttribute("class")).toContain(
-    "group-aria-expanded:rotate-0",
-  );
-  await act(async () => trigger.click());
-  expect(trigger.getAttribute("aria-expanded")).toBe("false");
-  await act(async () => trigger.click());
-  expect(trigger.getAttribute("aria-expanded")).toBe("true");
-});
-
-it("keeps cross-space communication off until explicitly enabled", async () => {
+it("treats cross-space communication as on unless turned off", async () => {
   const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async () => undefined);
   await renderSettings(onSave);
   const toggle = container.querySelector<HTMLButtonElement>('[id$="-cross-space"]');
-  expect(toggle?.getAttribute("aria-checked")).toBe("false");
+  expect(toggle?.getAttribute("aria-checked")).toBe("true");
   await act(async () => toggle?.click());
   await flush();
-  expect(onSave).toHaveBeenCalledWith({ crossSpaceCommunication: true });
+  expect(onSave).toHaveBeenCalledWith({ crossSpaceCommunication: false });
 });

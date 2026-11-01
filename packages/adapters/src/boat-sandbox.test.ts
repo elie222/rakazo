@@ -10,6 +10,7 @@ import {
   SandboxUnresponsiveError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
+import { screenDisplayArgv, shellQuote } from "@rakazo/core/node/desktop-runtime";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { parse } from "shell-quote";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -213,7 +214,7 @@ describe("BoatSandboxProvider", () => {
       .find((request) => request?.command.includes("hello"));
     expect(executeRequest?.command).not.toContain("works");
     expect(parse(executeRequest?.command ?? "").at(-1)).toMatch(
-      /; 'env' '-u' 'FAILED' '--' 'echo' 'hello'$/,
+      /; 'env' '-u' 'FAILED' '--' 'sh' '-c' '.*' 'sh' 'echo' 'hello'$/s,
     );
     expect(executeRequest?.cwd).toBe("rakazo-home/notes");
 
@@ -264,7 +265,7 @@ describe("BoatSandboxProvider", () => {
     // The same command opens, deletes, and loads the file before running argv.
     const run = parse(commands.find((text) => text.includes(envFile)) ?? "").at(-1);
     expect(run).toBe(
-      `exec 3< '${envFile}' || exit 1; rm -f -- '${envFile}'; . /dev/fd/3 || exit 1; exec 3<&-; 'printenv' 'FAKE_TOKEN'`,
+      `exec 3< '${envFile}' || exit 1; rm -f -- '${envFile}'; . /dev/fd/3 || exit 1; exec 3<&-; ${screenDisplayArgv(["printenv", "FAKE_TOKEN"], context.botId, 20).map(shellQuote).join(" ")}`,
     );
     expect(api.files(computer.id).has(envFile)).toBe(false);
   });
@@ -284,6 +285,54 @@ describe("BoatSandboxProvider", () => {
     await expect(run()).rejects.toThrow("invalid environment variable name");
     expect(writeFile).not.toHaveBeenCalled();
     expect(command).not.toHaveBeenCalled();
+  });
+
+  it("reports a timed out command that has no env file", async () => {
+    const command = FakeBoatApi.prototype.command;
+    vi.spyOn(FakeBoatApi.prototype, "command").mockImplementation(async function (
+      this: FakeBoatApi,
+      request,
+    ) {
+      const text = request.commandRequest.command;
+      // The command is still running when its timeout fires, so it never marks itself done.
+      if (text.startsWith("test -f") && text.includes("completed-124")) {
+        return {
+          ok: true,
+          type: "command.finished",
+          success: false,
+          exitCode: 1,
+          stdout: "",
+          stderr: "",
+          timedOut: false,
+        };
+      }
+      return text.includes("still-working")
+        ? {
+            ok: true,
+            type: "command.finished",
+            success: false,
+            exitCode: 124,
+            stdout: "",
+            stderr: "",
+            timedOut: false,
+          }
+        : command.call(this, request);
+    });
+    const { provider, computer } = await boat();
+
+    const events = [];
+    for await (const event of provider.execute(
+      computer,
+      { argv: ["still-working"], timeoutMs: 1_000 },
+      context,
+    )) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { type: "stderr", data: "command timed out after 1000 ms\n" },
+      { type: "exit", code: 124 },
+    ]);
   });
 
   it("removes the env file when the command never starts", async () => {
@@ -837,7 +886,9 @@ describe("BoatSandboxProvider", () => {
       const { api, provider, computer } = await boat();
       api.damage(computer.id);
 
-      await expect(provider.stop(computer, context)).rejects.toThrow("did not reach archived");
+      const stopped = provider.stop(computer, context);
+      await expect(stopped).rejects.toBeInstanceOf(SandboxUnresponsiveError);
+      await expect(stopped).rejects.toThrow("did not reach archived");
 
       expect(stop).toHaveBeenCalledExactlyOnceWith(
         { sandboxId: computer.id },

@@ -5,22 +5,27 @@ import type { PrismaClient } from "./generated/prisma/client.js";
  * How a computer run ended.
  * - `stopped`: stopped on request (the stop button, a computer switch, an archived bot).
  * - `idle` / `active_limit`: idle shutdown, or the cap on one continuous stretch.
+ * - `allowance`: its organization spent the month's computer allowance.
  * - `replaced`: torn down by update, recovery or reset; the replacement starts a new run.
- * - `gone`: the provider had already stopped or lost the sandbox. The end is when Rakazo noticed.
+ * - `gone`: the provider had already stopped or lost the sandbox.
  * - `deleted`: destroyed with its computer, bot, space or account.
  * - `reconciled`: the end was never seen; a later start or the reconciler found the computer
- *   no longer running. The end is when that was detected.
+ *   no longer running.
+ *
+ * A `gone` or `reconciled` end, noticed only later, is the run's `lastSeenAt` when there is one,
+ * else when it was noticed.
  */
 export type ComputerRunEnd =
   | "stopped"
   | "idle"
   | "active_limit"
+  | "allowance"
   | "replaced"
   | "gone"
   | "deleted"
   | "reconciled";
 
-type RunsClient = Pick<PrismaClient, "computerRun">;
+type RunsClient = Pick<PrismaClient, "computerRun" | "$executeRaw">;
 
 /**
  * Records the run that began at the computer's `runningSince`, and closes an earlier run whose
@@ -42,10 +47,11 @@ export async function recordComputerRunStart(
   // Host computers run on the user's own machine, and Electron, not Rakazo, sees them stop.
   if (computer.kind === "desktop") return;
   try {
-    await prisma.computerRun.updateMany({
-      where: { computerId: computer.id, endedAt: null, startedAt: { lt: startedAt } },
-      data: { endedAt: startedAt, endReason: previousEnd },
-    });
+    await prisma.$executeRaw`
+      UPDATE "computer_runs"
+      SET "endedAt" = COALESCE("lastSeenAt", ${startedAt}::timestamp(3)), "endReason" = ${previousEnd}
+      WHERE "computerId" = ${computer.id} AND "endedAt" IS NULL
+        AND "startedAt" < ${startedAt}::timestamp(3)`;
     await prisma.computerRun.createMany({
       data: [
         {
@@ -65,6 +71,29 @@ export async function recordComputerRunStart(
       transition: "start",
     });
   }
+  await recordComputerRunSeen(prisma, { id: computer.id, runningSince: startedAt });
+}
+
+/**
+ * Notes that the stretch that began at `runningSince` was just seen running, so an end noticed
+ * only later is placed here rather than at the moment it was noticed. Never fails its caller.
+ */
+export async function recordComputerRunSeen(
+  prisma: RunsClient,
+  computer: { id: string; runningSince?: Date | null },
+): Promise<void> {
+  if (!computer.runningSince) return;
+  try {
+    await prisma.computerRun.updateMany({
+      where: { computerId: computer.id, startedAt: computer.runningSince, endedAt: null },
+      data: { lastSeenAt: new Date() },
+    });
+  } catch (error) {
+    getLogger().error("computer.run_record_failed", error, {
+      "computer.id": computer.id,
+      transition: "seen",
+    });
+  }
 }
 
 /**
@@ -80,6 +109,17 @@ export async function recordComputerRunEnd(
 ): Promise<void> {
   const endedAt = new Date();
   try {
+    if (reason === "gone") {
+      const runningSince = computer.runningSince ?? null;
+      await prisma.$executeRaw`
+        UPDATE "computer_runs"
+        SET "endedAt" = COALESCE("lastSeenAt", ${endedAt}::timestamp(3)), "endReason" = ${reason}
+        WHERE "computerId" = ${computer.id} AND "endedAt" IS NULL
+          AND CASE WHEN ${runningSince}::timestamp(3) IS NULL
+            THEN "startedAt" <= ${endedAt}::timestamp(3)
+            ELSE "startedAt" = ${runningSince}::timestamp(3) END`;
+      return;
+    }
     await prisma.computerRun.updateMany({
       where: {
         computerId: computer.id,
@@ -109,7 +149,8 @@ export async function reconcileComputerRuns(
 ): Promise<void> {
   await prisma.$executeRaw`
     UPDATE "computer_runs" AS r
-    SET "endedAt" = GREATEST(${now}::timestamp(3), r."startedAt"),
+    SET "endedAt" = CASE WHEN c."id" IS NULL THEN ${now}::timestamp(3)
+          ELSE GREATEST(COALESCE(r."lastSeenAt", ${now}::timestamp(3)), r."startedAt") END,
         "endReason" = CASE WHEN c."id" IS NULL THEN 'deleted' ELSE 'reconciled' END
     FROM "computer_runs" AS o
     LEFT JOIN "computers" AS c ON c."id" = o."computerId"
@@ -121,10 +162,10 @@ export async function reconcileComputerRuns(
         OR c."runningSince" IS DISTINCT FROM o."startedAt"
       )`;
   // A booting computer may still carry the start of its previous stretch, so only rows that
-  // finished starting count. Host computers are never recorded (see recordComputerRunStart).
+  // finished starting count. The start is the one time it was seen; this pass reads only the row. Host computers are never recorded (see recordComputerRunStart).
   await prisma.$executeRaw`
-    INSERT INTO "computer_runs" ("id", "computerId", "spaceId", "userId", "kind", "providerRef", "startedAt")
-    SELECT gen_random_uuid()::text, c."id", c."spaceId", c."userId", c."kind", c."providerRef", c."runningSince"
+    INSERT INTO "computer_runs" ("id", "computerId", "spaceId", "userId", "kind", "providerRef", "startedAt", "lastSeenAt")
+    SELECT gen_random_uuid()::text, c."id", c."spaceId", c."userId", c."kind", c."providerRef", c."runningSince", c."runningSince"
     FROM "computers" AS c
     WHERE c."state" IN ('running', 'suspending')
       AND c."runningSince" IS NOT NULL

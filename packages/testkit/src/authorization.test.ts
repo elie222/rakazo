@@ -80,6 +80,103 @@ describeWithDatabase("API authorization and resource isolation", () => {
     rmSync(dataDir, { recursive: true, force: true });
   });
 
+  it("keeps another member's routine test run keys apart from a send's", async () => {
+    const owner = await signup(app, `routine-keys-owner-${stamp}@rakazo.test`, "Owner");
+    const peer = await signup(app, `routine-keys-peer-${stamp}@rakazo.test`, "Peer");
+    const ownerActor = await rpc<Actor>(app, owner, "me");
+    const peerActor = await rpc<Actor>(app, peer, "me");
+    const space = await db.space.findUniqueOrThrow({ where: { id: ownerActor.spaceId } });
+    await db.member.create({
+      data: {
+        id: `routine-keys-member-${stamp}`,
+        organizationId: space.organizationId,
+        userId: peerActor.userId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+    const ownBot = await rpc<Bot>(app, owner, "bots/create", botInput("Own"), space.id);
+    const peerBot = await rpc<Bot>(app, peer, "bots/create", botInput("Peer"), space.id);
+    const own = await rpc<{ id: string }>(
+      app,
+      owner,
+      "routines/create",
+      routineInput(ownBot.id),
+      space.id,
+    );
+    const peers = await rpc<{ id: string }>(
+      app,
+      peer,
+      "routines/create",
+      routineInput(peerBot.id),
+      space.id,
+    );
+    const clientNonce = `routine-keys-${stamp}`;
+    // The peer test-runs their own routine under the key the owner's send will use.
+    await rpc(
+      app,
+      peer,
+      "routines/testRun",
+      { routineId: peers.id, clientNonce: `routine-mention:${clientNonce}:${own.id}` },
+      space.id,
+    );
+
+    const sent = await rpc<{ routineRunIds: string[] }>(
+      app,
+      owner,
+      "threads/sendWithRoutines",
+      { botId: ownBot.id, clientNonce, routineIds: [own.id] },
+      space.id,
+    );
+
+    expect(sent.routineRunIds).toHaveLength(1);
+    expect(await db.run.findUniqueOrThrow({ where: { id: sent.routineRunIds[0] } })).toMatchObject({
+      routineId: own.id,
+      userId: ownerActor.userId,
+    });
+
+    // The previous release stored `routine-test:<client nonce>` as given, so the peer could write
+    // a key shaped like the owner's. That run must not become the owner's receipt.
+    const later = `routine-keys-legacy-${stamp}`;
+    const peerThread = await db.thread.findUniqueOrThrow({ where: { botId: peerBot.id } });
+    const task = await db.task.create({
+      data: {
+        spaceId: space.id,
+        botId: peerBot.id,
+        threadId: peerThread.id,
+        userId: peerActor.userId,
+        prompt: "Peer routine",
+        status: "queued",
+      },
+    });
+    await db.run.create({
+      data: {
+        spaceId: space.id,
+        botId: peerBot.id,
+        threadId: peerThread.id,
+        taskId: task.id,
+        userId: peerActor.userId,
+        status: "queued",
+        trigger: "routine",
+        routineId: peers.id,
+        clientNonce: `routine-test:${ownerActor.userId}:routine-mention:${later}:${own.id}`,
+      },
+    });
+    const withText = await rpc<{ routineRunIds: string[]; send?: { runId: string } }>(
+      app,
+      owner,
+      "threads/sendWithRoutines",
+      { botId: ownBot.id, clientNonce: later, text: "and the notes", routineIds: [own.id] },
+      space.id,
+    );
+    expect(withText.send).toBeDefined();
+    expect(await db.message.count({ where: { clientNonce: later } })).toBe(1);
+    expect(withText.routineRunIds).toHaveLength(1);
+    expect(
+      await db.run.findUniqueOrThrow({ where: { id: withText.routineRunIds[0] } }),
+    ).toMatchObject({ routineId: own.id, userId: ownerActor.userId });
+  });
+
   it("batches routine mentions with the same user, space and archive isolation as per-bot reads", async () => {
     const owner = await signup(app, `routine-mentions-owner-${stamp}@rakazo.test`, "Owner");
     const peer = await signup(app, `routine-mentions-peer-${stamp}@rakazo.test`, "Peer");
@@ -210,6 +307,10 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["threads/subscribe", { botId: "missing-bot", cursor: -1 }],
       ["threads/send", { botId: "missing-bot", text: "Nope" }],
       ["threads/send", { groupId: "missing-group", text: "Nope" }],
+      [
+        "threads/sendWithRoutines",
+        { botId: "missing-bot", clientNonce: "nope", routineIds: ["missing-routine"] },
+      ],
       ["threads/stop", { botId: "missing-bot" }],
       ["threads/clear", { botId: "missing-bot" }],
       ["threads/followUp", { botId: "missing-bot", text: "Nope" }],
@@ -305,13 +406,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["connections/rename"],
       ["connections/tools"],
       ["approvalRules/list"],
-      [
-        "approvalRules/preview",
-        { id: "missing-rule", effect: "remove", sample: { tools: [{ name: "send_email" }] } },
-      ],
       ["approvalRules/set", { effect: "deny", matchKind: "tool", matchValue: "gmail_send_email" }],
       ["approvalRules/remove", { id: "missing-rule" }],
-      ["approvalRules/preview"],
       ["artifacts/list", { botId: "missing-bot" }],
       ["artifacts/listSpace"],
       ["artifacts/listVersions"],
@@ -347,10 +443,14 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["billing/checkout"],
       ["billing/portal"],
       ["billing/claimReferral"],
+      ["accessGrants/list"],
+      ["accessGrants/create"],
+      ["accessGrants/revoke"],
       ["preferences/update"],
       ["preferences/adoptTimezone"],
       ["bootstrap"],
       ["security/events"],
+      ["audit/events"],
       ["boards/list"],
       ["boards/get"],
       ["boards/rename"],
@@ -373,6 +473,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["mcp/servers/update"],
       ["mcp/servers/remove"],
       ["mcp/servers/test"],
+      ["mcp/servers/agents"],
       ["mcp/assignments/list"],
       ["mcp/assignments/all"],
       ["mcp/assignments/approve"],
@@ -391,6 +492,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["integrationSetup/save"],
       ["messaging/installations/list"],
       ["messaging/installations/start"],
+      ["messaging/installations/complete", { state: "state", code: "code" }],
       ["messaging/installations/remove"],
       ["messaging/status"],
       ["messaging/link/start"],
@@ -632,6 +734,19 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["routines/update", { routineId: ownerRoutine.id, name: "Stolen Routine" }],
       ["routines/remove", { routineId: ownerRoutine.id }],
       ["routines/testRun", { routineId: ownerRoutine.id }],
+      [
+        "threads/sendWithRoutines",
+        { botId: intruderBot.id, clientNonce: "stolen", routineIds: [ownerRoutine.id] },
+      ],
+      [
+        "threads/sendWithRoutines",
+        {
+          botId: intruderBot.id,
+          clientNonce: "stolen-text",
+          text: "intruder message",
+          routineIds: [ownerRoutine.id],
+        },
+      ],
       ["scratchpad/update", { itemId: ownerScratchpad.id, title: "Stolen item" }],
       ["scratchpad/remove", { itemId: ownerScratchpad.id }],
       ["skills/get", { skillId: ownerSkill.id }],
@@ -1010,22 +1125,6 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(await rpc<Array<{ id: string }>>(app, member, "approvalRules/list")).toEqual([
       expect.objectContaining({ id: memberRule.id }),
     ]);
-
-    const candidate = {
-      scope: "account",
-      id: ownerRule.id,
-      effect: "deny",
-      sample: { tools: [{ name: "destination.write" }] },
-    };
-    expect(await rpc(app, owner, "approvalRules/preview", candidate)).toEqual({
-      before: "always_allow",
-      after: "deny",
-    });
-    const foreignPreview = await raw(app, member, "approvalRules/preview", candidate);
-    expect(foreignPreview.status).toBe(404);
-    expect(
-      await rpc<Array<{ id: string; effect: string }>>(app, owner, "approvalRules/list"),
-    ).toEqual([expect.objectContaining({ id: ownerRule.id, effect: "always_allow" })]);
 
     await rpc(app, member, "approvalRules/remove", { id: ownerRule.id });
     expect(
@@ -2205,6 +2304,32 @@ describeWithDatabase("API authorization and resource isolation", () => {
     });
     expect(deleted.status).toBe(400);
     expect(await handles.prisma.user.findUnique({ where: { email } })).not.toBeNull();
+  });
+
+  it("shows an organization's audit log only to its owners and admins, past deleted spaces", async () => {
+    const owner = await signup(app, `audit-owner-${stamp}@rakazo.test`, "Audit Owner");
+    const outsider = await signup(app, `audit-outsider-${stamp}@rakazo.test`, "Audit Outsider");
+    const account = await rpc<Actor>(app, owner, "me");
+    const space = await rpc<Space>(app, owner, "spaces/create", { name: "Client A" });
+    await rpc(app, owner, "spaces/remove", { spaceId: space.id });
+
+    type Page = { events: Array<{ action: string; spaceName: string | null }> };
+    const actions = (page: Page) => page.events.map((event) => event.action);
+    const ownLog = await rpc<Page>(app, owner, "audit/events", { spaceId: space.id });
+    expect(actions(ownLog)).toEqual(["space.deleted", "space.created"]);
+    expect(ownLog.events[0]?.spaceName).toBe("Client A");
+    expect(actions(await rpc<Page>(app, outsider, "audit/events", { spaceId: space.id }))).toEqual(
+      [],
+    );
+    const exported = await app.request("/api/audit-events/export", { headers: { cookie: owner } });
+    expect(exported.status).toBe(200);
+    expect(await exported.text()).toContain('"action":"space.created"');
+
+    await db.member.updateMany({ where: { userId: account.userId }, data: { role: "member" } });
+    await expectForbidden(app, owner, "audit/events", {});
+    expect(
+      (await app.request("/api/audit-events/export", { headers: { cookie: owner } })).status,
+    ).toBe(403);
   });
 
   it("denies server administration to every app account, including a stored former owner", async () => {

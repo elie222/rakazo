@@ -60,7 +60,8 @@ export class MessagingInstallations implements MessagingInstallationStore {
     });
   }
 
-  async complete(state: string, code: string): Promise<void> {
+  /** Only the user who started it may finish, so a forwarded authorize link cannot attach their workspace. */
+  async complete(actor: Actor, state: string, code: string): Promise<void> {
     if (!/^[A-Za-z0-9_-]{43}$/.test(state) || !code || code.length > 4096)
       throw new Error("Invalid authorization");
     await runAsSystem("complete messaging workspace installation", async () => {
@@ -69,6 +70,7 @@ export class MessagingInstallations implements MessagingInstallationStore {
       });
       if (
         !session ||
+        session.userId !== actor.userId ||
         session.provider !== this.provider.provider ||
         session.expiresAt <= new Date()
       )

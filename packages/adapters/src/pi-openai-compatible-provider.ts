@@ -2,7 +2,10 @@ import { lookup } from "node:dns/promises";
 import type { LookupFunction } from "node:net";
 import type { Model, MutableModels, Provider, ProviderStreams } from "@earendil-works/pi-ai";
 import { createProvider } from "@earendil-works/pi-ai";
+import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
+import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
+import type { ModelApiProtocol } from "@rakazo/contracts";
 import {
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
@@ -58,6 +61,8 @@ function modelsProbeLimits(catalogProbe?: boolean): { maxBytes: number; maxModel
 }
 
 const OPENAI_COMPAT_BASE = "http://127.0.0.1:1/v1";
+/** The version the Anthropic SDK pins; mirrored by the keyless-server probe. */
+const ANTHROPIC_MESSAGES_VERSION = "2023-06-01";
 const resolveHostname: ResolveHostname = (hostname) =>
   lookup(hostname, { all: true, verbatim: true });
 
@@ -68,22 +73,36 @@ export function openAiCompatibleModel(
   acceptsImages = false,
   maxTokens = DEFAULT_MODEL_MAX_TOKENS,
   contextWindow = DEFAULT_MODEL_CONTEXT_WINDOW,
-): Model<"openai-completions"> {
+  apiProtocol: ModelApiProtocol = "chat-completions",
+): Model<"openai-completions" | "openai-responses" | "anthropic-messages"> {
   return {
     id,
     name: id,
-    api: "openai-completions",
+    api:
+      apiProtocol === "responses"
+        ? "openai-responses"
+        : apiProtocol === "anthropic-messages"
+          ? "anthropic-messages"
+          : "openai-completions",
     provider: OPENAI_COMPATIBLE_PROVIDER_ID,
-    baseUrl,
+    baseUrl: apiProtocol === "anthropic-messages" ? anthropicMessagesBaseUrl(baseUrl) : baseUrl,
     reasoning,
-    compat: {
-      // `store: false` is already the default, and Google's endpoint rejects the field.
-      supportsStore: false,
-      supportsDeveloperRole: false,
-      supportsReasoningEffort: reasoning,
-      thinkingFormat: "openai",
-    },
-    thinkingLevelMap: reasoning ? { off: "none", xhigh: "xhigh", max: "max" } : { off: "none" },
+    ...(apiProtocol === "anthropic-messages"
+      ? // The built-in Anthropic provider passes no level map either: pi-ai derives
+        // budget-based thinking from `reasoning` alone.
+        {}
+      : {
+          compat: {
+            // `store: false` is already the default, and Google's endpoint rejects the field.
+            supportsStore: false,
+            supportsDeveloperRole: false,
+            supportsReasoningEffort: reasoning,
+            thinkingFormat: "openai",
+          },
+          thinkingLevelMap: reasoning
+            ? { off: "none", xhigh: "xhigh", max: "max" }
+            : { off: "none" },
+        }),
     input: inputModalities(acceptsImages),
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow,
@@ -91,21 +110,36 @@ export function openAiCompatibleModel(
   };
 }
 
+/**
+ * The Anthropic SDK appends `/v1/messages` itself, so the endpoint it gets must
+ * not carry the `/v1` the normalized OpenAI-style base URL ends with.
+ */
+function anthropicMessagesBaseUrl(baseUrl: string): string {
+  const url = new URL(baseUrl);
+  url.pathname = url.pathname.replace(/\/v1\/*$/, "");
+  return url.toString().replace(/\/$/, "");
+}
+
 function openAiCompatibleProvider(
-  models: Model<"openai-completions">[],
+  models: Model<"openai-completions" | "openai-responses" | "anthropic-messages">[],
   policy: { allowPrivate?: boolean; headers?: Record<string, string> } = {},
 ): Provider {
-  const api = openAICompletionsApi();
+  const api = (protocol: string) =>
+    protocol === "openai-responses"
+      ? openAIResponsesApi()
+      : protocol === "anthropic-messages"
+        ? anthropicMessagesApi()
+        : openAICompletionsApi();
   // Guard the fetch the caller supplied (the runtime's seam for tests) or the
   // dispatcher-matched default; never the bare global.
   const safeApi: ProviderStreams = {
     stream: (model, context, options) =>
-      api.stream(model, context, {
+      api(model.api).stream(model, context, {
         ...options,
         fetch: createOpenAiCompatibleFetch(options?.fetch, undefined, policy),
       }),
     streamSimple: (model, context, options) =>
-      api.streamSimple(model, context, {
+      api(model.api).streamSimple(model, context, {
         ...options,
         fetch: createOpenAiCompatibleFetch(options?.fetch, undefined, policy),
       }),
@@ -162,22 +196,21 @@ export function createOpenAiCompatibleLookup(
   });
 }
 
+function isAuthHeader(name: string, value: string | null | undefined): boolean {
+  const lower = name.toLowerCase();
+  return (lower === "authorization" || lower === "x-api-key") && Boolean(value);
+}
+
 function headersCarryAuthorization(headers: HeadersInit): boolean {
-  if (headers instanceof Headers) return Boolean(headers.get("authorization"));
-  if (Array.isArray(headers)) {
-    return headers.some(
-      ([name, value]) => name.toLowerCase() === "authorization" && Boolean(value),
-    );
-  }
-  return Object.entries(headers).some(
-    ([name, value]) => name.toLowerCase() === "authorization" && Boolean(value),
-  );
+  const entries =
+    headers instanceof Headers || Array.isArray(headers) ? [...headers] : Object.entries(headers);
+  return entries.some(([name, value]) => isAuthHeader(name, value));
 }
 
 /** Matches fetch: when init.headers is set it replaces Request headers entirely. */
 function requestCarriesAuthorization(input: RequestInfo | URL, init?: RequestInit): boolean {
   if (init?.headers !== undefined) return headersCarryAuthorization(init.headers);
-  return input instanceof Request ? Boolean(input.headers.get("authorization")) : false;
+  return input instanceof Request ? headersCarryAuthorization(input.headers) : false;
 }
 
 export function createOpenAiCompatibleFetch(
@@ -326,6 +359,7 @@ export function registerOpenAiCompatibleRuntime(
   opts: {
     modelId: string;
     baseUrl: string;
+    apiProtocol?: ModelApiProtocol;
     headers?: Record<string, string>;
     reasoning?: boolean;
     acceptsImages?: boolean;
@@ -348,6 +382,7 @@ export function registerOpenAiCompatibleRuntime(
           acceptsImages,
           opts.maxTokens,
           opts.contextWindow,
+          opts.apiProtocol,
         ),
       ],
       { allowPrivate: opts.allowPrivate, headers: opts.headers },
@@ -491,7 +526,12 @@ export async function verifyOpenAiCompatibleApiKey(
 }
 
 export async function probeOpenAiCompatibleModels(
-  input: { baseUrl: string; apiKey?: string; headers?: Record<string, string> },
+  input: {
+    baseUrl: string;
+    apiKey?: string;
+    headers?: Record<string, string>;
+    apiProtocol?: ModelApiProtocol;
+  },
   fetchImpl?: typeof fetch,
   signal?: AbortSignal,
   opts?: OpenAiCompatibleUrlPolicy & { catalogProbe?: boolean },
@@ -508,7 +548,14 @@ export async function probeOpenAiCompatibleModels(
   const merged = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
   try {
     const headers: Record<string, string> = { Accept: "application/json" };
-    if (input.apiKey?.trim()) headers.Authorization = `Bearer ${input.apiKey.trim()}`;
+    // Anthropic Messages authenticates with its own headers, not a Bearer token;
+    // the version header is required even when the endpoint needs no key.
+    if (input.apiProtocol === "anthropic-messages") {
+      headers["anthropic-version"] = ANTHROPIC_MESSAGES_VERSION;
+      if (input.apiKey?.trim()) headers["x-api-key"] = input.apiKey.trim();
+    } else if (input.apiKey?.trim()) {
+      headers.Authorization = `Bearer ${input.apiKey.trim()}`;
+    }
     const safeFetch = createOpenAiCompatibleFetch(fetchImpl, undefined, {
       ...opts,
       headers: input.headers,

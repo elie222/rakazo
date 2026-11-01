@@ -97,7 +97,7 @@ describe("unsafe computer stop", () => {
     const fullInfo = vi
       .spyOn(DesktopSandbox, "getFullInfo")
       .mockImplementation(async () => ({ state: cloudState }));
-    const worker = createRunSandbox("novita", { novitaApiKey: "test-key", prisma });
+    const worker = await createRunSandbox("novita", { novitaApiKey: "test-key", prisma });
     const ref = await worker.provision({ botId: "bot", homePath: "/unused" }, context);
     const controller = new AbortController();
     const pending = (async () => {
@@ -115,7 +115,7 @@ describe("unsafe computer stop", () => {
     expect(cloudState).toBe("paused");
     expect(updateMany).toHaveBeenCalledOnce();
 
-    const api = createRunSandbox("novita", { novitaApiKey: "test-key", prisma });
+    const api = await createRunSandbox("novita", { novitaApiKey: "test-key", prisma });
     await expect(api.keepAlive!(ref)).rejects.toBeInstanceOf(SandboxNotFoundError);
     await expect(api.readFile(ref, "notes", context)).rejects.toThrow("paused");
     expect(fullInfo).toHaveBeenCalledOnce();

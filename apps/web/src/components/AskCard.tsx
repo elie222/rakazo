@@ -39,17 +39,20 @@ function formatAnsweredState(
   if (!approval) return answer === "approved" ? t`Sent` : selectedAskActionLabel(answer, actions);
   if (outcome === "created") return t`Created`;
   if (outcome === "cancelled") return t`Cancelled`;
-  if (answer === "allow") return allowsChat(actions) ? t`Allowed for this chat` : t`Allowed once`;
+  if (answer === "allow") return allowsSpace(actions) ? t`Allowed in this space` : t`Allowed once`;
   if (answer === "always") return t`Always allowed`;
   if (answer === "deny") return t`Denied`;
   return t`Answered: ${answer}`;
 }
 
-/** The server's label on the user's-computer approval, whose "allow" covers the rest of the chat. */
-const ALLOW_FOR_CHAT = "Allow for this chat";
+/**
+ * The server's labels on the user's-computer approval, whose "allow" covers the whole space. Cards
+ * from before it covered the space carry the older label.
+ */
+const ALLOW_IN_SPACE = new Set(["Allow in this space", "Allow for this chat"]);
 
-function allowsChat(actions: AskBlock["actions"]): boolean {
-  return actions?.some((action) => action.label === ALLOW_FOR_CHAT) ?? false;
+function allowsSpace(actions: AskBlock["actions"]): boolean {
+  return actions?.some((action) => ALLOW_IN_SPACE.has(action.label)) ?? false;
 }
 
 function approvalActionLabel(
@@ -60,7 +63,7 @@ function approvalActionLabel(
 ): string {
   if (outcome === "created") return t`Create space`;
   if (outcome === "cancelled") return t`Cancel`;
-  if (id === "allow") return fallback === ALLOW_FOR_CHAT ? t`Allow for this chat` : t`Allow once`;
+  if (id === "allow") return ALLOW_IN_SPACE.has(fallback) ? t`Allow in this space` : t`Allow once`;
   if (id === "always") return site ? t`Always allow ${site}` : t`Always allow this tool`;
   if (id === "deny") return t`Deny`;
   return fallback;
@@ -206,11 +209,34 @@ export function AskCard({
     }
   }
 
-  if (block.instructionUpdate?.undoVersionId)
+  const { instructionUpdate, settingsUpdate } = block;
+  const undo = instructionUpdate?.undoVersionId
+    ? {
+        label: t`Instructions updated`,
+        run: () =>
+          rpc.bots.restoreInstructions({
+            botId: instructionUpdate.botId,
+            versionId: instructionUpdate.undoVersionId!,
+            expectedInstructions: instructionUpdate.after,
+            undo: true,
+          }),
+      }
+    : settingsUpdate
+      ? {
+          label: t`Settings updated`,
+          run: () =>
+            rpc.bots.update({
+              botId: settingsUpdate.botId,
+              ...settingsUpdate.before,
+              expectedSettings: settingsUpdate.after,
+            }),
+        }
+      : undefined;
+  if (undo)
     return (
       <BuiCard className="px-5 py-4">
         <div className="flex items-center gap-2 text-sm">
-          <Trans>Instructions updated</Trans>
+          {undo.label}
           <Button
             variant="link"
             disabled={undone || submitting}
@@ -218,12 +244,7 @@ export function AskCard({
               setPendingAction("undo");
               setError(null);
               try {
-                await rpc.bots.restoreInstructions({
-                  botId: block.instructionUpdate!.botId,
-                  versionId: block.instructionUpdate!.undoVersionId!,
-                  expectedInstructions: block.instructionUpdate!.after,
-                  undo: true,
-                });
+                await undo.run();
                 setUndone(true);
               } catch (err) {
                 setError(errorText(err));

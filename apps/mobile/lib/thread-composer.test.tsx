@@ -3,7 +3,7 @@
 import { buildComposerMentionOptions } from "@rakazo/core";
 import { MAX_FONT_SCALE } from "@rakazo/ui-tokens";
 import type { ComponentProps, ReactNode, Ref } from "react";
-import { act, Children, createElement, createRef, isValidElement } from "react";
+import { act, Children, createElement, createRef, isValidElement, useMemo } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -26,6 +26,56 @@ vi.mock("./api", () => ({
   currentApiBase: () => "https://api.test",
   selectedSpaceId: () => "space-a",
 }));
+const files = vi.hoisted(() => new Map<string, string>());
+const disk = vi.hoisted(() => ({ writes: 0, full: false, moveFails: false }));
+const appState = vi.hoisted(() => ({ listeners: new Set<(state: string) => void>() }));
+vi.mock("expo-file-system", () => {
+  const path = (parts: unknown[]) => parts.map(String).join("/");
+  class Directory {
+    readonly uri: string;
+    constructor(...parts: unknown[]) {
+      this.uri = path(parts);
+    }
+    create() {}
+    toString() {
+      return this.uri;
+    }
+  }
+  class File {
+    readonly uri: string;
+    constructor(...parts: unknown[]) {
+      this.uri = path(parts);
+    }
+    get exists() {
+      return files.has(this.uri);
+    }
+    create() {
+      files.set(this.uri, "");
+    }
+    write(text: string) {
+      disk.writes += 1;
+      // A full disk leaves the file empty, as a failed native write would.
+      if (disk.full) throw new Error("No space left on device");
+      files.set(this.uri, text);
+    }
+    moveSync(destination: File) {
+      // Native replacement removes the destination first; a crash can stop it right there.
+      if (disk.moveFails) {
+        files.delete(destination.uri);
+        throw new Error("Move interrupted");
+      }
+      files.set(destination.uri, files.get(this.uri) ?? "");
+      files.delete(this.uri);
+    }
+    textSync() {
+      return files.get(this.uri) ?? "";
+    }
+    delete() {
+      files.delete(this.uri);
+    }
+  }
+  return { Directory, File, Paths: { cache: "cache" } };
+});
 vi.mock("./session", () => ({
   currentSessionGeneration: () => mentionApi.generation,
   subscribeSessionGeneration: () => () => {},
@@ -49,6 +99,12 @@ vi.mock("react-native", () => {
   }) =>
     createElement("div", { "data-testid": testID, "data-style": JSON.stringify(style) }, children);
   return {
+    AppState: {
+      addEventListener: (_type: string, listener: (state: string) => void) => {
+        appState.listeners.add(listener);
+        return { remove: () => appState.listeners.delete(listener) };
+      },
+    },
     useWindowDimensions: () => dimensions,
     View: Surface,
     ScrollView: Surface,
@@ -171,12 +227,31 @@ describe("thread composer isolation", () => {
   let container: HTMLDivElement;
   let threadRenders: number;
   const composer = createRef<ThreadComposerHandle>();
+  type HarnessProps = Partial<typeof props> & {
+    threadKey?: string;
+    userId?: string;
+    apiBase?: string;
+  };
   function ThreadHarness({
     threadKey = "bot-1",
+    userId = "user-a",
+    apiBase = "https://api.test",
     ...changes
-  }: Partial<typeof props> & { threadKey?: string }) {
+  }: HarnessProps) {
     threadRenders += 1;
-    return <ThreadComposer key={threadKey} ref={composer} {...props} {...changes} />;
+    const draftScope = useMemo(
+      () => ({ apiBase, userId, threadKey: `bot:${threadKey}` }),
+      [apiBase, userId, threadKey],
+    );
+    return (
+      <ThreadComposer
+        key={`${apiBase} ${userId} ${threadKey}`}
+        ref={composer}
+        {...props}
+        draftScope={draftScope}
+        {...changes}
+      />
+    );
   }
   const catalogBots = [{ id: "bot-1", name: "Bot" }];
   function MentionThreadHarness({ owner = "thread-a" }: { owner?: string }) {
@@ -197,7 +272,7 @@ describe("thread composer isolation", () => {
       />
     );
   }
-  function render(changes: Partial<typeof props> & { threadKey?: string } = {}) {
+  function render(changes: HarnessProps = {}) {
     act(() => root.render(<ThreadHarness {...changes} />));
   }
   function type(value: string) {
@@ -213,6 +288,11 @@ describe("thread composer isolation", () => {
     vi.clearAllMocks();
     dimensions.fontScale = 1;
     threadRenders = 0;
+    files.clear();
+    disk.writes = 0;
+    disk.full = false;
+    disk.moveFails = false;
+    appState.listeners.clear();
     mentionApi.generation = 1;
     mentionApi.rpc.mockReset().mockResolvedValue([]);
     mentionApi.capture.mockReset().mockImplementation(async () => ({
@@ -661,7 +741,7 @@ describe("thread composer isolation", () => {
     expect(mentionApi.rpc).toHaveBeenCalledTimes(3);
   });
 
-  it("preserves draft across reply, attachment, and sending updates and resets on thread switch", () => {
+  it("preserves draft across reply, attachment, and sending updates and keeps it per conversation", () => {
     type("Draft");
     render({
       replyTargetId: "reply-1",
@@ -681,7 +761,167 @@ describe("thread composer isolation", () => {
       mentions: [],
       skill: null,
     });
-    expect(container.querySelector("input")!.value).toBe("");
+    expect(field().value).toBe("");
+    render();
+    expect(composer.current!.snapshot().promptText).toBe("Draft");
+    expect(field().value).toBe("Draft");
+  });
+
+  it("restores a conversation's draft and its mentions when the user returns", () => {
+    type("Hello @He");
+    press("@{name}");
+    render({ threadKey: "bot-2" });
+    render();
+    expect(field().value).toBe("Hello @Helper ");
+    expect(composer.current!.snapshot().mentions).toEqual([bot]);
+  });
+
+  it("restores a draft after the app restarts", () => {
+    type("Unsent");
+    act(() => root.unmount());
+    root = createRoot(container);
+    render();
+    expect(field().value).toBe("Unsent");
+  });
+
+  it("keeps drafts apart for other accounts and servers", () => {
+    type("Account A");
+    render({ userId: "user-b" });
+    expect(field().value).toBe("");
+    render({ apiBase: "https://other.test" });
+    expect(field().value).toBe("");
+    render();
+    expect(field().value).toBe("Account A");
+  });
+
+  it("forgets the saved draft once a send resets the composer", () => {
+    type("Sent");
+    render({ threadKey: "bot-2" });
+    render();
+    expect(field().value).toBe("Sent");
+    act(() => composer.current!.reset());
+    render({ threadKey: "bot-2" });
+    render();
+    expect(field().value).toBe("");
+  });
+
+  it("keeps the saved draft when a later save fails", () => {
+    type("Saved");
+    render({ threadKey: "bot-2" });
+    render();
+    disk.full = true;
+    type("Saved and more");
+    render({ threadKey: "bot-2" });
+    disk.full = false;
+    render();
+    expect(field().value).toBe("Saved");
+  });
+
+  it("keeps the new draft when replacing the saved one is interrupted", () => {
+    type("First");
+    render({ threadKey: "bot-2" });
+    render();
+    disk.moveFails = true;
+    type("First and second");
+    render({ threadKey: "bot-2" });
+    disk.moveFails = false;
+    render();
+    expect(field().value).toBe("First and second");
+  });
+
+  it("forgets an interrupted replacement once the draft is sent", () => {
+    type("Draft");
+    disk.moveFails = true;
+    render({ threadKey: "bot-2" });
+    disk.moveFails = false;
+    render();
+    act(() => composer.current!.reset());
+    render({ threadKey: "bot-2" });
+    render();
+    expect(field().value).toBe("");
+  });
+
+  it("keeps a recovered draft when the next save after a restart fails", () => {
+    type("First");
+    render({ threadKey: "bot-2" });
+    render();
+    disk.moveFails = true;
+    type("Second");
+    render({ threadKey: "bot-2" });
+    disk.moveFails = false;
+    act(() => root.unmount());
+    root = createRoot(container);
+    render();
+    expect(field().value).toBe("Second");
+    disk.full = true;
+    render({ threadKey: "bot-2" });
+    disk.full = false;
+    render();
+    expect(field().value).toBe("Second");
+  });
+
+  it("saves the draft once typing pauses, not on every keystroke", () => {
+    vi.useFakeTimers();
+    try {
+      disk.writes = 0;
+      for (const text of ["H", "He", "Hel", "Hell", "Hello"]) type(text);
+      expect(disk.writes).toBe(0);
+      act(() => vi.advanceTimersByTime(1000));
+      expect(disk.writes).toBe(1);
+      render({ threadKey: "bot-2" });
+      render();
+      expect(field().value).toBe("Hello");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("saves a pending draft when the app goes to the background", () => {
+    vi.useFakeTimers();
+    try {
+      type("Backgrounded");
+      act(() => {
+        for (const listener of appState.listeners) listener("background");
+      });
+      expect(disk.writes).toBe(1);
+      act(() => root.unmount());
+      root = createRoot(container);
+      render();
+      expect(field().value).toBe("Backgrounded");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("retries a failed pause save when leaving the conversation", () => {
+    vi.useFakeTimers();
+    try {
+      type("Base");
+      act(() => vi.advanceTimersByTime(1000));
+      type("Newest");
+      disk.full = true;
+      act(() => vi.advanceTimersByTime(1000));
+      disk.full = false;
+      render({ threadKey: "bot-2" });
+      render();
+      expect(field().value).toBe("Newest");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not bring back a sent draft from a save still waiting to run", () => {
+    vi.useFakeTimers();
+    try {
+      type("Sent");
+      act(() => composer.current!.reset());
+      act(() => vi.advanceTimersByTime(1000));
+      render({ threadKey: "bot-2" });
+      render();
+      expect(field().value).toBe("");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps edits during send and clears an unchanged composition, including popovers", () => {

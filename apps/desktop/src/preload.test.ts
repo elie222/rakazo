@@ -48,10 +48,13 @@ describe("desktop preload bridge", () => {
       "badge",
       "computer",
       "device",
+      "menu",
+      "monitoring",
       "nativeWindowFrame",
       "oauth",
       "passkeys",
       "platform",
+      "settings",
       "update",
       "window",
     ]);
@@ -72,6 +75,7 @@ describe("desktop preload bridge", () => {
     expect(invoke).toHaveBeenCalledWith("desktop.device.setAllowed", true);
     await bridge.oauth.open?.("https://provider.example.com/authorize");
     await bridge.oauth.cancel?.("https://provider.example.com/authorize");
+    await bridge.monitoring?.enabled();
     await bridge.passkeys?.rpIds();
     await bridge.window.close();
     await bridge.window.minimize();
@@ -87,6 +91,7 @@ describe("desktop preload bridge", () => {
       "desktop.device.setAllowed",
       "desktop.oauth.open",
       "desktop.oauth.cancel",
+      "desktop.monitoring.enabled",
       "desktop.passkeys.rpIds",
       "desktop.window.close",
       "desktop.window.minimize",
@@ -117,6 +122,46 @@ describe("desktop preload bridge", () => {
 
     unsubscribe();
     expect(off).toHaveBeenCalledWith("desktop.oauth.callback", expect.any(Function));
+  });
+
+  it("opens settings from the menu signal without leaking the IPC event", () => {
+    const listeners: Array<() => void> = [];
+    const on = vi.fn((_channel: string, handler: () => void) => {
+      listeners.push(handler);
+    });
+    const off = vi.fn();
+    const { exposeInMainWorld } = runPreload("preload.cjs", { on, off });
+    const [, bridge] = exposeInMainWorld.mock.calls[0] as [string, RakazoDesktop];
+
+    const opened: string[] = [];
+    const unsubscribe = bridge.settings!.onOpen(() => opened.push("settings"));
+
+    expect(on).toHaveBeenCalledWith("desktop.settings.open", expect.any(Function));
+    listeners[0]?.();
+    expect(opened).toEqual(["settings"]);
+
+    unsubscribe();
+    expect(off).toHaveBeenCalledWith("desktop.settings.open", expect.any(Function));
+  });
+
+  it("forwards menu commands without leaking the IPC event", () => {
+    const listeners: Array<(event: unknown, command: unknown) => void> = [];
+    const on = vi.fn((_channel: string, handler: (event: unknown, command: unknown) => void) => {
+      listeners.push(handler);
+    });
+    const off = vi.fn();
+    const { exposeInMainWorld } = runPreload("preload.cjs", { on, off });
+    const [, bridge] = exposeInMainWorld.mock.calls[0] as [string, RakazoDesktop];
+
+    const received: unknown[] = [];
+    const unsubscribe = bridge.menu!.onCommand((command) => received.push(command));
+
+    expect(on).toHaveBeenCalledWith("desktop.menu.command", expect.any(Function));
+    listeners[0]?.({ sender: "ipc" }, "search");
+    expect(received).toEqual(["search"]);
+
+    unsubscribe();
+    expect(off).toHaveBeenCalledWith("desktop.menu.command", expect.any(Function));
   });
 
   it.each(["win32", "linux"])("offers system speech only on macOS (%s)", (platform) => {

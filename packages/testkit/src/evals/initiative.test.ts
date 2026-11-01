@@ -1,7 +1,7 @@
 import { ONCE_ROUTINE_CRON } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import type { Evidence } from "./cases.js";
-import { wakesRoutines } from "./cases.js";
+import { EMPTY_SETTINGS, wakesRoutines } from "./cases.js";
 import {
   INITIATIVE_EVAL_CASES,
   INITIATIVE_JUDGE_CALIBRATION,
@@ -44,6 +44,10 @@ function evidence(overrides: Partial<Evidence> = {}): Evidence {
     pendingApproval: null,
     priorMemory: "",
     toolNames: [],
+    toolCalls: [],
+    finalStep: 1,
+    settings: EMPTY_SETTINGS,
+    settingsBefore: EMPTY_SETTINGS,
     messaging: { originThreadId: null, outbound: [] },
     ...overrides,
   };

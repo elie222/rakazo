@@ -1061,4 +1061,82 @@ describe("executor paused transcript", () => {
       }
     },
   );
+  it("gates a deferred built-in run through use_tool like a direct call", async () => {
+    const args = { title: "Call the dentist" };
+    const toolResult = (
+      request: { messages: { role: string; tool_call_id?: string }[] },
+      id: string,
+    ) =>
+      JSON.stringify(
+        request.messages.find((message) => message.role === "tool" && message.tool_call_id === id),
+      );
+    const model = await startModelEmulator({
+      steps: [
+        {
+          expect(request) {
+            const names = request.tools?.map((tool) => tool.function.name);
+            expect(names).toEqual(expect.arrayContaining(["find_tool", "use_tool"]));
+            expect(names).not.toContain("scratchpad_add");
+          },
+          response: {
+            type: "tool",
+            id: "find",
+            name: "find_tool",
+            arguments: { query: "scratchpad add" },
+          },
+        },
+        {
+          expect(request) {
+            expect(toolResult(request, "find")).toContain("Short title for the item.");
+          },
+          response: {
+            type: "tool",
+            id: "unoffered",
+            name: "use_tool",
+            arguments: { name: "call_user", arguments: { reason: "Fixture" } },
+          },
+        },
+        {
+          expect(request) {
+            expect(toolResult(request, "unoffered")).toContain("call_user is not available");
+          },
+          response: {
+            type: "tool",
+            id: "pending",
+            name: "use_tool",
+            arguments: { name: "scratchpad_add", arguments: args },
+          },
+        },
+        {
+          expect(request) {
+            expect(toolResult(request, "pending")).toBeDefined();
+          },
+          response: { type: "text", text: "Done." },
+        },
+      ],
+    });
+    try {
+      const state = fixture(model.model, false, "scratchpad_add");
+      state.run.trigger = "user";
+      await state.executor.continueRun(state.run.id, "fixture-worker");
+      expect(state.pauseRunForInput).toHaveBeenCalledOnce();
+      const pending = state.effects.filter((effect) => effect.status === "intended");
+      expect(pending.map((effect) => effect.kind)).toEqual(["scratchpad_add"]);
+      expect(pending[0]!.request).toEqual(args);
+      expect(state.effects.some((effect) => effect.kind === "call_user")).toBe(false);
+      for (const effect of pending) effect.status = "approved";
+      state.run.status = "queued";
+      await state.executor.continueRun(state.run.id, "fixture-worker");
+      model.assertComplete();
+      expect(state.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(state.effects.find((effect) => effect.kind === "scratchpad_add")?.status).not.toBe(
+        "intended",
+      );
+      expect(state.finalizeRun).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: "completed" }),
+      );
+    } finally {
+      await model.close();
+    }
+  });
 });

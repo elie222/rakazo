@@ -1,7 +1,6 @@
-import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import type { PluginSubmission } from "@rakazo/contracts";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, makeAdmin, signup } from "./helpers";
 
 const LOGO = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#888"/></svg>`;
 
@@ -21,14 +20,6 @@ function submission(overrides: Partial<PluginSubmission>): PluginSubmission {
     reviewedAt: null,
     ...overrides,
   };
-}
-
-async function makeAdmin(route: Route, path: "me" | "bootstrap") {
-  const response = await route.fetch();
-  const body = (await response.json()) as { json?: Record<string, unknown> };
-  const me = path === "me" ? body.json : (body.json?.me as Record<string, unknown> | undefined);
-  if (me) me.isAdmin = true;
-  await route.fulfill({ response, json: body });
 }
 
 test("an admin reviews plugin submissions from the emailed admin link", async ({

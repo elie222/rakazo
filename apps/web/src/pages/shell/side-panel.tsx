@@ -7,7 +7,7 @@ import type {
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
-import { Monitor, Settings, X } from "lucide-react";
+import { X } from "lucide-react";
 import type { ComponentProps, Dispatch, ReactNode, SetStateAction } from "react";
 import { ComputerMaintenanceActions } from "../../components/ComputerMaintenanceActions";
 import type { Panel } from "../../lib/right-panel-state";
@@ -18,10 +18,11 @@ import { ResizableSidePanel } from "../ResizableSidePanel";
 import { RoutineEditor } from "../RoutineEditor";
 import type { SettingsSection } from "../shell-overlay";
 import { AgentImportForm } from "./agent-import";
+import type { BotPanelTab } from "./bot-panel";
 import { BotSettings } from "./bot-panel";
 import { firstThreadRoute } from "./use-shell-navigation";
 
-/** The panel beside the chat: its computer, settings, routines, a new group, or an import. */
+/** The panel beside the chat: a bot's tabs, a routine, a group, or an import. */
 export function ShellSidePanel({
   rpc,
   panel,
@@ -40,6 +41,7 @@ export function ShellSidePanel({
   computerOpen,
   booting,
   computerPanel,
+  routinesPanel,
   routineEditorProps,
   openBot,
   openCreatedBot,
@@ -66,6 +68,7 @@ export function ShellSidePanel({
   computerOpen: boolean;
   booting: boolean;
   computerPanel: ReactNode;
+  routinesPanel: ReactNode;
   routineEditorProps: ComponentProps<typeof RoutineEditor> | null;
   openBot: (botId: string) => void;
   openCreatedBot: (bot: Bot) => void;
@@ -77,6 +80,8 @@ export function ShellSidePanel({
 }) {
   const { t } = useLingui();
   const open = Boolean(panel && (active || activeGroup || panel === "import-agent"));
+  const botTab =
+    panel === "computer" || panel === "routines" || panel === "settings" ? panel : null;
 
   async function createGroup(input: { name: string; botIds: string[] }) {
     const group = await rpc.groups.create(input);
@@ -115,21 +120,6 @@ export function ShellSidePanel({
                     }}
                   />
                 ) : null}
-                {active ? (
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={panel === "settings" ? t`Show computer` : t`Show settings`}
-                    onClick={() => setPanel(panel === "settings" ? "computer" : "settings")}
-                    className={panel === "settings" ? "text-foreground" : "text-muted-foreground"}
-                  >
-                    {panel === "settings" ? (
-                      <Monitor size={16} strokeWidth={1.7} />
-                    ) : (
-                      <Settings size={16} strokeWidth={1.7} />
-                    )}
-                  </Button>
-                ) : null}
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -141,7 +131,6 @@ export function ShellSidePanel({
               </div>
             </div>
           ) : null}
-          {panel === "computer" && active ? computerPanel : null}
           {panel === "create-group" ? (
             <CreateGroupForm
               bots={bots}
@@ -189,10 +178,17 @@ export function ShellSidePanel({
               }}
             />
           ) : null}
-          {panel === "settings" && active ? (
+          {botTab && active ? (
             <BotSettings
               key={active.id}
               bot={active}
+              tab={botTab}
+              onTabChange={(tab: BotPanelTab) => {
+                setPanel(tab);
+                if (tab === "computer") void refreshThread(active.id).catch(() => undefined);
+              }}
+              computer={computerPanel}
+              routines={routinesPanel}
               focusModel={modelFocusRequest}
               onOpenConnections={() => openSettings("models")}
               memoryProviderConfigured={memoryProviderConfigured}
