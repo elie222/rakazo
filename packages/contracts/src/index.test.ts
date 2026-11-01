@@ -51,6 +51,22 @@ describe("contracts", () => {
     ).toBe(false);
   });
 
+  it("round-trips every wire protocol a compatible connection may select", () => {
+    const input = {
+      provider: "openai-compatible",
+      baseUrl: "http://localhost:8000/v1",
+      modelId: "default",
+    };
+    for (const apiProtocol of ["chat-completions", "responses", "anthropic-messages"] as const) {
+      expect(ModelConnectInputSchema.parse({ ...input, apiProtocol })).toMatchObject({
+        apiProtocol,
+      });
+    }
+    expect(ModelConnectInputSchema.safeParse({ ...input, apiProtocol: "grpc" }).success).toBe(
+      false,
+    );
+  });
+
   it("accepts structured live activity progress", () => {
     expect(MessageBlock.parse({ kind: "progress", text: "Using browser", activity: true })).toEqual(
       { kind: "progress", text: "Using browser", activity: true },

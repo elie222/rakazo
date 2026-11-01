@@ -95,6 +95,7 @@ import {
   MessagingInstallationsStatusSchema,
   MessagingLinkedIdentitySchema,
   MessagingStatusSchema,
+  ModelApiProtocolSchema,
   ModelBackupChoiceSchema,
   ModelBackupListSchema,
   ModelCatalogEntrySchema,
@@ -386,6 +387,7 @@ export const appContract = {
           credentialId: z.string().optional(),
           headers: ModelHeadersSchema.optional(),
           apiKey: z.string().optional(),
+          apiProtocol: ModelApiProtocolSchema.optional(),
         }),
       )
       .output(z.object({ models: z.array(z.string()) })),
