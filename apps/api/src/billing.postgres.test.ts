@@ -167,6 +167,10 @@ describePostgres("billing service (PostgreSQL)", () => {
       cancellationComment: undefined,
     });
     await billing.sync(customerId);
+    await expect(billingAccountForOrganization(prisma, organizationId)).resolves.toMatchObject({
+      cancellationReason: null,
+      cancellationComment: null,
+    });
   });
 
   it("does not offer a second trial after the subscription ends", async () => {
