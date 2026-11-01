@@ -168,7 +168,8 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
 export function rlsBypassKey(connectionString: string | undefined): string {
   let password: string;
   try {
-    password = decodeURIComponent(new URL(connectionString ?? "").password);
+    const url = new URL(connectionString ?? "");
+    password = decodeURIComponent(url.password) || (url.searchParams.get("password") ?? "");
   } catch {
     return "";
   }
