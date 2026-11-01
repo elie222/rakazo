@@ -807,6 +807,8 @@ model Thread {
   historyCompactedUpToSeq     Int?
   historyCompactionSummary    String?    @db.Text
   historyCompactionGeneration Int        @default(0)
+  /// After a summary came back over the size limit, compaction waits until nextMessageSeq reaches this.
+  historyCompactionRetryAfterSeq Int?
   unread                      Boolean    @default(false)
   /// Highest message seq the user has read; the "New" divider goes after it. -1 = none read.
   lastReadSeq                 Int        @default(-1)

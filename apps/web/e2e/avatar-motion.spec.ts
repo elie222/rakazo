@@ -76,7 +76,7 @@ test("photo avatar animations stay still when reduced motion is enabled", async 
   expect(second).toEqual(first);
 });
 
-test("organic avatars morph only the shown layer and stop while offscreen or hidden", async ({
+test("organic avatars hold still while idle and stop working motion while offscreen or hidden", async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "no-preference" });
@@ -105,10 +105,11 @@ test("organic avatars morph only the shown layer and stop while offscreen or hid
         working: [...new Set(states("working"))],
       };
     });
+  // Idle avatars draw no frames: SVG motion repaints on the main thread.
   expect(await motion()).toEqual({
     clockPaused: false,
-    morphing: ["idle"],
-    idle: ["running"],
+    morphing: [],
+    idle: [],
     working: ["paused"],
   });
   const clock = await avatar.evaluate((svg: SVGSVGElement) => svg.getCurrentTime());
@@ -117,7 +118,7 @@ test("organic avatars morph only the shown layer and stop while offscreen or hid
     clock,
   );
 
-  // The working layer joins the running morph instead of restarting it, and fades in.
+  // The working morph joins the running svg clock instead of restarting it, and fades in.
   const handoff = await avatar.evaluate(async (svg) => {
     const body = (mode: string) =>
       svg.querySelector<SVGPathElement>(`.rakazo-organic-avatar-body-${mode}`)!;
@@ -140,14 +141,14 @@ test("organic avatars morph only the shown layer and stop while offscreen or hid
   expect(await motion()).toEqual({
     clockPaused: false,
     morphing: ["working"],
-    idle: ["paused"],
+    idle: [],
     working: ["running"],
   });
 
   const stopped = {
     clockPaused: true,
     morphing: ["working"],
-    idle: ["paused"],
+    idle: [],
     working: ["paused"],
   };
   await avatar.evaluate((svg) => {
