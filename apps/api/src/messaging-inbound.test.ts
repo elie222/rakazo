@@ -1466,6 +1466,77 @@ describe("createMessagingInboundHandler channel routing", () => {
     expect(runJobs).toHaveLength(0);
   });
 
+  it("wakes no bot for a group service message without text, like a pin", async () => {
+    const alice = {
+      id: "cm-1",
+      channelId: "ch-1",
+      address: "777",
+      identityId: "mi-alice",
+      status: "approved",
+    };
+    const bob = {
+      id: "cm-2",
+      channelId: "ch-1",
+      address: "888",
+      identityId: "mi-bob",
+      status: "approved",
+    };
+    const deps = createDeps({ members: [alice, bob] });
+    const identities = [
+      {
+        id: "mi-alice",
+        provider: "telegram",
+        address: "777",
+        userId: "user-a",
+        spaceId: "ws-a",
+        botId: "bot-a",
+        outboundSinceInbound: 0,
+      },
+      {
+        id: "mi-bob",
+        provider: "telegram",
+        address: "888",
+        userId: "user-b",
+        spaceId: "ws-b",
+        botId: "bot-b",
+        outboundSinceInbound: 0,
+      },
+    ];
+    Object.assign(deps.prisma.messagingIdentity, {
+      findUnique: vi.fn(
+        async ({ where }: { where: { provider_address?: { address: string }; id?: string } }) => {
+          if (where.provider_address) {
+            return (
+              identities.find((row) => row.address === where.provider_address?.address) ?? null
+            );
+          }
+          return identities.find((row) => row.id === where.id) ?? null;
+        },
+      ),
+    });
+    const handle = createMessagingInboundHandler(deps);
+    const event = {
+      type: "message" as const,
+      provider: "telegram",
+      handle: "-1001234:50",
+      threadId: "telegram:-1001234",
+      isDirect: false,
+      from: "888",
+      fromLabel: "Bob",
+      channelName: "Family",
+      participants: [],
+      content: "",
+      mediaUrl: null,
+    };
+    await handle(event);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    expect(deps.enqueue.mock.calls.filter(([job]) => job.name === "run.continue")).toHaveLength(0);
+
+    // The same sender's next real message still reaches both bots.
+    await handle({ ...event, handle: "-1001234:51", content: "dinner at 7" });
+    expect(deps.sendUserMessage).toHaveBeenCalledTimes(2);
+  });
+
   it("marks a Telegram member who left as left, without starting a run", async () => {
     const alice = {
       id: "cm-1",
