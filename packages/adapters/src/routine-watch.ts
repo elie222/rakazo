@@ -652,13 +652,16 @@ export function toolResultText(data: unknown): string {
   return stableStringify(data ?? null);
 }
 
-/** Whether `text` already contains every value in `data`, so its structured copy adds nothing. */
+/**
+ * Whether `text` already contains every value in `data`, so its structured copy adds nothing.
+ * Only strings count as repeated: a number or flag means something only beside its key.
+ */
 function repeatsEveryValue(data: unknown, text: string): boolean {
   if (data === null || data === undefined) return true;
   if (typeof data === "object") {
     return Object.values(data).every((value) => repeatsEveryValue(value, text));
   }
-  return text.includes(String(data));
+  return typeof data === "string" && text.includes(data);
 }
 
 function toolResultTextParts(data: unknown): string[] {

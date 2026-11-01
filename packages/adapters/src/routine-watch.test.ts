@@ -444,6 +444,15 @@ describe("tool results", () => {
       },
       /Request failed[\s\S]*reports:read/,
     ],
+    [
+      "a numeric diagnostic whose digits happen to appear in the text",
+      {
+        content: [{ type: "text", text: "Service returned HTTP 503" }],
+        structuredContent: { error: "Service returned HTTP 503", retryAfterSeconds: 3 },
+        isError: true,
+      },
+      /retryAfterSeconds/,
+    ],
   ])(
     "treats an MCP error result as a failed check that reports %s",
     async (_case, data, reported) => {
