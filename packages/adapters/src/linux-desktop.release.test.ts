@@ -102,3 +102,16 @@ describe("LinuxDesktop.releaseScreen", () => {
     expect(commands.map(releasesBrowser)).toEqual([true]);
   });
 });
+
+describe("LinuxDesktop.connectScreen", () => {
+  it("keeps the exit code of a desktop command that failed without stderr", async () => {
+    const desktop = new LinuxDesktop(host({ code: 137, stdout: "", stderr: "" }));
+
+    const error = await desktop
+      .connectScreen(computer, { view: "stream" }, context)
+      .catch((caught) => caught);
+
+    expect(error.message).toBe("computer desktop operation failed");
+    expect(error.cause.message).toBe("exit 137");
+  });
+});
