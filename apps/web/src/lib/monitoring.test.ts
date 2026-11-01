@@ -313,6 +313,7 @@ describe("browser monitoring", () => {
         "Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
         "NotFoundError",
       ),
+      "Object Not Found Matching Id:1, MethodName:update, ParamCount:4",
     ])
       expect(beforeSend({}, { originalException }), String(originalException)).toBeNull();
     expect(

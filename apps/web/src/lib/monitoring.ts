@@ -163,9 +163,12 @@ async function loadSentry(fetchImpl: typeof fetch): Promise<typeof SentryReact |
   return Sentry;
 }
 
-/** Scripts that browsers and extensions inject, and page translation rewriting React's DOM. */
+/**
+ * Scripts that browsers and extensions inject, page translation rewriting React's DOM, and the
+ * headless browser email link scanners open pages in.
+ */
 const INJECTED =
-  /window\.(?:__firefox__|ethereum)\b|Failed to execute '(?:removeChild|insertBefore)' on 'Node'/;
+  /window\.(?:__firefox__|ethereum)\b|Failed to execute '(?:removeChild|insertBefore)' on 'Node'|^Object Not Found Matching Id:/;
 
 /**
  * The network rather than the code (offline, a timeout or cancellation, a gateway answer while the
@@ -174,7 +177,8 @@ const INJECTED =
 function isNotAppBug(error: unknown): boolean {
   if (typeof error === "object" && error !== null && !(error instanceof Error)) return true;
   if (isAbandonedRequest(error) || isServerUnreachable(error)) return true;
-  return error instanceof Error && INJECTED.test(error.message);
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  return INJECTED.test(message);
 }
 
 /**
