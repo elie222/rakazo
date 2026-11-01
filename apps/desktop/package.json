@@ -107,6 +107,9 @@
         }
       ]
     },
+    "nsis": {
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
     "win": {
       "icon": "assets/icon.ico",
       "target": [

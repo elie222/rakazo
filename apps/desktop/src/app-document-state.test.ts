@@ -88,9 +88,11 @@ describe("waiting for the app document", () => {
     await expect(
       waitForMountedAppDocument({
         executeJavaScript: disposed,
-        isCrashed: () => false,
+        isCrashed: () => {
+          throw new TypeError("Object has been destroyed");
+        },
         isDestroyed: () => true,
       }),
-    ).rejects.toThrow("Render frame was disposed");
+    ).rejects.toThrow("The window closed before the app loaded.");
   });
 });

@@ -985,10 +985,15 @@ async function openAppOnce(targetUrl: string, switching: boolean) {
     if (pendingPreviousWindow !== null) pendingPreviousWindow.hide();
     return true;
   } catch (error) {
-    if (!(error instanceof ServerUnavailable)) reportDesktopError(error, "desktop.startup");
+    const closed = win?.isDestroyed() === true;
+    if (!closed && !(error instanceof ServerUnavailable)) {
+      reportDesktopError(error, "desktop.startup");
+    }
     pendingPreviousWindow = null;
     // Keep the previous app window so Cancel / close can restore it.
     if (previous !== null && !previous.isDestroyed()) mainWindow = previous;
+    // Closing the window while it loads is the user leaving, not a failure to explain.
+    if (closed) return false;
     // Show the setup window BEFORE destroying the failed one: on Windows/Linux,
     // destroying the last window fires "window-all-closed" -> app.quit() before
     // showSetupWindow() runs, so the app silently exits instead of showing this error.
