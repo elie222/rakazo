@@ -245,7 +245,8 @@ export class RemoteMcpSessionCache {
       const session = await this.sessionFor(key, options);
       session.inFlight += 1;
       try {
-        return await run(session.client, options.signal);
+        const signal = combineSignals(options.signal, AbortSignal.timeout(MCP_TIMEOUT_MS));
+        return await run(session.client, signal);
       } catch (error) {
         // The server rejected the session id before running the request, so a
         // fresh session can replay it once without doubling a write. Closing the

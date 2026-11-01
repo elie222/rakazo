@@ -103,6 +103,47 @@ function scopedCall(
 }
 
 describe("run-scoped remote MCP sessions", () => {
+  it("bounds each operation with a fresh timeout and keeps the session reusable", async () => {
+    const server = statefulServer();
+    const pool = new RemoteMcpSessionCache();
+    const options = {
+      endpoint: ENDPOINT,
+      fetch: server.fetch as unknown as typeof globalThis.fetch,
+      resolveHostname: publicResolver,
+      sessionScope: "run-1 srv",
+    };
+    // Establish the session before controlling only the operation's timeout.
+    await pool.withSession(options, async () => undefined);
+    vi.useFakeTimers();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException("Timed out", "TimeoutError")), ms);
+      return controller.signal;
+    });
+    try {
+      const hanging = pool.withSession(options, async (_client, signal) => {
+        return new Promise<void>((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      });
+      const rejected = expect(hanging).rejects.toMatchObject({ name: "TimeoutError" });
+      await vi.advanceTimersByTimeAsync(30_000);
+      await rejected;
+      expect(timeout).toHaveBeenCalledWith(30_000);
+      expect(server.deletes).toEqual([]);
+
+      await expect(
+        pool.withSession(options, async (_client, signal) => signal?.aborted),
+      ).resolves.toBe(false);
+      expect(timeout).toHaveBeenCalledTimes(2);
+      expect(server.initializations()).toBe(1);
+    } finally {
+      timeout.mockRestore();
+      vi.useRealTimers();
+      await pool.close();
+    }
+  });
+
   it("closes an idle session, so the next call opens a fresh one", async () => {
     const server = statefulServer();
     const pool = new RemoteMcpSessionCache(40);
