@@ -537,7 +537,7 @@ describe("thread cards", () => {
     const card = container.firstElementChild;
     expect(card?.textContent).toContain("Example notes");
     expect(styleOf(card)).toMatchObject({ maxWidth: 576 });
-    expect(styleOf(card).width).toBeUndefined();
+    expect(styleOf(card).width).toBe("100%");
   });
 
   it("labels a running helper", () => {
