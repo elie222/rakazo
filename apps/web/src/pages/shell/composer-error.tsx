@@ -38,33 +38,45 @@ export function ComposerError({
   useEffect(() => {
     if (!runError || !runErrorId) return;
     const currentRunErrorId = runErrorId;
-    let frame = 0;
+    // Counts the error as presented once it is actually on screen. Watching
+    // every DOM mutation and hit-testing the element on each one forced layout
+    // for the whole session; an IntersectionObserver costs nothing until the
+    // card scrolls into view.
     function recordIfPresented() {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        const element = runErrorRef.current;
-        if (!element || document.visibilityState !== "visible") return;
-        const rect = element.getBoundingClientRect();
-        const topElement = document.elementFromPoint(
-          rect.left + rect.width / 2,
-          rect.top + rect.height / 2,
-        );
-        if (topElement && (topElement === element || element.contains(topElement))) {
-          if (presentedRunErrorIdRef.current === currentRunErrorId) return;
-          presentedRunErrorIdRef.current = currentRunErrorId;
-          onRunErrorPresented(currentRunErrorId);
-        }
-      });
+      const element = runErrorRef.current;
+      if (!element || document.visibilityState !== "visible") return;
+      if (presentedRunErrorIdRef.current === currentRunErrorId) return;
+      const rect = element.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) return;
+      // Without hit testing (older engines, test DOMs) an element with a box is
+      // on screen, which is all this check can know.
+      if (typeof document.elementFromPoint !== "function") {
+        presentedRunErrorIdRef.current = currentRunErrorId;
+        onRunErrorPresented(currentRunErrorId);
+        return;
+      }
+      const topElement = document.elementFromPoint(
+        rect.left + rect.width / 2,
+        rect.top + rect.height / 2,
+      );
+      if (topElement && (topElement === element || element.contains(topElement))) {
+        presentedRunErrorIdRef.current = currentRunErrorId;
+        onRunErrorPresented(currentRunErrorId);
+      }
     }
-    recordIfPresented();
-    const observer = new MutationObserver(recordIfPresented);
-    observer.observe(document.body, { childList: true, subtree: true });
-    document.addEventListener("transitionend", recordIfPresented);
+    const element = runErrorRef.current;
+    const observer =
+      element && typeof IntersectionObserver !== "undefined"
+        ? new IntersectionObserver((entries) => {
+            if (entries.some((entry) => entry.isIntersecting)) recordIfPresented();
+          })
+        : null;
+    if (observer && element) observer.observe(element);
+    // Without an observer the card is on screen as soon as it mounts.
+    else recordIfPresented();
     document.addEventListener("visibilitychange", recordIfPresented);
     return () => {
-      cancelAnimationFrame(frame);
-      observer.disconnect();
-      document.removeEventListener("transitionend", recordIfPresented);
+      observer?.disconnect();
       document.removeEventListener("visibilitychange", recordIfPresented);
     };
   }, [onRunErrorPresented, runError, runErrorId]);

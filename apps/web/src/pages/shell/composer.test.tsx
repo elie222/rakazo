@@ -1363,3 +1363,60 @@ it("stops the running reply on Escape, but lets Escape close the mention picker 
   );
   expect(onStop).toHaveBeenCalledTimes(1);
 });
+
+it("counts a run error as presented when it scrolls into view", () => {
+  let fire: ((entries: Array<{ isIntersecting: boolean }>) => void) | undefined;
+  const onRunErrorPresented = vi.fn();
+  const original = globalThis.IntersectionObserver;
+  class FakeIntersectionObserver {
+    constructor(callback: (entries: Array<{ isIntersecting: boolean }>) => void) {
+      fire = callback;
+    }
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver);
+  const rect = {
+    width: 200,
+    height: 40,
+    top: 10,
+    left: 10,
+    bottom: 50,
+    right: 210,
+    x: 10,
+    y: 10,
+    toJSON: () => ({}),
+  } as DOMRect;
+  const rectSpy = vi
+    .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+    .mockReturnValue(rect);
+  const pointSpy = vi.fn(() => document.querySelector('[data-testid="composer-error"]'));
+  Object.defineProperty(document, "elementFromPoint", {
+    value: pointSpy,
+    configurable: true,
+    writable: true,
+  });
+  try {
+    renderComposer(async () => true, {
+      runError: "Something failed.",
+      runErrorId: "run-1",
+      onRunErrorPresented,
+    });
+
+    // Off screen: nothing is marked.
+    act(() => fire?.([{ isIntersecting: false }]));
+    expect(onRunErrorPresented).not.toHaveBeenCalled();
+
+    act(() => fire?.([{ isIntersecting: true }]));
+    expect(onRunErrorPresented).toHaveBeenCalledExactlyOnceWith("run-1");
+
+    // A second entry for the same card does not report it twice.
+    act(() => fire?.([{ isIntersecting: true }]));
+    expect(onRunErrorPresented).toHaveBeenCalledTimes(1);
+  } finally {
+    rectSpy.mockRestore();
+    Reflect.deleteProperty(document, "elementFromPoint");
+    vi.stubGlobal("IntersectionObserver", original);
+  }
+});
