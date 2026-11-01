@@ -125,7 +125,10 @@ describe("desktop release workflow", () => {
     expect(workflow).toContain("latest.yml");
     expect(workflow).toContain("latest-mac.yml");
     expect(workflow).toContain("latest-linux.yml");
-    expect(workflow).toContain("--draft --generate-notes");
+    expect(workflow).toContain(
+      '--draft --notes-file "$RUNNER_TEMP/release-notes.md" --generate-notes',
+    );
+    expect(workflow).toContain("CHANGELOG.md has no [$version] section");
     expect(workflow).toContain("--draft=false --latest");
   });
 });
