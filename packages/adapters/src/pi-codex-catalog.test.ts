@@ -10,6 +10,7 @@ import {
   codexLiveListsModel,
   fetchCodexCatalog,
   parseCodexCatalog,
+  resolveCodexOAuthDefaultModel,
 } from "./pi-codex-catalog.js";
 import { liveCatalogEntry } from "./pi-live-catalog.js";
 import { listPiCatalog } from "./pi-models.js";
@@ -65,6 +66,46 @@ function authPrisma(options: { secrets?: Array<{ id: string; ciphertext: string 
     },
   } as unknown as PrismaClient;
 }
+
+describe("resolveCodexOAuthDefaultModel", () => {
+  const oauthSecret = () => parseModelSecret(oauthPlaintext());
+  const catalog = (models: CodexCatalogModel[]) => ({
+    read: vi.fn(async () => models),
+  });
+
+  it("keeps the requested model when the connected account lists it", async () => {
+    const result = await resolveCodexOAuthDefaultModel(
+      catalog([liveModel(LUNA)]),
+      "user-test",
+      oauthSecret(),
+      LUNA,
+    );
+
+    expect(result).toBe(LUNA);
+  });
+
+  it("uses an account model when the static default is unavailable", async () => {
+    const result = await resolveCodexOAuthDefaultModel(
+      catalog([liveModel(SPARK)]),
+      "user-test",
+      oauthSecret(),
+      LUNA,
+    );
+
+    expect(result).toBe(SPARK);
+  });
+
+  it("keeps the normal fallback when the account catalog cannot be trusted", async () => {
+    const result = await resolveCodexOAuthDefaultModel(
+      catalog([liveModel("unrelated-model")]),
+      "user-test",
+      oauthSecret(),
+      LUNA,
+    );
+
+    expect(result).toBe(LUNA);
+  });
+});
 
 describe("fetchCodexCatalog", () => {
   it("requests the backend catalog with OAuth headers and the pinned client version", async () => {
