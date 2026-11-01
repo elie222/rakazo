@@ -660,6 +660,20 @@ class CardTest(unittest.TestCase):
         self.assertEqual([method for method, _, _ in browser.sent].count("Input.insertText"), 4)
         self.assertTrue(browser.cleared)
 
+    def test_clears_a_field_when_the_browser_fails_partway_through_the_card(self):
+        def fail(browser):
+            if len(browser.typed) == 4:
+                browser.after_key = None
+                raise RuntimeError("CDP websocket closed")
+
+        browser = CardBrowser(after_key=fail)
+        with self.assertRaisesRegex(RuntimeError, "websocket closed"):
+            self.card_fill(browser)
+        self.assertTrue(browser.cleared)
+        browser = CardBrowser(after_key=fail, clears=False)
+        with self.assertRaisesRegex(secrets.CardFieldUncertain, "could not be confirmed empty"):
+            self.card_fill(browser)
+
     def test_clears_a_field_that_did_not_keep_every_digit(self):
         browser = CardBrowser(kept=12)
         self.assertEqual(self.refused(browser), "This field didn't accept the card, so it was cleared.")

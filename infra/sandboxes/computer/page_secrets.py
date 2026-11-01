@@ -713,13 +713,20 @@ def fill_card(client: CdpClient, session_id: str, step: dict[str, Any]) -> None:
     if run("window.__rakazoPageBrowser.focusCard()") is not True:
         raise Refused("The card field did not take focus, so nothing was typed.")
     for index, char in enumerate(text):
-        reason = stopped() or (None if run("window.__rakazoPageBrowser.cardHolds()") is True else
-                               "Focus left the card field, so the card was not typed. Fill it again.")
+        try:
+            reason = stopped() or (None if run("window.__rakazoPageBrowser.cardHolds()") is True else
+                                   "Focus left the card field, so the card was not typed. Fill it again.")
+            if not reason:
+                client.call("Input.insertText", {"text": char}, session_id=field_session)
+        except Exception:
+            # Part of the card may be in the field: it is emptied before the failure is reported.
+            if index:
+                clear_or_uncertain(client, field_session, run, "The card could not be typed in full.")
+            raise
         if reason:
             if index:
                 clear_or_uncertain(client, field_session, run, reason)
             raise Refused(reason)
-        client.call("Input.insertText", {"text": char}, session_id=field_session)
     reason = stopped()
     if reason:
         clear_or_uncertain(client, field_session, run, reason)
