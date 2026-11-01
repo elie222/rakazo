@@ -1,5 +1,9 @@
+import { encodeLoginSecret } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { runLoginKind } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { storeBotSecret } from "./bot-secrets.js";
+import { fakeDatabase } from "./bot-secrets.test-support.js";
 import {
   commitConsumedRunSecret,
   createRunSecretWriter,
@@ -112,6 +116,119 @@ describe("createRunSecretWriter", () => {
     expect(create).not.toHaveBeenCalled();
     await answer("bot");
     expect(create).toHaveBeenCalledOnce();
+  });
+});
+
+describe("answering a login card that replaces a saved login's site", () => {
+  const WWW = "https://www.example.test";
+  // An international site, as the card shows it: the stored site must be the same string.
+  const LOGIN = "https://xn--bcher-kva.example.test";
+  const credential = { name: "site_login", origin: LOGIN, auth: { type: "login" as const } };
+  const secretStore = new EncryptedSecretStore("test-only-encryption-key");
+  const fields = (password: string) => [
+    { label: "Username", value: "fake-user", hidden: false },
+    { label: "Password", value: password, hidden: true },
+  ];
+  const typed = (password: string) => encodeLoginSecret({ fields: fields(password) });
+
+  /** A vault with a login saved for www and a run waiting on a card for the new site. */
+  async function waitingOn({ replacing = true } = {}) {
+    const db = fakeDatabase();
+    await storeBotSecret({
+      prisma: db.prisma,
+      secretStore,
+      scope: { userId: "user", spaceId: "space" },
+      destination: { ...credential, origin: WWW },
+      plaintext: typed("fake-password-www"),
+    });
+    const ask = { credential, ...(replacing ? { replaces: db.rows()[0]!.id } : {}) };
+    const runSecrets: Array<Record<string, unknown>> = [];
+    Object.assign(db.prisma, {
+      run: { findFirst: async () => ({ botId: "bot", userId: "user" }) },
+      message: {
+        findFirst: async () => ({
+          blocks: [{ kind: "ask", text: "Sign in", input: "secret", status: "pending", ...ask }],
+        }),
+      },
+      secret: {
+        count: async () => 0,
+        findFirst: async () => null,
+        deleteMany: async () => ({ count: 0 }),
+        create: async ({ data }: { data: Record<string, unknown> }) => runSecrets.push(data),
+      },
+    });
+    return { db, runSecrets, before: db.rows().map((row) => ({ ...row })) };
+  }
+
+  function answer(
+    db: ReturnType<typeof fakeDatabase>,
+    options: { password?: string; remember?: false; by?: string } = {},
+  ) {
+    const password = options.password ?? "fake-password-login";
+    return createRunSecretWriter(secretStore).withPrepared!(
+      db.prisma,
+      {
+        spaceId: "space",
+        runId: "run",
+        threadId: "thread",
+        messageId: "message",
+        answeredByUserId: options.by ?? "user",
+        answer: "",
+        fields: fields(password),
+        ...(options.remember === false ? { remember: false as const } : {}),
+      },
+      (writer) =>
+        db.prisma.$transaction((tx) =>
+          writer.store({
+            botId: "bot",
+            credential,
+            remember: options.remember !== false,
+            runId: "run",
+            userId: "user",
+            spaceId: "space",
+            plaintext: typed(password),
+            tx: tx as never,
+          }),
+        ),
+    );
+  }
+
+  it("saves the login for the card's site in place of the one for the old site", async () => {
+    const { db, before } = await waitingOn();
+    await answer(db);
+    expect(db.rows()).toHaveLength(1);
+    const [row] = db.rows();
+    expect(row).toMatchObject({ id: before[0]!.id, name: "site_login", origin: LOGIN });
+    expect(await secretStore.load(row!.ciphertext, row!.id)).toBe(typed("fake-password-login"));
+    expect(JSON.stringify(db.rows())).not.toContain(WWW);
+  });
+
+  it("with Save to Vault off, keeps the saved login and holds this one for the card's site", async () => {
+    const { db, runSecrets, before } = await waitingOn();
+    await answer(db, { remember: false });
+    expect(db.rows()).toEqual(before);
+    expect(runSecrets).toEqual([
+      expect.objectContaining({ kind: runLoginKind("run", "site_login") }),
+    ]);
+    const held = JSON.parse(
+      await secretStore.load(String(runSecrets[0]!.ciphertext), String(runSecrets[0]!.id)),
+    );
+    expect(held).toEqual({ origin: LOGIN, login: typed("fake-password-login") });
+  });
+
+  it("refuses another member of the chat, changing nothing", async () => {
+    const { db, before } = await waitingOn();
+    await expect(answer(db, { by: "member" })).rejects.toThrow("Secret request changed; retry");
+    expect(db.rows()).toEqual(before);
+  });
+
+  it("won't replace a login with a card that wasn't opened to replace it", async () => {
+    // Opened when nothing was saved under the name; the www login was saved after.
+    const { db, before } = await waitingOn({ replacing: false });
+    await expect(answer(db)).rejects.toThrow(
+      "Remove the existing credential before changing its destination",
+    );
+    expect(db.rows()).toEqual(before);
   });
 });
 
