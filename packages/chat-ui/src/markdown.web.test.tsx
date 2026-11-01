@@ -827,10 +827,10 @@ describe("web markdown streaming", () => {
 });
 
 describe("web markdown streamed definitions", () => {
-  it("resolves a reference whose definition label spans lines", () => {
+  it("resolves a reference whose definition label spans lines and escapes a bracket", () => {
     const html = renderToStaticMarkup(
       <ChatMarkdown streaming>
-        {"[foo\nbar]: https://example.test/ref\n\nSee [foo bar]."}
+        {"[foo\nb\\]ar]: https://example.test/ref\n\nSee [foo b\\]ar]."}
       </ChatMarkdown>,
     );
     expect(html).toContain('href="https://example.test/ref"');

@@ -676,7 +676,7 @@ type SplitSource = { text: string; blocks: SourceBlock[] };
 
 const blockParser = unified().use(remarkParse).use(remarkGfm);
 // Link and footnote definitions apply to the whole document, so such text is never split.
-const definition = /\[[^\]]{0,999}\]:/;
+const definition = /\]:/;
 
 /**
  * Top-level blocks of streamed text. Appended text can still change the last block, or join the
