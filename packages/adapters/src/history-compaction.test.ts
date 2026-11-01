@@ -145,6 +145,27 @@ describe("selectCompactedHistory", () => {
     expect(selected.history.map((message) => message.seq)).toEqual([0, 1, 2, 4]);
   });
 
+  it("keeps the summary past a message waiting for its own run, and leaves that message out", () => {
+    const loaded = messages(0, 3).map((message) => ({ ...message, waiting: message.seq === 2 }));
+    const selected = selectCompactedHistory({
+      messages: loaded,
+      summary: "facts through 0",
+      historyCompactedUpToSeq: 0,
+    });
+
+    expect(selected.usedLocalSummary).toBe(true);
+    expect(selected.summary).toBe("facts through 0");
+    expect(selected.history.map((message) => message.seq)).toEqual([1, 3]);
+    // Without a summary it is still left out.
+    expect(
+      selectCompactedHistory({
+        messages: loaded,
+        summary: null,
+        historyCompactedUpToSeq: null,
+      }).history.map((message) => message.seq),
+    ).toEqual([0, 1, 3]);
+  });
+
   it("does not use a cursor without its durable summary", () => {
     const selected = selectCompactedHistory({
       messages: messages(0, 10),

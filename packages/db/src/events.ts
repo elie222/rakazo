@@ -25,6 +25,7 @@ import {
   isSecretAskBlock,
   messageBypassesTakeoverWait,
   messageReaction,
+  messageSteersRun,
   messagingChannelId,
   normalizeRunError,
   QUEUE_HOLDING_RUN_STATUSES,
@@ -531,8 +532,14 @@ export async function sendUserMessage(
               select: { id: true, taskId: true, trigger: true, status: true },
             })
           : [];
+      // A group text never ends the owner's paused app task: it waits for it like any other turn.
+      const fromGroup = hasChannelMessage(input.blocks);
       const holdingRuns = activeRuns.filter(
-        (run) => !messageBypassesTakeoverWait(run, input.trigger !== "webhook"),
+        (run) =>
+          !messageBypassesTakeoverWait(
+            run,
+            fromGroup || messageSteersRun(input.trigger, run.trigger),
+          ),
       );
       // Steer a conversational run when there is one; a routine, webhook, or intro turn only holds the queue.
       const busy =
@@ -575,7 +582,7 @@ export async function sendUserMessage(
           await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });
         }
       } else if (createRun && busy) {
-        const held = input.trigger === "webhook" || !isConversationalRun(busy.trigger);
+        const held = !messageSteersRun(input.trigger, busy.trigger);
         await tx.steeringMessage.create({
           data: {
             messageId: message.id,
