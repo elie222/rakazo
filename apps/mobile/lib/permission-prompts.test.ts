@@ -12,9 +12,12 @@ const config = JSON.parse(readFileSync(resolve(mobileRoot, "app.json"), "utf8"))
 describe("iOS permission prompts", () => {
   it("has a Spanish version of every prompt the app shows", () => {
     expect(config.expo.locales?.es).toBe("./locales/es.json");
-    const spanish = JSON.parse(
-      readFileSync(resolve(mobileRoot, "locales/es.json"), "utf8"),
-    ) as Record<string, string>;
+    // Under `ios`: Expo writes top-level keys to Android resources too.
+    const spanish = (
+      JSON.parse(readFileSync(resolve(mobileRoot, "locales/es.json"), "utf8")) as {
+        ios: Record<string, string>;
+      }
+    ).ios;
     // Prompts the config plugins add (microphone, speech, Face ID) sit beside the app's own.
     const prompts = [
       ...Object.keys(config.expo.ios?.infoPlist ?? {}).filter((key) =>
