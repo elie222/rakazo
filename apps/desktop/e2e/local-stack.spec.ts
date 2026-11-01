@@ -17,6 +17,7 @@ const COMPOSE_DIR = path.resolve(import.meta.dirname, "..", "..", "..", "infra",
 type FakeDockerMode =
   | "ok"
   | "daemon-down"
+  | "compose-check-fails"
   | "pull-fails"
   | "pool-exhausted"
   | "port-conflict"
@@ -100,7 +101,9 @@ async function writeFakeDocker(mode: FakeDockerMode) {
     "#!/bin/sh",
     `printf '%s | %s | %s\\n' "$PWD" "$RAKAZO_IMAGE_TAG" "$*" >> '${fakeDockerLog()}'`,
     'case "$1 $2" in',
-    '  "compose version") echo "2.29.0"; exit 0 ;;',
+    mode === "compose-check-fails"
+      ? '  "compose version") echo "Access is denied." >&2; exit 7 ;;'
+      : '  "compose version") echo "5.6.1"; exit 0 ;;',
     '  "info --format")',
     mode === "daemon-down"
       ? '    echo "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?" >&2; exit 1 ;;'
@@ -283,6 +286,23 @@ test("a stopped Docker daemon is reported and Check again asks Docker once more"
   await expect(setup.getByRole("button", { name: "Check again" })).toBeEnabled();
   expect((await readLog()).filter((line) => line.includes("info --format"))).toHaveLength(2);
   expect((await readLog()).some((line) => line.includes(" pull"))).toBe(false);
+});
+
+test("a failed Compose check shows diagnostics instead of installation help", async () => {
+  app = await launch("compose-check-fails");
+  const setup = await app.firstWindow();
+  await setup.getByRole("radio", { name: /This computer/ }).check();
+  await setup.getByRole("button", { name: "Continue" }).click();
+  await expect(setup.locator("#stack-phase")).toHaveText(
+    "Could not check Docker Compose. Check the output below, then retry.",
+  );
+  await expect(setup.locator("#stack-output")).toContainText("Access is denied.");
+  await expect(setup.locator("#stack-output")).toContainText("exited with code 7");
+  await expect(setup.getByRole("button", { name: "Retry" })).toBeEnabled();
+  await expect(setup.locator("#stack-docker-help")).toBeHidden();
+  await setup.screenshot({
+    path: path.join(import.meta.dirname, "screenshots", "11-setup-compose-check-failed.png"),
+  });
 });
 
 test("unpublished images show the docker output and a Retry button", async () => {

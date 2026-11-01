@@ -274,6 +274,18 @@ describe("reduceStackState", () => {
     expect(state.output[0]).toBe("line 5");
   });
 
+  it("bounds diagnostics attached to a failed Docker check and clears them on retry", () => {
+    const checking = reduceStackState(start, { type: "check-start" });
+    const failed = reduceStackState(checking, {
+      type: "failed",
+      message: "Check failed",
+      output: Array.from({ length: STACK_OUTPUT_LINES + 5 }, (_, index) => `line ${index}`),
+    });
+    expect(failed.output).toHaveLength(STACK_OUTPUT_LINES);
+    expect(failed.output[0]).toBe("line 5");
+    expect(reduceStackState(failed, { type: "check-start" }).output).toEqual([]);
+  });
+
   it("holds terminal phases until the next check-start clears them", () => {
     let state = reduceStackState(start, { type: "check-start" });
     state = reduceStackState(state, { type: "pull-start" });
@@ -637,6 +649,63 @@ describe("LocalStackController", () => {
     expect(state.phase).toBe("docker-missing");
     expect(state.message).toContain("Docker Compose is missing");
     expect(calls).toHaveLength(1);
+  });
+
+  it.each(["5.6.1\r\n", "Docker Compose version v5.6.1\r\n"])(
+    "starts on Windows with Compose output %j and an absolute Docker override",
+    async (stdout) => {
+      const binary = "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe";
+      const stack = controller(
+        {
+          platform: "win32",
+          env: {
+            ProgramFiles: "C:\\Program Files",
+            PATH: "C:\\Windows\\System32;C:\\custom-helpers",
+            USERPROFILE: "C:\\Users\\example",
+            RAKAZO_DOCKER_BINARY: binary,
+          },
+          exists: (file) => file === binary,
+        },
+        (args) => (args[1] === "version" ? { stdout } : ok(args)),
+      );
+      expect((await stack.start()).phase).toBe("ready");
+      expect(calls[0]?.args).toEqual(["compose", "version", "--short"]);
+      for (const call of calls) {
+        expect(call.binary).toBe(binary);
+        expect(call.env.ProgramFiles).toBe("C:\\Program Files");
+        expect(call.env.USERPROFILE).toBe("C:\\Users\\example");
+        expect(call.env.PATH).toBe(
+          "C:\\Program Files\\Docker\\Docker\\resources\\bin;C:\\Windows\\System32;C:\\custom-helpers",
+        );
+      }
+      expect(calls.at(-1)?.args.slice(7)).toEqual([
+        "up",
+        "-d",
+        "--wait",
+        "--wait-timeout",
+        String(COMPOSE_WAIT_TIMEOUT_S),
+      ]);
+      expect(await stat(path.join(root, "stack", STACK_COMPOSE_FILE))).toBeDefined();
+    },
+  );
+
+  it.each([
+    { code: 1, stdout: "", stderr: "spawn docker.exe ENOENT" },
+    { code: 7, stdout: "plugin diagnostic\r\n", stderr: "Access is denied.\r\n" },
+    { code: 124, stdout: "", stderr: "" },
+  ])("keeps an unsuccessful Compose check distinct from a missing plugin: %j", async (reply) => {
+    const stack = controller({}, () => reply);
+    const state = await stack.start();
+    expect(state).toMatchObject({
+      phase: "failed",
+      message: "Could not check Docker Compose. Check the output below, then retry.",
+      output: [
+        ...`${reply.stdout}\n${reply.stderr}`.split(/\r?\n/).filter(Boolean),
+        `docker compose version --short exited with code ${reply.code}.`,
+      ],
+    });
+    expect(calls).toHaveLength(1);
+    await expect(stat(path.join(root, "stack", STACK_COMPOSE_FILE))).rejects.toThrow();
   });
 
   it("waits for the daemon when docker info fails", async () => {
