@@ -2,16 +2,20 @@ import type { CSSProperties, MouseEvent, ReactNode, RefObject } from "react";
 import {
   Component,
   createContext,
+  Fragment,
   memo,
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
 import type { HastNode } from "./table-utils";
 import "./markdown.web.css";
 import "./markdown-table.css";
@@ -634,13 +638,94 @@ export function LinkifiedText({ children }: { children: string }) {
   );
 }
 
+const remarkPlugins = [remarkGfm];
+const rehypePlugins = [preserveSkippedTableText];
+
+// MarkdownImage decides what an image source may do, so it receives the source as written.
+function urlTransform(url: string, key: string) {
+  return key === "src" || markdownMentionId(url) ? url : (sanitizeMarkdownUrl(url, true) ?? "");
+}
+
+const MarkdownBlock = memo(function MarkdownBlock({
+  source,
+  streaming,
+}: {
+  source: string;
+  streaming: boolean;
+}) {
+  const parsed = streaming ? closeUnterminatedFence(source) : source;
+  return (
+    <StreamingSourceContext.Provider value={streaming ? source : undefined}>
+      <MarkdownTableSourceContext.Provider value={parsed}>
+        <ReactMarkdown
+          components={components}
+          remarkPlugins={remarkPlugins}
+          rehypePlugins={rehypePlugins}
+          skipHtml
+          urlTransform={urlTransform}
+        >
+          {parsed}
+        </ReactMarkdown>
+      </MarkdownTableSourceContext.Provider>
+    </StreamingSourceContext.Provider>
+  );
+});
+
+type SourceBlock = { start: number; source: string };
+type SplitSource = { text: string; blocks: SourceBlock[] };
+
+const blockParser = unified().use(remarkParse).use(remarkGfm);
+// Link and footnote definitions apply to the whole document, so such text is never split.
+const definition = /\]:/;
+
+/**
+ * Top-level blocks of streamed text. Appended text can still change the last block, or join the
+ * one before it (a list continued after a blank line), so only those two are parsed again.
+ */
+function splitSource(text: string, previous: SplitSource | undefined): SplitSource {
+  const whole = { text, blocks: [{ start: 0, source: text }] };
+  if (definition.test(text)) return whole;
+  const kept = previous && text.startsWith(previous.text) ? previous.blocks.slice(0, -2) : [];
+  const from = previous?.blocks[kept.length]?.start ?? 0;
+  const tail = text.slice(from);
+  let starts: number[];
+  try {
+    starts = blockParser
+      .parse(tail)
+      .children.map((child, index) =>
+        index === 0 ? 0 : tail.lastIndexOf("\n", (child.position?.start.offset ?? 1) - 1) + 1,
+      );
+  } catch {
+    return whole;
+  }
+  if (starts.length === 0) starts = [0];
+  return {
+    text,
+    blocks: [
+      ...kept,
+      ...starts.map((start, index) => ({
+        start: from + start,
+        source: tail.slice(start, starts[index + 1] ?? tail.length),
+      })),
+    ],
+  };
+}
+
 export const ChatMarkdown = memo(function ChatMarkdown({
   children,
   streaming = false,
   renderMention,
 }: ChatMarkdownProps) {
   const { request, dialog } = useExternalLinkConfirm();
-  const source = streaming ? closeUnterminatedFence(children) : children;
+  // A streamed reply stays split once it finishes, so its blocks are not drawn again.
+  const [split, setSplit] = useState(streaming);
+  if (streaming && !split) setSplit(true);
+  const previousSplit = useRef<SplitSource | undefined>(undefined);
+  const blocks = useMemo(() => {
+    if (!split) return undefined;
+    previousSplit.current = splitSource(children, previousSplit.current);
+    return previousSplit.current.blocks;
+  }, [children, split]);
 
   return (
     <ConfirmLinkContext.Provider value={request}>
@@ -649,26 +734,22 @@ export const ChatMarkdown = memo(function ChatMarkdown({
           className={streaming ? "rk-chat-markdown rk-chat-markdown-streaming" : "rk-chat-markdown"}
         >
           <LinkFaviconsPausedContext.Provider value={streaming}>
-            <StreamingSourceContext.Provider value={streaming ? children : undefined}>
-              <MarkdownTableSourceContext.Provider value={source}>
-                <PlainTextOnFailure text={children}>
-                  <ReactMarkdown
-                    components={components}
-                    remarkPlugins={[remarkGfm]}
-                    rehypePlugins={[preserveSkippedTableText]}
-                    skipHtml
-                    // MarkdownImage decides what an image source may do, so it receives the source as written.
-                    urlTransform={(url, key) =>
-                      key === "src" || markdownMentionId(url)
-                        ? url
-                        : (sanitizeMarkdownUrl(url, true) ?? "")
-                    }
-                  >
-                    {source}
-                  </ReactMarkdown>
-                </PlainTextOnFailure>
-              </MarkdownTableSourceContext.Provider>
-            </StreamingSourceContext.Provider>
+            <PlainTextOnFailure text={children}>
+              {blocks ? (
+                blocks.map((block, index) => (
+                  <Fragment key={block.start}>
+                    {/* The line break react-markdown puts between blocks, so the DOM matches. */}
+                    {index > 0 ? "\n" : null}
+                    <MarkdownBlock
+                      source={block.source}
+                      streaming={streaming && index === blocks.length - 1}
+                    />
+                  </Fragment>
+                ))
+              ) : (
+                <MarkdownBlock source={children} streaming={streaming} />
+              )}
+            </PlainTextOnFailure>
           </LinkFaviconsPausedContext.Provider>
           {streaming ? <span aria-hidden="true" className="rk-chat-markdown-cursor" /> : null}
         </div>
