@@ -120,6 +120,22 @@ describe("API request body limits", () => {
     expect(cancel).toHaveBeenCalledOnce();
   });
 
+  it("counts the streamed body when transfer-encoding accompanies a small declared length", async () => {
+    const { app, parse } = testApp(8);
+    const response = await app.request("/parse", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "content-length": "2",
+        "transfer-encoding": "chunked",
+      },
+      body: JSON.stringify({ ok: true }),
+    });
+
+    expect(response.status).toBe(413);
+    expect(parse).not.toHaveBeenCalled();
+  });
+
   it("passes bodies at the configured boundary to the route parser", async () => {
     const { app, parse } = testApp(2);
     for (const headers of [{}, { "content-length": "2" }] as Record<string, string>[]) {

@@ -647,6 +647,11 @@ describe("anchored routine intervals", () => {
     expect(nextCronDate("0 0 */30 * *", from)).toEqual(new Date("2026-01-31T00:00:00Z"));
   });
 
+  it("rejects a step larger than its field instead of anchoring it", () => {
+    const anchor = new Date("2026-01-01T00:00:00Z");
+    expect(() => nextRoutineRunDate("*/90 * * * *", anchor, anchor)).toThrow();
+  });
+
   it("falls back to UTC for day intervals with an unknown timezone", () => {
     const anchor = new Date("2026-01-31T00:00:00Z");
     expect(nextRoutineRunDate("0 0 */2 * *", anchor, anchor, "Mars/Olympus")).toEqual(
