@@ -196,14 +196,14 @@ export async function withCleanupDeadline(
 ): Promise<void> {
   const deadline = new AbortController();
   const timer = setTimeout(
-    () => deadline.abort(new Error("team bot folder cleanup ran out of time")),
+    () => deadline.abort(new Error("computer cleanup ran out of time")),
     budgetMs,
   );
   const expired = new Promise<void>((resolve) => {
     deadline.signal.addEventListener(
       "abort",
       () => {
-        getLogger().warn("team bot folder cleanup ran out of time");
+        getLogger().warn("computer cleanup ran out of time");
         resolve();
       },
       { once: true },
