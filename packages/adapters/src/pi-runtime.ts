@@ -634,8 +634,9 @@ export class PiAgentRuntime implements AgentRuntime {
           if (event.type === "message_start" && event.message.role === "assistant") {
             host.modelResponses = (host.modelResponses ?? 0) + 1;
             currentMessageStreamed = "";
-            // A later assistant turn supersedes a terminating result's carried reply.
-            terminatedReply = undefined;
+            // A later assistant turn supersedes a terminating result's carried reply,
+            // except the empty aborted message of a turn the result itself ended.
+            if (event.message.stopReason !== "aborted") terminatedReply = undefined;
             if (!joinCutReply) joinDropped = "";
             // A later message (after a finished shell or steering, not only a tool call)
             // must not run its text straight on from the previous one.
@@ -919,7 +920,15 @@ export class PiAgentRuntime implements AgentRuntime {
         const error = outputCutFailed
           ? MODEL_OUTPUT_CUT_ERROR
           : agent.state.errorMessage || providerFailure;
-        if (error && !budgetExceeded && (!host.pausePending || signal.aborted)) {
+        // A turn ended at a terminating tool result leaves the abort's message on the
+        // agent; the reply that result carries is the answer, not a failure.
+        const endedAtToolResult = Boolean(terminatedReply) && !host.pausePending && !signal.aborted;
+        if (
+          error &&
+          !budgetExceeded &&
+          !endedAtToolResult &&
+          (!host.pausePending || signal.aborted)
+        ) {
           let message = sanitizeProviderError(activeStreamTarget.model.provider, error);
           if (
             !signal.aborted &&

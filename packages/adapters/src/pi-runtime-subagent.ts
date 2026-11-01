@@ -123,6 +123,11 @@ export async function executeSubagent(
     agentNamespace: agentId,
     pendingShells: [],
     modelResponses: undefined,
+    // A paused child or a spent shared budget stops the parent turn; a result that
+    // ends only the child's turn stops the child, and the parent reads it as the
+    // tool result, exactly as it reads a lone turn-ending result.
+    abortTurn: () =>
+      nestedHost.pausePending || host.toolCallBudget.exceeded ? host.abortTurn() : nested.abort(),
   };
   let contextPolicy = createRuntimeContextPolicy(
     {

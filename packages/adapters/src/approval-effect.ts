@@ -368,6 +368,16 @@ export function isToolPauseResult(result: unknown): result is ApprovalPausedTool
   return pause.approval === "paused" || pause.secret === "paused";
 }
 
+/** Whether this tool result ends the live turn with a final reply rather than a pause. */
+export function isTerminatingReplyResult(result: unknown): boolean {
+  return (
+    !!result &&
+    typeof result === "object" &&
+    (result as { terminate?: unknown }).terminate === true &&
+    !isToolPauseResult(result)
+  );
+}
+
 export function isApprovalPausedResult(result: unknown): result is ApprovalPausedToolResult {
   return isToolPauseResult(result);
 }

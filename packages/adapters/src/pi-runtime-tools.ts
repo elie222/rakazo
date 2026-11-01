@@ -12,7 +12,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
-import { isToolPauseResult } from "./approval-effect.js";
+import { isTerminatingReplyResult, isToolPauseResult } from "./approval-effect.js";
 import {
   connectionIdArgument,
   credentialArgument,
@@ -581,8 +581,9 @@ function toAgentTool(
             throw error;
           } finally {
             // Pi only terminates a parallel batch when every result terminates.
-            // A single paused call must stop the turn before another model request.
-            if (host.pausePending) host.abortTurn?.();
+            // A single paused or turn-ending call must stop the turn before another
+            // model request, or the next assistant message replaces its final reply.
+            if (host.pausePending || isTerminatingReplyResult(result)) host.abortTurn?.();
             const details = (
               result as AgentToolResult<{ error?: unknown; isError?: unknown }> | undefined
             )?.details;
