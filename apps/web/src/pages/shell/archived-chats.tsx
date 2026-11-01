@@ -44,7 +44,10 @@ export function ArchivedChats({
       </CollapsibleTrigger>
       <CollapsibleContent className="flex flex-col">
         {archivedBots.map((bot) => (
-          <div key={bot.id} className="flex items-center gap-2 rounded-lg px-2.5 py-2">
+          <div
+            key={bot.id}
+            className="flex items-center gap-2 rounded-lg px-2.5 py-2 [content-visibility:auto] [contain-intrinsic-size:auto_44px]"
+          >
             <BotAvatar
               avatarSet={bot.avatarSet}
               color={bot.color}
@@ -74,7 +77,10 @@ export function ArchivedChats({
           </div>
         ))}
         {archivedGroups.map((group) => (
-          <div key={group.id} className="flex items-center gap-2 rounded-lg px-2.5 py-2">
+          <div
+            key={group.id}
+            className="flex items-center gap-2 rounded-lg px-2.5 py-2 [content-visibility:auto] [contain-intrinsic-size:auto_44px]"
+          >
             <GroupAvatar members={group.members} size={28} />
             <span className="min-w-0 flex-1 truncate text-[14px] text-foreground/75" dir="auto">
               {group.name}

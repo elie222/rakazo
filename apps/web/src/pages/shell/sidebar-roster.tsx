@@ -395,7 +395,7 @@ export function SidebarRoster({
                         : compact
                           ? "w-full min-h-11 gap-2 rounded-xl px-2.5 py-1.5"
                           : "w-full gap-3 rounded-xl px-2.5 py-[10px]"
-                    } text-start ${
+                    } text-start focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${
                       item.kind === "bot" ? "cursor-grab active:cursor-grabbing" : ""
                     } ${
                       selected || rosterDropKey === rowDropKey
@@ -521,7 +521,14 @@ export function SidebarRoster({
                 return (
                   <div
                     key={`${item.kind}:${item.chat.id}`}
-                    className="group/row relative"
+                    // Offscreen rows skip layout and paint; the clip margin keeps a working avatar's glow.
+                    className={`group/row relative [content-visibility:auto] [overflow-clip-margin:16px] ${
+                      mini
+                        ? "[contain-intrinsic-size:auto_48px]"
+                        : compact
+                          ? "[contain-intrinsic-size:auto_44px]"
+                          : "[contain-intrinsic-size:auto_58px]"
+                    }`}
                     style={{
                       opacity: item.kind === "bot" && draggedBotId === item.chat.id ? 0.55 : 1,
                     }}
