@@ -1253,6 +1253,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Won't do": "対応しない",
   "Could not move the ticket": "チケットを移動できませんでした",
   "No tickets yet.": "チケットはまだありません。",
+  "Opens the actions for this credential": "この認証情報の操作を開きます",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "{peer}とのメッセージ{count}件" };

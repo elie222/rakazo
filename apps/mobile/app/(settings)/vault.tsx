@@ -8,6 +8,7 @@ import { Alert, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useIdentityConfirmation } from "../../components/confirm-identity";
 import { LoadFailure } from "../../components/load-failure";
+import { NativeSymbol } from "../../components/native-symbol";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { VaultCredentialSheet } from "../../components/vault-credential-sheet";
 import { mobileTokens } from "../../lib/appearance";
@@ -213,9 +214,12 @@ export default function Vault() {
                 <SettingsRow
                   accessible
                   accessibilityRole="button"
+                  accessibilityHint={t("Opens the actions for this credential")}
                   dimmed={pending}
                   title={credential.name}
                   detail={credentialDetail(credential) || undefined}
+                  // The menu only opens on tap, so the row has to look like it has one.
+                  trailing={<NativeSymbol ios="ellipsis" android="ellipsis-horizontal" size={18} />}
                 />
               </MenuView>
             ))}
