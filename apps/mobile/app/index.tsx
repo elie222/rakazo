@@ -111,6 +111,9 @@ async function openMobileSpace(spaceId: string | undefined, open: () => void) {
   open();
 }
 
+/** Whether this launch has saved its language to the account (see the inbox load). */
+let localeReported = false;
+
 export default function HomeRoute() {
   const { split } = useSplitView();
   return split ? <PickChatPane /> : <HomeSession />;
@@ -263,10 +266,14 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
       setGroups((current) => retainInboxValue(current, navigation.current.groups));
       setSpaces((current) => retainInboxValue(current, navigation.spaces));
       setMe((current) => retainInboxValue(current, nextMe));
-      // Emails follow the app's language, so the account keeps the one this app runs in.
-      // A server that predates it leaves `locale` out.
-      if (nextMe.locale !== undefined && nextMe.locale !== getActiveUiLocale()) {
-        void rpc("preferences/update", { locale: getActiveUiLocale() }).catch(() => undefined);
+      // Emails follow the app's language, so the account keeps the one this app runs in. Once
+      // per launch: polls must not undo a language picked on another device since. A server
+      // that predates it leaves `locale` out.
+      if (!localeReported && nextMe.locale !== undefined) {
+        localeReported = true;
+        if (nextMe.locale !== getActiveUiLocale()) {
+          void rpc("preferences/update", { locale: getActiveUiLocale() }).catch(() => undefined);
+        }
       }
       inboxLoaded.current = true;
       setBadgeLoad({ generation: badgeGeneration });
