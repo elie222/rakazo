@@ -71,6 +71,9 @@ function isActiveStatus(status: string | undefined): boolean {
   return isRunWorking(status) || isRunWaitingOnUser(status);
 }
 
+/** Breathing room the chat column keeps on each side. */
+const CHAT_SIDE_PADDING = 20;
+
 /**
  * The chat screen. Hook order is effect order: the snapshot, scroll, sync and send hooks run their
  * effects at the positions the screen ran them before they were split out.
@@ -548,11 +551,15 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         style={{
           flex: 1,
           backgroundColor: tokens.background,
-          paddingLeft: 20 + columnInsets.left,
-          paddingRight: 20 + columnInsets.right,
+          paddingLeft: CHAT_SIDE_PADDING + columnInsets.left,
+          paddingRight: CHAT_SIDE_PADDING + columnInsets.right,
         }}
       >
         <ThreadMessageList
+          // The screen pads the chat off both edges; the iOS scroll indicator sits at
+          // that padded edge and floats inside the message column instead of hugging
+          // the physical screen edge. Push it back out by the same amount.
+          indicatorRightInset={CHAT_SIDE_PADDING + columnInsets.right}
           scroll={scroll}
           pinnedListHandlers={paging.pinnedListHandlers}
           threadKey={threadKey}
