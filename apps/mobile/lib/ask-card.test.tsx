@@ -25,6 +25,7 @@ vi.mock("react-native", async () => {
       ? Object.assign({}, ...style.map(flatten))
       : ((style as CSSProperties) ?? {});
   return {
+    Platform: { OS: "ios" },
     StyleSheet: { create: <T,>(styles: T) => styles },
     View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
       createElement("div", { style: flatten(style) }, children),

@@ -29,6 +29,11 @@ it("pads the chat title 14 at its start and 10 at its end, mirrored for right-to
   }
 });
 
+it("fades the chat into the composer across the full screen width", () => {
+  const { composerFade } = createThreadHeaderStyles();
+  expect(composerFade).toMatchObject({ position: "absolute", left: 0, right: 0, bottom: "100%" });
+});
+
 it("uses a borderless fallback title fill and leaves the header buttons clear", () => {
   const styles = createThreadHeaderStyles();
   expect(styles.titleCapsuleFill).not.toHaveProperty("borderWidth");
