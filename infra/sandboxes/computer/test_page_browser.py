@@ -20,6 +20,7 @@ loader.exec_module(helper)
 
 MERCHANT = "https://shop.example.test"
 CARD_NUMBER = "4242424242424242"
+FRAME_PAY = {"reason": "final_step", "label": "Pay $20", "amount": "$20", "amountFrom": "button"}
 
 
 class CardBrowser:
@@ -274,6 +275,14 @@ class FrameBrowser:
     def answer(self, frame, expression):
         if expression == helper.EVAL_HELPERS:
             return True
+        if "purchaseIntent(" in expression:
+            ref = json.loads(expression.split("purchaseIntent(", 1)[1].split(",", 1)[0])
+            return {"purchase": frame.get("buys", {}).get(ref), "host": urlsplit(frame["url"]).netloc, "frames": False}
+        if expression == "location.host":
+            return urlsplit(frame["url"]).netloc
+        if expression.startswith("({origin: location.origin, host: location.host"):
+            parts = urlsplit(frame["url"])
+            return {"origin": f"{parts.scheme}://{parts.netloc}", "host": parts.netloc, "url": frame["url"], "title": ""}
         if "snapshot(" in expression:
             limits = json.loads(expression.split("snapshot(", 1)[1].split(")", 1)[0] or "{}")
             self.limits[frame["id"]] = limits
@@ -2278,6 +2287,32 @@ class PageBrowserTest(unittest.TestCase):
         result = browser.act([{"kind": "click", "ref": "f999"}], "auth")
         self.assertEqual((result["ok"], result["completed"], result["error"]), (False, 0, helper.STALE_REF))
         self.assertNotIn("fallback", result)
+
+    def test_a_pay_button_in_a_frame_is_checked_in_that_frame_and_the_card_names_the_top_page_s_site(self):
+        browser = FrameBrowser()
+        browser.frames["auth"]["buys"] = {"f22": FRAME_PAY}
+        with patch.object(helper, "ensure_helpers"):
+            found = helper.purchase_check(browser.client, "top", {"actions": [
+                {"kind": "click", "ref": "e1"}, {"kind": "click", "ref": "f999"}, {"kind": "click", "ref": "f22"}]})
+        self.assertEqual(found["purchase"], {"steps": [2], "label": "Pay $20", "amount": "$20", "amountFrom": "button",
+                                             "reason": "final_step"})
+        self.assertEqual(found["site"], urlsplit(SHOP_PAGE).netloc)
+
+    def test_a_pay_button_in_a_frame_is_pressed_only_on_approval_for_the_top_page_s_site(self):
+        browser = FrameBrowser()
+        browser.frames["auth"]["buys"] = {"f22": FRAME_PAY}
+        refused = browser.act([{"kind": "click", "ref": "f22"}], "auth")
+        self.assertEqual((refused["ok"], refused["completed"], refused["error"]), (False, 0, helper.PURCHASE_REFUSED))
+        self.assertEqual(refused["purchase"]["site"], urlsplit(SHOP_PAGE).netloc)
+        approved = {"kind": "click", "ref": "f22", "approved": True, "label": "Pay $20", "amount": "$20"}
+        self.assertFalse(browser.act([{**approved, "site": urlsplit(AUTH_SITE).netloc}], "auth")["ok"])
+        self.assertEqual(browser.mouse(), [])
+        changed = browser.act([{**approved, "site": urlsplit(SHOP_PAGE).netloc, "amount": "$5"}], "auth")
+        self.assertEqual((changed["ok"], changed["error"]), (False, helper.PURCHASE_CHANGED))
+        self.assertEqual(browser.mouse(), [])
+        result = browser.act([{**approved, "site": urlsplit(SHOP_PAGE).netloc}], "auth")
+        self.assertEqual((result["ok"], result["completed"]), (True, 1))
+        self.assertEqual([kind for kind, *_ in browser.mouse()], ["mouseMoved", "mousePressed", "mouseReleased"])
 
     def test_a_click_in_a_frame_goes_to_its_spot_in_the_window_on_the_page_session_only(self):
         browser = FrameBrowser()

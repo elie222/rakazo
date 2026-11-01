@@ -2330,13 +2330,12 @@ def frame_site_check(client: CdpClient, frame: PageFrame, step: dict[str, Any]) 
 
 
 def frame_step(client: CdpClient, session_id: str, step: dict[str, Any], touched: dict[str, PageFrame],
-               known: list[PageFrame]) -> bool:
+               frame: PageFrame) -> bool:
     """One step on an element inside a frame, as act takes it on the page itself.
 
     Returns whether the frame's page moved to another document on the last key of a type step.
     """
     kind, ref = step["kind"], step["ref"]
-    frame = frame_of(client, session_id, ref, known)
     touched[frame.id] = frame
     if frame.session != session_id:
         # Requests the step sets off in a frame of another process are its session's, and so is a file
@@ -2655,13 +2654,17 @@ def shown(text: Any) -> str:
     return " ".join(INVISIBLE.sub("", str(text or "")).split())
 
 
-def click_purchase(client: CdpClient, session_id: str, ref: str) -> dict[str, Any] | None:
+def click_purchase(client: CdpClient, session_id: str, ref: str, frame: PageFrame | None = None) -> dict[str, Any] | None:
     """The page's host and what a click on ref would buy, or None when the click buys nothing.
 
-    A check that fails, whatever the page did to make it fail, answers with what the page itself shows."""
+    A ref in a frame is asked in that frame's world, and the card names the top page's site, the one the
+    user sees. A check that fails, whatever the page did to make it fail, answers with what the page itself shows."""
     try:
-        found = page_purchase(client, session_id, lambda frame: "window.__rakazoPageBrowser.purchaseIntent("
-                              + json.dumps(ref) + ", " + json.dumps(frame) + ")")
+        found = page_purchase(client, frame.session if frame else session_id,
+                              lambda shows: "window.__rakazoPageBrowser.purchaseIntent("
+                              + json.dumps(ref) + ", " + json.dumps(shows) + ")", frame.world if frame else None)
+        if frame and found and isinstance(found.get("purchase"), dict):
+            found = {**found, "host": eval_json(client, session_id, "location.host")}
     except Exception:  # noqa: BLE001
         buying = signals_or_ask(client, session_id, False)
         if not buying:
@@ -2859,10 +2862,17 @@ def purchase_check(client: CdpClient, session_id: str, args: dict[str, Any]) -> 
     where = eval_json(client, session_id, "({origin: location.origin, host: location.host, url: location.href, "
                       "title: (document.title || '').slice(0, 200)})")
     steps, first = [], None
+    known: list[PageFrame] = []
     for index, step in enumerate(actions):
         if not isinstance(step, dict) or step.get("kind") != "click" or not isinstance(step.get("ref"), str):
             continue
-        found = click_purchase(client, session_id, step["ref"])
+        frame = None
+        if is_frame_ref(step["ref"]):
+            try:
+                frame = frame_of(client, session_id, step["ref"], known)
+            except Settled:
+                continue
+        found = click_purchase(client, session_id, step["ref"], frame)
         if found:
             steps.append(index)
             first = first or found["purchase"]
@@ -2872,6 +2882,21 @@ def purchase_check(client: CdpClient, session_id: str, args: dict[str, Any]) -> 
                 "amountFrom": first.get("amountFrom", "page"), "reason": first["reason"]} if first else None
     return {"ok": True, "origin": where["origin"], "site": where["host"], "purchase": purchase,
             "url": where["url"], "title": where["title"]}
+
+
+def purchase_refusal(step: dict[str, Any], buying: dict[str, Any] | None, completed: int) -> dict[str, Any] | None:
+    """Why a click that buys is not made: bought only on the user's word, for this site, while the button
+    and total still say what the card showed. An earlier step may have changed the page since the caller asked."""
+    if not buying:
+        return None
+    approved = step.get("approved") is True and step.get("site") == buying["host"]
+    changed = approved and any(
+        key in step and shown(step[key]) != shown(buying["purchase"].get(key)) for key in ("label", "amount"))
+    if approved and not changed:
+        return None
+    return {"ok": False, "completed": completed, "uncertain": False,
+            "purchase": {**buying["purchase"], "site": buying["host"]},
+            "error": PURCHASE_CHANGED if changed else PURCHASE_REFUSED}
 
 
 def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> dict[str, Any]:
@@ -2948,9 +2973,14 @@ def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> di
                 return {"uncertain": False, **snap, "ok": False, "completed": completed,
                         "error": "Stale element ref. Take a fresh snapshot."}
             if is_frame_ref(ref):
+                frame = frame_of(client, session_id, ref, known_frames)
+                if kind == "click":
+                    refused = purchase_refusal(step, click_purchase(client, session_id, ref, frame), completed)
+                    if refused:
+                        return refused
                 uncertain = True
                 try:
-                    page_changed = frame_step(client, session_id, step, touched, known_frames)
+                    page_changed = frame_step(client, session_id, step, touched, frame)
                 except TypingStopped as stopped:
                     try:
                         snap = snapshot(client, session_id)
@@ -3012,18 +3042,9 @@ def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> di
                                 "error": NOT_KEPT}
                     continue
             if kind == "click":
-                # Bought only on the user's word, for this site: an earlier step may have changed the page
-                # since the caller asked.
-                buying = click_purchase(client, session_id, ref)
-                if buying:
-                    approved = step.get("approved") is True and step.get("site") == buying["host"]
-                    # What the user saw on the card is what the button says and the total shows now.
-                    changed = approved and any(
-                        key in step and shown(step[key]) != shown(buying["purchase"].get(key)) for key in ("label", "amount"))
-                    if not approved or changed:
-                        return {"ok": False, "completed": completed, "uncertain": False,
-                                "purchase": {**buying["purchase"], "site": buying["host"]},
-                                "error": PURCHASE_CHANGED if changed else PURCHASE_REFUSED}
+                refused = purchase_refusal(step, click_purchase(client, session_id, ref), completed)
+                if refused:
+                    return refused
                 uncertain = True
                 aim = eval_json(client, session_id, f"window.__rakazoPageBrowser.aim({json.dumps(ref)})")
                 if isinstance(aim, dict) and aim.get("x") is not None:
