@@ -585,7 +585,20 @@ jobs:
     environment:
       name: production
       url: https://app.rakazo.com
+    permissions:
+      contents: read
+      id-token: write
     steps:
+      # Production SSH is reachable only over the tailnet; the runner joins with a short-lived
+      # GitHub OIDC identity scoped to this environment, so no Tailscale secret is stored.
+      - name: Join the tailnet
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ vars.TAILSCALE_CLIENT_ID }}
+          audience: ${{ vars.TAILSCALE_AUDIENCE }}
+          tags: tag:ci
+          ping: ${{ secrets.PRODUCTION_SSH_HOST }}
+
       - name: Configure production SSH identity
         env:
           SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
