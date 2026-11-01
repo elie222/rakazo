@@ -76,8 +76,12 @@ async function rollBackLockConflict(migrationUrl: string, migrationsPath: string
   const client = new Client({ connectionString: migrationUrl });
   await client.connect();
   try {
-    const { rows } = await client.query<{ migration_name: string; logs: string | null }>(
-      "SELECT migration_name, logs FROM _prisma_migrations WHERE finished_at IS NULL AND rolled_back_at IS NULL",
+    const { rows } = await client.query<{
+      id: string;
+      migration_name: string;
+      logs: string | null;
+    }>(
+      "SELECT id, migration_name, logs FROM _prisma_migrations WHERE finished_at IS NULL AND rolled_back_at IS NULL",
     );
     const failed = rows.length === 1 ? rows[0]! : undefined;
     if (!failed || !LOCK_CONFLICT.test(failed.logs ?? "")) return undefined;
@@ -87,8 +91,8 @@ async function rollBackLockConflict(migrationUrl: string, migrationsPath: string
     );
     if (NOT_ONE_TRANSACTION.test(sql)) return undefined;
     await client.query(
-      "UPDATE _prisma_migrations SET rolled_back_at = now() WHERE migration_name = $1 AND finished_at IS NULL",
-      [failed.migration_name],
+      "UPDATE _prisma_migrations SET rolled_back_at = now() WHERE id = $1 AND finished_at IS NULL AND rolled_back_at IS NULL",
+      [failed.id],
     );
     return failed.migration_name;
   } finally {
