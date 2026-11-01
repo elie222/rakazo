@@ -46,7 +46,7 @@ export function ArchivedChats({
         {archivedBots.map((bot) => (
           <div
             key={bot.id}
-            className="flex items-center gap-2 rounded-lg px-2.5 py-2 [content-visibility:auto] [contain-intrinsic-size:auto_44px]"
+            className="flex items-center gap-2 rounded-lg px-2.5 py-2 supports-[overflow-clip-margin:16px]:[content-visibility:auto] [overflow-clip-margin:16px] [contain-intrinsic-size:auto_44px]"
           >
             <BotAvatar
               avatarSet={bot.avatarSet}
@@ -79,7 +79,7 @@ export function ArchivedChats({
         {archivedGroups.map((group) => (
           <div
             key={group.id}
-            className="flex items-center gap-2 rounded-lg px-2.5 py-2 [content-visibility:auto] [contain-intrinsic-size:auto_44px]"
+            className="flex items-center gap-2 rounded-lg px-2.5 py-2 supports-[overflow-clip-margin:16px]:[content-visibility:auto] [overflow-clip-margin:16px] [contain-intrinsic-size:auto_44px]"
           >
             <GroupAvatar members={group.members} size={28} />
             <span className="min-w-0 flex-1 truncate text-[14px] text-foreground/75" dir="auto">

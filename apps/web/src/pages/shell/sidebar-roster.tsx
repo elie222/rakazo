@@ -521,8 +521,8 @@ export function SidebarRoster({
                 return (
                   <div
                     key={`${item.kind}:${item.chat.id}`}
-                    // Offscreen rows skip layout and paint; the clip margin keeps a working avatar's glow.
-                    className={`group/row relative [content-visibility:auto] [overflow-clip-margin:16px] ${
+                    // Offscreen rows skip layout and paint, only where the clip margin can keep a working avatar's glow.
+                    className={`group/row relative supports-[overflow-clip-margin:16px]:[content-visibility:auto] [overflow-clip-margin:16px] ${
                       mini
                         ? "[contain-intrinsic-size:auto_48px]"
                         : compact
