@@ -130,6 +130,7 @@ describe("messagingPlatformsFromEnv", () => {
     ]);
     expect((platforms[1]!.adapter as unknown as { mode: string }).mode).toBe("webhook");
     expect(platforms[1]!.capabilities.files).toBe(true);
+    expect(platforms[1]!.capabilities.groups).toBe(true);
   });
 
   it("reads named Telegram bots from TELEGRAM_BOT_TOKEN_<NAME> pairs", () => {
@@ -378,7 +379,7 @@ describe("messagingPlatformsFromEnv", () => {
     expect(capabilities.whatsapp).toEqual({ direct: true, groups: false, receipt: null });
     expect(capabilities.telegram).toEqual({
       direct: true,
-      groups: false,
+      groups: true,
       receipt: null,
       files: true,
     });

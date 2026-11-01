@@ -33,7 +33,15 @@ Add your bot to a group or channel in the chat app. The invite appears under **R
 **Settings → Messaging**; choose **Approve** or **Decline**. Approved groups are listed under
 **Conversations**, where you can **Leave** one at any time.
 
-Open a conversation's **Settings** to decide how the bot behaves there:
+On Telegram, groups link personally, like on iMessage: each member who has linked the app gets
+their own invite under **Requests**, and messages from approved linked members reach each approved
+member's own bot. Members who have not linked Telegram only trigger a one-time intro note in the
+group. Turn privacy mode off so the bot hears the whole group: in BotFather run `/setprivacy` and
+choose **Disable**, or make the bot a group admin. With privacy mode on it only sees messages that
+mention it. Telegram broadcast channels are not group chats; posts there never reach your bot.
+
+Slack rooms added through a workspace are team conversations, the only ones with per-room
+settings. Open a conversation's **Settings** to decide how the bot behaves there:
 
 - **Listening**: **Listen** to everything, or **Mentions only**. Either way, the bot answers when
   mentioned directly.
