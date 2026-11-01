@@ -134,6 +134,7 @@ export * from "./pi-models.js";
 export * from "./pi-oauth.js";
 export * from "./pi-openai-compatible-provider.js";
 export * from "./pi-runtime.js";
+export { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
 export * from "./pi-session.js";
 export { shutdownPiTelemetry } from "./pi-telemetry.js";
 export * from "./pipedream-connector.js";
