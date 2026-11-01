@@ -31,6 +31,7 @@ import {
   QUEUE_HOLDING_RUN_STATUSES,
   releasedTakeoverComputerBlocks,
   resolveAskChoice,
+  SITE_SENDING_TOOLS,
   STEERING_CONTINUATION_PROMPT,
   sanitizeJsonValue,
 } from "@rakazo/core";
@@ -1003,8 +1004,8 @@ async function commitAnswerRunInput(
       where: { id: approvalEffect!.id },
       data: { status: allowed ? "approved" : "denied" },
     });
-    // "Always" on a fetch card allows that site, never every site the tool can reach, and on a
-    // batch allows each action in it, never every action the batch tool can run.
+    // "Always" on a card for a request to a site allows that site, never every site the tool can
+    // reach, and on a batch allows each action in it, never every action the batch tool can run.
     const site = alwaysAllowedSite(approvalEffect!);
     const tools = storedBatchActions(approvalEffect!.batchActions) ?? [approvalEffect!.kind];
     if (input.answer === "always" && (site || approvalEffect!.kind !== "web_fetch")) {
@@ -2308,7 +2309,7 @@ function alwaysAllowedSite(effect: {
   kind: string;
   request: Prisma.JsonValue;
 }): string | undefined {
-  if (effect.kind !== "web_fetch") return undefined;
+  if (!SITE_SENDING_TOOLS.has(effect.kind)) return undefined;
   const request = effect.request as { url?: unknown } | null;
   return typeof request?.url === "string" ? urlSite(request.url) : undefined;
 }

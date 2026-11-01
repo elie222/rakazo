@@ -2927,6 +2927,52 @@ describeJourneys("required product journeys", () => {
     ]);
   });
 
+  it("20e: always allowing a paid request's site stops asking for that site, and only that site", async () => {
+    const cookie = await signup(app, `always-site-j-${stamp}@rakazo.test`, "Always Site");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const first = await rpc<{ runId: string }>(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "show a paid request card",
+    });
+    const waiting = await waitFor(
+      app,
+      cookie,
+      bot.id,
+      (snap) => snap.run?.status === "waiting_input",
+    );
+    expect(JSON.stringify(waiting.messages)).toContain("Always allow example.test");
+    await answerPendingApproval(app, cookie, bot.id, first.runId, "always", waiting);
+    await waitFor(
+      app,
+      cookie,
+      bot.id,
+      (snap) => !snap.run || ["completed", "failed", "cancelled"].includes(snap.run.status),
+    );
+    // A new run, so nothing approved in the first one carries over.
+    await sendAndWait(app, cookie, bot.id, "show a paid request card again");
+    expect(
+      (
+        await rpc<Array<{ effect: string; matchKind: string; matchValue: string }>>(
+          app,
+          cookie,
+          "approvalRules/list",
+        )
+      ).map(({ effect, matchKind, matchValue }) => ({ effect, matchKind, matchValue })),
+    ).toEqual([{ effect: "always_allow", matchKind: "site", matchValue: "example.test" }]);
+
+    await rpc(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "show a paid request card on other",
+    });
+    await waitFor(app, cookie, bot.id, (snap) => snap.run?.status === "waiting_input");
+  });
+
   it("21: in Ask mode, routine destination writes pause on the same approval card", async () => {
     const cookie = await signup(app, `routine-approval-j-${stamp}@rakazo.test`, "Routine Approval");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {
