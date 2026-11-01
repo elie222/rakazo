@@ -597,3 +597,50 @@ function connectTargetPort(args: unknown[]): number | undefined {
   }
   return undefined;
 }
+
+describe("outbound proxy", () => {
+  it("uses the environment proxy when one is configured", async () => {
+    const dispatchers: unknown[] = [];
+    const fetchMock = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      dispatchers.push((init as { dispatcher?: unknown } | undefined)?.dispatcher);
+      return new Response("ok", { status: 200, headers: { "content-type": "text/plain" } });
+    }) as typeof fetch;
+
+    await fetchSafeWebText("https://example.test/page", {
+      fetch: fetchMock,
+      resolveHostname: publicResolver,
+      env: { HTTPS_PROXY: "http://proxy.example.test:9480" } as NodeJS.ProcessEnv,
+    });
+
+    expect(dispatchers[0]?.constructor?.name).toBe("EnvHttpProxyAgent");
+  });
+
+  it("keeps the pinned direct agent when no proxy is configured", async () => {
+    const dispatchers: unknown[] = [];
+    const fetchMock = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      dispatchers.push((init as { dispatcher?: unknown } | undefined)?.dispatcher);
+      return new Response("ok", { status: 200, headers: { "content-type": "text/plain" } });
+    }) as typeof fetch;
+
+    await fetchSafeWebText("https://example.test/page", {
+      fetch: fetchMock,
+      resolveHostname: publicResolver,
+      env: {} as NodeJS.ProcessEnv,
+    });
+
+    expect(dispatchers[0]?.constructor?.name).toBe("Agent");
+  });
+
+  it("still refuses a blocked address before the proxy is asked", async () => {
+    const fetchMock = vi.fn() as unknown as typeof fetch;
+
+    await expect(
+      fetchSafeWebText("http://169.254.169.254/latest/meta-data", {
+        fetch: fetchMock,
+        resolveHostname: publicResolver,
+        env: { HTTPS_PROXY: "http://proxy.example.test:9480" } as NodeJS.ProcessEnv,
+      }),
+    ).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
