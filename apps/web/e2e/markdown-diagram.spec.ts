@@ -91,6 +91,79 @@ test("a wide diagram scrolls on a phone instead of shrinking its text away", asy
   await captureScreenshot(page, testInfo, "markdown-diagram-wide-phone");
 });
 
+test("a text fence reads as wrapped prose beside a scrolling code fence", async ({
+  page,
+}, testInfo) => {
+  await page.goto(`${fixture}?case=prose`);
+  const message = page.getByTestId("diagram-fixture");
+  const fences = message.locator("pre");
+  await expect(fences).toHaveCount(2);
+
+  const metrics = await fences.evaluateAll((blocks) =>
+    blocks.map((block) => ({ scrollWidth: block.scrollWidth, clientWidth: block.clientWidth })),
+  );
+  // The email draft wraps to the card's width; the TypeScript line scrolls sideways.
+  expect(metrics[0]!.scrollWidth).toBeLessThanOrEqual(metrics[0]!.clientWidth);
+  expect(metrics[1]!.scrollWidth).toBeGreaterThan(metrics[1]!.clientWidth);
+
+  const fonts = await message.evaluate((root) => {
+    const codes = root.querySelectorAll("pre code");
+    return [codes[0]!, codes[1]!, root.querySelector("p")!].map(
+      (element) => getComputedStyle(element).fontFamily,
+    );
+  });
+  expect(fonts[0]).toBe(fonts[2]);
+  expect(fonts[1]).not.toBe(fonts[2]);
+
+  // Prose lines take their own direction (a right-to-left draft aligns right); code stays LTR.
+  const bidi = await fences.evaluateAll((blocks) =>
+    blocks.map((block) => [getComputedStyle(block).unicodeBidi, getComputedStyle(block).direction]),
+  );
+  expect(bidi[0]).toEqual(["plaintext", "ltr"]);
+  expect(bidi[1]).toEqual(["isolate", "ltr"]);
+
+  await captureScreenshot(page, testInfo, "markdown-prose-fence");
+
+  // A mixed draft: the English line starts at the left edge, the Hebrew line at the right
+  // edge with its trailing period on its left, as a right-to-left reader expects.
+  await streamUpdate(page, "```text\nHello there.\nשלום עולם.\n```", false);
+  const prose = message.locator("pre");
+  await expect(prose).toHaveCount(1);
+  await expect(prose).toContainText("שלום");
+  const layout = await prose.evaluate((pre) => {
+    const code = pre.querySelector("code")!;
+    const walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT);
+    const nodes: Text[] = [];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) nodes.push(node as Text);
+    const rect = (needle: string, offset = 0, length = needle.length) => {
+      for (const node of nodes) {
+        const at = node.data.indexOf(needle);
+        if (at < 0) continue;
+        const range = document.createRange();
+        range.setStart(node, at + offset);
+        range.setEnd(node, at + offset + length);
+        return range.getBoundingClientRect();
+      }
+      throw new Error(`missing ${needle}`);
+    };
+    const box = pre.getBoundingClientRect();
+    const style = getComputedStyle(pre);
+    const english = rect("Hello there.");
+    const hebrew = rect("שלום עולם.");
+    return {
+      contentLeft: box.left + parseFloat(style.paddingLeft) + parseFloat(style.borderLeftWidth),
+      contentRight: box.right - parseFloat(style.paddingRight) - parseFloat(style.borderRightWidth),
+      englishLeft: english.left,
+      hebrewRight: hebrew.right,
+      firstLetterLeft: rect("שלום עולם.", 0, 1).left,
+      periodRight: rect("שלום עולם.", "שלום עולם".length, 1).right,
+    };
+  });
+  expect(Math.abs(layout.englishLeft - layout.contentLeft)).toBeLessThan(2);
+  expect(Math.abs(layout.hebrewRight - layout.contentRight)).toBeLessThan(2);
+  expect(layout.periodRight).toBeLessThanOrEqual(layout.firstLetterLeft);
+});
+
 test("Mermaid loads only for a message with a diagram", async ({ page }) => {
   // The library itself, not this package's own mermaid*.ts modules or the fixture.
   const libraryRequests: string[] = [];

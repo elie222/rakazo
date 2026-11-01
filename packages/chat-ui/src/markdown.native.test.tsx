@@ -527,7 +527,7 @@ describe("native markdown code blocks", () => {
     "preserves blank fence lines without adding a trailing row: %j",
     (code) => {
       const html = renderToStaticMarkup(
-        <ChatMarkdown colorScheme="light">{`\`\`\`\n${code}`}</ChatMarkdown>,
+        <ChatMarkdown colorScheme="light">{`\`\`\`ts\n${code}`}</ChatMarkdown>,
       );
       const document = new DOMParser().parseFromString(html, "text/html");
       const rows = document.querySelectorAll("rn-scroll-view rn-view[data-flex-direction='row']");
@@ -559,7 +559,7 @@ describe("native markdown code blocks", () => {
       900,
       true,
     ],
-    ["keeps a fence that fits still", "```\nok\n```", 40, false],
+    ["keeps a fence that fits still", "```ts\nok\n```", 40, false],
     [
       "scrolls an indented code block with a line wider than the bubble",
       `    ${LONG_LINE}`,
@@ -601,6 +601,102 @@ describe("native markdown code blocks", () => {
       root.unmount();
     });
     container.remove();
+  });
+});
+
+describe("native markdown prose fences", () => {
+  const draft =
+    "Dear team, this line of prose is far wider than a bubble, so it wraps instead of scrolling.";
+
+  // Stands in for the app's copy button, as the code copy tests do.
+  function CopyProbe({ code }: { code: string }) {
+    return createElement("copy-probe", { "data-code": code });
+  }
+
+  it.each(["text", "txt", "plaintext", ""])(
+    "wraps a fence marked %j as prose in the body font",
+    (language) => {
+      const html = renderToStaticMarkup(
+        <ChatMarkdown palette={lightTokens} colorScheme="light">
+          {`\`\`\`${language}\n${draft}\n\`\`\``}
+        </ChatMarkdown>,
+      );
+      const document = new DOMParser().parseFromString(html, "text/html");
+      // No sideways scroll view: the line wraps inside the fence's card.
+      expect(document.querySelector("rn-scroll-view")).toBeNull();
+      expect(
+        document.querySelector(`[data-background-color="${lightTokens.secondary}"]`),
+      ).not.toBeNull();
+      expect(textStyle(html, draft)).toMatchObject({
+        "data-color": lightTokens.foreground,
+        "data-font-size": "17",
+        "data-line-height": "22",
+      });
+      expect(textStyle(html, draft)["data-font-family"]).toBeUndefined();
+    },
+  );
+
+  it("keeps a fence with a programming language monospaced in a sideways scroll view", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown colorScheme="light">{"```ts\nconst a = 1;\n```"}</ChatMarkdown>,
+    );
+    const document = new DOMParser().parseFromString(html, "text/html");
+    expect(document.querySelector("rn-scroll-view")).not.toBeNull();
+    expect(document.querySelector("rn-scroll-view rn-text")?.getAttribute("data-font-family")).toBe(
+      "ui-monospace",
+    );
+  });
+
+  it("preserves a prose fence's lines and blank lines", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown colorScheme="light">
+        {"```text\nDear team,\n\n  see you Monday.\n```"}
+      </ChatMarkdown>,
+    );
+    const document = new DOMParser().parseFromString(html, "text/html");
+    const lines = [...document.querySelectorAll("rn-text")]
+      .filter((text) => !text.querySelector("rn-view"))
+      .map((text) => text.textContent);
+    expect(lines).toEqual(["text", "Dear team,", " ", "  see you Monday."]);
+  });
+
+  it("gives a prose fence a copy button for its exact code, outside any scroll view", () => {
+    const code = "Dear team,\n\n  see you Monday.";
+    const html = renderToStaticMarkup(
+      <CodeCopyButtonContext.Provider value={CopyProbe}>
+        <ChatMarkdown
+          palette={lightTokens}
+          colorScheme="light"
+        >{`\`\`\`text\n${code}\n\`\`\``}</ChatMarkdown>
+      </CodeCopyButtonContext.Provider>,
+    );
+    const document = new DOMParser().parseFromString(html, "text/html");
+    const probes = document.querySelectorAll("copy-probe");
+    expect(probes).toHaveLength(1);
+    expect(probes[0]?.getAttribute("data-code")).toBe(code);
+    expect(probes[0]?.closest("rn-scroll-view")).toBeNull();
+    // The button sits inside the fence's frame, beside the prose.
+    const frame = probes[0]?.parentElement?.parentElement;
+    expect(frame?.getAttribute("data-border-width")).toBeTruthy();
+    expect(frame?.getAttribute("data-background-color")).toBe(lightTokens.secondary);
+  });
+
+  it("aligns each prose line by its own direction, like a paragraph", () => {
+    const align = (markdown: string, line: string) =>
+      textStyle(
+        renderToStaticMarkup(<ChatMarkdown colorScheme="light">{markdown}</ChatMarkdown>),
+        line,
+      )["data-text-align"];
+    expect(align("```text\nשלום רב.\nDear team,\n```", "שלום רב.")).toBe("right");
+    expect(align("```text\nשלום רב.\nDear team,\n```", "Dear team,")).toBeUndefined();
+    i18n.isRTL = true;
+    try {
+      // React Native mirrors `right` in a right-to-left layout, so it lands on the left.
+      expect(align("```text\nDear team,\n```", "Dear team,")).toBe("right");
+      expect(align("```text\nשלום רב.\n```", "שלום רב.")).toBeUndefined();
+    } finally {
+      i18n.isRTL = false;
+    }
   });
 });
 
@@ -722,16 +818,17 @@ describe("native markdown code colours", () => {
   ] as const)("draws plain code in the %s theme's text colour", (scheme, palette, theme) => {
     const html = renderToStaticMarkup(
       <ChatMarkdown palette={palette} colorScheme={scheme}>
-        {"```bash\necho hi\n```\n\n```\nplain text\n```"}
+        {"```bash\necho hi\n```\n\n```bash\nplain text\n```"}
       </ChatMarkdown>,
     );
     const code = [...new DOMParser().parseFromString(html, "text/html").querySelectorAll("rn-text")]
-      .filter((text) => /echo|hi|plain text/.test(text.textContent ?? ""))
+      .filter((text) => /echo|hi|plain/.test(text.textContent ?? ""))
       .filter((text) => text.children.length === 0);
     expect(code.length).toBeGreaterThan(0);
     for (const text of code) expect(text.getAttribute("data-color")).toBeTruthy();
-    const plain = code.find((text) => text.textContent === "plain text");
-    expect(plain?.getAttribute("data-color")).toBe(theme.plain.color);
+    const plain = code.filter((text) => /^plain/.test(text.textContent ?? ""));
+    expect(plain.length).toBeGreaterThan(0);
+    for (const text of plain) expect(text.getAttribute("data-color")).toBe(theme.plain.color);
   });
 });
 
@@ -985,7 +1082,7 @@ describe("native markdown type", () => {
   });
 
   it("sets code blocks in the system monospaced font at 14pt with the font's own line spacing, in a rounded box", () => {
-    const html = renderToStaticMarkup(<ChatMarkdown>{"```\nconst a = 1;\n```"}</ChatMarkdown>);
+    const html = renderToStaticMarkup(<ChatMarkdown>{"```ts\nconst a = 1;\n```"}</ChatMarkdown>);
     const document = new DOMParser().parseFromString(html, "text/html");
     const token = [...document.querySelectorAll("rn-text")].find((text) =>
       text.textContent?.includes("const"),
