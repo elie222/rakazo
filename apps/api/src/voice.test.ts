@@ -10,6 +10,7 @@ import type { VoiceDeps } from "./voice.js";
 import {
   disconnectVoiceCredential,
   fishSpeechModelValue,
+  isVoiceProviderFailure,
   MAX_SPEAK_REQUEST_BYTES,
   MAX_TRANSCRIBE_REQUEST_BYTES,
   mountVoiceHttpRoutes,
@@ -302,6 +303,17 @@ describe("disconnectVoiceCredential", () => {
       },
     );
     expect(transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("isVoiceProviderFailure", () => {
+  it("treats provider refusals and timeouts as expected but keeps bugs reported", () => {
+    expect(isVoiceProviderFailure(new Error("Fish Audio could not speak that (500)."))).toBe(true);
+    expect(isVoiceProviderFailure(new DOMException("timed out", "TimeoutError"))).toBe(true);
+    expect(isVoiceProviderFailure(new TypeError("Cannot read properties of undefined"))).toBe(
+      false,
+    );
+    expect(isVoiceProviderFailure("boom")).toBe(false);
   });
 });
 
