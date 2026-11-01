@@ -342,7 +342,7 @@ export function accountRoutes(ctx: RouterContext) {
           ? await loadVoiceCredential(deps, context.actor, input.provider, input.scope)
           : await loadDefaultVoiceCredential(deps, context.actor, input.scope);
         if (!row) return [];
-        return (await voiceProviderFor(deps, context.actor, row.cred.provider)).listVoices(
+        return (await voiceProviderFor(deps, row.cred.provider)).listVoices(
           row.apiKey,
           voiceContext(context.actor, context.signal),
         );

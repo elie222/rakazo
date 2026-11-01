@@ -5,10 +5,11 @@ import type {
 } from "@rakazo/adapter-kit";
 import { messagingDeliverJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
+import { ATTACHMENT_MAX_COUNT, isAttachmentAudioMimeType } from "@rakazo/contracts";
 import {
   displayName,
   messageBlockForArtifact,
+  normalizeVoiceTranscript,
   parseMessagingCommand,
   promptTextForAttachments,
   sanitizeMessagingLabel,
@@ -64,8 +65,36 @@ export interface MessagingInboundDeps {
     attachment: MessagingInboundAttachment;
     clientNonce: string;
     downloadDeadline?: number;
-  }) => Promise<{ id: string; name: string; mimeType: string; size: number }>;
+  }) => Promise<{
+    id: string;
+    name: string;
+    mimeType: string;
+    size: number;
+    /** Downloaded content; absent when a replayed delivery returned a stored row. */
+    bytes?: Uint8Array;
+  }>;
+  /**
+   * Transcribes inbound audio with the bot owner's voice provider. Resolves
+   * null when no provider can transcribe or transcription fails; only the
+   * file reference is delivered then. `signal` aborts when the budget runs out.
+   */
+  transcribe?: (input: {
+    spaceId: string;
+    userId: string;
+    audio: Uint8Array;
+    mimeType: string;
+    signal: AbortSignal;
+  }) => Promise<string | null>;
 }
+
+/** A stored inbound attachment, with spoken words when audio was transcribed. */
+type StoredAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  transcript?: string;
+};
 
 type IdentityRow = {
   id: string;
@@ -213,13 +242,16 @@ async function handleDirectEvent(
   }
 }
 
+/** Time for all voice note transcripts of one inbound message; files are delivered without them after it. */
+const VOICE_TRANSCRIBE_BUDGET_MS = 20_000;
+
 /** Download provider-held files into thread artifacts, mirroring the team-chat path. */
 async function storeInboundMedia(
   deps: MessagingInboundDeps,
   ids: ProvisionedMessagingIdentity,
   event: MessagingInboundMessage,
 ) {
-  const artifacts: Array<{ id: string; name: string; mimeType: string; size: number }> = [];
+  const stored: Array<{ artifact: StoredAttachment; bytes: Uint8Array | undefined }> = [];
   const unavailable: string[] = [];
   const downloadDeadline = Date.now() + 2_000;
   for (const [index, attachment] of (event.attachments ?? []).entries()) {
@@ -228,16 +260,19 @@ async function storeInboundMedia(
       continue;
     }
     try {
-      artifacts.push(
-        await deps.storeAttachment({
-          spaceId: ids.spaceId,
-          userId: ids.userId,
-          botId: ids.botId,
-          attachment,
-          clientNonce: `messaging-attachment:${event.provider}:${event.handle}:${index}`,
-          downloadDeadline,
-        }),
-      );
+      const { bytes, ...artifact } = await deps.storeAttachment({
+        spaceId: ids.spaceId,
+        userId: ids.userId,
+        botId: ids.botId,
+        attachment,
+        clientNonce: `messaging-attachment:${event.provider}:${event.handle}:${index}`,
+        downloadDeadline,
+      });
+      // Only audio is transcribed; other files' bytes are not kept past their download.
+      stored.push({
+        artifact,
+        bytes: isAttachmentAudioMimeType(artifact.mimeType) ? bytes : undefined,
+      });
     } catch (error) {
       getLogger().warn("messaging attachment was not stored", {
         reason: error instanceof Error ? error.message : String(error),
@@ -245,7 +280,61 @@ async function storeInboundMedia(
       unavailable.push(`[file: ${sanitizeMessagingLabel(attachment.name)} (unavailable)]`);
     }
   }
+  // Transcribe only after every download, so a slow transcription cannot use up the
+  // download deadline of the attachments that follow it. One short budget covers all
+  // transcripts, so the webhook is answered before the provider retries it.
+  const transcribeDeadline = Date.now() + VOICE_TRANSCRIBE_BUDGET_MS;
+  const artifacts: StoredAttachment[] = [];
+  for (const { artifact, bytes } of stored) {
+    artifacts.push(await withVoiceTranscript(deps, ids, artifact, bytes, transcribeDeadline));
+  }
   return { artifacts, unavailable };
+}
+
+/**
+ * Best-effort transcript for a stored audio attachment. No provider, oversize
+ * audio or a failed call leaves the artifact unchanged, so the message is
+ * still delivered with the file reference.
+ */
+async function withVoiceTranscript(
+  deps: MessagingInboundDeps,
+  ids: Pick<ProvisionedMessagingIdentity, "spaceId" | "userId">,
+  artifact: StoredAttachment,
+  bytes: Uint8Array | undefined,
+  deadline: number,
+): Promise<StoredAttachment> {
+  if (!deps.transcribe || !bytes || !isAttachmentAudioMimeType(artifact.mimeType)) return artifact;
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) return artifact;
+  // The timer both stops waiting and cancels the provider call, so a stalled
+  // request does not keep running after the message is delivered without it.
+  const cancel = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      cancel.abort();
+      resolve(null);
+    }, remaining);
+  });
+  const call = deps
+    .transcribe({
+      spaceId: ids.spaceId,
+      userId: ids.userId,
+      audio: bytes,
+      mimeType: artifact.mimeType,
+      signal: cancel.signal,
+    })
+    .catch((error) => {
+      // Reason only: the audio and the transcript never reach the log.
+      getLogger().warn("messaging attachment transcription failed", {
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    });
+  const transcript = await Promise.race([call, timedOut]).finally(() => clearTimeout(timer));
+  // Normalized once here, so the direct prompt and the routine payload carry the same bounded text.
+  const normalized = normalizeVoiceTranscript(transcript);
+  return normalized ? { ...artifact, transcript: normalized } : artifact;
 }
 
 /** Wake provider-neutral message routines through the same approval boundary as webhooks. */
@@ -256,7 +345,7 @@ export async function wakeMessageRoutines(
   options?: {
     /** Wake clientNonce prefix; must match TeamChatBridge.providerId when event.provider differs. */
     deliveryProvider?: string;
-    artifacts?: Array<{ id: string; name: string; mimeType: string; size: number }>;
+    artifacts?: StoredAttachment[];
     unavailable?: string[];
     /**
      * TeamChat external message id. When set, atomically reassert routine
@@ -328,6 +417,13 @@ export async function wakeMessageRoutines(
             mimeType,
             size,
           })),
+        }
+      : {}),
+    ...(options?.artifacts?.some((artifact) => artifact.transcript)
+      ? {
+          voiceTranscripts: options.artifacts
+            .filter((artifact) => artifact.transcript)
+            .map((artifact) => ({ name: artifact.name, transcript: artifact.transcript })),
         }
       : {}),
   });
