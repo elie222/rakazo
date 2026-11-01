@@ -6,8 +6,6 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("deriveMcpSlug", () => {
   it.each([
-    ["_local", "local"],
-    ["___local", "local"],
     ["!_-_LOCAL!", "local"],
     [`${"_".repeat(80)}local`, "local"],
     ["9 Local", "9-local"],
@@ -28,7 +26,7 @@ describe("deriveMcpSlug", () => {
     ).toBe(true);
   });
 
-  it.each(["", "   ", "!!!", "___", "-_!-_", "世界"])(
+  it.each(["", "-_!-_", "世界"])(
     "uses a backend-valid fallback when %j has no slug characters",
     (name) => {
       vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);

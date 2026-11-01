@@ -1330,3 +1330,138 @@ it("accepts file drops in transparent padding only during file drags", () => {
   dispatchDrag(window, "dragend", dataTransfer);
   expect(fieldset.classList.contains("pointer-events-none")).toBe(true);
 });
+
+it("stops the running reply on Escape, but lets Escape close the mention picker first", () => {
+  const onStop = vi.fn(async () => {});
+  const textarea = renderComposer(async () => true, { onStop });
+  const pressEscape = () =>
+    act(() =>
+      textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    );
+
+  pressEscape();
+  expect(onStop).not.toHaveBeenCalled();
+
+  rerenderComposer({ running: true });
+  pressEscape();
+  expect(onStop).toHaveBeenCalledTimes(1);
+
+  type(textarea, "@");
+  pressEscape();
+  expect(onStop).toHaveBeenCalledTimes(1);
+
+  type(textarea, "/sum");
+  expect(container?.querySelector('[aria-label="Skill summarize"]')).not.toBeNull();
+  pressEscape();
+  expect(onStop).toHaveBeenCalledTimes(1);
+  expect(container?.querySelector('[aria-label="Skill summarize"]')).toBeNull();
+
+  act(() =>
+    textarea.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", repeat: true, bubbles: true }),
+    ),
+  );
+  expect(onStop).toHaveBeenCalledTimes(1);
+});
+
+it.each([10, -30, window.innerHeight - 10])(
+  "records an intersecting run error at top %s once uncovered and stops hit testing",
+  async (top) => {
+    let fire: ((entries: Array<{ isIntersecting: boolean }>) => void) | undefined;
+    const onRunErrorPresented = vi.fn();
+    const original = globalThis.IntersectionObserver;
+    class FakeIntersectionObserver {
+      constructor(callback: (entries: Array<{ isIntersecting: boolean }>) => void) {
+        fire = callback;
+      }
+      observe(target: Element) {
+        const callback = fire;
+        fire = (entries) => callback?.(entries.map((entry) => ({ ...entry, target })));
+      }
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver);
+    const rect = {
+      width: 200,
+      height: 40,
+      top,
+      left: 10,
+      bottom: top + 40,
+      right: 210,
+      x: 10,
+      y: top,
+      toJSON: () => ({}),
+    } as DOMRect;
+    const rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(rect);
+    let covered = true;
+    const pointSpy = vi.fn((x: number, y: number) =>
+      x < 0 || x >= window.innerWidth || y < 0 || y >= window.innerHeight
+        ? null
+        : covered
+          ? document.body
+          : document.querySelector('[data-testid="composer-error"]'),
+    );
+    Object.defineProperty(document, "elementFromPoint", {
+      value: pointSpy,
+      configurable: true,
+      writable: true,
+    });
+    try {
+      renderComposer(async () => true, {
+        runError: "Something failed.",
+        runErrorId: "run-1",
+        onRunErrorPresented,
+      });
+
+      // Off screen: nothing is marked.
+      act(() => fire?.([{ isIntersecting: false }]));
+      expect(onRunErrorPresented).not.toHaveBeenCalled();
+
+      act(() => fire?.([{ isIntersecting: true }]));
+      expect(onRunErrorPresented).not.toHaveBeenCalled();
+      expect(pointSpy).toHaveBeenCalledTimes(1);
+      expect(pointSpy).toHaveBeenLastCalledWith(
+        110,
+        (Math.max(0, top) + Math.min(window.innerHeight, top + 40)) / 2,
+      );
+
+      // The last entry wins when a fast scroll enters and leaves in one batch.
+      act(() => fire?.([{ isIntersecting: true }, { isIntersecting: false }]));
+      await act(async () => {
+        document.body.setAttribute("data-uncovered", "false");
+        document.dispatchEvent(new Event("transitionend"));
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      });
+      expect(pointSpy).toHaveBeenCalledTimes(1);
+      expect(onRunErrorPresented).not.toHaveBeenCalled();
+
+      act(() => fire?.([{ isIntersecting: true }]));
+      expect(pointSpy).toHaveBeenCalledTimes(2);
+      covered = false;
+      await act(async () => {
+        document.body.setAttribute("data-uncovered", "true");
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      });
+      expect(onRunErrorPresented).toHaveBeenCalledExactlyOnceWith("run-1");
+      expect(pointSpy).toHaveBeenCalledTimes(3);
+
+      await act(async () => {
+        document.body.removeAttribute("data-uncovered");
+        document.dispatchEvent(new Event("transitionend"));
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      });
+      expect(pointSpy).toHaveBeenCalledTimes(3);
+
+      // A second entry for the same card does not report it twice.
+      act(() => fire?.([{ isIntersecting: true }]));
+      expect(onRunErrorPresented).toHaveBeenCalledTimes(1);
+    } finally {
+      rectSpy.mockRestore();
+      Reflect.deleteProperty(document, "elementFromPoint");
+      vi.stubGlobal("IntersectionObserver", original);
+    }
+  },
+);

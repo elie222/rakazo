@@ -1062,7 +1062,6 @@ async function commitAnswerRunInput(
                 detail: instructionUpdateDiff(
                   pendingAsk.instructionUpdate.before,
                   editedInstructions,
-                  pendingAsk.instructionUpdate.reason,
                 ),
               }
             : {}),

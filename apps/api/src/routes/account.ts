@@ -6,11 +6,7 @@ import {
   PushSessionEndedError,
 } from "@rakazo/adapters";
 import type { ActionApprovalRule, Actor, Me, SettingsScope } from "@rakazo/contracts";
-import {
-  approvalModeFromPreference,
-  approvalPreferenceFromMode,
-  previewActionApprovalRule,
-} from "@rakazo/core";
+import { approvalModeFromPreference, approvalPreferenceFromMode } from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
 import {
   auditLogOrganization,
@@ -31,6 +27,8 @@ import {
   selectVoicePreference,
   voicePreferenceTarget,
 } from "@rakazo/db";
+import { createAccessGrant, listAccessGrants, revokeAccessGrant } from "../access-grants.js";
+import { requireAdmin } from "../admins.js";
 import { aiConsentStatus, allowAiConsent } from "../ai-consent.js";
 import type { BillingService } from "../billing.js";
 import { firstModelConnectAnalytics } from "../model-connect-analytics.js";
@@ -116,6 +114,20 @@ export function accountRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
     },
+    accessGrants: {
+      list: authed.accessGrants.list.handler(async ({ context }) => {
+        await requireGrantAdmin(deps, context.actor);
+        return listAccessGrants(deps.prisma);
+      }),
+      create: authed.accessGrants.create.handler(async ({ context, input }) => {
+        await requireGrantAdmin(deps, context.actor);
+        return createAccessGrant(deps.prisma, context.actor.userId, input);
+      }),
+      revoke: authed.accessGrants.revoke.handler(async ({ context, input }) => {
+        await requireGrantAdmin(deps, context.actor);
+        return revokeAccessGrant(deps.prisma, input.id);
+      }),
+    },
     preferences: {
       update: authed.preferences.update.handler(async ({ context, input }): Promise<Me> => {
         await deps.prisma.user.update({
@@ -171,19 +183,6 @@ export function accountRoutes(ctx: RouterContext) {
       }),
     },
     approvalRules: {
-      preview: authed.approvalRules.preview.handler(async ({ context, input }) => {
-        const rules = (await listApprovalRules(deps.prisma, context.actor, input.scope)).map(
-          approvalRuleDto,
-        );
-        const rule = rules.find((entry) => entry.id === input.id);
-        if (!rule) throw new ORPCError("NOT_FOUND");
-        if (rule.matchKind === "category" && input.effect !== "remove")
-          throw new ORPCError("BAD_REQUEST");
-        return previewActionApprovalRule(rules, rule, input.effect, {
-          ...input.sample,
-          site: input.sample.site?.toLowerCase(),
-        });
-      }),
       list: authed.approvalRules.list.handler(async ({ context, input }) => {
         const rows = await listApprovalRules(deps.prisma, context.actor, input?.scope);
         return rows.map(approvalRuleDto);
@@ -431,4 +430,10 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor, scope?: Se
 function requireBilling(deps: RouterDeps): BillingService {
   if (!deps.billing) throw new ORPCError("NOT_FOUND", { message: "Billing is not enabled" });
   return deps.billing;
+}
+
+async function requireGrantAdmin(deps: RouterDeps, actor: Actor) {
+  await requireAdmin(deps, actor.userId);
+  if (!deps.billing?.modelCreditsEnabled)
+    throw new ORPCError("NOT_FOUND", { message: "Model credits are not enabled" });
 }

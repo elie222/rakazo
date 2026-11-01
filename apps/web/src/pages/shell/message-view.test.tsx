@@ -257,6 +257,17 @@ it("keeps an edit made after a save when the saved status arrives late", async (
   expect(button().textContent).toBe("Saved");
 });
 
+it("speaks the message it renders", () => {
+  const onSpeak = vi.fn();
+  renderView("bot", [{ kind: "text", text: "Hello" }], { onSpeak, voiceReady: true });
+  const button = [...container.querySelectorAll("button")].find(
+    (node) => node.textContent === "Speak",
+  );
+  act(() => button?.click());
+  expect(onSpeak).toHaveBeenCalledTimes(1);
+  expect(onSpeak.mock.calls[0]?.[0]).toMatchObject({ id: "message" });
+});
+
 it("opens one counted peer line without an inline reply toggle", () => {
   const open = vi.fn();
   renderView(

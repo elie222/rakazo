@@ -35,6 +35,8 @@ export const ES_MESSAGES: Record<string, string> = {
     "El límite de solicitud de esta conexión es demasiado bajo. Elige otro modelo.",
   "This model's context window is too small. Choose another model.":
     "La ventana de contexto de este modelo es demasiado pequeña. Elige otro modelo.",
+  "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.":
+    "El resultado de la herramienta de este servidor no cabe en el modelo. Desactiva Conservar los resultados de las herramientas completos para ese servidor, o elige otro modelo.",
   "{provider} denied access to this model.": "{provider} denegó el acceso a este modelo.",
   "{summary} Backup models failed or were unavailable for this request.":
     "{summary} Los modelos de respaldo fallaron o no estaban disponibles para esta solicitud.",
@@ -500,6 +502,10 @@ export const ES_MESSAGES: Record<string, string> = {
   "Replace API key": "Reemplazar clave de API",
   "Saved.": "Guardado.",
   "Server URL": "URL del servidor",
+  Protocol: "Protocolo",
+  "Chat Completions": "Chat Completions",
+  Responses: "Responses",
+  "Anthropic Messages": "Anthropic Messages",
   "Server found. Enter a model name.": "Servidor encontrado. Introduce un nombre de modelo.",
   "Setup help": "Ayuda de configuración",
   "Sign in": "Iniciar sesión",
@@ -1061,6 +1067,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Always open {site}": "Abrir siempre {site}",
   "Trusted sites": "Sitios de confianza",
   "Run history": "Historial de ejecuciones",
+  "No reply": "Sin respuesta",
   "No runs yet": "Aún no hay ejecuciones",
   "Load older runs": "Cargar ejecuciones anteriores",
   "Could not load run history": "No se pudo cargar el historial de ejecuciones",
@@ -1085,15 +1092,6 @@ export const ES_MESSAGES: Record<string, string> = {
   "Add field": "Agregar campo",
   Label: "Etiqueta",
   "Could not show the credential": "No se pudo mostrar la credencial",
-  "Allow rule": "Regla de permiso",
-  "Ask rule": "Regla de aprobación",
-  "Block rule": "Regla de bloqueo",
-  "Candidate rule": "Regla propuesta",
-  "Could not preview rule": "No se pudo previsualizar la regla",
-  Current: "Actual",
-  "No matching rule": "Ninguna regla coincide",
-  "Test rule": "Probar regla",
-  "Tool name": "Nombre de la herramienta",
   Wallet: "Billetera",
   "Connect {name}": "Conectar {name}",
   "Could not load wallet": "No se pudo cargar la billetera",
@@ -1165,6 +1163,14 @@ export const ES_MESSAGES: Record<string, string> = {
   "Use email code": "Usar código por correo",
   "Use password": "Usar contraseña",
   "{count} messages with {peer}": "{count} mensajes con {peer}",
+  Board: "Tablero",
+  "To do": "Por hacer",
+  "In progress": "En curso",
+  "In review": "En revisión",
+  Blocked: "Bloqueado",
+  "Won't do": "No se hará",
+  "Could not move the ticket": "No se pudo mover el ticket",
+  "No tickets yet.": "Aún no hay tickets.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

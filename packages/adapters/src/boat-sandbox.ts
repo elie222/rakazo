@@ -443,6 +443,9 @@ export class BoatSandboxProvider implements SandboxProvider {
         60_000,
         context.signal,
       );
+      // Creating two directories outlasting a minute means the machine stopped answering.
+      if (result.timedOut)
+        throw new SandboxUnresponsiveError("could not prepare Boat workspace (timed out)");
       if (result.exitCode !== 0) {
         throw new Error(`could not prepare Boat workspace (${commandFailure(result)})`);
       }

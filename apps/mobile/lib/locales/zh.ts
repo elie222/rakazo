@@ -114,6 +114,8 @@ export const ZH_MESSAGES: Record<string, string> = {
     "此连接的请求限额过低。请选择其他模型。",
   "This model's context window is too small. Choose another model.":
     "此模型的上下文窗口太小。请选择其他模型。",
+  "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.":
+    "此服务器的工具结果放不进该模型。请关闭该服务器的“完整保留工具结果”，或选择其他模型。",
   "{provider} took too long to respond. Try again.": "{provider}响应超时。请重试。",
   "{provider} is overloaded right now. Try again in a moment.":
     "{provider}当前负载过高。请稍后再试。",
@@ -640,6 +642,10 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Sending…": "正在发送…",
   Server: "服务器",
   "Server URL": "服务器地址",
+  Protocol: "协议",
+  "Chat Completions": "Chat Completions",
+  Responses: "Responses",
+  "Anthropic Messages": "Anthropic Messages",
   "Setup help": "设置帮助",
   Share: "分享",
   "Share {name}": "分享 {name}",
@@ -1133,6 +1139,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Always open {site}": "始终打开 {site}",
   "Trusted sites": "受信任的网站",
   "Run history": "运行记录",
+  "No reply": "未回复",
   "No runs yet": "还没有运行记录",
   "Load older runs": "加载更早的运行记录",
   "Could not load run history": "无法加载运行历史记录",
@@ -1157,15 +1164,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Add field": "添加字段",
   Label: "标签",
   "Could not show the credential": "无法显示凭据",
-  "Allow rule": "允许规则",
-  "Ask rule": "审批规则",
-  "Block rule": "禁止规则",
-  "Candidate rule": "候选规则",
-  "Could not preview rule": "无法预览规则",
-  Current: "当前",
-  "No matching rule": "未匹配规则",
-  "Test rule": "测试规则",
-  "Tool name": "工具名",
   Wallet: "钱包",
   "Connect {name}": "连接 {name}",
   "Could not load wallet": "无法加载钱包",
@@ -1233,6 +1231,14 @@ export const ZH_MESSAGES: Record<string, string> = {
   "1 free month earned": "已获得 1 个月免费",
   "{count} free months earned": "已获得 {count} 个月免费",
   "Submit a plugin": "提交插件",
+  Board: "看板",
+  "To do": "待办",
+  "In progress": "进行中",
+  "In review": "审核中",
+  Blocked: "已阻塞",
+  "Won't do": "不做",
+  "Could not move the ticket": "无法移动工单",
+  "No tickets yet.": "还没有工单。",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

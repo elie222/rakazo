@@ -5,11 +5,15 @@ const { native } = vi.hoisted(() => ({
     setOpenThread: vi.fn(async (): Promise<void> => undefined),
     resume: vi.fn(async (): Promise<void> => undefined),
     resumeAfterMute: vi.fn(async (): Promise<void> => undefined),
+    stop: vi.fn(async (): Promise<void> => undefined),
   },
 }));
 
 vi.mock("expo-modules-core", () => ({ requireNativeModule: () => native }));
-vi.mock("expo-notifications", () => ({ setNotificationHandler: vi.fn() }));
+vi.mock("expo-notifications", () => ({
+  setNotificationHandler: vi.fn(),
+  dismissAllNotificationsAsync: vi.fn(),
+}));
 vi.mock("react-native", () => ({ Platform: { OS: "android" } }));
 vi.mock("./i18n", () => ({ getActiveUiLocale: () => "de", t: (text: string) => text }));
 const store = vi.hoisted(() => new Map<string, string>());
@@ -19,7 +23,12 @@ vi.mock("expo-secure-store", () => ({
   deleteItemAsync: async (key: string) => void store.delete(key),
 }));
 
-import { afterChatNotifyChange, resumeLiveNotifications } from "./live-notifications";
+import * as Notifications from "expo-notifications";
+import {
+  afterChatNotifyChange,
+  resumeLiveNotifications,
+  stopLiveNotifications,
+} from "./live-notifications";
 import { saveServerHeaders } from "./server-headers";
 
 describe("Android live notification resume", () => {
@@ -102,6 +111,14 @@ describe("Android live notification resume", () => {
     } finally {
       native.resumeAfterMute = resumeAfterMute;
     }
+  });
+});
+
+describe("Android sign-out", () => {
+  it("leaves clearing delivered notifications to the native service", async () => {
+    await stopLiveNotifications(true);
+    expect(native.stop).toHaveBeenCalledWith(true);
+    expect(Notifications.dismissAllNotificationsAsync).not.toHaveBeenCalled();
   });
 });
 

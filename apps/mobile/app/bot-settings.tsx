@@ -89,8 +89,8 @@ export default function BotSettingsScreen() {
   const [thinkingLevel, setThinkingLevel] = useState("");
   const [notifyOnFinish, setNotifyOnFinish] = useState(true);
   const [autoSpeak, setAutoSpeak] = useState(false);
-  const [crossSpaceCommunication, setCrossSpaceCommunication] = useState(false);
-  const [fleetManagement, setFleetManagement] = useState(false);
+  const [crossSpaceCommunication, setCrossSpaceCommunication] = useState(true);
+  const [fleetManagement, setFleetManagement] = useState(true);
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
   const [me, setMe] = useState<MobileMe | null>(null);
@@ -190,8 +190,8 @@ export default function BotSettingsScreen() {
         setThinkingLevel(next.thinkingLevel ?? "");
         setAutoSpeak(next.autoSpeak);
         setNotifyOnFinish(next.notifyOnFinish ?? true);
-        setCrossSpaceCommunication(next.crossSpaceCommunication ?? false);
-        crossSpaceSave.reset(next.crossSpaceCommunication ?? false);
+        setCrossSpaceCommunication(next.crossSpaceCommunication ?? true);
+        crossSpaceSave.reset(next.crossSpaceCommunication ?? true);
         setFleetManagement(next.fleetManagement);
         fleetSave.reset(next.fleetManagement);
       })

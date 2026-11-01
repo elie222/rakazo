@@ -5062,7 +5062,7 @@ describe("held instruction answers", () => {
           blocks: [
             expect.objectContaining({
               instructionUpdate: expect.objectContaining({ after: "Never send" }),
-              detail: "Learned preference\n\n- Original\n+ Never send",
+              detail: "- Original\n+ Never send",
             }),
           ],
         },

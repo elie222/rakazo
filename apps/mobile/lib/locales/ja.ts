@@ -34,6 +34,8 @@ export const JA_MESSAGES: Record<string, string> = {
     "この接続のリクエスト上限が小さすぎます。別のモデルを選択してください。",
   "This model's context window is too small. Choose another model.":
     "このモデルのコンテキストウィンドウは小さすぎます。別のモデルを選択してください。",
+  "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.":
+    "このサーバーのツール結果はモデルに収まりません。そのサーバーの「ツール結果を省略しない」をオフにするか、別のモデルを選んでください。",
   "{provider} denied access to this model.": "{provider}がこのモデルへのアクセスを拒否しました。",
   "{summary} Backup models failed or were unavailable for this request.":
     "{summary} 予備のモデルでエラーが発生したか、このリクエストでは利用できませんでした。",
@@ -510,6 +512,10 @@ export const JA_MESSAGES: Record<string, string> = {
   "Saved.": "保存しました。",
   "Search models": "モデルを検索",
   "Server URL": "サーバーURL",
+  Protocol: "プロトコル",
+  "Chat Completions": "Chat Completions",
+  Responses: "Responses",
+  "Anthropic Messages": "Anthropic Messages",
   "Server found. Enter a model name.": "サーバーが見つかりました。モデル名を入力してください。",
   "Setup help": "セットアップのヘルプ",
   "Show less": "表示を減らす",
@@ -1146,6 +1152,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Always open {site}": "{site} を常に開く",
   "Trusted sites": "信頼済みサイト",
   "Run history": "実行履歴",
+  "No reply": "返信なし",
   "No runs yet": "実行はまだありません",
   "Load older runs": "過去の実行を読み込む",
   "Could not load run history": "実行履歴を読み込めませんでした",
@@ -1171,15 +1178,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "Add field": "フィールドを追加",
   Label: "ラベル",
   "Could not show the credential": "認証情報を表示できませんでした",
-  "Allow rule": "許可ルール",
-  "Ask rule": "確認ルール",
-  "Block rule": "ブロックルール",
-  "Candidate rule": "変更案",
-  "Could not preview rule": "ルールをプレビューできませんでした",
-  Current: "現在",
-  "No matching rule": "一致するルールなし",
-  "Test rule": "ルールを試す",
-  "Tool name": "ツール名",
   Wallet: "ウォレット",
   "Connect {name}": "{name}に接続",
   "Could not load wallet": "ウォレットを読み込めませんでした",
@@ -1247,6 +1245,14 @@ export const JA_MESSAGES: Record<string, string> = {
   "1 free month earned": "1か月分の無料期間を獲得",
   "{count} free months earned": "{count}か月分の無料期間を獲得",
   "Submit a plugin": "プラグインを申請",
+  Board: "ボード",
+  "To do": "未着手",
+  "In progress": "進行中",
+  "In review": "レビュー中",
+  Blocked: "ブロック中",
+  "Won't do": "対応しない",
+  "Could not move the ticket": "チケットを移動できませんでした",
+  "No tickets yet.": "チケットはまだありません。",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "{peer}とのメッセージ{count}件" };

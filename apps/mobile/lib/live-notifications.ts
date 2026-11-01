@@ -165,7 +165,9 @@ function nativeServerHeaders(apiBase: string): string {
 }
 
 export async function stopLiveNotifications(clearSession = false): Promise<void> {
-  await nativeNotifications?.stop(clearSession);
+  // Android's native service clears delivered notifications itself.
+  if (nativeNotifications) await nativeNotifications.stop(clearSession);
+  else if (clearSession) await Notifications.dismissAllNotificationsAsync();
 }
 
 export async function setOpenNotificationThread(

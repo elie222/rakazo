@@ -6,17 +6,24 @@ import type {
   MessagingSurface,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
+import { SandboxUnresponsiveError } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { currentDbContext } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import { createBackgroundJobHandlers } from "./background-job-handlers.js";
+import type * as ComputerControl from "./computer-control.js";
+import { expireComputerControl } from "./computer-control.js";
 import { createRunExecutor } from "./executor.js";
 import { compactHistory } from "./history-compaction.js";
 import { deliverMessagingOutbound, mirrorMessagingOutbound } from "./messaging-delivery.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 
 vi.mock("./history-compaction.js", () => ({ compactHistory: vi.fn(async () => undefined) }));
+vi.mock("./computer-control.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof ComputerControl>()),
+  expireComputerControl: vi.fn(async () => false),
+}));
 vi.mock("./messaging-delivery.js", () => ({
   deliverMessagingOutbound: vi.fn(async () => undefined),
   mirrorMessagingOutbound: vi.fn(async () => undefined),
@@ -175,6 +182,40 @@ describe("createBackgroundJobHandlers", () => {
     lookups.findUnique.mockResolvedValueOnce(null as never);
     await handlers["run.continue"]({ runId: "run-gone" });
     expect(continueRun).toHaveBeenCalledTimes(2);
+  });
+
+  it("tries a control release again later when the computer provider is unreachable", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
+    vi.mocked(expireComputerControl).mockRejectedValueOnce(
+      new SandboxUnresponsiveError("Boat could not be reached"),
+    );
+    const enqueue = vi.fn(async () => undefined);
+    const handlers = createBackgroundJobHandlers({
+      executor: {} as unknown as ReturnType<typeof createRunExecutor>,
+      prisma: { computer: owned() } as unknown as PrismaClient,
+      sandbox: {} as unknown as SandboxProvider,
+      home: {} as unknown as AgentHomeStore,
+      artifacts: {} as unknown as ArtifactStore,
+      jobs: { enqueue } as unknown as JobPublisher,
+      events: {} as unknown as ThreadEvents,
+      workerId: "worker-1",
+      runtime: {} as unknown as AgentRuntime,
+      secretStore: {} as unknown as EncryptedSecretStore,
+      memoryProviders: { resolve: vi.fn(async () => null) },
+    });
+
+    await handlers["computer.control-expire"]({ computerId: "computer-1", leaseId: "lease-1" });
+
+    expect(enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "computer.control-expire",
+        payload: { computerId: "computer-1", leaseId: "lease-1" },
+      }),
+    );
+    expect(sink.events.map((event) => [event.level, event.message])).toEqual([
+      ["warn", "computer.control_expire_deferred"],
+    ]);
   });
 
   it("resolves the deployment model when no user credential is configured", async () => {

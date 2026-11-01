@@ -2,6 +2,7 @@ import { useFocusEffect, useNavigation } from "expo-router";
 import type { RefObject } from "react";
 import { useCallback, useEffect } from "react";
 import { AppState } from "react-native";
+import { selectedSpaceId } from "./api";
 import { cancelFocusPrompt, focusPromptThreadActive } from "./focus-prompt";
 import { saveLastBotId } from "./last-bot";
 import { dismissThreadNotifications, setOpenNotificationThread } from "./live-notifications";
@@ -51,7 +52,7 @@ export function useThreadFocus({
     useCallback(() => {
       if (botId && !readOnly) {
         focusPromptThreadActive(botId);
-        void saveLastBotId(botId).catch(() => undefined);
+        void saveLastBotId(botId, selectedSpaceId()).catch(() => undefined);
       } else {
         // Group thread focus: prior bot screen may stay mounted, so clear any delayed setup.
         cancelFocusPrompt();

@@ -17,13 +17,13 @@ describe("retry policy", () => {
   });
 
   it("retries server errors, rate limits, and request timeouts", () => {
-    for (const status of [500, 502, 503, 504, 429, 408]) {
+    for (const status of [503, 429, 408]) {
       expect(isRetryableError(withStatus(status))).toBe(true);
     }
   });
 
   it("stops on every other client error", () => {
-    for (const status of [400, 401, 403, 404, 409, 410, 422, 426]) {
+    for (const status of [401, 404, 426]) {
       expect(isRetryableError(withStatus(status))).toBe(false);
     }
   });

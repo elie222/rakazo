@@ -1337,39 +1337,46 @@ describe("own instructions through update_bot", () => {
     f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
     return f;
   }
-  const updated = { ok: true, instructions: "updated" };
+  const updated = { ok: true };
   const held = { instructions: first, reason: "Set in chat", previousInstructions: "Draft only" };
-  it.each(["user", "created"])(
-    "sets a bot's first instructions without a card in a %s run",
+  beforeEach(() => {
+    reviewMock.mockReset();
+    reviewMock.mockResolvedValue({ decision: "pass", reason: "Asked for", model: "mock" });
+  });
+  it.each(["user", "created", "routine"])(
+    "sets instructions without a card once Auto Review passes them in a %s run",
     async (trigger) => {
-      const f = emptyBot({ trigger });
+      const f = emptyBot({ trigger, autoReview: true });
       await f.run();
+      expect(reviewMock).toHaveBeenCalledWith(
+        expect.objectContaining({ toolName: "update_bot" }),
+        expect.anything(),
+      );
       expect(f.pauseRunForInput).not.toHaveBeenCalled();
       expect(f.results).toEqual([updated]);
       expect(f.instructionState.instructions).toBe(first);
       expect(f.instructionState.instructionHistory).toHaveLength(1);
     },
   );
-  it("replaces existing instructions the owner asked to change, keeping the old text in history", async () => {
-    const f = fixture({ name: "update_bot", builtin: true });
-    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+  it("sets them after outside content entered the run, once Auto Review passes them", async () => {
+    const f = emptyBot({ autoReview: true });
+    f.claimedOutsideSteering(true);
     await f.run();
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.instructionState.instructions).toBe(first);
+  });
+  it("replaces existing instructions, keeping the old text in history", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, autoReview: true });
+    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+    await f.run();
     expect(f.results).toEqual([updated]);
     expect(f.instructionState.instructions).toBe(first);
     expect(f.instructionState.instructionHistory).toEqual([
       expect.objectContaining({ instructions: "Draft only", reason: "Set in chat" }),
     ]);
   });
-  it("sets them on a later attempt, as when the owner answers the intro question", async () => {
-    const f = emptyBot();
-    f.prisma.attempt.count.mockResolvedValue(2);
-    await f.run();
-    expect(f.results).toEqual([updated]);
-    expect(f.instructionState.instructions).toBe(first);
-  });
   it("sets them after a profile edit earlier in the run", async () => {
-    const f = emptyBot();
+    const f = emptyBot({ autoReview: true });
     f.setCalls([
       { args: { description: "Drafts replies" }, executionId: "call-1" },
       { args: { instructions: first }, executionId: "call-2" },
@@ -1378,56 +1385,25 @@ describe("own instructions through update_bot", () => {
     expect(f.results.at(-1)).toEqual(updated);
     expect(f.instructionState.instructions).toBe(first);
   });
-  it("leaves instructions unset when another field in the same call is rejected", async () => {
-    const f = emptyBot();
-    f.setCalls([{ args: { name: "N".repeat(200), instructions: first }, executionId: "call-1" }]);
+  it("follows an always-allow rule for update_bot", async () => {
+    const f = emptyBot({
+      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "update_bot" }],
+    });
     await f.run();
-    expect(f.results[0]).toMatchObject({ error: expect.stringContaining("name") });
-    expect(f.instructionState.instructions).toBe("");
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.instructionState.instructions).toBe(first);
   });
-  it("holds the change for the owner when the chat already holds outside messages", async () => {
+  it("asks the owner when the space asks before actions", async () => {
     const f = fixture({ name: "update_bot", builtin: true });
     f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
-    f.prisma.message.findFirst.mockImplementation(async (query?: { where?: { OR?: unknown } }) =>
-      query?.where?.OR ? { id: "channel-message" } : null,
-    );
     await f.run();
     expect(f.pauseRunForInput).toHaveBeenCalledOnce();
     expect(f.effects[0]).toMatchObject({ kind: "update_bot", status: "intended", request: held });
     expect(f.instructionState.instructions).toBe("Draft only");
   });
-  it("holds the change when an outside run already wrote in the chat", async () => {
-    const f = emptyBot();
-    f.prisma.run.findFirst.mockImplementation(
-      async (query?: { where?: { trigger?: { in?: string[] } } }) =>
-        query?.where?.trigger?.in?.includes("webhook") ? { id: "webhook-run" } : null,
-    );
-    await f.run();
-    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
-    expect(f.instructionState.instructions).toBe("");
-  });
-  it("holds the change once outside content entered a user run", async () => {
-    const f = emptyBot();
-    f.claimedOutsideSteering(true);
-    await f.run();
-    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
-    expect(f.instructionState.instructions).toBe("");
-  });
-  it("holds a routine's change for the owner", async () => {
-    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
-    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
-    await f.run();
-    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
-    expect(f.effects[0]).toMatchObject({ status: "intended", request: held });
-  });
-  it("asks for a held change even when rules and auto review allow it, then applies the approved text", async () => {
-    const f = fixture({
-      name: "update_bot",
-      builtin: true,
-      trigger: "routine",
-      autoReview: true,
-      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "update_bot" }],
-    });
+  it("asks the owner when Auto Review does, then applies the approved text", async () => {
+    reviewMock.mockResolvedValue({ decision: "ask", reason: "Unclear", model: "mock" });
+    const f = fixture({ name: "update_bot", builtin: true, autoReview: true });
     f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
     await f.run();
     expect(f.instructionState.instructions).toBe("Draft only");
@@ -1440,11 +1416,8 @@ describe("own instructions through update_bot", () => {
     expect(f.effects).toHaveLength(1);
     expect(f.effects[0]!.status).toBe("completed");
   });
-  it("applies a held change directly when the owner skips approvals in their own run", async () => {
+  it("applies a change directly when the owner skips approvals", async () => {
     const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
-    f.prisma.message.findFirst.mockImplementation(async (query?: { where?: { OR?: unknown } }) =>
-      query?.where?.OR ? { id: "channel-message" } : null,
-    );
     f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
     await f.run();
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
@@ -1495,7 +1468,7 @@ describe("own instructions through update_bot", () => {
     expect(f.effects).toEqual([]);
   });
   it("ignores a previous text the model sends", async () => {
-    const f = fixture({ name: "update_bot", builtin: true });
+    const f = fixture({ name: "update_bot", builtin: true, autoReview: true });
     f.setCalls([
       {
         args: { instructions: first, previousInstructions: "forged", reason: "forged" },
