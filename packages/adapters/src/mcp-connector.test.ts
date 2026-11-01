@@ -1497,6 +1497,76 @@ describe("MCP connector session cache", () => {
     await connector.close();
   });
 
+  it.each([
+    ["renews it and connects", { access_token: "fake-renewed", token_type: "bearer" }, true],
+    ["asks for a reconnect when it cannot be renewed", undefined, false],
+  ])(
+    "when the server rejects an unexpired token with a JSON-RPC error, %s",
+    async (_, renewed, connects) => {
+      const state = { failNext: false, initializations: 0 };
+      const healthy = mcpFetch(state);
+      const provider = new StoredMcpOAuthProvider(
+        "server-1",
+        {
+          oauth: {
+            tokens: {
+              access_token: "fake-revoked",
+              refresh_token: "fake-refresh",
+              token_type: "bearer",
+            },
+          },
+        },
+        async () => undefined,
+        { refresh: async () => ({ tokens: renewed, obtainedAt: Date.now() }) },
+      );
+      const connector = new McpConnector(
+        {
+          mcpServer: { ...NO_SHARED_SERVERS, updateMany: vi.fn(async () => ({ count: 1 })) },
+          botMcpServer: { findMany: vi.fn().mockResolvedValue([ASSIGNMENT]) },
+        } as never,
+        {} as never,
+        {
+          network: {
+            resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }],
+            fetch: vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+              const request = new Request(input, init);
+              if (request.headers.get("authorization") !== "Bearer fake-revoked")
+                return healthy(input, init);
+              const { id } = (await request.json()) as { id?: number };
+              return Response.json({
+                jsonrpc: "2.0",
+                id,
+                error: { code: -32302, message: "Token is no longer active" },
+              });
+            }),
+          },
+        },
+        { providerFor: vi.fn().mockResolvedValue(provider) } as unknown as McpOAuthBroker,
+      );
+      const error = vi.spyOn(getLogger(), "error");
+      try {
+        const tools = await connector.discoverTools({
+          spaceId: "w1",
+          userId: "u1",
+          botId: "bot-1",
+          signal: new AbortController().signal,
+        } as never);
+        expect(error).not.toHaveBeenCalled();
+        if (connects) {
+          expect(tools).not.toEqual(unavailableOnly());
+          expect(state.initializations).toBe(1);
+        } else {
+          expect(tools).toEqual(unavailableOnly());
+          expect(tools[0]?.description).toContain("Reconnect this server");
+          expect(await provider.tokens()).toBeUndefined();
+        }
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    },
+  );
+
   it.each(["localhost", "127.0.0.1", "[::1]"])(
     "blocks OAuth rediscovery to HTTP %s after invalid_client from a public server",
     async (host) => {
