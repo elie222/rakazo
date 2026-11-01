@@ -1,9 +1,12 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import { z } from "zod";
 
 export const HOST_SCREEN_MAX_ACTIONS = 24;
 /** Tree text the model reads per window; the driver walks at most this many elements. */
 export const HOST_SCREEN_MAX_TREE_CHARS = 40_000;
 export const HOST_SCREEN_MAX_ELEMENTS = 400;
+/** Long screenshot edge. Larger images cost model tokens without making text easier to read. */
+export const HOST_SCREEN_MAX_IMAGE_DIMENSION = 1_568;
 
 const app = z.string().trim().min(1).max(200);
 const element = z.number().int().min(0).max(100_000);
@@ -92,5 +95,48 @@ export class HostScreenError extends Error {
   constructor(message: string) {
     super(message.length > 500 ? `${message.slice(0, 500)}…` : message);
     this.name = "HostScreenError";
+  }
+}
+
+/** Caps the tree the model reads and says when rows were left out. */
+export function boundedHostScreenTree(tree: string, truncated: boolean): string {
+  const bounded =
+    tree.length > HOST_SCREEN_MAX_TREE_CHARS
+      ? `${tree.slice(0, HOST_SCREEN_MAX_TREE_CHARS)}\n…`
+      : tree;
+  return truncated || bounded.endsWith("…")
+    ? `${bounded}\nSome rows were cut off. Observe again with a query to find the rest.`
+    : bounded;
+}
+
+/**
+ * Runs actions in order until one is refused, then looks at the window. Actions that ran stay
+ * counted even when that look fails, so the bot never repeats them blindly.
+ */
+export async function actThenObserve(
+  signal: AbortSignal,
+  actions: readonly HostScreenAction[],
+  perform: (action: HostScreenAction) => Promise<void>,
+  observe: () => Promise<HostScreenObservation>,
+): Promise<HostScreenActResult> {
+  let completed = 0;
+  let error: string | undefined;
+  for (const action of actions) {
+    try {
+      await perform(action);
+    } catch (caught) {
+      if (!(caught instanceof HostScreenError)) throw caught;
+      error = caught.message;
+      break;
+    }
+    completed += 1;
+  }
+  // Let the app redraw before the look that shows the result.
+  await sleep(300, undefined, { signal });
+  try {
+    return { completed, ...(error ? { error } : {}), observation: await observe() };
+  } catch (caught) {
+    if (!(caught instanceof HostScreenError)) throw caught;
+    return { completed, error: error ?? caught.message };
   }
 }

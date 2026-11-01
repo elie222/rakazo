@@ -1101,8 +1101,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           const device = await deps.userDevices.connected(userComputerOwnerId).catch(() => null);
           if (device) {
             userComputer = "connected";
-            // Only the macOS desktop bundles a screen driver so far.
-            userComputerScreen = device.platform === "darwin";
+            // The macOS and Windows desktops fetch a screen driver; Linux has none yet.
+            userComputerScreen = device.platform === "darwin" || device.platform === "win32";
           }
           // A chat that used the computer earlier may continue from another device after it closed.
           else if (await deps.userDevices.pairedSince(userComputerOwnerId).catch(() => null))

@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./agent-desktop-host-screen": "./src/agent-desktop-host-screen.ts",
     "./cua-host-screen": "./src/cua-host-screen.ts",
     "./host-computer-server": "./src/host-computer-server.ts",
     "./host-screen": "./src/host-screen.ts",
