@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Security
 
-- Hosts hardened with `harden-host.sh` now drop inbound IPv4 TCP packets that carry IP options and turn off multipath TCP, and production Caddy no longer listens with multipath TCP. This blocks the known path to CVE-2026-98432, a remote Linux kernel bug, until a fixed kernel is running. Rerun `harden-host.sh`, recreate Caddy, and reboot once your distribution ships the fixed kernel. The host check now reports updates waiting for a reboot ([production](docs/self-host-production.md)).
+- Hosts hardened with `harden-host.sh` now drop inbound IPv4 TCP packets that carry IP options and turn off multipath TCP, and production Caddy no longer listens with multipath TCP. This blocks the known path to CVE-2026-98432, a remote Linux kernel bug, until a fixed kernel is running. Rerun `harden-host.sh` and recreate Caddy now, then install the fixed kernel and reboot as soon as your distribution ships it. The host check now reports updates waiting for a reboot ([production](docs/self-host-production.md)).
 
 ### Added
 

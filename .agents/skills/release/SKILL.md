@@ -28,7 +28,7 @@ Pick the version: patch for fixes, minor when users get new capability or self-h
 
 ## 3. Release PR
 
-Bump `apps/desktop/package.json` to the new version in the same branch and open the PR titled `Release vX.Y.Z`. The maintainer reviews the changelog wording there.
+Bump `apps/desktop/package.json` to the new version in the same branch and open the PR titled `Release vX.Y.Z`. The maintainer reviews the changelog wording there. Right before it merges, rerun the gather against current `main` and add entries for anything merged since, because the tag covers everything up to the release PR's merge commit.
 
 ## 4. Tag
 
