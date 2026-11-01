@@ -5,7 +5,7 @@ import { isDeletableMemoryDocument, isEmptyBotMemory } from "@rakazo/contracts";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { Badge, Button, SectionHeading, Skeleton, Textarea } from "@rakazo/ui-web";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@rakazo/ui-web/components/ui/tooltip";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -81,6 +81,17 @@ function MemoryDocumentList({
   const listQuery = useQuery({ ...list, refetchOnMount: "always" });
   const docs = listQuery.data ?? NO_DOCS;
   const loading = listQuery.isPending;
+  // A bot reads a fixed slice of its memory; say so when the rest is left out.
+  const budgetInput = input.scope === "bot" && input.botId ? { botId: input.botId } : null;
+  const budgetOptions = budgetInput ? queries.memory.budget.queryOptions({ input: budgetInput }) : null;
+  const budgetQuery = useQuery(
+    budgetOptions ?? { queryKey: ["memory-budget", "none"], queryFn: skipToken },
+  );
+  const budget = budgetInput && budgetQuery.data ? budgetQuery.data : null;
+  const memoryBytesLeftOut = budget
+    ? budget.omitted.reduce((sum, entry) => sum + entry.totalBytes, 0) +
+      budget.documents.reduce((sum, entry) => sum + entry.totalBytes - entry.includedBytes, 0)
+    : 0;
   const [showAll, setShowAll] = useState(false);
   // Once shown, memory stays visible while the panel is open, even if emptied.
   const [memoryShown, setMemoryShown] = useState(false);
@@ -192,6 +203,14 @@ function MemoryDocumentList({
       ) : null}
       <div data-testid={testId} className={compact ? "rounded-xl bg-muted/50 p-4" : undefined}>
         {error ? <div className="pb-2 text-[13px] text-destructive">{error}</div> : null}
+        {memoryBytesLeftOut > 0 ? (
+          <p
+            className="pb-2 text-[13px] text-muted-foreground"
+            data-testid="memory-budget-note"
+          >
+            {t`About ${Math.ceil(memoryBytesLeftOut / 1024)} KB of this memory does not fit in what the bot reads.`}
+          </p>
+        ) : null}
         {conflicted ? (
           <div className="pb-2 text-[13px] text-destructive">
             <Trans>Document changed. Reopen to edit the latest version.</Trans>

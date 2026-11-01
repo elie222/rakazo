@@ -726,6 +726,25 @@ export const MemoryDocumentSchema = z.object({
 });
 export type MemoryDocument = z.infer<typeof MemoryDocumentSchema>;
 
+/** Which of a bot's memory documents reach the prompt, and what did not fit. */
+export const MemoryPromptDocumentUseSchema = z.object({
+  scope: MemoryScope,
+  path: z.string(),
+  revision: z.number().int(),
+  totalBytes: z.number().int().nonnegative(),
+  includedBytes: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+});
+export type MemoryPromptDocumentUse = z.infer<typeof MemoryPromptDocumentUseSchema>;
+
+export const MemoryPromptBudgetSchema = z.object({
+  limitBytes: z.number().int().positive(),
+  usedBytes: z.number().int().nonnegative(),
+  documents: z.array(MemoryPromptDocumentUseSchema),
+  omitted: z.array(MemoryPromptDocumentUseSchema),
+});
+export type MemoryPromptBudget = z.infer<typeof MemoryPromptBudgetSchema>;
+
 /** Every bot and Space keeps its MEMORY.md index; other memory documents can be deleted. */
 export const MEMORY_INDEX_PATH = "MEMORY.md";
 export function isDeletableMemoryDocument(path: string): boolean {

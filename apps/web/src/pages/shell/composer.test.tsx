@@ -1420,3 +1420,68 @@ it("counts a run error as presented when it scrolls into view", () => {
     vi.stubGlobal("IntersectionObserver", original);
   }
 });
+
+it("keeps checking a covered run error until the cover goes away", () => {
+  let fire: ((entries: Array<{ isIntersecting: boolean }>) => void) | undefined;
+  const onRunErrorPresented = vi.fn();
+  const original = globalThis.IntersectionObserver;
+  class FakeIntersectionObserver {
+    constructor(callback: (entries: Array<{ isIntersecting: boolean }>) => void) {
+      fire = callback;
+    }
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver);
+  const rect = {
+    width: 200,
+    height: 40,
+    top: 10,
+    left: 10,
+    bottom: 50,
+    right: 210,
+    x: 10,
+    y: 10,
+    toJSON: () => ({}),
+  } as DOMRect;
+  const rectSpy = vi
+    .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+    .mockReturnValue(rect);
+  // A sheet over the composer answers the hit test until it closes.
+  let covered = true;
+  const sheet = document.createElement("div");
+  const pointSpy = vi.fn(() =>
+    covered ? sheet : document.querySelector('[data-testid="composer-error"]'),
+  );
+  Object.defineProperty(document, "elementFromPoint", {
+    value: pointSpy,
+    configurable: true,
+    writable: true,
+  });
+  vi.useFakeTimers();
+  try {
+    renderComposer(async () => true, {
+      runError: "Something failed.",
+      runErrorId: "run-2",
+      onRunErrorPresented,
+    });
+
+    act(() => fire?.([{ isIntersecting: true }]));
+    expect(onRunErrorPresented).not.toHaveBeenCalled();
+
+    covered = false;
+    act(() => vi.advanceTimersByTime(1_000));
+    expect(onRunErrorPresented).toHaveBeenCalledExactlyOnceWith("run-2");
+
+    // Once presented it stops checking.
+    const checks = pointSpy.mock.calls.length;
+    act(() => vi.advanceTimersByTime(5_000));
+    expect(pointSpy.mock.calls.length).toBe(checks);
+  } finally {
+    vi.useRealTimers();
+    rectSpy.mockRestore();
+    Reflect.deleteProperty(document, "elementFromPoint");
+    vi.stubGlobal("IntersectionObserver", original);
+  }
+});

@@ -100,6 +100,11 @@ export * from "./mcp-server-tool.js";
 export * from "./mcp-transport.js";
 export * from "./media-generation-factory.js";
 export * from "./media-generation-provider.js";
+export {
+  AGENT_MEMORY_MAX_BYTES,
+  buildAgentMemoryPrompt,
+  readAgentMemory,
+} from "./memory-context.js";
 export * from "./memory-provider-factory.js";
 export * from "./messaging-composition.js";
 export * from "./messaging-context.js";
