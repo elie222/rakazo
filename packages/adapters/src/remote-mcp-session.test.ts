@@ -103,42 +103,95 @@ function scopedCall(
 }
 
 describe("run-scoped remote MCP sessions", () => {
-  it("bounds each operation with a fresh timeout and keeps the session reusable", async () => {
+  it("bounds each operation with a fresh timeout and closes the session it timed out on", async () => {
+    let hangNext = true;
+    const server = mcpServer(({ message, respond }) => {
+      if (message.method !== "tools/call") return undefined;
+      if (!hangNext) return respond({ result: { content: [{ type: "text", text: "done" }] } });
+      hangNext = false;
+      return new Promise<Response>(() => undefined) as unknown as Response;
+    });
+    const pool = new RemoteMcpSessionCache();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const hanging = scopedCall(pool, "run-1 srv", server);
+      await vi.waitFor(() => expect(server.toolCalls).toHaveLength(1));
+      const call = server.fetch.mock.calls.find(
+        ([, init]) => typeof init?.body === "string" && init.body.includes('"tools/call"'),
+      );
+      vi.advanceTimersByTime(30_000);
+      await expect(hanging).rejects.toThrow();
+      // The timed-out HTTP request is aborted and the server told to drop the session.
+      await vi.waitFor(() => expect(call?.[1]?.signal?.aborted).toBe(true));
+      await vi.waitFor(() => expect(server.deletes).toEqual(["session-1"]));
+
+      await expect(scopedCall(pool, "run-1 srv", server)).resolves.toMatchObject({
+        content: [{ text: "done" }],
+      });
+      expect(server.initializations()).toBe(2);
+    } finally {
+      vi.useRealTimers();
+      await pool.close();
+    }
+  });
+
+  it.each([
+    ["the deadline fires first", true],
+    ["the caller cancels first", false],
+  ])(
+    "closes the session only when the deadline ends the call: %s",
+    async (_case, deadlineFirst) => {
+      let hangNext = true;
+      const server = mcpServer(({ message, respond }) => {
+        if (message.method !== "tools/call") return undefined;
+        if (!hangNext) return respond({ result: { content: [{ type: "text", text: "done" }] } });
+        hangNext = false;
+        return new Promise<Response>(() => undefined) as unknown as Response;
+      });
+      const pool = new RemoteMcpSessionCache();
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        const caller = new AbortController();
+        const hanging = scopedCall(pool, "run-1 srv", server, caller.signal);
+        await vi.waitFor(() => expect(server.toolCalls).toHaveLength(1));
+        // Both fire before the call's rejection is handled; the first one decides.
+        const expire = () => vi.advanceTimersByTime(30_000);
+        if (deadlineFirst) {
+          expire();
+          caller.abort();
+        } else {
+          caller.abort();
+          expire();
+        }
+        await expect(hanging).rejects.toThrow();
+
+        await expect(scopedCall(pool, "run-1 srv", server)).resolves.toMatchObject({
+          content: [{ text: "done" }],
+        });
+        expect(server.initializations()).toBe(deadlineFirst ? 2 : 1);
+      } finally {
+        vi.useRealTimers();
+        await pool.close();
+      }
+    },
+  );
+
+  it("does not cancel a settled request when its deadline passes or its caller aborts", async () => {
     const server = statefulServer();
     const pool = new RemoteMcpSessionCache();
-    const options = {
-      endpoint: ENDPOINT,
-      fetch: server.fetch as unknown as typeof globalThis.fetch,
-      resolveHostname: publicResolver,
-      sessionScope: "run-1 srv",
-    };
-    // Establish the session before controlling only the operation's timeout.
-    await pool.withSession(options, async () => undefined);
-    vi.useFakeTimers();
-    const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
-      const controller = new AbortController();
-      setTimeout(() => controller.abort(new DOMException("Timed out", "TimeoutError")), ms);
-      return controller.signal;
-    });
+    const caller = new AbortController();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
-      const hanging = pool.withSession(options, async (_client, signal) => {
-        return new Promise<void>((_resolve, reject) => {
-          signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
-        });
-      });
-      const rejected = expect(hanging).rejects.toMatchObject({ name: "TimeoutError" });
+      await scopedCall(pool, "run-1 srv", server);
+      await scopedCall(pool, "run-1 srv", server, caller.signal);
+      const requests = server.fetch.mock.calls.length;
       await vi.advanceTimersByTimeAsync(30_000);
-      await rejected;
-      expect(timeout).toHaveBeenCalledWith(30_000);
+      caller.abort();
+      // Flush any cancellation POST through the injected fetch.
+      await vi.advanceTimersByTimeAsync(0);
+      expect(server.fetch).toHaveBeenCalledTimes(requests);
       expect(server.deletes).toEqual([]);
-
-      await expect(
-        pool.withSession(options, async (_client, signal) => signal?.aborted),
-      ).resolves.toBe(false);
-      expect(timeout).toHaveBeenCalledTimes(2);
-      expect(server.initializations()).toBe(1);
     } finally {
-      timeout.mockRestore();
       vi.useRealTimers();
       await pool.close();
     }
