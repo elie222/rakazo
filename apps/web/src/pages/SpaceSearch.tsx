@@ -6,16 +6,25 @@ import { searchHitListKey } from "@rakazo/core";
 export function SpaceSearchResults({
   hits,
   loading,
+  error,
   onSelect,
 }: {
   hits: SearchHit[];
   loading: boolean;
+  error: string | null;
   onSelect: (hit: SearchHit) => void;
 }) {
   if (loading) {
     return (
       <div className="px-3 py-4 text-[14px] text-muted-foreground">
         <Trans>Searching…</Trans>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div role="alert" className="px-3 py-4 text-[14px] text-destructive">
+        {error}
       </div>
     );
   }

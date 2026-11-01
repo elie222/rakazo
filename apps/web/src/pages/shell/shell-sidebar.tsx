@@ -97,6 +97,7 @@ export function ShellSidebar({
     setSearchOpen,
     searchHits,
     searchLoading,
+    searchError,
     showSpaceSearch,
     jumpToSearchHit,
     activityMode,
@@ -229,6 +230,7 @@ export function ShellSidebar({
             <SpaceSearchResults
               hits={searchHits}
               loading={searchLoading}
+              error={searchError}
               onSelect={(hit) => jumpToSearchHit(hit)}
             />
           ) : (

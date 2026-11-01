@@ -4,6 +4,7 @@ import type { ActivityListFilters } from "../../lib/activity-list-filters";
 import { emptyActivityFilters } from "../../lib/activity-list-filters";
 import { readActivityMode, writeActivityMode } from "../../lib/activity-mode";
 import type { createSpaceRpc } from "../../lib/rpc";
+import { errorText } from "../../lib/user-error";
 import type { useShellNavigation } from "./use-shell-navigation";
 
 /** The sidebar's search box: it filters the roster, searches the space, or filters runs in Activity. */
@@ -18,6 +19,7 @@ export function useSidebarSearch({
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [activityMode, setActivityMode] = useState(readActivityMode);
   const [activityFilters, setActivityFilters] = useState<ActivityListFilters>(emptyActivityFilters);
   const [activityFiltersExpanded, setActivityFiltersExpanded] = useState(false);
@@ -43,18 +45,20 @@ export function useSidebarSearch({
     if (!showSpaceSearch) {
       setSearchHits([]);
       setSearchLoading(false);
+      setSearchError(null);
       return;
     }
     const abort = new AbortController();
     const timer = window.setTimeout(() => {
       setSearchLoading(true);
+      setSearchError(null);
       void rpc.search
         .query({ q: spaceQuery })
         .then((result) => {
           if (!abort.signal.aborted) setSearchHits(result.hits);
         })
-        .catch(() => {
-          if (!abort.signal.aborted) setSearchHits([]);
+        .catch((error: unknown) => {
+          if (!abort.signal.aborted) setSearchError(errorText(error));
         })
         .finally(() => {
           if (!abort.signal.aborted) setSearchLoading(false);
@@ -86,6 +90,7 @@ export function useSidebarSearch({
     setSearchOpen,
     searchHits,
     searchLoading,
+    searchError,
     showSpaceSearch,
     jumpToSearchHit,
     activityMode,

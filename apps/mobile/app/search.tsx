@@ -52,7 +52,7 @@ export default function SearchSheet() {
   const focused = useRef(false);
   const [query, setQuery] = useState("");
   const spaces = useSyncExternalStore(subscribeSearchInbox, getSearchInbox);
-  const { hits, loading } = useSearch(query);
+  const { hits, loading, error } = useSearch(query);
   const rows = useMemo(() => searchSheetRows(spaces, query, hits), [spaces, query, hits, locale]);
 
   const cancelOpen = useCallback(() => {
@@ -216,7 +216,16 @@ export default function SearchSheet() {
           paddingBottom: insets.bottom + 16,
         }}
         ListEmptyComponent={
-          <Text style={styles.empty}>{loading ? t("Searching…") : t("No results")}</Text>
+          error ? null : (
+            <Text style={styles.empty}>{loading ? t("Searching…") : t("No results")}</Text>
+          )
+        }
+        ListFooterComponent={
+          error ? (
+            <Text accessibilityRole="alert" style={styles.error}>
+              {error}
+            </Text>
+          ) : null
         }
         renderItem={({ item }) => (
           <Pressable
@@ -312,5 +321,6 @@ function createStyles() {
       writingDirection: "auto",
     },
     empty: { color: native.secondaryLabel, fontSize: 16, paddingHorizontal: 20, paddingTop: 28 },
+    error: { color: tokens.destructive, fontSize: 14, paddingHorizontal: 20, paddingTop: 28 },
   });
 }
