@@ -30,6 +30,20 @@ import { deliverFinishedShells } from "./shell-command-stream.js";
 
 export const MAX_PARALLEL_SUBAGENTS = 4;
 
+/**
+ * A helper's result within `limit` characters. A stop text (the spent-budget message or a
+ * terminating reply) stays whole when it fits and only the narration before it is shortened;
+ * clipped text ends with "…" and never goes past the limit.
+ */
+export function helperResultText(text: string, tail: string | undefined, limit: number): string {
+  const clipTo = (value: string, max: number) =>
+    value.length > max ? clipToolResultText(value, Math.max(0, max - 1)) : value;
+  if (!tail) return clipTo(text, limit);
+  if (tail.length > limit) return clipTo(tail, limit);
+  const room = limit - tail.length - 2;
+  return text && room > 1 ? `${clipTo(text, room)}\n\n${tail}` : tail;
+}
+
 export async function executeSubagent(
   host: ToolHost,
   executionId: string,
@@ -367,20 +381,12 @@ export async function executeSubagent(
       : undefined;
     const label = `Result from your helper "${name}" (not a message from the user):\n`;
     // The parent clips label and result together, so the result gets what is left.
-    const limit = 12_000 - label.length;
-    // A stop message or the terminating reply must survive clipping: only the narration
-    // before it is shortened.
     const tail = budgetMessage ?? endedReply;
-    const narration = streamed.trim();
-    const room = tail ? limit - tail.length - 2 : limit;
-    const clipped = tail
-      ? narration && room > 1
-        ? `${clipToolResultText(narration, room - 1)}\n\n${tail}`
-        : tail
-      : clipToolResultText(
-          streamed || assistantText(nested.state.messages.at(-1)) || "done.",
-          limit,
-        );
+    const clipped = helperResultText(
+      tail ? streamed.trim() : streamed || assistantText(nested.state.messages.at(-1)) || "done.",
+      tail,
+      12_000 - label.length,
+    );
     host.queue.push({
       type: "subagent",
       agentId,
