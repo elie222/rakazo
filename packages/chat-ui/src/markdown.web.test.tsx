@@ -785,6 +785,15 @@ describe("web markdown streaming", () => {
       "  continued",
       "Done",
       "===",
+      "",
+      "[foo",
+      "bar]: https://example.com/",
+      "",
+      "See [foo bar].",
+      "",
+      "End.",
+      "",
+      "Really.",
     ].join("\n");
     const shape = (node: Node): string =>
       [...node.childNodes]
@@ -814,6 +823,17 @@ describe("web markdown streaming", () => {
       streamedRoot.unmount();
       wholeRoot.unmount();
     });
+  });
+});
+
+describe("web markdown streamed definitions", () => {
+  it("resolves a reference whose definition label spans lines", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown streaming>
+        {"[foo\nbar]: https://example.test/ref\n\nSee [foo bar]."}
+      </ChatMarkdown>,
+    );
+    expect(html).toContain('href="https://example.test/ref"');
   });
 });
 
