@@ -83,7 +83,9 @@ function MemoryDocumentList({
   const loading = listQuery.isPending;
   // A bot reads a fixed slice of its memory; say so when the rest is left out.
   const budgetInput = input.scope === "bot" && input.botId ? { botId: input.botId } : null;
-  const budgetOptions = budgetInput ? queries.memory.budget.queryOptions({ input: budgetInput }) : null;
+  const budgetOptions = budgetInput
+    ? queries.memory.budget.queryOptions({ input: budgetInput })
+    : null;
   const budgetQuery = useQuery(
     budgetOptions ?? { queryKey: ["memory-budget", "none"], queryFn: skipToken },
   );
@@ -204,10 +206,7 @@ function MemoryDocumentList({
       <div data-testid={testId} className={compact ? "rounded-xl bg-muted/50 p-4" : undefined}>
         {error ? <div className="pb-2 text-[13px] text-destructive">{error}</div> : null}
         {memoryBytesLeftOut > 0 ? (
-          <p
-            className="pb-2 text-[13px] text-muted-foreground"
-            data-testid="memory-budget-note"
-          >
+          <p className="pb-2 text-[13px] text-muted-foreground" data-testid="memory-budget-note">
             {t`About ${Math.ceil(memoryBytesLeftOut / 1024)} KB of this memory does not fit in what the bot reads.`}
           </p>
         ) : null}
