@@ -128,19 +128,9 @@ struct StartVoiceChatIntent: AppIntent {
 /// The chosen bot, or the one whose chat was opened last, with the Space it was opened in.
 private func target(_ bot: BotEntity?) -> (botId: String, spaceId: String?)? {
   if let bot { return (bot.botId, bot.spaceId) }
-  if let saved = secureStoreItem("rakazo.last_bot")?.data(using: .utf8),
-    let last = try? JSONDecoder().decode(LastBot.self, from: saved), !last.botId.isEmpty
-  {
-    return (last.botId, last.spaceId?.isEmpty == false ? last.spaceId : nil)
-  }
-  // Saved before the Space was kept with it.
   guard let last = secureStoreItem("rakazo.last_bot_id"), !last.isEmpty else { return nil }
-  return (last, nil)
-}
-
-private struct LastBot: Decodable {
-  let botId: String
-  let spaceId: String?
+  let space = secureStoreItem("rakazo.last_bot_space_id")
+  return (last, space?.isEmpty == false ? space : nil)
 }
 
 @MainActor

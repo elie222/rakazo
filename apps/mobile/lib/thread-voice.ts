@@ -266,19 +266,16 @@ export function useThreadVoiceCall({
   }
 
   // The shortcut can arrive long after this chat opened, e.g. once an archived chat is restored.
-  const latest = useRef({ botId, startVoiceCall });
+  const startVoiceCallRef = useRef(startVoiceCall);
   useLayoutEffect(() => {
-    latest.current = { botId, startVoiceCall };
+    startVoiceCallRef.current = startVoiceCall;
   });
 
   // A read-only chat leaves the request waiting until it is restored.
   useEffect(() => {
     if (!botId || readOnly) return;
     const unsubscribe = onShortcutVoiceChat(() => {
-      // A listener left over from the previous bot must not take its request for this one.
-      if (latest.current.botId === botId && takeShortcutVoiceChat(botId)) {
-        void latest.current.startVoiceCall(true);
-      }
+      if (takeShortcutVoiceChat(botId)) void startVoiceCallRef.current(true);
     });
     const session = currentSessionGeneration();
     if (takeRingOnArrival(botId, session) || takeShortcutVoiceChat(botId)) {
