@@ -143,12 +143,19 @@ describe("dispatchTool audit outcomes", () => {
 describe("isToolError", () => {
   it("counts errors and the internal owner-settings refusal as failures", () => {
     expect(isToolError({ error: "Denied" })).toBe(true);
-    expect(isToolError({ terminate: true, details: { refused: "owner-settings" } })).toBe(true);
+    expect(
+      isToolError({
+        kind: "agent_tool_result",
+        terminate: true,
+        details: { refused: "owner-settings" },
+      }),
+    ).toBe(true);
   });
 
   it("keeps a connector result that happens to carry a refused field a success", () => {
     expect(isToolError({ details: { refused: false } })).toBe(false);
     expect(isToolError({ details: { refused: "owner-settings" } })).toBe(false);
     expect(isToolError({ terminate: true, details: { refused: "repeat" } })).toBe(false);
+    expect(isToolError({ terminate: true, details: { refused: "owner-settings" } })).toBe(false);
   });
 });

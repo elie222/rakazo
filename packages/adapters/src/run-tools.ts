@@ -115,8 +115,13 @@ export function isToolError(result: unknown): boolean {
   // A repeated owner-settings refusal ends the turn without an error key; its marker
   // still makes it a failed call for the audit. Only that internal terminating result
   // counts: a connector's own `refused` field is data, not a refusal.
-  const { terminate, details } = result as { terminate?: unknown; details?: unknown };
+  const { kind, terminate, details } = result as {
+    kind?: unknown;
+    terminate?: unknown;
+    details?: unknown;
+  };
   return (
+    kind === "agent_tool_result" &&
     terminate === true &&
     typeof details === "object" &&
     details !== null &&
