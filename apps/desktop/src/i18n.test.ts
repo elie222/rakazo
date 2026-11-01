@@ -173,6 +173,24 @@ describe("desktop language", () => {
     expect(desktopLocale()).toBe("en");
   });
 
+  it("saves the same language again after a failed save", async () => {
+    startDesktopLocale(null, "en-US");
+    const { event, target } = appFrame();
+    const save = vi
+      .fn(async (_locale: string) => undefined)
+      .mockRejectedValueOnce(new Error("disk full"));
+    const handle = createLocaleHandler(
+      () => target,
+      save,
+      () => undefined,
+    );
+
+    await handle(event, "es");
+    await handle(event, "es");
+
+    expect(save).toHaveBeenCalledTimes(2);
+  });
+
   it("skips writing a report a later one already replaced", async () => {
     startDesktopLocale(null, "en-US");
     const { event, target } = appFrame();

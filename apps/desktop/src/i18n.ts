@@ -87,7 +87,10 @@ export function createLocaleHandler(
     // One write at a time, skipping any a later report replaced, so a relaunch reads the last.
     saving = saving
       .then(() => (locale === reportedLocale ? save(locale) : undefined))
-      .catch(() => undefined);
+      .catch(() => {
+        // Forget a report that failed to save, so the next one with the same language retries.
+        if (reportedLocale === locale) reportedLocale = null;
+      });
     return saving;
   };
 }
