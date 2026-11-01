@@ -244,8 +244,13 @@ export class RemoteMcpSessionCache {
     for (let attempt = 0; ; attempt += 1) {
       const session = await this.sessionFor(key, options);
       session.inFlight += 1;
-      const deadline = AbortSignal.timeout(MCP_TIMEOUT_MS);
-      const signal = combineSignals(options.signal, deadline);
+      const controller = new AbortController();
+      const deadlineReason = new DOMException("Timed out", "TimeoutError");
+      const deadline = setTimeout(() => controller.abort(deadlineReason), MCP_TIMEOUT_MS);
+      const onAbort = () => controller.abort(options.signal?.reason);
+      if (options.signal?.aborted) onAbort();
+      else options.signal?.addEventListener("abort", onAbort, { once: true });
+      const signal = controller.signal;
       try {
         return await run(session.client, signal);
       } catch (error) {
@@ -261,13 +266,12 @@ export class RemoteMcpSessionCache {
         // running on the transport; only closing the session aborts it and
         // tells the server to drop the work, as a one-off session does. The
         // combined signal keeps the reason of whichever signal fired first.
-        if (
-          brokeMcpSession(session, error) ||
-          (signal.aborted && signal.reason === deadline.reason)
-        )
+        if (brokeMcpSession(session, error) || (signal.aborted && signal.reason === deadlineReason))
           void this.drop(session);
         throw error;
       } finally {
+        clearTimeout(deadline);
+        options.signal?.removeEventListener("abort", onAbort);
         session.inFlight -= 1;
         session.lastUsedAt = this.now();
         // The last call on a dropped session retires it in the background, so
