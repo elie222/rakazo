@@ -3,7 +3,12 @@ import type { Api, Context, Message, Model } from "@earendil-works/pi-ai";
 import type { AdapterContext, AgentRunRequest, AgentUsage } from "@rakazo/adapter-kit";
 import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
-import { imagePartCount, normalizedImageLimit, pruneForRebuild } from "./context-pruning.js";
+import {
+  imagePartCount,
+  normalizedImageLimit,
+  pruneComputerScreenshotContext,
+  pruneForRebuild,
+} from "./context-pruning.js";
 import type { CacheRequest, ContextBudget } from "./context-selection.js";
 import {
   ContextBudgetError,
@@ -45,7 +50,10 @@ const messageHash = (message: Message) =>
     .digest("hex");
 /** A rebuild breaks the cached prefix, so it must drop at least this much stale content (estimated). */
 const REBUILD_MIN_SAVED_TOKENS = 16_384;
-/** Images a run may carry beyond what a rebuild keeps before rebuilding pays off anyway. */
+/**
+ * Images a run may carry beyond what a rebuild keeps before rebuilding pays off anyway. Older
+ * screenshots are already trimmed on every call, so in practice this counts other images.
+ */
 const REBUILD_MAX_STALE_IMAGES = 16;
 /** A rebuild forced by the model's window leaves this share of it free for the next calls. */
 const REBUILD_HEADROOM = 0.25;
@@ -621,6 +629,11 @@ export function createRuntimeContextPolicy(
       throw error;
     }
   }
+  /** Older screenshots lose their image; thinking from the first changed message on is dropped. */
+  function withLatestScreenshots(messages: Message[]): Message[] {
+    const kept = pruneComputerScreenshotContext(messages, request.model.maxImagesPerPrompt);
+    return kept === messages ? messages : withoutThinkingFrom(kept, firstChange(messages, kept));
+  }
   function firstChange(before: Message[], after: Message[]): number {
     const length = Math.min(before.length, after.length);
     for (let index = 0; index < length; index++) {
@@ -631,11 +644,13 @@ export function createRuntimeContextPolicy(
   return {
     /**
      * Each model call in a run gets the transcript the previous call was sent, byte for byte,
-     * followed by whatever the run appended since. Rewriting an earlier message breaks the
-     * provider's cached prefix and invalidates every later signed thinking block, which
-     * providers that bind reasoning to its conversation reject. The context is rebuilt only when
-     * that fixes a limit the appended transcript breaks (the model's window or image limit) or
-     * when rebuildPaysOff; thinking from the first rewritten message on is then dropped.
+     * followed by whatever the run appended since, except that screenshots older than the
+     * latest two lose their image in place (see withLatestScreenshots). Rewriting an earlier
+     * message breaks the provider's cached prefix and invalidates every later signed thinking
+     * block, which providers that bind reasoning to its conversation reject. The context is
+     * rebuilt only when that fixes a limit the appended transcript breaks (the model's window or
+     * image limit) or when rebuildPaysOff; thinking from the first rewritten message on is then
+     * dropped.
      */
     prepareContext(ctx: Context, model: Model<Api>): Context {
       let built = rebuild(ctx, model);
@@ -650,14 +665,16 @@ export function createRuntimeContextPolicy(
         previous.source.every((value, index) => source[index] === value)
           ? [...previous.messages, ...ctx.messages.slice(previous.source.length)]
           : undefined;
+      // Older screenshots are trimmed in place, so the messages before the first one stay as sent.
+      const trimmed = appended && withLatestScreenshots(appended);
       let append = false;
-      if (previous && appended) {
+      if (previous && trimmed) {
         const available =
           (request.model.contextWindow ?? model.contextWindow) - outputReserve(model);
         const imageLimit = normalizedImageLimit(request.model.maxImagesPerPrompt);
         const overTokens = (size: Size) => size.tokens > available;
         const overImages = (size: Size) => imageLimit !== undefined && size.images > imageLimit;
-        const kept = measure(ctx, appended);
+        const kept = measure(ctx, trimmed);
         const fresh = measure(ctx, built.context.messages);
         // Each limit is enforced on its own: a rebuild that fixes the image count is still
         // taken when the text stays too large for the window, and the other way round.
@@ -669,7 +686,7 @@ export function createRuntimeContextPolicy(
             overImages(kept) ||
             !rebuildPaysOff(kept, fresh, previous.rebuiltTokens, previous.appends);
       }
-      if (previous && appended && append) {
+      if (previous && trimmed && append) {
         const projection = [
           ...previous.projection,
           ...ctx.messages.slice(previous.source.length).map((message) => ({ hash: hash(message) })),
@@ -677,12 +694,12 @@ export function createRuntimeContextPolicy(
         sent = {
           ...previous,
           source,
-          messages: appended,
+          messages: trimmed,
           projection,
           appends: previous.appends + 1,
         };
-        return commit({ ...ctx, messages: appended }, built, projection, model, {
-          droppedMessages: Math.max(0, ctx.messages.length - appended.length),
+        return commit({ ...ctx, messages: trimmed }, built, projection, model, {
+          droppedMessages: Math.max(0, ctx.messages.length - trimmed.length),
           truncatedToolResults: previous.truncatedToolResults,
         });
       }
