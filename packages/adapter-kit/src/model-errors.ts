@@ -99,7 +99,7 @@ function isAccountExhaustion(text: string, statuses: ReadonlySet<number>): boole
 export function isModelCredentialRejected(error: unknown): boolean {
   const { text, statuses } = errorFacts(error);
   if (statuses.has(401)) return true;
-  return /authentication_error|invalid_api_key|invalid_grant|invalid (?:api[ -]key|credential|x-api-key)|incorrect api key|(?:expired|revoked) (?:api )?(?:key|credential|token)|(?:api )?(?:key|credential|token) (?:expired|revoked)|token (?:has been |was |is )?(?:revoked|expired|invalidated)|authentication (?:failed|failure|expired|invalid)/.test(
+  return /authentication_error|invalid_api_key|invalid_grant|invalid (?:api[ -]key|credential|x-api-key)|incorrect api key|(?:expired|revoked) (?:api )?(?:key|credential|token)|(?:api )?(?:key|credential|token) (?:expired|revoked)|token (?:has been |was |is )?(?:revoked|expired|invalidated)|authentication (?:failed|failure|expired|invalid)|api key is not scoped to a workspace/.test(
     text,
   );
 }
