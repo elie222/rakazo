@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AuthCapabilities } from "./auth-capabilities";
 
-vi.mock("@rakazo/contracts", () => import("../../../../packages/contracts/src/auth"));
-vi.mock("@rakazo/core", () => import("../../../../packages/core/src/http-response"));
+// Load the dependencies once; resetModules below only needs a fresh request cache.
+const loaded = await vi.hoisted(async () => ({
+  contracts: await import("@rakazo/contracts"),
+  core: await import("@rakazo/core"),
+}));
+vi.mock("@rakazo/contracts", () => loaded.contracts);
+vi.mock("@rakazo/core", () => loaded.core);
 
 let fetchAuthCapabilities: () => Promise<AuthCapabilities>;
 beforeEach(async () => {

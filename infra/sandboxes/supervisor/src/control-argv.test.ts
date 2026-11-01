@@ -17,43 +17,45 @@ let verdicts: Map<string, Verdict> | undefined;
 // One python3 process judges every argv in the file; spawning per case dominated the suite.
 function check(argv: string[]): Verdict {
   const key = JSON.stringify(argv);
-  if (!verdicts) {
-    const argvs = [...pending.values()];
-    const probe = spawnSync(
-      "python3",
-      [
-        "-c",
-        [
-          "import importlib.util, json, sys",
-          "from unittest.mock import patch",
-          "spec = importlib.util.spec_from_file_location('control_probe', sys.argv[1])",
-          "module = importlib.util.module_from_spec(spec)",
-          "spec.loader.exec_module(module)",
-          "results = []",
-          "for argv in json.loads(sys.stdin.read()):",
-          "  allowed = module.allowed_control_argv(argv, sys.argv[2])",
-          "  long_lived = module.is_long_lived_control(argv) if allowed else False",
-          "  if long_lived:",
-          "    with patch.object(module.subprocess, 'Popen') as popen:",
-          "      popen.return_value.wait.return_value = 0",
-          "      module.run_control_argv(argv, sys.argv[2])",
-          "      assert popen.call_args.args[0] == argv, 'profile must survive execution'",
-          "      assert popen.call_args.kwargs['env']['DISPLAY'] == sys.argv[2]",
-          "  results.append({'allowed': allowed, 'longLived': long_lived})",
-          "print(json.dumps(results))",
-        ].join("\n"),
-        controlPath,
-        display,
-      ],
-      { encoding: "utf8", input: JSON.stringify(argvs) },
-    );
-    expect(probe.status, probe.stderr).toBe(0);
-    const results: Verdict[] = JSON.parse(probe.stdout);
-    verdicts = new Map(argvs.map((value, index) => [JSON.stringify(value), results[index]]));
-  }
+  verdicts ??= probeAll();
   const verdict = verdicts.get(key);
   if (!verdict) throw new Error(`argv was not registered before the probe ran: ${key}`);
   return verdict;
+}
+
+function probeAll(): Map<string, Verdict> {
+  const argvs = [...pending.values()];
+  const probe = spawnSync(
+    "python3",
+    [
+      "-c",
+      [
+        "import importlib.util, json, sys",
+        "from unittest.mock import patch",
+        "spec = importlib.util.spec_from_file_location('control_probe', sys.argv[1])",
+        "module = importlib.util.module_from_spec(spec)",
+        "spec.loader.exec_module(module)",
+        "results = []",
+        "for argv in json.loads(sys.stdin.read()):",
+        "  allowed = module.allowed_control_argv(argv, sys.argv[2])",
+        "  long_lived = module.is_long_lived_control(argv) if allowed else False",
+        "  if long_lived:",
+        "    with patch.object(module.subprocess, 'Popen') as popen:",
+        "      popen.return_value.wait.return_value = 0",
+        "      module.run_control_argv(argv, sys.argv[2])",
+        "      assert popen.call_args.args[0] == argv, 'profile must survive execution'",
+        "      assert popen.call_args.kwargs['env']['DISPLAY'] == sys.argv[2]",
+        "  results.append({'allowed': allowed, 'longLived': long_lived})",
+        "print(json.dumps(results))",
+      ].join("\n"),
+      controlPath,
+      display,
+    ],
+    { encoding: "utf8", input: JSON.stringify(argvs) },
+  );
+  expect(probe.status, probe.stderr).toBe(0);
+  const results: Verdict[] = JSON.parse(probe.stdout);
+  return new Map(results.map((verdict, index) => [JSON.stringify(argvs[index]), verdict]));
 }
 
 function register<T extends string[]>(argv: T): T {
