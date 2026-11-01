@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { Toaster } from "@rakazo/ui-web";
+import { Toaster, toast } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -31,6 +31,9 @@ beforeEach(async () => {
   await act(async () => root.render(<Toaster />));
 });
 afterEach(async () => {
+  // Toasts live in a global store, so one left open would show in the next test.
+  await act(async () => toast.dismiss());
+  await vi.waitFor(() => expect(prompt()).toBeNull());
   await act(async () => root.unmount());
   host.remove();
 });
