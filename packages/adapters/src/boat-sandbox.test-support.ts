@@ -703,7 +703,8 @@ export class FakeBoatApi implements BoatSandboxSdk {
 
     if (command === BOAT_WRITABLE_WORKSPACE_COMMAND) {
       for (const [filePath, file] of box.files) {
-        if (filePath.startsWith(`${BOAT_WORKSPACE}/`)) file.readOnly = false;
+        if (filePath.startsWith(`${BOAT_WORKSPACE}/`) && file.readOnly)
+          box.files.set(filePath, { ...file, readOnly: false });
       }
       return finished({});
     }

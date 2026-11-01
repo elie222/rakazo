@@ -672,7 +672,15 @@ export class BoatSandboxProvider implements SandboxProvider {
     await this.desktops.stopBrowsers(computer, context);
     // A restore can land on a computer that kept its disk, which can hold read-only files such as
     // git packs, and Boat's file API cannot replace a read-only file.
-    await this.runCommand(id, BOAT_WRITABLE_WORKSPACE_COMMAND, undefined, 60_000, context.signal);
+    const writable = await this.runCommand(
+      id,
+      BOAT_WRITABLE_WORKSPACE_COMMAND,
+      undefined,
+      60_000,
+      context.signal,
+    );
+    if (writable.timedOut)
+      throw new Error("could not prepare Boat workspace for restore (timed out)");
     let batch: PortableFile[] = [];
     let batchBytes = 0;
     const flush = async () => {
