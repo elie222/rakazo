@@ -217,7 +217,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
         }
       : undefined;
   const authSecret = resolveAuthSecret(source);
-  const webOrigin = resolveWebOrigin(source.WEB_ORIGIN, DEFAULT_WEB_ORIGIN);
+  const webOrigin = resolveWebOrigin(source.WEB_ORIGIN, DEFAULT_WEB_ORIGIN, "WEB_ORIGIN");
   const sandboxProvider = resolveSandboxProvider(source);
   const cloudAgentProvider = resolveCloudAgentProvider(source);
   const deploymentModel = resolveDeploymentModel(source);
@@ -230,9 +230,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     realtimeDatabaseUrl: source.REALTIME_DATABASE_URL ?? required(source, "DATABASE_URL"),
     desktopStackToken: optional(source.RAKAZO_DESKTOP_STACK_TOKEN),
     authSecret,
-    authUrl: source.BETTER_AUTH_URL
-      ? resolveWebOrigin(source.BETTER_AUTH_URL, DEFAULT_WEB_ORIGIN)
-      : webOrigin,
+    authUrl: resolveWebOrigin(source.BETTER_AUTH_URL, webOrigin, "BETTER_AUTH_URL"),
     webOrigin,
     passkeyAppleAppIds: list(source.PASSKEY_APPLE_APP_IDS),
     passkeyAndroidCertFingerprints: androidCertFingerprints(source.PASSKEY_ANDROID_CERT_SHA256),
@@ -350,12 +348,13 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
  * `${webOrigin}/path` cannot produce `https://host//path`; providers reject a
  * double-slash redirect URI as a mismatch against the one registered with them.
  */
-function resolveWebOrigin(value: string | undefined, fallback: string): string {
-  const origin = (value ?? fallback).trim().replace(/\/+$/, "");
+function resolveWebOrigin(value: string | undefined, fallback: string, name: string): string {
+  const origin = (optional(value) ?? fallback).replace(/\/+$/, "");
   try {
-    new URL(origin);
+    const url = new URL(origin);
+    if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error();
   } catch {
-    throw new Error(`WEB_ORIGIN must be an absolute URL, got "${origin}"`);
+    throw new Error(`${name} must be an absolute URL, got "${origin}"`);
   }
   return origin;
 }

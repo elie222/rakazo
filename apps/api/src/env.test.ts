@@ -405,6 +405,21 @@ describe("web origin", () => {
     expect(loadEnv(base).authUrl).toBe("http://127.0.0.1:5173");
   });
 
+  it.each(["", " \t "])("uses the local default for blank WEB_ORIGIN %j", (value) => {
+    const env = loadEnv({ ...base, WEB_ORIGIN: value });
+    expect(env.webOrigin).toBe("http://127.0.0.1:5173");
+    expect(env.authUrl).toBe("http://127.0.0.1:5173");
+  });
+
+  it.each(["", " \t "])("uses webOrigin for blank BETTER_AUTH_URL %j", (value) => {
+    const env = loadEnv({
+      ...base,
+      WEB_ORIGIN: "https://app.example.com/",
+      BETTER_AUTH_URL: value,
+    });
+    expect(env.authUrl).toBe("https://app.example.com");
+  });
+
   it("normalises BETTER_AUTH_URL the same way and keeps a path", () => {
     const env = loadEnv({
       ...base,
@@ -418,6 +433,18 @@ describe("web origin", () => {
   it("refuses something that is not an absolute URL", () => {
     expect(() => loadEnv({ ...base, WEB_ORIGIN: "app.example.com" })).toThrow(
       'WEB_ORIGIN must be an absolute URL, got "app.example.com"',
+    );
+  });
+
+  it("names BETTER_AUTH_URL when it is invalid", () => {
+    expect(() => loadEnv({ ...base, BETTER_AUTH_URL: "app.example.com" })).toThrow(
+      'BETTER_AUTH_URL must be an absolute URL, got "app.example.com"',
+    );
+  });
+
+  it.each(["WEB_ORIGIN", "BETTER_AUTH_URL"])("refuses non-HTTP URLs for %s", (name) => {
+    expect(() => loadEnv({ ...base, [name]: "app.example.com:5173" })).toThrow(
+      `${name} must be an absolute URL, got "app.example.com:5173"`,
     );
   });
 });
