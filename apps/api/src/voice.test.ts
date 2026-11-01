@@ -1097,6 +1097,22 @@ describe("transcribeInboundVoice", () => {
     );
   });
 
+  it("passes the caller's cancel signal to the provider", async () => {
+    const transcribe = vi.fn().mockResolvedValue({ text: "spoken words" });
+    vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({ transcribe } as never);
+    const controller = new AbortController();
+
+    await transcribeInboundVoice(deps("openai"), owner, {
+      audio: new Uint8Array([1, 2]),
+      mimeType: "audio/ogg",
+      signal: controller.signal,
+    });
+    expect(transcribe).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ signal: controller.signal }),
+    );
+  });
+
   it("returns null when the owner has no default voice credential", async () => {
     const create = vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({} as never);
 

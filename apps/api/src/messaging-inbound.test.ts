@@ -478,6 +478,7 @@ describe("createMessagingInboundHandler DM routing", () => {
       userId: "user-1",
       audio: bytes,
       mimeType: "audio/ogg",
+      signal: expect.any(AbortSignal),
     });
     expect(deps.sendUserMessage).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -689,6 +690,9 @@ describe("createMessagingInboundHandler DM routing", () => {
       await vi.advanceTimersByTimeAsync(20_001);
       await pending;
       expect(transcribe).toHaveBeenCalledTimes(1);
+      // The stalled provider call is cancelled, not left running in the background.
+      const [{ signal }] = transcribe.mock.calls[0] as unknown as [{ signal: AbortSignal }];
+      expect(signal.aborted).toBe(true);
       expect(deps.sendUserMessage).toHaveBeenCalledWith(
         expect.objectContaining({ prompt: 'User attached file "voice.oga" (audio/ogg, 3 bytes).' }),
       );

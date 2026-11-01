@@ -76,13 +76,14 @@ export interface MessagingInboundDeps {
   /**
    * Transcribes inbound audio with the bot owner's voice provider. Resolves
    * null when no provider can transcribe or transcription fails; only the
-   * file reference is delivered then.
+   * file reference is delivered then. `signal` aborts when the budget runs out.
    */
   transcribe?: (input: {
     spaceId: string;
     userId: string;
     audio: Uint8Array;
     mimeType: string;
+    signal: AbortSignal;
   }) => Promise<string | null>;
 }
 
@@ -301,9 +302,15 @@ async function withVoiceTranscript(
   if (!deps.transcribe || !bytes || !isAttachmentAudioMimeType(artifact.mimeType)) return artifact;
   const remaining = deadline - Date.now();
   if (remaining <= 0) return artifact;
+  // The timer both stops waiting and cancels the provider call, so a stalled
+  // request does not keep running after the message is delivered without it.
+  const cancel = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timedOut = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), remaining);
+    timer = setTimeout(() => {
+      cancel.abort();
+      resolve(null);
+    }, remaining);
   });
   const call = deps
     .transcribe({
@@ -311,6 +318,7 @@ async function withVoiceTranscript(
       userId: ids.userId,
       audio: bytes,
       mimeType: artifact.mimeType,
+      signal: cancel.signal,
     })
     .catch((error) => {
       // Reason only: the audio and the transcript never reach the log.

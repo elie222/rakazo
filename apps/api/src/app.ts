@@ -1034,7 +1034,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           { spaceId, userId },
           input,
         ),
-      transcribe: ({ spaceId, userId, audio, mimeType }) =>
+      transcribe: ({ spaceId, userId, audio, mimeType, signal }) =>
         transcribeInboundVoice(
           {
             prisma,
@@ -1042,7 +1042,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
             env: { mcpAllowPrivateEndpoint: env.mcpAllowPrivateEndpoint },
           },
           { spaceId, userId },
-          { audio, mimeType },
+          { audio, mimeType, signal },
         ),
     } satisfies Parameters<typeof createMessagingInboundHandler>[0];
     const inbound = createMessagingInboundHandler(inboundDeps);

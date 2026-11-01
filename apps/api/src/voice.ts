@@ -577,12 +577,12 @@ export async function transcribeVoice(
  * the app's own dictation path. Null — never a throw — keeps delivery at
  * today's file-reference-only behaviour when no provider can transcribe, the
  * audio is empty or too large, or transcription fails. Providers bound their
- * own transcribe deadlines, so a hung call cannot outlive them.
+ * own transcribe deadlines; the caller's `signal` cancels the call earlier.
  */
 export async function transcribeInboundVoice(
   deps: VoiceDeps,
   owner: Pick<Actor, "userId" | "spaceId">,
-  input: { audio: Uint8Array; mimeType: string },
+  input: { audio: Uint8Array; mimeType: string; signal?: AbortSignal },
 ): Promise<string | null> {
   try {
     if (input.audio.byteLength === 0 || input.audio.byteLength > MAX_TRANSCRIBE_BYTES) return null;
@@ -596,7 +596,7 @@ export async function transcribeInboundVoice(
         mimeType: input.mimeType,
         apiKey: loaded.apiKey,
       },
-      voiceContext(owner),
+      voiceContext(owner, input.signal),
     );
     return text.trim() || null;
   } catch (error) {
