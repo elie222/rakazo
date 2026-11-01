@@ -32,6 +32,8 @@ export function recordMessageSent(): void {
   shownThisSession = true;
   toast.custom(() => <GitHubStarPrompt />, {
     id: TOAST_ID,
+    // The default bottom-right corner covers the composer.
+    position: "top-right",
     duration: Number.POSITIVE_INFINITY,
     onDismiss: dismiss,
   });
