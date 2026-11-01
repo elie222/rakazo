@@ -107,17 +107,21 @@ dbTests("model credits ledger", () => {
     await settleModelCredits(prisma, id, 0.125);
     expect(await balance()).toBe(9_875_000n);
   });
-  it("rejects unknown pricing and BYOK accounts before spending", async () => {
+  it("rejects unknown pricing before spending", async () => {
     await expect(reserveModelCredits(prisma, organizationId, Number.NaN)).rejects.toThrow(
       "reliable price",
     );
+  });
+  it("spends an own-key account's balance and stops when it runs out", async () => {
     await reconcileCreditPurchase(prisma, organizationId, {
       id: `${organizationId}-byok`,
       amountCents: 1000,
     });
     await prisma.modelCreditAccount.update({ where: { organizationId }, data: { mode: "byok" } });
-    await expect(reserveModelCredits(prisma, organizationId, 1)).rejects.toThrow("credits");
-    expect(await balance()).toBe(10_000_000n);
+    await reserveModelCredits(prisma, organizationId, 1);
+    expect(await balance()).toBe(9_000_000n);
+    await expect(reserveModelCredits(prisma, organizationId, 10)).rejects.toThrow("credits");
+    expect(await balance()).toBe(9_000_000n);
   });
   const beforeRenewal = new Date("2029-12-15T00:00:00Z");
   const renewal = new Date("2030-01-01T00:00:00Z");

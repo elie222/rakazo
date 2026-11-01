@@ -70,9 +70,6 @@ export class GraphileJobPublisher implements JobPublisher {
       jobKey: job.replaceKey,
       maxAttempts: job.maxAttempts,
       ...(jobKeyMode ? { jobKeyMode } : {}),
-      // Each delivery drains the whole outbox, and a reply still being sent does not hold
-      // back the next reply to the same conversation, so drains run one at a time.
-      ...(job.name === "messaging.deliver" ? { queueName: "messaging.deliver" } : {}),
     });
     if (
       task === INTERACTIVE_RUN_TASK &&
