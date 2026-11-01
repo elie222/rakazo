@@ -386,3 +386,38 @@ describe("OIDC environment", () => {
     ).toBe(true);
   });
 });
+
+describe("web origin", () => {
+  it("drops trailing slashes so links never double up", () => {
+    expect(loadEnv({ ...base, WEB_ORIGIN: "https://app.example.com/" }).webOrigin).toBe(
+      "https://app.example.com",
+    );
+    expect(loadEnv({ ...base, WEB_ORIGIN: "https://app.example.com///" }).webOrigin).toBe(
+      "https://app.example.com",
+    );
+    expect(loadEnv({ ...base, WEB_ORIGIN: " https://app.example.com " }).webOrigin).toBe(
+      "https://app.example.com",
+    );
+  });
+
+  it("keeps the local default when none is set", () => {
+    expect(loadEnv(base).webOrigin).toBe("http://127.0.0.1:5173");
+    expect(loadEnv(base).authUrl).toBe("http://127.0.0.1:5173");
+  });
+
+  it("normalises BETTER_AUTH_URL the same way and keeps a path", () => {
+    const env = loadEnv({
+      ...base,
+      WEB_ORIGIN: "https://app.example.com/",
+      BETTER_AUTH_URL: "https://auth.example.com/base/",
+    });
+    expect(env.authUrl).toBe("https://auth.example.com/base");
+    expect(env.webOrigin).toBe("https://app.example.com");
+  });
+
+  it("refuses something that is not an absolute URL", () => {
+    expect(() => loadEnv({ ...base, WEB_ORIGIN: "app.example.com" })).toThrow(
+      'WEB_ORIGIN must be an absolute URL, got "app.example.com"',
+    );
+  });
+});
