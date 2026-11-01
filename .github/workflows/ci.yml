@@ -184,7 +184,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends age
       - name: Unit tests
         if: steps.areas.outputs.all_packages != 'false'
-        run: pnpm test --shard=${{ matrix.shard }}/3
+        run: pnpm run test --shard=${{ matrix.shard }}/3
       - name: Unit tests for affected packages
         if: steps.areas.outputs.all_packages == 'false'
         env:
