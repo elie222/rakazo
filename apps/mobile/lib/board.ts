@@ -8,7 +8,7 @@ export type BoardSection = { status: TicketStatus; tickets: Ticket[] };
 
 /**
  * Groups the board's tickets by status, keeping the columns in board order and
- * dropping empty ones. Tickets arrive newest first, so a column reads the same
+ * dropping empty ones. Tickets arrive most recently updated first, so a column reads the same
  * way as the web board without another sort.
  */
 export function boardSections(tickets: readonly Ticket[]): BoardSection[] {
