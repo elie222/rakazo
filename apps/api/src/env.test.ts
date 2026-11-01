@@ -432,19 +432,26 @@ describe("web origin", () => {
 
   it("refuses something that is not an absolute URL", () => {
     expect(() => loadEnv({ ...base, WEB_ORIGIN: "app.example.com" })).toThrow(
-      'WEB_ORIGIN must be an absolute URL, got "app.example.com"',
+      "WEB_ORIGIN must be an absolute http(s) URL",
     );
   });
 
   it("names BETTER_AUTH_URL when it is invalid", () => {
     expect(() => loadEnv({ ...base, BETTER_AUTH_URL: "app.example.com" })).toThrow(
-      'BETTER_AUTH_URL must be an absolute URL, got "app.example.com"',
+      "BETTER_AUTH_URL must be an absolute http(s) URL",
     );
   });
 
   it.each(["WEB_ORIGIN", "BETTER_AUTH_URL"])("refuses non-HTTP URLs for %s", (name) => {
     expect(() => loadEnv({ ...base, [name]: "app.example.com:5173" })).toThrow(
-      `${name} must be an absolute URL, got "app.example.com:5173"`,
+      `${name} must be an absolute http(s) URL`,
     );
+  });
+
+  it.each(["WEB_ORIGIN", "BETTER_AUTH_URL"])("does not expose invalid %s values", (name) => {
+    const value = "postgres://user:password@db.example.test/database";
+    const load = () => loadEnv({ ...base, [name]: value });
+    expect(load).toThrow(`${name} must be an absolute http(s) URL`);
+    expect(load).not.toThrow(value);
   });
 });

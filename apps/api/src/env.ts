@@ -354,7 +354,7 @@ function resolveWebOrigin(value: string | undefined, fallback: string, name: str
     const url = new URL(origin);
     if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error();
   } catch {
-    throw new Error(`${name} must be an absolute URL, got "${origin}"`);
+    throw new Error(`${name} must be an absolute http(s) URL`);
   }
   return origin;
 }
