@@ -223,6 +223,14 @@ function scratchpadClause(disabled?: ReadonlySet<string>): string | undefined {
   return `Use ${pads.join(" / ")} for open work that should outlive this turn${reminder}.`;
 }
 
+/**
+ * Open loops get one follow-up the bot sets itself. The follow-up runs as a routine, which
+ * cannot see the chat, so the scratchpad item is what tells it whether the loop has closed;
+ * the item keeps the routine's id so closing the loop cancels it and a later turn sees it.
+ */
+const FOLLOW_UP_INSTRUCTION =
+  "Do not wait to be asked about open loops. When the conversation leaves something open for a known time (something the user will send or decide, a result you are waiting for, a deadline), schedule_create a single one-shot follow-up for when it is due, telling it to check that scratchpad item, stay silent if it is done or gone, and otherwise ask about it once and offer concrete help; then scratchpad_add the item with the follow-up's routineId in its notes. When the item is resolved, complete it and schedule_cancel its follow-up. Follow up once per item and never on something the user declined. When you notice recurring work you could take on, offer it once instead of setting it up unasked.";
+
 function spawnBotClause(disabled?: ReadonlySet<string>): string | undefined {
   if (!builtinOffered(disabled, "spawn_bot")) return undefined;
   const demo = builtinOffered(disabled, "run_subagent") ? " Do not run_subagent to demo it." : "";
@@ -275,6 +283,7 @@ function toolUsageLine(parts: {
   computerInstruction: string;
   pageBrowserAllowed: boolean;
   disabledBuiltinTools?: ReadonlySet<string>;
+  followUpsOffered?: boolean;
 }): string {
   const disabled = parts.disabledBuiltinTools;
   const clauses = [
@@ -286,6 +295,7 @@ function toolUsageLine(parts: {
       : undefined,
     builtinOffered(disabled, "remember") ? "Use remember for durable facts." : undefined,
     scratchpadClause(disabled),
+    parts.followUpsOffered ? FOLLOW_UP_INSTRUCTION : undefined,
     builtinOffered(disabled, "request_takeover")
       ? "Use request_takeover when the user must provide protected input or human judgment."
       : undefined,
@@ -317,6 +327,8 @@ export function userTurnInstructions(parts: {
   disabledBuiltinTools?: ReadonlySet<string>;
   /** The fleet tools the run was offered (see offeredFleetTools). */
   offeredFleetTools?: readonly string[];
+  /** The run can set its own follow-ups (see followUpsOffered). */
+  followUpsOffered?: boolean;
   userComputer?: UserComputerState;
 }): (string | undefined)[] {
   return [
