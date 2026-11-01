@@ -115,6 +115,13 @@ test("a text fence reads as wrapped prose beside a scrolling code fence", async 
   expect(fonts[0]).toBe(fonts[2]);
   expect(fonts[1]).not.toBe(fonts[2]);
 
+  // Prose lines take their own direction (a right-to-left draft aligns right); code stays LTR.
+  const bidi = await fences.evaluateAll((blocks) =>
+    blocks.map((block) => [getComputedStyle(block).unicodeBidi, getComputedStyle(block).direction]),
+  );
+  expect(bidi[0]).toEqual(["plaintext", "ltr"]);
+  expect(bidi[1]).toEqual(["isolate", "ltr"]);
+
   await captureScreenshot(page, testInfo, "markdown-prose-fence");
 });
 

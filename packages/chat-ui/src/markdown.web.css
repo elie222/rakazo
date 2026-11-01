@@ -183,6 +183,19 @@
   white-space: pre-wrap;
 }
 
+/* Prose takes each line's direction from its own text, like the mobile fence: a right-to-left
+   line aligns right with its punctuation in order, while code fences stay left-to-right. */
+.rk-chat-markdown .rk-chat-markdown-pre-prose {
+  direction: inherit;
+  unicode-bidi: plaintext;
+  text-align: start;
+}
+
+.rk-chat-markdown .rk-chat-markdown-pre-prose code {
+  direction: inherit;
+  unicode-bidi: normal;
+}
+
 .rk-chat-markdown .rk-chat-markdown-pre-wrap pre {
   margin: 0;
 }
