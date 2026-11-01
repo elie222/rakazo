@@ -24,7 +24,7 @@ describe("wrapped environment values", () => {
 
   it("rejects a tampered value without echoing it", async () => {
     const wrapped = await wrapEnvValue(provider, "BETTER_AUTH_SECRET", SECRET);
-    const tampered = `${wrapped.slice(0, -2)}${wrapped.endsWith("A") ? "B" : "A"}${wrapped.slice(-1)}`;
+    const tampered = `${wrapped.slice(0, -2)}${wrapped.at(-2) === "A" ? "B" : "A"}${wrapped.slice(-1)}`;
     for (const value of [tampered, `${wrapped}.extra`, "wrapped:v1:"]) {
       await expect(unwrapEnv({ BETTER_AUTH_SECRET: value }, provider)).rejects.toThrow(
         /^BETTER_AUTH_SECRET (could not be unwrapped|is not a valid wrapped value)$/,
