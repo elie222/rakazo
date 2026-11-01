@@ -7,7 +7,7 @@ import {
   normalizeHost,
 } from "@rakazo/contracts";
 import { readBoundedResponseBytes } from "@rakazo/core";
-import { Agent } from "undici";
+import { Agent, type Dispatcher, EnvHttpProxyAgent } from "undici";
 import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
 import { createAddressCheckedLookup, egressRefused } from "./network-address.js";
 import { fetchPairedWithDispatcher } from "./undici-fetch.js";
@@ -32,6 +32,13 @@ export interface SafeWebFetchOptions {
   truncate?: boolean;
   /** Refuse any hop, redirects included, whose port is not listed. */
   allowedPorts?: readonly number[];
+  /**
+   * Where proxy settings are read from. Defaults to `process.env`.
+   * HTTP_PROXY / HTTPS_PROXY / NO_PROXY route these fetches the way the
+   * self-hosting docs describe; the target URL is still resolved and checked
+   * before every hop, so the proxy is never asked to reach a blocked address.
+   */
+  env?: NodeJS.ProcessEnv;
   /**
    * Test seam for dispatcher teardown. Defaults to `Agent.close()`.
    * Always raced against the shared operation deadline.
@@ -148,7 +155,7 @@ export async function fetchSafeHttpRequest(
         headers: { "user-agent": options.userAgent ?? DEFAULT_USER_AGENT, ...request.headers },
         ...(request.body !== undefined ? { body: request.body } : {}),
         dispatcher,
-      } as RequestInit & { dispatcher: Agent }),
+      } as RequestInit & { dispatcher: Dispatcher }),
       signal,
     );
     const body = await readBodyPrefix(response, maxBytes + 1, signal);
@@ -162,21 +169,42 @@ export async function fetchSafeHttpRequest(
   });
 }
 
+/**
+ * The dispatcher for outbound fetches: a proxy when one is configured, a
+ * DNS-pinned direct agent otherwise.
+ *
+ * A proxy resolves the target itself, so the pinned lookup cannot apply on that
+ * path. `assertSafeWebUrl` still resolves and checks every hop before the
+ * request is sent, which is what keeps a blocked address out of the proxy.
+ */
+function safeWebDispatcher(resolve: ResolveHostname, env: NodeJS.ProcessEnv): Dispatcher {
+  const httpProxy = env.HTTP_PROXY ?? env.http_proxy;
+  const httpsProxy = env.HTTPS_PROXY ?? env.https_proxy;
+  if (!httpProxy && !httpsProxy) {
+    return new Agent({
+      connect: { lookup: createAddressCheckedLookup(resolve, assertPublicAddresses) },
+    });
+  }
+  return new EnvHttpProxyAgent({
+    ...(httpProxy ? { httpProxy } : {}),
+    ...(httpsProxy ? { httpsProxy } : {}),
+    noProxy: env.NO_PROXY ?? env.no_proxy ?? "",
+  });
+}
+
 async function withSafeEgress<T>(
   options: SafeWebFetchOptions,
   run: (egress: {
     baseFetch: typeof globalThis.fetch;
     resolve: ResolveHostname;
-    dispatcher: Agent;
+    dispatcher: Dispatcher;
     signal: AbortSignal;
   }) => Promise<T>,
 ): Promise<T> {
   const resolve = options.resolveHostname ?? defaultResolveHostname;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const baseFetch = fetchPairedWithDispatcher(options.fetch);
-  const dispatcher = new Agent({
-    connect: { lookup: createAddressCheckedLookup(resolve, assertPublicAddresses) },
-  });
+  const dispatcher = safeWebDispatcher(resolve, options.env ?? process.env);
   // One deadline for the whole redirect chain + body read + cleanup, not per hop.
   const signal = combineSignals(options.signal, AbortSignal.timeout(timeoutMs));
   const cleanup =
@@ -211,7 +239,7 @@ async function followRedirects(
   state: {
     baseFetch: typeof globalThis.fetch;
     resolve: ResolveHostname;
-    dispatcher: Agent;
+    dispatcher: Dispatcher;
     maxBytes: number;
     userAgent: string;
     headers?: Record<string, string>;
@@ -237,7 +265,7 @@ async function followRedirects(
         ...state.headers,
       },
       dispatcher: state.dispatcher,
-    } as RequestInit & { dispatcher: Agent }),
+    } as RequestInit & { dispatcher: Dispatcher }),
     state.signal,
   );
 
