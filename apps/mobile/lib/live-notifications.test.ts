@@ -138,10 +138,14 @@ describe("after a chat's notifications change", () => {
       { request: { identifier: "b", content: { data: { threadId: "thread-2" } } } },
     ] as never);
 
-    await afterChatNotifyChange("", "", "", { threadId: "thread-1", notify: true });
+    await afterChatNotifyChange("", "", "", { botId: "bot-1", threadId: "thread-1", notify: true });
     expect(Notifications.dismissNotificationAsync).not.toHaveBeenCalled();
 
-    await afterChatNotifyChange("", "", "", { threadId: "thread-1", notify: false });
+    await afterChatNotifyChange("", "", "", {
+      botId: "bot-1",
+      threadId: "thread-1",
+      notify: false,
+    });
     expect(vi.mocked(Notifications.dismissNotificationAsync).mock.calls).toEqual([["a"]]);
   });
 });

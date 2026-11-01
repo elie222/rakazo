@@ -87,6 +87,7 @@ export function useInboxChatActions({
           await loadSessionToken(),
           selectedSpaceId() ?? "",
           {
+            botId: chat.id,
             threadId: "threadId" in chat ? chat.threadId : undefined,
             notify: update.notifyOnFinish,
           },
