@@ -17,6 +17,7 @@ import {
 import { Check } from "lucide-react";
 import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { isApplePlatform } from "./shell-shortcuts";
 
 export type CommandPaletteAction = {
   id: string;
@@ -25,12 +26,6 @@ export type CommandPaletteAction = {
   checked?: boolean;
   onSelect: () => void;
 };
-
-function isApplePlatform() {
-  if (typeof navigator === "undefined") return false;
-  // platform is deprecated but still the most reliable Apple check in browsers.
-  return /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent);
-}
 
 function botSearchText(bot: Bot) {
   return `${bot.name} ${bot.description} ${bot.preview}`.toLowerCase();
@@ -194,5 +189,3 @@ export function CommandPalette({
     </CommandDialog>
   );
 }
-
-export { isCommandPaletteHotkey } from "./command-palette-hotkey";

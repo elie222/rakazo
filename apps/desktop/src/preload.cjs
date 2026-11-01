@@ -28,6 +28,14 @@ contextBridge.exposeInMainWorld("rakazoDesktop", {
     state: () => ipcRenderer.invoke("desktop.device.state"),
     setAllowed: (allowed) => ipcRenderer.invoke("desktop.device.setAllowed", allowed),
   },
+  menu: {
+    onCommand: (listener) => {
+      // The IpcRendererEvent stays in the preload: the renderer only sees the command.
+      const handler = (_event, command) => listener(command);
+      ipcRenderer.on("desktop.menu.command", handler);
+      return () => ipcRenderer.off("desktop.menu.command", handler);
+    },
+  },
   monitoring: {
     enabled: () => ipcRenderer.invoke("desktop.monitoring.enabled"),
   },
