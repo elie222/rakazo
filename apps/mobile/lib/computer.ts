@@ -214,7 +214,8 @@ export async function screenPageStatus(
       cache: "no-store",
       credentials: "omit",
       headers,
-      redirect: "manual",
+      // Native fetch may carry configured headers across a redirect; refuse one instead.
+      redirect: Object.keys(headers).length ? "error" : "manual",
       signal,
     });
     void response.body?.cancel().catch(() => undefined);

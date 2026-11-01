@@ -28,10 +28,12 @@ export function safeScreenProxyResponseHeaders(
   if (requestOrigin === "null") {
     safe["access-control-allow-origin"] = "null";
     safe["access-control-allow-credentials"] = "true";
-    safe.vary = "Origin";
   } else {
     safe["access-control-allow-origin"] = "*";
   }
+  // Both answers depend on Origin; a cache must not reuse one for the other.
+  const vary = safe.vary;
+  safe.vary = [...(Array.isArray(vary) ? vary : [vary]), "Origin"].filter(Boolean).join(", ");
   // A CDN in front of the web service must pass the screen through untouched: injected scripts,
   // minification and script loaders break noVNC's module scripts.
   const cacheControl = safe["cache-control"];
