@@ -7,12 +7,6 @@ import type { RefObject } from "react";
 import { useEffect, useId, useRef } from "react";
 import { translateRunError } from "../../lib/run-error";
 
-/**
- * While an undismissed error card sits on screen, check once a second whether it
- * is still covered. Only the one element is hit-tested, never the whole document.
- */
-const RUN_ERROR_RETRY_MS = 1_000;
-
 export function ComposerError({
   sendError,
   imageConfirmation = false,
@@ -44,68 +38,78 @@ export function ComposerError({
   useEffect(() => {
     if (!runError || !runErrorId) return;
     const currentRunErrorId = runErrorId;
-    let retry: number | undefined;
-    function stopRetry() {
-      if (retry === undefined) return;
-      window.clearInterval(retry);
-      retry = undefined;
+    if (presentedRunErrorIdRef.current === currentRunErrorId) return;
+    let intersecting = false;
+    let frame: number | undefined;
+    let mutations: MutationObserver | undefined;
+    function stopRechecking() {
+      mutations?.disconnect();
+      mutations = undefined;
+      document.removeEventListener("transitionend", scheduleCheck);
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      frame = undefined;
     }
-    // Counts the error as presented once it is actually on screen. Watching
-    // every DOM mutation and hit-testing the element on each one forced layout
-    // for the whole session; an IntersectionObserver costs nothing until the
-    // card scrolls into view.
+    function cleanup() {
+      stopRechecking();
+      observer?.disconnect();
+      document.removeEventListener("visibilitychange", recordIfPresented);
+    }
+    function scheduleCheck() {
+      if (frame !== undefined) return;
+      frame = requestAnimationFrame(() => {
+        frame = undefined;
+        recordIfPresented();
+      });
+    }
     function recordIfPresented() {
       const element = runErrorRef.current;
-      if (!element || document.visibilityState !== "visible") return;
-      if (presentedRunErrorIdRef.current === currentRunErrorId) {
-        stopRetry();
-        return;
-      }
+      if (!intersecting || !element || document.visibilityState !== "visible") return;
+      if (presentedRunErrorIdRef.current === currentRunErrorId) return;
       const rect = element.getBoundingClientRect();
       if (rect.width === 0 && rect.height === 0) return;
       // Without hit testing (older engines, test DOMs) an element with a box is
       // on screen, which is all this check can know.
       if (typeof document.elementFromPoint !== "function") {
         presentedRunErrorIdRef.current = currentRunErrorId;
+        cleanup();
         onRunErrorPresented(currentRunErrorId);
-        stopRetry();
         return;
       }
       const topElement = document.elementFromPoint(
-        rect.left + rect.width / 2,
-        rect.top + rect.height / 2,
+        (Math.max(0, rect.left) + Math.min(window.innerWidth, rect.right)) / 2,
+        (Math.max(0, rect.top) + Math.min(window.innerHeight, rect.bottom)) / 2,
       );
       if (topElement && (topElement === element || element.contains(topElement))) {
         presentedRunErrorIdRef.current = currentRunErrorId;
+        cleanup();
         onRunErrorPresented(currentRunErrorId);
-        stopRetry();
+        return;
       }
-    }
-    // A card can be on screen and still covered by a sheet or a dialog, and
-    // nothing fires when that cover goes away. Re-check on a slow timer while
-    // the card intersects, until it is either presented or gone.
-    function watchUntilPresented() {
-      recordIfPresented();
-      if (presentedRunErrorIdRef.current === currentRunErrorId) return;
-      retry ??= window.setInterval(recordIfPresented, RUN_ERROR_RETRY_MS);
+      // Only watch for an occluder to move while an unseen card is in view.
+      if (!mutations) {
+        mutations = new MutationObserver(scheduleCheck);
+        mutations.observe(document.body, { attributes: true, childList: true, subtree: true });
+        document.addEventListener("transitionend", scheduleCheck);
+      }
     }
     const element = runErrorRef.current;
     const observer =
       element && typeof IntersectionObserver !== "undefined"
         ? new IntersectionObserver((entries) => {
-            if (entries.some((entry) => entry.isIntersecting)) watchUntilPresented();
-            else stopRetry();
+            const entry = entries.filter((entry) => entry.target === element).at(-1);
+            if (!entry) return;
+            intersecting = entry.isIntersecting;
+            if (intersecting) recordIfPresented();
+            else stopRechecking();
           })
         : null;
+    document.addEventListener("visibilitychange", recordIfPresented);
     if (observer && element) observer.observe(element);
-    // Without an observer the card is on screen as soon as it mounts.
-    else watchUntilPresented();
-    document.addEventListener("visibilitychange", watchUntilPresented);
-    return () => {
-      observer?.disconnect();
-      stopRetry();
-      document.removeEventListener("visibilitychange", watchUntilPresented);
-    };
+    else {
+      intersecting = true;
+      recordIfPresented();
+    }
+    return cleanup;
   }, [onRunErrorPresented, runError, runErrorId]);
   const normalizedRunError = runError
     ? normalizeRunError(runError, translateRunError, i18n.locale || "en")

@@ -386,3 +386,72 @@ describe("OIDC environment", () => {
     ).toBe(true);
   });
 });
+
+describe("web origin", () => {
+  it("drops trailing slashes so links never double up", () => {
+    expect(loadEnv({ ...base, WEB_ORIGIN: "https://app.example.com/" }).webOrigin).toBe(
+      "https://app.example.com",
+    );
+    expect(loadEnv({ ...base, WEB_ORIGIN: "https://app.example.com///" }).webOrigin).toBe(
+      "https://app.example.com",
+    );
+    expect(loadEnv({ ...base, WEB_ORIGIN: " https://app.example.com " }).webOrigin).toBe(
+      "https://app.example.com",
+    );
+  });
+
+  it("keeps the local default when none is set", () => {
+    expect(loadEnv(base).webOrigin).toBe("http://127.0.0.1:5173");
+    expect(loadEnv(base).authUrl).toBe("http://127.0.0.1:5173");
+  });
+
+  it.each(["", " \t "])("uses the local default for blank WEB_ORIGIN %j", (value) => {
+    const env = loadEnv({ ...base, WEB_ORIGIN: value });
+    expect(env.webOrigin).toBe("http://127.0.0.1:5173");
+    expect(env.authUrl).toBe("http://127.0.0.1:5173");
+  });
+
+  it.each(["", " \t "])("uses webOrigin for blank BETTER_AUTH_URL %j", (value) => {
+    const env = loadEnv({
+      ...base,
+      WEB_ORIGIN: "https://app.example.com/",
+      BETTER_AUTH_URL: value,
+    });
+    expect(env.authUrl).toBe("https://app.example.com");
+  });
+
+  it("normalises BETTER_AUTH_URL the same way and keeps a path", () => {
+    const env = loadEnv({
+      ...base,
+      WEB_ORIGIN: "https://app.example.com/",
+      BETTER_AUTH_URL: "https://auth.example.com/base/",
+    });
+    expect(env.authUrl).toBe("https://auth.example.com/base");
+    expect(env.webOrigin).toBe("https://app.example.com");
+  });
+
+  it("refuses something that is not an absolute URL", () => {
+    expect(() => loadEnv({ ...base, WEB_ORIGIN: "app.example.com" })).toThrow(
+      "WEB_ORIGIN must be an absolute http(s) URL",
+    );
+  });
+
+  it("names BETTER_AUTH_URL when it is invalid", () => {
+    expect(() => loadEnv({ ...base, BETTER_AUTH_URL: "app.example.com" })).toThrow(
+      "BETTER_AUTH_URL must be an absolute http(s) URL",
+    );
+  });
+
+  it.each(["WEB_ORIGIN", "BETTER_AUTH_URL"])("refuses non-HTTP URLs for %s", (name) => {
+    expect(() => loadEnv({ ...base, [name]: "app.example.com:5173" })).toThrow(
+      `${name} must be an absolute http(s) URL`,
+    );
+  });
+
+  it.each(["WEB_ORIGIN", "BETTER_AUTH_URL"])("does not expose invalid %s values", (name) => {
+    const value = "postgres://user:password@db.example.test/database";
+    const load = () => loadEnv({ ...base, [name]: value });
+    expect(load).toThrow(`${name} must be an absolute http(s) URL`);
+    expect(load).not.toThrow(value);
+  });
+});
