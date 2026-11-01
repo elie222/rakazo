@@ -443,6 +443,11 @@ msgstr "已開啟 <0>{0}</0> 的登入分頁。請在該分頁輸入以下代碼
 msgid "A subscription credential is stored securely."
 msgstr "訂閱憑證已安全儲存。"
 
+#. placeholder {0}: Math.ceil(memoryBytesLeftOut / 1024)
+#: src/pages/KnowledgeSection.tsx
+msgid "About {0} KB of this memory does not fit in what the bot reads."
+msgstr ""
+
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
 msgstr "關於 {label}"
