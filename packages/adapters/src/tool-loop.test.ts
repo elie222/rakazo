@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  advanceOverLimitActionCalls,
   advanceToolCallLoopGuard,
   isLoopGuardStopText,
   loopGuardStopText,
+  MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS,
+  overLimitStopText,
   toolCallStreakLength,
 } from "./tool-loop.js";
 
@@ -102,5 +105,55 @@ describe("advanceToolCallLoopGuard", () => {
       streak = result.streak;
       expect(result.stuck).toBe(false);
     }
+  });
+});
+
+describe("advanceOverLimitActionCalls", () => {
+  const over = { actions: Array.from({ length: 25 }, () => ({ kind: "click", x: 1, y: 1 })) };
+  const ok = { actions: over.actions.slice(0, 24) };
+
+  it("counts over-limit batches in a row across both action tools, even when they differ", () => {
+    let count = 0;
+    count = advanceOverLimitActionCalls(count, "computer_act", over);
+    count = advanceOverLimitActionCalls(count, "browser_act", {
+      actions: [...over.actions, ...over.actions],
+    });
+    count = advanceOverLimitActionCalls(count, "computer_act", over);
+    expect(count).toBe(3);
+    expect(count).toBeLessThan(MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS);
+    expect(advanceOverLimitActionCalls(count, "computer_act", over)).toBe(
+      MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS,
+    );
+  });
+
+  it("counts expanded computer actions while leaving browser batches unexpanded", () => {
+    const actions = Array.from({ length: 13 }, () => ({
+      kind: "click",
+      x: 1,
+      y: 1,
+      double: true,
+    }));
+    expect(advanceOverLimitActionCalls(3, "computer_act", { actions })).toBe(
+      MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS,
+    );
+    expect(advanceOverLimitActionCalls(3, "computer_act", { actions: actions.slice(0, 12) })).toBe(
+      0,
+    );
+    expect(advanceOverLimitActionCalls(3, "browser_act", { actions })).toBe(0);
+  });
+
+  it("ignores other tools and resets on a batch within the limit", () => {
+    expect(advanceOverLimitActionCalls(2, "computer_observe", {})).toBe(2);
+    expect(advanceOverLimitActionCalls(2, "computer_act", ok)).toBe(0);
+    expect(advanceOverLimitActionCalls(2, "browser_act", undefined)).toBe(0);
+  });
+});
+
+describe("overLimitStopText", () => {
+  it("names the over-limit batches and is recognised as a loop-guard stop", () => {
+    const text = overLimitStopText("Computer act", 4);
+    expect(text).toContain("with too many actions 4 times in a row");
+    expect(text).not.toContain("same input");
+    expect(isLoopGuardStopText(text)).toBe(true);
   });
 });

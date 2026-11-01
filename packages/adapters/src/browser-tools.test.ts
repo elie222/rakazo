@@ -842,7 +842,7 @@ describe("browser tools", () => {
     [
       "too many actions",
       Array.from({ length: 25 }, () => ({ kind: "click", ref: "e1" })),
-      "browser_act accepts at most 24 actions",
+      "browser_act accepts at most 24 actions but got 25; none ran. Send the first 24 or fewer now, then the rest in a separate call.",
     ],
     ["an action without its ref", [{ kind: "click" }], "browser_act action 0 requires ref"],
     ["a fill without its text", [{ kind: "fill", ref: "e1" }], "browser_act fill requires text"],

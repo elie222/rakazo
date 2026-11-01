@@ -156,6 +156,8 @@ export interface RunState {
   effects: EffectState;
   screen: ScreenState;
   toolCallStreak: ToolCallStreak;
+  /** Consecutive `computer_act`/`browser_act` batches over the action limit, this one included. */
+  overLimitActionCalls: number;
   /**
    * Whether outside content has entered the run. A run someone else started begins tainted,
    * and so does a later attempt, including one with restored untrusted tool results.
