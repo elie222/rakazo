@@ -518,7 +518,9 @@ export async function runTrial(
       }
       runIds.push(runId);
       runSteps.set(runId, stepIndex + 1);
+      // Every reply to a peer is graded, so it is never setup.
       if (
+        !("fromPeer" in step) &&
         scenario.steps
           .slice(stepIndex + 1)
           .some(
