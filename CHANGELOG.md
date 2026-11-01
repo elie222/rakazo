@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## [0.3.7] - 2026-11-01
+## [0.4.0] - 2026-11-01
 
 ### Security
 
@@ -20,7 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Composio and Pipedream connections now record the exact external account you approved and use only that account, so people with several accounts on one app no longer get tools acting as whichever account the provider picks. Older Pipedream connections that never stored an account stop offering tools until they are reconnected.
 - A bot's memory tools remove the Serenity access token from errors and results before the model sees them, in case the server or a proxy repeats it.
 - Values you set for an MCP server's environment variables and headers are hidden from tool results and errors, whatever their names. Short values, numbers and common config words stay visible.
-- When stdio MCP servers are allowed through `npx`, Rakazo starts only a plain npm registry package (`npx -y @scope/pkg@version` or `npx -p <pkg> <bin>`) and installs it without running install scripts. Any other `npx` form is refused with "This npx command isn't supported here" ([integrations](docs/self-host-integrations.md#mcp-servers)).
+- When stdio MCP servers are allowed through `npx`, Rakazo starts only a plain npm registry package (`npx <pkg>`, optionally with `-y`, or `npx -p <pkg> <bin>`) and installs it without running install scripts. Any other `npx` form is refused with "This npx command isn't supported here" ([integrations](docs/self-host-integrations.md#mcp-servers)).
 - Saving a remote MCP server whose URL holds a credential in its query string (`?api_key=`, `?token=` and similar) is refused, with a message asking for it in a header, where it is stored encrypted. Servers already saved keep working.
 - In a shared Space, only the person who made a routine can delete it, the same rule as editing it.
 - The packaged desktop app labels a request to its local stack as coming from the app only when it really does. Sign-in popups and the sandboxed preview of bot-made HTML can no longer pass the API's origin checks as the app.
@@ -51,7 +51,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Bots can search all of your own chats in the current space, not just the chat you are in, and open the messages they find. They can also try several keyword variants in one search. This only works in runs you start directly, never in channel, webhook, routine or bot-to-bot runs, and never reaches another member's chats.
 - Login cards have a "Save to Vault" switch, on by default. Turn it off and the bot can sign in for this run only: the login is kept encrypted for that run and that site, and deleted when the run ends.
 - When you add a custom MCP server, OpenAPI or GraphQL source on mobile, you can choose how it signs in: bearer token, an API key in a header you name, or OAuth in your browser for MCP servers.
-- `SANDBOX_COMPUTER_MOUNTS` (Docker computers only) mounts host folders into every bot computer as `source:target[:rw][:rslave]` entries. Mounts are read-only unless an entry adds `rw`, and every bot in every Space sees them. Risky source paths are refused at startup ([shared host folders](docs/self-host.md#shared-host-folders)).
+- `SANDBOX_COMPUTER_MOUNTS` (Docker computers only) mounts host folders into every bot computer as `source:target[:rw][:rslave]` entries. Mounts are read-only unless an entry adds `rw`, and every bot in every Space sees them. Risky source paths are refused at startup ([shared host folders](docs/self-host-docker-computers.md#shared-host-folders)).
 - `MAX_ATTACHMENTS_PER_MESSAGE` (1 to 100, default 4) sets how many files fit in one message. Web, desktop and mobile use the server's limit.
 - Plugin authors can submit a public GitHub repository to the Rakazo marketplace from the website or the API. Admins approve or reject submissions on `/admin/plugins`, and approved plugins are listed under "Rakazo" in the in-app marketplace. Admins are the verified accounts listed in the optional `RAKAZO_ADMIN_EMAILS`.
 - boxd as a remote computer provider: set `SANDBOX_PROVIDER=boxd` and `BOXD_API_KEY` (and optionally `BOXD_ORG`). Each computer runs in its own microVM, and stopping one suspends it with its memory, so open programs and pages are still there when it resumes.
@@ -74,7 +74,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - On paid hosted billing, each organization gets a monthly allowance for cloud computers: $5 (25 hours) on own-key plans, and 20% of the monthly amount on credit plans. Billing shows "Computer hours left". Once the allowance is used up, computers don't start until next month, and a running computer is saved and stopped. Self-hosted installs without credit billing have no limit. Computer time for a computer the provider lost now ends when it was last seen running.
 - Custom endpoint model connections have a Protocol setting on web and mobile: Chat Completions, Responses or Anthropic Messages. This lets you use servers and gateways that don't serve Chat Completions. Existing connections keep Chat Completions.
 - Cmd/Ctrl-K can now start a new bot, group chat or private space, open Connect apps, Skills or any settings page, and switch between System, Light and Dark themes. Bots stay at the top of the list.
-- Keyboard shortcuts switch to the next or previous bot: Ctrl+Tab and Ctrl+Shift+Tab in the desktop app, and Cmd/Ctrl+Shift+Right and Left in the browser ([shortcuts](docs/desktop-app.md#shortcuts)).
+- Keyboard shortcuts switch to the next or previous bot: Ctrl+Tab and Ctrl+Shift+Tab in the desktop app, and Cmd/Ctrl+Shift+Down and Up in the browser ([shortcuts](docs/desktop-app.md#shortcuts)).
 - Custom endpoint model settings have a search box once the discovered model list gets long, and say when the search hides models you already selected.
 - The iOS app runs as a native iPad app, with the chat list beside the open chat in portrait and landscape.
 - When the ticket board is enabled, the mobile app has a Board in Settings where you can view tickets by column, move them between statuses and pull to refresh.
@@ -260,7 +260,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Production Compose hosts: rerun `harden-host.sh` and recreate Caddy now to block the remote path to CVE-2026-98432, then install the fixed kernel and reboot as soon as your distribution ships it.
 - If you run stdio MCP servers, list at least one admin in `RAKAZO_ADMIN_EMAILS` before upgrading. Without one nobody can add or edit them, though existing servers keep running.
 - If `SANDBOX_COMPUTER_DNS` is set, computers with restricted or `auto` egress now start only after one of those servers answers from a computer network. A private resolver that restricted egress blocks used to make every lookup time out without warning. Now the start fails with an error that names the setting, so point it at servers reachable from there, such as public resolvers ([self-hosting](docs/self-host.md)).
-- If you allow stdio MCP servers through `npx`, a server set up with any `npx` form other than `npx -y <pkg>` or `npx -p <pkg> <bin>` stops connecting until it is edited. A package that only works after its own install script runs also stops working ([integrations](docs/self-host-integrations.md#mcp-servers)).
+- If you allow stdio MCP servers through `npx`, a server set up with any `npx` form other than `npx <pkg>` (optionally with `-y`) or `npx -p <pkg> <bin>` stops connecting until it is edited. A package that only works after its own install script runs also stops working ([integrations](docs/self-host-integrations.md#mcp-servers)).
 - If your stdio command allowlist includes a runner other than `npx` (for example `uvx`, `pnpm` or `bunx`), servers launched through it stop starting. Switch them to `npx` or to a binary installed on the host.
 - Pipedream connections made before account ids were stored stop offering tools. Reconnect those apps.
 - Update the computer image together with the API: the page browser on Docker computers now runs on agent-browser.
