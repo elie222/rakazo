@@ -188,6 +188,10 @@ describe("normalizeRunError", () => {
       ],
       ['413: {"message":"Request entity too large"}', tooLong],
       ["Required context exceeds the model context budget", tooLong],
+      [
+        '400: {"message":"Too many images provided.  This model supports up to 3 images","type":"invalid_request_error"}',
+        tooLong,
+      ],
       ["terminated", tookTooLong],
       ["read ECONNRESET", tookTooLong],
       ["socket hang up", tookTooLong],
@@ -303,6 +307,7 @@ describe("normalizeRunError", () => {
           { "@type": "type.googleapis.com/google.rpc.ErrorInfo", reason: "API_KEY_INVALID" },
         ],
       }),
+      '400 {"type":"error","error":{"type":"invalid_request_error","message":"This API key is not scoped to a workspace."}}',
     ])("sends a rejected key to the connection: %s", (details) => {
       expect(normalizeRunError(details)).toMatchObject({
         summary: "Your model provider rejected the API key. Check your connection settings.",
@@ -387,6 +392,10 @@ describe("normalizeRunError", () => {
       "Failed to parse tool call arguments as JSON",
       '400: {"message":"Failed to parse tool call arguments as JSON","code":"tool_use_failed"}',
       "Tool call validation failed: attempted to call tool 'commentary' which was not in request.tools",
+      "tool call validation failed: attempted to call tool 'commentary' which was not in request.tools",
+      "Parsing failed. The model generated output that could not be parsed. Please adjust your prompt. See 'failed_generation' for more details.",
+      '400 {"type":"error","error":{"type":"api_error","message":"Upstream request failed: [api_error] Upstream response was not valid JSON"}}',
+      "Codex error: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request.",
       MODEL_OUTPUT_LIMIT_ERROR,
       "Upstream error from Example: HttpError: HTTP 400: Tool calls cutoff by max_tokens.",
     ])("calls unusable model output what it is: %s", (details) => {
@@ -802,6 +811,12 @@ describe("the one action that fixes a failed run", () => {
     '400: {"code":"400","message":"Unsupported model fixture-model"}',
     '400: {"error":{"message":"Unknown model: fixture-model"}}',
     '400: {"message":"Unrecognized model fixture-model"}',
+    google({
+      code: 400,
+      message: "This model requires the use of the Computer Use tool.",
+      status: "INVALID_ARGUMENT",
+    }),
+    "Invalid inference request. Check the model's supported parameters and input limits.",
   ])("offers another model when the provider cannot run it: %s", (details) => {
     expect(action(details)).toMatchObject({
       summary: "Your model provider can't run this model.",
