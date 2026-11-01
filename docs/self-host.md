@@ -140,3 +140,7 @@ From a checkout, use `-f infra/compose/docker-compose.yml` (or the production fi
 report lists the revision, which features are on, migration status, each bot's MCP servers with
 their health, and the latest runs. It prints no secrets, settings values, names, addresses,
 paths or message content; servers, bots and runs appear only as short hashes.
+
+When a user asks their bot to report a bug or send feedback, the report is saved on your server
+in the `feedback_reports` table, with the chat, bot and run it came from. Nothing is sent to the
+Rakazo project.
