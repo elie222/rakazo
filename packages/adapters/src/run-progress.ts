@@ -6,6 +6,7 @@ import {
   endsSentence,
   isBackgroundRunTrigger,
   noteLastToolStep,
+  redactSecrets,
   redactSecretsAfter,
 } from "@rakazo/core";
 import type { Run } from "@rakazo/db";
@@ -197,6 +198,44 @@ export async function publishMidTurnNarration(ctx: RunContext, beforeConnectCard
     reply.messageSegments = noteLastToolStep(reply.messageSegments, text);
   }
   return text;
+}
+
+/**
+ * Text the bot wrote before asking is what the person needs to answer, and a paused run
+ * never reaches the final reply that would bring held notes back. Posts it whole, ahead of
+ * the question.
+ */
+export async function publishNarrationBeforeAsk(ctx: RunContext) {
+  const { deps, run } = ctx;
+  const { reply } = ctx.state;
+  if (!runPromotesMidTurnNarration(run.trigger)) return;
+  const extracted = extractNarrationText(reply.messageSegments, reply.currentTextSegment);
+  const pending = redactSecretsAfter(reply.narrationSoFar, extracted.text, ctx.secrets).trim();
+  reply.narrationSoFar += extracted.text;
+  // Held notes were redacted against the secrets known when they were held; check them again.
+  const text = redactSecrets(
+    [...reply.workingNotes, pending].filter(Boolean).join("\n\n"),
+    ctx.secrets,
+  );
+  if (!text) return;
+  reply.messageSegments = extracted.remaining;
+  reply.currentTextSegment = "";
+  reply.workingNotes.length = 0;
+  reply.narrationStatusShowing = false;
+  reply.assembled = "";
+  reply.hasStreamedText = false;
+  reply.pendingProgress = "";
+  reply.redactor.skip();
+  await publishMessage(
+    deps,
+    run,
+    "bot",
+    [{ kind: "text", text }],
+    undefined,
+    nextProgressNonce(ctx),
+  );
+  reply.midTurnUserTexts.push(text);
+  reply.publishedMidTurnUserMessage = true;
 }
 
 /**
