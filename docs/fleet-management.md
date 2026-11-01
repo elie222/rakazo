@@ -1,16 +1,16 @@
-# Manage the bots it creates
+# Bots that manage bots
 
-A bot can set up other bots the way you would: create groups, organize the sidebar, rewrite
-the instructions of bots it created, pick their model and schedule them. This is controlled per
-bot and is off by default.
+A bot can set up your other bots the way you would: create groups, organize the sidebar, rewrite
+their instructions, pick their model and schedule them. This works on every bot of yours in the
+space, whoever created it. It is controlled per bot and is on for new bots.
 
 ## Turning it on
 
-Open a bot's settings, expand **Advanced** and turn on **Manage the bots it creates**. The switch is on web,
+Open a bot's settings, expand **Advanced** and turn on **Manage other bots**. The switch is on web,
 the Electron desktop app (which hosts the web UI) and mobile bot settings.
 
-- It is off for every new bot. A bot that creates another bot, or a duplicate, starts with it off;
-  the switch is never inherited.
+- New bots start with it on, including imported agents. Older bots, and bots loaded with
+  [**Import data**](./account.md), keep the setting they had.
 - It is checked again each time a tool is called, so turning it off takes effect immediately.
 - Subagents get none of the bot management tools, not even `list_fleet`.
 
@@ -28,19 +28,19 @@ message it answers came from you in the app.
 
 ## Tools
 
-- `list_fleet`: lists active bots, groups and sections. With `bot_id` of a bot it created, it instead
-  returns only that bot's full instructions and current version.
+- `list_fleet`: lists active bots, groups and sections, and marks the bots the caller created. With
+  `bot_id`, it instead returns only that bot's full instructions and current version.
 - `create_group`: creates a group from existing bots.
 - `update_group`: renames a group or adds and removes members.
 - `organize_bot`: sets a section (`section`), clears it (`clear_section: true`) or sets a pin on a bot
   or a group.
-- `update_bot` with `bot_id`: edits a child bot's name, description, color and
+- `update_bot` with `bot_id`: edits another bot's name, description, color and
   notifications. It never changes instructions. Without `bot_id` it acts on the calling bot as
   before.
-- `set_child_instructions`: replaces a child bot's instructions. The bot passes the version it read
+- `set_child_instructions`: replaces another bot's instructions. The bot passes the version it read
   with `list_fleet`.
-- `set_child_bot_model`: sets or clears a child bot's model and thinking level.
-- `create_child_routine`: schedules a prompt for a child bot.
+- `set_child_bot_model`: sets or clears another bot's model and thinking level.
+- `create_child_routine`: schedules a prompt for another bot.
 
 ## Approval
 
@@ -57,7 +57,7 @@ will actually run, resolved before the pause:
   level is set or reset.
 - Routine: the prompt and the resolved time.
 
-If the request cannot be shown whole on the card, it is refused instead of cut off. If the child's
+If the request cannot be shown whole on the card, it is refused instead of cut off. If the bot's
 instructions, model or thinking level change while the card waits, approving does not overwrite them;
 the bot has to ask again.
 
@@ -68,7 +68,6 @@ the bot has to ask again.
 - Permanently delete a bot.
 - Read, request or change secrets. Instructions, profile fields and routine names and prompts that
   contain a credential are refused.
-- Edit a bot it did not create. It can only change a section or pin on any of your bots.
 - Move a bot between spaces. Every tool works inside the space and account of the run.
 - Remove itself from the group it is running in.
 
@@ -77,8 +76,8 @@ the bot has to ask again.
 - A group has 2 to 10 members.
 - Instructions are at most 20,000 characters.
 - `list_fleet` returns at most 200 bots and 100 groups, and says when the result is truncated.
-- A bot writes at most one set of instructions per child per run, and must pass the version it read.
-  If the child changed in the meantime, the edit is refused and the bot reads it again.
+- A bot writes at most one set of instructions per bot per run, and must pass the version it read.
+  If that bot changed in the meantime, the edit is refused and the bot reads it again.
 
 ## History, events and routines
 
@@ -89,5 +88,5 @@ Creating a group appends a `group.created` event to the calling bot's thread; ch
 appends a `group.updated` event to the group's thread. Changes to a bot append `bot.updated` to that
 bot's thread.
 
-Routines a bot creates for a child are managed by you in the child's **Routines** screen. A bot
+Routines a bot creates for another bot are managed by you in that bot's **Routines** screen. A bot
 cannot list or cancel them.

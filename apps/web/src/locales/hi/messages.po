@@ -3595,8 +3595,8 @@ msgid "Manage MCP servers"
 msgstr "MCP सर्वर प्रबंधित करें"
 
 #: src/pages/shell/bot-panel.tsx
-msgid "Manage the bots it creates"
-msgstr "इसके बनाए बॉट प्रबंधित करें"
+msgid "Manage other bots"
+msgstr "अन्य बॉट प्रबंधित करें"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"

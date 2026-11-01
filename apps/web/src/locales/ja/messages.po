@@ -3595,8 +3595,8 @@ msgid "Manage MCP servers"
 msgstr "MCPサーバーを管理"
 
 #: src/pages/shell/bot-panel.tsx
-msgid "Manage the bots it creates"
-msgstr "作成したボットを管理"
+msgid "Manage other bots"
+msgstr "他のボットを管理"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
