@@ -420,6 +420,14 @@ it("forwards a purchase approval on a click step, and nothing else on it", async
   expect(JSON.parse(mock.stdin.join("")).actions[0]).toEqual(click);
 });
 
+it("forwards an approved click on a page without a host, whose site is empty", async () => {
+  const click = { kind: "click", ref: "e1", approved: true, site: "", label: "Pay", amount: "" };
+  expect(await (await browserRequest({ command: "act", actions: [click] })).json()).toMatchObject({
+    ok: true,
+  });
+  expect(JSON.parse(mock.stdin.join("")).actions[0]).toEqual(click);
+});
+
 it("forwards a purchase check without acting", async () => {
   const body = {
     command: "purchase_check",

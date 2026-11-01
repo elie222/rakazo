@@ -354,6 +354,26 @@ export async function prepareToolRequest(
     const { purchaseApproval: given, ...rest } = args;
     const approved = nextApprovedTool === name ? purchaseApprovalOf(given) : undefined;
     args = approved ? args : rest;
+    // A desktop press has no check on the page right before it, as a browser_act click does: one the user
+    // approved goes ahead only while the page still shows what the card did. A card that named nothing
+    // (the check failed) has nothing to compare.
+    if (
+      name === "computer_act" &&
+      approved &&
+      (approved.site || approved.label || approved.amount)
+    ) {
+      const now = await detectPurchase(ctx, name, rest);
+      if (
+        !now ||
+        now.site !== approved.site ||
+        now.label !== approved.label ||
+        now.amount !== approved.amount
+      )
+        return {
+          error:
+            "The page changed since the user approved this purchase, so nothing was pressed. Look at the screen and try again.",
+        };
+    }
     const purchase = approved ?? (await detectPurchase(ctx, name, rest));
     if (purchase) {
       args = { ...rest, purchaseApproval: purchase };

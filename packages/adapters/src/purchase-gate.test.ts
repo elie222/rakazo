@@ -148,6 +148,26 @@ describe("purchase detection for the page tools", () => {
     expect(check).not.toHaveBeenCalled();
   });
 
+  it("presses an approved desktop purchase only while the page still shows what the card did", async () => {
+    let now: typeof found | null = found;
+    const ctx = contextWith(vi.fn(async () => ({ purchase: now })));
+    const replay = async (approval: Record<string, unknown>) =>
+      prepareToolRequest(ctx, {
+        name: "computer_act",
+        nextApprovedTool: "computer_act",
+        args: { actions: [{ kind: "click", x: 1, y: 2 }], purchaseApproval: approval },
+      } as unknown as ToolRequest);
+    const approval = { steps: [], site: "shop.example.test", label: "Pay now", amount: "$5" };
+    expect(await replay(approval)).toBeUndefined();
+    const changed = { error: expect.stringContaining("nothing was pressed") };
+    now = { ...found, amount: "$50" };
+    expect(await replay(approval)).toEqual(changed);
+    now = null;
+    expect(await replay(approval)).toEqual(changed);
+    // A card that named nothing, because the check failed, has nothing to compare.
+    expect(await replay({ steps: [], site: "", label: "", amount: "" })).toBeUndefined();
+  });
+
   it("shows no card only where this run typed an approved wallet card or token, and still approves the click", async () => {
     const check = vi.fn(async () => ({ purchase: { ...found, steps: [0] } }));
     const ctx = contextWith(check);

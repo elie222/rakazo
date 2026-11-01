@@ -557,7 +557,8 @@ app.post("/computers/:id/browser", async (c) => {
                 ref: z.string().min(1).max(200),
                 // The user approved a purchase click on this site (see rakazo-page-browser).
                 approved: z.boolean().optional(),
-                site: z.string().min(1).max(253).optional(),
+                // Empty for a page without a host (about:blank, data:, file:).
+                site: z.string().max(253).optional(),
                 label: z.string().max(200).optional(),
                 amount: z.string().max(100).optional(),
               }),
