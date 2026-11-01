@@ -15,6 +15,10 @@ export const FLEET_WRITE_TOOL_NAMES = FLEET_TOOL_NAMES.filter(
   (name): name is Exclude<(typeof FLEET_TOOL_NAMES)[number], "list_fleet"> => name !== "list_fleet",
 );
 
+/** What a feedback report is about, and how long its description may be. */
+export const FEEDBACK_KINDS = ["bug", "feedback"] as const;
+export const FEEDBACK_DESCRIPTION_MAX_LENGTH = 2_000;
+
 /** Built-in tool names a bot may disable. Kept aligned with the adapter tool list. */
 export const BUILTIN_TOOL_NAMES = [
   "computer_observe",
@@ -91,6 +95,7 @@ export const BUILTIN_TOOL_NAMES = [
   "message_bot",
   "handoff_to_bot",
   "update_preferences",
+  "feedback",
   "connect_agent",
   "respond_agent_connection",
   "message_agent",

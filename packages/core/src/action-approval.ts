@@ -47,6 +47,7 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "create_group",
   "update_group",
   "create_child_routine",
+  "feedback",
 ]);
 const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set([
   "respond_agent_connection",
@@ -212,6 +213,7 @@ const OWN_STATE_RESULT_TOOLS = new Set([
   "connect_app",
   "attach_file",
   "end_call",
+  "feedback",
   "generate_secret",
   "list_fleet",
   "list_secrets",
@@ -492,38 +494,6 @@ export function resolveActionApprovalForTools(input: {
     source: allAllowed ? "always_allow" : "default",
     matchingRules,
     decisiveRules: [],
-  };
-}
-
-/** Only rule matching, not runtime authorization or an approval-model prediction. */
-export function previewActionApprovalRule(
-  rules: ActionApprovalRule[],
-  rule: ActionApprovalRule,
-  effect: "always_allow" | "deny" | "remove",
-  sample: Omit<Parameters<typeof resolveActionApprovalForTools>[0], "rules">,
-) {
-  const connectorKinds = rules
-    .filter((entry) => entry.matchKind === "connector")
-    .map((entry) => entry.matchValue);
-  const context = {
-    ...sample,
-    tools: sample.tools.map((tool) => ({
-      ...tool,
-      connectorKind: tool.connectorKind ?? connectorKindFromToolName(tool.name, connectorKinds),
-    })),
-  };
-  const remaining = rules.filter(
-    (other) =>
-      other.matchKind !== rule.matchKind ||
-      other.matchValue.toLowerCase() !== rule.matchValue.toLowerCase(),
-  );
-  const next =
-    effect === "remove"
-      ? rules.filter((other) => other !== rule)
-      : [...remaining, { ...rule, effect }];
-  return {
-    before: resolveActionApprovalForTools({ ...context, rules }).source,
-    after: resolveActionApprovalForTools({ ...context, rules: next }).source,
   };
 }
 

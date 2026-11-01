@@ -35,7 +35,7 @@ const REPORTING_API = [
       statusCode: 200,
     },
   },
-  { type: "deprecation", body: { id: "x" } },
+  { type: "deprecation", body: { id: "x", effectiveDirective: "script-src" } },
   {
     type: "csp-violation",
     body: {
@@ -98,6 +98,14 @@ describe("CSP report parsing", () => {
       },
       { directive: "img-src", blocked: "data", page: "/", disposition: "enforce" },
     ]);
+  });
+
+  it("reads at most twenty violations from one batch", () => {
+    const batch = Array.from({ length: 25 }, (_, index) => ({
+      type: "csp-violation",
+      body: { documentURL: `https://app.example.com/${index}`, effectiveDirective: "img-src" },
+    }));
+    expect(parseCspReports(batch)).toHaveLength(20);
   });
 
   it("reports blob and other non-network URLs by scheme alone", () => {

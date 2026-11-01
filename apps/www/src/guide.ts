@@ -372,7 +372,7 @@ ${faqMarkdown(SELF_HOST_FAQS)}
 `;
 
 export const OPENCLAW_RELATED = [
-  { href: "/grok-bot-alternative/", label: "Grok Bot alternative" },
+  { href: "/grok-bot-alternative/", label: "Grok Bot alternatives" },
   { href: "/muse-alternative/", label: "Meta Muse" },
   { href: "/dots-alternative/", label: "OpenAI Dots" },
   { href: "/instinct-alternative/", label: "Instinct AI" },

@@ -570,10 +570,10 @@ describe("buildMcpUpdateMaterial", () => {
       ).toEqual({ action: "store", material: {} });
     });
 
-    it("drops the files when the server is no longer stdio", () => {
+    it("drops the files and arguments when the server is no longer stdio", () => {
       expect(
         buildMcpUpdateMaterial(
-          { secret: "s", files: { CREDENTIALS_PATH: template } },
+          { secret: "s", args: ["--api-key", "fake-key"], files: { CREDENTIALS_PATH: template } },
           {
             transport: "streamable_http",
             slug: "x",

@@ -32,7 +32,7 @@ else if (args[0] === "pr" && args[1] === "view") {
   }
   else if (endpoint.includes("/actions/jobs/")) {
     const result = require("node:child_process").spawnSync("jq", ["-r", args[args.indexOf("--jq") + 1]], {
-      input: JSON.stringify({ steps: fixture.steps ?? [] }), encoding: "utf8"
+      input: JSON.stringify({ steps: fixture.steps?.[endpoint.split("/").pop()] ?? [] }), encoding: "utf8"
     });
     process.stdout.write(result.stdout);
     process.stderr.write(result.stderr);
@@ -75,7 +75,7 @@ function runDigest(
     check?: object;
     checks?: object[];
     statuses?: object[][];
-    steps?: object[];
+    steps?: Record<string, object[]>;
     deadline?: number;
   },
   ...args: string[]
@@ -109,122 +109,158 @@ function runDigest(
   }
 }
 
-const original = comment();
-const reply = (body: string) =>
-  comment({ id: 13, body, user: "viewer", updated: "2026-01-02T00:00:00Z" });
+const reply = (id: number, body: string) =>
+  comment({ id, body, user: "viewer", updated: "2026-01-02T00:00:00Z" });
+const shown = (stdout: string, id: number) => stdout.includes(`[${id}] `);
 
 describe("pr-digest", () => {
-  it.each(["Run pnpm test:integration", "Install dependencies"])(
-    "does not infer whether tests ran from skipped steps after %s",
-    (name) => {
-      const result = runDigest({
-        check: {
-          name: "Postgres journeys",
+  it("does not infer whether tests ran from skipped steps after a failed step", () => {
+    const names = ["Run pnpm test:integration", "Install dependencies"];
+    const result = runDigest({
+      checks: [
+        names.map((_, index) => ({
+          name: `Job ${index}`,
           status: "completed",
           conclusion: "failure",
-          html_url: "https://github.com/example/project/actions/runs/1/job/2",
-        },
-        steps: [
-          { name, number: 1, conclusion: "failure" },
-          { name: "Upload report", number: 2, conclusion: "skipped" },
-        ],
-      });
-      expect(result.status).toBe(10);
+          html_url: `https://github.com/example/project/actions/runs/1/job/${index + 2}`,
+        })),
+      ],
+      steps: Object.fromEntries(
+        names.map((name, index) => [
+          index + 2,
+          [
+            { name, number: 1, conclusion: "failure" },
+            { name: "Upload report", number: 2, conclusion: "skipped" },
+          ],
+        ]),
+      ),
+    });
+    expect(result.status).toBe(10);
+    for (const name of names) {
       expect(result.stdout).toContain(`step "${name}" failure (later steps skipped)`);
-      expect(result.stdout).not.toContain("tests did not run");
-    },
-  );
-  it.each([
-    [original.html_url, 0],
-    [`[fixed](${original.html_url})`, 0],
-    [`${original.html_url}.`, 0],
-    [`${original.html_url}3.`, 11],
-    [`${original.html_url}3`, 11],
-    ["#issuecomment-12", 11],
-  ])("matches complete permalinks: %s", (body, expected) => {
-    expect(runDigest({ conversation: [original, reply(body)] }).status).toBe(expected);
+    }
+    expect(result.stdout).not.toContain("tests did not run");
   });
 
-  it("reopens edited conversation comments", () => {
-    const edited = comment({ updated: "2026-01-03T00:00:00Z" });
-    expect(runDigest({ conversation: [edited, reply(edited.html_url)] }).status).toBe(11);
+  it("keeps conversation comments open until a later reply quotes the full permalink", () => {
+    const url = (id: number) => comment({ id }).html_url;
+    const replies: [number, string, boolean][] = [
+      [21, url(21), false],
+      [22, `[fixed](${url(22)})`, false],
+      [23, `${url(23)}.`, false],
+      [24, `${url(24)}3.`, true],
+      [25, `${url(25)}3`, true],
+      [26, "#issuecomment-26", true],
+    ];
+    const edited = comment({ id: 27, updated: "2026-01-03T00:00:00Z" });
+    const actionable: [number, string, string, string][] = [
+      [31, "reviewer", "User", "[vc]: Please fix this"],
+      [32, "unknown[bot]", "Bot", "[vc]: Please fix this"],
+      [33, "reviewer", "User", "<h3>Greptile Summary</h3>"],
+      [34, "reviewer", "User", "<!-- greptile_summary -->"],
+      [35, "coderabbitai[bot]", "Bot", "<!-- coderabbit-ai-generated:v1 -->\nPlease fix this"],
+      [36, "reviewer", "User", "Fix \x1b]0;title\x07 this"],
+    ];
+    const result = runDigest({
+      conversation: [
+        ...replies.map(([id]) => comment({ id })),
+        ...replies.map(([id, body]) => reply(id + 100, body)),
+        edited,
+        reply(127, edited.html_url),
+        comment({ id: 28 }),
+        ...actionable.map(([id, user, kind, body]) => comment({ id, user, kind, body })),
+      ],
+      // An inline reply never closes a conversation comment.
+      inline: [{ ...reply(128, "Already fixed"), in_reply_to_id: 19 }],
+    });
+    expect(result.status).toBe(11);
+    for (const [id, , open] of replies) expect(shown(result.stdout, id)).toBe(open);
+    for (const id of [27, 28, ...actionable.map(([id]) => id)]) {
+      expect(shown(result.stdout, id)).toBe(true);
+    }
+    expect(result.stdout).toContain("(0 noise)");
+    expect(result.stdout).not.toContain("\x1b");
+    expect(result.stdout).not.toContain("\x07");
   });
 
-  it.each([
-    ["reviewer", "User", "[vc]: Please fix this", 11],
-    ["unknown[bot]", "Bot", "[vc]: Please fix this", 11],
-    ["vercel[bot]", "Bot", "[vc]: generated deployment", 0],
-    [
-      "github-actions[bot]",
-      "Bot",
-      "<!-- rakazo-playwright-screenshots -->\n### Playwright screenshots\n",
-      0,
-    ],
-    ["reviewer", "User", "<h3>Greptile Summary</h3>", 11],
-    ["greptile-apps[bot]", "Bot", "<!-- greptile_summary -->\n\n<h2>Summary</h2>", 0],
-    ["reviewer", "User", "<!-- greptile_summary -->", 11],
-    [
-      "coderabbitai[bot]",
-      "Bot",
-      "<!-- coderabbit-ai-generated:v1 -->\n\n<!-- This is an auto-generated comment: summarize by coderabbit.ai -->\n",
-      0,
-    ],
-    ["coderabbitai[bot]", "Bot", "<!-- coderabbit-ai-generated:v1 -->\nPlease fix this", 11],
-  ])("requires matching automation for noise: %s %s %s", (user, kind, body, expected) => {
-    expect(runDigest({ conversation: [comment({ body, user, kind })] }).status).toBe(expected);
+  it("ignores status chrome only from the automation that posts it", () => {
+    const result = runDigest({
+      conversation: [
+        comment({ id: 41, user: "vercel[bot]", kind: "Bot", body: "[vc]: generated deployment" }),
+        comment({
+          id: 42,
+          user: "github-actions[bot]",
+          kind: "Bot",
+          body: "<!-- rakazo-playwright-screenshots -->\n### Playwright screenshots\n",
+        }),
+        comment({
+          id: 43,
+          user: "greptile-apps[bot]",
+          kind: "Bot",
+          body: "<!-- greptile_summary -->\n\n<h2>Summary</h2>",
+        }),
+        comment({
+          id: 44,
+          user: "coderabbitai[bot]",
+          kind: "Bot",
+          body: "<!-- coderabbit-ai-generated:v1 -->\n\n<!-- This is an auto-generated comment: summarize by coderabbit.ai -->\n",
+        }),
+      ],
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("(4 noise)");
   });
 
-  it.each([
-    { states: ["APPROVED"], expected: 0 },
-    { states: ["COMMENTED"], expected: 0 },
-    { states: ["CHANGES_REQUESTED"], expected: 11 },
-    { states: ["CHANGES_REQUESTED", "APPROVED"], expected: 0 },
-    { states: ["CHANGES_REQUESTED", "COMMENTED"], expected: 11 },
-    { states: ["DISMISSED"], expected: 0 },
-  ])("only blocks effective change requests: $states", ({ states, expected }) => {
-    const reviews = states.map((state, id) => ({
-      id,
-      state,
-      body: "Review summary",
-      submitted_at: `2026-01-0${id + 1}T00:00:00Z`,
-      user: { login: "reviewer", type: "User" },
-    }));
-    expect(runDigest({ reviews }).status).toBe(expected);
+  it("only blocks effective change requests", () => {
+    const cases: [string, string[], boolean][] = [
+      ["approver", ["APPROVED"], false],
+      ["commenter", ["COMMENTED"], false],
+      ["requester", ["CHANGES_REQUESTED"], true],
+      ["reapprover", ["CHANGES_REQUESTED", "APPROVED"], false],
+      ["followup", ["CHANGES_REQUESTED", "COMMENTED"], true],
+      ["dismissed", ["DISMISSED"], false],
+    ];
+    const reviews = cases.flatMap(([login, states], user) =>
+      states.map((state, index) => ({
+        id: user * 10 + index,
+        state,
+        body: "Review summary",
+        submitted_at: `2026-01-0${index + 1}T00:00:00Z`,
+        user: { login, type: "User" },
+      })),
+    );
+    const result = runDigest({ reviews });
+    expect(result.status).toBe(11);
+    for (const [login, , blocks] of cases) {
+      expect(result.stdout.includes(`] ${login} (review`)).toBe(blocks);
+    }
   });
 
-  it("does not let an inline reply close a conversation", () => {
-    const inline = { ...reply("Already fixed"), in_reply_to_id: 19 };
-    expect(runDigest({ conversation: [original], inline: [inline] }).status).toBe(11);
-  });
-
-  it.each([
-    ["2026-01-01T00:00:00Z", 0],
-    ["2026-01-03T00:00:00Z", 11],
-  ])("requires a new reply after inline edits: %s", (updated, expected) => {
-    const root = { ...comment({ updated }), path: "example.sh", line: 1, in_reply_to_id: null };
-    const response = { ...reply("Fixed"), in_reply_to_id: root.id };
-    expect(runDigest({ inline: [root, response] }).status).toBe(expected);
-  });
-
-  it("treats a bot confirming its own finding as handled", () => {
-    const root = {
+  it("requires a new reply after inline edits unless the bot confirmed the fix", () => {
+    const thread = (id: number, root: object, replied: boolean) => [
+      { ...root, id, path: "example.sh", line: 1, in_reply_to_id: null },
+      ...(replied ? [{ ...reply(id + 100, "Fixed"), in_reply_to_id: id }] : []),
+    ];
+    const confirmed = {
       ...comment({ user: "coderabbitai[bot]", kind: "Bot" }),
       body: "Please fix this ✅ Confirmed as addressed",
       updated_at: "2026-01-03T00:00:00Z",
-      path: "example.sh",
-      line: 1,
-      in_reply_to_id: null,
     };
-    const response = { ...reply("Fixed"), in_reply_to_id: root.id };
-    expect(runDigest({ inline: [root, response] }).status).toBe(0);
-    expect(runDigest({ inline: [root] }).status).toBe(11);
-  });
-
-  it("removes terminal controls", () => {
-    const result = runDigest({ conversation: [comment({ body: "Fix \x1b]0;title\x07 this" })] });
+    const result = runDigest({
+      inline: [
+        ...thread(51, comment({ updated: "2026-01-01T00:00:00Z" }), true),
+        ...thread(52, comment({ updated: "2026-01-03T00:00:00Z" }), true),
+        ...thread(53, confirmed, true),
+        ...thread(54, confirmed, false),
+      ],
+    });
     expect(result.status).toBe(11);
-    expect(result.stdout).not.toContain("\x1b");
-    expect(result.stdout).not.toContain("\x07");
+    expect([51, 52, 53, 54].map((id) => shown(result.stdout, id))).toEqual([
+      false,
+      true,
+      false,
+      true,
+    ]);
   });
 
   it("does not retry failed replies", () => {
@@ -238,11 +274,10 @@ describe("pr-digest", () => {
     const failed = { ...running, status: "completed", conclusion: "failure" };
 
     it("wakes for an unseen finding while checks are still running", () => {
-      const result = runDigest({ check: running, conversation: [original] }, "--watch", "1");
+      const result = runDigest({ check: running, conversation: [comment()] }, "--watch", "1");
       expect(result.status).toBe(11);
       expect(result.stdout).toContain("Please fix this");
     });
-
     it("wakes when a check fails while others are still running", () => {
       const result = runDigest({ checks: [running, [failed, running]] }, "--watch", "1");
       expect(result.status).toBe(10);

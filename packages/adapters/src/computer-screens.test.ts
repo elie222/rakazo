@@ -44,9 +44,10 @@ describe("Team Computer parallel screens", () => {
 
     const writerView = await fake.connectScreen(computer, { view: "stream" }, writer);
     const researcherView = await fake.connectScreen(computer, { view: "stream" }, researcher);
-    expect(writerView.url).toBe("fake://screen/fake-team-home/writer");
-    expect(researcherView.url).toBe("fake://screen/fake-team-home/researcher");
+    expect(new URL(writerView.url ?? "").searchParams.get("screen")).toBe("writer");
+    expect(new URL(researcherView.url ?? "").searchParams.get("screen")).toBe("researcher");
     expect(writerView.url).not.toBe(researcherView.url);
+    fake.close();
 
     await fake.writeFile(
       computer,

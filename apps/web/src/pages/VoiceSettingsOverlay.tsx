@@ -345,9 +345,12 @@ export function VoiceSettingsOverlay({
   const content = (
     <>
       {loading && !catalog.length ? (
-        <p className="text-sm text-muted-foreground">
-          <Spinner aria-label={t`Loading voice providers…`} />
-        </p>
+        <div className="grid place-items-center py-10">
+          <Spinner
+            className="size-5 text-muted-foreground"
+            aria-label={t`Loading voice providers…`}
+          />
+        </div>
       ) : null}
       {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}
       {notice ? <p className="mb-4 text-sm text-success">{notice}</p> : null}

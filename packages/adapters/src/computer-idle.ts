@@ -424,7 +424,13 @@ export async function sleepComputerIfIdle(
   if (computer.kind === "desktop") return;
 
   if (computer.controlBotId && computer.controlLeaseId && !hasActiveComputerControl(computer)) {
-    await expireComputerControl(deps, computer.id, computer.controlLeaseId);
+    try {
+      await expireComputerControl(deps, computer.id, computer.controlLeaseId);
+    } catch (error) {
+      scheduleComputerSleep(deps.jobs, computer.id, undefined, rateLimitEnds(error));
+      if (deferSleep(error, computer)) return;
+      throw error;
+    }
     computer = await loadComputer(deps.prisma, computerId);
     if (!computer?.providerRef || !mayNeedSleep(computer)) return;
   }

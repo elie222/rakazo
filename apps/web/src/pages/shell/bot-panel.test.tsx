@@ -33,6 +33,10 @@ vi.mock("@lingui/react/macro", () => {
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 vi.mock("@rakazo/ui-web", () => ({
+  SectionHeading: ({
+    variant: _variant,
+    ...props
+  }: ComponentProps<"h3"> & { variant?: string }) => <h3 {...props} />,
   Button: ({
     variant: _variant,
     size: _size,

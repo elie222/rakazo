@@ -127,6 +127,8 @@ export const DE_MESSAGES: Record<string, string> = {
     "Das Modell hat eine unbrauchbare Antwort geliefert. Versuche es erneut.",
   "This connection's request limit is too small. Choose another model.":
     "Das Anfragelimit dieser Verbindung ist zu niedrig. Wähle ein anderes Modell.",
+  "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.":
+    "Das Werkzeugergebnis dieses Servers passt nicht ins Modell. Schalte „Werkzeugergebnisse vollständig behalten“ für diesen Server aus, oder wähle ein anderes Modell.",
   "This model's context window is too small. Choose another model.":
     "Das Kontextfenster dieses Modells ist zu klein. Wähle ein anderes Modell.",
   "{provider} took too long to respond. Try again.":
@@ -528,6 +530,10 @@ export const DE_MESSAGES: Record<string, string> = {
   "Saved.": "Gespeichert.",
   "Search models": "Modelle suchen",
   "Server URL": "Server-URL",
+  Protocol: "Protokoll",
+  "Chat Completions": "Chat Completions",
+  Responses: "Responses",
+  "Anthropic Messages": "Anthropic Messages",
   "Server found. Enter a model name.": "Server gefunden. Gib einen Modellnamen ein.",
   "Setup help": "Einrichtungshilfe",
   "Show less": "Weniger anzeigen",
@@ -1122,6 +1128,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Always open {site}": "Immer {site} öffnen",
   "Trusted sites": "Vertrauenswürdige Websites",
   "Run history": "Ausführungsverlauf",
+  "No reply": "Keine Antwort",
   "No runs yet": "Noch keine Ausführungen",
   "Load older runs": "Ältere Ausführungen laden",
   "Could not load run history": "Ausführungsverlauf konnte nicht geladen werden",
@@ -1148,15 +1155,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Add field": "Feld hinzufügen",
   Label: "Bezeichnung",
   "Could not show the credential": "Zugangsdaten konnten nicht angezeigt werden",
-  "Allow rule": "Erlaubnisregel",
-  "Ask rule": "Nachfrageregel",
-  "Block rule": "Sperrregel",
-  "Candidate rule": "Vorgeschlagene Regel",
-  "Could not preview rule": "Regelvorschau fehlgeschlagen",
-  Current: "Aktuell",
-  "No matching rule": "Keine passende Regel",
-  "Test rule": "Regel testen",
-  "Tool name": "Werkzeugname",
   Wallet: "Wallet",
   "Connect {name}": "{name} verbinden",
   "Could not load wallet": "Wallet konnte nicht geladen werden",
@@ -1224,6 +1222,14 @@ export const DE_MESSAGES: Record<string, string> = {
   "1 free month earned": "1 Gratismonat verdient",
   "{count} free months earned": "{count} Gratismonate verdient",
   "Submit a plugin": "Plugin einreichen",
+  Board: "Board",
+  "To do": "Zu erledigen",
+  "In progress": "In Arbeit",
+  "In review": "In Prüfung",
+  Blocked: "Blockiert",
+  "Won't do": "Wird nicht gemacht",
+  "Could not move the ticket": "Ticket konnte nicht verschoben werden",
+  "No tickets yet.": "Noch keine Tickets.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

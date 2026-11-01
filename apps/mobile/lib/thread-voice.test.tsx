@@ -40,6 +40,10 @@ vi.mock("./device-voice", () => ({ loadDeviceVoiceEnabled: async () => true }));
 vi.mock("./dictation", () => ({ available: async () => true }));
 vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("./voice", () => ({ speakQueue: vi.fn(), speakText: vi.fn() }));
+vi.mock("./voice-chat-intent", () => ({
+  onShortcutVoiceChat: () => () => undefined,
+  takeShortcutVoiceChat: () => false,
+}));
 
 const riley = { id: "riley", name: "Riley" } as MobileBot;
 const max = { id: "max", name: "Max" } as MobileBot;

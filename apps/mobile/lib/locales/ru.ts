@@ -121,6 +121,8 @@ export const RU_MESSAGES: Record<string, string> = {
     "Лимит запроса этого подключения слишком мал. Выберите другую модель.",
   "This model's context window is too small. Choose another model.":
     "Контекстное окно этой модели слишком мало. Выберите другую модель.",
+  "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.":
+    "Результат инструмента этого сервера не помещается в модель. Выключите «Сохранять результаты инструментов целиком» для этого сервера или выберите другую модель.",
   "{provider} took too long to respond. Try again.":
     "{provider} не ответил вовремя. Повторите попытку.",
   "{provider} is overloaded right now. Try again in a moment.":
@@ -659,6 +661,10 @@ export const RU_MESSAGES: Record<string, string> = {
   "Sending…": "Отправка…",
   Server: "Сервер",
   "Server URL": "URL-адрес сервера",
+  Protocol: "Протокол",
+  "Chat Completions": "Chat Completions",
+  Responses: "Responses",
+  "Anthropic Messages": "Anthropic Messages",
   "Setup help": "Помощь по настройке",
   Share: "Поделиться",
   "Share {name}": "Поделиться {name}",
@@ -1154,6 +1160,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Always open {site}": "Всегда открывать {site}",
   "Trusted sites": "Доверенные сайты",
   "Run history": "История запусков",
+  "No reply": "Без ответа",
   "No runs yet": "Запусков пока нет",
   "Load older runs": "Загрузить более ранние запуски",
   "Could not load run history": "Не удалось загрузить историю запусков",
@@ -1179,15 +1186,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Add field": "Добавить поле",
   Label: "Название",
   "Could not show the credential": "Не удалось показать учетные данные",
-  "Allow rule": "Правило разрешения",
-  "Ask rule": "Правило подтверждения",
-  "Block rule": "Правило блокировки",
-  "Candidate rule": "Предлагаемое правило",
-  "Could not preview rule": "Не удалось проверить правило",
-  Current: "Сейчас",
-  "No matching rule": "Нет подходящего правила",
-  "Test rule": "Проверить правило",
-  "Tool name": "Название инструмента",
   Wallet: "Кошелёк",
   "Connect {name}": "Подключить {name}",
   "Could not load wallet": "Не удалось загрузить кошелёк",
@@ -1255,6 +1253,14 @@ export const RU_MESSAGES: Record<string, string> = {
   "1 free month earned": "Получен 1 бесплатный месяц",
   "{count} free months earned": "Бесплатных месяцев получено: {count}",
   "Submit a plugin": "Предложить плагин",
+  Board: "Доска",
+  "To do": "К выполнению",
+  "In progress": "В работе",
+  "In review": "На проверке",
+  Blocked: "Заблокировано",
+  "Won't do": "Не будем делать",
+  "Could not move the ticket": "Не удалось переместить тикет",
+  "No tickets yet.": "Тикетов пока нет.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

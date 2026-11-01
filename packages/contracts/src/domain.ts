@@ -111,7 +111,7 @@ export const BotSchema = z.object({
   teamChatAmbientEnabled: z.boolean(),
   teamChatRules: z.string(),
   crossSpaceCommunication: z.boolean().optional(),
-  fleetManagement: z.boolean().default(false),
+  fleetManagement: z.boolean().default(true),
   disabledBuiltinTools: z.array(z.string()).default([]),
   webhookConfigured: z.boolean(),
   /** Present when created with an idempotency key (e.g. onboarding:first). */
@@ -762,12 +762,6 @@ export const ActionApprovalRuleSchema = z.object({
 });
 export type ActionApprovalRule = z.infer<typeof ActionApprovalRuleSchema>;
 
-export const ApprovalRulePreviewSchema = z.object({
-  before: z.enum(["always_allow", "require_approval", "deny", "default"]),
-  after: z.enum(["always_allow", "require_approval", "deny", "default"]),
-});
-export type ApprovalRulePreview = z.infer<typeof ApprovalRulePreviewSchema>;
-
 /** How much a space asks before acting; see VISION.md. */
 export const ApprovalModeSchema = z.enum(["never", "auto", "ask"]);
 export type ApprovalMode = z.infer<typeof ApprovalModeSchema>;
@@ -914,6 +908,29 @@ export const PluginSubmissionReviewSchema = z.discriminatedUnion("decision", [
 ]);
 export type PluginSubmissionReview = z.infer<typeof PluginSubmissionReviewSchema>;
 
+export const AccessGrantInputSchema = z
+  .object({
+    email: z.string().trim().toLowerCase().max(254).email(),
+    creditCents: z.number().int().min(0).max(100_000).default(0),
+    freeMonths: z.number().int().min(0).max(12).default(0),
+  })
+  .refine((grant) => grant.creditCents > 0 || grant.freeMonths > 0, {
+    message: "Grant credits, free months, or both",
+  });
+export type AccessGrantInput = z.input<typeof AccessGrantInputSchema>;
+
+export const AccessGrantSchema = z.object({
+  id: Id,
+  email: z.string(),
+  creditCents: z.number().int(),
+  freeMonths: z.number().int(),
+  createdBy: z.string().nullable(),
+  status: z.enum(["pending", "applied", "revoked"]),
+  createdAt: z.string(),
+  appliedAt: z.string().nullable(),
+});
+export type AccessGrant = z.infer<typeof AccessGrantSchema>;
+
 export const IntegrationCatalogSurfaceSchema = z.object({
   kind: z.enum(["mcp", "openapi", "graphql", "cli"]),
   slug: z.string(),
@@ -944,6 +961,8 @@ const McpServerBaseInput = z.object({
   name: z.string().trim().min(1).max(120),
   description: z.string().max(2000).default(""),
   enabled: z.boolean().default(true),
+  /** Keep this server's tool results whole instead of cutting them to fit context. Omitted keeps the stored value. */
+  verbatimResults: z.boolean().optional(),
   /** Update-only: drop the stored static credential (secret/env/headers).
    * OAuth state survives so a connected server stays connected. */
   clearCredential: z.boolean().optional(),
@@ -1054,8 +1073,12 @@ export const McpServerSchema = z.object({
   oauthClientId: z.string().nullable(),
   health: McpServerHealthSchema,
   enabled: z.boolean(),
+  /** Keep this server's tool results whole instead of cutting them to fit context. */
+  verbatimResults: z.boolean().default(false),
   revision: z.number().int().positive(),
   availability: SpaceAvailabilitySchema.optional(),
+  /** Every agent can use it; when false, only the agents assigned to it. */
+  allBots: z.boolean().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -1358,7 +1381,11 @@ export function modelOutputLeavesInputRoom(
 }
 
 /** Wire protocol selected for one OpenAI-compatible connection. */
-export const ModelApiProtocolSchema = z.enum(["chat-completions", "responses"]);
+export const ModelApiProtocolSchema = z.enum([
+  "chat-completions",
+  "responses",
+  "anthropic-messages",
+]);
 export type ModelApiProtocol = z.infer<typeof ModelApiProtocolSchema>;
 
 export const ModelCredentialSchema = z.object({
@@ -1759,7 +1786,7 @@ export const MeSchema = z.object({
   spaceId: Id,
   /** Deprecated: app accounts never have server administrator privileges. Always false. */
   isDeploymentOwner: z.boolean(),
-  /** Listed in RAKAZO_ADMIN_EMAILS with a verified email: reviews plugin submissions, adds stdio MCP servers. */
+  /** Listed in RAKAZO_ADMIN_EMAILS with a verified email: reviews plugins, adds stdio MCP servers, grants access. */
   isAdmin: z.boolean().default(false),
   needsModel: z.boolean(),
   defaultProvider: z.string().nullable(),
@@ -1787,10 +1814,10 @@ export const MeSchema = z.object({
 });
 export type Me = z.infer<typeof MeSchema>;
 
-export const MODEL_CREDIT_AMOUNTS = [1000, 2000, 5000, 10000, 20000, 50000] as const;
+export const MODEL_CREDIT_AMOUNTS = [1000, 2000, 3000, 5000, 10000, 20000, 50000] as const;
 /** Monthly price in cents of running bots on your own model connection; `null` makes it free. */
 export const BYOK_MONTHLY_PRICE_CENTS: number | null = 1000;
-export const DEFAULT_MONTHLY_CREDIT_AMOUNT = 2000;
+export const DEFAULT_MONTHLY_CREDIT_AMOUNT = 3000;
 export const ModelCreditAmountSchema = z.union(
   MODEL_CREDIT_AMOUNTS.map((amount) => z.literal(amount)),
 );

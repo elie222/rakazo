@@ -104,6 +104,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
     "此連線的請求額度過低。請選擇其他模型。",
   "This model's context window is too small. Choose another model.":
     "此模型的上下文視窗太小。請選擇其他模型。",
+  "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.":
+    "此伺服器的工具結果放不進此模型。請關閉該伺服器的「完整保留工具結果」，或選擇其他模型。",
   "{provider} took too long to respond. Try again.": "{provider} 回應超時。請重試。",
   "{provider} is overloaded right now. Try again in a moment.":
     "{provider} 目前負載過高。請稍後再試。",
@@ -615,6 +617,10 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Sending…": "正在傳送…",
   Server: "伺服器",
   "Server URL": "伺服器網址",
+  Protocol: "通訊協定",
+  "Chat Completions": "Chat Completions",
+  Responses: "Responses",
+  "Anthropic Messages": "Anthropic Messages",
   "Setup help": "設定說明",
   Share: "分享",
   "Share {name}": "分享 {name}",
@@ -1130,6 +1136,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Always open {site}": "一律開啟 {site}",
   "Trusted sites": "受信任的網站",
   "Run history": "執行紀錄",
+  "No reply": "未回覆",
   "No runs yet": "還沒有執行紀錄",
   "Load older runs": "載入更早的執行紀錄",
   "Could not load run history": "無法載入執行歷史紀錄",
@@ -1154,15 +1161,6 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Add field": "新增欄位",
   Label: "標籤",
   "Could not show the credential": "無法顯示憑證",
-  "Allow rule": "允許規則",
-  "Ask rule": "審批規則",
-  "Block rule": "禁止規則",
-  "Candidate rule": "候選規則",
-  "Could not preview rule": "無法預覽規則",
-  Current: "目前",
-  "No matching rule": "未匹配規則",
-  "Test rule": "測試規則",
-  "Tool name": "工具名稱",
   Wallet: "錢包",
   "Connect {name}": "連結 {name}",
   "Could not load wallet": "無法載入錢包",
@@ -1230,6 +1228,14 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "1 free month earned": "已獲得 1 個月免費",
   "{count} free months earned": "已獲得 {count} 個月免費",
   "Submit a plugin": "提交外掛程式",
+  Board: "看板",
+  "To do": "待辦",
+  "In progress": "進行中",
+  "In review": "審查中",
+  Blocked: "受阻",
+  "Won't do": "不處理",
+  "Could not move the ticket": "無法移動工單",
+  "No tickets yet.": "還沒有工單。",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "與{peer}的 {count} 則訊息" };

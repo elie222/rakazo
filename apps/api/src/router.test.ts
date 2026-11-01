@@ -3922,7 +3922,8 @@ describe("computer terminal and file transfer", () => {
   const controlled = {
     controlHolder: "user",
     controlLeaseId: "lease-1",
-    controlLeaseExpiresAt: new Date(Date.now() + 60_000),
+    // Fixed far future: a lease relative to module load expires before a slow suite reaches it.
+    controlLeaseExpiresAt: new Date("2999-01-01T00:00:00Z"),
     controlBotId: "bot-1",
   };
 
@@ -4459,6 +4460,22 @@ describe("OpenAI-compatible model probes", () => {
       "fake-session-secret",
     );
     expect(JSON.stringify(response)).not.toContain("fake-session-secret");
+  });
+
+  it("sends a saved key with Anthropic headers for the Anthropic Messages protocol", async () => {
+    const { client, fetch, load } = fixture();
+    load.mockResolvedValue(
+      JSON.stringify({ kind: "openai_compatible", baseUrl, apiKey: "fake-saved-key" }),
+    );
+    const response = await client.models.probeOpenAiCompatible({
+      baseUrl,
+      apiProtocol: "anthropic-messages",
+    });
+    const headers = new Headers(fetch.mock.calls[0]?.[1]?.headers);
+    expect(headers.get("x-api-key")).toBe("fake-saved-key");
+    expect(headers.get("anthropic-version")).toBe("2023-06-01");
+    expect(headers.get("authorization")).toBeNull();
+    expect(response).toEqual({ models: ["test-model"] });
   });
 
   it("never uses another user's credential id for probe secrets", async () => {

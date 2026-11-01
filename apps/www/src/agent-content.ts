@@ -80,7 +80,7 @@ ${home.cta.copy}
 - [Docs](https://rakazo.com/docs/)
 - [Integrations](https://rakazo.com/integrations/)
 - [Blog](https://rakazo.com/blog/)
-- [Open source Grok Bot alternative](https://rakazo.com/grok-bot-alternative/)
+- [Grok Bot alternatives](https://rakazo.com/grok-bot-alternative/)
 - [About](https://rakazo.com/about/)
 - [Support](https://rakazo.com/support/)
 - [Privacy](https://rakazo.com/privacy/)
@@ -170,7 +170,7 @@ Rakazo Cloud at https://app.rakazo.com is in beta. Self-hosting is also availabl
 - [Website](https://rakazo.com/): product overview, supported models, and common questions.
 - [Website Markdown](https://rakazo.com/index.md): the English product overview as Markdown.
 - [Alternatives](https://rakazo.com/alternatives/)
-- [Open source Grok Bot alternative](https://rakazo.com/grok-bot-alternative/)
+- [Grok Bot alternatives](https://rakazo.com/grok-bot-alternative/)
 - [About](https://rakazo.com/about/)
 - [Source](https://github.com/elie222/rakazo)
 - [Self-hosting guide](https://rakazo.com/self-hosted-ai-agent/): requirements, Docker install, source setup, and desktop and mobile connections.

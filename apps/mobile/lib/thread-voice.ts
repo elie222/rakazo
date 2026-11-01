@@ -20,6 +20,7 @@ import {
   probeProviderTranscribe,
   resolveVoiceCallPlan,
 } from "./voice-call-entry";
+import { onShortcutVoiceChat, takeShortcutVoiceChat } from "./voice-chat-intent";
 
 const ATTACHMENT_PLACEHOLDER_LINE = /^\[(?:image|file|chart): .*\]$/;
 
@@ -264,10 +265,24 @@ export function useThreadVoiceCall({
     router.replace({ pathname: "/thread", params: { botId: target.id, name: target.name } });
   }
 
+  // The shortcut can arrive long after this chat opened, e.g. once an archived chat is restored.
+  const startVoiceCallRef = useRef(startVoiceCall);
+  useLayoutEffect(() => {
+    startVoiceCallRef.current = startVoiceCall;
+  });
+
+  // A read-only chat leaves the request waiting until it is restored.
   useEffect(() => {
+    if (!botId || readOnly) return;
+    const unsubscribe = onShortcutVoiceChat(() => {
+      if (takeShortcutVoiceChat(botId)) void startVoiceCallRef.current(true);
+    });
     const session = currentSessionGeneration();
-    if (botId && takeRingOnArrival(botId, session)) void startVoiceCall(true, session);
-  }, [botId]);
+    if (takeRingOnArrival(botId, session) || takeShortcutVoiceChat(botId)) {
+      void startVoiceCall(true, session);
+    }
+    return unsubscribe;
+  }, [botId, readOnly]);
 
   return { startVoiceCall, openBotChat };
 }

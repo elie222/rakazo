@@ -11,8 +11,8 @@ import { PURCHASE_CARD_FIELDS } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import { redactConnectorPayload } from "./connector-safety.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
+import { MAX_ACTIONS_PER_CALL } from "./tool-loop.js";
 
-const MAX_BROWSER_ACTIONS = 24;
 /** The action kinds `browser_act` takes, as its tool schema lists them. */
 export const BROWSER_ACT_KINDS = [
   "click",
@@ -235,8 +235,10 @@ export function parseBrowserActions(value: unknown): BrowserActInput[] {
   if (!Array.isArray(value) || value.length === 0) {
     throw new BrowserToolInputError("browser_act requires at least one action");
   }
-  if (value.length > MAX_BROWSER_ACTIONS) {
-    throw new BrowserToolInputError(`browser_act accepts at most ${MAX_BROWSER_ACTIONS} actions`);
+  if (value.length > MAX_ACTIONS_PER_CALL) {
+    throw new BrowserToolInputError(
+      `browser_act accepts at most ${MAX_ACTIONS_PER_CALL} actions but got ${value.length}; none ran. Send the first ${MAX_ACTIONS_PER_CALL} or fewer now, then the rest in a separate call.`,
+    );
   }
   return value.map((raw, index) => {
     if (!raw || typeof raw !== "object") {

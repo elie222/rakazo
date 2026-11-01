@@ -65,6 +65,7 @@ export async function waitForMountedAppDocument(
 ): Promise<AppDocumentState> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    if (contents.isDestroyed()) throw new Error("The window closed before the app loaded.");
     if (contents.isCrashed()) throw new Error("Renderer stopped after load.");
     let state: AppDocumentState;
     try {

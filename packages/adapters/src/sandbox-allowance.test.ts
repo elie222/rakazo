@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_SANDBOX_HOURLY_COST_MICROS,
   sandboxAllowance,
+  sandboxAllowanceUsedUp,
   sandboxHourlyCostMicros,
   sandboxHoursLeft,
 } from "./sandbox-allowance.js";
@@ -90,6 +91,35 @@ describe("computer allowance", () => {
       },
     });
     expect((await sandboxAllowance(deps, "organization"))?.usedMicros).toBe(400_000);
+  });
+});
+
+describe("computer allowance used up", () => {
+  function usedUpDeps(hours: number, organizationId: string | null = "organization") {
+    const { deps, prisma } = allowanceDeps({
+      billing: true,
+      mode: "byok",
+      hours: [{ kind: "e2b", hours }],
+    });
+    Object.assign(prisma, {
+      space: {
+        findUnique: vi.fn().mockResolvedValue(organizationId ? { organizationId } : null),
+      },
+    });
+    return deps;
+  }
+  const paid = { spaceId: "space", kind: "e2b" };
+
+  it("stops a billed computer only once the month's allowance is spent", async () => {
+    expect(await sandboxAllowanceUsedUp(usedUpDeps(24), paid)).toBe(false);
+    expect(await sandboxAllowanceUsedUp(usedUpDeps(25), paid)).toBe(true);
+  });
+
+  it("never stops a free computer or one whose space is gone", async () => {
+    expect(
+      await sandboxAllowanceUsedUp(usedUpDeps(25), { spaceId: "space", kind: "desktop" }),
+    ).toBe(false);
+    expect(await sandboxAllowanceUsedUp(usedUpDeps(25, null), paid)).toBe(false);
   });
 });
 

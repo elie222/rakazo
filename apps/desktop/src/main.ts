@@ -5,7 +5,12 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { HostScreen } from "@rakazo/adapters/host-screen";
 import { startUserDeviceClient } from "@rakazo/adapters/user-device-client";
-import type { DesktopReachability, DesktopSetup, RakazoDesktopDevice } from "@rakazo/contracts";
+import type {
+  DesktopMenuCommand,
+  DesktopReachability,
+  DesktopSetup,
+  RakazoDesktopDevice,
+} from "@rakazo/contracts";
 import { parseServerHeaders } from "@rakazo/contracts";
 import type { Session } from "electron";
 import {
@@ -15,6 +20,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  nativeImage,
   net,
   powerMonitor,
   safeStorage,
@@ -25,6 +31,7 @@ import {
 } from "electron";
 import type { AppDocumentState } from "./app-document-state.js";
 import { waitForMountedAppDocument } from "./app-document-state.js";
+import { fromAppFrame } from "./app-frame.js";
 import { createAppOpener } from "./app-opener.js";
 import type { ElectronAutoUpdater } from "./auto-update.js";
 import { DesktopUpdateController, LAUNCH_CHECK_DELAY_MS, updaterSupport } from "./auto-update.js";
@@ -32,7 +39,11 @@ import { createBadgeHandler } from "./badge.js";
 import { openBrowserAuth } from "./browser-auth.js";
 import { DOCKER_INSTALL_LINKS, isDesktopSetupLink, runDocker } from "./docker-cli.js";
 import { prepareHostComputer } from "./host-computer.js";
-import { createDesktopHostScreen, screenDriverInstaller } from "./host-screen.js";
+import {
+  createDesktopHostScreen,
+  screenDriverInstaller,
+  screenDriverRelease,
+} from "./host-screen.js";
 import { saveLocalComputerHost } from "./local-settings.js";
 import {
   LocalStackController,
@@ -336,12 +347,16 @@ function createWindow(url: string, partition: string | null) {
   };
   win.webContents.on("did-navigate", pairAfterNavigation);
   win.webContents.on("did-navigate-in-page", pairAfterNavigation);
-  win.webContents.on("will-navigate", (event, navigationUrl) => {
-    if (targetOrigin !== null && safeOrigin(navigationUrl) === targetOrigin) return;
+  // Server redirects skip will-navigate, so a same-origin link could otherwise land elsewhere.
+  const keepOnAppOrigin = (event: Electron.Event<{ url: string; isMainFrame: boolean }>) => {
+    if (!event.isMainFrame) return;
+    if (targetOrigin !== null && safeOrigin(event.url) === targetOrigin) return;
     event.preventDefault();
-    const external = safeExternalUrl(navigationUrl);
+    const external = safeExternalUrl(event.url);
     if (external !== null) void shell.openExternal(external);
-  });
+  };
+  win.webContents.on("will-navigate", keepOnAppOrigin);
+  win.webContents.on("will-redirect", keepOnAppOrigin);
   // The popup has no address bar, so a loopback redirect would otherwise strand
   // the user on a blank window holding the authorization code in a URL they
   // cannot read. Capture it here and hand it to the app instead.
@@ -729,9 +744,61 @@ function installApplicationMenu() {
       }
     },
   };
+  const isMac = process.platform === "darwin";
+  // The page handles these chords itself and stops them, so a key press runs them once; the menu
+  // shows them and runs them on click. The page decides whether each one applies right now.
+  const command = (
+    label: string,
+    accelerator: string,
+    name: DesktopMenuCommand,
+  ): Electron.MenuItemConstructorOptions => ({
+    label,
+    accelerator,
+    click: (_item, window) => {
+      if (window && window === mainWindow)
+        mainWindow.webContents.send("desktop.menu.command", name);
+    },
+  });
+  const newItem = command("New…", "CmdOrCtrl+N", "new");
+  // Electron's own Edit menu, plus Search.
+  const macEdit: Electron.MenuItemConstructorOptions[] = [
+    { type: "separator" },
+    { label: "Speech", submenu: [{ role: "startSpeaking" }, { role: "stopSpeaking" }] },
+  ];
+  const editMenu: Electron.MenuItemConstructorOptions = {
+    label: "Edit",
+    submenu: [
+      { role: "undo" },
+      { role: "redo" },
+      { type: "separator" },
+      { role: "cut" },
+      { role: "copy" },
+      { role: "paste" },
+      ...(isMac ? [{ role: "pasteAndMatchStyle" } as const] : []),
+      { role: "delete" },
+      { role: "selectAll" },
+      { type: "separator" },
+      command("Search…", "CmdOrCtrl+F", "search"),
+      ...(isMac ? macEdit : []),
+    ],
+  };
+  const goMenu: Electron.MenuItemConstructorOptions = {
+    label: "Go",
+    submenu: [
+      command("Back", isMac ? "Cmd+[" : "Alt+Left", "back"),
+      command("Forward", isMac ? "Cmd+]" : "Alt+Right", "forward"),
+      { type: "separator" },
+      command("Next Bot", "Ctrl+Tab", "next-bot"),
+      command("Previous Bot", "Ctrl+Shift+Tab", "previous-bot"),
+      { type: "separator" },
+      command("Command Menu…", "CmdOrCtrl+K", "command-menu"),
+    ],
+  };
   const viewMenu: Electron.MenuItemConstructorOptions = {
     label: "View",
     submenu: [
+      command("Toggle Sidebar", "CmdOrCtrl+B", "toggle-sidebar"),
+      { type: "separator" },
       { role: "resetZoom" },
       { role: "zoomIn" },
       // zoomIn's default accelerator is Cmd/Ctrl+Plus, which needs Shift on US layouts.
@@ -765,8 +832,10 @@ function installApplicationMenu() {
               { role: "quit" },
             ],
           },
-          { role: "editMenu" },
+          { label: "File", submenu: [newItem] },
+          editMenu,
           viewMenu,
+          goMenu,
           {
             label: "Window",
             role: "window",
@@ -783,6 +852,8 @@ function installApplicationMenu() {
           {
             label: "File",
             submenu: [
+              newItem,
+              { type: "separator" },
               openSettings,
               computerAccess,
               revokeComputerAccess,
@@ -794,8 +865,9 @@ function installApplicationMenu() {
               { role: "quit" },
             ],
           },
-          { role: "editMenu" },
+          editMenu,
           viewMenu,
+          goMenu,
           { role: "windowMenu" },
         ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -985,10 +1057,15 @@ async function openAppOnce(targetUrl: string, switching: boolean) {
     if (pendingPreviousWindow !== null) pendingPreviousWindow.hide();
     return true;
   } catch (error) {
-    if (!(error instanceof ServerUnavailable)) reportDesktopError(error, "desktop.startup");
+    const closed = win?.isDestroyed() === true;
+    if (!closed && !(error instanceof ServerUnavailable)) {
+      reportDesktopError(error, "desktop.startup");
+    }
     pendingPreviousWindow = null;
     // Keep the previous app window so Cancel / close can restore it.
     if (previous !== null && !previous.isDestroyed()) mainWindow = previous;
+    // Closing the window while it loads is the user leaving, not a failure to explain.
+    if (closed) return false;
     // Show the setup window BEFORE destroying the failed one: on Windows/Linux,
     // destroying the last window fires "window-all-closed" -> app.quit() before
     // showSetupWindow() runs, so the app silently exits instead of showing this error.
@@ -1183,22 +1260,35 @@ app.whenReady().then(async () => {
   } catch {
     /* Local access fails closed; Docker remains available. */
   }
-  hostScreen = createDesktopHostScreen({
-    platform: process.platform,
-    driver: screenDriverInstaller({
-      dir: path.join(userDataDir, "screen-driver", "bin"),
-      fetch: (url) => net.fetch(url),
-    }),
-    home: path.join(userDataDir, "screen-driver", "home"),
-    permissions: {
-      isTrustedAccessibilityClient: (prompt) =>
-        systemPreferences.isTrustedAccessibilityClient(prompt),
-      getMediaAccessStatus: (type) => systemPreferences.getMediaAccessStatus(type),
-      requestScreenCapture: () =>
-        desktopCapturer.getSources({ types: ["window"], thumbnailSize: { width: 0, height: 0 } }),
-    },
-    locked: () => powerMonitor.getSystemIdleState(1) === "locked",
-  });
+  const screenDriver = screenDriverRelease(process.platform);
+  hostScreen =
+    screenDriver &&
+    createDesktopHostScreen({
+      platform: process.platform,
+      driver: screenDriverInstaller({
+        dir: path.join(userDataDir, "screen-driver", "bin"),
+        fetch: (url) => net.fetch(url),
+        release: screenDriver,
+      }),
+      home: path.join(userDataDir, "screen-driver", "home"),
+      permissions: {
+        isTrustedAccessibilityClient: (prompt) =>
+          systemPreferences.isTrustedAccessibilityClient(prompt),
+        getMediaAccessStatus: (type) => systemPreferences.getMediaAccessStatus(type),
+        requestScreenCapture: () =>
+          desktopCapturer.getSources({ types: ["window"], thumbnailSize: { width: 0, height: 0 } }),
+      },
+      locked: () => powerMonitor.getSystemIdleState(1) === "locked",
+      fitImage: (png, maxDimension) => {
+        const image = nativeImage.createFromBuffer(png);
+        const { width, height } = image.getSize();
+        if (!width || !height) return undefined;
+        const fitted = image.resize(
+          width >= height ? { width: maxDimension } : { height: maxDimension },
+        );
+        return { png: fitted.toPNG(), ...fitted.getSize() };
+      },
+    });
   userDevices = createUserDeviceAccess({
     userDataDir,
     cipher: deviceTokenCipher(),
@@ -1278,12 +1368,7 @@ app.whenReady().then(async () => {
   };
   app.on("before-quit", cancelBrowserAuth);
   ipcMain.handle("desktop.oauth.open", async (event, url: unknown) => {
-    if (
-      !fromMainWindow(event) ||
-      event.senderFrame !== event.sender.mainFrame ||
-      typeof url !== "string" ||
-      url.length > 16_384
-    )
+    if (!fromAppFrame(permissionTarget(), event) || typeof url !== "string" || url.length > 16_384)
       throw new Error("Invalid sign-in request.");
     if (browserAuthAttempts.has(url) || browserAuthAttempts.size >= 8) {
       throw new Error("A sign-in attempt is already active. Cancel it and retry.");
@@ -1320,12 +1405,7 @@ app.whenReady().then(async () => {
     }
   });
   ipcMain.handle("desktop.oauth.cancel", (event, url: unknown) => {
-    if (
-      !fromMainWindow(event) ||
-      event.senderFrame !== event.sender.mainFrame ||
-      typeof url !== "string"
-    )
-      return;
+    if (!fromAppFrame(permissionTarget(), event) || typeof url !== "string") return;
     browserAuthAttempts.get(url)?.abort();
   });
   const isManagedComputerRequest = (event: Electron.IpcMainInvokeEvent) =>
@@ -1454,13 +1534,13 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("desktop.update.state", () => desktopUpdater.state());
   ipcMain.handle("desktop.update.check", (event) =>
-    fromMainWindow(event) ? desktopUpdater.check(true) : desktopUpdater.state(),
+    fromAppFrame(permissionTarget(), event) ? desktopUpdater.check(true) : desktopUpdater.state(),
   );
   ipcMain.handle("desktop.update.download", (event) =>
-    fromMainWindow(event) ? desktopUpdater.download() : desktopUpdater.state(),
+    fromAppFrame(permissionTarget(), event) ? desktopUpdater.download() : desktopUpdater.state(),
   );
   ipcMain.handle("desktop.update.install", (event) =>
-    fromMainWindow(event) ? installUpdate() : desktopUpdater.state(),
+    fromAppFrame(permissionTarget(), event) ? installUpdate() : desktopUpdater.state(),
   );
   ipcMain.handle("desktop.setup.state", (event) => {
     if (!fromSetupWindow(event)) return null;

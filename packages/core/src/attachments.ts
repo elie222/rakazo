@@ -251,6 +251,10 @@ export function inferAttachmentMimeType(
   if (extensionType === "text/markdown" && (!reportedType || reportedType === "text/plain")) {
     return extensionType;
   }
+  // Windows reports .csv as an Excel file when Excel is installed.
+  if (extensionType === "text/csv" && reportedType === "application/vnd.ms-excel") {
+    return extensionType;
+  }
   if (reportedType && isAllowedAttachmentMimeType(reportedType)) return reportedType;
   return extensionType ?? null;
 }

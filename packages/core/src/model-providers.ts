@@ -1,4 +1,4 @@
-import type { ModelCatalogEntry } from "@rakazo/contracts";
+import type { ModelApiProtocol, ModelCatalogEntry } from "@rakazo/contracts";
 import {
   canonicalPiProviderId,
   DEFAULT_MODEL_MAX_TOKENS,
@@ -18,6 +18,19 @@ export const COMPATIBLE_THINKING_LEVELS = [
   "xhigh",
   "max",
 ] as const;
+
+/**
+ * Effort choices by wire protocol. Anthropic Messages maps every level to a
+ * budget, and pi-ai's budgets top out at the "high" level, so the two levels
+ * above it are not offered for that protocol.
+ */
+export function compatibleThinkingLevels(
+  apiProtocol: ModelApiProtocol | undefined,
+): readonly (typeof COMPATIBLE_THINKING_LEVELS)[number][] {
+  return apiProtocol === "anthropic-messages"
+    ? COMPATIBLE_THINKING_LEVELS.filter((level) => level !== "xhigh" && level !== "max")
+    : COMPATIBLE_THINKING_LEVELS;
+}
 
 const THINKING_LEVELS = ["off", ...COMPATIBLE_THINKING_LEVELS] as const;
 

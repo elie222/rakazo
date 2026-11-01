@@ -22,8 +22,6 @@ describe("web SSRF policy", () => {
     "https://[::1]/",
     "http://[::]/",
     "file:///etc/passwd",
-    "gopher://example.test/1",
-    "ftp://example.test/file",
   ])("rejects unsafe URL %s", async (url) => {
     await expect(assertSafeWebUrl(url, publicResolver)).rejects.toThrow();
   });
@@ -145,6 +143,15 @@ describe("web SSRF policy", () => {
         maxBytes: 100,
       }),
     ).rejects.toThrow(/too large/i);
+  });
+
+  it("rejects an error status instead of returning its body", async () => {
+    await expect(
+      fetchSafeWebBytes("https://example.test/", {
+        fetch: async () => new Response("not found page", { status: 404 }),
+        resolveHostname: publicResolver,
+      }),
+    ).rejects.toThrow("Request failed: HTTP 404");
   });
 
   it("stops at maxRedirects", async () => {

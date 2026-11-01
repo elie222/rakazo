@@ -229,7 +229,8 @@ Monitoring is opt-in. Install `host-alert.py` as `/usr/local/sbin/rakazo-host-al
 `check-host.sh` as `/usr/local/sbin/rakazo-host-check`, and `check-services.py` as
 `/usr/local/sbin/rakazo-check-services` (all executable), then install the supplied host-check service
 and timer and enable `rakazo-host-check.timer`. Checks run every five minutes and report low disk
-space, failed backups, a verified backup older than 36 hours, or missing configured IPv4 SSH rules.
+space, failed backups, a verified backup older than 36 hours, missing configured IPv4 SSH rules, or
+installed updates waiting for a reboot.
 To also check API and worker containers, set `RAKAZO_MONITOR_COMPOSE_PROJECT` in `backup.env` to
 the Compose project name (`rakazo-prod` for production). The worker probe checks heartbeat and
 reconciliation freshness. Leave the variable unset if container monitoring is managed elsewhere.

@@ -356,7 +356,12 @@ export function ModelSettingsOverlay({
           )}
         </>
       ) : loading ? (
-        <Spinner aria-label={t`Loading model catalog…`} />
+        <div className="grid place-items-center py-10">
+          <Spinner
+            className="size-5 text-muted-foreground"
+            aria-label={t`Loading model catalog…`}
+          />
+        </div>
       ) : catalog.length ? null : (
         <p className="text-[13px] leading-[1.5] text-muted-foreground">
           <Trans>No model catalog is available.</Trans>

@@ -54,6 +54,16 @@ export async function heldBackMigrations(
   }
 }
 
+async function forgetHeldBack(migrationUrl: string, names: string[]) {
+  const client = new Client({ connectionString: migrationUrl });
+  await client.connect();
+  try {
+    await client.query('DELETE FROM "_deferred_migrations" WHERE name = ANY($1)', [names]);
+  } finally {
+    await client.end();
+  }
+}
+
 /** `prisma migrate deploy` from the database package, without the migrations held back this run. */
 export async function deployMigrations(input: {
   migrationUrl: string;
@@ -81,6 +91,10 @@ export async function deployMigrations(input: {
         RAKAZO_MIGRATIONS_PATH: migrationsPath,
       },
     });
+  } catch (error) {
+    // A failed run may leave the previous release running, so the hold lasts until a run succeeds.
+    if (held.length) await forgetHeldBack(input.migrationUrl, held);
+    throw error;
   } finally {
     if (migrationsPath !== migrationsDir) rmSync(migrationsPath, { recursive: true, force: true });
   }

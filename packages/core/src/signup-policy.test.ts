@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   emailAllowed,
+  isMessagingEmail,
   parseAllowlist,
   signupPolicyFromEnv,
   signupRequiresEmailVerification,
@@ -29,19 +30,26 @@ describe("signup policy", () => {
     const list = parseAllowlist("You@Example.com,@company.com");
     expect(emailAllowed("you@example.com", list)).toBe(true);
     expect(emailAllowed("dev@company.com", list)).toBe(true);
+    expect(emailAllowed(" Dev@Company.com ", list)).toBe(true);
     expect(emailAllowed("other@x.com", list)).toBe(false);
   });
 
-  it("uses only environment policy, including explicit empty allowlists", () => {
-    expect(signupPolicyFromEnv({ signupsEnabled: "false", signupAllowlist: "" })).toEqual({
-      enabled: false,
-      allowlist: [],
-    });
+  it("does not match a look-alike domain or a longer address", () => {
+    const list = parseAllowlist("you@example.com,@company.com");
+    expect(emailAllowed("dev@evilcompany.com", list)).toBe(false);
+    expect(emailAllowed("dev@company.com.evil.test", list)).toBe(false);
+    expect(emailAllowed("eviyou@example.com", list)).toBe(false);
+  });
+
+  it("recognizes internal messaging addresses in any case", () => {
+    expect(isMessagingEmail(" MSG-1@Messaging.Invalid ")).toBe(true);
+    expect(isMessagingEmail("msg-1@messaging.invalid.example.com")).toBe(false);
   });
 
   it("honors SIGNUPS_ENABLED", () => {
     expect(signupsOpen(undefined)).toBe(true);
     expect(signupsOpen("false")).toBe(false);
+    expect(signupsOpen("0")).toBe(false);
   });
 
   it("builds a normalized policy from environment defaults", () => {

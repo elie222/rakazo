@@ -117,6 +117,33 @@ describe("computer browser provider", () => {
     });
   });
 
+  it("passes on the page a live navigation reached, when the helper read it", async () => {
+    const tree = '- link "Sign in" [e1]';
+    const elements = [{ ref: "e1", role: "link", name: "Sign in" }];
+    const computer: ComputerRef = { id: "c", botId: "b", kind: "docker", providerRef: "c" };
+    const context = { ...baseContext, botId: "bot-a" };
+    const navigate = (live: Record<string, unknown>) =>
+      new ComputerBrowserProvider({
+        pages,
+        liveDriver: async () => ({
+          ok: true,
+          url: "https://example.test/",
+          title: "Example",
+          ...live,
+        }),
+      }).navigate(computer, { url: "https://example.test/" }, context);
+    const bare = { url: "https://example.test/", title: "Example" };
+    expect(await navigate({ tree, elements })).toEqual({ ...bare, tree, elements });
+    expect(await navigate({ tree, elements, loading: true })).toMatchObject({
+      tree,
+      loading: true,
+    });
+    // A page that is not whole is not passed on, nor is a loading flag without a page.
+    expect(await navigate({ tree, elements: "none" })).toEqual(bare);
+    expect(await navigate({ tree: 7, elements })).toEqual(bare);
+    expect(await navigate({ loading: true })).toEqual(bare);
+  });
+
   it("passes on that the live page was still loading", async () => {
     const tree = '- link "Sign in" [e1]';
     const live = { ok: true, url: "https://example.test/", title: "Example", tree, elements: [] };

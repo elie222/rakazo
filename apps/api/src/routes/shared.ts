@@ -101,9 +101,11 @@ export async function modelSetup(deps: RouterDeps, actor: Actor) {
       ? member
       : null;
   const funding = deps.billing ? await deps.billing.status(actor) : null;
+  // A balance keeps paying for the deployment model after switching to an own key.
+  const creditsAvailable = funding?.funding === "credits" || (funding?.balanceUsd ?? 0) > 0;
   const hasDeployment =
     Boolean(deps.env.deploymentModelConfigured) &&
-    (!funding?.creditPurchasesEnabled || funding.funding === "credits");
+    (!funding?.creditPurchasesEnabled || creditsAvailable);
   return {
     main,
     model:
@@ -114,6 +116,7 @@ export async function modelSetup(deps: RouterDeps, actor: Actor) {
       }).primary,
     settings,
     funding,
+    creditsAvailable,
     hasDeployment,
     needsModel: deps.env.agentRuntime !== "scripted" && !main && !hasDeployment,
   };

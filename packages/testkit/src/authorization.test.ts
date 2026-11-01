@@ -406,13 +406,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["connections/rename"],
       ["connections/tools"],
       ["approvalRules/list"],
-      [
-        "approvalRules/preview",
-        { id: "missing-rule", effect: "remove", sample: { tools: [{ name: "send_email" }] } },
-      ],
       ["approvalRules/set", { effect: "deny", matchKind: "tool", matchValue: "gmail_send_email" }],
       ["approvalRules/remove", { id: "missing-rule" }],
-      ["approvalRules/preview"],
       ["artifacts/list", { botId: "missing-bot" }],
       ["artifacts/listSpace"],
       ["artifacts/listVersions"],
@@ -448,6 +443,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["billing/checkout"],
       ["billing/portal"],
       ["billing/claimReferral"],
+      ["accessGrants/list"],
+      ["accessGrants/create"],
+      ["accessGrants/revoke"],
       ["preferences/update"],
       ["preferences/adoptTimezone"],
       ["bootstrap"],
@@ -475,6 +473,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["mcp/servers/update"],
       ["mcp/servers/remove"],
       ["mcp/servers/test"],
+      ["mcp/servers/agents"],
       ["mcp/assignments/list"],
       ["mcp/assignments/all"],
       ["mcp/assignments/approve"],
@@ -1126,22 +1125,6 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(await rpc<Array<{ id: string }>>(app, member, "approvalRules/list")).toEqual([
       expect.objectContaining({ id: memberRule.id }),
     ]);
-
-    const candidate = {
-      scope: "account",
-      id: ownerRule.id,
-      effect: "deny",
-      sample: { tools: [{ name: "destination.write" }] },
-    };
-    expect(await rpc(app, owner, "approvalRules/preview", candidate)).toEqual({
-      before: "always_allow",
-      after: "deny",
-    });
-    const foreignPreview = await raw(app, member, "approvalRules/preview", candidate);
-    expect(foreignPreview.status).toBe(404);
-    expect(
-      await rpc<Array<{ id: string; effect: string }>>(app, owner, "approvalRules/list"),
-    ).toEqual([expect.objectContaining({ id: ownerRule.id, effect: "always_allow" })]);
 
     await rpc(app, member, "approvalRules/remove", { id: ownerRule.id });
     expect(

@@ -3394,6 +3394,13 @@ button.product-demo__dock-icon {
   line-height: 1.3;
 }
 
+.other-card p.other-card__caption {
+  margin: 8px 16px 0;
+  color: var(--muted-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 .other-card p {
   margin: 6px 16px 16px;
   color: var(--body);

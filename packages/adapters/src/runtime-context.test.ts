@@ -354,6 +354,53 @@ describe("runtime context policy", () => {
       expect(body(id)).toBe(shellOutput);
     }
   });
+  it("does not cut the middle of an older MCP result that must stay whole", () => {
+    const { request, context } = fixture(2);
+    const link = "https://sessions.example.test/join/abc";
+    const mail = `${"header ".repeat(400)}${link}${" footer".repeat(400)}`;
+    const call = (id: string, name: string, args: Record<string, unknown> = {}) =>
+      ({
+        role: "assistant",
+        content: [{ type: "toolCall", id, name, arguments: args }],
+        timestamp: 101,
+      }) as unknown as Message;
+    const result = (id: string, name: string, body: string) =>
+      ({
+        role: "toolResult",
+        toolCallId: id,
+        toolName: name,
+        content: [{ type: "text", text: body }],
+        isError: false,
+        timestamp: 102,
+      }) as Message;
+    const shellOutput = "synthetic shell output ".repeat(3000);
+    context.messages.push(
+      call("mail", "mcp__mail__get_message"),
+      result("mail", "mcp__mail__get_message", mail),
+      call("shell-1", "shell"),
+      result("shell-1", "shell", shellOutput),
+      call("shell-2", "shell"),
+      result("shell-2", "shell", shellOutput),
+      call("shell-3", "shell"),
+      result("shell-3", "shell", shellOutput),
+      call("shell-4", "shell"),
+      result("shell-4", "shell", shellOutput),
+    );
+    const policy = createRuntimeContextPolicy({
+      ...request,
+      contextStrategy: DEFAULT_CONTEXT_STRATEGY,
+      verbatimMcpServers: { ids: ["srv_mail"], slugs: ["mail"] },
+    });
+    const prepared = policy.prepareContext(context, { ...model, contextWindow: 100_000 });
+    const text = (id: string) => {
+      const message = prepared.messages.find(
+        (message) => message.role === "toolResult" && message.toolCallId === id,
+      ) as Extract<Message, { role: "toolResult" }>;
+      return message.content.map((part) => (part.type === "text" ? part.text : "")).join("");
+    };
+    expect(text("mail")).toBe(mail);
+    expect(text("shell-1")).toContain("[Earlier result shortened after you read it");
+  });
   it.each([65_536, 10_000])(
     "retains individual parallel results within a %i budget",
     (contextWindow) => {

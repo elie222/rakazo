@@ -652,15 +652,16 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
 export type Auth = ReturnType<typeof createAuth>;
 
 async function revokeUnprovenCredentials(prisma: PrismaClient, userId: string) {
-  await prisma.$transaction([
-    prisma.passkey.deleteMany({ where: { userId } }),
-    prisma.messagingIdentity.deleteMany({ where: { userId } }),
-    prisma.messagingLinkCode.deleteMany({ where: { userId } }),
-    prisma.userDevice.updateMany({
+  // Auth requests carry a database context, which a batch $transaction([...]) cannot.
+  await prisma.$transaction(async (tx) => {
+    await tx.passkey.deleteMany({ where: { userId } });
+    await tx.messagingIdentity.deleteMany({ where: { userId } });
+    await tx.messagingLinkCode.deleteMany({ where: { userId } });
+    await tx.userDevice.updateMany({
       where: { userId, revokedAt: null },
       data: { revokedAt: new Date() },
-    }),
-  ]);
+    });
+  });
 }
 
 /**

@@ -66,6 +66,22 @@ export function hasUnsentComposerDraft(storage: Storage | null = null): boolean 
   return false;
 }
 
+/** Signing out leaves no saved draft, or its mentions, for whoever uses this browser next. */
+export function clearComposerDrafts(): void {
+  try {
+    const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
+    for (const key of keys) {
+      if (
+        key?.startsWith(COMPOSER_DRAFT_STORAGE_PREFIX) ||
+        key?.startsWith(COMPOSER_BINDINGS_STORAGE_PREFIX)
+      )
+        localStorage.removeItem(key);
+    }
+  } catch {
+    // Without storage no draft was saved.
+  }
+}
+
 export function subscribeComposerDraftAccepted(
   threadKey: string,
   listener: (text: string) => void,
