@@ -6,6 +6,7 @@ import { recheckSessionOnUnauthorized, rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 import { SuccessPop } from "./ai/primitives";
 import { useIdentityConfirmation } from "./ConfirmIdentityDialog";
+import { SettingsRow } from "./SettingsRows";
 
 export function AccountDataSettings({
   onImported,
@@ -54,7 +55,9 @@ export function AccountDataSettings({
       });
       recheckSessionOnUnauthorized(response.status);
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
+        const body = (await response.json().catch(() => null)) as {
+          error?: unknown;
+        } | null;
         setError(typeof body?.error === "string" ? body.error : t`Could not continue`);
         return;
       }
@@ -68,51 +71,75 @@ export function AccountDataSettings({
   }
 
   return (
-    <div className="space-y-3" data-testid="account-data">
-      <div className="flex flex-wrap items-center gap-3">
-        <Button
-          variant="outline"
-          disabled={pending !== null}
-          aria-busy={pending === "export"}
-          onClick={() => void exportData()}
-        >
-          {pending === "export" ? <Spinner aria-hidden /> : null}
-          <Trans>Export data</Trans>
-        </Button>
-        <Button
-          variant="outline"
-          disabled={pending !== null}
-          aria-busy={pending === "import"}
-          onClick={() => fileInput.current?.click()}
-        >
-          {pending === "import" ? <Spinner aria-hidden /> : null}
-          <Trans>Import data</Trans>
-        </Button>
-        {onImportAgent ? (
-          <Button variant="outline" disabled={pending !== null} onClick={onImportAgent}>
-            <Trans>Import an agent</Trans>
-          </Button>
+    <>
+      <SettingsRow
+        label={<Trans>Your data</Trans>}
+        control={
+          <>
+            {imported ? <SuccessPop label={t`Done`} /> : null}
+            <Button
+              variant="secondary"
+              size="sm"
+              aria-label={t`Export data`}
+              data-testid="account-export"
+              disabled={pending !== null}
+              aria-busy={pending === "export"}
+              onClick={() => void exportData()}
+            >
+              {pending === "export" ? <Spinner aria-hidden /> : null}
+              <Trans>Export</Trans>
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              aria-label={t`Import data`}
+              data-testid="account-import"
+              disabled={pending !== null}
+              aria-busy={pending === "import"}
+              onClick={() => fileInput.current?.click()}
+            >
+              {pending === "import" ? <Spinner aria-hidden /> : null}
+              <Trans>Import</Trans>
+            </Button>
+            <input
+              ref={fileInput}
+              type="file"
+              accept=".zip,application/zip"
+              hidden
+              data-testid="account-import-file"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) void importData(file);
+              }}
+            />
+          </>
+        }
+      >
+        {error ? (
+          <p role="alert" className="mt-2 text-[12.5px] text-destructive">
+            {error}
+          </p>
         ) : null}
-        <input
-          ref={fileInput}
-          type="file"
-          accept=".zip,application/zip"
-          hidden
-          data-testid="account-import-file"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = "";
-            if (file) void importData(file);
-          }}
+      </SettingsRow>
+      {onImportAgent ? (
+        <SettingsRow
+          label={<Trans>Agent from another app</Trans>}
+          control={
+            <Button
+              variant="secondary"
+              size="sm"
+              aria-label={t`Import an agent`}
+              data-testid="agent-import-open"
+              disabled={pending !== null}
+              onClick={onImportAgent}
+            >
+              <Trans>Import</Trans>
+            </Button>
+          }
         />
-        {imported ? <SuccessPop label={t`Done`} /> : null}
-      </div>
-      {error ? (
-        <p role="alert" className="text-[12.5px] text-destructive">
-          {error}
-        </p>
       ) : null}
       {identityDialog}
-    </div>
+    </>
   );
 }

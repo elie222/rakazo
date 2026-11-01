@@ -111,9 +111,16 @@ export class ComputerBrowserProvider implements BrowserProvider {
         error: live?.error || DETACHED_MESSAGE,
       };
     }
+    // The page comes with the navigation when the helper could read it in time.
+    const page =
+      typeof live.tree === "string" && Array.isArray(live.elements)
+        ? { tree: live.tree, elements: live.elements }
+        : {};
     return {
       url: typeof live.url === "string" ? live.url : request.url,
       title: typeof live.title === "string" ? live.title : "",
+      ...page,
+      ...(page.tree !== undefined && live.loading === true ? { loading: true } : {}),
     };
   }
 

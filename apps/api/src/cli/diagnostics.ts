@@ -1,7 +1,7 @@
 // `docker compose exec api node dist/cli/diagnostics.js`: a redacted report for a support issue.
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { contentKeyProviderFromEnv } from "@rakazo/adapters";
+import { contentKeyProviderFromEnv, unwrapEnvFromKeyManager } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
 import { createDb, runAsSystem } from "@rakazo/db";
 import type { DiagnosticsInput } from "../diagnostics.js";
@@ -34,6 +34,7 @@ try {
 }
 
 async function report(): Promise<string> {
+  await unwrapEnvFromKeyManager();
   const env = loadEnv();
   const { prisma, pool } = createDb(env.databaseUrl, { keyProvider: contentKeyProviderFromEnv() });
   try {

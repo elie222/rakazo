@@ -26,6 +26,9 @@ const { push, back, params, rpcCalls, saved } = vi.hoisted(() => ({
     label: "Fixture",
     held: null as Promise<void> | null,
     failMe: false,
+    apiProtocol: undefined as string | undefined,
+    reasoning: false,
+    thinkingLevel: undefined as string | undefined,
   },
 }));
 
@@ -78,6 +81,9 @@ vi.mock("./api", () => ({
           hasKey: saved.hasKey,
           headerNames: ["x-session"],
           label: saved.label,
+          ...(saved.apiProtocol ? { apiProtocol: saved.apiProtocol } : {}),
+          ...(saved.reasoning ? { reasoning: true } : {}),
+          ...(saved.thinkingLevel ? { thinkingLevel: saved.thinkingLevel } : {}),
         },
       ];
     return [];
@@ -90,7 +96,34 @@ vi.mock("expo-router", () => ({
   useFocusEffect: (effect: () => (() => void) | undefined) => useEffect(effect, [effect]),
 }));
 vi.mock("@expo/ui/community/menu", () => ({
-  MenuView: ({ children }: { children?: ReactNode }) => createElement("div", {}, children),
+  MenuView: ({
+    actions,
+    onPressAction,
+    title,
+    children,
+  }: {
+    actions: { id: string; title: string; state?: string }[];
+    onPressAction: (event: { nativeEvent: { event: string } }) => void;
+    title: string;
+    children?: ReactNode;
+  }) =>
+    createElement(
+      "div",
+      { "aria-label": title },
+      children,
+      actions.map((action) =>
+        createElement(
+          "button",
+          {
+            key: action.id,
+            type: "button",
+            "aria-pressed": action.state === "on",
+            onClick: () => onPressAction({ nativeEvent: { event: action.id } }),
+          },
+          action.title,
+        ),
+      ),
+    ),
 }));
 vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
@@ -374,6 +407,113 @@ describe("a Space's model override", () => {
     expect(connect?.[1]).toMatchObject({ makeDefault: true, scope: "space" });
     expect(connect?.[2]).toEqual({ requestContext: otherSpace });
   });
+});
+
+const PROTOCOL_LABELS = ["Chat Completions", "Responses", "Anthropic Messages"] as const;
+
+function protocolChoice(label: string) {
+  return [...container.querySelectorAll("button")].find((button) => button.textContent === label)!;
+}
+
+function currentProtocol(): string | undefined {
+  return PROTOCOL_LABELS.find(
+    (label) => protocolChoice(label).getAttribute("aria-pressed") === "true",
+  );
+}
+
+const EFFORT_LABELS = ["Default", "Minimal", "Low", "Medium", "High", "Extra high", "Max"];
+
+/** The reasoning-effort choice the picker marks current, when reasoning is on. */
+function currentEffort(): string | undefined {
+  return EFFORT_LABELS.find(
+    (label) => protocolChoice(label)?.getAttribute("aria-pressed") === "true",
+  );
+}
+
+async function saveConnection() {
+  const save = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Save",
+  )!;
+  await act(async () => save.click());
+}
+
+it("drops the saved model at another endpoint and restores it at the saved one", async () => {
+  await remount(() => renderConnection());
+  await change("OpenAI-compatible server URL", "https://other.example.test/v1");
+  await saveConnection();
+  expect(
+    rpcCalls.some(
+      ([procedure, input]) =>
+        procedure === "models/connect" &&
+        (input as { modelId?: string }).modelId === "model-fixture",
+    ),
+  ).toBe(false);
+  await change("OpenAI-compatible server URL", `${savedEndpoint}/`);
+  await saveConnection();
+  expect(rpcCalls.find(([procedure]) => procedure === "models/connect")?.[1]).toMatchObject({
+    modelId: "model-fixture",
+  });
+});
+
+it("offers the wire protocol on the compatible form and sends the saved choice", async () => {
+  saved.apiProtocol = "anthropic-messages";
+  try {
+    await remount(() => renderConnection());
+    expect(currentProtocol()).toBe("Anthropic Messages");
+    await act(async () => protocolChoice("Responses").click());
+    await saveConnection();
+    expect(rpcCalls.find(([procedure]) => procedure === "models/connect")?.[1]).toMatchObject({
+      provider: "openai-compatible",
+      apiProtocol: "responses",
+    });
+  } finally {
+    saved.apiProtocol = undefined;
+  }
+});
+
+it("keeps the chosen protocol when the endpoint changes", async () => {
+  saved.apiProtocol = "anthropic-messages";
+  try {
+    await remount(() => renderConnection());
+    await change("OpenAI-compatible server URL", "https://other.example.test/v1");
+    expect(currentProtocol()).toBe("Anthropic Messages");
+  } finally {
+    saved.apiProtocol = undefined;
+  }
+});
+
+/** Remounting folds Advanced away again; the effort picker lives inside it. */
+async function remountWithAdvanced(render: () => Promise<void>) {
+  await remount(render);
+  const advanced = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Advanced",
+  );
+  expect(advanced).toBeDefined();
+  await act(async () => advanced!.click());
+}
+
+it("clamps a staged effort when the protocol switch drops the level", async () => {
+  saved.reasoning = true;
+  saved.thinkingLevel = "max";
+  try {
+    await remountWithAdvanced(() => renderConnection());
+    expect(currentEffort()).toBe("Max");
+    await act(async () => protocolChoice("Anthropic Messages").click());
+    expect(currentEffort()).toBe("High");
+    await saveConnection();
+    expect(rpcCalls.find(([procedure]) => procedure === "models/connect")?.[1]).toMatchObject({
+      apiProtocol: "anthropic-messages",
+      thinkingLevel: "high",
+    });
+  } finally {
+    saved.reasoning = false;
+    saved.thinkingLevel = undefined;
+  }
+});
+
+it("offers no protocol choice on a catalog provider's connection", async () => {
+  await remount(() => renderConnection({ provider: "anthropic", credentialId: null }));
+  expect(PROTOCOL_LABELS.some((label) => container.textContent?.includes(label))).toBe(false);
 });
 
 it("lets the limit fields hold every value the server accepts", () => {

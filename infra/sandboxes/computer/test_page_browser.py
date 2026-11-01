@@ -118,6 +118,207 @@ class PayTokenBrowser(CardBrowser):
         return super().evaluate(expression, in_frame)
 
 
+SHOP_PAGE = "https://shop.example.test"
+AUTH_SITE = "https://auth.example.test"
+ID_SITE = "https://id.example.test"
+
+
+class FrameBrowser:
+    """A stand-in Chromium for a shop page with frames, as the protocol shows them.
+
+    The page holds a frame of its own process, a login frame of another process with a frame of a third
+    inside it, a hidden ad frame, a card frame of a payment provider, and a frame drawn by the page itself.
+    Each frame answers in its own world, on the CDP session it is local to, and nowhere else.
+    """
+
+    def __init__(self):
+        self.frames, self.sent, self.evaluated, self.fills, self.limits = {}, [], [], [], {}
+        self.spots, self.located, self.target = [], [], "main"
+        self.document_order = ["same", "auth", "ad", "pay", "blank"]
+        self.covered, self.hit, self.shift_after_move, self.drawn = {}, None, {}, {}
+        self.failing = set()
+        self.client = helper.CdpClient("ws://127.0.0.1:9222/test")
+        self.client.context_id = 1
+        self.client.call = self.call
+        self.add("main", "top", None, SHOP_PAGE + "/", 1, tree="Shop page")
+        self.add("same", "top", "main", SHOP_PAGE + "/inner", 2, refs=("f11",), tree='- textbox "Name" [f11]')
+        self.add("auth", "s-auth", "main", AUTH_SITE + "/login", 3, refs=("f21", "f22"), offset=(100, 50),
+                 tree='Sign in\n- textbox "ID number" [f21]\n- textbox "Password" [f22]')
+        self.add("deep", "s-deep", "auth", ID_SITE + "/", 4, refs=("f31",), offset=(30, 40), tree='- button "Continue" [f31]')
+        self.add("ad", "s-ad", "main", "https://ads.example.test/", 5, refs=("f41",), tree='- link "Offer" [f41]',
+                 visible=False)
+        self.add("blank", "top", "main", "about:blank", 7, refs=("f61",), tree='- textbox "Secret" [f61]')
+
+    def add_card_frame(self, card):
+        self.add("pay", "s-pay", "main", "https://js.stripe.com/v3/elements-inner-card.html", 6, refs=("f51",),
+                 tree='- textbox "Card number" [f51]')
+        self.frames["pay"]["card"] = card
+
+    def add(self, frame_id, session, parent, url, world, refs=(), tree="", visible=True, offset=(0, 0)):
+        self.frames[frame_id] = {"id": frame_id, "session": session, "parent": parent, "url": url, "world": world,
+                                 "refs": set(refs), "tree": tree, "visible": visible, "offset": offset,
+                                 "owner": 100 + world, "secure": True, "card": False, "aim": (10, 20)}
+
+    def origin(self, frame):
+        parts = urlsplit(frame["url"])
+        if parts.scheme in ("http", "https"):
+            return f"{parts.scheme}://{parts.netloc}"
+        return self.origin(self.frames[frame["parent"]]) if frame["parent"] else "null"
+
+    def in_world(self, context):
+        return next(frame for frame in self.frames.values() if frame["world"] == context)
+
+    def settled(self, message):
+        return {"exceptionDetails": {"text": "Uncaught", "exception": {"description": f"Error: Settled: {message}\n  at"}}}
+
+    def call(self, method, params=None, *, session_id=None, timeout_s=30.0):
+        params = params or {}
+        self.sent.append((method, params, session_id))
+        handler = getattr(self, "on_" + method.replace(".", "_"), None)
+        return handler(params, session_id) if handler else {}
+
+    def on_Target_setAutoAttach(self, params, session):
+        for frame in self.frames.values():
+            parent = self.frames.get(frame["parent"])
+            if parent and parent["session"] == session and frame["session"] != session:
+                self.client._handle_event({"method": "Target.attachedToTarget", "sessionId": session, "params": {
+                    "sessionId": frame["session"], "targetInfo": {"type": "iframe", "url": frame["url"]}}})
+        return {}
+
+    def on_Page_getFrameTree(self, params, session):
+        local = [frame for frame in self.frames.values() if frame["session"] == session]
+        root = next(frame for frame in local if not self.frames.get(frame["parent"]) or
+                    self.frames[frame["parent"]]["session"] != session)
+
+        def node(frame):
+            info = {"id": frame["id"], "url": frame["url"], "loaderId": "loader"}
+            if frame["parent"]:
+                info["parentId"] = frame["parent"]
+            return {"frame": info, "childFrames": [node(child) for child in local if child["parent"] == frame["id"]]}
+        return {"frameTree": node(root)}
+
+    def on_DOM_getFrameOwner(self, params, session):
+        frame = self.frames[params["frameId"]]
+        if self.frames[frame["parent"]]["session"] != session:
+            raise RuntimeError("DOM.getFrameOwner failed: Frame with given id does not belong to target.")
+        return {"backendNodeId": frame["owner"]}
+
+    def on_DOM_resolveNode(self, params, session):
+        owner = next(frame for frame in self.frames.values() if frame["owner"] == params["backendNodeId"])
+        parent = self.frames[owner["parent"]]
+        if (params["executionContextId"], session) != (parent["world"], parent["session"]):
+            raise RuntimeError("DOM.resolveNode failed: node is not in that context")
+        return {"object": {"objectId": f"owner-{owner['id']}"}}
+
+    def on_Runtime_callFunctionOn(self, params, session):
+        declaration = params["functionDeclaration"]
+        if declaration == helper.IN_PAGE_ORDER:
+            ids = [argument["objectId"].removeprefix("owner-") for argument in params["arguments"]]
+            ranked = sorted(range(len(ids)), key=lambda at: self.document_order.index(ids[at]))
+            return {"result": {"value": ranked}}
+        frame = self.frames[params["objectId"].removeprefix("owner-")]
+        if declaration == helper.FRAME_OWNER_VISIBLE:
+            return {"result": {"value": frame["visible"]}}
+        x, y, moved = (argument["value"] for argument in params["arguments"])
+        self.spots.append((frame["id"], session, x, y, moved))
+        if frame["id"] in self.covered and not (self.covered[frame["id"]][1] and not moved):
+            return self.settled(self.covered[frame["id"]][0])
+        dx, dy = frame["offset"]
+        extra = self.shift_after_move.get(frame["id"], 0) if moved else 0
+        return {"result": {"value": {"x": x + dx + extra, "y": y + dy, "width": 300, "height": 200,
+                                     "scroll": {"x": 0, "y": 0}}}}
+
+    def on_DOM_getBoxModel(self, params, session):
+        owner = next(frame for frame in self.frames.values() if frame["owner"] == params["backendNodeId"])
+        if self.frames[owner["parent"]]["session"] != session:
+            raise RuntimeError("DOM.getBoxModel failed: Could not find node with given id")
+        # The content box as the browser draws it: upright at 300 x 200 unless a test turns it.
+        quad = self.drawn.get(owner["id"], [0, 0, 300, 0, 300, 200, 0, 200])
+        return {"model": {"content": quad}}
+
+    def on_Page_createIsolatedWorld(self, params, session):
+        return {"executionContextId": self.frames[params["frameId"]]["world"]}
+
+    def on_DOM_getNodeForLocation(self, params, session):
+        self.located.append((params["x"], params["y"], session))
+        if self.hit is not None:
+            return {"frameId": self.hit[0], "backendNodeId": self.hit[1]}
+        target = self.target
+        for frame in reversed(self.chain(target)):
+            if frame["session"] != "top":
+                return {"frameId": frame["parent"], "backendNodeId": frame["owner"]}
+        return {"frameId": target, "backendNodeId": 900}
+
+    def on_DOM_describeNode(self, params, session):
+        if self.hit is not None:
+            return {"node": {"nodeName": self.hit[2]}}
+        return {"node": {"nodeName": "IFRAME" if params["backendNodeId"] != 900 else "BUTTON"}}
+
+    def chain(self, frame_id):
+        frames = []
+        while self.frames[frame_id]["parent"]:
+            frames.append(self.frames[frame_id])
+            frame_id = self.frames[frame_id]["parent"]
+        return frames
+
+    def on_Runtime_evaluate(self, params, session):
+        frame = self.in_world(params["contextId"])
+        if frame["session"] != session:
+            raise RuntimeError("Runtime.evaluate failed: Cannot find context with specified id")
+        expression = params["expression"]
+        self.evaluated.append((session, params["contextId"], expression))
+        if frame["id"] in self.failing and expression != helper.EVAL_HELPERS:
+            raise RuntimeError("Runtime.evaluate failed: Execution context was destroyed.")
+        return {"result": {"value": self.answer(frame, expression)}}
+
+    def answer(self, frame, expression):
+        if expression == helper.EVAL_HELPERS:
+            return True
+        if "snapshot(" in expression:
+            limits = json.loads(expression.split("snapshot(", 1)[1].split(")", 1)[0] or "{}")
+            self.limits[frame["id"]] = limits
+            page = {"url": frame["url"], "title": "", "tree": frame["tree"], "frames": frame["id"] == "main",
+                    "elements": [{"ref": ref, "role": "textbox", "name": ref} for ref in sorted(frame["refs"])]}
+            if "origin: location.origin" in expression:
+                parts = urlsplit(frame["url"])
+                return {**page, "origin": self.origin(frame), "scheme": f"{parts.scheme}:"}
+            return page
+        if "owns(" in expression:
+            return json.loads(expression.split("owns(", 1)[1].rsplit(")", 1)[0]) in frame["refs"]
+        if "aim(" in expression:
+            return {"x": frame["aim"][0], "y": frame["aim"][1]}
+        if "stillAimed(" in expression:
+            return {"x": 0, "y": 0}
+        if "hasCardField()" in expression:
+            return frame["card"]
+        if expression.startswith("(() => { let saved = null"):
+            saved = json.loads(expression.split("new URL(", 1)[1].split(")", 1)[0])
+            return {"origin": self.origin(frame), "same": self.origin(frame) == saved, "sandboxed": frame.get("sandboxed", False),
+                    "secure": frame["url"].startswith("https:") and frame["secure"]}
+        if "fill(" in expression:
+            self.fills.append((frame["id"], expression))
+            return {}
+        if "payTokenAccount()" in expression:
+            return None
+        return True
+
+    def snapshot(self):
+        with patch.object(helper, "wait_for_settle", return_value=True), patch.object(helper, "ensure_helpers"):
+            return helper.snapshot(self.client, "top")
+
+    def act(self, actions, target=None):
+        self.target = target
+        with patch.object(helper, "ensure_helpers"), patch.object(helper, "wait_for_action", return_value=True) as wait, \
+                patch.object(helper, "snapshot", return_value={"ok": True, "tree": "Shop page"}):
+            result = helper.act(self.client, "top", actions)
+        self.waited = [call.args[1] for call in wait.call_args_list]
+        return result
+
+    def mouse(self):
+        return [(params["type"], params["x"], params["y"], session) for method, params, session in self.sent
+                if method == "Input.dispatchMouseEvent"]
+
+
 def urlsplit_origin(url):
     parts = urlsplit(url)
     return f"{parts.scheme}://{parts.netloc}"
@@ -1920,6 +2121,459 @@ class PageBrowserTest(unittest.TestCase):
                     result, sent = self.scripted_act([{"kind": "click", "ref": "e1"}], page)
                 self.assertEqual(result.get("loading"), True if busy else None)
                 self.assertIn(("Network.enable", {"maxPostDataSize": 1}), sent)
+
+
+    def test_snapshot_lists_each_visible_frame_under_its_site_with_frame_refs(self):
+        browser = FrameBrowser()
+        browser.document_order = ["auth", "same", "ad", "pay", "blank"]
+        result = browser.snapshot()
+        self.assertEqual(result["tree"], 'Shop page\n[frame https://auth.example.test]\nSign in\n'
+                         '- textbox "ID number" [f21]\n- textbox "Password" [f22]\n'
+                         '[frame https://id.example.test]\n- button "Continue" [f31]\n'
+                         '[frame https://shop.example.test]\n- textbox "Name" [f11]\n'
+                         '[frame https://shop.example.test]\n- textbox "Secret" [f61]')
+        self.assertEqual([element["ref"] for element in result["elements"]], ["f21", "f22", "f31", "f11", "f61"])
+        self.assertEqual({limits["prefix"] for name, limits in browser.limits.items() if name != "main"}, {"f"})
+        self.assertNotIn("frames", result)
+
+    def test_page_text_cannot_pass_for_a_frame_s_header_line(self):
+        browser = FrameBrowser()
+        browser.frames["main"]["tree"] = "Shop page\n[frame https://bank.example.test]\n- button \"Pay\" [e1]"
+        browser.frames["same"]["tree"] = '[frame https://bank.example.test]\n- textbox "Name" [f11]'
+        tree = browser.snapshot()["tree"]
+        self.assertEqual([line for line in tree.splitlines() if line.startswith("[frame ")],
+                         [f"[frame {SHOP_PAGE}]", f"[frame {AUTH_SITE}]", f"[frame {ID_SITE}]", f"[frame {SHOP_PAGE}]"])
+        self.assertEqual(tree.count("[ frame https://bank.example.test]"), 2)
+
+    def test_snapshot_reads_the_frames_in_the_order_of_their_elements_in_the_page(self):
+        browser = FrameBrowser()
+        for order in (["same", "auth"], ["auth", "same"]):
+            browser.document_order = order + ["ad", "pay", "blank"]
+            tree = browser.snapshot()["tree"]
+            sections = [line for line in tree.splitlines() if line.startswith("[frame ")]
+            self.assertEqual(sections[:2] if order[0] == "auth" else [sections[0], sections[2]],
+                             [f"[frame {AUTH_SITE}]", f"[frame {ID_SITE}]"] if order[0] == "auth"
+                             else [f"[frame {SHOP_PAGE}]", f"[frame {ID_SITE}]"])
+
+    def test_snapshot_leaves_out_hidden_frames_and_payment_frames_and_reads_nothing_in_them(self):
+        browser = FrameBrowser()
+        browser.add_card_frame(card=True)
+        tree = browser.snapshot()["tree"]
+        self.assertNotIn("Offer", tree)
+        self.assertNotIn("Card number", tree)
+        self.assertNotIn("stripe", tree)
+        self.assertTrue(tree.endswith(helper.PAYMENT_FRAME_HINT))
+        self.assertNotIn("Embedded frames require desktop tools.", tree)
+        # The hidden frame gets no world of ours, and the card frame none for the listing of frames.
+        self.assertNotIn(("Page.createIsolatedWorld", {"frameId": "ad", "worldName": helper.WORLD_NAME}, "s-ad"),
+                         browser.sent)
+        read = [ctx for _, ctx, expression in browser.evaluated if "origin: location.origin" in expression]
+        self.assertEqual(sorted(read), [2, 3, 4, 7])
+
+    def test_a_payment_frame_without_card_fields_still_says_frames_need_desktop_tools(self):
+        browser = FrameBrowser()
+        browser.add_card_frame(card=False)
+        self.assertTrue(browser.snapshot()["tree"].endswith("Embedded frames require desktop tools."))
+
+    def test_snapshot_says_frames_need_desktop_tools_only_when_one_could_not_be_read(self):
+        for broken, unread in ((None, False), ("auth", True), ("blank", True)):
+            with self.subTest(broken=broken):
+                browser = FrameBrowser()
+                if broken:
+                    browser.failing.add(broken)
+                tree = browser.snapshot()["tree"]
+                self.assertEqual("Embedded frames require desktop tools." in tree, unread)
+                if broken:
+                    # The frames that could be read are still there.
+                    self.assertIn('[f11]', tree)
+
+    def test_snapshot_skips_frames_with_nothing_in_them_without_calling_them_unread(self):
+        browser = FrameBrowser()
+        for name in ("same", "auth", "deep", "blank"):
+            browser.frames[name]["tree"] = "(no interactive elements)"
+        tree = browser.snapshot()["tree"]
+        self.assertEqual(tree, "Shop page")
+
+    def test_snapshot_reports_frames_beyond_the_depth_limit_as_unread(self):
+        browser = FrameBrowser()
+        with patch.object(helper, "MAX_FRAME_DEPTH", 1):
+            tree = browser.snapshot()["tree"]
+        self.assertIn("[frame https://auth.example.test]", tree)
+        self.assertNotIn("Continue", tree)
+        self.assertTrue(tree.endswith("Embedded frames require desktop tools."))
+
+    def test_snapshot_reports_a_frame_it_cannot_place_in_the_page_as_unread(self):
+        browser = FrameBrowser()
+        original = browser.on_Page_getFrameTree
+
+        def without_parent(params, session):
+            tree = original(params, session)
+            if session == "s-auth":
+                del tree["frameTree"]["frame"]["parentId"]
+            return tree
+        browser.on_Page_getFrameTree = without_parent
+        tree = browser.snapshot()["tree"]
+        self.assertNotIn("Password", tree)
+        self.assertTrue(tree.endswith("Embedded frames require desktop tools."))
+
+    def test_the_frames_share_the_snapshot_budget_with_the_page_and_never_add_to_it(self):
+        browser = FrameBrowser()
+        for name in ("same", "auth", "deep"):
+            browser.frames[name]["tree"] = f"{name} " + "x" * 2300
+        tree = browser.snapshot()["tree"]
+        self.assertLessEqual(helper.sent_length(tree), helper.TREE_BUDGET)
+        # Two of the three fit in what the frames may take; the third is reported, not squeezed in.
+        self.assertEqual(tree.count("[frame "), 2)
+        self.assertTrue(tree.endswith("Embedded frames require desktop tools."))
+
+    def test_the_page_gives_up_part_of_its_own_tree_when_the_frames_would_not_fit_beside_it(self):
+        browser = FrameBrowser()
+        browser.frames["main"]["tree"] = "y" * 9000
+        browser.frames["auth"]["tree"] = "z" * 2000
+        tree = browser.snapshot()["tree"]
+        self.assertIn("z" * 2000, tree)
+        self.assertEqual(browser.limits["main"]["prefix"], "e")
+        self.assertEqual(browser.limits["main"]["tree"], helper.TREE_BUDGET - helper.sent_length(
+            "".join(f"\n[frame {site}]\n{body}" for site, body in (
+                (AUTH_SITE, browser.frames["auth"]["tree"]), (ID_SITE, browser.frames["deep"]["tree"]),
+                (SHOP_PAGE, browser.frames["same"]["tree"]), (SHOP_PAGE, browser.frames["blank"]["tree"])))))
+
+    def test_a_ref_belongs_to_the_one_frame_whose_helper_handed_it_out(self):
+        browser = FrameBrowser()
+        for ref, frame in (("f22", "auth"), ("f31", "deep"), ("f11", "same")):
+            with patch.object(helper, "ensure_helpers"):
+                self.assertEqual(helper.frame_of(browser.client, "top", ref, []).id, frame)
+
+    def test_an_action_finds_the_frames_once_and_again_only_for_a_ref_they_do_not_answer_to(self):
+        def lookups(actions):
+            browser = FrameBrowser()
+            self.assertTrue(browser.act(actions, "auth")["ok"])
+            return sum(method == "DOM.getFrameOwner" for method, _, _ in browser.sent)
+        one = lookups([{"kind": "fill", "ref": "f21", "text": "1"}])
+        self.assertEqual(lookups([{"kind": "fill", "ref": "f21", "text": "1"}, {"kind": "fill", "ref": "f22", "text": "2"},
+                                  {"kind": "fill", "ref": "f31", "text": "3"}]), one)
+        browser = FrameBrowser()
+        known = []
+        helper.frame_of(browser.client, "top", "f21", known)
+        browser.frames["auth"]["refs"].discard("f21")
+        browser.frames["same"]["refs"].add("f21")
+        self.assertEqual(helper.frame_of(browser.client, "top", "f21", known).id, "same")
+
+    def test_a_ref_no_frame_handed_out_is_stale_and_a_ref_two_frames_claim_is_refused(self):
+        browser = FrameBrowser()
+        with self.assertRaises(helper.Settled) as stale:
+            helper.frame_of(browser.client, "top", "f999", [])
+        self.assertEqual(str(stale.exception), helper.STALE_REF)
+        browser.frames["same"]["refs"].add("f22")
+        with self.assertRaises(helper.Settled) as two:
+            helper.frame_of(browser.client, "top", "f22", [])
+        self.assertEqual(str(two.exception), helper.TWO_FRAMES)
+        # Nothing is done on a ref that two frames claim.
+        result = browser.act([{"kind": "click", "ref": "f22"}], "auth")
+        self.assertEqual((result["ok"], result["error"]), (False, helper.TWO_FRAMES))
+        self.assertEqual(browser.mouse(), [])
+
+    def test_a_frame_ref_is_only_asked_of_the_frames_it_can_be_in(self):
+        browser = FrameBrowser()
+        result = browser.act([{"kind": "click", "ref": "f999"}], "auth")
+        self.assertEqual((result["ok"], result["completed"], result["error"]), (False, 0, helper.STALE_REF))
+        self.assertNotIn("fallback", result)
+
+    def test_a_click_in_a_frame_goes_to_its_spot_in_the_window_on_the_page_session_only(self):
+        browser = FrameBrowser()
+        result = browser.act([{"kind": "click", "ref": "f22"}], "auth")
+        self.assertEqual((result["ok"], result["completed"]), (True, 1))
+        # The frame's spot (10, 20) plus where its element sits in the page (100, 50).
+        self.assertEqual(browser.mouse(), [("mouseMoved", 110, 70, "top"), ("mousePressed", 110, 70, "top"),
+                                           ("mouseReleased", 110, 70, "top")])
+        self.assertEqual(browser.located, [(110, 70, "top")])
+        self.assertEqual(browser.waited, ["top", "s-auth"])
+
+    def test_a_click_in_a_nested_frame_is_carried_up_through_each_frame_element_in_its_own_page(self):
+        browser = FrameBrowser()
+        browser.frames["deep"]["aim"] = (5, 6)
+        result = browser.act([{"kind": "click", "ref": "f31"}], "deep")
+        self.assertTrue(result["ok"])
+        self.assertEqual([spot for spot in browser.spots if not spot[4]],
+                         [("deep", "s-auth", 5, 6, False), ("auth", "top", 35, 46, False)])
+        self.assertEqual({(kind, x, y) for kind, x, y, _ in browser.mouse()},
+                         {("mouseMoved", 135, 96), ("mousePressed", 135, 96), ("mouseReleased", 135, 96)})
+        self.assertEqual({session for *_, session in browser.mouse()}, {"top"})
+
+    def test_a_click_in_a_frame_of_the_same_process_is_judged_by_the_frame_the_browser_finds(self):
+        browser = FrameBrowser()
+        browser.frames["same"]["offset"] = (0, 300)
+        self.assertTrue(browser.act([{"kind": "click", "ref": "f11"}], "same")["ok"])
+        self.assertEqual(browser.mouse()[-1], ("mouseReleased", 10, 320, "top"))
+        browser = FrameBrowser()
+        browser.hit = ("main", 1, "DIV")
+        result = browser.act([{"kind": "click", "ref": "f11"}], "same")
+        self.assertEqual(result["error"], helper.FRAME_SPOT_TAKEN)
+        self.assertEqual([kind for kind, *_ in browser.mouse()], ["mouseMoved"])
+
+    def test_a_click_in_a_frame_presses_nothing_when_the_frame_element_is_covered_hidden_or_scaled(self):
+        for message in ('The frame holding this element is covered by div "Cover", so a click would land there.',
+                        "The frame holding this element is hidden. Take a fresh snapshot.",
+                        "The frame holding this element is drawn scaled or turned, so the page tools cannot click in it."):
+            with self.subTest(message=message):
+                browser = FrameBrowser()
+                browser.covered["auth"] = (message, False)
+                result = browser.act([{"kind": "click", "ref": "f22"}], "auth")
+                self.assertEqual((result["ok"], result["completed"], result["uncertain"]), (False, 0, False))
+                self.assertEqual(result["error"], message)
+                self.assertNotIn("fallback", result)
+                self.assertEqual(browser.mouse(), [])
+
+    def test_a_file_chooser_a_click_opens_in_a_frame_of_another_process_is_held_back(self):
+        browser = FrameBrowser()
+        original = browser.on_Input_dispatchMouseEvent if hasattr(browser, "on_Input_dispatchMouseEvent") else None
+
+        def press(params, session):
+            if params["type"] == "mouseReleased":
+                browser.client._handle_event({"method": "Page.fileChooserOpened", "sessionId": "s-auth", "params": {}})
+            return original(params, session) if original else {}
+        browser.on_Input_dispatchMouseEvent = press
+        result = browser.act([{"kind": "click", "ref": "f22"}], "auth")
+        self.assertIn(("Page.setInterceptFileChooserDialog", {"enabled": True}, "s-auth"), browser.sent)
+        self.assertEqual((result["ok"], result["error"]), (False, helper.FILE_CHOOSER))
+
+    def test_a_click_in_a_frame_presses_nothing_when_the_browser_draws_the_frame_turned_or_scaled(self):
+        # Styles the page script does not read (a motion path, for one) still show in the drawn corners.
+        for quad in ([300, 200, 0, 200, 0, 0, 300, 0], [0, 0, 150, 0, 150, 100, 0, 100], [0, 0, 300, 20, 280, 220, -20, 200]):
+            with self.subTest(quad=quad):
+                browser = FrameBrowser()
+                browser.drawn["auth"] = quad
+                result = browser.act([{"kind": "click", "ref": "f22"}], "auth")
+                self.assertEqual((result["ok"], result["completed"], result["error"]), (False, 0, helper.FRAME_DRAWN))
+                self.assertEqual(browser.mouse(), [])
+
+    def test_a_click_in_a_frame_presses_nothing_when_something_covers_it_only_once_the_pointer_moved(self):
+        browser = FrameBrowser()
+        browser.covered["auth"] = ('The page moved under the pointer: div "Cover" is now over the frame.', True)
+        result = browser.act([{"kind": "click", "ref": "f22"}], "auth")
+        self.assertFalse(result["ok"])
+        self.assertIn("moved under the pointer", result["error"])
+        self.assertEqual([kind for kind, *_ in browser.mouse()], ["mouseMoved"])
+
+    def test_a_click_in_a_frame_presses_nothing_when_the_frame_moved_with_the_pointer(self):
+        browser = FrameBrowser()
+        browser.shift_after_move["auth"] = 40
+        result = browser.act([{"kind": "click", "ref": "f22"}], "auth")
+        self.assertEqual((result["ok"], result["error"]), (False, helper.CHANGED_UNDER_POINTER))
+        self.assertEqual([kind for kind, *_ in browser.mouse()], ["mouseMoved"])
+
+    def test_a_click_in_a_frame_presses_nothing_when_the_browser_finds_another_frame_at_the_spot(self):
+        for hit in (("main", 7, "DIV"), ("main", 7, "IFRAME"), ("other", 107, "IFRAME")):
+            with self.subTest(hit=hit):
+                browser = FrameBrowser()
+                browser.hit = hit
+                result = browser.act([{"kind": "click", "ref": "f22"}], "auth")
+                self.assertEqual((result["ok"], result["error"]), (False, helper.FRAME_SPOT_TAKEN))
+                self.assertEqual([kind for kind, *_ in browser.mouse()], ["mouseMoved"])
+        # Even the frame element of the right frame is refused when it is in another frame's page.
+        browser = FrameBrowser()
+        browser.hit = ("auth", browser.frames["auth"]["owner"], "IFRAME")
+        self.assertFalse(browser.act([{"kind": "click", "ref": "f22"}], "auth")["ok"])
+
+    def test_a_click_in_a_nested_frame_is_refused_when_any_frame_element_on_the_way_is_covered(self):
+        browser = FrameBrowser()
+        browser.covered["auth"] = ('The frame holding this element is covered by div "Cover".', False)
+        result = browser.act([{"kind": "click", "ref": "f31"}], "deep")
+        self.assertFalse(result["ok"])
+        self.assertEqual(browser.mouse(), [])
+        # The inner frame element was asked first, in the login frame's own page.
+        self.assertEqual([spot[:2] for spot in browser.spots], [("deep", "s-auth"), ("auth", "top")])
+
+    def test_a_saved_login_is_filled_in_the_frame_it_is_for_in_that_frame_s_own_world(self):
+        browser = FrameBrowser()
+        step = {"kind": "fill", "ref": "f22", "text": "fake-secret", "origin": AUTH_SITE, "field": "password"}
+        result = browser.act([step], "auth")
+        self.assertEqual((result["ok"], result["completed"]), (True, 1))
+        self.assertEqual(browser.fills, [("auth", 'window.__rakazoPageBrowser.fill("f22", "fake-secret", '
+                                                  f'"{AUTH_SITE}", "password")')])
+        # Everything about the field ran in the login frame's world on its session, none in the page's.
+        self.assertEqual({(session, ctx) for session, ctx, expression in browser.evaluated
+                          if expression != helper.EVAL_HELPERS and ("fake-secret" in expression or "resolve(" in expression)},
+                         {("s-auth", 3)})
+
+    def test_a_saved_login_is_refused_in_a_frame_from_another_site_even_when_the_page_is_the_right_one(self):
+        # The credential is for the shop's own site, which is the page's; the frame is from the login site.
+        browser = FrameBrowser()
+        step = {"kind": "fill", "ref": "f22", "text": "fake-secret", "origin": SHOP_PAGE, "field": "password"}
+        result = browser.act([step], "auth")
+        self.assertEqual((result["ok"], result["completed"], result["uncertain"]), (False, 0, False))
+        self.assertIn(AUTH_SITE, result["error"])
+        self.assertNotIn("fake-secret", json.dumps(result))
+        self.assertNotIn("fallback", result)
+        self.assertEqual(browser.fills, [])
+        self.assertNotIn("fake-secret", "".join(expression for _, _, expression in browser.evaluated))
+
+    def test_a_saved_login_is_refused_in_a_frame_of_the_right_host_on_another_scheme_or_port(self):
+        for origin in ("http://auth.example.test", "https://auth.example.test:8443", "https://sub.auth.example.test",
+                       "https://auth.example.test.evil.example"):
+            with self.subTest(origin=origin):
+                browser = FrameBrowser()
+                result = browser.act([{"kind": "fill", "ref": "f22", "text": "fake-secret", "origin": origin,
+                                       "field": "password"}], "auth")
+                self.assertFalse(result["ok"])
+                self.assertEqual(browser.fills, [])
+
+    def test_a_saved_login_is_refused_in_a_frame_that_is_not_a_secure_page_or_not_https(self):
+        for name, ref, update in (("auth", "f22", {"secure": False}), ("blank", "f61", {})):
+            with self.subTest(frame=name):
+                browser = FrameBrowser()
+                browser.frames[name].update(update)
+                # The blank frame has the page's origin, as a frame the page wrote does; it is still not HTTPS.
+                origin = SHOP_PAGE if name == "blank" else AUTH_SITE
+                result = browser.act([{"kind": "fill", "ref": ref, "text": "fake-secret", "origin": origin,
+                                       "field": "password"}], name)
+                self.assertFalse(result["ok"])
+                self.assertIn("HTTPS", result["error"])
+                self.assertEqual(browser.fills, [])
+                self.assertNotIn("fallback", result)
+
+    def test_a_saved_login_is_refused_in_a_sandboxed_frame_served_from_its_site(self):
+        browser = FrameBrowser()
+        browser.frames["auth"]["sandboxed"] = True
+        result = browser.act([{"kind": "fill", "ref": "f22", "text": "fake-secret", "origin": AUTH_SITE,
+                               "field": "password"}], "auth")
+        self.assertEqual((result["ok"], result["error"]), (False, "This field is in a sandboxed frame, so nothing was filled."))
+        self.assertEqual(browser.fills, [])
+
+    def test_a_fill_without_an_origin_in_a_frame_is_plain_and_in_the_frame_s_world(self):
+        browser = FrameBrowser()
+        result = browser.act([{"kind": "fill", "ref": "f11", "text": "Alex"}], "same")
+        self.assertTrue(result["ok"])
+        self.assertEqual(browser.fills, [("same", 'window.__rakazoPageBrowser.fill("f11", "Alex")')])
+        self.assertFalse([1 for _, _, expression in browser.evaluated if expression.startswith("(() => { let saved")])
+
+    def test_typing_into_a_frame_takes_its_keys_while_the_field_in_the_frame_holds_focus(self):
+        browser = FrameBrowser()
+        original = browser.answer
+
+        def answer(frame, expression):
+            if "focusForKeys(" in expression:
+                return {"focused": True}
+            if "focusHolds()" in expression:
+                return True
+            if "typed(" in expression:
+                return True
+            return original(frame, expression)
+        browser.answer = answer
+        result = browser.act([{"kind": "type", "ref": "f21", "text": "12"}], "auth")
+        self.assertTrue(result["ok"])
+        keys = [(params["type"], params["key"], session) for method, params, session in browser.sent
+                if method == "Input.dispatchKeyEvent"]
+        self.assertEqual(keys, [("keyDown", "1", "s-auth"), ("keyUp", "1", "s-auth"),
+                                ("keyDown", "2", "s-auth"), ("keyUp", "2", "s-auth")])
+
+    def test_typing_into_a_frame_that_drops_characters_counts_the_step_as_done_as_on_the_page(self):
+        browser = FrameBrowser()
+        original = browser.answer
+
+        def answer(frame, expression):
+            if "focusForKeys(" in expression:
+                return {"focused": True}
+            if "focusHolds()" in expression:
+                return True
+            if "typed(" in expression:
+                return False
+            return original(frame, expression)
+        browser.answer = answer
+        result = browser.act([{"kind": "type", "ref": "f21", "text": "12"}], "auth")
+        self.assertEqual((result["ok"], result["completed"], result["uncertain"], result["error"]),
+                         (False, 1, False, helper.NOT_KEPT))
+
+    def test_typing_stops_when_a_frame_of_the_page_s_own_process_navigates(self):
+        browser = FrameBrowser()
+        original_answer, original_call = browser.answer, browser.call
+
+        def answer(frame, expression):
+            if "focusForKeys(" in expression:
+                return {"focused": True}
+            if "focusHolds()" in expression:
+                return True
+            return original_answer(frame, expression)
+
+        def call(method, params=None, *, session_id=None, timeout_s=30.0):
+            result = original_call(method, params, session_id=session_id, timeout_s=timeout_s)
+            if method == "Input.dispatchKeyEvent" and (params or {}).get("type") == "keyUp":
+                browser.client._handle_event({"method": "Page.frameRequestedNavigation", "sessionId": "top",
+                                              "params": {"frameId": "same", "url": SHOP_PAGE + "/next"}})
+            return result
+        browser.answer, browser.client.call = answer, call
+        with patch.object(helper, "SETTLE_SECONDS", 0.1):
+            result = browser.act([{"kind": "type", "ref": "f11", "text": "12"}], "same")
+        self.assertFalse(result["ok"])
+        self.assertIn("after 1 of 2 characters", result["error"])
+
+    def test_navigate_returns_the_page_it_reached_beside_the_navigation(self):
+        client = Mock()
+        client.deadline = None
+        client.call.side_effect = lambda method, *a, **k: (
+            {"loaderId": "L"} if method == "Page.navigate" else {"frameTree": {"frame": {"loaderId": "L"}}})
+        page = {"ok": True, "url": "https://shop.example.test/", "title": "Shop", "tree": "Shop page",
+                "elements": [{"ref": "e1"}], "loading": True, "uncertain": False}
+        answers = {"document.readyState": "complete", "location.href": "https://shop.example.test/",
+                   "(document.title || '').slice(0, 200)": "Shop"}
+        limits = []
+        with patch.object(helper, "ensure_world"), patch.object(helper, "eval_json", side_effect=lambda c, s, e: answers[e]), \
+                patch.object(helper, "snapshot", side_effect=lambda *a: limits.append(client.deadline) or page) as snapshot:
+            started = helper.time.time()
+            result = helper.navigate(client, "session", "https://shop.example.test/")
+        self.assertEqual(result, {"ok": True, "url": "https://shop.example.test/", "title": "Shop",
+                                  "tree": "Shop page", "elements": [{"ref": "e1"}], "loading": True})
+        snapshot.assert_called_once()
+        # The snapshot, frames included, ends within the supervisor's limit on the call or is left out.
+        self.assertAlmostEqual(limits[0] - started, helper.NAVIGATE_SNAPSHOT_UNTIL, delta=1.0)
+        self.assertIsNone(client.deadline)
+
+    def test_navigate_still_returns_the_navigation_when_the_page_cannot_be_read_or_there_is_no_time(self):
+        client = Mock()
+        client.deadline = None
+        client.call.side_effect = lambda method, *a, **k: (
+            {"loaderId": "L"} if method == "Page.navigate" else {"frameTree": {"frame": {"loaderId": "L"}}})
+        answers = {"document.readyState": "complete", "location.href": "https://shop.example.test/",
+                   "(document.title || '').slice(0, 200)": "Shop"}
+        expected = {"ok": True, "url": "https://shop.example.test/", "title": "Shop"}
+        for label, kwargs in (("snapshot fails", {"side_effect": RuntimeError("boom")}),
+                              ("snapshot times out", {"side_effect": TimeoutError("late")}),
+                              ("no time left", {"return_value": {"ok": True, "tree": "x"}})):
+            with self.subTest(label=label), patch.object(helper, "ensure_world"), \
+                    patch.object(helper, "eval_json", side_effect=lambda c, s, e: answers[e]), \
+                    patch.object(helper, "snapshot", **kwargs) as snapshot:
+                if label == "no time left":
+                    with patch.object(helper, "NAVIGATE_SNAPSHOT_BY", 0.0):
+                        result = helper.navigate(client, "session", "https://shop.example.test/")
+                    snapshot.assert_not_called()
+                else:
+                    result = helper.navigate(client, "session", "https://shop.example.test/")
+                self.assertEqual(result, expected)
+
+
+    def test_calls_to_a_frame_that_answers_nothing_are_cut_short_by_the_time_limit(self):
+        client = helper.CdpClient("ws://127.0.0.1:9222/test")
+        client._sock = Mock()
+        with patch.object(client, "_send_frame"), patch.object(client, "_read_frame", side_effect=socket.timeout):
+            started = helper.time.monotonic()
+            with helper.time_limit(client, started + 0.3), self.assertRaises(TimeoutError):
+                client.call("Page.enable", session_id="busy-frame")
+            self.assertLess(helper.time.monotonic() - started, 5)
+        self.assertIsNone(client.deadline)
+
+    def test_a_frame_busy_in_a_loop_does_not_stop_the_other_frames_from_being_read(self):
+        browser = FrameBrowser()
+        original = browser.call
+
+        def call(method, params=None, *, session_id=None, timeout_s=30.0):
+            if session_id == "s-auth" and method in ("Page.enable", "Page.getFrameTree"):
+                raise TimeoutError(f"CDP call timed out: {method}")
+            return original(method, params, session_id=session_id, timeout_s=timeout_s)
+        browser.client.call = call
+        tree = browser.snapshot()["tree"]
+        self.assertIn('[f11]', tree)
+        self.assertNotIn("Password", tree)
+        self.assertTrue(tree.endswith("Embedded frames require desktop tools."))
 
 
 if __name__ == "__main__":

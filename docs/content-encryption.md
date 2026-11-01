@@ -198,8 +198,43 @@ To replace the KMS key, point `AWS_KMS_KEY_ARN` at the new one, keep
 While KMS is unreachable, a process cannot read or write content in a space
 whose key it has not cached. Startup logs master keys it cannot unwrap.
 
+To run CLIs such as `content-encryption export` from a laptop with short-lived
+credentials, set `AWS_KMS_PROFILE` to a named AWS profile (including one from
+`aws login` or SSO) instead of the access key pair. Exactly one of the two must
+be set, so leave the pair out of the laptop's `.env`, and the key policy must
+allow that principal:
+
+```bash
+aws login --profile rakazo-kms
+AWS_KMS_PROFILE=rakazo-kms pnpm -s --filter @rakazo/api content-encryption export --bot <bot id> > rakazo-export.jsonl
+```
+
+### Wrapped settings
+
+With a key manager configured, any setting the API and worker read can be
+stored in `.env` wrapped, so a copy of `.env` holds no usable application
+secret; the KMS credentials it still holds only work from the server's address
+(the `aws:SourceIp` condition above). Each
+process unwraps them once at startup. To wrap a value the API already has:
+
+```bash
+docker compose -f docker-compose.images.yml exec -T api \
+  sh -c 'printenv BETTER_AUTH_SECRET | node dist/cli/wrap-env.js BETTER_AUTH_SECRET'
+```
+
+For a new value, pipe it in instead of `printenv` (it is read from stdin, never
+arguments). Replace the line in `.env` with the printed `wrapped:v1:…` value and
+run `docker compose up -d`. The plaintext is unchanged, so nothing derived from
+it changes. A wrapped value only unwraps under its own variable name.
+
+`MASTER_KEY_PROVIDER` and the `AWS_KMS_*` settings cannot be wrapped, and
+neither can values Compose interpolates into other settings or other containers
+read, such as `POSTGRES_PASSWORD`, `POSTGRES_APP_PASSWORD` and `SCREEN_PROXY_SECRET`
+(the web container reads it too). A wrapped value
+without a key manager stops startup with the variable's name.
+
 Other key managers implement the `KeyProvider` interface in
 `@rakazo/adapter-kit` (`activeKeyId`, `wrap`, `unwrap`), pass the shared suite in
 `packages/adapters/src/key-provider-conformance.test.ts`, and are selected in
-`contentKeyProviderFromEnv`. A provider only wraps 32-byte data keys, so it is
-called once per space key, not per value.
+`keyManagerFromEnv`. A provider only wraps 32-byte data keys: one per space
+key and one per wrapped setting, never per stored message or file.

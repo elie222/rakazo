@@ -242,7 +242,7 @@ export async function gateToolCall(
     (await ctx.trust.routineNamesNewSite(String(args.prompt ?? "")));
   const { purchase } = request;
   const requiresApprovalByDefault =
-    request.ownerApproval ||
+    request.heldForApproval ||
     Boolean(purchase) ||
     commandWatch ||
     requiresUnattendedApproval ||
@@ -254,7 +254,6 @@ export async function gateToolCall(
   // A gated read still fails closed when its review errors, and keeps its approval key.
   const gated = requiresApprovalByDefault || connectorReadGated;
   const requiresMandatoryApproval =
-    request.ownerApproval ||
     Boolean(purchase) ||
     commandWatch ||
     scheduleNamesNewSite ||

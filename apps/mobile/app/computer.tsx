@@ -110,6 +110,9 @@ export default function Computer() {
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl, currentApiBase());
   useEffect(() => setScreenError(null), [embeddedScreenUrl]);
+  // Without a WebView a dropped URL never fails on its own, so say so instead of a dead preview.
+  const unreachableScreen =
+    computer?.state === "running" && Boolean(screenUrl) && !embeddedScreenUrl;
 
   const hasControl = computer?.controlHolder === "user" && computer.controlBotId === botId;
   // Propped open like a laptop, the desktop stays above the fold and the keys go below it.
@@ -436,11 +439,16 @@ export default function Computer() {
     />
   ) : null;
   const placeholder =
-    screenError ?? previewPlaceholder(computer?.state, booting, name, computer?.mode);
+    screenError ??
+    (unreachableScreen
+      ? t("Could not load the desktop. This device cannot reach the screen URL.")
+      : previewPlaceholder(computer?.state, booting, name, computer?.mode));
   // Booting shows in the preview; the header and Back stay, and leaving lets the boot finish.
   const bootPending = booting || computer?.state === "booting";
   const canRetry = !bootPending && (bootFailed || computer?.state === "error");
-  const screenRetry = computer?.state === "running" && screenOriginError && Boolean(screenError);
+  const screenRetry =
+    unreachableScreen ||
+    (computer?.state === "running" && screenOriginError && Boolean(screenError));
   const retryScreenAction = screenRetry ? (
     <NativeActionButton
       style={{ marginBottom: 16 }}

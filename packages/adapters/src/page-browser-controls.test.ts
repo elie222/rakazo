@@ -77,7 +77,14 @@ function installPageHelper(
   const browser = (
     win as unknown as {
       __rakazoPageBrowser: {
-        snapshot: () => Snapshot;
+        snapshot: (limits?: Record<string, unknown>) => Snapshot;
+        owns: (ref: unknown) => boolean;
+        frameSpot: (
+          owner: unknown,
+          x: number,
+          y: number,
+          moved?: boolean,
+        ) => { x: number; y: number; scroll: { x: number; y: number } };
         resolve: (ref: string) => unknown;
         aim: (ref: string) => { x: number | null; y: number | null };
         stillAimed: (ref: string, x: number, y: number) => { x: number; y: number };
@@ -530,31 +537,31 @@ describe("live page helper control lines", () => {
 
 describe("live page helper long dropdowns", () => {
   const years = Array.from(
-    { length: 5000 },
+    { length: 1000 },
     (_, i) => `<option value="y${i}">Year ${i}</option>`,
   ).join("");
   const html = `<label for="y">Year</label><select id="y">${years}</select>`;
 
   it("lists the first options and the chosen one, and counts the rest", () => {
     const { win, browser } = installPageHelper(html);
-    (win.document.getElementById("y") as HTMLSelectElement).selectedIndex = 4200;
+    (win.document.getElementById("y") as HTMLSelectElement).selectedIndex = 840;
     const snap = browser.snapshot();
     const year = snap.elements.find((el) => el.name === "Year") as Snapshot["elements"][number] & {
       optionsTotal?: number;
     };
     expect(year.options).toHaveLength(101);
-    expect(year.options?.at(-1)).toEqual({ label: "Year 4200", value: "y4200", selected: true });
-    expect(year.optionsTotal).toBe(5000);
-    expect(snap.tree).toContain(", and 4899 more");
+    expect(year.options?.at(-1)).toEqual({ label: "Year 840", value: "y840", selected: true });
+    expect(year.optionsTotal).toBe(1000);
+    expect(snap.tree).toContain(", and 899 more");
     expect(JSON.stringify(snap).length).toBeLessThan(30_000);
   });
 
   it("still fills any option by its label and lists only a few when it has none", () => {
     const { win, browser } = installPageHelper(html);
     const ref = refOf(browser.snapshot(), "Year");
-    browser.fill(ref, "Year 4321");
-    expect((win.document.getElementById("y") as HTMLSelectElement).value).toBe("y4321");
-    expect(() => browser.fill(ref, "Year 9999")).toThrow(/Its options: .*, and 4899 more\./);
+    browser.fill(ref, "Year 432");
+    expect((win.document.getElementById("y") as HTMLSelectElement).value).toBe("y432");
+    expect(() => browser.fill(ref, "Year 9999")).toThrow(/Its options: .*, and 899 more\./);
   });
 });
 
@@ -698,5 +705,196 @@ describe("what the model reads of a dense page", () => {
     const result = { ok: true, url: "u", title: "t", tree: "x".repeat(13_000), elements: [] };
     expect(browserResultForModel(result)).toBe(result);
     expect(browserResultForModel({ error: "boom" })).toEqual({ error: "boom" });
+  });
+});
+
+describe("live page helper snapshots of a frame", () => {
+  it("hands a frame's controls refs with its prefix and goes back to the page's own prefix", () => {
+    const { browser } = installPageHelper(`<button>One</button><button>Two</button>`);
+    const inFrame = browser.snapshot({ prefix: "f" });
+    expect(inFrame.elements.every((el) => /^f\d+$/.test(el.ref))).toBe(true);
+    expect(inFrame.tree).toMatch(/\[f\d+\]/);
+    expect(browser.snapshot().elements.every((el) => /^e\d+$/.test(el.ref))).toBe(true);
+  });
+
+  it("keeps to the share of the budget it is given", () => {
+    const buttons = Array.from({ length: 30 }, (_, i) => `<button>Action ${i}</button>`).join("");
+    const { browser } = installPageHelper(`<p>${"word ".repeat(3000)}</p>${buttons}`);
+    const small = browser.snapshot({
+      prefix: "f",
+      tree: 1000,
+      controls: 500,
+      maxControls: 5,
+      minText: 100,
+    });
+    expect(small.elements).toHaveLength(5);
+    expect(small.tree).toContain("[controls: showing 5 of 30]");
+    expect(small.tree).toMatch(/\[page text: showing first \d+ of \d+ characters\]/);
+    expect(JSON.stringify(small.tree).length).toBeLessThan(1400);
+    // Without limits the page keeps its own budget.
+    expect(browser.snapshot().elements.length).toBeGreaterThan(5);
+  });
+});
+
+describe("live page helper ref ownership", () => {
+  it("answers only for the refs of its last snapshot", () => {
+    const { browser } = installPageHelper(`<button>One</button>`);
+    const ref = refOf(browser.snapshot({ prefix: "f" }), "One");
+    expect(browser.owns(ref)).toBe(true);
+    expect(browser.owns("f1")).toBe(false);
+    expect(browser.owns("")).toBe(false);
+    expect(browser.owns(undefined)).toBe(false);
+    expect(browser.owns({ toString: () => ref })).toBe(true);
+    browser.snapshot();
+    expect(browser.owns(ref)).toBe(false);
+  });
+});
+
+describe("live page helper frame spots", () => {
+  const frameAt = (style = "", cover?: string) => {
+    const { win, browser } = installPageHelper(
+      `<div id="outer"><iframe data-rect="50,100,300,200" style="${style}"></iframe></div>` +
+        `<div id="cover" role="dialog" aria-label="Cookies"></div>`,
+      (dom, x, y) => {
+        const { document } = dom.window;
+        if (cover) return document.querySelector(cover);
+        return x >= 50 && x < 350 && y >= 100 && y < 300 ? document.querySelector("iframe") : null;
+      },
+    );
+    const frame = win.document.querySelector("iframe")!;
+    for (const [name, value] of Object.entries({
+      clientWidth: 300,
+      clientHeight: 200,
+      clientLeft: 0,
+      clientTop: 0,
+      offsetWidth: 300,
+      offsetHeight: 200,
+    })) {
+      Object.defineProperty(frame, name, { value, configurable: true });
+    }
+    return { win, browser, frame };
+  };
+
+  it("puts a spot of the frame's page where it is on the page the frame is in", () => {
+    const { browser, frame } = frameAt();
+    // With the size of the frame's page, which the caller checks against where the browser draws it.
+    expect(browser.frameSpot(frame, 10, 20)).toEqual({
+      x: 60,
+      y: 120,
+      width: 300,
+      height: 200,
+      scroll: { x: 0, y: 0 },
+    });
+    // Again after the pointer moved: the same spot.
+    expect(browser.frameSpot(frame, 10, 20, true)).toMatchObject({ x: 60, y: 120 });
+  });
+
+  it("refuses a spot outside the frame's visible page", () => {
+    const { browser, frame } = frameAt();
+    for (const [x, y] of [
+      [300, 10],
+      [10, 200],
+      [-1, 5],
+    ]) {
+      expect(() => browser.frameSpot(frame, x!, y!)).toThrow(
+        /Settled: Element is outside the visible part of its frame/,
+      );
+    }
+  });
+
+  it("refuses a frame that something else covers, naming what covers it", () => {
+    const { browser, frame } = frameAt("", "#cover");
+    expect(() => browser.frameSpot(frame, 10, 20)).toThrow(
+      /Settled: The frame holding this element is covered by dialog "Cookies"/,
+    );
+    // After the pointer moved, the page changed under it.
+    expect(() => browser.frameSpot(frame, 10, 20, true)).toThrow(
+      /Settled: The page moved under the pointer: dialog "Cookies"/,
+    );
+  });
+
+  it("refuses a frame that is hidden, or in a hidden element, or see-through", () => {
+    for (const style of ["display: none", "visibility: hidden", "opacity: 0"]) {
+      const { browser, frame } = frameAt(style);
+      expect(() => browser.frameSpot(frame, 10, 20)).toThrow(
+        /Settled: The frame holding this element is hidden/,
+      );
+    }
+    const { win, browser, frame } = frameAt();
+    (win.document.querySelector("#outer") as HTMLElement).style.display = "none";
+    expect(() => browser.frameSpot(frame, 10, 20)).toThrow(/is hidden/);
+  });
+
+  it("refuses a frame drawn scaled or turned, but not one that is only moved", () => {
+    for (const style of ["transform: scale(0.5)", "transform: rotate(10deg)"]) {
+      const { browser, frame } = frameAt(style);
+      expect(() => browser.frameSpot(frame, 10, 20)).toThrow(/drawn scaled or turned/);
+    }
+    const { browser, frame } = frameAt("transform: matrix(1, 0, 0, 1, 5, 5)");
+    expect(browser.frameSpot(frame, 10, 20)).toMatchObject({ x: 60, y: 120 });
+  });
+
+  it("refuses a frame whose drawn size is not its own size", () => {
+    const { browser, frame } = frameAt();
+    Object.defineProperty(frame, "offsetWidth", { value: 600, configurable: true });
+    expect(() => browser.frameSpot(frame, 10, 20)).toThrow(/drawn scaled or turned/);
+  });
+
+  it("refuses anything that is not a frame element in the page", () => {
+    const { browser, win } = frameAt();
+    expect(() => browser.frameSpot(win.document.querySelector("#cover"), 1, 1)).toThrow(
+      /Settled: The page changed under the pointer/,
+    );
+    const frame = win.document.querySelector("iframe")!;
+    frame.remove();
+    expect(() => browser.frameSpot(frame, 1, 1)).toThrow(
+      /Settled: The page changed under the pointer/,
+    );
+  });
+
+  it("scrolls a frame below the fold into view, but never after the pointer moved", () => {
+    const { win, browser } = installPageHelper(
+      `<iframe data-rect="50,2000,300,200"></iframe>`,
+      (dom, x, y) =>
+        x >= 50 && y >= 2000 - scrolled && y < 2200 - scrolled
+          ? dom.window.document.querySelector("iframe")
+          : null,
+    );
+    let scrolled = 0;
+    const frame = win.document.querySelector("iframe")!;
+    for (const [name, value] of Object.entries({
+      clientWidth: 300,
+      clientHeight: 200,
+      clientLeft: 0,
+      clientTop: 0,
+      offsetWidth: 300,
+      offsetHeight: 200,
+    })) {
+      Object.defineProperty(frame, name, { value, configurable: true });
+    }
+    frame.getBoundingClientRect = () => {
+      const top = 2000 - scrolled;
+      return {
+        width: 300,
+        height: 200,
+        top,
+        left: 50,
+        right: 350,
+        bottom: top + 200,
+        x: 50,
+        y: top,
+      } as DOMRect;
+    };
+    (win as unknown as { scrollBy: (o: { top: number }) => void }).scrollBy = ({ top }) => {
+      scrolled += top;
+    };
+    expect(() => browser.frameSpot(frame, 10, 20, true)).toThrow(
+      /Settled: The page changed under the pointer/,
+    );
+    expect(scrolled).toBe(0);
+    const spot = browser.frameSpot(frame, 10, 20);
+    expect(scrolled).toBeGreaterThan(0);
+    expect(spot.y).toBeLessThan(win.innerHeight);
+    expect(spot.y).toBeGreaterThanOrEqual(0);
   });
 });

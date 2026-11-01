@@ -90,7 +90,7 @@ export function buildApprovalAskBlock(
       ],
     };
   }
-  // Only an instruction change held for the owner carries the text it replaces.
+  // Only an instruction change held for approval carries the text it replaces.
   if (toolName === "update_bot" && typeof args.previousInstructions === "string") {
     const before = redactSecrets(String(args.previousInstructions ?? ""), secrets);
     const after = redactSecrets(String(args.instructions ?? ""), secrets);
@@ -99,7 +99,7 @@ export function buildApprovalAskBlock(
       kind: "ask",
       approvalEffectId: effectId,
       text: "Update instructions?",
-      detail: instructionUpdateDiff(before, after, reason),
+      detail: instructionUpdateDiff(before, after),
       instructionUpdate: {
         botId: String(args.botId ?? ""),
         before,

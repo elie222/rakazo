@@ -1,5 +1,13 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -11,8 +19,9 @@ const workflow = parse(
     "utf8",
   ),
 ) as { jobs: { publish: { steps: Array<{ name?: string; run?: string }> } } };
-const applyScript = workflow.jobs.publish.steps.find((step) => step.name === "Apply bump patch")!
-  .run!;
+const publishScript = (name: string) =>
+  workflow.jobs.publish.steps.find((step) => step.name === name)!.run!;
+const applyScript = publishScript("Apply bump patch");
 
 describe("model catalog artifact boundary", () => {
   let root: string;
@@ -94,5 +103,87 @@ describe("model catalog artifact boundary", () => {
     writeFileSync(path.join(artifact, "bump.patch"), git("diff"));
     git("checkout", "--", manifest);
     expect(apply().status).not.toBe(0);
+  });
+});
+
+describe("model catalog bump PR lookup", () => {
+  const branch = "deps/pi-catalog-ai-1.4.0-core-1.4.0";
+  let root: string;
+  const remoteBranches = () =>
+    execFileSync("git", ["branch", "--format=%(refname:short)"], {
+      cwd: path.join(root, "origin.git"),
+      encoding: "utf8",
+    }).trim();
+  function publish(
+    openPrs: Array<{ number: number; headRefName: string; isCrossRepository: boolean }>,
+  ) {
+    writeFileSync(path.join(root, "prs.json"), JSON.stringify(openPrs));
+    const result = spawnSync("bash", ["-c", publishScript("Push branch and open PR")], {
+      cwd: path.join(root, "checkout"),
+      env: {
+        ...process.env,
+        PATH: `${path.join(root, "bin")}:${process.env.PATH}`,
+        GH_LOG: path.join(root, "gh.log"),
+        GH_PRS: path.join(root, "prs.json"),
+        OLD_AI: "1.3.0",
+        NEW_AI: "1.4.0",
+        OLD_CORE: "1.3.0",
+        NEW_CORE: "1.4.0",
+      },
+      encoding: "utf8",
+    });
+    const calls = readFileSync(path.join(root, "gh.log"), "utf8").trim().split("\n");
+    return { status: result.status, calls: calls.filter((call) => !call.startsWith("pr list")) };
+  }
+  beforeEach(() => {
+    root = mkdtempSync(path.join(tmpdir(), "rakazo-catalog-publish-"));
+    mkdirSync(path.join(root, "bin"));
+    // Like the real CLI, --head also matches fork PRs from a branch with the same name, and only
+    // the --json fields are returned.
+    writeFileSync(
+      path.join(root, "bin/gh"),
+      `#!/usr/bin/env bash
+echo "\${*:1:3}" >> "$GH_LOG"
+[ "$1 $2" = "pr list" ] || exit 0
+head="" fields="" query="."
+while [ $# -gt 0 ]; do
+  case "$1" in --head) head="$2"; shift ;; --json) fields="$2"; shift ;; --jq) query="$2"; shift ;; esac
+  shift
+done
+jq --arg head "$head" --arg fields "$fields" '[.[] | select($head == "" or .headRefName == $head)
+  | with_entries(select(.key as $key | $fields | split(",") | index($key)))]' "$GH_PRS" |
+  jq -r "$query" | grep -vx null || true
+`,
+    );
+    chmodSync(path.join(root, "bin/gh"), 0o755);
+    const checkout = path.join(root, "checkout");
+    execFileSync("git", ["init", "-q", "--bare", path.join(root, "origin.git")]);
+    execFileSync("git", ["init", "-q", checkout]);
+    execFileSync("git", ["remote", "add", "origin", path.join(root, "origin.git")], {
+      cwd: checkout,
+    });
+    writeFileSync(path.join(checkout, "pnpm-lock.yaml"), "version: 2\n");
+    execFileSync("git", ["add", "."], { cwd: checkout });
+    writeFileSync(path.join(root, "gh.log"), "");
+  });
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it("ignores fork PRs that reuse the bump branch names", () => {
+    const result = publish([
+      { number: 4242, headRefName: branch, isCrossRepository: true },
+      { number: 4243, headRefName: "deps/pi-catalog-contributor-work", isCrossRepository: true },
+      { number: 7, headRefName: "deps/pi-catalog-ai-1.3.0-core-1.3.0", isCrossRepository: false },
+      { number: 8, headRefName: "deps/weekly-dependencies-1", isCrossRepository: false },
+    ]);
+    expect(result.status).toBe(0);
+    expect(remoteBranches()).toBe(branch);
+    expect(result.calls).toEqual(["auth setup-git", "pr close 7", "pr create --title"]);
+  });
+
+  it("leaves its own open PR for the same versions in place", () => {
+    const result = publish([{ number: 7, headRefName: branch, isCrossRepository: false }]);
+    expect(result.status).toBe(0);
+    expect(remoteBranches()).toBe("");
+    expect(result.calls).toEqual([]);
   });
 });

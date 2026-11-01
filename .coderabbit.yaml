@@ -3,11 +3,11 @@ reviews:
   # No "review skipped" comment on the PRs CodeRabbit sits out.
   review_status: false
   # Greptile is the default reviewer; CodeRabbit only reviews PRs labeled
-  # review:coderabbit (see .github/workflows/review-bot.yml).
+  # review:cr (see .github/workflows/review-bot.yml).
   auto_review:
     enabled: false
     labels:
-      - "review:coderabbit"
+      - "review:cr"
   tools:
     # Biome owns this repo's CSS (see biome.json and `pnpm lint`); Stylelint is not
     # installed or configured here, so its findings are about rules we do not run.

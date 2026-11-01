@@ -9,6 +9,7 @@ fallback computer_act.
 from __future__ import annotations
 
 import base64
+import contextlib
 import hashlib
 import json
 import os
@@ -575,10 +576,12 @@ EVAL_HELPERS = r"""
   }
   // Refs count up for as long as the page lives, so a ref from an earlier snapshot never names
   // another element; a new document starts from a random point, so refs from the page before it
-  // name nothing either. Retain exact nodes, not selectors.
+  // name nothing either. Retain exact nodes, not selectors. A frame's refs start with "f", the
+  // page's own with "e", so the two never name the same thing.
   let refCounter = Math.floor(Math.random() * 1e8);
+  let refPrefix = "e";
   function newRef() {
-    return `e${++refCounter}`;
+    return `${refPrefix}${++refCounter}`;
   }
   // Code fields often keep their real input transparent under drawn boxes; it is still the target.
   function isCodeInput(el) {
@@ -867,6 +870,8 @@ EVAL_HELPERS = r"""
     return `- ${el.role} ${JSON.stringify(el.name.slice(0, MAX_NAME))} [${el.ref}]${value}${options}`;
   }
   const FRAME_CLICK = "That spot is inside a frame, which the page tools cannot click in.";
+  const FRAME_DRAWN = "The frame holding this element is drawn scaled or turned, so the page tools cannot click in it.";
+  const CHANGED_UNDER_POINTER = "The page changed under the pointer. Use the page below and click again.";
   // What a click at (x, y) reaches, looking into shadow trees.
   function elementAtPoint(x, y) {
     let hit = document.elementFromPoint(x, y);
@@ -1074,7 +1079,11 @@ EVAL_HELPERS = r"""
   new MutationObserver(() => { lastChange = performance.now(); })
     .observe(document, { childList: true, subtree: true, characterData: true });
   window.__rakazoPageBrowser = {
-    snapshot() {
+    // `limits`: a frame's snapshot takes its "f" refs and its share of the budget.
+    snapshot(limits = {}) {
+      const { prefix = "e", tree: treeBudget = TREE_BUDGET, controls: controlsBudget = CONTROLS_BUDGET,
+        maxControls = MAX_CONTROLS, minText = MIN_TEXT } = limits;
+      refPrefix = prefix;
       refMap.clear();
       const elements = [];
       const listed = new Set();
@@ -1112,7 +1121,7 @@ EVAL_HELPERS = r"""
         item.entry = entryFor(item.el);
         if (item.rank >= 0) {
           const length = formatLine({ ...item.entry, ref: "e000000000" }).length + 1;
-          if (shown >= MAX_CONTROLS || (shown && used + length > CONTROLS_BUDGET)) continue;
+          if (shown >= maxControls || (shown && used + length > controlsBudget)) continue;
           used += length;
           shown++;
         }
@@ -1128,7 +1137,7 @@ EVAL_HELPERS = r"""
       // The notices come first so that nothing cuts them off.
       let notices = total > shown ? `[controls: showing ${shown} of ${total}]\n` : "";
       let cut = text.length;
-      const room = Math.max(MIN_TEXT, TREE_BUDGET - sent(controls) - 200);
+      const room = Math.max(minText, treeBudget - sent(controls) - 200);
       while (cut > 0 && sent(text.slice(0, cut)) > room) cut = Math.floor(cut * 0.9);
       if (cut < text.length) notices += `[page text: showing first ${cut} of ${text.length} characters]\n`;
       return {
@@ -1439,6 +1448,66 @@ EVAL_HELPERS = r"""
       const shown = boxes.map((box) => (box.isContentEditable ? box.innerText : box.value)).join("");
       return letters(shown) === letters(text);
     },
+    // Each frame's helper answers only for the refs it handed out, in a world the page cannot reach.
+    owns(ref) {
+      return refMap.has(String(ref));
+    },
+    // Where the spot (x, y) of the page inside `owner`, a frame element of this page, is on this page,
+    // brought into view; or why a click there would not reach that frame. `moved`: checked again
+    // after the pointer moved, so nothing scrolls.
+    frameSpot(owner, x, y, moved = false) {
+      if (!(owner instanceof HTMLIFrameElement || owner instanceof HTMLFrameElement) || !owner.isConnected) {
+        throw settled(CHANGED_UNDER_POINTER);
+      }
+      for (let node = owner; node instanceof Element; node = node.parentElement || node.getRootNode().host) {
+        const style = window.getComputedStyle(node);
+        if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) {
+          throw settled("The frame holding this element is hidden. Take a fresh snapshot.");
+        }
+        // Moving is fine; a frame drawn scaled or turned shows its page's spots elsewhere than they are.
+        if ((style.transform !== "none" && !/^matrix\(1, 0, 0, 1, [^,]+, [^,]+\)$/.test(style.transform))
+          || !["", "none", "1"].includes(style.scale || "") || !["", "none", "0deg"].includes(style.rotate || "")
+          || !["", "1", "normal"].includes(style.zoom || "") || !["", "none"].includes(style.offsetPath || "")
+          || !["", "none"].includes(style.perspective || "")) {
+          throw settled(FRAME_DRAWN);
+        }
+      }
+      const style = window.getComputedStyle(owner);
+      const pad = (side) => parseFloat(style[`padding${side}`]) || 0;
+      const width = owner.clientWidth - pad("Left") - pad("Right");
+      const height = owner.clientHeight - pad("Top") - pad("Bottom");
+      if (!(x >= 0 && y >= 0 && x < width && y < height)) {
+        throw settled("Element is outside the visible part of its frame.");
+      }
+      const place = () => {
+        const rect = owner.getBoundingClientRect();
+        // The frame's page starts inside its element's border and padding.
+        if (Math.abs(rect.width - owner.offsetWidth) > 1 || Math.abs(rect.height - owner.offsetHeight) > 1) {
+          throw settled(FRAME_DRAWN);
+        }
+        return [rect.left + owner.clientLeft + pad("Left") + x, rect.top + owner.clientTop + pad("Top") + y];
+      };
+      const inView = ([px, py]) => px >= 0 && py >= 0 && px < window.innerWidth && py < window.innerHeight;
+      let spot = place();
+      if (!moved && !inView(spot)) {
+        owner.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
+        spot = place();
+        if (!inView(spot)) {
+          window.scrollBy({ left: spot[0] - window.innerWidth / 2, top: spot[1] - window.innerHeight / 2, behavior: "instant" });
+          spot = place();
+        }
+      }
+      if (!inView(spot)) throw settled(moved ? CHANGED_UNDER_POINTER : "Element is outside the visible part of the page.");
+      const hit = elementAtPoint(spot[0], spot[1]);
+      if (hit !== owner) {
+        const cover = !hit || hit === document.body || hit === document.documentElement ? "the page behind it"
+          : `${roleOf(hit)} "${String(nameOf(hit)).slice(0, 60)}"`;
+        throw settled(moved
+          ? `The page moved under the pointer: ${cover} is now over the frame where the click would land. Click again using the page below.`
+          : `The frame holding this element is covered by ${cover}, so a click would land there. Close or dismiss that first, then click again.`);
+      }
+      return { x: spot[0], y: spot[1], width, height, scroll: { x: window.pageXOffset, y: window.pageYOffset } };
+    },
   };
   return true;
 })()
@@ -1456,6 +1525,11 @@ def eval_json(client: CdpClient, session_id: str, expression: str, context_id: i
         },
         session_id=session_id,
     )
+    return page_value(result)
+
+
+def page_value(result: dict[str, Any]) -> Any:
+    """The value of an evaluation in the helper's world, raising the page script's settled and refused errors."""
     if result.get("exceptionDetails"):
         details = result["exceptionDetails"]
         # Chromium's text is just "Uncaught"; the reason is the thrown error's first line.
@@ -1478,6 +1552,7 @@ def navigate(client: CdpClient, session_id: str, url: str) -> dict[str, Any]:
     parsed = urlsplit(url)
     if parsed.scheme not in ("http", "https") or parsed.username or parsed.password:
         raise RuntimeError("Only HTTP(S) URLs without embedded credentials are supported")
+    started = time.monotonic()
     result = client.call("Page.navigate", {"url": url}, session_id=session_id, timeout_s=15.0)
     if result.get("errorText") or result.get("isDownload"):
         raise RuntimeError(result.get("errorText") or "Navigation started a download")
@@ -1492,11 +1567,32 @@ def navigate(client: CdpClient, session_id: str, url: str) -> dict[str, Any]:
             ready = eval_json(client, session_id, "document.readyState")
             if ready in ("interactive", "complete"):
                 return {"ok": True, "url": eval_json(client, session_id, "location.href"),
-                        "title": eval_json(client, session_id, "(document.title || '').slice(0, 200)")}
+                        "title": eval_json(client, session_id, "(document.title || '').slice(0, 200)"),
+                        **page_after_navigation(client, session_id, started)}
         except Exception:
             pass
         time.sleep(0.1)
     raise RuntimeError("Navigation did not settle; inspect the screen before continuing")
+
+
+# browser_navigate returns the page as an action does, saving the bot a snapshot call, when the
+# navigation took less than NAVIGATE_SNAPSHOT_BY; the snapshot then ends by NAVIGATE_SNAPSHOT_UNTIL
+# or is left out, inside the supervisor's limit on one call.
+NAVIGATE_SNAPSHOT_BY = 12.0
+NAVIGATE_SNAPSHOT_UNTIL = 20.0
+
+
+def page_after_navigation(client: CdpClient, session_id: str, started: float) -> dict[str, Any]:
+    """The page a navigation reached, or nothing when there is no time left or it cannot be read."""
+    left = NAVIGATE_SNAPSHOT_BY - (time.monotonic() - started)
+    if left <= 0:
+        return {}
+    try:
+        with time_limit(client, started + NAVIGATE_SNAPSHOT_UNTIL):
+            page = snapshot(client, session_id, min(SETTLE_SECONDS, left))
+    except Exception:  # noqa: BLE001
+        return {}
+    return {key: page[key] for key in ("url", "title", "tree", "elements", "loading") if key in page}
 
 
 MAX_UPLOAD_FILES = 10
@@ -1686,6 +1782,13 @@ class TypingStopped(RuntimeError):
     """Typing ended before the last key. The message never repeats any of the text."""
 
 
+NOT_KEPT = "The page did not keep every character typed. Check the field in this snapshot before trying again."
+
+
+class KeysNotKept(RuntimeError):
+    """Every key was pressed, but the field did not keep them all: the step ran, its result is wrong."""
+
+
 def focus_holds(client: CdpClient, session_id: str) -> bool | None:
     """Whether keys still reach the field or its code boxes; None once its document is gone."""
     try:
@@ -1694,9 +1797,23 @@ def focus_holds(client: CdpClient, session_id: str) -> bool | None:
         return None
 
 
-def page_mark(client: CdpClient, session_id: str) -> tuple[dict[str, Any], int]:
-    """The main frame and its navigation count, taken before a type step touches the page."""
-    frame = client.call("Page.getFrameTree", session_id=session_id)["frameTree"]["frame"]
+def frame_in_tree(client: CdpClient, session_id: str, frame_id: str | None = None,
+                  timeout_s: float = 10.0) -> dict[str, Any] | None:
+    """The session's root frame, or the frame frame_id in its tree."""
+    stack = [client.call("Page.getFrameTree", session_id=session_id, timeout_s=timeout_s)["frameTree"]]
+    while stack:
+        node = stack.pop()
+        if frame_id is None or node["frame"]["id"] == frame_id:
+            return node["frame"]
+        stack += node.get("childFrames") or []
+    return None
+
+
+def page_mark(client: CdpClient, session_id: str, frame_id: str | None = None) -> tuple[dict[str, Any], int]:
+    """The frame typed into (the main frame by default) and its navigation count, taken before a type step."""
+    frame = frame_in_tree(client, session_id, frame_id)
+    if frame is None:
+        raise Settled(STALE_REF)
     return frame, client.navigations(session_id, frame["id"])
 
 
@@ -1717,7 +1834,7 @@ def type_keys(client: CdpClient, session_id: str, text: str, multiline: bool,
     def moved_on(holds: bool | None) -> bool:
         if holds is not None and client.navigations(session_id, frame_id) == navigations:
             return False
-        wait_for_new_document(client, session_id, frame.get("loaderId"))
+        wait_for_new_document(client, session_id, frame_id, frame.get("loaderId"))
         return True
 
     # Enter in a one-line field would submit its form.
@@ -1738,13 +1855,13 @@ def type_keys(client: CdpClient, session_id: str, text: str, multiline: bool,
     return moved_on(focus_holds(client, session_id))
 
 
-def wait_for_new_document(client: CdpClient, session_id: str, loader_id: Any) -> None:
-    """Give a page that began loading another document the settle budget to replace the old one."""
+def wait_for_new_document(client: CdpClient, session_id: str, frame_id: str, loader_id: Any) -> None:
+    """Give a frame that began loading another document the settle budget to replace the old one."""
     deadline = time.monotonic() + SETTLE_SECONDS
     while time.monotonic() < deadline:
         try:
-            frame = client.call("Page.getFrameTree", session_id=session_id, timeout_s=SETTLE_SECONDS)
-            if frame["frameTree"]["frame"].get("loaderId") != loader_id:
+            frame = frame_in_tree(client, session_id, frame_id, timeout_s=SETTLE_SECONDS)
+            if frame is None or frame.get("loaderId") != loader_id:
                 return
         except Exception:  # noqa: BLE001
             return
@@ -1792,14 +1909,16 @@ FRAME_OWNER_VISIBLE = """function () {
     if (style.display === "none" || style.visibility !== "visible" || Number(style.opacity) === 0) return false;
   }
   const box = this.getBoundingClientRect();
-  return box.width > 1 && box.height > 1;
+  // A frame sized to nothing still draws its border, which is not a page anyone can see.
+  return box.width > 1 && box.height > 1 && this.clientWidth > 1 && this.clientHeight > 1;
 }"""
 
 
-def frame_owner_visible(client: CdpClient, session_id: str, backend_node_id: int) -> bool:
+def frame_owner_visible(client: CdpClient, session_id: str, backend_node_id: int, world: int | None = None) -> bool:
     # Resolved in the helper's isolated world, so the page cannot fake the answer; an owner outside it fails.
     node = client.call("DOM.resolveNode", {"backendNodeId": backend_node_id,
-                                           "executionContextId": client.context_id}, session_id=session_id)
+                                           "executionContextId": client.context_id if world is None else world},
+                       session_id=session_id)
     result = client.call("Runtime.callFunctionOn", {"objectId": node["object"]["objectId"],
                                                     "functionDeclaration": FRAME_OWNER_VISIBLE,
                                                     "returnByValue": True}, session_id=session_id)
@@ -1822,6 +1941,457 @@ def pay_token_frames(client: CdpClient, frames: list[tuple[str, str, int]]) -> l
             if origin == PAY_TOKEN_FRAME_ORIGIN]
 
 
+
+# Frames of any origin, read and acted in through their own isolated worlds. Each frame's helper hands
+# out refs starting with "f" and answers only for its own, in a world the page cannot reach; a
+# login, card or code goes into a frame only when the frame itself is on its site.
+
+MAX_PAGE_FRAMES = 16
+MAX_FRAME_DEPTH = 4
+# The most a snapshot spends on frames, beyond the page itself.
+FRAMES_SECONDS = 4.0
+# What one frame may take to answer while the frames are listed; a frame busy in a loop answers nothing.
+FRAME_CALL_SECONDS = 1.5
+# The page helper's budget for a snapshot (TREE_BUDGET, CONTROLS_BUDGET, MAX_CONTROLS there). Frames
+# share at most FRAMES_BUDGET of it, and the page itself keeps the rest.
+TREE_BUDGET = 10000
+CONTROLS_SHARE = 0.55
+MAX_CONTROLS = 80
+FRAMES_BUDGET = 5000
+MIN_FRAME_SHARE = 600
+UNREAD_FRAMES = "Embedded frames require desktop tools."
+STALE_REF = "Stale element ref: the page has changed since that snapshot. Use a ref from the page below."
+TWO_FRAMES = "Two frames answer to that ref, so nothing was done. Take a fresh snapshot."
+FRAME_SPOT_TAKEN = ("Something other than this element's frame is at that spot, so the click was not made. "
+                    "Use the page below and click again.")
+FRAME_DRAWN = "The frame holding this element is drawn scaled or turned, so the page tools cannot click in it."
+FRAME_SPOT = "function (x, y, moved) { return window.__rakazoPageBrowser.frameSpot(this, x, y, moved); }"
+
+
+class PageFrame:
+    """A frame of the page: the CDP session it is local to, its helper's world, its element in its parent."""
+
+    def __init__(self, session: str, frame_id: str, parent: PageFrame | None, world: int, owner: int | None,
+                 url: str = "") -> None:
+        self.session, self.id, self.parent, self.world, self.owner, self.url = (
+            session, frame_id, parent, world, owner, url)
+
+    def chain(self) -> list[PageFrame]:
+        """This frame and the frames around it, up to but not including the top page."""
+        levels, at = [], self
+        while at.parent is not None:
+            levels.append(at)
+            at = at.parent
+        return levels
+
+
+def is_frame_ref(ref: Any) -> bool:
+    return isinstance(ref, str) and len(ref) > 1 and ref[0] == "f" and ref[1:].isdigit()
+
+
+def frame_tree(client: CdpClient, session_id: str, deadline: float) -> tuple[
+        dict[str, tuple[str, str]], dict[str, list[str]], int]:
+    """Every frame of the page, in its process or not: frame id -> (session it is local to, url), each
+    frame's children, and how many frames of other processes were left unvisited.
+
+    Frames of another process come through auto-attached sessions, frames inside them through theirs.
+    A session listed later wins, so a frame is read where it is local.
+    """
+    local: dict[str, tuple[str, str]] = {}
+    parents: dict[str, str] = {}
+    sessions, seen, failed = [session_id], set(), 0
+    while sessions and len(seen) <= MAX_PAGE_FRAMES and time.monotonic() < deadline:
+        session = sessions.pop(0)
+        if session in seen:
+            continue
+        seen.add(session)
+        try:
+            with time_limit(client, min(deadline, time.monotonic() + FRAME_CALL_SECONDS)):
+                if session != session_id:
+                    client.call("Page.enable", session_id=session)
+                client.call("Target.setAutoAttach", {"autoAttach": True, "waitForDebuggerOnStart": False,
+                                                     "flatten": True, "filter": [{"type": "iframe"}]},
+                            session_id=session)
+                sessions += client.frame_sessions(session)
+                tree = client.call("Page.getFrameTree", session_id=session)["frameTree"]
+        except Exception:  # noqa: BLE001
+            failed += 1
+            continue
+        if session != session_id and not tree["frame"].get("parentId"):
+            # A frame that cannot be placed in the page is not read; payment providers' are never read.
+            failed += 0 if payment_frame_origin(tree["frame"].get("url")) else 1
+            continue
+        stack = [(tree, tree["frame"].get("parentId"))]
+        while stack:
+            node, parent = stack.pop()
+            frame = node["frame"]
+            local[frame["id"]] = (session, str(frame.get("url") or ""))
+            if parent:
+                parents[frame["id"]] = parent
+            stack += [(child, frame["id"]) for child in reversed(node.get("childFrames") or [])]
+    children: dict[str, list[str]] = {}
+    for frame_id, parent in parents.items():
+        children.setdefault(parent, []).append(frame_id)
+    return local, children, failed + len({session for session in sessions if session not in seen})
+
+
+def page_frames(client: CdpClient, session_id: str, deadline: float) -> tuple[list[PageFrame], int]:
+    """The page's frames that the page tools can read, outermost first in page order, with how many
+    shown frames could not be read (over the limits, or unreachable).
+
+    A frame whose element, or any frame element around it, is hidden is left out with what is inside
+    it. Payment providers' frames are too: card details reach them only through fill_card.
+    """
+    local, children, unread = frame_tree(client, session_id, deadline)
+    main = client.call("Page.getFrameTree", session_id=session_id)["frameTree"]["frame"]["id"]
+    found: list[PageFrame] = []
+
+    def visit(parent: PageFrame, depth: int) -> None:
+        nonlocal unread
+        owners: dict[str, int] = {}
+        for frame_id in children.get(parent.id, []):
+            if payment_frame_origin(local[frame_id][1]):
+                continue
+            try:
+                owners[frame_id] = client.call("DOM.getFrameOwner", {"frameId": frame_id},
+                                               session_id=parent.session)["backendNodeId"]
+            except Exception:  # noqa: BLE001
+                unread += 1
+        for frame_id in in_page_order(client, parent, owners):
+            session, url = local[frame_id]
+            if time.monotonic() > deadline:
+                unread += 1
+                continue
+            try:
+                if not frame_owner_visible(client, parent.session, owners[frame_id], parent.world):
+                    continue
+                if len(found) >= MAX_PAGE_FRAMES or depth > MAX_FRAME_DEPTH:
+                    unread += 1
+                    continue
+                world = world_in(client, session, frame_id)
+                eval_json(client, session, EVAL_HELPERS, context_id=world)
+            except Exception:  # noqa: BLE001
+                unread += 1
+                continue
+            frame = PageFrame(session, frame_id, parent, world, owners[frame_id], url)
+            found.append(frame)
+            visit(frame, depth + 1)
+
+    with time_limit(client, deadline):
+        visit(PageFrame(session_id, main, None, client.context_id, None), 1)
+    return found, unread
+
+
+IN_PAGE_ORDER = """function (...owners) {
+  return owners.map((_, at) => at).sort((a, b) => (owners[a].compareDocumentPosition(owners[b])
+    & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+}"""
+
+
+def in_page_order(client: CdpClient, parent: PageFrame, owners: dict[str, int]) -> list[str]:
+    """The frames of a parent in the order their elements come in its page; frames in other processes are
+    only found session by session."""
+    frame_ids = list(owners)
+    if len(frame_ids) < 2:
+        return frame_ids
+    try:
+        objects = [client.call("DOM.resolveNode", {"backendNodeId": owner, "executionContextId": parent.world},
+                               session_id=parent.session)["object"]["objectId"] for owner in owners.values()]
+        result = client.call("Runtime.callFunctionOn", {
+            "executionContextId": parent.world, "functionDeclaration": IN_PAGE_ORDER, "returnByValue": True,
+            "arguments": [{"objectId": object_id} for object_id in objects]}, session_id=parent.session)
+        return [frame_ids[at] for at in result["result"]["value"]]
+    except Exception:  # noqa: BLE001
+        return frame_ids
+
+
+def sent_length(text: str) -> int:
+    """A text's length as the bot receives it, line breaks escaped (the page helper's sent())."""
+    return len(json.dumps(text, ensure_ascii=False)) - 2
+
+
+def snapshot_limits(prefix: str, budget: int) -> dict[str, Any]:
+    return {"prefix": prefix, "tree": budget, "controls": int(budget * CONTROLS_SHARE),
+            "maxControls": max(8, MAX_CONTROLS * budget // TREE_BUDGET), "minText": min(1500, budget // 4)}
+
+
+def frame_snapshots(client: CdpClient, session_id: str) -> tuple[str, list[Any], int]:
+    """Each shown frame's page under a line naming its site, their elements, and how many shown
+    frames could not be read. Frames with nothing in them are left out."""
+    deadline = time.monotonic() + FRAMES_SECONDS
+    try:
+        frames, unread = page_frames(client, session_id, deadline)
+    except Exception:  # noqa: BLE001
+        return "", [], 1
+    if not frames:
+        return "", [], unread
+    sections, elements, left = [], [], FRAMES_BUDGET
+    for index, frame in enumerate(frames):
+        # What the frames before it left over goes to the ones after.
+        share = max(MIN_FRAME_SHARE, left // (len(frames) - index))
+        if time.monotonic() > deadline or left < MIN_FRAME_SHARE:
+            unread += len(frames) - index
+            break
+        limits = json.dumps(snapshot_limits("f", share))
+        try:
+            with time_limit(client, deadline):
+                data = eval_json(client, frame.session, "({...window.__rakazoPageBrowser.snapshot(" + limits + "), "
+                                 "origin: location.origin, scheme: location.protocol})", context_id=frame.world)
+        except Exception:  # noqa: BLE001
+            unread += 1
+            continue
+        if not isinstance(data, dict):
+            unread += 1
+            continue
+        tree = unframed(str(data.get("tree") or "").strip())
+        if tree in ("", "(no interactive elements)"):
+            continue
+        site = data.get("origin") if data.get("origin") not in (None, "", "null") else data.get("scheme")
+        section = f"[frame {site}]\n{tree}"
+        if sent_length(section) + 1 > left:
+            unread += 1
+            continue
+        left -= sent_length(section) + 1
+        sections.append(section)
+        elements += data.get("elements") or []
+    return "".join("\n" + section for section in sections), elements, unread
+
+
+def unframed(text: str) -> str:
+    """Page text with anything that reads like a frame's header line set apart, so a page cannot name a site."""
+    return text.replace("[frame ", "[ frame ")
+
+
+def frame_of(client: CdpClient, session_id: str, ref: str, known: list[PageFrame]) -> PageFrame:
+    """The one frame whose helper handed out ref. `known` holds the frames found earlier in this action;
+    they are found again only when none or two of them answer to ref."""
+    deadline = time.monotonic() + FRAMES_SECONDS
+
+    def owners_of(frames: list[PageFrame]) -> list[PageFrame]:
+        owners = []
+        for frame in frames:
+            try:
+                with time_limit(client, deadline):
+                    if eval_json(client, frame.session, f"window.__rakazoPageBrowser.owns({json.dumps(ref)})",
+                                 context_id=frame.world) is True:
+                        owners.append(frame)
+            except Exception:  # noqa: BLE001
+                continue
+        return owners
+
+    owners = owners_of(known)
+    if len(owners) != 1:
+        known[:] = page_frames(client, session_id, deadline)[0]
+        owners = owners_of(known)
+    if not owners:
+        raise Settled(STALE_REF)
+    if len(owners) > 1:
+        raise Settled(TWO_FRAMES)
+    return owners[0]
+
+
+@contextlib.contextmanager
+def time_limit(client: CdpClient, until: float):  # type: ignore[no-untyped-def]
+    """No call waits past `until` (on the monotonic clock) meanwhile: a frame busy in a loop answers nothing."""
+    before = client.deadline
+    limit = time.time() + until - time.monotonic()
+    client.deadline = limit if before is None else min(before, limit)
+    try:
+        yield
+    finally:
+        client.deadline = before
+
+
+@contextlib.contextmanager
+def in_frame(client: CdpClient, frame: PageFrame):  # type: ignore[no-untyped-def]
+    """Helpers written for the top page evaluate in this frame's world meanwhile."""
+    top = client.context_id
+    client.context_id = frame.world
+    try:
+        yield
+    finally:
+        client.context_id = top
+
+
+def frame_spot(client: CdpClient, frame: PageFrame, x: float, y: float, moved: bool) -> tuple[float, float, dict[str, Any]]:
+    """The spot (x, y) of the frame's page as a spot in the browser window, with the top page's scroll.
+
+    At every level the frame element around it must show that spot: not covered, hidden, or drawn
+    scaled or turned. Each level is asked in its parent's world.
+    """
+    scroll: dict[str, Any] = {}
+    for level in frame.chain():
+        parent = level.parent
+        assert parent is not None
+        try:
+            node = client.call("DOM.resolveNode", {"backendNodeId": level.owner, "executionContextId": parent.world},
+                               session_id=parent.session)
+            object_id = node["object"]["objectId"]
+            try:
+                result = client.call("Runtime.callFunctionOn", {
+                    "objectId": object_id, "functionDeclaration": FRAME_SPOT, "returnByValue": True,
+                    "arguments": [{"value": x}, {"value": y}, {"value": moved}],
+                }, session_id=parent.session)
+            finally:
+                client.call("Runtime.releaseObject", {"objectId": object_id}, session_id=parent.session)
+            spot = page_value(result)
+        except Refused:
+            raise
+        except (RuntimeError, KeyError, TypeError):
+            raise Settled(CHANGED_UNDER_POINTER) from None
+        if not isinstance(spot, dict):
+            raise Settled(CHANGED_UNDER_POINTER)
+        check_upright(client, parent.session, level.owner, spot)
+        x, y, scroll = spot["x"], spot["y"], spot.get("scroll") or {}
+    return x, y, scroll
+
+
+def check_upright(client: CdpClient, session_id: str, owner: int | None, spot: dict[str, Any]) -> None:
+    """Where the browser itself draws the frame element's content: upright and at its own size, whatever
+    style turned, flipped or scaled it. The page script reads styles; this reads the drawn corners."""
+    try:
+        quad = client.call("DOM.getBoxModel", {"backendNodeId": owner}, session_id=session_id)["model"]["content"]
+        x1, y1, x2, y2, x3, y3, x4, y4 = (float(value) for value in quad)
+    except (RuntimeError, KeyError, TypeError, ValueError):
+        raise Settled(CHANGED_UNDER_POINTER) from None
+    width, height = float(spot.get("width") or 0), float(spot.get("height") or 0)
+    upright = (abs(y2 - y1) <= 1 and abs(x3 - x2) <= 1 and abs(y3 - y4) <= 1 and abs(x4 - x1) <= 1
+               and abs((x2 - x1) - width) <= max(1.0, width * 0.02) and abs((y4 - y1) - height) <= max(1.0, height * 0.02))
+    if not upright:
+        raise Settled(FRAME_DRAWN)
+
+
+def check_frame_spot(client: CdpClient, session_id: str, frame: PageFrame, x: float, y: float) -> None:
+    """The browser's own hit-test at the spot (x, y) of the top page must reach the frame: the frame itself
+    when the page's process holds it, else the element of the first frame on the way in another process."""
+    # The hit-test takes whole pixels; a scroll offset may not be one.
+    hit, node = hit_at(client, session_id, round(x), round(y))
+    levels = frame.chain()
+    boundary = next((level for level in reversed(levels) if level.session != session_id), None)
+    if boundary is None:
+        reached = hit.get("frameId") == frame.id and str(node.get("nodeName", "")).upper() not in (
+            "IFRAME", "FRAME", "OBJECT", "EMBED")
+    else:
+        assert boundary.parent is not None
+        reached = hit.get("backendNodeId") == boundary.owner and hit.get("frameId") == boundary.parent.id
+    if not reached:
+        raise Settled(FRAME_SPOT_TAKEN)
+
+
+def frame_click(client: CdpClient, session_id: str, frame: PageFrame, ref: str) -> None:
+    """A real mouse click on an element inside a frame, sent to the top page at the element's spot in the window.
+
+    Checked in the frame and at every frame element around it before the pointer moves, again after,
+    and by the browser's own hit-test right before the press.
+    """
+    def in_page(expression: str) -> Any:
+        return eval_json(client, frame.session, expression, context_id=frame.world)
+
+    aim = in_page(f"window.__rakazoPageBrowser.aim({json.dumps(ref)})")
+    if not isinstance(aim, dict) or aim.get("x") is None:
+        return
+    # The browser's hit-test takes whole pixels, so the press goes to the same one.
+    x, y = (round(value) for value in frame_spot(client, frame, aim["x"], aim["y"], False)[:2])
+    base = {"x": x, "y": y, "pointerType": "mouse"}
+    draw_frames(client, session_id)
+    client.call("Input.dispatchMouseEvent", {**base, "type": "mouseMoved"}, session_id=session_id)
+    in_page(f"window.__rakazoPageBrowser.stillAimed({json.dumps(ref)}, {aim['x']}, {aim['y']})")
+    again_x, again_y, scroll = frame_spot(client, frame, aim["x"], aim["y"], True)
+    if round(again_x) != x or round(again_y) != y:
+        raise Settled(CHANGED_UNDER_POINTER)
+    check_frame_spot(client, session_id, frame, x + scroll.get("x", 0), y + scroll.get("y", 0))
+    client.call("Input.dispatchMouseEvent", {**base, "type": "mousePressed", "button": "left", "buttons": 1,
+                                             "clickCount": 1}, session_id=session_id)
+    client.call("Input.dispatchMouseEvent", {**base, "type": "mouseReleased", "button": "left",
+                                             "clickCount": 1}, session_id=session_id)
+
+
+def frame_site_check(client: CdpClient, frame: PageFrame, step: dict[str, Any]) -> None:
+    """A saved login, card or code goes into a frame only when the frame itself is on its site, an HTTPS
+    page inside HTTPS pages. The fill checks the frame's site again in the same evaluation."""
+    found = eval_json(client, frame.session, "(() => { let saved = null; try { saved = new URL("
+                      + json.dumps(step["origin"]) + ").origin; } catch { /* refused below */ } "
+                      "return { origin: location.origin, same: location.origin === saved, sandboxed: self.origin !== location.origin, "
+                      "secure: location.protocol === 'https:' && window.isSecureContext !== false }; })()",
+                      context_id=frame.world)
+    login = step.get("field") in ("username", "password")
+    if not isinstance(found, dict) or not found.get("secure"):
+        raise Refused("Website logins can only be filled on HTTPS, and this field's frame is not an HTTPS page "
+                      "inside HTTPS pages." if login else
+                      "This field's frame is not an HTTPS page inside HTTPS pages, so nothing was filled.")
+    if found.get("sandboxed"):
+        # Served from its site but run sandboxed, without that site's own origin: not the site's page as such.
+        raise Refused("This field is in a sandboxed frame, so nothing was filled.")
+    if not found.get("same"):
+        raise Refused(f"This field is in a frame from {found.get('origin')}, not on the site this login was saved "
+                      "for, so nothing was filled." if login else
+                      f"This field is in a frame from {found.get('origin')}, not on the site it is meant for, "
+                      "so nothing was filled.")
+
+
+def frame_step(client: CdpClient, session_id: str, step: dict[str, Any], touched: dict[str, PageFrame],
+               known: list[PageFrame]) -> bool:
+    """One step on an element inside a frame, as act takes it on the page itself.
+
+    Returns whether the frame's page moved to another document on the last key of a type step.
+    """
+    kind, ref = step["kind"], step["ref"]
+    frame = frame_of(client, session_id, ref, known)
+    touched[frame.id] = frame
+    if frame.session != session_id:
+        # Requests the step sets off in a frame of another process are its session's, and so is a file
+        # chooser it opens, which is held back as on the page itself.
+        for method, params in (("Network.enable", {"maxPostDataSize": 1}),
+                               ("Page.setInterceptFileChooserDialog", {"enabled": True})):
+            try:
+                client.call(method, params, session_id=frame.session)
+            except Exception:  # noqa: BLE001
+                pass
+    if kind == "click":
+        eval_json(client, frame.session, f"Boolean(window.__rakazoPageBrowser.resolve({json.dumps(ref)}))",
+                  context_id=frame.world)
+        frame_click(client, session_id, frame, ref)
+        return False
+    with in_frame(client, frame):
+        eval_json(client, frame.session, f"Boolean(window.__rakazoPageBrowser.resolve({json.dumps(ref)}))")
+        if kind == "upload":
+            upload(client, frame.session, ref, step["files"])
+            return False
+        if kind == "type":
+            mark = page_mark(client, frame.session, frame.id)
+            whole = json.dumps(len(step["text"]) > 1)
+            focus = eval_json(client, frame.session,
+                              f"window.__rakazoPageBrowser.focusForKeys({json.dumps(ref)}, {whole})")
+            if not (isinstance(focus, dict) and focus.get("select")):
+                if not isinstance(focus, dict) or not focus.get("focused"):
+                    raise RuntimeError("The field did not take keyboard focus. Click it, then type again.")
+                moved = type_keys(client, frame.session, step["text"], multiline=bool(focus.get("multiline")),
+                                  mark=mark)
+                if not moved and not typed_in_full(client, frame.session, ref, step["text"]):
+                    raise KeysNotKept(NOT_KEPT)
+                return moved
+        if step.get("origin"):
+            frame_site_check(client, frame, step)
+        arguments = json.dumps(ref) + ", " + json.dumps(step["text"])
+        if step.get("origin"):
+            arguments += ", " + json.dumps(step["origin"]) + ", " + json.dumps(step.get("field"))
+        data = eval_json(client, frame.session, f"window.__rakazoPageBrowser.fill({arguments})")
+        if not isinstance(data, dict):
+            raise RuntimeError("Action response unavailable")
+        if data.get("insertText"):
+            client.call("Input.insertText", {"text": step["text"]}, session_id=frame.session)
+    return False
+
+
+def wait_for_frames(client: CdpClient, frames: dict[str, PageFrame], ended: float, seconds: float) -> bool:
+    """Wait, within the action's budget, for the frames it acted in: their requests and their pages drawing."""
+    calm = True
+    for frame in frames.values():
+        with in_frame(client, frame):
+            calm = wait_for_action(client, frame.session, ended, seconds) and calm
+    return calm
+
+
 def snapshot(client: CdpClient, session_id: str, settle: float | None = None) -> dict[str, Any]:
     settled = wait_for_settle(client, session_id, settle)
     ensure_helpers(client, session_id)
@@ -1832,11 +2402,27 @@ def snapshot(client: CdpClient, session_id: str, settle: float | None = None) ->
     account = eval_json(client, session_id, "window.__rakazoPageBrowser.payTokenAccount()")
     if data.pop("frames", False):
         try:
-            frames = payment_frames(client, session_id)
+            with time_limit(client, time.monotonic() + FRAMES_SECONDS):
+                frames = payment_frames(client, session_id)
         except Exception:  # noqa: BLE001
             frames = []
         card_shown = any(frame_eval(client, frames, "window.__rakazoPageBrowser.hasCardField()"))
-        tree += "\n" + (PAYMENT_FRAME_HINT if card_shown else "Embedded frames require desktop tools.")
+        sections, frame_elements, unread = frame_snapshots(client, session_id)
+        if sections and sent_length(tree) + sent_length(sections) > TREE_BUDGET:
+            # The frames' share comes out of the page's own, so the whole snapshot still goes to the bot in one piece.
+            room = max(TREE_BUDGET - FRAMES_BUDGET, TREE_BUDGET - sent_length(sections))
+            data = eval_json(client, session_id, "window.__rakazoPageBrowser.snapshot("
+                             + json.dumps(snapshot_limits("e", room)) + ")")
+            if not isinstance(data, dict):
+                raise RuntimeError("snapshot returned non-object")
+            data.pop("frames", None)
+            tree = str(data.get("tree") or "")
+        tree = unframed(tree) + sections
+        data["elements"] = list(data.get("elements") or []) + frame_elements
+        if card_shown:
+            tree += "\n" + PAYMENT_FRAME_HINT
+        if unread or (frames and not card_shown):
+            tree += "\n" + UNREAD_FRAMES
         accounts = [found for found in frame_eval(client, pay_token_frames(client, frames),
                                                   "window.__rakazoPageBrowser.payTokenAccount()") if found]
         account = account or (accounts[0] if len(accounts) == 1 else None)
@@ -1996,14 +2582,24 @@ def check_frame(client: CdpClient, session_id: str, x: float, y: float) -> None:
     that element stops the press too. Right after a scroll the browser may not know the spot yet
     ("No node found"): it gets one more frame to catch up.
     """
+    hit, node = hit_at(client, session_id, x, y)
+    try:
+        main = client.call("Page.getFrameTree", session_id=session_id)["frameTree"]["frame"]["id"]
+    except (RuntimeError, KeyError):
+        raise Settled(CHANGED_UNDER_POINTER) from None
+    if hit.get("frameId") != main or str(node.get("nodeName", "")).upper() in ("IFRAME", "FRAME", "OBJECT", "EMBED"):
+        raise Settled(FRAME_CLICK)
+
+
+def hit_at(client: CdpClient, session_id: str, x: float, y: float) -> tuple[dict[str, Any], dict[str, Any]]:
+    """What the browser's own hit-test finds at a spot on the page: the hit (frame, node) and its node."""
     for attempt in range(2):
         try:
             hit = client.call("DOM.getNodeForLocation", {"x": x, "y": y, "includeUserAgentShadowDOM": True},
                               session_id=session_id)
-            main = client.call("Page.getFrameTree", session_id=session_id)["frameTree"]["frame"]["id"]
             node = client.call("DOM.describeNode", {"backendNodeId": hit["backendNodeId"]},
                                session_id=session_id)["node"]
-            break
+            return hit, node
         except (RuntimeError, KeyError) as error:
             if attempt == 0 and "No node found" in str(error):
                 draw_frames(client, session_id)
@@ -2011,8 +2607,7 @@ def check_frame(client: CdpClient, session_id: str, x: float, y: float) -> None:
             if "No node found" in str(error):
                 raise Settled(STILL_MOVING) from None
             raise Settled(CHANGED_UNDER_POINTER) from None
-    if hit.get("frameId") != main or str(node.get("nodeName", "")).upper() in ("IFRAME", "FRAME", "OBJECT", "EMBED"):
-        raise Settled(FRAME_CLICK)
+    raise Settled(STILL_MOVING)
 
 
 def click_at(client: CdpClient, session_id: str, ref: str, x: float, y: float) -> None:
@@ -2333,6 +2928,10 @@ def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> di
     except Exception:  # noqa: BLE001
         pass
     navigations = client.navigation_count(session_id)
+    # Frames a step acted in, whose own requests the result waits for too.
+    touched: dict[str, PageFrame] = {}
+    # The page's frames, found on the first frame step and reused by the next ones.
+    known_frames: list[PageFrame] = []
     completed = 0
     uncertain = False
     # Refs belong to the document that was typed into; a page that moved on keeps none of them.
@@ -2348,6 +2947,22 @@ def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> di
                     snap = {"uncertain": True}
                 return {"uncertain": False, **snap, "ok": False, "completed": completed,
                         "error": "Stale element ref. Take a fresh snapshot."}
+            if is_frame_ref(ref):
+                uncertain = True
+                try:
+                    page_changed = frame_step(client, session_id, step, touched, known_frames)
+                except TypingStopped as stopped:
+                    try:
+                        snap = snapshot(client, session_id)
+                    except Exception:  # noqa: BLE001
+                        snap = {"uncertain": True}
+                    return {"uncertain": False, **snap, "ok": False, "completed": completed, "error": str(stopped)}
+                except KeysNotKept:
+                    return {"uncertain": False, **snapshot(client, session_id), "ok": False,
+                            "completed": completed + 1, "error": NOT_KEPT}
+                completed += 1
+                uncertain = False
+                continue
             if kind == "pay_token":
                 uncertain = True
                 fill_pay_token(client, session_id, step)
@@ -2394,8 +3009,7 @@ def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> di
                     uncertain = False
                     if not page_changed and not typed_in_full(client, session_id, ref, step["text"]):
                         return {"uncertain": False, **snapshot(client, session_id), "ok": False, "completed": completed,
-                                "error": "The page did not keep every character typed. "
-                                         "Check the field in this snapshot before trying again."}
+                                "error": NOT_KEPT}
                     continue
             if kind == "click":
                 # Bought only on the user's word, for this site: an earlier step may have changed the page
@@ -2431,6 +3045,7 @@ def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> di
         ended = time.monotonic()
         budget = SETTLE_SECONDS if client.navigation_count(session_id) != navigations else ACTION_WAIT_SECONDS
         busy = not wait_for_action(client, session_id, ended, budget)
+        busy = not wait_for_frames(client, touched, ended, budget) or busy
         if client.file_choosers:
             raise Settled(FILE_CHOOSER)
         # The snapshot takes what is left of the budget, and none when a request is known to be open.

@@ -67,6 +67,8 @@
       "proxy-addr@<2.0.8": "2.0.8",
       "dompurify@<3.4.17": "3.4.17",
       "ws@>=8 <8.21.1": "8.22.0",
+      "@grpc/grpc-js@<1.14.5": "1.14.7",
+      "@opentelemetry/core@>=2 <2.8.0": "2.12.0",
       "e2b>undici8": "npm:undici@8.10.2"
     },
     "patchedDependencies": {

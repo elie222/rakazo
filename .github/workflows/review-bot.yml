@@ -1,6 +1,6 @@
 name: Review bot
 
-# Greptile reviews PRs by default. A PR labeled review:coderabbit goes to
+# Greptile reviews PRs by default. A PR labeled review:cr goes to
 # CodeRabbit instead (.coderabbit.yaml opts it in, greptile.json opts it out).
 # The label is added when Greptile replies that it can no longer review, or,
 # while the CODERABBIT_UNTIL repository variable holds a later date
@@ -37,5 +37,5 @@ jobs:
           UNTIL: ${{ vars.CODERABBIT_UNTIL }}
         run: |
           if [[ "$EVENT" == pull_request_review || "$(date -u +%F)" < "$UNTIL" ]]; then
-            gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=review:coderabbit" --silent
+            gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=review:cr" --silent
           fi
