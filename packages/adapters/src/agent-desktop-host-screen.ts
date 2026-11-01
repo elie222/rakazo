@@ -434,8 +434,8 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
 
 /** The first match's element, or undefined when nothing matches. */
 async function first(run: (...args: string[]) => Promise<unknown>, args: string[]) {
-  const data = (await run(...args, "--first")) as { matches?: AgentDesktopNode[] } | null;
-  return data?.matches?.find((match) => match.ref_id)?.ref_id;
+  const data = (await run(...args, "--first")) as { match?: AgentDesktopNode | null } | null;
+  return data?.match?.ref_id;
 }
 
 function appName(window: AgentDesktopWindow) {

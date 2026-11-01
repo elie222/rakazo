@@ -130,12 +130,10 @@ describe("agent-desktop host screen", () => {
       find: (args) =>
         ok({
           snapshot_id: "s0000000c",
-          matches: [
-            {
-              ref_id: args.includes("--surface") ? "@s0000000c:e9" : "@s0000000c:e5",
-              role: "menuitem",
-            },
-          ],
+          match: {
+            ref_id: args.includes("--surface") ? "@s0000000c:e9" : "@s0000000c:e5",
+            role: "menuitem",
+          },
         }),
     });
     await screen.observe(scope, "notepad");
