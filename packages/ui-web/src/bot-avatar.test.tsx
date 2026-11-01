@@ -171,7 +171,7 @@ describe("BotAvatar", () => {
     expect(html).toContain("rakazo-organic-avatar");
   });
 
-  it("morphs only the organic layer that is shown", () => {
+  it("morphs the organic body only while working", () => {
     const morphing = (status: string) =>
       [
         ...renderToString(<BotAvatar color="#8B5CF6" status={status} />).matchAll(
@@ -180,7 +180,7 @@ describe("BotAvatar", () => {
       ]
         .filter((match) => match[2])
         .map((match) => match[1]);
-    expect(morphing("idle")).toEqual(["idle"]);
+    expect(morphing("idle")).toEqual([]);
     expect(morphing("running")).toEqual(["working"]);
   });
 

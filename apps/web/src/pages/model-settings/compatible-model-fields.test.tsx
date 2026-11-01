@@ -74,6 +74,8 @@ function props(compatibleRows: string[], enabledModelIds: string[], modelId = ""
     supportsImages: false,
     thinkingLevel: null,
     updateBaseUrl: () => {},
+    apiProtocol: "chat-completions" as const,
+    updateApiProtocol: () => {},
   };
 }
 

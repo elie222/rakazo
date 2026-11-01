@@ -1381,7 +1381,11 @@ export function modelOutputLeavesInputRoom(
 }
 
 /** Wire protocol selected for one OpenAI-compatible connection. */
-export const ModelApiProtocolSchema = z.enum(["chat-completions", "responses"]);
+export const ModelApiProtocolSchema = z.enum([
+  "chat-completions",
+  "responses",
+  "anthropic-messages",
+]);
 export type ModelApiProtocol = z.infer<typeof ModelApiProtocolSchema>;
 
 export const ModelCredentialSchema = z.object({
