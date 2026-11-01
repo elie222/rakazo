@@ -4,6 +4,7 @@ import { Button, Input, Label } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { fetchAccountSecurity, requestAccountDeletionCode } from "../lib/account-security";
 import { authClient } from "../lib/auth";
+import { clearComposerDrafts } from "../lib/composer-draft";
 import { runSsoFlow } from "../lib/sso-flow";
 import { authErrorText } from "../lib/user-error";
 import { SettingsRow } from "./SettingsRows";
@@ -166,6 +167,7 @@ export function AccountAccess({
                 );
                 if (result.error)
                   throw new Error(authErrorText(result.error, t`Could not continue`));
+                clearComposerDrafts();
                 window.location.assign("/sign-in");
               })
             }

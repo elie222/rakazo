@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { fetchAccountSecurity, requestAccountDeletionCode } from "../lib/account-security";
 import { authClient } from "../lib/auth";
+import { readComposerDraft, writeComposerDraft } from "../lib/composer-draft";
 import { runSsoFlow } from "../lib/sso-flow";
 import { AccountAccess, LinkSsoRow } from "./AccountAccess";
 
@@ -197,4 +198,29 @@ it("requires a nonempty code and allows it after the proof expires", async () =>
   await act(async () => deleteButton().click());
   expect(fetchAccountSecurity).toHaveBeenCalledTimes(2);
   expect(authClient.deleteUser).toHaveBeenCalledWith({ token: "123456" });
+});
+
+it("clears saved drafts only once the account is deleted", async () => {
+  const location = { assign: vi.fn() };
+  vi.stubGlobal("location", location);
+  try {
+    writeComposerDraft("bot:bot-1", "unsent thought");
+    vi.mocked(fetchAccountSecurity).mockResolvedValue({ ...security, freshOidcAuth: true });
+    vi.mocked(authClient.deleteUser)
+      .mockResolvedValueOnce({
+        data: null,
+        error: { message: "Server error", status: 500, statusText: "Internal Server Error" },
+      })
+      .mockResolvedValueOnce({ data: { success: true }, error: null });
+    await render();
+    await click("Delete");
+    await act(async () => deleteButton().click());
+    expect(readComposerDraft("bot:bot-1")).toBe("unsent thought");
+    await act(async () => deleteButton().click());
+    expect(location.assign).toHaveBeenCalledWith("/sign-in");
+    expect(readComposerDraft("bot:bot-1")).toBe("");
+  } finally {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  }
 });

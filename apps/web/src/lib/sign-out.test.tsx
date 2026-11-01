@@ -5,6 +5,13 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as CallSessionModule from "./call-session";
 import { SIGNED_IN_USER_KEY } from "./call-session";
+import {
+  composerDraftBindingsKey,
+  hasUnsentComposerDraft,
+  readComposerDraft,
+  writeComposerDraft,
+} from "./composer-draft";
+import { COMPOSER_ENTER_TO_SEND_STORAGE_KEY } from "./composer-enter-to-send-pref";
 import { selectedSpaceId, selectSpace } from "./rpc";
 import { LOG_OUT_FAILED_KEY, signOut, syncLogOutFailure, useSignOut } from "./sign-out";
 
@@ -28,6 +35,9 @@ beforeEach(() => {
   requestSignOut.mockResolvedValue({ data: { success: true }, error: null });
   localStorage.setItem(SIGNED_IN_USER_KEY, "user-1");
   selectSpace("space-1");
+  writeComposerDraft("bot:bot-1", "unsent thought");
+  localStorage.setItem(composerDraftBindingsKey("bot:bot-1"), "{}");
+  localStorage.setItem(COMPOSER_ENTER_TO_SEND_STORAGE_KEY, "false");
 });
 
 afterEach(() => {
@@ -67,6 +77,14 @@ describe("signOut", () => {
     expect(selectedSpaceId()).toBeNull();
   });
 
+  it("leaves no saved draft for whoever uses this browser next", async () => {
+    await signOut("/sign-in");
+    expect(readComposerDraft("bot:bot-1")).toBe("");
+    expect(localStorage.getItem(composerDraftBindingsKey("bot:bot-1"))).toBeNull();
+    expect(hasUnsentComposerDraft()).toBe(false);
+    expect(localStorage.getItem(COMPOSER_ENTER_TO_SEND_STORAGE_KEY)).toBe("false");
+  });
+
   it.each([
     ["an error result", () => requestSignOut.mockResolvedValue({ error: { status: 500 } })],
     ["a rejected request", () => requestSignOut.mockRejectedValue(new Error("Network"))],
@@ -76,6 +94,8 @@ describe("signOut", () => {
     expect(location.reload).toHaveBeenCalledOnce();
     expect(location.assign).not.toHaveBeenCalled();
     expect(localStorage.getItem(SIGNED_IN_USER_KEY)).toBe("user-1");
+    expect(readComposerDraft("bot:bot-1")).toBe("unsent thought");
+    expect(localStorage.getItem(composerDraftBindingsKey("bot:bot-1"))).toBe("{}");
   });
 
   it("says the sign-out failed when the reloaded page is still signed in", async () => {
