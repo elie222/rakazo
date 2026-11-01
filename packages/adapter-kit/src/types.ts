@@ -1033,6 +1033,11 @@ export interface BrowserNavigateRequest {
 export interface BrowserNavigateResult {
   url: string;
   title: string;
+  /** The page it reached, as a snapshot shows it, when that could be read in time. */
+  tree?: string;
+  elements?: BrowserSnapshotNode[];
+  /** The page was still loading or waiting on its own requests when it was captured. */
+  loading?: boolean;
   /** When set, the page tool could not operate; use computer_act instead. */
   fallback?: "computer_act";
   error?: string;

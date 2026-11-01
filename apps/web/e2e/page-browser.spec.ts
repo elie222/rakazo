@@ -732,7 +732,10 @@ test("live page helper types a purchase's card into a payment provider's frame o
     await expect(card.locator("#number")).toHaveValue("");
     await page.goto(`${merchant}/ads`);
     await expect(card.locator("#number")).toBeVisible();
-    expect((await command("snapshot")).tree).toContain("Embedded frames require desktop tools.");
+    // A frame from another site is read like any other, but never takes the card.
+    const ads = (await command("snapshot")).tree;
+    expect(ads).toContain("[frame https://ads.example.test]");
+    expect(ads).not.toContain("Embedded frames require desktop tools.");
     expect(await fill("number", number)).toMatchObject({
       ok: false,
       completed: 0,

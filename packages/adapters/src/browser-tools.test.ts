@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   browserActFromTool,
   browserNavigateFromTool,
+  browserResultForModel,
   browserSnapshotFromTool,
   parseBrowserActions,
   redactBrowserResult,
@@ -75,6 +76,52 @@ describe("browser tools", () => {
         }),
       ).toMatchObject({ error: expect.stringContaining("credentials") });
     }
+  });
+
+  it("sends the page a navigation reached to the model as a snapshot is, with its elements as details", async () => {
+    const tree = '[frame https://auth.example.test]\n- textbox "ID number" [f1]';
+    const elements = [{ ref: "f1", role: "textbox", name: "ID number" }];
+    const browser = new ComputerBrowserProvider({
+      liveDriver: async () => ({
+        ok: true,
+        url: "https://shop.example.test/",
+        title: "Shop",
+        tree,
+        elements,
+      }),
+    });
+    const live: ComputerRef = { id: "c1", botId: "b1", kind: "docker", providerRef: "c1" };
+    const navigated = await browserNavigateFromTool(browser, live, context, {
+      url: "https://shop.example.test/",
+    });
+    expect(navigated).toMatchObject({
+      url: "https://shop.example.test/",
+      title: "Shop",
+      tree,
+      elements,
+    });
+    const view = browserResultForModel(navigated) as {
+      content: Array<{ text: string }>;
+      details: unknown;
+    };
+    expect(JSON.parse(view.content[0]!.text)).toEqual({
+      url: "https://shop.example.test/",
+      title: "Shop",
+      tree,
+    });
+    expect(view.details).toBe(navigated);
+  });
+
+  it("sends a navigation that brought no page as it is", async () => {
+    const browser = new ComputerBrowserProvider({
+      liveDriver: async () => ({ ok: true, url: "https://shop.example.test/", title: "Shop" }),
+    });
+    const live: ComputerRef = { id: "c1", botId: "b1", kind: "docker", providerRef: "c1" };
+    const navigated = await browserNavigateFromTool(browser, live, context, {
+      url: "https://shop.example.test/",
+    });
+    expect(navigated).toEqual({ url: "https://shop.example.test/", title: "Shop" });
+    expect(browserResultForModel(navigated)).toBe(navigated);
   });
 
   it("navigates, snapshots, and acts through the tool helpers", async () => {
