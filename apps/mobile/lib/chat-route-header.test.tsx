@@ -1,14 +1,34 @@
 // @vitest-environment jsdom
+
+import type { ReactNode } from "react";
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ChatSplit } from "../components/chat-route-header";
 import { chatRouteHeader } from "../components/chat-route-header";
 
 const push = vi.hoisted(() => vi.fn());
 const setInboxHidden = vi.hoisted(() => vi.fn());
+const platform = vi.hoisted(() => ({ OS: "ios" }));
 vi.mock("react-native", () => ({
-  Platform: { OS: "ios" },
-  Pressable: () => null,
-  View: () => null,
+  Platform: platform,
+  Pressable: (props: {
+    children?: ReactNode;
+    accessibilityLabel?: string;
+    onPress?: () => void;
+    disabled?: boolean;
+  }) =>
+    createElement(
+      "button",
+      {
+        type: "button",
+        "aria-label": props.accessibilityLabel,
+        onClick: props.onPress,
+        disabled: props.disabled,
+      },
+      props.children,
+    ),
+  View: (props: { children?: ReactNode }) => createElement("div", null, props.children),
 }));
 vi.mock("expo-router", () => ({ router: { push } }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({ foreground: "#000" }) }));
@@ -27,6 +47,8 @@ vi.mock("../components/sheet-header", () => ({
 }));
 
 beforeEach(() => {
+  platform.OS = "ios";
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   push.mockClear();
   setInboxHidden.mockClear();
 });
@@ -44,10 +66,40 @@ it("declares a bot chat's title and its … menu when the screen is created", ()
   expect(options.headerTitle).toBeTypeOf("function");
   expect(options.headerTitleAlign).toBe("center");
   expect(options.headerTransparent).toBe(true);
-  const [item] = rightItems(options);
+  const [computer, item] = rightItems(options);
+  expect(computer).toMatchObject({
+    type: "button",
+    label: "Open computer",
+    icon: { type: "sfSymbol", name: "desktopcomputer" },
+  });
+  (computer as { onPress: () => void }).onPress();
+  expect(push).toHaveBeenCalledWith({
+    pathname: "/computer",
+    params: { botId: "bot-1", name: "Helper" },
+  });
   expect(item).toMatchObject({ type: "menu", icon: { type: "sfSymbol", name: "ellipsis" } });
   expect(options.headerRight).toBeTypeOf("function");
   expect(options.headerBackVisible).toBe(true);
+});
+
+it("opens the computer directly from an Android bot header", async () => {
+  platform.OS = "android";
+  const options = header({ botId: "bot-1", name: "Helper" });
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(options.headerRight?.({} as never)));
+    const button = container.querySelector<HTMLButtonElement>('[aria-label="Open computer"]');
+    expect(button).not.toBeNull();
+    await act(async () => button?.click());
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/computer",
+      params: { botId: "bot-1", name: "Helper" },
+    });
+    expect(container.querySelector('[aria-label="Bot actions"]')).not.toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+  }
 });
 
 it("declares a group chat's settings button, which opens the group's settings", () => {

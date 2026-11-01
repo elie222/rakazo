@@ -32,6 +32,11 @@ const picker = vi.hoisted(() => ({
     | undefined,
 }));
 
+vi.mock("../components/native-symbol", () => ({
+  NativeSymbol: (props: { android: string }) =>
+    createElement("span", { "data-symbol": props.android, "aria-hidden": true }),
+}));
+
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("react-native", () => {
   function MockView(props: {
