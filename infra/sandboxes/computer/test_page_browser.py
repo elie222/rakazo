@@ -1970,7 +1970,9 @@ class PageBrowserTest(unittest.TestCase):
         step = {"kind": "fill", "ref": "f22", "text": "fake-secret", "origin": SHOP_PAGE, "field": "password"}
         result = browser.act([step], "auth")
         self.assertEqual((result["ok"], result["completed"], result["uncertain"]), (False, 0, False))
-        self.assertIn(AUTH_SITE, result["error"])
+        # Both sites and nothing else, so the bot can tell a wrong page from a login saved for the wrong site.
+        self.assertEqual(result["error"], f"This field is in a frame from {AUTH_SITE}, and this login is saved for "
+                                          f"{SHOP_PAGE}, so nothing was filled.")
         self.assertNotIn("fake-secret", json.dumps(result))
         self.assertNotIn("fallback", result)
         self.assertEqual(browser.fills, [])

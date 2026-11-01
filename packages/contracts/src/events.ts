@@ -136,6 +136,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     // an ask persisted before an owner toggles the private-HTTP flag still
     // validates on replay.
     credential: botSecretDestinationSchema({ allowPrivateHttpOrigin: true }).optional(),
+    /** On a login card, the saved login this card replaces. */
+    replaces: z.string().max(64).optional(),
     /** The fields a login card asks for, by label; absent means DEFAULT_LOGIN_FIELD_LABELS. */
     loginFields: LoginFieldLabels.optional(),
     /** On a fetch approval, the site an "always" answer allows. */

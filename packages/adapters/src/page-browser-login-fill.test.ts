@@ -195,7 +195,9 @@ describe("live page helper saved-login fill", () => {
     for (const url of ["https://example.test/login", "https://www.example.test.evil.test/login"]) {
       const { domWindow, browser } = installPageHelper(url, html);
       const email = refFor("Email", browser.snapshot().elements);
-      expect(() => browser.fill(email, "fake-user", origin, "username")).toThrow(/not on the site/);
+      expect(() => browser.fill(email, "fake-user", origin, "username")).toThrow(
+        `This login is saved for https://www.example.test; the page is on ${new URL(url).origin}.`,
+      );
       expect(fieldValue(domWindow, "Email")).toBe("");
     }
   });

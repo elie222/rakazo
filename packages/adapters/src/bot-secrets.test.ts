@@ -7,14 +7,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   credentialArgument,
   encodeRunLogin,
+  forgetBotSecret,
+  listBotSecrets,
   loadLoginPasswordRedactions,
   loadRunLoginRedactions,
   normalizeSecretDestination,
+  prepareBotSecret,
   requestWithBotSecret,
   resolveLoginFill,
   resolveRequestSecretDestination,
   sameSecretDestination,
+  storeBotSecret,
 } from "./bot-secrets.js";
+import { fakeDatabase } from "./bot-secrets.test-support.js";
 import { EncryptedSecretStore } from "./secrets.js";
 
 afterEach(() => {
@@ -1186,5 +1191,164 @@ describe("logins kept for one run", () => {
     const redacted = redactSecrets(forms.join("\n"), redactions);
     for (const form of forms) expect(redacted).not.toContain(form);
     expect(await loadRunLoginRedactions(prisma, secretStore, scope, "run-2")).toEqual([]);
+  });
+});
+
+describe("replacing a saved login's site", () => {
+  const WWW = "https://www.example.test";
+  const LOGIN = "https://login.example.test";
+  const REFUSED = "Remove the existing credential before changing its destination";
+  const login = (origin: string): BotSecretDestination => ({
+    name: "site_login",
+    origin,
+    auth: { type: "login" },
+  });
+  const typed = (password: string) =>
+    encodeLoginSecret({
+      fields: [
+        { label: "Username", value: "fake-user", hidden: false },
+        { label: "Password", value: password, hidden: true },
+      ],
+    });
+
+  async function save(db: ReturnType<typeof fakeDatabase>, destination = login(WWW)) {
+    await storeBotSecret({
+      prisma: db.prisma,
+      secretStore,
+      scope,
+      destination,
+      plaintext: destination.auth.type === "login" ? typed("fake-password-www") : "fake-token-1",
+    });
+    return { ...db.rows().find((row) => row.name === destination.name)! };
+  }
+
+  function prepare(
+    db: ReturnType<typeof fakeDatabase>,
+    destination: BotSecretDestination,
+    password: string,
+    options: { replaces?: string; createOnly?: boolean } = {},
+  ) {
+    return prepareBotSecret({
+      prisma: db.prisma,
+      secretStore,
+      scope,
+      destination,
+      plaintext: destination.auth.type === "login" ? typed(password) : password,
+      ...options,
+    });
+  }
+
+  const commit = (
+    db: ReturnType<typeof fakeDatabase>,
+    prepared: Awaited<ReturnType<typeof prepareBotSecret>>,
+  ) => db.prisma.$transaction((tx) => prepared.store(tx));
+
+  it("moves the one saved row to the new site with the value typed for it", async () => {
+    const db = fakeDatabase();
+    const before = await save(db);
+    await commit(
+      db,
+      await prepare(db, login(LOGIN), "fake-password-login", { replaces: before.id }),
+    );
+    expect(db.rows()).toHaveLength(1);
+    const [row] = db.rows();
+    expect(row).toMatchObject({ id: before.id, name: "site_login", origin: LOGIN });
+    expect(row!.ciphertext).not.toBe(before.ciphertext);
+    expect(await secretStore.load(row!.ciphertext, row!.id)).toBe(typed("fake-password-login"));
+    expect(JSON.stringify(db.rows())).not.toContain(WWW);
+    // Origin and value are one write, so no state has one without the other.
+    expect(db.prisma.vaultCredential.update).toHaveBeenLastCalledWith({
+      where: { id: before.id },
+      data: { origin: LOGIN, ciphertext: row!.ciphertext },
+    });
+    // Every bot of the member lists it for the new site, and fills take their site from the row.
+    const otherBot = { ...scope, botId: "bot-2" };
+    expect(await listBotSecrets(db.prisma, otherBot)).toEqual([
+      expect.objectContaining(login(LOGIN)),
+    ]);
+    expect(
+      await resolveLoginFill({
+        prisma: db.prisma,
+        secretStore,
+        scope: otherBot,
+        runId: "run-1",
+        name: "site_login",
+        field: "Password",
+      }),
+    ).toMatchObject({ text: "fake-password-login", origin: LOGIN });
+  });
+
+  it("keeps refusing another site to every save that isn't a card replacing that login", async () => {
+    const db = fakeDatabase();
+    const before = await save(db);
+    await expect(
+      storeBotSecret({
+        prisma: db.prisma,
+        secretStore,
+        scope,
+        destination: login(LOGIN),
+        plaintext: typed("fake-password-login"),
+      }),
+    ).rejects.toThrow(REFUSED);
+    await expect(
+      prepare(db, login(LOGIN), "fake-password-login", { replaces: before.id, createOnly: true }),
+    ).rejects.toThrow("A credential with this name is already saved");
+    // A card that replaces another login, or none, including one given the old site.
+    for (const replaces of ["other-login", WWW, undefined]) {
+      await expect(prepare(db, login(LOGIN), "fake-password-login", { replaces })).rejects.toThrow(
+        REFUSED,
+      );
+    }
+    expect(db.rows()).toEqual([before]);
+  });
+
+  it("moves only a login, only to another HTTPS login", async () => {
+    vi.stubEnv("RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP", "1");
+    const db = fakeDatabase();
+    const token = await save(db, { name: "api", origin: WWW, auth: { type: "bearer" } });
+    const saved = await save(db);
+    const attempts: Array<[BotSecretDestination, string]> = [
+      [{ name: "api", origin: LOGIN, auth: { type: "bearer" } }, token.id],
+      [{ name: "api", origin: LOGIN, auth: { type: "login" } }, token.id],
+      [{ name: "api", origin: "http://192.168.1.20", auth: { type: "bearer" } }, token.id],
+      [{ name: "site_login", origin: LOGIN, auth: { type: "bearer" } }, saved.id],
+    ];
+    for (const [destination, replaces] of attempts) {
+      await expect(prepare(db, destination, "fake-value-2", { replaces })).rejects.toThrow(REFUSED);
+    }
+    expect(db.rows()).toEqual([token, saved]);
+  });
+
+  it("won't let a card replace a login saved after it was opened", async () => {
+    // Opened when nothing was saved under the name; a login for www is saved meanwhile.
+    const db = fakeDatabase();
+    const opened = await prepare(db, login(LOGIN), "fake-password-login");
+    const before = await save(db);
+    await expect(commit(db, opened)).rejects.toThrow(REFUSED);
+    // Opened to replace a login that was then removed and saved again, as another row.
+    const replacing = await prepare(db, login(LOGIN), "fake-password-login", {
+      replaces: before.id,
+    });
+    await forgetBotSecret(db.prisma, scope, "site_login");
+    const again = await save(db);
+    expect(again.id).not.toBe(before.id);
+    await expect(commit(db, replacing)).rejects.toThrow(REFUSED);
+    expect(db.rows()).toEqual([again]);
+  });
+
+  it("keeps the site and value of the last of two cards replacing the same login", async () => {
+    const db = fakeDatabase();
+    const before = await save(db);
+    const toLogin = await prepare(db, login(LOGIN), "fake-password-login", {
+      replaces: before.id,
+    });
+    const toOther = await prepare(db, login("https://other.example.test"), "fake-password-other", {
+      replaces: before.id,
+    });
+    await Promise.all([commit(db, toLogin), commit(db, toOther)]);
+    expect(db.rows()).toHaveLength(1);
+    const [row] = db.rows();
+    expect(row).toMatchObject({ id: before.id, origin: "https://other.example.test" });
+    expect(await secretStore.load(row!.ciphertext, row!.id)).toBe(typed("fake-password-other"));
   });
 });

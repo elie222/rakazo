@@ -435,12 +435,13 @@ export function sameSecretDestination(
   );
 }
 
+/** The credential saved under `name`. Its row id is for a card that replaces it, never for the bot. */
 export async function findBotSecret(prisma: PrismaClient, scope: BotSecretScope, name: string) {
   const row = await prisma.vaultCredential.findFirst({
     where: { ...(await vaultFields(prisma, scope)), name },
-    select: metadata,
+    select: { ...metadata, id: true },
   });
-  return row ? normalizeSecretDestination(row) : null;
+  return row ? { id: row.id, destination: normalizeSecretDestination(row) } : null;
 }
 
 export async function prepareBotSecret(input: {
@@ -451,6 +452,11 @@ export async function prepareBotSecret(input: {
   plaintext: string;
   /** Refuse instead of replacing a credential saved under this name, even by a concurrent call. */
   createOnly?: boolean;
+  /**
+   * The id of the saved login of this name that this login replaces, from a login card the person
+   * answered for another site. Without it, a credential's destination never changes.
+   */
+  replaces?: string;
 }) {
   const { prisma, secretStore, scope } = input;
   let { plaintext } = input;
@@ -473,7 +479,14 @@ export async function prepareBotSecret(input: {
   });
   function validate(row: typeof existing, count: number) {
     if (row && input.createOnly) throw new Error(SECRET_ALREADY_SAVED);
-    if (row && !sameSecretDestination(normalizeSecretDestination(row), destination))
+    const saved = row && normalizeSecretDestination(row);
+    // Only an HTTPS login moves to another site, and only the saved login the card replaces.
+    const replaced =
+      saved?.auth.type === "login" &&
+      row?.id === input.replaces &&
+      destination.origin.startsWith("https://") &&
+      sameSecretDestination({ ...saved, origin: destination.origin }, destination);
+    if (saved && !sameSecretDestination(saved, destination) && !replaced)
       throw new Error("Remove the existing credential before changing its destination");
     if (!row && count >= 100) throw new Error("Credential limit reached");
   }
@@ -511,8 +524,12 @@ export async function prepareBotSecret(input: {
       }
       if (current?.id !== existing?.id)
         throw Object.assign(new Error("Credential changed while saving; retry"), { code: "P2034" });
+      // The site and the value change together; validate allowed another site only when replacing.
       if (current)
-        await tx.vaultCredential.update({ where: { id }, data: { ciphertext: stored.ciphertext } });
+        await tx.vaultCredential.update({
+          where: { id },
+          data: { origin: destination.origin, ciphertext: stored.ciphertext },
+        });
       else
         await tx.vaultCredential.create({
           data: { id, ...vault, ...destination, ciphertext: stored.ciphertext },
@@ -582,7 +599,7 @@ export async function generateBotSecret(input: {
   const command: BotSecretDestination | undefined = parsed.data.command
     ? { name: loginCommandName(name), origin: "", auth: { type: "command" } }
     : undefined;
-  const existing = await findBotSecret(input.prisma, input.scope, name);
+  const existing = (await findBotSecret(input.prisma, input.scope, name))?.destination;
   if (existing) {
     return {
       result: sameSecretDestination(existing, destination)

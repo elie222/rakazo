@@ -178,6 +178,7 @@ export function createRunSecretWriter(secretStore: SecretStore): RunSecretWriter
                 scope,
                 destination: ask.credential,
                 plaintext,
+                replaces: ask.replaces,
               })
             : await secretStore.put(
                 runLogin ? encodeRunLogin(runLogin.origin, plaintext) : plaintext,
