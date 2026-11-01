@@ -245,8 +245,8 @@ export class RemoteMcpSessionCache {
       const session = await this.sessionFor(key, options);
       session.inFlight += 1;
       const deadline = AbortSignal.timeout(MCP_TIMEOUT_MS);
+      const signal = combineSignals(options.signal, deadline);
       try {
-        const signal = combineSignals(options.signal, deadline);
         return await run(session.client, signal);
       } catch (error) {
         // The server rejected the session id before running the request, so a
@@ -259,8 +259,12 @@ export class RemoteMcpSessionCache {
         }
         // The SDK stops waiting at the deadline but leaves the HTTP request
         // running on the transport; only closing the session aborts it and
-        // tells the server to drop the work, as a one-off session does.
-        if (brokeMcpSession(session, error) || (deadline.aborted && !options.signal?.aborted))
+        // tells the server to drop the work, as a one-off session does. The
+        // combined signal keeps the reason of whichever signal fired first.
+        if (
+          brokeMcpSession(session, error) ||
+          (signal.aborted && signal.reason === deadline.reason)
+        )
           void this.drop(session);
         throw error;
       } finally {

@@ -143,6 +143,54 @@ describe("run-scoped remote MCP sessions", () => {
     }
   });
 
+  it.each([
+    ["the deadline fires first", true],
+    ["the caller cancels first", false],
+  ])(
+    "closes the session only when the deadline ends the call: %s",
+    async (_case, deadlineFirst) => {
+      let hangNext = true;
+      const server = mcpServer(({ message, respond }) => {
+        if (message.method !== "tools/call") return undefined;
+        if (!hangNext) return respond({ result: { content: [{ type: "text", text: "done" }] } });
+        hangNext = false;
+        return new Promise<Response>(() => undefined) as unknown as Response;
+      });
+      const pool = new RemoteMcpSessionCache();
+      const deadlines: AbortController[] = [];
+      const timeout = AbortSignal.timeout.bind(AbortSignal);
+      const spy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+        if (ms !== 30_000) return timeout(ms);
+        const controller = new AbortController();
+        deadlines.push(controller);
+        return controller.signal;
+      });
+      try {
+        const caller = new AbortController();
+        const hanging = scopedCall(pool, "run-1 srv", server, caller.signal);
+        await vi.waitFor(() => expect(server.toolCalls).toHaveLength(1));
+        // Both fire before the call's rejection is handled; the first one decides.
+        const expire = () => deadlines.at(-1)?.abort(new DOMException("Timed out", "TimeoutError"));
+        if (deadlineFirst) {
+          expire();
+          caller.abort();
+        } else {
+          caller.abort();
+          expire();
+        }
+        await expect(hanging).rejects.toThrow();
+
+        await expect(scopedCall(pool, "run-1 srv", server)).resolves.toMatchObject({
+          content: [{ text: "done" }],
+        });
+        expect(server.initializations()).toBe(deadlineFirst ? 2 : 1);
+      } finally {
+        spy.mockRestore();
+        await pool.close();
+      }
+    },
+  );
+
   it("closes an idle session, so the next call opens a fresh one", async () => {
     const server = statefulServer();
     const pool = new RemoteMcpSessionCache(40);
