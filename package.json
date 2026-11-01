@@ -37,6 +37,7 @@
     "test:flows": "tsx packages/testkit/src/cli/flows.ts",
     "perf:desktop": "tsx packages/testkit/src/cli/desktop-performance.ts",
     "perf:compare": "tsx packages/testkit/src/cli/compare-performance.ts",
+    "bench:page-browser": "tsx packages/testkit/src/cli/page-browser-bench.ts",
     "perf:web-chat": "tsx packages/testkit/src/cli/web-chat-performance.ts",
     "compose:up": "docker compose --env-file .env -f infra/compose/docker-compose.yml up --build",
     "compose:down": "docker compose --env-file .env -f infra/compose/docker-compose.yml down -v"
