@@ -114,6 +114,10 @@ internal class PollTokenCache {
   }
 }
 
+/** Sign-out clears the stored space id; only the session that still owns the history may write it. */
+internal fun ownsStoredHistory(storedSpaceId: String?, sessionSpaceId: String?): Boolean =
+  sessionSpaceId != null && storedSpaceId == sessionSpaceId
+
 internal class PollHistoryWrites {
   private var persistedSeen: Set<String>? = null
 

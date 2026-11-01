@@ -150,6 +150,15 @@ class NotificationPollingTest {
   }
 
   @Test
+  fun `a sign-out before the mute leaves the cleared history alone`() {
+    // Sign-out clears the stored space id; the old session must not write its seen set back.
+    assertFalse(ownsStoredHistory(storedSpaceId = null, sessionSpaceId = "space-1"))
+    assertFalse(ownsStoredHistory(storedSpaceId = "space-2", sessionSpaceId = "space-1"))
+    assertFalse(ownsStoredHistory(storedSpaceId = null, sessionSpaceId = null))
+    assertTrue(ownsStoredHistory(storedSpaceId = "space-1", sessionSpaceId = "space-1"))
+  }
+
+  @Test
   fun `muting with no discarded direct reply writes no history`() {
     val completions = PollCompletions(mutableSetOf())
     completions.page(listOf(run("group").copy(groupId = "group-1")))

@@ -75,7 +75,10 @@ class RakazoNotificationService : Service() {
       intent?.getStringExtra(EXTRA_MUTED_BOT_ID)?.let { botId ->
         // Only a seeded poll can hold pending replies, and a discard always changes the
         // seen set, so the mute persists here instead of waiting for the next poll.
-        completions.muteBot(botId) { persistCompleted(seeded = true) }
+        completions.muteBot(botId) {
+          val stored = getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).getString(SEEN_RUNS_SPACE_ID, null)
+          if (ownsStoredHistory(stored, historySpaceId)) persistCompleted(seeded = true)
+        }
       }
       sessionGeneration.incrementAndGet().also {
         if (intent?.action == ACTION_THREAD_CHANGED && (openBotId != null || openThreadId != null)) {
