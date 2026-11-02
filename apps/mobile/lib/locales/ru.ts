@@ -493,6 +493,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Failed to send message": "Не удалось отправить сообщение",
   "Failed to stop work": "Не удалось остановить работу",
   File: "Файл",
+  "Did you mean {email}?": "Вы имели в виду {email}?",
   "Forgot password?": "Забыли пароль?",
   "Find models": "Найти модели",
   "Finding…": "Поиск…",

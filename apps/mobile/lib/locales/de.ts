@@ -211,6 +211,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Custom server {host}": "Eigener Server {host}",
   "Don’t have an account?": "Du hast noch kein Konto?",
   Email: "E-Mail",
+  "Did you mean {email}?": "Meintest du {email}?",
   "Forgot password?": "Passwort vergessen?",
   "Loading…": "Wird geladen…",
   Password: "Passwort",
