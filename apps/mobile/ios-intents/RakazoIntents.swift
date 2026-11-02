@@ -183,8 +183,14 @@ private func send(_ message: String, file: IntentFile?, to bot: BotEntity?) asyn
 private func reply(to sent: Delivery) async throws -> String? {
   guard try await sent.session.waitForReply(runId: sent.runId, botId: sent.botId, spaceId: sent.spaceId)
   else { return nil }
-  let thread: ThreadSnapshot = try await sent.session.rpc(
-    "threads/get", ["botId": sent.botId], spaceId: sent.spaceId, timeout: 5)
+  let thread: ThreadSnapshot
+  do {
+    thread = try await sent.session.rpc(
+      "threads/get", ["botId": sent.botId], spaceId: sent.spaceId, timeout: 5)
+  } catch let error as URLError {
+    if error.code == .cancelled { throw error }
+    return nil
+  }
   if thread.run?.id == sent.runId, thread.run?.status == "failed" {
     throw MessageBotError.server(nil)
   }
@@ -381,16 +387,21 @@ private struct RakazoSession {
       try checkResponse(response)
       var frame = Data()
       var previousLf = false
+      var discardingFrame = false
       // AsyncBytes.lines omits empty lines, so split SSE frames on bytes instead.
       for try await byte in bytes {
         if byte == 13 { continue }
         if byte == 10 && previousLf {
+          previousLf = false
+          if discardingFrame {
+            discardingFrame = false
+            continue
+          }
           let payload = String(decoding: frame, as: UTF8.self).split(separator: "\n")
             .filter { $0.hasPrefix("data:") }
             .map { $0.dropFirst(5).trimmingCharacters(in: .whitespaces) }
             .joined(separator: "\n")
           frame.removeAll(keepingCapacity: true)
-          previousLf = false
           guard let data = payload.data(using: .utf8),
             let event = try? JSONDecoder().decode(Envelope<ReplyEvent>.self, from: data).json,
             event.runId == runId
@@ -398,9 +409,13 @@ private struct RakazoSession {
           if ["run.completed", "run.failed", "run.cancelled", "run.waiting_input",
               "computer.takeover.requested"].contains(event.type) { return true }
         } else {
-          frame.append(byte)
           previousLf = byte == 10
-          guard frame.count <= 1_048_576 else { throw MessageBotError.server(nil) }
+          guard !discardingFrame else { continue }
+          frame.append(byte)
+          if frame.count > 1_048_576 {
+            frame.removeAll(keepingCapacity: true)
+            discardingFrame = true
+          }
         }
       }
     } catch let error as URLError {
