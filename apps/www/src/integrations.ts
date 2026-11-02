@@ -37,7 +37,8 @@ const ClaimsSchema = z.object({
 /** Owners' reviewed edits to their pages, keyed by URL slug. Without them the catalog's words ship. */
 async function loadClaims(): Promise<Map<string, z.infer<typeof ClaimsSchema>["claims"][number]>> {
   try {
-    const response = await fetch(INTEGRATION_CLAIMS_URL);
+    // Optional, so a slow API never holds up the build.
+    const response = await fetch(INTEGRATION_CLAIMS_URL, { signal: AbortSignal.timeout(15_000) });
     if (!response.ok) throw new Error(`Claims fetch failed: ${response.status}`);
     const { claims } = ClaimsSchema.parse(await response.json());
     return new Map(claims.map((claim) => [claim.slug, claim]));
