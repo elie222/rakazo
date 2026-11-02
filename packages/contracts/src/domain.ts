@@ -1710,44 +1710,36 @@ export const DeploymentSettingsSchema = z.object({
   sandboxProvider: z.string(),
 });
 
-/** Where new computers run, as an admin set it in Settings. Secrets are never returned. */
+/** Public metadata only; adapter validation and constructor options stay server-side. */
+export const ComputerProviderFieldSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  kind: z.enum(["text", "secret", "url", "select"]),
+  required: z.boolean(),
+  options: z.array(z.object({ value: z.string(), label: z.string() })).optional(),
+  validation: z.enum(["public-https"]).optional(),
+  /** A saved credential must be re-entered when its destination changes. */
+  destination: z.string().optional(),
+});
+export type ComputerProviderField = z.infer<typeof ComputerProviderFieldSchema>;
+export const ComputerProviderDescriptorSchema = z.object({
+  id: z.string(),
+  displayName: z.string(),
+  fields: z.array(ComputerProviderFieldSchema),
+  capabilities: z.object({ perAccount: z.boolean() }),
+});
+export type ComputerProviderDescriptor = z.infer<typeof ComputerProviderDescriptorSchema>;
 export const ComputerProviderSettingsSchema = z.object({
-  /** "default" keeps the deployment's SANDBOX_PROVIDER. */
-  provider: z.enum(["default", "wuying"]),
-  /** The deployment's own SANDBOX_PROVIDER, used while provider is "default". */
+  provider: z.string(),
   defaultProvider: z.string(),
-  wuying: z
-    .object({
-      regionId: z.string(),
-      desktopId: z.string(),
-      endUserId: z.string(),
-      mcpUrl: z.string(),
-      hasAccessKey: z.boolean(),
-      hasMcpToken: z.boolean(),
-    })
-    .nullable(),
+  providers: z.array(ComputerProviderDescriptorSchema),
+  values: z.record(z.string(), z.string()),
+  savedSecrets: z.record(z.string(), z.boolean()),
 });
 export type ComputerProviderSettings = z.infer<typeof ComputerProviderSettingsSchema>;
-
-const settingText = (max: number) => z.string().trim().max(max);
-
 export const ComputerProviderUpdateSchema = z.object({
-  provider: z.enum(["default", "wuying"]),
-  /** Blank secret fields keep the ones already saved. */
-  wuying: z
-    .object({
-      // Part of the API endpoint's host name, such as cn-hangzhou.
-      regionId: settingText(64)
-        .regex(/^([a-z]+(-[a-z0-9]+)+)?$/)
-        .optional(),
-      desktopId: settingText(128),
-      endUserId: settingText(256),
-      mcpUrl: settingText(2048).url(),
-      accessKeyId: settingText(256).optional(),
-      accessKeySecret: settingText(256).optional(),
-      mcpToken: settingText(4096).optional(),
-    })
-    .optional(),
+  provider: z.string().trim().min(1).max(64),
+  values: z.record(z.string().max(64), z.string().trim().max(4096)).default({}),
 });
 export type ComputerProviderUpdate = z.infer<typeof ComputerProviderUpdateSchema>;
 

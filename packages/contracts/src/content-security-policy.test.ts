@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   APP_CONTENT_SECURITY_POLICY,
   appContentSecurityPolicy,
+  COMPUTER_SCREEN_PATH,
   CSP_REPORT_PATH,
   CSP_REPORTING_ENDPOINTS,
   contentSecurityPolicyFor,
   HTML_VIEWER_PATH,
   parseContentSecuritySources,
   parseCrispWebsiteId,
-  WUYING_SCREEN_PATH,
 } from "./content-security-policy.js";
 
 function directives(policy: string) {
@@ -69,21 +69,37 @@ describe("app content security policy", () => {
   });
 
   it("isolates Wuying documents without widening the app policy", () => {
-    const screen = directives(contentSecurityPolicyFor(WUYING_SCREEN_PATH)!);
+    const screen = directives(contentSecurityPolicyFor(COMPUTER_SCREEN_PATH)!);
     expect(screen.get("sandbox")).toEqual(["allow-scripts", "allow-pointer-lock"]);
     expect(screen.get("frame-ancestors")).toEqual(["'self'"]);
     expect(screen.get("connect-src")).not.toContain("'self'");
     expect(screen.get("script-src")).not.toContain("'unsafe-eval'");
     expect(screen.get("script-src")).toContain("'wasm-unsafe-eval'");
-    expect(screen.get("script-src")).toContain(
+    expect(screen.get("script-src")).not.toContain(
       "https://o.alicdn.com/aliyun-ecs/eds-cdn/paho-mqtt/mqttws31.min.js",
     );
-    expect(screen.get("connect-src")).toContain("data:");
-    expect(screen.get("connect-src")).toContain("wss://*.wuying.aliyuncs.com:*");
+    expect(screen.get("connect-src")).not.toContain("data:");
+    expect(screen.get("connect-src")?.some((source) => source.endsWith(":*"))).toBe(false);
     expect(screen.get("script-src")).not.toContain("data:");
     const nested = directives(contentSecurityPolicyFor("/wuying/sdk/ASP/container.html")!);
     expect(nested.get("sandbox")).toEqual(screen.get("sandbox"));
+    expect(nested.get("script-src")).toContain(
+      "https://o.alicdn.com/aliyun-ecs/eds-cdn/paho-mqtt/mqttws31.min.js",
+    );
+    expect(nested.get("connect-src")).toContain("data:");
     expect(nested.get("frame-ancestors")).toBeUndefined();
+    for (const path of [
+      "/wuying/",
+      "/wuying/screen.js",
+      "/wuying/storage.js",
+      "/wuying/other.html",
+      "/wuying/sdk/ASP/container.html/",
+      "/wuying/sdk/ASP/container.html.extra",
+    ]) {
+      const restricted = directives(contentSecurityPolicyFor(path)!);
+      expect(restricted.get("frame-ancestors")).toEqual(["'self'"]);
+      expect(restricted.get("sandbox")).toEqual(screen.get("sandbox"));
+    }
     expect(contentSecurityPolicyFor("/chat")).toBe(APP_CONTENT_SECURITY_POLICY);
   });
 });

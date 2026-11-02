@@ -17,6 +17,20 @@ Published-images [Compose](../infra/compose/docker-compose.images.yml) defaults 
 It always starts the supervisor and requires `SANDBOX_SUPERVISOR_TOKEN`, including for `none`
 and remote providers. This stack credential does not replace a remote provider's API key.
 
+## Settings configuration
+
+Admins can choose **Settings → Computer → New computers run on** and save the fields shown for
+E2B, Novita, Daytona, CreateOS, Boat, Boxd, Railway, or Wuying. The API supplies the provider's field
+descriptors and validates values server-side. Credentials are encrypted in the secret store and
+never returned; a blank secret field keeps its saved value for the same provider and destination.
+Changing a URL requires credentials again. **Deployment default** uses `SANDBOX_PROVIDER`.
+Docker, Kubernetes, desktop, fake, and none remain environment-only. Settings overrides are disabled
+for desktop and fake deployments.
+
+The account form offers only providers that declare support for account-owned computers (currently
+Wuying). Team Computers follow their owner's account choice; Private Computers use the deployment
+choice. See [Wuying setup](./wuying-computers.md) for that adapter's fields and requirements.
+
 ## Choosing a provider
 
 The Electron desktop app is a client of the same API. Docker remains the default. For an app-managed local instance, the local operator can choose **Use this Mac** (macOS) or **Use this computer** (Windows/Linux). After native confirmation, an authenticated bridge sends commands from the Docker backend to Electron, where they run under your OS account. **Computer Access…** in the app menu changes the choice; **Revoke Local Computer Access** immediately disconnects active operations and revokes the saved permission. Local execution requires the desktop app to remain running. Connecting to an existing remote instance does not grant it access to your computer. Browser and mobile clients use the deployment’s configured computer; they do not expose their own host. `SANDBOX_PROVIDER=desktop` is a separate, development-only configuration for backends running directly on the intended host.

@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type {
   AdapterContext,
   CommandRequest,
@@ -17,80 +16,80 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
 import { cancelComputerRunWork, probeBackgroundWork } from "./computer-idle.js";
+import { computerProviderDescriptor } from "./computer-provider-registry.js";
 import { manageComputerWorkspaceDirectories } from "./computer-workspace.js";
-import type { WuyingSandboxOptions } from "./wuying-sandbox.js";
+import { credentialDigest } from "./credential-digest.js";
+import { createSandboxProvider } from "./sandbox-factory.js";
 
-// Wuying and its Alibaba Cloud SDK load only once Settings holds a Wuying connection.
-async function createWuyingProvider(settings: StoredWuyingSettings): Promise<SandboxProvider> {
-  const { WuyingSandboxProvider } = await import("./wuying-sandbox.js");
-  return WuyingSandboxProvider.fromOptions(settings);
+export const COMPUTER_PROVIDER_SECRET_KIND = "computer-provider";
+export interface StoredComputerSettings {
+  provider: string;
+  values: Record<string, string>;
+  /** Retain other deployment connections for computers already running there. */
+  connections?: Record<string, Record<string, string>>;
+  /** Ciphertext identifies a credential version without retaining another plaintext copy. */
+  ciphertext?: string;
 }
-
-/**
- * The desktop's power state and a screen login through ECD, and a harmless read through its MCP
- * gateway when the desktop is on.
- */
-export async function verifyWuyingConnection(settings: StoredWuyingSettings, signal: AbortSignal) {
-  const [{ WuyingOpenApi }, { WuyingMcpTools }] = await Promise.all([
-    import("./wuying-openapi.js"),
-    import("./wuying-sandbox.js"),
-  ]);
-  const control = new WuyingOpenApi(settings);
-  const status = await control.desktopStatus(settings.desktopId, signal);
-  if (status === null)
-    throw new Error(`Wuying does not list this desktop in ${settings.regionId} for the AccessKey`);
-  await control.authCode(settings.endUserId, signal);
-  if (status !== "Running") return;
-  const tools = new WuyingMcpTools({ url: settings.mcpUrl, token: settings.mcpToken });
-  await tools.call("env_get", { name: "USERPROFILE" }, signal);
-}
-
-/** Reads the Settings choice again in this process, as right after an admin saved it. */
-export async function refreshComputerProvider(sandbox: SandboxProvider) {
-  if (sandbox instanceof ConfiguredSandbox) await sandbox.refresh();
-}
-
-/** How long a read of the Settings choice is reused before the next call reads it again. */
-const SETTINGS_TTL_MS = 10_000;
-
-/** Cached reads of computers' own desktops, and live Wuying providers, kept at most. */
-const CACHE_LIMIT = 1_000;
-
-/** Secret kind holding the Wuying desktop an account saved for its own Team Computers. */
-export const ACCOUNT_WUYING_SECRET_KIND = "wuying-computer";
-
-/** The Wuying connection saved in Settings, as stored inside its secret. */
-export type StoredWuyingSettings = Omit<WuyingSandboxOptions, "regionId"> & { regionId: string };
-
 export interface ComputerProviderSelection {
-  /** True when Settings sends new computers to Wuying. */
-  wuying: boolean;
-  /** The saved connection, kept after switching back so existing Wuying computers still work. */
-  settings: StoredWuyingSettings | null;
+  provider: string;
+  settings: StoredComputerSettings | null;
 }
-
-export function parseStoredWuyingSettings(plaintext: string): StoredWuyingSettings | null {
+export function parseStoredComputerSettings(plaintext: string): StoredComputerSettings | null {
   try {
-    const value = JSON.parse(plaintext) as Record<string, unknown>;
-    const text = (key: string) => (typeof value[key] === "string" ? (value[key] as string) : "");
-    const settings = {
-      accessKeyId: text("accessKeyId"),
-      accessKeySecret: text("accessKeySecret"),
-      regionId: text("regionId") || "cn-hangzhou",
-      desktopId: text("desktopId"),
-      endUserId: text("endUserId"),
-      mcpUrl: text("mcpUrl"),
-      mcpToken: text("mcpToken"),
+    const value = JSON.parse(plaintext);
+    if (
+      typeof value.provider !== "string" ||
+      !value.values ||
+      typeof value.values !== "object" ||
+      Array.isArray(value.values) ||
+      Object.values(value.values).some((v) => typeof v !== "string")
+    )
+      return null;
+    computerProviderDescriptor(value.provider).verify(value.values);
+    const connections: Record<string, Record<string, string>> = {};
+    if (value.connections) {
+      for (const [id, values] of Object.entries(value.connections)) {
+        if (
+          !values ||
+          typeof values !== "object" ||
+          Array.isArray(values) ||
+          Object.values(values).some((entry) => typeof entry !== "string")
+        )
+          return null;
+        computerProviderDescriptor(id).verify(values as Record<string, string>);
+        connections[id] = values as Record<string, string>;
+      }
+    }
+    return {
+      provider: value.provider,
+      values: value.values,
+      ...(Object.keys(connections).length ? { connections } : {}),
     };
-    return Object.values(settings).every(Boolean) ? settings : null;
   } catch {
     return null;
   }
 }
-
-/** Reads the Settings choice and its decrypted Wuying connection. */
+async function decryptSettings(
+  secrets: Pick<SecretStore, "load">,
+  secret: { id: string; ciphertext: string },
+) {
+  try {
+    const settings = parseStoredComputerSettings(await secrets.load(secret.ciphertext, secret.id));
+    return settings ? { ...settings, ciphertext: secret.ciphertext } : null;
+  } catch {
+    return null;
+  }
+}
+export function computerSettingsForProvider(
+  settings: StoredComputerSettings | null,
+  provider: string,
+): StoredComputerSettings | null {
+  if (!settings) return null;
+  const values =
+    settings.provider === provider ? settings.values : settings.connections?.[provider];
+  return values ? { provider, values, ciphertext: settings.ciphertext } : null;
+}
 export async function loadComputerProviderSelection(
   prisma: PrismaClient,
   secrets: Pick<SecretStore, "load">,
@@ -106,194 +105,157 @@ export async function loadComputerProviderSelection(
           select: { id: true, ciphertext: true },
         })
       : null;
-    return { provider: settings?.computerProvider ?? null, secret };
+    return { provider: settings?.computerProvider ?? "default", secret };
   });
-  const settings = row.secret ? await decryptWuyingSettings(secrets, row.secret) : null;
-  return { wuying: row.provider === "wuying" && settings !== null, settings };
+  const settings = row.secret ? await decryptSettings(secrets, row.secret) : null;
+  return {
+    provider: settings && settings.provider === row.provider ? row.provider : "default",
+    settings,
+  };
 }
-
-async function decryptWuyingSettings(
-  secrets: Pick<SecretStore, "load">,
-  secret: { id: string; ciphertext: string },
-) {
-  try {
-    return parseStoredWuyingSettings(await secrets.load(secret.ciphertext, secret.id));
-  } catch (error) {
-    // A connection that no longer decrypts, as after a key change, waits to be saved again
-    // rather than fail every computer.
-    getLogger().warn("computer_provider.settings_unreadable", { error });
-    return null;
-  }
-}
-
-/** The Wuying desktop an account saved for itself, or null when it uses the deployment's. */
-export async function loadAccountWuyingSettings(
+export async function loadAccountComputerSettings(
   prisma: PrismaClient,
   secrets: Pick<SecretStore, "load">,
   userId: string,
-): Promise<StoredWuyingSettings | null> {
-  const secret = await runAsSystem("read an account's own Wuying desktop", () =>
+) {
+  const secret = await runAsSystem("read account computer settings", () =>
     prisma.secret.findFirst({
-      where: { userId, spaceId: null, kind: ACCOUNT_WUYING_SECRET_KIND },
+      where: { userId, spaceId: null, kind: COMPUTER_PROVIDER_SECRET_KIND },
       orderBy: { createdAt: "desc" },
       select: { id: true, ciphertext: true },
     }),
   );
-  return secret ? decryptWuyingSettings(secrets, secret) : null;
+  const settings = secret ? await decryptSettings(secrets, secret) : null;
+  return settings && computerProviderDescriptor(settings.provider).capabilities.perAccount
+    ? settings
+    : null;
 }
-
-/** The Wuying desktop a Team Computer's owner saved for it, by the computer's home key. */
-export async function loadComputerOwnerWuyingSettings(
+export async function loadComputerOwnerSettings(
   prisma: PrismaClient,
   secrets: Pick<SecretStore, "load">,
   homeKey: string,
-): Promise<StoredWuyingSettings | null> {
-  const computer = await runAsSystem("read whose computer runs on which desktop", () =>
+) {
+  const computer = await runAsSystem("read computer owner", () =>
     prisma.computer.findUnique({ where: { homeKey }, select: { userId: true, scope: true } }),
   );
-  // Private Computers stay on the deployment's provider; Wuying runs Team Computers only.
   return computer?.scope === "team"
-    ? loadAccountWuyingSettings(prisma, secrets, computer.userId)
+    ? loadAccountComputerSettings(prisma, secrets, computer.userId)
     : null;
 }
-
-/** An account's own desktop and the provider that reaches it. */
-type OwnDesktop = { desktopId: string; provider: SandboxProvider };
-
-function connectionKey(settings: StoredWuyingSettings) {
-  return createHash("sha256").update(JSON.stringify(settings)).digest("hex");
+export async function refreshComputerProvider(sandbox: SandboxProvider) {
+  if (sandbox instanceof ConfiguredSandbox) await sandbox.refresh();
 }
 
-/** Adds to a bounded cache, dropping the oldest entry once it is full. */
-function remember<K, V>(cache: Map<K, V>, key: K, value: V) {
-  cache.delete(key);
-  cache.set(key, value);
-  if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as K);
-}
-
-/**
- * Sends new computers to the provider chosen in Settings, or to the Wuying desktop their owner
- * saved for themselves, and every existing computer to the provider it already runs on, so
- * switching never strands a computer that is already running.
- */
+/** Resolve settings per operation; retain only the adapter for each current ciphertext. */
 export class ConfiguredSandbox implements SandboxProvider {
-  readonly pageBrowser?: SandboxProvider["pageBrowser"];
-  private selection: ComputerProviderSelection = { wuying: false, settings: null };
-  private loadedAt = 0;
-  private loading?: Promise<void>;
-  private wuying?: { key: string; provider: SandboxProvider };
-  /** Wuying providers by connection, shared by every computer on the same desktop. */
-  private readonly providers = new Map<string, Promise<SandboxProvider>>();
-  /** Each computer's owner's own desktop, by home key, read at most every SETTINGS_TTL_MS. */
-  private readonly own = new Map<string, { at: number; desktop: Promise<OwnDesktop | null> }>();
-  private readonly loadOwn: (homeKey: string) => Promise<StoredWuyingSettings | null>;
-  private readonly createWuying: (settings: StoredWuyingSettings) => Promise<SandboxProvider>;
-
+  readonly pageBrowser: NonNullable<SandboxProvider["pageBrowser"]>;
+  private selection: ComputerProviderSelection = { provider: "default", settings: null };
+  private selected?: SandboxProvider;
+  private readonly providers = new Map<
+    string,
+    {
+      ciphertext: string;
+      digest: string;
+      provider: Promise<SandboxProvider>;
+      resolved?: SandboxProvider;
+    }
+  >();
   constructor(
     private readonly primary: SandboxProvider,
     private readonly load: () => Promise<ComputerProviderSelection>,
-    options: {
-      /** The Wuying desktop a computer's owner saved for it, by its home key. */
-      loadOwn?: (homeKey: string) => Promise<StoredWuyingSettings | null>;
-      createWuying?: (settings: StoredWuyingSettings) => Promise<SandboxProvider>;
+    private readonly options: {
+      loadOwn?: (homeKey: string) => Promise<StoredComputerSettings | null>;
+      onSecretChange?: SecretStore["onChange"];
+      createProvider?: (settings: StoredComputerSettings) => Promise<SandboxProvider>;
     } = {},
   ) {
-    this.loadOwn = options.loadOwn ?? (async () => null);
-    this.createWuying = options.createWuying ?? createWuyingProvider;
-    if (primary.pageBrowser) {
-      this.pageBrowser = (computer, request, context) =>
-        computer.kind === "wuying"
-          ? Promise.resolve({
-              ok: false,
-              uncertain: false,
-              fallback: "computer_act",
-              error: "Page browser is unavailable on this computer.",
-            })
-          : primary.pageBrowser!(computer, request, context);
-    }
-    void this.refresh().catch(() => undefined);
-  }
-
-  /** Reads the Settings choices again now, as after one was saved. */
-  async refresh() {
-    this.own.clear();
-    this.loading ??= this.load()
-      .then(async (selection) => {
-        // Ready before the selection is, so every synchronous read sees a loaded provider.
-        await this.loadWuying(selection.settings);
-        this.selection = selection;
-        this.loadedAt = Date.now();
-      })
-      .finally(() => {
-        this.loading = undefined;
-      });
-    return this.loading;
-  }
-
-  private async current() {
-    if (Date.now() - this.loadedAt >= SETTINGS_TTL_MS) await this.refresh();
-    return this.selection;
-  }
-
-  private async loadWuying(settings: StoredWuyingSettings | null) {
-    if (!settings) return;
-    const key = connectionKey(settings);
-    if (this.wuying?.key !== key) this.wuying = { key, provider: await this.providerFor(settings) };
-  }
-
-  private providerFor(settings: StoredWuyingSettings) {
-    const key = connectionKey(settings);
-    const cached = this.providers.get(key);
-    if (cached) return cached;
-    const provider = this.createWuying(settings);
-    remember(this.providers, key, provider);
-    provider.catch(() => {
-      if (this.providers.get(key) === provider) this.providers.delete(key);
+    options.onSecretChange?.((ref) => {
+      for (const [key, entry] of this.providers)
+        if (entry.ciphertext === ref) this.providers.delete(key);
     });
+    this.pageBrowser = async (computer, request, context) => {
+      const provider = await this.route(computer);
+      return provider.pageBrowser
+        ? provider.pageBrowser(computer, request, context)
+        : {
+            ok: false,
+            uncertain: false,
+            fallback: "computer_act",
+            error: "Page browser is unavailable on this computer.",
+          };
+    };
+  }
+  async refresh() {
+    const selection = await this.load();
+    this.selected = selection.settings
+      ? await this.providerFor(selection.settings, "deployment")
+      : undefined;
+    if (!selection.settings) this.forgetOwner("deployment");
+    this.selection = selection;
+  }
+  private forgetOwner(owner: string) {
+    for (const key of this.providers.keys())
+      if (key.startsWith(`${owner}:`)) this.providers.delete(key);
+  }
+  private providerFor(settings: StoredComputerSettings, owner: string) {
+    const ciphertext = settings.ciphertext ?? credentialDigest(JSON.stringify(settings));
+    const digest = credentialDigest(JSON.stringify(settings.values));
+    const cached = this.providers.get(`${owner}:${settings.provider}`);
+    if (cached?.ciphertext === ciphertext && cached.digest === digest) return cached.provider;
+    const provider = this.options.createProvider
+      ? this.options.createProvider(settings)
+      : createSandboxProvider(
+          settings.provider,
+          computerProviderDescriptor(settings.provider).verify(settings.values),
+        );
+    this.providers.delete(`${owner}:${settings.provider}`);
+    this.providers.set(`${owner}:${settings.provider}`, { ciphertext, digest, provider });
+    if (this.providers.size > 1000) this.providers.delete(this.providers.keys().next().value!);
+    provider.catch(() => {
+      if (this.providers.get(`${owner}:${settings.provider}`)?.provider === provider)
+        this.providers.delete(`${owner}:${settings.provider}`);
+    });
+    void provider.then(
+      (resolved) => {
+        const entry = this.providers.get(`${owner}:${settings.provider}`);
+        if (entry?.provider === provider) Object.assign(entry, { resolved });
+      },
+      () => {},
+    );
     return provider;
   }
-
-  private ownDesktop(homeKey: string) {
-    const cached = this.own.get(homeKey);
-    if (cached && Date.now() - cached.at < SETTINGS_TTL_MS) return cached.desktop;
-    const desktop = this.loadOwn(homeKey).then(async (settings) =>
-      settings
-        ? { desktopId: settings.desktopId, provider: await this.providerFor(settings) }
-        : null,
-    );
-    remember(this.own, homeKey, { at: Date.now(), desktop });
-    desktop.catch(() => {
-      if (this.own.get(homeKey)?.desktop === desktop) this.own.delete(homeKey);
-    });
-    return desktop;
+  private async ownSettings(homeKey: string) {
+    const settings = (await this.options.loadOwn?.(homeKey)) ?? null;
+    if (!settings) this.forgetOwner(homeKey);
+    return settings;
   }
-
-  private wuyingProvider(settings: StoredWuyingSettings | null) {
-    return settings ? this.wuying?.provider : undefined;
-  }
-
-  /** The provider that owns an existing computer. */
   private async route(computer: Pick<ComputerRef, "kind" | "botId" | "providerRef">) {
-    if (computer.kind !== "wuying") return this.primary;
-    // A computer stays on the desktop it runs on until it starts again.
-    const own = await this.ownDesktop(computer.botId);
-    if (own?.desktopId === computer.providerRef) return own.provider;
-    return this.wuyingProvider((await this.current()).settings) ?? this.primary;
+    const own = await this.ownSettings(computer.botId);
+    if (own?.provider === computer.kind) {
+      const provider = await this.providerFor(own, computer.botId);
+      if (provider.ownsReference?.(computer) ?? true) return provider;
+    }
+    await this.refresh();
+    const saved = computerSettingsForProvider(this.selection.settings, computer.kind);
+    if (saved) {
+      const provider = await this.providerFor(saved, "deployment");
+      if (provider.ownsReference?.(computer) ?? true) return provider;
+    }
+    const primaryKind =
+      (await this.primary.provisionKind?.(computer.botId)) ?? this.primary.describe().id;
+    if (computer.kind === primaryKind && (this.primary.ownsReference?.(computer) ?? true))
+      return this.primary;
+    throw new Error("The computer's provider connection is no longer configured");
   }
-
-  /** The provider a computer goes to when it starts. */
   private async target(homeKey?: string) {
-    const own = homeKey ? await this.ownDesktop(homeKey) : null;
-    if (own) return own.provider;
-    const selection = await this.current();
-    return (selection.wuying && this.wuyingProvider(selection.settings)) || this.primary;
+    const own = homeKey ? await this.ownSettings(homeKey) : null;
+    if (own) return this.providerFor(own, homeKey!);
+    await this.refresh();
+    return this.selection.provider !== "default" && this.selected ? this.selected : this.primary;
   }
-
   describe() {
-    const selection = this.selection;
     return (
-      (selection.wuying && this.wuyingProvider(selection.settings)) ||
-      this.primary
+      this.selection.provider !== "default" && this.selected ? this.selected : this.primary
     ).describe();
   }
 
@@ -313,14 +275,8 @@ export class ConfiguredSandbox implements SandboxProvider {
     const target = await this.target(request.botId);
     const kind = target.describe().id;
     // A reference from the other provider means nothing to this one.
-    const providerRef =
-      target === this.primary
-        ? request.providerKind === "wuying"
-          ? undefined
-          : request.providerRef
-        : request.providerKind === kind
-          ? request.providerRef
-          : undefined;
+    const expectedKind = (await target.provisionKind?.(request.botId)) ?? kind;
+    const providerRef = request.providerKind === expectedKind ? request.providerRef : undefined;
     return target.provision({ ...request, providerRef }, context);
   }
 
@@ -460,8 +416,14 @@ export class ConfiguredSandbox implements SandboxProvider {
   }
 
   billsWhileRunning(computer: ComputerRef): boolean {
-    if (computer.kind === "wuying") return true;
-    return this.primary.billsWhileRunning?.(computer) ?? false;
+    if (computer.kind === this.primary.describe().id)
+      return this.primary.billsWhileRunning?.(computer) ?? false;
+    for (const entry of this.providers.values()) {
+      if (entry.resolved?.describe().id === computer.kind)
+        return entry.resolved.billsWhileRunning?.(computer) ?? false;
+    }
+    // An unresolved or invalidated remote connection must not disable idle shutdown.
+    return true;
   }
 
   async keepAlive(computer: ComputerRef) {

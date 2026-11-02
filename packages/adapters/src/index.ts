@@ -48,6 +48,8 @@ export * from "./computer-browser.js";
 export * from "./computer-control.js";
 export * from "./computer-idle.js";
 export * from "./computer-lifecycle.js";
+export * from "./computer-provider-descriptor.js";
+export * from "./computer-provider-registry.js";
 export * from "./computer-screens.js";
 export * from "./computer-support.js";
 export * from "./computer-tools.js";

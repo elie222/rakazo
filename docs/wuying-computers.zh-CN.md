@@ -38,34 +38,21 @@ Bot 可以把一台现有的[无影云电脑](https://www.aliyun.com/product/ecs
 
 1. 先把自己设成管理员：把账号邮箱写进 `.env` 的 `RAKAZO_ADMIN_EMAILS`，然后重启 API。这个邮箱必须是已验证的。
 2. 打开 **设置 → Computer**。
-3. 在 **New computers run on** 里选 **Wuying cloud computer**。
+3. 在 **New computers run on** 里选 **Wuying**。
 4. 填写云电脑 ID、终端用户 ID、地域（默认 `cn-hangzhou`）、AccessKey ID 和 Secret、MCP 网关地址和 MCP Token，然后点 **Save**。
-
-   网关给的 MCP 客户端配置可以一次填好两个 MCP 字段：原样粘贴到 **MCP gateway URL** 里即可，例如
-
-   ```json
-   {
-     "mcpServers": {
-       "mindcenter": {
-         "url": "https://gw-<id>.cn-hangzhou.aigclinks.com:8019/mcp",
-         "headers": { "Authorization": "Bearer <token>" }
-       }
-     }
-   }
-   ```
 
 保存前会先检查：AccessKey 能否查到这台云电脑并签发屏幕登录码；如果云电脑正在运行，MCP 网关能否响应。任何一项失败都不会保存。
 连接信息用部署的 `ENCRYPTION_KEY` 加密保存，AccessKey Secret 和 MCP Token 保存后不会再显示。
-以后只想改其他字段时，密钥字段留空即可，会继续使用已保存的值。换了 MCP 网关地址时，需要重新填写 Token。
+以后只想改其他字段时，密钥字段留空即可，会继续使用已保存的值。换了 MCP 网关地址时，需要重新填写所有密钥。URL 和 Token 分别填写；网关必须使用 HTTPS 和公网地址。
 
 选择 **Deployment default** 会让新电脑回到 `SANDBOX_PROVIDER` 指定的沙箱。已保存的无影连接会保留，
 已经在无影上的电脑可以继续使用，下次启动时会换到默认沙箱。
 
 ### 每个账号用自己的云电脑
 
-不是管理员的账号，在 **设置 → Computer** 里也会看到同样的表单，用来设置这个账号自己的 Team Computer 跑在哪里：
+每个账号都可以在 **设置 → Computer** 配置自己的电脑；管理员展开部署表单下的 **My computers**。此表单设置账号自己的 Team Computer 跑在哪里：
 选 **Deployment default** 就用部署默认的电脑（上面管理员的选择，或 `SANDBOX_PROVIDER`）；
-选 **Wuying cloud computer** 就用这个账号自己的云电脑、自己的 AccessKey 和 MCP 网关。保存前同样会先检查。
+选 **Wuying** 就用这个账号自己的云电脑、自己的 AccessKey 和 MCP 网关。保存前同样会先检查。
 
 连接信息保存在账号上，不属于某个空间，其他人都读不到。已经在运行的 Team Computer 会留在原来的云电脑上，
 下次启动时才换过去。Private Computer 始终用部署默认的电脑。切回 **Deployment default** 会删除已保存的连接。
@@ -84,6 +71,14 @@ Bot 可以把一台现有的[无影云电脑](https://www.aliyun.com/product/ecs
 | `WUYING_MCP_URL` / `WUYING_MCP_TOKEN` | 云电脑的 MCP 网关地址和 Bearer Token |
 
 设置里保存的连接优先于这些环境变量，已经在无影上的电脑也会改用它。`SANDBOX_PROVIDER` 是 `desktop` 或 `fake` 时，设置里的选择不起作用。
+
+## 屏幕隔离
+
+SDK 的本地模式在屏幕页内加载 `/wuying/sdk/ASP/container.html`。屏幕页没有
+`allow-same-origin`，其不透明来源无法匹配运行时的 `frame-ancestors 'self'`。
+只有这个精确路径省略祖先限制与 X-Frame-Options；其他 `/wuying/` 路径仍限制为同源嵌入。
+运行时仍受沙箱 CSP 限制，服务器不会给它发送凭据；屏幕登录码由已登录的应用传入。
+屏幕 WebSocket 只允许默认 TLS 端口，非标准端口暂不支持，MCP 网关端口不受此限制。
 
 ## 限制
 

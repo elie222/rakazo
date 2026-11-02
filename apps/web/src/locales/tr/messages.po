@@ -454,14 +454,6 @@ msgstr "{label} hakkında"
 msgid "Access token (optional)"
 msgstr "Erişim token'ı (isteğe bağlı)"
 
-#: src/components/ComputerProviderSettings.tsx
-msgid "AccessKey ID"
-msgstr ""
-
-#: src/components/ComputerProviderSettings.tsx
-msgid "AccessKey secret"
-msgstr ""
-
 #: src/components/AccountMenu.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Account"
@@ -1302,7 +1294,6 @@ msgstr ""
 msgid "Checking connection…"
 msgstr "Bağlantı kontrol ediliyor…"
 
-#: src/components/ComputerProviderSettings.tsx
 #: src/components/ComputersUnavailableHint.tsx
 #: src/components/DesktopUpdates.tsx
 #: src/pages/HostComputerPrompt.tsx
@@ -2574,10 +2565,6 @@ msgstr ""
 msgid "Desktop app"
 msgstr ""
 
-#: src/components/ComputerProviderSettings.tsx
-msgid "Desktop ID"
-msgstr ""
-
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop update"
 msgstr ""
@@ -2781,10 +2768,6 @@ msgstr "E-posta doğrulaması gerekiyor"
 #: src/pages/shell/bot-panel.tsx
 msgid "Enable {0}"
 msgstr "{0} etkinleştir"
-
-#: src/components/ComputerProviderSettings.tsx
-msgid "End user ID"
-msgstr ""
 
 #: src/lib/billing.ts
 msgid "Ends {day}"
@@ -3694,10 +3677,6 @@ msgstr "Maksimum çıktı token sayısı"
 msgid "MCP endpoint"
 msgstr ""
 
-#: src/components/ComputerProviderSettings.tsx
-msgid "MCP gateway URL"
-msgstr ""
-
 #: src/pages/PluginsOverlay.tsx
 msgid "MCP server"
 msgstr ""
@@ -3706,10 +3685,6 @@ msgstr ""
 #: src/pages/shell/agent-import.tsx
 msgid "MCP servers"
 msgstr "MCP sunucuları"
-
-#: src/components/ComputerProviderSettings.tsx
-msgid "MCP token"
-msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -3954,6 +3929,10 @@ msgstr "Sesi kapat"
 
 #: src/components/call/CallCard.tsx
 msgid "Muted"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "My computers"
 msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
@@ -4806,10 +4785,6 @@ msgstr ""
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Refreshing…"
-msgstr ""
-
-#: src/components/ComputerProviderSettings.tsx
-msgid "Region"
 msgstr ""
 
 #: src/lib/user-error.ts
@@ -6580,10 +6555,6 @@ msgstr "ChatGPT veya Claude aboneliğinle çalışır."
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "Workspace"
-msgstr ""
-
-#: src/components/ComputerProviderSettings.tsx
-msgid "Wuying cloud computer"
 msgstr ""
 
 #: src/lib/billing.ts

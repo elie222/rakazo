@@ -73,7 +73,7 @@ export const AUDITED_PROCEDURES: Record<string, AuditedProcedure> = {
   },
   "computerProvider.account.update": {
     type: "credential.changed",
-    kind: "wuying_computer",
+    kind: "computer_provider",
     fields: ["provider"],
   },
   "mcp.assignments.approve": {

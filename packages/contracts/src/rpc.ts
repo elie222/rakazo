@@ -349,7 +349,7 @@ export const appContract = {
   computerProvider: {
     get: oc.output(ComputerProviderSettingsSchema),
     update: oc.input(ComputerProviderUpdateSchema).output(ComputerProviderSettingsSchema),
-    /** The signed-in account's own Wuying desktop for its Team Computers, over the default. */
+    /** The signed-in account's provider for Team Computers, over the default. */
     account: {
       get: oc.output(ComputerProviderSettingsSchema),
       update: oc.input(ComputerProviderUpdateSchema).output(ComputerProviderSettingsSchema),

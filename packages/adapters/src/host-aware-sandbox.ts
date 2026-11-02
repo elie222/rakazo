@@ -17,10 +17,11 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { cancelComputerRunWork } from "./computer-idle.js";
+import { computerProviderDescriptor } from "./computer-provider-registry.js";
 import { manageComputerWorkspaceDirectories } from "./computer-workspace.js";
 import {
   ConfiguredSandbox,
-  loadComputerOwnerWuyingSettings,
+  loadComputerOwnerSettings,
   loadComputerProviderSelection,
 } from "./configured-sandbox.js";
 import { assertHostCommandsAllowed, DesktopSandboxProvider } from "./desktop-sandbox.js";
@@ -35,16 +36,31 @@ export function sandboxKindForBot(envKind: string, computerHost: string | null |
 
 export async function createRunSandbox(
   kind: string,
-  opts: SandboxProviderOptions & { prisma?: PrismaClient; secrets?: Pick<SecretStore, "load"> },
+  opts: SandboxProviderOptions & {
+    prisma?: PrismaClient;
+    secrets?: Pick<SecretStore, "load" | "onChange">;
+  },
 ): Promise<SandboxProvider> {
   const base = await createBaseRunSandbox(kind, opts);
   // With the database at hand, Settings can send computers elsewhere: an admin's choice for
-  // everyone, or the Wuying desktop an account saved for its own.
+  // everyone, or an account's own provider.
   if (!opts.prisma || !opts.secrets || kind === "desktop" || kind === "fake") return base;
   const { prisma, secrets } = opts;
-  return new ConfiguredSandbox(base, () => loadComputerProviderSelection(prisma, secrets), {
-    loadOwn: (homeKey) => loadComputerOwnerWuyingSettings(prisma, secrets, homeKey),
-  });
+  const configured = new ConfiguredSandbox(
+    base,
+    () => loadComputerProviderSelection(prisma, secrets),
+    {
+      onSecretChange: secrets.onChange?.bind(secrets),
+      loadOwn: (homeKey) => loadComputerOwnerSettings(prisma, secrets, homeKey),
+      createProvider: (settings) =>
+        createBaseRunSandbox(settings.provider, {
+          ...opts,
+          ...computerProviderDescriptor(settings.provider).verify(settings.values),
+        }),
+    },
+  );
+  await configured.refresh();
+  return configured;
 }
 
 async function createBaseRunSandbox(
@@ -115,6 +131,10 @@ export class HostAwareSandbox implements SandboxProvider {
             });
       };
     }
+  }
+
+  ownsReference(computer: Pick<ComputerRef, "kind" | "providerRef">) {
+    return this.route(computer).ownsReference?.(computer) ?? true;
   }
 
   describe() {

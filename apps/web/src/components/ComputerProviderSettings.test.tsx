@@ -46,16 +46,22 @@ vi.mock("../lib/rpc", () => ({
 }));
 
 const saved = {
-  provider: "wuying" as const,
-  defaultProvider: "wuying",
-  wuying: {
-    regionId: "cn-hangzhou",
-    desktopId: "ecd-own",
-    endUserId: "end-user",
-    mcpUrl: "https://gateway.example.com/mcp",
-    hasAccessKey: true,
-    hasMcpToken: true,
-  },
+  provider: "personal-desktop",
+  defaultProvider: "docker",
+  providers: [
+    {
+      id: "personal-desktop",
+      displayName: "Personal desktop",
+      capabilities: { perAccount: true },
+      fields: [
+        { key: "desktop", label: "Desktop", kind: "text", required: true },
+        { key: "url", label: "Gateway", kind: "url", required: true },
+        { key: "token", label: "Token", kind: "secret", required: true, destination: "url" },
+      ],
+    },
+  ],
+  values: { desktop: "example-desktop", url: "https://gateway.example.com/mcp" },
+  savedSecrets: { token: true },
 };
 
 let host: HTMLDivElement;
@@ -80,26 +86,27 @@ it("saves an account's own desktop to the account, never the deployment", async 
   await act(async () =>
     root.render(<ComputerProviderSettings scope="account" onProviderChange={onProviderChange} />),
   );
-  expect(host.querySelector<HTMLInputElement>("input")?.value).toBe("ecd-own");
+  expect(host.querySelector<HTMLInputElement>("input")?.value).toBe("example-desktop");
   // Loaded once, not again on every render.
   expect(account.get).toHaveBeenCalledOnce();
 
   await act(async () => host.querySelector("form")?.requestSubmit());
   expect(account.update).toHaveBeenCalledWith({
-    provider: "wuying",
-    wuying: expect.objectContaining({ desktopId: "ecd-own", accessKeySecret: "", mcpToken: "" }),
+    provider: saved.provider,
+    values: saved.values,
   });
   expect(deployment.get).not.toHaveBeenCalled();
   expect(deployment.update).not.toHaveBeenCalled();
-  expect(onProviderChange).toHaveBeenCalledWith("wuying");
+  expect(onProviderChange).toHaveBeenCalledWith(saved.provider);
 });
 
 it("reports the deployment default once an account goes back to it", async () => {
-  account.get.mockResolvedValue({ provider: "default", defaultProvider: "docker", wuying: null });
+  account.get.mockResolvedValue({ ...saved, provider: "default", values: {}, savedSecrets: {} });
   account.update.mockResolvedValue({
+    ...saved,
     provider: "default",
-    defaultProvider: "docker",
-    wuying: null,
+    values: {},
+    savedSecrets: {},
   });
   const onProviderChange = vi.fn();
   await act(async () =>
@@ -107,7 +114,7 @@ it("reports the deployment default once an account goes back to it", async () =>
   );
   expect(host.querySelector("input")).toBeNull();
   await act(async () => host.querySelector("form")?.requestSubmit());
-  expect(account.update).toHaveBeenCalledWith({ provider: "default" });
+  expect(account.update).toHaveBeenCalledWith({ provider: "default", values: {} });
   expect(onProviderChange).toHaveBeenCalledWith("docker");
 });
 
@@ -122,25 +129,16 @@ function paste(label: string, text: string) {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-it("fills in the gateway and its token from a pasted MCP config", async () => {
+it("requires credentials again after changing the destination", async () => {
   account.get.mockResolvedValue(saved);
-  account.update.mockResolvedValue(saved);
   await act(async () => root.render(<ComputerProviderSettings scope="account" />));
-  const config = {
-    mcpServers: {
-      desktop: {
-        url: "https://gateway.example.com:8019/mcp",
-        headers: { Authorization: "Bearer test-token" },
-      },
-    },
-  };
-  await act(async () => paste("MCP gateway URL", JSON.stringify(config, null, 2)));
-  await act(async () => host.querySelector("form")?.requestSubmit());
-  expect(account.update).toHaveBeenCalledWith({
-    provider: "wuying",
-    wuying: expect.objectContaining({
-      mcpUrl: "https://gateway.example.com:8019/mcp",
-      mcpToken: "test-token",
-    }),
-  });
+  expect(host.querySelector<HTMLInputElement>('input[type="password"]')?.required).toBe(false);
+  await act(async () => paste("Gateway", "https://other.example.com/mcp"));
+  expect(host.querySelector<HTMLInputElement>('input[type="password"]')?.required).toBe(true);
+});
+
+it("hides the account form when no provider supports accounts", async () => {
+  account.get.mockResolvedValue({ ...saved, providers: [] });
+  await act(async () => root.render(<ComputerProviderSettings scope="account" />));
+  expect(host.querySelector("form")).toBeNull();
 });

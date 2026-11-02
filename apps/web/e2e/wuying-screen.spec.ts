@@ -5,7 +5,7 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { contentSecurityPolicyFor } from "@rakazo/contracts/content-security-policy";
 
-test("the isolated Wuying runtime loads its decoder and connects to a gateway port", async ({
+test("the isolated Wuying runtime loads its decoder and connects to a TLS gateway", async ({
   page,
 }) => {
   const publicDir = path.resolve(import.meta.dirname, "../public/wuying");
@@ -25,7 +25,7 @@ test("the isolated Wuying runtime loads its decoder and connects to a gateway po
         script.onerror = reject;
         document.body.append(script);
       });
-      const socket = new WebSocket('wss://test.wuying.aliyuncs.com:8008/websocket');
+      const socket = new WebSocket('wss://test.wuying.aliyuncs.com/websocket');
       socket.onmessage = async () => {
         let isolated = false;
         try { parent.document.title; } catch { isolated = true; }
@@ -39,7 +39,7 @@ test("the isolated Wuying runtime loads its decoder and connects to a gateway po
   await page.route(mqttUrl, (route) =>
     route.fulfill({ contentType: "text/javascript", body: "/* Offline gateway dependency. */" }),
   );
-  await page.routeWebSocket("wss://test.wuying.aliyuncs.com:8008/websocket", (socket) => {
+  await page.routeWebSocket("wss://test.wuying.aliyuncs.com/websocket", (socket) => {
     socket.send("connected");
   });
   const routes: Record<string, [string, string]> = {
@@ -71,6 +71,13 @@ test("the isolated Wuying runtime loads its decoder and connects to a gateway po
   const server = createServer((request, response) => {
     const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
     if (pathname === "/api/private") privateApiRequests.push(pathname);
+    if (pathname === "/third-party") {
+      response.setHeader("Content-Type", "text/html");
+      response.end(
+        `<iframe src="http://localhost:${(server.address() as AddressInfo).port}/wuying/screen.html#desktop_id=ecd-fake&auth_code=fake"></iframe>`,
+      );
+      return;
+    }
     const route = routes[pathname];
     if (!route) {
       response.writeHead(404).end();
@@ -79,6 +86,8 @@ test("the isolated Wuying runtime loads its decoder and connects to a gateway po
     response.setHeader("Content-Type", route[0]);
     const policy = contentSecurityPolicyFor(pathname);
     if (policy) response.setHeader("Content-Security-Policy", policy);
+    if (pathname !== "/wuying/sdk/ASP/container.html")
+      response.setHeader("X-Frame-Options", "SAMEORIGIN");
     response.end(route[1]);
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -91,6 +100,11 @@ test("the isolated Wuying runtime loads its decoder and connects to a gateway po
       timeout: 5000,
     });
     expect(privateApiRequests).toEqual([]);
+    const blocked = page.waitForEvent("console", {
+      predicate: (message) => message.text().includes("frame-ancestors"),
+    });
+    await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/third-party`);
+    expect((await blocked).text()).toContain("frame-ancestors");
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));

@@ -458,6 +458,10 @@ export class WuyingSandboxProvider implements SandboxProvider {
     );
   }
 
+  ownsReference(computer: Pick<ComputerRef, "kind" | "providerRef">) {
+    return computer.kind === "wuying" && computer.providerRef === this.options.desktopId;
+  }
+
   async isRunning(computer: ComputerRef, context: AdapterContext) {
     if (computer.providerRef !== this.options.desktopId) return false;
     return (await this.control.desktopStatus(this.options.desktopId, context.signal)) === "Running";

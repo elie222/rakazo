@@ -1,12 +1,15 @@
 import { ORPCError } from "@orpc/server";
 import type { SandboxProvider, SecretStore } from "@rakazo/adapter-kit";
-import type { StoredWuyingSettings } from "@rakazo/adapters";
+import type { ResolveHostname, StoredComputerSettings } from "@rakazo/adapters";
 import {
-  ACCOUNT_WUYING_SECRET_KIND,
-  loadAccountWuyingSettings,
+  assertSafeWebUrl,
+  COMPUTER_PROVIDER_SECRET_KIND,
+  computerProviderDescriptor,
+  computerProviderDescriptors,
+  computerSettingsForProvider,
   loadComputerProviderSelection,
+  loadAccountComputerSettings as loadSavedAccountComputerSettings,
   refreshComputerProvider,
-  verifyWuyingConnection,
 } from "@rakazo/adapters";
 import type { Actor, ComputerProviderSettings, ComputerProviderUpdate } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
@@ -20,66 +23,88 @@ export interface ComputerProviderConfigDeps {
   secrets: Pick<SecretStore, "put" | "load">;
   sandbox: SandboxProvider;
   env: Pick<RouterDeps["env"], "sandboxProvider" | "adminEmails">;
+  resolveHostname?: ResolveHostname;
   /** Test seam: confirm the desktop answers before saving. */
-  verifyWuying?: (settings: StoredWuyingSettings, signal: AbortSignal) => Promise<void>;
+  verifyConnection?: (settings: StoredComputerSettings, signal: AbortSignal) => Promise<void>;
 }
 
 const VERIFY_TIMEOUT_MS = 20_000;
 
 function view(
-  wuying: boolean,
-  saved: StoredWuyingSettings | null,
+  provider: string,
+  saved: StoredComputerSettings | null,
   defaultProvider: string,
+  account = false,
+  enabled = true,
 ): ComputerProviderSettings {
-  return {
-    provider: wuying ? "wuying" : "default",
-    defaultProvider,
-    wuying: saved
-      ? {
-          regionId: saved.regionId,
-          desktopId: saved.desktopId,
-          endUserId: saved.endUserId,
-          mcpUrl: saved.mcpUrl,
-          hasAccessKey: Boolean(saved.accessKeyId && saved.accessKeySecret),
-          hasMcpToken: Boolean(saved.mcpToken),
-        }
-      : null,
-  };
-}
-
-/** The connection to save, checked against the desktop. Blank secrets keep the saved ones. */
-async function checkedWuyingSettings(
-  deps: ComputerProviderConfigDeps,
-  given: ComputerProviderUpdate["wuying"],
-  previous: StoredWuyingSettings | null,
-): Promise<StoredWuyingSettings> {
-  if (!given) throw new ORPCError("BAD_REQUEST", { message: "Wuying settings are missing" });
-  // The saved token goes only to the gateway it was saved for.
-  const settings: StoredWuyingSettings = {
-    regionId: given.regionId || "cn-hangzhou",
-    desktopId: given.desktopId,
-    endUserId: given.endUserId,
-    mcpUrl: given.mcpUrl,
-    accessKeyId: given.accessKeyId || previous?.accessKeyId || "",
-    accessKeySecret: given.accessKeySecret || previous?.accessKeySecret || "",
-    mcpToken: given.mcpToken || (previous?.mcpUrl === given.mcpUrl ? previous.mcpToken : "") || "",
-  };
-  const missing = Object.entries(settings).find(([, value]) => !value);
-  if (missing) throw new ORPCError("BAD_REQUEST", { message: `Wuying ${missing[0]} is required` });
-  try {
-    await (deps.verifyWuying ?? verifyWuyingConnection)(
-      settings,
-      AbortSignal.timeout(VERIFY_TIMEOUT_MS),
-    );
-  } catch (error) {
-    throw new ORPCError("BAD_REQUEST", {
-      message: `Could not reach the Wuying desktop: ${error instanceof Error ? error.message : String(error)}`,
-    });
+  if (!enabled) provider = "default";
+  const values: Record<string, string> = {};
+  const savedSecrets: Record<string, boolean> = {};
+  if (saved && saved.provider === provider) {
+    for (const field of computerProviderDescriptor(provider).fields) {
+      if (field.kind === "secret") savedSecrets[field.key] = Boolean(saved.values[field.key]);
+      else values[field.key] = saved.values[field.key] ?? "";
+    }
   }
-  return settings;
+  return {
+    provider,
+    defaultProvider,
+    values,
+    savedSecrets,
+    providers: enabled ? computerProviderDescriptors(account) : [],
+  };
 }
 
-function encrypt(deps: ComputerProviderConfigDeps, actor: Actor, settings: StoredWuyingSettings) {
+async function checkedSettings(
+  deps: ComputerProviderConfigDeps,
+  input: ComputerProviderUpdate,
+  previous: StoredComputerSettings | null,
+  account = false,
+): Promise<StoredComputerSettings> {
+  try {
+    const descriptor = computerProviderDescriptor(input.provider);
+    if (account && !descriptor.capabilities.perAccount)
+      throw new Error("Provider does not support account settings");
+    const values = { ...input.values };
+    const saved = computerSettingsForProvider(previous, input.provider)?.values ?? {};
+    const destinationChanged = descriptor.fields.some(
+      (field) => field.kind === "url" && (values[field.key] ?? "") !== (saved[field.key] ?? ""),
+    );
+    for (const field of descriptor.fields) {
+      if (
+        field.kind === "secret" &&
+        !values[field.key] &&
+        !destinationChanged &&
+        (!field.destination || values[field.destination] === saved[field.destination])
+      )
+        values[field.key] = saved[field.key] ?? "";
+    }
+    descriptor.verify(values);
+    const signal = AbortSignal.timeout(VERIFY_TIMEOUT_MS);
+    for (const field of descriptor.fields) {
+      if (field.kind === "url" && values[field.key])
+        await assertSafeWebUrl(values[field.key]!, deps.resolveHostname, signal);
+    }
+    const connections =
+      !account && previous
+        ? { ...previous.connections, [previous.provider]: previous.values }
+        : undefined;
+    if (connections) delete connections[input.provider];
+    const settings = {
+      provider: input.provider,
+      values,
+      ...(connections && Object.keys(connections).length ? { connections } : {}),
+    };
+    if (deps.verifyConnection) await deps.verifyConnection(settings, signal);
+    else await descriptor.verifyConnection?.(values, signal);
+    return settings;
+  } catch {
+    // Provider failures and schema errors can contain credentials. Never echo them.
+    throw new ORPCError("BAD_REQUEST", { message: "Could not verify computer settings" });
+  }
+}
+
+function encrypt(deps: ComputerProviderConfigDeps, actor: Actor, settings: StoredComputerSettings) {
   return deps.secrets.put(JSON.stringify(settings), {
     operationId: "computer-provider-config",
     traceId: "computer-provider-config",
@@ -95,7 +120,13 @@ export async function getComputerProviderSettings(
 ): Promise<ComputerProviderSettings> {
   await requireAdmin(deps, actor.userId);
   const selection = await loadComputerProviderSelection(deps.prisma, deps.secrets);
-  return view(selection.wuying, selection.settings, deps.env.sandboxProvider);
+  return view(
+    selection.provider,
+    selection.settings,
+    deps.env.sandboxProvider,
+    false,
+    routesBySettings(deps.env.sandboxProvider),
+  );
 }
 
 export async function updateComputerProviderSettings(
@@ -104,9 +135,11 @@ export async function updateComputerProviderSettings(
   input: ComputerProviderUpdate,
 ): Promise<ComputerProviderSettings> {
   await requireAdmin(deps, actor.userId);
+  if (input.provider !== "default" && !routesBySettings(deps.env.sandboxProvider))
+    throw new ORPCError("BAD_REQUEST", { message: "This deployment cannot use computer settings" });
   const existing = await loadComputerProviderSelection(deps.prisma, deps.secrets);
   if (input.provider === "default") {
-    // The saved connection stays, so computers already on Wuying keep working.
+    // Keep the connection for computers already using it.
     await runAsSystem("an admin keeps computers on the deployment provider", () =>
       deps.prisma.deploymentSettings.upsert({
         where: { id: "default" },
@@ -115,13 +148,19 @@ export async function updateComputerProviderSettings(
       }),
     );
     await refreshComputerProvider(deps.sandbox);
-    return view(false, existing.settings, deps.env.sandboxProvider);
+    return view(
+      "default",
+      existing.settings,
+      deps.env.sandboxProvider,
+      false,
+      routesBySettings(deps.env.sandboxProvider),
+    );
   }
   // Blank secrets keep the saved ones, so an admin never has to see them again.
-  const settings = await checkedWuyingSettings(deps, input.wuying, existing.settings);
+  const settings = await checkedSettings(deps, input, existing.settings);
   const stored = await encrypt(deps, actor, settings);
   await withSerializableRetry(() =>
-    runAsSystem("an admin sends new computers to Wuying", () =>
+    runAsSystem("an admin configures computers", () =>
       deps.prisma.$transaction(
         async (tx) => {
           const current = await tx.deploymentSettings.findUnique({
@@ -133,7 +172,7 @@ export async function updateComputerProviderSettings(
               id: stored.id,
               userId: actor.userId,
               spaceId: actor.spaceId,
-              kind: "computer-provider",
+              kind: COMPUTER_PROVIDER_SECRET_KIND,
               ciphertext: stored.ciphertext,
             },
           });
@@ -141,10 +180,10 @@ export async function updateComputerProviderSettings(
             where: { id: "default" },
             create: {
               id: "default",
-              computerProvider: "wuying",
+              computerProvider: input.provider,
               computerProviderSecretId: secret.id,
             },
-            update: { computerProvider: "wuying", computerProviderSecretId: secret.id },
+            update: { computerProvider: input.provider, computerProviderSecretId: secret.id },
           });
           if (current?.computerProviderSecretId && current.computerProviderSecretId !== secret.id) {
             await tx.secret.deleteMany({ where: { id: current.computerProviderSecretId } });
@@ -155,7 +194,7 @@ export async function updateComputerProviderSettings(
     ),
   );
   await refreshComputerProvider(deps.sandbox);
-  return view(true, settings, deps.env.sandboxProvider);
+  return view(input.provider, settings, deps.env.sandboxProvider);
 }
 
 /** Where computers run while an account keeps the deployment default. */
@@ -169,16 +208,22 @@ async function deploymentProvider(deps: ComputerProviderConfigDeps) {
   return effectiveSandboxProvider(settings, deps.env.sandboxProvider);
 }
 
-/** The Wuying desktop the signed-in account runs its own Team Computers on, if it saved one. */
+/** Account computer settings. */
 export async function getAccountComputerSettings(
   deps: ComputerProviderConfigDeps,
   actor: Actor,
 ): Promise<ComputerProviderSettings> {
   const [saved, defaultProvider] = await Promise.all([
-    loadAccountWuyingSettings(deps.prisma, deps.secrets, actor.userId),
+    loadSavedAccountComputerSettings(deps.prisma, deps.secrets, actor.userId),
     deploymentProvider(deps),
   ]);
-  return view(saved !== null, saved, defaultProvider);
+  return view(
+    saved?.provider ?? "default",
+    saved,
+    defaultProvider,
+    true,
+    routesBySettings(deps.env.sandboxProvider),
+  );
 }
 
 export async function updateAccountComputerSettings(
@@ -188,20 +233,26 @@ export async function updateAccountComputerSettings(
 ): Promise<ComputerProviderSettings> {
   // Those deployments run every computer on their own provider, never one chosen in Settings.
   if (!routesBySettings(deps.env.sandboxProvider))
-    throw new ORPCError("BAD_REQUEST", { message: "This deployment cannot use Wuying computers" });
-  const mine = { userId: actor.userId, spaceId: null, kind: ACCOUNT_WUYING_SECRET_KIND };
-  let saved: StoredWuyingSettings | null = null;
+    throw new ORPCError("BAD_REQUEST", {
+      message: "This deployment cannot use account computer settings",
+    });
+  const mine = { userId: actor.userId, spaceId: null, kind: COMPUTER_PROVIDER_SECRET_KIND };
+  let saved: StoredComputerSettings | null = null;
   if (input.provider === "default") {
     // The account's computers move to the deployment's desktop the next time they start.
     await runAsSystem("an account goes back to the deployment's computers", () =>
       deps.prisma.secret.deleteMany({ where: mine }),
     );
   } else {
-    const previous = await loadAccountWuyingSettings(deps.prisma, deps.secrets, actor.userId);
-    saved = await checkedWuyingSettings(deps, input.wuying, previous);
+    const previous = await loadSavedAccountComputerSettings(
+      deps.prisma,
+      deps.secrets,
+      actor.userId,
+    );
+    saved = await checkedSettings(deps, input, previous, true);
     const stored = await encrypt(deps, actor, saved);
     await withSerializableRetry(() =>
-      runAsSystem("an account saves its own Wuying desktop", () =>
+      runAsSystem("an account saves computer settings", () =>
         deps.prisma.$transaction(
           async (tx) => {
             // Account-level, so it outlives any one space and only its owner can read it.
@@ -216,7 +267,7 @@ export async function updateAccountComputerSettings(
     );
   }
   await refreshComputerProvider(deps.sandbox);
-  return view(saved !== null, saved, await deploymentProvider(deps));
+  return view(saved?.provider ?? "default", saved, await deploymentProvider(deps), true);
 }
 
 /** Whether computers on this deployment can run where Settings says. */
@@ -224,17 +275,14 @@ function routesBySettings(envProvider: string) {
   return envProvider !== "desktop" && envProvider !== "fake";
 }
 
-/**
- * The provider Me reports: the account's own Wuying desktop, else Settings' choice when it holds
- * a saved Wuying connection.
- */
+/** Effective provider id after the account and deployment overrides. */
 export function effectiveSandboxProvider(
   settings: { computerProvider?: string | null; computerProviderSecretId?: string | null } | null,
   envProvider: string,
-  ownWuying = false,
+  ownProvider?: string,
 ) {
-  if (ownWuying && routesBySettings(envProvider)) return "wuying";
-  return settings?.computerProvider === "wuying" && settings.computerProviderSecretId
-    ? "wuying"
-    : envProvider;
+  if (!routesBySettings(envProvider)) return envProvider;
+  return (
+    ownProvider || (settings?.computerProviderSecretId && settings.computerProvider) || envProvider
+  );
 }

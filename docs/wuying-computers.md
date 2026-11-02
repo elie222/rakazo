@@ -1,4 +1,4 @@
-# Wuying cloud computers
+# Wuyings
 
 [English](./wuying-computers.md) | [简体中文](./wuying-computers.zh-CN.md)
 
@@ -23,7 +23,7 @@ Deleting a computer removes only its home folder, never the desktop.
 
 You need:
 
-1. **A Wuying cloud computer** (Windows), created and **assigned to an end user**, such as a
+1. **A Wuying** (Windows), created and **assigned to an end user**, such as a
    convenience user. Screen logins are issued for that user.
 2. **A RAM user's AccessKey** allowed `ecd:DescribeDesktops`, `ecd:StartDesktops` and
    `appstream-center:GetAuthCode`. Keep it to those actions.
@@ -43,29 +43,15 @@ Admins can switch new computers to Wuying without editing the environment.
 1. Make yourself an admin: add your account's email to `RAKAZO_ADMIN_EMAILS` in `.env` and
    restart the API. The email must be verified.
 2. Open **Settings → Computer**.
-3. Under **New computers run on**, choose **Wuying cloud computer**.
+3. Under **New computers run on**, choose **Wuying**.
 4. Fill in the desktop ID, end user ID, region (defaults to `cn-hangzhou`), AccessKey ID and
    secret, MCP gateway URL and MCP token, then **Save**.
 
-   The gateway's MCP client config fills in both MCP fields at once: paste it into **MCP gateway
-   URL** as is, for example
-
-   ```json
-   {
-     "mcpServers": {
-       "mindcenter": {
-         "url": "https://gw-<id>.cn-hangzhou.aigclinks.com:8019/mcp",
-         "headers": { "Authorization": "Bearer <token>" }
-       }
-     }
-   }
-   ```
-
 Saving first checks that the AccessKey can see the desktop and issue a screen login and, when the
 desktop is running, that the gateway answers. Nothing is saved if a check fails. The connection is
-stored encrypted with the deployment's `ENCRYPTION_KEY`; the AccessKey secret and MCP token are
+stored encrypted with the deployment's `ENCRYPTION_KEY`; the AccessKey ID, AccessKey secret and MCP token are
 never shown again. To change other fields later, leave the secret fields blank and they keep their
-saved values. A new MCP gateway URL needs its token entered again.
+saved values. A new MCP gateway URL needs all credentials entered again. Paste the URL and token into their separate fields. The gateway must use HTTPS and a public address.
 
 Choosing **Deployment default** sends new computers back to `SANDBOX_PROVIDER`. The saved Wuying
 connection stays, so computers already on Wuying keep working; each moves to the default the next
@@ -73,9 +59,9 @@ time it starts.
 
 ### Each account's own desktop
 
-Accounts that are not admins see the same form under **Settings → Computer**. There it sets where
+Every account can use **Settings → Computer**; admins expand **My computers** below the deployment form. There it sets where
 that account's own Team Computers run: **Deployment default** keeps them on the deployment's
-computers (the admin's choice above, or `SANDBOX_PROVIDER`), and **Wuying cloud computer** runs
+computers (the admin's choice above, or `SANDBOX_PROVIDER`), and **Wuying** runs
 them on a desktop the account brings, with its own AccessKey and MCP gateway. The same checks run
 before it is saved.
 
@@ -99,6 +85,19 @@ Set `SANDBOX_PROVIDER=wuying` and these, on both the API and the worker:
 
 A connection saved in Settings takes precedence over these variables, for existing Wuying
 computers too. Settings has no effect when `SANDBOX_PROVIDER` is `desktop` or `fake`.
+
+## Screen isolation
+
+The pinned Web SDK's local mode loads `/wuying/sdk/ASP/container.html` inside the screen page.
+The screen page is sandboxed without `allow-same-origin`, so its opaque origin cannot match a
+runtime `frame-ancestors 'self'` policy. Only that exact runtime path omits ancestor restrictions
+and Caddy's X-Frame-Options. Its CSP still denies app-origin connections, forms and objects and
+keeps scripts sandboxed. It can be embedded by another site, but receives no credentials from the
+server; the authenticated app supplies a short-lived screen login in the screen page's fragment.
+Every other `/wuying/` path, including `screen.html`, requires same-origin ancestors and keeps
+X-Frame-Options. The policy permits the SDK's exact MQTT script and embedded WebAssembly data
+fetch; WebSocket connections use TLS on the default port. Nonstandard screen gateway ports are
+blocked pending a verified, narrowly scoped requirement. MCP gateway ports are independent.
 
 ## Limits
 

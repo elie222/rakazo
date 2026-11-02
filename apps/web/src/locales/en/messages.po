@@ -454,14 +454,6 @@ msgstr "About {label}"
 msgid "Access token (optional)"
 msgstr "Access token (optional)"
 
-#: src/components/ComputerProviderSettings.tsx
-msgid "AccessKey ID"
-msgstr "AccessKey ID"
-
-#: src/components/ComputerProviderSettings.tsx
-msgid "AccessKey secret"
-msgstr "AccessKey secret"
-
 #: src/components/AccountMenu.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Account"
@@ -1302,7 +1294,6 @@ msgstr "Checking computer setup…"
 msgid "Checking connection…"
 msgstr "Checking connection…"
 
-#: src/components/ComputerProviderSettings.tsx
 #: src/components/ComputersUnavailableHint.tsx
 #: src/components/DesktopUpdates.tsx
 #: src/pages/HostComputerPrompt.tsx
@@ -2574,10 +2565,6 @@ msgstr "Design"
 msgid "Desktop app"
 msgstr "Desktop app"
 
-#: src/components/ComputerProviderSettings.tsx
-msgid "Desktop ID"
-msgstr "Desktop ID"
-
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop update"
 msgstr "Desktop update"
@@ -2781,10 +2768,6 @@ msgstr "Email verification required"
 #: src/pages/shell/bot-panel.tsx
 msgid "Enable {0}"
 msgstr "Enable {0}"
-
-#: src/components/ComputerProviderSettings.tsx
-msgid "End user ID"
-msgstr "End user ID"
 
 #: src/lib/billing.ts
 msgid "Ends {day}"
@@ -3694,10 +3677,6 @@ msgstr "Maximum output tokens"
 msgid "MCP endpoint"
 msgstr "MCP endpoint"
 
-#: src/components/ComputerProviderSettings.tsx
-msgid "MCP gateway URL"
-msgstr "MCP gateway URL"
-
 #: src/pages/PluginsOverlay.tsx
 msgid "MCP server"
 msgstr "MCP server"
@@ -3706,10 +3685,6 @@ msgstr "MCP server"
 #: src/pages/shell/agent-import.tsx
 msgid "MCP servers"
 msgstr "MCP servers"
-
-#: src/components/ComputerProviderSettings.tsx
-msgid "MCP token"
-msgstr "MCP token"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -3955,6 +3930,10 @@ msgstr "Mute"
 #: src/components/call/CallCard.tsx
 msgid "Muted"
 msgstr "Muted"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "My computers"
+msgstr "My computers"
 
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/VaultSettings.tsx
@@ -4807,10 +4786,6 @@ msgstr "Refresh view"
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Refreshing…"
 msgstr "Refreshing…"
-
-#: src/components/ComputerProviderSettings.tsx
-msgid "Region"
-msgstr "Region"
 
 #: src/lib/user-error.ts
 msgid "Registration is closed"
@@ -6581,10 +6556,6 @@ msgstr "Works with your ChatGPT or Claude plan."
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "Workspace"
 msgstr "Workspace"
-
-#: src/components/ComputerProviderSettings.tsx
-msgid "Wuying cloud computer"
-msgstr "Wuying cloud computer"
 
 #: src/lib/billing.ts
 msgid "year"

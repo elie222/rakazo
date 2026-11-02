@@ -455,14 +455,6 @@ msgstr "關於 {label}"
 msgid "Access token (optional)"
 msgstr "存取權杖（選填）"
 
-#: src/components/ComputerProviderSettings.tsx
-msgid "AccessKey ID"
-msgstr ""
-
-#: src/components/ComputerProviderSettings.tsx
-msgid "AccessKey secret"
-msgstr ""
-
 #: src/components/AccountMenu.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Account"
@@ -1303,7 +1295,6 @@ msgstr "正在檢查電腦設定…"
 msgid "Checking connection…"
 msgstr "正在檢查連線…"
 
-#: src/components/ComputerProviderSettings.tsx
 #: src/components/ComputersUnavailableHint.tsx
 #: src/components/DesktopUpdates.tsx
 #: src/pages/HostComputerPrompt.tsx
@@ -2575,10 +2566,6 @@ msgstr ""
 msgid "Desktop app"
 msgstr "桌面應用程式"
 
-#: src/components/ComputerProviderSettings.tsx
-msgid "Desktop ID"
-msgstr ""
-
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop update"
 msgstr "桌面版更新"
@@ -2782,10 +2769,6 @@ msgstr "需要驗證電子信箱"
 #: src/pages/shell/bot-panel.tsx
 msgid "Enable {0}"
 msgstr "啟用 {0}"
-
-#: src/components/ComputerProviderSettings.tsx
-msgid "End user ID"
-msgstr ""
 
 #: src/lib/billing.ts
 msgid "Ends {day}"
@@ -3695,10 +3678,6 @@ msgstr "最大輸出 token 數"
 msgid "MCP endpoint"
 msgstr "MCP 端點"
 
-#: src/components/ComputerProviderSettings.tsx
-msgid "MCP gateway URL"
-msgstr ""
-
 #: src/pages/PluginsOverlay.tsx
 msgid "MCP server"
 msgstr ""
@@ -3707,10 +3686,6 @@ msgstr ""
 #: src/pages/shell/agent-import.tsx
 msgid "MCP servers"
 msgstr "MCP 伺服器"
-
-#: src/components/ComputerProviderSettings.tsx
-msgid "MCP token"
-msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -3956,6 +3931,10 @@ msgstr "靜音"
 #: src/components/call/CallCard.tsx
 msgid "Muted"
 msgstr "已靜音"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "My computers"
+msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/VaultSettings.tsx
@@ -4808,10 +4787,6 @@ msgstr "重新整理畫面"
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Refreshing…"
 msgstr "重新整理中…"
-
-#: src/components/ComputerProviderSettings.tsx
-msgid "Region"
-msgstr ""
 
 #: src/lib/user-error.ts
 msgid "Registration is closed"
@@ -6582,10 +6557,6 @@ msgstr "可使用你的 ChatGPT 或 Claude 方案。"
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "Workspace"
 msgstr "工作空間"
-
-#: src/components/ComputerProviderSettings.tsx
-msgid "Wuying cloud computer"
-msgstr ""
 
 #: src/lib/billing.ts
 msgid "year"

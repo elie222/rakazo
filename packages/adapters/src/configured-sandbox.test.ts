@@ -1,12 +1,12 @@
 import type { ComputerRef } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import type { ComputerProviderSelection, StoredWuyingSettings } from "./configured-sandbox.js";
+import type { ComputerProviderSelection, StoredComputerSettings } from "./configured-sandbox.js";
 import {
   ConfiguredSandbox,
-  loadComputerOwnerWuyingSettings,
+  loadComputerOwnerSettings,
   loadComputerProviderSelection,
-  parseStoredWuyingSettings,
+  parseStoredComputerSettings,
 } from "./configured-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { FakeWuyingDesktop } from "./wuying-sandbox.test-support.js";
@@ -19,7 +19,7 @@ const ctx = {
   signal: new AbortController().signal,
 };
 
-const settings = {
+const values = {
   accessKeyId: "test-id",
   accessKeySecret: "test-secret",
   regionId: "cn-hangzhou",
@@ -29,19 +29,21 @@ const settings = {
   mcpToken: "test-token",
 };
 
+const settings: StoredComputerSettings = { provider: "wuying", values };
+
 function setup(initial: ComputerProviderSelection) {
   let selection = initial;
   const primary = new FakeSandboxProvider();
   const desktop = new FakeWuyingDesktop();
   const ownDesktop = new FakeWuyingDesktop();
   /** The desktop each home key's owner saved for themselves. */
-  const own = new Map<string, StoredWuyingSettings>();
+  const own = new Map<string, StoredComputerSettings>();
   const sandbox = new ConfiguredSandbox(primary, async () => selection, {
     loadOwn: async (homeKey) => own.get(homeKey) ?? null,
-    createWuying: async (chosen) =>
-      chosen.desktopId === settings.desktopId
+    createProvider: async (chosen) =>
+      chosen.values.desktopId === settings.values.desktopId
         ? desktop.provider()
-        : ownDesktop.provider(chosen.desktopId),
+        : ownDesktop.provider(chosen.values.desktopId),
   });
   return {
     sandbox,
@@ -57,22 +59,22 @@ function setup(initial: ComputerProviderSelection) {
 
 describe("ConfiguredSandbox", () => {
   it("sends new computers to the provider chosen in Settings", async () => {
-    const { sandbox, select } = setup({ wuying: false, settings: null });
+    const { sandbox, select } = setup({ provider: "default", settings: null });
     await sandbox.refresh();
     expect(await sandbox.provisionKind()).toBe("fake");
     expect((await sandbox.provision({ botId: "a", homePath: "/h" }, ctx)).kind).toBe("fake");
 
-    await select({ wuying: true, settings });
+    await select({ provider: "wuying", settings });
     expect(sandbox.describe().id).toBe("wuying");
     expect(await sandbox.provisionKind()).toBe("wuying");
     expect((await sandbox.provision({ botId: "b", homePath: "/h" }, ctx)).kind).toBe("wuying");
   });
 
   it("keeps every existing computer on the provider of its own kind", async () => {
-    const { sandbox, select, desktop } = setup({ wuying: true, settings });
+    const { sandbox, select, desktop } = setup({ provider: "wuying", settings });
     await sandbox.refresh();
     const onWuying = await sandbox.provision({ botId: "w", homePath: "/h" }, ctx);
-    await select({ wuying: false, settings });
+    await select({ provider: "default", settings });
     const onPrimary = await sandbox.provision(
       { botId: "p", homePath: "/h", providerRef: onWuying.providerRef, providerKind: "wuying" },
       ctx,
@@ -88,8 +90,8 @@ describe("ConfiguredSandbox", () => {
   });
 
   it("runs an account's Team Computer on the desktop it saved, and the rest on the default", async () => {
-    const { sandbox, desktop, ownDesktop, own } = setup({ wuying: true, settings });
-    own.set("mine", { ...settings, desktopId: "ecd-own" });
+    const { sandbox, desktop, ownDesktop, own } = setup({ provider: "wuying", settings });
+    own.set("mine", { ...settings, values: { ...values, desktopId: "ecd-own" } });
     await sandbox.refresh();
     expect(await sandbox.provisionKind("mine")).toBe("wuying");
     const mine = await sandbox.provision({ botId: "mine", homePath: "/h" }, ctx);
@@ -106,10 +108,10 @@ describe("ConfiguredSandbox", () => {
   });
 
   it("keeps a computer on the default desktop until it starts again on its owner's", async () => {
-    const { sandbox, desktop, own } = setup({ wuying: true, settings });
+    const { sandbox, desktop, own } = setup({ provider: "wuying", settings });
     await sandbox.refresh();
     const before = await sandbox.provision({ botId: "mine", homePath: "/h" }, ctx);
-    own.set("mine", { ...settings, desktopId: "ecd-own" });
+    own.set("mine", { ...settings, values: { ...values, desktopId: "ecd-own" } });
     await sandbox.refresh();
 
     await sandbox.prepare(before, ctx);
@@ -124,8 +126,8 @@ describe("ConfiguredSandbox", () => {
   });
 
   it("uses an account's own desktop even when the deployment default is not Wuying", async () => {
-    const { sandbox, own } = setup({ wuying: false, settings: null });
-    own.set("mine", { ...settings, desktopId: "ecd-own" });
+    const { sandbox, own } = setup({ provider: "default", settings: null });
+    own.set("mine", { ...settings, values: { ...values, desktopId: "ecd-own" } });
     await sandbox.refresh();
     expect(await sandbox.provisionKind()).toBe("fake");
     expect(await sandbox.provisionKind("mine")).toBe("wuying");
@@ -141,21 +143,22 @@ describe("ConfiguredSandbox", () => {
         secret: { findFirst },
       }) as unknown as PrismaClient;
     const secrets = { load: async () => JSON.stringify(settings) };
-    expect(await loadComputerOwnerWuyingSettings(prisma("team"), secrets, "team-k")).toEqual(
-      settings,
-    );
+    expect(await loadComputerOwnerSettings(prisma("team"), secrets, "team-k")).toEqual({
+      ...settings,
+      ciphertext: "c1",
+    });
     expect(findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { userId: "u1", spaceId: null, kind: "wuying-computer" },
+        where: { userId: "u1", spaceId: null, kind: "computer-provider" },
       }),
     );
     findFirst.mockClear();
-    expect(await loadComputerOwnerWuyingSettings(prisma("dedicated"), secrets, "bot-k")).toBeNull();
+    expect(await loadComputerOwnerSettings(prisma("dedicated"), secrets, "bot-k")).toBeNull();
     expect(findFirst).not.toHaveBeenCalled();
   });
 
   it("probes background work for providers without their own check", async () => {
-    const { sandbox } = setup({ wuying: false, settings: null });
+    const { sandbox } = setup({ provider: "default", settings: null });
     const computer: ComputerRef = await sandbox.provision({ botId: "a", homePath: "/h" }, ctx);
     await expect(sandbox.inspectBackgroundWork(computer, "marker", ctx)).resolves.toMatch(
       /^(active|idle)$/,
@@ -175,16 +178,78 @@ describe("ConfiguredSandbox", () => {
       },
     };
     expect(await loadComputerProviderSelection(prisma as unknown as PrismaClient, secrets)).toEqual(
-      { wuying: false, settings: null },
+      { provider: "default", settings: null },
     );
   });
 
   it("reads only complete saved Wuying settings", () => {
-    expect(parseStoredWuyingSettings(JSON.stringify(settings))).toEqual(settings);
-    expect(parseStoredWuyingSettings(JSON.stringify({ ...settings, regionId: "" }))?.regionId).toBe(
-      "cn-hangzhou",
-    );
-    expect(parseStoredWuyingSettings(JSON.stringify({ ...settings, mcpToken: "" }))).toBeNull();
-    expect(parseStoredWuyingSettings("not json")).toBeNull();
+    expect(parseStoredComputerSettings(JSON.stringify(settings))).toEqual(settings);
+    expect(
+      parseStoredComputerSettings(
+        JSON.stringify({ ...settings, values: { ...values, regionId: "" } }),
+      )?.values.regionId,
+    ).toBe("");
+    expect(
+      parseStoredComputerSettings(
+        JSON.stringify({ ...settings, values: { ...values, mcpToken: "" } }),
+      ),
+    ).toBeNull();
+    expect(parseStoredComputerSettings("not json")).toBeNull();
   });
+});
+
+it("reuses adapters only for the same ciphertext and credentials, and invalidates on secret changes", async () => {
+  let saved: StoredComputerSettings = { ...settings, ciphertext: "encrypted-1" };
+  let changed: ((ref: string) => void) | undefined;
+  const createProvider = vi.fn(async () => new FakeSandboxProvider());
+  const load = vi.fn(async () => ({ provider: saved.provider, settings: saved }));
+  const sandbox = new ConfiguredSandbox(new FakeSandboxProvider(), load, {
+    createProvider,
+    onSecretChange: (listener) => {
+      changed = listener;
+      return () => {};
+    },
+  });
+  await sandbox.provisionKind();
+  await sandbox.provisionKind();
+  expect(load).toHaveBeenCalledTimes(2);
+  expect(createProvider).toHaveBeenCalledTimes(1);
+  changed?.("encrypted-1");
+  await sandbox.provisionKind();
+  expect(createProvider).toHaveBeenCalledTimes(2);
+  saved = { ...saved, ciphertext: "encrypted-2" };
+  await sandbox.provisionKind();
+  expect(createProvider).toHaveBeenCalledTimes(3);
+  saved = { ...saved, values: { ...values, mcpToken: "replacement-token" } };
+  await sandbox.provisionKind();
+  expect(createProvider).toHaveBeenCalledTimes(4);
+});
+
+it("routes an existing computer through a retained deployment connection after a provider switch", async () => {
+  const { sandbox, select, desktop } = setup({ provider: "wuying", settings });
+  const computer = await sandbox.provision({ botId: "a", homePath: "/h" }, ctx);
+  await select({
+    provider: "e2b",
+    settings: { provider: "e2b", values: { apiKey: "test-key" }, connections: { wuying: values } },
+  });
+  await sandbox.prepare(computer, ctx);
+  desktop.calls.length = 0;
+  await sandbox.listFiles(computer, "", ctx);
+  expect(desktop.calls.some((call) => call.tool === "fs_list")).toBe(true);
+});
+
+it("refuses a reference from a connection that is no longer configured", async () => {
+  const { sandbox, select } = setup({ provider: "wuying", settings });
+  const computer = await sandbox.provision({ botId: "a", homePath: "/h" }, ctx);
+  await select({ provider: "default", settings: null });
+  await expect(sandbox.prepare(computer, ctx)).rejects.toThrow("no longer configured");
+});
+
+it("refuses a desktop reference belonging to another account connection", async () => {
+  const { sandbox, own } = setup({ provider: "default", settings: null });
+  own.set("mine", { ...settings, values: { ...values, desktopId: "ecd-own" } });
+  const computer = await sandbox.provision({ botId: "mine", homePath: "/h" }, ctx);
+  await expect(sandbox.prepare({ ...computer, providerRef: "ecd-another" }, ctx)).rejects.toThrow(
+    "no longer configured",
+  );
 });

@@ -95,6 +95,8 @@ import type {
 } from "./types.js";
 
 export interface SandboxProvider {
+  /** Providers tied to one external desktop reject references belonging to another connection. */
+  ownsReference?(computer: Pick<ComputerRef, "kind" | "providerRef">): boolean;
   /** True when every running minute is billed, so the active-lifetime cap applies. */
   billsWhileRunning?(computer: Pick<ComputerRef, "kind">): boolean;
   describe(): AdapterDescriptor<SandboxCapabilities>;
