@@ -4808,6 +4808,7 @@ msgid "Release control"
 msgstr "操作を戻す"
 
 #: src/components/InstructionSettings.tsx
+#: src/lib/client-update.ts
 msgid "Reload"
 msgstr "再読み込み"
 
@@ -6258,6 +6259,10 @@ msgstr "指示を更新しますか？"
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
 msgstr "更新の進行状況"
+
+#: src/lib/client-update.ts
+msgid "Update required"
+msgstr "アップデートが必要です"
 
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"

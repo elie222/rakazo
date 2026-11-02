@@ -532,7 +532,7 @@ app.post("/computers/:id/exec", async (c) => {
   });
 });
 
-// The bot's folder in the computer's home that files its page downloads are saved to.
+// The bot's folder in the computer's home that files its page downloads, and PDFs its tabs show, are saved to.
 const downloadFolder = z.string().min(1).max(1024).optional();
 
 app.post("/computers/:id/browser", async (c) => {
@@ -554,7 +554,11 @@ app.post("/computers/:id/browser", async (c) => {
           }),
         downloads: downloadFolder,
       }),
-      z.object({ command: z.literal("snapshot"), query: z.string().max(200).optional() }),
+      z.object({
+        command: z.literal("snapshot"),
+        query: z.string().max(200).optional(),
+        downloads: downloadFolder,
+      }),
       z.object({
         command: z.literal("act"),
         downloads: downloadFolder,

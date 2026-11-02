@@ -364,6 +364,31 @@ describe("page browser safety", () => {
     expect(result).toMatchObject({ ok: outcome.ok, downloads });
   });
 
+  it("forwards the download folder with a snapshot and keeps the PDF it saved, and a new tab's note", async () => {
+    const downloads = [{ name: "4b1d.pdf", path: "bots/b1/Downloads/4b1d.pdf", size: 4 }];
+    const note =
+      'A new tab opened, and page tools now read it: "4b1d" at blob:https://bank.example/4b1d.';
+    const liveDriver = vi.fn(async (_computer: ComputerRef, _request: PageBrowserCommand) => ({
+      ok: true,
+      url: "blob:https://bank.example/4b1d",
+      title: "",
+      tree: "(no interactive elements)",
+      elements: [],
+      downloads,
+      note,
+    }));
+    const result = await new ComputerBrowserProvider({ liveDriver }).snapshot(
+      computer,
+      { downloads: "bots/b1/Downloads" },
+      baseContext,
+    );
+    expect(liveDriver.mock.calls[0]?.[1]).toEqual({
+      command: "snapshot",
+      downloads: "bots/b1/Downloads",
+    });
+    expect(result).toMatchObject({ downloads, note });
+  });
+
   it("reports a refused saved-login fill as settled, without desktop tools", async () => {
     const error = "The page is not on the site this login was saved for.";
     const provider = new ComputerBrowserProvider({
