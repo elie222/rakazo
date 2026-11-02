@@ -396,7 +396,7 @@ export function ThreadComposer({
                   flexDirection: "row",
                   alignItems: "center",
                   gap: MENTION_ROW_GAP,
-                  height: MENTION_ROW_HEIGHT,
+                  minHeight: MENTION_ROW_HEIGHT,
                   paddingHorizontal: MENTION_ROW_PADDING,
                 }}
               >

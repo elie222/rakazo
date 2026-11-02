@@ -31,7 +31,7 @@ export function UserMention({
   const bot = target.kind === "bot" ? target : null;
   return (
     <Text
-      accessibilityRole={bot ? "link" : undefined}
+      accessibilityRole={bot ? "button" : undefined}
       onPress={bot ? () => onOpenBot(bot.id, bot.name) : undefined}
       style={{ fontWeight: fontWeight.medium }}
     >

@@ -94,7 +94,7 @@ describe("sent message mentions", () => {
 
   it("draws a member mention with a 15pt avatar in medium weight, without a background", () => {
     render("hey @Ada can you look");
-    const mention = container.querySelector('span[role="link"]')!;
+    const mention = container.querySelector('span[role="button"]')!;
     expect(mention.textContent).toBe("Ada");
     expect(JSON.parse(mention.getAttribute("data-style")!)).toEqual({ fontWeight: "500" });
     expect(mention.querySelector("[data-avatar]")!.getAttribute("data-avatar")).toBe("bot-ada");
@@ -104,7 +104,7 @@ describe("sent message mentions", () => {
 
   it("opens the bot's chat when the mention is tapped", () => {
     render("@Ben Stone, thanks");
-    act(() => container.querySelector<HTMLElement>('span[role="link"]')!.click());
+    act(() => container.querySelector<HTMLElement>('span[role="button"]')!.click());
     expect(onOpenBot).toHaveBeenCalledWith("bot-ben", "Ben Stone");
   });
 
@@ -112,7 +112,7 @@ describe("sent message mentions", () => {
     render("@everyone please check");
     const mention = container.querySelector("span[data-style]:not([role])")!;
     expect(container.querySelector('[data-symbol="person.3"]')).not.toBeNull();
-    expect(container.querySelector('span[role="link"]')).toBeNull();
+    expect(container.querySelector('span[role="button"]')).toBeNull();
     act(() => (mention as HTMLElement).click());
     expect(onOpenBot).not.toHaveBeenCalled();
   });
@@ -125,7 +125,7 @@ describe("sent message mentions", () => {
 
   it("keeps a link whole when its address contains a member's name", () => {
     render("see https://example.test/@Ada, then ask @Ada");
-    expect(container.querySelectorAll('span[role="link"]')).toHaveLength(1);
+    expect(container.querySelectorAll('span[role="button"]')).toHaveLength(1);
     expect(container.textContent).toBe("see https://example.test/@Ada, then ask Ada");
     render("https://example.test/@Ben?x=1");
     expect(container.querySelector("[data-avatar]")).toBeNull();

@@ -1,7 +1,7 @@
 import { plainTextLinkParts } from "@rakazo/chat-ui/native";
 import type { BotAvatarSet } from "@rakazo/contracts";
 import type { MentionTextPart } from "@rakazo/core";
-import { splitMentionText } from "@rakazo/core";
+import { displayName, splitMentionText } from "@rakazo/core";
 import type { ReactNode } from "react";
 import { createContext } from "react";
 
@@ -31,7 +31,7 @@ export function userMentionTargets(
   const targets: UserMentionTarget[] = members.map((member) => ({
     kind: "bot",
     id: member.botId,
-    name: member.name,
+    name: displayName(member.name, "Bot"),
     color: member.color,
     avatarSet: member.avatarSet,
   }));
