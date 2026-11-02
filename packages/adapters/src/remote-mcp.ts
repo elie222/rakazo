@@ -21,6 +21,7 @@ import {
   normalizeHost,
 } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
+import type { Dispatcher } from "undici";
 import { Agent } from "undici";
 import { composioToolBatch } from "./composio-batch.js";
 import { sensitiveQueryParameter } from "./connector-http.js";
@@ -33,6 +34,7 @@ import {
   egressRefused,
   withPinnedDnsLookup,
 } from "./network-address.js";
+import { createCheckedProxyDispatcher } from "./proxy-dispatcher.js";
 import { dispatcherFetch, fetchPairedWithDispatcher } from "./undici-fetch.js";
 
 const MAX_MCP_TOOLS = 250;
@@ -624,7 +626,9 @@ export function createSafeRemoteFetch(
   resolve: ResolveHostname = resolveHostname,
   policy: RemoteUrlPolicy = {},
 ): SafeRemoteFetch {
-  const dispatcher = new Agent({ connect: { lookup: createSafeLookup(resolve, policy) } });
+  const dispatcher = createCheckedProxyDispatcher(resolve, (addresses, hostname) =>
+    assertSafeRemoteAddresses(addresses, hostname, policy),
+  );
   // Injected fetches are not given this Agent; they keep the original hostname
   // for TLS/SNI and pin TCP to the already-validated address through dns.lookup.
   const usePackageFetch = fetchPairedWithDispatcher(baseFetch) === dispatcherFetch;
@@ -640,7 +644,7 @@ export function createSafeRemoteFetch(
         ? await dispatcherFetch(url, {
             ...requestInit,
             dispatcher,
-          } as RequestInit & { dispatcher: Agent })
+          } as RequestInit & { dispatcher: Dispatcher })
         : await withPinnedDnsLookup(url.hostname, addresses, () =>
             baseFetch!(url, requestInitWithHost(url, requestInit)),
           );
@@ -751,16 +755,24 @@ export function createSafeLookup(
   resolve: ResolveHostname = resolveHostname,
   policy: RemoteUrlPolicy = {},
 ): LookupFunction {
-  return createAddressCheckedLookup(resolve, (addresses, hostname) => {
-    if (
-      policy.allowPrivateEndpoint === true &&
-      isLocalhostOrLoopbackIp(hostname.replace(/^\[|\]$/g, ""))
-    ) {
-      assertLoopbackAddresses(addresses);
-      return;
-    }
-    assertAllowedAddresses(addresses, policy);
-  });
+  return createAddressCheckedLookup(resolve, (addresses, hostname) =>
+    assertSafeRemoteAddresses(addresses, hostname, policy),
+  );
+}
+
+function assertSafeRemoteAddresses(
+  addresses: ResolvedAddress[],
+  hostname: string,
+  policy: RemoteUrlPolicy,
+): void {
+  if (
+    policy.allowPrivateEndpoint === true &&
+    isLocalhostOrLoopbackIp(hostname.replace(/^\[|\]$/g, ""))
+  ) {
+    assertLoopbackAddresses(addresses);
+    return;
+  }
+  assertAllowedAddresses(addresses, policy);
 }
 
 /** Reserved local names (localhost, .local, .internal, Docker Desktop) and non-public literals. */
