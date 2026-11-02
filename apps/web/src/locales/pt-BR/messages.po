@@ -420,6 +420,10 @@ msgstr "{toolCount, plural, one {# ferramenta} other {# ferramentas}}"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/ModelCredits.tsx
+msgid "/ month"
+msgstr "/ mês"
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr ""
@@ -1027,6 +1031,10 @@ msgstr "Token portador"
 msgid "Billing"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Billing period"
+msgstr "Período de cobrança"
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "Bloquear"
@@ -1156,6 +1164,7 @@ msgstr "Não pode ler imagens"
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/VaultSettings.tsx
@@ -2583,6 +2592,10 @@ msgstr ""
 msgid "Dictation failed."
 msgstr ""
 
+#: src/pages/Auth.tsx
+msgid "Did you mean <0>{emailSuggestion}</0>?"
+msgstr "Você quis dizer <0>{emailSuggestion}</0>?"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "Desativar uma ferramenta"
@@ -3887,6 +3900,7 @@ msgstr "segunda-feira"
 msgid "month"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "Mensalmente"
@@ -5652,9 +5666,21 @@ msgstr ""
 msgid "Start {trialDays}-day free trial"
 msgstr "Começar teste grátis de {trialDays} dias"
 
+#: src/components/ModelCredits.tsx
+msgid "Start plan"
+msgstr "Começar plano"
+
+#: src/components/ModelCredits.tsx
+msgid "Start plan now"
+msgstr "Começar o plano agora"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"
 msgstr "Começar a gravar"
+
+#: src/components/ModelCredits.tsx
+msgid "Start your plan now?"
+msgstr "Começar seu plano agora?"
 
 #: src/pages/ActivityList.tsx
 msgid "Starting"
@@ -5731,6 +5757,10 @@ msgid "Subscribe"
 msgstr "Assinar"
 
 #: src/components/ModelCredits.tsx
+msgid "Subscribe for {annualPrice} / year"
+msgstr "Assinar por {annualPrice} / ano"
+
+#: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
 msgstr "Assinar por {price} / mês"
 
@@ -5760,9 +5790,18 @@ msgstr "Suporta imagens"
 msgid "Supports thinking"
 msgstr "Suporta raciocínio"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
-msgstr ""
+msgstr "Mudar"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly"
+msgstr "Mudar para anual"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly?"
+msgstr "Mudar para anual?"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
@@ -6144,12 +6183,17 @@ msgstr ""
 msgid "Trial ends {day}"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Trials get fewer hours to prevent abuse."
+msgstr "Testes têm menos horas para evitar abusos."
+
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "Sites confiáveis"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "Tentar novamente"
 
@@ -6556,6 +6600,10 @@ msgstr ""
 msgid "year"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Yearly"
+msgstr "Anual"
+
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Yesterday"
@@ -6590,6 +6638,10 @@ msgstr "Você tem o controle"
 msgid "Your Anthropic"
 msgstr "Seu Anthropic"
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged {annualPrice} today, less the unused part of this month."
+msgstr "Seu cartão será cobrado em {annualPrice} hoje, menos a parte não usada deste mês."
+
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr ""
@@ -6621,6 +6673,10 @@ msgstr "Seu OpenAI"
 msgid "Your OpenRouter"
 msgstr "Seu OpenRouter"
 
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {annualPrice} / year when your trial ends."
+msgstr "Quando seu teste terminar, seu plano passa a custar {annualPrice} / ano."
+
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"
 msgstr ""
@@ -6632,6 +6688,14 @@ msgstr ""
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Sua equipe de agentes sempre ativos<0/>, a quem você pode dar trabalho de verdade."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged {price} today."
+msgstr "Seu teste termina e seu cartão será cobrado em {price} hoje."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged today."
+msgstr "Seu teste termina e seu cartão será cobrado hoje."
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

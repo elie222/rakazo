@@ -43,6 +43,36 @@ test(
     await captureScreenshot(page, testInfo, "signup-ready");
   },
 );
+test("signup suggests a fix for a mistyped email domain", async ({ page }, testInfo) => {
+  let signups = 0;
+  await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
+  await page.route("**/api/auth/capabilities", (route) =>
+    route.fulfill({
+      json: { passwordAuth: true, sso: null, passwordReset: false, resetUrl: null },
+    }),
+  );
+  await page.route("**/api/auth/sign-up/email", (route) => {
+    signups += 1;
+    return route.fulfill({
+      json: { token: null, user: { id: "pending-user", emailVerified: false } },
+    });
+  });
+  await page.goto("/sign-up");
+  await page.getByLabel("Name").fill("Typo User");
+  await page.getByLabel("Email").fill("typo@gmial.com");
+  await page.getByLabel("Password", { exact: true }).fill("password12");
+  await page.getByRole("button", { name: "Create account", exact: true }).click();
+  const fix = page.getByRole("button", { name: "typo@gmail.com" });
+  await expect(fix).toBeVisible();
+  expect(signups).toBe(0);
+  await captureScreenshot(page, testInfo, "signup-email-typo");
+  await fix.click();
+  await expect(page.getByLabel("Email")).toHaveValue("typo@gmail.com");
+  await page.getByRole("button", { name: "Create account", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+  expect(signups).toBe(1);
+});
+
 test(
   "restricted signup waits for mailbox verification",
   { tag: "@nightly" },

@@ -327,7 +327,7 @@ function toAgentTool(
       if (tool.name === "remember") {
         return {
           content: String(raw.content ?? ""),
-          path: String(raw.path ?? "MEMORY.md"),
+          ...(typeof raw.old_text === "string" && raw.old_text ? { old_text: raw.old_text } : {}),
         };
       }
       if (tool.name === "request_takeover") {

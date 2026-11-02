@@ -38,7 +38,8 @@ export function useRoutineEditor({
 }) {
   const { t } = useLingui();
   const [routineDraft, setRoutineDraft] = useState<RoutineDraftState>(emptyRoutineDraft());
-  const [routineWebhookSecret, setRoutineWebhookSecret] = useState<string | null>(null);
+  const [revealedWebhookSecrets, setRevealedWebhookSecrets] = useState<Record<string, string>>({});
+  const routineWebhookSecret = (active && revealedWebhookSecrets[active.id]) || null;
   const [editingRoutine, setEditingRoutine] = useState<Routine | null>(null);
   const [deleteRoutineTarget, setDeleteRoutineTarget] = useState<Routine | null>(null);
   const [savingRoutine, setSavingRoutine] = useState(false);
@@ -49,7 +50,7 @@ export function useRoutineEditor({
   const ensureWebhookSecret = (botId: string) =>
     sharedInflight(webhookSecretProvisionRef.current, botId, async () => {
       const result = await rpc.bots.rotateWebhookSecret({ botId });
-      setRoutineWebhookSecret(result.secret);
+      setRevealedWebhookSecrets((current) => ({ ...current, [botId]: result.secret }));
       setBots((current) =>
         current.map((bot) => (bot.id === botId ? { ...bot, webhookConfigured: true } : bot)),
       );
@@ -59,7 +60,7 @@ export function useRoutineEditor({
   const routineRunPending = useRef(false);
   const addSkillRoutine = useCallback((name: string, prompt: string) => {
     setRoutineDraft({ ...emptyRoutineDraft(), name, prompt });
-    setRoutineWebhookSecret(null);
+    setRevealedWebhookSecrets({});
     setEditingRoutine(null);
     setPanel("routine");
   }, []);
@@ -67,16 +68,16 @@ export function useRoutineEditor({
   function restoreRoutine(routine: Routine | null) {
     setEditingRoutine(routine);
     setRoutineDraft(routine ? draftFromRoutine(routine) : emptyRoutineDraft());
-    setRoutineWebhookSecret(null);
+    setRevealedWebhookSecrets({});
   }
   function editRoutine(routine: Routine) {
     setRoutineDraft(draftFromRoutine(routine));
-    setRoutineWebhookSecret(null);
+    setRevealedWebhookSecrets({});
     setEditingRoutine(routine);
   }
   function startRoutine(routine?: Routine) {
     setRoutineDraft(routine ? draftFromRoutine(routine) : emptyRoutineDraft());
-    setRoutineWebhookSecret(null);
+    setRevealedWebhookSecrets({});
     setEditingRoutine(routine ?? null);
     setRoutineError(null);
     setPanel("routine");

@@ -420,6 +420,10 @@ msgstr "{toolCount, plural, one {# araç} other {# araç}}"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/ModelCredits.tsx
+msgid "/ month"
+msgstr "/ ay"
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr ""
@@ -1027,6 +1031,10 @@ msgstr "Bearer token"
 msgid "Billing"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Billing period"
+msgstr "Fatura dönemi"
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "Engelle"
@@ -1156,6 +1164,7 @@ msgstr "Görselleri okuyamaz"
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/VaultSettings.tsx
@@ -2583,6 +2592,10 @@ msgstr ""
 msgid "Dictation failed."
 msgstr ""
 
+#: src/pages/Auth.tsx
+msgid "Did you mean <0>{emailSuggestion}</0>?"
+msgstr "<0>{emailSuggestion}</0> mi demek istediniz?"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "Bir aracı devre dışı bırak"
@@ -3887,6 +3900,7 @@ msgstr "Pazartesi"
 msgid "month"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "Aylık"
@@ -5652,9 +5666,21 @@ msgstr ""
 msgid "Start {trialDays}-day free trial"
 msgstr "{trialDays} günlük ücretsiz denemeyi başlat"
 
+#: src/components/ModelCredits.tsx
+msgid "Start plan"
+msgstr "Planı başlat"
+
+#: src/components/ModelCredits.tsx
+msgid "Start plan now"
+msgstr "Planı şimdi başlat"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"
 msgstr "Kaydı başlat"
+
+#: src/components/ModelCredits.tsx
+msgid "Start your plan now?"
+msgstr "Planınız şimdi başlatılsın mı?"
 
 #: src/pages/ActivityList.tsx
 msgid "Starting"
@@ -5731,6 +5757,10 @@ msgid "Subscribe"
 msgstr "Abone ol"
 
 #: src/components/ModelCredits.tsx
+msgid "Subscribe for {annualPrice} / year"
+msgstr "Yıllık {annualPrice} ile abone ol"
+
+#: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
 msgstr "Aylık {price} ile abone ol"
 
@@ -5760,9 +5790,18 @@ msgstr "Görüntüleri destekler"
 msgid "Supports thinking"
 msgstr "Düşünmeyi destekler"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
-msgstr ""
+msgstr "Geç"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly"
+msgstr "Yıllığa geç"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly?"
+msgstr "Yıllığa geçilsin mi?"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
@@ -6144,12 +6183,17 @@ msgstr ""
 msgid "Trial ends {day}"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Trials get fewer hours to prevent abuse."
+msgstr "Kötüye kullanımı önlemek için denemelerde daha az saat verilir."
+
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "Güvenilen siteler"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "Tekrar dene"
 
@@ -6556,6 +6600,10 @@ msgstr ""
 msgid "year"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Yearly"
+msgstr "Yıllık"
+
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Yesterday"
@@ -6590,6 +6638,10 @@ msgstr "Kontrol sende"
 msgid "Your Anthropic"
 msgstr "Anthropic sağlayıcınız"
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged {annualPrice} today, less the unused part of this month."
+msgstr "Bugün kartından {annualPrice} tahsil edilir, bu ayın kullanılmayan kısmı düşülür."
+
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr ""
@@ -6621,6 +6673,10 @@ msgstr "OpenAI sağlayıcınız"
 msgid "Your OpenRouter"
 msgstr "OpenRouter sağlayıcınız"
 
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {annualPrice} / year when your trial ends."
+msgstr "Deneme süren bitince planın yıllık {annualPrice} olur."
+
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"
 msgstr ""
@@ -6632,6 +6688,14 @@ msgstr ""
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Gerçek işler verebileceğin,<0/>her zaman açık agent takımın."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged {price} today."
+msgstr "Denemeniz biter ve kartınızdan bugün {price} çekilir."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged today."
+msgstr "Denemeniz biter ve kartınızdan bugün ödeme alınır."
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

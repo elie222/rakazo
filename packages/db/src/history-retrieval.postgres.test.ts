@@ -29,6 +29,8 @@ postgres("history retrieval (PostgreSQL)", () => {
       CREATE TEMP TABLE chat_group_members ("groupId" text, "botId" text);
       CREATE TEMP TABLE messages (id text PRIMARY KEY, "threadId" text, seq integer, role text, "runId" text,
         "replyToMessageId" text, "createdAt" timestamptz, blocks jsonb);
+      CREATE TEMP TABLE steering_messages ("messageId" text, "botId" text, "runId" text,
+        UNIQUE ("messageId", "botId"));
       CREATE TEMP TABLE runs (id text PRIMARY KEY, "spaceId" text, "userId" text, "threadId" text, "botId" text,
         "sourceMessageId" text, status text, "createdAt" timestamptz, "completedAt" timestamptz);
       CREATE TEMP TABLE artifacts (id text PRIMARY KEY, "spaceId" text, "userId" text, "botId" text, "groupId" text,
@@ -50,6 +52,72 @@ postgres("history retrieval (PostgreSQL)", () => {
   afterAll(async () => {
     await prisma?.$disconnect();
     await pool?.end();
+  });
+  it("hides waiting messages per bot in searches, anchors and neighbors until assigned", async () => {
+    await pool.query(`
+      INSERT INTO bots (id, "spaceId", "userId") VALUES ('waiting-peer','synthetic-space','synthetic-user');
+      INSERT INTO chat_groups (id, "spaceId", "userId") VALUES ('waiting-group','synthetic-space','synthetic-user');
+      INSERT INTO chat_group_members VALUES ('waiting-group','synthetic-bot'), ('waiting-group','waiting-peer');
+      INSERT INTO threads VALUES
+        ('waiting-direct','synthetic-space','synthetic-user','waiting-peer',NULL),
+        ('waiting-group-thread','synthetic-space','synthetic-user',NULL,'waiting-group');
+      INSERT INTO messages SELECT 'waiting-' || n, 'waiting-group-thread', n, 'user', NULL, NULL,
+        '2026-01-01'::timestamptz, '[{"kind":"text","text":"waitingprobe"}]'::jsonb
+        FROM generate_series(1,3) n;
+      INSERT INTO messages VALUES ('waiting-direct-message','waiting-direct',1,'user',NULL,NULL,
+        '2026-01-01','[{"kind":"text","text":"waitingprobe"}]');
+      INSERT INTO steering_messages VALUES
+        ('waiting-2','synthetic-bot',NULL),
+        ('waiting-3','waiting-peer',NULL),
+        ('waiting-direct-message','waiting-peer',NULL);
+    `);
+    const group = { ...scope, threadId: "waiting-group-thread", allowMyChats: true };
+    const ids = (result: Awaited<ReturnType<typeof searchHistory>>) =>
+      result.messages.map((message) => message.messageId).sort();
+    expect(ids(await searchHistory(prisma, group, { query: "waitingprobe" }))).toEqual([
+      "waiting-1",
+      "waiting-3",
+    ]);
+    expect(
+      ids(
+        await searchHistory(prisma, { ...group, botId: "waiting-peer" }, { query: "waitingprobe" }),
+      ),
+    ).toEqual(["waiting-1", "waiting-2"]);
+    expect(
+      (await readHistory(prisma, group, { messageId: "waiting-2", textOffset: 0 })).messages,
+    ).toEqual([]);
+    expect(
+      (
+        await readHistory(prisma, group, { messageId: "waiting-1", direction: "newer" })
+      ).messages.map((m) => m.messageId),
+    ).toEqual(["waiting-3"]);
+    const granted = { ...scope, allowMyChats: true };
+    expect(
+      ids(await searchHistory(prisma, granted, { scope: "my_chats", query: "waitingprobe" })),
+    ).toEqual(["waiting-1", "waiting-3"]);
+    expect(
+      (
+        await readHistory(prisma, granted, {
+          threadId: "waiting-direct",
+          messageId: "waiting-direct-message",
+        })
+      ).messages,
+    ).toEqual([]);
+    expect(
+      (await readHistory(prisma, granted, { threadId: group.threadId, messageId: "waiting-2" }))
+        .messages,
+    ).toEqual([]);
+    await pool.query(`UPDATE steering_messages SET "runId" = 'assigned-run'
+      WHERE "botId" IN ('synthetic-bot','waiting-peer') AND "messageId" IN ('waiting-2','waiting-direct-message')`);
+    expect(
+      ids(await searchHistory(prisma, granted, { scope: "my_chats", query: "waitingprobe" })),
+    ).toEqual(["waiting-1", "waiting-2", "waiting-3", "waiting-direct-message"]);
+    expect(
+      (await readHistory(prisma, group, { messageId: "waiting-2", textOffset: 0 })).messages.map(
+        (m) => m.messageId,
+      ),
+    ).toEqual(["waiting-2"]);
+    await pool.query(`DELETE FROM steering_messages WHERE "messageId" LIKE 'waiting-%'`);
   });
   it.each([
     { text: String.raw`back\slash`, query: String.raw`back\slash`, matches: true },

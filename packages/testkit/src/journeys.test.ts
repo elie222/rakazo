@@ -903,6 +903,52 @@ describeJourneys("required product journeys", () => {
     });
   });
 
+  it("4e: deleting a group with a run waiting on takeover frees its bot's computer", async () => {
+    const cookie = await signup(app, `takeover-group-delete-${stamp}@rakazo.test`, "Group Delete");
+    const createBot = (name: string) =>
+      rpc<Bot>(app, cookie, "bots/create", {
+        name,
+        title: "",
+        description: "",
+        instructions: "",
+        notifyOnFinish: true,
+      });
+    const chief = await createBot("Chief");
+    const mate = await createBot("Mate");
+    const group = await rpc<{ id: string; threadId: string }>(app, cookie, "groups/create", {
+      name: "Launch room",
+      botIds: [chief.id, mate.id],
+    });
+    await rpc(app, cookie, "threads/send", {
+      groupId: group.id,
+      text: "@Chief install the gsc cli and sign in",
+    });
+    let waitingRunId: string | undefined;
+    await waitForDatabase(async () => {
+      const run = await prisma.run.findFirst({
+        where: { threadId: group.threadId, botId: chief.id, status: "waiting_takeover" },
+        select: { id: true },
+      });
+      waitingRunId = run?.id;
+      return Boolean(run);
+    });
+    // The takeover holds Chief's computer for a day.
+    const held = await prisma.computerExecutionLease.findFirstOrThrow({
+      where: { botId: chief.id, runId: waitingRunId },
+    });
+    expect(held.expiresAt.getTime()).toBeGreaterThan(Date.now() + 60 * 60_000);
+
+    await rpc(app, cookie, "groups/remove", { groupId: group.id });
+
+    expect(await prisma.run.findUnique({ where: { id: waitingRunId } })).toBeNull();
+    // Chief's next run, in its own chat, takes the computer instead of waiting a day for it.
+    const direct = await sendAndWait(app, cookie, chief.id, "hello again");
+    expect(direct.run.status).toBe("completed");
+    expect(
+      await prisma.computerExecutionLease.findUniqueOrThrow({ where: { id: held.id } }),
+    ).toMatchObject({ runId: direct.run.id, fence: held.fence + 1 });
+  });
+
   it("4b: an expired takeover denies input and reconciles API and database state", async () => {
     const previousTakeoverTtl = process.env.COMPUTER_TAKEOVER_TTL_MS;
     process.env.COMPUTER_TAKEOVER_TTL_MS = "1000";

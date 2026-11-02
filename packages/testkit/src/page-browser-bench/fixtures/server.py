@@ -20,6 +20,8 @@ SUBMISSIONS: list[dict[str, object]] = []
 LOCK = threading.Lock()
 # The page's HTML, then the data its script loads, each arrive this many seconds late.
 SLOW_SECONDS = 2.0
+SEARCH_SECONDS = 0.2
+COUNTRIES = [("ca", "Canada"), ("cv", "Cape Verde"), ("fr", "France"), ("jp", "Japan")]
 
 
 def long_page() -> bytes:
@@ -61,6 +63,11 @@ class Handler(SimpleHTTPRequestHandler):
         elif url.path == "/api/slow":
             time.sleep(SLOW_SECONDS)
             self.send(200, b"ready", "text/plain")
+        elif url.path == "/api/search":
+            time.sleep(SEARCH_SECONDS)
+            query = parse_qs(url.query).get("q", [""])[0].lower()
+            found = [pair for pair in COUNTRIES if query and pair[1].lower().startswith(query)]
+            self.send(200, json.dumps(found).encode(), "application/json")
         elif url.path == "/__submissions":
             run = parse_qs(url.query).get("run", [""])[0]
             with LOCK:

@@ -420,6 +420,10 @@ msgstr "{toolCount, plural, one {# כלי} other {# כלים}}"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/ModelCredits.tsx
+msgid "/ month"
+msgstr "/ חודש"
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr ""
@@ -1027,6 +1031,10 @@ msgstr "Bearer token"
 msgid "Billing"
 msgstr "חיוב"
 
+#: src/components/ModelCredits.tsx
+msgid "Billing period"
+msgstr "תקופת חיוב"
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "לחסום"
@@ -1156,6 +1164,7 @@ msgstr "לא ניתן לקרוא תמונות"
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/VaultSettings.tsx
@@ -2583,6 +2592,10 @@ msgstr ""
 msgid "Dictation failed."
 msgstr ""
 
+#: src/pages/Auth.tsx
+msgid "Did you mean <0>{emailSuggestion}</0>?"
+msgstr "האם התכוונת ל-<0>{emailSuggestion}</0>?"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "השבתת כלי"
@@ -3887,6 +3900,7 @@ msgstr "יום שני"
 msgid "month"
 msgstr "חודש"
 
+#: src/components/ModelCredits.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "חודשי"
@@ -5652,9 +5666,21 @@ msgstr ""
 msgid "Start {trialDays}-day free trial"
 msgstr "התחלת תקופת ניסיון חינם של {trialDays} ימים"
 
+#: src/components/ModelCredits.tsx
+msgid "Start plan"
+msgstr "להתחיל תוכנית"
+
+#: src/components/ModelCredits.tsx
+msgid "Start plan now"
+msgstr "להתחיל את התוכנית עכשיו"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"
 msgstr "התחלת הקלטה"
+
+#: src/components/ModelCredits.tsx
+msgid "Start your plan now?"
+msgstr "להתחיל את התוכנית עכשיו?"
 
 #: src/pages/ActivityList.tsx
 msgid "Starting"
@@ -5731,6 +5757,10 @@ msgid "Subscribe"
 msgstr "הרשמה למנוי"
 
 #: src/components/ModelCredits.tsx
+msgid "Subscribe for {annualPrice} / year"
+msgstr "הרשמה ב-{annualPrice} / שנה"
+
+#: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
 msgstr "הרשמה במחיר {price} לחודש"
 
@@ -5760,9 +5790,18 @@ msgstr "תומך בתמונות"
 msgid "Supports thinking"
 msgstr "תומך בחשיבה"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
-msgstr ""
+msgstr "החלפה"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly"
+msgstr "מעבר לתשלום שנתי"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly?"
+msgstr "לעבור לתשלום שנתי?"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
@@ -6144,12 +6183,17 @@ msgstr "תקופת ניסיון"
 msgid "Trial ends {day}"
 msgstr "תקופת הניסיון מסתיימת {day}"
 
+#: src/components/ModelCredits.tsx
+msgid "Trials get fewer hours to prevent abuse."
+msgstr "בתקופת ניסיון יש פחות שעות כדי למנוע ניצול לרעה."
+
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "אתרים מהימנים"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "לנסות שוב"
 
@@ -6556,6 +6600,10 @@ msgstr ""
 msgid "year"
 msgstr "שנה"
 
+#: src/components/ModelCredits.tsx
+msgid "Yearly"
+msgstr "שנתי"
+
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Yesterday"
@@ -6590,6 +6638,10 @@ msgstr "השליטה אצלך"
 msgid "Your Anthropic"
 msgstr "Anthropic"
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged {annualPrice} today, less the unused part of this month."
+msgstr "הכרטיס שלך יחויב היום ב-{annualPrice}, בניכוי החלק שלא נוצל מהחודש הזה."
+
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr ""
@@ -6621,6 +6673,10 @@ msgstr "OpenAI"
 msgid "Your OpenRouter"
 msgstr "OpenRouter"
 
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {annualPrice} / year when your trial ends."
+msgstr "בסיום תקופת הניסיון, המינוי שלך יעלה {annualPrice} / שנה."
+
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"
 msgstr ""
@@ -6632,6 +6688,14 @@ msgstr ""
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "צוות של סוכנים שזמינים תמיד<0/>שאפשר להטיל עליהם עבודה אמיתית."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged {price} today."
+msgstr "תקופת הניסיון תסתיים והכרטיס שלך יחויב היום ב-{price}."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged today."
+msgstr "תקופת הניסיון תסתיים והכרטיס שלך יחויב היום."
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

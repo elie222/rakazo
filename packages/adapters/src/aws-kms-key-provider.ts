@@ -1,4 +1,4 @@
-import { DecryptCommand, EncryptCommand, KMSClient } from "@aws-sdk/client-kms";
+import type * as KmsSdk from "@aws-sdk/client-kms";
 import type { KeyProvider, KeyWrapContext, WrappedDataKey } from "@rakazo/adapter-kit";
 
 export type AwsKmsKeyProviderConfig = {
@@ -32,12 +32,13 @@ export function awsKmsConfigFromEnv(env: NodeJS.ProcessEnv = process.env): AwsKm
  * and every unwrap is recorded in CloudTrail.
  */
 export class AwsKmsKeyProvider implements KeyProvider {
-  private readonly client: KMSClient;
   private readonly masterKeyId: string;
+  private readonly region: string;
+  private kms?: Promise<{ sdk: typeof KmsSdk; client: KmsSdk.KMSClient }>;
 
   constructor(
     private readonly config: AwsKmsKeyProviderConfig,
-    client?: KMSClient,
+    private readonly client?: KmsSdk.KMSClient,
   ) {
     const [, region, keyId] = KEY_ARN.exec(config.keyArn) ?? [];
     if (!region || !keyId)
@@ -45,21 +46,33 @@ export class AwsKmsKeyProvider implements KeyProvider {
         "AWS_KMS_KEY_ARN must be a KMS key ARN (arn:aws:kms:<region>:<account>:key/<id>)",
       );
     this.masterKeyId = `${MASTER_KEY_PREFIX}${keyId}`;
-    this.client =
-      client ??
-      new KMSClient({
-        region,
-        ...("profile" in config
-          ? { profile: config.profile }
-          : {
-              credentials: {
-                accessKeyId: config.accessKeyId,
-                secretAccessKey: config.secretAccessKey,
-              },
-            }),
-        maxAttempts: 3,
-        requestHandler: { connectionTimeout: 3_000, requestTimeout: 10_000 },
-      });
+    this.region = region;
+  }
+
+  /** The SDK loads on first use, so deployments without KMS never load it. */
+  private connect() {
+    this.kms ??= import("@aws-sdk/client-kms").then((sdk) => {
+      const config = this.config;
+      return {
+        sdk,
+        client:
+          this.client ??
+          new sdk.KMSClient({
+            region: this.region,
+            ...("profile" in config
+              ? { profile: config.profile }
+              : {
+                  credentials: {
+                    accessKeyId: config.accessKeyId,
+                    secretAccessKey: config.secretAccessKey,
+                  },
+                }),
+            maxAttempts: 3,
+            requestHandler: { connectionTimeout: 3_000, requestTimeout: 10_000 },
+          }),
+      };
+    });
+    return this.kms;
   }
 
   describe() {
@@ -76,8 +89,9 @@ export class AwsKmsKeyProvider implements KeyProvider {
   }
 
   async wrap(dataKey: Uint8Array, context: KeyWrapContext): Promise<WrappedDataKey> {
-    const { CiphertextBlob } = await this.client.send(
-      new EncryptCommand({
+    const { sdk, client } = await this.connect();
+    const { CiphertextBlob } = await client.send(
+      new sdk.EncryptCommand({
         KeyId: this.config.keyArn,
         Plaintext: dataKey,
         EncryptionContext: encryptionContext(context),
@@ -99,9 +113,10 @@ export class AwsKmsKeyProvider implements KeyProvider {
     if (!wrapped.masterKeyId.startsWith(MASTER_KEY_PREFIX))
       throw new Error(`Master key ${wrapped.masterKeyId} is not configured`);
     const keyId = wrapped.masterKeyId.slice(MASTER_KEY_PREFIX.length);
-    const { KeyId, Plaintext } = await this.client
+    const { sdk, client } = await this.connect();
+    const { KeyId, Plaintext } = await client
       .send(
-        new DecryptCommand({
+        new sdk.DecryptCommand({
           KeyId: wrapped.masterKeyId === this.masterKeyId ? this.config.keyArn : undefined,
           CiphertextBlob: Buffer.from(wrapped.wrappedKey, "base64url"),
           EncryptionContext: encryptionContext(context),
