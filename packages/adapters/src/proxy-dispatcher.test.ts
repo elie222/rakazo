@@ -132,7 +132,7 @@ describe.each(["web", "remote"] as const)("%s proxy transport", (kind) => {
     const resolve: ResolveHostname = async () => [
       { address: calls++ === 0 ? "203.0.113.10" : "127.0.0.1", family: 4 },
     ];
-    await expect(request(url, resolve)).rejects.toThrow();
+    await expect(request(url, resolve, kind === "remote")).rejects.toThrow();
     expect(tunnels).toEqual([]);
     expect(requests).toEqual([]);
   });
@@ -160,13 +160,31 @@ describe.each(["web", "remote"] as const)("%s proxy transport", (kind) => {
       expect(tunnels).toEqual([{ path: authority, host: authority }]);
     });
 
-    it("keeps an authorized private MCP endpoint in NO_PROXY direct", async () => {
-      vi.stubEnv("no_proxy", "localhost");
-      const endpoint = url.replace("proxy.example.test", "localhost");
+    it("keeps an authorized private MCP endpoint direct without NO_PROXY", async () => {
+      const endpoint = url.replace("proxy.example.test", "private.example.test");
       const resolve: ResolveHostname = async () => [{ address: "127.0.0.1", family: 4 }];
       expect(await request(endpoint, resolve, true)).toBe("ok");
       expect(tunnels).toEqual([]);
       expect(requests).toHaveLength(1);
+    });
+
+    it("delivers private HTTP credentials directly without NO_PROXY", async () => {
+      let authorization: string | undefined;
+      const server = createHttpServer((incoming, response) => {
+        authorization = incoming.headers.authorization;
+        response.end("direct");
+      });
+      await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+      try {
+        const endpoint = `http://localhost:${(server.address() as AddressInfo).port}/mcp`;
+        expect(
+          await request(endpoint, async () => [{ address: "127.0.0.1", family: 4 }], true),
+        ).toBe("direct");
+        expect(authorization).toBe("Bearer fake-proxy-test-credential");
+        expect(tunnels).toEqual([]);
+      } finally {
+        await new Promise((done) => server.close(done));
+      }
     });
   }
 });

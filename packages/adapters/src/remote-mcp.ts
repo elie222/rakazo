@@ -626,12 +626,10 @@ export function createSafeRemoteFetch(
   resolve: ResolveHostname = resolveHostname,
   policy: RemoteUrlPolicy = {},
 ): SafeRemoteFetch {
-  const dispatcher =
-    fetchPairedWithDispatcher(baseFetch) === dispatcherFetch
-      ? createCheckedProxyDispatcher(resolve, (addresses, hostname) =>
-          assertSafeRemoteAddresses(addresses, hostname, policy),
-        )
-      : undefined;
+  const usePackageFetch = fetchPairedWithDispatcher(baseFetch) === dispatcherFetch;
+  let proxyDispatcher: Dispatcher | undefined;
+  let privateDispatcher: Agent | undefined;
+  let closed = false;
   // Injected fetches are not given this Agent; they keep the original hostname
   // for TLS/SNI and pin TCP to the already-validated address through dns.lookup.
   const safeFetch = async (input: string | URL | Request, init?: RequestInit) => {
@@ -641,6 +639,29 @@ export function createSafeRemoteFetch(
     const { url, addresses } = await inspectSafeRemoteUrl(String(input), resolve, policy);
     let response: Response;
     try {
+      if (closed) throw new Error("Connector fetch is closed");
+      let dispatcher: Dispatcher | undefined;
+      if (usePackageFetch) {
+        const privateDestination =
+          isLocalhostOrLoopbackIp(url.hostname) ||
+          addresses.some((entry) => isNonPublicAddress(entry.address));
+        // Route each validated destination independently. A DNS change must not move a
+        // public request onto the private network, or a private request onto the proxy.
+        if (privateDestination) {
+          privateDispatcher ??= new Agent({
+            connect: {
+              lookup: createAddressCheckedLookup(resolve, (answers, hostname) => {
+                assertSafeRemoteAddresses(answers, hostname, policy);
+                assertPrivateAddresses(answers);
+              }),
+            },
+          });
+          dispatcher = privateDispatcher;
+        } else {
+          proxyDispatcher ??= createCheckedProxyDispatcher(resolve, assertPublicAddresses);
+          dispatcher = proxyDispatcher;
+        }
+      }
       const requestInit = { ...init, redirect: "manual" as const };
       response = dispatcher
         ? await dispatcherFetch(url, {
@@ -663,7 +684,10 @@ export function createSafeRemoteFetch(
     return response;
   };
   const result = safeFetch as SafeRemoteFetch;
-  result.close = () => dispatcher?.close() ?? Promise.resolve();
+  result.close = async () => {
+    closed = true;
+    await Promise.all([proxyDispatcher?.close(), privateDispatcher?.close()]);
+  };
   return result;
 }
 
