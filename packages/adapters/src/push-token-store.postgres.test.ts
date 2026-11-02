@@ -99,6 +99,69 @@ suite("database push registrations", () => {
     expect((await worker.list(user("b")))[0]?.token).toBe(token("shared"));
   });
 
+  it("honors an unregister handled by the previous API release", async () => {
+    await api.save(user("a"), token("phone"), session("a"));
+    await api.save(user("a"), token("tablet"), session("a2"));
+    await runAsSystem("unregister through the previous-release table", () =>
+      a.prisma.pushToken.deleteMany({ where: { userId: user("a") } }),
+    );
+    expect(await worker.list(user("a"))).toEqual([
+      { token: token("phone"), sessionId: session("a") },
+    ]);
+  });
+
+  it("keeps another signed-in account when an old API transfers the shared token", async () => {
+    await api.save(user("a"), token("shared"), session("a"));
+    await api.save(user("b"), token("shared"), session("b"));
+    await runAsSystem("transfer a device through the previous-release table", () =>
+      a.prisma.$transaction(async (tx) => {
+        const row = await tx.pushRegistration.findUniqueOrThrow({
+          where: { userId_sessionId: { userId: user("b"), sessionId: session("b") } },
+        });
+        await tx.pushToken.deleteMany({
+          where: { tokenDigest: row.tokenDigest, userId: { not: user("b") } },
+        });
+        await tx.pushToken.upsert({ where: { userId: user("b") }, create: row, update: row });
+      }),
+    );
+    expect((await worker.load(user("a")))?.token).toBe(token("shared"));
+    expect((await worker.load(user("b")))?.token).toBe(token("shared"));
+  });
+
+  it("honors an old API's token rotation followed by unregister", async () => {
+    await api.save(user("a"), token("phone"), session("a"));
+    await api.save(user("a"), token("rotated"), session("a2"));
+    await runAsSystem("rotate and unregister through the previous-release table", async () => {
+      const original = await a.prisma.pushRegistration.findUniqueOrThrow({
+        where: { userId_sessionId: { userId: user("a"), sessionId: session("a") } },
+      });
+      const rotated = await a.prisma.pushRegistration.findUniqueOrThrow({
+        where: { userId_sessionId: { userId: user("a"), sessionId: session("a2") } },
+      });
+      await a.prisma.pushToken.update({ where: { userId: user("a") }, data: original });
+      await a.prisma.pushRegistration.deleteMany({ where: { sessionId: session("a2") } });
+      await a.prisma.pushToken.update({
+        where: { userId: user("a") },
+        data: { ciphertext: rotated.ciphertext, tokenDigest: rotated.tokenDigest },
+      });
+    });
+    expect((await worker.load(user("a")))?.token).toBe(token("rotated"));
+    await runAsSystem("unregister rotated token through the previous-release table", () =>
+      a.prisma.pushToken.deleteMany({ where: { userId: user("a") } }),
+    );
+    expect(await worker.list(user("a"))).toEqual([]);
+  });
+
+  it("preserves a new shared-token registration when its stale legacy projection is deleted", async () => {
+    await api.save(user("a"), token("old"), session("a"));
+    await api.save(user("b"), token("shared"), session("b"));
+    await api.save(user("a"), token("shared"), session("a"));
+    expect(await worker.list(user("a"))).toEqual([
+      { token: token("shared"), sessionId: session("a") },
+    ]);
+    expect((await worker.load(user("b")))?.token).toBe(token("shared"));
+  });
+
   it("keeps newer registrations when an old receipt or logout arrives", async () => {
     await api.save(user("a"), token("a"), session("a"));
     await worker.save(user("a"), token("new"), session("a2"));

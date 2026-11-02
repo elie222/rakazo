@@ -13,3 +13,31 @@ INSERT INTO "push_registrations" ("userId", "sessionId", "ciphertext", "tokenDig
 ALTER TABLE "push_registrations" ENABLE ROW LEVEL SECURITY;
 CREATE POLICY push_registrations_system ON "push_registrations"
   USING ((SELECT app_rls_bypass()));
+
+-- Previous-release APIs still rotate or unregister through push_tokens.
+CREATE FUNCTION sync_legacy_push_registration() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' THEN
+    UPDATE "push_registrations"
+      SET "ciphertext" = NEW."ciphertext", "tokenDigest" = NEW."tokenDigest",
+          "updatedAt" = NEW."updatedAt"
+      WHERE "userId" = OLD."userId" AND "sessionId" = OLD."sessionId"
+        AND "tokenDigest" = OLD."tokenDigest";
+  ELSE
+    -- Old registration transfers delete one owner before inserting the next.
+    -- Check at commit so that transfer does not revoke another saved account.
+    IF NOT EXISTS (SELECT 1 FROM "push_tokens" WHERE "tokenDigest" = OLD."tokenDigest") THEN
+      DELETE FROM "push_registrations"
+        WHERE "userId" = OLD."userId" AND "sessionId" = OLD."sessionId"
+          AND "tokenDigest" = OLD."tokenDigest";
+    END IF;
+  END IF;
+  RETURN NULL;
+END;
+$$;
+CREATE TRIGGER push_tokens_sync_rotation AFTER UPDATE ON "push_tokens"
+  FOR EACH ROW WHEN (OLD."sessionId" = NEW."sessionId")
+  EXECUTE FUNCTION sync_legacy_push_registration();
+CREATE CONSTRAINT TRIGGER push_tokens_sync_unregister AFTER DELETE ON "push_tokens"
+  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
+  EXECUTE FUNCTION sync_legacy_push_registration();
