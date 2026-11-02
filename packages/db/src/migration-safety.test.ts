@@ -10,7 +10,9 @@ const LAST_UNCHECKED = "20261115120000_billing_byok_price";
 
 // The previous release still reads what these remove while both run during a deploy, so they
 // wait for the next deploy behind the deferred marker.
-const DROP = /\bDROP\s+(?:TABLE|COLUMN)\b/i;
+// `COLUMN` is optional in `ALTER TABLE … DROP`; dropping a constraint is fine.
+const DROP =
+  /\bDROP\s+TABLE\b|^ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?\S+\s+DROP\s+(?!CONSTRAINT\b)|,\s*DROP\s+(?!CONSTRAINT\b)/i;
 // No marker makes a rename safe: one of the two releases always reads the missing name.
 // Renaming a constraint is fine.
 const RENAME = /^ALTER\s+TABLE\b.*\bRENAME\s+(?!CONSTRAINT\b)/i;
@@ -19,6 +21,7 @@ const RENAME = /^ALTER\s+TABLE\b.*\bRENAME\s+(?!CONSTRAINT\b)/i;
 function unsafeStatements(sql: string): string[] {
   const deferred = sql.startsWith(DEFERRED_MIGRATION_MARKER);
   return sql
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
     .replace(/--[^\n]*/g, "")
     .split(";")
     .map((statement) => statement.trim().replace(/\s+/g, " "))
@@ -44,18 +47,22 @@ describe("migration safety", () => {
     const sql = `
       -- DROP COLUMN in a comment is fine
       ALTER TABLE "bots" DROP COLUMN "title";
+      ALTER TABLE "bots" DROP "label";
+      ALTER TABLE "bots" DROP /* cleanup */ COLUMN "notes";
       DROP TABLE IF EXISTS "old";
       ALTER TABLE "bots" RENAME COLUMN "a" TO "b";
       ALTER TABLE "bots" RENAME TO "agents";
       ALTER TABLE "bots" DROP CONSTRAINT "bots_pkey";
       ALTER TABLE "bots" RENAME CONSTRAINT "x" TO "y";
       ALTER TABLE "bots" ALTER COLUMN "name" DROP DEFAULT;
-      ALTER TABLE "bots" ALTER COLUMN "name" DROP NOT NULL;
+      ALTER TABLE "bots" ALTER COLUMN "name" DROP NOT NULL, DROP CONSTRAINT "c";
       DROP INDEX "bots_name_idx";
       ALTER INDEX "a_idx" RENAME TO "b_idx";
     `;
     expect(unsafeStatements(sql)).toEqual([
       'ALTER TABLE "bots" DROP COLUMN "title"',
+      'ALTER TABLE "bots" DROP "label"',
+      'ALTER TABLE "bots" DROP COLUMN "notes"',
       'DROP TABLE IF EXISTS "old"',
       'ALTER TABLE "bots" RENAME COLUMN "a" TO "b"',
       'ALTER TABLE "bots" RENAME TO "agents"',

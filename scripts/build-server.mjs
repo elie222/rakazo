@@ -53,7 +53,7 @@ export function serverBuildOptions(entry, outfile) {
   };
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   for (const entry of process.argv.slice(2)) {
     const outfile = path.resolve("dist", path.relative("src", entry).replace(/\.ts$/, ".js"));
     await build(serverBuildOptions(entry, outfile));
