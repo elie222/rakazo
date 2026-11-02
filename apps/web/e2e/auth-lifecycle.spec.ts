@@ -134,7 +134,7 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await expect(page.getByRole("button", { name: "Log out" })).toBeVisible();
   await captureScreenshot(page, testInfo, "36-account-menu");
 
-  await page.route("**/api/auth/sign-out", (route) => route.fulfill({ status: 500, body: "" }), {
+  await page.route("**/api/accounts/remove", (route) => route.fulfill({ status: 500, body: "" }), {
     times: 1,
   });
   await page.getByRole("button", { name: "Log out" }).click();
@@ -143,7 +143,7 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   ).toBeVisible();
   await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
   await captureScreenshot(page, testInfo, "36-account-menu-logout-error");
-  await page.unroute("**/api/auth/sign-out");
+  await page.unroute("**/api/accounts/remove");
 
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));

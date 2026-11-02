@@ -829,7 +829,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
     ).not.toBeNull();
   });
 
-  it("hands a device's push token to the account that registers it last", async () => {
+  it("keeps a device registered for every signed-in account and unregisters only the caller", async () => {
     const first = await signup(app, `push-first-${stamp}@rakazo.test`, "Push First");
     const second = await signup(app, `push-second-${stamp}@rakazo.test`, "Push Second");
     const firstUser = (await rpc<Actor>(app, first, "me")).userId;
@@ -844,7 +844,10 @@ describeWithDatabase("API authorization and resource isolation", () => {
 
     await rpc(app, second, "notifications/registerPush", { token: device });
     await expect(loadPushToken(secondUser)).resolves.toBe(device);
-    await expect(loadPushToken(firstUser)).resolves.toBeUndefined();
+    await expect(loadPushToken(firstUser)).resolves.toBe(device);
+    await rpc(app, second, "notifications/unregisterPush");
+    await expect(loadPushToken(secondUser)).resolves.toBeUndefined();
+    await expect(loadPushToken(firstUser)).resolves.toBe(device);
     const multiline = await raw(app, first, "notifications/registerPush", {
       token: `${device}\nsession`,
     });

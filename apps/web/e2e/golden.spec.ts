@@ -354,6 +354,12 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
     if (message.type() === "error") browserErrors.push(message.text());
   });
   page.on("requestfailed", (request) => {
+    // Session transitions cancel the previous account's notification feed.
+    if (
+      new URL(request.url()).pathname === "/api/accounts" &&
+      request.failure()?.errorText === "net::ERR_ABORTED"
+    )
+      return;
     failedRequests.push(
       `${request.method()} ${request.url()} ${request.failure()?.errorText ?? ""}`,
     );

@@ -276,4 +276,21 @@ describe("bearer sessions", () => {
     await auth.api.getSession({ headers: new Headers({ authorization: `Bearer ${bearer}` }) });
     expect(JSON.stringify(lookups)).toContain(token);
   });
+
+  it.each([token, signed(token, "another-secret-of-at-least-32-chars")])(
+    "never falls back to saved browser sessions for an invalid bearer",
+    async (bearer) => {
+      const { auth, lookups } = authWithSessionLookups();
+      const browserToken = "otherBrowserSession0123456789";
+      expect(
+        await auth.api.getSession({
+          headers: new Headers({
+            authorization: `Bearer ${bearer}`,
+            cookie: `better-auth.session_token=${encodeURIComponent(signed(browserToken))}; better-auth.session_token_multi-${browserToken.toLowerCase()}=${encodeURIComponent(signed(browserToken))}`,
+          }),
+        }),
+      ).toBeNull();
+      expect(JSON.stringify(lookups)).not.toContain(browserToken);
+    },
+  );
 });

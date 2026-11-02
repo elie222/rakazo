@@ -8,6 +8,7 @@ import {
   getSessionFromCtx,
   sessionMiddleware,
 } from "better-auth/api";
+import { parseCookies } from "better-auth/cookies";
 import { bearer } from "better-auth/plugins";
 import type { EmailLocaleOf } from "./email.js";
 import { accountDeletionEmail } from "./email.js";
@@ -132,7 +133,45 @@ export function accountSecurity(
  * Session rows hold the raw token, so a raw bearer could be replayed from a database
  * copy. A bearer must carry the signature the session cookie has.
  */
-export const signedBearer = bearer({ requireSignature: true });
+const bearerPlugin = bearer({ requireSignature: true });
+const bearerHook = bearerPlugin.hooks.before[0]!;
+export const signedBearer: typeof bearerPlugin = {
+  ...bearerPlugin,
+  hooks: {
+    ...bearerPlugin.hooks,
+    before: [
+      {
+        ...bearerHook,
+        handler: createAuthMiddleware(async (ctx) => {
+          if (!(ctx.request?.headers ?? ctx.headers)?.has("authorization")) return;
+          // Native credentials must never authorize browser accounts, including
+          // the multi-session plugin's sign-out-all hook and cached session reads.
+          const headers = new Headers(ctx.request?.headers ?? ctx.headers);
+          const cookies = parseCookies(headers.get("cookie") ?? "");
+          const names = Object.values(ctx.context.authCookies).map((cookie) => cookie.name);
+          for (const key of cookies.keys()) {
+            if (
+              names.some(
+                (name) =>
+                  key === name || key.startsWith(`${name}_multi-`) || key.startsWith(`${name}.`),
+              )
+            ) {
+              cookies.delete(key);
+            }
+          }
+          headers.set("cookie", [...cookies].map(([key, value]) => `${key}=${value}`).join("; "));
+          const converted = await bearerHook.handler({
+            ...ctx,
+            headers,
+            request: undefined,
+            returnHeaders: false,
+          });
+          return { context: { headers: converted?.context.headers ?? headers } };
+        }),
+      },
+    ],
+  },
+};
 
 /** Hook results are applied after all before hooks, so native bearer conversion is explicit here. */
 export async function sessionForAuthHook(ctx: Parameters<typeof getSessionFromCtx>[0]) {
