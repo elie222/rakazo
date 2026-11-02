@@ -9,6 +9,7 @@ import { threadColumnPadding } from "./thread-edges";
 import type { ThreadListScroll } from "./thread-list-scroll";
 
 const native = vi.hoisted(() => ({
+  os: "ios",
   rtl: false,
   flat: null as Record<string, unknown> | null,
   scroll: null as Record<string, unknown> | null,
@@ -28,7 +29,11 @@ vi.mock("react-native", async () => {
         return native.rtl;
       },
     },
-    Platform: { OS: "ios" },
+    Platform: {
+      get OS() {
+        return native.os;
+      },
+    },
     ScrollView: (props: Record<string, unknown> & { children?: ReactNode }) => {
       native.scroll = props;
       return createElement("div", { "data-list": "scroll" }, props.children);
@@ -108,6 +113,7 @@ let container: HTMLDivElement;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  native.os = "ios";
   native.rtl = false;
   native.flat = null;
   native.scroll = null;
@@ -151,5 +157,19 @@ it("mirrors the jump button inset when the layout is right to left", async () =>
     root.render(createElement(ThreadMessageList, listProps({ detached: true }))),
   );
   expect(container.querySelector("[data-inset-end]")?.getAttribute("data-inset-end")).toBe("60");
+  await act(async () => root.unmount());
+});
+
+it("swaps the live list's side padding for Android's mirrored inverted list only", async () => {
+  native.os = "android";
+  const root = createRoot(container);
+  await act(async () => root.render(createElement(ThreadMessageList, listProps())));
+  const live = flatten(native.flat?.contentContainerStyle);
+  expect(live).toMatchObject({ paddingLeft: 28, paddingRight: 60 });
+  await act(async () =>
+    root.render(createElement(ThreadMessageList, listProps({ showPinnedPage: true }))),
+  );
+  const pinned = flatten(native.scroll?.contentContainerStyle);
+  expect(pinned).toMatchObject({ paddingLeft: 60, paddingRight: 28 });
   await act(async () => root.unmount());
 });
