@@ -37,6 +37,7 @@ AGENT_BROWSER = os.environ.get("RAKAZO_AGENT_BROWSER") or "/usr/local/bin/agent-
 NO_ANSWER = "The page did not answer in time."
 STALE_REF = "Stale element ref: the page has changed since that snapshot. Use a ref from the page below."
 NOT_KEPT = "The page did not keep every character typed. Check the field in this snapshot before trying again."
+DISABLED = "That control is disabled, so nothing happened. Pick another control from this snapshot."
 PAYMENT_FRAME_HINT = "Card fields are in a payment frame: use fill_card without ref."
 
 # The snapshot goes to the model whole, in one piece of at most 12,000 characters, or the tool result
@@ -689,6 +690,8 @@ class PageBrowser:
         try:
             results = self.ab.batch(commands)
         except AbError as error:
+            if re.search(r"Element\b.*\bis disabled", str(error)):
+                raise Settled(DISABLED) from None
             if any(marker in str(error) for marker in SETTLED_ERRORS):
                 raise Settled(str(error)) from None
             raise
