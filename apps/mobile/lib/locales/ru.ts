@@ -1219,6 +1219,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "No connected providers": "Нет подключённых провайдеров",
   Quota: "Квота",
   "Quota unavailable": "Квота недоступна",
+  "Claude subscription": "Подписка Claude",
   Session: "Сеанс",
   Updated: "Обновлено",
   Weekly: "За неделю",

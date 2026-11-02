@@ -18,7 +18,7 @@ export function ConnectionQuota({
   compact?: boolean;
   accountLabel?: string;
 }) {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const queries = useSpaceQueries();
   const client = useQueryClient();
   const rpc = useSpaceRpc();
@@ -94,7 +94,7 @@ export function ConnectionQuota({
         <p className="text-xs text-muted-foreground">
           <Trans>Updated</Trans>{" "}
           <time dateTime={observation.observedAt}>
-            {new Date(observation.observedAt).toLocaleString()}
+            {new Date(observation.observedAt).toLocaleString(i18n.locale)}
           </time>
         </p>
       ) : null}
@@ -103,7 +103,7 @@ export function ConnectionQuota({
 }
 
 function QuotaWindow({ window, compact }: { window: ModelQuotaWindow; compact: boolean }) {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const remaining = Math.round((100 - window.usedPercent) * 10) / 10;
   const label =
     window.id === "five_hour"
@@ -124,12 +124,12 @@ function QuotaWindow({ window, compact }: { window: ModelQuotaWindow; compact: b
             <time
               className="ms-2 text-muted-foreground"
               dateTime={window.resetsAt}
-              title={`${t`Resets`} ${new Date(window.resetsAt).toLocaleString()}`}
+              title={`${t`Resets`} ${new Date(window.resetsAt).toLocaleString(i18n.locale)}`}
             >
               <span className="sr-only">
                 <Trans>Resets</Trans>{" "}
               </span>
-              {new Date(window.resetsAt).toLocaleString(undefined, {
+              {new Date(window.resetsAt).toLocaleString(i18n.locale, {
                 month: "short",
                 day: "numeric",
                 hour: "numeric",
@@ -152,7 +152,9 @@ function QuotaWindow({ window, compact }: { window: ModelQuotaWindow; compact: b
       {!compact && window.resetsAt ? (
         <p className="text-xs text-muted-foreground">
           <Trans>Resets</Trans>{" "}
-          <time dateTime={window.resetsAt}>{new Date(window.resetsAt).toLocaleString()}</time>
+          <time dateTime={window.resetsAt}>
+            {new Date(window.resetsAt).toLocaleString(i18n.locale)}
+          </time>
         </p>
       ) : null}
     </div>

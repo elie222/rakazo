@@ -1,5 +1,5 @@
 import type { ModelQuota } from "@rakazo/contracts";
-import { useI18n } from "../lib/i18n";
+import { dateLocaleForUi, useI18n } from "../lib/i18n";
 import { SettingsGroup, SettingsRow } from "./settings-group";
 
 export function ConnectionQuota({
@@ -13,13 +13,13 @@ export function ConnectionQuota({
   loading: boolean;
   onRefresh: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   return (
     <SettingsGroup
       label={label ?? t("Quota")}
       footer={
         currentQuota?.observedAt
-          ? `${t("Updated")} ${new Date(currentQuota.observedAt).toLocaleString()}`
+          ? `${t("Updated")} ${new Date(currentQuota.observedAt).toLocaleString(dateLocaleForUi(locale))}`
           : undefined
       }
     >
@@ -48,7 +48,7 @@ export function ConnectionQuota({
           })}
           detail={
             window.resetsAt
-              ? `${t("Resets")} ${new Date(window.resetsAt).toLocaleString()}`
+              ? `${t("Resets")} ${new Date(window.resetsAt).toLocaleString(dateLocaleForUi(locale))}`
               : undefined
           }
         />

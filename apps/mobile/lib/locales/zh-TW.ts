@@ -1192,6 +1192,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "No connected providers": "沒有已連接的供應商",
   Quota: "配額",
   "Quota unavailable": "配額無法使用",
+  "Claude subscription": "Claude 訂閱",
   Session: "工作階段",
   Updated: "已更新",
   Weekly: "每週",

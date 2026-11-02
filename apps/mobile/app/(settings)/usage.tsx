@@ -116,7 +116,7 @@ export default function Usage() {
       credential.provider === "openai-codex"
         ? "Codex"
         : credential.provider === "anthropic" && credential.authKind === "oauth"
-          ? "Claude subscription"
+          ? t("Claude subscription")
           : (catalog.find((entry) => entry.provider === credential.provider)?.providerName ??
             credential.provider);
     const label = connectionDisplayName(credential, providerName);

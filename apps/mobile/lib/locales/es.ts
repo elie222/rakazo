@@ -13,6 +13,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Primary first": "Principal primero",
   Quota: "Cuota",
   "Quota unavailable": "Cuota no disponible",
+  "Claude subscription": "Suscripción de Claude",
   Refresh: "Actualizar",
   "Remaining quota": "Cuota restante",
   Session: "Sesión",
