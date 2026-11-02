@@ -8,7 +8,7 @@ import type { DriverRun, Submission } from "../page-browser-bench/tasks.js";
 import {
   comparisonTable,
   LIVE_SITES,
-  modelText,
+  modelSize,
   runTask,
   SITE,
   TASKS,
@@ -104,6 +104,7 @@ async function installDriver(exec: Exec, driver: string) {
   )
     .split("\n")
     .filter(Boolean);
+  if (!files.includes(DRIVER_SOURCE)) throw new Error(`${driver} has no ${DRIVER_SOURCE}`);
   for (const file of files) {
     const content = execFileSync("git", ["show", `${sha}:${file}`], {
       cwd: root,
@@ -181,7 +182,7 @@ async function measureDriver(
           command: command.command,
           ms: Math.round(performance.now() - started),
           ok: page.ok,
-          modelChars: modelText(page).length,
+          ...modelSize(page),
           ...(page.error ? { error: page.error.slice(0, 300) } : {}),
         });
       }

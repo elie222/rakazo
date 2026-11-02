@@ -225,6 +225,14 @@ export const LIVE_SITES = [
 
 export type RunDriver = (command: PageBrowserCommand) => Promise<PageBrowserResult>;
 
+/** What the model reads of a result: its length after the runtime's clip, and whether it was cut. */
+export function modelSize(result: PageBrowserResult): Pick<StepRecord, "modelChars" | "clipped"> {
+  const length = modelText(result).length;
+  return length > TOOL_RESULT_TEXT_LIMIT
+    ? { modelChars: TOOL_RESULT_TEXT_LIMIT, clipped: true }
+    : { modelChars: length };
+}
+
 export type StepRecord = {
   command: PageBrowserCommand["command"] | "wait";
   ms: number;
@@ -317,13 +325,11 @@ export async function runTask(
     const started = performance.now();
     const result = await driver(command);
     const ms = Math.round(performance.now() - started);
-    const text = modelText(result);
     steps.push({
       command: command.command,
       ms,
       ok: result.ok,
-      modelChars: Math.min(text.length, TOOL_RESULT_TEXT_LIMIT),
-      ...(text.length > TOOL_RESULT_TEXT_LIMIT ? { clipped: true } : {}),
+      ...modelSize(result),
       ...(result.elements ? { elements: result.elements.length } : {}),
       ...(result.loading ? { loading: true } : {}),
       ...(result.fallback ? { fallback: true } : {}),
