@@ -20,6 +20,7 @@ test("opening and releasing the computer keep a view-only stream; a failed relea
     if (request.url().endsWith("/rpc/computer/takeover")) takeovers += 1;
   });
   await openComputerPanel(page);
+  await captureScreenshot(page, testInfo, "computer-tab-asleep");
   await page.getByTestId("computer-preview").hover();
   await page.getByTestId("computer-preview-open").click();
   const chrome = page.getByTestId("computer-chrome");
@@ -56,6 +57,12 @@ test("opening and releasing the computer keep a view-only stream; a failed relea
   await checkViewOnly();
   expect(takeovers).toBe(1);
   await captureScreenshot(page, testInfo, "computer-released-view-only");
+  await page.getByRole("button", { name: "Close computer" }).click();
+  await expect(page.getByTitle("Bot screen preview")).toBeVisible();
+  await captureScreenshot(page, testInfo, "computer-tab-running");
+  await page.getByTestId("computer-preview").hover();
+  await page.getByTestId("computer-preview-open").click();
+  await expect(take).toBeVisible();
 
   // A release that fails keeps the computer open so it can be retried.
   await take.click();

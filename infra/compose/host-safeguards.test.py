@@ -651,6 +651,8 @@ class HostCheckTests(unittest.TestCase):
             audit_env = root / "audit-ship.env"
             source = source.replace("/etc/rakazo/audit-ship.env", str(audit_env))
             source = source.replace("/usr/sbin/sshd", str(bin_dir / "sshd"))
+            reboot_required = root / "reboot-required"
+            source = source.replace("/run/reboot-required", str(reboot_required))
             source = source.replace(
                 "/usr/local/sbin/rakazo-host-alert", str(bin_dir / "alert")
             )
@@ -691,6 +693,13 @@ class HostCheckTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             plaintext.unlink()
+            reboot_required.touch()
+            result = subprocess.run(
+                ["bash", str(script)], env=env, capture_output=True, text=True
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("need a reboot", alert_log.read_text())
+            reboot_required.unlink()
             rules.write_text(
                 "### tuple ### allow any 2222 0.0.0.0/0 any 0.0.0.0/0 in\n"
             )

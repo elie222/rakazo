@@ -16,6 +16,7 @@ import type {
   TransactionalEmailProvider,
 } from "@rakazo/adapter-kit";
 import {
+  SandboxAllowanceUsedError,
   SandboxDamagedError,
   SandboxRateLimitError,
   SandboxUnavailableError,
@@ -137,7 +138,7 @@ import {
   installLogger,
   SERVICE_NAMES,
 } from "@rakazo/logging";
-import { requestLogging } from "@rakazo/logging/hono";
+import { markExpectedFailure, requestLogging } from "@rakazo/logging/hono";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -191,7 +192,7 @@ import {
   TeamChatStartupRetries,
 } from "./team-chat-startup.js";
 import { mountUserDeviceRoutes } from "./user-devices.js";
-import { mountVoiceHttpRoutes, voiceAccountErrorStatus } from "./voice.js";
+import { mountVoiceHttpRoutes, transcribeInboundVoice, voiceAccountErrorStatus } from "./voice.js";
 import { mountWebhookHttpRoutes } from "./webhook.js";
 
 /**
@@ -466,6 +467,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         sandbox,
         webOrigin: env.webOrigin,
         managedModelsAvailable: resolveDeploymentModel().configured,
+        analytics,
       })
     : undefined;
   const modelCreditsEnabled = billing?.modelCreditsEnabled ?? false;
@@ -537,7 +539,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     onEmailError,
     afterSignIn:
       email && env.welcomeEmailEnabled
-        ? (userId) =>
+        ? (userId, headers) =>
             sendWelcomeEmail(
               {
                 prisma,
@@ -547,6 +549,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
                 onError: (error) => getLogger().error("welcome email delivery failed", error),
               },
               userId,
+              headers,
             )
         : undefined,
     extraOrigins: MOBILE_AUTH_ORIGINS,
@@ -1033,6 +1036,16 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           { spaceId, userId },
           input,
         ),
+      transcribe: ({ spaceId, userId, audio, mimeType, signal }) =>
+        transcribeInboundVoice(
+          {
+            prisma,
+            secrets,
+            env: { mcpAllowPrivateEndpoint: env.mcpAllowPrivateEndpoint },
+          },
+          { spaceId, userId },
+          { audio, mimeType, signal },
+        ),
     } satisfies Parameters<typeof createMessagingInboundHandler>[0];
     const inbound = createMessagingInboundHandler(inboundDeps);
     const handleTeamChatInbound = async (
@@ -1439,6 +1452,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await secrets.close();
       await realtime.close();
       await mcp.close();
+      await installed.close();
       await prisma.$disconnect().catch(() => undefined);
       await created.pool?.end().catch(() => undefined);
       await ownedJobPool?.end().catch(() => undefined);
@@ -1548,11 +1562,13 @@ export function handleRpcError(
     getLogger().warn(`rpc ${path.join("/")} computer unavailable`, {
       reason: unavailable.cause instanceof Error ? unavailable.cause.message : undefined,
     });
+    markExpectedFailure();
     throw new ORPCError("SERVICE_UNAVAILABLE", { message: unavailable.message, cause: error });
   }
   // A provider kept another transaction busy past the wait; nothing failed, so the caller retries.
   if (error instanceof ProviderTransactionBusyError) {
     getLogger().warn(`rpc ${path.join("/")} provider transaction busy`);
+    markExpectedFailure();
     throw new ORPCError("SERVICE_UNAVAILABLE", { message: error.message, cause: error });
   }
   if (error instanceof SandboxRateLimitError) {
@@ -1560,6 +1576,11 @@ export function handleRpcError(
       reason: error.cause instanceof Error ? error.cause.message : undefined,
     });
     throw new ORPCError("TOO_MANY_REQUESTS", { message: error.message, cause: error });
+  }
+  // The organization spent this period's computer allowance; its message says so.
+  if (error instanceof SandboxAllowanceUsedError) {
+    getLogger().warn(`rpc ${path.join("/")} computer allowance used up`);
+    throw new ORPCError("FORBIDDEN", { message: error.message, cause: error });
   }
   // A retry cannot fix a damaged computer; its message tells the user to Recover it.
   if (error instanceof SandboxDamagedError) {
@@ -1571,13 +1592,16 @@ export function handleRpcError(
     getLogger().warn(`rpc ${path.join("/")} client disconnected`, {
       reason: error instanceof Error ? error.message : String(error),
     });
+    markExpectedFailure();
     return;
   }
   logUnexpectedRpcError(error, path);
 }
 
 export function logUnexpectedRpcError(error: unknown, path: readonly string[]): void {
-  if (error instanceof ORPCError) return;
+  // A procedure's own 5xx (a store it depends on is down) would otherwise reach the collector
+  // only as an anonymous failed request; report it under the procedure with its cause.
+  if (error instanceof ORPCError && error.status < 500) return;
   const where = `rpc ${path.join("/")} failed`;
   getLogger().error(where, error);
 }

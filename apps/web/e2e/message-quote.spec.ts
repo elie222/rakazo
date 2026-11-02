@@ -197,7 +197,7 @@ test("an armed reply survives the parent paging out of the transcript", async ({
     reaction: "👍",
     clientNonce: `qr-${stamp}`,
   });
-  // Opening the bot panel on its computer refreshes the thread.
+  // Opening the bot panel refreshes the thread.
   const panelButton = page.getByTestId("bot-settings-trigger");
   await expect(async () => {
     if ((await panelButton.getAttribute("aria-expanded")) === "true") {

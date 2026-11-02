@@ -114,7 +114,7 @@ export function createSentrySink(
     write(event: LogEvent) {
       if (event.level !== "error" || event["error.report"] === false) return;
       const { "service.name": service, error } = event;
-      const message = redactSensitiveText(event.message);
+      const message = redactSensitiveText(reportTitle(event));
       Sentry.withScope((scope) => {
         scope.setTag("service", service);
         for (const key of TAG_KEYS) {
@@ -149,6 +149,13 @@ export function createSentrySinkFromEnv(
 } {
   const { config, warning } = sentryConfigFromEnv(source);
   return config ? { sink: createSentrySink(service, config) } : { warning };
+}
+
+/** A failed request with nothing else logged groups by what answered it, not as one issue. */
+function reportTitle(event: LogEvent): string {
+  const route = event["http.route"];
+  if (typeof route !== "string") return event.message;
+  return `${event.message} ${event["http.method"]} ${route} ${event["http.status"]}`;
 }
 
 function releaseFromGitSha(sha: string | undefined): string | undefined {

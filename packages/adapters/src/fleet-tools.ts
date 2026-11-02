@@ -14,12 +14,7 @@ import {
   TimeZoneSchema,
   UpdateGroupInput,
 } from "@rakazo/contracts";
-import {
-  CARD_TITLE_ESCAPED_CHARACTERS,
-  ONCE_ROUTINE_CRON,
-  redactSecrets,
-  toolRequiresExplicitApproval,
-} from "@rakazo/core";
+import { CARD_TITLE_ESCAPED_CHARACTERS, ONCE_ROUTINE_CRON, redactSecrets } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   commitBotUpdate,
@@ -51,17 +46,14 @@ import {
 import type { UpdateBotPatch } from "./update-bot-patch.js";
 import { argumentGiven, parseUpdateBotPatch } from "./update-bot-patch.js";
 
-/** The fleet writes that pause for the owner's card. */
+/** The fleet writes resolved up front so an approval card can show what will run. */
 export type FleetApprovalToolName = Exclude<
   (typeof FLEET_WRITE_TOOL_NAMES)[number],
   "organize_bot"
 >;
 
 export function isFleetApprovalTool(name: string): name is FleetApprovalToolName {
-  return (
-    (FLEET_WRITE_TOOL_NAMES as readonly string[]).includes(name) &&
-    toolRequiresExplicitApproval(name)
-  );
+  return name !== "organize_bot" && (FLEET_WRITE_TOOL_NAMES as readonly string[]).includes(name);
 }
 
 /** All scope comes from the run; no tool argument may name a space or user. */
@@ -472,7 +464,7 @@ export type FleetListing = {
   groups: FleetGroup[];
   sections: string[];
   truncated: boolean;
-  /** With `bot_id` of a bot the caller created: what an instruction edit must start from. */
+  /** With `bot_id`: what an instruction edit must start from. */
   bot?: { id: string; name: string; instructions: string; instructionsVersion: string };
 };
 
@@ -795,7 +787,7 @@ export async function updateFleetGroup(
 const CHILD_CHANGED = "child changed; read it again with list_fleet";
 const ALREADY_WROTE_INSTRUCTIONS = "You already changed this bot's instructions in this run.";
 
-/** `update_bot` with `bot_id`: the profile fields of a bot the caller created. */
+/** `update_bot` with `bot_id`: the profile fields of another bot in the space. */
 export async function updateChildBot(
   deps: Pick<FleetDeps, "prisma" | "events"> & { runSecrets: readonly string[] },
   run: FleetRun,

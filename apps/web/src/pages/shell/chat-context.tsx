@@ -106,7 +106,12 @@ export function ComposerReplyPreview({
   const { t } = useLingui();
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !event.defaultPrevented) {
+      if (
+        event.key === "Escape" &&
+        !event.defaultPrevented &&
+        !event.isComposing &&
+        event.keyCode !== 229
+      ) {
         event.preventDefault();
         onDismiss();
       }

@@ -11,7 +11,7 @@ import {
   toolRequiresExplicitApproval,
 } from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
-import { USER_COMPUTER_SCREEN_TOOLS, userComputerAppName } from "./run-tools-user-computer.js";
+import { USER_COMPUTER_SCREEN_TOOLS, userComputerAppName } from "./user-computer-tools.js";
 
 export const MAX_APPROVAL_SUMMARY_LENGTH = 500;
 export const MAX_APPROVAL_DETAIL_LENGTH = 4_000;
@@ -52,10 +52,16 @@ export function buildApprovalAskBlock(
       ),
       detailFormat: toolName === "set_child_instructions" ? "code" : "text",
       status: "pending",
-      actions: [
-        { id: "allow", label: "Allow once" },
-        { id: "deny", label: "Deny" },
-      ],
+      actions: toolRequiresExplicitApproval(toolName)
+        ? [
+            { id: "allow", label: "Allow once" },
+            { id: "deny", label: "Deny" },
+          ]
+        : [
+            { id: "allow", label: "Allow once" },
+            { id: "always", label: "Always allow this tool" },
+            { id: "deny", label: "Deny" },
+          ],
     };
   }
   if (toolName === "respond_agent_connection") {
@@ -82,7 +88,7 @@ export function buildApprovalAskBlock(
       ],
     };
   }
-  // Only an instruction change held for the owner carries the text it replaces.
+  // Only an instruction change held for approval carries the text it replaces.
   if (toolName === "update_bot" && typeof args.previousInstructions === "string") {
     const before = redactSecrets(String(args.previousInstructions ?? ""), secrets);
     const after = redactSecrets(String(args.instructions ?? ""), secrets);
@@ -91,7 +97,7 @@ export function buildApprovalAskBlock(
       kind: "ask",
       approvalEffectId: effectId,
       text: "Update instructions?",
-      detail: instructionUpdateDiff(before, after, reason),
+      detail: instructionUpdateDiff(before, after),
       instructionUpdate: {
         botId: String(args.botId ?? ""),
         before,
@@ -124,7 +130,7 @@ export function buildApprovalAskBlock(
         : {}),
       status: "pending",
       actions: [
-        { id: "allow", label: "Allow for this chat" },
+        { id: "allow", label: "Allow in this space" },
         { id: "deny", label: "Deny" },
       ],
     };
@@ -142,7 +148,7 @@ export function buildApprovalAskBlock(
       detailFormat: "code",
       status: "pending",
       actions: [
-        { id: "allow", label: "Allow for this chat" },
+        { id: "allow", label: "Allow in this space" },
         { id: "deny", label: "Deny" },
       ],
     };

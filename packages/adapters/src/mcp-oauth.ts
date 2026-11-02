@@ -471,6 +471,19 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     };
   }
 
+  /**
+   * The server refused the held access token before its stated expiry. Renew it, or drop
+   * it so the server reads as needing a reconnect when no refresh can replace it.
+   */
+  async replaceRejectedToken(): Promise<void> {
+    const held = this.material.oauth?.tokens;
+    await this.renew();
+    const tokens = this.material.oauth?.tokens;
+    if (tokens && tokens !== held) return;
+    if (tokens) await this.invalidateCredentials("tokens");
+    throw new McpReauthorizationRequiredError(this.serverId);
+  }
+
   /** Renews under the credential lock; concurrent callers share one refresh. */
   private renew(): Promise<void> {
     this.refreshing ??= this.refreshHeldGrant().finally(() => {

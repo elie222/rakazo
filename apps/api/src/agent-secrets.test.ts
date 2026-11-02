@@ -103,11 +103,24 @@ describe("agent secrets on the vault", () => {
   });
 
   it("rejects non-owners", async () => {
-    const { deps } = fixture("member");
+    const { deps, rows } = fixture("member");
+    rows.push({
+      id: "acme",
+      userId: "user-1",
+      spaceId: null,
+      name: "acme_token",
+      origin: "",
+      auth: { type: "command" },
+      ciphertext: "unused",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
     await expect(listAgentSecrets(deps, actor)).rejects.toBeInstanceOf(ORPCError);
     await expect(
       putAgentSecret(deps, actor, { name: "ACME_TOKEN", value: "fake" }),
     ).rejects.toBeInstanceOf(ORPCError);
+    await expect(deleteAgentSecret(deps, actor, "acme_token")).rejects.toBeInstanceOf(ORPCError);
+    expect(rows).toHaveLength(1);
   });
 
   it("updates a variable through the vault name that exports it", async () => {

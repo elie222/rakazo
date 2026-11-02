@@ -14,7 +14,7 @@ import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import { createJobReconciler } from "./job-reconciler.js";
 import { PEER_NOTHING_NEW_REPLY } from "./silent-reply.js";
-import { userProgressClientNonce } from "./user-progress.js";
+import { MID_TURN_PROGRESS_MIN_TURN_AGE_MS, userProgressClientNonce } from "./user-progress.js";
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
@@ -708,6 +708,51 @@ describe("notes that can't be posted as messages", () => {
       .filter((event) => event.type === "thread.progress")
       .map((event) => event.payload as { text?: string; activity?: boolean });
     expect(lines).toContainEqual({ text: "Reading march.csv", activity: true });
+  });
+
+  it("tells the bot whether a message_user update it can't post can be retried", async () => {
+    const update = async ({
+      startedAt,
+      earlier = [],
+      steerAt = -1,
+    }: {
+      startedAt?: Date;
+      earlier?: string[];
+      steerAt?: number;
+    } = {}) => {
+      let result: unknown;
+      const { messages } = await runTurn("", false, undefined, [], "fyi", {
+        startedAt,
+        runtime: async function* (request) {
+          for (const [index, message] of [...earlier, "On it, checking now."].entries()) {
+            const executionId = `call-${index}`;
+            if (index === steerAt) yield { type: "steered", fromRunUser: true };
+            yield { type: "tool", name: "message_user", args: { message }, executionId };
+            result = await request.executeTool!("message_user", { message }, executionId);
+          }
+          yield { type: "text", text: "Done." };
+          yield { type: "done", text: "" };
+        },
+      });
+      return { result, sent: sentTexts(messages) };
+    };
+    const notYet = {
+      ok: true,
+      note: `This update was not posted because the turn just started. Keep working and put anything the person needs in your final reply. Once the turn has run ${MID_TURN_PROGRESS_MIN_TURN_AGE_MS / 1000} seconds, a later update can be posted.`,
+    };
+    const stop = {
+      ok: true,
+      note: "This update was not posted. The chat already has enough interim messages for this run. Do not send more progress updates — keep working and put everything in your final reply.",
+    };
+    expect(await update()).toEqual({ result: notYet, sent: [] });
+
+    const earlier = ["One.", "Two.", "Three."];
+    const longTurn = new Date(Date.now() - 120_000);
+    expect(await update({ startedAt: longTurn, earlier })).toEqual({ result: stop, sent: earlier });
+    // The person's message restarts the budget, so after the answer the turn is fresh again.
+    expect(
+      await update({ startedAt: longTurn, earlier: [...earlier, "Yes, still on it."], steerAt: 3 }),
+    ).toEqual({ result: notYet, sent: [...earlier, "Yes, still on it."] });
   });
 });
 

@@ -179,7 +179,11 @@ export function useRoutineEditor({
                 name: routineDraft.name || t`Routine`,
                 prompt: routineDraft.prompt || t`Check in.`,
                 crons,
-                active: armOneShot ? true : routineDraft.active,
+                // Send on/off only when this save changes it, so a stale draft cannot undo a
+                // disable made elsewhere since the editor opened.
+                ...(armOneShot || routineDraft.active !== targetRoutine.active
+                  ? { active: armOneShot ? true : routineDraft.active }
+                  : {}),
                 webhookEnabled: routineDraft.webhookEnabled,
                 githubEnabled: routineDraft.githubEnabled,
                 messageProvider: routineDraft.messageProvider,

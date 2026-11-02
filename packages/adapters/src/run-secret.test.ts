@@ -1,6 +1,8 @@
+import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   commitConsumedRunSecret,
+  createRunSecretWriter,
   normalizeSecretAskPurpose,
   reconcileManagedConnection,
   resolveCompletedSecretLeftover,
@@ -8,6 +10,7 @@ import {
   secretPausedToolResult,
   tryCompleteConnectionWithCode,
 } from "./run-secret.js";
+import { EncryptedSecretStore } from "./secrets.js";
 
 describe("normalizeSecretAskPurpose", () => {
   it("keeps known purposes and defaults unknown ones to otp", () => {
@@ -68,6 +71,47 @@ describe("commitConsumedRunSecret", () => {
     ).resolves.toBe(onPersistFailed);
 
     expect(deleteSecret).toHaveBeenCalledOnce();
+  });
+});
+
+describe("createRunSecretWriter", () => {
+  it("refuses to store an answer for a run whose bot changed", async () => {
+    const prisma = {
+      run: { findFirst: async () => ({ botId: "bot", userId: "user" }) },
+      message: {
+        findFirst: async () => ({
+          blocks: [{ kind: "ask", text: "Code", input: "secret", status: "pending" }],
+        }),
+      },
+    } as unknown as PrismaClient;
+    const create = vi.fn();
+    const answer = (botId: string) =>
+      createRunSecretWriter(new EncryptedSecretStore("fake-key")).withPrepared!(
+        prisma,
+        {
+          spaceId: "space",
+          runId: "run",
+          threadId: "thread",
+          messageId: "message",
+          answeredByUserId: "user",
+          answer: "fake-code",
+        },
+        (prepared) =>
+          prepared.store({
+            botId,
+            runId: "run",
+            userId: "user",
+            spaceId: "space",
+            plaintext: "fake-code",
+            remember: true,
+            tx: { secret: { create } } as never,
+          }),
+      );
+
+    await expect(answer("other-bot")).rejects.toThrow("Secret request changed");
+    expect(create).not.toHaveBeenCalled();
+    await answer("bot");
+    expect(create).toHaveBeenCalledOnce();
   });
 });
 

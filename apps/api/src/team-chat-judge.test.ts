@@ -291,7 +291,7 @@ describe("team chat engagement judge", () => {
         space: { findUnique: async () => ({ organizationId: "org" }) },
         member: { findUnique: async () => ({ role: "owner" }) },
         billingAccount: { findUnique: async () => null },
-        modelCreditAccount: { upsert: async () => ({ mode: "byok" }) },
+        modelCreditAccount: { upsert: async () => ({ mode: "byok", balanceMicros: 0n }) },
       } as never,
       runtime: { run } as never,
       secrets: {} as never,

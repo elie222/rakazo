@@ -297,7 +297,7 @@ export function loadCatalogEntry(
   );
 }
 
-const GROUP_SEPARATORS = [":", "/", "__", "."];
+export const GROUP_SEPARATORS = [":", "/", "__", "."];
 
 function matchesGroupQualifiedName(entry: CatalogEntry, id: string): boolean {
   const group = entry.group.toLowerCase();

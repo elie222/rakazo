@@ -10,6 +10,7 @@ import type {
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import { isRetryableError, reorderBotTo } from "@rakazo/core";
+import { replaceEqualDeep } from "@tanstack/react-query";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { takeInitialBootstrap } from "../../lib/bootstrap";
@@ -94,18 +95,21 @@ export function useSpaceRoster({
         // includeArchived request still owns archivedBotsRefreshEpoch — apply
         // whichever slices are still current.
         if (!botsFresh && !archivedFresh) return;
-        if (archivedFresh && archived) setArchivedBots(archived);
-        if (archivedFresh && archivedGroupList) setArchivedGroups(archivedGroupList);
+        // The roster is polled; keeping unchanged values lets an unchanged poll skip rendering.
+        if (archivedFresh && archived)
+          setArchivedBots((previous) => replaceEqualDeep(previous, archived));
+        if (archivedFresh && archivedGroupList)
+          setArchivedGroups((previous) => replaceEqualDeep(previous, archivedGroupList));
         if (!botsFresh) return;
         if (
           botOrderEpoch === botOrderEpochRef.current &&
           (replaceBotOrder || (!preserveBotOrder && !savingBotOrderRef.current))
         ) {
-          setBots(list);
+          setBots((previous) => replaceEqualDeep(previous, list));
         }
-        setBotSections(sections);
-        setGroups(groupList);
-        setSpaces(navigation.spaces);
+        setBotSections((previous) => replaceEqualDeep(previous, sections));
+        setGroups((previous) => replaceEqualDeep(previous, groupList));
+        setSpaces((previous) => replaceEqualDeep(previous, navigation.spaces));
         setInitialBotsLoaded(true);
         botsRefreshApplied.current = request;
         if (

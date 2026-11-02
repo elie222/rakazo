@@ -115,6 +115,7 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
     const realtime = new InMemoryRealtimeFanout();
     const host = () => new RunWorkerHost(db.prisma, realtime, new RunStarter(realtime));
     const waitingOnBot = host();
+    const handoff = host();
     const unblocked = host();
     try {
       // Waiting for the bot's own earlier run is expected, not a failure to start.
@@ -123,9 +124,19 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
       await waitingOnBot.stop();
       expect(sink.events.some((event) => event.message === "run.queue_delayed")).toBe(false);
 
+      // A release moments ago is the handoff to the bot's next run.
       await system.computerExecutionLease.update({
         where: { id: lease.id },
-        data: { expiresAt: new Date(now - 1_000) },
+        data: { expiresAt: new Date(0) },
+      });
+      await handoff.start({} as BackgroundJobHandlers);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await handoff.stop();
+      expect(sink.events.some((event) => event.message === "run.queue_delayed")).toBe(false);
+
+      await system.computerExecutionLease.update({
+        where: { id: lease.id },
+        data: { updatedAt: new Date(now - 60_000) },
       });
       await unblocked.start({} as BackgroundJobHandlers);
       await wait(() =>
@@ -139,6 +150,7 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
       expect(warning["queue.oldest_wait_ms"]).toBeLessThan(60_000);
     } finally {
       await waitingOnBot.stop();
+      await handoff.stop();
       await unblocked.stop();
       installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
       await system.run.updateMany({

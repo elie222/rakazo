@@ -59,7 +59,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Search bots": "Поиск ботов",
   "{count} messages with {peer}": "{count} сообщения с {peer}",
   "About {label}": "О настройке «{label}»",
-  "Manage the bots it creates": "Управлять созданными им ботами",
+  "Manage other bots": "Управлять другими ботами",
   "Allow cross-space bot communication": "Разрешить общение ботов из разных пространств",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "Упорядочивайте боковую панель и редактируйте ботов. Изменения групп, инструкций, моделей и процедур требуют вашего одобрения.",
@@ -121,6 +121,8 @@ export const RU_MESSAGES: Record<string, string> = {
     "Лимит запроса этого подключения слишком мал. Выберите другую модель.",
   "This model's context window is too small. Choose another model.":
     "Контекстное окно этой модели слишком мало. Выберите другую модель.",
+  "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.":
+    "Результат инструмента этого сервера не помещается в модель. Выключите «Сохранять результаты инструментов целиком» для этого сервера или выберите другую модель.",
   "{provider} took too long to respond. Try again.":
     "{provider} не ответил вовремя. Повторите попытку.",
   "{provider} is overloaded right now. Try again in a moment.":
@@ -264,6 +266,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Agent messages": "Сообщения агента",
   "Allowed once": "Разрешено один раз",
   "Allow once": "Разрешить один раз",
+  "Allow in this space": "Разрешить в этом пространстве",
+  "Allowed in this space": "Разрешено в этом пространстве",
   "Already have an account?": "У вас уже есть аккаунт?",
   "Always allow": "Всегда разрешать",
   "Always allow this tool": "Всегда разрешать этот инструмент",
@@ -657,6 +661,10 @@ export const RU_MESSAGES: Record<string, string> = {
   "Sending…": "Отправка…",
   Server: "Сервер",
   "Server URL": "URL-адрес сервера",
+  Protocol: "Протокол",
+  "Chat Completions": "Chat Completions",
+  Responses: "Responses",
+  "Anthropic Messages": "Anthropic Messages",
   "Setup help": "Помощь по настройке",
   Share: "Поделиться",
   "Share {name}": "Поделиться {name}",
@@ -1016,6 +1024,15 @@ export const RU_MESSAGES: Record<string, string> = {
   Credits: "Кредиты",
   "Available credits": "Доступные кредиты",
   "Computer hours left": "Осталось часов компьютера",
+  "Trials get fewer hours to prevent abuse.":
+    "В пробном периоде меньше часов, чтобы предотвратить злоупотребления.",
+  "Start plan now": "Начать тариф сейчас",
+  "Start your plan now?": "Начать тариф сейчас?",
+  "Your trial ends and your card is charged {price} today.":
+    "Пробный период закончится, и сегодня с вашей карты спишется {price}.",
+  "Your trial ends and your card is charged today.":
+    "Пробный период закончится, и сегодня с вашей карты будет списана оплата.",
+  "Start plan": "Начать тариф",
   "Monthly credits": "Ежемесячные кредиты",
   "Upgrade now": "Повысить тариф сейчас",
   "Downgrade at renewal": "Понизить тариф при продлении",
@@ -1029,6 +1046,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Use Rakazo credits": "Использовать кредиты Rakazo",
   "Choose a plan": "Выбрать тариф",
   "Change plan": "Сменить тариф",
+  "Current plan": "Текущий тариф",
   Plan: "Тариф",
   None: "Нет",
   "Free trial": "Бесплатный пробный период",
@@ -1053,6 +1071,13 @@ export const RU_MESSAGES: Record<string, string> = {
   "Full access, nothing to pay": "Полный доступ без оплаты",
   "Day {days}": "День {days}",
   "{price} / month begins": "Далее {price} в месяц",
+  "Billing period": "Период оплаты",
+  "Yearly −{percent}%": "Год −{percent}%",
+  "{days} days free, then {price} / year. Cancel anytime.":
+    "{days} дн. бесплатно, затем {price} в год. Отмена в любой момент.",
+  "{price} / year": "{price} в год",
+  "{price} / year begins": "Далее {price} в год",
+  "{price} / year. Cancel anytime.": "{price} в год. Отмена в любой момент.",
   "Only the owner of this account can choose a plan.":
     "Только владелец этого аккаунта может выбрать тариф.",
   Terms: "Условия",
@@ -1152,6 +1177,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Always open {site}": "Всегда открывать {site}",
   "Trusted sites": "Доверенные сайты",
   "Run history": "История запусков",
+  "No reply": "Без ответа",
   "No runs yet": "Запусков пока нет",
   "Load older runs": "Загрузить более ранние запуски",
   "Could not load run history": "Не удалось загрузить историю запусков",
@@ -1177,15 +1203,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Add field": "Добавить поле",
   Label: "Название",
   "Could not show the credential": "Не удалось показать учетные данные",
-  "Allow rule": "Правило разрешения",
-  "Ask rule": "Правило подтверждения",
-  "Block rule": "Правило блокировки",
-  "Candidate rule": "Предлагаемое правило",
-  "Could not preview rule": "Не удалось проверить правило",
-  Current: "Сейчас",
-  "No matching rule": "Нет подходящего правила",
-  "Test rule": "Проверить правило",
-  "Tool name": "Название инструмента",
   Wallet: "Кошелёк",
   "Connect {name}": "Подключить {name}",
   "Could not load wallet": "Не удалось загрузить кошелёк",
@@ -1253,6 +1270,30 @@ export const RU_MESSAGES: Record<string, string> = {
   "1 free month earned": "Получен 1 бесплатный месяц",
   "{count} free months earned": "Бесплатных месяцев получено: {count}",
   "Submit a plugin": "Предложить плагин",
+  Board: "Доска",
+  "To do": "К выполнению",
+  "In progress": "В работе",
+  "In review": "На проверке",
+  Blocked: "Заблокировано",
+  "Won't do": "Не будем делать",
+  "Could not move the ticket": "Не удалось переместить тикет",
+  "No tickets yet.": "Тикетов пока нет.",
+  "Bot models": "Модели ботов",
+  "1 bot has its own model:": "1 бот использует свою модель:",
+  "{count} bots have their own model:": "Своя модель у ботов ({count}):",
+  "Use space default": "Использовать модель пространства по умолчанию",
+  "Switching…": "Переключение…",
+  "Switch 1 bot to the space default?": "Переключить 1 бота на модель пространства по умолчанию?",
+  "Switch {count} bots to the space default?":
+    "Переключить ботов на модель пространства по умолчанию ({count})?",
+  "Their own model is cleared. You can pick one again in each bot.":
+    "Их собственная модель будет сброшена. Её можно снова выбрать в каждом боте.",
+  Switch: "Переключить",
+  "1 bot now uses the space default.": "1 бот теперь использует модель пространства по умолчанию.",
+  "{count} bots now use the space default.":
+    "Ботов переведено на модель пространства по умолчанию: {count}.",
+  "Could not switch {failedNames}. Try again.":
+    "Не удалось переключить {failedNames}. Попробуйте снова.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

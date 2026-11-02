@@ -85,3 +85,19 @@ it("keeps edits made while a save is in flight", async () => {
   expect(editor.editorProps!.draft.name).toBe("Monthly");
   expect(editor.editorProps!.draft.prompt).toBe("Check in.");
 });
+
+it("sends on/off only when the save changes it", async () => {
+  update.mockResolvedValue(routine);
+  act(() => editor.editRoutine(routine));
+  act(() => editor.editorProps!.onChange({ ...editor.editorProps!.draft, name: "Renamed" }));
+  await act(async () => {
+    await editor.editorProps!.onSave();
+  });
+  expect(update.mock.calls[0]![0]).not.toHaveProperty("active");
+
+  act(() => editor.editorProps!.onChange({ ...editor.editorProps!.draft, active: false }));
+  await act(async () => {
+    await editor.editorProps!.onSave();
+  });
+  expect(update.mock.calls[1]![0]).toMatchObject({ active: false });
+});

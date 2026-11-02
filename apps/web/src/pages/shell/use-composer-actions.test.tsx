@@ -207,3 +207,27 @@ it("opens a mentioned group without running anything", async () => {
   expect(rpc.threads.sendWithRoutines).not.toHaveBeenCalled();
   expect(rpc.threads.send).not.toHaveBeenCalled();
 });
+
+it("asks the chat to follow on submit, before the send lands", async () => {
+  let finishSend!: () => void;
+  rpc.threads.send.mockReturnValue(
+    new Promise((resolve) => {
+      finishSend = () => resolve({ runId: "run-1", taskId: "task-1" });
+    }),
+  );
+  let sent!: Promise<boolean>;
+  act(() => {
+    sent = latest.sendMessage("hello", [], "nonce-1");
+  });
+  expect(latest.sentCount).toBe(1);
+  finishSend();
+  await act(async () => void (await sent));
+  expect(latest.sentCount).toBe(1);
+
+  rpc.threads.sendWithRoutines.mockResolvedValue({ routineRunIds: ["routine-run"] });
+  expect(await send("@digest", [digest])).toBe(true);
+  expect(rpc.threads.sendWithRoutines).toHaveBeenCalledWith(
+    expect.not.objectContaining({ text: expect.anything() }),
+  );
+  expect(latest.sentCount).toBe(2);
+});

@@ -17,8 +17,8 @@ test("asks before using an app on the user's computer", async ({ page }, testInf
   await expect(page.getByRole("button", { name: "Deny", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "user-computer-screen-approval-card");
 
-  await page.getByRole("button", { name: "Allow for this chat", exact: true }).click();
-  await expect(transcript.getByText("Allowed for this chat", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Allow in this space", exact: true }).click();
+  await expect(transcript.getByText("Allowed in this space", { exact: true })).toBeVisible();
 
   // The emulated desktop (see UserDeviceEmulator) records requests; the window it returns is
   // only for the bot, so check that the approved look reached it.

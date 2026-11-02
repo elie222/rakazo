@@ -21,7 +21,7 @@ vi.mock("../../components/ComputerMaintenanceActions", () => ({
 }));
 
 import type { ComputerState } from "./use-computer";
-import { useComputerState } from "./use-computer";
+import { useComputerControls, useComputerState } from "./use-computer";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -120,4 +120,43 @@ it("keeps a live Wuying frame's code, and reconnects one drop with a fresh code"
 it("never caches a Wuying login code", async () => {
   await read();
   expect(state.computerCacheRef.current.get("bot-1")?.screenUrl).toBeNull();
+});
+
+it("closes the computer view on Escape, but not on the Escape that ends an IME composition", async () => {
+  function Controls() {
+    state = useComputerState({
+      rpc: {} as never,
+      panel: null,
+      activeId: undefined,
+      activeBotId: { current: undefined },
+    });
+    useComputerControls({
+      rpc: {} as never,
+      state,
+      panel: null,
+      active: undefined,
+      bots: [],
+      botsRef: { current: [] },
+      activeBotId: { current: undefined },
+      activeGroupId: { current: undefined },
+      runStatus: undefined,
+      sandboxProvider: undefined,
+      refreshThread: vi.fn(),
+      refreshGroupThread: vi.fn(),
+    });
+    // Stands in for the view's "Teach a task" goal box, whose popover lets a composing Escape bubble.
+    return <textarea aria-label="Goal" />;
+  }
+  await act(async () => root.render(<Controls />));
+  await act(async () => state.setComputerOpen(true));
+  const goal = container.querySelector("textarea")!;
+  const press = (init: KeyboardEventInit = {}) =>
+    act(async () => {
+      goal.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, ...init }));
+    });
+  await press({ isComposing: true });
+  await press({ keyCode: 229 });
+  expect(state.computerOpen).toBe(true);
+  await press();
+  expect(state.computerOpen).toBe(false);
 });

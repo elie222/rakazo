@@ -444,6 +444,79 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
     }
   });
 
+  it("updates under its maintenance while a later run waits, but not while a run holds a lease", async () => {
+    const { spaceId, botId, threadId, userId } = identity;
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-maintenance-"));
+    const deps = {
+      prisma,
+      sandbox: new FakeSandboxProvider(),
+      home: new LocalAgentHomeStore(dataDir),
+      jobs: { enqueue: vi.fn(), cancel: vi.fn() } as unknown as JobPublisher,
+      events: { append: vi.fn() } as unknown as ThreadEvents,
+      dataDir,
+    };
+    const context = {
+      operationId: "maintenance",
+      traceId: "maintenance",
+      spaceId,
+      userId,
+      botId,
+      signal: new AbortController().signal,
+    } satisfies AdapterContext;
+    const task = await prisma.task.create({
+      data: { spaceId, botId, threadId, userId, prompt: "fixture", status: "queued" },
+    });
+    const run = await prisma.run.create({
+      data: {
+        spaceId,
+        botId,
+        threadId,
+        userId,
+        taskId: task.id,
+        status: "queued",
+        trigger: "user",
+      },
+    });
+    try {
+      await prisma.computer.update({
+        where: { id: computerId },
+        data: { kind: "fake", state: "stopped", providerRef: null, restorePending: false },
+      });
+      await provisionComputer(deps, computerId, context);
+      await prisma.computer.update({
+        where: { id: computerId },
+        data: { maintenanceId: context.operationId },
+      });
+      await expect(
+        acquireComputerExecutionLease(prisma, { computerId, botId, runId: run.id }),
+      ).rejects.toBeInstanceOf(ComputerBusyError);
+      await expect(replaceComputer(deps, computerId, "update", context)).resolves.toBeTruthy();
+
+      await prisma.computerExecutionLease.upsert({
+        where: { computerId_botId: { computerId, botId } },
+        create: {
+          computerId,
+          botId,
+          runId: run.id,
+          fence: 1,
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+        update: { runId: run.id, expiresAt: new Date(Date.now() + 60_000) },
+      });
+      await expect(replaceComputer(deps, computerId, "update", context)).rejects.toBeInstanceOf(
+        ComputerBusyError,
+      );
+    } finally {
+      await prisma.computerExecutionLease.updateMany({
+        where: { computerId },
+        data: { expiresAt: new Date(0) },
+      });
+      await prisma.run.update({ where: { id: run.id }, data: { status: "cancelled" } });
+      await prisma.computer.update({ where: { id: computerId }, data: { maintenanceId: null } });
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it("lets API operations acquire new or expired leases without a worker claim", async () => {
     const input = { computerId, botId: identity.botId, runId: "boot:fixture" };
     const first = await acquireComputerExecutionLease(prisma, input);

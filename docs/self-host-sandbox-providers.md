@@ -122,6 +122,9 @@ The API and worker talk to the Kubernetes API with their own service account (or
 | `KUBERNETES_SANDBOX_READY_TIMEOUT_MS` | `120000` | How long a new pod has to become ready |
 
 Each pod runs the image's own user (uid 1000) with no service account token and no service links,
+with all Linux capabilities dropped, privilege escalation off and the runtime's default seccomp
+profile, like a Docker computer (these apply to newly created pods; a pod that was already running
+keeps its old spec until it is stopped and recreated),
 and is labelled `app.kubernetes.io/name=rakazo-computer` and `rakazo-bot-id=<bot id>`. Commands,
 file transfers and workspace save and restore go through `pods/exec`; save and restore stream the
 home as one tar archive. Screens use the image's desktop gateway on the pod IP, so the API, the

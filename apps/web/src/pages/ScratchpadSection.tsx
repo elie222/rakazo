@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ScratchpadItem } from "@rakazo/contracts";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
-import { Button, Checkbox, Input } from "@rakazo/ui-web";
+import { Button, Checkbox, Input, SectionHeading } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
 import { useState } from "react";
@@ -99,7 +99,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
 
   return (
     <div className="mt-6" data-testid="bot-scratchpad">
-      <h3 className="mb-2 flex items-center justify-between text-xs font-medium text-muted-foreground pe-1">
+      <SectionHeading variant="label" className="mb-2 flex items-center justify-between pe-1">
         <Trans>Open work</Trans>
         <Button
           variant="ghost"
@@ -110,7 +110,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
         >
           <Plus className="size-4" />
         </Button>
-      </h3>
+      </SectionHeading>
       <div className="rounded-xl bg-muted/50 p-4">
         {(showAll ? items : items.slice(0, 5)).map((item) => (
           <div

@@ -2,7 +2,7 @@ import { createTelegramAdapter } from "@chat-adapter/telegram";
 import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
-import { splitOutboundBody } from "./messaging-platforms.js";
+import { messagingPlatformsFromEnv, splitOutboundBody } from "./messaging-platforms.js";
 
 const context: AdapterContext = {
   operationId: "op-test",
@@ -272,6 +272,297 @@ describe("Telegram bots side by side", () => {
 
     expect(response?.status).toBe(401);
     expect(inbound).toEqual([]);
+  });
+});
+
+describe("Telegram groups", () => {
+  function createGroupSurface() {
+    const sends: { token: string; payload: Record<string, unknown> }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string, init: RequestInit) => {
+        const url = new URL(input);
+        const [, botPath, method] = url.pathname.split("/");
+        const token = botPath!.replace(/^bot/, "");
+        if (method === "getMe") {
+          const work = token.includes("work");
+          return Response.json({
+            ok: true,
+            result: {
+              id: work ? 998 : 999,
+              is_bot: true,
+              username: work ? "workbot" : "testbot",
+            },
+          });
+        }
+        if (method === "sendRichMessage") {
+          return Response.json(
+            { ok: false, error_code: 404, description: "Not Found" },
+            { status: 404 },
+          );
+        }
+        if (method !== "sendMessage") throw new Error(`Unexpected Telegram method: ${method}`);
+        const payload = JSON.parse(String(init.body)) as Record<string, unknown>;
+        sends.push({ token, payload });
+        return Response.json({
+          ok: true,
+          result: {
+            message_id: 42,
+            date: 1_700_000_000,
+            chat: { id: payload.chat_id, type: "supergroup" },
+            from: { id: 999, is_bot: true, first_name: "Test Bot" },
+            text: payload.text,
+          },
+        });
+      }),
+    );
+    // Mount the production platform entries, not hand-built ones, so the
+    // capability and hook wiring itself is under test.
+    const surface = new ChatSdkMessagingSurface(
+      messagingPlatformsFromEnv({
+        telegramBotToken: "home-token",
+        telegramWebhookSecret: "home-secret",
+        telegramBots: [{ name: "work", botToken: "work-token", webhookSecret: "work-secret" }],
+      }),
+    );
+    const inbound: MessagingInboundEvent[] = [];
+    surface.onInbound(async (event) => {
+      inbound.push(event);
+    });
+    return { surface, sends, inbound };
+  }
+
+  const webhook = (secret: string, update: unknown) =>
+    new Request("https://rakazo.test/api/v1/messaging/webhook/x", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-telegram-bot-api-secret-token": secret,
+      },
+      body: JSON.stringify(update),
+    });
+
+  const familyChat = { id: -1001234, type: "supergroup" as const, title: "Family" };
+  const sender = { id: 777, is_bot: false, first_name: "Grace" };
+
+  function groupMessage(messageOverrides: Record<string, unknown> = {}, updateId = 101) {
+    return {
+      update_id: updateId,
+      message: {
+        message_id: 11,
+        date: 1_700_000_000,
+        chat: familyChat,
+        from: sender,
+        text: "hello group",
+        ...messageOverrides,
+      },
+    };
+  }
+
+  it("delivers a group message with the chat title and the mention flag", async () => {
+    const { surface, inbound } = createGroupSurface();
+
+    expect(
+      (
+        await surface.handleWebhook(
+          "telegram",
+          webhook(
+            "home-secret",
+            groupMessage({
+              message_id: 11,
+              text: "@testbot hello",
+              entities: [{ type: "mention", offset: 0, length: 8 }],
+            }),
+          ),
+        )
+      )?.status,
+    ).toBe(200);
+    expect(
+      (
+        await surface.handleWebhook(
+          "telegram",
+          webhook("home-secret", groupMessage({ message_id: 12 }, 102)),
+        )
+      )?.status,
+    ).toBe(200);
+
+    expect(inbound).toHaveLength(2);
+    expect(inbound[0]).toMatchObject({
+      type: "message",
+      provider: "telegram",
+      handle: "-1001234:11",
+      threadId: "telegram:-1001234",
+      isDirect: false,
+      from: "777",
+      fromLabel: "Grace",
+      channelName: "Family",
+      participants: [],
+      content: "@testbot hello",
+      mentionsBot: true,
+    });
+    expect(inbound[1]).toMatchObject({
+      threadId: "telegram:-1001234",
+      content: "hello group",
+    });
+    expect(inbound[1]?.type === "message" && inbound[1].mentionsBot).toBeUndefined();
+  });
+
+  it("keeps a plain reply on the group's own thread", async () => {
+    const { surface, inbound } = createGroupSurface();
+
+    expect(
+      (
+        await surface.handleWebhook(
+          "telegram",
+          webhook(
+            "home-secret",
+            groupMessage({
+              message_id: 13,
+              message_thread_id: 9,
+              text: "yes please",
+              reply_to_message: {
+                message_id: 9,
+                date: 1_700_000_000,
+                chat: familyChat,
+                from: { id: 999, is_bot: true, first_name: "Test Bot" },
+                text: "earlier bot reply",
+              },
+            }),
+          ),
+        )
+      )?.status,
+    ).toBe(200);
+
+    expect(inbound).toEqual([
+      expect.objectContaining({
+        threadId: "telegram:-1001234",
+        content: "yes please",
+      }),
+    ]);
+  });
+
+  it("keeps a forum topic as its own conversation", async () => {
+    const { surface, inbound } = createGroupSurface();
+
+    await surface.handleWebhook(
+      "telegram",
+      webhook(
+        "home-secret",
+        groupMessage({ message_id: 14, is_topic_message: true, message_thread_id: 12 }),
+      ),
+    );
+
+    expect(inbound).toEqual([
+      expect.objectContaining({ threadId: "telegram:-1001234:12", channelName: "Family" }),
+    ]);
+  });
+
+  it("ignores broadcast channel posts", async () => {
+    const { surface, inbound } = createGroupSurface();
+
+    const response = await surface.handleWebhook(
+      "telegram",
+      webhook("home-secret", {
+        update_id: 104,
+        channel_post: {
+          message_id: 21,
+          date: 1_700_000_000,
+          chat: { id: -1005499, type: "channel", title: "Announcements" },
+          text: "big news",
+        },
+      }),
+    );
+
+    expect(response?.status).toBe(200);
+    expect(inbound).toEqual([]);
+  });
+
+  it("keeps each bot's group threads apart and posts replies to the right chat", async () => {
+    const { surface, sends, inbound } = createGroupSurface();
+
+    await surface.handleWebhook(
+      "telegram-work",
+      webhook("work-secret", groupMessage({ message_id: 15, text: "hi work bot" })),
+    );
+    expect(inbound).toMatchObject([
+      {
+        provider: "telegram-work",
+        threadId: "telegram-work:-1001234",
+        channelName: "Family",
+      },
+    ]);
+
+    await surface.sendToThread({ threadId: "telegram-work:-1001234", body: "from work" }, context);
+    await surface.sendToThread({ threadId: "telegram:-1001234", body: "from home" }, context);
+    expect(sends.map(({ token, payload }) => [token, payload.chat_id])).toEqual([
+      ["work-token", "-1001234"],
+      ["home-token", "-1001234"],
+    ]);
+  });
+
+  it("posts a forum topic reply into its topic", async () => {
+    const { surface, sends } = createGroupSurface();
+
+    await surface.sendToThread({ threadId: "telegram:-1001234:12", body: "topic reply" }, context);
+
+    expect(sends[0]?.payload).toMatchObject({ chat_id: "-1001234", message_thread_id: 12 });
+  });
+
+  it("reports a member who left or was removed as a departure, not a message", async () => {
+    const { surface, inbound } = createGroupSurface();
+
+    expect(
+      (
+        await surface.handleWebhook(
+          "telegram",
+          webhook(
+            "home-secret",
+            groupMessage({
+              message_id: 16,
+              text: undefined,
+              left_chat_member: { id: 888, is_bot: false, first_name: "Heather" },
+            }),
+          ),
+        )
+      )?.status,
+    ).toBe(200);
+
+    expect(inbound).toEqual([
+      expect.objectContaining({
+        type: "message",
+        threadId: "telegram:-1001234",
+        isDirect: false,
+        from: "777",
+        content: "",
+        departures: { addresses: ["888"], botLeft: false },
+      }),
+    ]);
+  });
+
+  it("flags the bot's own removal as the channel's end", async () => {
+    const { surface, inbound } = createGroupSurface();
+
+    expect(
+      (
+        await surface.handleWebhook(
+          "telegram",
+          webhook(
+            "home-secret",
+            groupMessage({
+              message_id: 17,
+              text: undefined,
+              from: { id: 600, is_bot: false, first_name: "Ada" },
+              // The home bot's getMe id is 999.
+              left_chat_member: { id: 999, is_bot: true, username: "testbot" },
+            }),
+          ),
+        )
+      )?.status,
+    ).toBe(200);
+
+    expect(inbound).toEqual([
+      expect.objectContaining({ departures: { addresses: [], botLeft: true } }),
+    ]);
   });
 });
 

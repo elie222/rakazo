@@ -119,14 +119,33 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
       maxTokens?: string;
       maxTokensLabel?: string;
       onMaxTokensChange?: (value: string) => void;
+      thinkingLevel?: string | null;
+      thinkingLevelLabel?: string;
+      thinkingLevelOptions?: { value: string; label: string }[];
+      onThinkingLevelChange?: (value: string) => void;
     }) =>
-      props.onMaxTokensChange ? (
+      props.onMaxTokensChange || props.onThinkingLevelChange ? (
         <>
-          <input
-            aria-label={props.maxTokensLabel}
-            value={props.maxTokens ?? ""}
-            onChange={(event) => props.onMaxTokensChange?.(event.target.value)}
-          />
+          {props.onMaxTokensChange ? (
+            <input
+              aria-label={props.maxTokensLabel}
+              value={props.maxTokens ?? ""}
+              onChange={(event) => props.onMaxTokensChange?.(event.target.value)}
+            />
+          ) : null}
+          {props.onThinkingLevelChange ? (
+            <select
+              aria-label={props.thinkingLevelLabel}
+              value={props.thinkingLevel ?? ""}
+              onChange={(event) => props.onThinkingLevelChange?.(event.target.value)}
+            >
+              {(props.thinkingLevelOptions ?? []).map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          ) : null}
           {props.children}
         </>
       ) : null,
@@ -963,8 +982,105 @@ it("probes with the editing credential id without sending saved header values", 
       baseUrl: compatibleCredential.baseUrl,
       apiKey: undefined,
       headers: undefined,
+      apiProtocol: "chat-completions",
       credentialId: compatibleCredential.id,
     });
+  } finally {
+    await view.unmount();
+  }
+});
+
+function protocolField(container: HTMLElement) {
+  const select = container.querySelector('select[aria-label="Protocol"]');
+  if (!(select instanceof HTMLSelectElement)) throw new Error("Missing protocol select");
+  return select;
+}
+
+async function chooseProtocol(container: HTMLElement, value: string) {
+  await selectValue(protocolField(container), value);
+}
+
+async function selectValue(select: HTMLSelectElement, value: string) {
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
+    setter?.call(select, value);
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+function effortField(container: HTMLElement) {
+  const select = container.querySelector('select[aria-label="Reasoning effort"]');
+  if (!(select instanceof HTMLSelectElement)) throw new Error("Missing effort select");
+  return select;
+}
+
+it("offers the three wire protocols only on a custom endpoint, keeping the saved choice", async () => {
+  const view = await renderCompatible({
+    ...compatibleCredential,
+    apiProtocol: "anthropic-messages",
+  });
+  try {
+    const select = protocolField(view.container);
+    expect([...select.options].map((option) => option.value)).toEqual([
+      "chat-completions",
+      "responses",
+      "anthropic-messages",
+    ]);
+    expect(select.value).toBe("anthropic-messages");
+    await chooseProtocol(view.container, "responses");
+    await click(buttons(view.container, "Save")[0]);
+    expect(models.connect).toHaveBeenLastCalledWith(
+      expect.objectContaining({ apiProtocol: "responses" }),
+    );
+  } finally {
+    await view.unmount();
+  }
+
+  // A catalog provider's connection has no protocol choice.
+  vi.mocked(rpc.me).mockResolvedValue(account("deepseek", "deepseek-chat"));
+  models.list.mockResolvedValue([deepseekEntry]);
+  models.credentials.mockResolvedValue([deepseekCredential]);
+  const catalog = await renderSettings();
+  try {
+    await manage();
+    expect(catalog.container.querySelector('select[aria-label="Protocol"]')).toBeNull();
+  } finally {
+    await catalog.unmount();
+  }
+});
+
+it("keeps the chosen protocol when the endpoint changes and probes with it", async () => {
+  models.probeOpenAiCompatible.mockResolvedValue({ models: ["model-a"] });
+  const view = await renderCompatible({
+    ...compatibleCredential,
+    apiProtocol: "anthropic-messages",
+  });
+  try {
+    await typeInto(baseUrlField(view.container), "http://127.0.0.1:9000/v1");
+    expect(protocolField(view.container).value).toBe("anthropic-messages");
+    await click(buttons(view.container, "Find models")[0]);
+    expect(models.probeOpenAiCompatible).toHaveBeenLastCalledWith(
+      expect.objectContaining({ apiProtocol: "anthropic-messages" }),
+    );
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("clamps a staged effort when the protocol switch drops the level", async () => {
+  const view = await renderCompatible({
+    ...compatibleCredential,
+    reasoning: true,
+    thinkingLevel: "max",
+  });
+  try {
+    expect(effortField(view.container).value).toBe("max");
+    await chooseProtocol(view.container, "anthropic-messages");
+    expect(effortField(view.container).value).toBe("high");
+    await click(buttons(view.container, "Save")[0]);
+    expect(models.connect).toHaveBeenLastCalledWith(
+      expect.objectContaining({ apiProtocol: "anthropic-messages", thinkingLevel: "high" }),
+    );
   } finally {
     await view.unmount();
   }

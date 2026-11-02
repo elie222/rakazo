@@ -3,6 +3,7 @@ import { displayName } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { returnBotMessageOutcome } from "./bot-messages.js";
+import { sleepDeferReason } from "./computer-idle.js";
 import { withComputerScreenAvailability } from "./computer-screens.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { notifyRun } from "./run-notifications.js";
@@ -16,6 +17,7 @@ import { TAKEOVER_RESUME_CHECKPOINTS } from "./takeover-resume.js";
  */
 export function createRunWorkspaceCheckpoint(
   checkpoint: () => Promise<unknown>,
+  computer: { id: string; kind: string },
   signal?: AbortSignal,
 ) {
   let dirty = false;
@@ -35,7 +37,12 @@ export function createRunWorkspaceCheckpoint(
       } catch (error) {
         dirty = true;
         if (signal?.aborted) throw error;
-        getLogger().warn("computer.checkpoint_deferred", { error });
+        getLogger().warn("computer.checkpoint_deferred", {
+          "computer.id": computer.id,
+          provider: computer.kind,
+          reason: sleepDeferReason(error),
+          error,
+        });
         return false;
       }
     },

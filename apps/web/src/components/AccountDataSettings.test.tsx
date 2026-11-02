@@ -112,7 +112,7 @@ it("confirms identity before minting the export token, then downloads it by link
     .mockResolvedValueOnce({ token: "tok/en+1" });
   await render();
 
-  await act(async () => button("Export data").click());
+  await act(async () => button("Export").click());
   expect(clicked).toHaveLength(0);
   await act(async () => {
     container.querySelector<HTMLButtonElement>('[data-testid="identity-confirm"]')!.click();
@@ -167,5 +167,5 @@ it("shows the server's message when the import is rejected", async () => {
     "This archive is from a newer version.",
   );
   expect(onImported).not.toHaveBeenCalled();
-  expect(button("Import data").disabled).toBe(false);
+  expect(button("Import").disabled).toBe(false);
 });

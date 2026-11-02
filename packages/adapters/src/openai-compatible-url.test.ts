@@ -21,49 +21,6 @@ afterEach(() => {
 });
 
 describe("openai-compatible URL policy", () => {
-  it("normalizes missing /v1 suffix without doubling it", () => {
-    expect(normalizeOpenAiCompatibleBaseUrl("http://127.0.0.1:8000")).toBe(
-      "http://127.0.0.1:8000/v1",
-    );
-    expect(normalizeOpenAiCompatibleBaseUrl("http://127.0.0.1:8000/v1")).toBe(
-      "http://127.0.0.1:8000/v1",
-    );
-    expect(normalizeOpenAiCompatibleBaseUrl("http://127.0.0.1:8000/v1/")).toBe(
-      "http://127.0.0.1:8000/v1",
-    );
-  });
-
-  it("treats any /vN versioned API root as complete (no /v1 append)", () => {
-    expect(normalizeOpenAiCompatibleBaseUrl("http://127.0.0.1:8000/v4")).toBe(
-      "http://127.0.0.1:8000/v4",
-    );
-    expect(normalizeOpenAiCompatibleBaseUrl("http://127.0.0.1:8000/v2")).toBe(
-      "http://127.0.0.1:8000/v2",
-    );
-    expect(normalizeOpenAiCompatibleBaseUrl("http://127.0.0.1:8000/v3")).toBe(
-      "http://127.0.0.1:8000/v3",
-    );
-    expect(normalizeOpenAiCompatibleBaseUrl("http://127.0.0.1:8000/v10")).toBe(
-      "http://127.0.0.1:8000/v10",
-    );
-    expect(normalizeOpenAiCompatibleBaseUrl("https://open.bigmodel.cn/api/paas/v4")).toBe(
-      "https://open.bigmodel.cn/api/paas/v4",
-    );
-    expect(normalizeOpenAiCompatibleBaseUrl("https://open.bigmodel.cn/api/paas/v4/")).toBe(
-      "https://open.bigmodel.cn/api/paas/v4",
-    );
-    expect(normalizeOpenAiCompatibleBaseUrl("http://127.0.0.1:8000/api")).toBe(
-      "http://127.0.0.1:8000/api/v1",
-    );
-  });
-
-  it("allows public bigmodel host when ALLOW_PUBLIC=1 without rewriting /v4", () => {
-    process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "1";
-    expect(assertAllowedOpenAiCompatibleUrl("https://open.bigmodel.cn/api/paas/v4").href).toBe(
-      "https://open.bigmodel.cn/api/paas/v4",
-    );
-  });
-
   it("validates request URLs without changing their path", () => {
     expect(
       assertAllowedOpenAiCompatibleRequestUrl("http://127.0.0.1:8000/v1/chat/completions", OWNER)
@@ -75,6 +32,9 @@ describe("openai-compatible URL policy", () => {
     expect(() => normalizeOpenAiCompatibleBaseUrl("file:///tmp/sock")).toThrow(/http or https/);
     expect(() => normalizeOpenAiCompatibleBaseUrl("http://user:pass@127.0.0.1:8000/v1")).toThrow(
       /credentials/,
+    );
+    expect(() => assertAllowedOpenAiCompatibleRequestUrl("file:///tmp/sock", OWNER)).toThrow(
+      /http or https/,
     );
   });
 

@@ -819,6 +819,46 @@ describe("MCP OAuth", () => {
     expect(server.fetch).not.toHaveBeenCalled();
   });
 
+  it("renews a token the server rejected inside its lifetime", async () => {
+    const server = rotatingAuthServer();
+    const shared = sharedCredentials(expiringMaterial(Date.now() - 10 * 60 * 1000));
+    const { provider, broker } = await shared.startProcess(server.fetch);
+
+    await provider.replaceRejectedToken();
+
+    expect(await provider.tokens()).toMatchObject({ access_token: "access-1" });
+    expect((await shared.stored()).oauth?.tokens).toMatchObject({ refresh_token: "refresh-1" });
+    expect(await broker.statusFor(shared.server, shared.context)).toBe("connected");
+  });
+
+  it("asks for a reconnect when a rejected token cannot be renewed", async () => {
+    const server = rotatingAuthServer();
+    server.revoke();
+    const shared = sharedCredentials(expiringMaterial(Date.now() - 10 * 60 * 1000));
+    const { provider, broker } = await shared.startProcess(server.fetch);
+
+    await expect(provider.replaceRejectedToken()).rejects.toBeInstanceOf(
+      McpReauthorizationRequiredError,
+    );
+
+    expect((await shared.stored()).oauth?.tokens).toBeUndefined();
+    expect(await broker.statusFor(shared.server, shared.context)).toBe("reconnect");
+  });
+
+  it("asks for a reconnect when a rejected token has no refresh token", async () => {
+    const material = expiringMaterial(Date.now());
+    delete (material.oauth.tokens as { refresh_token?: string }).refresh_token;
+    const shared = sharedCredentials(material);
+    const { provider, broker } = await shared.startProcess(vi.fn());
+
+    await expect(provider.replaceRejectedToken()).rejects.toBeInstanceOf(
+      McpReauthorizationRequiredError,
+    );
+
+    expect((await shared.stored()).oauth?.tokens).toBeUndefined();
+    expect(await broker.statusFor(shared.server, shared.context)).toBe("reconnect");
+  });
+
   it("rejects unsafe browser authorization URLs", async () => {
     const onAuthorization = vi.fn();
     const provider = new StoredMcpOAuthProvider(

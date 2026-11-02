@@ -61,9 +61,8 @@ pnpm test:e2e -- --sandbox=boat
 pnpm test:e2e -- --sandbox=boxd
 ```
 
-The Playwright workflow also accepts E2B, Novita, Daytona, and Boat through its manual **Sandbox provider** input.
 For Novita, build the [computer template](docs/self-host-sandbox-providers.md#novita-computer-template) first.
-These runs provision real machines and destroy them after the suite. Automatic runs use `fake`.
+These runs provision real machines and destroy them after the suite. CI always uses `fake`.
 For the separate real-model desktop acceptance test, see
 [computer verification](docs/computer-runtime.md#verification).
 

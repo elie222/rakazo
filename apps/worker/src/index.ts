@@ -1,7 +1,11 @@
 import { hostname } from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
-import { ComposioConnector, IntegrationProviderSettings } from "@rakazo/adapters";
+import {
+  ComposioConnector,
+  IntegrationProviderSettings,
+  unwrapEnvFromKeyManager,
+} from "@rakazo/adapters";
 import { phoneCallSettings } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { stopOnShutdownSignals } from "@rakazo/core/node/shutdown-signals";
@@ -9,6 +13,7 @@ import { startWorkerHealth, watchEventLoopStalls } from "./health.js";
 import { createWorkerSecretStore } from "./secret-store.js";
 
 loadRootEnv();
+await unwrapEnvFromKeyManager();
 
 import {
   auditLogConfig,
@@ -210,8 +215,14 @@ async function main() {
       pipedream,
     },
   );
+  const installedConnectors = new InstalledConnectorProvider(
+    prisma,
+    secrets,
+    {},
+    allowPrivateEndpoint,
+  );
   const stack = createConnectorStack(undefined, [
-    new InstalledConnectorProvider(prisma, secrets, {}, allowPrivateEndpoint),
+    installedConnectors,
     ...integrationSettings.providers(),
     mcp,
   ]);
@@ -380,6 +391,7 @@ async function main() {
       await secrets.close();
       await realtime.close();
       await mcp.close();
+      await installedConnectors.close();
       await prisma.$disconnect().catch(() => undefined);
       await pool.end().catch(() => undefined);
     } finally {

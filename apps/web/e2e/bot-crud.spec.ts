@@ -146,7 +146,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await captureScreenshot(page, testInfo, "27c-disabled-builtin-tools");
   await expect(teamComputer).toBeVisible();
   await expect(settings.getByRole("switch", { name: "Read replies aloud" })).toBeVisible();
-  await expect(settings.getByRole("switch", { name: "Manage the bots it creates" })).toBeVisible();
+  await expect(settings.getByRole("switch", { name: "Manage other bots" })).toBeVisible();
   await expect(modelSelect).toBeVisible();
   await expect(modelSelect).toContainText("Space default");
   await captureScreenshot(page, testInfo, "27a-bot-settings-model");
