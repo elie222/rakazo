@@ -229,6 +229,8 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
             },
           },
         );
+    // A snapshot saves the PDF its tab shows, which is a new file on the computer.
+    if ((result as { downloads?: unknown } | null)?.downloads) ctx.computer.checkpoint.markDirty();
     ctx.state.screen.unchangedVisualStreak = unchangedVisualStreakAfterPageBrowser(
       ctx.state.screen.unchangedVisualStreak,
       name,
