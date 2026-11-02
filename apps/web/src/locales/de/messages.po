@@ -420,6 +420,10 @@ msgstr "{toolCount, plural, one {# Tool} other {# Tools}}"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/ModelCredits.tsx
+msgid "/ month"
+msgstr ""
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr ""
@@ -1023,6 +1027,10 @@ msgstr "Bearer-Token"
 msgid "Billing"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Billing period"
+msgstr ""
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "Blockieren"
@@ -1152,6 +1160,7 @@ msgstr "Kann keine Bilder lesen"
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/VaultSettings.tsx
@@ -3869,6 +3878,7 @@ msgstr "Montag"
 msgid "month"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "Monatlich"
@@ -5634,9 +5644,21 @@ msgstr ""
 msgid "Start {trialDays}-day free trial"
 msgstr "Kostenlose {trialDays}-Tage-Testphase starten"
 
+#: src/components/ModelCredits.tsx
+msgid "Start plan"
+msgstr "Plan starten"
+
+#: src/components/ModelCredits.tsx
+msgid "Start plan now"
+msgstr "Plan jetzt starten"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"
 msgstr "Aufnahme starten"
+
+#: src/components/ModelCredits.tsx
+msgid "Start your plan now?"
+msgstr "Plan jetzt starten?"
 
 #: src/pages/RoutineRunHistory.tsx
 msgid "Started {count}d late"
@@ -5723,6 +5745,10 @@ msgstr ""
 #: src/pages/Paywall.tsx
 msgid "Subscribe"
 msgstr "Abonnieren"
+
+#: src/components/ModelCredits.tsx
+msgid "Subscribe for {annualPrice} / year"
+msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
@@ -6138,12 +6164,17 @@ msgstr ""
 msgid "Trial ends {day}"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Trials get fewer hours to prevent abuse."
+msgstr "Testzeiträume erhalten weniger Stunden, um Missbrauch zu verhindern."
+
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "Vertrauenswürdige Websites"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "Erneut versuchen"
 
@@ -6550,6 +6581,10 @@ msgstr ""
 msgid "year"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Yearly"
+msgstr ""
+
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Yesterday"
@@ -6626,6 +6661,14 @@ msgstr ""
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Dein Team aus jederzeit verfügbaren Agents<0/>für echte Aufgaben."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged {price} today."
+msgstr "Dein Testzeitraum endet und deine Karte wird heute mit {price} belastet."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged today."
+msgstr "Dein Testzeitraum endet und deine Karte wird heute belastet."
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

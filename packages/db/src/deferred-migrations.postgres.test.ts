@@ -1,3 +1,5 @@
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -26,6 +28,8 @@ dbTests("deferred migrations", () => {
   const laterDropped = `29990101000004_drop_${stamp}`;
   const lockTable = `deferred_lock_${stamp}`;
   const lockAdded = `29990101000005_lock_${stamp}`;
+  const indexAdded = `29990101000006_index_${stamp}`;
+  const indexTable = `deferred_index_${stamp}`;
   const freshSchema = `deferred_fresh_${stamp}`;
   const dir = mkdtempSync(path.join(tmpdir(), "deferred-migrations-"));
   let client: Client;
@@ -56,8 +60,9 @@ dbTests("deferred migrations", () => {
     await client.query(`DROP TABLE IF EXISTS "${table}"`);
     await client.query(`DROP TABLE IF EXISTS "${laterTable}"`);
     await client.query(`DROP TABLE IF EXISTS "${lockTable}"`);
+    await client.query(`DROP TABLE IF EXISTS "${indexTable}"`);
     await client.query("DELETE FROM _prisma_migrations WHERE migration_name = ANY($1)", [
-      [added, dropped, broken, laterAdded, laterDropped, lockAdded],
+      [added, dropped, broken, laterAdded, laterDropped, lockAdded, indexAdded],
     ]);
     await client.query('DELETE FROM "_deferred_migrations" WHERE name = ANY($1)', [
       [dropped, laterDropped],
@@ -106,10 +111,7 @@ dbTests("deferred migrations", () => {
 
   it("retries a migration that lost a lock to a running query", async () => {
     await client.query(`CREATE TABLE "${lockTable}" (id INT)`);
-    migration(
-      lockAdded,
-      `SET lock_timeout = '200ms';\nALTER TABLE "${lockTable}" ADD COLUMN extra INT;\n`,
-    );
+    migration(lockAdded, `ALTER TABLE "${lockTable}" ADD COLUMN extra INT;\n`);
     const reader = new Client({ connectionString: databaseUrl });
     await reader.connect();
     await reader.query("BEGIN");
@@ -124,8 +126,53 @@ dbTests("deferred migrations", () => {
       dbPackageDir,
       migrationsDir: dir,
       lockRetryDelaysMs: [2_000],
+      lockTimeoutMs: 200,
     });
     await released;
     expect(await columns(lockTable)).toEqual(["extra", "id"]);
+  });
+
+  it("lets a concurrent index build wait for open transactions", async () => {
+    await client.query(`CREATE TABLE "${indexTable}" (id INT)`);
+    migration(
+      indexAdded,
+      `-- builds without blocking writes\nCREATE INDEX CONCURRENTLY "${indexTable}_id" ON "${indexTable}" (id);\n`,
+    );
+    // deployMigrations blocks this process while prisma runs, so another process holds the snapshot.
+    const reader = spawn(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `import pg from "pg";
+const client = new pg.Client({ connectionString: process.argv[1] });
+await client.connect();
+await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ");
+await client.query("SELECT 1");
+console.log("ready");
+await new Promise((resolve) => setTimeout(resolve, 1500));
+await client.query("COMMIT");
+await client.end();`,
+        databaseUrl!,
+      ],
+      { cwd: dbPackageDir, stdio: ["ignore", "pipe", "inherit"] },
+    );
+    const exited = once(reader, "exit");
+    await once(reader.stdout!, "data");
+
+    const started = Date.now();
+    await deployMigrations({
+      migrationUrl: databaseUrl!,
+      dbPackageDir,
+      migrationsDir: dir,
+      lockRetryDelaysMs: [],
+      lockTimeoutMs: 200,
+    });
+    expect(Date.now() - started).toBeGreaterThan(1_000);
+    expect(await exited).toEqual([0, null]);
+    const { rows } = await client.query("SELECT 1 FROM pg_indexes WHERE indexname = $1", [
+      `${indexTable}_id`,
+    ]);
+    expect(rows).toHaveLength(1);
   });
 });

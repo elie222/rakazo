@@ -66,7 +66,8 @@ class FakeAgentBrowser:
     def __init__(self, tree=PAGE, state=None, sources=None, requests=None, fail=None):
         self.tree = tree
         self.state = {"url": "https://portal.example.test/", "title": "Portal", "ready": "complete",
-                      "text": "Portal\nWelcome back", "masked": [], "payToken": None, **(state or {})}
+                      "text": "Portal\nWelcome back", "masked": [], "payToken": None,
+                      "frames": ["https://portal.example.test/help", "https://js.stripe.com/v3/card"], **(state or {})}
         self.sources = sources if sources is not None else {"e9": "/help", "e11": "https://js.stripe.com/v3/card"}
         self.requests = requests or [{"resourceType": "Document", "url": "https://portal.example.test/",
                                       "status": 200, "timestamp": 0}]
@@ -75,6 +76,10 @@ class FakeAgentBrowser:
         self.typing = {"result": {"multiline": False}}
         self.stuck = False
         self.checks = []
+        self.disabled = set()
+        self.aria_disabled = {}
+        # Each control's box, relative to the top of the visible part of the page.
+        self.boxes = {}
         # A JavaScript dialog the next click opens, then the one open on the page.
         self.opens = None
         self.dialog = None
@@ -121,7 +126,7 @@ class FakeAgentBrowser:
                 return {"result": self.state}
             if script == helper.PAGE_LOAD:
                 return {"result": {"href": self.state["url"], "ready": self.state["ready"],
-                                   "done": self.state.get("done", [])}}
+                                   "began": self.state.get("began", 0), "done": self.state.get("done", [])}}
             if "location.assign(" in script:
                 return {"result": {"timeOrigin": 1, "href": "https://portal.example.test/"}}
             if script.startswith("({ timeOrigin"):
@@ -134,6 +139,12 @@ class FakeAgentBrowser:
             return {"result": {"kept": True}}
         if name == "network":
             return {} if "--clear" in command else {"requests": self.requests}
+        if command[:2] == ["is", "enabled"]:
+            return {"enabled": command[2].lstrip("@") not in self.disabled}
+        if name == "get" and command[1] == "box":
+            return self.boxes.get(command[2].lstrip("@"), {})
+        if name == "get" and command[1] == "attr" and command[3] == "aria-disabled":
+            return {"value": self.aria_disabled.get(command[2].lstrip("@"))}
         if name == "get" and command[1] == "attr":
             return {"value": self.sources.get(command[2].lstrip("@"))}
         if name == "get" and command[1] == "value":
@@ -141,17 +152,31 @@ class FakeAgentBrowser:
         return {}
 
     def actions(self):
-        return [command for command in self.sent if command[0] not in ("snapshot", "eval", "network", "get")]
+        return [command for command in self.sent if command[0] not in ("snapshot", "eval", "network", "get", "is")]
 
 
 def page(browser):
     return helper.PageBrowser(9222, "tab-1", browser)
 
 
+class FakePageLoad:
+    """Chromium's record of the page's load: idle once the page's own requests are done."""
+
+    def __init__(self, idle):
+        self.answers = iter(idle)
+        self.closed = False
+
+    def idle(self):
+        return next(self.answers)
+
+    def close(self):
+        self.closed = True
+
+
 class SnapshotTest(unittest.TestCase):
-    def snapshot(self, browser=None):
+    def snapshot(self, browser=None, hints=(True, None)):
         browser = browser or FakeAgentBrowser()
-        with patch.object(helper.time, "sleep"):
+        with patch.object(helper.time, "sleep"), patch.object(secrets, "payment_frame_hints", return_value=hints):
             return page(browser).snapshot(0.0), browser
 
     def test_reads_quoted_names_attributes_and_values(self):
@@ -209,6 +234,24 @@ class SnapshotTest(unittest.TestCase):
         self.assertNotIn("e12", [el["ref"] for el in result["elements"]])
         self.assertTrue(result["tree"].endswith(helper.PAYMENT_FRAME_HINT))
 
+    def test_points_to_fill_card_when_agent_browser_cannot_see_inside_the_payment_frame(self):
+        # A session that attached after the frame loaded lists the frame, or nothing, but none of its fields.
+        tree = '- heading "Pay" [level=1, ref=e1]\n'
+        with patch.object(helper.time, "sleep"), \
+                patch.object(secrets, "payment_frame_hints", return_value=(True, None)) as hints:
+            result = page(FakeAgentBrowser(tree=tree, state={"frames": ["https://js.stripe.com/v3/card"]})).snapshot(0.0)
+        hints.assert_called_once_with(9222, "tab-1")
+        self.assertIn("(no interactive elements)", result["tree"])
+        self.assertTrue(result["tree"].endswith(helper.PAYMENT_FRAME_HINT))
+
+    def test_no_card_hint_without_a_card_field_and_no_frame_lookup_without_a_payment_frame(self):
+        result, _ = self.snapshot(hints=(False, None))
+        self.assertNotIn(helper.PAYMENT_FRAME_HINT, result["tree"])
+        with patch.object(helper.time, "sleep"), patch.object(secrets, "payment_frame_hints") as hints:
+            result = page(FakeAgentBrowser(state={"frames": ["https://ads.example.test/card"]})).snapshot(0.0)
+        hints.assert_not_called()
+        self.assertNotIn(helper.PAYMENT_FRAME_HINT, result["tree"])
+
     def test_names_each_frame_s_site_and_lists_its_text_without_letting_it_fake_a_header(self):
         result, _ = self.snapshot()
         self.assertIn("- Iframe [ref=e9] https://portal.example.test\n", result["tree"])
@@ -217,11 +260,9 @@ class SnapshotTest(unittest.TestCase):
         self.assertIn('  - button "Frame button" [ref=e10]', result["tree"])
 
     def test_names_the_merchant_account_of_a_pay_token_checkout(self):
-        result, _ = self.snapshot(FakeAgentBrowser(state={"payToken": "acct_main1"}, sources={}))
+        result, _ = self.snapshot(FakeAgentBrowser(state={"payToken": "acct_main1", "frames": []}, sources={}))
         self.assertTrue(result["tree"].endswith('merchantAccountId "acct_main1".'))
-        with patch.object(secrets, "stripe_pay_token_account", return_value="acct_fake123") as frame:
-            result, _ = self.snapshot()
-        frame.assert_called_once_with(9222, "tab-1")
+        result, _ = self.snapshot(hints=(False, "acct_fake123"))
         self.assertTrue(result["tree"].endswith('merchantAccountId "acct_fake123".'))
 
     def test_keeps_the_controls_and_page_text_in_one_piece_under_the_budget(self):
@@ -229,12 +270,109 @@ class SnapshotTest(unittest.TestCase):
         browser = FakeAgentBrowser(tree=controls, state={"text": "word " * 20000}, sources={})
         result, _ = self.snapshot(browser)
         self.assertTrue(result["tree"].startswith("[controls: showing "))
+        self.assertIn(" of 399. Snapshot with a query to find the rest.]\n", result["tree"])
         self.assertIn("[page text: showing first ", result["tree"])
         self.assertLessEqual(helper.sent(result["tree"]), helper.TREE_BUDGET)
         shown = int(result["tree"].split("showing ")[1].split(" ")[0])
         self.assertEqual(len(result["elements"]), shown)
         for element in result["elements"]:
             self.assertIn(f"[ref={element['ref']}]", result["tree"])
+
+    def long_page(self):
+        stories = "".join(f'- heading "Story {n}" [level=2, ref=h{n}]\n- link "Read story {n}" [ref=e{n}]\n'
+                          for n in range(1, 400))
+        form = ('- form\n  - LabelText\n    - StaticText "Newsletter email "\n'
+                '    - textbox "Newsletter email" [ref=e900]\n  - button "Subscribe" [ref=e901]\n'
+                '- group "Postal address"\n  - textbox "Code" [ref=e902]\n'
+                '- Iframe [ref=e903]\n  - button "Partner newsletter archive" [ref=e904]\n')
+        return FakeAgentBrowser(tree=stories + form, state={"text": "Archive"}, sources={"e903": "https://partner.example.test/x"})
+
+    def test_a_query_lists_the_matching_controls_from_anywhere_on_the_page_with_their_form_and_frame(self):
+        browser = self.long_page()
+        with patch.object(helper.time, "sleep"):
+            result = page(browser).snapshot(0.0, query="Newsletter")
+        self.assertEqual([e["ref"] for e in result["elements"]], ["e900", "e901", "e903", "e904"])
+        self.assertTrue(result["tree"].startswith('[controls matching "Newsletter"]\n- textbox "Newsletter email"'))
+        self.assertIn("https://partner.example.test", result["tree"])
+        self.assertNotIn("Archive", result["tree"])
+
+    def test_a_query_finds_a_control_by_the_text_near_it_and_says_when_nothing_matches(self):
+        browser = self.long_page()
+        with patch.object(helper.time, "sleep"):
+            near = page(browser).snapshot(0.0, query="story 12")
+            postal = page(browser).snapshot(0.0, query="postal codé")
+            none = page(browser).snapshot(0.0, query="checkout")
+        self.assertEqual(near["elements"][0]["ref"], "e12")
+        self.assertEqual([e["ref"] for e in postal["elements"]], ["e902"])
+        self.assertEqual(none["tree"], '[no controls match "checkout"]')
+        self.assertEqual(none["elements"], [])
+
+    def test_a_query_brings_the_whole_form_when_the_match_is_in_a_group_inside_it(self):
+        tree = ('- form\n  - group "Address"\n    - textbox "Street" [ref=e1]\n  - button "Send" [ref=e2]\n'
+                '- button "Other" [ref=e3]\n')
+        with patch.object(helper.time, "sleep"):
+            result = page(FakeAgentBrowser(tree=tree, sources={})).snapshot(0.0, query="street")
+        self.assertEqual([e["ref"] for e in result["elements"]], ["e1", "e2"])
+
+    def test_a_frame_s_line_comes_before_its_matches_even_when_they_are_cut(self):
+        buttons = "".join(f'  - button "Pick {n}" [ref=e{n}]\n' for n in range(1, 120))
+        browser = FakeAgentBrowser(tree="- Iframe [ref=e900]\n" + buttons, sources={"e900": "https://partner.example.test/"})
+        with patch.object(helper.time, "sleep"):
+            result = page(browser).snapshot(0.0, query="pick")
+        self.assertEqual(result["elements"][0]["ref"], "e900")
+        self.assertIn("showing 80 of 120", result["tree"])
+
+    def test_a_frame_above_the_view_leaves_its_controls_out_of_the_part_in_view(self):
+        buttons = "".join(f'  - button "Pick {n}" [ref=e{n}]\n' for n in range(1, 120))
+        tree = "- Iframe [ref=e900]\n" + buttons + '- textbox "Email" [ref=e901]\n- button "Join" [ref=e902]\n'
+        browser = FakeAgentBrowser(tree=tree, sources={"e900": "https://partner.example.test/"})
+        browser.boxes = {"e900": {"y": -5000.0, "height": 400}, "e901": {"y": 100.0, "height": 20}}
+        with patch.object(helper.time, "sleep"):
+            result = page(browser).snapshot(0.0)
+        refs = [e["ref"] for e in result["elements"]]
+        self.assertIn("e901", refs)
+        self.assertIn("e902", refs)
+
+    def test_a_query_with_more_matches_than_fit_says_how_many_it_shows(self):
+        browser = self.long_page()
+        with patch.object(helper.time, "sleep"):
+            result = page(browser).snapshot(0.0, query="read story")
+        self.assertTrue(result["tree"].startswith(f'[controls matching "read story": showing {helper.MAX_CONTROLS} of 399]'))
+        self.assertLessEqual(helper.sent(result["tree"]), helper.TREE_BUDGET)
+
+    def test_a_long_page_lists_the_controls_in_view_first_and_a_header_that_stays_in_view_does_not_count(self):
+        browser = self.long_page()
+        # Scrolled to story 200: the stories before it are above the view, the site's header stays on screen.
+        browser.boxes = {f"e{n}": {"y": (n - 200) * 50.0, "height": 20} for n in range(1, 400)}
+        browser.boxes["e1"] = {"y": 0, "height": 20}
+        with patch.object(helper.time, "sleep"):
+            result = page(browser).snapshot(0.0)
+        refs = [e["ref"] for e in result["elements"]]
+        self.assertEqual(len(refs), helper.MAX_CONTROLS)
+        self.assertIn("e200", refs)
+        self.assertNotIn("e150", refs)
+        self.assertEqual(refs, sorted(refs, key=lambda ref: int(ref[1:])))
+        self.assertTrue(result["tree"].startswith(f"[controls: showing {helper.MAX_CONTROLS} of 404. "))
+        probes = [command for command in browser.sent if command[:2] == ["get", "box"]]
+        self.assertLessEqual(len(probes), helper.VIEW_PROBES)
+
+    def test_near_the_end_of_a_long_page_the_room_left_goes_to_the_controls_above(self):
+        browser = self.long_page()
+        browser.boxes = {f"e{n}": {"y": -1000.0, "height": 20} for n in range(1, 400)}
+        with patch.object(helper.time, "sleep"):
+            result = page(browser).snapshot(0.0)
+        refs = [e["ref"] for e in result["elements"]]
+        self.assertEqual(len(refs), helper.MAX_CONTROLS)
+        self.assertEqual(refs[-5:], ["e900", "e901", "e902", "e903", "e904"])
+
+    def test_a_ref_left_out_of_the_snapshot_still_acts_on_its_element(self):
+        browser = self.long_page()
+        with patch.object(helper.time, "sleep"):
+            snap = page(browser).snapshot(0.0)
+            self.assertNotIn("e900", [e["ref"] for e in snap["elements"]])
+            result = page(browser).act([{"kind": "fill", "ref": "e900", "text": "reader@example.test"}])
+        self.assertTrue(result["ok"])
+        self.assertIn(["fill", "@e900", "reader@example.test"], browser.sent)
 
     def test_waits_for_a_request_the_page_is_still_waiting_on_or_flags_it_as_loading(self):
         now = time.time() * 1000
@@ -246,6 +384,59 @@ class SnapshotTest(unittest.TestCase):
         with patch.object(helper.time, "sleep"):
             result = page(browser).snapshot(0.0)
         self.assertTrue(result["loading"])
+
+    def test_a_page_that_began_loading_before_the_session_attached_waits_for_chromium_s_network_idle(self):
+        # The log never saw the document, so a sign-in check the page began before is not in it either.
+        began = time.time() * 1000 - 300
+        unseen = {"requests": [{"resourceType": "Fetch", "url": "https://portal.example.test/x", "status": 200,
+                                "timestamp": began - 5000}], "state": {"began": began}}
+        load = FakePageLoad([False, False, True])
+        with patch.object(helper.time, "sleep"), patch.object(helper, "PageLoad", return_value=load) as made:
+            self.assertTrue(page(FakeAgentBrowser(**unseen)).settle(3.0))
+        made.assert_called_once_with(9222, "tab-1")
+        self.assertTrue(load.closed)
+        # Still waiting when the time is up: the snapshot says the page is loading.
+        with patch.object(helper.time, "sleep"), patch.object(secrets, "payment_frame_hints", return_value=(False, None)), \
+                patch.object(helper, "PageLoad", return_value=FakePageLoad(iter(lambda: False, True))):
+            self.assertTrue(page(FakeAgentBrowser(**unseen)).snapshot(0.0)["loading"])
+        # A log that saw the document has every request the page made: Chromium is not asked.
+        with patch.object(helper.time, "sleep"), patch.object(helper, "PageLoad") as made:
+            self.assertTrue(page(FakeAgentBrowser(state={"began": began})).settle(3.0))
+        made.assert_not_called()
+
+    def test_only_a_young_page_whose_document_the_log_never_saw_may_have_unseen_requests(self):
+        now = time.time() * 1000
+        current = {"resourceType": "Document", "url": "https://portal.example.test/", "status": 200, "timestamp": now}
+        other = {**current, "url": "https://old.example.test/"}
+        for requests, began, unseen in (([other], now - 1000, True), ([current], now - 1000, False),
+                                        ([other], now - 11000, False)):
+            browser = FakeAgentBrowser(requests=requests, state={"began": began})
+            self.assertEqual(page(browser).pending_requests()[2], unseen)
+
+    def test_network_idle_is_read_for_the_page_s_current_document(self):
+        client = helper.CdpClient("ws://127.0.0.1:9222/test")
+        calls = []
+
+        def call(method, params=None, *, session_id=None, timeout_s=10.0):
+            calls.append(method)
+            if method == "Target.attachToTarget":
+                return {"sessionId": "page"}
+            if method == "Page.getFrameTree":
+                return {"frameTree": {"frame": {"id": "main", "loaderId": "now"}}}
+            return {}
+
+        client.call = call
+        with patch.object(helper, "CdpClient", return_value=client), patch.object(client, "connect"), \
+                patch.object(helper, "discover_ws_url", return_value="ws://test"):
+            load = helper.PageLoad(9222, "tab-1")
+        self.assertEqual(calls, ["Target.attachToTarget", "Page.enable", "Page.setLifecycleEventsEnabled"])
+        for loader, name in (("before", "load"), ("before", "networkIdle"), ("now", "load")):
+            client._handle_event({"method": "Page.lifecycleEvent",
+                                  "params": {"frameId": "main", "loaderId": loader, "name": name}})
+        self.assertFalse(load.idle())
+        client._handle_event({"method": "Page.lifecycleEvent",
+                              "params": {"frameId": "main", "loaderId": "now", "name": "networkIdle"}})
+        self.assertTrue(load.idle())
 
     def test_ignores_old_documents_streams_failed_and_third_party_requests_and_ones_long_unanswered(self):
         now = time.time() * 1000
@@ -260,11 +451,22 @@ class SnapshotTest(unittest.TestCase):
                 "timestamp": now - 1000},
                {"resourceType": "XHR", "url": "https://status.widget-vendor.test/status.json", "status": None,
                 "timestamp": now - 1000}]
-        busy, _ = page(FakeAgentBrowser(requests=log, state={"done": ["https://beacon.example.test/event"]})
-                       ).pending_requests()
+        busy, *_ = page(FakeAgentBrowser(requests=log, state={"done": [["https://beacon.example.test/event", now - 900]]})
+                        ).pending_requests()
         self.assertFalse(busy)
-        busy, _ = page(FakeAgentBrowser(state={"ready": "loading"})).pending_requests()
+        busy, *_ = page(FakeAgentBrowser(state={"ready": "loading"})).pending_requests()
         self.assertTrue(busy)
+
+    def test_the_page_is_quiet_only_once_its_last_answer_has_arrived_too(self):
+        now = time.time() * 1000
+        log = [{"resourceType": "Document", "url": "https://portal.example.test/", "status": 200,
+                "timestamp": now - 2000},
+               {"resourceType": "Fetch", "url": "https://portal.example.test/api/me", "status": 200,
+                "timestamp": now - 1500}]
+        done = [["https://portal.example.test/api/me", now - 20], ["https://cdn.widget-vendor.test/w.js", now - 5]]
+        busy, latest, _ = page(FakeAgentBrowser(requests=log, state={"done": done})).pending_requests()
+        self.assertFalse(busy)
+        self.assertEqual(latest, (now - 20) / 1000)
 
 
 class ActTest(unittest.TestCase):
@@ -279,6 +481,18 @@ class ActTest(unittest.TestCase):
         self.assertEqual(result["completed"], 3)
         self.assertTrue(result["ok"])
         self.assertEqual(browser.actions(), [["click", "@e8"], ["fill", "@e2", "Grace"], ["select", "@e4", "Choose"]])
+
+    def test_an_act_that_ends_by_typing_waits_for_a_debounced_request_to_begin(self):
+        for actions, pause in (([{"kind": "fill", "ref": "e2", "text": "Can"}], helper.TYPING_PAUSE_SECONDS),
+                               ([{"kind": "fill", "ref": "e2", "text": "Can"}, {"kind": "click", "ref": "e8"}], 0.0),
+                               ([{"kind": "fill", "ref": "e4", "text": "Choose"}], 0.0)):
+            current = page(FakeAgentBrowser())
+            with patch.object(current, "settle", return_value=True) as settle, \
+                    patch.object(current, "snapshot", return_value={"ok": True}):
+                before = time.time()
+                current.act(actions)
+            waited = settle.call_args_list[0].kwargs["quiet_from"] - before
+            self.assertTrue(pause <= waited < pause + 0.1, (actions, waited))
 
     def test_a_frame_below_the_fold_is_brought_into_view_before_a_click_inside_it(self):
         _, browser = self.act([{"kind": "click", "ref": "e10"}])
@@ -302,7 +516,6 @@ class ActTest(unittest.TestCase):
 
     def test_a_step_agent_browser_declines_before_acting_is_settled_with_the_page(self):
         for message in ("Element '@e8' is covered by <div> at its click point, so the input would land there.",
-                        "Element '@e8' is disabled, so the click would not reach it",
                         'No option matched ["Spain"]. Available options: Choose, France'):
             with self.subTest(message=message):
                 result, _ = self.act([{"kind": "click", "ref": "e8"}], FakeAgentBrowser(fail={"click": message}))
@@ -310,6 +523,55 @@ class ActTest(unittest.TestCase):
                 self.assertEqual(result["error"], message)
                 self.assertNotIn("fallback", result)
                 self.assertIn("tree", result)
+
+    def test_a_click_on_a_disabled_control_is_settled_with_the_page(self):
+        for message in ("Element is disabled.", "Element '@e8' is disabled, so the click would not reach it"):
+            with self.subTest(message=message):
+                result, _ = self.act([{"kind": "click", "ref": "e8"}], FakeAgentBrowser(fail={"click": message}))
+                self.assertEqual((result["ok"], result["uncertain"], result["completed"]), (False, False, 0))
+                self.assertEqual(result["error"], helper.DISABLED)
+                self.assertNotIn("fallback", result)
+                self.assertIn("tree", result)
+
+    def disabled_action(self, kind, ref, text):
+        for native in (True, False):
+            with self.subTest(native=native):
+                browser = FakeAgentBrowser()
+                if native:
+                    browser.disabled.add(ref)
+                else:
+                    browser.aria_disabled[ref] = "true"
+                with patch.object(browser, "batch", wraps=browser.batch) as batch:
+                    result, _ = self.act([{"kind": "click", "ref": "e8"},
+                                          {"kind": kind, "ref": ref, "text": text},
+                                          {"kind": "click", "ref": "e8"}], browser)
+                batch.assert_any_call([["snapshot", "-i"], ["is", "enabled", f"@{ref}"],
+                                       ["get", "attr", f"@{ref}", "aria-disabled"]])
+                self.assertEqual((result["ok"], result["uncertain"], result["completed"]), (False, False, 1))
+                self.assertEqual(result["error"], helper.DISABLED)
+                self.assertNotIn("fallback", result)
+                self.assertIn("Welcome back", result["tree"])
+                self.assertEqual(browser.actions(), [["click", "@e8"]])
+                self.assertIn(["snapshot"], browser.sent)
+
+    def test_a_fill_on_a_disabled_control_is_settled_without_input(self):
+        self.disabled_action("fill", "e2", "Grace")
+
+    def test_a_select_on_a_disabled_control_is_settled_without_input(self):
+        self.disabled_action("fill", "e4", "Choose")
+
+    def test_typing_on_a_disabled_control_is_settled_without_focus_or_keys(self):
+        self.disabled_action("type", "e2", "Grace")
+
+    def test_controls_with_aria_disabled_false_still_accept_input(self):
+        browser = FakeAgentBrowser()
+        browser.aria_disabled = {"e2": "false", "e4": "false"}
+        result, _ = self.act([{"kind": "fill", "ref": "e2", "text": "Grace"},
+                              {"kind": "fill", "ref": "e4", "text": "Choose"},
+                              {"kind": "type", "ref": "e2", "text": "a"}], browser)
+        self.assertEqual((result["ok"], result["completed"]), (True, 3))
+        self.assertEqual(browser.actions(), [["fill", "@e2", "Grace"], ["select", "@e4", "Choose"],
+                                             ["focus", "@e2"], ["press", "a"]])
 
     def test_any_other_failure_keeps_progress_and_falls_back_to_the_desktop(self):
         result, _ = self.act([{"kind": "fill", "ref": "e2", "text": "Grace"}, {"kind": "click", "ref": "e8"}],
@@ -384,6 +646,18 @@ class ActTest(unittest.TestCase):
         self.assertEqual(json.loads(printed.call_args.args[0]), {
             "ok": False, "error": 'A confirm dialog is open on the screen: "Delete this?"', "dialog": "confirm",
             "fallback": "computer_act"})
+
+    def test_the_snapshot_command_passes_its_query_on(self):
+        with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1", "RAKAZO_BROWSER_ARGS_STDIN": "1"}), \
+                patch.object(helper, "wait_for_cdp"), \
+                patch.object(helper, "read_stdin_line", return_value='{"command": "snapshot", "query": " zip "}'), \
+                patch.object(helper, "http_get_json", return_value=[{"type": "page", "id": "tab-1",
+                                                                      "url": "https://portal.example.test/"}]), \
+                patch.object(helper, "AgentBrowser"), \
+                patch.object(helper.PageBrowser, "snapshot", return_value={"ok": True}) as snapshot, \
+                patch("builtins.print"):
+            helper.run(["rakazo-page-browser", "snapshot"])
+        snapshot.assert_called_once_with(query="zip")
 
     def test_uploads_only_files_inside_the_trusted_roots(self):
         with tempfile.TemporaryDirectory() as home:
@@ -677,6 +951,8 @@ class CardBrowser:
             return urlsplit_origin(self.frame_url) if in_frame else self.top_origin
         if "findCard(" in expression:
             return self.frame_found if in_frame else self.main_found
+        if "hasCardField()" in expression:
+            return bool(self.frame_found if in_frame else self.main_found)
         if "focusCard()" in expression:
             self.focused = True
             if self.on_focus:
@@ -841,6 +1117,15 @@ class CardTest(unittest.TestCase):
         browser = CardBrowser()
         self.card_fill(browser)
         self.assertIn("cardTyped(16)", "".join(browser.evaluated))
+
+
+class FrameHintsTest(unittest.TestCase):
+    def test_reports_a_card_field_and_a_pay_token_account_only_from_payment_frames_the_page_shows(self):
+        self.assertEqual(secrets.frame_hints(PayTokenBrowser().client, "page"), (True, "acct_fake123"))
+        self.assertEqual(secrets.frame_hints(PayTokenBrowser(frame_found=0).client, "page"), (False, "acct_fake123"))
+        for browser in (CardBrowser(shown=False), CardBrowser(owned=False),
+                        CardBrowser(frame_url="https://ads.example.test/card")):
+            self.assertEqual(secrets.frame_hints(browser.client, "page"), (False, None))
 
 
 class PayTokenTest(unittest.TestCase):

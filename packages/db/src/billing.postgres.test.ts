@@ -22,6 +22,7 @@ const snapshot: BillingSubscriptionSnapshot = {
   status: "trialing",
   seats: 2,
   trialEndsAt: new Date("2026-10-14T00:00:00.000Z"),
+  currentPeriodStartsAt: new Date("2026-10-07T00:00:00.000Z"),
   currentPeriodEndsAt: new Date("2026-10-14T00:00:00.000Z"),
   cancelAtPeriodEnd: false,
   endedAt: null,

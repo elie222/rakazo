@@ -152,11 +152,11 @@ import {
 } from "./run-lifecycle.js";
 import { withRunLease } from "./run-messages.js";
 import {
-  cloudflareRunFields,
   isTerminalModelSetupError,
   modelCreditBillingEnabled,
   resolveConnectedModelKey,
   resolveConnectedRunModel,
+  resolvedModelRunFields,
   resolveModelKey,
   resolveRunModel,
   runtimeFallbackModel,
@@ -673,6 +673,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               content: isPartialReplyClientNonce(m.clientNonce)
                 ? `${messageToAgentHistoryText(m)}\n\n${PARTIAL_REPLY_NOTE}`
                 : messageToAgentHistoryText(m),
+              waiting: m.steeringMessages.length > 0,
             })),
             summary: thread.historyCompactionSummary,
             historyCompactedUpToSeq: thread.historyCompactedUpToSeq,
@@ -691,12 +692,14 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           role,
           content,
         }));
-        const historyMessages = messages.map((message) => ({
-          id: message.id,
-          role: message.role,
-          runId: message.runId,
-          blocks: message.blocks as MessageBlock[],
-        }));
+        const historyMessages = messages
+          .filter((message) => message.steeringMessages.length === 0)
+          .map((message) => ({
+            id: message.id,
+            role: message.role,
+            runId: message.runId,
+            blocks: message.blocks as MessageBlock[],
+          }));
         const currentTurnMessage = userTurnMessageForRun(
           run.trigger,
           runId,
@@ -997,10 +1000,14 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           () => runAbortController?.abort(),
         );
         const computerKind = (await deps.sandbox.provisionKind?.()) ?? storedComputer.kind;
-        const workspaceCheckpoint = createRunWorkspaceCheckpoint(async () => {
-          if (!runComputer.ready) return;
-          await checkpointRunComputerWorkspace(deps, storedComputer, runComputer.ready, context);
-        }, context.signal);
+        const workspaceCheckpoint = createRunWorkspaceCheckpoint(
+          async () => {
+            if (!runComputer.ready) return;
+            await checkpointRunComputerWorkspace(deps, storedComputer, runComputer.ready, context);
+          },
+          { id: storedComputer.id, kind: computerKind },
+          context.signal,
+        );
         const pendingTurnFiles: MessageBlock[][] = [turnBlocks ?? []];
         let copyingTurnFiles = Promise.resolve();
         // Serialize copies before each tool, including attachments received while a boot is in flight.
@@ -1658,28 +1665,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 provider: runModelProvider,
                 id: runModelId,
                 ...(credential ? { connectionId: credential.id } : {}),
-                apiKey: resolved.oauth ? undefined : resolved.apiKey,
-                callObserver: resolved.callObserver,
-                ...cloudflareRunFields(resolved),
-                baseUrl: resolved.baseUrl,
-                apiProtocol: resolved.apiProtocol,
-                headers: resolved.headers,
-                allowPrivateEndpoint: resolved.allowPrivateEndpoint,
-                cacheCapabilities: resolved.cacheCapabilities,
-                contextWindow: resolved.contextWindow,
-
-                reasoning: resolved.reasoning,
-                maxTokens: resolved.maxTokens,
-                acceptsImages: resolved.acceptsImages,
-                maxImagesPerPrompt: resolved.maxImagesPerPrompt,
+                ...resolvedModelRunFields(resolved),
                 thinkingLevel: thinkingLevel ?? resolved.thinkingLevel ?? null,
-                oauth: resolved.oauth
-                  ? {
-                      credential: resolved.oauth,
-                      persist: resolved.persistOAuth,
-                      retire: resolved.retireOAuth,
-                    }
-                  : undefined,
               },
               fallbackModels: fallbackModels.map(({ provider, modelId, credentialId }) => ({
                 provider,

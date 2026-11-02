@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import math
 import mimetypes
 import os
 import re
@@ -37,6 +38,7 @@ AGENT_BROWSER = os.environ.get("RAKAZO_AGENT_BROWSER") or "/usr/local/bin/agent-
 NO_ANSWER = "The page did not answer in time."
 STALE_REF = "Stale element ref: the page has changed since that snapshot. Use a ref from the page below."
 NOT_KEPT = "The page did not keep every character typed. Check the field in this snapshot before trying again."
+DISABLED = "That control is disabled, so nothing happened. Pick another control from this snapshot."
 PAYMENT_FRAME_HINT = "Card fields are in a payment frame: use fill_card without ref."
 
 # The snapshot goes to the model whole, in one piece of at most 12,000 characters, or the tool result
@@ -49,14 +51,26 @@ MIN_TEXT = 1500
 MAX_OPTIONS = 100
 OPTIONS_CHARS = 2000
 MAX_OPTION_TEXT = 80
+# A long page's controls are sampled this many times to find the ones in view.
+VIEW_PROBES = 48
+# How much of the text before a control a query also looks in, such as its heading.
+NEARBY_CHARS = 300
+# A match brings the rest of its form, unless the form is this big.
+MAX_FORM_CONTROLS = 30
+CUT_CONTROLS = "Snapshot with a query to find the rest."
 
 SETTLE_SECONDS = 3.0
 # The most an action's result waits for its requests and the snapshot after them together.
 ACTION_WAIT_SECONDS = 2.0
-# Requests an action sets off begin a moment after its last step.
-ACTION_QUIET_SECONDS = 0.3
-# A page is quiet once no request has begun for this long and none is still waiting for its answer.
-QUIET_SECONDS = 0.5
+# A page is quiet once none of its requests has begun or finished for this long, none is still waiting
+# for its answer, and, after an action, this long has passed since its last step. Reading the page
+# runs on its main thread, so it already waits for scripts that are still running.
+QUIET_SECONDS = 0.15
+# How often a wait reads the page again.
+POLL_SECONDS = 0.05
+# A search box or autocomplete sends its request a moment after typing stops (a debounce), so an act
+# that ends by typing starts its quiet wait this long after the last key.
+TYPING_PAUSE_SECONDS = 0.35
 # A request still unanswered after this long is a stream or a lost request, not the page loading.
 REQUEST_PATIENCE_SECONDS = 10.0
 # browser_navigate returns the page as an action does when the navigation took less than
@@ -262,9 +276,11 @@ NAVIGATE = r"""(() => {
   return { timeOrigin, href: location.href };
 })()"""
 
-# Whether the page has loaded, and the requests it has finished, failed ones included.
-PAGE_LOAD = r"""({ href: location.href, ready: document.readyState,
-  done: performance.getEntriesByType("resource").slice(-500).map((entry) => entry.name) })"""
+# Whether the page has loaded, when its document began, and the requests it has finished (failed ones
+# included) with when each ended.
+PAGE_LOAD = r"""({ href: location.href, ready: document.readyState, began: performance.timeOrigin,
+  done: performance.getEntriesByType("resource").slice(-500)
+    .map((entry) => [entry.name, performance.timeOrigin + entry.responseEnd]) })"""
 
 # The page's address, title and text, the values a snapshot must not show (password fields, fields
 # holding a saved login or card, and fields drawn as dots), and the merchant account a pay token checkout names in the page itself.
@@ -285,6 +301,7 @@ PAGE_STATE = r"""(() => {
     text: (document.body?.innerText || "").slice(0, 200000),
     masked,
     payToken: /^acct_[A-Za-z0-9]{1,64}$/.test(account) ? account : null,
+    frames: [...document.querySelectorAll("iframe")].slice(0, 50).map((frame) => frame.src),
   };
 })()"""
 
@@ -421,6 +438,98 @@ CONTROL_ROLES = frozenset({"button", "link", "textbox", "searchbox", "checkbox",
                            "spinbutton", "treeitem", "Iframe"})
 
 
+class Control:
+    """A control as the snapshot lists it, with the text a query can find it by."""
+
+    def __init__(self, index: int, line: str, entry: dict[str, Any], node: Node, own: str, nearby: str) -> None:
+        self.index, self.line, self.entry, self.node, self.own, self.nearby = index, line, entry, node, own, nearby
+        self.cost = sent(line) + 1
+
+
+def words(text: str) -> list[str]:
+    plain = unicodedata.normalize("NFKD", text.casefold())
+    return re.sub(r"[^\w]+", " ", "".join(char for char in plain if not unicodedata.combining(char))).split()
+
+
+def found(word: str, among: list[str]) -> bool:
+    """A query word is a word of the text, or the start of one once it is long enough to mean something."""
+    return any(have == word or (len(word) >= 3 and have.startswith(word)) for have in among)
+
+
+# The containers a control's form is: a match brings the rest of it, such as the form's submit button.
+FORM_ROLES = frozenset({"form", "group", "search", "dialog", "alertdialog", "radiogroup"})
+
+
+def matching(controls: list[Control], query: str) -> list[Control]:
+    """The controls a query names, best first: those with every word in their own name, label, value or
+    options, then those that need the text before them or their form's name, then the rest of their forms.
+
+    When none has every word, those with the most do.
+    """
+    wanted = list(dict.fromkeys(words(query)))
+    if not wanted:
+        return []
+    position = {id(control.node): index for index, control in enumerate(controls)}
+    scored: list[tuple[int, int, int]] = []
+    for index, control in enumerate(controls):
+        own = words(control.own)
+        around = own + words(control.nearby)
+        at = control.node.parent
+        while at is not None:
+            around += words(at.name)
+            at = at.parent
+        hits = sum(found(word, around) for word in wanted)
+        if hits:
+            scored.append((hits, sum(found(word, own) for word in wanted), index))
+    if not scored:
+        return []
+    best = max(hits for hits, _, _ in scored)
+    ranked = [index for hits, _, index in sorted(scored, key=lambda s: (-s[1], s[2])) if hits == best]
+    chosen = dict.fromkeys(ranked)
+    for index in ranked:
+        form = form_of(controls[index].node)
+        if form is not None:
+            mates = [position[id(node)] for node in walk(form.children) if id(node) in position]
+            if len(mates) <= MAX_FORM_CONTROLS:
+                chosen.update(dict.fromkeys(mates))
+    listed: dict[int, None] = {}
+    for index in chosen:
+        # A control in a frame comes after the frame's line, which names its site, so a cut never parts them.
+        frames: list[int] = []
+        frame = controls[index].node.frame
+        while frame is not None:
+            if id(frame) in position:
+                frames.append(position[id(frame)])
+            frame = frame.frame
+        listed.update(dict.fromkeys([*reversed(frames), index]))
+    return [controls[index] for index in listed]
+
+
+def form_of(node: Node) -> Node | None:
+    """The form a control is in, or else the nearest group-like container."""
+    nearest = None
+    at = node.parent
+    while at is not None:
+        if at.role == "form":
+            return at
+        if nearest is None and at.role in FORM_ROLES:
+            nearest = at
+        at = at.parent
+    return nearest
+
+
+def fit(candidates: list[Control], budget: int) -> list[Control]:
+    """The candidates that fit, taken in order until one does not, then put back in page order."""
+    shown: list[Control] = []
+    used = 0
+    for control in candidates:
+        if len(shown) >= MAX_CONTROLS or (shown and used + control.cost > budget):
+            break
+        shown.append(control)
+        used += control.cost
+    return sorted(shown, key=lambda control: control.index)
+
+
 def same_site(url: Any) -> str:
     """The site a URL is on, as its host's last two labels; close enough to tell a page's own requests apart."""
     try:
@@ -453,12 +562,17 @@ class PageBrowser:
 
     # -- reading the page -------------------------------------------------------------------------
 
-    def pending_requests(self) -> tuple[bool, float]:
-        """Whether the page is waiting on a request of its current document, and when its latest began."""
+    def pending_requests(self) -> tuple[bool, float, bool]:
+        """Whether the page is waiting on a request of its current document, when its latest began or
+        ended, and whether the page may be waiting on requests the log never saw.
+
+        agent-browser logs requests only from when its session attached, which can be after the page
+        began loading: the person opened it, or the session started or moved to this tab since.
+        """
         state, log = self.ab.batch([["eval", PAGE_LOAD], ["network", "requests"]])
         page = state.get("result") or {}
         # agent-browser logs a response but never a failure; the page lists failed requests as done.
-        done = set(page.get("done") or [])
+        done = {str(name): float(ended or 0) for name, ended in page.get("done") or []}
         requests = [r for r in log.get("requests") or [] if isinstance(r, dict)]
         documents = [r for r in requests if r.get("resourceType") == "Document"]
         current = [r for r in documents if r.get("url") == page.get("href")] or documents
@@ -470,8 +584,12 @@ class PageBrowser:
         waiting = [r for r in recent if r.get("status") is None and r.get("url") not in done
                    and r.get("resourceType") not in ("EventSource", "WebSocket")
                    and now - float(r.get("timestamp") or 0) < REQUEST_PATIENCE_SECONDS * 1000]
-        latest = max((float(r.get("timestamp") or 0) for r in recent), default=0.0)
-        return bool(waiting) or page.get("ready") != "complete", latest / 1000
+        started = [float(r.get("timestamp") or 0) for r in recent]
+        ended = [at for name, at in done.items() if at >= since and same_site(name) == site]
+        latest = max(started + ended, default=0.0)
+        unseen = (not any(r.get("url") == page.get("href") for r in documents)
+                  and now - float(page.get("began") or 0) < REQUEST_PATIENCE_SECONDS * 1000)
+        return bool(waiting) or page.get("ready") != "complete", latest / 1000, unseen
 
     def settle(self, seconds: float, quiet_from: float = 0.0) -> bool:
         """Wait until the page has loaded and its requests are answered, then QUIET_SECONDS more.
@@ -480,17 +598,28 @@ class PageBrowser:
         so a page captured earlier can show "Sign in" to an account that is signed in.
         """
         deadline = time.monotonic() + seconds
-        while True:
-            busy, latest = self.pending_requests()
-            if not busy and time.time() - max(latest, quiet_from) >= QUIET_SECONDS:
-                # agent-browser keeps every request it sees; once none is waiting, the log can start over.
-                self.ab.batch([["network", "requests", "--clear"]])
-                return True
-            if time.monotonic() >= deadline:
-                return not busy
-            time.sleep(min(0.15, max(0.0, deadline - time.monotonic())))
+        load: PageLoad | None = None
+        try:
+            while True:
+                busy, latest, unseen = self.pending_requests()
+                if not busy and unseen:
+                    load = load or PageLoad(self.port, self.target)
+                    busy = not load.idle()
+                quiet_in = QUIET_SECONDS - (time.time() - max(latest, quiet_from))
+                if not busy and quiet_in <= 0:
+                    # agent-browser keeps every request it sees; once none is waiting, the log can start over.
+                    self.ab.batch([["network", "requests", "--clear"]])
+                    return True
+                if time.monotonic() >= deadline:
+                    return not busy
+                # A quiet page is read again just as it has been quiet long enough.
+                wait = POLL_SECONDS if busy else min(POLL_SECONDS, quiet_in)
+                time.sleep(max(0.0, min(wait, deadline - time.monotonic())))
+        finally:
+            if load:
+                load.close()
 
-    def snapshot(self, settle: float | None = None) -> dict[str, Any]:
+    def snapshot(self, settle: float | None = None, query: str | None = None) -> dict[str, Any]:
         settled = self.settle(SETTLE_SECONDS if settle is None else settle)
         state_result, snap = self.ab.batch([["eval", PAGE_STATE], ["snapshot"]])
         state = state_result.get("result") or {}
@@ -500,9 +629,17 @@ class PageBrowser:
         sites = {id(node): frame_site(urljoin(str(state.get("url") or ""), str((found or {}).get("value") or "")))
                  for node, found in zip(frames, sources)}
         masked = {str(value) for value in state.get("masked") or [] if value}
+        # Found in the page, not in agent-browser's tree: a session that attached after a frame loaded never sees inside it.
+        payment = any(payment_frame_origin(frame_site(src)) for src in state.get("frames") or [])
+        try:
+            card_shown, account = page_secrets.payment_frame_hints(self.port, self.target) if payment else (False, None)
+        except Exception:  # noqa: BLE001
+            card_shown, account = False, None
         hints: list[str] = []
         frame_text: list[str] = []
-        controls: list[tuple[str, dict[str, Any]]] = []
+        controls: list[Control] = []
+        # Text read since the last control, such as a heading or a field's label: what a query can find it by.
+        recent: list[str] = []
 
         def render(nodes: list[Node], depth: int, inside: str | None) -> None:
             for node in nodes:
@@ -510,8 +647,6 @@ class PageBrowser:
                     site = sites.get(id(node), "")
                     if payment_frame_origin(site):
                         # Card details reach a payment provider's frame only through fill_card.
-                        if PAYMENT_FRAME_HINT not in hints and any(n.role == "textbox" for n in walk(node.children)):
-                            hints.append(PAYMENT_FRAME_HINT)
                         continue
                     text = " ".join(n.name for n in walk(node.children) if n.role == "StaticText").strip()
                     if text:
@@ -522,6 +657,8 @@ class PageBrowser:
                 # agent-browser also hands refs to named text such as headings and table cells; the
                 # list is of what a click or a fill can mean something for.
                 if ref is None or not (node.role in CONTROL_ROLES or "clickable" in node.extra):
+                    if node.name:
+                        recent.append(node.name)
                     render(node.children, depth, inside)
                     continue
                 value = node.value
@@ -547,53 +684,87 @@ class PageBrowser:
                     if total > len(options):
                         entry["optionsTotal"] = total
                     line += " options: " + describe_options(options, total)
-                controls.append((line, entry))
+                own = " ".join([node.name, entry.get("value") or "", *(option["label"] for option in options)])
+                controls.append(Control(len(controls), line, entry, node, own, " ".join(recent)[-NEARBY_CHARS:]))
+                recent.clear()
                 render(node.children, depth + 1, "select" if options else inside)
 
         render(roots, 0, None)
-        if state.get("payToken"):
-            account = state["payToken"]
-        elif any(sites.get(id(node)) == page_secrets.PAY_TOKEN_FRAME_ORIGIN for node in frames):
-            try:
-                account = page_secrets.stripe_pay_token_account(self.port, self.target)
-            except Exception:  # noqa: BLE001
-                account = None
-        else:
-            account = None
+        if card_shown:
+            hints.append(PAYMENT_FRAME_HINT)
+        account = state.get("payToken") or account
         if account:
             hints.append(f'This checkout accepts a pay token: merchantAccountId "{account}".')
-        shown: list[tuple[str, dict[str, Any]]] = []
-        used = 0
-        for line, entry in controls:
-            length = sent(line) + 1
-            if len(shown) >= MAX_CONTROLS or (shown and used + length > CONTROLS_BUDGET):
-                break
-            shown.append((line, entry))
-            used += length
-        listing = "\n".join(line for line, _ in shown) or "(no interactive elements)"
-        notices = f"[controls: showing {len(shown)} of {len(controls)}]\n" if len(shown) < len(controls) else ""
+        page = {"ok": True, "url": str(state.get("url") or snap.get("origin") or ""),
+                "title": str(state.get("title") or ""), **({} if settled else {"loading": True})}
+        if query:
+            ranked = matching(controls, query)
+            shown = fit(ranked, TREE_BUDGET - sum(sent(h) + 1 for h in hints) - 200)
+            label = json.dumps(query, ensure_ascii=False)
+            if not ranked:
+                notice = f"[no controls match {label}]"
+            elif len(shown) < len(ranked):
+                notice = f"[controls matching {label}: showing {len(shown)} of {len(ranked)}]"
+            else:
+                notice = f"[controls matching {label}]"
+            tree = "\n".join([notice, *(c.line for c in shown), *hints])
+            return {**page, "tree": tree, "elements": [c.entry for c in shown]}
+        shown = fit(controls, CONTROLS_BUDGET)
+        start = self.view_start(controls) if len(shown) < len(controls) else 0
+        if start:
+            # From the first control in view on, then back up the page with the room left.
+            shown = fit(controls[start:] + controls[start - 1::-1], CONTROLS_BUDGET)
+        listing = "\n".join(c.line for c in shown) or "(no interactive elements)"
+        notices = (f"[controls: showing {len(shown)} of {len(controls)}. {CUT_CONTROLS}]\n"
+                   if len(shown) < len(controls) else "")
         text = "\n".join([unframed(str(state.get("text") or "")), *frame_text])
-        room = max(MIN_TEXT, TREE_BUDGET - sent(listing) - sum(sent(h) + 1 for h in hints) - 200)
+        room = max(MIN_TEXT, TREE_BUDGET - sent(listing) - sent(notices) - sum(sent(h) + 1 for h in hints) - 200)
         cut = len(text)
         while cut > 0 and sent(text[:cut]) > room:
             cut = int(cut * 0.9)
         if cut < len(text):
             notices += f"[page text: showing first {cut} of {len(text)} characters]\n"
         tree = notices + text[:cut] + "\n" + listing + "".join("\n" + hint for hint in hints)
-        return {"ok": True, "url": str(state.get("url") or snap.get("origin") or ""),
-                "title": str(state.get("title") or ""), "tree": tree, "elements": [entry for _, entry in shown],
-                **({} if settled else {"loading": True})}
+        return {**page, "tree": tree, "elements": [c.entry for c in shown]}
 
-    def control(self, ref: str) -> Node:
+    def view_start(self, controls: list[Control]) -> int:
+        """Where the controls in view begin: just after the last one above the visible part of the page.
+
+        Controls come in page order, which is mostly top to bottom, so a sample of them is enough.
+        Ones in frames are placed by their frame, and a header that stays on screen does not count.
+        """
+        top = [index for index, control in enumerate(controls) if control.node.frame is None]
+        sampled = range(0, len(top), max(1, math.ceil(len(top) / VIEW_PROBES)))
+        if not sampled:
+            return 0
+        try:
+            boxes = self.ab.batch([["get", "box", f"@{controls[top[at]].entry['ref']}"] for at in sampled], bail=False)
+        except Exception:  # noqa: BLE001
+            return 0
+        start = 0
+        for at, box in zip(sampled, boxes):
+            if box and box.get("height") and float(box.get("y") or 0) + float(box["height"]) <= 0:
+                # The next control outside any frame: a frame above the view takes its own controls with it.
+                start = top[at + 1] if at + 1 < len(top) else len(controls)
+        return min(start, len(controls) - 1)
+
+    def control(self, ref: str, *, check_disabled: bool = False) -> Node:
         """The element a ref names in the page as it is now; a ref that names nothing now is stale.
 
         agent-browser keeps a ref while its element lives, but would hand an action a replacement
         with the same role and name, even on another page. Checking right before the step stops that.
         """
-        (snap,) = self.ab.batch([["snapshot", "-i"]])
+        commands = [["snapshot", "-i"]]
+        if check_disabled:
+            # `is enabled` includes disabled fieldsets (and their first-legend exception),
+            # but agent-browser does not include aria-disabled in that check.
+            commands += [["is", "enabled", f"@{ref}"], ["get", "attr", f"@{ref}", "aria-disabled"]]
+        snap, *state = self.step(commands)
         node = find_ref(parse_tree(snap.get("snapshot") or ""), ref)
         if node is None or ref not in (snap.get("refs") or {}):
             raise Settled(STALE_REF)
+        if check_disabled and (state[0].get("enabled") is False or str(state[1].get("value")).lower() == "true"):
+            raise Settled(DISABLED)
         return node
 
     # -- commands ---------------------------------------------------------------------------------
@@ -624,7 +795,7 @@ class PageBrowser:
                 break
             if time.monotonic() - started > NAVIGATE_SECONDS:
                 raise RuntimeError("Navigation did not settle; inspect the screen before continuing")
-            time.sleep(0.1)
+            time.sleep(POLL_SECONDS)
         while True:
             (now,) = self.ab.batch([["eval", "({ timeOrigin: performance.timeOrigin, href: location.href, "
                                               "ready: document.readyState })"]])
@@ -638,7 +809,7 @@ class PageBrowser:
                 break
             if time.monotonic() - started > NAVIGATE_SECONDS:
                 raise RuntimeError("Navigation did not settle; inspect the screen before continuing")
-            time.sleep(0.1)
+            time.sleep(POLL_SECONDS)
         page: dict[str, Any] = {}
         left = NAVIGATE_SNAPSHOT_BY - (time.monotonic() - started)
         if left > 0:
@@ -689,6 +860,8 @@ class PageBrowser:
         try:
             results = self.ab.batch(commands)
         except AbError as error:
+            if re.search(r"Element\b.*\bis disabled", str(error)):
+                raise Settled(DISABLED) from None
             if any(marker in str(error) for marker in SETTLED_ERRORS):
                 raise Settled(str(error)) from None
             raise
@@ -747,10 +920,12 @@ class PageBrowser:
         validate_actions(actions)
         completed = 0
         uncertain = False
+        typed = False
         try:
             for step in actions:
                 kind, ref = step["kind"], step.get("ref")
-                node = self.control(ref) if ref is not None else None
+                node = self.control(ref, check_disabled=kind in ("fill", "type")) if ref is not None else None
+                typed = kind == "type" or (kind == "fill" and not (node and native_options(node)))
                 uncertain = True
                 if kind == "pay_token" or step.get("origin"):
                     if ref is not None:
@@ -787,11 +962,10 @@ class PageBrowser:
                 if dialog:
                     return self.dialog_result(dialog, {"completed": completed, "uncertain": False},
                                               remaining=completed < len(actions))
-            ended = time.time()
-            time.sleep(ACTION_QUIET_SECONDS)
             started = time.monotonic()
-            busy = not self.settle(ACTION_WAIT_SECONDS - ACTION_QUIET_SECONDS, quiet_from=ended)
-            left = ACTION_WAIT_SECONDS - ACTION_QUIET_SECONDS - (time.monotonic() - started)
+            quiet_from = time.time() + (TYPING_PAUSE_SECONDS if typed else 0.0)
+            busy = not self.settle(ACTION_WAIT_SECONDS, quiet_from=quiet_from)
+            left = ACTION_WAIT_SECONDS - (time.monotonic() - started)
             snap = self.snapshot(0.0 if busy else max(0.0, left))
             return {**snap, "completed": completed, **({"loading": True} if busy else {})}
         except (Settled, TypingStopped, KeysNotKept) as exc:
@@ -820,27 +994,69 @@ class PageBrowser:
 # A code is typed into its boxes: like-named one- or two-character inputs around the field, up to
 # where their numbering starts again, so a second code or a middle-initial field next to it is left alone.
 CODE_BOXES = r"""
-  const box = (input) => input instanceof HTMLInputElement && input.maxLength > 0 && input.maxLength <= 2;
+  // Boxes cap their own length at one or two characters. Number boxes ignore a cap, and some pages
+  // set none: those must be narrow and say they take one digit, so card or date fields never count.
+  const box = (input) => {
+    if (!(input instanceof HTMLInputElement)) return false;
+    if (input.maxLength > 0) return input.maxLength <= 2;
+    const width = input.getBoundingClientRect().width;
+    return ["text", "tel", "number", "password"].includes(input.type) && width > 0 && width <= 72
+      && (input.autocomplete === "one-time-code"
+        || (input.type === "number" && input.max !== "" && Number(input.max) <= 9));
+  };
   const naming = (field) => [field.getAttribute("aria-label"), field.name, field.id,
     ...Array.from(field.labels || [], (label) => label.textContent)].join("|").replace(/[\d\s]+/g, "").toLowerCase();
+  // Pages often label only the first box, with the prompt, and leave the rest unnamed. Unnamed boxes
+  // straight after a named one, with no other field between, are its code, if the whole run is a code's size.
+  const unnamed = (field) => /^\|*$/.test(naming(field));
+  const cache = new WeakMap();
+  const led = new WeakMap();
+  const named = (field, container) => {
+    let names = cache.get(container);
+    if (!names) {
+      names = new Map();
+      const members = new Set();
+      led.set(container, members);
+      const inputs = [...container.querySelectorAll("input")].filter((input) => input.type !== "hidden");
+      const bare = (input) => input && box(input) && unnamed(input);
+      inputs.forEach((input, at) => {
+        if (names.has(input)) return;
+        names.set(input, naming(input));
+        if (!bare(input)) return;
+        let from = at;
+        let to = at;
+        while (bare(inputs[from - 1])) from--;
+        while (bare(inputs[to + 1])) to++;
+        const lead = inputs[from - 1];
+        const name = lead && box(lead) && to - from >= 2 && to - from <= 6 ? naming(lead) : naming(input);
+        if (name === naming(input)) return;
+        for (let i = from - 1; i <= to; i++) members.add(inputs[i]);
+        for (let i = from; i <= to; i++) names.set(inputs[i], name);
+      });
+      cache.set(container, names);
+    }
+    return names.get(field) ?? naming(field);
+  };
+  // Boxes with no length cap only count as a code when a named box leads them.
+  const joined = (input, container) => input.maxLength > 0 || (named(input, container), led.get(container).has(input));
   const numberOf = (field) => {
     const found = /\d+/.exec(field.getAttribute("aria-label")
       || Array.from(field.labels || [], (label) => label.textContent).join(" ") || field.name || "");
     return found ? Number(found[0]) : null;
   };
   const like = (container, name) => [...container.querySelectorAll("input")].filter((input) => box(input)
-    && naming(input) === name);
+    && joined(input, container) && named(input, container) === name);
   function codeOf(el) {
     if (!box(el)) return null;
     for (let node = el.parentElement, up = 0; node && up < 3; node = node.parentElement, up++) {
-      if ([...node.querySelectorAll("input")].filter(box).length < 4) continue;
-      const boxes = like(node, naming(el));
+      if ([...node.querySelectorAll("input")].filter(box).length < 4 || !joined(el, node)) continue;
+      const boxes = like(node, named(el, node));
       const restarts = (a, b) => numberOf(a) !== null && numberOf(b) !== null && numberOf(b) <= numberOf(a);
       let from = boxes.indexOf(el);
       let to = from;
       while (from > 0 && !restarts(boxes[from - 1], boxes[from])) from--;
       while (to < boxes.length - 1 && !restarts(boxes[to], boxes[to + 1])) to++;
-      return { container: node, name: naming(el), from, size: to - from + 1, at: boxes.indexOf(el) };
+      return { container: node, name: named(el, node), from, size: to - from + 1, at: boxes.indexOf(el) };
     }
     return null;
   }
@@ -864,7 +1080,10 @@ TYPE_START = "(() => {" + CODE_BOXES + r"""
   if (code && code.size > 1 && WHOLE) {
     // A whole code replaces the code: every box is emptied and typing starts at the first. Widgets
     // that draw their boxes again on each input are found again in the same place each time.
-    const boxes = () => like(code.container, code.name).slice(code.from, code.from + code.size);
+    const boxes = () => {
+      cache.delete(code.container);
+      return like(code.container, code.name).slice(code.from, code.from + code.size);
+    };
     for (let i = 0; i < 24; i++) {
       const filled = boxes().find((field) => field.value);
       if (!filled) break;
@@ -891,7 +1110,7 @@ TYPE_CHECK = "(() => {" + CODE_BOXES + r"""
   const active = focused();
   const { el, code } = typing;
   const holds = active === el || el.contains(active) || (code !== null && code.container.isConnected
-    && code.container.contains(active) && box(active) && naming(active) === code.name);
+    && code.container.contains(active) && box(active) && named(active, code.container) === code.name);
   if (!holds) throw new Error("Typing stopped: focus");
   return true;
 })()"""
@@ -922,10 +1141,12 @@ def key_command(char: str) -> list[str]:
 
 
 class CdpClient(page_secrets.CdpClient):
-    """The shared CDP transport with events for this call's downloads."""
+    """The shared CDP transport with events for this call's downloads and its page's load."""
 
     def __init__(self, ws_url: str) -> None:
         super().__init__(ws_url)
+        # The load milestones each document has reached, by frame and document.
+        self.lifecycle: dict[tuple[Any, Any], set[str]] = {}
         # Downloads Chromium began since download events were turned on, by guid, in the order they began.
         self.downloads: dict[str, dict[str, Any]] = {}
         # The MIME type each document response was sent with, by URL, for the type of a download.
@@ -950,6 +1171,8 @@ class CdpClient(page_secrets.CdpClient):
             if isinstance(guid, str):
                 self.downloads.setdefault(guid, {"name": params.get("suggestedFilename"), "url": params.get("url"),
                                                  "state": "inProgress", "received": 0, "total": 0})
+        elif method == "Page.lifecycleEvent":
+            self.lifecycle.setdefault((params.get("frameId"), params.get("loaderId")), set()).add(str(params.get("name")))
         elif method == "Browser.downloadProgress":
             download = self.downloads.get(params.get("guid"))
             if download is not None:
@@ -997,6 +1220,41 @@ class CdpClient(page_secrets.CdpClient):
             message = json.loads(frame.decode("utf-8"))
             if isinstance(message, dict) and message.get("method"):
                 self._handle_event(message)
+
+
+class PageLoad:
+    """Chromium's own record of the page's load, which covers requests made before agent-browser attached."""
+
+    def __init__(self, port: int, target: str) -> None:
+        self.client: CdpClient | None = None
+        self.session: str | None = None
+        try:
+            self.client = CdpClient(discover_ws_url(port))
+            self.client.connect()
+            self.session = self.client.call("Target.attachToTarget", {"targetId": target, "flatten": True},
+                                            timeout_s=2.0)["sessionId"]
+            self.client.call("Page.enable", session_id=self.session, timeout_s=2.0)
+            # Enabling lifecycle events replays the ones the current document has already reached.
+            self.client.call("Page.setLifecycleEventsEnabled", {"enabled": True}, session_id=self.session, timeout_s=2.0)
+        except Exception:  # noqa: BLE001
+            self.session = None
+
+    def idle(self) -> bool:
+        """Whether the page has loaded and Chromium has seen no request for 500 ms (its networkIdle).
+
+        A browser that cannot say leaves the wait to agent-browser's log.
+        """
+        if self.client is None or self.session is None:
+            return True
+        try:
+            frame = self.client.call("Page.getFrameTree", session_id=self.session, timeout_s=2.0)["frameTree"]["frame"]
+        except Exception:  # noqa: BLE001
+            return True
+        return {"load", "networkIdle"} <= self.client.lifecycle.get((frame.get("id"), frame.get("loaderId")), set())
+
+    def close(self) -> None:
+        if self.client:
+            self.client.close()
 
 
 def max_file_bytes() -> int:
@@ -1395,7 +1653,8 @@ def run(argv: list[str]) -> int:
         if command == "navigate":
             result = page.navigate(str(args.get("url") or ""), opened=opened)
         elif command == "snapshot":
-            result = page.snapshot()
+            query = args.get("query")
+            result = page.snapshot(query=query.strip()[:200] if isinstance(query, str) and query.strip() else None)
         else:
             actions = args.get("actions")
             if not isinstance(actions, list):

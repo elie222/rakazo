@@ -34,6 +34,7 @@
   --panel-cream: #f1f1ef;
   --panel-cream-ink: #1a1a1a;
   --success: #30a24b;
+  --destructive: #dc2626;
   --coral: #f2622a;
   --coral-soft: #fde3d6;
   --indigo: #6a6bf5;
@@ -2606,6 +2607,120 @@ button.product-demo__dock-icon {
   color: var(--blue);
 }
 
+.brand-kit__logos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 32px 20px;
+}
+
+.privacy-copy .brand-kit__logos,
+.privacy-copy .brand-kit__colors {
+  padding: 0;
+  list-style: none;
+}
+
+.brand-kit__logos li {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.brand-kit__logos span,
+.brand-kit__colors code {
+  color: var(--muted-2);
+  font-size: 14px;
+}
+
+.privacy-copy a.brand-kit__logo {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 3 / 2;
+  overflow: hidden;
+  margin-bottom: 10px;
+  padding: 36px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-card);
+  background: var(--surface-soft);
+}
+
+.brand-kit__logo img {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
+}
+
+.logo-menu {
+  position: fixed;
+  z-index: 50;
+  display: grid;
+  min-width: 200px;
+  padding: 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.18);
+}
+
+.logo-menu[hidden] {
+  display: none;
+}
+
+.logo-menu > * {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.logo-menu > *:hover,
+.logo-menu > *:focus {
+  outline: none;
+  background: var(--surface-soft);
+}
+
+.logo-menu > *:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
+.logo-menu svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: var(--muted-2);
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.brand-kit__colors {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 20px;
+}
+
+.brand-kit__colors li {
+  display: grid;
+  gap: 2px;
+}
+
+.brand-kit__swatch {
+  height: 88px;
+  margin-bottom: 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+}
+
 .alt-page {
   max-width: 960px;
   padding: 72px 0 110px;
@@ -2694,6 +2809,16 @@ button.product-demo__dock-icon {
   border-color: var(--blue);
 }
 
+.plugin-form input[aria-invalid="true"],
+.plugin-form textarea[aria-invalid="true"] {
+  border-color: var(--destructive);
+}
+
+.plugin-form input[aria-invalid="true"]:focus-visible,
+.plugin-form textarea[aria-invalid="true"]:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--destructive) 20%, transparent);
+}
+
 .plugin-form .plugin-form__check {
   display: flex;
   align-items: center;
@@ -2707,10 +2832,16 @@ button.product-demo__dock-icon {
   accent-color: var(--blue);
 }
 
-.plugin-form__error {
+/* Beats the page's paragraph color, so a missing field reads as an error. */
+.alt-page .plugin-form__error {
   margin: 0;
-  color: var(--coral);
+  color: var(--destructive);
   font-size: 15px;
+}
+
+.plugin-form .plugin-form__error--field {
+  margin-top: -12px;
+  font-size: 14px;
 }
 
 .plugin-form__done {

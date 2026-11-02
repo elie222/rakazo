@@ -2,6 +2,7 @@ import { createTelegramAdapter } from "@chat-adapter/telegram";
 import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
+import type { MessagingEnvironmentValues } from "./messaging-platforms.js";
 import { messagingPlatformsFromEnv, splitOutboundBody } from "./messaging-platforms.js";
 
 const context: AdapterContext = {
@@ -632,4 +633,69 @@ describe("Telegram messaging files", () => {
       { method: "sendDocument", field: "document", filename: "report.pdf", caption: null },
     ]);
   });
+});
+
+describe("Telegram redelivery", () => {
+  it.each([
+    [
+      "telegram",
+      999,
+      5,
+      { telegramBotToken: "test-token", telegramWebhookSecret: "test-webhook-secret" },
+    ],
+    [
+      "telegram-work",
+      1001,
+      6,
+      {
+        telegramBots: [
+          { name: "work", botToken: "test-token", webhookSecret: "test-webhook-secret" },
+        ],
+      },
+    ],
+  ] as [string, number, number, MessagingEnvironmentValues][])(
+    "processes Telegram's retry of an update the sink failed on, exactly once (%s)",
+    async (provider, botId, updateId, env) => {
+      // The pinned adapter claims each update id; only getMe goes over HTTP.
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          Response.json({ ok: true, result: { id: botId, is_bot: true, username: "testbot" } }),
+        ),
+      );
+      const surface = new ChatSdkMessagingSurface(messagingPlatformsFromEnv(env));
+      const inbound: string[] = [];
+      surface.onInbound(async (event) => {
+        if (event.type !== "message") return;
+        inbound.push(event.content);
+        if (inbound.length === 1) throw new Error("database unavailable");
+      });
+      const update = () =>
+        new Request("https://rakazo.test/api/v1/messaging/webhook/telegram", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-telegram-bot-api-secret-token": "test-webhook-secret",
+          },
+          body: JSON.stringify({
+            update_id: updateId,
+            message: {
+              message_id: 7,
+              date: 1_700_000_000,
+              chat: { id: 123, type: "private", first_name: "Ada" },
+              from: { id: 123, is_bot: false, first_name: "Ada" },
+              text: "remind me at 5",
+            },
+          }),
+        });
+
+      const statuses = [];
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        statuses.push((await surface.handleWebhook(provider, update()))?.status);
+      }
+
+      expect(statuses).toEqual([500, 200, 200]);
+      expect(inbound).toEqual(["remind me at 5", "remind me at 5"]);
+    },
+  );
 });

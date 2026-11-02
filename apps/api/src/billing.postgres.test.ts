@@ -1,5 +1,6 @@
+import type { ProductAnalytics } from "@rakazo/adapter-kit";
 import { BillingEmulator } from "@rakazo/adapters";
-import type { Actor } from "@rakazo/contracts";
+import type { Actor, AnalyticsEvent } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { billingAccountForOrganization, createBillingAccount, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -24,6 +25,11 @@ describePostgres("billing service (PostgreSQL)", () => {
   };
   const member: Actor = { ...owner, userId: memberId, email: `${memberId}@rakazo.test` };
   const emulator = new BillingEmulator();
+  const events: Array<[string, AnalyticsEvent]> = [];
+  const analytics: ProductAnalytics = {
+    capture: (userId, event) => events.push([userId, event]),
+    flush: async () => {},
+  };
   let prisma: PrismaClient;
   let close: () => Promise<void>;
   let billing: ReturnType<typeof createBillingService>;
@@ -35,7 +41,7 @@ describePostgres("billing service (PostgreSQL)", () => {
       await db.prisma.$disconnect();
       await db.pool.end();
     };
-    billing = createBillingService({ prisma, provider: emulator, webOrigin });
+    billing = createBillingService({ prisma, provider: emulator, webOrigin, analytics });
     const createdAt = new Date();
     for (const id of [ownerId, memberId]) {
       await prisma.user.create({
@@ -133,6 +139,38 @@ describePostgres("billing service (PostgreSQL)", () => {
     await billing.syncSeats(organizationId);
     const account = await billingAccountForOrganization(prisma, organizationId);
     expect(account?.seats).toBe(2);
+  });
+
+  it("stores the cancellation answer and reports it to the owner once", async () => {
+    const { customerId } = (await billingAccountForOrganization(prisma, organizationId))!;
+    const subscription = emulator.subscriptions.find((s) => s.customerId === customerId)!;
+    Object.assign(subscription, {
+      cancelAtPeriodEnd: true,
+      cancellationReason: "missing_features",
+      cancellationComment: "Needs a calendar",
+    });
+    await billing.sync(customerId);
+    await billing.sync(customerId);
+    await expect(billingAccountForOrganization(prisma, organizationId)).resolves.toMatchObject({
+      cancellationReason: "missing_features",
+      cancellationComment: "Needs a calendar",
+    });
+    expect(events).toEqual([
+      [
+        ownerId,
+        { name: "subscription_cancel_feedback", reason: "missing_features", commented: true },
+      ],
+    ]);
+    Object.assign(subscription, {
+      cancelAtPeriodEnd: false,
+      cancellationReason: undefined,
+      cancellationComment: undefined,
+    });
+    await billing.sync(customerId);
+    await expect(billingAccountForOrganization(prisma, organizationId)).resolves.toMatchObject({
+      cancellationReason: null,
+      cancellationComment: null,
+    });
   });
 
   it("does not offer a second trial after the subscription ends", async () => {

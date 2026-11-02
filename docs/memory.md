@@ -10,6 +10,10 @@ indexed in a file called `MEMORY.md`.
 
 You can also just tell it: "remember that invoices go to the finance folder".
 
+A bot keeps its notes short, one fact per line. When something changes, it rewrites the old note
+instead of adding a second one, and it deletes notes that no longer hold. It keeps at most 4 KB of
+notes in `MEMORY.md`, merging or removing notes to make room. You can still add more by hand.
+
 To see what a bot remembers, click its name at the top of the chat and open **Memory**. Each note can
 be downloaded or deleted.
 

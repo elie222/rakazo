@@ -12,7 +12,8 @@ The hosted computer is included in both paths, and monthly credits include the o
 
 `BYOK_MONTHLY_PRICE_CENTS` in `@rakazo/contracts` sets the own-key plan's price for new
 subscriptions; existing subscribers keep the price they signed up at. `null` makes it
-free and ends paid own-key subscriptions at their period end. Runs check access on the server, so a
+free and ends paid own-key subscriptions at their period end. `BYOK_ANNUAL_PRICE_CENTS` offers the
+same plan billed yearly, shown as its monthly equivalent; `null` offers it monthly only. Runs check access on the server, so a
 lapsed organization's bots and routines stop until it subscribes.
 
 ## Model credits

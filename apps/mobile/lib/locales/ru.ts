@@ -1027,6 +1027,15 @@ export const RU_MESSAGES: Record<string, string> = {
   Credits: "Кредиты",
   "Available credits": "Доступные кредиты",
   "Computer hours left": "Осталось часов компьютера",
+  "Trials get fewer hours to prevent abuse.":
+    "В пробном периоде меньше часов, чтобы предотвратить злоупотребления.",
+  "Start plan now": "Начать тариф сейчас",
+  "Start your plan now?": "Начать тариф сейчас?",
+  "Your trial ends and your card is charged {price} today.":
+    "Пробный период закончится, и сегодня с вашей карты спишется {price}.",
+  "Your trial ends and your card is charged today.":
+    "Пробный период закончится, и сегодня с вашей карты будет списана оплата.",
+  "Start plan": "Начать тариф",
   "Monthly credits": "Ежемесячные кредиты",
   "Upgrade now": "Повысить тариф сейчас",
   "Downgrade at renewal": "Понизить тариф при продлении",
@@ -1065,6 +1074,13 @@ export const RU_MESSAGES: Record<string, string> = {
   "Full access, nothing to pay": "Полный доступ без оплаты",
   "Day {days}": "День {days}",
   "{price} / month begins": "Далее {price} в месяц",
+  "Billing period": "Период оплаты",
+  "Yearly −{percent}%": "Год −{percent}%",
+  "{days} days free, then {price} / year. Cancel anytime.":
+    "{days} дн. бесплатно, затем {price} в год. Отмена в любой момент.",
+  "{price} / year": "{price} в год",
+  "{price} / year begins": "Далее {price} в год",
+  "{price} / year. Cancel anytime.": "{price} в год. Отмена в любой момент.",
   "Only the owner of this account can choose a plan.":
     "Только владелец этого аккаунта может выбрать тариф.",
   Terms: "Условия",
@@ -1265,6 +1281,22 @@ export const RU_MESSAGES: Record<string, string> = {
   "Won't do": "Не будем делать",
   "Could not move the ticket": "Не удалось переместить тикет",
   "No tickets yet.": "Тикетов пока нет.",
+  "Bot models": "Модели ботов",
+  "1 bot has its own model:": "1 бот использует свою модель:",
+  "{count} bots have their own model:": "Своя модель у ботов ({count}):",
+  "Use space default": "Использовать модель пространства по умолчанию",
+  "Switching…": "Переключение…",
+  "Switch 1 bot to the space default?": "Переключить 1 бота на модель пространства по умолчанию?",
+  "Switch {count} bots to the space default?":
+    "Переключить ботов на модель пространства по умолчанию ({count})?",
+  "Their own model is cleared. You can pick one again in each bot.":
+    "Их собственная модель будет сброшена. Её можно снова выбрать в каждом боте.",
+  Switch: "Переключить",
+  "1 bot now uses the space default.": "1 бот теперь использует модель пространства по умолчанию.",
+  "{count} bots now use the space default.":
+    "Ботов переведено на модель пространства по умолчанию: {count}.",
+  "Could not switch {failedNames}. Try again.":
+    "Не удалось переключить {failedNames}. Попробуйте снова.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

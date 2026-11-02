@@ -420,6 +420,10 @@ msgstr "{toolCount, plural, one {# כלי} other {# כלים}}"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/ModelCredits.tsx
+msgid "/ month"
+msgstr ""
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr ""
@@ -1023,6 +1027,10 @@ msgstr "Bearer token"
 msgid "Billing"
 msgstr "חיוב"
 
+#: src/components/ModelCredits.tsx
+msgid "Billing period"
+msgstr ""
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "לחסום"
@@ -1152,6 +1160,7 @@ msgstr "לא ניתן לקרוא תמונות"
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/VaultSettings.tsx
@@ -3869,6 +3878,7 @@ msgstr "יום שני"
 msgid "month"
 msgstr "חודש"
 
+#: src/components/ModelCredits.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "חודשי"
@@ -5634,9 +5644,21 @@ msgstr ""
 msgid "Start {trialDays}-day free trial"
 msgstr "התחלת תקופת ניסיון חינם של {trialDays} ימים"
 
+#: src/components/ModelCredits.tsx
+msgid "Start plan"
+msgstr "להתחיל תוכנית"
+
+#: src/components/ModelCredits.tsx
+msgid "Start plan now"
+msgstr "להתחיל את התוכנית עכשיו"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"
 msgstr "התחלת הקלטה"
+
+#: src/components/ModelCredits.tsx
+msgid "Start your plan now?"
+msgstr "להתחיל את התוכנית עכשיו?"
 
 #: src/pages/RoutineRunHistory.tsx
 msgid "Started {count}d late"
@@ -5723,6 +5745,10 @@ msgstr ""
 #: src/pages/Paywall.tsx
 msgid "Subscribe"
 msgstr "הרשמה למנוי"
+
+#: src/components/ModelCredits.tsx
+msgid "Subscribe for {annualPrice} / year"
+msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
@@ -6138,12 +6164,17 @@ msgstr "תקופת ניסיון"
 msgid "Trial ends {day}"
 msgstr "תקופת הניסיון מסתיימת {day}"
 
+#: src/components/ModelCredits.tsx
+msgid "Trials get fewer hours to prevent abuse."
+msgstr "בתקופת ניסיון יש פחות שעות כדי למנוע ניצול לרעה."
+
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "אתרים מהימנים"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "לנסות שוב"
 
@@ -6550,6 +6581,10 @@ msgstr ""
 msgid "year"
 msgstr "שנה"
 
+#: src/components/ModelCredits.tsx
+msgid "Yearly"
+msgstr ""
+
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Yesterday"
@@ -6626,6 +6661,14 @@ msgstr ""
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "צוות של סוכנים שזמינים תמיד<0/>שאפשר להטיל עליהם עבודה אמיתית."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged {price} today."
+msgstr "תקופת הניסיון תסתיים והכרטיס שלך יחויב היום ב-{price}."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged today."
+msgstr "תקופת הניסיון תסתיים והכרטיס שלך יחויב היום."
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

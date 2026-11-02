@@ -5,10 +5,11 @@ import path from "node:path";
 import {
   ChatSdkMessagingSurface,
   createEmulatedSendbluePlatform,
+  ScriptedAgentRuntime,
   SendBlueEmulator,
 } from "@rakazo/adapters";
 import { formatMessagingLinkCode, issueMessagingLinkCode } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { asSystem } from "./system-db.js";
 
 process.env.WAKEUP_DRIVER = "memory";
@@ -147,6 +148,84 @@ describeMessaging("messaging surface journeys", () => {
     expect(emulator.sent.filter((send) => send.kind === "dm" && send.to === sender)).toHaveLength(
       1,
     );
+  });
+
+  it("answers a text sent while an app turn is working back in the chat it came from", async () => {
+    const texter = uniqueNumber();
+    await app.request(
+      emulator.buildInboundRequest({
+        fromNumber: texter,
+        content: "hello",
+        handle: `journey-busy-hello-${stamp}`,
+      }),
+    );
+    const identity = await waitForDatabase(async () => findIdentity(texter));
+    const sentReplies = () =>
+      prisma.messagingOutbound.count({
+        where: { identityId: identity.id, kind: "dm", providerHandle: { not: null } },
+      });
+    await waitForDatabase(async () => (await sentReplies()) === 1);
+
+    // The owner started a turn in the app; it is still queued when the text arrives.
+    const thread = await prisma.thread.findFirst({ where: { botId: identity.botId } });
+    const task = await prisma.task.create({
+      data: {
+        spaceId: identity.spaceId,
+        botId: identity.botId,
+        threadId: thread.id,
+        userId: identity.userId,
+        prompt: "Plan the offsite",
+        status: "queued",
+      },
+    });
+    const appRun = await prisma.run.create({
+      data: {
+        spaceId: identity.spaceId,
+        botId: identity.botId,
+        threadId: thread.id,
+        taskId: task.id,
+        userId: identity.userId,
+        status: "queued",
+        trigger: "user",
+      },
+    });
+
+    const histories = new Map<string, string>();
+    const scripted = ScriptedAgentRuntime.prototype.run;
+    const runtime = vi.spyOn(ScriptedAgentRuntime.prototype, "run").mockImplementation(function (
+      this: ScriptedAgentRuntime,
+      request,
+      context,
+    ) {
+      histories.set(request.runId, JSON.stringify(request.history));
+      return scripted.call(this, request, context);
+    });
+    try {
+      await app.request(
+        emulator.buildInboundRequest({
+          fromNumber: texter,
+          content: "How is it going?",
+          handle: `journey-busy-status-${stamp}`,
+        }),
+      );
+      await waitForDatabase(async () => {
+        const run = await prisma.run.findUnique({ where: { id: appRun.id } });
+        return run.status === "completed";
+      });
+      // The app turn's reply stays in the app, so the text needs its own reply by text.
+      await waitForDatabase(async () => (await sentReplies()) === 2);
+    } finally {
+      runtime.mockRestore();
+    }
+    expect(emulator.sent.filter((send) => send.kind === "dm" && send.to === texter)).toHaveLength(
+      2,
+    );
+    // Only the run that answers the text sees it.
+    const continuation = await prisma.run.findFirst({
+      where: { threadId: thread.id, trigger: "messaging", createdAt: { gt: appRun.createdAt } },
+    });
+    expect(histories.get(appRun.id)).not.toContain("How is it going?");
+    expect(histories.get(continuation.id)).toContain("How is it going?");
   });
 
   it("runs the channel loop: discovery, invite, intro, YES, fan-out, attributed post", async () => {
