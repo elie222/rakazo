@@ -39,7 +39,7 @@ vi.mock("../lib/rpc", () => {
 });
 vi.mock("../lib/artifact-open", () => ({ downloadArtifactBytes: vi.fn() }));
 vi.mock("@lingui/react/macro", () => {
-  const t = (parts: TemplateStringsArray) => parts.join("");
+  const t = (parts: TemplateStringsArray, ...values: unknown[]) => String.raw(parts, ...values);
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 vi.mock("@rakazo/ui-web", () => {
@@ -440,7 +440,7 @@ it("opens skills from the composer's cached list and saves back into it", async 
   }
 });
 
-it("says when memory no longer fits in what the bot reads", async () => {
+it("says how much memory no longer reaches the bot", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const host = document.createElement("div");
   const root = createRoot(host);
@@ -483,7 +483,7 @@ it("says when memory no longer fits in what the bot reads", async () => {
 
     await show(root, <KnowledgeSection botId="fixture" />);
 
-    expect(host.textContent).toContain("does not fit in what the bot reads");
+    expect(host.textContent).toContain("About 20 KB of memory no longer reaches the bot.");
   } finally {
     memoryApi.budget.mockReset().mockResolvedValue({
       limitBytes: 32768,

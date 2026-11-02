@@ -41,13 +41,8 @@ export function memoryRoutes(ctx: RouterContext) {
         }));
       }),
       budget: authed.memory.budget.handler(async ({ context, input }) => {
-        const bot = await deps.prisma.bot.findFirst({
-          where: { id: input.botId, spaceId: context.actor.spaceId },
-          select: { id: true },
-        });
-        if (!bot) throw new IsolationError();
-        // Read through the same store a run uses, so the numbers match what the
-        // bot actually receives, including a semantic provider's documents.
+        await repos.getBot(context.actor, input.botId);
+        // Read through the store a run uses, so the numbers match what the bot receives.
         const documents = await readAgentMemory(deps.memory, input.botId, {
           operationId: "mem",
           traceId: "mem",

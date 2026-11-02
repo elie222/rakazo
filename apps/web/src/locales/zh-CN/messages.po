@@ -442,9 +442,8 @@ msgstr "已在 <0>{0}</0> 打开登录页。请在那里输入验证码，这个
 msgid "A subscription credential is stored securely."
 msgstr "订阅凭据已安全存储。"
 
-#. placeholder {0}: Math.ceil(memoryBytesLeftOut / 1024)
 #: src/pages/KnowledgeSection.tsx
-msgid "About {0} KB of this memory does not fit in what the bot reads."
+msgid "About {kb} KB of memory no longer reaches the bot."
 msgstr ""
 
 #: src/components/InfoTooltip.tsx

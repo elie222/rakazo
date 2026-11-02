@@ -1,12 +1,9 @@
-import type { AdapterContext, MemorySnapshot, MemoryStore } from "@rakazo/adapter-kit";
+import type { AdapterContext, MemoryStore } from "@rakazo/adapter-kit";
+import type { MemoryPromptBudget, MemoryPromptDocumentUse } from "@rakazo/contracts";
 import { byteLength, truncateUtf8 } from "./utf8.js";
 
 /** How much durable memory a prompt carries before the rest is left out. */
 export const AGENT_MEMORY_MAX_BYTES = 32 * 1024;
-
-type ScopedMemoryDocument = MemorySnapshot["documents"][number] & {
-  scope: "bot" | "user";
-};
 
 export type MemoryPromptDocument = {
   scope: "bot" | "user";
@@ -14,24 +11,6 @@ export type MemoryPromptDocument = {
   revision: number;
   updatedAt?: string;
   content: string;
-};
-
-export type MemoryPromptDocumentUse = {
-  scope: "bot" | "user";
-  path: string;
-  revision: number;
-  totalBytes: number;
-  /** Bytes of this document that reach the prompt; 0 when it is left out. */
-  includedBytes: number;
-  truncated: boolean;
-};
-
-export type MemoryPromptPlan = {
-  limitBytes: number;
-  usedBytes: number;
-  documents: MemoryPromptDocumentUse[];
-  /** Documents left out entirely because the budget ran out before them. */
-  omitted: MemoryPromptDocumentUse[];
 };
 
 const PREAMBLE =
@@ -45,8 +24,13 @@ const CLOSING = "\n</durable_memory>";
 export function buildAgentMemoryPrompt(
   input: readonly MemoryPromptDocument[],
   maxBytes = AGENT_MEMORY_MAX_BYTES,
-): { text?: string; plan: MemoryPromptPlan } {
-  const plan: MemoryPromptPlan = { limitBytes: maxBytes, usedBytes: 0, documents: [], omitted: [] };
+): { text?: string; plan: MemoryPromptBudget } {
+  const plan: MemoryPromptBudget = {
+    limitBytes: maxBytes,
+    usedBytes: 0,
+    documents: [],
+    omitted: [],
+  };
   if (input.length === 0) return { plan };
 
   const documents = [...input].sort(
@@ -142,13 +126,7 @@ export async function readAgentMemory(
   return [
     ...botMemory.documents.map((document) => ({ ...document, scope: "bot" as const })),
     ...userMemory.documents.map((document) => ({ ...document, scope: "user" as const })),
-  ].map((document) => ({
-    scope: document.scope,
-    path: document.path,
-    revision: document.revision,
-    updatedAt: document.updatedAt,
-    content: document.content,
-  }));
+  ];
 }
 
 function memoryTimestamp(updatedAt: string | undefined): number {

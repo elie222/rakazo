@@ -442,10 +442,9 @@ msgstr "A sign-in tab opened at <0>{0}</0>. Enter this code there — this windo
 msgid "A subscription credential is stored securely."
 msgstr "A subscription credential is stored securely."
 
-#. placeholder {0}: Math.ceil(memoryBytesLeftOut / 1024)
 #: src/pages/KnowledgeSection.tsx
-msgid "About {0} KB of this memory does not fit in what the bot reads."
-msgstr "About {0} KB of this memory does not fit in what the bot reads."
+msgid "About {kb} KB of memory no longer reaches the bot."
+msgstr "About {kb} KB of memory no longer reaches the bot."
 
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
