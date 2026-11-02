@@ -6162,6 +6162,7 @@ msgstr "신뢰할 수 있는 사이트"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "다시 시도"
 
