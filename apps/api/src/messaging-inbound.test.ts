@@ -1529,11 +1529,14 @@ describe("createMessagingInboundHandler channel routing", () => {
       mediaUrl: null,
     };
     await handle(event);
+    expect(deps.prisma.routine.findMany).not.toHaveBeenCalled();
+    // A bare photo still reaches each bot's routines, but starts no plain run.
     await handle({
       ...event,
       handle: "-1001234:51",
       mediaUrl: "https://cdn.example.com/pic.jpg",
     });
+    expect(deps.prisma.routine.findMany).toHaveBeenCalledTimes(2);
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
     expect(deps.enqueue.mock.calls.filter(([job]) => job.name === "run.continue")).toHaveLength(0);
 

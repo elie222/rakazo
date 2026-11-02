@@ -706,9 +706,8 @@ async function handleChannelEvent(
     });
   }
 
-  // Group runs carry only text: a service message (a pin, a join) or a bare
-  // photo would start every approved bot on an empty prompt.
-  if (!event.content.trim()) return;
+  // A service message (a pin, a join) carries nothing for a bot to read.
+  if (!event.content.trim() && !event.mediaUrl && !event.attachments?.length) return;
 
   // Only approved owners' bots participate.
   const senderMember = await deps.prisma.messagingChannelMember.findUnique({
@@ -751,6 +750,8 @@ async function handleChannelEvent(
       threadId: thread.id,
     };
     if (await wakeMessageRoutines(deps, target, event)) continue;
+    // Group runs carry only text; a bare photo would start an empty prompt.
+    if (!event.content.trim()) continue;
 
     const sent = await deps.events.sendUserMessage({
       spaceId: identity.spaceId,
