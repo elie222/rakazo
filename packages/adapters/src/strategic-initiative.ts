@@ -2,12 +2,11 @@ import type { JobPublisher } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
 import { ACTIVE_RUN_STATUSES, escapePromptData, truncatePlainText } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
-import { spaceHasModelAccess } from "@rakazo/db";
+import { STRATEGIC_INITIATIVE_NONCE_PREFIX, spaceHasModelAccess } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { isUniqueViolation } from "./run-messages.js";
 import { modelCreditBillingEnabled } from "./run-model.js";
 
-export const STRATEGIC_INITIATIVE_NONCE_PREFIX = "strategic-initiative";
 const STRATEGIC_INITIATIVE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const STALE_SCRATCHPAD_ITEM_MS = 12 * 60 * 60 * 1000;
 const MAX_ITEMS_IN_PROMPT = 5;
@@ -70,7 +69,7 @@ export function createStrategicInitiativeReconciler(deps: {
       jobs: deps.jobs,
       billingEnabled: await modelCreditBillingEnabled(deps),
       now,
-      batchSize: 100,
+      pageSize: 100,
     });
   };
 }
@@ -85,14 +84,13 @@ export async function reconcileStrategicInitiatives(deps: {
   prisma: PrismaClient;
   jobs: JobPublisher;
   now: Date;
-  batchSize: number;
+  pageSize: number;
   billingEnabled?: boolean;
 }): Promise<number> {
   const eligibleWhere = strategicBotEligibility(deps.now);
-  if (deps.batchSize <= 0) return 0;
   let queued = 0;
   let cursor: string | undefined;
-  while (queued < deps.batchSize) {
+  for (;;) {
     const bots = await deps.prisma.bot.findMany({
       where: { ...eligibleWhere, ...(cursor ? { id: { gt: cursor } } : {}) },
       select: {
@@ -112,13 +110,12 @@ export async function reconcileStrategicInitiatives(deps: {
         },
       },
       orderBy: { id: "asc" },
-      take: deps.batchSize,
+      take: deps.pageSize,
     });
 
     if (bots.length === 0) break;
     cursor = bots[bots.length - 1]!.id;
     for (const bot of bots) {
-      if (queued >= deps.batchSize) break;
       const membership = await deps.prisma.spaceMember.findUnique({
         where: { spaceId_userId: { spaceId: bot.spaceId, userId: bot.userId } },
         select: { id: true },

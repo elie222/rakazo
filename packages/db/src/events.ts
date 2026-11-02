@@ -61,6 +61,8 @@ import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
 import { recordSecurityEvent } from "./security-events.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
+export const STRATEGIC_INITIATIVE_NONCE_PREFIX = "strategic-initiative";
+
 /** A one-time answer longer than a saved value may be. Nothing is stored or echoed. */
 export class AnswerTooLongError extends Error {
   constructor() {
@@ -838,6 +840,7 @@ async function commitAnswerRunInput(
       userId: true,
       checkpoint: true,
       trigger: true,
+      clientNonce: true,
       task: { select: { prompt: true } },
     },
   });
@@ -935,10 +938,13 @@ async function commitAnswerRunInput(
     }
   }
 
-  // Answering the creation intro's question tells the bot what it is for, so it resumes as
-  // the user's turn: with the conversation and every tool, to get going on that answer.
-  const resumedTrigger =
-    run.trigger === "created" && !approvalAsk && !secretAsk ? "user" : run.trigger;
+  // Answering the creation intro's or a daily check-in's question resumes as the user's
+  // turn: with the conversation and every tool, to get going on that answer.
+  const answersOpener =
+    run.trigger === "created" ||
+    (run.trigger === "routine" &&
+      Boolean(run.clientNonce?.startsWith(`${STRATEGIC_INITIATIVE_NONCE_PREFIX}:`)));
+  const resumedTrigger = answersOpener && !approvalAsk && !secretAsk ? "user" : run.trigger;
   const queued = await tx.run.updateMany({
     where: {
       id: input.runId,

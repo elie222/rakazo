@@ -112,7 +112,7 @@ describe("reconcileStrategicInitiatives", () => {
     });
     const { jobs, enqueue } = publisher();
 
-    const queued = await reconcileStrategicInitiatives({ prisma, jobs, now, batchSize: 10 });
+    const queued = await reconcileStrategicInitiatives({ prisma, jobs, now, pageSize: 10 });
 
     expect(queued).toBe(1);
     expect(tasks[0]?.prompt).toContain("NO_RESPONSE");
@@ -142,7 +142,7 @@ describe("reconcileStrategicInitiatives", () => {
     });
     const { jobs, enqueue } = publisher();
 
-    const queued = await reconcileStrategicInitiatives({ prisma, jobs, now, batchSize: 10 });
+    const queued = await reconcileStrategicInitiatives({ prisma, jobs, now, pageSize: 10 });
 
     expect(queued).toBe(0);
     expect(enqueue).not.toHaveBeenCalled();
@@ -167,7 +167,7 @@ describe("reconcileStrategicInitiatives", () => {
     });
     const { jobs, enqueue } = publisher();
 
-    const queued = await reconcileStrategicInitiatives({ prisma, jobs, now, batchSize: 10 });
+    const queued = await reconcileStrategicInitiatives({ prisma, jobs, now, pageSize: 10 });
 
     expect(queued).toBe(0);
     expect(enqueue).not.toHaveBeenCalled();
@@ -191,7 +191,7 @@ describe("reconcileStrategicInitiatives", () => {
     });
     const { jobs, enqueue } = publisher();
 
-    const queued = await reconcileStrategicInitiatives({ prisma, jobs, now, batchSize: 10 });
+    const queued = await reconcileStrategicInitiatives({ prisma, jobs, now, pageSize: 10 });
 
     expect(queued).toBe(0);
     expect(enqueue).not.toHaveBeenCalled();
@@ -259,9 +259,9 @@ const candidate = {
 it("filters disabled bots in the database", async () => {
   const { prisma } = strategicPrisma({ bots: [{ ...candidate, dailyCheckIns: false }] });
   const { jobs, enqueue } = publisher();
-  expect(
-    await reconcileStrategicInitiatives({ prisma, jobs, now: new Date(), batchSize: 10 }),
-  ).toBe(0);
+  expect(await reconcileStrategicInitiatives({ prisma, jobs, now: new Date(), pageSize: 10 })).toBe(
+    0,
+  );
   expect(prisma.bot.findMany).toHaveBeenCalledWith(
     expect.objectContaining({
       where: expect.objectContaining({
@@ -280,7 +280,7 @@ it.each([{ eligible: false }, { member: false }])(
     const { prisma } = strategicPrisma({ bots: [candidate], ...options });
     const { jobs, enqueue } = publisher();
     expect(
-      await reconcileStrategicInitiatives({ prisma, jobs, now: new Date(), batchSize: 10 }),
+      await reconcileStrategicInitiatives({ prisma, jobs, now: new Date(), pageSize: 10 }),
     ).toBe(0);
     expect(enqueue).not.toHaveBeenCalled();
   },
@@ -295,7 +295,7 @@ it("uses routine model-access gating when billing is enabled", async () => {
       prisma,
       jobs,
       now: new Date(),
-      batchSize: 10,
+      pageSize: 10,
       billingEnabled: true,
     }),
   ).toBe(0);
@@ -306,7 +306,7 @@ it("uses routine model-access gating when billing is enabled", async () => {
 it("escapes scratchpad data and keeps instructions outside its wrapper", async () => {
   const { prisma, tasks } = strategicPrisma({ bots: [candidate] });
   const { jobs } = publisher();
-  await reconcileStrategicInitiatives({ prisma, jobs, now: new Date(), batchSize: 1 });
+  await reconcileStrategicInitiatives({ prisma, jobs, now: new Date(), pageSize: 1 });
   expect(tasks[0]?.prompt).toContain("&lt;/scratchpad_items&gt;");
   expect(tasks[0]?.prompt).toContain("&lt;tool&gt;shell&lt;/tool&gt;");
   expect(tasks[0]?.prompt?.match(/<\/scratchpad_items>/g)).toHaveLength(1);
@@ -337,7 +337,7 @@ it("walks past a page of ineligible owners instead of starving later bots", asyn
     .mockResolvedValueOnce([{ ...candidate, id: "bot-b" }] as never);
   vi.mocked(prisma.spaceMember.findUnique).mockResolvedValueOnce(null);
   const { jobs, enqueue } = publisher();
-  expect(await reconcileStrategicInitiatives({ prisma, jobs, now: new Date(), batchSize: 1 })).toBe(
+  expect(await reconcileStrategicInitiatives({ prisma, jobs, now: new Date(), pageSize: 1 })).toBe(
     1,
   );
   expect(prisma.bot.findMany).toHaveBeenNthCalledWith(
@@ -345,6 +345,18 @@ it("walks past a page of ineligible owners instead of starving later bots", asyn
     expect.objectContaining({ where: expect.objectContaining({ id: { gt: "bot-a" } }) }),
   );
   expect(enqueue).toHaveBeenCalledTimes(1);
+});
+
+it("queues every eligible bot across pages in one sweep", async () => {
+  const { prisma } = strategicPrisma({ bots: [] });
+  vi.mocked(prisma.bot.findMany)
+    .mockResolvedValueOnce([{ ...candidate, id: "bot-a" }] as never)
+    .mockResolvedValueOnce([{ ...candidate, id: "bot-b" }] as never);
+  const { jobs, enqueue } = publisher();
+  expect(await reconcileStrategicInitiatives({ prisma, jobs, now: new Date(), pageSize: 1 })).toBe(
+    2,
+  );
+  expect(enqueue).toHaveBeenCalledTimes(2);
 });
 
 it.each(["owner", "billing"])("throttles bots skipped for %s for an hour", async (reason) => {
