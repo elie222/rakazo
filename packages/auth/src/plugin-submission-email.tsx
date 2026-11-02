@@ -7,34 +7,45 @@ import { emailText, linkStyle, message } from "./email.js";
 export function pluginSubmissionReceivedEmail(
   email: string,
   locale = "en",
+  claim = false,
 ): Promise<TransactionalEmail> {
   const say = emailText(locale);
   return message(
     email,
     locale,
-    say("We received your Rakazo plugin"),
+    claim ? say("We received your Rakazo page claim") : say("We received your Rakazo plugin"),
     <>
-      <Text>{say("Thanks for submitting a plugin to the Rakazo marketplace.")}</Text>
+      <Text>
+        {claim
+          ? say("Thanks for claiming your app's page on Rakazo.")
+          : say("Thanks for submitting a plugin to the Rakazo marketplace.")}
+      </Text>
       <Text>{say("We review every submission and will email you when it's done.")}</Text>
-      <Text>{say("If you did not submit a plugin, ignore this email.")}</Text>
+      <Text>
+        {claim
+          ? say("If you did not claim a page, ignore this email.")
+          : say("If you did not submit a plugin, ignore this email.")}
+      </Text>
     </>,
   );
 }
 
 export function pluginSubmissionAdminEmail(
   to: string,
-  submission: { name: string; source: string; email: string },
+  submission: { name: string; source: string | null; claim?: string | null; email: string },
   reviewUrl: string,
 ): Promise<TransactionalEmail> {
   return message(
     to,
     "en",
-    `New plugin submission: ${submission.name}`,
+    submission.claim
+      ? `New page claim: ${submission.name}`
+      : `New plugin submission: ${submission.name}`,
     <>
       <Text>
         {submission.name} from {submission.email}
       </Text>
-      <Text>{submission.source}</Text>
+      <Text>{submission.source ?? submission.claim}</Text>
       <Text>
         <Link href={reviewUrl} style={linkStyle}>
           Review
@@ -50,6 +61,7 @@ export function pluginSubmissionReviewedEmail(
     name: string;
     status: "approved" | "rejected";
     reason: string | null;
+    claim?: boolean;
   },
   locale = "en",
 ): Promise<TransactionalEmail> {
@@ -59,14 +71,20 @@ export function pluginSubmissionReviewedEmail(
   return message(
     submission.email,
     locale,
-    approved
-      ? say("{name} is in the Rakazo marketplace", { name })
-      : say("Your Rakazo plugin submission: {name}", { name }),
+    submission.claim
+      ? say("Your Rakazo page claim: {name}", { name })
+      : approved
+        ? say("{name} is in the Rakazo marketplace", { name })
+        : say("Your Rakazo plugin submission: {name}", { name }),
     <>
       <Text>
-        {approved
-          ? say("{name} is now listed in the Rakazo plugin marketplace.", { name })
-          : say("We couldn't list {name} in the Rakazo plugin marketplace.", { name })}
+        {submission.claim
+          ? approved
+            ? say("Your changes to the {name} page are approved.", { name })
+            : say("We couldn't approve your changes to the {name} page.", { name })
+          : approved
+            ? say("{name} is now listed in the Rakazo plugin marketplace.", { name })
+            : say("We couldn't list {name} in the Rakazo plugin marketplace.", { name })}
       </Text>
       {submission.reason ? <Text>{submission.reason}</Text> : null}
       <Text>{say("Have any questions? Reply to this email.")}</Text>

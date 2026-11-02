@@ -2744,6 +2744,10 @@ msgstr "Email"
 msgid "Email is not allowed to register"
 msgstr "Email is not allowed to register"
 
+#: src/pages/PluginSubmissionsPanel.tsx
+msgid "Email isn't at this website's domain"
+msgstr "Email isn't at this website's domain"
+
 #: src/components/ConfirmIdentityDialog.tsx
 msgid "Email me a code"
 msgstr "Email me a code"

@@ -8,12 +8,18 @@ import {
   pluginSubmissionReviewedEmail,
 } from "@rakazo/auth";
 import type {
+  IntegrationClaim,
   PluginMarketplaceEntry,
   PluginSubmission,
   PluginSubmissionReview,
   PluginSubmissionStatus,
 } from "@rakazo/contracts";
-import { PLUGIN_SUBMISSIONS_PATH, PluginSubmissionInputSchema } from "@rakazo/contracts";
+import {
+  INTEGRATION_CLAIMS_PATH,
+  IntegrationClaimInputSchema,
+  PLUGIN_SUBMISSIONS_PATH,
+  PluginSubmissionInputSchema,
+} from "@rakazo/contracts";
 import { pluginCategory } from "@rakazo/core";
 import type { PluginSubmission as PluginSubmissionRow, PrismaClient } from "@rakazo/db";
 import type { Context } from "hono";
@@ -49,6 +55,19 @@ function browseUrl(source: string): string {
     : ref.gitUrl;
 }
 
+/** Only a hint for the reviewer: anyone can type any address, and a mail provider's own app matches. */
+function emailMatchesWebsite(email: string, website: string | null): boolean {
+  if (!website) return false;
+  const domain = email.slice(email.lastIndexOf("@") + 1).toLowerCase();
+  let host: string;
+  try {
+    host = new URL(website).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return false;
+  }
+  return domain === host || domain.endsWith(`.${host}`) || host.endsWith(`.${domain}`);
+}
+
 function pluginSubmissionDto(row: PluginSubmissionRow): PluginSubmission {
   return {
     id: row.id,
@@ -56,7 +75,9 @@ function pluginSubmissionDto(row: PluginSubmissionRow): PluginSubmission {
     name: row.name,
     website: row.website,
     logo: row.logo,
-    source: browseUrl(row.source),
+    claim: row.claim,
+    emailMatchesWebsite: row.claim !== null && emailMatchesWebsite(row.email, row.website),
+    source: row.source ? browseUrl(row.source) : null,
     description: row.description,
     testing: row.testing,
     status: row.status as PluginSubmissionStatus,
@@ -64,6 +85,42 @@ function pluginSubmissionDto(row: PluginSubmissionRow): PluginSubmission {
     createdAt: row.createdAt.toISOString(),
     reviewedAt: row.reviewedAt?.toISOString() ?? null,
   };
+}
+
+type Issue = { field: string; message: string };
+
+const issuesOf = (error: { issues: Array<{ path: PropertyKey[]; message: string }> }): Issue[] =>
+  error.issues.map((issue) => ({
+    field: issue.path.map(String).join("."),
+    message: issue.message,
+  }));
+
+/** A plugin is matched to its pending resubmissions by repository, a claim by page. */
+function submissionData(body: unknown) {
+  if (body && typeof body === "object" && "claim" in body) {
+    const parsed = IntegrationClaimInputSchema.safeParse(body);
+    if (!parsed.success) return { issues: issuesOf(parsed.error) };
+    const { logo, ...input } = parsed.data;
+    return {
+      match: { claim: input.claim },
+      data: { ...input, logo: logo ?? null, source: null, testing: null },
+    };
+  }
+  const parsed = PluginSubmissionInputSchema.safeParse(body);
+  if (!parsed.success) return { issues: issuesOf(parsed.error) };
+  const { tested: _tested, ...input } = parsed.data;
+  try {
+    const ref = parsePluginSource(input.source);
+    if (new URL(ref.gitUrl).hostname !== "github.com")
+      throw new Error("Use a public GitHub repository");
+    const source = sourceString(ref, ref.ref);
+    return {
+      match: { source },
+      data: { ...input, source, website: input.website ?? null, claim: null },
+    };
+  } catch (error) {
+    return { issues: [{ field: "source", message: (error as Error).message }] };
+  }
 }
 
 export function pluginSubmissionRoutes(
@@ -77,8 +134,6 @@ export function pluginSubmissionRoutes(
   const app = new Hono();
   const submissions = windowCounter(HOUR_MS);
   const confirmations = windowCounter(24 * HOUR_MS);
-  const invalid = (c: Context, issues: Array<{ field: string; message: string }>) =>
-    c.json({ error: "Invalid submission", issues }, 400);
 
   app.post(PLUGIN_SUBMISSIONS_PATH, async (c) => {
     if (submissions(throttleKey(deps.clientIp(c))) > SUBMISSIONS_PER_IP_PER_HOUR) {
@@ -94,31 +149,16 @@ export function pluginSubmissionRoutes(
     } catch {
       return c.json({ error: "Send the submission as JSON" }, 400);
     }
-    const parsed = PluginSubmissionInputSchema.safeParse(body);
-    if (!parsed.success) {
-      return invalid(
-        c,
-        parsed.error.issues.map((issue) => ({
-          field: issue.path.join("."),
-          message: issue.message,
-        })),
-      );
+    const submission = submissionData(body);
+    if (submission.issues) {
+      return c.json({ error: "Invalid submission", issues: submission.issues }, 400);
     }
-    const { tested: _tested, ...input } = parsed.data;
-    let source: string;
-    try {
-      const ref = parsePluginSource(input.source);
-      if (new URL(ref.gitUrl).hostname !== "github.com")
-        throw new Error("Use a public GitHub repository");
-      source = sourceString(ref, ref.ref);
-    } catch (error) {
-      return invalid(c, [{ field: "source", message: (error as Error).message }]);
-    }
-    const email = input.email.toLowerCase();
-    const data = { ...input, email, source, website: input.website ?? null };
+    const email = submission.data.email.toLowerCase();
+    const data = { ...submission.data, email };
+    const claim = data.claim !== null;
     // The same author resubmitting while it waits updates theirs; anyone else's is kept apart.
     const pending = await deps.prisma.pluginSubmission.findFirst({
-      where: { source, email, status: "pending" },
+      where: { ...submission.match, email, status: "pending" },
       select: { id: true },
     });
     // A submission reviewed since the lookup keeps what the admin saw; this becomes a new one.
@@ -134,7 +174,10 @@ export function pluginSubmissionRoutes(
       ? await deps.prisma.pluginSubmission.findUniqueOrThrow({ where: { id: pending.id } })
       : await deps.prisma.pluginSubmission.create({ data });
     if (confirmations(email) <= CONFIRMATIONS_PER_EMAIL_PER_DAY) {
-      sendLater(deps, pluginSubmissionReceivedEmail(email, emailLocale(null, c.req.raw.headers)));
+      sendLater(
+        deps,
+        pluginSubmissionReceivedEmail(email, emailLocale(null, c.req.raw.headers), claim),
+      );
     }
     if (!updated) {
       const reviewUrl = new URL("/admin/plugins", deps.webOrigin).href;
@@ -144,6 +187,13 @@ export function pluginSubmissionRoutes(
     }
     return c.json({ id: row.id, status: row.status }, updated ? 200 : 201);
   });
+
+  // The marketing site reads this when it builds; a few minutes of staleness is fine.
+  app.get(INTEGRATION_CLAIMS_PATH, async (c) =>
+    c.json({ claims: await approvedIntegrationClaims(deps.prisma) }, 200, {
+      "cache-control": "public, max-age=300",
+    }),
+  );
 
   return app;
 }
@@ -169,7 +219,8 @@ export async function reviewPluginSubmission(
   if (!row) throw new ORPCError("NOT_FOUND", { message: "Submission not found" });
   if (row.status !== "pending") throw new ORPCError("CONFLICT", { message: "Already reviewed" });
   let listing = {};
-  if (input.decision === "approve") {
+  // A claim only changes how its page reads, so there is no plugin to check.
+  if (input.decision === "approve" && row.source) {
     // Approval lists the commit that was checked, the same way the other registries pin theirs.
     const preview = await previewPluginInstall({
       source: row.source,
@@ -211,7 +262,7 @@ export async function reviewPluginSubmission(
       .catch(() => null)
       .then((author) =>
         pluginSubmissionReviewedEmail(
-          { email: row.email, name: row.name, status, reason },
+          { email: row.email, name: row.name, status, reason, claim: row.claim !== null },
           emailLocale(author?.locale),
         ),
       ),
@@ -256,6 +307,23 @@ export async function approvedPluginEntries(
         hasConnector: row.hasConnector,
         skillCount: row.skillCount,
       },
+    ];
+  });
+}
+
+/** The newest approved claim for each integration page. */
+export async function approvedIntegrationClaims(prisma: PrismaClient): Promise<IntegrationClaim[]> {
+  const rows = await prisma.pluginSubmission.findMany({
+    where: { status: "approved", claim: { not: null } },
+    orderBy: { reviewedAt: "desc" },
+    select: { claim: true, website: true, logo: true, description: true },
+  });
+  const claimed = new Set<string>();
+  return rows.flatMap((row) => {
+    if (!row.claim || !row.website || claimed.has(row.claim)) return [];
+    claimed.add(row.claim);
+    return [
+      { slug: row.claim, website: row.website, logo: row.logo, description: row.description },
     ];
   });
 }

@@ -311,10 +311,12 @@ model PluginSubmission {
   email        String
   name         String
   website      String?
-  logo         String
-  source       String
+  logo         String?
+  /// The integration page slug this claims; claims have no source or testing.
+  claim        String?
+  source       String?
   description  String
-  testing      String
+  testing      String?
   status       String    @default("pending")
   reason       String?
   pinnedSource String?
@@ -326,6 +328,7 @@ model PluginSubmission {
 
   @@index([status, createdAt])
   @@index([source])
+  @@index([claim, status])
   @@map("plugin_submissions")
 }
 

@@ -81,6 +81,8 @@ const submission: PluginSubmission = {
   source: "https://github.com/example/notes",
   description: "Daily planning",
   testing: "Ask it to plan a day.",
+  claim: null,
+  emailMatchesWebsite: false,
   status: "pending",
   reason: null,
   createdAt: "2026-10-01T00:00:00.000Z",
@@ -132,6 +134,38 @@ it("lists pending submissions with their links", () => {
   expect(row?.textContent).toContain("Ask it to plan a day.");
   const links = [...(row?.querySelectorAll("a") ?? [])].map((link) => link.getAttribute("href"));
   expect(links).toEqual([submission.source, submission.website, `mailto:${submission.email}`]);
+});
+
+it("shows a claim's page and flags an email at another domain", async () => {
+  api.submissions.mockResolvedValue([
+    {
+      ...submission,
+      source: null,
+      testing: null,
+      claim: "notes",
+      email: "someone@mail.example.test",
+    },
+  ]);
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await act(async () => {
+    root.render(
+      <QueryClientProvider client={new QueryClient()}>
+        <PluginSubmissionsPanel />
+      </QueryClientProvider>,
+    );
+  });
+  await vi.waitFor(() => {
+    if (!container.textContent?.includes("Email isn't")) throw new Error("Loading");
+  });
+  const row = container.querySelector('[data-testid="plugin-submission"]');
+  const links = [...(row?.querySelectorAll("a") ?? [])].map((link) => link.getAttribute("href"));
+  expect(links).toEqual([
+    "https://rakazo.com/integrations/notes/",
+    submission.website,
+    "mailto:someone@mail.example.test",
+  ]);
+  expect(row?.textContent).not.toContain("Testing");
 });
 
 it("approves a submission", async () => {

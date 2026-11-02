@@ -8,6 +8,7 @@ import {
   INTEGRATIONS_PATH,
   categoryOf,
   integrationBreadcrumbs,
+  integrationClaimPath,
   integrationPath,
   integrationUrlSlug,
   relatedIntegrations,
@@ -59,6 +60,11 @@ const groups = [
       <p class="ix-facts">
         <span>{actions.length} actions</span>
         <span>{AUTH_LABEL[integration.auth]}</span>
+        {
+          integration.website && (
+            <a href={integration.website}>{new URL(integration.website).hostname.replace(/^www\./, "")}</a>
+          )
+        }
       </p>
     </div>
     <a class="button button--primary ix-detail__cta" href={APP_URL}>Connect {name}</a>
@@ -118,6 +124,14 @@ const groups = [
           ))}
         </ul>
       </section>
+    )
+  }
+
+  {
+    !integration.website && (
+      <p class="ix-submit">
+        <a href={integrationClaimPath(integration.slug)} rel="nofollow">Claim this page</a>
+      </p>
     )
   }
 </SiteFrame>

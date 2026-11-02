@@ -1,0 +1,57 @@
+---
+import SiteFrame from "../../../components/SiteFrame.astro";
+import type { SubmissionField } from "../../../components/SubmissionForm.astro";
+import SubmissionForm from "../../../components/SubmissionForm.astro";
+import type { Integration } from "../../../integrations";
+import { INTEGRATIONS, integrationPath, integrationUrlSlug } from "../../../integrations";
+
+interface Props {
+  integration: Integration;
+}
+
+export function getStaticPaths() {
+  return INTEGRATIONS.map((integration) => ({
+    params: { slug: integrationUrlSlug(integration.slug) },
+    props: { integration },
+  }));
+}
+
+const { integration } = Astro.props;
+const { name } = integration;
+
+const fields: SubmissionField[] = [
+  { name: "email", label: "Work email", placeholder: "you@acme.com", type: "email", required: true },
+  {
+    name: "website",
+    label: "Website URL",
+    placeholder: "https://acme.com",
+    type: "url",
+    required: true,
+  },
+  { name: "logo", label: "Logo URL", placeholder: integration.logo ?? "https://acme.com/logo.svg", type: "url" },
+  {
+    name: "description",
+    label: "Description",
+    type: "textarea",
+    required: true,
+    value: integration.description,
+  },
+];
+---
+
+<SiteFrame
+  title={`Claim the ${name} page on Rakazo`}
+  description={`Edit how ${name} appears on Rakazo.`}
+  index={false}
+>
+  <h1>Claim {name}</h1>
+  <p>
+    Edit how <a href={integrationPath(integration.slug)}>{name}</a> appears on Rakazo and link to
+    your site. We review every claim.
+  </p>
+  <SubmissionForm
+    fields={fields}
+    hidden={{ claim: integrationUrlSlug(integration.slug), name }}
+    submitLabel="Claim page"
+  />
+</SiteFrame>

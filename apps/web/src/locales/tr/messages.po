@@ -2744,6 +2744,10 @@ msgstr "E-posta"
 msgid "Email is not allowed to register"
 msgstr "Bu e-posta adresinin kaydolmasına izin verilmiyor"
 
+#: src/pages/PluginSubmissionsPanel.tsx
+msgid "Email isn't at this website's domain"
+msgstr "E-posta bu web sitesinin alan adında değil"
+
 #: src/components/ConfirmIdentityDialog.tsx
 msgid "Email me a code"
 msgstr ""

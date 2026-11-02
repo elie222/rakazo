@@ -2744,6 +2744,10 @@ msgstr "אימייל"
 msgid "Email is not allowed to register"
 msgstr "האימייל הזה לא מורשה להירשם"
 
+#: src/pages/PluginSubmissionsPanel.tsx
+msgid "Email isn't at this website's domain"
+msgstr "האימייל לא בדומיין של האתר הזה"
+
 #: src/components/ConfirmIdentityDialog.tsx
 msgid "Email me a code"
 msgstr ""

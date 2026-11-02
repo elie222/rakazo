@@ -1,5 +1,5 @@
 import { EmailEmulator } from "@rakazo/adapters";
-import { PLUGIN_SUBMISSIONS_PATH } from "@rakazo/contracts";
+import { INTEGRATION_CLAIMS_PATH, PLUGIN_SUBMISSIONS_PATH } from "@rakazo/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const preview = vi.hoisted(() => vi.fn());
@@ -8,9 +8,13 @@ vi.mock("@rakazo/adapters", async (original) => ({
   previewPluginInstall: preview,
 }));
 
-const { approvedPluginEntries, pluginSubmissionRoutes, reviewPluginSubmission } = await import(
-  "./plugin-submissions.js"
-);
+const {
+  approvedIntegrationClaims,
+  approvedPluginEntries,
+  listPluginSubmissions,
+  pluginSubmissionRoutes,
+  reviewPluginSubmission,
+} = await import("./plugin-submissions.js");
 
 const SHA = "a".repeat(40);
 const valid = {
@@ -22,8 +26,20 @@ const valid = {
   testing: "Ask a bot to find ticket 42.",
   tested: true,
 };
+const claim = {
+  claim: "acme_tickets",
+  email: "owner@acme.test",
+  name: "Acme Tickets",
+  website: "https://www.acme.test",
+  description: "Tickets your whole team can search.",
+};
 
-type Row = Record<string, unknown> & { id: string; status: string; source: string };
+type Row = Record<string, unknown> & {
+  id: string;
+  status: string;
+  source: string | null;
+  claim: string | null;
+};
 
 function fakePrisma(users: Array<{ id: string; email: string; emailVerified: boolean }> = []) {
   const rows: Row[] = [];
@@ -33,10 +49,16 @@ function fakePrisma(users: Array<{ id: string; email: string; emailVerified: boo
     ...data,
   });
   const pluginSubmission = {
-    findFirst: async ({ where }: { where: { source: string; email: string; status: string } }) =>
+    findFirst: async ({
+      where,
+    }: {
+      where: { source?: string; claim?: string; email: string; status: string };
+    }) =>
       rows.find(
         (row) =>
-          row.source === where.source && row.email === where.email && row.status === where.status,
+          (where.claim ? row.claim === where.claim : row.source === where.source) &&
+          row.email === where.email &&
+          row.status === where.status,
       ) ?? null,
     findUnique: async ({ where }: { where: { id: string } }) => {
       const row = rows.find((candidate) => candidate.id === where.id);
@@ -73,7 +95,13 @@ function fakePrisma(users: Array<{ id: string; email: string; emailVerified: boo
       Object.assign(row, data, { updatedAt: new Date() });
       return { count: 1 };
     },
-    findMany: async () => rows.filter((row) => row.status === "approved" && row.pinnedSource),
+    findMany: async ({ where }: { where: { status: string; claim?: unknown } }) =>
+      rows
+        .filter((row) =>
+          where.claim ? row.status === where.status && row.claim : row.status === where.status,
+        )
+        .filter((row) => where.claim || where.status !== "approved" || row.pinnedSource)
+        .toSorted((a, b) => Number(b.reviewedAt ?? 0) - Number(a.reviewedAt ?? 0)),
   };
   const user = {
     findUnique: async ({ where }: { where: { id: string } }) =>
@@ -99,7 +127,9 @@ function routes(prisma: never, email = new EmailEmulator()) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
-  return { submit, email };
+  const claims = async () =>
+    (await (await app.request(INTEGRATION_CLAIMS_PATH)).json()) as { claims: unknown[] };
+  return { submit, claims, email };
 }
 
 beforeEach(() => preview.mockReset());
@@ -313,5 +343,88 @@ describe("reviewing submissions", () => {
       reviewPluginSubmission(deps, { id: "sub-1", decision: "approve" }),
     ).rejects.toThrow("This plugin would only install in part");
     expect(rows[0]!.status).toBe("pending");
+  });
+});
+
+describe("integration page claims", () => {
+  function reviewDeps(prisma: never) {
+    return {
+      prisma,
+      email: new EmailEmulator(),
+      onEmailError: (error: unknown) => {
+        throw error;
+      },
+      env: {} as never,
+    };
+  }
+
+  it("queues a claim for review without a repository and tells admins it is a claim", async () => {
+    const { rows, prisma } = fakePrisma();
+    const { submit, email } = routes(prisma);
+    const response = await submit(claim);
+    expect(response.status).toBe(201);
+    expect(rows[0]).toMatchObject({
+      claim: "acme_tickets",
+      source: null,
+      testing: null,
+      logo: null,
+    });
+    await vi.waitFor(() => expect(email.sent).toHaveLength(2));
+    const admin = email.sent.find((message) => message.to === "admin@example.test")!;
+    expect(admin.subject).toBe("New page claim: Acme Tickets");
+    const owner = email.sent.find((message) => message.to === claim.email)!;
+    expect(owner.text).not.toContain(claim.name);
+  });
+
+  it("updates the owner's pending claim for the same page", async () => {
+    const { rows, prisma } = fakePrisma();
+    const { submit } = routes(prisma);
+    await submit(claim);
+    expect((await submit({ ...claim, description: "Sharper." })).status).toBe(200);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.description).toBe("Sharper.");
+  });
+
+  it("needs a website to link to", async () => {
+    const { rows, prisma } = fakePrisma();
+    const { website: _website, ...noWebsite } = claim;
+    const response = await routes(prisma).submit(noWebsite);
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { issues: Array<{ field: string }> };
+    expect(body.issues.map((issue) => issue.field)).toEqual(["website"]);
+    expect(rows).toHaveLength(0);
+  });
+
+  it("shows reviewers whether the email is at the website's domain", async () => {
+    const { prisma } = fakePrisma();
+    const { submit } = routes(prisma);
+    await submit(claim);
+    await submit({ ...claim, email: "someone@mail.example" });
+    expect(
+      (await listPluginSubmissions(prisma, "pending")).map((row) => row.emailMatchesWebsite),
+    ).toEqual([true, false]);
+  });
+
+  it("approves without previewing a plugin and publishes the newest claim per page", async () => {
+    const { rows, prisma } = fakePrisma();
+    const { submit, claims } = routes(prisma);
+    await submit(claim);
+    await submit({ ...claim, email: "other@acme.test", description: "Newer words." });
+    await reviewPluginSubmission(reviewDeps(prisma), { id: "sub-1", decision: "approve" });
+    await reviewPluginSubmission(reviewDeps(prisma), { id: "sub-2", decision: "approve" });
+    rows[0]!.reviewedAt = new Date(1);
+    rows[1]!.reviewedAt = new Date(2);
+    expect(preview).not.toHaveBeenCalled();
+    expect(await approvedIntegrationClaims(prisma)).toEqual([
+      {
+        slug: "acme_tickets",
+        website: "https://www.acme.test",
+        logo: null,
+        description: "Newer words.",
+      },
+    ]);
+    expect((await claims()).claims).toHaveLength(1);
+    // A claim never becomes an installable plugin.
+    expect(await approvedPluginEntries(prisma)).toEqual([]);
   });
 });

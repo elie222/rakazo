@@ -907,7 +907,10 @@ export const PluginMarketplaceCatalogSchema = z.object({
 export type PluginMarketplaceCatalog = z.infer<typeof PluginMarketplaceCatalogSchema>;
 
 export const PLUGIN_SUBMISSIONS_PATH = "/api/v1/plugin-submissions";
+/** Approved claims, public so the marketing site can show each owner's page at build time. */
+export const INTEGRATION_CLAIMS_PATH = "/api/v1/integration-claims";
 export const SUBMIT_PLUGIN_URL = "https://rakazo.com/plugins/submit/";
+export const integrationPageUrl = (slug: string) => `https://rakazo.com/integrations/${slug}/`;
 
 const HttpsUrlSchema = z
   .string()
@@ -928,12 +931,42 @@ export const PluginSubmissionInputSchema = z.object({
 });
 export type PluginSubmissionInput = z.infer<typeof PluginSubmissionInputSchema>;
 
+/** An app's owner claiming its integration page to describe it and link their site. */
+export const IntegrationClaimInputSchema = z.object({
+  /** The page's URL slug, as in `integrationPageUrl`. */
+  claim: z
+    .string()
+    .max(100)
+    .regex(/^[a-z0-9_-]+$/),
+  email: z.string().trim().max(254).email(),
+  name: z.string().trim().min(1).max(80),
+  website: HttpsUrlSchema,
+  logo: HttpsUrlSchema.optional(),
+  description: z.string().trim().min(1).max(2000),
+});
+export type IntegrationClaimInput = z.infer<typeof IntegrationClaimInputSchema>;
+
+export const IntegrationClaimSchema = z.object({
+  slug: z.string(),
+  website: z.string(),
+  logo: z.string().nullable(),
+  description: z.string(),
+});
+export type IntegrationClaim = z.infer<typeof IntegrationClaimSchema>;
+
 export const PluginSubmissionStatusSchema = z.enum(["pending", "approved", "rejected"]);
 export type PluginSubmissionStatus = z.infer<typeof PluginSubmissionStatusSchema>;
 
 export const PluginSubmissionSchema = PluginSubmissionInputSchema.omit({ tested: true }).extend({
   id: z.string(),
   website: z.string().nullable(),
+  logo: z.string().nullable(),
+  source: z.string().nullable(),
+  testing: z.string().nullable(),
+  /** The integration page URL slug a claim is for; null for plugins. */
+  claim: z.string().nullable(),
+  /** For a claim, whether the submitter's email is at the website's domain. */
+  emailMatchesWebsite: z.boolean(),
   status: PluginSubmissionStatusSchema,
   reason: z.string().nullable(),
   createdAt: z.string(),
