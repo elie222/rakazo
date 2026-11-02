@@ -359,12 +359,69 @@ export function parseConnectorToolArgs(
       "Tool schema is unsupported: patternProperties with additionalProperties false",
     );
   }
-  const schema = z.fromJSONSchema(inputSchema as never);
+  const schema = z.fromJSONSchema(hoistPointerRefs(inputSchema) as never);
   const parsed = schema.safeParse(args);
   if (!parsed.success) {
     throw new Error(`Tool arguments are invalid: ${z.prettifyError(parsed.error)}`);
   }
   return parsed.data as Record<string, unknown>;
+}
+
+/** Zod resolves only `#` and `#/$defs/<name>` refs, but a valid schema may point anywhere in
+ * itself (`#/properties/values/anyOf/0`). Copy each such target into the definitions map and
+ * point the ref there; targets are registered before they are walked so cycles stay refs. */
+function hoistPointerRefs(root: Record<string, unknown>): Record<string, unknown> {
+  const legacyDraft =
+    root.$schema === "http://json-schema.org/draft-07/schema#" ||
+    root.$schema === "http://json-schema.org/draft-04/schema#";
+  const defsKey = legacyDraft ? "definitions" : "$defs";
+  const container =
+    root.$defs != null ? "$defs" : root.definitions != null ? "definitions" : defsKey;
+  const existing = (root[container] ?? {}) as Record<string, unknown>;
+  const defs: Record<string, unknown> = {};
+  const hoisted = new Map<string, string>();
+  let changed = false;
+
+  const resolve = (pointer: string): unknown => {
+    let node: unknown = root;
+    for (const raw of pointer.slice(2).split("/")) {
+      let segment: string;
+      try {
+        segment = decodeURIComponent(raw).replace(/~1/g, "/").replace(/~0/g, "~");
+      } catch {
+        return;
+      }
+      if (node == null || typeof node !== "object" || !Object.hasOwn(node, segment)) return;
+      node = (node as Record<string, unknown>)[segment];
+    }
+    return node;
+  };
+
+  const walk = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(walk);
+    if (node == null || typeof node !== "object") return node;
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(node)) result[key] = walk(value);
+    const ref = result.$ref;
+    if (typeof ref !== "string" || !ref.startsWith("#/")) return result;
+    const segments = ref.slice(2).split("/");
+    if (segments.length === 2 && segments[0] === defsKey) return result;
+    let name = hoisted.get(ref);
+    if (!name) {
+      const target = resolve(ref);
+      if (target === undefined) return result;
+      name = `ref${hoisted.size}`;
+      while (Object.hasOwn(existing, name)) name = `_${name}`;
+      hoisted.set(ref, name);
+      defs[name] = walk(target);
+    }
+    changed = true;
+    return { ...result, $ref: `#/${defsKey}/${name}` };
+  };
+
+  const walked = walk(root) as Record<string, unknown>;
+  if (!changed) return root;
+  return { ...walked, [container]: { ...(walked[container] as object), ...defs } };
 }
 
 export function assertConnectorToolArgs(

@@ -497,6 +497,47 @@ describe("lazy tool catalog", () => {
     expect(executeResolved).not.toHaveBeenCalled();
   });
 
+  it("validates args against local refs that point inside the schema", () => {
+    const value = {
+      anyOf: [
+        { type: "string" },
+        { type: "number" },
+        {
+          type: "object",
+          properties: { nested: { $ref: "#/properties/values/additionalProperties/anyOf/0" } },
+        },
+      ],
+    };
+    const schema = {
+      type: "object",
+      properties: {
+        resource_type: { type: "string" },
+        values: {
+          type: "object",
+          additionalProperties: {
+            anyOf: [
+              value,
+              {
+                type: "array",
+                items: { $ref: "#/properties/values/additionalProperties/anyOf/0" },
+              },
+            ],
+          },
+        },
+      },
+      required: ["resource_type", "values"],
+    };
+
+    const args = {
+      resource_type: "companies",
+      values: { name: "Acme", domains: ["acme.test"], owner: { nested: { nested: 1 } } },
+    };
+    expect(() => assertConnectorToolArgs(schema, args)).not.toThrow();
+    expect(() =>
+      assertConnectorToolArgs(schema, { resource_type: "companies", values: { name: true } }),
+    ).toThrow(/invalid/i);
+  });
+
   it("accepts group-qualified names a model builds from search output", () => {
     const route = (resourceId: string, toolName: string, catalogGroup: string) => ({
       connectorId: "mcp",
