@@ -387,6 +387,50 @@ const TWO_CODES = `<!doctype html><title>Two codes</title><style>input { width: 
     for (const box of boxes.slice(0, 6)) box.value = "1";
   </script>`;
 
+// Code pages that name only the first box, with the prompt, and leave the other boxes unnamed; some
+// set no length limit and size their boxes narrow instead. Focus moves on by itself after each digit.
+// "stray" moves focus to an unrelated field instead, "long" has more unnamed boxes than any code.
+const FIRST_LABEL_ONLY = `<!doctype html><title>First label</title><style>input { width: 36px }</style>
+  <section id="text"><label for="text-1">Code from Larkspur by text</label></section>
+  <section id="app"></section><section id="call"></section><section id="stray"></section>
+  <section id="long"></section>
+  <section id="card">${["Card 1", "Card 2", "Card 3", "Card 4", "Expiry", "CVC"]
+    .map(
+      (hint) => `<input type="tel" inputmode="numeric" placeholder="${hint}" style="width:60px">`,
+    )
+    .join("")}</section>
+  <section id="grid">${Array.from(
+    { length: 8 },
+    (_, i) =>
+      `<input type="number" min="0" max="9" value="7" placeholder="Cell ${i + 1}" style="width:40px">`,
+  ).join("")}</section>
+  <script>
+    const add = (id, attributes, label, count, next) => {
+      const section = document.getElementById(id);
+      const boxes = Array.from({ length: count }, (_, i) => {
+        const box = document.createElement("input");
+        for (const [name, value] of Object.entries(attributes)) box.setAttribute(name, value);
+        if (i === 0 && label) box.setAttribute(label[0], label[1]);
+        if (i === 0 && id === "text") box.id = "text-1";
+        box.addEventListener("input", () => {
+          box.value = box.value.replace(/[^0-9]/g, "").slice(-1);
+          if (box.value) next(boxes, i)?.focus();
+        });
+        section.append(box);
+        return box;
+      });
+    };
+    const following = (boxes, i) => boxes[i + 1];
+    add("text", { maxlength: "1" }, null, 6, following);
+    add("app", { type: "tel", inputmode: "numeric", autocomplete: "one-time-code" },
+      ["aria-label", "Code from Larkspur by app"], 6, following);
+    add("call", { type: "number", min: "0", max: "9" }, ["aria-label", "Code from Larkspur by call"], 6, following);
+    add("stray", { maxlength: "1" }, ["aria-label", "Stray code"], 4, (boxes, i) =>
+      boxes[i + 1] ?? document.getElementById("phone"));
+    document.getElementById("stray").insertAdjacentHTML("beforeend", '<input id="phone" aria-label="Phone" style="width:200px">');
+    add("long", { maxlength: "1" }, ["aria-label", "Long code"], 10, following);
+  </script>`;
+
 test("live page helper types codes as real key presses into one-box-per-digit fields", async () => {
   test.setTimeout(240_000);
   const profile = await mkdtemp(path.join(os.tmpdir(), "page-browser-test-"));
@@ -428,9 +472,11 @@ test("live page helper types codes as real key presses into one-box-per-digit fi
           ? "<title>Signed in</title>"
           : route.request().url().endsWith("/two")
             ? TWO_CODES
-            : route.request().url().endsWith("/next")
-              ? '<title>Next</title><input aria-label="Next" autofocus>'
-              : CODE_FIELDS,
+            : route.request().url().endsWith("/first")
+              ? FIRST_LABEL_ONLY
+              : route.request().url().endsWith("/next")
+                ? '<title>Next</title><input aria-label="Next" autofocus>'
+                : CODE_FIELDS,
       }),
     );
     const open = async () => {
@@ -622,6 +668,40 @@ test("live page helper types codes as real key presses into one-box-per-digit fi
       .locator("#codes input")
       .evaluateAll((boxes) => boxes.map((box) => (box as HTMLInputElement).value).join(""));
     expect(digits).toBe("111111482913");
+
+    // Pages that name only the first box still get the whole code, with or without a length limit.
+    await page.goto("https://code.example.test/first");
+    await refresh();
+    for (const [section, name] of [
+      ["text", "Code from Larkspur by text"],
+      ["app", "Code from Larkspur by app"],
+      ["call", "Code from Larkspur by call"],
+    ] as const) {
+      expect(await type(name, "482913"), section).toMatchObject({ ok: true, completed: 1 });
+      expect(await code(section), section).toBe("482913");
+    }
+    // Keys never go to an unrelated field: focus moving on to a phone field after the last box
+    // stops the typing there, and a run of unnamed boxes longer than a code is not one code.
+    for (const [section, name, typed] of [
+      ["stray", "Stray code", "4829"],
+      ["long", "Long code", "4"],
+    ] as const) {
+      await page.goto("https://code.example.test/first");
+      await refresh();
+      const stopped = await type(name, "482913");
+      expect(stopped, section).toMatchObject({ ok: false, completed: 0 });
+      expect(stopped.error, section).toContain(`after ${typed.length} of 6 characters`);
+      expect(await code(section), section).toBe(typed);
+    }
+    await expect(page.getByLabel("Phone")).toHaveValue("");
+    // Narrow number or card fields that no named box leads are not a code: the text stays in the
+    // field it was typed into and the others keep what they had.
+    await page.goto("https://code.example.test/first");
+    await refresh();
+    expect(await type("CVC", "123")).toMatchObject({ ok: true });
+    expect(await code("card")).toBe("123");
+    expect(await type("Cell 4", "12")).toMatchObject({ ok: true });
+    expect(await code("grid")).toBe("777127777");
 
     // A widget that submits on its last digit: the step is done and the result is the next page.
     await open();

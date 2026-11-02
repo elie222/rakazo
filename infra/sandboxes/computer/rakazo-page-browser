@@ -830,27 +830,69 @@ class PageBrowser:
 # A code is typed into its boxes: like-named one- or two-character inputs around the field, up to
 # where their numbering starts again, so a second code or a middle-initial field next to it is left alone.
 CODE_BOXES = r"""
-  const box = (input) => input instanceof HTMLInputElement && input.maxLength > 0 && input.maxLength <= 2;
+  // Boxes cap their own length at one or two characters. Number boxes ignore a cap, and some pages
+  // set none: those must be narrow and say they take one digit, so card or date fields never count.
+  const box = (input) => {
+    if (!(input instanceof HTMLInputElement)) return false;
+    if (input.maxLength > 0) return input.maxLength <= 2;
+    const width = input.getBoundingClientRect().width;
+    return ["text", "tel", "number", "password"].includes(input.type) && width > 0 && width <= 72
+      && (input.autocomplete === "one-time-code"
+        || (input.type === "number" && input.max !== "" && Number(input.max) <= 9));
+  };
   const naming = (field) => [field.getAttribute("aria-label"), field.name, field.id,
     ...Array.from(field.labels || [], (label) => label.textContent)].join("|").replace(/[\d\s]+/g, "").toLowerCase();
+  // Pages often label only the first box, with the prompt, and leave the rest unnamed. Unnamed boxes
+  // straight after a named one, with no other field between, are its code, if the whole run is a code's size.
+  const unnamed = (field) => /^\|*$/.test(naming(field));
+  const cache = new WeakMap();
+  const led = new WeakMap();
+  const named = (field, container) => {
+    let names = cache.get(container);
+    if (!names) {
+      names = new Map();
+      const members = new Set();
+      led.set(container, members);
+      const inputs = [...container.querySelectorAll("input")].filter((input) => input.type !== "hidden");
+      const bare = (input) => input && box(input) && unnamed(input);
+      inputs.forEach((input, at) => {
+        if (names.has(input)) return;
+        names.set(input, naming(input));
+        if (!bare(input)) return;
+        let from = at;
+        let to = at;
+        while (bare(inputs[from - 1])) from--;
+        while (bare(inputs[to + 1])) to++;
+        const lead = inputs[from - 1];
+        const name = lead && box(lead) && to - from >= 2 && to - from <= 6 ? naming(lead) : naming(input);
+        if (name === naming(input)) return;
+        for (let i = from - 1; i <= to; i++) members.add(inputs[i]);
+        for (let i = from; i <= to; i++) names.set(inputs[i], name);
+      });
+      cache.set(container, names);
+    }
+    return names.get(field) ?? naming(field);
+  };
+  // Boxes with no length cap only count as a code when a named box leads them.
+  const joined = (input, container) => input.maxLength > 0 || (named(input, container), led.get(container).has(input));
   const numberOf = (field) => {
     const found = /\d+/.exec(field.getAttribute("aria-label")
       || Array.from(field.labels || [], (label) => label.textContent).join(" ") || field.name || "");
     return found ? Number(found[0]) : null;
   };
   const like = (container, name) => [...container.querySelectorAll("input")].filter((input) => box(input)
-    && naming(input) === name);
+    && joined(input, container) && named(input, container) === name);
   function codeOf(el) {
     if (!box(el)) return null;
     for (let node = el.parentElement, up = 0; node && up < 3; node = node.parentElement, up++) {
-      if ([...node.querySelectorAll("input")].filter(box).length < 4) continue;
-      const boxes = like(node, naming(el));
+      if ([...node.querySelectorAll("input")].filter(box).length < 4 || !joined(el, node)) continue;
+      const boxes = like(node, named(el, node));
       const restarts = (a, b) => numberOf(a) !== null && numberOf(b) !== null && numberOf(b) <= numberOf(a);
       let from = boxes.indexOf(el);
       let to = from;
       while (from > 0 && !restarts(boxes[from - 1], boxes[from])) from--;
       while (to < boxes.length - 1 && !restarts(boxes[to], boxes[to + 1])) to++;
-      return { container: node, name: naming(el), from, size: to - from + 1, at: boxes.indexOf(el) };
+      return { container: node, name: named(el, node), from, size: to - from + 1, at: boxes.indexOf(el) };
     }
     return null;
   }
@@ -874,7 +916,10 @@ TYPE_START = "(() => {" + CODE_BOXES + r"""
   if (code && code.size > 1 && WHOLE) {
     // A whole code replaces the code: every box is emptied and typing starts at the first. Widgets
     // that draw their boxes again on each input are found again in the same place each time.
-    const boxes = () => like(code.container, code.name).slice(code.from, code.from + code.size);
+    const boxes = () => {
+      cache.delete(code.container);
+      return like(code.container, code.name).slice(code.from, code.from + code.size);
+    };
     for (let i = 0; i < 24; i++) {
       const filled = boxes().find((field) => field.value);
       if (!filled) break;
@@ -901,7 +946,7 @@ TYPE_CHECK = "(() => {" + CODE_BOXES + r"""
   const active = focused();
   const { el, code } = typing;
   const holds = active === el || el.contains(active) || (code !== null && code.container.isConnected
-    && code.container.contains(active) && box(active) && naming(active) === code.name);
+    && code.container.contains(active) && box(active) && named(active, code.container) === code.name);
   if (!holds) throw new Error("Typing stopped: focus");
   return true;
 })()"""
