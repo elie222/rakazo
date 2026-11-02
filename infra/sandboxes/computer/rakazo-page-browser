@@ -585,16 +585,23 @@ class PageBrowser:
                 "title": str(state.get("title") or ""), "tree": tree, "elements": [entry for _, entry in shown],
                 **({} if settled else {"loading": True})}
 
-    def control(self, ref: str) -> Node:
+    def control(self, ref: str, *, check_disabled: bool = False) -> Node:
         """The element a ref names in the page as it is now; a ref that names nothing now is stale.
 
         agent-browser keeps a ref while its element lives, but would hand an action a replacement
         with the same role and name, even on another page. Checking right before the step stops that.
         """
-        (snap,) = self.ab.batch([["snapshot", "-i"]])
+        commands = [["snapshot", "-i"]]
+        if check_disabled:
+            # `is enabled` includes disabled fieldsets (and their first-legend exception),
+            # but agent-browser does not include aria-disabled in that check.
+            commands += [["is", "enabled", f"@{ref}"], ["get", "attr", f"@{ref}", "aria-disabled"]]
+        snap, *state = self.step(commands)
         node = find_ref(parse_tree(snap.get("snapshot") or ""), ref)
         if node is None or ref not in (snap.get("refs") or {}):
             raise Settled(STALE_REF)
+        if check_disabled and (state[0].get("enabled") is False or str(state[1].get("value")).lower() == "true"):
+            raise Settled(DISABLED)
         return node
 
     # -- commands ---------------------------------------------------------------------------------
@@ -753,7 +760,7 @@ class PageBrowser:
         try:
             for step in actions:
                 kind, ref = step["kind"], step.get("ref")
-                node = self.control(ref) if ref is not None else None
+                node = self.control(ref, check_disabled=kind in ("fill", "type")) if ref is not None else None
                 uncertain = True
                 if kind == "pay_token" or step.get("origin"):
                     if ref is not None:
