@@ -319,7 +319,21 @@ struct RoutineQuery: EntityQuery {
   }
 }
 
+/// Never forward a session or proxy credential to a redirect destination.
+private final class RejectRedirects: NSObject, URLSessionTaskDelegate {
+  func urlSession(
+    _ session: URLSession, task: URLSessionTask,
+    willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+    completionHandler: @escaping (URLRequest?) -> Void
+  ) {
+    completionHandler(nil)
+  }
+}
+
 private struct RakazoSession {
+  private static let transport = URLSession(
+    configuration: .ephemeral, delegate: RejectRedirects(), delegateQueue: nil)
+
   let apiBase: String
   let token: String
   let selectedSpaceId: String?
@@ -377,7 +391,7 @@ private struct RakazoSession {
     request.setValue("Bearer \(token)", forHTTPHeaderField: "authorization")
     if let spaceId { request.setValue(spaceId, forHTTPHeaderField: "x-rakazo-space-id") }
     request.httpBody = try JSONSerialization.data(withJSONObject: ["json": input])
-    let (data, response) = try await URLSession.shared.data(for: request)
+    let (data, response) = try await Self.transport.data(for: request)
     let status = (response as? HTTPURLResponse)?.statusCode ?? 0
     if status == 401 { throw MessageBotError.signedOut }
     guard (200..<300).contains(status) else {
