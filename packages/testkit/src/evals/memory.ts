@@ -161,10 +161,7 @@ export const MEMORY_EVAL_CASES: EvalCase[] = [
     ],
     grade: (e) => {
       // The first session only asks to remember London, so whatever it saved is the old home.
-      const first = saves(e, 1)
-        .flatMap((c) => String(c.args.content ?? "").split("\n"))
-        .map((line) => line.trim())
-        .filter(Boolean);
+      const first = saves(e, 1).flatMap((c) => entries(String(c.args.content ?? "")));
       const current = new Set(entries(e.memory));
       return [
         check("home-saved-first", first.length > 0),
