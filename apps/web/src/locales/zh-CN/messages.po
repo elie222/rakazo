@@ -6640,3 +6640,7 @@ msgstr "你的语音提供方额度已用完。"
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "你的语音提供方拒绝了该密钥。"
+
+#: src/components/SidebarFooter.tsx
+msgid "Switch accounts"
+msgstr "切换账号"

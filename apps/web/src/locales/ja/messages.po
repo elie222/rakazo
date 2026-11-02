@@ -6640,3 +6640,7 @@ msgstr "音声プロバイダーのクレジットが不足しています。"
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "音声プロバイダーのキーが拒否されました。"
+
+#: src/components/SidebarFooter.tsx
+msgid "Switch accounts"
+msgstr "アカウントを切り替える"

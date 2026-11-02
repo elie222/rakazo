@@ -6640,3 +6640,7 @@ msgstr "Ses sağlayıcınızın kredisi bitti."
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "Ses sağlayıcınız anahtarı reddetti."
+
+#: src/components/SidebarFooter.tsx
+msgid "Switch accounts"
+msgstr "Hesap değiştir"

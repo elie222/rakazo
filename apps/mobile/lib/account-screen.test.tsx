@@ -2,7 +2,7 @@
 
 import type { AccountSecurity } from "@rakazo/contracts";
 import type { ReactNode } from "react";
-import { act, createElement, useEffect } from "react";
+import { act, createElement, useEffect, useState } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -102,32 +102,47 @@ vi.mock("react-native", () => ({
   View: element("div"),
 }));
 vi.mock("@expo/ui/community/menu", () => ({
-  MenuView: ({
+  MenuView: function MenuView({
     children,
     actions,
     onPressAction,
   }: {
     children?: ReactNode;
-    actions: Array<{ id: string; title: string }>;
+    actions: Array<{
+      id: string;
+      title: string;
+      state?: string;
+      attributes?: { disabled?: boolean };
+    }>;
     onPressAction: (event: { nativeEvent: { event: string } }) => void;
-  }) =>
-    createElement(
+  }) {
+    const [open, setOpen] = useState(false);
+    return createElement(
       "div",
-      null,
+      { onClick: () => setOpen(true) },
       children,
-      actions.map((action) =>
-        createElement(
-          "button",
-          {
-            key: action.id,
-            type: "button",
-            "data-menu-action": action.id,
-            onClick: () => onPressAction({ nativeEvent: { event: action.id } }),
-          },
-          action.title,
-        ),
-      ),
-    ),
+      open
+        ? actions.map((action) =>
+            createElement(
+              "button",
+              {
+                key: action.id,
+                type: "button",
+                "data-menu-action": action.id,
+                "aria-pressed": action.state === "on",
+                disabled: action.attributes?.disabled,
+                onClick: (event: { stopPropagation: () => void }) => {
+                  event.stopPropagation();
+                  setOpen(false);
+                  onPressAction({ nativeEvent: { event: action.id } });
+                },
+              },
+              action.title,
+            ),
+          )
+        : null,
+    );
+  },
 }));
 vi.mock("expo-router", () => {
   const router = { push: account.push, back: () => undefined, dismissTo: account.dismissTo };
@@ -531,9 +546,12 @@ it("lists trusted link sites only when there is one, each with a remove action",
   const group = container.querySelector('[aria-label="Trusted sites"]');
   expect(group?.textContent).toContain("alice.github.io");
   expect(group?.textContent).toContain("example.com");
-  const removes = group?.querySelectorAll<HTMLButtonElement>('[data-menu-action="remove"]');
-  expect(removes).toHaveLength(2);
-  await act(async () => removes?.[1]?.click());
+  const site = [...group!.querySelectorAll<HTMLButtonElement>("button")].find(
+    (row) => row.textContent === "example.com",
+  )!;
+  await act(async () => site.click());
+  const remove = group?.querySelector<HTMLButtonElement>('[data-menu-action="remove"]');
+  await act(async () => remove?.click());
   expect(trusted.remove).toHaveBeenCalledWith("example.com");
   trusted.sites = [];
 });
@@ -574,12 +592,16 @@ it("shows each saved account's unread count and makes the selected identity expl
   document.body.append(container);
   root = createRoot(container);
   await act(async () => root?.render(<Account />));
-  const rows = [...container.querySelectorAll<HTMLButtonElement>("button")];
-  const selected = rows.find((row) => row.textContent === "family@example.test")!;
-  const work = rows.find((row) => row.textContent === "work@example.test")!;
-  expect(selected.dataset.value).toBe("✓  2");
+  expect(container.textContent).not.toContain("work@example.test");
+  const trigger = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (row) => row.textContent === "Switch accounts",
+  )!;
+  await act(async () => trigger.click());
+  const rows = [...container.querySelectorAll<HTMLButtonElement>("[data-menu-action]")];
+  const selected = rows.find((row) => row.textContent === "family@example.test  ·  2")!;
+  const work = rows.find((row) => row.textContent === "work@example.test  ·  3")!;
+  expect(selected.getAttribute("aria-pressed")).toBe("true");
   expect(selected.disabled).toBe(true);
-  expect(work.dataset.value).toBe("3");
   await act(async () => work.click());
   expect(selectSavedAccount).toHaveBeenCalledWith("user-2");
 });

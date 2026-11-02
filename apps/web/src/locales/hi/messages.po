@@ -6640,3 +6640,7 @@ msgstr "आपके आवाज़ प्रोवाइडर का क्�
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "आपके आवाज़ प्रोवाइडर ने कुंजी अस्वीकार कर दी।"
+
+#: src/components/SidebarFooter.tsx
+msgid "Switch accounts"
+msgstr "खाता बदलें"

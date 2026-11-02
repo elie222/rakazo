@@ -6640,3 +6640,7 @@ msgstr "Seu provedor de voz está sem crédito."
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "Seu provedor de voz recusou a chave."
+
+#: src/components/SidebarFooter.tsx
+msgid "Switch accounts"
+msgstr "Alternar contas"

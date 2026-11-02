@@ -1,4 +1,5 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Switch accounts": "切换账号",
   "Add account": "添加账户",
   "Sign in to open this account": "登录以打开此账户",
   "Sign in to open this notification": "登录以打开此通知",

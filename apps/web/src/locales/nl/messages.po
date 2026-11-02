@@ -6640,3 +6640,7 @@ msgstr "Je spraakaanbieder heeft geen tegoed meer."
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "Je spraakaanbieder heeft de sleutel geweigerd."
+
+#: src/components/SidebarFooter.tsx
+msgid "Switch accounts"
+msgstr "Van account wisselen"

@@ -81,7 +81,7 @@ series. Commits use a generic fictional contributor identity because no Git auth
 | `pnpm check` | All 22 package tasks passed |
 | `pnpm lint` | Passed with existing warnings/informational diagnostics |
 | Web production build | Passed; existing bundle-size warning remains |
-| Full unit run before final review follow-ups | 19,944 passed and 712 skipped; three unchanged shell/backup failures remain across two suites |
+| Latest full unit run | 19,966 passed and 713 skipped; three unchanged shell/backup failures remain across two suites |
 
 The three remaining full-suite failures also reproduce from pristine starting-revision source:
 the shell environment test's failed-reader fixture still runs its command, and the two backup
@@ -190,19 +190,36 @@ filtered events to find eligible alerts within its existing daily window; attent
 an event error/reason or the existing needs-answer, needs-screen and failure wording.
 
 The combined follow-up run passed all 184 tests across 11 mobile and API suites. The real
-Postgres account-session suite passed all six tests, including pagination past 110 filtered events. The full suite result above predates
-these final follow-ups; native build and device-delivery limits remain unchanged.
+Postgres account-session suite passed all six tests, including pagination past 110 filtered events.
+The latest full suite result includes these follow-ups; native build and device-delivery limits
+remain unchanged.
+
+## Account picker presentation
+
+The profile menu exposes “Switch accounts”; its dialog contains the saved identities, selected
+checkmark, unread counts and “Add account”. Mobile Account settings uses the existing native menu
+for the same choices. Account rows stay hidden until the picker opens. Receiving a notification
+does not change the displayed account; tapping still verifies/selects the owner before navigation.
+
+The presentation tests failed before the change and passed afterward (49 focused tests). The real
+browser journey passed again at desktop and phone widths, including hidden-account receipt without
+selection and selection on tap. All 22 workspace type checks, lint and the web production build
+passed. The full unit run passed 19,966 tests with 713 skipped and the same three reproduced
+starting-revision fixture failures. A fresh scoped Compound Engineering review found no actionable
+issues. The iOS catalog flow now opens the native picker but remains unrun on a simulator/device.
 
 ## Browser evidence
 
 These captures contain only fictional fixture accounts. They live on the independent dogfooding
 branch so its draft can be closed without merging the evidence into the product tree.
 
-![Account switcher on desktop](https://raw.githubusercontent.com/christso/rakazo/b43e1ef72bb27bc0abbbffe0b4b0e602a8b9db1c/screenshots/switcher-desktop.png)
+![Account menu](https://raw.githubusercontent.com/christso/rakazo/1c0258a5f25258b7105e0817afd45290319fc467/screenshots/account-menu.png)
 
-![Account switcher at phone width](https://raw.githubusercontent.com/christso/rakazo/b43e1ef72bb27bc0abbbffe0b4b0e602a8b9db1c/screenshots/switcher-phone.png)
+![Account switcher on desktop](https://raw.githubusercontent.com/christso/rakazo/1c0258a5f25258b7105e0817afd45290319fc467/screenshots/switcher-desktop.png)
 
-![Hidden account unread count](https://raw.githubusercontent.com/christso/rakazo/b43e1ef72bb27bc0abbbffe0b4b0e602a8b9db1c/screenshots/unread.png)
+![Account switcher at phone width](https://raw.githubusercontent.com/christso/rakazo/1c0258a5f25258b7105e0817afd45290319fc467/screenshots/switcher-phone.png)
+
+![Hidden account unread count](https://raw.githubusercontent.com/christso/rakazo/1c0258a5f25258b7105e0817afd45290319fc467/screenshots/unread.png)
 
 
-![Sign out all confirmation](https://raw.githubusercontent.com/christso/rakazo/39f6fe8e05e343556628cfd34fed238f2553061b/screenshots/sign-out-all.png)
+![Sign out all confirmation](https://raw.githubusercontent.com/christso/rakazo/1c0258a5f25258b7105e0817afd45290319fc467/screenshots/sign-out-all.png)

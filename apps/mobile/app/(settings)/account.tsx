@@ -522,30 +522,35 @@ export default function Account() {
         </SettingsGroup>
 
         <SettingsGroup>
-          {savedAccounts.length > 1
-            ? savedAccounts.map((saved) => (
-                <SettingsRow
-                  key={saved.userId}
-                  title={saved.email}
-                  value={[
-                    saved.userId === me?.userId ? "✓" : "",
-                    saved.unread ? String(saved.unread) : "",
-                  ]
-                    .filter(Boolean)
-                    .join("  ")}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: saved.userId === me?.userId }}
-                  disabled={pending || saved.userId === me?.userId}
-                  onPress={() => void switchAccount(saved.userId)}
-                />
-              ))
-            : null}
-          <SettingsRow
-            title={t("Add account")}
-            accessibilityRole="button"
-            disabled={pending}
-            onPress={() => void addAccount()}
-          />
+          <MenuView
+            title={t("Switch accounts")}
+            colorScheme={colorScheme}
+            actions={[
+              ...savedAccounts.map((saved) => ({
+                id: `account:${saved.userId}`,
+                title: saved.unread ? `${saved.email}  ·  ${saved.unread}` : saved.email,
+                state: saved.userId === me?.userId ? ("on" as const) : ("off" as const),
+                attributes: { disabled: pending || saved.userId === me?.userId },
+              })),
+              { id: "add", title: t("Add account"), attributes: { disabled: pending } },
+            ]}
+            onPressAction={(event) => {
+              if (pending) return;
+              const id = event.nativeEvent.event;
+              if (id === "add") void addAccount();
+              else if (id.startsWith("account:")) {
+                const userId = id.slice("account:".length);
+                if (userId !== me?.userId) void switchAccount(userId);
+              }
+            }}
+          >
+            <SettingsRow
+              title={t("Switch accounts")}
+              accessibilityRole="button"
+              chevron="right"
+              disabled={pending}
+            />
+          </MenuView>
           {savedAccounts.length > 1 ? (
             <SettingsRow
               title={t("Sign out all")}

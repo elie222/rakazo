@@ -6640,3 +6640,7 @@ msgstr "Dein Stimmanbieter hat kein Guthaben mehr."
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "Der Schlüssel deines Stimmanbieters wurde abgelehnt."
+
+#: src/components/SidebarFooter.tsx
+msgid "Switch accounts"
+msgstr "Konten wechseln"

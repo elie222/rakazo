@@ -1,4 +1,5 @@
 export const NL_MESSAGES: Record<string, string> = {
+  "Switch accounts": "Van account wisselen",
   "Add account": "Account toevoegen",
   "Sign in to open this account": "Meld je aan om dit account te openen",
   "Sign in to open this notification": "Meld je aan om deze melding te openen",

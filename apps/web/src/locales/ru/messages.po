@@ -6640,3 +6640,7 @@ msgstr "У вашего голосового провайдера закончи
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "Ваш голосовой провайдер отклонил ключ."
+
+#: src/components/SidebarFooter.tsx
+msgid "Switch accounts"
+msgstr "Сменить аккаунт"

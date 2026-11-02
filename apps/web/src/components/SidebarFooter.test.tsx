@@ -83,6 +83,12 @@ it("shows the selected account, each unread count and deliberate all-account sig
     onLogOutAll: all,
     onAddAccount: vi.fn(),
   });
+  expect(document.querySelector("button[aria-pressed]")).toBeNull();
+  const switcher = [...document.querySelectorAll("button")].find(
+    (button) => button.textContent === "Switch accounts",
+  )!;
+  await act(async () => switcher.click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Switch accounts");
   const selected = document.querySelector<HTMLButtonElement>('button[aria-pressed="true"]')!;
   expect(selected.disabled).toBe(true);
   expect(selected.textContent).toBe("family@example.test2");

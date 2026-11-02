@@ -46,6 +46,7 @@ test("saved accounts switch, receive hidden-account notifications, and sign out 
     await workPage.goto("about:blank");
 
     await page.getByTestId("user-menu-trigger").click();
+    await page.getByRole("button", { name: "Switch accounts", exact: true }).click();
     await page.getByRole("button", { name: "Add account", exact: true }).click();
     await expect(page).toHaveURL(/\/sign-in\?add=1$/);
     await page.getByLabel("Email", { exact: true }).fill(workEmail);
@@ -55,6 +56,10 @@ test("saved accounts switch, receive hidden-account notifications, and sign out 
     await page.getByTestId("user-menu-trigger").click();
     const familyRow = page.getByRole("button", { name: familyEmail, exact: true });
     const workRow = page.getByRole("button", { name: workEmail, exact: true });
+    await expect(familyRow).toBeHidden();
+    await expect(workRow).toBeHidden();
+    await captureScreenshot(page, testInfo, "multi-account-menu");
+    await page.getByRole("button", { name: "Switch accounts", exact: true }).click();
     await expect(workRow).toHaveAttribute("aria-pressed", "true");
     await captureScreenshot(page, testInfo, "multi-account-switcher");
     await page.setViewportSize({ width: 390, height: 844 });
@@ -64,12 +69,14 @@ test("saved accounts switch, receive hidden-account notifications, and sign out 
     if (await navigation.isVisible()) await navigation.click();
     await expect(sidebar).toBeInViewport();
     await sidebar.click();
+    await page.getByRole("button", { name: "Switch accounts", exact: true }).click();
     await expect(page.getByRole("button", { name: workEmail, exact: true })).toBeVisible();
     await expect(page.locator("body")).toHaveJSProperty("scrollWidth", 390);
     await captureScreenshot(page, testInfo, "multi-account-switcher-phone");
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.keyboard.press("Escape");
     await page.getByTestId("user-menu-trigger").click();
+    await page.getByRole("button", { name: "Switch accounts", exact: true }).click();
     await familyRow.click();
     await expect(page).toHaveURL(new RegExp(`/app/${familyBot}$`));
     const otherTab = await page.context().newPage();
@@ -91,6 +98,7 @@ test("saved accounts switch, receive hidden-account notifications, and sign out 
       })
       .toBeGreaterThan(0);
     await page.getByTestId("user-menu-trigger").click();
+    await page.getByRole("button", { name: "Switch accounts", exact: true }).click();
     await expect(
       page.getByRole("button", {
         name: new RegExp(workEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
@@ -105,6 +113,10 @@ test("saved accounts switch, receive hidden-account notifications, and sign out 
         }, workEmail),
       )
       .toBe(true);
+    await expect(page.getByTestId("user-menu-trigger")).toHaveAttribute(
+      "aria-label",
+      "Account menu for Family",
+    );
     await page.evaluate((email) => {
       const state = window as unknown as {
         accountNotifications: Array<{ title: string; onclick?: () => void }>;
@@ -131,6 +143,7 @@ test("saved accounts switch, receive hidden-account notifications, and sign out 
     const remaining = (await (await page.request.get("/api/accounts")).json()) as AccountSessions;
     expect(remaining.accounts.map((account) => account.email)).toEqual([familyEmail]);
     await page.getByTestId("user-menu-trigger").click();
+    await page.getByRole("button", { name: "Switch accounts", exact: true }).click();
     await page.getByRole("button", { name: "Add account", exact: true }).click();
     await page.getByLabel("Email", { exact: true }).fill(workEmail);
     await page.getByLabel("Password", { exact: true }).fill(password);
