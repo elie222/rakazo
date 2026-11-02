@@ -1,14 +1,17 @@
 import { randomUUID } from "node:crypto";
-import type { JobPublisher } from "@rakazo/adapter-kit";
+import type { JobPublisher, NotificationProvider } from "@rakazo/adapter-kit";
 import { callExpireJob } from "@rakazo/adapter-kit";
-import type { MessageBlock } from "@rakazo/contracts";
+import type { IncomingBotCall, MessageBlock } from "@rakazo/contracts";
+import { resolveBotAvatarSet } from "@rakazo/contracts";
 import type { CallRequestBlock } from "@rakazo/core";
 import {
   CALL_CLIENT_NONCE_PREFIX,
   callIdFromClientNonce,
+  callIsRinging,
   callRequestBlock,
   callRequestClientNonce,
   phoneCallSettings,
+  ringingCall,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
@@ -94,7 +97,7 @@ export function newCallRequest(input: {
  * devices answering, or an answer racing the ring-out, settle exactly once.
  */
 export async function settleCallRequest(
-  deps: { prisma: PrismaClient; events: Pick<ThreadEvents, "notify"> },
+  deps: { prisma: PrismaClient; events: Pick<ThreadEvents, "notify" | "notifyIncomingCalls"> },
   input: {
     threadId: string;
     callId: string;
@@ -113,13 +116,18 @@ export async function settleCallRequest(
           clientNonce: callRequestClientNonce(input.callId),
         },
       },
-      select: { id: true, blocks: true, botId: true, thread: { select: { spaceId: true } } },
+      select: {
+        id: true,
+        blocks: true,
+        botId: true,
+        thread: { select: { spaceId: true, userId: true } },
+      },
     });
     if (!message?.botId) return null;
     const before = Array.isArray(message.blocks) ? (message.blocks as MessageBlock[]) : [];
     const block = callRequestBlock(before);
     if (!block || !input.from.includes(block.status)) return null;
-    const expired = block.status === "ringing" && Date.parse(block.expiresAt) <= Date.now();
+    const expired = block.status === "ringing" && !callIsRinging(block);
     const next: CallRequestBlock = {
       ...block,
       ...(input.status ? { status: expired ? "missed" : input.status } : {}),
@@ -140,10 +148,11 @@ export async function settleCallRequest(
       type: "thread.message.updated",
       payload: { messageId: message.id, role: "bot", blocks, callId: input.callId },
     });
-    return { next, eventSeq: event.seq };
+    return { next, eventSeq: event.seq, userId: message.thread.userId };
   });
   if (!result) return null;
   await deps.events.notify(input.threadId, result.eventSeq).catch(() => undefined);
+  if (result.userId) await deps.events.notifyIncomingCalls?.(result.userId).catch(() => undefined);
   return result.next;
 }
 
@@ -157,6 +166,7 @@ export async function requestUserCall(
     phoneCallCooldownMinutes?: number;
     phoneCallRingSeconds?: number;
     runLease?: ExecutorDeps["runLease"];
+    notifications?: NotificationProvider;
   },
   run: { id: string; spaceId: string; userId: string; threadId: string; botId: string },
   input: { reason: string; opening: string },
@@ -231,7 +241,63 @@ export async function requestUserCall(
     });
     return { error: "Could not ring the user. Send a message instead." };
   }
+  await deps.events.notifyIncomingCalls?.(run.userId).catch(() => undefined);
+  if (deps.notifications?.incomingCall && request.expiresAt.getTime() > Date.now()) {
+    const bot = await deps.prisma.bot.findFirst({
+      where: { id: run.botId, userId: run.userId },
+      select: { name: true },
+    });
+    if (bot)
+      await deps.notifications
+        .incomingCall(run.userId, {
+          callId: request.callId,
+          botId: run.botId,
+          botName: bot.name,
+          expiresAt: request.expiresAt.toISOString(),
+        })
+        .catch(() => undefined);
+  }
   return { ok: true, status: "ringing" };
+}
+
+/** Load only the signed-in owner's ringing requests, across their Spaces. */
+export async function loadUserIncomingCalls(
+  prisma: PrismaClient,
+  userId: string,
+): Promise<IncomingBotCall[]> {
+  return runAsSystem("load the signed-in call owner's incoming calls", async () => {
+    const messages = await prisma.message.findMany({
+      where: {
+        role: "bot",
+        clientNonce: { startsWith: CALL_CLIENT_NONCE_PREFIX, endsWith: ":request" },
+        blocks: { path: ["0", "status"], equals: "ringing" },
+        thread: {
+          userId,
+          groupId: null,
+          externalConversationId: null,
+          bot: { userId, archivedAt: null },
+        },
+      },
+      select: {
+        role: true,
+        blocks: true,
+        thread: {
+          select: {
+            bot: { select: { id: true, spaceId: true, name: true, color: true, avatarSet: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+    return messages.flatMap((message) => {
+      const incomingCall = ringingCall([message]);
+      const bot = message.thread.bot;
+      return incomingCall && bot
+        ? [{ ...bot, avatarSet: resolveBotAvatarSet(bot.avatarSet), incomingCall }]
+        : [];
+    });
+  });
 }
 
 /** Restore expiry jobs after a process interruption between persistence and enqueue. */

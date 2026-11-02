@@ -27,7 +27,10 @@ vi.mock("../../lib/call-session", () => ({
   useCallSession: () => null,
 }));
 vi.mock("../../lib/rpc", () => ({
-  rpc: { threads: { answerCall: vi.fn(), declineCall: vi.fn(), endCall: vi.fn() } },
+  rpc: {
+    threads: { answerCall: vi.fn(), endCall: vi.fn() },
+    notifications: { declineIncomingCall: vi.fn() },
+  },
   selectedSpaceId: () => "space-1",
 }));
 
@@ -84,7 +87,7 @@ beforeEach(() => {
   vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visibility);
   vi.clearAllMocks();
   vi.mocked(rpc.threads.answerCall).mockReset();
-  vi.mocked(rpc.threads.declineCall).mockReset();
+  vi.mocked(rpc.notifications.declineIncomingCall).mockReset();
   vi.mocked(rpc.threads.endCall).mockReset();
   vi.mocked(isLeavingSession).mockReturnValue(false);
   container = document.createElement("div");
@@ -124,7 +127,7 @@ it("notifies when a visible call's tab becomes hidden", () => {
   render([bot("call-1", start + 45_000)]);
   expect(notify).not.toHaveBeenCalled();
   visibility = "hidden";
-  act(() => vi.advanceTimersByTime(1000));
+  act(() => document.dispatchEvent(new Event("visibilitychange")));
   expect(notify).toHaveBeenCalledOnce();
 });
 
@@ -164,7 +167,9 @@ it.each(["CONFLICT", "SERVICE_UNAVAILABLE"])(
 
 it.each(["Answer", "Decline"])("keeps a failed %s retryable", async (action) => {
   vi.mocked(rpc.threads.answerCall).mockRejectedValue(new Error("Connection failed"));
-  vi.mocked(rpc.threads.declineCall).mockRejectedValue(new Error("Connection failed"));
+  vi.mocked(rpc.notifications.declineIncomingCall).mockRejectedValue(
+    new Error("Connection failed"),
+  );
   render([bot("call-1", start + 45_000)]);
   const button = () =>
     [...container.querySelectorAll("button")].find((element) => element.textContent === action)!;
@@ -185,7 +190,7 @@ it.each(["Answer", "Decline"])(
     )!;
     await act(async () => button.click());
     expect(rpc.threads.answerCall).not.toHaveBeenCalled();
-    expect(rpc.threads.declineCall).not.toHaveBeenCalled();
+    expect(rpc.notifications.declineIncomingCall).not.toHaveBeenCalled();
   },
 );
 

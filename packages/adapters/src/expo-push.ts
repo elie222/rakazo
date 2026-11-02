@@ -9,6 +9,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { pushReceiptJob } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
+import type { IncomingCallPush, VoipPushProvider } from "./apns-voip.js";
 import { combineSignals } from "./connector-safety.js";
 import { credentialDigest } from "./credential-digest.js";
 import type { PushTokenStore } from "./push-token-store.js";
@@ -120,6 +121,7 @@ function expoPushReceipts(body: unknown): Record<string, ExpoPushTicket | undefi
 }
 
 export type ExpoPushOptions = {
+  voip?: VoipPushProvider;
   sessionExpiresAt?: PushSessionExpiresAt;
   /** Schedules the receipt check; without it receipts are not read. */
   jobs?: JobPublisher;
@@ -129,6 +131,7 @@ export type ExpoPushOptions = {
 };
 
 export class ExpoPushProvider implements NotificationProvider {
+  private readonly voip?: VoipPushProvider;
   private readonly sessionExpiresAt?: PushSessionExpiresAt;
   private readonly jobs?: JobPublisher;
   private readonly accessToken?: string;
@@ -138,6 +141,7 @@ export class ExpoPushProvider implements NotificationProvider {
     private readonly tokens: PushTokenStore,
     options: ExpoPushOptions = {},
   ) {
+    this.voip = options.voip;
     this.sessionExpiresAt = options.sessionExpiresAt;
     this.jobs = options.jobs;
     this.accessToken = options.accessToken?.trim() || undefined;
@@ -159,6 +163,104 @@ export class ExpoPushProvider implements NotificationProvider {
 
   async send(message: NotificationMessage, context: AdapterContext): Promise<void> {
     await this.deliver(message, context);
+  }
+
+  async incomingCall(userId: string, call: IncomingCallPush): Promise<void> {
+    const devices = (await this.tokens.devices?.(userId)) ?? [];
+    await Promise.allSettled(
+      devices.map(async (device) => {
+        if (device.userId !== userId || !(Date.parse(call.expiresAt) > Date.now())) return;
+        const expires = await this.sessionExpiresAt?.(device.sessionId);
+        if (!expires || expires.getTime() <= Date.now()) return;
+        // Re-read after the session lookup: sign-out or device handover may have won.
+        const current = await this.tokens.devices?.(userId);
+        if (
+          !current?.some(
+            (row) => row.deviceId === device.deviceId && row.revision === device.revision,
+          )
+        )
+          return;
+        if (device.platform === "ios" && device.voipToken && this.voip) {
+          const result = await this.voip.send(device.voipToken, call);
+          if (result === "sent") return;
+          if (result === "invalid") {
+            await this.tokens.removeDevice?.(userId, device.deviceId, device.revision, "voip");
+          }
+        }
+        if (!device.expoToken) return;
+        const registered = (await this.tokens.devices?.(userId))?.find(
+          (row) =>
+            row.deviceId === device.deviceId &&
+            row.expoToken === device.expoToken &&
+            row.sessionId === device.sessionId,
+        );
+        if (!registered) return;
+        const ttl = Math.floor((Date.parse(call.expiresAt) - Date.now()) / 1000);
+        if (ttl <= 0) return;
+        const { status, body } = await postToExpo(
+          EXPO_PUSH_URL,
+          {
+            to: device.expoToken,
+            priority: "high",
+            ttl,
+            expiration: Math.floor(Date.parse(call.expiresAt) / 1000),
+            data: {
+              kind: "incoming_call",
+              callId: call.callId,
+              botId: call.botId,
+              botName: call.botName.slice(0, 100),
+              expiresAt: call.expiresAt,
+            },
+            ...(device.platform === "android"
+              ? {}
+              : {
+                  title: call.botName.slice(0, 100),
+                  body: "",
+                  sound: "default",
+                  interruptionLevel: "time-sensitive",
+                  categoryId: "incoming-call",
+                }),
+          },
+          this.accessToken,
+        );
+        const ticket = expoPushTickets(body)[0];
+        if (ticket?.details?.error === "DeviceNotRegistered")
+          await this.tokens.removeDevice?.(userId, device.deviceId, registered.revision, "expo");
+        else if (status < 300 && ticket?.id)
+          await this.scheduleReceiptCheck(userId, device.expoToken, ticket.id);
+      }),
+    );
+    // Old native builds registered only the account's Expo token.
+    if (devices.length === 0) {
+      const token = await this.deliverableToken(userId);
+      const ttl = Math.floor((Date.parse(call.expiresAt) - Date.now()) / 1000);
+      if (!token || ttl <= 0) return;
+      const result = await postToExpo(
+        EXPO_PUSH_URL,
+        {
+          to: token,
+          priority: "high",
+          ttl,
+          title: call.botName.slice(0, 100),
+          sound: "default",
+          channelId: "incoming-call",
+          interruptionLevel: "time-sensitive",
+          categoryId: "incoming-call",
+          data: {
+            kind: "incoming_call",
+            callId: call.callId,
+            botId: call.botId,
+            botName: call.botName.slice(0, 100),
+            expiresAt: call.expiresAt,
+          },
+        },
+        this.accessToken,
+      );
+      const ticket = expoPushTickets(result.body)[0];
+      if (ticket?.details?.error === "DeviceNotRegistered")
+        await this.tokens.remove(userId, credentialDigest(token));
+      else if (ticket?.id) await this.scheduleReceiptCheck(userId, token, ticket.id);
+    }
   }
 
   /**
@@ -217,6 +319,17 @@ export class ExpoPushProvider implements NotificationProvider {
     }
     if (result.status !== "error") return;
     if (result.details?.error === "DeviceNotRegistered") {
+      const devices = (await this.tokens.devices?.(receipt.userId)) ?? [];
+      await Promise.all(
+        devices
+          .filter(
+            (device) =>
+              device.expoToken && credentialDigest(device.expoToken) === receipt.tokenDigest,
+          )
+          .map((device) =>
+            this.tokens.removeDevice?.(receipt.userId, device.deviceId, device.revision, "expo"),
+          ),
+      );
       await this.tokens.remove(receipt.userId, receipt.tokenDigest);
       return;
     }

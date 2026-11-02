@@ -29,6 +29,11 @@
       "types": "./src/content-security-policy.ts",
       "development": "./src/content-security-policy.ts",
       "default": "./src/content-security-policy.ts"
+    },
+    "./mobile-app": {
+      "types": "./src/mobile-app.ts",
+      "development": "./src/mobile-app.ts",
+      "default": "./src/mobile-app.ts"
     }
   },
   "scripts": {

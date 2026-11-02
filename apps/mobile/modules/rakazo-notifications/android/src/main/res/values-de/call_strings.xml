@@ -3,4 +3,6 @@
   <string name="rakazo_call_channel">Laufender Anruf</string>
   <string name="rakazo_call_title">Rakazo-Anruf</string>
   <string name="rakazo_call_text">Mikrofon ist aktiv</string>
+  <string name="rakazo_call_answer">Annehmen</string>
+  <string name="rakazo_call_decline">Ablehnen</string>
 </resources>

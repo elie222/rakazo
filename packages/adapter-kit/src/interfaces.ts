@@ -454,9 +454,17 @@ export interface RealtimeFanout {
   close(): Promise<void>;
 }
 
+export type IncomingCallNotification = {
+  callId: string;
+  botId: string;
+  botName: string;
+  expiresAt: string;
+};
+
 export interface NotificationProvider {
   describe(): AdapterDescriptor<{ push: boolean; email: boolean }>;
   send(message: NotificationMessage, context: AdapterContext): Promise<void>;
+  incomingCall?(userId: string, call: IncomingCallNotification): Promise<void>;
 }
 
 /** Outbound account and security email. Product code owns content; adapters own delivery. */

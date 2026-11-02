@@ -1,7 +1,10 @@
+import { newClientId } from "@rakazo/core";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
+import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 import { rpc } from "./api";
+import { currentSessionGeneration } from "./session";
 
 async function notificationsAllowed() {
   // On iOS getPermissionsAsync holds Expo's shared native queue until the system answers,
@@ -20,6 +23,7 @@ export async function registerPushToken() {
     const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     if (!token) return;
     await rpc("notifications/registerPush", { token });
+    await registerCallPushToken({ expoToken: token });
   } catch {
     // Expo Go without an EAS project id and Android builds without a Firebase config
     // cannot mint an Expo push token.
@@ -28,4 +32,37 @@ export async function registerPushToken() {
 
 export async function unregisterPushToken() {
   await rpc("notifications/unregisterPush").catch(() => undefined);
+}
+
+let callTokens: { expoToken?: string; voipToken?: string } = {};
+let tokenGeneration = -1;
+let deviceIdPromise: Promise<string> | undefined;
+async function installationId() {
+  deviceIdPromise ??= (async () => {
+    const stored = await SecureStore.getItemAsync("rakazo.call-device");
+    if (stored) return stored;
+    const id = newClientId();
+    await SecureStore.setItemAsync("rakazo.call-device", id);
+    return id;
+  })();
+  const pending = deviceIdPromise;
+  try {
+    return await pending;
+  } catch (error) {
+    if (deviceIdPromise === pending) deviceIdPromise = undefined;
+    throw error;
+  }
+}
+export async function registerCallPushToken(tokens: { expoToken?: string; voipToken?: string }) {
+  const generation = currentSessionGeneration();
+  if (generation !== tokenGeneration) {
+    callTokens = {};
+    tokenGeneration = generation;
+  }
+  callTokens = { ...callTokens, ...tokens };
+  const registration = { ...callTokens };
+  const deviceId = await installationId();
+  if (generation !== currentSessionGeneration()) return;
+  if (Platform.OS !== "ios" && Platform.OS !== "android") return;
+  await rpc("notifications/registerCallPush", { deviceId, platform: Platform.OS, ...registration });
 }

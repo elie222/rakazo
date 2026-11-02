@@ -217,6 +217,7 @@ describe("requestUserCall security", () => {
     let saved: { id: string; blocks: unknown; botId: string; thread: { spaceId: string } } | null =
       null;
     const tx = {
+      bot: { findFirst: vi.fn(async () => ({ name: "Caller" })) },
       $queryRaw: vi.fn(async () => []),
       thread: {
         findFirst: vi.fn(async (): Promise<{ id: string } | null> => ({ id: run.threadId })),
@@ -267,6 +268,34 @@ describe("requestUserCall security", () => {
     };
     return { deps, tx, saved: () => saved };
   }
+
+  it("pushes only the persisted call owner's minimal ringing request after scheduling expiry", async () => {
+    const { deps, saved } = fixture();
+    const incomingCall = vi.fn(async (_userId: string, _call: unknown) => {
+      expect(deps.jobs.enqueue).toHaveBeenCalled();
+    });
+    const notifications = {
+      incomingCall,
+      send: vi.fn(),
+      describe: () => ({
+        id: "fake",
+        contractVersion: "1",
+        adapterVersion: "1",
+        capabilities: { push: true, email: false },
+      }),
+    };
+    await requestUserCall({ ...deps, notifications }, run, input);
+    const block = (saved()!.blocks as { callId: string; expiresAt: string }[])[0]!;
+    expect(incomingCall).toHaveBeenCalledWith(run.userId, {
+      callId: block.callId,
+      botId: run.botId,
+      botName: "Caller",
+      expiresAt: block.expiresAt,
+    });
+    incomingCall.mockClear();
+    await requestUserCall({ ...deps, notifications }, run, input);
+    expect(incomingCall).not.toHaveBeenCalled();
+  });
 
   it("forwards the first-response winner for a call request card", async () => {
     const { deps } = fixture();

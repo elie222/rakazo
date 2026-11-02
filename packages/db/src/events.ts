@@ -102,6 +102,8 @@ export function transientRunEventsWhere(): Prisma.EventWhereInput {
 }
 
 export interface ThreadEvents {
+  notifyIncomingCalls?(userId: string): Promise<void>;
+  followIncomingCalls?(userId: string, signal?: AbortSignal): AsyncGenerator<void>;
   answerRunInput(input: AnswerRunInput): Promise<boolean>;
   append(input: AppendEventInput): Promise<ProductEvent>;
   claimSteering(input: ClaimSteeringInput): Promise<ClaimedSteeringMessage[]>;
@@ -354,6 +356,10 @@ export function createThreadEvents(
   } = {},
 ): ThreadEvents {
   return {
+    notifyIncomingCalls: async (userId) => {
+      await realtime?.publish(`incoming-calls:${userId}`, "");
+    },
+    followIncomingCalls: (userId, signal) => followIncomingCallSignals(realtime, userId, signal),
     answerRunInput: (input) => answerRunInput(prisma, input, realtime, options.runSecretWriter),
     append: (input) => appendEvent(prisma, input, realtime, options.analytics),
     claimSteering: (input) => claimSteering(prisma, input),
@@ -384,7 +390,7 @@ export async function clearThread(
         ...(input.groupId ? { groupId: input.groupId } : { botId: input.botId }),
       },
       data: { unread: false },
-      select: { nextMessageSeq: true, historyCompactionGeneration: true },
+      select: { nextMessageSeq: true, historyCompactionGeneration: true, userId: true },
     });
     const activeRuns = await tx.run.findMany({
       where: {
@@ -437,11 +443,14 @@ export async function clearThread(
     });
     return {
       event,
+      userId: thread.userId,
       cancelledRunIds: runIds,
       historyCompactionGeneration: thread.historyCompactionGeneration,
     };
   });
   await notifyRealtime(realtime, committed.event.threadId, committed.event.seq);
+  if (!input.groupId && committed.userId)
+    await realtime?.publish(`incoming-calls:${committed.userId}`, "").catch(() => undefined);
   // Legacy execution bindings point at runs of pre-lease releases, which kept writing
   // Computer.executionRunId. Clearing them inside the transaction reaches for the
   // computer row while holding the thread row — the inverted half of a cycle with a
@@ -2251,6 +2260,28 @@ function mapProductEvent(event: {
   };
 }
 
+/** One account stream; signals carry no content and never poll for call state. */
+async function* followIncomingCallSignals(
+  realtime: RealtimeFanout | undefined,
+  userId: string,
+  signal?: AbortSignal,
+): AsyncGenerator<void> {
+  const latch = new ChangeLatch();
+  const unsubscribe = await realtime?.subscribe(`incoming-calls:${userId}`, () => latch.notify());
+  try {
+    let seen = latch.generation;
+    yield;
+    while (!signal?.aborted) {
+      await latch.waitForChange(seen, undefined, signal);
+      if (signal?.aborted) return;
+      seen = latch.generation;
+      yield;
+    }
+  } finally {
+    await unsubscribe?.();
+  }
+}
+
 class ChangeLatch {
   generation = 0;
   private wake: (() => void) | undefined;
@@ -2260,7 +2291,11 @@ class ChangeLatch {
     this.wake?.();
   }
 
-  async waitForChange(expected: number, timeoutMs: number, signal?: AbortSignal): Promise<void> {
+  async waitForChange(
+    expected: number,
+    timeoutMs: number | undefined,
+    signal?: AbortSignal,
+  ): Promise<void> {
     if (this.generation !== expected || signal?.aborted) return;
     await new Promise<void>((resolve) => {
       let settled = false;
@@ -2272,7 +2307,7 @@ class ChangeLatch {
         if (this.wake === finish) this.wake = undefined;
         resolve();
       };
-      const timer = setTimeout(finish, timeoutMs);
+      const timer = timeoutMs === undefined ? undefined : setTimeout(finish, timeoutMs);
       this.wake = finish;
       signal?.addEventListener("abort", finish, { once: true });
       if (this.generation !== expected || signal?.aborted) finish();
