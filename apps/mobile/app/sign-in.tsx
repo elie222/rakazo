@@ -158,6 +158,9 @@ export default function SignIn() {
     if (emailSuggestion && warnedEmail !== email) {
       setWarnedEmail(email);
       setEmailBlurred(true);
+      AccessibilityInfo.announceForAccessibility(
+        t("Did you mean {email}?", { email: emailSuggestion }),
+      );
       return;
     }
     // An unfinished code would spend one of the code's three attempts.

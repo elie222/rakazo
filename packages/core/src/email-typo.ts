@@ -55,22 +55,27 @@ function editDistance(a: string, b: string): number {
   return at(a.length, b.length);
 }
 
+function splitDomain(domain: string): [name: string, tld: string] {
+  const dot = domain.lastIndexOf(".");
+  return dot < 0 ? [domain, ""] : [domain.slice(0, dot), domain.slice(dot + 1)];
+}
+
 function correctedDomain(domain: string): string | null {
-  if (KNOWN_DOMAINS.includes(domain)) return null;
-  let best: string | null = null;
-  let bestDistance = Infinity;
+  if (domain.length > 253 || KNOWN_DOMAINS.includes(domain)) return null;
+  const [name, rawTld] = splitDomain(domain);
+  const tld = COM_TYPOS.has(rawTld) ? "com" : rawTld;
   for (const known of KNOWN_DOMAINS) {
-    const distance = editDistance(domain, known);
-    // Short domains are close to each other (126.com vs 163.com), so they only allow one edit.
-    if (distance <= (known.length >= 9 ? 2 : 1) && distance < bestDistance) {
-      best = known;
-      bestDistance = distance;
+    const [knownName, knownTld] = splitDomain(known);
+    if (domain.replaceAll(".", "") === known.replaceAll(".", "")) return known;
+    // Short names sit one edit from real domains (gm.com, ge.com), so only longer ones are fuzzy.
+    if (knownName.length < 5) continue;
+    if (name === knownName && editDistance(tld, knownTld) <= 1) return known;
+    // Typos rarely hit the first letter, while lookalike real domains (cloud.com) often differ there.
+    if (tld === knownTld && name[0] === knownName[0] && editDistance(name, knownName) <= 1) {
+      return known;
     }
   }
-  if (best) return best;
-  const dot = domain.lastIndexOf(".");
-  if (dot > 0 && COM_TYPOS.has(domain.slice(dot + 1))) return `${domain.slice(0, dot)}.com`;
-  return null;
+  return tld === rawTld ? null : `${name}.com`;
 }
 
 /** A likely intended address when the domain looks mistyped, e.g. `a@gmial.com` → `a@gmail.com`. */
