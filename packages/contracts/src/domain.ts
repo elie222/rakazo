@@ -907,14 +907,25 @@ export const PluginMarketplaceCatalogSchema = z.object({
 export type PluginMarketplaceCatalog = z.infer<typeof PluginMarketplaceCatalogSchema>;
 
 export const PLUGIN_SUBMISSIONS_PATH = "/api/v1/plugin-submissions";
+/** Approved claims, public so the marketing site can show each owner's page at build time. */
+export const INTEGRATION_CLAIMS_PATH = "/api/v1/integration-claims";
+/** Opened from the email that proves a claimant reads mail at the app's domain. */
+export const INTEGRATION_CLAIM_CONFIRM_PATH = "/api/v1/integration-claims/confirm";
 export const SUBMIT_PLUGIN_URL = "https://rakazo.com/plugins/submit/";
+export const integrationPageUrl = (slug: string) => `https://rakazo.com/integrations/${slug}/`;
 
+/** People type a bare domain like `acme.com`, so a URL without a scheme gets `https://`. */
 const HttpsUrlSchema = z
   .string()
   .trim()
-  .max(2048)
-  .url()
-  .refine((value) => value.startsWith("https://"), "Use an https:// URL");
+  .transform((value) => (/^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `https://${value}`))
+  .pipe(
+    z
+      .string()
+      .max(2048)
+      .url()
+      .refine((value) => value.startsWith("https://"), "Use an https:// URL"),
+  );
 
 export const PluginSubmissionInputSchema = z.object({
   email: z.string().trim().max(254).email(),
@@ -928,12 +939,38 @@ export const PluginSubmissionInputSchema = z.object({
 });
 export type PluginSubmissionInput = z.infer<typeof PluginSubmissionInputSchema>;
 
+/** An app's owner claiming its integration page so it links to their site. */
+export const IntegrationClaimInputSchema = z.object({
+  /** The page's URL slug, as in `integrationPageUrl`. */
+  claim: z
+    .string()
+    .max(100)
+    .regex(/^[a-z0-9-]+$/, "Use the page's URL slug"),
+  email: z.string().trim().max(254).email(),
+  name: z.string().trim().min(1).max(80),
+  website: HttpsUrlSchema,
+});
+export type IntegrationClaimInput = z.infer<typeof IntegrationClaimInputSchema>;
+
+export const IntegrationClaimSchema = z.object({
+  slug: z.string(),
+  website: z.string(),
+});
+export type IntegrationClaim = z.infer<typeof IntegrationClaimSchema>;
+
 export const PluginSubmissionStatusSchema = z.enum(["pending", "approved", "rejected"]);
 export type PluginSubmissionStatus = z.infer<typeof PluginSubmissionStatusSchema>;
 
 export const PluginSubmissionSchema = PluginSubmissionInputSchema.omit({ tested: true }).extend({
   id: z.string(),
   website: z.string().nullable(),
+  logo: z.string().nullable(),
+  source: z.string().nullable(),
+  testing: z.string().nullable(),
+  /** Empty for a claim, which only links the page. */
+  description: z.string(),
+  /** The integration page URL slug a claim is for; null for plugins. */
+  claim: z.string().nullable(),
   status: PluginSubmissionStatusSchema,
   reason: z.string().nullable(),
   createdAt: z.string(),

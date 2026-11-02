@@ -13,6 +13,7 @@ import {
 import { ES_MESSAGES } from "./locales/es.js";
 
 import {
+  integrationClaimConfirmEmail,
   pluginSubmissionAdminEmail,
   pluginSubmissionReceivedEmail,
   pluginSubmissionReviewedEmail,
@@ -61,6 +62,7 @@ it("shares the layout across account, product and marketplace emails", async () 
     welcomeEmail(user, url),
     referralEmail(user, url, url),
     pluginSubmissionReceivedEmail(user.email),
+    integrationClaimConfirmEmail(user.email, url),
     pluginSubmissionAdminEmail(
       user.email,
       { name: "Example plugin", source: "https://example.com/plugin", email: user.email },

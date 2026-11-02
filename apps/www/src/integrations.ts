@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import type { PluginCategory } from "@rakazo/core";
 import { PLUGIN_CATEGORIES } from "@rakazo/core";
 import { z } from "zod";
-import { CATALOG_URL, SITE_URL } from "./site";
+import { CATALOG_URL, INTEGRATION_CLAIMS_URL, SITE_URL } from "./site";
 
 const IntegrationSchema = z.object({
   slug: z.string().regex(/^[a-z0-9_-]+$/),
@@ -12,6 +12,8 @@ const IntegrationSchema = z.object({
   categories: z.array(z.string()),
   auth: z.enum(["oauth", "key", "none"]),
   actions: z.array(z.object({ name: z.string(), description: z.string(), readOnly: z.boolean() })),
+  /** The owner's site, once they claim the page. */
+  website: z.url().optional(),
 });
 
 const CatalogSchema = z.object({
@@ -20,6 +22,37 @@ const CatalogSchema = z.object({
 });
 
 export type Integration = z.infer<typeof IntegrationSchema>;
+
+const ClaimsSchema = z.object({
+  claims: z.array(
+    z.object({
+      slug: z.string(),
+      website: z.url(),
+    }),
+  ),
+});
+
+/** Owners' reviewed links to their sites, keyed by page URL slug. */
+async function loadClaims(): Promise<Map<string, z.infer<typeof ClaimsSchema>["claims"][number]>> {
+  try {
+    // Optional, so a slow API never holds up the build.
+    const response = await fetch(INTEGRATION_CLAIMS_URL, { signal: AbortSignal.timeout(15_000) });
+    if (!response.ok) throw new Error(`Claims fetch failed: ${response.status}`);
+    const { claims } = ClaimsSchema.parse(await response.json());
+    return new Map(claims.map((claim) => [claim.slug, claim]));
+  } catch (error) {
+    console.warn(`Integration claims unavailable: ${String(error)}`);
+    return new Map();
+  }
+}
+
+async function loadIntegrations(): Promise<Integration[]> {
+  const [catalog, claims] = await Promise.all([loadCatalog(), loadClaims()]);
+  return catalog.map((integration) => {
+    const claim = claims.get(integrationUrlSlug(integration.slug));
+    return claim ? { ...integration, website: claim.website } : integration;
+  });
+}
 
 /** Published weekly by a private sync job. `CATALOG_URL` may point at another URL or a local file. */
 async function loadCatalog(): Promise<Integration[]> {
@@ -177,7 +210,7 @@ const POPULAR_SLUGS = [
   "twitter",
 ];
 
-export const INTEGRATIONS = await loadCatalog();
+export const INTEGRATIONS = await loadIntegrations();
 
 const BY_SLUG = new Map(INTEGRATIONS.map((integration) => [integration.slug, integration]));
 
@@ -190,6 +223,10 @@ export function integrationUrlSlug(slug: string): string {
 
 export function integrationPath(slug: string): string {
   return `${INTEGRATIONS_PATH}${integrationUrlSlug(slug)}/`;
+}
+
+export function integrationClaimPath(slug: string): string {
+  return `${integrationPath(slug)}claim/`;
 }
 
 /** Round down so the headline count stays true as the catalog shifts. */
@@ -257,7 +294,7 @@ export function integrationMarkdown(integration: Integration): string {
 
 ${integration.description}
 
-Category: ${CATEGORY_LABELS[categoryOf(integration)]}. Connect from any Rakazo bot at ${SITE_URL}${integrationPath(integration.slug)}.
+Category: ${CATEGORY_LABELS[categoryOf(integration)]}. Connect from any Rakazo bot at ${SITE_URL}${integrationPath(integration.slug)}.${integration.website ? ` Website: ${integration.website}.` : ""}
 
 ## Actions
 
