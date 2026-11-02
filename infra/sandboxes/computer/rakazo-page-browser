@@ -212,6 +212,8 @@ class Tabs:
             # The tab in front of those the last call left, or else the tab in front, which stays.
             keep = next((tab.get("id") for tab in tabs if tab.get("id") in self.known),
                         tabs[0].get("id") if tabs else None)
+            # Kept as known, so it is not counted as page-opened and trimmed later.
+            self.known.add(keep)
             tabs = self.close_flood(tabs, self.known, keep)
         self.start = {tab.get("id") for tab in tabs}
 

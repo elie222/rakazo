@@ -951,8 +951,9 @@ class NewTabTest(unittest.TestCase):
         chromium = FakeTabs("a")
         self.call(chromium, "a")
         chromium.ids = [f"x{index}" for index in range(5)]
-        self.call(chromium, "x0")
-        self.assertEqual(chromium.ids, ["x0"])
+        opened, _, _ = self.call(chromium, "x0")
+        self.assertEqual((chromium.ids, opened), (["x0"], []))
+        self.assertEqual(json.loads(Path(self.home, "tabs-9222.json").read_text())["opened"], [])
 
     def test_a_front_tab_that_cannot_be_brought_back_still_leaves_the_note_and_the_tabs_kept(self):
         chromium = FakeTabs("own")
