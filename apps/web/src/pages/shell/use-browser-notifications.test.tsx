@@ -316,3 +316,62 @@ it("does not turn mirrored user messages into synthetic bot replies", async () =
     await act(async () => root.unmount());
   }
 });
+
+it("coalesces a queued reply into the later actionable interruption for the same thread", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const show = vi.fn();
+  class NotificationMock {
+    static permission = "default";
+    constructor(title: string, options: NotificationOptions) {
+      show(title, options);
+    }
+  }
+  vi.stubGlobal("Notification", NotificationMock);
+  Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+  const bot = {
+    id: "agent",
+    threadId: "thread",
+    name: "Marketing",
+    status: "idle",
+    unread: true,
+    notifyOnFinish: true,
+    previewRole: "bot",
+    preview: "Old reply",
+  } as Bot;
+  let controls!: ReturnType<typeof useBrowserNotifications>;
+  function Harness({ bots }: { bots: Bot[] }) {
+    const ref = useRef(bots);
+    ref.current = bots;
+    controls = useBrowserNotifications(ref, bots, "other", "space");
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root.render(<Harness bots={[bot]} />));
+    await act(async () =>
+      root.render(<Harness bots={[{ ...bot, preview: "New reply", updatedAt: "reply" }]} />),
+    );
+    await act(async () =>
+      root.render(
+        <Harness
+          bots={[
+            {
+              ...bot,
+              preview: "New reply",
+              status: "waiting_input",
+              activeRunId: "run",
+              updatedAt: "question",
+            },
+          ]}
+        />,
+      ),
+    );
+    expect(show).not.toHaveBeenCalled();
+    NotificationMock.permission = "granted";
+    await act(async () => controls.flushPendingBrowserNotifications());
+    expect(show).toHaveBeenCalledOnce();
+    expect(show.mock.calls[0]?.[1].body).toBe("Needs attention");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});

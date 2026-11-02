@@ -177,3 +177,25 @@ it("keeps older failures out of Needs attention when the conversation has a curr
   expect(markup.indexOf("Current failure")).toBeLessThan(markup.indexOf("Recent"));
   expect(markup.indexOf("Old failure")).toBeGreaterThan(markup.indexOf("Recent"));
 });
+
+it("renders roster-only waiting agents without an unread receipt and omits an empty section", () => {
+  const empty = { activity: { active: [], recent: [] }, bots: [] };
+  expect(renderToStaticMarkup(createElement(ActivitySection, empty))).toBe("");
+  const markup = renderToStaticMarkup(
+    createElement(ActivitySection, {
+      ...empty,
+      bots: [
+        {
+          id: "waiting",
+          name: "Waiting agent",
+          status: "waiting_input",
+          unread: false,
+          threadId: "private",
+          activeRunThreadId: "private",
+        },
+      ] as never,
+    }),
+  );
+  expect(markup).toContain("Needs attention");
+  expect(markup).toContain("Waiting agent");
+});

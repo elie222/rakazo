@@ -76,6 +76,15 @@ export function ActivitySection({
         ? unreadGroups.some((group) => group.id === run.groupId)
         : [...unreadBots, ...attentionBots].some((bot) => bot.id === run.botId)),
   );
+  if (
+    !attentionRuns.length &&
+    !workingRuns.length &&
+    !attentionBots.length &&
+    !unreadBots.length &&
+    !unreadGroups.length &&
+    !readRecent.length
+  )
+    return null;
   return (
     <View style={styles.activitySection}>
       {[

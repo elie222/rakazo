@@ -851,12 +851,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                         <Text style={styles.spaceTitle}>{t("Try again.")}</Text>
                       </Pressable>
                     ) : null}
-                    {!onShareSelect &&
-                    activityMode &&
-                    (activity.active.length > 0 ||
-                      activity.recent.length > 0 ||
-                      bots.some((bot) => bot.unread) ||
-                      groups.some((group) => group.unread)) ? (
+                    {!onShareSelect && activityMode ? (
                       <ActivitySection activity={activity} bots={bots} groups={groups} />
                     ) : null}
                   </>

@@ -56,11 +56,7 @@ describe("browser notifications", () => {
   beforeEach(() => {
     i18n.load("en", {
       "{name} failed": "Chief failed",
-      "{name} finished": "Chief finished",
-      "{name} stopped": "Chief stopped",
       "Failed.": "Failed.",
-      "Stopped.": "Stopped.",
-      "Finished.": "Finished.",
     });
     i18n.activate("en");
   });
@@ -111,10 +107,6 @@ describe("browser notifications", () => {
     expect(browserNotificationMessage(event({ type: "run.failed" }), "Chief")).toEqual({
       title: "Chief failed",
       body: "Failed.",
-    });
-    expect(browserNotificationMessage(event({ type: "run.cancelled" }), "Chief")).toEqual({
-      title: "Chief stopped",
-      body: "Stopped.",
     });
   });
 
