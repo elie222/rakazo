@@ -983,8 +983,13 @@ export async function failRun(
   // A refusal of the deployment's own key is the operator's problem, not the user's.
   const refusal =
     run.trigger === "routine" && model.ownCredential ? modelAccountRefusal(error) : undefined;
-  if (run.routineId && refusal) {
-    await backOffRoutineAfterAccountError(deps, run.routineId, new Date(), refusal.resetAt);
+  // A spent computer allowance refuses every run that needs the computer until the period resets.
+  if (
+    run.trigger === "routine" &&
+    run.routineId &&
+    (refusal || error instanceof SandboxAllowanceUsedError)
+  ) {
+    await backOffRoutineAfterAccountError(deps, run.routineId, new Date(), refusal?.resetAt);
   }
   const retrying = !failed.continuationRunId && (await scheduleRoutineRetry(deps, run, error));
   if (runSendsFinishNotification(run.trigger) && !failed.continuationRunId && !retrying) {

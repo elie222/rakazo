@@ -99,4 +99,44 @@ describe("resolveDeploymentModel", () => {
       }).configured,
     ).toBe(false);
   });
+
+  it("allows an explicitly declared keyless local model as the deployment default", () => {
+    expect(
+      resolveDeploymentModel({
+        PI_DEFAULT_PROVIDER: " local ",
+        PI_DEFAULT_MODEL: " example-model ",
+        PI_DEFAULT_CREDENTIALS: " host ",
+        RAKAZO_LOCAL_MODELS: "other-model, , example-model ,",
+        OPENROUTER_API_KEY: "or-key",
+      }),
+    ).toEqual({
+      provider: "local",
+      model: "example-model",
+      key: undefined,
+      configured: true,
+      hostCredentials: true,
+    });
+  });
+
+  it.each([
+    { RAKAZO_LOCAL_MODELS: undefined },
+    { RAKAZO_LOCAL_MODELS: " , , " },
+    { RAKAZO_LOCAL_MODELS: "example-model-extra,other-example-model" },
+    { RAKAZO_LOCAL_MODELS: "EXAMPLE-MODEL" },
+    { PI_DEFAULT_MODEL: undefined },
+    { PI_DEFAULT_MODEL: " " },
+    { PI_DEFAULT_CREDENTIALS: undefined },
+    { PI_DEFAULT_CREDENTIALS: "true" },
+    { PI_DEFAULT_PROVIDER: "unknown" },
+  ])("rejects a keyless local default without declaration and opt-in: %j", (overrides) => {
+    expect(
+      resolveDeploymentModel({
+        PI_DEFAULT_PROVIDER: "local",
+        PI_DEFAULT_MODEL: "example-model",
+        PI_DEFAULT_CREDENTIALS: "host",
+        RAKAZO_LOCAL_MODELS: "example-model",
+        ...overrides,
+      }),
+    ).toMatchObject({ key: undefined, configured: false, hostCredentials: false });
+  });
 });
