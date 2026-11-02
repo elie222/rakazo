@@ -139,7 +139,9 @@ function assertCompatibleModelEnabled(
   }
 }
 
-export async function modelCreditBillingEnabled(deps: ExecutorDeps): Promise<boolean> {
+export async function modelCreditBillingEnabled(
+  deps: Pick<ExecutorDeps, "prisma" | "billingEnabled">,
+): Promise<boolean> {
   if (deps.billingEnabled !== undefined) return deps.billingEnabled;
   return (
     (

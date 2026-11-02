@@ -4,6 +4,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { spaceHasModelAccess } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
+  createStrategicInitiativeReconciler,
   filterStrategicInitiativeTools,
   isStrategicInitiativeRun,
   reconcileStrategicInitiatives,
@@ -344,4 +345,44 @@ it("walks past a page of ineligible owners instead of starving later bots", asyn
     expect.objectContaining({ where: expect.objectContaining({ id: { gt: "bot-a" } }) }),
   );
   expect(enqueue).toHaveBeenCalledTimes(1);
+});
+
+it.each(["owner", "billing"])("throttles bots skipped for %s for an hour", async (reason) => {
+  let now = new Date("2026-11-02T12:00:00Z");
+  const { prisma } = strategicPrisma({ bots: [candidate], member: reason !== "owner" });
+  const { jobs, enqueue } = publisher();
+  vi.mocked(spaceHasModelAccess).mockResolvedValueOnce(false).mockResolvedValueOnce(false);
+  const reconcile = createStrategicInitiativeReconciler({
+    prisma,
+    jobs,
+    billingEnabled: true,
+    now: () => now,
+  });
+  await reconcile();
+  const calls = vi.mocked(prisma.bot.findMany).mock.calls.length;
+  now = new Date(now.getTime() + 30_000);
+  await reconcile();
+  now = new Date("2026-11-02T12:59:59Z");
+  await reconcile();
+  expect(prisma.bot.findMany).toHaveBeenCalledTimes(calls);
+  now = new Date("2026-11-02T13:00:00Z");
+  await reconcile();
+  expect(prisma.bot.findMany).toHaveBeenCalledTimes(calls * 2);
+  expect(enqueue).not.toHaveBeenCalled();
+  vi.mocked(spaceHasModelAccess).mockReset().mockResolvedValue(true);
+});
+
+it("reads the worker model-credit billing flag from deployment settings", async () => {
+  const { prisma } = strategicPrisma({ bots: [candidate] });
+  Object.assign(prisma, {
+    deploymentSettings: { findUnique: vi.fn(async () => ({ modelCreditsEnabled: true })) },
+  });
+  vi.mocked(spaceHasModelAccess).mockResolvedValueOnce(false);
+  const { jobs, enqueue } = publisher();
+  await createStrategicInitiativeReconciler({ prisma, jobs })();
+  expect(prisma.deploymentSettings.findUnique).toHaveBeenCalledWith({
+    where: { id: "default" },
+    select: { modelCreditsEnabled: true },
+  });
+  expect(enqueue).not.toHaveBeenCalled();
 });

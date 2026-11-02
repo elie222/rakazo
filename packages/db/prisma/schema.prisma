@@ -973,7 +973,6 @@ model Run {
   @@index([trigger, status, teamChatMirroredAt, updatedAt])
   @@index([spaceId, botId])
   @@index([botId])
-  @@index([botId, createdAt])
   @@index([taskId])
   @@index([sourceMessageId])
   @@index([threadId, status, createdAt])

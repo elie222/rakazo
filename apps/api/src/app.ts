@@ -56,6 +56,7 @@ import {
   createRunSandbox,
   createRunSecretWriter,
   createSecretStore,
+  createStrategicInitiativeReconciler,
   createTicketChangeNotifier,
   createWebProvider,
   deploymentModelUsageLookup,
@@ -85,7 +86,6 @@ import {
   reconcileCloudAgents,
   reconcileComputerUpdates,
   reconcilePurchases,
-  reconcileStrategicInitiatives,
   removePiUserSessions,
   resolveDeploymentModel,
   ScriptedAgentRuntime,
@@ -706,14 +706,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         reconcileCloudAgents: () => reconcileCloudAgents({ prisma, jobs, cloudAgent }),
         reconcilePurchases: () => reconcilePurchases({ prisma, jobs, paymentWallet }),
         reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs }),
-        reconcileStrategicInitiatives: () =>
-          reconcileStrategicInitiatives({
-            billingEnabled: modelCreditsEnabled,
-            prisma,
-            jobs,
-            now: new Date(),
-            batchSize: 100,
-          }).then(() => undefined),
+        reconcileStrategicInitiatives: createStrategicInitiativeReconciler({
+          prisma,
+          jobs,
+          billingEnabled: modelCreditsEnabled,
+        }),
         reconcileSecurityEventRetention: createSecurityEventPruner(
           prisma,
           securityEventRetentionDays(),

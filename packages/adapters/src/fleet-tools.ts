@@ -800,7 +800,7 @@ export async function updateChildBot(
     return { error: "Change another bot's instructions with set_child_instructions." };
   }
   const profile = {
-    dailyCheckIns: args.dailyCheckIns,
+    dailyCheckIns: argumentGiven(args.dailyCheckIns) ? args.dailyCheckIns : undefined,
     name: argumentGiven(args.name) ? args.name : undefined,
     description: argumentGiven(args.description) ? args.description : undefined,
     notifyOnFinish: argumentGiven(args.notifyOnFinish)

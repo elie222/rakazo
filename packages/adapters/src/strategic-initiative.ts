@@ -5,6 +5,7 @@ import type { Prisma, PrismaClient } from "@rakazo/db";
 import { spaceHasModelAccess } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { isUniqueViolation } from "./run-messages.js";
+import { modelCreditBillingEnabled } from "./run-model.js";
 
 export const STRATEGIC_INITIATIVE_NONCE_PREFIX = "strategic-initiative";
 const STRATEGIC_INITIATIVE_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -49,6 +50,28 @@ function strategicBotEligibility(now: Date): Prisma.BotWhereInput {
         ],
       },
     },
+  };
+}
+
+/** Hourly cadence for the elected reconciler, including bots skipped by the sweep. */
+export function createStrategicInitiativeReconciler(deps: {
+  prisma: PrismaClient;
+  jobs: JobPublisher;
+  billingEnabled?: boolean;
+  now?: () => Date;
+}): () => Promise<void> {
+  let lastRun: number | undefined;
+  return async () => {
+    const now = deps.now?.() ?? new Date();
+    if (lastRun !== undefined && now.getTime() - lastRun < 60 * 60 * 1000) return;
+    lastRun = now.getTime();
+    await reconcileStrategicInitiatives({
+      prisma: deps.prisma,
+      jobs: deps.jobs,
+      billingEnabled: await modelCreditBillingEnabled(deps),
+      now,
+      batchSize: 100,
+    });
   };
 }
 
