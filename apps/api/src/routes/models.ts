@@ -58,7 +58,7 @@ import { withSerializableRetry } from "../serializable-retry.js";
 import type { RouterContext } from "./context.js";
 
 export function modelsRoutes(ctx: RouterContext) {
-  const quotaReader = new ModelQuotaReader(ctx.deps.modelQuotaFetch ?? dispatcherFetch);
+  const quotaReader = new ModelQuotaReader(dispatcherFetch);
   const {
     deps,
     codexCatalog,

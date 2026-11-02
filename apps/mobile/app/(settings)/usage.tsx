@@ -37,11 +37,11 @@ export default function Usage() {
   const [quotas, setQuotas] = useState<Record<string, ModelQuota>>({});
   const [quotaLoading, setQuotaLoading] = useState<Record<string, boolean>>({});
   const loadQuota = useCallback(
-    async (credentialId: string, active: () => boolean = () => true) => {
+    async (credentialId: string, fresh: boolean, active: () => boolean = () => true) => {
       if (!active()) return;
       setQuotaLoading((current) => ({ ...current, [credentialId]: true }));
       try {
-        const quota = await rpc("models/quota", { credentialId, fresh: true });
+        const quota = await rpc("models/quota", { credentialId, fresh });
         if (active()) setQuotas((current) => ({ ...current, [credentialId]: quota }));
       } catch {
         if (active()) {
@@ -100,7 +100,7 @@ export default function Usage() {
               Object.fromEntries(ids.flatMap((id) => (current[id] ? [[id, current[id]]] : []))),
             );
             setQuotaLoading(Object.fromEntries(ids.map((id) => [id, true])));
-            void Promise.all(ids.map((id) => loadQuota(id, () => active)));
+            void Promise.all(ids.map((id) => loadQuota(id, false, () => active)));
           }
         })
         .catch(() => {
@@ -236,7 +236,7 @@ export default function Usage() {
               readOnly
               quotaOverride={quota}
               quotaLoading={quotaLoading[credential.id] ?? true}
-              onRefreshQuota={() => void loadQuota(credential.id)}
+              onRefreshQuota={() => void loadQuota(credential.id, true)}
             />
           );
         })}
