@@ -523,6 +523,9 @@ services:
     mem_limit: ${RAKAZO_WORKER_MEMORY_LIMIT:-2g}
     environment:
       <<: *app-environment
+      # Push tap routing uses the API's canonical public server origin.
+      BETTER_AUTH_URL:
+      WEB_ORIGIN:
       GRAPHILE_WORKER_CONCURRENCY:
     volumes:
       - appdata:/data

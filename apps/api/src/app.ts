@@ -44,6 +44,7 @@ import {
   createBackgroundJobHandlers,
   createCloudAgentConnection,
   createConnectorStack,
+  createExpoPushProvider,
   createIdleComputerSweeper,
   createJobReconciler,
   createMessagingContextLoader,
@@ -123,7 +124,6 @@ import {
   ProviderTransactionBusyError,
   parsePositiveInteger,
   provisionMessagingIdentity,
-  pushSessionExpiresAt,
   requireMembership,
   rowSecurityWarning,
   runAsSystem,
@@ -512,17 +512,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const pushTokens = new PrismaPushTokenStore(prisma, env.encryptionKey);
   const notifications =
     notificationsOverride ??
-    new ExpoPushProvider(pushTokens, {
-      apiBase: new URL(env.authUrl).origin,
-      sessionExpiresAt: (sessionId) => pushSessionExpiresAt(prisma, sessionId),
-      accountLabel: (userId) =>
-        runAsSystem(
-          "read push account label",
-          async () =>
-            (await prisma.user.findUnique({ where: { id: userId }, select: { email: true } }))
-              ?.email ?? userId,
-        ),
-      badgeForToken: (token) => pushTokens.badgeForToken(token),
+    createExpoPushProvider(prisma, pushTokens, {
+      authUrl: env.authUrl,
       jobs,
       accessToken: env.expoAccessToken,
     });
@@ -841,23 +832,21 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       exposeHeaders: [SERVER_BUILD_HEADER],
     }),
   );
-  // Share authentication within one request; never cache a session across requests.
+  // Share the guard's initial lookup once. Long-lived streams must authenticate again.
   const loadRequestSession = (request: Request) =>
     runAsSystem("authenticate request", () => auth.api.getSession({ headers: request.headers }));
   const requestSessions = new WeakMap<Request, ReturnType<typeof loadRequestSession>>();
   const authenticatedSession = (request: Request) => {
-    let session = requestSessions.get(request);
-    if (!session) {
-      session = loadRequestSession(request);
-      requestSessions.set(request, session);
-    }
-    return session;
+    const session = requestSessions.get(request);
+    requestSessions.delete(request);
+    return session ?? loadRequestSession(request);
   };
   // Session and account replies must never be stored by a client or an HTTP cache.
-  mountAccountIdentityGuard(
-    app,
-    async (request) => (await authenticatedSession(request))?.user.id ?? null,
-  );
+  mountAccountIdentityGuard(app, async (request) => {
+    const session = loadRequestSession(request);
+    requestSessions.set(request, session);
+    return (await session)?.user.id ?? null;
+  });
   for (const path of ["/api/auth/*", "/rpc/*"]) {
     app.use(path, async (c, next) => {
       await next();

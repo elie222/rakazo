@@ -450,6 +450,9 @@ services:
       start_period: 2m
     environment:
       <<: *app-environment
+      # Push tap routing uses the API's canonical public server origin.
+      BETTER_AUTH_URL:
+      WEB_ORIGIN:
       GRAPHILE_WORKER_CONCURRENCY:
     volumes:
       - ../../data:/data

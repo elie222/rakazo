@@ -961,6 +961,47 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(await a.me()).toBe(200);
   });
 
+  it("ends already-open thread and board streams after their browser session signs out", async () => {
+    const cookie = await signup(app, `stream-revocation-${stamp}@example.test`, "Stream Owner");
+    const { userId } = await rpc<Actor>(app, cookie, "me");
+    const bot = await rpc<{ id: string }>(app, cookie, "bots/create", botInput("Stream Bot"));
+    const controller = new AbortController();
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const streams = await Promise.all(
+        [
+          ["threads/subscribe", { botId: bot.id, cursor: -1 }],
+          ["boards/subscribe", {}],
+        ].map(([procedure, input]) =>
+          app.request(`/rpc/${procedure}`, {
+            method: "POST",
+            headers: {
+              cookie,
+              origin: "http://127.0.0.1:5173",
+              "content-type": "application/json",
+              "x-rakazo-user-id": userId,
+            },
+            body: JSON.stringify({ json: input }),
+            signal: controller.signal,
+          }),
+        ),
+      );
+      expect(streams.map((stream) => stream.status)).toEqual([200, 200]);
+      const closed = Promise.all(streams.map((stream) => stream.text()));
+      await authPost(app, cookie, "/sign-out");
+      const frames = await Promise.race([
+        closed,
+        new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(() => reject(new Error("Signed-out streams stayed open")), 25_000);
+        }),
+      ]);
+      for (const frame of frames) expect(frame).toContain('"code":"UNAUTHORIZED"');
+    } finally {
+      clearTimeout(timeout);
+      controller.abort();
+    }
+  }, 40_000);
+
   it("accepts only signed bearer tokens, and every sign-in hands one out", async () => {
     const email = `phone-signed-${stamp}@rakazo.test`;
     const phone = await phoneSession(app, email);

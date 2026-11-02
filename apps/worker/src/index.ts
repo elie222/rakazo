@@ -27,6 +27,7 @@ import {
   createCloudAgentConnection,
   createConnectorStack,
   createDeadJobPruner,
+  createExpoPushProvider,
   createIdleComputerSweeper,
   createJobReconciler,
   createMessagingContextLoader,
@@ -43,7 +44,6 @@ import {
   createWebProvider,
   databaseCapacityBackoffMs,
   deploymentModelUsageLookup,
-  ExpoPushProvider,
   GraphileJobPublisher,
   homeStorageSweeper,
   InMemoryJobQueue,
@@ -92,7 +92,6 @@ import {
   isPoolCheckoutTimeout,
   isTooManyDatabaseConnections,
   parsePositiveInteger,
-  pushSessionExpiresAt,
   rowSecurityWarning,
   runAsSystem,
   securityEventRetentionDays,
@@ -259,8 +258,9 @@ async function main() {
   const paymentWallet = await createPaymentWalletProvider();
   // Shared with the reconciler so a stuck wait uses the same push path as a finish notice.
   const pushTokens = new PrismaPushTokenStore(prisma, resolveEncryptionKey(process.env));
-  const notifications = new ExpoPushProvider(pushTokens, {
-    sessionExpiresAt: (sessionId) => pushSessionExpiresAt(prisma, sessionId),
+  const notifications = createExpoPushProvider(prisma, pushTokens, {
+    authUrl: process.env.BETTER_AUTH_URL,
+    webOrigin: process.env.WEB_ORIGIN,
     jobs,
     accessToken: process.env.EXPO_ACCESS_TOKEN,
   });
