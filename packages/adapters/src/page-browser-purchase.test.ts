@@ -11,10 +11,7 @@ type Purchase = {
 } | null;
 type Helper = {
   paymentPage: (frame?: boolean, enter?: boolean) => { purchase: Purchase };
-  pagePoint: (
-    x: number,
-    y: number,
-  ) => { x: number; y: number; inside: boolean } | null;
+  pagePoint: (x: number, y: number) => { x: number; y: number; inside: boolean } | null;
   purchaseAt: (
     x: number,
     y: number,
@@ -27,7 +24,9 @@ function nameOf(el: Element) {
   const text = (value: string | null | undefined) => value?.replace(/\s+/g, " ").trim() || "";
   return (
     text(el.getAttribute("aria-label")) ||
-    text(Array.from((el as HTMLInputElement).labels ?? [], (label) => label.textContent).join(" ")) ||
+    text(
+      Array.from((el as HTMLInputElement).labels ?? [], (label) => label.textContent).join(" "),
+    ) ||
     text(el.getAttribute("placeholder")) ||
     text(el.getAttribute("name")) ||
     text(el.getAttribute("title")) ||
