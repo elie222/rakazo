@@ -166,19 +166,43 @@ it("separates attention, working and unread and keeps the agent beside every run
   }
 });
 
-it.each(["all", "status", "query", "date"])(
+it.each(["all", "status", "query", "date", "historical"])(
   "keeps roster failures and filtered unread runs visible: %s",
   async (mode) => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     runs.list.mockImplementation(async ({ filter }: { filter: string }) => ({
-      runs: filter === "recent" ? [{ ...run, promptSnippet: "needle", botId: "unread" }] : [],
+      runs:
+        filter !== "recent"
+          ? []
+          : mode === "historical"
+            ? [
+                {
+                  ...run,
+                  runId: "current",
+                  botId: "unread",
+                  threadId: "private",
+                  status: "failed",
+                  promptSnippet: "Latest",
+                  updatedAt: "2026-01-02T00:00:00Z",
+                },
+                {
+                  ...run,
+                  runId: "old",
+                  botId: "unread",
+                  threadId: "private",
+                  status: "failed",
+                  promptSnippet: "needle",
+                  updatedAt: "2026-01-01T00:00:00Z",
+                },
+              ]
+            : [{ ...run, promptSnippet: "needle", botId: "unread" }],
     }));
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const container = document.createElement("div");
     const root = createRoot(container);
     const filters = emptyActivityFilters();
     if (mode === "status") filters.status = "completed";
-    if (mode === "query") filters.query = "needle";
+    if (mode === "query" || mode === "historical") filters.query = "needle";
     if (mode === "date") filters.dateRange = { from: "2000-01-01", to: "2100-01-01" };
     try {
       await act(async () =>
@@ -192,6 +216,7 @@ it.each(["all", "status", "query", "date"])(
                     name: "Writer",
                     status: "idle",
                     unread: true,
+                    runErrorId: mode === "historical" ? "current" : null,
                     preview: "Done",
                     color: "orange",
                   },
@@ -229,6 +254,8 @@ it.each(["all", "status", "query", "date"])(
           ).toContain("Scout"),
         );
       }
+      if (mode === "historical")
+        expect(container.querySelector('section[aria-label="Needs attention"]')).toBeNull();
     } finally {
       await act(async () => root.unmount());
       client.clear();

@@ -9,6 +9,19 @@ import org.junit.Test
 
 class NotificationPollingTest {
   @Test
+  fun `portrait candidates exclude historical muted open and initial failure history`() {
+    val history = run("history").copy(status = "failed")
+    val fresh = run("fresh").copy(status = "failed")
+    val muted = run("muted").copy(status = "failed", notificationsEnabled = false)
+    val open = run("open").copy(status = "failed")
+    val completions = PollCompletions(mutableSetOf("history"))
+    val recent = listOf(history, fresh, muted, open, run("completed"))
+    assertEquals(listOf(fresh), completions.pendingFailures(recent, true, NotificationSettings(), { it.runId == "open" }))
+    assertTrue(completions.pendingFailures(recent, false, NotificationSettings(), { false }).isEmpty())
+    assertTrue(completions.pendingFailures(recent, true, NotificationSettings(needsAttention = false), { false }).isEmpty())
+  }
+
+  @Test
   fun `distinct portrait loads can make progress concurrently`() {
     val cache = PollPortraitCache<String>()
     val started = java.util.concurrent.CountDownLatch(2)

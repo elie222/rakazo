@@ -1,7 +1,12 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, Group, RunActivityRow, RunStatus } from "@rakazo/contracts";
-import { isAgedStuckWork, isRetryableError, notificationAttention } from "@rakazo/core";
+import {
+  isAgedStuckWork,
+  isRetryableError,
+  notificationAttention,
+  notificationAttentionRuns,
+} from "@rakazo/core";
 import {
   BotAvatar,
   Button,
@@ -96,12 +101,11 @@ export function ActivityList({
     [recentRuns, filters, t],
   );
 
-  const runUnread = (run: RunActivityRow) =>
-    run.groupId
-      ? groups.some((group) => group.id === run.groupId && group.unread)
-      : bots.some((bot) => bot.id === run.botId && bot.unread);
-  const attentionRuns = [...filteredActive, ...filteredRecent].filter(
-    (run) => notificationAttention(run.status, runUnread(run)) === "needs_attention",
+  const attentionIds = new Set(
+    notificationAttentionRuns(activeRuns, recentRuns, bots, groups).map((run) => run.runId),
+  );
+  const attentionRuns = [...filteredActive, ...filteredRecent].filter((run) =>
+    attentionIds.has(run.runId),
   );
   const workingRuns = filteredActive.filter(
     (run) => notificationAttention(run.status) === "working",

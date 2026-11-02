@@ -1,5 +1,5 @@
 import type { RunActivityRow } from "@rakazo/contracts";
-import { notificationAttention } from "@rakazo/core";
+import { notificationAttention, notificationAttentionRuns } from "@rakazo/core";
 import { useRouter } from "expo-router";
 import { useMemo } from "react";
 import { Text, View } from "react-native";
@@ -36,13 +36,7 @@ export function ActivitySection({
     router.push({ pathname: "/thread", params: { botId: run.botId, name: run.botName } });
   };
 
-  const runUnread = (run: RunActivityRow) =>
-    run.groupId
-      ? groups.some((group) => group.id === run.groupId && group.unread)
-      : Boolean(botsById.get(run.botId)?.unread);
-  const attentionRuns = [...activity.active, ...activity.recent].filter(
-    (run) => notificationAttention(run.status, runUnread(run)) === "needs_attention",
-  );
+  const attentionRuns = notificationAttentionRuns(activity.active, activity.recent, bots, groups);
   const workingRuns = activity.active.filter(
     (run) => notificationAttention(run.status) === "working",
   );

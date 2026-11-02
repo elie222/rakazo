@@ -38,6 +38,15 @@ internal class PollCompletions(private val seen: MutableSet<String>) {
     }
   }
 
+  fun pendingFailures(
+    recent: List<RunRecord>,
+    seeded: Boolean,
+    settings: NotificationSettings,
+    isOpenThread: (RunRecord) -> Boolean,
+  ): List<RunRecord> = if (!seeded || !settings.needsAttention) emptyList() else recent.filter {
+    it.status == "failed" && it.runId !in seen && it.notificationsEnabled && !isOpenThread(it)
+  }
+
   fun prepare(
     recent: List<RunRecord>,
     seeded: Boolean,

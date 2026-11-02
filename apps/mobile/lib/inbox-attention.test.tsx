@@ -150,3 +150,30 @@ it.each([false, true])(
     expect(markup).toContain("Finished reply");
   },
 );
+
+it("keeps older failures out of Needs attention when the conversation has a current failure", () => {
+  const old = {
+    runId: "old",
+    botId: "agent",
+    botName: "Old failure",
+    threadId: "private",
+    status: "failed",
+    updatedAt: "2026-01-01T00:00:00Z",
+  };
+  const current = {
+    ...old,
+    runId: "current",
+    botName: "Current failure",
+    updatedAt: "2026-01-02T00:00:00Z",
+  };
+  const markup = renderToStaticMarkup(
+    createElement(ActivitySection, {
+      activity: { active: [], recent: [current, old] as never },
+      bots: [
+        { id: "agent", name: "Agent", unread: true, status: "idle", runErrorId: "current" },
+      ] as never,
+    }),
+  );
+  expect(markup.indexOf("Current failure")).toBeLessThan(markup.indexOf("Recent"));
+  expect(markup.indexOf("Old failure")).toBeGreaterThan(markup.indexOf("Recent"));
+});

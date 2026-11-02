@@ -147,9 +147,14 @@ class RakazoNotificationService : Service() {
           }.getOrNull()
         }
         val primaryWorking = working.firstOrNull { !isOpenThread(it) }
-        val candidates = (active + recent).filter {
-          it.status == "waiting_input" || it.status == "waiting_takeover" || it.status == "failed"
-        } + listOfNotNull(primaryWorking)
+        var candidates = emptyList<RunRecord>()
+        if (!runIfCurrent(generation) {
+            val attention = if (settings.needsAttention) active.filter {
+              (it.status == "waiting_input" || it.status == "waiting_takeover") &&
+                it.notificationsEnabled && !isOpenThread(it) && "${it.runId}:${it.status}" !in alertedAttention
+            } else emptyList()
+            candidates = attention + completions.pendingFailures(recent, seeded, settings, ::isOpenThread) + listOfNotNull(primaryWorking)
+          }) return
         val preparedPortraits = coroutineScope {
           candidates.distinctBy { it.botId }.map { run ->
             async { run.botId to portrait(run) }
