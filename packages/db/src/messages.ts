@@ -2,10 +2,14 @@ import type { MessageBlock } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "./client.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
-/** Group turns use channel inputs and their own outputs, never private thread history. */
+/**
+ * Group turns use channel inputs and their own outputs, never private thread history.
+ * `steeringMessages` is non-empty for a message still waiting for its own run, which the caller
+ * leaves out of this run's history.
+ */
 export function loadRunHistoryMessages(
   prisma: PrismaClient,
-  run: { id: string; threadId: string },
+  run: { id: string; threadId: string; botId: string },
   limit: number,
   channelId?: string,
 ) {
@@ -39,6 +43,7 @@ export function loadRunHistoryMessages(
       replyQuote: true,
       replyTo: { select: { id: true, threadId: true, role: true, botId: true, blocks: true } },
       clientNonce: true,
+      steeringMessages: { where: { botId: run.botId, runId: null }, select: { id: true } },
     },
   });
 }
