@@ -4,7 +4,6 @@ import { ScrollViewMarker } from "react-native-screens/experimental";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ThreadScrollSurface } from "../components/thread-scroll-surface";
 import {
-  THREAD_COLUMN_GUTTER,
   threadColumnPadding,
   threadEdgeOptions,
   threadHeaderClearance,
@@ -83,7 +82,6 @@ it("preserves Android clearance without a floating header", () => {
 });
 
 it("pads the chat column inside the screen, including a cutout and a wide gutter", () => {
-  expect(THREAD_COLUMN_GUTTER).toBe(20);
   expect(threadColumnPadding({ left: 0, right: 0 }, false)).toEqual({
     paddingStart: 20,
     paddingEnd: 20,

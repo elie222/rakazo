@@ -3,7 +3,6 @@ import type { MobileMessage } from "./api";
 import { isCenteredAgentEvent } from "./message-presentation";
 import { THREAD_COLUMN_GUTTER } from "./thread-edges";
 
-/** Both sides of the chat column. The scroll view itself stays full width. */
 const COLUMN_PADDING = THREAD_COLUMN_GUTTER * 2;
 
 /** Sizes a message's column: wide asks and centered events fill it, minus the avatar gutter. */

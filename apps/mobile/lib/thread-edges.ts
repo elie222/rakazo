@@ -8,11 +8,7 @@ export const threadScrollEdgeEffects = {
   right: "hidden",
 } as const;
 
-/**
- * Gap between the screen edge and the chat column, before cutouts and the extra
- * space that centres a wide window. Messages use it as padding; the scroll view does not,
- * so the vertical scroll indicator stays on the screen edge.
- */
+/** Pads the content, not the scroll view, so the scroll indicator stays on the screen edge. */
 export const THREAD_COLUMN_GUTTER = 20;
 
 export type ThreadColumnPadding = { paddingStart: number; paddingEnd: number };

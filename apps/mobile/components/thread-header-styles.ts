@@ -50,7 +50,6 @@ export function createThreadHeaderStyles() {
       right: 0,
       experimental_backgroundImage: `linear-gradient(to bottom, ${tokens.background} 0%, ${tokens.background} 60%, ${transparentBackground} 100%)`,
     },
-    // The composer fills the screen and pads its own column, so the fade meets the screen edge.
     composerFade: {
       position: "absolute",
       bottom: "100%",

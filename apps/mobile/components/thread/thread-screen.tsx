@@ -98,7 +98,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     right: insets.right,
   });
   const columnWidth = windowWidth - columnInsets.left - columnInsets.right;
-  // Pad the column, not the scroll view, so the indicator stays on the screen edge.
   const columnPadding = useMemo(
     () => threadColumnPadding(columnInsets, I18nManager.isRTL),
     [columnInsets.left, columnInsets.right],
