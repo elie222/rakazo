@@ -499,6 +499,22 @@ describe("remote MCP URL policy", () => {
     }
   });
 
+  it("ignores unsupported ambient proxies for an injected fetch", async () => {
+    vi.stubEnv("https_proxy", "socks5://127.0.0.1:1080");
+    try {
+      const injected = vi.fn(async () => new Response(null, { status: 204 }));
+      const safeFetch = createSafeRemoteFetch(injected, publicResolver);
+      try {
+        expect((await safeFetch("https://connectors.example.test/mcp")).status).toBe(204);
+        expect(injected).toHaveBeenCalledTimes(1);
+      } finally {
+        await safeFetch.close();
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("pins an injected fetch to the validated address so DNS cannot rebind", async () => {
     const seen: {
       href?: string;

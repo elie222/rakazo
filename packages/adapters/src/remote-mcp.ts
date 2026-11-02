@@ -626,12 +626,14 @@ export function createSafeRemoteFetch(
   resolve: ResolveHostname = resolveHostname,
   policy: RemoteUrlPolicy = {},
 ): SafeRemoteFetch {
-  const dispatcher = createCheckedProxyDispatcher(resolve, (addresses, hostname) =>
-    assertSafeRemoteAddresses(addresses, hostname, policy),
-  );
+  const dispatcher =
+    fetchPairedWithDispatcher(baseFetch) === dispatcherFetch
+      ? createCheckedProxyDispatcher(resolve, (addresses, hostname) =>
+          assertSafeRemoteAddresses(addresses, hostname, policy),
+        )
+      : undefined;
   // Injected fetches are not given this Agent; they keep the original hostname
   // for TLS/SNI and pin TCP to the already-validated address through dns.lookup.
-  const usePackageFetch = fetchPairedWithDispatcher(baseFetch) === dispatcherFetch;
   const safeFetch = async (input: string | URL | Request, init?: RequestInit) => {
     if (typeof input !== "string" && !(input instanceof URL)) {
       throw new Error("Connector fetch requires a URL, not a Request");
@@ -640,7 +642,7 @@ export function createSafeRemoteFetch(
     let response: Response;
     try {
       const requestInit = { ...init, redirect: "manual" as const };
-      response = usePackageFetch
+      response = dispatcher
         ? await dispatcherFetch(url, {
             ...requestInit,
             dispatcher,
@@ -661,7 +663,7 @@ export function createSafeRemoteFetch(
     return response;
   };
   const result = safeFetch as SafeRemoteFetch;
-  result.close = () => dispatcher.close();
+  result.close = () => dispatcher?.close() ?? Promise.resolve();
   return result;
 }
 
