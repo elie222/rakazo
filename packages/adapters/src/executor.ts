@@ -678,6 +678,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   | "assistant"
                   | "system",
                 ...(speaker ? { speaker } : {}),
+                waiting: m.steeringMessages.length > 0,
                 content: isPartialReplyClientNonce(m.clientNonce)
                   ? `${text}\n\n${PARTIAL_REPLY_NOTE}`
                   : text,
@@ -701,12 +702,14 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           content,
           ...(speaker ? { speaker } : {}),
         }));
-        const historyMessages = messages.map((message) => ({
-          id: message.id,
-          role: message.role,
-          runId: message.runId,
-          blocks: message.blocks as MessageBlock[],
-        }));
+        const historyMessages = messages
+          .filter((message) => message.steeringMessages.length === 0)
+          .map((message) => ({
+            id: message.id,
+            role: message.role,
+            runId: message.runId,
+            blocks: message.blocks as MessageBlock[],
+          }));
         const currentTurnMessage = userTurnMessageForRun(
           run.trigger,
           runId,

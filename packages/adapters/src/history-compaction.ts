@@ -52,6 +52,8 @@ export type CompactedHistoryMessage = {
   content: string;
   /** Set on a message by someone other than this bot or a direct chat's user; see AgentRunRequest.history. */
   speaker?: string;
+  /** Still waiting for its own run: covered by the summary check, never sent as history. */
+  waiting?: boolean;
 };
 
 export interface CompactedHistorySelection {
@@ -62,28 +64,34 @@ export interface CompactedHistorySelection {
 
 /**
  * Uses a local summary only when the messages following its cursor are present and contiguous.
- * Otherwise the caller keeps the complete legacy window instead of silently creating a gap.
+ * Otherwise the caller keeps the complete legacy window instead of silently creating a gap. A
+ * message still waiting for its own run counts as present but is left out of the history.
  */
 export function selectCompactedHistory(options: {
   messages: CompactedHistoryMessage[];
   summary: string | null;
   historyCompactedUpToSeq: number | null;
 }): CompactedHistorySelection {
-  const messages = [...options.messages].sort((left, right) => left.seq - right.seq);
+  const loaded = [...options.messages].sort((left, right) => left.seq - right.seq);
+  const messages = loaded.filter((message) => !message.waiting);
   const summary = options.summary?.trim() || null;
   const cursor = options.historyCompactedUpToSeq;
   if (!summary || summary.length > MAX_COMPACTED_SUMMARY_CHARS || cursor == null) {
     return { history: messages, summary: null, usedLocalSummary: false };
   }
 
-  const uncompacted = messages.filter((message) => message.seq > cursor);
+  const uncompacted = loaded.filter((message) => message.seq > cursor);
   for (let index = 0; index < uncompacted.length; index += 1) {
     if (uncompacted[index]!.seq !== cursor + index + 1) {
       return { history: messages, summary: null, usedLocalSummary: false };
     }
   }
 
-  return { history: uncompacted, summary, usedLocalSummary: true };
+  return {
+    history: uncompacted.filter((message) => !message.waiting),
+    summary,
+    usedLocalSummary: true,
+  };
 }
 
 export function formatCompactedSummary(summary: string, historyCompactedUpToSeq: number): string {

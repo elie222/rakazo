@@ -223,10 +223,8 @@ test("live page helper waits for a site's sign-in check, or says the page is sti
     };
     const page = context.pages()[0]!;
 
-    // The session sees a page's requests and frames only from when it attaches, so start it
-    // before the page loads, as a bot's browser_navigate does.
-    await snapshot();
-    // The check answers within the wait: the snapshot shows the signed-in page.
+    // The check answers within the wait: the snapshot shows the signed-in page. The helper first
+    // reads it after it began loading, as when the person opened it.
     await page.goto(`http://127.0.0.1:${address.port}/?check=500`);
     const settled = await snapshot();
     expect(settled).toMatchObject({ ok: true, title: "Example" });
@@ -239,6 +237,77 @@ test("live page helper waits for a site's sign-in check, or says the page is sti
     const loading = await snapshot();
     expect(loading).toMatchObject({ ok: true, title: "Example", loading: true });
     expect(loading.tree).toContain('link "Sign in"');
+  } finally {
+    await context?.close();
+    await rm(profile, { recursive: true, force: true });
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test("live page helper reaches a form past the control limit by query or by scrolling to it", async () => {
+  const profile = await mkdtemp(path.join(os.tmpdir(), "page-browser-long-"));
+  const stories = Array.from(
+    { length: 200 },
+    (_, n) =>
+      `<article><h2>Story ${n}</h2><p>Story ${n} text.</p><a href="#s${n}">Read story ${n}</a></article>`,
+  ).join("");
+  const server = http.createServer((_req, res) => {
+    res.setHeader("content-type", "text/html");
+    res.end(`<!doctype html><title>Archive</title>${stories}
+      <form onsubmit="event.preventDefault(); window.subscribed = this.email.value">
+        <label>Newsletter email <input name="email"></label><button>Subscribe</button></form>`);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("No fixture server");
+  let context: Awaited<ReturnType<typeof chromium.launchPersistentContext>> | undefined;
+  try {
+    context = await chromium.launchPersistentContext(profile, {
+      ...BROWSER,
+      args: ["--remote-debugging-port=0"],
+    });
+    let port = "";
+    await expect(async () => {
+      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0];
+      expect(port).toMatch(/^\d+$/);
+    }).toPass({ timeout: 5_000 });
+    async function command(name: string, args: Record<string, unknown> = {}) {
+      const { stdout } = await execute("python3", [helper, name, JSON.stringify(args)], {
+        env: { ...process.env, RAKAZO_CDP_PORT: port },
+        timeout: 30_000,
+      });
+      return JSON.parse(stdout);
+    }
+    type Snapshot = { tree: string; elements: { name: string; ref: string }[] };
+    const names = (snapshot: Snapshot) => snapshot.elements.map((element) => element.name);
+    const page = context.pages()[0]!;
+    await page.goto(`http://127.0.0.1:${address.port}`);
+
+    const top: Snapshot = await command("snapshot");
+    expect(top.tree).toMatch(/^\[controls: showing \d+ of \d+\. Snapshot with a query/);
+    expect(names(top)).not.toContain("Newsletter email");
+
+    const found: Snapshot = await command("snapshot", { query: "newsletter" });
+    expect(found.tree.startsWith('[controls matching "newsletter"]')).toBe(true);
+    expect(names(found)).toEqual(["Newsletter email", "Subscribe"]);
+    const ref = (name: string) => found.elements.find((element) => element.name === name)!.ref;
+    expect(
+      await command("act", {
+        actions: [
+          { kind: "fill", ref: ref("Newsletter email"), text: "reader@example.test" },
+          { kind: "click", ref: ref("Subscribe") },
+        ],
+      }),
+    ).toMatchObject({ ok: true, completed: 2 });
+    expect(await page.evaluate(() => (window as { subscribed?: string }).subscribed)).toBe(
+      "reader@example.test",
+    );
+
+    await page.evaluate(() => scrollTo(0, document.body.scrollHeight));
+    const bottom: Snapshot = await command("snapshot");
+    expect(names(bottom)).toContain("Subscribe");
+    expect(names(bottom)).not.toContain("Read story 0");
   } finally {
     await context?.close();
     await rm(profile, { recursive: true, force: true });
@@ -779,9 +848,7 @@ test("live page helper types a purchase's card into a payment provider's frame o
         actions: [{ kind: "fill", text, origin: merchant, field: "card", cardField }],
       });
     const page = context.pages()[0]!;
-    // The session sees a page's frames only from when it attaches, so start it before the page
-    // loads, as a bot's browser_navigate does.
-    await command("snapshot");
+    // The helper first reads the checkout after its card frame loaded, as when the person opened it.
     await page.goto(`${merchant}/checkout`);
     const card = page.frameLocator("iframe").locator("body");
     await expect(card.locator("#number")).toBeVisible();
