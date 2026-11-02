@@ -58,4 +58,15 @@ export const DE_MESSAGES: Record<string, string> = {
     "{name} ist jetzt im Rakazo-Plugin-Marktplatz gelistet.",
   "We couldn't list {name} in the Rakazo plugin marketplace.":
     "Wir konnten {name} nicht im Rakazo-Plugin-Marktplatz listen.",
+  "Confirm your Rakazo page claim": "Bestätige deinen Seitenanspruch bei Rakazo",
+  "Confirm claim": "Anspruch bestätigen",
+  "We review every claim once it's confirmed and will email you when it's done.":
+    "Wir prüfen jeden Anspruch, sobald er bestätigt ist, und schreiben dir, wenn wir fertig sind.",
+  "This link expires in one day. If you did not claim a page, ignore this email.":
+    "Dieser Link läuft in einem Tag ab. Wenn du keine Seite beansprucht hast, ignoriere diese E-Mail.",
+  "Your Rakazo page claim: {name}": "Dein Seitenanspruch bei Rakazo: {name}",
+  "Your changes to the {name} page are approved.":
+    "Deine Änderungen an der Seite {name} wurden genehmigt.",
+  "We couldn't approve your changes to the {name} page.":
+    "Wir konnten deine Änderungen an der Seite {name} nicht genehmigen.",
 };
