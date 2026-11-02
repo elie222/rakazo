@@ -8,14 +8,21 @@ import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { ModelConnectInputSchema } from "@rakazo/contracts";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import type { StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import type { EvalCase } from "../evals/cases.js";
 import { EVAL_CASES, HISTORY_EVAL_CASES } from "../evals/cases.js";
 import { HISTORY_FIXTURE_VERSION } from "../evals/history-fixtures.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "../evals/history-observer.js";
 import { observeSyntheticHistory } from "../evals/history-observer.js";
-import type { EvalJudge } from "../evals/judge.js";
+import type { EvalJudge, JudgeInput } from "../evals/judge.js";
 import { createEvalJudge } from "../evals/judge.js";
 import type { CacheDecisionMeasurement, EvalPricing, MeasuredCall } from "../evals/measurement.js";
 import { measureCalls, SpendBudget, validatePricing } from "../evals/measurement.js";
+import {
+  MEMORY_EVAL_CASES,
+  MEMORY_FIXTURE_VERSION,
+  MEMORY_JUDGE_CALIBRATION,
+  MEMORY_JUDGE_VERSION,
+} from "../evals/memory.js";
 import { emptyTrial, redact, summarize, validateControls } from "../evals/report.js";
 import {
   SILENCE_EVAL_CASES,
@@ -69,15 +76,33 @@ async function main() {
       workingDiffHash: workingDiffHash(),
       readConnection,
     });
-  const suites = {
+  const suites: Record<
+    string,
+    {
+      cases: EvalCase[];
+      fixtureVersion: string;
+      judge?: { version: string; calibration: Array<{ input: JudgeInput; pass: boolean }> };
+    }
+  > = {
     product: { cases: EVAL_CASES, fixtureVersion: "product-v1" },
     history: { cases: HISTORY_EVAL_CASES, fixtureVersion: HISTORY_FIXTURE_VERSION },
-    silence: { cases: SILENCE_EVAL_CASES, fixtureVersion: SILENCE_FIXTURE_VERSION },
+    silence: {
+      cases: SILENCE_EVAL_CASES,
+      fixtureVersion: SILENCE_FIXTURE_VERSION,
+      judge: { version: SILENCE_JUDGE_VERSION, calibration: SILENCE_JUDGE_CALIBRATION },
+    },
+    memory: {
+      cases: MEMORY_EVAL_CASES,
+      fixtureVersion: MEMORY_FIXTURE_VERSION,
+      judge: { version: MEMORY_JUDGE_VERSION, calibration: MEMORY_JUDGE_CALIBRATION },
+    },
     "tool-choice": { cases: TOOL_CHOICE_CASES, fixtureVersion: TOOL_CHOICE_FIXTURE_VERSION },
   };
   if (!Object.hasOwn(suites, values.suite!))
-    throw new Error("Unknown suite; use product, history, silence, tool-choice, or approval");
-  const suite = suites[values.suite as keyof typeof suites];
+    throw new Error(
+      "Unknown suite; use product, history, silence, memory, tool-choice, or approval",
+    );
+  const suite = suites[values.suite!]!;
   const extraCases = values["cases-file"] ? loadToolChoiceCases(values["cases-file"]) : [];
   const cases = [...suite.cases, ...extraCases];
   const fixtureVersion = extraCases.length
@@ -172,7 +197,7 @@ async function main() {
     limitations: [
       "Does not evaluate browser perception, native recording perception, or real external services.",
       "Silence cases observe routine chat, transient progress, and provider notification requests; native push delivery and UI pixels are outside the fixture.",
-      "Silence reply meaning uses a calibrated LLM judge; other suites retain their existing task-specific graders.",
+      "Silence replies and memory contents are graded by meaning with a calibrated LLM judge; other suites retain their existing task-specific graders.",
       "Cost uses provider-reported charges where available and explicit pricing estimates otherwise. Spend reservations are a guard, not a billing guarantee.",
       "Tool trace contains names and statuses only; raw requests and responses are omitted. The tool-calls artifact keeps model-supplied arguments, with only configured secrets redacted.",
     ],
@@ -261,6 +286,8 @@ async function main() {
   };
   let judge: EvalJudge | undefined;
   if (selected.some((c) => c.judge) && !values["cache-probe"]) {
+    if (!suite.judge) throw new Error("Judged cases need a suite rubric and calibration");
+    const suiteJudge = suite.judge;
     if (!values["judge-connection"] || !values["judge-pricing"])
       return notRun(
         "Semantic cases require --judge-connection and --judge-pricing; no inference was scheduled",
@@ -286,7 +313,7 @@ async function main() {
     report.judge = {
       model: judgeConnection.modelId!,
       provider: judgeConnection.provider,
-      rubricVersion: SILENCE_JUDGE_VERSION,
+      rubricVersion: suiteJudge.version,
       pricing: judgePricing,
       calibration: [],
       modelCalls: 0,
@@ -337,7 +364,7 @@ async function main() {
       }
     };
     try {
-      for (const anchor of SILENCE_JUDGE_CALIBRATION) {
+      for (const anchor of suiteJudge.calibration) {
         const verdict = await judge(anchor.input, AbortSignal.timeout(60_000));
         report.judge.calibration.push({
           expected: anchor.pass,
