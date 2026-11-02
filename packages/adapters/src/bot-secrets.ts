@@ -842,7 +842,7 @@ export async function requestWithBotSecret(input: {
       truncated: safe.length > 20_000,
     };
   } catch {
-    return { error: "Authenticated request failed. Check the destination and credential." };
+    return { error: "Authenticated request failed. Check the network and destination." };
   } finally {
     controller.abort();
     await withAbort(fetch.close(), AbortSignal.timeout(1000)).catch(() => undefined);
