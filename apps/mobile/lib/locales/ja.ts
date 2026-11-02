@@ -973,6 +973,15 @@ export const JA_MESSAGES: Record<string, string> = {
   Credits: "クレジット",
   "Available credits": "利用可能なクレジット",
   "Computer hours left": "コンピューターの残り時間",
+  "Trials get fewer hours to prevent abuse.":
+    "不正利用を防ぐため、トライアルでは時間が少なくなっています。",
+  "Start plan now": "今すぐプランを開始",
+  "Start your plan now?": "今すぐプランを開始しますか？",
+  "Your trial ends and your card is charged {price} today.":
+    "トライアルが終了し、本日カードに{price}が請求されます。",
+  "Your trial ends and your card is charged today.":
+    "トライアルが終了し、本日カードに請求されます。",
+  "Start plan": "プランを開始",
   "Monthly credits": "月間クレジット",
   "Upgrade now": "今すぐアップグレード",
   "Downgrade at renewal": "更新時にダウングレード",

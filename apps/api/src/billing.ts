@@ -66,6 +66,8 @@ export interface BillingService {
   setMonthlyCredits(actor: Actor, amountCents: number): Promise<{ ok: true }>;
   checkout(actor: Actor, client?: BillingClient): Promise<{ url: string }>;
   portal(actor: Actor, client?: BillingClient): Promise<{ url: string }>;
+  /** Ends the organization's trial and bills the first period now. */
+  endTrial(actor: Actor): Promise<void>;
   /** Re-fetches the customer's subscription from the provider and overwrites the stored snapshot. */
   sync(customerId: string): Promise<void>;
   /** Syncs the actor's organization, e.g. on return from checkout before the webhook lands. */
@@ -504,6 +506,15 @@ export function createBillingService(deps: {
           returnUrl: client === "mobile" ? mobileReturnUrl : appUrl,
         }),
       );
+    },
+
+    async endTrial(actor) {
+      if (!provider.endTrial) throw new ORPCError("NOT_FOUND");
+      const { organizationId } = await managedOrganization(actor);
+      const account = await billingAccountForOrganization(prisma, organizationId);
+      if (!account) throw new ORPCError("NOT_FOUND", { message: "No billing account" });
+      await provider.endTrial(account.customerId);
+      await sync(account.customerId);
     },
 
     sync,
