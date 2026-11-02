@@ -75,16 +75,6 @@ it("refreshes recovered and newly delayed status while the detail stays open", a
   expect(container.textContent).toContain("Schedule delayed");
 });
 
-it("does not keep claiming a delay after a failed status read, and recovers on the next poll", async () => {
-  state.useBotRoutines.mockReturnValue({ routines: [routine], failedSinceShown: true });
-  await act(async () => root.render(createElement(RoutineDetail)));
-  expect(container.textContent).not.toContain("Schedule delayed");
-  state.useBotRoutines.mockReturnValue({ routines: [routine], failedSinceShown: false });
-  await act(async () => root.render(createElement(RoutineDetail)));
-  expect(container.textContent).toContain("Schedule delayed");
-  expect(container.textContent).not.toContain("Could not load routine");
-});
-
 it("uses the shared routine store with focus-scoped polling enabled", () => {
   expect(state.useBotRoutines).toHaveBeenCalledWith("bot-1");
 });

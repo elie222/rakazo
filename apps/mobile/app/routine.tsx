@@ -61,9 +61,7 @@ export default function RoutineDetail() {
             }}
           >
             <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>
-              {routineStatusLine(
-                failedSinceShown ? { ...routine, scheduleDelayed: false } : routine,
-              )}
+              {routineStatusLine(routine)}
             </Text>
           </View>
           <View style={{ gap: 8 }}>

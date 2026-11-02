@@ -3,7 +3,7 @@ import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import type { QueryFunction } from "@tanstack/react-query";
 import { hashKey, useQuery } from "@tanstack/react-query";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { captureApiRequestContext, rpc } from "./api";
 import { queryClient, rpcQuery } from "./query";
 import { createQueuedSave } from "./queued-save";
@@ -175,12 +175,18 @@ export function useBotRoutines(botId: string) {
       return () => clearInterval(timer);
     }, [botId]),
   );
+  const failedSinceShown = errorUpdatedAt >= shownSince && errorUpdatedAt > dataUpdatedAt;
+  // A delay seen before a failed read may already have cleared.
+  const routines = useMemo(
+    () => (failedSinceShown ? data?.map((r) => ({ ...r, scheduleDelayed: false })) : data),
+    [data, failedSinceShown],
+  );
   return {
-    routines: data,
+    routines,
     error,
     /** A read answered since this screen opened, so a missing routine is really gone. */
     readSinceShown: dataUpdatedAt >= shownSince,
     /** The latest read since this screen opened failed. */
-    failedSinceShown: errorUpdatedAt >= shownSince && errorUpdatedAt > dataUpdatedAt,
+    failedSinceShown,
   };
 }
