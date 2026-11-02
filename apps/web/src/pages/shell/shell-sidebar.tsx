@@ -2,6 +2,13 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, NavLink } from "@rakazo/contracts";
 import { accountDisplay } from "@rakazo/core";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Button,
   InputGroup,
   InputGroupAddon,
@@ -304,6 +311,7 @@ function ShellSidebarFooter({
       ? billing.byokFreeUntil
       : null;
   const [menuOpen, setMenuOpen] = useState(false);
+  const [confirmLogOutAll, setConfirmLogOutAll] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const referral = billing?.referral;
   const [logOutError, setLogOutError] = useState<string | null>(null);
@@ -341,7 +349,8 @@ function ShellSidebarFooter({
         onSwitchAccount={(userId) => void switchSavedAccount(userId)}
         onAddAccount={saved.accounts.length ? () => void addSavedAccount() : undefined}
         onLogOutAll={() => {
-          if (window.confirm(t`Log out all accounts?`)) void logOutAll();
+          setMenuOpen(false);
+          setConfirmLogOutAll(true);
         }}
         open={menuOpen}
         onOpenChange={(open) => {
@@ -399,6 +408,31 @@ function ShellSidebarFooter({
         signingOut={signingOut}
         logOutError={logOutError}
       />
+      <AlertDialog open={confirmLogOutAll} onOpenChange={setConfirmLogOutAll}>
+        <AlertDialogContent aria-describedby={undefined}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              <Trans>Log out all accounts?</Trans>
+            </AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              <Trans>Cancel</Trans>
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={signingOut}
+              onClick={() => {
+                setConfirmLogOutAll(false);
+                setLogOutError(null);
+                void logOutAll();
+              }}
+            >
+              <Trans>Log out all accounts</Trans>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {referral ? (
         <InviteDialog referral={referral} open={inviteOpen} onOpenChange={setInviteOpen} />
       ) : null}

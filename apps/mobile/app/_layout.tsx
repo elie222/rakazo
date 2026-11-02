@@ -19,7 +19,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { AppState, Platform, StyleSheet, View } from "react-native";
+import { Alert, AppState, Platform, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
@@ -35,7 +35,7 @@ import { MessageMenuHost } from "../components/message-action-menu";
 import { MessageActionSheetHost } from "../components/message-action-sheet-host";
 import { NativeSymbol } from "../components/native-symbol";
 import { VoicePlayerBar } from "../components/voice-player-bar";
-import { refreshAccountSummaries } from "../lib/account-sessions";
+import { refreshAccountSummaries, selectNextSavedAccount } from "../lib/account-sessions";
 import {
   currentApiBase,
   loadApiBase,
@@ -69,6 +69,7 @@ import { loadResponseStreamingPreference } from "../lib/response-streaming";
 import { clearSavedChats } from "../lib/saved-chats";
 import {
   currentReadySessionGeneration,
+  currentSessionGeneration,
   registerSessionDiskCache,
   subscribeSessionGeneration,
 } from "../lib/session";
@@ -93,6 +94,7 @@ import {
   useTrustedLinkSites,
 } from "../lib/trusted-link-sites";
 import { startUnsentSends } from "../lib/unsent-sends";
+import { errorText } from "../lib/user-error";
 import { InboxPane } from "./index";
 
 // Before anything renders: text grows with the iOS text size only up to a fixed maximum.
@@ -292,7 +294,10 @@ function LayoutContent() {
       foreground.remove();
     };
   }, [ready, accountGeneration]);
-  const screen = analyticsScreen(usePathname());
+  const pathname = usePathname();
+  const recoveryParams = useGlobalSearchParams();
+  const screen = analyticsScreen(pathname);
+  const router = useRouter();
   useEffect(() => setMobileMonitoringScreen(screen), [screen]);
   useEffect(() => {
     const surface = Platform.OS;
@@ -342,8 +347,39 @@ function LayoutContent() {
   useEffect(() => {
     if (!ready) return;
     // A session revoked or expired on the server ends here, from whichever screen noticed it.
-    return subscribeSessionRejected(() => replaceWithSignIn());
-  }, [ready]);
+    let active = true;
+    const unsubscribe = subscribeSessionRejected(() => {
+      // Notification and add-account screens own their intended destination.
+      if (
+        pathname === "/notification-open" ||
+        recoveryParams.notificationTarget ||
+        recoveryParams.addAccount === "1"
+      )
+        return;
+      const apiBase = currentApiBase();
+      const generation = currentSessionGeneration();
+      void selectNextSavedAccount()
+        .then((result) => {
+          if (!active || apiBase !== currentApiBase()) return;
+          if (result === "selected" && generation + 1 === currentSessionGeneration()) {
+            router.dismissTo("/");
+            router.replace("/");
+          } else if (result === "unavailable" && generation === currentSessionGeneration()) {
+            replaceWithSignIn();
+          }
+        })
+        .catch((error) => {
+          if (!active || apiBase !== currentApiBase() || generation !== currentSessionGeneration())
+            return;
+          Alert.alert(errorText(error, t("Could not continue")));
+          replaceWithSignIn();
+        });
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [ready, pathname, recoveryParams.notificationTarget, recoveryParams.addAccount, router, t]);
 
   useEffect(() => {
     if (!ready) return;
@@ -356,7 +392,9 @@ function LayoutContent() {
     markMobileStartupMounted();
     void Promise.all([
       Promise.all([
-        trackMobileStartup("server", loadApiBase()),
+        trackMobileStartup("server", loadApiBase()).catch((error) => {
+          Alert.alert(errorText(error, t("Could not continue")));
+        }),
         trackMobileStartup("appearance", loadAppearancePreference()).finally(() =>
           setAppearanceReady(true),
         ),

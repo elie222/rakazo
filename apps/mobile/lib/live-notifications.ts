@@ -3,6 +3,7 @@ import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { apiBaseWarning, normalizeApiBase } from "./endpoint";
 import { getActiveUiLocale, t } from "./i18n";
+import type { SavedAccount } from "./saved-accounts";
 import {
   cachedSavedAccounts,
   loadSavedAccounts,
@@ -168,9 +169,19 @@ export async function setLiveNotificationSettings(
     const granted = existing.granted || (await Notifications.requestPermissionsAsync()).granted;
     if (!granted) throw new Error(t("Android blocked notifications."));
   }
-  const accounts = await loadSavedAccounts(parsed.url).catch(() => []);
+  let accounts: SavedAccount[];
+  try {
+    accounts = await loadSavedAccounts(parsed.url);
+  } catch {
+    if (selectedSavedAccount() === selection) await nativeNotifications.stop(false);
+    return;
+  }
   const account = accounts.find((row) => row.token === token);
   if (selectedSavedAccount() !== selection) return;
+  if (nativeNotifications.setAccount && !account) {
+    await nativeNotifications.stop(false);
+    return;
+  }
   if (account)
     await updateSavedAccountIfCurrent(parsed.url, account.token, (row) => ({
       ...row,
@@ -203,9 +214,19 @@ export async function resumeLiveNotifications(
   const selection = selectedSavedAccount();
   const parsed = normalizeApiBase(endpoint);
   if (!parsed.ok || apiBaseWarning(parsed.url)) return;
-  const accounts = await loadSavedAccounts(parsed.url).catch(() => []);
+  let accounts: SavedAccount[];
+  try {
+    accounts = await loadSavedAccounts(parsed.url);
+  } catch {
+    if (selectedSavedAccount() === selection) await nativeNotifications.stop(false);
+    return;
+  }
   const account = accounts.find((row) => row.token === token);
   if (selectedSavedAccount() !== selection) return;
+  if (nativeNotifications.setAccount && !account) {
+    await nativeNotifications.stop(false);
+    return;
+  }
   // Older native binaries cannot attach an account to links; their poller pauses for multiple logins.
   if (accounts.length > 1 && !nativeNotifications.setAccount) {
     await nativeNotifications.stop(false);
@@ -229,6 +250,17 @@ export async function resumeLiveNotifications(
     if (selectedSavedAccount() !== selection) return;
     await nativeNotifications.setSettings(
       settings,
+      parsed.url,
+      token,
+      spaceId,
+      getActiveUiLocale(),
+      nativeServerHeaders(parsed.url),
+    );
+    return;
+  }
+  if (account?.notifications) {
+    await nativeNotifications.setSettings(
+      account.notifications,
       parsed.url,
       token,
       spaceId,

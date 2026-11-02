@@ -31,6 +31,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
@@ -65,7 +66,7 @@ class RakazoNotificationService : Service() {
   private var pollJob: Job? = null
   private val knownCompleted = mutableSetOf<String>()
   private val alertedAttention = mutableSetOf<String>()
-  private var historySpaceId: String? = null
+  private var historyScope: String? = null
   private val tokenCache = PollTokenCache()
   private val historyWrites = PollHistoryWrites()
 
@@ -253,20 +254,22 @@ class RakazoNotificationService : Service() {
     synchronized(sessionLock) {
       if (generation != sessionGeneration.get()) return null
       val state = getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE)
-      if (historySpaceId != spaceId) {
+      val storage = NotificationStorage(this)
+      val scope = JSONArray().put(storage.endpoint).put(storage.userId).put(spaceId).toString()
+      if (historyScope != scope) {
         knownCompleted.clear()
         alertedAttention.clear()
         historyWrites.reset()
-        if (state.getString(SEEN_RUNS_SPACE_ID, null) == spaceId) {
+        if (state.getString(SEEN_RUNS_SPACE_ID, null) == scope) {
           knownCompleted += state.getStringSet(SEEN_RUNS, emptySet()).orEmpty()
         } else {
           state.edit()
-            .putString(SEEN_RUNS_SPACE_ID, spaceId)
+            .putString(SEEN_RUNS_SPACE_ID, scope)
             .remove(SEEN_RUNS)
             .putBoolean(SEEN_RUNS_SEEDED, false)
             .apply()
         }
-        historySpaceId = spaceId
+        historyScope = scope
       }
       state.getBoolean(SEEN_RUNS_SEEDED, false)
     }

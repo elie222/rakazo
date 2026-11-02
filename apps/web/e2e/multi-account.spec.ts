@@ -137,8 +137,20 @@ test("saved accounts switch, receive hidden-account notifications, and sign out 
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/app/${workBot}$`));
     await page.getByTestId("user-menu-trigger").click();
-    page.once("dialog", (dialog) => void dialog.accept());
     await page.getByRole("button", { name: "Log out all accounts", exact: true }).click();
+    const confirmation = page.getByRole("alertdialog", { name: "Log out all accounts?" });
+    await expect(confirmation).toBeVisible();
+    await captureScreenshot(page, testInfo, "multi-account-sign-out-all");
+    await confirmation.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(confirmation).toBeHidden();
+    const cancelled = (await (await page.request.get("/api/accounts")).json()) as AccountSessions;
+    expect(cancelled.accounts.map((account) => account.email).sort()).toEqual(
+      [familyEmail, workEmail].sort(),
+    );
+    await expect(page).toHaveURL(new RegExp(`/app/${workBot}$`));
+    await page.getByTestId("user-menu-trigger").click();
+    await page.getByRole("button", { name: "Log out all accounts", exact: true }).click();
+    await confirmation.getByRole("button", { name: "Log out all accounts", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
     const signedOut = (await (await page.request.get("/api/accounts")).json()) as AccountSessions;
     expect(signedOut.accounts).toEqual([]);

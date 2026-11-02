@@ -13,6 +13,7 @@ import {
   forgetSavedToken,
   loadSavedAccounts,
   rememberSavedAccount,
+  savedAccountRevocationSnapshot,
   savedAccountServers,
   setSelectedSavedAccount,
   updateSavedAccountIfCurrent,
@@ -23,6 +24,13 @@ import { currentSessionGeneration, saveSessionToken } from "./session";
 export type AccountSummary = Omit<SavedAccount, "token" | "notifications">;
 let selectionRequest = 0;
 let signingOutAll = false;
+
+/** Recovery menus can show saved identities before the network is reachable. */
+export async function loadAccountSummaries(): Promise<AccountSummary[]> {
+  return (await loadSavedAccounts(currentApiBase())).map(
+    ({ token: _token, notifications: _notifications, ...summary }) => summary,
+  );
+}
 
 async function accountJson(apiBase: string, token: string, path: string, method = "GET") {
   const controller = new AbortController();
@@ -242,16 +250,12 @@ export async function signOutAllAccounts(): Promise<void> {
   const generation = currentSessionGeneration();
   const activeToken = await loadSessionToken();
   await rememberCurrentAccount().catch(() => undefined);
-  const servers = await savedAccountServers();
-  const accounts = (
-    await Promise.all(
-      servers.map(async (server) =>
-        (
-          await loadSavedAccounts(server)
-        ).map((account) => ({ apiBase: server, token: account.token })),
-      ),
-    )
-  ).flat();
+  let localFailed = false;
+  const accounts: Array<{ apiBase: string; token: string }> =
+    await savedAccountRevocationSnapshot().catch(() => {
+      localFailed = true;
+      return [];
+    });
   if (
     activeToken &&
     apiBase === currentApiBase() &&
@@ -265,10 +269,10 @@ export async function signOutAllAccounts(): Promise<void> {
   let failed = false;
   try {
     await Promise.all(
-      accounts.map((account) => queueSessionRevocation(account.apiBase, account.token)),
-    );
-    await Promise.all(
       accounts.map(async (account) => {
+        // Failure to retain a retry credential must not prevent direct revocation
+        // or the independent attempts to remove the local saved and primary tokens.
+        await queueSessionRevocation(account.apiBase, account.token).catch(() => undefined);
         try {
           const { response, body } = await accountJson(
             account.apiBase,
@@ -277,12 +281,14 @@ export async function signOutAllAccounts(): Promise<void> {
             "POST",
           );
           if (response.ok && (body as { success?: unknown } | null)?.success === true)
-            await completeSessionRevocation(account.apiBase, account.token);
+            await completeSessionRevocation(account.apiBase, account.token).catch(() => undefined);
           else failed = true;
         } catch {
           failed = true;
         }
-        await forgetSavedToken(account.apiBase, account.token);
+        await forgetSavedToken(account.apiBase, account.token).catch(() => {
+          localFailed = true;
+        });
       }),
     );
     const cleanupServer = currentApiBase();
@@ -297,6 +303,7 @@ export async function signOutAllAccounts(): Promise<void> {
       expectedTokens.includes(token)
     )
       await signOut(expectedTokens, cleanupServer);
+    if (localFailed) throw new Error(t("Could not clear the local session"));
     if (failed)
       throw new Error(t("Signed out on this device. Some server sessions could not be revoked."));
   } finally {

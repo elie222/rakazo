@@ -9,6 +9,7 @@ import {
   currentApiBase,
   fetchMobileJson,
   passwordResetCapabilities,
+  rememberAuthenticatedAccount,
 } from "./api";
 import {
   addPasskey,
@@ -35,6 +36,7 @@ vi.mock("./api", () => ({
   currentApiBase: vi.fn(() => "https://rakazo.example.test"),
   fetchMobileJson: vi.fn(),
   passwordResetCapabilities: vi.fn(),
+  rememberAuthenticatedAccount: vi.fn(async () => undefined),
 }));
 vi.mock("./session", () => ({
   currentSessionGeneration: vi.fn(() => 1),
@@ -160,6 +162,12 @@ describe("passkey sign-in", () => {
     expect(verify?.body).toEqual({ response: credential });
     expect(clearSpace).toHaveBeenCalledOnce();
     expect(replaceSessionTokenIfCurrent).toHaveBeenCalledWith(1, "new-session");
+    expect(rememberAuthenticatedAccount).toHaveBeenCalledWith(
+      "https://rakazo.example.test",
+      "new-session",
+      expect.objectContaining({ user: { id: "user-1" } }),
+      1,
+    );
   });
 
   it.each([

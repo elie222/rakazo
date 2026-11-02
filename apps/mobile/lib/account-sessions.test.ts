@@ -1,5 +1,7 @@
+import * as SecureStore from "expo-secure-store";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
+  loadAccountSummaries,
   refreshAccountSummaries,
   selectNextSavedAccount,
   selectNotificationAccount,
@@ -7,7 +9,12 @@ import {
   signOutAllAccounts,
 } from "./account-sessions";
 import { pendingSessionTokens } from "./pending-session-revocations";
-import { forgetSavedToken, loadSavedAccounts, rememberSavedAccount } from "./saved-accounts";
+import {
+  forgetSavedToken,
+  loadSavedAccounts,
+  rememberSavedAccount,
+  savedAccountRevocationSnapshot,
+} from "./saved-accounts";
 
 const state = vi.hoisted(() => ({
   token: "family-token",
@@ -73,6 +80,18 @@ beforeEach(async () => {
   );
   await rememberSavedAccount(apiBase, account("family", "family-token"));
   await rememberSavedAccount(apiBase, account("work", "work-token"));
+});
+it("returns local recovery identities without credentials or notification settings", async () => {
+  const summaries = await loadAccountSummaries();
+  expect(summaries.map((row) => row.userId)).toEqual(["family", "work"]);
+  expect(summaries).toEqual(
+    expect.arrayContaining([expect.objectContaining({ email: "work@example.test" })]),
+  );
+  for (const summary of summaries) {
+    expect(summary).not.toHaveProperty("token");
+    expect(summary).not.toHaveProperty("notifications");
+  }
+  expect(fetch).not.toHaveBeenCalled();
 });
 it("validates and selects the notification owner while preserving the other login", async () => {
   expect(await selectNotificationAccount("work")).toBe(true);
@@ -302,6 +321,43 @@ it("skips a revoked fallback and selects the next valid saved account", async ()
   expect(await selectNextSavedAccount()).toBe("selected");
   expect(state.token).toBe("work-token");
   expect((await loadSavedAccounts(apiBase)).map((row) => row.userId)).toEqual(["work"]);
+});
+
+it("revokes and removes every saved credential even when the pending store is malformed", async () => {
+  state.disk.set("rakazo.pending_session_revocations", "malformed-json");
+  vi.mocked(fetch).mockImplementation(async () => Response.json({ success: true }));
+  await signOutAllAccounts();
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(await savedAccountRevocationSnapshot()).toEqual([]);
+  expect(state.token).toBe("");
+  expect(state.signOut).toHaveBeenCalledOnce();
+  await expect(loadSavedAccounts(apiBase)).rejects.toThrow();
+});
+
+it("does not let revocation-queue write failure skip remote or local sign-out-all", async () => {
+  const original = vi.mocked(SecureStore.setItemAsync).getMockImplementation()!;
+  vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+    if (key.startsWith("rakazo.pending_session_revocations")) throw new Error("Storage locked");
+    return original(key, value);
+  });
+  try {
+    vi.mocked(fetch).mockImplementation(async () => Response.json({ success: true }));
+    await signOutAllAccounts();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(await loadSavedAccounts(apiBase)).toEqual([]);
+    expect(state.token).toBe("");
+  } finally {
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(original);
+  }
+});
+
+it("reports remote failure after local sign-out-all when no retry credential can be saved", async () => {
+  state.disk.set("rakazo.pending_session_revocations", "malformed-json");
+  vi.mocked(fetch).mockRejectedValue(new Error("offline"));
+  await expect(signOutAllAccounts()).rejects.toThrow("Some server sessions could not be revoked");
+  expect(await savedAccountRevocationSnapshot()).toEqual([]);
+  expect(state.token).toBe("");
+  expect(state.signOut).toHaveBeenCalledOnce();
 });
 
 it("reports no fallback only after every saved account is revoked", async () => {

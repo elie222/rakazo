@@ -2,6 +2,7 @@ import { getArtifactById } from "./artifacts";
 
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
 vi.mock("./saved-accounts", () => ({
+  cachedSavedAccounts: vi.fn(() => []),
   forgetSavedToken: vi.fn(async () => undefined),
   rememberSavedAccount: vi.fn(async () => undefined),
   replaceSavedToken: vi.fn(async () => undefined),
@@ -64,7 +65,9 @@ import {
   updateAccountName,
 } from "./api.js";
 import { resumeLiveNotifications } from "./live-notifications.js";
+import { pendingSessionTokens, queueSessionRevocation } from "./pending-session-revocations";
 import { threadRefreshDelayMs } from "./refresh";
+import { forgetSavedToken, rememberSavedAccount } from "./saved-accounts";
 import {
   clearSessionToken,
   restoreSessionToken,
@@ -80,6 +83,12 @@ vi.mock("expo-secure-store", () => ({
   deleteItemAsync: vi.fn(),
 }));
 vi.mock("./live-notifications.js", () => ({
+  DEFAULT_LIVE_NOTIFICATION_SETTINGS: {
+    liveConnection: false,
+    messages: true,
+    scheduledTasks: true,
+    needsAttention: true,
+  },
   resumeLiveNotifications: vi.fn(async () => undefined),
   stopLiveNotifications: vi.fn(async () => undefined),
 }));
@@ -91,6 +100,34 @@ afterEach(() => {
 });
 
 describe("mobile API authentication", () => {
+  it("initializes an authenticated fresh account with independent notification defaults", async () => {
+    vi.mocked(SecureStore.setItemAsync).mockResolvedValue();
+    vi.mocked(SecureStore.deleteItemAsync).mockResolvedValue();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse({
+          token: "work-new-token",
+          user: { id: "work", name: "Work", email: "work@example.test" },
+        }),
+      ),
+    );
+    await signIn("work@example.test", "password12");
+    expect(rememberSavedAccount).toHaveBeenCalledWith(
+      currentApiBase(),
+      expect.objectContaining({
+        userId: "work",
+        token: "work-new-token",
+        notifications: {
+          liveConnection: false,
+          messages: true,
+          scheduledTasks: true,
+          needsAttention: true,
+        },
+      }),
+      expect.any(Function),
+    );
+  });
   it("does not send a captured old bearer after the session changes", async () => {
     await saveSessionToken("fake-session-a");
     const context = await captureApiRequestContext();
@@ -107,6 +144,9 @@ describe("mobile API authentication", () => {
     vi.mocked(SecureStore.setItemAsync).mockReset();
     vi.mocked(SecureStore.deleteItemAsync).mockReset();
     vi.mocked(resumeLiveNotifications).mockClear();
+    vi.mocked(pendingSessionTokens).mockReset().mockResolvedValue(new Set());
+    vi.mocked(queueSessionRevocation).mockReset().mockResolvedValue(undefined);
+    vi.mocked(forgetSavedToken).mockReset().mockResolvedValue(undefined);
     await restoreSessionToken("");
   });
 
@@ -1023,6 +1063,75 @@ describe("mobile API authentication", () => {
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.session_token");
   });
 
+  it("still revokes and clears the primary token when the revocation queue cannot be written", async () => {
+    const store = new Map([["rakazo.session_token", "family-token"]]);
+    mockSecureStore(store);
+    await saveSessionToken("family-token");
+    vi.mocked(queueSessionRevocation).mockRejectedValueOnce(new Error("storage locked"));
+    const fetchMock = vi.fn(async (url) =>
+      String(url).includes("/rpc/")
+        ? jsonResponse({ json: { ok: true } })
+        : jsonResponse({ success: true }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(signOut()).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/auth/sign-out"),
+      expect.objectContaining({
+        headers: expect.objectContaining({ authorization: "Bearer family-token" }),
+      }),
+    );
+    expect(store.has("rakazo.session_token")).toBe(false);
+    expect(await snapshotSessionToken()).toEqual({ ok: true, value: "" });
+  });
+
+  it("reports incomplete revocation after clearing locally when both queue and server fail", async () => {
+    const store = new Map([["rakazo.session_token", "family-token"]]);
+    mockSecureStore(store);
+    await saveSessionToken("family-token");
+    vi.mocked(queueSessionRevocation).mockRejectedValueOnce(new Error("storage locked"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("offline");
+      }),
+    );
+    await expect(signOut()).rejects.toThrow("Some server sessions could not be revoked");
+    expect(store.has("rakazo.session_token")).toBe(false);
+    expect(await snapshotSessionToken()).toEqual({ ok: true, value: "" });
+  });
+
+  it("does not skip primary cleanup when saved-account removal fails", async () => {
+    const store = new Map([["rakazo.session_token", "family-token"]]);
+    mockSecureStore(store);
+    await saveSessionToken("family-token");
+    vi.mocked(forgetSavedToken).mockRejectedValueOnce(new Error("storage locked"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ success: true })),
+    );
+    await expect(signOut()).rejects.toThrow("Could not clear the local session");
+    expect(store.has("rakazo.session_token")).toBe(false);
+    expect(await snapshotSessionToken()).toEqual({ ok: true, value: "" });
+  });
+
+  it("quarantines the bearer and reports failure when no local credential write succeeds", async () => {
+    const store = new Map([["rakazo.session_token", "family-token"]]);
+    mockSecureStore(store);
+    await saveSessionToken("family-token");
+    vi.mocked(queueSessionRevocation).mockRejectedValueOnce(new Error("storage locked"));
+    vi.mocked(forgetSavedToken).mockRejectedValueOnce(new Error("storage locked"));
+    vi.mocked(SecureStore.deleteItemAsync).mockRejectedValue(new Error("storage locked"));
+    vi.mocked(SecureStore.setItemAsync).mockRejectedValue(new Error("storage locked"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ success: true })),
+    );
+    await expect(signOut()).rejects.toThrow("Could not clear the local session");
+    expect(store.get("rakazo.session_token")).toBe("family-token");
+    expect(await snapshotSessionToken()).toEqual({ ok: true, value: "" });
+  });
+
   it("does not sign out an unrelated replacement while clearing a revoked account set", async () => {
     let stored = "unrelated-new-session";
     vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) =>
@@ -1587,6 +1696,25 @@ describe("mobile API authentication", () => {
     });
   });
 
+  it.each([new SyntaxError("Malformed pending store"), new Error("Storage locked")])(
+    "finishes server and Space restoration while quarantining an uncertain pending credential (%s)",
+    async (error) => {
+      const store = new Map([
+        ["rakazo.api_base", "https://app.example.test"],
+        ["rakazo.space_id", "family-space"],
+        ["rakazo.session_token", "family-token"],
+      ]);
+      mockSecureStore(store);
+      await saveSessionToken("family-token");
+      vi.mocked(pendingSessionTokens).mockRejectedValueOnce(error);
+      await expect(loadApiBase()).rejects.toThrow("Could not continue");
+      expect(currentApiBase()).toBe("https://app.example.test");
+      expect(selectedSpaceId()).toBe("family-space");
+      expect(store.has("rakazo.session_token")).toBe(false);
+      expect(await authHeaders()).not.toHaveProperty("authorization");
+    },
+  );
+
   it("restores a persisted space when its initial load failed", async () => {
     vi.mocked(SecureStore.getItemAsync).mockResolvedValue(null);
     await loadApiBase();
@@ -2140,6 +2268,37 @@ describe("mobile API authentication", () => {
       await expect(rpc("me")).rejects.toThrow("Unauthorized");
       expect(fetchMock.mock.calls[2]![1].headers.authorization).toBeUndefined();
       expect(rejected).toHaveBeenCalledOnce();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("does not announce an old rejection after a different account signs in during cleanup", async () => {
+    const store = new Map([["rakazo.session_token", "family-token"]]);
+    mockSecureStore(store);
+    await loadApiBase();
+    await saveSessionToken("family-token");
+    let release!: () => void;
+    vi.mocked(forgetSavedToken).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized")),
+    );
+    const rejected = vi.fn();
+    const unsubscribe = subscribeSessionRejected(rejected);
+    try {
+      const pending = expect(rpc("me")).rejects.toThrow("Unauthorized");
+      await vi.waitFor(() => expect(release).toBeDefined());
+      await saveSessionToken("work-token");
+      release();
+      await pending;
+      expect(await snapshotSessionToken()).toEqual({ ok: true, value: "work-token" });
+      expect(rejected).not.toHaveBeenCalled();
     } finally {
       unsubscribe();
     }

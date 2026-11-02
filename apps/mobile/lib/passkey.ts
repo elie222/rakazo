@@ -10,6 +10,7 @@ import {
   currentApiBase,
   fetchMobileJson,
   passwordResetCapabilities,
+  rememberAuthenticatedAccount,
 } from "./api";
 import { t } from "./i18n";
 import {
@@ -160,6 +161,7 @@ export function signInWithPasskey(): Promise<boolean> {
     try {
       if (!(await clearSpace()))
         throw new Error(t("Could not save your sign-in on this device. Try again."));
+      await rememberAuthenticatedAccount(flow.apiBase, token, body, flow.generation);
       return await replaceSessionTokenIfCurrent(flow.generation, token);
     } catch (error) {
       throw new Error(sessionSaveErrorText(error));

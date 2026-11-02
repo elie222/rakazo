@@ -1,6 +1,11 @@
 import * as SecureStore from "expo-secure-store";
 import { beforeEach, expect, it, vi } from "vitest";
-import { forgetSavedToken, loadSavedAccounts, rememberSavedAccount } from "./saved-accounts";
+import {
+  forgetSavedToken,
+  loadSavedAccounts,
+  rememberSavedAccount,
+  savedAccountRevocationSnapshot,
+} from "./saved-accounts";
 
 const disk = vi.hoisted(() => new Map<string, string>());
 vi.mock("expo-secure-store", () => ({
@@ -58,4 +63,51 @@ it("serializes concurrent additions without losing either account", async () => 
     rememberSavedAccount(apiBase, account("work", "work-token")),
   ]);
   expect(await loadSavedAccounts(apiBase)).toHaveLength(2);
+});
+
+it("keeps existing account preferences when a fresh authenticated bearer supplies defaults", async () => {
+  const preferences = {
+    liveConnection: false,
+    messages: false,
+    scheduledTasks: false,
+    needsAttention: false,
+  };
+  const defaults = {
+    liveConnection: false,
+    messages: true,
+    scheduledTasks: true,
+    needsAttention: true,
+  };
+  await rememberSavedAccount(apiBase, {
+    ...account("family", "family-token"),
+    notifications: preferences,
+  });
+  await rememberSavedAccount(apiBase, {
+    ...account("family", "new-family-token"),
+    notifications: defaults,
+  });
+  expect((await loadSavedAccounts(apiBase))[0]).toMatchObject({
+    token: "new-family-token",
+    notifications: preferences,
+  });
+  await forgetSavedToken(apiBase, "new-family-token");
+  await rememberSavedAccount(apiBase, {
+    ...account("work", "work-token"),
+    notifications: defaults,
+  });
+  expect((await loadSavedAccounts(apiBase))[0]).toMatchObject({
+    userId: "work",
+    notifications: defaults,
+  });
+});
+
+it("allows only the revocation snapshot to read credentials when pending sign-outs are unreadable", async () => {
+  await rememberSavedAccount(apiBase, account("family", "family-token"));
+  await rememberSavedAccount(apiBase, account("work", "work-token"));
+  disk.set("rakazo.pending_session_revocations", "malformed-json");
+  await expect(loadSavedAccounts(apiBase)).rejects.toThrow();
+  expect(await savedAccountRevocationSnapshot()).toEqual([
+    { apiBase, token: "family-token" },
+    { apiBase, token: "work-token" },
+  ]);
 });

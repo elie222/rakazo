@@ -64,7 +64,7 @@ import type { EndpointResult } from "./endpoint";
 import { defaultApiBase, normalizeApiBase } from "./endpoint";
 import { getActiveUiLocale, t } from "./i18n";
 import { identityLabels } from "./identity-display";
-import { resumeLiveNotifications } from "./live-notifications";
+import { DEFAULT_LIVE_NOTIFICATION_SETTINGS, resumeLiveNotifications } from "./live-notifications";
 import {
   beginMobileAvatarFeed,
   mobileLogoAvatarActivity,
@@ -191,20 +191,29 @@ export async function loadApiBase() {
   await loadServerHeaders(apiBase);
   setCachedApiBase(apiBase);
   // A process may have stopped after recording sign-out but before clearing its primary token.
-  const pending = await pendingSessionTokens(apiBase);
-  if (pending.size) {
-    const generation = currentSessionGeneration();
-    const token = await loadSessionToken();
-    if (
-      token &&
-      pending.has(token) &&
-      generation === currentSessionGeneration() &&
-      apiBase === currentApiBase()
-    ) {
-      await clearSessionToken();
-      if (generation + 1 === currentSessionGeneration() && apiBase === currentApiBase())
-        await clearSpace();
+  const generation = currentSessionGeneration();
+  let sessionRecoveryFailed = false;
+  try {
+    const pending = await pendingSessionTokens(apiBase);
+    if (pending.size) {
+      const token = await loadSessionToken();
+      if (
+        token &&
+        pending.has(token) &&
+        generation === currentSessionGeneration() &&
+        apiBase === currentApiBase()
+      ) {
+        if (!(await clearSessionToken())) sessionRecoveryFailed = true;
+        if (generation + 1 === currentSessionGeneration() && apiBase === currentApiBase())
+          if (!(await clearSpace())) sessionRecoveryFailed = true;
+      }
     }
+  } catch {
+    // Unknown tombstones cannot authorize the primary credential. Quarantine it,
+    // but finish restoring the server and Space before reporting the storage error.
+    sessionRecoveryFailed = true;
+    if (generation === currentSessionGeneration() && apiBase === currentApiBase())
+      await clearSessionToken().catch(() => undefined);
   }
   void retryPendingSessionRevocations(apiBase).catch(() => undefined);
   try {
@@ -217,6 +226,7 @@ export async function loadApiBase() {
   } catch {
     // Keep any in-memory selection when SecureStore is temporarily unavailable.
   }
+  if (sessionRecoveryFailed) throw new Error(t("Could not continue"));
   return currentApiBase();
 }
 
@@ -595,6 +605,8 @@ async function authenticate(
   input: Record<string, string>,
   missingSession: string,
 ): Promise<{ verificationRequired: boolean }> {
+  const apiBase = currentApiBase();
+  const generation = currentSessionGeneration();
   const { response, body, invalidJson } = await postAuth(path, input);
   if (!response.ok || invalidJson) {
     throw new Error(authResponseErrorText(response.status, body, invalidJson));
@@ -604,13 +616,45 @@ async function authenticate(
     return { verificationRequired: true };
   if (!token) throw new Error(missingSession);
   try {
+    if (apiBase !== currentApiBase() || generation !== currentSessionGeneration())
+      throw new Error(t("Could not continue"));
     if (!(await clearSpace()))
       throw new Error(t("Could not save your sign-in on this device. Try again."));
+    await rememberAuthenticatedAccount(apiBase, token, body, generation);
+    if (apiBase !== currentApiBase() || generation !== currentSessionGeneration())
+      throw new Error(t("Could not continue"));
     await saveSessionToken(token);
   } catch (error) {
     throw new Error(sessionSaveErrorText(error));
   }
   return { verificationRequired: false };
+}
+
+/** Fresh logins start with their own preferences; legacy primary adoption stays separate. */
+export async function rememberAuthenticatedAccount(
+  apiBase: string,
+  token: string,
+  body: unknown,
+  generation: number,
+): Promise<void> {
+  const user = (
+    body as { user?: { id?: unknown; email?: unknown; name?: unknown; image?: unknown } } | null
+  )?.user;
+  if (typeof user?.id !== "string" || typeof user.email !== "string") return;
+  await rememberSavedAccount(
+    apiBase,
+    {
+      userId: user.id,
+      token,
+      name: typeof user.name === "string" ? user.name : "",
+      email: user.email,
+      image: typeof user.image === "string" ? user.image : null,
+      unread:
+        cachedSavedAccounts(apiBase).find((account) => account.userId === user.id)?.unread ?? 0,
+      notifications: DEFAULT_LIVE_NOTIFICATION_SETTINGS,
+    },
+    () => apiBase === currentApiBase() && generation === currentSessionGeneration(),
+  );
 }
 
 export function signIn(email: string, password: string) {
@@ -805,11 +849,15 @@ export async function signOut(expectedTokens?: readonly string[], expectedApiBas
   const accountToken = (headers.authorization ?? "").replace(/^Bearer /, "");
   if (expectedApiBase !== undefined && apiBase !== expectedApiBase) return;
   if (expectedTokens && !expectedTokens.includes(accountToken)) return;
-  await queueSessionRevocation(apiBase, accountToken);
+  let queued = true;
+  await queueSessionRevocation(apiBase, accountToken).catch(() => {
+    queued = false;
+  });
   // Cleanup remains bound to this login even if a notification selects another account.
   await rpc("notifications/unregisterPush", undefined, {
     requestContext: { apiBase, headers },
   }).catch(() => undefined);
+  let revoked = false;
   try {
     const { response, body } = await fetchMobileJson<{ success?: unknown }>(
       `${apiBase}/api/auth/sign-out`,
@@ -821,17 +869,27 @@ export async function signOut(expectedTokens?: readonly string[], expectedApiBas
       {},
       apiBase,
     );
-    if (response.ok && body?.success === true)
-      await completeSessionRevocation(apiBase, accountToken);
+    if (response.ok && body?.success === true) {
+      revoked = true;
+      await completeSessionRevocation(apiBase, accountToken).catch(() => undefined);
+    }
   } catch {
     // Local sign-out still works offline.
   }
-  await forgetSavedToken(apiBase, accountToken);
-  if (sessionGeneration !== currentSessionGeneration() || apiBase !== currentApiBase()) return;
-  const sessionCleared = await clearSessionToken();
-  if (currentSessionGeneration() !== sessionGeneration + 1 || apiBase !== currentApiBase()) return;
-  const spaceCleared = await clearSpace();
-  if (!sessionCleared || !spaceCleared) throw new Error(t("Could not clear the local session"));
+  let localFailed = false;
+  await forgetSavedToken(apiBase, accountToken).catch(() => {
+    localFailed = true;
+  });
+  if (sessionGeneration === currentSessionGeneration() && apiBase === currentApiBase()) {
+    const sessionCleared = await clearSessionToken();
+    if (!sessionCleared) localFailed = true;
+    if (currentSessionGeneration() === sessionGeneration + 1 && apiBase === currentApiBase()) {
+      if (!(await clearSpace())) localFailed = true;
+    }
+  }
+  if (localFailed) throw new Error(t("Could not clear the local session"));
+  if (!queued && !revoked)
+    throw new Error(t("Signed out on this device. Some server sessions could not be revoked."));
 }
 
 export async function deleteAccount(password?: string, token?: string) {
@@ -873,8 +931,10 @@ export function subscribeSessionRejected(listener: () => void): () => void {
 
 async function rejectSession(token: string) {
   const apiBase = currentApiBase();
+  const generation = currentSessionGeneration();
   await clearSessionToken();
   await forgetSavedToken(apiBase, token).catch(() => undefined);
+  if (generation + 1 !== currentSessionGeneration() || apiBase !== currentApiBase()) return;
   for (const listener of sessionRejectedListeners) listener();
 }
 

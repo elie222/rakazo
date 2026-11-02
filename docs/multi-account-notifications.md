@@ -31,6 +31,9 @@ series. Commits use a generic fictional contributor identity because no Git auth
   interruption-recovery journal. Old JSON remains readable; primary single-account token keys
   are unchanged. Unchanged summaries skip native writes. Native
   auth excludes ambient cookies, so signing out one bearer cannot revoke another account.
+- API and worker share account-aware push composition, including canonical origin and aggregate
+  device badges. The identity guard shares its opening lookup once; stream authorization checks
+  always read the current session again.
 - Account selection invalidates private client state. Web reloads after stopping calls and pins
   requests to the rendered user; the API rejects a stale page before its handler runs. Native
   generation checks fence late requests, cache writes and navigation. Persisted drafts stay
@@ -49,10 +52,16 @@ series. Commits use a generic fictional contributor identity because no Git auth
   Sign-out-all also removes saved logins on previously configured servers and attempts each
   revocation at its own origin. After signing out one account, fallback selection skips revoked
   logins and tries the next valid saved account without overriding concurrent selection.
+  Saved accounts remain available on ordinary sign-in even if a rejected active session ended
+  during bootstrap. Successful password/code, passkey and SSO logins initialize independent
+  notification defaults while retaining an existing account's preferences and legacy adoption.
+  Queue/storage failures do not skip remaining local sign-out cleanup; uncertain credentials
+  stay quarantined and failures are reported without claiming disk deletion succeeded.
   Notification recovery separates transient lookup errors from invalid credentials and retries
   using saved credentials. Desktop account totals hand the badge to the existing roster fallback
   when the feed is unavailable; leaving both writers clears it. Android binary upgrades remove
-  only old unscoped native thread alerts before using account-scoped notification IDs.
+  only old unscoped native thread alerts before using account-scoped notification IDs. Native
+  completion history includes server/account ownership; missing identity pauses the poller.
   Failed remote sign-outs retain SecureStore records used only for revocation retries at startup
   and push registration. These credentials cannot appear in saved-account lists or register push.
 
@@ -64,14 +73,15 @@ series. Commits use a generic fictional contributor identity because no Git auth
 | Postgres push store suite | 12 passed, including concurrency, RLS, encryption, multi-device/account persistence, badge aggregation, legacy projection and late registration |
 | Postgres account-session suite | 5 passed, including real cookie/bearer ownership, preferences, revocation/expiry, stale requests and suppressed internal background failures |
 | Browser journeys after PR review | 9 passed, including real authentication, hidden-account notifications, unread counts, tab refresh/stale rejection, independent/all sign-out, logout failure/recovery and existing shell flows |
-| Authorization journey after PR review | 33 passed, including bearer/cookie precedence, stale identity guard, multi-account device persistence and revocation |
-| Mobile review regression run | 2,895 tests passed across all 243 mobile suites; final workspace type check passed all 22 tasks |
+| Authorization journey after PR review | 34 passed, including actual thread/board stream closure after sign-out; including bearer/cookie precedence, stale identity guard, multi-account device persistence and revocation |
+| Mobile review regression run | 2,919 tests passed across all 243 mobile suites; a later 369-test authentication/preference run and the final full unit run cover fresh-login initialization |
+| Worker/runtime/UI contracts | 143 tests passed across eight provider, Compose environment, account-menu and desktop-badge suites |
 | Latest notification/badge follow-up | 106 tests passed across seven suites; all 22 workspace type checks passed again. Android migration was source-reviewed only; no native compilation or device run |
 | Focused review regressions | 195 auth, 309 mobile account/API/push, 36 native route/notification, 45 Expo provider and 12 web account/draft tests passed |
 | `pnpm check` | All 22 package tasks passed |
 | `pnpm lint` | Passed with existing warnings/informational diagnostics |
 | Web production build | Passed; existing bundle-size warning remains |
-| Full unit run after first PR review | 19,879 passed and 711 skipped after review; three unchanged shell/backup failures remain. The final startup-notification regression separately passed its 19-test suite |
+| Final full unit run | 19,944 passed and 712 skipped; three unchanged shell/backup failures remain across two suites |
 
 The three remaining full-suite failures also reproduce from pristine starting-revision source:
 the shell environment test's failed-reader fixture still runs its command, and the two backup
@@ -133,9 +143,12 @@ retain their scoped drafts.
    legacy projection whenever its unique-token model can represent the registration, so ordinary
    single-account delivery survives API overlap. An old worker cannot represent every account on
    a shared token or every device; mixed workers cannot promise full multi-account delivery.
-3. Roll API instances and clients, then rebuild native Android for the native poller additions.
+3. Repository Compose templates now pass the existing `BETTER_AUTH_URL` and `WEB_ORIGIN`
+   settings to workers. Use the same canonical origin as the API. These are source-template
+   changes; no live deployment or external infrastructure checkout was changed.
+4. Roll API instances and clients, then rebuild native Android for the native poller additions.
    Keep the configured canonical API origin consistent with the origin in push payloads.
-4. Retain both registration tables on rollback. Older code can use the legacy projection and the
+5. Retain both registration tables on rollback. Older code can use the legacy projection and the
    selected session, but cannot provide all-account/all-device delivery or expose hidden saved
    accounts. Some devices must reopen and register again. Do not drop the new table to roll back.
 
@@ -171,3 +184,6 @@ branch so its draft can be closed without merging the evidence into the product 
 ![Account switcher at phone width](https://raw.githubusercontent.com/christso/rakazo/b43e1ef72bb27bc0abbbffe0b4b0e602a8b9db1c/screenshots/switcher-phone.png)
 
 ![Hidden account unread count](https://raw.githubusercontent.com/christso/rakazo/b43e1ef72bb27bc0abbbffe0b4b0e602a8b9db1c/screenshots/unread.png)
+
+
+![Sign out all confirmation](https://raw.githubusercontent.com/christso/rakazo/39f6fe8e05e343556628cfd34fed238f2553061b/screenshots/sign-out-all.png)

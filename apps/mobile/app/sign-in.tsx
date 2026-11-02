@@ -16,6 +16,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../components/native-action-button";
+import type { AccountSummary } from "../lib/account-sessions";
+import { loadAccountSummaries, selectSavedAccount } from "../lib/account-sessions";
 import { FORM_COLUMN_WIDTH } from "../lib/adaptive-layout";
 import type { PasswordResetCapabilities } from "../lib/api";
 import {
@@ -37,6 +39,7 @@ import { useI18n } from "../lib/i18n";
 import { hasIncomingShare } from "../lib/incoming-share";
 import { useMobileTokens } from "../lib/native";
 import { passkeysAvailable, signInWithPasskey } from "../lib/passkey";
+import { currentSessionGeneration } from "../lib/session";
 import { continueWithSso } from "../lib/sso";
 import { credentialIssueText, errorText } from "../lib/user-error";
 
@@ -72,6 +75,7 @@ export default function SignIn() {
   const [code, setCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
   const [passkeys, setPasskeys] = useState(false);
+  const [savedAccounts, setSavedAccounts] = useState<AccountSummary[]>([]);
 
   useEffect(() => {
     setPasswordVisible(false);
@@ -89,6 +93,22 @@ export default function SignIn() {
       setReady(true);
     });
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    setSavedAccounts([]);
+    if (addAccount === "1" || notificationTarget) return;
+    void loadAccountSummaries()
+      .then((accounts) => {
+        if (active && apiBase === currentApiBase()) setSavedAccounts(accounts);
+      })
+      .catch((error) => {
+        if (active) setError(errorText(error, t("Could not continue")));
+      });
+    return () => {
+      active = false;
+    };
+  }, [apiBase, addAccount, notificationTarget, t]);
 
   useEffect(() => {
     let active = true;
@@ -145,6 +165,31 @@ export default function SignIn() {
   // A blank password asks for an emailed code, so code-only accounts need no toggle.
   const usingCode = codeFlow && (codeSent || !password);
   const codeStep = codeFlow && codeSent;
+
+  async function openSavedAccount(account: AccountSummary) {
+    if (pending || apiBase !== currentApiBase()) return;
+    const generation = currentSessionGeneration();
+    setPending(true);
+    setError(null);
+    try {
+      const selected = await selectSavedAccount(account.userId);
+      if (apiBase !== currentApiBase()) return;
+      if (selected) {
+        if (currentSessionGeneration() > generation + 1) return;
+        router.replace("/");
+      } else if (generation === currentSessionGeneration()) {
+        setSavedAccounts((accounts) => accounts.filter((row) => row.userId !== account.userId));
+        setEmail(account.email);
+        setMode("in");
+        setError(t("Sign in to open this account"));
+      }
+    } catch (error) {
+      if (apiBase === currentApiBase() && generation === currentSessionGeneration())
+        setError(errorText(error, t("Could not continue")));
+    } finally {
+      setPending(false);
+    }
+  }
 
   async function submit(enteredCode = code) {
     if (pending || !reset?.passwordAuth) return;
@@ -277,6 +322,17 @@ export default function SignIn() {
                       ? t("Sign up for Rakazo")
                       : t("Reset your password")}
               </Text>
+              {!resetSent && !codeStep && mode !== "forgot"
+                ? savedAccounts.map((account) => (
+                    <NativeActionButton
+                      key={account.userId}
+                      label={account.email}
+                      prominence="secondary"
+                      disabled={pending}
+                      onPress={() => void openSavedAccount(account)}
+                    />
+                  ))
+                : null}
               {resetSent ? (
                 <View style={{ alignItems: "center", marginTop: 28 }}>
                   <Pressable

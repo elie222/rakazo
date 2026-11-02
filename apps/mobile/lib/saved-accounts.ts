@@ -63,6 +63,16 @@ export async function loadSavedAccounts(apiBase: string): Promise<SavedAccount[]
   return rows;
 }
 
+/** Cleanup only: these credentials may already be pending revocation and are never selectable. */
+export async function savedAccountRevocationSnapshot(): Promise<
+  Array<{ apiBase: string; token: string }>
+> {
+  await writes.catch(() => undefined);
+  return Object.entries(await read()).flatMap(([apiBase, rows]) =>
+    rows.map(({ token }) => ({ apiBase, token })),
+  );
+}
+
 function update(
   apiBase: string,
   change: (rows: SavedAccount[]) => SavedAccount[],
@@ -95,6 +105,7 @@ export function rememberSavedAccount(
     (rows) => {
       const previous = rows.find((row) => row.userId === account.userId);
       const next = { ...previous, ...account };
+      if (previous?.notifications) next.notifications = previous.notifications;
       return previous
         ? rows.map((row) => (row.userId === account.userId ? next : row))
         : [...rows, next];

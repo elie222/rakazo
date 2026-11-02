@@ -69,6 +69,8 @@ class RakazoNotificationsModule : Module() {
         storage.token = ""
         storage.headers = ""
         storage.spaceId = ""
+        storage.userId = ""
+        storage.accountLabel = ""
       } else {
         RakazoNotificationService.stop(context)
       }
