@@ -11,7 +11,6 @@ struct RakazoWidgets: WidgetBundle {
 private typealias Status = VoiceMessageAttributes.ContentState.Status
 
 private extension Color {
-  static let botAccent = Color.orange
   static let destructive = Color.red
   static let muted = Color.white.opacity(0.66)
 }
@@ -106,7 +105,7 @@ struct VoiceMessageLiveActivity: Widget {
     switch status {
     case .listening:
       Image(systemName: "waveform").font(.system(size: size, weight: .semibold))
-        .foregroundStyle(Color.botAccent)
+        .foregroundStyle(.white)
         .symbolEffect(.variableColor.iterative)
     case .thinking:
       Image(systemName: "ellipsis").font(.system(size: size, weight: .bold))
@@ -156,7 +155,7 @@ struct VoiceMessageLiveActivity: Widget {
 
   private func labelColor(_ status: Status, muted: Color = .muted) -> Color {
     switch status {
-    case .listening: .botAccent
+    case .listening: .white
     case .failed: .destructive
     default: muted
     }

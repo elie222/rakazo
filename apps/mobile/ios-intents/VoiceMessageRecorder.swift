@@ -106,7 +106,7 @@ final class VoiceMessageRecorder {
       engine.prepare()
       try engine.start()
     } catch {
-      releaseMicrophone()
+      releaseUnusedMicrophone()
       Task { await activity.end(nil, dismissalPolicy: .immediate) }
       throw VoiceMessageError.failed
     }
@@ -164,11 +164,7 @@ final class VoiceMessageRecorder {
     // The rest works on this message's own activity, so a press meanwhile can start the next one.
     stopListening(request)
     finishing += 1
-    // iOS suspends a background app as soon as it stops recording, so the microphone stays open,
-    // its audio dropped, until the message is sent; end() releases it.
-    let input = engine.inputNode
-    input.removeTap(onBus: 0)
-    input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0)) { _, _ in }
+    keepMicrophoneOpen()
 
     let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !message.isEmpty else {
@@ -200,7 +196,7 @@ final class VoiceMessageRecorder {
   func cancel() async {
     guard let request, let activity else { return }
     stopListening(request)
-    releaseMicrophone()
+    releaseUnusedMicrophone()
     await activity.end(nil, dismissalPolicy: .immediate)
   }
 
@@ -212,6 +208,21 @@ final class VoiceMessageRecorder {
     request.endAudio()
     task?.cancel()
     task = nil
+  }
+
+  /// iOS suspends a background app as soon as it stops recording, so while a message sends the
+  /// microphone stays open with its audio dropped.
+  private func keepMicrophoneOpen() {
+    let input = engine.inputNode
+    input.removeTap(onBus: 0)
+    input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0)) { _, _ in }
+    if !engine.isRunning { try? engine.start() }
+  }
+
+  /// Releases the microphone unless a newer recording, or a message still sending, needs it.
+  private func releaseUnusedMicrophone() {
+    if isRecording { return }
+    if finishing > 0 { keepMicrophoneOpen() } else { releaseMicrophone() }
   }
 
   private func releaseMicrophone() {
@@ -229,9 +240,8 @@ final class VoiceMessageRecorder {
       await activity.update(content(status, text))
       try? await Task.sleep(nanoseconds: 4_000_000_000)
     }
-    // A newer message may be listening on the microphone, or still sending, by now.
     finishing -= 1
-    if !isRecording && finishing == 0 { releaseMicrophone() }
+    releaseUnusedMicrophone()
     await activity.end(
       content(status, text), dismissalPolicy: .after(Date().addingTimeInterval(seconds)))
   }
