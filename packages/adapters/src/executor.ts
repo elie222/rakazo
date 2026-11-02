@@ -1618,7 +1618,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 });
               },
               prompt,
-              ...(speakers && run.trigger === "user" ? { promptSpeaker: USER_SPEAKER } : {}),
+              ...(speakers &&
+              (run.trigger === "user" ||
+                (run.trigger === "follow_up" && sourceMessage?.role === "user"))
+                ? { promptSpeaker: USER_SPEAKER }
+                : {}),
               // Keep an explicit executor override, but let the runtime select
               // cache-aware context for connections declaring a cache window.
               contextStrategy: deps.contextStrategy,
