@@ -1304,7 +1304,7 @@ describe("monthly computer allowance", () => {
           blocks: [
             {
               kind: "meta",
-              text: "This month's computer allowance is used up. The computer was saved and stopped.",
+              text: "No computer hours left. The computer was saved and stopped.",
             },
           ],
         }),

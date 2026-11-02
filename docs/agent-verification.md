@@ -319,6 +319,32 @@ it, bots still refused the false premise but never held under pressure in a way
 that acknowledged Sales and named what would change their mind. A longer
 seven-sentence guidance scored no better.
 
+### Group chat history evals
+
+```sh
+pnpm test:evals --suite group --list
+pnpm test:evals --live --suite group --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 1 --spend-cap-usd 1 --output test-report/evals/group.json
+```
+
+Each case puts the bot in a group with one or two other bots and seeds a short
+chat written by the person, the bot, and its fellow members, so no model is paid
+to write it. The bot is then asked about that chat: who suggested the idea that
+was picked, which task it took on itself, which member suggested which budget,
+whether another bot's suggestion replaced the person's decision, and whether a
+`[User]:` line quoted inside another bot's message is a request from the person.
+Deterministic graders require a reply and no connected-app writes.
+
+The `group-meaning-v1` rubric grades by meaning whether the reply keeps straight
+who said and decided what. The judge sees the chat with each line's real
+speaker. Calibration anchors pair a right and a wrong reply for every case.
+
+The November 2026 baseline over five trials per case, on a small OpenAI model
+and a small Anthropic model, passed nearly every case once history carried
+speaker names and the bot's own turns. Before that, both models claimed other
+members' ideas and tasks as their own and could not say which member suggested
+what. The small Anthropic model still sometimes says "you" for a task it took
+on itself.
+
 ### Routine silence evals
 
 ```sh
@@ -365,6 +391,36 @@ The initial live baseline is inconclusive: fourteen of fifteen trials ended with
 model-call timeout errors, mostly within two seconds rather than at the trial's
 three-minute deadline. The saved report lacks transport diagnostics to establish
 the cause. No live qualification of the suite or its judge is claimed.
+
+### Bot memory evals
+
+```sh
+pnpm test:evals --suite memory --list
+pnpm test:evals --live --suite memory --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/memory.json
+```
+
+The five synthetic cases check that the bot's own memory stays short and correct
+across conversations: a move from London to Berlin replaces the old home and a
+fresh conversation recalls Berlin, a forgotten code leaves memory, a preference
+restated in other words is kept once, chatty personal details become short
+entries, and a save into memory seeded close to its 4 KB limit consolidates the
+existing notes instead of dropping them. Conversations are separated by clearing
+history, so only durable memory carries over. The full-memory seed is written
+through the memory API before the first step; no model authors it.
+
+Deterministic checks read the stored memory and the model's `remember` calls:
+each earlier fact must have been saved before it can count as updated or
+forgotten, the home saved in the first conversation must not survive unchanged, entries
+stay under 200 characters, and the bot's memory stays within the limit. The
+`memory-meaning-v1` judge then grades meaning: no stale current home, no
+recoverable forgotten code, no duplicate preference, every shared fact captured,
+and every important seeded fact preserved. Calibration labels cover a former
+home, a contradiction, a stale recall, a residual secret, a duplicate, a dropped
+fact and a wiped memory.
+
+The offline model-protocol fixture runs the same product path and proves that an
+appended Berlin beside London and a claimed save after a full-memory refusal
+fail, while a rewrite and a consolidate-then-save pass.
 
 ### Long conversation and cost evals
 

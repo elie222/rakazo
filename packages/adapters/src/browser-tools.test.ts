@@ -113,6 +113,31 @@ describe("browser tools", () => {
     expect(view.details).toBe(navigated);
   });
 
+  it("passes a snapshot's query on to the computer's page browser, trimmed, and leaves it out when blank", async () => {
+    const commands: unknown[] = [];
+    const browser = new ComputerBrowserProvider({
+      liveDriver: async (_computer, request) => {
+        commands.push(request);
+        return {
+          ok: true,
+          url: "https://shop.example.test/",
+          title: "Shop",
+          tree: "",
+          elements: [],
+        };
+      },
+    });
+    const live: ComputerRef = { id: "c1", botId: "b1", kind: "docker", providerRef: "c1" };
+    await browserSnapshotFromTool(browser, live, context, { query: "  postal code " });
+    await browserSnapshotFromTool(browser, live, context, { query: "  " });
+    await browserSnapshotFromTool(browser, live, context, {});
+    expect(commands).toEqual([
+      { command: "snapshot", query: "postal code" },
+      { command: "snapshot" },
+      { command: "snapshot" },
+    ]);
+  });
+
   it("sends a navigation that brought no page as it is", async () => {
     const browser = new ComputerBrowserProvider({
       liveDriver: async () => ({ ok: true, url: "https://shop.example.test/", title: "Shop" }),

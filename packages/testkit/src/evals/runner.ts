@@ -102,6 +102,8 @@ export async function runTrial(
   let cookie = "";
   let botId = "";
   let peer: { id: string; name: string } | undefined;
+  // A group case talks to the subject inside a group thread; every other case uses its direct chat.
+  let group: { id: string; threadId: string; memberIds: Map<string, string> } | undefined;
   let seededThreadId: string | undefined;
   const runIds: string[] = [];
   const runSteps = new Map<string, number>();
@@ -206,6 +208,23 @@ export async function runTrial(
       // Direct synthetic fixture state, so setup never depends on the behavior under test.
       if (scenario.botSetup)
         await prisma.bot.update({ where: { id: botId }, data: scenario.botSetup });
+      if (scenario.botMemory) {
+        const documents = await rpc<Array<{ id: string; path: string }>>(
+          app,
+          cookie,
+          "memory/list",
+          {
+            botId,
+            scope: "bot",
+          },
+        );
+        const index = documents.find((document) => document.path === "MEMORY.md");
+        if (!index) throw new EvalFailure("harness", "New bot has no MEMORY.md to seed");
+        await rpc(app, cookie, "memory/update", {
+          documentId: index.id,
+          content: scenario.botMemory,
+        });
+      }
       if (scenario.peer) {
         const created = await rpc<{ id: string }>(app, cookie, "bots/create", {
           name: scenario.peer.name,
@@ -221,6 +240,26 @@ export async function runTrial(
           modelId: options.connection.modelId,
         });
         peer = { id: created.id, name: scenario.peer.name };
+      }
+      if (scenario.group) {
+        // Members only author seeded history; no step mentions them, so they never run a model.
+        const memberIds = new Map<string, string>();
+        for (const name of scenario.group.members) {
+          const member = await rpc<{ id: string }>(app, cookie, "bots/create", {
+            name,
+            title: "",
+            description: "",
+            instructions: "",
+            notifyOnFinish: false,
+          });
+          await discardBotIntroRun(trial, cookie, member.id);
+          memberIds.set(name, member.id);
+        }
+        const created = await rpc<{ id: string; threadId: string }>(app, cookie, "groups/create", {
+          name: "Launch desk",
+          botIds: [botId, ...memberIds.values()],
+        });
+        group = { ...created, memberIds };
       }
       messagingLinked = false;
       messagingAddress = `U-eval-${randomUUID()}`;
@@ -244,11 +283,16 @@ export async function runTrial(
         notify: true,
       });
     }
+    const botAuthor = (author: string | undefined) => {
+      if (!author) return botId;
+      const id = group?.memberIds.get(author);
+      if (!id) throw new EvalFailure("harness", `History author ${author} is not a group member`);
+      return id;
+    };
     if (scenario.history) {
-      const thread = await prisma.thread.findUniqueOrThrow({
-        where: { botId },
-        select: { id: true },
-      });
+      const thread = group
+        ? { id: group.threadId }
+        : await prisma.thread.findUniqueOrThrow({ where: { botId }, select: { id: true } });
       seededThreadId = thread.id;
       // Direct synthetic fixture setup, never pay a model to author filler.
       for (let offset = 0; offset < scenario.history.messages.length; offset += 500) {
@@ -273,7 +317,7 @@ export async function runTrial(
                 : []),
             ],
             createdAt: m.createdAt,
-            ...(m.role === "bot" ? { botId } : {}),
+            ...(m.role === "bot" ? { botId: botAuthor(m.author) } : {}),
           })),
         });
       }
@@ -419,7 +463,14 @@ export async function runTrial(
       let runId: string;
       if ("ask" in step) {
         runId = (
-          await rpc<{ runId: string }>(app, cookie, "threads/send", { botId, text: step.ask })
+          await rpc<{ runId: string }>(
+            app,
+            cookie,
+            "threads/send",
+            group
+              ? { groupId: group.id, text: step.ask, mentions: [{ kind: "bot", id: botId }] }
+              : { botId, text: step.ask },
+          )
         ).runId;
       } else if ("fromPeer" in step) {
         if (!peer) throw new EvalFailure("harness", "A fromPeer step needs the case's peer bot");
@@ -617,7 +668,7 @@ export async function runTrial(
           runId?: string | null;
           blocks: ClarificationBlock[];
         }>;
-      }>(app, cookie, "threads/get", { botId });
+      }>(app, cookie, "threads/get", group ? { groupId: group.id } : { botId });
       approvalPending =
         terminal.status === "waiting_input" &&
         snap.messages.some((m) =>

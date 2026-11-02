@@ -1,0 +1,49 @@
+---
+import Footer from "../components/Footer.astro";
+import Header from "../components/Header.astro";
+import { BRAND_COLORS, BRAND_LOGOS } from "../brand";
+import { githubStarsLabel } from "../github";
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const starsLabel = await githubStarsLabel();
+---
+
+<BaseLayout title="Brand · Rakazo" description="Rakazo logos and colors for press and partners.">
+  <div class="container">
+    <Header starsLabel={starsLabel} />
+    <main id="main" class="privacy-copy brand-kit">
+      <h1>Brand</h1>
+      <p>Logos and colors for writing about Rakazo.</p>
+      <h2>Logos</h2>
+      <ul class="brand-kit__logos">
+        {
+          BRAND_LOGOS.map((logo) => (
+            <li>
+              <a class="brand-kit__logo" href={logo.file} download tabindex="-1" aria-hidden="true">
+                <img src={logo.preview} alt="" loading="lazy" />
+              </a>
+              <a href={logo.file} download>{logo.name}</a>
+              <span>{logo.format}</span>
+            </li>
+          ))
+        }
+      </ul>
+      <h2>Colors</h2>
+      <ul class="brand-kit__colors">
+        {
+          BRAND_COLORS.map((color) => (
+            <li>
+              <span class="brand-kit__swatch" style={`background:${color.hex}`} />
+              <strong>{color.name}</strong>
+              <code>{color.hex}</code>
+            </li>
+          ))
+        }
+      </ul>
+      <h2>Usage</h2>
+      <p>Write Rakazo with a capital R in text. The wordmark is lowercase. Do not alter the mascot or imply an endorsement.</p>
+      <p>For press, email <a href="mailto:hello@rakazo.com">hello@rakazo.com</a>.</p>
+    </main>
+    <Footer />
+  </div>
+</BaseLayout>

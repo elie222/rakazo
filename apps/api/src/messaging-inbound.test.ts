@@ -291,6 +291,7 @@ function createDeps(
         messagingOutbound: prisma.messagingOutbound,
         messagingIdentity: prisma.messagingIdentity,
         messagingLinkCode,
+        bot: prisma.bot,
       }),
     ),
   };
@@ -313,6 +314,7 @@ function createDeps(
     members,
     txMock,
     createdIdentities,
+    linkCodes,
   } as unknown as MessagingInboundDeps & {
     sendUserMessage: ReturnType<typeof vi.fn>;
     notify: ReturnType<typeof vi.fn>;
@@ -320,6 +322,7 @@ function createDeps(
     acknowledge: typeof acknowledge;
     runs: typeof runs;
     botReplies: typeof botReplies;
+    linkCodes: typeof linkCodes;
     provision: ReturnType<typeof vi.fn>;
     outboundRows: Array<Record<string, unknown>>;
     members: Array<Record<string, unknown>>;
@@ -2305,6 +2308,45 @@ describe("createMessagingInboundHandler confirmation atomicity", () => {
     );
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
+
+  it("leaves one group when a redelivered LEAVE retries a failed confirmation", async () => {
+    const newest = { id: "cm-1", channelId: "ch-1", identityId: "mi-1", status: "approved" };
+    const older = { id: "cm-2", channelId: "ch-2", identityId: "mi-1", status: "approved" };
+    const deps = createDeps({ members: [newest, older] });
+    Object.assign(deps.prisma.messagingChannelMember, {
+      findFirst: vi.fn(async ({ where }: { where?: { status?: string } }) =>
+        where?.status === "approved"
+          ? ([newest, older].find((m) => m.status === "approved") ?? null)
+          : null,
+      ),
+    });
+    const transaction = vi.mocked(deps.prisma.$transaction).getMockImplementation()!;
+    vi.mocked(deps.prisma.$transaction).mockImplementation(async (fn) => {
+      const before = { newest: newest.status, older: older.status };
+      try {
+        return await transaction(fn);
+      } catch (error) {
+        // Model rollback at the database boundary, not in the handler.
+        newest.status = before.newest;
+        older.status = before.older;
+        throw error;
+      }
+    });
+    vi.mocked(deps.prisma.messagingOutbound.createMany).mockRejectedValueOnce(
+      new Error("database unavailable"),
+    );
+    const handle = createMessagingInboundHandler(deps);
+    const leave = { ...dmEvent, provider: "telegram", content: "LEAVE" };
+
+    await expect(handle(leave)).rejects.toThrow("database unavailable");
+    await handle(leave);
+
+    expect([newest.status, older.status]).toEqual(["left", "approved"]);
+    expect(deps.outboundRows).toEqual([
+      expect.objectContaining({ idempotencyKey: "command:leave:cm-1", identityId: "mi-1" }),
+    ]);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
 });
 
 describe("createMessagingInboundHandler linking", () => {
@@ -2350,6 +2392,70 @@ describe("createMessagingInboundHandler linking", () => {
         idempotencyKey: "link:code-1",
         kind: "dm",
         identityId: "mi-linked",
+        body: 'Linked. Messages here now reach "Chief".',
+      }),
+    ]);
+  });
+
+  it("rolls back linking when confirmation fails, then retries without starting a run", async () => {
+    const deps = createDeps({ identity: null, linkCode: { ...liveCode } });
+    deps.openSignup = false;
+    const transaction = vi.mocked(deps.prisma.$transaction).getMockImplementation()!;
+    vi.mocked(deps.prisma.$transaction).mockImplementation(async (fn) => {
+      try {
+        return await transaction(fn);
+      } catch (error) {
+        // Model rollback at the database boundary, not in the handler.
+        deps.linkCodes.push({ ...liveCode });
+        deps.createdIdentities.length = 0;
+        deps.outboundRows.length = 0;
+        throw error;
+      }
+    });
+    vi.mocked(deps.prisma.bot.findUnique).mockRejectedValueOnce(new Error("database unavailable"));
+    const handle = createMessagingInboundHandler(deps);
+    const event = { ...dmEvent, content: "ABCD2345" };
+    await expect(handle(event)).rejects.toThrow("database unavailable");
+    expect(deps.createdIdentities).toHaveLength(0);
+    await handle(event);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    expect(deps.outboundRows).toEqual([
+      expect.objectContaining({ body: 'Linked. Messages here now reach "Chief".' }),
+    ]);
+  });
+
+  it("moves a linked sender to another bot, saving the confirmation with the switch", async () => {
+    const deps = createDeps({ linkCode: { ...liveCode, userId: "user-1" } });
+    const transaction = vi.mocked(deps.prisma.$transaction).getMockImplementation()!;
+    vi.mocked(deps.prisma.$transaction).mockImplementation(async (fn) => {
+      try {
+        return await transaction(fn);
+      } catch (error) {
+        // Model rollback at the database boundary, not in the handler.
+        deps.linkCodes.push({ ...liveCode, userId: "user-1" });
+        deps.outboundRows.length = 0;
+        throw error;
+      }
+    });
+    vi.mocked(deps.prisma.messagingOutbound.createMany).mockRejectedValueOnce(
+      new Error("database unavailable"),
+    );
+    const handle = createMessagingInboundHandler(deps);
+    const event = { ...dmEvent, content: "ABCD2345" };
+    await expect(handle(event)).rejects.toThrow("database unavailable");
+    await handle(event);
+
+    expect(deps.prisma.messagingIdentity.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "mi-1" },
+        data: expect.objectContaining({ botId: "bot-web", spaceId: "ws-web" }),
+      }),
+    );
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    expect(deps.outboundRows).toEqual([
+      expect.objectContaining({
+        idempotencyKey: "link:code-1",
+        identityId: "mi-1",
         body: 'Linked. Messages here now reach "Chief".',
       }),
     ]);

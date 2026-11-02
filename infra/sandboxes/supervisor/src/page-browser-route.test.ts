@@ -414,6 +414,12 @@ it.each([
   expect(JSON.parse(mock.stdin.join(""))).toEqual(body);
 });
 
+it("forwards a snapshot's query", async () => {
+  const body = { command: "snapshot", query: "newsletter signup" };
+  expect(await (await browserRequest(body)).json()).toMatchObject({ ok: true });
+  expect(JSON.parse(mock.stdin.join(""))).toEqual(body);
+});
+
 it.each(["", "x".repeat(1025), 7])(
   "rejects an invalid download folder before running commands: %j",
   async (downloads) => {
