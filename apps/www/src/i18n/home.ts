@@ -47,7 +47,7 @@ export type HomeCopy = {
     heading: string;
     copy: string;
     worksWith: string;
-    mock: { model: string; weekdays: string; approval: string; approve: string; deny: string };
+    mock: { weekdays: string; approval: string; approve: string; deny: string };
     features: Array<{ title: string; body: string }>;
   };
   platforms: {
@@ -910,7 +910,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Self-hosted",
       copy: "Your machine, your models, your control.",
       worksWith: "Works with",
-      mock: { model: "Model", weekdays: "Weekdays at 9:00", approval: "Approval required", approve: "Approve", deny: "Deny" },
+      mock: { weekdays: "Weekdays at 9:00", approval: "Approval required", approve: "Approve", deny: "Deny" },
       features: [
         { title: "Your model", body: "Choose a different model for each bot." },
         { title: "Work on a schedule", body: "Run recurring tasks while your computer stays on." },
@@ -1059,7 +1059,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Self-hosted",
       copy: "Deine Maschine, deine Modelle, deine Kontrolle.",
       worksWith: "Funktioniert mit",
-      mock: { model: "Modell", weekdays: "Mo–Fr um 9:00", approval: "Freigabe erforderlich", approve: "Genehmigen", deny: "Ablehnen" },
+      mock: { weekdays: "Mo–Fr um 9:00", approval: "Freigabe erforderlich", approve: "Genehmigen", deny: "Ablehnen" },
       features: [
         { title: "Dein Modell", body: "Wähle für jeden Bot ein anderes Modell." },
         { title: "Arbeitet nach Zeitplan", body: "Wiederkehrende Aufgaben laufen, solange dein Computer an ist." },
@@ -1211,7 +1211,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "셀프 호스트",
       copy: "컴퓨터도, 모델도, 제어권도 내 손에.",
       worksWith: "지원 모델·서비스",
-      mock: { model: "모델", weekdays: "평일 9:00", approval: "승인 필요", approve: "승인", deny: "거부" },
+      mock: { weekdays: "평일 9:00", approval: "승인 필요", approve: "승인", deny: "거부" },
       features: [
         { title: "원하는 모델", body: "봇마다 다른 모델을 선택하세요." },
         { title: "예약한 시간에 실행", body: "컴퓨터를 켜 두면 반복 작업을 실행합니다." },
@@ -1363,7 +1363,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "自托管",
       copy: "电脑、模型、控制权，都归你。",
       worksWith: "支持",
-      mock: { model: "模型", weekdays: "工作日 9:00", approval: "需要审批", approve: "批准", deny: "拒绝" },
+      mock: { weekdays: "工作日 9:00", approval: "需要审批", approve: "批准", deny: "拒绝" },
       features: [
         { title: "自选模型", body: "为每个 Bot 选择不同的模型。" },
         { title: "按时自动执行", body: "电脑保持开机，重复任务按时执行。" },
@@ -1516,7 +1516,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "セルフホスト",
       copy: "マシンもモデルも、コントロールもあなたの手に。",
       worksWith: "対応サービス",
-      mock: { model: "モデル", weekdays: "平日 9:00", approval: "承認が必要", approve: "承認", deny: "拒否" },
+      mock: { weekdays: "平日 9:00", approval: "承認が必要", approve: "承認", deny: "拒否" },
       features: [
         { title: "好きなモデルで", body: "ボットごとに別のモデルを選べます。" },
         { title: "スケジュールどおりに実行", body: "コンピューターが起動している間、定期タスクを実行します。" },
@@ -1669,7 +1669,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Autoalojado",
       copy: "Tu máquina, tus modelos, tu control.",
       worksWith: "Funciona con",
-      mock: { model: "Modelo", weekdays: "Días laborables a las 9:00", approval: "Requiere aprobación", approve: "Aprobar", deny: "Denegar" },
+      mock: { weekdays: "Días laborables a las 9:00", approval: "Requiere aprobación", approve: "Aprobar", deny: "Denegar" },
       features: [
         { title: "Tu modelo", body: "Elige un modelo distinto para cada bot." },
         { title: "Trabaja según un horario", body: "Ejecuta tareas recurrentes mientras tu computadora siga encendida." },
@@ -1822,7 +1822,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Auto-hébergé",
       copy: "Votre machine, vos modèles, votre contrôle.",
       worksWith: "Fonctionne avec",
-      mock: { model: "Modèle", weekdays: "Jours ouvrés à 9:00", approval: "Approbation requise", approve: "Approuver", deny: "Refuser" },
+      mock: { weekdays: "Jours ouvrés à 9:00", approval: "Approbation requise", approve: "Approuver", deny: "Refuser" },
       features: [
         { title: "Votre modèle", body: "Choisissez un modèle différent pour chaque bot." },
         { title: "Travaille selon un planning", body: "Exécutez des tâches récurrentes tant que votre ordinateur reste allumé." },
@@ -1975,7 +1975,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Auto-hospedado",
       copy: "Sua máquina, seus modelos, seu controle.",
       worksWith: "Funciona com",
-      mock: { model: "Modelo", weekdays: "Dias úteis às 9:00", approval: "Aprovação necessária", approve: "Aprovar", deny: "Negar" },
+      mock: { weekdays: "Dias úteis às 9:00", approval: "Aprovação necessária", approve: "Aprovar", deny: "Negar" },
       features: [
         { title: "Seu modelo", body: "Escolha um modelo diferente para cada bot." },
         { title: "Trabalha com agendamento", body: "Execute tarefas recorrentes enquanto seu computador estiver ligado." },
@@ -2128,7 +2128,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Zelf gehost",
       copy: "Jouw machine, jouw modellen, jouw controle.",
       worksWith: "Werkt met",
-      mock: { model: "Model", weekdays: "Werkdagen om 9:00", approval: "Goedkeuring vereist", approve: "Goedkeuren", deny: "Weigeren" },
+      mock: { weekdays: "Werkdagen om 9:00", approval: "Goedkeuring vereist", approve: "Goedkeuren", deny: "Weigeren" },
       features: [
         { title: "Jouw model", body: "Kies voor elke bot een ander model." },
         { title: "Werkt volgens schema", body: "Terugkerende taken draaien zolang je computer aanstaat." },
@@ -2281,7 +2281,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "На своём сервере",
       copy: "Ваш компьютер, ваши модели, ваш контроль.",
       worksWith: "Работает с",
-      mock: { model: "Модель", weekdays: "По будням в 9:00", approval: "Требуется одобрение", approve: "Утвердить", deny: "Запретить" },
+      mock: { weekdays: "По будням в 9:00", approval: "Требуется одобрение", approve: "Утвердить", deny: "Запретить" },
       features: [
         { title: "Ваша модель", body: "Выберите свою модель для каждого бота." },
         { title: "Работа по расписанию", body: "Повторяющиеся задачи выполняются, пока ваш компьютер включён." },
@@ -2434,7 +2434,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Kendi sunucunuzda",
       copy: "Sizin makineniz, sizin modelleriniz, sizin kontrolünüz.",
       worksWith: "Şunlarla çalışır",
-      mock: { model: "Model", weekdays: "Hafta içi 9:00'da", approval: "Onay gerekli", approve: "Onayla", deny: "Reddet" },
+      mock: { weekdays: "Hafta içi 9:00'da", approval: "Onay gerekli", approve: "Onayla", deny: "Reddet" },
       features: [
         { title: "Sizin modeliniz", body: "Her bot için farklı bir model seçin." },
         { title: "Zamanlanmış çalışma", body: "Bilgisayarınız açık kaldığı sürece tekrarlanan görevleri çalıştırın." },
@@ -2587,7 +2587,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "באירוח עצמי",
       copy: "המכונה שלך, המודלים שלך, השליטה שלך.",
       worksWith: "עובד עם",
-      mock: { model: "מודל", weekdays: "שני עד שישי ב-9:00", approval: "נדרש אישור", approve: "אישור", deny: "דחייה" },
+      mock: { weekdays: "שני עד שישי ב-9:00", approval: "נדרש אישור", approve: "אישור", deny: "דחייה" },
       features: [
         { title: "המודל שלך", body: "אפשר לבחור מודל אחר לכל בוט." },
         { title: "עבודה לפי לוח זמנים", body: "משימות חוזרות רצות כל עוד המחשב שלך דולק." },
@@ -2740,7 +2740,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "सेल्फ़-होस्टेड",
       copy: "आपकी मशीन, आपके मॉडल, आपका नियंत्रण।",
       worksWith: "इनके साथ काम करता है",
-      mock: { model: "मॉडल", weekdays: "कार्यदिवस, 9:00 बजे", approval: "अनुमोदन ज़रूरी", approve: "अनुमोदित करें", deny: "अस्वीकार करें" },
+      mock: { weekdays: "कार्यदिवस, 9:00 बजे", approval: "अनुमोदन ज़रूरी", approve: "अनुमोदित करें", deny: "अस्वीकार करें" },
       features: [
         { title: "आपका मॉडल", body: "हर बॉट के लिए अलग मॉडल चुनें।" },
         { title: "शेड्यूल पर काम", body: "जब तक आपका कंप्यूटर चालू है, दोहराए जाने वाले काम चलते रहते हैं।" },
@@ -2892,7 +2892,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "自行託管",
       copy: "機器、模型、控制權，都由你掌握。",
       worksWith: "支援",
-      mock: { model: "模型", weekdays: "工作日 9:00", approval: "需要核准", approve: "核准", deny: "拒絕" },
+      mock: { weekdays: "工作日 9:00", approval: "需要核准", approve: "核准", deny: "拒絕" },
       features: [
         { title: "自選模型", body: "為每個機器人選擇不同的模型。" },
         { title: "依排程執行", body: "只要電腦保持開機，週期性任務就會照常執行。" },
