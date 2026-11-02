@@ -1285,7 +1285,6 @@ export interface BillingSubscriptionSnapshot {
   byokPlan?: boolean;
   /** Stable identity of the subscription's card across customers, when the provider has one. */
   cardFingerprint?: string;
-  /** What the customer said when canceling, when the provider asked. */
   cancellationReason?: BillingCancellationReason;
   cancellationComment?: string;
 }
