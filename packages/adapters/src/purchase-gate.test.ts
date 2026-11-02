@@ -113,6 +113,8 @@ describe("purchase detection for the page tools", () => {
       unplaced: true,
     });
     expect(await request([{ kind: "click" }])).toMatchObject({ points: [], unplaced: true });
+    // A right-click presses nothing, so it is not asked about.
+    expect(await request([{ kind: "click", x: 5, y: 6, button: "right" }])).toBeUndefined();
   });
 
   it("takes typing a line break, or only spaces, as a press", async () => {

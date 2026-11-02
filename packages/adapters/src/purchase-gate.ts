@@ -109,6 +109,9 @@ function purchaseProbe(name: string, args: Record<string, unknown>) {
         : undefined;
     if (kind === "move") {
       pointer = own ?? pointer;
+    } else if (["click", "down", "up"].includes(kind) && step.button === "right") {
+      // A right-click opens a menu and presses nothing, but the page may change under later presses.
+      disturbed = true;
     } else if (["click", "down", "up"].includes(kind)) {
       if (opened) unchecked = true;
       const at = kind === "up" ? pointer : own;

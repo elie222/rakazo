@@ -2373,7 +2373,8 @@ def run(argv: list[str]) -> int:
             # No browser running, no tab open, or one of Chromium's own pages: nothing on it can be bought.
             # Any other failure is a failed check, which asks.
             try:
-                wait_for_cdp(port)
+                # Briefly: a desktop press waits on this check, and a closed browser has nothing to buy.
+                wait_for_cdp(port, 0.3)
                 address = front_tab(port)[1]
             except RuntimeError as error:
                 if not str(error).startswith(("CDP not ready", NO_TAB)):
