@@ -578,8 +578,9 @@ jobs:
     # Only checks that catch a broken server gate the deploy; lint, E2E, and Docker drills report on their own.
     needs: [checks, test-integration, publish-server-image]
     runs-on: ubuntu-latest
-    # Matches infra/compose/deploy-main.sh's own limits, including a fallback build and rollback.
-    timeout-minutes: 45
+    # Matches infra/compose/deploy-main.sh's own limits, including a fallback build, rollback, and
+    # waiting for the replaced worker to finish its jobs.
+    timeout-minutes: 90
     concurrency:
       group: production
       cancel-in-progress: false
