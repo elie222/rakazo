@@ -1,5 +1,9 @@
 import type { BrowserActStep, PageBrowserCommand, PageBrowserResult } from "@rakazo/adapter-kit";
-import { browserResultForModel, TOOL_RESULT_TEXT_LIMIT } from "@rakazo/adapters";
+import {
+  browserResultForModel,
+  serializeToolResult,
+  TOOL_RESULT_TEXT_LIMIT,
+} from "@rakazo/adapters";
 
 /** The site under test and a second site for cross-site frames, both served inside the computer. */
 export const SITE = "https://localhost:8443";
@@ -225,21 +229,25 @@ export const LIVE_SITES = [
 
 export type RunDriver = (command: PageBrowserCommand) => Promise<PageBrowserResult>;
 
-/** What the model reads of a result: its length after the runtime's clip, and whether it was cut. */
+/** What the model reads of a result: its length after the runtime shortens it, and whether it did. */
 export function modelSize(result: PageBrowserResult): Pick<StepRecord, "modelChars" | "clipped"> {
   const length = modelText(result).length;
-  return length > TOOL_RESULT_TEXT_LIMIT
-    ? { modelChars: TOOL_RESULT_TEXT_LIMIT, clipped: true }
-    : { modelChars: length };
+  if (length <= TOOL_RESULT_TEXT_LIMIT) return { modelChars: length };
+  const view = browserResultForModel(result);
+  const sent =
+    view && typeof view === "object" && "kind" in view
+      ? TOOL_RESULT_TEXT_LIMIT
+      : serializeToolResult(view, undefined, "browser_snapshot", {}).length;
+  return { modelChars: sent, clipped: true };
 }
 
 export type StepRecord = {
   command: PageBrowserCommand["command"] | "wait";
   ms: number;
   ok: boolean;
-  /** Characters of the tool result as the model reads it, after the runtime's clip. */
+  /** Characters of the tool result as the model reads it, after the runtime shortens it. */
   modelChars: number;
-  /** The result was longer than the runtime sends, so the model saw it cut. */
+  /** The result was longer than the runtime sends, so the model saw it shortened. */
   clipped?: boolean;
   elements?: number;
   loading?: boolean;

@@ -24,8 +24,8 @@ one) is copied into the computer, so an alternative driver is measured by commit
 
 Each task succeeds only by an observable effect: the fields the fixture server received, or the
 page's URL. For every driver call the results file records latency, errors and fallbacks, and the
-characters of the result as the model reads it (after `browserResultForModel` and the runtime's
-12,000-character clip). Tokens are estimated at four characters each. `--live-sites` adds a few public
+characters of the result as the model reads it (after `browserResultForModel` and the runtime
+shortening results over 12,000 characters). Tokens are estimated at four characters each. `--live-sites` adds a few public
 pages, measured for size and latency only.
 
 The suite covers a link, a text form, a native select, a checkbox, same-site and cross-site frames,
