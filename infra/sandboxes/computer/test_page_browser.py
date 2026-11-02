@@ -78,6 +78,8 @@ class FakeAgentBrowser:
         self.checks = []
         self.disabled = set()
         self.aria_disabled = {}
+        # Each control's box, relative to the top of the visible part of the page.
+        self.boxes = {}
         # A JavaScript dialog the next click opens, then the one open on the page.
         self.opens = None
         self.dialog = None
@@ -139,6 +141,8 @@ class FakeAgentBrowser:
             return {} if "--clear" in command else {"requests": self.requests}
         if command[:2] == ["is", "enabled"]:
             return {"enabled": command[2].lstrip("@") not in self.disabled}
+        if name == "get" and command[1] == "box":
+            return self.boxes.get(command[2].lstrip("@"), {})
         if name == "get" and command[1] == "attr" and command[3] == "aria-disabled":
             return {"value": self.aria_disabled.get(command[2].lstrip("@"))}
         if name == "get" and command[1] == "attr":
@@ -266,12 +270,83 @@ class SnapshotTest(unittest.TestCase):
         browser = FakeAgentBrowser(tree=controls, state={"text": "word " * 20000}, sources={})
         result, _ = self.snapshot(browser)
         self.assertTrue(result["tree"].startswith("[controls: showing "))
+        self.assertIn(" of 399. Snapshot with a query to find the rest.]\n", result["tree"])
         self.assertIn("[page text: showing first ", result["tree"])
         self.assertLessEqual(helper.sent(result["tree"]), helper.TREE_BUDGET)
         shown = int(result["tree"].split("showing ")[1].split(" ")[0])
         self.assertEqual(len(result["elements"]), shown)
         for element in result["elements"]:
             self.assertIn(f"[ref={element['ref']}]", result["tree"])
+
+    def long_page(self):
+        stories = "".join(f'- heading "Story {n}" [level=2, ref=h{n}]\n- link "Read story {n}" [ref=e{n}]\n'
+                          for n in range(1, 400))
+        form = ('- form\n  - LabelText\n    - StaticText "Newsletter email "\n'
+                '    - textbox "Newsletter email" [ref=e900]\n  - button "Subscribe" [ref=e901]\n'
+                '- group "Postal address"\n  - textbox "Code" [ref=e902]\n'
+                '- Iframe [ref=e903]\n  - button "Partner newsletter archive" [ref=e904]\n')
+        return FakeAgentBrowser(tree=stories + form, state={"text": "Archive"}, sources={"e903": "https://partner.example.test/x"})
+
+    def test_a_query_lists_the_matching_controls_from_anywhere_on_the_page_with_their_form_and_frame(self):
+        browser = self.long_page()
+        with patch.object(helper.time, "sleep"):
+            result = page(browser).snapshot(0.0, query="Newsletter")
+        self.assertEqual([e["ref"] for e in result["elements"]], ["e900", "e901", "e903", "e904"])
+        self.assertTrue(result["tree"].startswith('[controls matching "Newsletter"]\n- textbox "Newsletter email"'))
+        self.assertIn("https://partner.example.test", result["tree"])
+        self.assertNotIn("Archive", result["tree"])
+
+    def test_a_query_finds_a_control_by_the_text_near_it_and_says_when_nothing_matches(self):
+        browser = self.long_page()
+        with patch.object(helper.time, "sleep"):
+            near = page(browser).snapshot(0.0, query="story 12")
+            postal = page(browser).snapshot(0.0, query="postal codé")
+            none = page(browser).snapshot(0.0, query="checkout")
+        self.assertEqual(near["elements"][0]["ref"], "e12")
+        self.assertEqual([e["ref"] for e in postal["elements"]], ["e902"])
+        self.assertEqual(none["tree"], '[no controls match "checkout"]')
+        self.assertEqual(none["elements"], [])
+
+    def test_a_query_with_more_matches_than_fit_says_how_many_it_shows(self):
+        browser = self.long_page()
+        with patch.object(helper.time, "sleep"):
+            result = page(browser).snapshot(0.0, query="read story")
+        self.assertTrue(result["tree"].startswith(f'[controls matching "read story": showing {helper.MAX_CONTROLS} of 399]'))
+        self.assertLessEqual(helper.sent(result["tree"]), helper.TREE_BUDGET)
+
+    def test_a_long_page_lists_the_controls_in_view_first_and_a_header_that_stays_in_view_does_not_count(self):
+        browser = self.long_page()
+        # Scrolled to story 200: the stories before it are above the view, the site's header stays on screen.
+        browser.boxes = {f"e{n}": {"y": (n - 200) * 50.0, "height": 20} for n in range(1, 400)}
+        browser.boxes["e1"] = {"y": 0, "height": 20}
+        with patch.object(helper.time, "sleep"):
+            result = page(browser).snapshot(0.0)
+        refs = [e["ref"] for e in result["elements"]]
+        self.assertEqual(len(refs), helper.MAX_CONTROLS)
+        self.assertIn("e200", refs)
+        self.assertNotIn("e150", refs)
+        self.assertEqual(refs, sorted(refs, key=lambda ref: int(ref[1:])))
+        self.assertTrue(result["tree"].startswith(f"[controls: showing {helper.MAX_CONTROLS} of 404. "))
+        probes = [command for command in browser.sent if command[:2] == ["get", "box"]]
+        self.assertLessEqual(len(probes), helper.VIEW_PROBES)
+
+    def test_near_the_end_of_a_long_page_the_room_left_goes_to_the_controls_above(self):
+        browser = self.long_page()
+        browser.boxes = {f"e{n}": {"y": -1000.0, "height": 20} for n in range(1, 400)}
+        with patch.object(helper.time, "sleep"):
+            result = page(browser).snapshot(0.0)
+        refs = [e["ref"] for e in result["elements"]]
+        self.assertEqual(len(refs), helper.MAX_CONTROLS)
+        self.assertEqual(refs[-5:], ["e900", "e901", "e902", "e903", "e904"])
+
+    def test_a_ref_left_out_of_the_snapshot_still_acts_on_its_element(self):
+        browser = self.long_page()
+        with patch.object(helper.time, "sleep"):
+            snap = page(browser).snapshot(0.0)
+            self.assertNotIn("e900", [e["ref"] for e in snap["elements"]])
+            result = page(browser).act([{"kind": "fill", "ref": "e900", "text": "reader@example.test"}])
+        self.assertTrue(result["ok"])
+        self.assertIn(["fill", "@e900", "reader@example.test"], browser.sent)
 
     def test_waits_for_a_request_the_page_is_still_waiting_on_or_flags_it_as_loading(self):
         now = time.time() * 1000
@@ -522,6 +597,18 @@ class ActTest(unittest.TestCase):
         self.assertEqual(json.loads(printed.call_args.args[0]), {
             "ok": False, "error": 'A confirm dialog is open on the screen: "Delete this?"', "dialog": "confirm",
             "fallback": "computer_act"})
+
+    def test_the_snapshot_command_passes_its_query_on(self):
+        with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1", "RAKAZO_BROWSER_ARGS_STDIN": "1"}), \
+                patch.object(helper, "wait_for_cdp"), \
+                patch.object(helper, "read_stdin_line", return_value='{"command": "snapshot", "query": " zip "}'), \
+                patch.object(helper, "http_get_json", return_value=[{"type": "page", "id": "tab-1",
+                                                                      "url": "https://portal.example.test/"}]), \
+                patch.object(helper, "AgentBrowser"), \
+                patch.object(helper.PageBrowser, "snapshot", return_value={"ok": True}) as snapshot, \
+                patch("builtins.print"):
+            helper.run(["rakazo-page-browser", "snapshot"])
+        snapshot.assert_called_once_with(query="zip")
 
     def test_uploads_only_files_inside_the_trusted_roots(self):
         with tempfile.TemporaryDirectory() as home:

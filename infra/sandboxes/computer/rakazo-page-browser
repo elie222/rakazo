@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import math
 import mimetypes
 import os
 import re
@@ -50,6 +51,13 @@ MIN_TEXT = 1500
 MAX_OPTIONS = 100
 OPTIONS_CHARS = 2000
 MAX_OPTION_TEXT = 80
+# A long page's controls are sampled this many times to find the ones in view.
+VIEW_PROBES = 48
+# How much of the text before a control a query also looks in, such as its heading.
+NEARBY_CHARS = 300
+# A match brings the rest of its form, unless the form is this big.
+MAX_FORM_CONTROLS = 30
+CUT_CONTROLS = "Snapshot with a query to find the rest."
 
 SETTLE_SECONDS = 3.0
 # The most an action's result waits for its requests and the snapshot after them together.
@@ -423,6 +431,84 @@ CONTROL_ROLES = frozenset({"button", "link", "textbox", "searchbox", "checkbox",
                            "spinbutton", "treeitem", "Iframe"})
 
 
+class Control:
+    """A control as the snapshot lists it, with the text a query can find it by."""
+
+    def __init__(self, index: int, line: str, entry: dict[str, Any], node: Node, own: str, nearby: str) -> None:
+        self.index, self.line, self.entry, self.node, self.own, self.nearby = index, line, entry, node, own, nearby
+        self.cost = sent(line) + 1
+
+
+def words(text: str) -> list[str]:
+    plain = unicodedata.normalize("NFKD", text.casefold())
+    return re.sub(r"[^\w]+", " ", "".join(char for char in plain if not unicodedata.combining(char))).split()
+
+
+def found(word: str, among: list[str]) -> bool:
+    """A query word is a word of the text, or the start of one once it is long enough to mean something."""
+    return any(have == word or (len(word) >= 3 and have.startswith(word)) for have in among)
+
+
+# The containers a control's form is: a match brings the rest of it, such as the form's submit button.
+FORM_ROLES = frozenset({"form", "group", "search", "dialog", "alertdialog", "radiogroup"})
+
+
+def matching(controls: list[Control], query: str) -> list[Control]:
+    """The controls a query names, best first: those with every word in their own name, label, value or
+    options, then those that need the text before them or their form's name, then the rest of their forms.
+
+    When none has every word, those with the most do.
+    """
+    wanted = list(dict.fromkeys(words(query)))
+    if not wanted:
+        return []
+    position = {id(control.node): index for index, control in enumerate(controls)}
+    scored: list[tuple[int, int, int]] = []
+    for index, control in enumerate(controls):
+        own = words(control.own)
+        around = own + words(control.nearby)
+        at = control.node.parent
+        while at is not None:
+            around += words(at.name)
+            at = at.parent
+        hits = sum(found(word, around) for word in wanted)
+        if hits:
+            scored.append((hits, sum(found(word, own) for word in wanted), index))
+    if not scored:
+        return []
+    best = max(hits for hits, _, _ in scored)
+    ranked = [index for hits, _, index in sorted(scored, key=lambda s: (-s[1], s[2])) if hits == best]
+    chosen = dict.fromkeys(ranked)
+    for index in ranked:
+        form = controls[index].node.parent
+        while form is not None and form.role not in FORM_ROLES:
+            form = form.parent
+        if form is not None:
+            mates = [position[id(node)] for node in walk(form.children) if id(node) in position]
+            if len(mates) <= MAX_FORM_CONTROLS:
+                chosen.update(dict.fromkeys(mates))
+    for index in list(chosen):
+        frame = controls[index].node.frame
+        while frame is not None:
+            # A control in a frame comes with the frame's line, which names its site.
+            if id(frame) in position:
+                chosen.setdefault(position[id(frame)])
+            frame = frame.frame
+    return [controls[index] for index in chosen]
+
+
+def fit(candidates: list[Control], budget: int) -> list[Control]:
+    """The candidates that fit, taken in order until one does not, then put back in page order."""
+    shown: list[Control] = []
+    used = 0
+    for control in candidates:
+        if len(shown) >= MAX_CONTROLS or (shown and used + control.cost > budget):
+            break
+        shown.append(control)
+        used += control.cost
+    return sorted(shown, key=lambda control: control.index)
+
+
 def same_site(url: Any) -> str:
     """The site a URL is on, as its host's last two labels; close enough to tell a page's own requests apart."""
     try:
@@ -507,7 +593,7 @@ class PageBrowser:
             if load:
                 load.close()
 
-    def snapshot(self, settle: float | None = None) -> dict[str, Any]:
+    def snapshot(self, settle: float | None = None, query: str | None = None) -> dict[str, Any]:
         settled = self.settle(SETTLE_SECONDS if settle is None else settle)
         state_result, snap = self.ab.batch([["eval", PAGE_STATE], ["snapshot"]])
         state = state_result.get("result") or {}
@@ -525,7 +611,9 @@ class PageBrowser:
             card_shown, account = False, None
         hints: list[str] = []
         frame_text: list[str] = []
-        controls: list[tuple[str, dict[str, Any]]] = []
+        controls: list[Control] = []
+        # Text read since the last control, such as a heading or a field's label: what a query can find it by.
+        recent: list[str] = []
 
         def render(nodes: list[Node], depth: int, inside: str | None) -> None:
             for node in nodes:
@@ -543,6 +631,8 @@ class PageBrowser:
                 # agent-browser also hands refs to named text such as headings and table cells; the
                 # list is of what a click or a fill can mean something for.
                 if ref is None or not (node.role in CONTROL_ROLES or "clickable" in node.extra):
+                    if node.name:
+                        recent.append(node.name)
                     render(node.children, depth, inside)
                     continue
                 value = node.value
@@ -568,7 +658,9 @@ class PageBrowser:
                     if total > len(options):
                         entry["optionsTotal"] = total
                     line += " options: " + describe_options(options, total)
-                controls.append((line, entry))
+                own = " ".join([node.name, entry.get("value") or "", *(option["label"] for option in options)])
+                controls.append(Control(len(controls), line, entry, node, own, " ".join(recent)[-NEARBY_CHARS:]))
+                recent.clear()
                 render(node.children, depth + 1, "select" if options else inside)
 
         render(roots, 0, None)
@@ -577,27 +669,57 @@ class PageBrowser:
         account = state.get("payToken") or account
         if account:
             hints.append(f'This checkout accepts a pay token: merchantAccountId "{account}".')
-        shown: list[tuple[str, dict[str, Any]]] = []
-        used = 0
-        for line, entry in controls:
-            length = sent(line) + 1
-            if len(shown) >= MAX_CONTROLS or (shown and used + length > CONTROLS_BUDGET):
-                break
-            shown.append((line, entry))
-            used += length
-        listing = "\n".join(line for line, _ in shown) or "(no interactive elements)"
-        notices = f"[controls: showing {len(shown)} of {len(controls)}]\n" if len(shown) < len(controls) else ""
+        page = {"ok": True, "url": str(state.get("url") or snap.get("origin") or ""),
+                "title": str(state.get("title") or ""), **({} if settled else {"loading": True})}
+        if query:
+            ranked = matching(controls, query)
+            shown = fit(ranked, TREE_BUDGET - sum(sent(h) + 1 for h in hints) - 200)
+            label = json.dumps(query, ensure_ascii=False)
+            if not ranked:
+                notice = f"[no controls match {label}]"
+            elif len(shown) < len(ranked):
+                notice = f"[controls matching {label}: showing {len(shown)} of {len(ranked)}]"
+            else:
+                notice = f"[controls matching {label}]"
+            tree = "\n".join([notice, *(c.line for c in shown), *hints])
+            return {**page, "tree": tree, "elements": [c.entry for c in shown]}
+        shown = fit(controls, CONTROLS_BUDGET)
+        start = self.view_start(controls) if len(shown) < len(controls) else 0
+        if start:
+            # From the first control in view on, then back up the page with the room left.
+            shown = fit(controls[start:] + controls[start - 1::-1], CONTROLS_BUDGET)
+        listing = "\n".join(c.line for c in shown) or "(no interactive elements)"
+        notices = (f"[controls: showing {len(shown)} of {len(controls)}. {CUT_CONTROLS}]\n"
+                   if len(shown) < len(controls) else "")
         text = "\n".join([unframed(str(state.get("text") or "")), *frame_text])
-        room = max(MIN_TEXT, TREE_BUDGET - sent(listing) - sum(sent(h) + 1 for h in hints) - 200)
+        room = max(MIN_TEXT, TREE_BUDGET - sent(listing) - sent(notices) - sum(sent(h) + 1 for h in hints) - 200)
         cut = len(text)
         while cut > 0 and sent(text[:cut]) > room:
             cut = int(cut * 0.9)
         if cut < len(text):
             notices += f"[page text: showing first {cut} of {len(text)} characters]\n"
         tree = notices + text[:cut] + "\n" + listing + "".join("\n" + hint for hint in hints)
-        return {"ok": True, "url": str(state.get("url") or snap.get("origin") or ""),
-                "title": str(state.get("title") or ""), "tree": tree, "elements": [entry for _, entry in shown],
-                **({} if settled else {"loading": True})}
+        return {**page, "tree": tree, "elements": [c.entry for c in shown]}
+
+    def view_start(self, controls: list[Control]) -> int:
+        """Where the controls in view begin: just after the last one above the visible part of the page.
+
+        Controls come in page order, which is mostly top to bottom, so a sample of them is enough.
+        Ones in frames are placed by their frame, and a header that stays on screen does not count.
+        """
+        top = [index for index, control in enumerate(controls) if control.node.frame is None]
+        probes = top[::max(1, math.ceil(len(top) / VIEW_PROBES))]
+        if not probes:
+            return 0
+        try:
+            boxes = self.ab.batch([["get", "box", f"@{controls[index].entry['ref']}"] for index in probes], bail=False)
+        except Exception:  # noqa: BLE001
+            return 0
+        start = 0
+        for index, box in zip(probes, boxes):
+            if box and box.get("height") and float(box.get("y") or 0) + float(box["height"]) <= 0:
+                start = index + 1
+        return min(start, len(controls) - 1)
 
     def control(self, ref: str, *, check_disabled: bool = False) -> Node:
         """The element a ref names in the page as it is now; a ref that names nothing now is stale.
@@ -1503,7 +1625,8 @@ def run(argv: list[str]) -> int:
         if command == "navigate":
             result = page.navigate(str(args.get("url") or ""), opened=opened)
         elif command == "snapshot":
-            result = page.snapshot()
+            query = args.get("query")
+            result = page.snapshot(query=query.strip()[:200] if isinstance(query, str) and query.strip() else None)
         else:
             actions = args.get("actions")
             if not isinstance(actions, list):
