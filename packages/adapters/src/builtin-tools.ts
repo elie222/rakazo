@@ -1471,14 +1471,13 @@ export const builtinAgentTools: ConnectorTool[] = [
         },
         use_attached_image: {
           type: "boolean",
-          description:
-            "If true, use the latest image attached on this user message as the profile picture.",
+          description: "Use the latest image attached to this message as the profile picture.",
         },
         // Explained in the update_bot instructions; kept short for the listed-tool budget.
         dailyCheckIns: { type: "boolean" },
         notifyOnFinish: {
           type: "boolean",
-          description: "true notifies the user when this bot finishes a run; false silences that.",
+          description: "Notify the user when this bot finishes a run.",
         },
         instructions: {
           type: "string",
