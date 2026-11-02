@@ -75,6 +75,8 @@ class FakeAgentBrowser:
         self.typing = {"result": {"multiline": False}}
         self.stuck = False
         self.checks = []
+        self.disabled = set()
+        self.aria_disabled = {}
         # A JavaScript dialog the next click opens, then the one open on the page.
         self.opens = None
         self.dialog = None
@@ -134,6 +136,10 @@ class FakeAgentBrowser:
             return {"result": {"kept": True}}
         if name == "network":
             return {} if "--clear" in command else {"requests": self.requests}
+        if command[:2] == ["is", "enabled"]:
+            return {"enabled": command[2].lstrip("@") not in self.disabled}
+        if name == "get" and command[1] == "attr" and command[3] == "aria-disabled":
+            return {"value": self.aria_disabled.get(command[2].lstrip("@"))}
         if name == "get" and command[1] == "attr":
             return {"value": self.sources.get(command[2].lstrip("@"))}
         if name == "get" and command[1] == "value":
@@ -141,7 +147,7 @@ class FakeAgentBrowser:
         return {}
 
     def actions(self):
-        return [command for command in self.sent if command[0] not in ("snapshot", "eval", "network", "get")]
+        return [command for command in self.sent if command[0] not in ("snapshot", "eval", "network", "get", "is")]
 
 
 def page(browser):
@@ -318,6 +324,46 @@ class ActTest(unittest.TestCase):
                 self.assertEqual(result["error"], helper.DISABLED)
                 self.assertNotIn("fallback", result)
                 self.assertIn("tree", result)
+
+    def disabled_action(self, kind, ref, text):
+        for native in (True, False):
+            with self.subTest(native=native):
+                browser = FakeAgentBrowser()
+                if native:
+                    browser.disabled.add(ref)
+                else:
+                    browser.aria_disabled[ref] = "true"
+                with patch.object(browser, "batch", wraps=browser.batch) as batch:
+                    result, _ = self.act([{"kind": "click", "ref": "e8"},
+                                          {"kind": kind, "ref": ref, "text": text},
+                                          {"kind": "click", "ref": "e8"}], browser)
+                batch.assert_any_call([["snapshot", "-i"], ["is", "enabled", f"@{ref}"],
+                                       ["get", "attr", f"@{ref}", "aria-disabled"]])
+                self.assertEqual((result["ok"], result["uncertain"], result["completed"]), (False, False, 1))
+                self.assertEqual(result["error"], helper.DISABLED)
+                self.assertNotIn("fallback", result)
+                self.assertIn("Welcome back", result["tree"])
+                self.assertEqual(browser.actions(), [["click", "@e8"]])
+                self.assertIn(["snapshot"], browser.sent)
+
+    def test_a_fill_on_a_disabled_control_is_settled_without_input(self):
+        self.disabled_action("fill", "e2", "Grace")
+
+    def test_a_select_on_a_disabled_control_is_settled_without_input(self):
+        self.disabled_action("fill", "e4", "Choose")
+
+    def test_typing_on_a_disabled_control_is_settled_without_focus_or_keys(self):
+        self.disabled_action("type", "e2", "Grace")
+
+    def test_controls_with_aria_disabled_false_still_accept_input(self):
+        browser = FakeAgentBrowser()
+        browser.aria_disabled = {"e2": "false", "e4": "false"}
+        result, _ = self.act([{"kind": "fill", "ref": "e2", "text": "Grace"},
+                              {"kind": "fill", "ref": "e4", "text": "Choose"},
+                              {"kind": "type", "ref": "e2", "text": "a"}], browser)
+        self.assertEqual((result["ok"], result["completed"]), (True, 3))
+        self.assertEqual(browser.actions(), [["fill", "@e2", "Grace"], ["select", "@e4", "Choose"],
+                                             ["focus", "@e2"], ["press", "a"]])
 
     def test_any_other_failure_keeps_progress_and_falls_back_to_the_desktop(self):
         result, _ = self.act([{"kind": "fill", "ref": "e2", "text": "Grace"}, {"kind": "click", "ref": "e8"}],
