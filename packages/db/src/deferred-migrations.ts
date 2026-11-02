@@ -70,6 +70,7 @@ async function forgetHeldBack(migrationUrl: string, names: string[]) {
 }
 
 const BUILDS_INDEX_CONCURRENTLY = /\bCONCURRENTLY\b/i;
+const SQL_COMMENTS = /--[^\n]*|\/\*[\s\S]*?\*\//g;
 const LOCK_TIMEOUT_MS = 5_000;
 
 /**
@@ -86,7 +87,10 @@ async function buildsIndexConcurrently(migrationUrl: string, migrationsPath: str
         entry.isDirectory() &&
         !done.has(entry.name) &&
         BUILDS_INDEX_CONCURRENTLY.test(
-          readFileSync(path.join(migrationsPath, entry.name, "migration.sql"), "utf8"),
+          readFileSync(path.join(migrationsPath, entry.name, "migration.sql"), "utf8").replace(
+            SQL_COMMENTS,
+            "",
+          ),
         ),
     );
   } finally {
