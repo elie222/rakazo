@@ -4169,6 +4169,129 @@ describe("sendUserMessage", () => {
       },
     });
   });
+  it.each([
+    {
+      name: "prefers messaging over an app run",
+      parallel: true,
+      incoming: undefined,
+      source: undefined,
+      held: false,
+    },
+    {
+      name: "holds group text during a direct run",
+      parallel: false,
+      incoming: "group-1",
+      source: undefined,
+      held: true,
+    },
+    {
+      name: "holds direct text during a group run",
+      parallel: false,
+      incoming: undefined,
+      source: "group-1",
+      held: true,
+    },
+    {
+      name: "holds text from a different group",
+      parallel: false,
+      incoming: "group-2",
+      source: "group-1",
+      held: true,
+    },
+    {
+      name: "steers the same group",
+      parallel: false,
+      incoming: "group-1",
+      source: "group-1",
+      held: false,
+    },
+    {
+      name: "steers the same direct chat",
+      parallel: false,
+      incoming: undefined,
+      source: undefined,
+      held: false,
+    },
+  ])("$name", async ({ parallel, incoming, source, held }) => {
+    const blocks = (channelId: string | undefined) =>
+      channelId
+        ? [
+            {
+              kind: "channel_message" as const,
+              provider: "test",
+              channelId,
+              fromAddress: "sender",
+              fromLabel: "Sender",
+              text: "hello",
+            },
+          ]
+        : [{ kind: "text" as const, text: "hello" }];
+    const tx = {
+      thread: {
+        update: vi
+          .fn()
+          .mockResolvedValueOnce({ nextMessageSeq: 5 })
+          .mockResolvedValueOnce({ nextEventSeq: 9 }),
+      },
+      message: {
+        create: vi.fn().mockResolvedValue({ id: "message-1", seq: 4 }),
+        update: vi.fn().mockResolvedValue({ id: "message-1" }),
+      },
+      steeringMessage: { create: vi.fn() },
+      task: { create: vi.fn() },
+      run: {
+        findMany: vi.fn().mockResolvedValue([
+          ...(parallel ? [{ id: "run-app", taskId: "task-app", trigger: "user" }] : []),
+          {
+            id: "run-text",
+            taskId: "task-text",
+            trigger: "messaging",
+            sourceMessage: { blocks: blocks(source) },
+          },
+        ]),
+        findUnique: vi.fn().mockResolvedValue({ status: "running" }),
+        create: vi.fn(),
+      },
+      event: {
+        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+          ...event(data.seq),
+          type: data.type,
+        })),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      sendUserMessage(prisma, {
+        spaceId: "workspace-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        userId: "user-1",
+        blocks: blocks(incoming),
+        prompt: "hello",
+        trigger: "messaging",
+      }),
+    ).resolves.toEqual({ messageId: "message-1", seq: 4, taskId: null, runId: "run-text" });
+
+    expect(tx.run.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({ sourceMessage: { select: { blocks: true } } }),
+      }),
+    );
+    expect(tx.run.create).not.toHaveBeenCalled();
+    expect(tx.steeringMessage.create).toHaveBeenCalledWith({
+      data: {
+        messageId: "message-1",
+        botId: "bot-1",
+        userId: "user-1",
+        runId: held ? null : "run-text",
+        // Kept so an unclaimed release continues as messaging, never as an owner follow-up.
+        originTrigger: "messaging",
+      },
+    });
+  });
 });
 
 describe("claimSteering", () => {

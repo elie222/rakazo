@@ -176,6 +176,19 @@ test("setup opens in the language the app last used", async () => {
   });
 });
 
+test("setup lays out right to left in Hebrew", async () => {
+  await writeFile(path.join(userData, "ui-locale.txt"), "he\n");
+  app = await launch();
+  const setup = await app.firstWindow();
+
+  await expect(setup.locator("html")).toHaveAttribute("dir", "rtl");
+  await expect(setup.getByRole("heading", { name: "ברוכים הבאים ל-Rakazo" })).toBeVisible();
+  await expect(setup.getByRole("button", { name: "המשך" })).toBeEnabled();
+  await setup.screenshot({
+    path: path.join(import.meta.dirname, "screenshots", "11-setup-hebrew.png"),
+  });
+});
+
 test("Rakazo Cloud saves the hosted address and is reselected when saved", async () => {
   app = await launch();
   const setup = await app.firstWindow();

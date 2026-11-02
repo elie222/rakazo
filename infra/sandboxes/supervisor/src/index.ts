@@ -554,7 +554,7 @@ app.post("/computers/:id/browser", async (c) => {
           }),
         downloads: downloadFolder,
       }),
-      z.object({ command: z.literal("snapshot") }),
+      z.object({ command: z.literal("snapshot"), query: z.string().max(200).optional() }),
       z.object({
         command: z.literal("act"),
         downloads: downloadFolder,

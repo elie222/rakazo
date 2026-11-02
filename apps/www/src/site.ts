@@ -5,6 +5,7 @@ export const SITE_DESCRIPTION =
 
 export const APP_URL = "https://app.rakazo.com";
 export const PLUGIN_SUBMISSIONS_URL = `${APP_URL}/api/v1/plugin-submissions`;
+export const INTEGRATION_CLAIMS_URL = `${APP_URL}/api/v1/integration-claims`;
 export const CATALOG_URL =
   "https://rakazo-public.fsn1.your-objectstorage.com/integrations/catalog.json";
 export const GITHUB_URL = "https://github.com/elie222/rakazo";

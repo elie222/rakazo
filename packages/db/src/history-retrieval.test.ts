@@ -24,6 +24,37 @@ function sql(mock: ReturnType<typeof db>["mock"], call = 0) {
   return mock.$queryRaw.mock.calls[call]![0] as Prisma.Sql;
 }
 describe("local history retrieval", () => {
+  it.each([false, true])(
+    "excludes per-bot waiting rows across search and read queries (cross-chat: %s)",
+    async (crossChat) => {
+      const { mock, prisma } = db();
+      const granted = { ...scope, allowMyChats: true };
+      mock.$queryRaw.mockResolvedValue([]);
+      await searchHistory(prisma, granted, {
+        query: "exports",
+        ...(crossChat ? { scope: "my_chats" as const } : {}),
+      });
+      mock.$queryRaw
+        .mockResolvedValueOnce([{ ...row(4), threadId: "peer-thread", botId: "peer-bot" }])
+        .mockResolvedValueOnce([{ ...row(4), role: "bot", runId: "run" }])
+        .mockResolvedValueOnce([]);
+      mock.run.findMany.mockResolvedValue([{ id: "run" }]);
+      await readHistory(prisma, granted, {
+        messageId: "message-4",
+        ...(crossChat ? { threadId: "peer-thread" } : {}),
+      });
+      expect(mock.$queryRaw).toHaveBeenCalledTimes(4);
+      for (let call = 0; call < 4; call++) {
+        const query = sql(mock, call);
+        expect(query.sql).toContain("NOT EXISTS (");
+        expect(query.sql).toContain("FROM steering_messages pending");
+        expect(query.sql).toContain('pending."messageId" = m.id AND pending."botId" =');
+        expect(query.sql).toContain('pending."runId" IS NULL');
+        expect(query.values).toContain(scope.botId);
+        expect(query.sql.includes('COALESCE(t."botId",')).toBe(crossChat);
+      }
+    },
+  );
   it("bounds search excerpts and pages by stable sequence", async () => {
     const { mock, prisma } = db();
     mock.$queryRaw.mockResolvedValue([row(10), row(9), row(8)]);

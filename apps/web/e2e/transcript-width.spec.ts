@@ -5,8 +5,11 @@ import { captureScreenshot } from "./helpers";
 async function expectRailBesideCard(row: Locator, cardId: string) {
   const card = row.getByTestId(cardId);
   const rail = row.getByTestId("message-hover-rail");
-  await row.hover();
-  await expect(rail).toHaveCSS("opacity", "1");
+  // The transcript can still be scrolling as cards above render, moving another row under the pointer.
+  await expect(async () => {
+    await row.hover();
+    await expect(rail).toHaveCSS("opacity", "1", { timeout: 1_000 });
+  }).toPass();
   await expect
     .poll(async () => {
       const cardBox = await card.boundingBox();
