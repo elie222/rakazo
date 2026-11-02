@@ -488,6 +488,9 @@ class FakePurchases:
     def site(self):
         return FakePurchases.host
 
+    def where(self):
+        return {"url": "https://shop.example.test/pay", "title": "Pay"}
+
     def click(self, box, scrolled):
         if box.get("ref") in FakePurchases.offscreen and not scrolled:
             raise helper.Offscreen()
@@ -598,9 +601,15 @@ class PurchaseTest(unittest.TestCase):
         result = page(browser).purchase_check({"actions": [
             {"kind": "fill", "ref": "e2", "text": "x"}, {"kind": "click", "ref": "e8"},
             {"kind": "click", "ref": "e7"}, {"kind": "click", "ref": "e99"}]})
-        self.assertEqual(result, {"ok": True, "site": "shop.example.test", "purchase": {
+        self.assertEqual(result, {"ok": True, "site": "shop.example.test", "url": "https://shop.example.test/pay",
+                                  "title": "Pay", "purchase": {
             "steps": [2], "label": "Pay $5", "amount": "$5", "amountFrom": "button", "reason": "final_step"}})
         self.assertEqual(browser.actions(), [])
+
+    def test_one_card_approves_one_purchase_click_of_a_batch(self):
+        browser = pays(pays(FakeAgentBrowser(), "e7"), "e8")
+        result = page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e7"}, {"kind": "click", "ref": "e8"}]})
+        self.assertEqual(result["purchase"]["steps"], [0])
 
     def test_purchase_check_for_the_screen_asks_the_page(self):
         FakePurchases.on_desktop = {**PAY, "reason": "payment_page"}
@@ -625,7 +634,9 @@ class PurchaseTest(unittest.TestCase):
                     patch.object(helper, "wait_for_cdp"), patch.object(helper, "http_get_json", return_value=listing), \
                     patch("builtins.print") as printed:
                 self.assertEqual(helper.run(["rakazo-page-browser", "purchase_check", '{"desktop": true}']), 0)
-            self.assertEqual(json.loads(printed.call_args.args[0]), {"ok": True, "site": "", "purchase": None})
+            self.assertEqual(json.loads(printed.call_args.args[0]),
+                             {"ok": True, "site": "", "purchase": None, "url": listing[0]["url"] if listing else "",
+                              "title": ""})
 
 
 class DesktopPurchaseTest(unittest.TestCase):

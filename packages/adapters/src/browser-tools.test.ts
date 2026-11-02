@@ -1073,6 +1073,20 @@ describe("browser tools and purchase approval", () => {
       { kind: "fill", ref: "e2", text: "x" },
     ]);
   });
+  it("lets a card for a page that could not be checked cover each click, bound to no site", async () => {
+    const unchecked = { steps: [], site: "", label: "", amount: "" };
+    const marked = { approved: true, site: "", label: "", amount: "" };
+    expect(
+      await actWith(
+        { actions: [click("e1"), { kind: "fill", ref: "e2", text: "x" }, click("e3")] },
+        unchecked,
+      ),
+    ).toEqual([
+      { kind: "click", ref: "e1", ...marked },
+      { kind: "fill", ref: "e2", text: "x" },
+      { kind: "click", ref: "e3", ...marked },
+    ]);
+  });
 });
 
 describe("browser tools on dropdowns and stale refs", () => {

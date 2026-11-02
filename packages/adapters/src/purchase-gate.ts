@@ -130,7 +130,8 @@ function purchaseProbe(name: string, args: Record<string, unknown>) {
           enter = true;
           if (opened) unchecked = true;
         }
-      } else if (kind === "type" && /[\r\n]/.test(String(step.text ?? ""))) {
+      } else if (kind === "type" && /[\r\n]|^\s+$/.test(String(step.text ?? ""))) {
+        // A line break submits; text that is only spaces presses a focused button.
         enter = true;
         if (opened) unchecked = true;
       } else if (kind === "focus" && step.uri !== undefined) opened = true;

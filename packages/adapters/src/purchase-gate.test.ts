@@ -115,6 +115,21 @@ describe("purchase detection for the page tools", () => {
     expect(await request([{ kind: "click" }])).toMatchObject({ points: [], unplaced: true });
   });
 
+  it("takes typing a line break, or only spaces, as a press", async () => {
+    const check = vi.fn(async (_computer: unknown, _request: unknown) => ({ purchase: found }));
+    const ctx = contextWith(check as never);
+    for (const text of ["\n", "done\r", " ", "  "]) {
+      check.mockClear();
+      await detectPurchase(ctx, "computer_act", { actions: [{ kind: "type", text }] });
+      expect(check.mock.calls[0]?.[1], JSON.stringify(text)).toMatchObject({ enter: true });
+    }
+    check.mockClear();
+    await detectPurchase(ctx, "computer_act", {
+      actions: [{ kind: "type", text: "Ada Lovelace" }],
+    });
+    expect(check).not.toHaveBeenCalled();
+  });
+
   it("takes every key that submits, with its modifiers written either way", async () => {
     const check = vi.fn(async (_computer: unknown, _request: unknown) => ({ purchase: found }));
     const ctx = contextWith(check as never);

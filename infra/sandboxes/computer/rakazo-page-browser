@@ -995,13 +995,14 @@ class PageBrowser:
                 continue
             site, found = self.click_purchase(step["ref"], node)
             if found:
-                steps.append(index)
-                first = first or found
+                # One card approves one click: a later purchase click in the batch is refused, and asks.
+                steps, first = [index], found
+                break
         if args.get("desktop") is True and not steps:
             first = self.purchases().desktop(args)
         purchase = {"steps": steps, "label": first.get("label", ""), "amount": first.get("amount", ""),
                     "amountFrom": first.get("amountFrom", "page"), "reason": first.get("reason")} if first else None
-        return {"ok": True, "site": site, "purchase": purchase}
+        return {"ok": True, "url": "", "title": "", **self.purchases().where(), "site": site, "purchase": purchase}
 
     # -- commands ---------------------------------------------------------------------------------
 
@@ -1865,7 +1866,7 @@ PURCHASE_HELPERS = r"""
   const isFinalStep = (words, el) => words.some((word) => FINAL_STEP.some((pattern) => pattern.test(phrase(word)))
     || (el && PAY_WORD.test(phrase(word)) && inPaymentForm(el)));
   // Controls on a payment page that never pay.
-  const NOT_PAYING = /^(?:back|go back|previous|cancel|edit|change|remove|delete|clear|apply|redeem|coupon|promo|discount|gift card|show|hide|help|close|dismiss|terms|privacy|learn more|view|select (?:a )?seat|choose (?:a )?seat|sign in|log in|login|sign up|register|forgot|add (?:a )?(?:promo|coupon|code|gift|note))\b|^(?:חזרה|ביטול|עריכה|שינוי|הסרה|קופון|סגירה|סגור|עזרה|תנאי|פרטיות|התחבר|כניסה|החל)(?:\s|$)/;
+  const NOT_PAYING = /^(?:back|go back|previous|cancel|edit|change|remove|delete|clear|apply|redeem|coupon|promo|discount|gift card|show|hide|help|close|dismiss|terms|privacy|learn more|view|select (?:a )?seat|choose (?:a )?seat|sign in|log in|login|sign up|register|forgot|add (?:a )?(?:promo|coupon|code|gift|note)|add to (?:cart|basket|bag))\b|^(?:חזרה|ביטול|עריכה|שינוי|הסרה|קופון|סגירה|סגור|עזרה|תנאי|פרטיות|התחבר|כניסה|החל|הוסף לסל|הוספה לסל)(?:\s|$)/;
   const MONEY = new RegExp(`(?:[$€£₪¥]\\s?\\d[\\d.,]*|\\d[\\d.,]*\\s?(?:[$€£₪¥]|USD|EUR|GBP|ILS|NIS|ש"ח|ש״ח)|(?:USD|EUR|GBP|ILS|NIS)\\s?\\d[\\d.,]*)`, "gi");
   const TOTAL = /(?<!sub)total|amount due|balance due|to pay|you pay|סה[״"'׳]?כ|סך[\s-]*הכל|לתשלום/i;
   const moneyIn = (text, last) => {
@@ -1917,7 +1918,7 @@ PURCHASE_HELPERS = r"""
     let reason = null;
     if (form && ([...form.elements].some(cardLike) || (frame && form.querySelector("iframe,frame")))) reason = "card_form";
     else if ((el instanceof HTMLButtonElement || el instanceof HTMLInputElement || el instanceof HTMLAnchorElement
-        || el.getAttribute("role") === "button") && isFinalStep(words, el)) reason = "final_step";
+        || el.getAttribute("role") === "button" || pressable(el)) && isFinalStep(words, el)) reason = "final_step";
     else if ((frame || pageCards().length) && pressable(el) && !inSurroundings(el)
         && !words.some((word) => NOT_PAYING.test(phrase(word)))) reason = "payment_page";
     return reason ? shownPurchase(reason, words[0] || "") : null;
@@ -2032,6 +2033,11 @@ class Purchases:
     def ask(self, session: str, world: int | None, call: str) -> Any:
         return page_secrets.eval_json(self.client, session, f"{PURCHASE_HELPERS}, window.__rakazoPurchase.{call}",
                                       context_id=world)
+
+    def where(self) -> dict[str, str]:
+        found = page_secrets.eval_json(self.client, self.session,
+                                       "({url: location.href, title: (document.title || '').slice(0, 200)})")
+        return {key: str(found.get(key) or "") for key in ("url", "title")} if isinstance(found, dict) else {}
 
     def site(self) -> str:
         """The top page's host. Each check starts here, in the world of the document the tab shows now: an
@@ -2361,7 +2367,7 @@ def run(argv: list[str]) -> int:
                 address = ""
             if not address or internal(address):
                 # No page is showing, or one of Chromium's own: nothing on it can be bought.
-                print(json.dumps({"ok": True, "site": "", "purchase": None}))
+                print(json.dumps({"ok": True, "site": "", "purchase": None, "url": address, "title": ""}))
                 return 0
         browser = AgentBrowser(port)
         tabs: Tabs | None = None
