@@ -32,7 +32,7 @@ import { NativeSymbol } from "../components/native-symbol";
 import { ProfileEditDialog } from "../components/profile-edit-dialog";
 import { Chevron } from "../components/row-accessories";
 import type { MobileMe, MobileModel, MobileModelCredential } from "../lib/api";
-import { rpc } from "../lib/api";
+import { currentApiBase, loadSessionToken, rpc, selectedSpaceId } from "../lib/api";
 import {
   avatarColor,
   avatarShape,
@@ -45,6 +45,7 @@ import { chatModelPickerChoices } from "../lib/chat-model";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computer";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { useI18n } from "../lib/i18n";
+import { afterChatNotifyChange } from "../lib/live-notifications";
 import { native, useMobileTokens } from "../lib/native";
 import { createQueuedSave } from "../lib/queued-save";
 import { useSideInsets } from "../lib/side-insets";
@@ -65,6 +66,7 @@ export default function BotSettingsScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const modelY = useRef(0);
   const [bot, setBot] = useState<Bot | null>(null);
+  const threadId = useRef<string | undefined>(undefined);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [instructions, setInstructions] = useState("");
@@ -121,9 +123,22 @@ export default function BotSettingsScreen() {
     () =>
       createQueuedSave<boolean>(true, {
         save: async (notifyOnFinish) => {
-          await rpc("bots/update", { botId, notifyOnFinish });
+          const next = await rpc("bots/update", { botId, notifyOnFinish });
+          threadId.current = next.threadId;
         },
         onChange: setNotifyOnFinish,
+        onSaved: async (notify) => {
+          try {
+            await afterChatNotifyChange(
+              currentApiBase(),
+              await loadSessionToken(),
+              selectedSpaceId() ?? "",
+              { botId, threadId: threadId.current, notify },
+            );
+          } catch {
+            // The server save succeeded; device reconciliation can retry later.
+          }
+        },
         onError: (err) => setError(errorText(err)),
       }),
     [botId],
@@ -147,6 +162,7 @@ export default function BotSettingsScreen() {
     if (!botId) return;
     void rpc("bots/get", { botId })
       .then((next) => {
+        threadId.current = next.threadId;
         setBot(next);
         setName(next.name);
         nameSave.reset(next.name);
