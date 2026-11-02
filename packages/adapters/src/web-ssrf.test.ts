@@ -600,9 +600,10 @@ function connectTargetPort(args: unknown[]): number | undefined {
 
 describe("outbound proxy", () => {
   async function withConnectProxy(
-    run: (proxy: { proxied: string[]; hosts: string[] }) => Promise<void>,
+    run: (proxy: { proxied: string[]; hosts: string[]; connectHosts: string[] }) => Promise<void>,
   ): Promise<void> {
     const proxied: string[] = [];
+    const connectHosts: string[] = [];
     const hosts: string[] = [];
     const target = createServer((request, response) => {
       hosts.push(request.headers.host ?? "");
@@ -614,6 +615,7 @@ describe("outbound proxy", () => {
     });
     proxy.on("connect", (request, client) => {
       proxied.push(request.url ?? "");
+      connectHosts.push(request.headers.host ?? "");
       const upstream = new Socket();
       upstream.connect((target.address() as AddressInfo).port, "127.0.0.1", () => {
         client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
@@ -629,7 +631,7 @@ describe("outbound proxy", () => {
     vi.stubEnv("HTTP_PROXY", proxyUrl);
     vi.stubEnv("http_proxy", proxyUrl);
     try {
-      await run({ proxied, hosts });
+      await run({ proxied, hosts, connectHosts });
     } finally {
       vi.unstubAllEnvs();
       proxy.closeAllConnections();
@@ -639,13 +641,14 @@ describe("outbound proxy", () => {
   }
 
   it("tunnels to the checked address and keeps the original host", async () => {
-    await withConnectProxy(async ({ proxied, hosts }) => {
+    await withConnectProxy(async ({ proxied, hosts, connectHosts }) => {
       const response = await fetchSafeWebText("http://example.test/page", {
         resolveHostname: publicResolver,
       });
 
       expect(response.body).toBe("ok");
       expect(proxied).toEqual(["203.0.113.10:80"]);
+      expect(connectHosts).toEqual(["203.0.113.10:80"]);
       expect(hosts).toEqual(["example.test"]);
     });
   });
@@ -662,5 +665,17 @@ describe("outbound proxy", () => {
       ).rejects.toThrow();
       expect(proxied).toEqual([]);
     });
+  });
+
+  it("refuses a SOCKS proxy, which would resolve the hostname itself", async () => {
+    vi.stubEnv("HTTPS_PROXY", "socks5://127.0.0.1:1080");
+    vi.stubEnv("https_proxy", "socks5://127.0.0.1:1080");
+    try {
+      await expect(
+        fetchSafeWebText("https://example.test/page", { resolveHostname: publicResolver }),
+      ).rejects.toThrow("Only HTTP proxies are supported");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

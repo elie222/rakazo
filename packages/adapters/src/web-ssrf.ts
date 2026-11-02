@@ -177,6 +177,10 @@ export async function fetchSafeHttpRequest(
  * IP, so the proxy never resolves the hostname itself and DNS rebinding cannot reach past it.
  */
 function safeWebDispatcher(resolve: ResolveHostname): Dispatcher {
+  const { env } = process;
+  for (const proxy of [env.http_proxy ?? env.HTTP_PROXY, env.https_proxy ?? env.HTTPS_PROXY]) {
+    if (proxy && !/^https?:\/\//i.test(proxy)) throw new Error("Only HTTP proxies are supported");
+  }
   return new EnvHttpProxyAgent({
     connect: { lookup: createAddressCheckedLookup(resolve, assertPublicAddresses) },
     proxyTunnel: true,
@@ -186,8 +190,14 @@ function safeWebDispatcher(resolve: ResolveHostname): Dispatcher {
         options: Dispatcher.ConnectOptions,
       ) => Promise<Dispatcher.ConnectData>;
       return Object.assign(pool, {
-        connect: async (options: Dispatcher.ConnectOptions) =>
-          connect({ ...options, path: await checkedAuthority(options.path, resolve) }),
+        connect: async (options: Dispatcher.ConnectOptions) => {
+          const authority = await checkedAuthority(options.path, resolve);
+          return connect({
+            ...options,
+            path: authority,
+            headers: { ...(options.headers as Record<string, string>), host: authority },
+          });
+        },
       });
     },
   });
