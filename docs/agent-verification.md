@@ -366,6 +366,36 @@ model-call timeout errors, mostly within two seconds rather than at the trial's
 three-minute deadline. The saved report lacks transport diagnostics to establish
 the cause. No live qualification of the suite or its judge is claimed.
 
+### Bot memory evals
+
+```sh
+pnpm test:evals --suite memory --list
+pnpm test:evals --live --suite memory --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/memory.json
+```
+
+The five synthetic cases check that the bot's own memory stays short and correct
+across conversations: a move from London to Berlin replaces the old home and a
+fresh conversation recalls Berlin, a forgotten code leaves memory, a preference
+restated in other words is kept once, chatty personal details become short
+entries, and a save into memory seeded close to its 4 KB limit consolidates the
+existing notes instead of dropping them. Conversations are separated by clearing
+history, so only durable memory carries over. The full-memory seed is written
+through the memory API before the first step; no model authors it.
+
+Deterministic checks read the stored memory and the model's `remember` calls:
+each earlier fact must have been saved before it can count as updated or
+forgotten, the home saved in the first conversation must not survive unchanged, entries
+stay under 200 characters, and the bot's memory stays within the limit. The
+`memory-meaning-v1` judge then grades meaning: no stale current home, no
+recoverable forgotten code, no duplicate preference, every shared fact captured,
+and every important seeded fact preserved. Calibration labels cover a former
+home, a contradiction, a stale recall, a residual secret, a duplicate, a dropped
+fact and a wiped memory.
+
+The offline model-protocol fixture runs the same product path and proves that an
+appended Berlin beside London and a claimed save after a full-memory refusal
+fail, while a rewrite and a consolidate-then-save pass.
+
 ### Long conversation and cost evals
 
 List seeded long-chat cases without a database or model connection:

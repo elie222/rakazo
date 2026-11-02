@@ -2,6 +2,7 @@ import type { ConnectorTool } from "@rakazo/adapter-kit";
 import {
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
+  BOT_MEMORY_MAX_BYTES,
   BotSecretName,
   botSecretDestinationSchema,
   FEEDBACK_DESCRIPTION_MAX_LENGTH,
@@ -706,13 +707,12 @@ export const builtinAgentTools: ConnectorTool[] = [
   },
   {
     name: "remember",
-    description:
-      "Add a durable fact to this bot's explicit memory. The fact is appended; existing memory is kept.",
+    description: `Save one short new fact to your memory, one call per fact. To change or drop a fact, pass old_text from its entry with new or empty content. Holds ${BOT_MEMORY_MAX_BYTES / 1024} KB.`,
     inputSchema: {
       type: "object",
       properties: {
         content: { type: "string" },
-        path: { type: "string" },
+        old_text: { type: "string" },
       },
       required: ["content"],
     },

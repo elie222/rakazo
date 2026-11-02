@@ -70,6 +70,8 @@ export type EvalCase = {
   pauseEndsTurn?: true;
   /** Synthetic bot state written before the first step. */
   botSetup?: BotSetup;
+  /** The bot's MEMORY.md, written through the memory API before the first step. */
+  botMemory?: string;
   taughtSkill?: true;
   history?: ReturnType<typeof historyFixture>;
   configure?: (services: EvalServices) => void;
