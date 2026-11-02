@@ -1083,6 +1083,8 @@ export interface BrowserNavigateResult {
 export interface BrowserSnapshotRequest {
   /** Words to find controls by anywhere on the page, such as "newsletter signup". */
   query?: string;
+  /** Folder in the computer's home that a PDF the tab shows is saved to; without it, none is saved. */
+  downloads?: string;
   signal?: AbortSignal;
 }
 
@@ -1107,6 +1109,7 @@ export interface BrowserSnapshotResult {
   elements: BrowserSnapshotNode[];
   /** The page was still loading or waiting on its own requests when it was captured. */
   loading?: boolean;
+  downloads?: BrowserDownload[];
   fallback?: "computer_act";
   error?: string;
   /** What the page did that the bot should know, such as an alert that was closed. */
@@ -1183,7 +1186,7 @@ export interface BrowserActResult {
 /** A sandbox must route these commands through its owned screen, never generic host execution. */
 export type PageBrowserCommand =
   | { command: "navigate"; url: string; downloads?: string }
-  | { command: "snapshot"; query?: string }
+  | { command: "snapshot"; query?: string; downloads?: string }
   | { command: "act"; actions: BrowserActStep[]; downloads?: string };
 
 export type PageBrowserResult = Partial<BrowserSnapshotResult & BrowserActResult> & { ok: boolean };

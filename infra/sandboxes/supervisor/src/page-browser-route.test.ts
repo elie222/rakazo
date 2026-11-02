@@ -408,6 +408,7 @@ async function browserRequest(body: Record<string, unknown>) {
 it.each([
   { command: "navigate", url: "https://bank.example/files/statement.pdf" },
   { command: "act", actions: [{ kind: "click", ref: "e1" }] },
+  { command: "snapshot" },
 ])("forwards the bot's download folder: $command", async (command) => {
   const body = { ...command, downloads: "bots/b1/Downloads" };
   expect(await (await browserRequest(body)).json()).toMatchObject({ ok: true });

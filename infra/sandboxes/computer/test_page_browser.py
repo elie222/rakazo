@@ -826,6 +826,228 @@ class AgentBrowserTest(unittest.TestCase):
                          [json.dumps([["tab", "front"]])] * 2)
 
 
+class FakeTabs:
+    """Chromium's tab list over its DevTools HTTP endpoint: front tab first, closed and activated by id."""
+
+    def __init__(self, *ids):
+        self.ids = list(ids)
+        self.closed, self.activated = [], []
+        # Tabs a page opens while the call runs, as Chromium would show them at its end.
+        self.opening = []
+        self.broken = False
+
+    def list(self, _port=None):
+        return [{"type": "page", "id": tab, "title": f"Report {tab}", "url": f"https://portal.example.test/{tab}"}
+                for tab in self.ids]
+
+    def urlopen(self, url, timeout=None):
+        tab = url.rsplit("/", 1)[1]
+        if "/json/activate/" in url and self.broken:
+            raise OSError("no answer")
+        if "/json/close/" in url:
+            self.closed.append(tab)
+            self.ids.remove(tab)
+        else:
+            self.activated.append(tab)
+            self.ids.remove(tab)
+            self.ids.insert(0, tab)
+        return Mock()
+
+
+class NewTabTest(unittest.TestCase):
+    """A tab a page opens, as a pop-up, a link to a new tab or a report it opens once made, is named in the result."""
+
+    def setUp(self):
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        self.home = home.name
+
+    def call(self, chromium, own, browser="browser-1", port=9222, ours=None):
+        """One call's view of the tabs: those opened since the last call, and the note it gives."""
+        with patch.object(helper, "page_tabs", chromium.list), \
+                patch.object(helper.urllib.request, "urlopen", chromium.urlopen):
+            tabs = helper.Tabs(self.home, port, browser)
+            tabs.begin()
+            chromium.ids[:0] = chromium.opening
+            chromium.opening = []
+            now, opened, flooded = tabs.end(own, ours=ours)
+        return [tab["id"] for tab in opened], tabs.note(now, opened, now[0]["url"]), flooded
+
+    def test_names_the_tabs_opened_since_the_last_call(self):
+        chromium = FakeTabs("a")
+        self.assertEqual(self.call(chromium, "a")[0], [])
+        chromium.ids.insert(0, "b")
+        self.assertEqual(self.call(chromium, "b")[0], ["b"])
+        self.assertEqual(self.call(chromium, "b")[0], [])
+        chromium.ids[0] = "c"
+        self.assertEqual(self.call(chromium, "c")[0], ["c"])
+        # The helper's own tab, opened to leave the browser's new tab page, is not news.
+        chromium.ids.insert(0, "d")
+        self.assertEqual(self.call(chromium, "d", ours="d")[0], [])
+        # Another screen's browser is kept apart: its first call names every tab but its own.
+        self.assertEqual(self.call(FakeTabs("x", "y"), "x", port=9223)[0], ["y"])
+        # Written whole: nothing is left beside it.
+        self.assertEqual(sorted(os.listdir(self.home)), ["tabs-9222.json", "tabs-9223.json"])
+        Path(self.home, "tabs-9222.json").write_text("not json")
+        self.assertEqual(self.call(chromium, "d")[0], ["c", "a"])
+
+    def test_after_the_browser_starts_every_tab_but_the_call_s_own_is_new_and_none_is_closed(self):
+        chromium = FakeTabs("a")
+        self.call(chromium, "a")
+        # Started again, maybe with the person's own tabs restored: they are named, never closed.
+        restored = FakeTabs("r1", "r2", "r3", "r4", "r5")
+        opened, note, flooded = self.call(restored, "r1", browser="browser-2")
+        self.assertEqual((opened, flooded, restored.closed), (["r2", "r3", "r4", "r5"], False, []))
+        self.assertTrue(note.startswith('4 new tabs opened behind this one: "Report r2" at '))
+        self.assertTrue(note.endswith("; and 1 more."))
+
+    def test_a_flood_of_tabs_is_closed_and_the_bot_s_own_tab_is_in_front_again(self):
+        chromium = FakeTabs("own")
+        self.call(chromium, "own")
+        # During a call: 60 window.open calls with no click.
+        chromium.opening = [f"p{index}" for index in range(60)]
+        opened, note, flooded = self.call(chromium, "own")
+        self.assertEqual((chromium.ids, opened, flooded), (["own"], [], True))
+        self.assertEqual(len(chromium.closed), 60)
+        self.assertEqual(chromium.activated, ["own"])
+        self.assertEqual(note, "The page opened 60 tabs at once, more than 3, so they were closed.")
+        # Between calls: closed before the call picks the tab it reads.
+        chromium.ids[:0] = [f"q{index}" for index in range(5)]
+        opened, note, _ = self.call(chromium, "own")
+        self.assertEqual((chromium.ids, opened), (["own"], []))
+        self.assertEqual(note, "The page opened 5 tabs at once, more than 3, so they were closed.")
+        # A report, or a few tabs, stay open and are named.
+        chromium.opening = ["r1", "r2", "r3"]
+        opened, note, flooded = self.call(chromium, "own")
+        self.assertEqual((opened, flooded, chromium.ids), (["r1", "r2", "r3"], False, ["r1", "r2", "r3", "own"]))
+
+    def test_the_call_s_own_tab_is_never_closed_even_when_it_opened_with_the_flood(self):
+        # browser_navigate from the browser's own page opens the site in a tab of its own; the site
+        # then opens 60 pop-ups as it loads.
+        chromium = FakeTabs("newtab")
+        self.call(chromium, "newtab")
+        chromium.ids.remove("newtab")
+        chromium.opening = [f"p{index}" for index in range(30)] + ["site"] + [f"p{index}" for index in range(30, 60)]
+        opened, note, flooded = self.call(chromium, "site", ours="site")
+        self.assertEqual((chromium.ids, opened, flooded), (["site"], [], True))
+        self.assertNotIn("site", chromium.closed)
+        self.assertEqual(chromium.activated, ["site"])
+        self.assertEqual(note, "The page opened 60 tabs at once, more than 3, so they were closed.")
+
+    def test_a_front_tab_that_cannot_be_brought_back_still_leaves_the_note_and_the_tabs_kept(self):
+        chromium = FakeTabs("own")
+        self.call(chromium, "own")
+        chromium.broken = True
+        chromium.opening = [f"p{index}" for index in range(10)]
+        opened, note, flooded = self.call(chromium, "own")
+        self.assertEqual((chromium.ids, flooded), (["own"], True))
+        self.assertEqual(note, "The page opened 10 tabs at once, more than 3, so they were closed.")
+        self.assertEqual(json.loads(Path(self.home, "tabs-9222.json").read_text())["tabs"], ["own"])
+
+    def test_tabs_pages_open_a_few_at_a_time_are_kept_to_eight_and_the_person_s_never_closed(self):
+        # The browser started with the person's own tabs restored.
+        chromium = FakeTabs("own", *[f"mine{index}" for index in range(10)])
+        self.call(chromium, "own")
+        notes = []
+        for round in range(4):
+            own = chromium.ids[0]
+            chromium.opening = [f"d{round}{index}" for index in range(3)]
+            notes.append(self.call(chromium, own)[1])
+        self.assertTrue(all(f"mine{index}" in chromium.ids for index in range(10)))
+        # Eight besides the tab the call read, which is never closed.
+        self.assertEqual([tab for tab in chromium.ids if tab.startswith("d") and tab != own],
+                         ["d30", "d31", "d32", "d21", "d22", "d10", "d11", "d12"])
+        # The ones longest out of sight went first.
+        self.assertEqual(sorted(chromium.closed), ["d00", "d01", "d02"])
+        self.assertNotIn("Closed", notes[2])
+        one = helper.Tabs(self.home, 9222, "browser-1")
+        one.trimmed = 1
+        self.assertEqual(one.note([], [], ""), "Closed the oldest tab a page had opened, to keep at most 8.")
+        self.assertTrue(notes[3].startswith("Closed the 3 oldest tabs pages had opened, to keep at most 8. "))
+
+    def test_says_which_tab_page_tools_now_read_and_that_the_one_before_is_still_open(self):
+        a, b, c = FakeTabs("a", "b", "c").list()
+        self.assertIsNone(helper.tab_note([], [a], a["url"]))
+        self.assertEqual(helper.tab_note([b], [b, a], b["url"]),
+                         'A new tab opened, and page tools now read it: "Report b" at https://portal.example.test/b; '
+                         "the tab before it is still open.")
+        self.assertEqual(helper.tab_note([b], [b, a], a["url"]),
+                         'A new tab opened, and page tools now read it: "Report b" at https://portal.example.test/b; '
+                         "the tab before it is still open. Take a snapshot to read it.")
+        self.assertEqual(helper.tab_note([c, b], [c, b, a], c["url"]),
+                         '2 new tabs opened, and page tools now read the one in front: "Report c" at '
+                         'https://portal.example.test/c; the others are "Report b" at https://portal.example.test/b; '
+                         "the tabs before them are still open.")
+        self.assertEqual(helper.tab_note([b], [a, b], a["url"]),
+                         'A new tab opened behind this one: "Report b" at https://portal.example.test/b.')
+        self.assertEqual(helper.tab_note([b, c], [a, b, c], a["url"]), '2 new tabs opened behind this one: "Report b" at '
+                         'https://portal.example.test/b; "Report c" at https://portal.example.test/c.')
+        many = FakeTabs("a", *"bcdef").list()
+        self.assertTrue(helper.tab_note(many[1:], many, many[0]["url"]).endswith(
+            '"Report d" at https://portal.example.test/d; and 2 more.'))
+        long = {"id": "d", "title": 'x"' * 300, "url": "https://portal.example.test/" + "y" * 900}
+        note = helper.tab_note([long], [long], long["url"])
+        self.assertLess(len(note), 1000)
+        self.assertIn('\\"x', note)
+
+    def run_call(self, chromium, result, note=None, opens=()):
+        browser = FakeAgentBrowser()
+        browser.home = self.home
+        reads = []
+
+        def snapshot(current, settle=None):
+            # The page tools read the tab in front: during the call, a tab the page just opened.
+            chromium.ids[:0] = opens if not reads else []
+            reads.append(chromium.ids[0])
+            return {**result, "url": f"https://portal.example.test/{chromium.ids[0]}",
+                    **({"note": note} if note else {})}
+
+        with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "9222"}), \
+                patch.object(helper, "wait_for_cdp", return_value={"webSocketDebuggerUrl": "ws://b/1"}), \
+                patch.object(helper, "page_tabs", chromium.list), \
+                patch.object(helper.urllib.request, "urlopen", chromium.urlopen), \
+                patch.object(helper, "AgentBrowser", return_value=browser), \
+                patch.object(browser, "use_tab", create=True) as use_tab, \
+                patch.object(helper.PageBrowser, "snapshot", autospec=True, side_effect=snapshot), \
+                patch("builtins.print") as printed:
+            self.assertEqual(helper.run(["rakazo-page-browser", "snapshot", "{}"]), 0)
+        return json.loads(printed.call_args.args[0]), reads, use_tab
+
+    def test_a_report_a_page_opened_after_the_last_call_is_named_in_the_next_result(self):
+        reports = {"ok": True, "title": "Report", "tree": "", "elements": []}
+        chromium = FakeTabs("a")
+        self.assertNotIn("note", self.run_call(chromium, reports)[0])
+        chromium.ids.insert(0, "pdf")
+        result = self.run_call(chromium, reports, note="The page showed an alert, now closed.")[0]
+        self.assertEqual(result["note"], 'The page showed an alert, now closed. A new tab opened, and page tools now '
+                         'read it: "Report pdf" at https://portal.example.test/pdf; the tab before it is still open.')
+        self.assertNotIn("note", self.run_call(chromium, reports)[0])
+
+    def test_a_hostile_page_s_sixty_pop_ups_are_closed_and_the_bot_reads_its_own_page(self):
+        reports = {"ok": True, "title": "Report", "tree": "", "elements": []}
+        chromium = FakeTabs("own")
+        self.run_call(chromium, reports)
+        result, reads, use_tab = self.run_call(chromium, reports, opens=[f"p{index}" for index in range(60)])
+        self.assertEqual(chromium.ids, ["own"])
+        self.assertEqual(reads, ["p0", "own"])
+        use_tab.assert_called_with("own")
+        self.assertEqual(result["url"], "https://portal.example.test/own")
+        self.assertEqual(result["note"], "The page opened 60 tabs at once, more than 3, so they were closed.")
+
+    def test_a_tab_list_that_fails_at_the_start_closes_nothing_at_the_end(self):
+        chromium = FakeTabs("a")
+        self.run_call(chromium, {"ok": True, "title": "Report", "tree": "", "elements": []})
+        with patch.object(helper.Tabs, "begin", side_effect=OSError("no answer")):
+            self.run_call(chromium, {"ok": True, "title": "Report", "tree": "", "elements": []},
+                          opens=[f"p{index}" for index in range(5)])
+        self.assertEqual(chromium.closed, [])
+
+    def test_a_tab_list_that_fails_leaves_the_result_as_it_is(self):
+        reports = {"ok": True, "title": "Report", "tree": "", "elements": []}
+        with patch.object(helper.Tabs, "end", side_effect=OSError("read-only")):
+            result = self.run_call(FakeTabs("a"), reports)[0]
+        self.assertEqual(result, {**reports, "url": "https://portal.example.test/a"})
+
 class RunTest(unittest.TestCase):
     def test_without_a_browser_falls_back_to_the_desktop_without_doubt(self):
         with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), patch.object(helper, "wait_for_cdp",
@@ -887,12 +1109,29 @@ class RunTest(unittest.TestCase):
                 patch.object(helper, "http_get_json", side_effect=[listing, opened]), \
                 patch.object(helper.urllib.request, "urlopen"), \
                 patch.object(helper, "AgentBrowser", return_value=browser), \
-                patch.object(browser, "use_tab", create=True), \
+                patch.object(browser, "use_tab", create=True) as use_tab, \
                 patch.object(helper.time, "sleep"), patch("builtins.print") as printed:
             self.assertEqual(helper.run(["rakazo-page-browser", "navigate", '{"url": "https://portal.example.test/"}']), 0)
         self.assertEqual(json.loads(printed.call_args.args[0])["ok"], True)
         self.assertEqual(browser.sent[0], ["tab", "new", "https://portal.example.test/"])
+        use_tab.assert_called_once_with("site")
         self.assertFalse(any("location.assign(" in " ".join(command) for command in browser.sent))
+
+    def test_navigating_from_a_browser_page_reads_the_tab_it_opened_even_if_a_pop_up_is_in_front(self):
+        listing = [{"type": "page", "id": "newtab", "url": "chrome://newtab/"}]
+        browser = FakeAgentBrowser(requests=[])
+        browser.stuck = True
+        original = browser.answer
+        browser.answer = lambda command: {"targetId": "site"} if command[:2] == ["tab", "new"] else original(command)
+        with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), patch.object(helper, "wait_for_cdp"), \
+                patch.object(helper, "http_get_json", side_effect=[listing, listing]), \
+                patch.object(helper, "front_tab", side_effect=[("newtab", "chrome://newtab/"), ("pop-up", "x")]), \
+                patch.object(helper.urllib.request, "urlopen"), \
+                patch.object(helper, "AgentBrowser", return_value=browser), \
+                patch.object(browser, "use_tab", create=True) as use_tab, \
+                patch.object(helper.time, "sleep"), patch("builtins.print"):
+            helper.run(["rakazo-page-browser", "navigate", '{"url": "https://portal.example.test/"}'])
+        use_tab.assert_called_once_with("site")
 
     def test_a_navigation_that_never_reaches_a_new_page_is_left_to_the_desktop(self):
         browser = FakeAgentBrowser()
@@ -1662,6 +1901,56 @@ class DownloadTest(unittest.TestCase):
         current.downloads = downloads
         with patch.object(current, "snapshot", return_value={"url": "https://bank.example/", "title": "Bank"}):
             self.assertEqual(current.navigate(self.URL), {"ok": True, "url": "https://bank.example/", "title": "Bank"})
+
+    def test_a_pdf_the_tab_shows_is_saved_once_with_the_call_s_downloads(self):
+        browser = FakeAgentBrowser()
+        current = page(browser)
+        shows = iter([True, False])
+        original = browser.batch
+
+        def batch(commands, **kwargs):
+            if commands == [["eval", helper.SAVE_PDF.replace("NAME", '""')]]:
+                return [{"result": next(shows)}]
+            return original(commands, **kwargs)
+
+        blob = {"title": "4b1d", "url": "blob:https://bank.example/4b1d"}
+        with patch.object(browser, "batch", side_effect=batch):
+            current.save_pdf(blob)
+            self.assertEqual(browser.sent, [])
+            current.downloads = self.downloads()
+            current.save_pdf(blob)
+            current.save_pdf(blob)
+        # Waited for as a download link is, until Chromium begins the download.
+        self.assertEqual(self.client.download_links, [1.0])
+        self.assertIn('document.contentType !== "application/pdf"', helper.SAVE_PDF)
+        self.assertIn("window.__rakazoPdfSaved", helper.SAVE_PDF)
+
+    def test_a_saved_pdf_is_named_after_its_title_made_safe_unless_that_is_only_its_address(self):
+        browser = FakeAgentBrowser()
+        current = page(browser)
+        current.downloads = self.downloads()
+        names = []
+
+        def batch(commands, **_):
+            names.append(json.loads(commands[0][1].split("link.download = ", 1)[1].split(";", 1)[0]))
+            return [{"result": False}]
+
+        with patch.object(browser, "batch", side_effect=batch):
+            for title, url in (("Larkspur annual statement 2031", "blob:https://bank.example/4b1d"),
+                               ("4b1d", "blob:https://bank.example/4b1d"),
+                               ("statement.pdf", "https://bank.example/files/statement.pdf"),
+                               ("../../.ssh/id `rm -rf`.PDF", "blob:https://bank.example/9c2e"),
+                               ("", "blob:https://bank.example/9c2e")):
+                current.save_pdf({"title": title, "url": url})
+        self.assertEqual(names, ["Larkspur annual statement 2031.pdf", "", "", "_.._.ssh_id _rm -rf_.PDF", ""])
+
+    def test_a_snapshot_saves_and_lists_the_pdf_its_tab_shows(self):
+        page_result = {"ok": True, "url": "blob:https://bank.example/4b1d", "title": "", "tree": "", "elements": []}
+        with patch.object(helper.PageBrowser, "save_pdf", autospec=True) as save_pdf:
+            result = self.run_helper("snapshot", {"downloads": "bots/b1/Downloads"}, page_result)
+        save_pdf.assert_called_once()
+        self.assertEqual(result, {**page_result, "downloads": [{"name": "statement.pdf",
+            "path": "bots/b1/Downloads/statement.pdf", "size": 4, "type": "application/pdf"}]})
 
     def test_download_links_are_tracked_before_clicking(self):
         browser = FakeAgentBrowser()
