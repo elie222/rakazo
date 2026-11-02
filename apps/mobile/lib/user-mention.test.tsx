@@ -152,6 +152,15 @@ describe("sent message mentions", () => {
     expect(container.textContent).toBe("https://example.test/@Ada?x=1");
   });
 
+  it("reads @everyone as the group, never as a bot named everyone", () => {
+    render("@everyone hi", "user", [
+      ...members,
+      { botId: "bot-all", name: "Everyone", color: "#000000" },
+    ]);
+    expect(container.querySelector("[data-avatar]")).toBeNull();
+    expect(container.querySelector("[data-symbol]")).not.toBeNull();
+  });
+
   it("leaves a name two members share as plain text", () => {
     render("@Ada hi", "user", [...members, { botId: "bot-ada-2", name: "ada", color: "#778899" }]);
     expect(container.querySelector("[data-avatar]")).toBeNull();

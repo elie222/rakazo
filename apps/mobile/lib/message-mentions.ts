@@ -26,13 +26,15 @@ export const UserMentionsContext = createContext<
 
 /**
  * The targets a sent message can name: the group's members, plus everyone with two or more. A name
- * two members share stays plain text, since the text alone cannot say which one was meant.
+ * two members share, or a bot named everyone, stays plain text: the text alone cannot say which
+ * one was meant.
  */
 export function userMentionTargets(
   members: readonly { botId: string; name: string; color: string; avatarSet?: BotAvatarSet }[],
 ): UserMentionTarget[] {
   const named = members.map((member) => ({ member, name: displayName(member.name, "Bot") }));
-  const counts = new Map<string, number>();
+  const everyone = members.length >= 2;
+  const counts = new Map<string, number>(everyone ? [["everyone", 1]] : []);
   for (const { name } of named)
     counts.set(name.toLowerCase(), (counts.get(name.toLowerCase()) ?? 0) + 1);
   const targets: UserMentionTarget[] = named
@@ -44,7 +46,7 @@ export function userMentionTargets(
       color: member.color,
       avatarSet: member.avatarSet,
     }));
-  if (members.length >= 2) targets.unshift({ kind: "everyone", id: "everyone", name: "everyone" });
+  if (everyone) targets.unshift({ kind: "everyone", id: "everyone", name: "everyone" });
   return targets;
 }
 
