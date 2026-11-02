@@ -57,8 +57,9 @@ export function routineAccountBackoffMs(failures: number): number {
 }
 
 /**
- * A missing or refused model connection of the user's own fails every run the same way until
- * the user fixes it, so a frequent routine would keep firing against it. Push
+ * A missing or refused model connection of the user's own, or a spent computer allowance, fails
+ * every run the same way until the user acts or the period resets, so a frequent routine would
+ * keep firing against it. Push
  * its next run out by a gap that doubles with each such failure in a row, or to the reset the
  * provider named, at most a day away.
  */

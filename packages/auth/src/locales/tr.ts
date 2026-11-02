@@ -58,4 +58,15 @@ export const TR_MESSAGES: Record<string, string> = {
     "{name} artık Rakazo eklenti pazaryerinde listeleniyor.",
   "We couldn't list {name} in the Rakazo plugin marketplace.":
     "{name} eklentisini Rakazo eklenti pazaryerinde listeleyemedik.",
+  "Confirm your Rakazo page claim": "Rakazo sayfa sahiplik talebinizi onaylayın",
+  "Confirm claim": "Talebi onaylayın",
+  "We review every claim once it's confirmed and will email you when it's done.":
+    "Her talebi onaylandıktan sonra inceliyor ve işimiz bitince size e-posta gönderiyoruz.",
+  "This link expires in one day. If you did not claim a page, ignore this email.":
+    "Bu bağlantının süresi bir gün içinde dolar. Bir sayfa talep etmediyseniz bu e-postayı yok sayın.",
+  "Your Rakazo page claim: {name}": "Rakazo sayfa sahiplik talebiniz: {name}",
+  "Your changes to the {name} page are approved.":
+    "{name} sayfasındaki değişiklikleriniz onaylandı.",
+  "We couldn't approve your changes to the {name} page.":
+    "{name} sayfasındaki değişikliklerinizi onaylayamadık.",
 };

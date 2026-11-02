@@ -55,4 +55,14 @@ export const HE_MESSAGES: Record<string, string> = {
     "{name} מופיע עכשיו בחנות הפלאגינים של Rakazo.",
   "We couldn't list {name} in the Rakazo plugin marketplace.":
     "לא הצלחנו לפרסם את {name} בחנות הפלאגינים של Rakazo.",
+  "Confirm your Rakazo page claim": "אשר את בקשת הבעלות על הדף שלך ב-Rakazo",
+  "Confirm claim": "אישור הבקשה",
+  "We review every claim once it's confirmed and will email you when it's done.":
+    "אנחנו בודקים כל בקשה לאחר שהיא מאושרת ונשלח לך אימייל כשנסיים.",
+  "This link expires in one day. If you did not claim a page, ignore this email.":
+    "הקישור הזה יפוג בעוד יום אחד. אם לא ביקשת בעלות על דף, התעלם מהאימייל הזה.",
+  "Your Rakazo page claim: {name}": "בקשת הבעלות שלך על דף ב-Rakazo: {name}",
+  "Your changes to the {name} page are approved.": "השינויים שלך בדף {name} אושרו.",
+  "We couldn't approve your changes to the {name} page.":
+    "לא הצלחנו לאשר את השינויים שלך בדף {name}.",
 };
