@@ -110,7 +110,11 @@ export function isRetryableProviderUnavailable(error: unknown): boolean {
   if (statuses.has(401)) return false;
   if (isAccountExhaustion(text, statuses)) return true;
   // The provider timed out fetching a file the request links to; another attempt fetches it again.
-  if (/\bdownload\w*\b[^.]{0,40}\b(?:file|image|media|url)\b[^.]{0,20}\btimed? ?out\b/.test(text))
+  if (
+    /\b(?:download\w*\b[^.]{0,40}\b(?:file|image|media|url)|(?:file|image|media|url)\w*\s+download\w*)\b[^.]{0,20}\btimed? ?out\b/.test(
+      text,
+    )
+  )
     return true;
   if (statuses.has(400)) return false;
   // The ChatGPT subscription (Codex) runtime reports an exhausted usage window without a status.
