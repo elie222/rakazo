@@ -1039,6 +1039,18 @@ describe("mobile API authentication", () => {
     expect(await snapshotSessionToken()).toEqual({ ok: true, value: "unrelated-new-session" });
   });
 
+  it("does not sign out a matching bearer on a different server", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) =>
+      key === "rakazo.session_token" ? "same-token" : null,
+    );
+    await saveSessionToken("same-token");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await signOut(["same-token"], "https://other.example.test");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await snapshotSessionToken()).toEqual({ ok: true, value: "same-token" });
+  });
+
   it("unregisters push delivery before invalidating the session", async () => {
     vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
     const fetchMock = vi

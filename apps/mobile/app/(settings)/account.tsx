@@ -34,6 +34,7 @@ import type { AccountSummary } from "../../lib/account-sessions";
 import {
   refreshAccountSummaries,
   rememberCurrentAccount,
+  selectNextSavedAccount,
   selectSavedAccount,
   signOutAllAccounts,
 } from "../../lib/account-sessions";
@@ -89,7 +90,6 @@ import {
   setResponseStreamingPreference,
   subscribeResponseStreaming,
 } from "../../lib/response-streaming";
-import { loadSavedAccounts } from "../../lib/saved-accounts";
 import { promptSectionName } from "../../lib/section-name-prompt";
 import {
   closeSettingsSheet,
@@ -370,12 +370,19 @@ export default function Account() {
     setSigningOut(true);
     setSignOutError(null);
     try {
+      const server = currentApiBase();
       await signOut();
-      const next = (await loadSavedAccounts(currentApiBase()))[0];
-      if (next && (await selectSavedAccount(next.userId))) {
+      const token = await loadSessionToken();
+      if (server !== currentApiBase() || token) {
+        setSigningOut(false);
+        return;
+      }
+      const next = await selectNextSavedAccount();
+      if (next === "selected") {
         closeSettingsSheet();
         router.dismissTo("/");
-      } else replaceWithSignIn();
+      } else if (next === "unavailable") replaceWithSignIn();
+      else setSigningOut(false);
     } catch (err) {
       setSignOutError(errorText(err, t("Could not sign out")));
       setSigningOut(false);

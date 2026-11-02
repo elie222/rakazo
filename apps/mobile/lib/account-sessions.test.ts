@@ -1,27 +1,33 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import {
   refreshAccountSummaries,
+  selectNextSavedAccount,
   selectNotificationAccount,
   selectSavedAccount,
   signOutAllAccounts,
 } from "./account-sessions";
+import { pendingSessionTokens } from "./pending-session-revocations";
 import { forgetSavedToken, loadSavedAccounts, rememberSavedAccount } from "./saved-accounts";
 
 const state = vi.hoisted(() => ({
   token: "family-token",
   generation: 0,
+  apiBase: "https://app.example.test",
   disk: new Map<string, string>(),
   save: vi.fn(),
   signOut: vi.fn(),
 }));
 vi.mock("expo-secure-store", () => ({
+  deleteItemAsync: vi.fn(async (key: string) => {
+    state.disk.delete(key);
+  }),
   getItemAsync: vi.fn(async (key: string) => state.disk.get(key) ?? null),
   setItemAsync: vi.fn(async (key: string, value: string) => {
     state.disk.set(key, value);
   }),
 }));
 vi.mock("./api", () => ({
-  currentApiBase: () => "https://app.example.test",
+  currentApiBase: () => state.apiBase,
   loadSessionToken: async () => state.token,
   clearSpace: async () => true,
   signOut: state.signOut,
@@ -48,6 +54,7 @@ beforeEach(async () => {
   state.disk.clear();
   state.token = "family-token";
   state.generation = 0;
+  state.apiBase = apiBase;
   state.signOut.mockReset().mockImplementation(async () => {
     state.token = "";
     state.generation++;
@@ -226,3 +233,98 @@ it("keeps an unrelated new login installed during remote sign-out-all", async ()
   expect(state.signOut).not.toHaveBeenCalled();
   expect(state.token).toBe("new-login-token");
 });
+
+it("sign-out-all revokes and removes every server's saved login at its own origin", async () => {
+  const other = "https://other.example.test";
+  await rememberSavedAccount(other, account("family", "other-family-token"));
+  await rememberSavedAccount(other, account("work", "other-work-token"));
+  vi.mocked(fetch).mockImplementation(async (url, init) => {
+    const bearer = new Headers(init?.headers).get("authorization");
+    const expectedServer = bearer?.includes("other-") ? other : apiBase;
+    expect(url).toBe(`${expectedServer}/api/auth/sign-out`);
+    expect(init).toMatchObject({ credentials: "omit", redirect: "error" });
+    return Response.json({ success: true });
+  });
+  await signOutAllAccounts();
+  expect(fetch).toHaveBeenCalledTimes(4);
+  expect(await loadSavedAccounts(apiBase)).toEqual([]);
+  expect(await loadSavedAccounts(other)).toEqual([]);
+  expect(await pendingSessionTokens(other)).toEqual(new Set());
+  expect(state.signOut).toHaveBeenCalledWith(
+    expect.arrayContaining(["family-token", "work-token"]),
+    apiBase,
+  );
+});
+
+it("removes an offline other-server login and keeps only its revocation tombstone", async () => {
+  const other = "https://other.example.test";
+  await rememberSavedAccount(other, account("work", "other-work-token"));
+  vi.mocked(fetch).mockImplementation(async (url) => {
+    if (String(url).startsWith(other)) throw new Error("offline");
+    return Response.json({ success: true });
+  });
+  await expect(signOutAllAccounts()).rejects.toThrow("Some server sessions could not be revoked");
+  expect(await loadSavedAccounts(apiBase)).toEqual([]);
+  expect(await loadSavedAccounts(other)).toEqual([]);
+  expect(await pendingSessionTokens(other)).toEqual(new Set(["other-work-token"]));
+});
+
+it("does not clear a new other-server login whose token matches an old server's token", async () => {
+  const other = "https://other.example.test";
+  await rememberSavedAccount(other, account("work", "other-work-token"));
+  let release!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  vi.mocked(fetch).mockImplementation(async () => {
+    await waiting;
+    return Response.json({ success: true });
+  });
+  const signingOut = signOutAllAccounts();
+  await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+  state.apiBase = other;
+  state.token = "family-token";
+  state.generation++;
+  await rememberSavedAccount(other, account("work", "family-token"));
+  release();
+  await signingOut;
+  expect(state.signOut).not.toHaveBeenCalled();
+  expect((await loadSavedAccounts(other)).map((row) => row.token)).toEqual(["family-token"]);
+});
+
+it("skips a revoked fallback and selects the next valid saved account", async () => {
+  state.token = "";
+  vi.mocked(fetch).mockImplementation(async (_url, init) =>
+    new Headers(init?.headers).get("authorization") === "Bearer family-token"
+      ? Response.json(null, { status: 401 })
+      : Response.json({ user: { id: "work", email: "work@example.test" } }),
+  );
+  expect(await selectNextSavedAccount()).toBe("selected");
+  expect(state.token).toBe("work-token");
+  expect((await loadSavedAccounts(apiBase)).map((row) => row.userId)).toEqual(["work"]);
+});
+
+it("reports no fallback only after every saved account is revoked", async () => {
+  state.token = "";
+  vi.mocked(fetch).mockImplementation(async () => Response.json(null, { status: 401 }));
+  expect(await selectNextSavedAccount()).toBe("unavailable");
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(state.save).not.toHaveBeenCalled();
+});
+
+it.each(["session", "server"])(
+  "stops fallback selection when another %s operation wins",
+  async (change) => {
+    state.token = "";
+    vi.mocked(fetch).mockImplementation(async () => {
+      if (change === "session") {
+        state.token = "new-session";
+        state.generation++;
+      } else state.apiBase = "https://other.example.test";
+      return Response.json(null, { status: 401 });
+    });
+    expect(await selectNextSavedAccount()).toBe("changed");
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(state.save).not.toHaveBeenCalled();
+  },
+);

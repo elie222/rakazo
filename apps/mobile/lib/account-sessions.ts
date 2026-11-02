@@ -33,6 +33,7 @@ async function accountJson(apiBase: string, token: string, path: string, method 
       {
         method,
         credentials: "omit",
+        redirect: "error",
         headers: {
           origin: "rakazo://",
           authorization: `Bearer ${token}`,
@@ -206,44 +207,96 @@ export async function selectNotificationAccount(
   return target ? selectSavedAccount(target) : false;
 }
 
-/** Revokes each locally saved credential; remote failures are reported after local removal. */
+/** A revoked first choice must not hide a later valid saved account. */
+export async function selectNextSavedAccount(): Promise<"selected" | "unavailable" | "changed"> {
+  const apiBase = currentApiBase();
+  const generation = currentSessionGeneration();
+  const request = selectionRequest;
+  const accounts = await loadSavedAccounts(apiBase);
+  if (
+    signingOutAll ||
+    apiBase !== currentApiBase() ||
+    generation !== currentSessionGeneration() ||
+    request !== selectionRequest
+  )
+    return "changed";
+  for (const account of accounts) {
+    const selecting = selectSavedAccount(account.userId);
+    const selectingRequest = selectionRequest;
+    if (await selecting) return "selected";
+    if (
+      signingOutAll ||
+      apiBase !== currentApiBase() ||
+      generation !== currentSessionGeneration() ||
+      selectingRequest !== selectionRequest
+    )
+      return "changed";
+  }
+  return "unavailable";
+}
+
+/** Revokes saved credentials on every server; remote failures are reported after local removal. */
 export async function signOutAllAccounts(): Promise<void> {
   if (signingOutAll) return;
   const apiBase = currentApiBase();
   const generation = currentSessionGeneration();
+  const activeToken = await loadSessionToken();
   await rememberCurrentAccount().catch(() => undefined);
-  const accounts = await loadSavedAccounts(apiBase);
+  const servers = await savedAccountServers();
+  const accounts = (
+    await Promise.all(
+      servers.map(async (server) =>
+        (
+          await loadSavedAccounts(server)
+        ).map((account) => ({ apiBase: server, token: account.token })),
+      ),
+    )
+  ).flat();
+  if (
+    activeToken &&
+    apiBase === currentApiBase() &&
+    generation === currentSessionGeneration() &&
+    !accounts.some((account) => account.apiBase === apiBase && account.token === activeToken)
+  )
+    accounts.push({ apiBase, token: activeToken });
   if (signingOutAll) return;
   signingOutAll = true;
   selectionRequest++;
   let failed = false;
   try {
-    await Promise.all(accounts.map((account) => queueSessionRevocation(apiBase, account.token)));
+    await Promise.all(
+      accounts.map((account) => queueSessionRevocation(account.apiBase, account.token)),
+    );
     await Promise.all(
       accounts.map(async (account) => {
         try {
           const { response, body } = await accountJson(
-            apiBase,
+            account.apiBase,
             account.token,
             "/api/auth/sign-out",
             "POST",
           );
           if (response.ok && (body as { success?: unknown } | null)?.success === true)
-            await completeSessionRevocation(apiBase, account.token);
+            await completeSessionRevocation(account.apiBase, account.token);
           else failed = true;
         } catch {
           failed = true;
         }
-        await forgetSavedToken(apiBase, account.token);
+        await forgetSavedToken(account.apiBase, account.token);
       }),
     );
+    const cleanupServer = currentApiBase();
     const token = await loadSessionToken();
+    const expectedTokens = accounts
+      .filter((account) => account.apiBase === cleanupServer)
+      .map((account) => account.token);
+    if (apiBase === cleanupServer && generation === currentSessionGeneration())
+      expectedTokens.push(activeToken);
     if (
-      apiBase === currentApiBase() &&
-      (generation === currentSessionGeneration() ||
-        accounts.some((account) => account.token === token))
+      (apiBase === cleanupServer && generation === currentSessionGeneration()) ||
+      expectedTokens.includes(token)
     )
-      await signOut([...accounts.map((account) => account.token), token]);
+      await signOut(expectedTokens, cleanupServer);
     if (failed)
       throw new Error(t("Signed out on this device. Some server sessions could not be revoked."));
   } finally {

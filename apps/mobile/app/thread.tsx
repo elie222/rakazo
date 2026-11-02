@@ -1,13 +1,15 @@
 import { isRetryableError } from "@rakazo/core";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { ActivityIndicator, Alert, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
+import { NativeActionButton } from "../components/native-action-button";
 import { Thread } from "../components/thread/thread-screen";
 import { currentApiBase, selectedSpaceId, selectSpace } from "../lib/api";
+import { mobileTokens } from "../lib/appearance";
 import { normalizeApiBase } from "../lib/endpoint";
 import { t, useI18n } from "../lib/i18n";
 import { integrationsCacheScope } from "../lib/integrations-cache";
-import { useMobileTokens } from "../lib/native";
+import { useMobileTokens, useThemedStyles } from "../lib/native";
 import {
   threadRouteSpaceOnFocus,
   threadSpaceRequest,
@@ -61,6 +63,7 @@ export default function ThreadRoute() {
     };
   }, [generation, ready]);
   const tokens = useMobileTokens();
+  const styles = useThemedStyles(createStyles);
   const { t } = useI18n();
   const router = useRouter();
   const focused = useIsFocused();
@@ -124,48 +127,52 @@ export default function ThreadRoute() {
 
   if (wrongAccount)
     return (
-      <View
-        style={{
-          flex: 1,
-          justifyContent: "center",
-          alignItems: "center",
-          backgroundColor: tokens.background,
-        }}
-      >
-        <Text style={{ color: tokens.foreground }}>{t("Sign in to open this notification")}</Text>
-        <Pressable accessibilityRole="button" onPress={() => router.replace("/")}>
-          <Text style={{ color: tokens.foreground }}>{t("Return to inbox")}</Text>
-        </Pressable>
+      <View style={styles.screen}>
+        <Text style={styles.message}>{t("Sign in to open this notification")}</Text>
+        <NativeActionButton
+          label={t("Return to inbox")}
+          prominence="secondary"
+          onPress={() => router.replace("/")}
+        />
       </View>
     );
   if (!currentOwner) return <ActivityIndicator color={tokens.foreground} />;
   if (request.action === "show" && !focusSync.switchFailed)
     return (
-      <View style={{ flex: 1 }}>
+      <View style={styles.thread}>
         <Thread key={currentOwner.key} sessionEpoch={ready} userId={currentOwner.userId} />
       </View>
     );
   return (
-    <View
-      style={{
-        flex: 1,
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: tokens.background,
-      }}
-    >
+    <View style={styles.screen}>
       {request.action === "switch" && !focusSync.switchFailed ? (
         <ActivityIndicator color={tokens.foreground} />
       ) : (
-        <View style={{ alignItems: "center", gap: 12 }}>
-          <Text style={{ color: tokens.foreground, fontSize: 16 }}>
-            {t("Could not switch spaces")}
-          </Text>
-          <Pressable accessibilityRole="button" onPress={() => router.replace("/")}>
-            <Text style={{ color: tokens.foreground, fontSize: 16 }}>{t("Return to inbox")}</Text>
-          </Pressable>
+        <View style={styles.feedback}>
+          <Text style={styles.feedbackMessage}>{t("Could not switch spaces")}</Text>
+          <NativeActionButton
+            label={t("Return to inbox")}
+            prominence="secondary"
+            onPress={() => router.replace("/")}
+          />
         </View>
       )}
     </View>
   );
+}
+
+function createStyles() {
+  const tokens = mobileTokens();
+  return StyleSheet.create({
+    screen: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: tokens.background,
+    },
+    thread: { flex: 1 },
+    message: { color: tokens.foreground },
+    feedback: { alignItems: "center", gap: 12 },
+    feedbackMessage: { color: tokens.foreground, fontSize: 16 },
+  });
 }

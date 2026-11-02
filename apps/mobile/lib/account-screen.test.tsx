@@ -7,8 +7,18 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Account from "../app/(settings)/account";
-import { refreshAccountSummaries, selectSavedAccount } from "./account-sessions";
-import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode } from "./api";
+import {
+  refreshAccountSummaries,
+  selectNextSavedAccount,
+  selectSavedAccount,
+} from "./account-sessions";
+import {
+  deleteAccount,
+  fetchAccountSecurity,
+  loadSessionToken,
+  requestAccountDeletionCode,
+  signOut,
+} from "./api";
 import { replaceWithSignIn } from "./auth-routing";
 import { promptAccountDeletion } from "./delete-account-prompt";
 import { registerSettingsSheet } from "./settings-sheet";
@@ -35,6 +45,8 @@ const { element, account } = vi.hoisted(() => ({
       unknown
     >,
     push: vi.fn(),
+    dismissTo: vi.fn(),
+    apiBase: "http://127.0.0.1:3100",
     approvals: { mode: "ask", enabled: false, skipApprovals: false, checkerAvailable: true },
     rules: [] as { id: string }[],
   },
@@ -44,9 +56,11 @@ vi.mock("./account-sessions", () => ({
   refreshAccountSummaries: vi.fn(async () => []),
   rememberCurrentAccount: vi.fn(async () => undefined),
   selectSavedAccount: vi.fn(async () => false),
+  selectNextSavedAccount: vi.fn<() => Promise<"selected" | "unavailable" | "changed">>(
+    async () => "unavailable",
+  ),
   signOutAllAccounts: vi.fn(async () => undefined),
 }));
-vi.mock("./saved-accounts", () => ({ loadSavedAccounts: vi.fn(async () => []) }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("expo-notifications", () => ({
   getPermissionsAsync: vi.fn(async () => ({ status: "granted" })),
@@ -114,7 +128,7 @@ vi.mock("@expo/ui/community/menu", () => ({
     ),
 }));
 vi.mock("expo-router", () => {
-  const router = { push: account.push, back: () => undefined };
+  const router = { push: account.push, back: () => undefined, dismissTo: account.dismissTo };
   return {
     useFocusEffect: (effect: () => undefined | (() => void)) => useEffect(effect, [effect]),
     useLocalSearchParams: () => ({}),
@@ -175,7 +189,7 @@ vi.mock("../components/settings-group", () => ({
   useStackedSettings: () => false,
 }));
 vi.mock("./api", () => ({
-  currentApiBase: () => "http://127.0.0.1:3100",
+  currentApiBase: () => account.apiBase,
   deleteAccount: vi.fn(),
   fetchAccountSecurity: vi.fn(async () => ({ hasPassword: true })),
   loadSessionToken: vi.fn(async () => "token"),
@@ -279,9 +293,13 @@ let container: HTMLDivElement | undefined;
 beforeEach(() => {
   vi.clearAllMocks();
   account.me = { userId: "user-1", name: "Tester", email: "tester@example.test" };
+  account.apiBase = "http://127.0.0.1:3100";
   account.rules = [];
   vi.mocked(fetchAccountSecurity).mockResolvedValue(security());
   vi.mocked(refreshAccountSummaries).mockResolvedValue([]);
+  vi.mocked(selectNextSavedAccount).mockResolvedValue("unavailable");
+  vi.mocked(loadSessionToken).mockResolvedValue("token");
+  vi.mocked(signOut).mockReset();
 });
 
 afterEach(() => {
@@ -562,3 +580,34 @@ it("shows each saved account's unread count and makes the selected identity expl
   await act(async () => work.click());
   expect(selectSavedAccount).toHaveBeenCalledWith("user-2");
 });
+
+it.each(["selected", "unavailable", "changed"] as const)(
+  "routes single-account sign-out according to the validated fallback result: %s",
+  async (result) => {
+    vi.mocked(selectNextSavedAccount).mockResolvedValue(result);
+    vi.mocked(loadSessionToken).mockResolvedValue("");
+    const view = await renderAccount();
+    await view.press("Sign out");
+    expect(signOut).toHaveBeenCalledOnce();
+    expect(selectNextSavedAccount).toHaveBeenCalledOnce();
+    expect(account.dismissTo).toHaveBeenCalledTimes(result === "selected" ? 1 : 0);
+    expect(replaceWithSignIn).toHaveBeenCalledTimes(result === "unavailable" ? 1 : 0);
+  },
+);
+
+it.each(["session", "server"])(
+  "keeps a concurrent %s change after single-account sign-out",
+  async (change) => {
+    vi.mocked(loadSessionToken).mockResolvedValue("");
+    vi.mocked(signOut).mockImplementation(async () => {
+      if (change === "session") vi.mocked(loadSessionToken).mockResolvedValue("new-session");
+      else account.apiBase = "https://other.example.test";
+    });
+    const view = await renderAccount();
+    await view.press("Sign out");
+    expect(selectNextSavedAccount).not.toHaveBeenCalled();
+    expect(replaceWithSignIn).not.toHaveBeenCalled();
+    expect(account.dismissTo).not.toHaveBeenCalled();
+    expect(view.button("Sign out")?.disabled).toBe(false);
+  },
+);

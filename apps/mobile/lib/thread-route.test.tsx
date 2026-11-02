@@ -30,9 +30,13 @@ vi.mock("expo-router", () => ({
 vi.mock("react-native", () => ({
   ActivityIndicator: () => createElement("progress"),
   Alert: { alert: vi.fn() },
-  Pressable: element("button"),
+  StyleSheet: { create: (styles: unknown) => styles },
   Text: element("span"),
   View: element("div"),
+}));
+vi.mock("../components/native-action-button", () => ({
+  NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) =>
+    createElement("button", { type: "button", onClick: onPress }, label),
 }));
 vi.mock("../components/thread/thread-screen", () => ({
   Thread: ({ userId }: { userId: string }) => createElement("main", null, `thread:${userId}`),
@@ -47,7 +51,11 @@ vi.mock("./i18n", () => {
   return { t, useI18n: () => ({ t }) };
 });
 vi.mock("./integrations-cache", () => ({ integrationsCacheScope: () => null }));
-vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
+vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
+vi.mock("./native", () => ({
+  useMobileTokens: () => ({}),
+  useThemedStyles: (create: () => unknown) => create(),
+}));
 vi.mock("./session", () => ({
   currentReadySessionGeneration: () => state.generation,
   currentSessionGeneration: () => state.generation,

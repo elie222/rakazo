@@ -800,9 +800,10 @@ export async function fetchMobileJson<T>(
   }
 }
 
-export async function signOut(expectedTokens?: readonly string[]) {
+export async function signOut(expectedTokens?: readonly string[], expectedApiBase?: string) {
   const { apiBase, headers, sessionGeneration } = await captureApiRequestContext(null);
   const accountToken = (headers.authorization ?? "").replace(/^Bearer /, "");
+  if (expectedApiBase !== undefined && apiBase !== expectedApiBase) return;
   if (expectedTokens && !expectedTokens.includes(accountToken)) return;
   await queueSessionRevocation(apiBase, accountToken);
   // Cleanup remains bound to this login even if a notification selects another account.

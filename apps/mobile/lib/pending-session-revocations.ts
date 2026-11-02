@@ -1,5 +1,5 @@
 import { readBoundedJsonResponse } from "@rakazo/core";
-import * as SecureStore from "expo-secure-store";
+import { readChunkedSecureValue, writeChunkedSecureValue } from "./chunked-secure-store";
 import { fetchServer } from "./server-headers";
 
 const KEY = "rakazo.pending_session_revocations";
@@ -7,7 +7,7 @@ type Revocation = { apiBase: string; token: string };
 let writes: Promise<unknown> = Promise.resolve();
 
 async function read(): Promise<Revocation[]> {
-  const raw = await SecureStore.getItemAsync(KEY);
+  const raw = await readChunkedSecureValue(KEY);
   if (!raw) return [];
   const rows: unknown = JSON.parse(raw);
   if (!Array.isArray(rows)) throw new Error("Could not read pending sign-outs");
@@ -26,7 +26,10 @@ function update(change: (rows: Revocation[]) => Revocation[]): Promise<void> {
   const next = writes
     .catch(() => undefined)
     .then(async () => {
-      await SecureStore.setItemAsync(KEY, JSON.stringify(change(await read())));
+      const rows = await read();
+      const previous = JSON.stringify(rows);
+      const next = JSON.stringify(change(rows));
+      if (next !== previous) await writeChunkedSecureValue(KEY, next);
     });
   writes = next;
   return next;

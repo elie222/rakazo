@@ -4,6 +4,9 @@ import { forgetSavedToken, loadSavedAccounts, rememberSavedAccount } from "./sav
 
 const disk = vi.hoisted(() => new Map<string, string>());
 vi.mock("expo-secure-store", () => ({
+  deleteItemAsync: vi.fn(async (key: string) => {
+    disk.delete(key);
+  }),
   getItemAsync: vi.fn(async (key: string) => disk.get(key) ?? null),
   setItemAsync: vi.fn(async (key: string, value: string) => {
     disk.set(key, value);

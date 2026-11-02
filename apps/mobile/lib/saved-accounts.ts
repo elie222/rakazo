@@ -1,4 +1,4 @@
-import * as SecureStore from "expo-secure-store";
+import { readChunkedSecureValue, writeChunkedSecureValue } from "./chunked-secure-store";
 import type { LiveNotificationSettings } from "./live-notifications";
 import { pendingSessionTokens } from "./pending-session-revocations";
 
@@ -29,7 +29,7 @@ export function cachedSavedAccounts(apiBase: string): readonly SavedAccount[] {
 }
 
 async function read(): Promise<AccountStore> {
-  const raw = await SecureStore.getItemAsync(ACCOUNTS_KEY);
+  const raw = await readChunkedSecureValue(ACCOUNTS_KEY);
   if (!raw) return {};
   const data: unknown = JSON.parse(raw);
   if (!data || typeof data !== "object" || Array.isArray(data))
@@ -73,9 +73,11 @@ function update(
     .then(async () => {
       const store = await read();
       if (!stillCurrent()) return;
+      const previous = JSON.stringify(store);
       const rows = change(store[apiBase] ?? []);
       store[apiBase] = rows;
-      await SecureStore.setItemAsync(ACCOUNTS_KEY, JSON.stringify(store));
+      const next = JSON.stringify(store);
+      if (next !== previous) await writeChunkedSecureValue(ACCOUNTS_KEY, next);
       cache.set(apiBase, rows);
     });
   writes = next;

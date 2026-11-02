@@ -1,10 +1,11 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { NativeActionButton } from "../components/native-action-button";
 import { selectNotificationAccount } from "../lib/account-sessions";
+import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
-import { useMobileTokens } from "../lib/native";
+import { useMobileTokens, useThemedStyles } from "../lib/native";
 import { notificationOpenTargetFromLink } from "../lib/notification-open";
 
 /** Android and external notification links resolve identity before mounting a private screen. */
@@ -13,6 +14,7 @@ export default function NotificationOpen() {
   const router = useRouter();
   const { t } = useI18n();
   const tokens = useMobileTokens();
+  const styles = useThemedStyles(createStyles);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let active = true;
@@ -35,19 +37,10 @@ export default function NotificationOpen() {
     };
   }, [router, target]);
   return (
-    <View
-      style={{
-        flex: 1,
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: tokens.background,
-        gap: 16,
-        padding: 24,
-      }}
-    >
+    <View style={styles.screen}>
       {failed ? (
         <>
-          <Text style={{ color: tokens.foreground }}>{t("Sign in to open this notification")}</Text>
+          <Text style={styles.message}>{t("Sign in to open this notification")}</Text>
           <NativeActionButton
             label={t("Sign in")}
             onPress={() =>
@@ -68,4 +61,19 @@ export default function NotificationOpen() {
       )}
     </View>
   );
+}
+
+function createStyles() {
+  const tokens = mobileTokens();
+  return StyleSheet.create({
+    screen: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: tokens.background,
+      gap: 16,
+      padding: 24,
+    },
+    message: { color: tokens.foreground },
+  });
 }

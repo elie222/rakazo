@@ -10,6 +10,9 @@ vi.mock("expo-notifications", () => ({
 }));
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 vi.mock("expo-secure-store", () => ({
+  deleteItemAsync: vi.fn(async (key: string) => {
+    secureStorage.delete(key);
+  }),
   getItemAsync: vi.fn(async (key: string) => secureStorage.get(key) ?? null),
   setItemAsync: vi.fn(async (key: string, value: string) => {
     secureStorage.set(key, value);

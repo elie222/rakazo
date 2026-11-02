@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const accountDisk = vi.hoisted(() => new Map<string, string>());
 vi.mock("expo-secure-store", () => ({
+  deleteItemAsync: vi.fn(async (key: string) => {
+    accountDisk.delete(key);
+  }),
   getItemAsync: vi.fn(async (key: string) => accountDisk.get(key) ?? null),
   setItemAsync: vi.fn(async (key: string, value: string) => {
     accountDisk.set(key, value);
