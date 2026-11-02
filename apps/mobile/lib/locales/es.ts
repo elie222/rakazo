@@ -196,6 +196,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Custom server {host}": "Servidor personalizado {host}",
   "Don’t have an account?": "¿No tienes una cuenta?",
   Email: "Correo",
+  "Did you mean {email}?": "¿Quisiste decir {email}?",
   "Forgot password?": "¿Olvidaste la contraseña?",
   "Loading…": "Cargando…",
   Password: "Contraseña",

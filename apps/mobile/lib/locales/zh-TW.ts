@@ -455,6 +455,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Failed to send message": "傳送訊息失敗",
   "Failed to stop work": "停止工作失敗",
   File: "檔案",
+  "Did you mean {email}?": "你是指 {email} 嗎？",
   "Forgot password?": "忘記密碼？",
   "Find models": "查詢模型",
   "Finding…": "正在查詢…",

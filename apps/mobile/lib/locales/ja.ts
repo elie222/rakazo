@@ -194,6 +194,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Custom server {host}": "カスタムサーバー {host}",
   "Don’t have an account?": "アカウントをお持ちでないですか？",
   Email: "メールアドレス",
+  "Did you mean {email}?": "{email} のことですか？",
   "Forgot password?": "パスワードをお忘れですか？",
   "Loading…": "読み込み中…",
   Password: "パスワード",

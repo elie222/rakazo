@@ -476,6 +476,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Failed to send message": "发送消息失败",
   "Failed to stop work": "停止工作失败",
   File: "文件",
+  "Did you mean {email}?": "你是不是想输入 {email}？",
   "Forgot password?": "忘记密码？",
   "Find models": "查找模型",
   "Finding…": "正在查找…",

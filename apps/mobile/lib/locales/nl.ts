@@ -206,6 +206,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Custom server {host}": "Eigen server {host}",
   "Don’t have an account?": "Heb je geen account?",
   Email: "E-mail",
+  "Did you mean {email}?": "Bedoelde je {email}?",
   "Forgot password?": "Wachtwoord vergeten?",
   "Loading…": "Bezig met laden…",
   Password: "Wachtwoord",
