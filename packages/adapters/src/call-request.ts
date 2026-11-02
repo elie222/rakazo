@@ -247,8 +247,9 @@ export async function requestUserCall(
       where: { id: run.botId, userId: run.userId },
       select: { name: true },
     });
+    // Delivery to every device (and its APNs timeout) must not hold the bot's turn.
     if (bot)
-      await deps.notifications
+      void deps.notifications
         .incomingCall(run.userId, {
           callId: request.callId,
           botId: run.botId,

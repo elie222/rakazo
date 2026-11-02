@@ -36,6 +36,7 @@ export async function unregisterPushToken() {
 
 let callTokens: { expoToken?: string; voipToken?: string } = {};
 let tokenGeneration = -1;
+let registeredKey: string | undefined;
 let deviceIdPromise: Promise<string> | undefined;
 async function installationId() {
   deviceIdPromise ??= (async () => {
@@ -57,12 +58,16 @@ export async function registerCallPushToken(tokens: { expoToken?: string; voipTo
   const generation = currentSessionGeneration();
   if (generation !== tokenGeneration) {
     callTokens = {};
+    registeredKey = undefined;
     tokenGeneration = generation;
   }
-  callTokens = { ...callTokens, ...tokens };
-  const registration = { ...callTokens };
+  const registration = { ...callTokens, ...tokens };
+  const key = JSON.stringify(registration);
+  if (key === registeredKey) return;
+  callTokens = registration;
   const deviceId = await installationId();
   if (generation !== currentSessionGeneration()) return;
   if (Platform.OS !== "ios" && Platform.OS !== "android") return;
   await rpc("notifications/registerCallPush", { deviceId, platform: Platform.OS, ...registration });
+  if (generation === currentSessionGeneration()) registeredKey = key;
 }
