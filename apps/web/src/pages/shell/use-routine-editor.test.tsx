@@ -128,3 +128,28 @@ it("shows a revealed webhook secret only for the bot it belongs to", async () =>
   act(() => root.render(<Harness />));
   expect(editor.editorProps!.webhook.secret).toBe("secret-1");
 });
+
+it("keeps each bot's revealed secret when rotations overlap", async () => {
+  const finishers: ((result: { secret: string }) => void)[] = [];
+  rotateWebhookSecret.mockImplementation(() => new Promise((resolve) => finishers.push(resolve)));
+  let first!: Promise<void>;
+  act(() => {
+    first = editor.editorProps!.onEnsureWebhook() as Promise<void>;
+  });
+  activeBot = { id: "bot-2", webhookConfigured: false } as Bot;
+  act(() => root.render(<Harness />));
+  let second!: Promise<void>;
+  act(() => {
+    second = editor.editorProps!.onEnsureWebhook() as Promise<void>;
+  });
+  await act(async () => {
+    finishers[0]!({ secret: "secret-1" });
+    finishers[1]!({ secret: "secret-2" });
+    await Promise.all([first, second]);
+  });
+  expect(editor.editorProps!.webhook.secret).toBe("secret-2");
+
+  activeBot = { id: "bot-1", webhookConfigured: true } as Bot;
+  act(() => root.render(<Harness />));
+  expect(editor.editorProps!.webhook.secret).toBe("secret-1");
+});
