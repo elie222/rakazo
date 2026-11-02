@@ -10,7 +10,7 @@ import {
 } from "./index.js";
 
 describe("auth policy", () => {
-  it("closes every organization plugin route", () => {
+  it("closes organization and raw multi-session plugin routes", () => {
     for (const path of [
       "/organization/delete",
       "/organization/update",
@@ -22,6 +22,9 @@ describe("auth policy", () => {
       "/organization/list",
       "/organization/create-team",
       "/organization/some-future-route",
+      "/multi-session/list-device-sessions",
+      "/multi-session/set-active",
+      "/multi-session/revoke",
     ]) {
       expect(isBlockedAuthPath(path), path).toBe(true);
     }

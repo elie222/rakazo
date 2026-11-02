@@ -907,7 +907,8 @@ describe("SSO-only account deletion", () => {
       results.filter((response) => response.headers.get("location") === `${origin}/app`),
     ).toHaveLength(1);
     expect(exchanges() - before).toBe(1);
-    expect(rows("session")).toHaveLength(2);
+    // The multi-session plugin replaces this device's older login for the same account.
+    expect(rows("session")).toHaveLength(1);
     const savedCookies = cookies;
     expect((await request(callback)).headers.get("location")).toContain("error=");
     cookies = savedCookies;

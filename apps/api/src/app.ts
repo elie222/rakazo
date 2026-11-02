@@ -145,6 +145,7 @@ import { cors } from "hono/cors";
 import { deleteAccountContent } from "./account-deletion.js";
 import { mountAccountExportRoute } from "./account-export.js";
 import { mountAccountImportRoute } from "./account-import.js";
+import { mountAccountIdentityGuard, mountAccountSessions } from "./account-sessions.js";
 import { mountAppAssociation, nativePasskeys } from "./app-association.js";
 import { storeInboundAttachment } from "./artifacts.js";
 import { mountAuditExportRoute } from "./audit-export.js";
@@ -513,6 +514,14 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     notificationsOverride ??
     new ExpoPushProvider(pushTokens, {
       sessionExpiresAt: (sessionId) => pushSessionExpiresAt(prisma, sessionId),
+      accountLabel: (userId) =>
+        runAsSystem(
+          "read push account label",
+          async () =>
+            (await prisma.user.findUnique({ where: { id: userId }, select: { email: true } }))
+              ?.email ?? userId,
+        ),
+      badgeForToken: (token) => pushTokens.badgeForToken(token),
       jobs,
       accessToken: env.expoAccessToken,
     });
@@ -832,6 +841,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     }),
   );
   // Session and account replies must never be stored by a client or an HTTP cache.
+  mountAccountIdentityGuard(app, (request) =>
+    runAsSystem(
+      "validate request account identity",
+      async () => (await auth.api.getSession({ headers: request.headers }))?.user.id ?? null,
+    ),
+  );
   for (const path of ["/api/auth/*", "/rpc/*"]) {
     app.use(path, async (c, next) => {
       await next();
@@ -908,6 +923,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     const response = await auth.handler(withClientIp(emptyAuthBodyAsJson(c.req.raw), ip));
     await auditAuthResponse(path, ip, response);
     return response;
+  });
+  mountAccountSessions(app, {
+    auth,
+    prisma,
+    trustedOrigin: (origin) => isTrustedOrigin(origin, env),
   });
   mountLocalComputerHost(app, {
     token: env.desktopStackToken,

@@ -21,7 +21,7 @@ import {
   getOAuthState,
 } from "better-auth/api";
 import { parseSetCookieHeader } from "better-auth/cookies";
-import { emailOTP, organization } from "better-auth/plugins";
+import { emailOTP, multiSession, organization } from "better-auth/plugins";
 import {
   ACCOUNT_EXPORT_TOKEN_PREFIX,
   consumeAccountExportToken,
@@ -33,6 +33,11 @@ import {
   sessionForAuthHook,
   signedBearer,
 } from "./account-security.js";
+import {
+  accountSessions,
+  MAX_SAVED_BROWSER_ACCOUNTS,
+  requireSavedAccountCapacity,
+} from "./account-sessions.js";
 import { breachedPasswordCheck } from "./breached-password.js";
 import type { EmailLocaleOf } from "./email.js";
 import { emailLocale, passwordResetEmail, signInCodeEmail, verificationEmail } from "./email.js";
@@ -299,6 +304,8 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     plugins: [
       signedBearer,
       expo(),
+      multiSession({ maximumSessions: MAX_SAVED_BROWSER_ACCOUNTS }),
+      accountSessions(),
       accountSecurity(
         env.email,
         emailLocaleOf,
@@ -530,6 +537,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       session: {
         create: {
           before: async (session, ctx) => {
+            if (ctx?.headers) await requireSavedAccountCapacity(ctx, session.userId);
             // The auth adapter can still be inside the signup transaction.
             const user = await ctx?.context.internalAdapter.findUserById(session.userId);
             const policy = signupPolicyFromEnv(env);
@@ -604,7 +612,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         },
         delete: {
           after: async (session, ctx) => {
-            if (ctx?.path === "/sign-out") {
+            if (ctx?.path === "/sign-out" || ctx?.path === "/accounts/remove") {
               await recordSecurityEvent({ type: "auth.sign_out", userId: session.userId });
             } else if (ctx?.path && REVOCATION_PATHS.has(ctx.path)) {
               await recordSecurityEvent({
@@ -713,8 +721,15 @@ function withoutSessionTokens(
   if (path === "/list-sessions" && Array.isArray(returned)) {
     return returned.map(withoutToken);
   }
+  if (path === "/multi-session/list-device-sessions" && Array.isArray(returned)) {
+    return returned.map((item) =>
+      isRecord(item) ? { ...item, session: withoutToken(item.session) } : item,
+    );
+  }
   if (
-    (path === "/get-session" || path === "/update-session") &&
+    (path === "/get-session" ||
+      path === "/update-session" ||
+      path === "/multi-session/set-active") &&
     isRecord(returned) &&
     isRecord(returned.session)
   ) {
@@ -796,7 +811,7 @@ export function loopbackTwinOrigins(origin: string): string[] {
  * route under it stays closed, including ones a future plugin version adds.
  */
 export function isBlockedAuthPath(path: string): boolean {
-  return path.startsWith("/organization");
+  return path.startsWith("/organization") || path.startsWith("/multi-session");
 }
 
 function isOidcCallback(
