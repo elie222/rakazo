@@ -54,11 +54,9 @@ export function ConnectionQuota({
                 const result = await rpc.models.quota({ credentialId, fresh: true });
                 client.setQueryData(queries.models.quota.queryKey(quotaInput), result);
               } catch {
-                if (observation?.observedAt)
-                  client.setQueryData(queries.models.quota.queryKey(quotaInput), {
-                    ...observation,
-                    status: "stale",
-                  });
+                client.setQueryData(queries.models.quota.queryKey(quotaInput), (current) =>
+                  current?.observedAt ? { ...current, status: "stale" as const } : current,
+                );
               } finally {
                 setRefreshing(false);
               }
