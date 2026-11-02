@@ -52,6 +52,22 @@ describe("expo push tickets", () => {
 });
 
 describe("expo push", () => {
+  it("keeps the affected routine in an alert tap payload", () => {
+    expect(
+      expoPushData(
+        {
+          kind: "failure",
+          title: "Schedule delayed",
+          body: "Report",
+          botId: "bot",
+          threadId: "thread",
+          routineId: "routine",
+        },
+        "space",
+        "delivery",
+      ),
+    ).toMatchObject({ botId: "bot", routineId: "routine", spaceId: "space" });
+  });
   it("does not call Expo when the user has no token", async () => {
     const tokens = new MemoryPushTokenStore();
     const fetchMock = vi.fn();

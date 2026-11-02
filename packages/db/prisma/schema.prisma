@@ -1165,6 +1165,11 @@ model Routine {
   nextRunAt      DateTime?
   /// Runs in a row the model provider refused for the account; each one spaces out the schedule.
   accountFailures Int      @default(0)
+  delayAlertsEnabled Boolean @default(false)
+  delayAlertSchedule DateTime?
+  delayAlertClaimedAt DateTime?
+  delayAlertSentAt DateTime?
+  delayAlertResult String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   runs           Run[]

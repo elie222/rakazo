@@ -1,11 +1,12 @@
 import { ORPCError } from "@orpc/server";
 import { routineJobKey, routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
 import { parseRoutineWatch, stableStringify, validateRoutineWatch } from "@rakazo/adapters";
-import { canonicalPiProviderId } from "@rakazo/contracts";
+import { canonicalPiProviderId, RunStatus } from "@rakazo/contracts";
 import {
   expandSkillReferencesInPrompt,
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
+  routineScheduleDelay,
 } from "@rakazo/core";
 import { IsolationError, Prisma } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -31,6 +32,83 @@ export function routinesRoutes(ctx: RouterContext) {
   const { deps, repos, announceRoutine, codexCatalog, agentSkills, authed } = ctx;
   return {
     routines: {
+      health: authed.routines.health.handler(async ({ context, input }) => {
+        const { actor } = context;
+        const routine = await deps.prisma.routine.findFirst({
+          where: {
+            id: input.routineId,
+            spaceId: actor.spaceId,
+            userId: actor.userId,
+            bot: { archivedAt: null },
+          },
+          select: {
+            id: true,
+            botId: true,
+            active: true,
+            nextRunAt: true,
+            notify: true,
+            delayAlertsEnabled: true,
+            delayAlertSchedule: true,
+            delayAlertResult: true,
+          },
+        });
+        if (!routine) throw new ORPCError("NOT_FOUND");
+        const where = {
+          routineId: routine.id,
+          botId: routine.botId,
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+        };
+        const [attempt, success] = await Promise.all([
+          deps.prisma.run.findFirst({
+            where,
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            select: { createdAt: true, status: true },
+          }),
+          deps.prisma.run.findFirst({
+            where: { ...where, status: "completed", completedAt: { not: null } },
+            orderBy: [{ completedAt: "desc" }, { id: "desc" }],
+            select: { completedAt: true },
+          }),
+        ]);
+        return {
+          nextRunAt: routine.nextRunAt?.toISOString() ?? null,
+          delayed: routineScheduleDelay(routine.active, routine.nextRunAt, new Date()),
+          lastAttempt: attempt
+            ? { at: attempt.createdAt.toISOString(), status: RunStatus.parse(attempt.status) }
+            : null,
+          lastSuccessAt: success?.completedAt?.toISOString() ?? null,
+          delayAlertsEnabled: routine.delayAlertsEnabled,
+          failureAlertsEnabled: routine.notify,
+          delayAlertResult:
+            routine.delayAlertSchedule !== null &&
+            ["sent", "failed", "pending"].includes(routine.delayAlertResult ?? "")
+              ? (routine.delayAlertResult as "sent" | "failed" | "pending")
+              : null,
+        };
+      }),
+      setAlerts: authed.routines.setAlerts.handler(async ({ context, input }) => {
+        const { actor } = context;
+        if (input.delayed === undefined && input.failure === undefined)
+          throw new ORPCError("BAD_REQUEST");
+        const updated = await deps.prisma.routine.updateMany({
+          where: {
+            id: input.routineId,
+            spaceId: actor.spaceId,
+            userId: actor.userId,
+            bot: { archivedAt: null },
+          },
+          data: {
+            ...(input.failure === undefined ? {} : { notify: input.failure }),
+            ...(input.delayed === undefined ? {} : { delayAlertsEnabled: input.delayed }),
+            ...(input.delayed === false
+              ? { delayAlertSchedule: null, delayAlertClaimedAt: null, delayAlertResult: null }
+              : {}),
+          },
+        });
+        if (!updated.count) throw new ORPCError("NOT_FOUND");
+        return { ok: true as const };
+      }),
       listForMentions: authed.routines.listForMentions.handler(async ({ context, input }) => {
         const { actor } = context;
         // Same ownership predicates as getBot, so a batch never widens what routines/list allows.

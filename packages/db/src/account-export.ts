@@ -360,6 +360,7 @@ async function* spaceRecords(
       timezone: routine.timezone,
       active: routine.active,
       notify: routine.notify,
+      delayAlertsEnabled: routine.delayAlertsEnabled,
       messageProvider: routine.messageProvider,
       modelProvider: routine.modelProvider,
       modelId: routine.modelId,

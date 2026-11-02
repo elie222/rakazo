@@ -1,16 +1,77 @@
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, Text, View } from "react-native";
 import { glassHeaderOptions } from "../components/glass-title";
 import { NativeActionButton } from "../components/native-action-button";
+import { RoutineHealth } from "../components/routine-health";
 import { RoutineRunHistory } from "../components/routine-run-history";
+import { selectedSpaceId, selectSpace } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
+import {
+  threadRouteSpaceOnFocus,
+  threadSpaceRequest,
+  threadSpaceSwitchResult,
+} from "../lib/notification-open";
 import { routineStatusLine } from "../lib/routine";
 import { useBotRoutines } from "../lib/routine-store";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
 export default function RoutineDetail() {
+  const { t } = useI18n();
+  const router = useRouter();
+  const focused = useIsFocused();
+  const { spaceId } = useLocalSearchParams<{ spaceId?: string | string[] }>();
+  const [activeSpaceId, setActiveSpaceId] = useState<string | null>(() => selectedSpaceId());
+  const [switchFailed, setSwitchFailed] = useState(false);
+  const [appliedFocus, setAppliedFocus] = useState(focused);
+  const sync = threadRouteSpaceOnFocus({
+    focused,
+    appliedFocus,
+    activeSpaceId,
+    liveSpaceId: selectedSpaceId(),
+    switchFailed,
+  });
+  if (sync.appliedFocus !== appliedFocus) setAppliedFocus(sync.appliedFocus);
+  if (sync.activeSpaceId !== activeSpaceId) setActiveSpaceId(sync.activeSpaceId);
+  if (sync.switchFailed !== switchFailed) setSwitchFailed(sync.switchFailed);
+  const request = threadSpaceRequest(spaceId, sync.activeSpaceId);
+  useEffect(() => {
+    if (!focused) return;
+    const next = threadSpaceRequest(spaceId, activeSpaceId);
+    if (next.action === "show") {
+      setSwitchFailed(false);
+      return;
+    }
+    if (next.action === "unavailable") {
+      setSwitchFailed(true);
+      return;
+    }
+    let cancelled = false;
+    setSwitchFailed(false);
+    void selectSpace(next.spaceId).then((switched) => {
+      if (cancelled) return;
+      if (threadSpaceSwitchResult(next.spaceId, switched, selectedSpaceId()) === "ready")
+        setActiveSpaceId(next.spaceId);
+      else setSwitchFailed(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSpaceId, focused, spaceId]);
+  if (sync.switchFailed || request.action === "unavailable")
+    return (
+      <View>
+        <Text>{t("Could not switch spaces")}</Text>
+        <NativeActionButton label={t("Return to inbox")} onPress={() => router.replace("/")} />
+      </View>
+    );
+  if (request.action !== "show") return <ActivityIndicator />;
+  return <RoutineDetailContent />;
+}
+
+function RoutineDetailContent() {
   const sideInsets = useSideInsets();
   const tokens = useMobileTokens();
   const { t } = useI18n();
@@ -64,6 +125,7 @@ export default function RoutineDetail() {
               {routineStatusLine(routine)}
             </Text>
           </View>
+          <RoutineHealth routineId={routine.id} />
           <View style={{ gap: 8 }}>
             <Text
               style={{ color: tokens.mutedForeground, fontSize: 13, textTransform: "uppercase" }}

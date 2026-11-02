@@ -1223,6 +1223,26 @@ export const NL_MESSAGES: Record<string, string> = {
   "Won't do": "Wordt niet gedaan",
   "Could not move the ticket": "Kon ticket niet verplaatsen",
   "No tickets yet.": "Nog geen tickets.",
+  "Next scheduled: {date}": "Volgende uitvoering: {date}",
+  "Last attempt: {date} · {status}": "Laatste poging: {date} · {status}",
+  "Last successful run: {date}": "Laatste geslaagde uitvoering: {date}",
+  "Edit memory": "Geheugen bewerken",
+  "Edit {entry}": "{entry} bewerken",
+  "Delete {entry}": "{entry} verwijderen",
+  "Delete memory?": "Geheugen verwijderen?",
+  "{used} / {limit} bytes": "{used} / {limit} bytes",
+  "Alert accepted; delivery not confirmed": "Melding geaccepteerd; bezorging niet bevestigd",
+  "Alert could not be sent": "Melding kon niet worden verzonden",
+  "Could not load schedule status": "Schemastatus kon niet worden geladen",
+  "Delay alerts": "Vertragingsmeldingen",
+  "Delay alerts run while the worker is running.":
+    "Vertragingsmeldingen werken zolang de worker actief is.",
+  "Failure alerts": "Foutmeldingen",
+  "No successful runs yet": "Nog geen geslaagde uitvoeringen",
+  "No upcoming schedule": "Geen volgende uitvoering",
+  "Schedule delayed": "Geplande uitvoering vertraagd",
+  "View prompt memory": "Promptgeheugen bekijken",
+  "Could not load": "Kon niet laden",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

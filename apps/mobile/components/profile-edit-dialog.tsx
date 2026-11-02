@@ -11,6 +11,7 @@ export function ProfileEditDialog({
   editLabel,
   maxLength,
   large = false,
+  preserveWhitespace = false,
   icon,
   onCommit,
 }: {
@@ -19,6 +20,7 @@ export function ProfileEditDialog({
   editLabel: string;
   maxLength: number;
   large?: boolean;
+  preserveWhitespace?: boolean;
   icon?: "plus";
   onCommit: (value: string) => Promise<void>;
 }) {
@@ -29,7 +31,7 @@ export function ProfileEditDialog({
   function commit(next: string) {
     if (next.length > maxLength) return;
     setOpen(false);
-    void onCommit(next.trim());
+    void onCommit(preserveWhitespace ? next : next.trim());
   }
   return (
     <>

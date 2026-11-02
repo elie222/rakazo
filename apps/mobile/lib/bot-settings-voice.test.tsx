@@ -69,6 +69,7 @@ vi.mock("./api", () => ({
         "bots/setComputer",
         "scratchpad/create",
         "scratchpad/update",
+        "memory/editEntry",
         "bots/restoreInstructions",
         "export/bot",
         "threads/clear",
@@ -590,7 +591,7 @@ describe("bot settings device voice menu", () => {
   it("shows a quiet header with no Save or empty context groups", async () => {
     await act(async () => root.render(<BotSettingsScreen />));
     expect(container.textContent).not.toContain("Open work");
-    expect(container.textContent).not.toContain("Memory");
+    expect(container.textContent).toContain("View prompt memory");
     expect(
       [...container.querySelectorAll("button")].some((button) => button.textContent === "Save"),
     ).toBe(false);
@@ -620,7 +621,35 @@ describe("bot settings device voice menu", () => {
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="notes/6.md"]')!.click(),
     );
-    expect(mocks.alert).toHaveBeenCalledWith("notes/6.md", "Fixture notes");
+    expect(container.textContent).toContain("Fixture notes");
+    expect(container.textContent).toContain("View prompt memory");
+  });
+
+  it("preserves the whitespace entered when correcting a memory line", async () => {
+    const doc = {
+      id: "doc",
+      botId: "bot-fixture",
+      scope: "bot",
+      path: "MEMORY.md",
+      content: "  old",
+      revision: 1,
+      updatedAt: "",
+    };
+    mocks.docs = [doc];
+    mocks.rpc.mockResolvedValue({ ...doc, content: "  new  ", revision: 2 });
+    await act(async () => root.render(<BotSettingsScreen />));
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="MEMORY.md"]')!.click(),
+    );
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Edit   old"]')!.click(),
+    );
+    const buttons = mocks.prompt.mock.lastCall![2] as { onPress?: (value?: string) => void }[];
+    await act(async () => buttons[1]!.onPress?.("  new  "));
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "memory/editEntry",
+      expect.objectContaining({ replacement: "  new  " }),
+    );
   });
 
   it("uses a dialog rather than inline fields on Android", async () => {
@@ -689,7 +718,7 @@ describe("bot settings device voice menu", () => {
     expect(trigger.getAttribute("role")).toBe("button");
     expect(JSON.parse(trigger.dataset.style!)).toMatchObject({ marginTop: 24, minHeight: 44 });
     const headings = [...container.querySelectorAll<HTMLElement>('[role="header"]')];
-    expect(headings.map((heading) => heading.textContent)).toEqual(["Notifications"]);
+    expect(headings.map((heading) => heading.textContent)).toEqual(["Notifications", "Memory"]);
     expect(trigger.querySelector('[data-ios="chevron.right"]')).not.toBeNull();
     expect(container.querySelector('[aria-label="Instructions"]')).toBeNull();
     await expand();

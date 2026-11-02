@@ -653,6 +653,14 @@ msgstr "Geavanceerd..."
 msgid "Agent from another app"
 msgstr ""
 
+#: src/pages/RoutineHealth.tsx
+msgid "Alert accepted; delivery not confirmed"
+msgstr "Melding geaccepteerd; bezorging niet bevestigd"
+
+#: src/pages/RoutineHealth.tsx
+msgid "Alert could not be sent"
+msgstr "Melding kon niet worden verzonden"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
 msgstr ""
@@ -1112,6 +1120,10 @@ msgstr "MCP-servers doorzoeken"
 #: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "Ingebouwd"
+
+#: src/pages/KnowledgeSection.tsx
+msgid "bytes"
+msgstr "bytes"
 
 #: src/pages/shell/chat-header.tsx
 msgid "Call"
@@ -2006,6 +2018,10 @@ msgstr "Modelinstellingen laden mislukt"
 msgid "Could not load run history"
 msgstr "Rungeschiedenis laden mislukt"
 
+#: src/pages/RoutineHealth.tsx
+msgid "Could not load schedule status"
+msgstr "Schemastatus kon niet worden geladen"
+
 #: src/lib/account-security.ts
 #: src/pages/Auth.tsx
 msgid "Could not load sign-in options"
@@ -2136,6 +2152,7 @@ msgstr "Routine uitvoeren mislukt"
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/RoutineHealth.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
 #: src/pages/shell/use-space-roster.ts
@@ -2455,6 +2472,14 @@ msgstr "Standaard van OpenClaw"
 msgid "Default scope"
 msgstr "Standaardbereik"
 
+#: src/pages/RoutineHealth.tsx
+msgid "Delay alerts"
+msgstr "Vertragingsmeldingen"
+
+#: src/pages/RoutineHealth.tsx
+msgid "Delay alerts run while the worker is running."
+msgstr "Vertragingsmeldingen werken zolang de worker actief is."
+
 #: src/components/AccountAccess.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
@@ -2734,6 +2759,10 @@ msgstr "Naam bewerken"
 msgid "Edit Profile"
 msgstr "Profiel bewerken"
 
+#: src/pages/KnowledgeSection.tsx
+msgid "Edit selection"
+msgstr "Selectie bewerken"
+
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
 msgid "Email"
@@ -2937,6 +2966,10 @@ msgstr "Stoppen mislukt"
 #: src/lib/browser-notifications.ts
 msgid "Failed."
 msgstr "Mislukt."
+
+#: src/pages/RoutineHealth.tsx
+msgid "Failure alerts"
+msgstr "Foutmeldingen"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Failure handling"
@@ -3424,6 +3457,10 @@ msgstr "Label"
 msgid "Language"
 msgstr "Taal"
 
+#: src/pages/RoutineHealth.tsx
+msgid "Last attempt"
+msgstr "Laatste poging"
+
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
 #: src/pages/RoutineEditor.tsx
 msgid "Last check {0}: changed"
@@ -3433,6 +3470,10 @@ msgstr "Laatste controle {0}: gewijzigd"
 #: src/pages/RoutineEditor.tsx
 msgid "Last check {0}: no changes"
 msgstr "Laatste controle {0}: geen wijzigingen"
+
+#: src/pages/RoutineHealth.tsx
+msgid "Last successful run"
+msgstr "Laatste geslaagde uitvoering"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
@@ -4040,6 +4081,10 @@ msgstr "Nieuw ticket"
 msgid "Next page"
 msgstr "Volgende pagina"
 
+#: src/pages/RoutineHealth.tsx
+msgid "Next scheduled"
+msgstr "Volgende uitvoering"
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Next settings sections"
 msgstr ""
@@ -4143,6 +4188,10 @@ msgstr "Nog geen skills"
 msgid "No submissions"
 msgstr ""
 
+#: src/pages/RoutineHealth.tsx
+msgid "No successful runs yet"
+msgstr "Nog geen geslaagde uitvoeringen"
+
 #: src/pages/Board.tsx
 msgid "No tickets yet"
 msgstr "Nog geen tickets"
@@ -4150,6 +4199,10 @@ msgstr "Nog geen tickets"
 #: src/pages/RoutineEditor.tsx
 msgid "No trigger"
 msgstr "Geen trigger"
+
+#: src/pages/RoutineHealth.tsx
+msgid "No upcoming schedule"
+msgstr "Geen volgende uitvoering"
 
 #: src/lib/ticket-priority.ts
 msgid "Normal"
@@ -4894,6 +4947,10 @@ msgstr "Wordt verlengd op {day}"
 msgid "Reopen"
 msgstr "Heropenen"
 
+#: src/pages/KnowledgeSection.tsx
+msgid "Replace"
+msgstr "Vervangen"
+
 #: src/pages/model-settings/connection-controls.tsx
 msgid "Replace API key"
 msgstr "API-sleutel vervangen"
@@ -4906,6 +4963,10 @@ msgstr "Sleutel vervangen"
 #: src/components/VaultSettings.tsx
 msgid "Replace value"
 msgstr "Waarde vervangen"
+
+#: src/pages/KnowledgeSection.tsx
+msgid "Replacement"
+msgstr "Vervanging"
 
 #: src/pages/shell/message-hover-actions.tsx
 #: src/pages/shell/quote-selection-button.tsx
@@ -5194,6 +5255,10 @@ msgstr "Bezig met opslaan…"
 #: src/lib/call-session.ts
 msgid "Say yes or no, or answer in a sentence."
 msgstr "Zeg ja of nee, of antwoord in een zin."
+
+#: src/pages/RoutineHealth.tsx
+msgid "Schedule delayed"
+msgstr "Geplande uitvoering vertraagd"
 
 #: src/components/ModelCredits.tsx
 msgid "Scheduled routines"
@@ -6161,6 +6226,7 @@ msgid "Unassigned"
 msgstr "Niet toegewezen"
 
 #: src/components/AskCard.tsx
+#: src/pages/KnowledgeSection.tsx
 msgid "Undo"
 msgstr "Ongedaan maken"
 
@@ -6373,6 +6439,10 @@ msgstr "Versie"
 #: src/pages/PluginsOverlay.tsx
 msgid "View all"
 msgstr ""
+
+#: src/pages/KnowledgeSection.tsx
+msgid "View prompt memory"
+msgstr "Promptgeheugen bekijken"
 
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "View source"

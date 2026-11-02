@@ -653,6 +653,14 @@ msgstr "고급..."
 msgid "Agent from another app"
 msgstr ""
 
+#: src/pages/RoutineHealth.tsx
+msgid "Alert accepted; delivery not confirmed"
+msgstr "알림이 접수됨; 전달은 확인되지 않음"
+
+#: src/pages/RoutineHealth.tsx
+msgid "Alert could not be sent"
+msgstr "알림을 보낼 수 없음"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
 msgstr ""
@@ -1112,6 +1120,10 @@ msgstr ""
 #: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "기본 제공"
+
+#: src/pages/KnowledgeSection.tsx
+msgid "bytes"
+msgstr "바이트"
 
 #: src/pages/shell/chat-header.tsx
 msgid "Call"
@@ -2006,6 +2018,10 @@ msgstr "AI 모델 설정을 불러오지 못했습니다."
 msgid "Could not load run history"
 msgstr "실행 기록을 불러오지 못했습니다"
 
+#: src/pages/RoutineHealth.tsx
+msgid "Could not load schedule status"
+msgstr "일정 상태를 불러오지 못함"
+
 #: src/lib/account-security.ts
 #: src/pages/Auth.tsx
 msgid "Could not load sign-in options"
@@ -2136,6 +2152,7 @@ msgstr "루틴을 실행할 수 없습니다"
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/RoutineHealth.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
 #: src/pages/shell/use-space-roster.ts
@@ -2455,6 +2472,14 @@ msgstr "OpenClaw 기본값"
 msgid "Default scope"
 msgstr "기본 기억 범위"
 
+#: src/pages/RoutineHealth.tsx
+msgid "Delay alerts"
+msgstr "지연 알림"
+
+#: src/pages/RoutineHealth.tsx
+msgid "Delay alerts run while the worker is running."
+msgstr "지연 알림은 워커가 실행 중일 때 작동합니다."
+
 #: src/components/AccountAccess.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
@@ -2734,6 +2759,10 @@ msgstr "이름 편집"
 msgid "Edit Profile"
 msgstr "Bot 정보 수정"
 
+#: src/pages/KnowledgeSection.tsx
+msgid "Edit selection"
+msgstr "선택 영역 편집"
+
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
 msgid "Email"
@@ -2937,6 +2966,10 @@ msgstr "작업을 중지하지 못했습니다."
 #: src/lib/browser-notifications.ts
 msgid "Failed."
 msgstr "실패했습니다."
+
+#: src/pages/RoutineHealth.tsx
+msgid "Failure alerts"
+msgstr "실패 알림"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Failure handling"
@@ -3424,6 +3457,10 @@ msgstr "레이블"
 msgid "Language"
 msgstr "언어"
 
+#: src/pages/RoutineHealth.tsx
+msgid "Last attempt"
+msgstr "마지막 시도"
+
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
 #: src/pages/RoutineEditor.tsx
 msgid "Last check {0}: changed"
@@ -3433,6 +3470,10 @@ msgstr "마지막 확인 {0}: 변경됨"
 #: src/pages/RoutineEditor.tsx
 msgid "Last check {0}: no changes"
 msgstr "마지막 확인 {0}: 변경 없음"
+
+#: src/pages/RoutineHealth.tsx
+msgid "Last successful run"
+msgstr "마지막 성공 실행"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
@@ -4040,6 +4081,10 @@ msgstr ""
 msgid "Next page"
 msgstr "다음 페이지"
 
+#: src/pages/RoutineHealth.tsx
+msgid "Next scheduled"
+msgstr "다음 예정 실행"
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Next settings sections"
 msgstr ""
@@ -4143,6 +4188,10 @@ msgstr "아직 스킬이 없습니다"
 msgid "No submissions"
 msgstr ""
 
+#: src/pages/RoutineHealth.tsx
+msgid "No successful runs yet"
+msgstr "아직 성공한 실행이 없음"
+
 #: src/pages/Board.tsx
 msgid "No tickets yet"
 msgstr ""
@@ -4150,6 +4199,10 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "No trigger"
 msgstr "트리거 없음"
+
+#: src/pages/RoutineHealth.tsx
+msgid "No upcoming schedule"
+msgstr "예정된 실행 없음"
 
 #: src/lib/ticket-priority.ts
 msgid "Normal"
@@ -4894,6 +4947,10 @@ msgstr ""
 msgid "Reopen"
 msgstr "다시 열기"
 
+#: src/pages/KnowledgeSection.tsx
+msgid "Replace"
+msgstr "바꾸기"
+
 #: src/pages/model-settings/connection-controls.tsx
 msgid "Replace API key"
 msgstr "API 키 교체"
@@ -4906,6 +4963,10 @@ msgstr "키 교체"
 #: src/components/VaultSettings.tsx
 msgid "Replace value"
 msgstr ""
+
+#: src/pages/KnowledgeSection.tsx
+msgid "Replacement"
+msgstr "대체 내용"
 
 #: src/pages/shell/message-hover-actions.tsx
 #: src/pages/shell/quote-selection-button.tsx
@@ -5194,6 +5255,10 @@ msgstr "저장 중…"
 #: src/lib/call-session.ts
 msgid "Say yes or no, or answer in a sentence."
 msgstr "예 또는 아니요로 답하거나 문장으로 답해 주세요."
+
+#: src/pages/RoutineHealth.tsx
+msgid "Schedule delayed"
+msgstr "예약 실행 지연"
 
 #: src/components/ModelCredits.tsx
 msgid "Scheduled routines"
@@ -6161,6 +6226,7 @@ msgid "Unassigned"
 msgstr "섹션 없음"
 
 #: src/components/AskCard.tsx
+#: src/pages/KnowledgeSection.tsx
 msgid "Undo"
 msgstr "실행 취소"
 
@@ -6373,6 +6439,10 @@ msgstr ""
 #: src/pages/PluginsOverlay.tsx
 msgid "View all"
 msgstr ""
+
+#: src/pages/KnowledgeSection.tsx
+msgid "View prompt memory"
+msgstr "프롬프트 메모리 보기"
 
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "View source"

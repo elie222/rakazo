@@ -1,11 +1,13 @@
 import type { MemoryDocument, ScratchpadItem } from "@rakazo/contracts";
 import { isEmptyBotMemory } from "@rakazo/contracts";
 import { useEffect, useState } from "react";
-import { Alert, Pressable, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { errorText } from "../lib/user-error";
+import { MemoryEntries } from "./memory-entries";
+import { NativeActionButton } from "./native-action-button";
 import { NativeSymbol } from "./native-symbol";
 import { ProfileEditDialog } from "./profile-edit-dialog";
 
@@ -18,7 +20,9 @@ export function BotContextCards({ botId }: { botId: string }) {
   const [allDocs, setAllDocs] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [openMemory, setOpenMemory] = useState<{ doc: MemoryDocument | null } | null>(null);
   useEffect(() => {
+    setOpenMemory(null);
     let current = true;
     void rpc("scratchpad/list", { botId })
       .then((items) => {
@@ -131,7 +135,7 @@ export function BotContextCards({ botId }: { botId: string }) {
           </View>
         </View>
       ) : null}
-      {docs.length ? (
+      {
         <View style={{ marginTop: 24 }}>
           <Text accessibilityRole="header" style={[heading, { marginBottom: 8 }]}>
             {t("Memory")}
@@ -142,7 +146,7 @@ export function BotContextCards({ botId }: { botId: string }) {
                 key={doc.id}
                 accessibilityRole="button"
                 accessibilityLabel={doc.path}
-                onPress={() => Alert.alert(doc.path, doc.content)}
+                onPress={() => setOpenMemory({ doc })}
                 style={{
                   minHeight: 44,
                   flexDirection: "row",
@@ -162,6 +166,11 @@ export function BotContextCards({ botId }: { botId: string }) {
                 />
               </Pressable>
             ))}
+            <NativeActionButton
+              label={t("View prompt memory")}
+              prominence="plain"
+              onPress={() => setOpenMemory({ doc: null })}
+            />
             {!allDocs && docs.length > 5 ? (
               <Pressable
                 accessibilityRole="button"
@@ -173,8 +182,19 @@ export function BotContextCards({ botId }: { botId: string }) {
             ) : null}
           </View>
         </View>
-      ) : null}
+      }
       {error ? <Text style={{ color: tokens.destructive, marginTop: 16 }}>{error}</Text> : null}
+      {openMemory ? (
+        <MemoryEntries
+          initial={openMemory.doc}
+          botId={botId}
+          onClose={() => setOpenMemory(null)}
+          onUpdate={(updated) =>
+            setDocs((current) => current.map((doc) => (doc.id === updated.id ? updated : doc)))
+          }
+          onRefresh={async () => setDocs(await rpc("memory/list", { botId, scope: "bot" }))}
+        />
+      ) : null}
     </>
   );
 }

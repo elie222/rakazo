@@ -1262,6 +1262,26 @@ export const RU_MESSAGES: Record<string, string> = {
   "Won't do": "Не будем делать",
   "Could not move the ticket": "Не удалось переместить тикет",
   "No tickets yet.": "Тикетов пока нет.",
+  "Next scheduled: {date}": "Следующий запуск: {date}",
+  "Last attempt: {date} · {status}": "Последняя попытка: {date} · {status}",
+  "Last successful run: {date}": "Последний успешный запуск: {date}",
+  "Edit memory": "Изменить запись",
+  "Edit {entry}": "Изменить {entry}",
+  "Delete {entry}": "Удалить {entry}",
+  "Delete memory?": "Удалить запись?",
+  "{used} / {limit} bytes": "{used} / {limit} байт",
+  "Alert accepted; delivery not confirmed": "Оповещение принято; доставка не подтверждена",
+  "Alert could not be sent": "Не удалось отправить оповещение",
+  "Could not load schedule status": "Не удалось загрузить состояние расписания",
+  "Delay alerts": "Оповещения о задержке",
+  "Delay alerts run while the worker is running.":
+    "Оповещения о задержке работают, пока запущен рабочий процесс.",
+  "Failure alerts": "Оповещения об ошибке",
+  "No successful runs yet": "Успешных запусков пока нет",
+  "No upcoming schedule": "Нет запланированных запусков",
+  "Schedule delayed": "Запуск по расписанию задерживается",
+  "View prompt memory": "Посмотреть память в промпте",
+  "Could not load": "Не удалось загрузить",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

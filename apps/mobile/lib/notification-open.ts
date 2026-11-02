@@ -1,4 +1,5 @@
 export type NotificationRoute =
+  | { pathname: "/routine"; params: { botId: string; routineId: string; spaceId?: string } }
   | {
       pathname: "/thread";
       params: { botId: string; threadId?: string; spaceId?: string; name?: string };
@@ -14,7 +15,7 @@ export type ThreadSpaceRequest =
   | { action: "unavailable" };
 
 export function threadRouteId(name: string, params: Record<string, unknown>): string | undefined {
-  const ownerId = params.groupId ?? params.botId;
+  const ownerId = name === "routine" ? params.routineId : (params.groupId ?? params.botId);
   return typeof ownerId === "string" && ownerId ? JSON.stringify([name, ownerId]) : undefined;
 }
 
@@ -44,6 +45,10 @@ export function notificationOpenTarget(data: unknown): NotificationRoute | null 
   const threadId = notificationField(record, "threadId");
   const spaceId = notificationField(record, "spaceId");
   const name = notificationField(record, "name");
+  const botId = notificationField(record, "botId");
+  const routineId = notificationField(record, "routineId");
+  if (botId && routineId)
+    return { pathname: "/routine", params: { botId, routineId, ...(spaceId ? { spaceId } : {}) } };
   const shared = {
     ...(threadId ? { threadId } : {}),
     ...(spaceId ? { spaceId } : {}),
@@ -51,7 +56,6 @@ export function notificationOpenTarget(data: unknown): NotificationRoute | null 
   };
   const groupId = notificationField(record, "groupId");
   if (groupId) return { pathname: "/group-thread", params: { groupId, ...shared } };
-  const botId = notificationField(record, "botId");
   if (botId) return { pathname: "/thread", params: { botId, ...shared } };
   return null;
 }
@@ -69,8 +73,12 @@ export function notificationOpenTargetFromLink(url: string): NotificationRoute |
   for (const [key, value] of parsed.searchParams) data[key] = value;
   if (screen === "thread") {
     delete data.groupId;
+    delete data.routineId;
   } else if (screen === "group-thread") {
     delete data.botId;
+    delete data.routineId;
+  } else if (screen === "routine") {
+    delete data.groupId;
   } else {
     return null;
   }

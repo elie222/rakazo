@@ -156,6 +156,7 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     timezone: z.string(),
     active: z.boolean(),
     notify: z.boolean(),
+    delayAlertsEnabled: z.boolean().optional(),
     messageProvider: z.string().nullable(),
     modelProvider: z.string().nullable(),
     modelId: z.string().nullable(),

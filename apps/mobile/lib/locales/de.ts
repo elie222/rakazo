@@ -1231,6 +1231,27 @@ export const DE_MESSAGES: Record<string, string> = {
   "Won't do": "Wird nicht gemacht",
   "Could not move the ticket": "Ticket konnte nicht verschoben werden",
   "No tickets yet.": "Noch keine Tickets.",
+  "Next scheduled: {date}": "Nächster Termin: {date}",
+  "Last attempt: {date} · {status}": "Letzter Versuch: {date} · {status}",
+  "Last successful run: {date}": "Letzter erfolgreicher Lauf: {date}",
+  "Edit memory": "Erinnerung bearbeiten",
+  "Edit {entry}": "{entry} bearbeiten",
+  "Delete {entry}": "{entry} löschen",
+  "Delete memory?": "Erinnerung löschen?",
+  "{used} / {limit} bytes": "{used} / {limit} Bytes",
+  "Alert accepted; delivery not confirmed":
+    "Benachrichtigung angenommen; Zustellung nicht bestätigt",
+  "Alert could not be sent": "Benachrichtigung konnte nicht gesendet werden",
+  "Could not load schedule status": "Zeitplanstatus konnte nicht geladen werden",
+  "Delay alerts": "Verzögerungswarnungen",
+  "Delay alerts run while the worker is running.":
+    "Verzögerungswarnungen funktionieren, solange der Worker läuft.",
+  "Failure alerts": "Fehlerwarnungen",
+  "No successful runs yet": "Noch keine erfolgreichen Läufe",
+  "No upcoming schedule": "Kein bevorstehender Termin",
+  "Schedule delayed": "Ausführung verzögert",
+  "View prompt memory": "Prompt-Speicher anzeigen",
+  "Could not load": "Laden fehlgeschlagen",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

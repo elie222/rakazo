@@ -653,6 +653,14 @@ msgstr "高级..."
 msgid "Agent from another app"
 msgstr ""
 
+#: src/pages/RoutineHealth.tsx
+msgid "Alert accepted; delivery not confirmed"
+msgstr "提醒已受理；尚未确认送达"
+
+#: src/pages/RoutineHealth.tsx
+msgid "Alert could not be sent"
+msgstr "无法发送提醒"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
 msgstr "全部"
@@ -1112,6 +1120,10 @@ msgstr "浏览 MCP 服务器"
 #: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "内置"
+
+#: src/pages/KnowledgeSection.tsx
+msgid "bytes"
+msgstr "字节"
 
 #: src/pages/shell/chat-header.tsx
 msgid "Call"
@@ -2006,6 +2018,10 @@ msgstr "无法加载模型设置"
 msgid "Could not load run history"
 msgstr "无法加载运行历史记录"
 
+#: src/pages/RoutineHealth.tsx
+msgid "Could not load schedule status"
+msgstr "无法加载计划状态"
+
 #: src/lib/account-security.ts
 #: src/pages/Auth.tsx
 msgid "Could not load sign-in options"
@@ -2136,6 +2152,7 @@ msgstr "无法运行例行任务"
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/RoutineHealth.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
 #: src/pages/shell/use-space-roster.ts
@@ -2455,6 +2472,14 @@ msgstr "OpenClaw 默认内容"
 msgid "Default scope"
 msgstr "默认范围"
 
+#: src/pages/RoutineHealth.tsx
+msgid "Delay alerts"
+msgstr "延迟提醒"
+
+#: src/pages/RoutineHealth.tsx
+msgid "Delay alerts run while the worker is running."
+msgstr "延迟提醒仅在工作进程运行时生效。"
+
 #: src/components/AccountAccess.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
@@ -2734,6 +2759,10 @@ msgstr "编辑名称"
 msgid "Edit Profile"
 msgstr "编辑资料"
 
+#: src/pages/KnowledgeSection.tsx
+msgid "Edit selection"
+msgstr "编辑所选内容"
+
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
 msgid "Email"
@@ -2937,6 +2966,10 @@ msgstr "停止失败"
 #: src/lib/browser-notifications.ts
 msgid "Failed."
 msgstr "失败。"
+
+#: src/pages/RoutineHealth.tsx
+msgid "Failure alerts"
+msgstr "失败提醒"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Failure handling"
@@ -3424,6 +3457,10 @@ msgstr "标签"
 msgid "Language"
 msgstr "语言"
 
+#: src/pages/RoutineHealth.tsx
+msgid "Last attempt"
+msgstr "上次尝试"
+
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
 #: src/pages/RoutineEditor.tsx
 msgid "Last check {0}: changed"
@@ -3433,6 +3470,10 @@ msgstr "上次检查 {0}：有变化"
 #: src/pages/RoutineEditor.tsx
 msgid "Last check {0}: no changes"
 msgstr "上次检查 {0}：无变化"
+
+#: src/pages/RoutineHealth.tsx
+msgid "Last successful run"
+msgstr "上次成功运行"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
@@ -4040,6 +4081,10 @@ msgstr "新建工单"
 msgid "Next page"
 msgstr "下一页"
 
+#: src/pages/RoutineHealth.tsx
+msgid "Next scheduled"
+msgstr "下次计划运行"
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Next settings sections"
 msgstr "下一组设置项"
@@ -4143,6 +4188,10 @@ msgstr "暂无技能"
 msgid "No submissions"
 msgstr "暂无提交"
 
+#: src/pages/RoutineHealth.tsx
+msgid "No successful runs yet"
+msgstr "尚无成功运行"
+
 #: src/pages/Board.tsx
 msgid "No tickets yet"
 msgstr "还没有工单"
@@ -4150,6 +4199,10 @@ msgstr "还没有工单"
 #: src/pages/RoutineEditor.tsx
 msgid "No trigger"
 msgstr "无触发器"
+
+#: src/pages/RoutineHealth.tsx
+msgid "No upcoming schedule"
+msgstr "没有即将运行的计划"
 
 #: src/lib/ticket-priority.ts
 msgid "Normal"
@@ -4894,6 +4947,10 @@ msgstr "将于 {day} 续订"
 msgid "Reopen"
 msgstr "重新打开"
 
+#: src/pages/KnowledgeSection.tsx
+msgid "Replace"
+msgstr "替换"
+
 #: src/pages/model-settings/connection-controls.tsx
 msgid "Replace API key"
 msgstr "替换 API 密钥"
@@ -4906,6 +4963,10 @@ msgstr "替换密钥"
 #: src/components/VaultSettings.tsx
 msgid "Replace value"
 msgstr "替换值"
+
+#: src/pages/KnowledgeSection.tsx
+msgid "Replacement"
+msgstr "替换内容"
 
 #: src/pages/shell/message-hover-actions.tsx
 #: src/pages/shell/quote-selection-button.tsx
@@ -5194,6 +5255,10 @@ msgstr "正在保存…"
 #: src/lib/call-session.ts
 msgid "Say yes or no, or answer in a sentence."
 msgstr "回答是或否，或一句话说明。"
+
+#: src/pages/RoutineHealth.tsx
+msgid "Schedule delayed"
+msgstr "计划执行延迟"
 
 #: src/components/ModelCredits.tsx
 msgid "Scheduled routines"
@@ -6161,6 +6226,7 @@ msgid "Unassigned"
 msgstr "未分配"
 
 #: src/components/AskCard.tsx
+#: src/pages/KnowledgeSection.tsx
 msgid "Undo"
 msgstr "撤销"
 
@@ -6373,6 +6439,10 @@ msgstr "版本"
 #: src/pages/PluginsOverlay.tsx
 msgid "View all"
 msgstr "查看全部"
+
+#: src/pages/KnowledgeSection.tsx
+msgid "View prompt memory"
+msgstr "查看提示词记忆"
 
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "View source"

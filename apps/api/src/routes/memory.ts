@@ -9,6 +9,7 @@ import {
 } from "@rakazo/adapters";
 import { isDeletableMemoryDocument } from "@rakazo/contracts";
 import { findSpaceMemoryConfig, IsolationError } from "@rakazo/db";
+import { editMemoryEntry } from "../memory-entry.js";
 import {
   disconnectMemoryProvider,
   persistMemoryProviderConfig,
@@ -21,6 +22,23 @@ export function memoryRoutes(ctx: RouterContext) {
   const { deps, repos, taughtSkills, agentSkills, authed } = ctx;
   return {
     memory: {
+      prompt: authed.memory.prompt.handler(async ({ context, input }) => {
+        await repos.getBot(context.actor, input.botId);
+        const documents = await readAgentMemory(deps.memory, input.botId, {
+          operationId: "memory-prompt",
+          traceId: "memory-prompt",
+          spaceId: context.actor.spaceId,
+          userId: context.actor.userId,
+          botId: input.botId,
+          signal: context.signal ?? new AbortController().signal,
+        });
+        const { text, plan } = buildAgentMemoryPrompt(documents);
+        return {
+          text: text ?? null,
+          usedBytes: plan.usedBytes,
+          limitBytes: plan.limitBytes,
+        };
+      }),
       list: authed.memory.list.handler(async ({ context, input }) => {
         const docs = await deps.prisma.memoryDocument.findMany({
           where: {
@@ -70,6 +88,7 @@ export function memoryRoutes(ctx: RouterContext) {
               path: doc.path,
               content: input.content,
               expectedRevision: input.expectedRevision,
+              expectedDocumentId: doc.id,
             },
             {
               operationId: "mem",
@@ -92,6 +111,104 @@ export function memoryRoutes(ctx: RouterContext) {
           path: updated.path,
           content: updated.content,
           revision: updated.revision,
+          updatedAt: new Date().toISOString(),
+        };
+      }),
+      editEntry: authed.memory.editEntry.handler(async ({ context, input }) => {
+        const doc = await deps.prisma.memoryDocument.findFirst({
+          where: {
+            id: input.documentId,
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+          },
+        });
+        if (!doc) throw new IsolationError();
+        if (doc.revision !== input.expectedRevision) throw new ORPCError("CONFLICT");
+        let content: string;
+        try {
+          content = editMemoryEntry(
+            doc.content,
+            input.start,
+            input.end,
+            input.expected,
+            input.replacement,
+          );
+        } catch {
+          throw new ORPCError("CONFLICT", { message: "Memory selection changed" });
+        }
+        const saved = await deps.memory
+          .commit(
+            {
+              scope: doc.scope as "bot" | "user",
+              botId: doc.botId ?? undefined,
+              path: doc.path,
+              content,
+              expectedRevision: input.expectedRevision,
+              expectedDocumentId: doc.id,
+            },
+            {
+              operationId: "mem",
+              traceId: "mem",
+              spaceId: context.actor.spaceId,
+              userId: context.actor.userId,
+              signal: new AbortController().signal,
+            },
+          )
+          .catch((error: unknown) => {
+            if (error instanceof Error && error.message === MEMORY_REVISION_CONFLICT_ERROR)
+              throw new ORPCError("CONFLICT");
+            throw error;
+          });
+        return {
+          ...saved,
+          scope: doc.scope as "bot" | "user",
+          botId: doc.botId,
+          updatedAt: new Date().toISOString(),
+        };
+      }),
+      undoEntry: authed.memory.undoEntry.handler(async ({ context, input }) => {
+        const doc = await deps.prisma.memoryDocument.findFirst({
+          where: {
+            id: input.documentId,
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+          },
+        });
+        if (!doc) throw new IsolationError();
+        if (doc.revision !== input.expectedRevision) throw new ORPCError("CONFLICT");
+        const previous = await deps.prisma.memoryRevision.findUnique({
+          where: {
+            documentId_revision: { documentId: doc.id, revision: input.expectedRevision - 1 },
+          },
+        });
+        if (!previous) throw new ORPCError("NOT_FOUND");
+        const saved = await deps.memory
+          .commit(
+            {
+              scope: doc.scope as "bot" | "user",
+              botId: doc.botId ?? undefined,
+              path: doc.path,
+              content: previous.content,
+              expectedRevision: input.expectedRevision,
+              expectedDocumentId: doc.id,
+            },
+            {
+              operationId: "mem",
+              traceId: "mem",
+              spaceId: context.actor.spaceId,
+              userId: context.actor.userId,
+              signal: new AbortController().signal,
+            },
+          )
+          .catch((error: unknown) => {
+            if (error instanceof Error && error.message === MEMORY_REVISION_CONFLICT_ERROR)
+              throw new ORPCError("CONFLICT");
+            throw error;
+          });
+        return {
+          ...saved,
+          scope: doc.scope as "bot" | "user",
+          botId: doc.botId,
           updatedAt: new Date().toISOString(),
         };
       }),

@@ -147,7 +147,7 @@ import {
   VoiceStatusSchema,
 } from "./domain.js";
 import { ComputerCommandSchema, ProductEventSchema } from "./events.js";
-import { Id, IsoDate, ThinkingLevelSchema } from "./ids.js";
+import { Id, IsoDate, RunStatus, ThinkingLevelSchema } from "./ids.js";
 import {
   IntegrationProviderConfigSchema,
   IntegrationSetupStateSchema,
@@ -717,6 +717,13 @@ export const appContract = {
     heartbeat: oc.input(botId).output(z.object({ ok: z.literal(true) })),
   },
   memory: {
+    prompt: oc.input(botId).output(
+      z.object({
+        text: z.string().nullable(),
+        usedBytes: z.number().int().nonnegative(),
+        limitBytes: z.number().int().positive(),
+      }),
+    ),
     list: oc
       .input(z.object({ botId: Id.optional(), scope: z.enum(["bot", "user"]).optional() }))
       .output(z.array(MemoryDocumentSchema)),
@@ -729,6 +736,21 @@ export const appContract = {
           expectedRevision: z.number().int().positive().optional(),
         }),
       )
+      .output(MemoryDocumentSchema),
+    editEntry: oc
+      .input(
+        z.object({
+          documentId: Id,
+          expectedRevision: z.number().int().positive(),
+          start: z.number().int().nonnegative(),
+          end: z.number().int().nonnegative(),
+          expected: z.string().min(1),
+          replacement: z.string(),
+        }),
+      )
+      .output(MemoryDocumentSchema),
+    undoEntry: oc
+      .input(z.object({ documentId: Id, expectedRevision: z.number().int().positive() }))
       .output(MemoryDocumentSchema),
     remove: oc.input(z.object({ documentId: Id })).output(z.object({ ok: z.literal(true) })),
     exportMarkdown: oc.input(z.object({ botId: Id.optional() })).output(z.string()),
@@ -749,6 +771,26 @@ export const appContract = {
     disconnectProvider: oc.output(z.object({ ok: z.literal(true) })),
   },
   routines: {
+    health: oc.input(z.object({ routineId: Id })).output(
+      z.object({
+        nextRunAt: z.string().nullable(),
+        delayed: z.boolean(),
+        lastAttempt: z.object({ at: z.string(), status: RunStatus }).nullable(),
+        lastSuccessAt: z.string().nullable(),
+        delayAlertsEnabled: z.boolean(),
+        failureAlertsEnabled: z.boolean(),
+        delayAlertResult: z.enum(["sent", "failed", "pending"]).nullable(),
+      }),
+    ),
+    setAlerts: oc
+      .input(
+        z.object({
+          routineId: Id,
+          delayed: z.boolean().optional(),
+          failure: z.boolean().optional(),
+        }),
+      )
+      .output(z.object({ ok: z.literal(true) })),
     listForMentions: oc
       .input(z.object({ botIds: z.array(Id).min(1).max(ROUTINE_MENTION_BATCH_MAX) }))
       .output(z.array(z.object({ botId: Id, routines: z.array(RoutineSchema) }))),

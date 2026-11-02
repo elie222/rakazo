@@ -77,6 +77,7 @@ export * from "./retry-policy.js";
 export * from "./room-settings.js";
 export * from "./routine-mention-batcher.js";
 export * from "./routine-runs.js";
+export * from "./routine-schedule-delay.js";
 export * from "./run-error.js";
 export * from "./run-state.js";
 export * from "./sandbox-command.js";

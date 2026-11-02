@@ -19,6 +19,9 @@ const memoryApi = vi.hoisted(() => ({
     documents: [],
     omitted: [],
   })),
+  editEntry: vi.fn(),
+  undoEntry: vi.fn(),
+  prompt: vi.fn(),
 }));
 // One space, so no "Available in" choice appears.
 vi.mock("../components/integrations/space-availability", () => ({
@@ -37,6 +40,97 @@ vi.mock("../lib/rpc", () => {
     selectedSpaceId: () => null,
   };
 });
+
+it("shows the durable memory sent to a chat on demand", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  memoryApi.list.mockReset().mockResolvedValue([
+    {
+      id: "doc",
+      scope: "bot",
+      botId: "bot-fixture",
+      path: "MEMORY.md",
+      content: "fact",
+      revision: 1,
+      updatedAt: "",
+    },
+  ] as never);
+  memoryApi.prompt.mockResolvedValue({
+    text: "<durable_memory>fact</durable_memory>",
+    usedBytes: 37,
+    limitBytes: 32768,
+  });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await show(root, <KnowledgeSection botId="bot-fixture" />);
+    const button = [...container.querySelectorAll("button")].find(
+      (b) => b.textContent === "View prompt memory",
+    )!;
+    await act(async () => button.click());
+    expect(memoryApi.prompt).toHaveBeenCalledWith({ botId: "bot-fixture" });
+    expect(container.textContent).toContain("37 / 32768 bytes");
+    expect(container.textContent).toContain("<durable_memory>fact</durable_memory>");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("edits the selected memory and offers undo", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const doc = {
+    id: "entry-doc",
+    scope: "bot" as const,
+    botId: "bot-fixture",
+    path: "MEMORY.md",
+    content: "first\nsecond",
+    revision: 2,
+    updatedAt: "",
+  };
+  memoryApi.list.mockReset().mockResolvedValue([doc] as never);
+  memoryApi.editEntry.mockResolvedValue({ ...doc, content: "first\nchanged", revision: 3 });
+  memoryApi.undoEntry.mockResolvedValue({ ...doc, revision: 4 });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const button = (text: string) =>
+    [...container.querySelectorAll("button")].find((b) => b.textContent === text)!;
+  try {
+    await show(root, <KnowledgeSection botId="bot-fixture" />);
+    await act(async () => button("MEMORY.md").click());
+    const editor = container.querySelector("textarea")!;
+    editor.focus();
+    editor.setSelectionRange(7, 10);
+    await act(async () => document.dispatchEvent(new Event("selectionchange", { bubbles: true })));
+    await act(async () => button("Edit selection").click());
+    const replacement = container.querySelector<HTMLInputElement>('[aria-label="Replacement"]')!;
+    expect(replacement.value).toBe("second");
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        replacement,
+        "changed",
+      );
+      replacement.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => button("Replace").click());
+    expect(memoryApi.editEntry).toHaveBeenCalledWith({
+      documentId: doc.id,
+      expectedRevision: 2,
+      start: 6,
+      end: 12,
+      expected: "second",
+      replacement: "changed",
+    });
+    await act(async () => button("Undo").click());
+    expect(memoryApi.undoEntry).toHaveBeenCalledWith({ documentId: doc.id, expectedRevision: 3 });
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
 vi.mock("../lib/artifact-open", () => ({ downloadArtifactBytes: vi.fn() }));
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) => String.raw(parts, ...values);
@@ -53,6 +147,7 @@ vi.mock("@rakazo/ui-web", () => {
       ...props
     }: ComponentProps<"h3"> & { variant?: string }) => <h3 {...props} />,
     Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
+    Input: (props: ComponentProps<"input">) => <input {...props} />,
     Skeleton: Container,
     Tabs: Container,
     TabsList: Container,
@@ -294,14 +389,14 @@ it("downloads only each row’s saved markdown with its own filename", async () 
   }
 });
 
-it("hides empty bot memory and limits long lists to five documents", async () => {
+it("offers the prompt preview and limits long memory lists to five documents", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const host = document.createElement("div");
   const root = createRoot(host);
   try {
     memoryApi.list.mockReset().mockResolvedValueOnce([]);
     await show(root, <KnowledgeSection key="empty" botId="fixture" />);
-    expect(host.textContent).toBe("");
+    expect(host.textContent).toContain("View prompt memory");
     memoryApi.list.mockResolvedValueOnce(
       Array.from({ length: 7 }, (_, i) => ({
         id: `doc-${i}`,
@@ -334,7 +429,7 @@ it.each([" \n", "# Fixture\n\n"])("hides empty memory: %j", async (content) => {
   const root = createRoot(host);
   try {
     await show(root, <KnowledgeSection botId="fixture" />);
-    expect(host.textContent).not.toContain("Memory");
+    expect(host.textContent).toContain("View prompt memory");
     expect(host.textContent).not.toContain("MEMORY.md");
   } finally {
     await act(async () => root.unmount());

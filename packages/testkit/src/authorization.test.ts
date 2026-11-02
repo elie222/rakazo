@@ -353,6 +353,19 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["computer/commands"],
       ["memory/list", {}],
       ["memory/budget", { botId: "missing-bot" }],
+      ["memory/prompt", { botId: "missing-bot" }],
+      [
+        "memory/editEntry",
+        {
+          documentId: "missing-memory",
+          expectedRevision: 1,
+          start: 0,
+          end: 1,
+          expected: "x",
+          replacement: "y",
+        },
+      ],
+      ["memory/undoEntry", { documentId: "missing-memory", expectedRevision: 1 }],
       ["memory/update", { documentId: "missing-memory", content: "Nope" }],
       ["memory/exportMarkdown", {}],
       ["memory/remove"],
@@ -361,6 +374,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["memory/setDefaultScope"],
       ["memory/disconnectProvider"],
       ["routines/list", { botId: "missing-bot" }],
+      ["routines/health", { routineId: "missing-routine" }],
+      ["routines/setAlerts", { routineId: "missing-routine", delayed: true }],
       ["routines/listForMentions", { botIds: ["missing-bot"] }],
       ["routines/create", routineInput("missing-bot")],
       ["routines/update", { routineId: "missing-routine", name: "Nope" }],
@@ -695,6 +710,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ],
       ["artifacts/get", { botId: ownerBot.id, artifactId: ownerArtifact.id }],
       ["export/bot", { botId: ownerBot.id }],
+      ["memory/prompt", { botId: ownerBot.id }],
       ["voice/prepare", { text: "stolen speech", botId: ownerBot.id }],
     ];
     await Promise.all(
@@ -733,6 +749,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
 
     const resourceIdCalls = [
       ["routines/update", { routineId: ownerRoutine.id, name: "Stolen Routine" }],
+      ["routines/health", { routineId: ownerRoutine.id }],
+      ["routines/setAlerts", { routineId: ownerRoutine.id, delayed: true }],
       ["routines/remove", { routineId: ownerRoutine.id }],
       ["routines/testRun", { routineId: ownerRoutine.id }],
       [
@@ -765,6 +783,18 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["agentSkills/update", { skillId: ownerAgentSkill.id, description: "Stolen" }],
       ["agentSkills/remove", { skillId: ownerAgentSkill.id }],
       ["memory/update", { documentId: ownerMemory.id, content: "stolen" }],
+      [
+        "memory/editEntry",
+        {
+          documentId: ownerMemory.id,
+          expectedRevision: 1,
+          start: 0,
+          end: 1,
+          expected: "x",
+          replacement: "stolen",
+        },
+      ],
+      ["memory/undoEntry", { documentId: ownerMemory.id, expectedRevision: 1 }],
       ["connections/complete", { connectionId: ownerConnection.connectionId }],
     ] satisfies Array<[string, unknown]>;
     await Promise.all(

@@ -90,6 +90,20 @@ export class MarkdownMemoryStore implements MemoryStore {
             const live = existing?.revision ?? 0;
             if (live !== request.expectedRevision) throw new Error(MEMORY_REVISION_CONFLICT_ERROR);
           }
+          if (
+            request.expectedDocumentId !== undefined &&
+            existing?.id !== request.expectedDocumentId
+          )
+            throw new Error(MEMORY_REVISION_CONFLICT_ERROR);
+          // Seeded documents may not have a history row until their first save.
+          if (existing) {
+            await tx.memoryRevision.createMany({
+              data: [
+                { documentId: existing.id, revision: existing.revision, content: existing.content },
+              ],
+              skipDuplicates: true,
+            });
+          }
           const doc = existing
             ? await tx.memoryDocument.update({
                 where: { id: existing.id },

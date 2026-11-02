@@ -50,6 +50,14 @@ test("routine editing updates in place, preserves timezone, deletion persists, a
   await openBotPanelTab(page, "Routines");
 
   await page.getByRole("button", { name: /Tokyo check-in/ }).click();
+  const health = page.getByTestId("routine-health");
+  await expect(health.getByText("Next scheduled", { exact: false })).toBeVisible();
+  const delayAlerts = health.getByRole("switch", { name: "Delay alerts" });
+  await expect(delayAlerts).not.toBeChecked();
+  await delayAlerts.click();
+  await expect(delayAlerts).toBeChecked();
+  await expect(health.getByText("Delay alerts run while the worker is running.")).toBeVisible();
+  await captureScreenshot(page, testInfo, "routine-health-alerts");
   await page.locator("label:has-text('Name') input").fill("Weekday check-in");
   await page.locator("label:has-text('Instruction') textarea").fill("Send the revised update");
   await page.getByLabel("How often").selectOption("Weekdays");

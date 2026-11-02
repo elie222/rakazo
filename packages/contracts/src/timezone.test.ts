@@ -2,6 +2,16 @@ import { describe, expect, it } from "vitest";
 import { CreateRoutineInput, RoutineSchema, TimeZoneSchema } from "./domain.js";
 import { appContract } from "./rpc.js";
 
+it("keeps failure alerts opt-in when a routine is created", () => {
+  const routine = CreateRoutineInput.parse({
+    botId: "bot",
+    name: "Report",
+    prompt: "Prepare report",
+    crons: ["0 * * * *"],
+  });
+  expect(routine.notify).toBe(false);
+});
+
 describe("TimeZoneSchema", () => {
   it.each(["UTC", "Pacific/Auckland", "Asia/Kolkata", "Etc/GMT+5"])(
     "accepts IANA timezone %s",

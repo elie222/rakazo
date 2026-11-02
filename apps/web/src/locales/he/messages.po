@@ -653,6 +653,14 @@ msgstr "מתקדם..."
 msgid "Agent from another app"
 msgstr ""
 
+#: src/pages/RoutineHealth.tsx
+msgid "Alert accepted; delivery not confirmed"
+msgstr "ההתראה התקבלה; המסירה לא אושרה"
+
+#: src/pages/RoutineHealth.tsx
+msgid "Alert could not be sent"
+msgstr "לא ניתן לשלוח את ההתראה"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
 msgstr ""
@@ -1112,6 +1120,10 @@ msgstr "עיון בשרתי MCP"
 #: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "מובנה"
+
+#: src/pages/KnowledgeSection.tsx
+msgid "bytes"
+msgstr "בתים"
 
 #: src/pages/shell/chat-header.tsx
 msgid "Call"
@@ -2006,6 +2018,10 @@ msgstr "לא ניתן לטעון את הגדרות המודל"
 msgid "Could not load run history"
 msgstr "לא ניתן לטעון את היסטוריית ההרצות"
 
+#: src/pages/RoutineHealth.tsx
+msgid "Could not load schedule status"
+msgstr "לא ניתן לטעון את מצב התזמון"
+
 #: src/lib/account-security.ts
 #: src/pages/Auth.tsx
 msgid "Could not load sign-in options"
@@ -2136,6 +2152,7 @@ msgstr "לא ניתן להריץ את הרוטינה"
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/RoutineHealth.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
 #: src/pages/shell/use-space-roster.ts
@@ -2455,6 +2472,14 @@ msgstr "ברירת מחדל של OpenClaw"
 msgid "Default scope"
 msgstr "היקף ברירת מחדל"
 
+#: src/pages/RoutineHealth.tsx
+msgid "Delay alerts"
+msgstr "התראות על עיכוב"
+
+#: src/pages/RoutineHealth.tsx
+msgid "Delay alerts run while the worker is running."
+msgstr "התראות עיכוב פועלות כאשר תהליך העבודה פועל."
+
 #: src/components/AccountAccess.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
@@ -2734,6 +2759,10 @@ msgstr "עריכת שם"
 msgid "Edit Profile"
 msgstr "עריכת פרופיל"
 
+#: src/pages/KnowledgeSection.tsx
+msgid "Edit selection"
+msgstr "עריכת הבחירה"
+
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
 msgid "Email"
@@ -2937,6 +2966,10 @@ msgstr "העצירה נכשלה"
 #: src/lib/browser-notifications.ts
 msgid "Failed."
 msgstr "נכשל."
+
+#: src/pages/RoutineHealth.tsx
+msgid "Failure alerts"
+msgstr "התראות על כשל"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Failure handling"
@@ -3424,6 +3457,10 @@ msgstr "תווית"
 msgid "Language"
 msgstr "שפה"
 
+#: src/pages/RoutineHealth.tsx
+msgid "Last attempt"
+msgstr "ניסיון אחרון"
+
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
 #: src/pages/RoutineEditor.tsx
 msgid "Last check {0}: changed"
@@ -3433,6 +3470,10 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "Last check {0}: no changes"
 msgstr ""
+
+#: src/pages/RoutineHealth.tsx
+msgid "Last successful run"
+msgstr "הרצה מוצלחת אחרונה"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
@@ -4040,6 +4081,10 @@ msgstr "כרטיס חדש"
 msgid "Next page"
 msgstr "העמוד הבא"
 
+#: src/pages/RoutineHealth.tsx
+msgid "Next scheduled"
+msgstr "ההרצה הבאה"
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Next settings sections"
 msgstr ""
@@ -4143,6 +4188,10 @@ msgstr "עדיין אין מיומנויות"
 msgid "No submissions"
 msgstr ""
 
+#: src/pages/RoutineHealth.tsx
+msgid "No successful runs yet"
+msgstr "עדיין אין הרצות מוצלחות"
+
 #: src/pages/Board.tsx
 msgid "No tickets yet"
 msgstr "עדיין אין כרטיסים"
@@ -4150,6 +4199,10 @@ msgstr "עדיין אין כרטיסים"
 #: src/pages/RoutineEditor.tsx
 msgid "No trigger"
 msgstr "ללא טריגר"
+
+#: src/pages/RoutineHealth.tsx
+msgid "No upcoming schedule"
+msgstr "אין הרצה מתוזמנת"
 
 #: src/lib/ticket-priority.ts
 msgid "Normal"
@@ -4894,6 +4947,10 @@ msgstr "מתחדש ב-{day}"
 msgid "Reopen"
 msgstr "פתיחה מחדש"
 
+#: src/pages/KnowledgeSection.tsx
+msgid "Replace"
+msgstr "החלפה"
+
 #: src/pages/model-settings/connection-controls.tsx
 msgid "Replace API key"
 msgstr "החלפת מפתח API"
@@ -4906,6 +4963,10 @@ msgstr "החלפת מפתח"
 #: src/components/VaultSettings.tsx
 msgid "Replace value"
 msgstr "החלפת ערך"
+
+#: src/pages/KnowledgeSection.tsx
+msgid "Replacement"
+msgstr "טקסט חלופי"
 
 #: src/pages/shell/message-hover-actions.tsx
 #: src/pages/shell/quote-selection-button.tsx
@@ -5194,6 +5255,10 @@ msgstr "שומר…"
 #: src/lib/call-session.ts
 msgid "Say yes or no, or answer in a sentence."
 msgstr "אפשר לענות כן או לא, או במשפט."
+
+#: src/pages/RoutineHealth.tsx
+msgid "Schedule delayed"
+msgstr "ההפעלה המתוזמנת מתעכבת"
 
 #: src/components/ModelCredits.tsx
 msgid "Scheduled routines"
@@ -6161,6 +6226,7 @@ msgid "Unassigned"
 msgstr "ללא שיוך"
 
 #: src/components/AskCard.tsx
+#: src/pages/KnowledgeSection.tsx
 msgid "Undo"
 msgstr "ביטול"
 
@@ -6373,6 +6439,10 @@ msgstr "גרסה"
 #: src/pages/PluginsOverlay.tsx
 msgid "View all"
 msgstr ""
+
+#: src/pages/KnowledgeSection.tsx
+msgid "View prompt memory"
+msgstr "הצגת זיכרון ההנחיה"
 
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "View source"

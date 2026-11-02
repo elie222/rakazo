@@ -172,6 +172,22 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   ).toContainEqual(expect.objectContaining({ content: `# Chief\n\n${botMarker}\n`, revision: 3 }));
   await botMemoryRow.click();
   await expect(botDocEditor).toHaveValue(new RegExp(botMarker));
+  await botMemory.getByRole("button", { name: "View prompt memory" }).click();
+  await expect(botMemory.getByText(/32768 bytes/)).toBeVisible();
+  await botDocEditor.evaluate((element, text) => {
+    const editor = element as HTMLTextAreaElement;
+    editor.focus();
+    const start = editor.value.indexOf(text);
+    editor.setSelectionRange(start, start + text.length);
+    document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
+  }, botMarker);
+  await botMemory.getByRole("button", { name: "Edit selection" }).click();
+  await botMemory.getByLabel("Replacement").fill("Corrected preference");
+  await captureScreenshot(page, testInfo, "memory-entry-controls");
+  await botMemory.getByRole("button", { name: "Replace", exact: true }).click();
+  await botMemory.getByRole("button", { name: "Undo", exact: true }).click();
+  await botMemoryRow.click();
+  await expect(botDocEditor).toHaveValue(new RegExp(botMarker));
   await botMemory.getByRole("button", { name: "Cancel", exact: true }).click();
 
   // Skills belong to the person in this space, so they open from the account menu, not bot settings.
@@ -308,6 +324,10 @@ test("a new bot hides its untouched memory index", async ({ page }, testInfo) =>
   );
   const settings = page.getByTestId("bot-settings");
   await expect(settings.getByRole("button", { name: "Edit name" })).toHaveText("Researcher");
-  await expect(settings.getByTestId("bot-knowledge-memory")).toHaveCount(0);
+  await expect(
+    settings
+      .getByTestId("bot-knowledge-memory")
+      .getByRole("button", { name: "View prompt memory" }),
+  ).toBeVisible();
   await captureScreenshot(page, testInfo, "bot-settings-empty-memory");
 });

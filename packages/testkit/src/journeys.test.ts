@@ -571,9 +571,14 @@ describeJourneys("required product journeys", () => {
       instructions: "",
       notifyOnFinish: true,
     });
-    const [doc] = await rpc<Array<{ id: string; revision: number }>>(app, cookie, "memory/list", {
-      botId: bot.id,
-    });
+    const [doc] = await rpc<Array<{ id: string; revision: number; content: string }>>(
+      app,
+      cookie,
+      "memory/list",
+      {
+        botId: bot.id,
+      },
+    );
     if (!doc) throw new Error("Missing seeded memory");
     await rpc(app, cookie, "memory/update", { documentId: doc.id, content: "A\nB" });
     const revisionCount = await prisma.memoryRevision.count({ where: { documentId: doc.id } });
@@ -601,6 +606,117 @@ describeJourneys("required product journeys", () => {
     expect(
       await rpc(app, cookie, "memory/update", { documentId: doc.id, content: "legacy" }),
     ).toMatchObject({ content: "legacy", revision: doc.revision + 3 });
+  });
+
+  it("edits one selected memory and refuses stale edits and undo", async () => {
+    const cookie = await signup(app, `memory-entry-${stamp}@rakazo.test`, "Memory entries");
+    const other = await signup(app, `memory-other-${stamp}@rakazo.test`, "Other user");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Keeper",
+      title: "Memory",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const [doc] = await rpc<Array<{ id: string; revision: number; content: string }>>(
+      app,
+      cookie,
+      "memory/list",
+      {
+        botId: bot.id,
+      },
+    );
+    if (!doc) throw new Error("Missing seeded memory");
+    const firstLine = doc.content.split(/\r?\n/)[0]!;
+    const first = await rpc<{ revision: number }>(app, cookie, "memory/editEntry", {
+      documentId: doc.id,
+      expectedRevision: doc.revision,
+      start: 0,
+      end: firstLine.length,
+      expected: firstLine,
+      replacement: "X",
+    });
+    const restored = await rpc<{ revision: number; content: string }>(
+      app,
+      cookie,
+      "memory/undoEntry",
+      {
+        documentId: doc.id,
+        expectedRevision: first.revision,
+      },
+    );
+    expect(restored.content).toBe(doc.content);
+    const seeded = await rpc<{ revision: number }>(app, cookie, "memory/update", {
+      documentId: doc.id,
+      content: "same\nsame\nlast",
+      expectedRevision: restored.revision,
+    });
+    const request = {
+      documentId: doc.id,
+      expectedRevision: seeded.revision,
+      start: 5,
+      end: 9,
+      expected: "same",
+      replacement: "updated",
+    };
+    expect((await raw(app, other, "memory/editEntry", request)).status).not.toBe(200);
+    const edited = await rpc<{ revision: number; content: string }>(
+      app,
+      cookie,
+      "memory/editEntry",
+      request,
+    );
+    expect(edited.content).toBe("same\nupdated\nlast");
+    expect((await raw(app, cookie, "memory/editEntry", request)).status).toBe(409);
+    expect(
+      await rpc(app, cookie, "memory/undoEntry", {
+        documentId: doc.id,
+        expectedRevision: edited.revision,
+      }),
+    ).toMatchObject({ content: "same\nsame\nlast", revision: edited.revision + 1 });
+    expect(
+      (
+        await raw(app, cookie, "memory/undoEntry", {
+          documentId: doc.id,
+          expectedRevision: edited.revision,
+        })
+      ).status,
+    ).toBe(409);
+  });
+
+  it("keeps routine alert preferences within the owner's space", async () => {
+    const owner = await signup(app, `routine-alert-${stamp}@rakazo.test`, "Routine owner");
+    const other = await signup(app, `routine-other-${stamp}@rakazo.test`, "Other user");
+    const bot = await rpc<Bot>(app, owner, "bots/create", {
+      name: "Keeper",
+      title: "Tasks",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const routine = await rpc<{ id: string }>(app, owner, "routines/create", {
+      botId: bot.id,
+      name: "Report",
+      prompt: "Prepare report",
+      crons: ["0 * * * *"],
+      timezone: "UTC",
+      active: true,
+    });
+    expect((await raw(app, other, "routines/health", { routineId: routine.id })).status).toBe(404);
+    expect(
+      (await raw(app, other, "routines/setAlerts", { routineId: routine.id, delayed: true }))
+        .status,
+    ).toBe(404);
+    await rpc(app, owner, "routines/setAlerts", {
+      routineId: routine.id,
+      delayed: true,
+      failure: false,
+    });
+    expect(await rpc(app, owner, "routines/health", { routineId: routine.id })).toMatchObject({
+      delayAlertsEnabled: true,
+      failureAlertsEnabled: false,
+      delayAlertResult: null,
+    });
   });
 
   it("clears a conversation without removing the bot, computer, memory, or routines", async () => {

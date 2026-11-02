@@ -35,6 +35,22 @@ describe("thread route identity", () => {
 });
 
 describe("notification tap routing", () => {
+  it("opens the affected routine from a delay alert", () => {
+    expect(
+      notificationOpenTarget({ botId: "bot-1", routineId: "routine-1", spaceId: "space-1" }),
+    ).toEqual({
+      pathname: "/routine",
+      params: { botId: "bot-1", routineId: "routine-1", spaceId: "space-1" },
+    });
+    expect(
+      notificationOpenTargetFromLink(
+        "rakazo://routine?botId=bot-1&routineId=routine-1&spaceId=space-1",
+      ),
+    ).toEqual({
+      pathname: "/routine",
+      params: { botId: "bot-1", routineId: "routine-1", spaceId: "space-1" },
+    });
+  });
   it("opens the bot thread from an Expo push payload", () => {
     expect(
       notificationOpenTarget({

@@ -203,7 +203,7 @@ export function useRoutineEditor({
                 crons,
                 timezone: timezone ?? localTimezone(),
                 active: routineDraft.active,
-                notify: true,
+                notify: false,
                 webhookEnabled: routineDraft.webhookEnabled,
                 githubEnabled: routineDraft.githubEnabled,
                 messageProvider: routineDraft.messageProvider,

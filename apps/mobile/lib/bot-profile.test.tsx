@@ -45,6 +45,7 @@ vi.mock("./api", () => ({
   currentApiBase: () => "https://api.example",
   loadSessionToken: async () => "token",
   selectedSpaceId: () => "space-a",
+  selectSpace: async () => true,
   captureApiRequestContext: requestContext,
 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => session.generation }));
@@ -60,6 +61,7 @@ vi.mock("expo-router", () => ({
   useRouter: () => ({ push }),
   useNavigation: () => ({ setOptions: vi.fn() }),
   useLocalSearchParams: () => params.current,
+  useIsFocused: () => true,
   useFocusEffect: (effect: () => (() => void) | undefined) => {
     useEffect(effect, [effect]);
     // Lets a test bring the screen back into view.
@@ -260,6 +262,16 @@ function profileRpc(
     if (procedure === "routines/update") return updateRoutine(input);
     if (procedure === "routines/remove") return removeRoutine(input);
     if (procedure === "routines/history") return history(input);
+    if (procedure === "routines/health")
+      return {
+        nextRunAt: null,
+        delayed: false,
+        lastAttempt: null,
+        lastSuccessAt: null,
+        delayAlertsEnabled: false,
+        failureAlertsEnabled: false,
+        delayAlertResult: null,
+      };
     if (procedure === "computer/status") return computer();
     return Promise.reject(new Error(`unexpected ${procedure}`));
   });

@@ -14,6 +14,10 @@ vi.mock("./native", () => ({ native: {}, useMobileTokens: () => ({}) }));
 vi.mock("./user-error", () => ({ errorText: (error: Error) => error.message }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/profile-edit-dialog", () => ({ ProfileEditDialog: () => null }));
+vi.mock("../components/native-action-button", () => ({
+  NativeActionButton: ({ label }: { label: string }) =>
+    createElement("button", { type: "button" }, label),
+}));
 vi.mock("react-native", () => {
   const view = ({ children }: { children?: ReactNode }) => createElement("div", null, children);
   return { Alert: { alert: vi.fn() }, Pressable: view, Text: view, View: view };
@@ -45,7 +49,7 @@ async function render(botId = "bot-a") {
 describe("bot context cards", () => {
   it.each([
     ["scratchpad/list", "Memory", "notes.md", "Open work"],
-    ["memory/list", "Open work", "Review draft", "Memory"],
+    ["memory/list", "Open work", "Review draft", null],
   ])("renders the other section when %s fails", async (failed, heading, item, hidden) => {
     rpc.mockImplementation(async (method: string) => {
       if (method === failed) throw new Error("Request failed");
@@ -54,7 +58,7 @@ describe("bot context cards", () => {
     await render();
     expect(container.textContent).toContain(heading);
     expect(container.textContent).toContain(item);
-    expect(container.textContent).not.toContain(hidden);
+    if (hidden) expect(container.textContent).not.toContain(hidden);
     expect(container.textContent).toContain("Request failed");
   });
 
@@ -76,7 +80,7 @@ describe("bot context cards", () => {
       method === "scratchpad/list" ? [] : [{ id: "memory-a", path: "MEMORY.md", content: "" }],
     );
     await render();
-    expect(container.textContent).toBe("");
+    expect(container.textContent).toContain("View prompt memory");
   });
 
   it("ignores results from the previous bot", async () => {
@@ -92,6 +96,6 @@ describe("bot context cards", () => {
     await render();
     await render("bot-b");
     await act(async () => resolveWork(work));
-    expect(container.textContent).toBe("");
+    expect(container.textContent).not.toContain("Review draft");
   });
 });

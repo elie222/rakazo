@@ -653,6 +653,14 @@ msgstr "Avancé..."
 msgid "Agent from another app"
 msgstr ""
 
+#: src/pages/RoutineHealth.tsx
+msgid "Alert accepted; delivery not confirmed"
+msgstr "Alerte acceptée ; livraison non confirmée"
+
+#: src/pages/RoutineHealth.tsx
+msgid "Alert could not be sent"
+msgstr "Impossible d’envoyer l’alerte"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
 msgstr ""
@@ -1112,6 +1120,10 @@ msgstr "Parcourir les serveurs MCP"
 #: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "Intégré"
+
+#: src/pages/KnowledgeSection.tsx
+msgid "bytes"
+msgstr "octets"
 
 #: src/pages/shell/chat-header.tsx
 msgid "Call"
@@ -2006,6 +2018,10 @@ msgstr "Impossible de charger les paramètres du modèle"
 msgid "Could not load run history"
 msgstr "Impossible de charger l’historique des exécutions"
 
+#: src/pages/RoutineHealth.tsx
+msgid "Could not load schedule status"
+msgstr "Impossible de charger l’état du calendrier"
+
 #: src/lib/account-security.ts
 #: src/pages/Auth.tsx
 msgid "Could not load sign-in options"
@@ -2136,6 +2152,7 @@ msgstr "Impossible d'exécuter la routine"
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/RoutineHealth.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
 #: src/pages/shell/use-space-roster.ts
@@ -2455,6 +2472,14 @@ msgstr "Par défaut d’OpenClaw"
 msgid "Default scope"
 msgstr "Portée par défaut"
 
+#: src/pages/RoutineHealth.tsx
+msgid "Delay alerts"
+msgstr "Alertes de retard"
+
+#: src/pages/RoutineHealth.tsx
+msgid "Delay alerts run while the worker is running."
+msgstr "Les alertes de retard fonctionnent lorsque le worker est actif."
+
 #: src/components/AccountAccess.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
@@ -2734,6 +2759,10 @@ msgstr "Modifier le nom"
 msgid "Edit Profile"
 msgstr "Modifier le profil"
 
+#: src/pages/KnowledgeSection.tsx
+msgid "Edit selection"
+msgstr "Modifier la sélection"
+
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
 msgid "Email"
@@ -2937,6 +2966,10 @@ msgstr "Échec de l'arrêt"
 #: src/lib/browser-notifications.ts
 msgid "Failed."
 msgstr "Échoué."
+
+#: src/pages/RoutineHealth.tsx
+msgid "Failure alerts"
+msgstr "Alertes d’échec"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Failure handling"
@@ -3424,6 +3457,10 @@ msgstr "Libellé"
 msgid "Language"
 msgstr "Langue"
 
+#: src/pages/RoutineHealth.tsx
+msgid "Last attempt"
+msgstr "Dernière tentative"
+
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
 #: src/pages/RoutineEditor.tsx
 msgid "Last check {0}: changed"
@@ -3433,6 +3470,10 @@ msgstr "Dernière vérification {0} : modifications"
 #: src/pages/RoutineEditor.tsx
 msgid "Last check {0}: no changes"
 msgstr "Dernière vérification {0} : aucun changement"
+
+#: src/pages/RoutineHealth.tsx
+msgid "Last successful run"
+msgstr "Dernière exécution réussie"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
@@ -4040,6 +4081,10 @@ msgstr ""
 msgid "Next page"
 msgstr "Page suivante"
 
+#: src/pages/RoutineHealth.tsx
+msgid "Next scheduled"
+msgstr "Prochaine exécution"
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Next settings sections"
 msgstr ""
@@ -4143,6 +4188,10 @@ msgstr "Aucune compétence pour le moment"
 msgid "No submissions"
 msgstr ""
 
+#: src/pages/RoutineHealth.tsx
+msgid "No successful runs yet"
+msgstr "Aucune exécution réussie"
+
 #: src/pages/Board.tsx
 msgid "No tickets yet"
 msgstr ""
@@ -4150,6 +4199,10 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "No trigger"
 msgstr "Aucun déclencheur"
+
+#: src/pages/RoutineHealth.tsx
+msgid "No upcoming schedule"
+msgstr "Aucune exécution prévue"
 
 #: src/lib/ticket-priority.ts
 msgid "Normal"
@@ -4894,6 +4947,10 @@ msgstr ""
 msgid "Reopen"
 msgstr "Rouvrir"
 
+#: src/pages/KnowledgeSection.tsx
+msgid "Replace"
+msgstr "Remplacer"
+
 #: src/pages/model-settings/connection-controls.tsx
 msgid "Replace API key"
 msgstr "Remplacer la clé API"
@@ -4906,6 +4963,10 @@ msgstr "Remplacer la clé"
 #: src/components/VaultSettings.tsx
 msgid "Replace value"
 msgstr ""
+
+#: src/pages/KnowledgeSection.tsx
+msgid "Replacement"
+msgstr "Remplacement"
 
 #: src/pages/shell/message-hover-actions.tsx
 #: src/pages/shell/quote-selection-button.tsx
@@ -5194,6 +5255,10 @@ msgstr "Enregistrement en cours…"
 #: src/lib/call-session.ts
 msgid "Say yes or no, or answer in a sentence."
 msgstr "Dites oui ou non, ou répondez en une phrase."
+
+#: src/pages/RoutineHealth.tsx
+msgid "Schedule delayed"
+msgstr "Exécution planifiée retardée"
 
 #: src/components/ModelCredits.tsx
 msgid "Scheduled routines"
@@ -6161,6 +6226,7 @@ msgid "Unassigned"
 msgstr "Non assigné"
 
 #: src/components/AskCard.tsx
+#: src/pages/KnowledgeSection.tsx
 msgid "Undo"
 msgstr "Annuler"
 
@@ -6373,6 +6439,10 @@ msgstr "Version"
 #: src/pages/PluginsOverlay.tsx
 msgid "View all"
 msgstr ""
+
+#: src/pages/KnowledgeSection.tsx
+msgid "View prompt memory"
+msgstr "Voir la mémoire du prompt"
 
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "View source"

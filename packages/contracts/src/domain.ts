@@ -526,7 +526,7 @@ export const CreateRoutineInput = z
     prompt: z.string().min(1),
     crons: z.array(z.string().min(1)).default([]),
     timezone: TimeZoneSchema.default("UTC"),
-    notify: z.boolean().default(true),
+    notify: z.boolean().default(false),
     active: z.boolean().default(false),
     webhookEnabled: z.boolean().default(false),
     githubEnabled: z.boolean().default(false),

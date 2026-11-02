@@ -3,7 +3,7 @@ import { ORPCError } from "@orpc/client";
 import type { AgentSkill, AgentSkillCatalogEntry, MemoryDocument } from "@rakazo/contracts";
 import { isDeletableMemoryDocument, isEmptyBotMemory } from "@rakazo/contracts";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
-import { Badge, Button, SectionHeading, Skeleton, Textarea } from "@rakazo/ui-web";
+import { Badge, Button, Input, SectionHeading, Skeleton, Textarea } from "@rakazo/ui-web";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@rakazo/ui-web/components/ui/tooltip";
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Plus } from "lucide-react";
@@ -18,6 +18,7 @@ import { SettingsSectionHeading } from "../components/SettingsSectionHeading";
 import { downloadArtifactBytes } from "../lib/artifact-open";
 import { useSpaceQueries } from "../lib/query";
 import { useSpaceRpc } from "../lib/space-rpc";
+import { memoryLineSelection } from "./memory-selection";
 
 const NO_DOCS: MemoryDocument[] = [];
 const NO_SKILLS: AgentSkillCatalogEntry[] = [];
@@ -99,6 +100,8 @@ function MemoryDocumentList({
   const [memoryShown, setMemoryShown] = useState(false);
   const memoryVisible = memoryShown || docs.some((doc) => !isEmptyBotMemory(doc));
   if (memoryVisible && !memoryShown) setMemoryShown(true);
+  const visibleDocs =
+    compact && !memoryVisible ? [] : compact && !showAll ? docs.slice(0, 5) : docs;
   const [openId, setOpenId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [loadedRevision, setLoadedRevision] = useState<number | undefined>();
@@ -107,6 +110,18 @@ function MemoryDocumentList({
   const [actionError, setError] = useState<string | null>(null);
   const error = actionError ?? (listQuery.isError ? t`Could not load` : null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [selection, setSelection] = useState<{
+    start: number;
+    end: number;
+    expected: string;
+  } | null>(null);
+  const [replacement, setReplacement] = useState<string | null>(null);
+  const [undo, setUndo] = useState<{ documentId: string; revision: number } | null>(null);
+  const [promptMemory, setPromptMemory] = useState<{
+    text: string | null;
+    usedBytes: number;
+    limitBytes: number;
+  } | null>(null);
 
   async function setDocs(update: (current: MemoryDocument[]) => MemoryDocument[]) {
     await writeSaved(queryClient, list.queryKey, (current) => update(current ?? []));
@@ -120,6 +135,8 @@ function MemoryDocumentList({
     setDraft(doc.content);
     setError(null);
     setConfirmingDelete(false);
+    setSelection(null);
+    setReplacement(null);
   }
 
   function closeDoc() {
@@ -139,6 +156,7 @@ function MemoryDocumentList({
     try {
       await rpc.memory.remove({ documentId: doc.id });
       await setDocs((current) => current.filter((entry) => entry.id !== doc.id));
+      setPromptMemory(null);
       closeDoc();
     } catch {
       setError(t`Could not remove`);
@@ -160,6 +178,7 @@ function MemoryDocumentList({
       await setDocs((current) =>
         current.map((entry) => (entry.id === updated.id ? updated : entry)),
       );
+      setPromptMemory(null);
       closeDoc();
     } catch (err) {
       if (err instanceof ORPCError && err.code === "CONFLICT") {
@@ -172,6 +191,56 @@ function MemoryDocumentList({
       } else {
         setError(t`Could not save`);
       }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function replaceSelection(doc: MemoryDocument) {
+    if (!selection || replacement === null || loadedRevision === undefined || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await rpc.memory.editEntry({
+        documentId: doc.id,
+        expectedRevision: loadedRevision,
+        ...selection,
+        replacement,
+      });
+      await setDocs((current) =>
+        current.map((entry) => (entry.id === updated.id ? updated : entry)),
+      );
+      setPromptMemory(null);
+      setUndo({ documentId: doc.id, revision: updated.revision });
+      closeDoc();
+    } catch (err) {
+      if (err instanceof ORPCError && err.code === "CONFLICT") setConflicted(true);
+      else setError(t`Could not save`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function undoSelection() {
+    if (!undo || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await rpc.memory.undoEntry({
+        documentId: undo.documentId,
+        expectedRevision: undo.revision,
+      });
+      await setDocs((current) =>
+        current.map((entry) => (entry.id === updated.id ? updated : entry)),
+      );
+      setPromptMemory(null);
+      setUndo(null);
+    } catch (err) {
+      if (err instanceof ORPCError && err.code === "CONFLICT") {
+        setUndo(null);
+        setError(t`Document changed. Reopen to edit the latest version.`);
+        await fetchFresh(queryClient, list);
+      } else setError(t`Could not save`);
     } finally {
       setBusy(false);
     }
@@ -196,7 +265,6 @@ function MemoryDocumentList({
     }
   }
 
-  if (compact && !memoryVisible && !error) return null;
   return (
     <section className={compact ? "mt-6" : undefined}>
       {compact ? (
@@ -205,11 +273,41 @@ function MemoryDocumentList({
         </SectionHeading>
       ) : null}
       <div data-testid={testId} className={compact ? "rounded-xl bg-muted/50 p-4" : undefined}>
+        {input.botId ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              void rpc.memory
+                .prompt({ botId: input.botId! })
+                .then(setPromptMemory)
+                .catch(() => setError(t`Could not load`))
+                .finally(() => setBusy(false));
+            }}
+          >
+            <Trans>View prompt memory</Trans>
+          </Button>
+        ) : null}
+        {promptMemory ? (
+          <div className="text-sm">
+            <p>
+              {promptMemory.usedBytes} / {promptMemory.limitBytes} <Trans>bytes</Trans>
+            </p>
+            <pre className="whitespace-pre-wrap break-words">{promptMemory.text}</pre>
+          </div>
+        ) : null}
         {error ? <div className="pb-2 text-[13px] text-destructive">{error}</div> : null}
         {kb > 0 ? (
           <p className="pb-2 text-[13px] text-muted-foreground" data-testid="memory-budget-note">
             {t`About ${kb} KB of memory no longer reaches the bot.`}
           </p>
+        ) : null}
+        {undo ? (
+          <Button variant="ghost" size="sm" disabled={busy} onClick={() => void undoSelection()}>
+            <Trans>Undo</Trans>
+          </Button>
         ) : null}
         {conflicted ? (
           <div className="pb-2 text-[13px] text-destructive">
@@ -223,7 +321,7 @@ function MemoryDocumentList({
           </div>
         ) : null}
         <div>
-          {(compact && !showAll ? docs.slice(0, 5) : docs).map((doc) => (
+          {visibleDocs.map((doc) => (
             <div key={doc.id} className="border-b border-border last:border-0">
               <div className="flex items-center gap-2">
                 <Button
@@ -260,12 +358,35 @@ function MemoryDocumentList({
                     aria-label={doc.path}
                     disabled={busy}
                     value={draft}
-                    onChange={(event) => setDraft(event.target.value)}
+                    onChange={(event) => {
+                      setDraft(event.target.value);
+                      setSelection(null);
+                      setReplacement(null);
+                    }}
+                    onSelect={(event) => {
+                      const { selectionStart, selectionEnd, value } = event.currentTarget;
+                      setSelection(
+                        draft === doc.content
+                          ? memoryLineSelection(draft, value, selectionStart, selectionEnd)
+                          : null,
+                      );
+                    }}
                     rows={Math.min(16, Math.max(4, draft.split("\n").length + 1))}
                     className={fieldClass}
                     dir="auto"
                   />
                   <div className="mt-2 flex gap-2">
+                    {selection && replacement === null ? (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        type="button"
+                        disabled={busy || conflicted}
+                        onClick={() => setReplacement(selection.expected)}
+                      >
+                        <Trans>Edit selection</Trans>
+                      </Button>
+                    ) : null}
                     <Button
                       variant="secondary"
                       size="sm"
@@ -297,6 +418,23 @@ function MemoryDocumentList({
                       </Button>
                     ) : null}
                   </div>
+                  {replacement !== null ? (
+                    <div className="mt-2">
+                      <Input
+                        aria-label={t`Replacement`}
+                        value={replacement}
+                        onChange={(event) => setReplacement(event.target.value)}
+                      />
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={busy || conflicted}
+                        onClick={() => void replaceSelection(doc)}
+                      >
+                        <Trans>Replace</Trans>
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>

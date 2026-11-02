@@ -1,4 +1,5 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
+import { MEMORY_REVISION_CONFLICT_ERROR } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { MarkdownMemoryStore } from "./index.js";
 
@@ -11,6 +12,51 @@ const context: AdapterContext = {
 };
 
 describe("memory store contract shape", () => {
+  it("rejects a replacement document even when its revision matches", async () => {
+    const tx = {
+      memoryDocument: { findFirst: vi.fn().mockResolvedValue({ id: "new-document", revision: 1 }) },
+      memoryRevision: { createMany: vi.fn() },
+    };
+    const store = new MarkdownMemoryStore({
+      $transaction: (run: (client: typeof tx) => unknown) => run(tx),
+    } as never);
+    await expect(
+      store.commit(
+        {
+          scope: "bot",
+          botId: "bot-1",
+          path: "MEMORY.md",
+          content: "new",
+          expectedRevision: 1,
+          expectedDocumentId: "old-document",
+        },
+        context,
+      ),
+    ).rejects.toThrow(MEMORY_REVISION_CONFLICT_ERROR);
+    expect(tx.memoryRevision.createMany).not.toHaveBeenCalled();
+  });
+  it("records the original revision before replacing a seeded document", async () => {
+    const existing = { id: "memory-1", path: "MEMORY.md", revision: 1, content: "old" };
+    const revisions = { createMany: vi.fn(), create: vi.fn() };
+    const tx = {
+      memoryDocument: {
+        findFirst: vi.fn().mockResolvedValue(existing),
+        update: vi.fn().mockResolvedValue({ ...existing, revision: 2, content: "new" }),
+      },
+      memoryRevision: revisions,
+    };
+    const store = new MarkdownMemoryStore({
+      $transaction: (run: (client: typeof tx) => unknown) => run(tx),
+    } as never);
+    await store.commit(
+      { scope: "bot", botId: "bot-1", path: "MEMORY.md", content: "new", expectedRevision: 1 },
+      context,
+    );
+    expect(revisions.createMany).toHaveBeenCalledWith({
+      data: [{ documentId: "memory-1", revision: 1, content: "old" }],
+      skipDuplicates: true,
+    });
+  });
   it("reads the most recently updated documents first", async () => {
     const updatedAt = new Date("2026-08-16T10:00:00.000Z");
     const findMany = vi
