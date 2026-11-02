@@ -35,6 +35,7 @@ export const TICKET_SILENT_REPLY_GUIDANCE =
 export function runReplyGuidance(trigger: string): string {
   if (trigger === "reaction") return REACTION_SILENT_REPLY_GUIDANCE;
   if (isBackgroundRunTrigger(trigger)) return TICKET_SILENT_REPLY_GUIDANCE;
+  if (trigger === "bot_message") return longWorkProgressGuidance();
   return runAllowsSilentEmpty(trigger) ? ROUTINE_SILENT_REPLY_GUIDANCE : userReplyGuidance();
 }
 
@@ -49,6 +50,9 @@ export function replyGuidanceForOfferedTools(
   if (!disabled?.has("message_user")) return guidance;
   if (guidance === userReplyGuidance()) {
     return `${REPLY_STYLE_GUIDANCE} Always put the complete final answer in your normal reply.`;
+  }
+  if (guidance === longWorkProgressGuidance()) {
+    return "Always put the complete final answer in your normal reply.";
   }
   if (guidance === REACTION_SILENT_REPLY_GUIDANCE) {
     return guidance.replace(", with no message_user call.", ".");

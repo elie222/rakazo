@@ -751,7 +751,7 @@ export async function runTrial(
           })
         ).map((m) => ({
           blocks: m.blocks as MessageBlock[],
-          beforeTools: !firstTool || m.createdAt < firstTool.createdAt,
+          beforeTools: !firstTool || m.createdAt <= firstTool.createdAt,
         })),
       );
       if (scenario.routine && "wakeRoutine" in step) {

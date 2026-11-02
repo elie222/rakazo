@@ -599,6 +599,13 @@ describe("runReplyGuidance", () => {
     expect(runReplyGuidance("messaging")).toBe(runReplyGuidance("user"));
   });
 
+  it("leaves reply style out of bot-to-bot runs", () => {
+    expect(runReplyGuidance("bot_message")).toBe(longWorkProgressGuidance());
+    expect(
+      replyGuidanceForOfferedTools(runReplyGuidance("bot_message"), new Set(["message_user"])),
+    ).toBe("Always put the complete final answer in your normal reply.");
+  });
+
   it("keeps reply style when message_user is turned off", () => {
     const guidance = replyGuidanceForOfferedTools(
       runReplyGuidance("user"),
