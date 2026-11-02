@@ -351,9 +351,17 @@ app.post("/computers", async (c) => {
             : await ensureBotNetwork(body.botId, networkOwner);
         let container: Docker.Container | undefined;
         try {
+          const removeBlockingComputer = async () => {
+            await existing?.remove({ force: true }).catch(async () => {
+              // Removal by id can fail transiently (endpoint still attached,
+              // device-busy mount). Without a name-based fallback the create
+              // below collides with 409 "already in use" on every boot.
+              await docker.getContainer(name).remove({ force: true });
+            });
+          };
           if (existing) {
             await withComputerScreenLock(existing.id, async () => {
-              await existing.remove({ force: true }).catch(() => undefined);
+              await removeBlockingComputer();
               clearComputerScreenRegistry(computerScreens, computerScreenBoots, existing.id);
             });
           }
@@ -374,11 +382,37 @@ app.post("/computers", async (c) => {
           );
           await container.start();
         } catch (error) {
-          // Never force removal: a lost start response may hide a running computer.
-          // Docker also refuses network removal while any endpoint is attached.
+          const nameConflict =
+            (error as { statusCode?: number })?.statusCode === 409 ||
+            /already in use/i.test(String(error));
+          if (!nameConflict) {
+            // Never force removal: a lost start response may hide a running computer.
+            // Docker also refuses network removal while any endpoint is attached.
+            await container?.remove().catch(() => undefined);
+            await createdNetwork?.remove().catch(() => undefined);
+            throw error;
+          }
+          // A leftover container holds the generated name (a removal that failed
+          // silently before, or one the label lookup could not match). Remove it
+          // and retry the create once instead of failing every boot with 500.
           await container?.remove().catch(() => undefined);
-          await createdNetwork?.remove().catch(() => undefined);
-          throw error;
+          await docker.getContainer(name).remove({ force: true }).catch(() => undefined);
+          container = await docker.createContainer(
+            containerCreateOptions({
+              name,
+              image: COMPUTER_IMAGE,
+              botId: body.botId,
+              spaceId: body.spaceId,
+              ...storage,
+              user: computerUser,
+              networkMode,
+              controlToken: randomUUID(),
+              publishControlPort: controlViaLoopback,
+              dns: computerDns,
+              mounts: computerMounts,
+            }),
+          );
+          await container.start();
         }
         return c.json({
           id: container.id,
