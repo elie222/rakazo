@@ -81,10 +81,9 @@ export function ThreadComposerDock({
 
   const noticeHeight = useRef(0);
   const controlsHeight = useRef(0);
-  const report = () => onHeight(noticeHeight.current + (hidden ? 0 : controlsHeight.current));
-  useEffect(() => {
-    onHeight(noticeHeight.current + (hidden ? 0 : controlsHeight.current));
-  }, [hidden, onHeight]);
+  const report = () =>
+    onHeight(noticeHeight.current + (hidden ? 0 : controlsHeight.current + composerRestingPadding));
+  useEffect(report, [composerRestingPadding, hidden, onHeight]);
 
   return (
     // Floats over the messages, which scroll underneath it; only its controls take touches.
@@ -109,7 +108,7 @@ export function ThreadComposerDock({
           pointerEvents="box-none"
           style={{ flexShrink: 1 }}
           onLayout={(event) => {
-            controlsHeight.current = event.nativeEvent.layout.height + composerRestingPadding;
+            controlsHeight.current = event.nativeEvent.layout.height;
             report();
           }}
         >
