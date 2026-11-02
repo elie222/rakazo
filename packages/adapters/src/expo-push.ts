@@ -198,6 +198,8 @@ export class ExpoPushProvider implements NotificationProvider {
     await Promise.allSettled(
       devices.map(async (device) => {
         if (device.userId !== userId || !(Date.parse(call.expiresAt) > Date.now())) return;
+        // PushKit makes every VoIP push ring, so only Android's data push can stop a ring.
+        if (call.ended && device.platform !== "android") return;
         const expires = await this.sessionExpiresAt?.(device.sessionId);
         if (!expires || expires.getTime() <= Date.now()) return;
         // Re-read after the session lookup: sign-out or device handover may have won.
@@ -219,8 +221,7 @@ export class ExpoPushProvider implements NotificationProvider {
             if (result === "sent") return;
             invalidVoip = result === "invalid";
           }
-          // Only Android's native handler can stop a ring; a visible iOS alert cannot be recalled.
-          if (!device.expoToken || (call.ended && device.platform !== "android")) return;
+          if (!device.expoToken) return;
           invalidExpo =
             (await this.sendCallPush(
               userId,

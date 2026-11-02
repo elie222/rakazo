@@ -459,7 +459,7 @@ export type IncomingCallNotification = {
   botId: string;
   botName: string;
   expiresAt: string;
-  /** Stops the ring on devices that are still ringing for a call settled elsewhere. */
+  /** Stops a ring that is still going on Android devices for a call settled elsewhere. */
   ended?: true;
 };
 

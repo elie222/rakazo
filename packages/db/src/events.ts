@@ -76,6 +76,7 @@ export class AnswerTooLongError extends Error {
 const EVENT_BATCH_SIZE = 200;
 const PUSH_CATCH_UP_MS = 30_000;
 const POLL_ONLY_CATCH_UP_MS = 400;
+const INCOMING_CALL_POLL_MS = 3_000;
 
 export interface AppendEventInput {
   spaceId: string;
@@ -2270,7 +2271,8 @@ async function* followIncomingCallSignals(
   const unsubscribe = await realtime
     ?.subscribe(`incoming-calls:${userId}`, () => latch.notify())
     .catch(() => undefined);
-  const catchUpMs = unsubscribe ? PUSH_CATCH_UP_MS : POLL_ONLY_CATCH_UP_MS;
+  // Without fanout each wake re-reads every ringing request, so poll gently.
+  const catchUpMs = unsubscribe ? PUSH_CATCH_UP_MS : INCOMING_CALL_POLL_MS;
   try {
     let seen = latch.generation;
     yield;

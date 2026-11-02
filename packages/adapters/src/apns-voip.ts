@@ -114,7 +114,6 @@ export class ApnsVoipProvider implements VoipPushProvider {
           botId: call.botId,
           botName: call.botName.slice(0, 100),
           expiresAt: call.expiresAt,
-          ...(call.ended ? { ended: "1" } : {}),
         }),
       );
       if (

@@ -163,7 +163,7 @@ describe("mobile incoming calls", () => {
     );
     expect(fake.startCall).not.toHaveBeenCalled();
   });
-  it("does not start audio after a session changes while answering", async () => {
+  it("hangs up instead of starting audio when the session changes while answering", async () => {
     const call = await ring();
     fake.rpc.mockImplementation(async (path: string) => {
       if (path === "threads/answerCall") {
@@ -172,8 +172,13 @@ describe("mobile incoming calls", () => {
       }
       return {};
     });
-    await respondToMobileCall(call, "answer");
+    await expect(respondToMobileCall(call, "answer")).rejects.toThrow();
     expect(fake.startCall).not.toHaveBeenCalled();
+    expect(fake.rpc).toHaveBeenCalledWith(
+      "threads/endCall",
+      { botId: call.id, callId: call.incomingCall.callId },
+      expect.anything(),
+    );
   });
   it("stops ringing when another device answers", async () => {
     await ring();

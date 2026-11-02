@@ -167,9 +167,10 @@ export async function respondToMobileCall(call: IncomingBotCall, action: "answer
         rpc("threads/answerCall", target, { requestContext: context }),
       );
       answered = true;
-      if (generation !== currentSessionGeneration()) return;
+      // A sign-out or server switch mid-answer hangs up below with the answer's own session.
+      if (generation !== currentSessionGeneration()) throw new Error(t("Something went wrong. Try again."));
       const voice = await rpc("voice/status", {}, { requestContext: context });
-      if (generation !== currentSessionGeneration()) return;
+      if (generation !== currentSessionGeneration()) throw new Error(t("Something went wrong. Try again."));
       if (nativeEnded.has(target.callId)) throw new Error(t("This call is no longer ringing."));
       activeNativeCall = target.callId;
       startCall({
@@ -188,7 +189,7 @@ export async function respondToMobileCall(call: IncomingBotCall, action: "answer
     handled.add(target.callId);
     if (action === "decline") await native?.endIncomingCall(target.callId);
   } catch (error) {
-    if (answered && context && generation === currentSessionGeneration()) {
+    if (answered && context) {
       await rpc(
         "threads/endCall",
         { botId: call.id, callId: call.incomingCall.callId },

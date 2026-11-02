@@ -83,13 +83,11 @@ describe("incoming call delivery", () => {
     expect(body.title).toBeUndefined();
     expect(body.body).toBeUndefined();
   });
-  it("stops the ring through VoIP and Android data pushes but never a visible iOS alert", async () => {
+  it("stops the ring only through Android data pushes, since every VoIP push rings", async () => {
     const { provider, device, voip, fetch } = fixture();
     const ended = { ...call, ended: true as const };
     await provider.incomingCall("user-1", ended);
-    expect(voip.send).toHaveBeenCalledWith("fake-voip-token", ended);
-    voip.send.mockResolvedValue("unavailable");
-    await provider.incomingCall("user-1", ended);
+    expect(voip.send).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
     device.platform = "android";
     await provider.incomingCall("user-1", ended);

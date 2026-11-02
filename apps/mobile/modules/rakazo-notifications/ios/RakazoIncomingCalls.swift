@@ -52,7 +52,7 @@ final class IncomingCalls: NSObject, PKPushRegistryDelegate, CXProviderDelegate,
   }
   func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {
     var call: [String: String] = [:]
-    for key in ["callId", "botId", "botName", "expiresAt", "ended"] {
+    for key in ["callId", "botId", "botName", "expiresAt"] {
       if let value = payload.dictionaryPayload[key] as? String { call[key] = value }
     }
     // Even malformed or expired VoIP pushes must be reported before completion.
@@ -78,11 +78,6 @@ final class IncomingCalls: NSObject, PKPushRegistryDelegate, CXProviderDelegate,
     provider.reportNewIncomingCall(with: id, update: update) { error in
       DispatchQueue.main.async {
       defer { completion() }
-      // Settled on another device. Reporting first satisfies PushKit; a joined call keeps going.
-      if call["ended"] != nil {
-        if self.active != id { self.end(id, reason: .answeredElsewhere) }
-        return
-      }
       guard error == nil else { return }
       guard self.hasSession(), self.expiry(call) > Date(), call["botId"] != nil, call["callId"] != nil else {
         self.provider.reportCall(with: id, endedAt: Date(), reason: .unanswered)

@@ -23,7 +23,7 @@ class RakazoMessagingService : ExpoFirebaseMessagingService() {
     val call = runCatching { JSONObject(message.data["body"] ?: "{}") }.getOrNull() ?: JSONObject()
     when (call.optString("kind")) {
       "incoming_call" -> IncomingCalls.report(this, call)
-      "incoming_call_ended" -> IncomingCalls.end(this, call.optString("callId"))
+      "incoming_call_ended" -> IncomingCalls.settled(this, call)
       else -> super.onMessageReceived(message)
     }
   }
@@ -42,8 +42,11 @@ internal object IncomingCalls {
   }.getOrDefault(0L)
   fun fresh(call: JSONObject) = expiry(call) > System.currentTimeMillis()
   private fun id(call: JSONObject) = call.optString("callId").hashCode()
+  /** Calls settled while their start push was still in flight must not ring when it lands. */
+  private fun ended(context: Context) = context.getSharedPreferences("rakazo.ended_calls", Context.MODE_PRIVATE)
   fun report(context: Context, call: JSONObject) {
     if (!fresh(call) || NotificationStorage(context).token.isBlank()) return
+    if (ended(context).contains(call.optString("callId"))) return
     val known = prefs(context).contains(call.optString("callId"))
     prefs(context).edit().putString(call.optString("callId"), call.toString()).apply()
     if (!known) context.sendBroadcast(Intent(CHANGED).setPackage(context.packageName))
@@ -82,6 +85,15 @@ internal object IncomingCalls {
     runCatching { manager.notify(id(call), notification) }
   }
   fun exists(context: Context, callId: String) = prefs(context).contains(callId)
+  fun settled(context: Context, call: JSONObject) {
+    val now = System.currentTimeMillis()
+    val store = ended(context)
+    val edit = store.edit()
+    for ((key, expires) in store.all) if ((expires as? Long ?: 0L) <= now) edit.remove(key)
+    if (fresh(call)) edit.putLong(call.optString("callId"), expiry(call))
+    edit.apply()
+    end(context, call.optString("callId"))
+  }
   fun end(context: Context, callId: String) {
     context.getSystemService(NotificationManager::class.java).cancel(callId.hashCode())
     prefs(context).edit().remove(callId).apply()
