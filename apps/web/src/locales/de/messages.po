@@ -4271,6 +4271,10 @@ msgstr "Einmalig"
 msgid "One-time purchase. Credits do not expire."
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "Only enter a code {codeHost} sent you."
+msgstr ""
+
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/shell/computer-panel.tsx
@@ -4790,6 +4794,7 @@ msgid "Release control"
 msgstr "Kontrolle abgeben"
 
 #: src/components/InstructionSettings.tsx
+#: src/lib/client-update.ts
 msgid "Reload"
 msgstr "Neu laden"
 
@@ -6236,6 +6241,10 @@ msgstr "Anweisungen aktualisieren?"
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
 msgstr ""
+
+#: src/lib/client-update.ts
+msgid "Update required"
+msgstr "Update erforderlich"
 
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"

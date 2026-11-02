@@ -1036,7 +1036,7 @@ describe("Pi connector tool dispatch", () => {
     );
   });
 
-  it("runs schedule tools and remember sequentially", async () => {
+  it("runs schedule tools, remember and request_secret sequentially", async () => {
     const executeTool = vi.fn(async () => ({ ok: true }));
     const runtime = new PiAgentRuntime();
 
@@ -1054,6 +1054,7 @@ describe("Pi connector tool dispatch", () => {
           scheduleCancelTool,
           destinationTool,
           builtinAgentTools.find((tool) => tool.name === "remember")!,
+          builtinAgentTools.find((tool) => tool.name === "request_secret")!,
         ],
         model: { provider: "test", id: "dispatch-test-model" },
         executeTool,
@@ -1079,6 +1080,8 @@ describe("Pi connector tool dispatch", () => {
     // schedule_cancel is deferred, so the use_tool that runs it is sequential.
     expect(modes.get("use_tool")).toBe("sequential");
     expect(modes.get("remember")).toBe("sequential");
+    // Two code requests in one batch would each wait on a card that one answer approves.
+    expect(modes.get("request_secret")).toBe("sequential");
     expect(modes.get("destination_write")).toBe("default");
   });
 

@@ -6,7 +6,7 @@ import { redactSecrets, sandboxCommandTimeoutMs } from "@rakazo/core";
 import { RunHistoryWriteError } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { redactShellStreams } from "./agent-environment.js";
-import { resolveLoginFill, shellCommandEnvironment } from "./bot-secrets.js";
+import { resolveCodeFill, resolveLoginFill, shellCommandEnvironment } from "./bot-secrets.js";
 import {
   browserActFromTool,
   browserNavigateFromTool,
@@ -212,6 +212,18 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
               addRunSecrets(ctx, resolved.redactions);
               ctx.state.walletHosts.add(new URL(resolved.origin).host);
               return { text: resolved.text, origin: resolved.origin };
+            },
+            resolveCodeFill: async () => {
+              const resolved = await resolveCodeFill({
+                prisma: deps.prisma,
+                secretStore: deps.secretStore,
+                scope: run,
+                runId: run.id,
+              });
+              if ("error" in resolved) return resolved;
+              addRunSecrets(ctx, resolved.redactions);
+              const { text, origin, claim, restore } = resolved;
+              return { text, origin, claim, restore };
             },
             resolvePayTokenFill: async (step) => {
               const paymentWallet = deps.paymentWallet;
