@@ -384,6 +384,12 @@ export async function prepareToolRequest(
         };
     }
     const purchase = approved ?? (await detectPurchase(ctx, name, rest));
+    // An approval given for something else never covers a purchase: the call is made again and asks.
+    if (purchase && !approved && nextApprovedTool === name)
+      return {
+        error:
+          "This would complete a purchase, which the user has not approved, so nothing was pressed. Call the tool again with only that step; that asks the user.",
+      };
     if (purchase) {
       args = { ...rest, purchaseApproval: purchase };
       // The wallet owner approved paying at a site this run typed the approved card or pay token into: the

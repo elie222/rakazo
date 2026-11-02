@@ -3583,6 +3583,25 @@ describe("a click that completes a purchase on a website", () => {
     expect(f.pauseRunForInput).toHaveBeenCalledTimes(2);
   });
 
+  it("never lets an approval given for something else press a purchase the page now shows", async () => {
+    const page = pageBrowser(null);
+    const f = fixture({
+      builtin: true,
+      browser: page.provider,
+      rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "browser_act" }],
+      confirmationsOverride: true,
+    } as never);
+    f.setCalls([payCall()]);
+    await f.run();
+    expect(isApprovalPausedResult(f.results[0])).toBe(true);
+    f.effects[0]!.status = "approved";
+    page.provider.purchaseCheck = async () => ({ purchase });
+    f.setCalls([payCall(undefined, "call-2")]);
+    await f.run();
+    expect(f.results.at(-1)).toEqual({ error: expect.stringContaining("not approved") });
+    expect(page.acts).toEqual([]);
+  });
+
   it("ignores a purchase approval the model supplies", async () => {
     const page = pageBrowser(null);
     const f = fixture({ builtin: true, browser: page.provider });
