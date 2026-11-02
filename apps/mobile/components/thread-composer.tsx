@@ -235,6 +235,11 @@ export function ThreadComposer({
         })
       : [];
   function updateMentionQuery(value: string, start: number, end = start) {
+    // A mention selected by a backspace is waiting to be deleted, not re-picked.
+    if (selectedMentionRef.current !== null) {
+      setMentionQuery(null);
+      return;
+    }
     const query = composerMentionQuery(
       value,
       start,

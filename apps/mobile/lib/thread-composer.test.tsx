@@ -744,6 +744,7 @@ describe("thread composer isolation", () => {
     type("first @Helper  then @Helpe ");
     expect(field().value).toBe("first @Helper  then ");
     expect(composer.current!.snapshot().mentions).toEqual([bot]);
+    select(20);
     select(13);
     type("first @Helpe  then ");
     select(13);

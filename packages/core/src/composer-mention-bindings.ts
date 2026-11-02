@@ -282,6 +282,9 @@ export function resolveComposerMentionBackspace(
   if (next.length !== previous.length - 1) return null;
   const edit = editBetween(previous, next, hints);
   if (edit.length !== 0 || edit.end - edit.start !== 1) return null;
+  // A forward delete removes the character after the caret; only a backspace selects a mention.
+  if (!hints.before?.some((caret) => caret.start === caret.end && caret.start === edit.end))
+    return null;
   const binding = bindings.find(
     (candidate) =>
       edit.end === candidate.end ||

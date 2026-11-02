@@ -324,6 +324,18 @@ describe("two-step mention delete", () => {
     expect(result).toMatchObject({ text, caret: 13, selected: 9 });
   });
 
+  it("leaves a forward delete after a mention to the ordinary edit", () => {
+    expect(
+      resolveComposerMentionBackspace(
+        text,
+        "@Boband @Bob ",
+        bindings,
+        { before: [caret(4)] },
+        null,
+      ),
+    ).toBeNull();
+  });
+
   it.each([
     ["plain text", "@Bob nd @Bob ", { start: 6, end: 6 }],
     ["the character after the space", "@Bob nd @Bob ", { start: 6, end: 6 }],
