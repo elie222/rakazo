@@ -65,7 +65,8 @@ export const TR_MESSAGES: Record<string, string> = {
   "This link expires in one day. If you did not claim a page, ignore this email.":
     "Bu bağlantının süresi bir gün içinde dolar. Bir sayfa talep etmediyseniz bu e-postayı yok sayın.",
   "Your Rakazo page claim: {name}": "Rakazo sayfa sahiplik talebiniz: {name}",
-  "Your changes to the {name} page are approved.": "{name} sayfasındaki değişiklikleriniz onaylandı.",
+  "Your changes to the {name} page are approved.":
+    "{name} sayfasındaki değişiklikleriniz onaylandı.",
   "We couldn't approve your changes to the {name} page.":
     "{name} sayfasındaki değişikliklerinizi onaylayamadık.",
 };
