@@ -2,10 +2,12 @@ import type {
   JobPublisher,
   MessagingInboundAttachment,
   MessagingInboundMessage,
+  SandboxProvider,
 } from "@rakazo/adapter-kit";
 import { messagingDeliverJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT, isAttachmentAudioMimeType } from "@rakazo/contracts";
+import type { MessagingCommand } from "@rakazo/core";
 import {
   displayName,
   messageBlockForArtifact,
@@ -35,6 +37,7 @@ import {
   MESSAGE_ROUTING_REASON,
   MESSAGE_ROUTING_RESERVATION_MS,
 } from "./team-chat-startup.js";
+import { cancelThreadRuns, finishThreadStop, STOPPED_BY_MESSAGE_NOTE } from "./thread-target.js";
 import {
   deliverWebhookEvent,
   formatUntrustedDeliveryPayload,
@@ -46,6 +49,7 @@ export interface MessagingInboundDeps {
   prisma: PrismaClient;
   events: Pick<ThreadEvents, "sendUserMessage" | "notify">;
   jobs: Pick<JobPublisher, "enqueue">;
+  sandbox: SandboxProvider;
   provision: (
     request: MessagingIdentityRequest,
     env: SignupPolicyEnv,
@@ -107,7 +111,7 @@ type IdentityRow = {
 
 /**
  * Inbound routing. 1:1 messages are messages to the sender's own bot (with
- * provisioning on first contact and the YES/NO/LEAVE owner commands).
+ * provisioning on first contact and the YES/NO/LEAVE/STOP owner commands).
  * Group messages drive channel discovery — upsert channel + members, DM
  * invites to linked owners, one intro when strangers are present — and
  * fan out to every approved member bot's own thread.
@@ -146,7 +150,13 @@ async function handleDirectEvent(
     if (!text && attachments.length === 0) return;
     // Owner commands are only parsed in the verified 1:1 conversation.
     const command = parseMessagingCommand(event.content);
-    if (command && (await applyOwnerCommand(deps, existing, command))) return;
+    if (command === "stop") {
+      // Only a bare "stop" is the command; one carrying media is delivered as a message.
+      if (attachments.length === 0 && !event.mediaUrl) {
+        await stopOwnerWork(deps, existing, event);
+        return;
+      }
+    } else if (command && (await applyOwnerCommand(deps, existing, command))) return;
     // A linked sender pasting a fresh code re-points this address at another
     // of their bots (only their own codes apply).
     if (await tryRedeemLinkCode(deps, event)) return;
@@ -521,11 +531,48 @@ async function tryRedeemLinkCode(
   return true;
 }
 
+/**
+ * The owner's "stop", an owner command like YES/NO/LEAVE: Stop for their bot's chat, always
+ * answered by text. The answer's row, written first, is this delivery's receipt, so a
+ * redelivered or concurrent copy finds it and changes nothing.
+ */
+async function stopOwnerWork(
+  deps: MessagingInboundDeps,
+  identity: IdentityRow,
+  event: MessagingInboundMessage,
+): Promise<void> {
+  const thread = await deps.prisma.thread.findFirstOrThrow({
+    where: { botId: identity.botId },
+    select: { id: true },
+  });
+  const key = `command:stop:${identity.id}:${event.handle}`;
+  const target = { kind: "bot", botId: identity.botId, threadId: thread.id } as const;
+  const stop = await deps.prisma.$transaction(async (tx) => {
+    const receipt = await tx.messagingOutbound.createMany({
+      data: [
+        { idempotencyKey: key, kind: "dm", identityId: identity.id, body: "Nothing is running." },
+      ],
+      skipDuplicates: true,
+    });
+    if (receipt.count === 0) return null;
+    const stop = await cancelThreadRuns(identity, target, { botId: identity.botId })(tx);
+    if (stop.runIds.length) {
+      await tx.messagingOutbound.update({
+        where: { idempotencyKey: key },
+        data: { body: STOPPED_BY_MESSAGE_NOTE },
+      });
+    }
+    return stop;
+  });
+  if (stop?.runIds.length) await finishThreadStop(deps, identity, target, stop);
+  await enqueueDeliverJob(deps);
+}
+
 /** Returns true when the command matched a pending item and was handled. */
 async function applyOwnerCommand(
   deps: MessagingInboundDeps,
   identity: IdentityRow,
-  command: "approve" | "decline" | "leave",
+  command: Exclude<MessagingCommand, "stop">,
 ): Promise<boolean> {
   if (command === "leave") {
     const membership = await deps.prisma.messagingChannelMember.findFirst({

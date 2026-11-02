@@ -2112,6 +2112,93 @@ describeJourneys("required product journeys", () => {
     );
   });
 
+  it("15c: a bare stop message ends the work like Stop, and is an ordinary message when idle", async () => {
+    const cookie = await signup(app, `stop-msg-j-${stamp}@rakazo.test`, "Stop Ada");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const notes = (snap: Snap) =>
+      snap.messages.flatMap((message) =>
+        message.blocks.filter((block) => block.kind === "meta").map((block) => block.text),
+      );
+
+    const working = await rpc<{ runId: string }>(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "keep working until I stop you",
+    });
+    await waitFor(app, cookie, bot.id, (snap) => snap.run?.status === "running");
+    // With a file attached it is not just "stop": it steers like any message.
+    const file = await rpc<{ id: string }>(app, cookie, "artifacts/create", {
+      botId: bot.id,
+      name: "stop.txt",
+      mimeType: "text/plain",
+      contentBase64: Buffer.from("stop").toString("base64"),
+    });
+    await rpc(app, cookie, "threads/send", { botId: bot.id, text: "stop", artifactIds: [file.id] });
+    expect((await prisma.run.findUniqueOrThrow({ where: { id: working.runId } })).status).toBe(
+      "running",
+    );
+    const stop = { botId: bot.id, text: " Stop now! ", clientNonce: `stop-msg-${stamp}` };
+    const stopped = await rpc<{ runId: string }>(app, cookie, "threads/send", stop);
+    expect(stopped.runId).toBe(working.runId);
+    expect((await prisma.run.findUniqueOrThrow({ where: { id: working.runId } })).status).toBe(
+      "cancelled",
+    );
+    const afterStop = await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id });
+    expect(afterStop.run).toBeNull();
+    expect(notes(afterStop)).toEqual(["Stopped. Anything already done stays done."]);
+    expect(await prisma.steeringMessage.count({ where: { botId: bot.id } })).toBe(0);
+
+    // A retried stop is the same send: it leaves newer work alone.
+    const newer = await rpc<{ runId: string }>(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "keep working until I stop you",
+    });
+    await waitFor(app, cookie, bot.id, (snap) => snap.run?.status === "running");
+    expect((await rpc<{ runId: string }>(app, cookie, "threads/send", stop)).runId).toBe(
+      working.runId,
+    );
+    expect((await prisma.run.findUniqueOrThrow({ where: { id: newer.runId } })).status).toBe(
+      "running",
+    );
+    await rpc(app, cookie, "threads/stop", { botId: bot.id });
+    expect(notes(await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id }))).toHaveLength(1);
+
+    // A waiting card is work too: stop cancels it instead of answering it.
+    const asked = await rpc<{ runId: string }>(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "ask me which city to use",
+    });
+    await waitFor(
+      app,
+      cookie,
+      bot.id,
+      (snap) => snap.run?.id === asked.runId && snap.run.status === "waiting_input",
+    );
+    const stoppedCard = await rpc<{ runId: string }>(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "stop",
+    });
+    expect(stoppedCard.runId).toBe(asked.runId);
+    expect((await prisma.run.findUniqueOrThrow({ where: { id: asked.runId } })).status).toBe(
+      "cancelled",
+    );
+    const afterCard = await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id });
+    expect(afterCard.messages.flatMap((message) => message.blocks)).not.toContainEqual(
+      expect.objectContaining({ kind: "ask", answer: "stop" }),
+    );
+    expect(notes(afterCard)).toHaveLength(2);
+
+    // Nothing running: "stop" starts an ordinary turn and adds no note.
+    const idle = await sendAndWait(app, cookie, bot.id, "stop");
+    expect([working.runId, asked.runId]).not.toContain(idle.run.id);
+    expect(notes(idle)).toHaveLength(2);
+  });
+
   it("16: routine test-run and plugin connect/revoke", async () => {
     const ada = await signup(app, `plug-j-${stamp}@rakazo.test`, "Plug Ada");
     const bob = await signup(app, `plug-bob-j-${stamp}@rakazo.test`, "Plug Bob");
@@ -4006,7 +4093,13 @@ type Snap = {
     id: string;
     seq: number;
     runId?: string | null;
-    blocks: Array<{ kind?: string; status?: string; answer?: string; actions?: unknown[] }>;
+    blocks: Array<{
+      kind?: string;
+      status?: string;
+      answer?: string;
+      text?: string;
+      actions?: unknown[];
+    }>;
   }>;
   run: { id: string; status: string } | null;
   activeRuns?: Array<{ id: string; status: string }>;
