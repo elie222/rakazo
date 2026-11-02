@@ -1,5 +1,6 @@
 import { execFileSync, spawn } from "node:child_process";
 import { mkdir, rm } from "node:fs/promises";
+import type { Server } from "node:http";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -82,7 +83,7 @@ try {
       resolveHostname: thirdParties.resolveHostname,
     },
   });
-  const server = serve({ fetch: handles.app.fetch, hostname: "0.0.0.0", port });
+  const server = serve({ fetch: handles.app.fetch, hostname: "0.0.0.0", port }) as Server;
   try {
     await waitForHealth(`${API_URL}/health`);
     const child = spawn("pnpm", ["ios:screenshots", "--", "--section", "usage"], {
