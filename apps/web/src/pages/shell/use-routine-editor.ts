@@ -38,7 +38,14 @@ export function useRoutineEditor({
 }) {
   const { t } = useLingui();
   const [routineDraft, setRoutineDraft] = useState<RoutineDraftState>(emptyRoutineDraft());
-  const [routineWebhookSecret, setRoutineWebhookSecret] = useState<string | null>(null);
+  const [revealedWebhookSecret, setRoutineWebhookSecret] = useState<{
+    botId: string;
+    secret: string;
+  } | null>(null);
+  const routineWebhookSecret =
+    revealedWebhookSecret && revealedWebhookSecret.botId === active?.id
+      ? revealedWebhookSecret.secret
+      : null;
   const [editingRoutine, setEditingRoutine] = useState<Routine | null>(null);
   const [deleteRoutineTarget, setDeleteRoutineTarget] = useState<Routine | null>(null);
   const [savingRoutine, setSavingRoutine] = useState(false);
@@ -49,7 +56,7 @@ export function useRoutineEditor({
   const ensureWebhookSecret = (botId: string) =>
     sharedInflight(webhookSecretProvisionRef.current, botId, async () => {
       const result = await rpc.bots.rotateWebhookSecret({ botId });
-      setRoutineWebhookSecret(result.secret);
+      setRoutineWebhookSecret({ botId, secret: result.secret });
       setBots((current) =>
         current.map((bot) => (bot.id === botId ? { ...bot, webhookConfigured: true } : bot)),
       );
