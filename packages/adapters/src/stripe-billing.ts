@@ -73,7 +73,9 @@ const subscriptionSchema = z.object({
         price: idSchema.extend({
           product: z.string().optional(),
           unit_amount: z.number().int().nullish(),
-          recurring: z.object({ interval: z.string() }).nullish(),
+          recurring: z
+            .object({ interval: z.string(), interval_count: z.number().int().nullish() })
+            .nullish(),
         }),
       }),
     ),
@@ -314,9 +316,13 @@ export class StripeBillingProvider implements BillingProvider {
       (status !== "active" && status !== "trialing") ||
       subscription.cancel_at_period_end ||
       subscription.cancel_at != null ||
+      // One plan billed every month, as own-key checkout creates it.
+      subscription.items.data.length !== 1 ||
+      (item.quantity ?? 1) !== 1 ||
       item.price.recurring?.interval !== "month" ||
+      (item.price.recurring.interval_count ?? 1) !== 1 ||
       // Twelve months at the current price must still cost more than the year.
-      (item.price.unit_amount ?? 0) * (item.quantity ?? 1) * 12 <= amountCents ||
+      (item.price.unit_amount ?? 0) * 12 <= amountCents ||
       subscriptions.some((s) => live(s) && creditAmount(s.metadata?.rakazo_credit_cents))
     )
       return false;

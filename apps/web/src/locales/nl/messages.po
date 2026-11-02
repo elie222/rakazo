@@ -422,7 +422,7 @@ msgstr "@{0}"
 
 #: src/components/ModelCredits.tsx
 msgid "/ month"
-msgstr ""
+msgstr "/ maand"
 
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
@@ -1029,7 +1029,7 @@ msgstr "Facturatie"
 
 #: src/components/ModelCredits.tsx
 msgid "Billing period"
-msgstr ""
+msgstr "Factuurperiode"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
@@ -5736,7 +5736,7 @@ msgstr "Abonneren"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe for {annualPrice} / year"
-msgstr ""
+msgstr "Abonneren voor {annualPrice} / jaar"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
@@ -5771,15 +5771,15 @@ msgstr "Ondersteunt denken"
 #: src/components/ModelCredits.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
-msgstr ""
+msgstr "Overstappen"
 
 #: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
-msgstr ""
+msgstr "Overstappen op jaarlijks"
 
 #: src/components/ModelCredits.tsx
 msgid "Switch to yearly?"
-msgstr ""
+msgstr "Overstappen op jaarlijks?"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
@@ -6580,7 +6580,7 @@ msgstr "jaar"
 
 #: src/components/ModelCredits.tsx
 msgid "Yearly"
-msgstr ""
+msgstr "Jaarlijks"
 
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
@@ -6618,7 +6618,7 @@ msgstr "Jouw Anthropic"
 
 #: src/components/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
-msgstr ""
+msgstr "Je kaart wordt vandaag belast met {annualPrice}, min het ongebruikte deel van deze maand."
 
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
@@ -6653,7 +6653,7 @@ msgstr "Jouw OpenRouter"
 
 #: src/components/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."
-msgstr ""
+msgstr "Na je proefperiode kost je plan {annualPrice} per jaar."
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"

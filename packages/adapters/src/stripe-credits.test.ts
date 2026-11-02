@@ -137,6 +137,19 @@ describe("Stripe prepaid model credits", () => {
           plan("sub_yearly", "active", { rakazo_plan: "byok" }, "year"),
           plan("sub_overdue", "past_due", { rakazo_plan: "byok" }),
           plan("sub_cheap", "active", { rakazo_plan: "byok" }, "month", 1000),
+          (() => {
+            const quarterly = plan("sub_quarterly", "active", { rakazo_plan: "byok" });
+            quarterly.items.data[0]!.price.recurring = {
+              interval: "month",
+              interval_count: 3,
+            } as never;
+            return quarterly;
+          })(),
+          (() => {
+            const seats = plan("sub_seats", "active", { rakazo_plan: "byok" });
+            seats.items.data[0]!.quantity = 2;
+            return seats;
+          })(),
           {
             ...plan("sub_cancelling", "active", { rakazo_plan: "byok" }),
             cancel_at_period_end: true,
@@ -148,7 +161,14 @@ describe("Stripe prepaid model credits", () => {
     await expect(provider.switchByokToYearly("cus_fixture", "sub_unpaid", 14400)).resolves.toBe(
       false,
     );
-    for (const id of ["sub_yearly", "sub_overdue", "sub_cancelling", "sub_cheap"])
+    for (const id of [
+      "sub_yearly",
+      "sub_overdue",
+      "sub_cancelling",
+      "sub_cheap",
+      "sub_quarterly",
+      "sub_seats",
+    ])
       await expect(provider.switchByokToYearly("cus_fixture", id, 14400)).resolves.toBe(false);
     const withCredits = fixture({
       "GET /v1/subscriptions": {

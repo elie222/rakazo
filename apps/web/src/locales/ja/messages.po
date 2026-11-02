@@ -422,7 +422,7 @@ msgstr "@{0}"
 
 #: src/components/ModelCredits.tsx
 msgid "/ month"
-msgstr ""
+msgstr "/ 月"
 
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
@@ -1029,7 +1029,7 @@ msgstr "請求"
 
 #: src/components/ModelCredits.tsx
 msgid "Billing period"
-msgstr ""
+msgstr "請求期間"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
@@ -5736,7 +5736,7 @@ msgstr "申し込む"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe for {annualPrice} / year"
-msgstr ""
+msgstr "年額 {annualPrice} で登録"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
@@ -5775,11 +5775,11 @@ msgstr "切り替え"
 
 #: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
-msgstr ""
+msgstr "年払いに切り替え"
 
 #: src/components/ModelCredits.tsx
 msgid "Switch to yearly?"
-msgstr ""
+msgstr "年払いに切り替えますか？"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
@@ -6580,7 +6580,7 @@ msgstr "年"
 
 #: src/components/ModelCredits.tsx
 msgid "Yearly"
-msgstr ""
+msgstr "年払い"
 
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
@@ -6618,7 +6618,7 @@ msgstr "お使いのAnthropic"
 
 #: src/components/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
-msgstr ""
+msgstr "本日カードに{annualPrice}が請求されます（今月の未使用分を差し引きます）。"
 
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
@@ -6653,7 +6653,7 @@ msgstr "お使いのOpenRouter"
 
 #: src/components/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."
-msgstr ""
+msgstr "トライアル終了後、プランは年額 {annualPrice} になります。"
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"
