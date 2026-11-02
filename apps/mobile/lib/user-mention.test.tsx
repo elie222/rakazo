@@ -38,8 +38,8 @@ vi.mock("@rakazo/chat-ui/native", () => {
   const plainTextLinkParts = (text: string) =>
     text
       .split(/(https?:\/\/\S+|[^\s@]+@[^\s@]+\.[a-z]+)/)
-      .filter(Boolean)
-      .map((value, index) => ({ type: index % 2 ? "link" : "text", value, href: value }));
+      .map((value, index) => ({ type: index % 2 ? "link" : "text", value, href: value }))
+      .filter((part) => part.value);
   return {
     ChatMarkdown: ({ children }: { children?: ReactNode }) => createElement("p", null, children),
     plainTextLinkParts,
@@ -147,9 +147,9 @@ describe("sent message mentions", () => {
     render("see https://example.test/@Ada, then ask @Ada");
     expect(container.querySelectorAll('span[role="link"]')).toHaveLength(1);
     expect(container.textContent).toBe("see https://example.test/@Ada, then ask Ada");
-    render("https://example.test/@Ben?x=1");
+    render("https://example.test/@Ada?x=1");
     expect(container.querySelector("[data-avatar]")).toBeNull();
-    expect(container.textContent).toBe("https://example.test/@Ben?x=1");
+    expect(container.textContent).toBe("https://example.test/@Ada?x=1");
   });
 
   it("leaves a name two members share as plain text", () => {
