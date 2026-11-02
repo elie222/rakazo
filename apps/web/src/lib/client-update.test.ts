@@ -54,6 +54,7 @@ function setup(overrides: Partial<ClientUpdateDeps> = {}) {
     reload: vi.fn(() => true),
     holdsUnsavedWork: vi.fn(() => false),
     holdsWorkInFlight: vi.fn(() => false),
+    offerReload: vi.fn(),
     hasUnsentDraft: vi.fn(() => false),
     now: () => now,
     setInterval: (callback) => {
@@ -206,6 +207,7 @@ describe("client updates", () => {
     reply(426, NEW);
     await flush();
     expect(deps.reload).toHaveBeenCalledOnce();
+    expect(deps.offerReload).not.toHaveBeenCalled();
   });
 
   it("holds a refused build's reload while work is in flight, then reloads once it is gone", async () => {
@@ -213,6 +215,7 @@ describe("client updates", () => {
     const { deps, doc, reply, idleTick } = setup({ holdsWorkInFlight });
     reply(426);
     await flush();
+    expect(deps.offerReload).toHaveBeenCalled();
     // Held work longer than the rollout retries does not use them up.
     for (let i = 0; i <= CLIENT_UPDATE_REQUIRED_RETRIES; i++) idleTick();
     await flush();

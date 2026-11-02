@@ -1,8 +1,10 @@
+import { t } from "@lingui/core/macro";
 import {
   CLIENT_UPDATE_REQUIRED_STATUS,
   compareBuilds,
   SERVER_BUILD_HEADER,
 } from "@rakazo/contracts";
+import { toast } from "@rakazo/ui-web";
 import { getSnapshot as activeCall } from "./call-session";
 import { CLIENT_BUILD } from "./client-build";
 import {
@@ -44,6 +46,8 @@ export type ClientUpdateDeps = {
    * for this, since the server rejects the requests that would send attachments.
    */
   holdsWorkInFlight: () => boolean;
+  /** A refused build is waiting on work: let the user reload now instead. */
+  offerReload: () => void;
   /** Also saved-but-unsent text, which blocks only the idle reload. */
   hasUnsentDraft: () => boolean;
   now: () => number;
@@ -56,7 +60,7 @@ export type ClientUpdateDeps = {
  * deployed build; once it is newer than this bundle, the tab reloads at the first safe moment —
  * hidden, navigating, or idle with nothing unsent — and only after the web server confirms it
  * already serves a newer build, which it may not yet mid-deploy. A refused client (426) reloads as
- * soon as no typed text, open dialog, or unsaved work would be lost.
+ * soon as no typed text, open dialog, or unsaved work would be lost, offering a reload meanwhile.
  *
  * Loops are impossible by construction: every reload records the build it left and the build it
  * expected, and a tab that comes back on the same build never reloads for that target again (a
@@ -150,7 +154,11 @@ export function createClientUpdates(deps: ClientUpdateDeps) {
   };
   /** False when a check is running or the moment is not safe, so a held refusal keeps its retries. */
   const tryRequired = (): boolean => {
-    if (checking || !safe("required")) return false;
+    if (checking) return false;
+    if (!safe("required")) {
+      deps.offerReload();
+      return false;
+    }
     void reloadOntoServedBuild("required");
     return true;
   };
@@ -233,6 +241,13 @@ export function clientUpdates(): ReturnType<typeof createClientUpdates> {
     reload: recoveryReload,
     holdsUnsavedWork: () => activeCall() !== null || composerHoldsUnsavedWork(),
     holdsWorkInFlight: () => activeCall() !== null || composerHoldsWorkInFlight(),
+    offerReload: () =>
+      toast(t`Update required`, {
+        id: "client-update-required",
+        duration: Number.POSITIVE_INFINITY,
+        dismissible: false,
+        action: { label: t`Reload`, onClick: () => window.location.reload() },
+      }),
     hasUnsentDraft: () => hasUnsentComposerDraft(),
     now: () => Date.now(),
     setInterval: (callback, ms) => window.setInterval(callback, ms),

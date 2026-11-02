@@ -4802,6 +4802,7 @@ msgid "Release control"
 msgstr "제어권 넘기기"
 
 #: src/components/InstructionSettings.tsx
+#: src/lib/client-update.ts
 msgid "Reload"
 msgstr "새로고침"
 
@@ -6247,6 +6248,10 @@ msgstr "지침을 업데이트할까요?"
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
 msgstr ""
+
+#: src/lib/client-update.ts
+msgid "Update required"
+msgstr "업데이트가 필요합니다"
 
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"
