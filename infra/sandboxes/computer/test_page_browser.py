@@ -837,6 +837,8 @@ class FakeTabs:
         # Tabs a page opens while the call runs, as Chromium would show them at its end.
         self.opening = []
         self.broken = False
+        # Tabs whose close request fails.
+        self.stuck = set()
 
     def select(self, tab):
         self.events.append(("select", tab))
@@ -848,6 +850,8 @@ class FakeTabs:
     def urlopen(self, url, timeout=None):
         tab = url.rsplit("/", 1)[1]
         if "/json/activate/" in url and self.broken:
+            raise OSError("no answer")
+        if "/json/close/" in url and tab in self.stuck:
             raise OSError("no answer")
         if "/json/close/" in url:
             self.events.append(("close", tab))
@@ -954,6 +958,20 @@ class NewTabTest(unittest.TestCase):
         opened, _, _ = self.call(chromium, "x0")
         self.assertEqual((chromium.ids, opened), (["x0"], []))
         self.assertEqual(json.loads(Path(self.home, "tabs-9222.json").read_text())["opened"], [])
+
+    def test_only_tabs_that_closed_are_counted_and_the_rest_are_tried_again(self):
+        chromium = FakeTabs("own")
+        self.call(chromium, "own")
+        chromium.stuck = {"p0", "p1"}
+        chromium.opening = [f"p{index}" for index in range(6)]
+        _, note, _ = self.call(chromium, "own")
+        self.assertEqual(note.split(".")[0], "The page opened 4 tabs at once, more than 3, so they were closed")
+        self.assertEqual(sorted(chromium.ids), ["own", "p0", "p1"])
+        # Past the deadline, nothing more is closed in this call.
+        tabs = helper.Tabs(self.home, 9222, "browser-1", chromium.select)
+        tabs.deadline = time.monotonic() - 1
+        with patch.object(helper.urllib.request, "urlopen", chromium.urlopen):
+            self.assertEqual(tabs.close(["p2"], None), [])
 
     def test_a_front_tab_that_cannot_be_brought_back_still_leaves_the_note_and_the_tabs_kept(self):
         chromium = FakeTabs("own")

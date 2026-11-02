@@ -246,22 +246,27 @@ class Tabs:
         os.replace(temporary, self.path)
         return tabs, opened, flooded
 
-    def close(self, ids: list[Any], keep: Any) -> None:
+    def close(self, ids: list[Any], keep: Any) -> list[Any]:
+        """The tabs it closed, by the deadline: the rest are left for the next call."""
         if keep is not None:
             # Best effort: if the session does not move, the tab it reads is read again or refused after.
             with contextlib.suppress(Exception):
                 self.select(keep)
+        closed = []
         for tab in ids:
+            if self.deadline is not None and time.monotonic() >= self.deadline:
+                break
             with contextlib.suppress(OSError):
                 urllib.request.urlopen(f"http://127.0.0.1:{self.port}/json/close/{tab}",
                                        timeout=left(self.deadline, 5.0)).close()
+                closed.append(tab)
+        return closed
 
     def close_flood(self, tabs: list[dict[str, Any]], before: set[Any], own: Any) -> list[dict[str, Any]]:
         new = [tab.get("id") for tab in tabs if tab.get("id") not in before and tab.get("id") != own]
         if len(new) <= MAX_NEW_TABS:
             return tabs
-        self.close(new, own)
-        self.closed += len(new)
+        self.closed += len(self.close(new, own))
         return page_tabs(self.port)
 
     def trim(self, tabs: list[dict[str, Any]], own: str) -> list[dict[str, Any]]:
@@ -272,9 +277,9 @@ class Tabs:
         if not extra:
             return tabs
         # The tab in front stays, as the oldest out of sight go: the session stays on it.
-        self.close(extra, tabs[0].get("id"))
-        self.trimmed += len(extra)
-        self.opened = [tab for tab in self.opened if tab not in extra]
+        closed = self.close(extra, tabs[0].get("id"))
+        self.trimmed += len(closed)
+        self.opened = [tab for tab in self.opened if tab not in closed]
         return page_tabs(self.port)
 
     def note(self, tabs: list[dict[str, Any]], opened: list[dict[str, Any]], shown_url: Any) -> str | None:
