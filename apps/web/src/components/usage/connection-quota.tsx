@@ -47,7 +47,7 @@ export function ConnectionQuota({
             <p className="truncate text-xs text-muted-foreground">{accountLabel}</p>
           ) : null}
         </div>
-        {!compact ? (
+        {!compact && observation?.status !== "unsupported" ? (
           <Button
             variant="ghost"
             size="sm"
@@ -75,9 +75,7 @@ export function ConnectionQuota({
           <Trans>Loading</Trans>
         </p>
       ) : null}
-      {(quota.isError && !observation) ||
-      observation?.status === "unavailable" ||
-      observation?.status === "unsupported" ? (
+      {(quota.isError && !observation) || observation?.status === "unavailable" ? (
         <p className="text-sm text-muted-foreground" role="status">
           <Trans>Quota unavailable</Trans>
         </p>

@@ -24,9 +24,7 @@ export function ConnectionQuota({
       }
     >
       {currentQuota?.status === "stale" ? <SettingsRow title={t("Last known usage")} /> : null}
-      {!currentQuota ||
-      currentQuota.status === "unavailable" ||
-      currentQuota.status === "unsupported" ? (
+      {!currentQuota || currentQuota.status === "unavailable" ? (
         <SettingsRow title={currentPending ? t("Loading") : t("Quota unavailable")} />
       ) : null}
       {currentQuota?.windows.map((window) => (
@@ -55,7 +53,9 @@ export function ConnectionQuota({
           }
         />
       ))}
-      <SettingsRow title={t("Refresh")} disabled={currentPending} onPress={onRefresh} />
+      {currentQuota?.status !== "unsupported" ? (
+        <SettingsRow title={t("Refresh")} disabled={currentPending} onPress={onRefresh} />
+      ) : null}
     </SettingsGroup>
   );
 }
