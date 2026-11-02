@@ -161,7 +161,7 @@ export async function removeBotRoutine(botId: string, routineId: string): Promis
  * The bot's routines, shared by every screen that shows them. Each time a screen comes into
  * view it shows what is already known and reads again, then keeps reading while it stays.
  */
-export function useBotRoutines(botId: string, { poll = true }: { poll?: boolean } = {}) {
+export function useBotRoutines(botId: string) {
   const [shownSince] = useState(Date.now);
   const { data, error, dataUpdatedAt, errorUpdatedAt } = useQuery(
     { ...routinesQuery(botId), enabled: false, select: oldestFirst },
@@ -171,10 +171,9 @@ export function useBotRoutines(botId: string, { poll = true }: { poll?: boolean 
     useCallback(() => {
       if (!botId) return;
       void loadBotRoutines(botId);
-      if (!poll) return;
       const timer = setInterval(() => void loadBotRoutines(botId), ROUTINES_POLL_MS);
       return () => clearInterval(timer);
-    }, [botId, poll]),
+    }, [botId]),
   );
   return {
     routines: data,
