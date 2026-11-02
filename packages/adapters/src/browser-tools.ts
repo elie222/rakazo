@@ -24,6 +24,7 @@ export const BROWSER_ACT_KINDS = [
   "fill_card",
   "fill_pay_token",
 ] as const;
+const MAX_QUERY = 200;
 const NAVIGATE_URL_REQUIRED = "An HTTP(S) URL without embedded credentials is required";
 
 /** Fills a saved website login's field by its label; the model never supplies or sees the value. */
@@ -110,9 +111,13 @@ export async function browserSnapshotFromTool(
   args: Record<string, unknown>,
   options: PageToolOptions = {},
 ) {
-  void args;
+  const query = typeof args.query === "string" ? args.query.trim().slice(0, MAX_QUERY) : "";
   try {
-    const result = await browser.snapshot(computer, { signal: context.signal }, context);
+    const result = await browser.snapshot(
+      computer,
+      { ...(query ? { query } : {}), signal: context.signal },
+      context,
+    );
     return formatBrowserResult(result, options);
   } catch (error) {
     context.signal.throwIfAborted();

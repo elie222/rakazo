@@ -310,3 +310,48 @@ test("end an own-key trial early to get full computer hours", async ({ page }, t
   await confirm.getByRole("button", { name: "Start plan", exact: true }).click();
   await expect.poll(() => ended).toBe(true);
 });
+
+test("switch a monthly own-key plan to yearly", async ({ page }, testInfo) => {
+  await signup(page, `byok-switch-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
+  await completeOnboarding(page);
+  await page.route("**/api/auth/capabilities", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), billing: true } });
+  });
+  await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
+  await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
+  let status = billingStatus({
+    access: true,
+    trialAvailable: false,
+    creditPurchasesEnabled: true,
+    byokPriceCents: 1500,
+    byokInterval: "month",
+    byokAnnualPriceCents: 14400,
+    funding: "byok",
+    balanceUsd: 0,
+    monthlyAmountCents: null,
+    state: "active",
+    currentPeriodEndsAt: "2030-01-15T12:00:00.000Z",
+    hasCustomer: true,
+  });
+  await page.route("**/rpc/billing/status", (route) => route.fulfill({ json: { json: status } }));
+  let switched = false;
+  await page.route("**/rpc/billing/switchToYearly", async (route) => {
+    switched = true;
+    status = { ...status, byokPriceCents: 14400, byokInterval: "year" };
+    await route.fulfill({ json: { json: status } });
+  });
+  await page.reload();
+  const settings = await openUserSettings(page, "billing");
+  const plan = settings.getByTestId("own-key-plan");
+  await expect(plan.getByText("$15 / month", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "billing-own-key-monthly");
+  await plan.getByRole("button", { name: /Switch to yearly/ }).click();
+  const confirm = page.getByRole("alertdialog", { name: "Switch to yearly?" });
+  await expect(confirm.getByText(/charged \$144 today/)).toBeVisible();
+  await captureScreenshot(page, testInfo, "billing-switch-to-yearly");
+  await confirm.getByRole("button", { name: "Switch", exact: true }).click();
+  await expect.poll(() => switched).toBe(true);
+  await expect(plan.getByText("$144 / year", { exact: true })).toBeVisible();
+  await expect(plan.getByRole("button", { name: /Switch to yearly/ })).toHaveCount(0);
+});

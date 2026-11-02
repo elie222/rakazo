@@ -1,15 +1,40 @@
-import { matchUiLocale, translate } from "@rakazo/core";
+import type { TextDirection } from "@rakazo/core";
+import { matchUiLocale, textDirectionForLocale, translate } from "@rakazo/core";
 import type { IpcMainInvokeEvent } from "electron";
 import type { AppTarget } from "./app-frame.js";
 import { fromAppFrame } from "./app-frame.js";
+import { DE_MESSAGES } from "./locales/de.js";
 import { ES_MESSAGES } from "./locales/es.js";
+import { FR_MESSAGES } from "./locales/fr.js";
+import { HE_MESSAGES } from "./locales/he.js";
+import { HI_MESSAGES } from "./locales/hi.js";
+import { JA_MESSAGES } from "./locales/ja.js";
+import { KO_MESSAGES } from "./locales/ko.js";
+import { NL_MESSAGES } from "./locales/nl.js";
+import { PT_BR_MESSAGES } from "./locales/pt-BR.js";
+import { RU_MESSAGES } from "./locales/ru.js";
+import { TR_MESSAGES } from "./locales/tr.js";
+import { ZH_CN_MESSAGES } from "./locales/zh-CN.js";
+import { ZH_TW_MESSAGES } from "./locales/zh-TW.js";
 
-/** The languages the desktop shell ships; any other language the app offers shows English. */
-const DESKTOP_LOCALES = ["en", "es"] as const;
-export type DesktopLocale = (typeof DESKTOP_LOCALES)[number];
-const CATALOGS: Partial<Record<DesktopLocale, Readonly<Record<string, string>>>> = {
+/** Every language the app offers; English is the source text and needs no catalog. */
+export const CATALOGS = {
+  de: DE_MESSAGES,
   es: ES_MESSAGES,
-};
+  fr: FR_MESSAGES,
+  he: HE_MESSAGES,
+  hi: HI_MESSAGES,
+  ja: JA_MESSAGES,
+  ko: KO_MESSAGES,
+  nl: NL_MESSAGES,
+  "pt-BR": PT_BR_MESSAGES,
+  ru: RU_MESSAGES,
+  tr: TR_MESSAGES,
+  "zh-CN": ZH_CN_MESSAGES,
+  "zh-TW": ZH_TW_MESSAGES,
+} as const satisfies Record<string, Readonly<Record<string, string>>>;
+export type DesktopLocale = "en" | keyof typeof CATALOGS;
+const DESKTOP_LOCALES = ["en", ...Object.keys(CATALOGS)] as DesktopLocale[];
 const LANGUAGE_TAG = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,3}$/;
 
 let activeLocale: DesktopLocale = "en";
@@ -19,7 +44,7 @@ let writtenLocale: string | null = null;
 let saving: Promise<void> = Promise.resolve();
 
 export function t(message: string, values?: Record<string, string | number>): string {
-  return translate(CATALOGS[activeLocale], message, values);
+  return translate(desktopMessages(), message, values);
 }
 
 export function desktopLocale(): DesktopLocale {
@@ -28,7 +53,11 @@ export function desktopLocale(): DesktopLocale {
 
 /** The active translations, keyed by the English text; empty for English. */
 export function desktopMessages(): Readonly<Record<string, string>> {
-  return CATALOGS[activeLocale] ?? {};
+  return activeLocale === "en" ? {} : CATALOGS[activeLocale];
+}
+
+export function desktopDirection(): TextDirection {
+  return textDirectionForLocale(activeLocale);
 }
 
 /** An error whose message stays English for error reports and shows `detail` to the person. */

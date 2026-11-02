@@ -211,6 +211,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Custom server {host}": "Eigener Server {host}",
   "Don’t have an account?": "Du hast noch kein Konto?",
   Email: "E-Mail",
+  "Did you mean {email}?": "Meintest du {email}?",
   "Forgot password?": "Passwort vergessen?",
   "Loading…": "Wird geladen…",
   Password: "Passwort",
@@ -1002,6 +1003,12 @@ export const DE_MESSAGES: Record<string, string> = {
   "Your trial ends and your card is charged today.":
     "Dein Testzeitraum endet und deine Karte wird heute belastet.",
   "Start plan": "Plan starten",
+  "Switch to yearly": "Zu jährlich wechseln",
+  "Switch to yearly?": "Zu jährlich wechseln?",
+  "Your card is charged {price} today, less the unused part of this month.":
+    "Deine Karte wird heute mit {price} belastet, abzüglich des ungenutzten Teils dieses Monats.",
+  "Your plan becomes {price} / year when your trial ends.":
+    "Nach dem Testzeitraum kostet dein Plan {price} / Jahr.",
   "Monthly credits": "Monatliches Guthaben",
   "Upgrade now": "Jetzt upgraden",
   "Downgrade at renewal": "Bei Verlängerung downgraden",

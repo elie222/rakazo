@@ -73,9 +73,20 @@ const searchableText = Prisma.sql`jsonb_path_query_array(m.blocks,
 const columns = Prisma.sql`m.id, m.seq, m.role, m."runId", m."replyToMessageId", m."createdAt", m.blocks, m."threadId", t."groupId" AS "groupId"`;
 
 function visible(scope: HistoryScope, myChats = false, targetThreadId?: string): Prisma.Sql {
+  // Match loadRunHistoryMessages: only an unassigned row for this bot means waiting.
+  // Cross-chat direct threads use their owning bot; groups retain the reading bot.
+  const historyBot = myChats
+    ? Prisma.sql`COALESCE(t."botId", ${scope.botId})`
+    : Prisma.sql`${scope.botId}`;
+  const notWaiting = Prisma.sql`NOT EXISTS (
+    SELECT 1 FROM steering_messages pending
+    WHERE pending."messageId" = m.id AND pending."botId" = ${historyBot}
+      AND pending."runId" IS NULL
+  )`;
   if (myChats)
     return Prisma.sql`
     t."spaceId" = ${scope.spaceId} AND t."userId" = ${scope.userId}
+    AND ${notWaiting}
     ${targetThreadId ? Prisma.sql`AND t.id = ${targetThreadId}` : Prisma.empty}
     AND ((t."groupId" IS NULL AND EXISTS (
       SELECT 1 FROM bots b WHERE b.id = t."botId" AND b."spaceId" = ${scope.spaceId}
@@ -87,6 +98,7 @@ function visible(scope: HistoryScope, myChats = false, targetThreadId?: string):
   const channel = scope.channelId;
   return Prisma.sql`
     t.id = ${scope.threadId} AND t."spaceId" = ${scope.spaceId}
+    AND ${notWaiting}
     AND t."userId" = ${scope.userId}
     AND (t."botId" = ${scope.botId} OR (t."botId" IS NULL AND EXISTS (
       SELECT 1 FROM chat_groups g JOIN chat_group_members member ON member."groupId" = g.id

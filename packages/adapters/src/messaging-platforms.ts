@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import { createSlackAdapter } from "@chat-adapter/slack";
+import type { TelegramAdapter } from "@chat-adapter/telegram";
 import {
   createTelegramAdapter,
   escapeMarkdownV2,
@@ -285,7 +287,7 @@ export function messagingPlatformsFromEnv(
     platforms.push({
       provider: "telegram",
       capabilities: { direct: true, groups: true, receipt: null, files: true },
-      adapter,
+      ...withTelegramRedelivery(adapter),
       ...telegramGroupHooks(adapter),
       isPermanentSendError: isTelegramBlocked,
     });
@@ -307,7 +309,7 @@ export function messagingPlatformsFromEnv(
       provider: `telegram-${bot.name}`,
       adapterName: "telegram",
       capabilities: { direct: true, groups: true, receipt: null, files: true },
-      adapter,
+      ...withTelegramRedelivery(adapter),
       ...telegramGroupHooks(adapter),
       isPermanentSendError: isTelegramBlocked,
     });
@@ -414,6 +416,21 @@ const WHATSAPP_REENGAGEMENT_REQUIRED = 131047;
 
 /** WhatsApp and Telegram both cap a text message at 4096 UTF-16 units. */
 const MESSAGE_PART_LIMIT = 4096;
+
+/**
+ * The key the Telegram adapter claims each webhook update under (chat-adapter
+ * 4.43), released when processing fails so Telegram's retry is processed. The
+ * redelivery test fails if an SDK upgrade moves it.
+ */
+function withTelegramRedelivery(adapter: TelegramAdapter) {
+  return {
+    adapter,
+    redeliveryKeys: (payload: unknown) => {
+      const scope = createHash("sha256").update(adapter.botUserId!).digest("hex");
+      return [`${adapter.name}:webhook-update:${scope}:${asRecord(payload)?.update_id}`];
+    },
+  };
+}
 
 /** Split before enqueueing so retries only resend the parts that failed. */
 export function splitOutboundBody(provider: string, body: string): string[] {
