@@ -17,7 +17,10 @@ import type {
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { cancelComputerRunWork, probeBackgroundWork } from "./computer-idle.js";
-import { computerProviderDescriptor } from "./computer-provider-registry.js";
+import {
+  computerProviderDescriptor,
+  computerProviderRegistry,
+} from "./computer-provider-registry.js";
 import { manageComputerWorkspaceDirectories } from "./computer-workspace.js";
 import { credentialDigest } from "./credential-digest.js";
 import { createSandboxProvider } from "./sandbox-factory.js";
@@ -241,9 +244,14 @@ export class ConfiguredSandbox implements SandboxProvider {
       const provider = await this.providerFor(saved, "deployment");
       if (provider.ownsReference?.(computer) ?? true) return provider;
     }
+    // Kinds Settings never selects (a local host computer, say) can only belong to the primary.
+    const settingsKind = computerProviderRegistry.some((entry) => entry.id === computer.kind);
     const primaryKind =
       (await this.primary.provisionKind?.(computer.botId)) ?? this.primary.describe().id;
-    if (computer.kind === primaryKind && (this.primary.ownsReference?.(computer) ?? true))
+    if (
+      (!settingsKind || computer.kind === primaryKind) &&
+      (this.primary.ownsReference?.(computer) ?? true)
+    )
       return this.primary;
     throw new Error("The computer's provider connection is no longer configured");
   }

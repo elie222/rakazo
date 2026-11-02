@@ -294,6 +294,15 @@ it("refuses a desktop reference belonging to another account connection", async 
   );
 });
 
+it("keeps computers the primary started as another of its kinds on the primary", async () => {
+  const { sandbox } = setup({ provider: "default", settings: null });
+  const computer = await sandbox.provision({ botId: "a", homePath: "/h" }, ctx);
+  // The primary now starts new computers elsewhere, as a host-aware primary does when the host is toggled.
+  const primary = (sandbox as unknown as { primary: FakeSandboxProvider }).primary;
+  Object.assign(primary, { provisionKind: async () => "host" });
+  await expect(sandbox.prepare(computer, ctx)).resolves.not.toThrow();
+});
+
 vi.mock(
   "./computer-provider-registry.js",
   () => import("./fake-computer-settings.test-support.js"),
