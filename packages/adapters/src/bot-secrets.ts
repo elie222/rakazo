@@ -470,6 +470,18 @@ export function sameSecretDestination(
   );
 }
 
+/** Only an HTTPS login moves to another site; nothing else about it changes. */
+export function canReplaceLoginSite(
+  saved: BotSecretDestination,
+  destination: BotSecretDestination,
+): boolean {
+  return (
+    saved.auth.type === "login" &&
+    destination.origin.startsWith("https://") &&
+    sameSecretDestination({ ...saved, origin: destination.origin }, destination)
+  );
+}
+
 /** The credential saved under `name`. Its row id is for a card that replaces it, never for the bot. */
 export async function findBotSecret(prisma: PrismaClient, scope: BotSecretScope, name: string) {
   const row = await prisma.vaultCredential.findFirst({
@@ -537,13 +549,11 @@ export async function prepareBotSecret(input: {
   function validate(row: typeof existing, count: number) {
     if (row && input.createOnly) throw new Error(SECRET_ALREADY_SAVED);
     const saved = row && normalizeSecretDestination(row);
-    // Only an HTTPS login moves to another site, and only the saved login the card replaces.
-    const replaced =
-      saved?.auth.type === "login" &&
-      row?.id === input.replaces &&
-      destination.origin.startsWith("https://") &&
-      sameSecretDestination({ ...saved, origin: destination.origin }, destination);
-    if (saved && !sameSecretDestination(saved, destination) && !replaced)
+    if (
+      saved &&
+      !sameSecretDestination(saved, destination) &&
+      !(row?.id === input.replaces && canReplaceLoginSite(saved, destination))
+    )
       throw new Error("Remove the existing credential before changing its destination");
     if (!row && count >= 100) throw new Error("Credential limit reached");
   }

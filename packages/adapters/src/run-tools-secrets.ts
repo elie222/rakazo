@@ -13,6 +13,7 @@ import {
 import {
   allowPrivateHttpSecretOrigins,
   botSecretToolView,
+  canReplaceLoginSite,
   findBotSecret,
   findCommandVariableConflict,
   findRunLogin,
@@ -126,11 +127,7 @@ export const secretTools: ToolHandlers = {
           : undefined;
       const held = runLogin?.origin === destination.origin ? runLogin : undefined;
       if (existing && !sameSecretDestination(existing, destination)) {
-        if (
-          existing.auth.type !== "login" ||
-          destination.auth.type !== "login" ||
-          !destination.origin.startsWith("https://")
-        ) {
+        if (!canReplaceLoginSite(existing, destination)) {
           return call.finish({
             error: "Remove the existing credential before changing its destination.",
           });
