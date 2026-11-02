@@ -61,10 +61,12 @@ export function useAccountDeletion({
     }
   }
 
+  // Cancelling dismisses the dialog's error too, so it does not reappear behind it.
   function close() {
     if (pending) return;
     setOpen(false);
     setPassword("");
+    setError(null);
   }
 
   async function request() {
