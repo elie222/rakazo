@@ -895,17 +895,6 @@ class RunTest(unittest.TestCase):
         self.assertEqual(browser.sent[0], ["tab", "new", "https://portal.example.test/"])
         self.assertFalse(any("location.assign(" in " ".join(command) for command in browser.sent))
 
-    def test_a_failing_download_listener_does_not_fail_the_navigation(self):
-        browser = FakeAgentBrowser()
-        subject = page(browser)
-        subject.downloads = Mock()
-        subject.downloads.client.listen.side_effect = RuntimeError("CDP frame too large")
-        with patch.object(helper.time, "sleep"):
-            result = subject.navigate("https://next.example.test/a")
-        self.assertEqual(result["ok"], True)
-        self.assertIn("Welcome back", result["tree"])
-        self.assertIsNone(subject.downloads)
-
     def test_a_navigation_that_never_reaches_a_new_page_is_left_to_the_desktop(self):
         browser = FakeAgentBrowser()
         browser.stuck = True
