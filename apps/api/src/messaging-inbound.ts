@@ -499,25 +499,31 @@ async function tryRedeemLinkCode(
 ): Promise<boolean> {
   const code = normalizeMessagingLinkCode(event.content);
   if (!code) return false;
-  const redeemed = await redeemMessagingLinkCode(deps.prisma, {
-    code,
-    provider: event.provider,
-    address: event.from,
-    dmThreadId: event.threadId,
-    spaceId: event.installationSpaceId,
-    installationId: event.installationId,
-  });
-  if (!redeemed) return false;
-  const bot = await deps.prisma.bot.findUnique({
-    where: { id: redeemed.botId },
-    select: { name: true },
-  });
-  await enqueueConfirmation(
-    deps,
-    { id: redeemed.identityId },
-    redeemed.confirmationKey,
-    `Linked. Messages here now reach "${bot?.name ?? "your agent"}".`,
+  const redeemed = await redeemMessagingLinkCode(
+    deps.prisma,
+    {
+      code,
+      provider: event.provider,
+      address: event.from,
+      dmThreadId: event.threadId,
+      spaceId: event.installationSpaceId,
+      installationId: event.installationId,
+    },
+    async (tx, linked) => {
+      const bot = await tx.bot.findUnique({
+        where: { id: linked.botId },
+        select: { name: true },
+      });
+      await writeConfirmation(
+        tx,
+        { id: linked.identityId },
+        linked.confirmationKey,
+        `Linked. Messages here now reach "${bot?.name ?? "your agent"}".`,
+      );
+    },
   );
+  if (!redeemed) return false;
+  await enqueueDeliverJob(deps);
   return true;
 }
 
@@ -533,19 +539,26 @@ async function applyOwnerCommand(
       orderBy: { updatedAt: "desc" },
     });
     if (!membership) return false;
-    const { count } = await deps.prisma.messagingChannelMember.updateMany({
-      where: { id: membership.id, status: "approved" },
-      data: { status: "left" },
+    // One transaction, so a failed confirmation leaves the membership as it
+    // was and a redelivered LEAVE cannot move on to the next group.
+    const claimed = await deps.prisma.$transaction(async (tx) => {
+      const { count } = await tx.messagingChannelMember.updateMany({
+        where: { id: membership.id, status: "approved" },
+        data: { status: "left" },
+      });
+      // State changed under us (e.g. swept out and re-invited): treat the
+      // text as a normal message rather than overwriting the newer state.
+      if (count === 0) return false;
+      await writeConfirmation(
+        tx,
+        identity,
+        `command:leave:${membership.id}`,
+        "You've left the channel. Your agent will no longer post there. The group chat itself is unchanged.",
+      );
+      return true;
     });
-    // State changed under us (e.g. swept out and re-invited): treat the
-    // text as a normal message rather than overwriting the newer state.
-    if (count === 0) return false;
-    await enqueueConfirmation(
-      deps,
-      identity,
-      `command:leave:${membership.id}`,
-      "You've left the channel. Your agent will no longer post there. The group chat itself is unchanged.",
-    );
+    if (!claimed) return false;
+    await enqueueDeliverJob(deps);
     return true;
   }
 
@@ -653,24 +666,6 @@ async function writeConfirmation(
 }
 
 async function enqueueDeliverJob(deps: MessagingInboundDeps): Promise<void> {
-  await deps.jobs.enqueue(messagingDeliverJob()).catch((error) => {
-    getLogger().error("messaging confirmation enqueue error", error);
-  });
-}
-
-async function enqueueConfirmation(
-  deps: MessagingInboundDeps,
-  identity: { id: string },
-  key: string,
-  body: string,
-): Promise<void> {
-  // Keys are stable per membership/connection across approval cycles; clear
-  // the prior cycle's row or skipDuplicates would swallow the new text.
-  await deps.prisma.messagingOutbound.deleteMany({ where: { idempotencyKey: key } });
-  await deps.prisma.messagingOutbound.createMany({
-    data: [{ idempotencyKey: key, kind: "dm", identityId: identity.id, body }],
-    skipDuplicates: true,
-  });
   await deps.jobs.enqueue(messagingDeliverJob()).catch((error) => {
     getLogger().error("messaging confirmation enqueue error", error);
   });
