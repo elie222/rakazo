@@ -108,6 +108,14 @@ describe("connectorToolRequiresApproval", () => {
     expect(connectorToolRequiresApproval("send_message")).toBe(true);
   });
 
+  it("reads words separated by hyphens", () => {
+    expect(connectorToolRequiresApproval("gmail-find-email", true)).toBe(false);
+    expect(connectorToolRequiresApproval("google_calendar-list-events", true)).toBe(false);
+    expect(connectorToolRequiresApproval("gmail-send-email", true)).toBe(true);
+    expect(connectorToolRequiresApproval("google_sheets-get-or-create-row", true)).toBe(true);
+    expect(connectorToolRequiresApproval("hubspot-find-and-update-contact", true)).toBe(true);
+  });
+
   it("requires approval for a declared write whatever its name says", () => {
     expect(connectorToolRequiresApproval("read_profile_card", false)).toBe(true);
     expect(connectorToolRequiresApproval("find_validator_record", false)).toBe(true);

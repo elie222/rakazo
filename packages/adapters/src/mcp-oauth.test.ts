@@ -11,7 +11,10 @@ import {
 } from "./mcp-oauth.js";
 import { McpSession } from "./mcp-transport.js";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 const TEST_NETWORK = {
   // Read the global per call so a fetch stubbed after construction still wins.
@@ -41,12 +44,13 @@ function oauthSessionStore() {
   };
 }
 
-function trackedClone(response: Response): { response: Response; bytesRead: () => number } {
+/** Counts the bytes read from clones of `status` responses, which the MCP fetch re-wraps. */
+function trackClonedBodies(status: number): () => number {
   let bytes = 0;
-  const clone = response.clone.bind(response);
-  response.clone = () => {
-    const cloned = clone();
-    const reader = cloned.body?.getReader();
+  const clone = Response.prototype.clone;
+  vi.spyOn(Response.prototype, "clone").mockImplementation(function (this: Response) {
+    const cloned = clone.call(this);
+    const reader = this.status === status ? cloned.body?.getReader() : undefined;
     if (!reader) return cloned;
     const body = new ReadableStream<Uint8Array>({
       async pull(controller) {
@@ -67,8 +71,8 @@ function trackedClone(response: Response): { response: Response; bytesRead: () =
       statusText: cloned.statusText,
       headers: cloned.headers,
     });
-  };
-  return { response, bytesRead: () => bytes };
+  });
+  return () => bytes;
 }
 
 function chunkedBody(totalBytes: number, chunkBytes: number): ReadableStream<Uint8Array> {
@@ -1413,36 +1417,38 @@ describe("MCP OAuth", () => {
   it("stops reading an oversized OAuth error body", async () => {
     const totalBytes = 128 * 1_024;
     const chunkBytes = 1_024;
-    const tracked = trackedClone(
-      new Response(chunkedBody(totalBytes, chunkBytes), {
-        status: 403,
-        headers: { "content-type": "application/json" },
-      }),
+    const bytesRead = trackClonedBodies(403);
+
+    const error = await rejectedOAuthBegin(
+      () =>
+        new Response(chunkedBody(totalBytes, chunkBytes), {
+          status: 403,
+          headers: { "content-type": "application/json" },
+        }),
     );
 
-    const error = await rejectedOAuthBegin(() => tracked.response);
-
-    expect(tracked.bytesRead()).toBeGreaterThan(0);
-    expect(tracked.bytesRead()).toBeLessThanOrEqual(8_000 * 3 + chunkBytes);
-    expect(tracked.bytesRead()).toBeLessThan(totalBytes);
+    expect(bytesRead()).toBeGreaterThan(0);
+    expect(bytesRead()).toBeLessThanOrEqual(8_000 * 3 + chunkBytes);
+    expect(bytesRead()).toBeLessThan(totalBytes);
     expect(error.message).toBe("Could not start MCP OAuth");
     expect(error.message).not.toContain("a".repeat(300));
   });
 
   it("does not read an OAuth error body whose declared length exceeds the cap", async () => {
-    const tracked = trackedClone(
-      new Response(chunkedBody(64 * 1_024, 1_024), {
-        status: 403,
-        headers: {
-          "content-type": "application/json",
-          "content-length": String(1024 * 1024),
-        },
-      }),
+    const bytesRead = trackClonedBodies(403);
+
+    const error = await rejectedOAuthBegin(
+      () =>
+        new Response(chunkedBody(64 * 1_024, 1_024), {
+          status: 403,
+          headers: {
+            "content-type": "application/json",
+            "content-length": String(1024 * 1024),
+          },
+        }),
     );
 
-    const error = await rejectedOAuthBegin(() => tracked.response);
-
-    expect(tracked.bytesRead()).toBe(0);
+    expect(bytesRead()).toBe(0);
     expect(error.message).toBe("Could not start MCP OAuth");
   });
 
