@@ -6059,6 +6059,7 @@ msgstr "אתרים מהימנים"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "לנסות שוב"
 

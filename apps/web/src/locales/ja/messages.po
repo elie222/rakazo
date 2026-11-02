@@ -6059,6 +6059,7 @@ msgstr "信頼済みサイト"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "再試行"
 

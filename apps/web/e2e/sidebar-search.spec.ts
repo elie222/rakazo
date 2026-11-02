@@ -82,7 +82,9 @@ test("a failed space search says so instead of No results", async ({ page }, tes
   await captureScreenshot(page, testInfo, "sidebar-search-failed");
 
   failSearch = false;
-  await search.fill("quarterly notes again");
+  const retried = page.waitForRequest("**/rpc/search/query");
+  await sidebar.getByRole("button", { name: "Try again", exact: true }).click();
+  expect((await retried).postData()).toContain("quarterly notes");
   await expect(sidebar.getByText("No results", { exact: true })).toBeVisible();
   await expect(failure).toHaveCount(0);
 });

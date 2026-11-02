@@ -20,6 +20,7 @@ export function useSidebarSearch({
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchAttempt, setSearchAttempt] = useState(0);
   const [activityMode, setActivityMode] = useState(readActivityMode);
   const [activityFilters, setActivityFilters] = useState<ActivityListFilters>(emptyActivityFilters);
   const [activityFiltersExpanded, setActivityFiltersExpanded] = useState(false);
@@ -68,7 +69,7 @@ export function useSidebarSearch({
       abort.abort();
       window.clearTimeout(timer);
     };
-  }, [showSpaceSearch, spaceQuery]);
+  }, [showSpaceSearch, spaceQuery, searchAttempt]);
 
   function jumpToSearchHit(hit: SearchHit) {
     setQuery("");
@@ -91,6 +92,10 @@ export function useSidebarSearch({
     searchHits,
     searchLoading,
     searchError,
+    retrySearch: () => {
+      setSearchLoading(true);
+      setSearchAttempt((attempt) => attempt + 1);
+    },
     showSpaceSearch,
     jumpToSearchHit,
     activityMode,

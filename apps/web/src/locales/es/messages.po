@@ -6059,6 +6059,7 @@ msgstr "Sitios de confianza"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "Intentarlo de nuevo"
 

@@ -7,6 +7,7 @@ export function useSearch(query: string) {
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     const trimmed = query.trim();
     setHits([]);
@@ -30,6 +31,6 @@ export function useSearch(query: string) {
       abort.abort();
       clearTimeout(timer);
     };
-  }, [query]);
-  return { hits, loading, error };
+  }, [query, attempt]);
+  return { hits, loading, error, retry: () => setAttempt((value) => value + 1) };
 }

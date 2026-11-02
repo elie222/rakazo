@@ -97,6 +97,13 @@ vi.mock("react-native-safe-area-context", () => ({
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => <span>bot avatar</span> }));
 vi.mock("../components/group-avatar", () => ({ GroupAvatar: () => <span>group avatar</span> }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("../components/native-action-button", () => ({
+  NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) => (
+    <button type="button" onClick={onPress}>
+      {label}
+    </button>
+  ),
+}));
 vi.mock("../components/glass-icon-button", () => ({
   GlassIconButton: ({ testID, onPress }: { testID: string; onPress: () => void }) => (
     <button type="button" data-testid={testID} onClick={onPress}>
@@ -300,18 +307,22 @@ it("says the search failed instead of no results, ignoring superseded and cleare
   );
   expect(container.textContent).not.toContain("No results");
 
+  await act(async () =>
+    [...container.querySelectorAll("button")].find((b) => b.textContent === "Try again")!.click(),
+  );
+  expect(container.textContent).toBe("CloseSearching…");
+  await act(async () => vi.advanceTimersByTime(200));
+  expect(state.search).toHaveBeenLastCalledWith("first");
+  await act(async () => pending[1]!.resolve([]));
+  expect(container.textContent).toBe("CloseNo results");
+
   await search("Scout");
   expect(container.textContent).not.toContain("Search is unavailable right now");
-  await act(async () => pending[1]!.reject(new Error("Search is unavailable right now")));
+  await act(async () => pending[2]!.reject(new Error("Search is unavailable right now")));
   expect(row("Scout, Bot")).not.toBeNull();
   expect(container.querySelector('[role="alert"]')?.textContent).toBe(
     "Search is unavailable right now",
   );
-
-  await search("second");
-  expect(container.textContent).toBe("CloseSearching…");
-  await act(async () => pending[2]!.resolve([]));
-  expect(container.textContent).toBe("CloseNo results");
 
   await search("third");
   await search("fourth");

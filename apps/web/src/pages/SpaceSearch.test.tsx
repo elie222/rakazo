@@ -53,6 +53,7 @@ it("renders every file sent in one message without duplicate-key errors", async 
         hits={[file("artifact-1"), file("artifact-2")]}
         loading={false}
         error={null}
+        onRetry={() => {}}
         onSelect={() => {}}
       />,
     ),
@@ -83,6 +84,7 @@ it("says the search failed instead of no results, ignoring superseded and cleare
         hits={search.searchHits}
         loading={search.searchLoading}
         error={search.searchError}
+        onRetry={search.retrySearch}
         onSelect={() => {}}
       />
     );
@@ -95,11 +97,15 @@ it("says the search failed instead of no results, ignoring superseded and cleare
 
   await search("first");
   await act(async () => pending[0]!.reject(new Error("Search is unavailable right now")));
-  expect(container.textContent).toBe("Search is unavailable right now");
-  expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+    "Search is unavailable right now",
+  );
+  expect(container.textContent).not.toContain("No results");
 
-  await search("second");
+  await act(async () => container.querySelector("button")!.click());
   expect(container.textContent).toBe("Searching…");
+  await act(async () => vi.advanceTimersByTime(200));
+  expect(query).toHaveBeenLastCalledWith({ q: "first" });
   await act(async () => pending[1]!.resolve([]));
   expect(container.textContent).toBe("No results");
 
@@ -112,7 +118,7 @@ it("says the search failed instead of no results, ignoring superseded and cleare
 
   await search("fifth");
   await act(async () => pending[4]!.reject(new TypeError("Failed to fetch")));
-  expect(container.textContent).toBe("Could not reach the server");
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe("Could not reach the server");
   await act(async () => setQuery(""));
   await act(async () => setQuery("sixth"));
   expect(container.querySelector('[role="alert"]')).toBeNull();
