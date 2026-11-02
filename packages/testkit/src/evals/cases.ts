@@ -14,11 +14,15 @@ export type Step =
   | { slack: string }
   | { clear: true }
   | { newWorkspace: true }
-  | { wakeRoutine: true; releases?: "unchanged" | "new" | "empty" };
+  | { wakeRoutine: true; releases?: "unchanged" | "new" | "empty" }
+  /** A request from the case's peer bot, delivered through message_bot's product path. */
+  | { fromPeer: string };
 export type Evidence = {
   text: string;
   replies?: string[];
   routineRuns?: RoutineEvidence[];
+  /** Per fromPeer step: what the peer sent and what came back to it, or null if nothing did. */
+  peerExchanges?: Array<{ message: string; reply: string | null }>;
   files: Record<string, string | null>;
   records: EvalServices["records"];
   notes: EvalServices["notes"];
@@ -31,7 +35,14 @@ export type Evidence = {
   priorMemory: string;
   toolNames: string[];
   /** Tool calls with arguments, by the 1-based step whose run made them. */
-  toolCalls: Array<{ step: number; name: string; args: Record<string, unknown> }>;
+  toolCalls: Array<{
+    step: number;
+    name: string;
+    args: Record<string, unknown>;
+    /** Ran through use_tool; `loaded` when an earlier find_tool returned it. */
+    viaUseTool?: boolean;
+    loaded?: boolean;
+  }>;
   finalStep: number;
   settings: SettingsSnapshot;
   /** Settings just before the final step. */
@@ -59,10 +70,14 @@ export type EvalCase = {
   pauseEndsTurn?: true;
   /** Synthetic bot state written before the first step. */
   botSetup?: BotSetup;
+  /** The bot's MEMORY.md, written through the memory API before the first step. */
+  botMemory?: string;
   taughtSkill?: true;
   history?: ReturnType<typeof historyFixture>;
   configure?: (services: EvalServices) => void;
   routine?: { prompt: string };
+  /** A second bot of the same user that fromPeer steps speak as. */
+  peer?: { name: string; description: string; instructions: string };
   grade: (evidence: Evidence) => Criterion[];
   judge?: (evidence: Evidence) => JudgeInput;
 };

@@ -42,6 +42,12 @@ export function installDesktopEarlyErrorReporting(): void {
   process.on("uncaughtExceptionMonitor", (error) => {
     reportDesktopError(error, "desktop.startup");
   });
+  // A launcher that closed its end of stdout or stderr must not turn every log line into a crash.
+  for (const stream of [process.stdout, process.stderr]) {
+    stream.on("error", (error: NodeJS.ErrnoException) => {
+      if (error.code !== "EPIPE") reportDesktopError(error, "desktop.startup");
+    });
+  }
 }
 
 export function disableDesktopMonitoring(): void {

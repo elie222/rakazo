@@ -710,6 +710,58 @@ describe("finalizeComputerControlRelease", () => {
     );
   });
 
+  it("locks the control run's thread before it writes the run row", async () => {
+    // clearThread locks the thread row before it cancels runs; the release must match
+    // that order, or the two transactions can wait on each other's rows.
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      computer: {
+        findFirst: vi.fn().mockResolvedValue({ controlRunId: "run-1" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      bot: {
+        findFirst: vi.fn().mockResolvedValue({ thread: { id: "thread-1" } }),
+      },
+      run: {
+        findUnique: vi.fn().mockResolvedValue({ threadId: "thread-1", status: "waiting_takeover" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      message: { findMany: vi.fn().mockResolvedValue([]) },
+      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
+      event: {
+        create: vi.fn().mockResolvedValue({
+          ...event(7),
+          type: "computer.takeover.released",
+          payload: { holder: "none", leaseId: "lease-1", reason: "done" },
+        }),
+      },
+    };
+    const prisma = {
+      message: { findUnique: vi.fn().mockResolvedValue(null) },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      finalizeComputerControlRelease(prisma, {
+        spaceId: "workspace-1",
+        computerId: "computer-1",
+        botId: "bot-1",
+        runId: "run-1",
+        leaseId: "lease-1",
+        holder: "none",
+        reason: "done",
+      }),
+    ).resolves.toEqual({ runId: "run-1" });
+
+    const threadLock = tx.$queryRaw.mock.calls.findIndex((call) =>
+      Array.isArray(call[0]) ? call[0][0].includes("FROM threads") : false,
+    );
+    expect(threadLock).toBeGreaterThanOrEqual(0);
+    expect(tx.$queryRaw.mock.invocationCallOrder[threadLock]!).toBeLessThan(
+      tx.run.updateMany.mock.invocationCallOrder[0]!,
+    );
+  });
+
   it("clears the lease even if its controlling bot was deleted", async () => {
     const tx = {
       $queryRaw: vi.fn().mockResolvedValue([]),
@@ -4355,6 +4407,52 @@ describe("claimSteering", () => {
 });
 
 describe("clearThread", () => {
+  it("reports a committed clear even when the legacy binding sweep fails", async () => {
+    const tx = {
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      thread: {
+        update: vi
+          .fn()
+          .mockResolvedValueOnce({ nextMessageSeq: 3, historyCompactionGeneration: 0 })
+          .mockResolvedValue({ nextEventSeq: 1 }),
+      },
+      run: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([
+            { id: "run-1", taskId: "task-1", userId: "user-1", spaceId: "workspace-1" },
+          ]),
+        updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
+          where.id.in.map((id) => ({ id })),
+        ),
+      },
+      attempt: { updateMany: vi.fn() },
+      task: { updateMany: vi.fn() },
+      secret: { deleteMany: vi.fn() },
+      computerExecutionLease: { updateMany: vi.fn() },
+      computer: { updateMany: vi.fn() },
+      message: { deleteMany: vi.fn(), findMany: vi.fn(async () => []) },
+      event: {
+        deleteMany: vi.fn(),
+        create: vi.fn().mockResolvedValue({ ...event(0), type: "thread.cleared" }),
+      },
+      bot: { update: vi.fn() },
+    };
+    const prisma = {
+      computer: { updateMany: vi.fn().mockRejectedValue(new Error("connection lost")) },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      clearThread(
+        prisma,
+        { spaceId: "workspace-1", threadId: "thread-1", botId: "bot-1" },
+        new TestFanout(),
+      ),
+    ).resolves.toMatchObject({ event: { type: "thread.cleared" }, cancelledRunIds: ["run-1"] });
+    expect(prisma.computer.updateMany).toHaveBeenCalled();
+  });
+
   it("releases the computer execution lease without dropping the computer", async () => {
     const fanout = new TestFanout();
     const publish = vi.spyOn(fanout, "publish");
@@ -4372,7 +4470,9 @@ describe("clearThread", () => {
           .mockResolvedValue([
             { id: "run-1", taskId: "task-1", userId: "user-1", spaceId: "workspace-1" },
           ]),
-        updateMany: vi.fn(),
+        updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
+          where.id.in.map((id) => ({ id })),
+        ),
       },
       attempt: { updateMany: vi.fn() },
       task: { updateMany: vi.fn() },
@@ -4390,6 +4490,7 @@ describe("clearThread", () => {
       bot: { update: vi.fn() },
     };
     const prisma = {
+      computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
@@ -4403,7 +4504,10 @@ describe("clearThread", () => {
       where: { runId: { in: ["run-1"] } },
       data: { expiresAt: new Date(0) },
     });
-    expect(tx.computer.updateMany).toHaveBeenCalledWith({
+    // The legacy execution binding is cleared after the transaction commits, so the
+    // transaction never reaches for the computer row under the thread-row lock.
+    expect(tx.computer.updateMany).not.toHaveBeenCalled();
+    expect(prisma.computer.updateMany).toHaveBeenCalledWith({
       where: { executionRunId: { in: ["run-1"] } },
       data: {
         executionRunId: null,
@@ -4430,6 +4534,12 @@ describe("clearThread", () => {
         ],
       },
     });
+    // The thread row locks before the runs are cancelled, matching the takeover
+    // release order (computer, thread, run), so neither path waits on a row the
+    // other holds while reaching for the thread.
+    expect(tx.thread.update.mock.invocationCallOrder[0]!).toBeLessThan(
+      tx.run.updateManyAndReturn.mock.invocationCallOrder[0]!,
+    );
   });
 
   it("scopes group clear lease cleanup to cancelled run ids", async () => {
@@ -4447,7 +4557,9 @@ describe("clearThread", () => {
           { id: "group-run-1", taskId: "task-1" },
           { id: "group-run-2", taskId: "task-2" },
         ]),
-        updateMany: vi.fn(),
+        updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
+          where.id.in.map((id) => ({ id })),
+        ),
       },
       attempt: { updateMany: vi.fn() },
       task: { updateMany: vi.fn() },
@@ -4465,6 +4577,7 @@ describe("clearThread", () => {
       chatGroup: { update: vi.fn() },
     };
     const prisma = {
+      computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
@@ -4493,7 +4606,7 @@ describe("clearThread", () => {
       where: { runId: { in: ["group-run-1", "group-run-2"] } },
       data: { expiresAt: new Date(0) },
     });
-    expect(tx.computer.updateMany).toHaveBeenCalledWith({
+    expect(prisma.computer.updateMany).toHaveBeenCalledWith({
       where: { executionRunId: { in: ["group-run-1", "group-run-2"] } },
       data: {
         executionRunId: null,
@@ -4855,7 +4968,7 @@ describe("appendEvent", () => {
   });
 });
 
-describe("instruction proposal answers", () => {
+describe("held instruction answers", () => {
   function fixture() {
     const request = {
       instructions: "Draft only",
@@ -4892,13 +5005,12 @@ describe("instruction proposal answers", () => {
       externalEffect: {
         findFirst: vi.fn(async () => ({
           id: "effect-1",
-          kind: "propose_instructions_update",
+          kind: "update_bot",
           request,
         })),
         findUniqueOrThrow: vi.fn(async () => ({ request })),
         update: vi.fn(),
       },
-      bot: { updateMany: vi.fn() },
       task: { updateMany: vi.fn() },
       thread: { update: vi.fn(async () => ({ nextEventSeq: 10 })) },
       event: {
@@ -4950,7 +5062,7 @@ describe("instruction proposal answers", () => {
           blocks: [
             expect.objectContaining({
               instructionUpdate: expect.objectContaining({ after: "Never send" }),
-              detail: "Learned preference\n\n- Original\n+ Never send",
+              detail: "- Original\n+ Never send",
             }),
           ],
         },
@@ -4970,13 +5082,9 @@ describe("instruction proposal answers", () => {
     expect(f.tx.externalEffect.update).not.toHaveBeenCalled();
     expect(f.tx.run.updateMany).not.toHaveBeenCalled();
   });
-  it("dismisses and frees the bot reservation", async () => {
+  it("dismisses the change", async () => {
     const f = fixture();
     expect(await f.answer("deny")).toBe(true);
-    expect(f.tx.bot.updateMany).toHaveBeenCalledWith({
-      where: { id: "bot-1", pendingInstructionsRunId: "run-1" },
-      data: { pendingInstructionsRunId: null },
-    });
     expect(f.tx.externalEffect.update).toHaveBeenCalledWith({
       where: { id: "effect-1" },
       data: { status: "denied" },

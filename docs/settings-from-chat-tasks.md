@@ -82,24 +82,29 @@ rest on demand. Every step is measured with tool-choice evals before and after.
 
 ### 2. Bot settings from chat
 
-- [ ] Remove `propose_instructions_update` and its approval wiring; `update_bot`
+- [x] Remove `propose_instructions_update` and its approval wiring; `update_bot`
       accepts `instructions` on the bot's own profile.
-- [ ] `update_bot` with no fields returns the current settings and allowed
-      values (connected models, thinking levels, voices).
-- [ ] Add `model` (resolved from loose names against connected models; a clear
+- [x] `update_bot` with no fields returns the current settings and allowed
+      values (connected models, thinking levels). Voices take a provider call,
+      so they are listed only when `voice` is passed and matches nothing.
+- [x] Add `model` (resolved from loose names against connected models; a clear
       "connect a provider first" result when none match), `thinking`, `voice`,
-      `readAloud`, `memoryScope`. Same API validation as the settings screen.
-      Reuse the same resolution in `set_child_bot_model`.
-- [ ] Undo for chat-made profile changes, reusing instruction/profile history.
-- [ ] Prompt: change settings only when the user asks; onboarding self-setup
+      `readAloud`. Same API validation as the settings screen.
+      Reuse the same resolution in `set_child_bot_model`. `memoryScope` stays
+      in Settings: shared memory widens what the bot reads and exposes.
+- [x] Undo for chat-made changes: instructions keep their history; model,
+      thinking, voice and read-aloud post a "Settings updated" card whose undo
+      writes the previous values back only while the changed ones still hold.
+- [x] Prompt: change settings only when the user asks; onboarding self-setup
       (name, description, instructions) stays.
-- [ ] Eval: settings guard cases pass; controls show no unasked changes.
+- [x] Eval: settings guard cases pass; controls show no unasked changes.
 
 ### 3. User settings from chat
 
-- [ ] One small patch tool for low-risk user preferences that already live on
-      the server (timezone, voice preferences, marketing email opt-out). Read
-      by omitting fields.
+- [x] `update_preferences`: timezone and marketing emails for the user who
+      started the run, offered only on runs they started. Read by omitting
+      fields. Voice and model preferences stay out: each is tied to a
+      connection and its catalog, not a simple value.
 - Theme stays out: it is device-local (`@rakazo/ui-tokens` appearance
   preference), not an account setting.
 - [ ] Eval cases for each preference and for refused ones (email, billing).
@@ -115,7 +120,7 @@ rest on demand. Every step is measured with tool-choice evals before and after.
 
 ### 5. Lazy tool loading
 
-- [ ] Provider-neutral bridge: a core set (~12-15 tools, chosen from usage)
+- [x] Provider-neutral bridge: a core set (~12-15 tools, chosen from usage)
       stays listed; the rest are reachable through `find_tool` (returns top
       matches with full schemas) and `use_tool` (runs through the exact same
       gate, approvals and audit as a direct call). The `find_tool` description
@@ -123,10 +128,10 @@ rest on demand. Every step is measured with tool-choice evals before and after.
       exact `names` (lookup) or a `query` (deterministic keyword/BM25 ranking
       over name, description and parameter names, top 3). The tool list never
       changes mid-run, so the prompt cache survives.
-- [ ] Evals: rare tasks find then use the right tool; common tasks never call
+- [x] Evals: rare tasks find then use the right tool; common tasks never call
       `find_tool`; `use_tool` is never called on an unloaded or unknown tool.
-- [ ] Tool activity UI shows the real tool, not `use_tool`.
-- [ ] Deterministic test pinning the visible tool list and a byte budget for
+- [x] Tool activity UI shows the real tool, not `use_tool`.
+- [x] Deterministic test pinning the visible tool list and a byte budget for
       tool text; fails CI when it grows.
 - [ ] Re-run the full tool-choice suite and the existing product suite; compare
       pass rate, tool calls per run, tokens and cost against the baseline.

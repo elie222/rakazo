@@ -81,7 +81,7 @@ export const ToolChoiceCaseSchema = z
   );
 export type ToolChoiceCase = z.infer<typeof ToolChoiceCaseSchema>;
 
-const SETTINGS_TOOLS = ["update_bot", "propose_instructions_update"];
+const SETTINGS_TOOLS = ["update_bot", "update_preferences"];
 
 function matches(expected: Matcher, actual: unknown): boolean {
   if (Array.isArray(expected)) return expected.some((option) => matches(option, actual));
@@ -149,6 +149,11 @@ export function gradeToolChoice(expect: ToolChoiceExpect, evidence: Evidence): C
       id: `at most ${max} ${tool}`,
       pass: names.filter((name) => name === tool).length <= max,
     });
+  if (calls.some((call) => call.viaUseTool || call.name === "use_tool"))
+    criteria.push({
+      id: "use_tool runs only tools find_tool loaded",
+      pass: calls.every((call) => call.name !== "use_tool" && (!call.viaUseTool || call.loaded)),
+    });
   criteria.push(...stateCriteria("bot", expect.bot, evidence.settings.bot));
   criteria.push(...stateCriteria("user", expect.user, evidence.settings.user));
   if (expect.settingsUnchanged)
@@ -161,11 +166,15 @@ export function gradeToolChoice(expect: ToolChoiceExpect, evidence: Evidence): C
   return criteria;
 }
 
-/** `update_bot` with no fields only reads; it is not a change. */
+/** `update_bot` with no fields only reads; providers may send omitted fields as null or blank. */
 function isSettingsRead(calls: Evidence["toolCalls"], name: string) {
   return calls
     .filter((call) => call.name === name)
-    .every((call) => Object.keys(call.args ?? {}).length === 0);
+    .every((call) =>
+      Object.values((call.args ?? {}) as Record<string, unknown>).every(
+        (value) => value === null || (typeof value === "string" && !value.trim()),
+      ),
+    );
 }
 
 export function toolChoiceEvalCase(definition: ToolChoiceCase): EvalCase {

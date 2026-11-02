@@ -433,6 +433,7 @@ describe("rejected model credentials", () => {
     "401 Incorrect API key provided",
     "invalid_api_key",
     "Your authentication token has been invalidated.",
+    '400 {"type":"error","error":{"type":"invalid_request_error","message":"This API key is not scoped to a workspace."}}',
   ])("rejects %s without a retry", (message) => {
     expect(isModelCredentialRejected(new Error(message))).toBe(true);
     expect(isTransientModelError(new Error(message))).toBe(false);

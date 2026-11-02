@@ -342,7 +342,15 @@ export function modelCredentialDto(
       ? { enabledModelIds: enabledOpenAiCompatibleModelIds(parsed, row.defaultModel) }
       : {}),
     thinkingLevels: getSupportedThinkingLevels(
-      openAiCompatibleModel(row.defaultModel ?? "custom", parsed.baseUrl, parsed.reasoning),
+      openAiCompatibleModel(
+        row.defaultModel ?? "custom",
+        parsed.baseUrl,
+        parsed.reasoning,
+        false,
+        undefined,
+        undefined,
+        parsed.apiProtocol,
+      ),
     ) as ThinkingLevel[],
     modelId: row.defaultModel ?? undefined,
   };

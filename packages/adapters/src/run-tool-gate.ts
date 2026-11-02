@@ -28,7 +28,8 @@ import {
 } from "@rakazo/core";
 import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
-import { runSecretKind } from "@rakazo/db";
+import type { AuditEventInput } from "@rakazo/db";
+import { recordAuditEvent, runSecretKind } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { FleetCardSummary } from "./approval-ask.js";
 import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH, SITE_SENDING_TOOLS } from "./approval-ask.js";
@@ -46,6 +47,7 @@ import {
   resolveAutoReviewChecker,
 } from "./auto-review.js";
 import { reviewWithBackups } from "./auto-review-backups.js";
+import { RAKAZO_DOCS_URLS } from "./builtin-skills.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { findConnectedModelCredential } from "./model-selection.js";
 import { paidRequestEffect } from "./paid-request.js";
@@ -71,7 +73,7 @@ import { resolveCompletedSecretLeftover } from "./run-secret.js";
 import type { ToolRequest } from "./run-tool-request.js";
 import { BUILTIN_AGENT_TOOL_NAMES, READ_ONLY_AGENT_TOOLS } from "./run-tool-selection.js";
 import { callMediaTool } from "./run-tools-files.js";
-import { USER_COMPUTER_SHELL_TOOL, userComputerGate } from "./run-tools-user-computer.js";
+import { USER_COMPUTER_TOOLS, userComputerGate } from "./run-tools-user-computer.js";
 import { connectorTrustKeys } from "./run-trust.js";
 import { watchFromTool } from "./schedule-tools.js";
 
@@ -194,6 +196,7 @@ export async function gateToolCall(
           site: fetchSite,
           trusted:
             ctx.trust.searchResultUrls.has(fetchUrl) ||
+            (name === "web_fetch" && RAKAZO_DOCS_URLS.includes(fetchUrl)) ||
             (await ctx.trust.loadTrustedSites()).has(fetchSite),
           rules: await ctx.trust.loadApprovalRules(),
         })
@@ -231,10 +234,13 @@ export async function gateToolCall(
   // site this run was not given needs a person: a reviewer would judge it on this run's
   // context, and passing it would trust the site for every later run.
   const scheduleNamesNewSite =
-    (name === "schedule_create" || (name === "schedule_update" && Boolean(args.prompt))) &&
+    (name === "schedule_create" ||
+      name === "create_child_routine" ||
+      (name === "schedule_update" && Boolean(args.prompt))) &&
     (await isRunTainted(ctx)) &&
     (await ctx.trust.routineNamesNewSite(String(args.prompt ?? "")));
   const requiresApprovalByDefault =
+    request.heldForApproval ||
     commandWatch ||
     requiresUnattendedApproval ||
     siteGate === "new" ||
@@ -249,6 +255,8 @@ export async function gateToolCall(
     scheduleNamesNewSite ||
     requiresUnattendedApproval ||
     toolRequiresExplicitApproval(name);
+  // Never ask runs everything else: only another owner's connection could have been steered into it.
+  const guardedInNeverAsk = name === "respond_agent_connection";
   const resolvedRules = resolveActionApprovalForTools({
     tools: approvalToolNames.map((toolName) => ({
       name: toolName,
@@ -297,23 +305,25 @@ export async function gateToolCall(
             ),
           )
         : false));
-  const plan =
-    name === USER_COMPUTER_SHELL_TOOL
-      ? await userComputerGate(ctx, approvalResolved.decision === "deny")
-      : planActionGate({
-          resolved: approvalResolved,
-          mode,
-          mandatory: requiresMandatoryApproval,
-          steerable:
-            requiresMandatoryApproval && mode === "never"
-              ? !ctx.source.ownerStartedRun || (await isRunTainted(ctx))
-              : undefined,
-          consequential: requiresApprovalByDefault,
-          reviewOnly: connectorReadGated,
-          checkerConfigured,
-          newDestination: siteGate === "new",
-        });
+  const plan = USER_COMPUTER_TOOLS.has(name)
+    ? await userComputerGate(ctx, approvalResolved.decision === "deny", name, args)
+    : planActionGate({
+        resolved: approvalResolved,
+        mode,
+        mandatory: requiresMandatoryApproval,
+        steerable:
+          guardedInNeverAsk && mode === "never"
+            ? !ctx.source.ownerStartedRun || (await isRunTainted(ctx))
+            : undefined,
+        consequential: requiresApprovalByDefault,
+        reviewOnly: connectorReadGated,
+        checkerConfigured,
+        newDestination: siteGate === "new",
+      });
   if (plan === "deny") {
+    await auditToolCall(ctx, name, "denied", {
+      reason: approvalResolved.decision === "deny" ? "rule" : "never_asks",
+    });
     return {
       result: {
         error:
@@ -550,6 +560,28 @@ export async function gateToolCall(
   return { call };
 }
 
+/** A bot's consequential tool call, recorded in its organization's audit log. */
+export async function auditToolCall(
+  ctx: RunContext,
+  tool: string,
+  outcome: "success" | "failure" | "denied",
+  metadata: AuditEventInput["metadata"],
+  recorded: Pick<AuditEventInput, "action" | "actor"> = {
+    action: "tool.call",
+    actor: { type: "bot", id: ctx.bot.id, label: ctx.bot.name },
+  },
+): Promise<void> {
+  await recordAuditEvent({
+    ...recorded,
+    spaceId: ctx.run.spaceId,
+    target: { type: "tool", id: tool, label: humanizeToolName(tool) },
+    outcome,
+    runId: ctx.runId,
+    threadId: ctx.thread.id,
+    metadata,
+  });
+}
+
 function blockingRuleSuffix(resolved: ReturnType<typeof resolveActionApprovalForTools>): string {
   const labels = decisiveActionApprovalRules(resolved).map((rule) => {
     const value = rule.matchValue.trim().replace(/\s+/g, " ");
@@ -650,7 +682,7 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
       buildApprovalAskBlock(
         applied!.effect.id,
         name,
-        name === "propose_instructions_update" ? { ...args, botId: bot.id } : args,
+        name === "update_bot" && "previousInstructions" in args ? { ...args, botId: bot.id } : args,
         ctx.secrets,
         card,
       ),
@@ -774,6 +806,7 @@ async function reviewToolCall(
         },
       });
     }
+    await auditAutoReview(ctx, name, applied, judge.decision, judge.model);
     return verdict;
   } catch {
     // Cancellation must not write a review the next attempt would reuse.
@@ -784,18 +817,32 @@ async function reviewToolCall(
       reason: reviewReason,
       decision: applyJudgeDecision({ decision: "error", consequential: gated }),
     };
+    const reviewModel = checker
+      ? `${checker.provider}/${checker.model}`
+      : (injectedReview?.describe().id ?? "auto-review");
     if (applied) {
       await deps.prisma.externalEffect.update({
         where: { id: applied.effect.id },
-        data: {
-          reviewDecision: "error",
-          reviewReason,
-          reviewModel: checker
-            ? `${checker.provider}/${checker.model}`
-            : (injectedReview?.describe().id ?? "auto-review"),
-        },
+        data: { reviewDecision: "error", reviewReason, reviewModel },
       });
     }
+    await auditAutoReview(ctx, name, applied, "error", reviewModel);
     return verdict;
   }
+}
+
+function auditAutoReview(
+  ctx: RunContext,
+  tool: string,
+  applied: AppliedEffect | undefined,
+  decision: string,
+  model: string | undefined,
+): Promise<void> {
+  return auditToolCall(
+    ctx,
+    tool,
+    decision === "error" ? "failure" : "success",
+    { effectId: applied?.effect.id, decision },
+    { action: "approval.auto_reviewed", actor: { type: "system", label: model } },
+  );
 }

@@ -20,6 +20,12 @@ dbTests("deferred migrations", () => {
   const table = `deferred_probe_${stamp}`;
   const added = `29990101000000_add_${stamp}`;
   const dropped = `29990101000001_drop_${stamp}`;
+  const broken = `29990101000002_broken_${stamp}`;
+  const laterTable = `deferred_later_${stamp}`;
+  const laterAdded = `29990101000003_add_${stamp}`;
+  const laterDropped = `29990101000004_drop_${stamp}`;
+  const lockTable = `deferred_lock_${stamp}`;
+  const lockAdded = `29990101000005_lock_${stamp}`;
   const freshSchema = `deferred_fresh_${stamp}`;
   const dir = mkdtempSync(path.join(tmpdir(), "deferred-migrations-"));
   let client: Client;
@@ -29,10 +35,10 @@ dbTests("deferred migrations", () => {
     writeFileSync(path.join(dir, name, "migration.sql"), sql);
   }
 
-  async function columns() {
+  async function columns(name = table) {
     const { rows } = await client.query<{ column_name: string }>(
       "SELECT column_name FROM information_schema.columns WHERE table_name = $1 ORDER BY 1",
-      [table],
+      [name],
     );
     return rows.map((row) => row.column_name);
   }
@@ -48,10 +54,14 @@ dbTests("deferred migrations", () => {
 
   afterAll(async () => {
     await client.query(`DROP TABLE IF EXISTS "${table}"`);
+    await client.query(`DROP TABLE IF EXISTS "${laterTable}"`);
+    await client.query(`DROP TABLE IF EXISTS "${lockTable}"`);
     await client.query("DELETE FROM _prisma_migrations WHERE migration_name = ANY($1)", [
-      [added, dropped],
+      [added, dropped, broken, laterAdded, laterDropped, lockAdded],
     ]);
-    await client.query('DELETE FROM "_deferred_migrations" WHERE name = $1', [dropped]);
+    await client.query('DELETE FROM "_deferred_migrations" WHERE name = ANY($1)', [
+      [dropped, laterDropped],
+    ]);
     await client.query(`DROP SCHEMA "${freshSchema}"`);
     await client.end();
     rmSync(dir, { recursive: true, force: true });
@@ -68,5 +78,54 @@ dbTests("deferred migrations", () => {
     expect(await columns()).toEqual(["gone", "id"]);
     await deployMigrations({ migrationUrl: databaseUrl!, dbPackageDir, migrationsDir: dir });
     expect(await columns()).toEqual(["id"]);
+  });
+
+  it("keeps holding a deferred drop back after a failed run", async () => {
+    migration(laterAdded, `CREATE TABLE "${laterTable}" (id INT, gone INT);\n`);
+    await deployMigrations({ migrationUrl: databaseUrl!, dbPackageDir, migrationsDir: dir });
+    migration(broken, "SELECT * FROM no_such_table;\n");
+    migration(
+      laterDropped,
+      `${DEFERRED_MIGRATION_MARKER}\nALTER TABLE "${laterTable}" DROP COLUMN gone;\n`,
+    );
+    await expect(
+      deployMigrations({ migrationUrl: databaseUrl!, dbPackageDir, migrationsDir: dir }),
+    ).rejects.toThrow();
+
+    // Recover the way an operator would: mark the failed migration rolled back and fix it.
+    await client.query(
+      "UPDATE _prisma_migrations SET rolled_back_at = now() WHERE migration_name = $1",
+      [broken],
+    );
+    writeFileSync(path.join(dir, broken, "migration.sql"), "SELECT 1;\n");
+    await deployMigrations({ migrationUrl: databaseUrl!, dbPackageDir, migrationsDir: dir });
+    expect(await columns(laterTable)).toEqual(["gone", "id"]);
+    await deployMigrations({ migrationUrl: databaseUrl!, dbPackageDir, migrationsDir: dir });
+    expect(await columns(laterTable)).toEqual(["id"]);
+  });
+
+  it("retries a migration that lost a lock to a running query", async () => {
+    await client.query(`CREATE TABLE "${lockTable}" (id INT)`);
+    migration(
+      lockAdded,
+      `SET lock_timeout = '200ms';\nALTER TABLE "${lockTable}" ADD COLUMN extra INT;\n`,
+    );
+    const reader = new Client({ connectionString: databaseUrl });
+    await reader.connect();
+    await reader.query("BEGIN");
+    await reader.query(`LOCK TABLE "${lockTable}" IN ACCESS SHARE MODE`);
+    const released = new Promise((resolve) => setTimeout(resolve, 1_000)).then(async () => {
+      await reader.query("COMMIT");
+      await reader.end();
+    });
+
+    await deployMigrations({
+      migrationUrl: databaseUrl!,
+      dbPackageDir,
+      migrationsDir: dir,
+      lockRetryDelaysMs: [2_000],
+    });
+    await released;
+    expect(await columns(lockTable)).toEqual(["extra", "id"]);
   });
 });

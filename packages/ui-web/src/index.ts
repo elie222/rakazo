@@ -53,3 +53,4 @@ export { GroupAvatar, type GroupAvatarMember, type GroupAvatarProps } from "./gr
 export { cn } from "./lib/utils.js";
 export { LogoAvatar } from "./logo-avatar.js";
 export { ModelThinkingOptions } from "./model-thinking-options.js";
+export { SectionHeading } from "./section-heading.js";

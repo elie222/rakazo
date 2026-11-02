@@ -18,6 +18,7 @@ export const SELF_HOST_RESTRICTED_URL =
   "https://github.com/elie222/rakazo/blob/main/docs/self-host-restricted-network.md";
 export const SETUP_PROMPT_URL = "https://github.com/elie222/rakazo/blob/main/SETUP_PROMPT.md";
 export const SELF_HOST_GUIDE_PATH = "/self-hosted-ai-agent/";
+export const PLUGIN_SUBMIT_PATH = "/plugins/submit/";
 export const OPENCLAW_ALTERNATIVE_PATH = "/openclaw-alternative/";
 export const CHANGELOG_URL = "https://github.com/elie222/rakazo/releases";
 export const LATEST_RELEASE_URL = `${CHANGELOG_URL}/latest`;

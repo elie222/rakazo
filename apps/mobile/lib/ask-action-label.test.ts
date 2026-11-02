@@ -32,6 +32,15 @@ describe("askActionLabel", () => {
     );
   });
 
+  it.each(["Allow in this space", "Allow for this chat"])(
+    "labels the user's-computer allow from %s as covering the space",
+    (label) => {
+      expect(askActionLabel({ id: "allow", label }, { approval: true }, fakeT)).toBe(
+        "Allow in this space",
+      );
+    },
+  );
+
   it.each(["allow", "always", "deny", "custom"])(
     "preserves the server label for non-approval action %s",
     (id) => {

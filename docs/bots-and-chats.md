@@ -50,9 +50,11 @@ Under **Advanced**:
 - **Computer**: **Team** or **Private**. See [The bot's computer](./computer.md).
 - **Voice**: **Read replies aloud** and the bot's voice.
 - **Permissions**: **Allow cross-space bot communication** and
-  [**Manage the bots it creates**](./fleet-management.md).
-- **Instructions**: the bot's standing instructions. Bots can propose changes, which you approve
-  in the chat. **Instruction history** lets you restore an earlier version.
+  [**Manage other bots**](./fleet-management.md).
+- **Instructions**: the bot's standing instructions. You can also ask the bot in chat to change
+  them, or its name, model, thinking, voice and read-aloud; instruction and setting changes
+  show **Undo** in the chat. Memory scope stays in Settings, since shared memory changes what the bot can read.
+  **Instruction history** lets you restore an earlier version.
 - **How other bots see it**: a short description other bots read when deciding whom to ask.
 - **Tools**: **Disable a tool** the bot should never use.
 - **Export** downloads the bot's setup as a file. **Clear conversation** empties the chat.

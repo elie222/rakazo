@@ -2397,7 +2397,9 @@ describe("computer execution leases", () => {
       },
       run: {
         findMany: vi.fn().mockResolvedValue([{ id: "run-1", taskId: "task-1" }]),
-        updateMany: vi.fn(),
+        updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
+          where.id.in.map((id) => ({ id })),
+        ),
       },
       attempt: { updateMany: vi.fn() },
       task: { updateMany: vi.fn() },
@@ -2749,6 +2751,8 @@ describe("computer replacement", () => {
   it("exposes update availability by sandbox kind", () => {
     expect(computerSupportsUpdate("e2b")).toBe(true);
     expect(computerSupportsUpdate("desktop")).toBe(false);
+    expect(computerSupportsUpdate("wuying")).toBe(false);
+    expect(computerSupportsUpdate("none")).toBe(false);
   });
 
   it("replaces a wedged computer and restores the durable home", async () => {
@@ -3976,6 +3980,7 @@ describe("computer terminal capability", () => {
   it("allows Novita terminals through the product capability gate", () => {
     expect(computerSupportsTerminal("novita")).toBe(true);
     expect(computerSupportsTerminal("unknown")).toBe(false);
+    expect(computerSupportsTerminal("none")).toBe(false);
   });
 });
 

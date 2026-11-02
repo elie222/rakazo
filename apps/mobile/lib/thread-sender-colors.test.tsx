@@ -53,7 +53,10 @@ vi.mock("../components/audio-attachment", () => ({ AudioAttachment: () => null }
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("../components/ChoiceCard", () => ({ ChoiceCard: () => null }));
 vi.mock("../components/inline-image-attachment", () => ({ InlineImageAttachment: () => null }));
-vi.mock("../components/instruction-undo", () => ({ InstructionUndo: () => null }));
+vi.mock("../components/change-undo", () => ({
+  ChangeUndo: () => null,
+  isUndoableChange: () => false,
+}));
 vi.mock("../components/McpApprovalCard", () => ({ McpApprovalCard: () => null }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 

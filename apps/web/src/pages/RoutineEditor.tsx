@@ -718,8 +718,7 @@ export function RoutineEditor({
                 <DropdownMenuItem disabled>
                   <span
                     aria-hidden
-                    className="inline-block size-3.5 rounded-[4px]"
-                    style={{ background: comingSoonColor(item.id), opacity: 0.55 }}
+                    className="inline-block size-3.5 rounded-[4px] bg-muted-foreground/50"
                   />
                   {item.label()}
                 </DropdownMenuItem>
@@ -1056,18 +1055,5 @@ function schedulePresetLabel(freq: CronFreq): string {
       return t`Advanced...`;
     default:
       return freq;
-  }
-}
-
-function comingSoonColor(id: string): string {
-  switch (id) {
-    case "teams":
-      return "#6264A7";
-    case "linear":
-      return "#5E6AD2";
-    case "sentry":
-      return "#A467FD";
-    default:
-      return "#06AC38";
   }
 }

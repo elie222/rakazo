@@ -574,10 +574,9 @@ async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) 
         },
       })
     : [];
-  if (activeRuns.length) {
-    const now = new Date();
-    const runIds = activeRuns.map((run) => run.id);
-    await cancelRunsInTransaction(tx, activeRuns, now);
+  const cancelledRuns = await cancelRunsInTransaction(tx, activeRuns, new Date());
+  if (cancelledRuns.length) {
+    const runIds = cancelledRuns.map((run) => run.id);
     await expireComputerExecutionLeases(tx, { runId: { in: runIds } });
     await tx.computer.updateMany({
       where: { executionRunId: { in: runIds } },
@@ -602,7 +601,7 @@ async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) 
   }
   return {
     artifactKeys: groupArtifacts.map((artifact) => artifact.storageKey),
-    cancelledRuns: activeRuns.map((run) => ({
+    cancelledRuns: cancelledRuns.map((run) => ({
       id: run.id,
       botId: run.botId,
       computer: run.bot.computer,

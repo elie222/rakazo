@@ -475,8 +475,8 @@ describe("mutating tool effect idempotency keys", () => {
     expect(f.results[0]).toEqual({ ok: true });
   });
 
-  it.each(["", "   ", "  MEMORY.md  "])(
-    "normalizes remember path %j before reading and committing",
+  it.each(["", "  MEMORY.md  ", "other.md", "bot"])(
+    "writes MEMORY.md whatever path %j the model passes",
     async (path) => {
       const f = fixture("run-path");
       f.memoryDocuments.push(

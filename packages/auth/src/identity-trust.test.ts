@@ -86,6 +86,10 @@ function fixture({
       }),
     },
     user: {
+      findUnique: vi.fn(async ({ where }: { where: { id?: string; email?: string } }) => {
+        const user = data.user!.find((row) => row.id === where.id || row.email === where.email);
+        return user ? { locale: user.locale ?? null } : null;
+      }),
       findMany: vi.fn(async () =>
         data
           .user!.filter((user) => !String(user.email).toLowerCase().endsWith("@messaging.invalid"))
@@ -712,6 +716,15 @@ describe("identity confirmation", () => {
     expect(await reused.json()).toMatchObject({ code: "OTP_EXPIRED" });
   });
 
+  it("writes a code email in the language the account last used the app in", async () => {
+    const f = fixture();
+    const token = await codeAccount(f);
+    const user = f.data.user!.find((row) => row.email === "approved@example.test")!;
+    user.locale = "es";
+    expect((await f.request("/request-identity-code", {}, token)).status).toBe(200);
+    expect(f.messages.at(-1)).toMatchObject({ subject: "Tu código de confirmación de Rakazo" });
+  });
+
   it("binds an emailed code to the session that requested it", async () => {
     const f = fixture();
     const token = await codeAccount(f);
@@ -1049,6 +1062,7 @@ describe("passkeys", () => {
       where: { userId, revokedAt: null },
       data: { revokedAt: expect.any(Date) },
     });
+    expect(f.prisma.$transaction).not.toHaveBeenCalledWith(expect.any(Array));
   });
 
   it("keeps a verified account's passkeys on code sign-in", async () => {

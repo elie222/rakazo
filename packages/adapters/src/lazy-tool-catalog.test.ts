@@ -235,7 +235,7 @@ describe("lazy tool catalog", () => {
         { group: "github", count: githubTools.length },
         { group: "linear", count: linearTools.length },
       ],
-      hint: expect.stringContaining("Built-in tools are called directly"),
+      hint: expect.stringContaining("Built-in tools are not in this catalog"),
     });
   });
 
@@ -244,7 +244,7 @@ describe("lazy tool catalog", () => {
     const result = searchCatalog(entries, { query: "read_file" });
     expect(result).toMatchObject({
       groups: expect.arrayContaining([{ group: "github", count: githubTools.length }]),
-      hint: expect.stringContaining("Built-in tools are called directly"),
+      hint: expect.stringContaining("Built-in tools are not in this catalog"),
     });
     expect("tools" in result && result.tools.length).toBeGreaterThan(0);
     expect(searchCatalog(entries, { query: "linear issue" })).not.toHaveProperty("hint");

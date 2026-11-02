@@ -1,4 +1,5 @@
 import { normalizeContext } from "@earendil-works/pi-ai";
+import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import {
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
@@ -338,9 +339,11 @@ describe("tool completion audit", () => {
 });
 
 describe("run workspace checkpoint", () => {
+  const computer = { id: "computer", kind: "fake" };
+
   it("skips clean turns and flushes once after a mutation", async () => {
     const persist = vi.fn(async () => undefined);
-    const checkpoint = createRunWorkspaceCheckpoint(persist);
+    const checkpoint = createRunWorkspaceCheckpoint(persist, computer);
 
     await expect(checkpoint.flush()).resolves.toBe(false);
     checkpoint.markDirty();
@@ -351,7 +354,7 @@ describe("run workspace checkpoint", () => {
 
   it("marks materialized steering files for checkpointing", async () => {
     const persist = vi.fn(async () => undefined);
-    const checkpoint = createRunWorkspaceCheckpoint(persist);
+    const checkpoint = createRunWorkspaceCheckpoint(persist, computer);
 
     checkpoint.markFiles([]);
     await expect(checkpoint.flush()).resolves.toBe(false);
@@ -360,25 +363,38 @@ describe("run workspace checkpoint", () => {
   });
 
   it("defers a failed checkpoint without failing the run and keeps it dirty for retry", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
     const persist = vi
       .fn<() => Promise<void>>()
-      .mockRejectedValueOnce(new Error("checkpoint failed"))
+      .mockRejectedValueOnce(new WorkspaceTooLargeError("bytes"))
       .mockResolvedValueOnce(undefined);
-    const checkpoint = createRunWorkspaceCheckpoint(persist);
+    const checkpoint = createRunWorkspaceCheckpoint(persist, computer);
     checkpoint.markDirty();
 
-    await expect(checkpoint.flush()).resolves.toBe(false);
-    await expect(checkpoint.flush()).resolves.toBe(true);
-    expect(persist).toHaveBeenCalledTimes(2);
+    try {
+      await expect(checkpoint.flush()).resolves.toBe(false);
+      await expect(checkpoint.flush()).resolves.toBe(true);
+      expect(persist).toHaveBeenCalledTimes(2);
+      expect(
+        sink.events.find((event) => event.message === "computer.checkpoint_deferred"),
+      ).toMatchObject({ "computer.id": "computer", provider: "fake", reason: "too_large" });
+    } finally {
+      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+    }
   });
 
   it("still stops a cancelled run whose checkpoint fails", async () => {
     const controller = new AbortController();
     const aborted = new DOMException("Aborted", "AbortError");
-    const checkpoint = createRunWorkspaceCheckpoint(async () => {
-      controller.abort(aborted);
-      throw aborted;
-    }, controller.signal);
+    const checkpoint = createRunWorkspaceCheckpoint(
+      async () => {
+        controller.abort(aborted);
+        throw aborted;
+      },
+      computer,
+      controller.signal,
+    );
     checkpoint.markDirty();
 
     await expect(checkpoint.flush()).rejects.toBe(aborted);
@@ -1319,7 +1335,7 @@ describe("userTurnInstructions", () => {
     "A bot and a subagent are different. Never use both for the same request.",
     "create_space proposes a new privacy boundary inside the current organization. Use it when the user asks to create a space or separate data between teams or projects. Never claim the space exists before the tool succeeds.",
     "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
-    "update_bot updates this bot's own name (chat header / list label), description, avatar, and notifyOnFinish. Your description is the one-line public summary teammates see; your instructions are private and say how you do your job. When you have no instructions yet and your job becomes clear, set them with update_bot; after that, propose changes with propose_instructions_update. When the user asks you to rename yourself, change your description, change your profile picture, or turn finish notifications on or off, call update_bot — do not claim you changed them without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
+    "update_bot reads and changes your own settings: name (chat header and list label), description (the one-line public summary teammates see), private instructions (how you do your job), avatar, notifyOnFinish, model, thinkingLevel (how hard you reason; a standing request to think harder, or to answer faster, is a request to change it) and readAloud. Call it with no fields to read them, for example when asked which model you run. Change a setting only when the user asks for that change; when you have no instructions yet and your job becomes clear, set your name, description and instructions yourself. Never claim a change without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
     "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
   ];
   const archiveBot =
@@ -1367,6 +1383,7 @@ describe("userTurnInstructions", () => {
       archiveBot,
       "Connected plugins: none",
       "Agent skills",
+      expect.stringContaining("read the Rakazo skill"),
       "Taught skills",
       ...stableTail,
       "Group context",
@@ -1491,7 +1508,7 @@ describe("userTurnInstructions", () => {
     const clause = clauseFor("user", true);
     expect(clause).toContain("list_fleet before changing anything");
     expect(clause).toContain(
-      "create_group, update_group, set_child_instructions, set_child_bot_model and create_child_routine need the owner's approval",
+      "set_child_instructions and set_child_bot_model need the owner's approval",
     );
     expect(clause).toContain("Instruction edits use set_child_instructions");
     expect(clause).toContain("expected_version");
@@ -1500,9 +1517,7 @@ describe("userTurnInstructions", () => {
     expect(clause).not.toContain("Instructions edits");
     expect(clause).toContain("any bot in your current space");
     const narrowed = clauseFor("user", true, false, ["set_child_instructions", "create_group"]);
-    expect(narrowed).toContain(
-      "update_group, set_child_bot_model and create_child_routine need the owner's approval",
-    );
+    expect(narrowed).toContain("set_child_bot_model needs the owner's approval");
     expect(narrowed).not.toContain("set_child_instructions");
     expect(clauseFor("user", false)).toBeUndefined();
     expect(clauseFor("bot_message", true)).toBeUndefined();

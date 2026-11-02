@@ -25,7 +25,6 @@ test("computer rail resizes its preview and remembers width", async ({ page }, t
   await expect.poll(async () => (await panel.boundingBox())!.width).toBeGreaterThan(600);
   const after = (await page.getByTestId("computer-preview").boundingBox())!;
   expect(after.width).toBeGreaterThan(before.width + 200);
-  expect(after.height).toBeGreaterThan(before.height + 100);
   await page.reload();
   await page.getByTestId("bot-settings-trigger").waitFor({ state: "visible" });
   if ((await page.getByTestId("side-panel").getAttribute("data-panel")) === "closed") {

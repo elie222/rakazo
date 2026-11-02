@@ -18,6 +18,7 @@ import { blockText, messagingProviderLabel } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import type { MobileArtifactTarget } from "../../lib/artifact-open";
 import { openMobileArtifact } from "../../lib/artifact-open";
+import { allowsSpace } from "../../lib/ask-action-label";
 import { plainAskTitle } from "../../lib/ask-title";
 import { t, useI18n } from "../../lib/i18n";
 import { isInlineImageBlock } from "../../lib/inline-image";
@@ -33,9 +34,9 @@ import { AudioAttachment } from "../audio-attachment";
 import { MessageMentions } from "../bot-mention";
 import { ChoiceCard } from "../ChoiceCard";
 import { ComputerCard } from "../ComputerCard";
+import { ChangeUndo, isUndoableChange } from "../change-undo";
 import type { ImageArtifactPreviewTarget } from "../image-artifact-viewer";
 import { InlineImageAttachment } from "../inline-image-attachment";
-import { InstructionUndo } from "../instruction-undo";
 import { McpApprovalCard } from "../McpApprovalCard";
 import type { MarkdownArtifactPreviewTarget } from "../markdown-artifact-preview";
 import { MessageCaption } from "../message-caption";
@@ -57,7 +58,8 @@ function formatApprovalAnswer(
   const outcome = selectedAction?.outcome;
   if (approval && outcome === "created") return t("Created");
   if (approval && outcome === "cancelled") return t("Cancelled");
-  if (approval && answer === "allow") return t("Allowed once");
+  if (approval && answer === "allow")
+    return allowsSpace(actions) ? t("Allowed in this space") : t("Allowed once");
   if (approval && answer === "always") return t("Always allowed");
   if (approval && answer === "deny") return t("Denied");
   return t("Answered: {answer}", { answer: selectedAskActionLabel(answer, actions) });
@@ -207,19 +209,8 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     (block): block is Extract<MessageBlock, { kind: "mcp_approval" }> =>
       block.kind === "mcp_approval",
   );
-  const undoBlock = message.blocks.find(
-    (block): block is Extract<MessageBlock, { kind: "ask" }> =>
-      block.kind === "ask" && Boolean(block.instructionUpdate?.undoVersionId),
-  );
-  if (undoBlock?.instructionUpdate?.undoVersionId) {
-    return (
-      <InstructionUndo
-        botId={undoBlock.instructionUpdate.botId}
-        versionId={undoBlock.instructionUpdate.undoVersionId}
-        instructions={undoBlock.instructionUpdate.after}
-      />
-    );
-  }
+  const undoBlock = message.blocks.find(isUndoableChange);
+  if (undoBlock?.kind === "ask") return <ChangeUndo block={undoBlock} />;
   const ask = message.blocks.find(
     (block): block is Extract<MessageBlock, { kind: "ask" }> =>
       block.kind === "ask" && !isApprovalAskBlock(block) && !block.actions?.length,
@@ -368,12 +359,8 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
             paddingVertical: 14,
           }}
         >
-          {askBlock.instructionUpdate?.undoVersionId ? (
-            <InstructionUndo
-              botId={askBlock.instructionUpdate.botId}
-              versionId={askBlock.instructionUpdate.undoVersionId}
-              instructions={askBlock.instructionUpdate.after}
-            />
+          {isUndoableChange(askBlock) ? (
+            <ChangeUndo block={askBlock} />
           ) : (
             <>
               {askBlock.text ? (

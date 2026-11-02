@@ -16,7 +16,8 @@ import { LoadFailure } from "../../components/load-failure";
 import { ModelProviders } from "../../components/model-providers";
 import type { ConnectableProvider, ModelConnectIntent } from "../../components/model-role-settings";
 import { ModelRoleSettings } from "../../components/model-role-settings";
-import type { MobileModel, MobileModelCredential } from "../../lib/api";
+import { SpaceBotsModel } from "../../components/space-bots-model";
+import type { MobileBot, MobileModel, MobileModelCredential } from "../../lib/api";
 // Connections belong to the account, so renaming and removing them go to the selected Space.
 import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
@@ -33,6 +34,7 @@ import { errorText } from "../../lib/user-error";
 
 const noModels: MobileModel[] = [];
 const noCredentials: MobileModelCredential[] = [];
+const noBots: MobileBot[] = [];
 
 /**
  * The main and approval model lists; connecting a provider opens its own screen. Opened with a
@@ -60,6 +62,9 @@ export default function Models() {
       },
       queryClient,
     ).data ?? noCredentials;
+  const bots =
+    useQuery({ ...rpcQuery("bots/list", undefined, spaceId), enabled: false }, queryClient).data ??
+    noBots;
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const openedRef = useRef(false);
@@ -87,6 +92,10 @@ export default function Models() {
           fetchFresh(queryClient, rpcQuery("models/credentials", undefined, spaceId), {
             reuse,
           }),
+          // Without the bot list only the bot model notice is missing.
+          fetchFresh(queryClient, rpcQuery("bots/list", undefined, spaceId), { reuse }).catch(
+            () => undefined,
+          ),
         ]);
         setLoadError(null);
       } catch (err) {
@@ -272,6 +281,9 @@ export default function Models() {
               defaultLabel={t("Choose a model")}
               onChanged={() => void load()}
             />
+            {me.needsModel ? null : (
+              <SpaceBotsModel bots={bots} spaceId={spaceId} onSwitched={() => load()} />
+            )}
             <ModelRoleSettings
               {...shared}
               modelRole="approval"

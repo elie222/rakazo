@@ -114,3 +114,33 @@ describe.each(["openrouter", "typesafe"] as const)("%s decision conformance", (p
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("decision provider failures", () => {
+  it("refuses a blank API key before any request", () => {
+    expect(() => new HttpDecisionProvider("typesafe", { apiKey: " " })).toThrow(
+      expect.objectContaining({ kind: "authentication" }),
+    );
+  });
+
+  it.each([
+    [422, "invalid", { costUsd: 0, usageSource: "provider-rejected" }],
+    [429, "busy", { costUsd: 0, usageSource: "provider-rejected" }],
+    [503, "unavailable", null],
+  ] as const)(
+    "maps HTTP %i to %s and bills only client rejections",
+    async (status, kind, usage) => {
+      const afterCall = vi.fn();
+      await expect(
+        new HttpDecisionProvider("typesafe", {
+          apiKey: "fake-key",
+          fetch: async () => new Response("", { status }),
+          callObserver: { beforeCall: () => "reservation", afterCall },
+        }).decide(request, context),
+      ).rejects.toMatchObject({ kind });
+      expect(afterCall).toHaveBeenCalledWith(
+        "reservation",
+        usage ? expect.objectContaining(usage) : null,
+      );
+    },
+  );
+});

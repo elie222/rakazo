@@ -20,7 +20,11 @@ import {
   registerOpenAiCompatibleCatalog,
   registerOpenAiCompatibleRuntime,
 } from "./pi-openai-compatible-provider.js";
-import { REASONING_MODEL_MAX_TOKENS, resolveCompletionMaxTokens } from "./pi-runtime-limits.js";
+import {
+  operatorMaxTokens,
+  REASONING_MODEL_MAX_TOKENS,
+  resolveCompletionMaxTokens,
+} from "./pi-runtime-limits.js";
 
 // Built on first use, not at module load: entry points call loadRootEnv() after
 // their imports, and ESM hoists those imports, so module-level env reads here
@@ -176,6 +180,8 @@ export function modelForCompletion(model: Model<Api>, configuredMaxTokens?: numb
     configuredMaxTokens,
     undefined,
     model.reasoning,
+    undefined,
+    operatorMaxTokens(model),
   );
   if (maxTokens === model.maxTokens) return model;
   return { ...model, maxTokens };

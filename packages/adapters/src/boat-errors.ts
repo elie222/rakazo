@@ -102,6 +102,10 @@ export function wrapBoatCall<Args extends unknown[], Result>(
       if (wrapped.code === "sandbox_direct_failed" && /\btimeout\b/i.test(wrapped.message)) {
         throw new SandboxUnresponsiveError(wrapped.message, { cause: wrapped });
       }
+      // Boat is still applying another change, such as a keep-alive; a later stop succeeds.
+      if (wrapped.code === "stop_failed" && /\bis updating\b/i.test(wrapped.message)) {
+        throw new SandboxUnresponsiveError(wrapped.message, { cause: wrapped });
+      }
       throw wrapped;
     }
   };

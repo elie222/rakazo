@@ -1,6 +1,7 @@
 export * from "./account-export.js";
 export * from "./approval-settings.js";
 export * from "./artifact-versions.js";
+export * from "./audit-events.js";
 export * from "./availability.js";
 export * from "./billing.js";
 export * from "./board.js";

@@ -92,9 +92,14 @@ describe("screen capability lifecycle authorization", () => {
     computer.screenGeneration++;
     expect((await request()).status).toBe(403);
   });
-  it.each(["suspending", "error", "stopped"])("rejects computer state %s", async (state) => {
+  it("serves a booting computer and rejects one that is suspending or has no sandbox", async () => {
     const { request, computer } = fixture();
-    computer.state = state;
+    computer.state = "booting";
+    expect((await request()).status).toBe(200);
+    computer.state = "suspending";
+    expect((await request()).status).toBe(403);
+    computer.state = "running";
+    computer.providerRef = "";
     expect((await request()).status).toBe(403);
   });
   it("revokes archived, reassigned, and restored bots", async () => {

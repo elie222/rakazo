@@ -14,7 +14,6 @@ import type { createSpaceRpc } from "../../lib/rpc";
 import { selectSpace } from "../../lib/rpc";
 import type { CommandPaletteAction } from "./command-palette";
 import { CommandPalette } from "./command-palette";
-import { isCommandPaletteHotkey } from "./command-palette-hotkey";
 import type { CreateBotDialogInput } from "./create-bot-dialog";
 import { CreateBotDialog } from "./create-bot-dialog";
 import {
@@ -53,15 +52,6 @@ export function useShellDialogs() {
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
   const [createBotOpen, setCreateBotOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (!isCommandPaletteHotkey(event)) return;
-      event.preventDefault();
-      setCommandPaletteOpen((open) => !open);
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
   return {
     deleteTarget,
     setDeleteTarget,

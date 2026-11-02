@@ -21,6 +21,7 @@ function createDeps(
     sendResult?: { messageId: string; runId: string | null; seq: number };
     routines?: Array<{ id: string; name: string; prompt: string }>;
     storeAttachment?: MessagingInboundDeps["storeAttachment"];
+    transcribe?: MessagingInboundDeps["transcribe"];
   } = {},
 ) {
   const identity =
@@ -136,6 +137,7 @@ function createDeps(
     routine: { findMany: vi.fn(async () => overrides.routines ?? []) },
     thread: { findFirst: vi.fn(async () => ({ id: "thread-1" })) },
     messagingChannel: {
+      findMany: vi.fn(async () => [{ id: channel.id }]),
       findUnique: vi.fn(async () => channel),
       upsert: vi.fn(async () => channel),
       update: vi.fn(async () => ({ ...channel, introPostedAt: new Date() })),
@@ -191,11 +193,16 @@ function createDeps(
           where,
           data,
         }: {
-          where: { id?: string; status?: string };
+          where: {
+            id?: string;
+            channelId?: string | { in?: string[] };
+            address?: { in?: string[]; notIn?: string[] };
+            status?: string | { in?: string[] };
+          };
           data: Record<string, unknown>;
         }) => {
           // Single-row predicated claims (owner commands) honor the status
-          // predicate; the group sweep path is asserted by call args only.
+          // predicate; bulk group writes (sweep, departures) apply to members.
           if (where.id) {
             const row = [overrides.invitedMember, overrides.approvedMember, ...members]
               .filter(Boolean)
@@ -206,6 +213,19 @@ function createDeps(
               Object.assign(row, data);
               return { count: 1 };
             }
+          } else if (where.channelId) {
+            const statuses = typeof where.status === "string" ? [where.status] : where.status?.in;
+            const channelIds =
+              typeof where.channelId === "string" ? [where.channelId] : (where.channelId.in ?? []);
+            const rows = members.filter(
+              (m) =>
+                (m.channelId === undefined || channelIds.includes(m.channelId as string)) &&
+                (!where.address?.in || where.address.in.includes(m.address as string)) &&
+                !where.address?.notIn?.includes(m.address as string) &&
+                (!statuses || statuses.includes(m.status as string)),
+            );
+            for (const row of rows) Object.assign(row, data);
+            return { count: rows.length };
           }
           return { count: 0 };
         },
@@ -283,6 +303,7 @@ function createDeps(
     signupPolicy,
     acknowledge,
     storeAttachment: overrides.storeAttachment,
+    transcribe: overrides.transcribe,
     runs,
     botReplies,
     sendUserMessage,
@@ -444,6 +465,167 @@ describe("createMessagingInboundHandler DM routing", () => {
     );
   });
 
+  it("adds a voice note transcript next to the stored audio file note", async () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    const storeAttachment = vi.fn(
+      async ({ attachment }: { attachment: { name: string; mimeType: string } }) => ({
+        id: "artifact-2",
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        size: 10,
+        bytes,
+      }),
+    );
+    const transcribe = vi.fn(async () => "spoken words");
+    const deps = createDeps({ storeAttachment, transcribe });
+    const handle = createMessagingInboundHandler(deps);
+    await handle({
+      ...dmEvent,
+      content: "",
+      attachments: [
+        {
+          name: "voice.oga",
+          mimeType: "audio/ogg",
+          size: 10,
+          fetch: async () => bytes,
+        },
+      ],
+    });
+
+    expect(transcribe).toHaveBeenCalledWith({
+      spaceId: "ws-1",
+      userId: "user-1",
+      audio: bytes,
+      mimeType: "audio/ogg",
+      signal: expect.any(AbortSignal),
+    });
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blocks: [
+          {
+            kind: "file",
+            artifactId: "artifact-2",
+            mimeType: "audio/ogg",
+            name: "voice.oga",
+            size: 10,
+          },
+        ],
+        prompt:
+          'User attached file "voice.oga" (audio/ogg, 10 bytes).' +
+          "\n[voice note transcript: spoken words]",
+      }),
+    );
+  });
+
+  it("keeps the file-only prompt when no provider can transcribe", async () => {
+    const storeAttachment = vi.fn(
+      async ({ attachment }: { attachment: { name: string; mimeType: string } }) => ({
+        id: "artifact-2",
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        size: 10,
+        bytes: new Uint8Array([1]),
+      }),
+    );
+    const transcribe = vi.fn(async () => null);
+    const deps = createDeps({ storeAttachment, transcribe });
+    const handle = createMessagingInboundHandler(deps);
+    await handle({
+      ...dmEvent,
+      content: "",
+      attachments: [
+        {
+          name: "voice.oga",
+          mimeType: "audio/ogg",
+          size: 10,
+          fetch: async () => new Uint8Array([1]),
+        },
+      ],
+    });
+
+    expect(transcribe).toHaveBeenCalledTimes(1);
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: 'User attached file "voice.oga" (audio/ogg, 10 bytes).',
+      }),
+    );
+    expect(deps.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "run.continue", payload: { runId: "run-1" } }),
+    );
+  });
+
+  it("keeps the old prompt and still delivers when transcription fails", async () => {
+    const storeAttachment = vi.fn(
+      async ({ attachment }: { attachment: { name: string; mimeType: string } }) => ({
+        id: "artifact-2",
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        size: 10,
+        bytes: new Uint8Array([1]),
+      }),
+    );
+    const transcribe = vi.fn(async () => {
+      throw new Error("provider unreachable");
+    });
+    const deps = createDeps({ storeAttachment, transcribe });
+    const handle = createMessagingInboundHandler(deps);
+    await handle({
+      ...dmEvent,
+      content: "listen",
+      attachments: [
+        {
+          name: "voice.oga",
+          mimeType: "audio/ogg",
+          size: 10,
+          fetch: async () => new Uint8Array([1]),
+        },
+      ],
+    });
+
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: 'listen\n\nUser attached file "voice.oga" (audio/ogg, 10 bytes).',
+      }),
+    );
+    expect(deps.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "run.continue", payload: { runId: "run-1" } }),
+    );
+  });
+
+  it("does not transcribe a non-audio attachment", async () => {
+    const storeAttachment = vi.fn(
+      async ({ attachment }: { attachment: { name: string; mimeType: string } }) => ({
+        id: "artifact-3",
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        size: 42,
+        bytes: new Uint8Array([1]),
+      }),
+    );
+    const transcribe = vi.fn(async () => "words");
+    const deps = createDeps({ storeAttachment, transcribe });
+    const handle = createMessagingInboundHandler(deps);
+    await handle({
+      ...dmEvent,
+      content: "",
+      attachments: [
+        {
+          name: "notes.pdf",
+          mimeType: "application/pdf",
+          size: 42,
+          fetch: async () => new Uint8Array([1]),
+        },
+      ],
+    });
+
+    expect(transcribe).not.toHaveBeenCalled();
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: 'User attached file "notes.pdf" (application/pdf, 42 bytes).',
+      }),
+    );
+  });
+
   it("keeps a media-only DM deliverable when the download fails", async () => {
     const storeAttachment = vi.fn(async () => {
       throw new Error("download failed");
@@ -468,6 +650,103 @@ describe("createMessagingInboundHandler DM routing", () => {
         prompt: "[file: voice.oga (unavailable)]",
       }),
     );
+  });
+
+  it("downloads every attachment before transcribing", async () => {
+    const audio = new Uint8Array([1, 2, 3]);
+    const storeAttachment = vi.fn(
+      async ({ attachment }: { attachment: { name: string; mimeType: string } }) => ({
+        id: attachment.name,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        size: 3,
+        bytes: attachment.mimeType.startsWith("audio/") ? audio : undefined,
+      }),
+    );
+    const transcribe = vi.fn(async () => "spoken words");
+    const deps = createDeps({ storeAttachment, transcribe });
+    await createMessagingInboundHandler(deps)({
+      ...dmEvent,
+      content: "",
+      attachments: [
+        { name: "voice.oga", mimeType: "audio/ogg", size: 3, fetch: async () => audio },
+        {
+          name: "photo.jpg",
+          mimeType: "image/jpeg",
+          size: 1,
+          fetch: async () => new Uint8Array([1]),
+        },
+      ],
+    });
+    expect(storeAttachment).toHaveBeenCalledTimes(2);
+    // A slow transcription must not eat the shared download deadline of later files.
+    const firstTranscribe = transcribe.mock.invocationCallOrder[0]!;
+    for (const order of storeAttachment.mock.invocationCallOrder) {
+      expect(order).toBeLessThan(firstTranscribe);
+    }
+  });
+
+  it("delivers the file without a transcript when transcription stalls past the budget", async () => {
+    vi.useFakeTimers();
+    try {
+      const audio = new Uint8Array([1, 2, 3]);
+      const storeAttachment = vi.fn(async () => ({
+        id: "artifact-1",
+        name: "voice.oga",
+        mimeType: "audio/ogg",
+        size: 3,
+        bytes: audio,
+      }));
+      const transcribe = vi.fn(() => new Promise<string | null>(() => {}));
+      const deps = createDeps({ storeAttachment, transcribe });
+      const pending = createMessagingInboundHandler(deps)({
+        ...dmEvent,
+        content: "",
+        attachments: [
+          { name: "voice.oga", mimeType: "audio/ogg", size: 3, fetch: async () => audio },
+        ],
+      });
+      await vi.advanceTimersByTimeAsync(20_001);
+      await pending;
+      expect(transcribe).toHaveBeenCalledTimes(1);
+      // The stalled provider call is cancelled, not left running in the background.
+      const [{ signal }] = transcribe.mock.calls[0] as unknown as [{ signal: AbortSignal }];
+      expect(signal.aborted).toBe(true);
+      expect(deps.sendUserMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ prompt: 'User attached file "voice.oga" (audio/ogg, 3 bytes).' }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("puts the same normalized transcript in the routine payload", async () => {
+    const audio = new Uint8Array([1, 2, 3]);
+    const storeAttachment = vi.fn(async () => ({
+      id: "artifact-1",
+      name: "voice.oga",
+      mimeType: "audio/ogg",
+      size: 3,
+      bytes: audio,
+    }));
+    const transcribe = vi.fn(async () => `hi\u0000 there\u007f${"a".repeat(5000)}`);
+    const deps = createDeps({
+      storeAttachment,
+      transcribe,
+      routines: [{ id: "routine-1", name: "Triage", prompt: "Review" }],
+    });
+    await createMessagingInboundHandler(deps)({
+      ...dmEvent,
+      content: "",
+      attachments: [
+        { name: "voice.oga", mimeType: "audio/ogg", size: 3, fetch: async () => audio },
+      ],
+    });
+    const prompt = deps.sendUserMessage.mock.calls[0]?.[0]?.prompt as string;
+    expect(prompt).toContain("voiceTranscripts");
+    expect(prompt).toContain("hi there");
+    expect(prompt).not.toMatch(/\\u0000|\\u007f/);
+    expect(prompt).not.toMatch(/a{4001}/);
   });
 
   it("lists attachment names in the routine wake payload", async () => {
@@ -1112,6 +1391,41 @@ describe("createMessagingInboundHandler owner commands", () => {
 });
 
 describe("createMessagingInboundHandler channel routing", () => {
+  it("discovers a Telegram group from the senders it has seen, without sweeping members", async () => {
+    const deps = createDeps({ identity: null });
+    const handle = createMessagingInboundHandler(deps);
+    // Telegram names no roster: participants accumulate as senders appear.
+    await handle({
+      type: "message",
+      provider: "telegram",
+      handle: "-1001234:11",
+      threadId: "telegram:-1001234",
+      isDirect: false,
+      from: "777",
+      fromLabel: "Grace",
+      channelName: "Family",
+      participants: [],
+      content: "hello group",
+      mediaUrl: null,
+      mentionsBot: true,
+    });
+
+    expect(deps.prisma.messagingChannel.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          provider: "telegram",
+          threadId: "telegram:-1001234",
+          name: "Family",
+        }),
+      }),
+    );
+    expect(deps.members).toEqual([
+      expect.objectContaining({ address: "777", identityId: null, status: "invited" }),
+    ]);
+    // A rosterless event says nothing about who left; no member may be swept.
+    expect(deps.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
+  });
+
   it("discovers the channel, invites linked members, and posts one intro for unlinked ones", async () => {
     const deps = createDeps();
     const handle = createMessagingInboundHandler(deps);
@@ -1214,7 +1528,12 @@ describe("createMessagingInboundHandler channel routing", () => {
       ),
     });
     const handle = createMessagingInboundHandler(deps);
-    await handle(groupEvent);
+    // The roster names both members; a roster without the peer would sweep
+    // their membership to left before the fan-out.
+    await handle({
+      ...groupEvent,
+      participants: ["+15551111111", "+15553333333"],
+    });
 
     const fanout = deps.sendUserMessage.mock.calls.map(([input]) => input);
     expect(fanout).toHaveLength(2);
@@ -1405,6 +1724,339 @@ describe("createMessagingInboundHandler channel routing", () => {
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
     const runJobs = deps.enqueue.mock.calls.filter(([job]) => job.name === "run.continue");
     expect(runJobs).toHaveLength(0);
+  });
+
+  it("wakes no bot for a group event without text, like a pin or a bare photo", async () => {
+    const alice = {
+      id: "cm-1",
+      channelId: "ch-1",
+      address: "777",
+      identityId: "mi-alice",
+      status: "approved",
+    };
+    const bob = {
+      id: "cm-2",
+      channelId: "ch-1",
+      address: "888",
+      identityId: "mi-bob",
+      status: "approved",
+    };
+    const deps = createDeps({ members: [alice, bob] });
+    const identities = [
+      {
+        id: "mi-alice",
+        provider: "telegram",
+        address: "777",
+        userId: "user-a",
+        spaceId: "ws-a",
+        botId: "bot-a",
+        outboundSinceInbound: 0,
+      },
+      {
+        id: "mi-bob",
+        provider: "telegram",
+        address: "888",
+        userId: "user-b",
+        spaceId: "ws-b",
+        botId: "bot-b",
+        outboundSinceInbound: 0,
+      },
+    ];
+    Object.assign(deps.prisma.messagingIdentity, {
+      findUnique: vi.fn(
+        async ({ where }: { where: { provider_address?: { address: string }; id?: string } }) => {
+          if (where.provider_address) {
+            return (
+              identities.find((row) => row.address === where.provider_address?.address) ?? null
+            );
+          }
+          return identities.find((row) => row.id === where.id) ?? null;
+        },
+      ),
+    });
+    const handle = createMessagingInboundHandler(deps);
+    const event = {
+      type: "message" as const,
+      provider: "telegram",
+      handle: "-1001234:50",
+      threadId: "telegram:-1001234",
+      isDirect: false,
+      from: "888",
+      fromLabel: "Bob",
+      channelName: "Family",
+      participants: [],
+      content: "",
+      mediaUrl: null,
+    };
+    await handle(event);
+    expect(deps.prisma.routine.findMany).not.toHaveBeenCalled();
+    // A bare photo still reaches each bot's routines, but starts no plain run.
+    await handle({
+      ...event,
+      handle: "-1001234:51",
+      mediaUrl: "https://cdn.example.com/pic.jpg",
+    });
+    expect(deps.prisma.routine.findMany).toHaveBeenCalledTimes(2);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    expect(deps.enqueue.mock.calls.filter(([job]) => job.name === "run.continue")).toHaveLength(0);
+
+    // The same sender's next real message still reaches both bots.
+    await handle({ ...event, handle: "-1001234:52", content: "dinner at 7" });
+    expect(deps.sendUserMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it("marks a Telegram member who left as left, without starting a run", async () => {
+    const alice = {
+      id: "cm-1",
+      channelId: "ch-1",
+      address: "777",
+      identityId: "mi-alice",
+      status: "approved",
+    };
+    const bob = {
+      id: "cm-2",
+      channelId: "ch-1",
+      address: "888",
+      identityId: "mi-bob",
+      status: "approved",
+    };
+    const deps = createDeps({ members: [alice, bob] });
+    const identities = [
+      {
+        id: "mi-alice",
+        provider: "telegram",
+        address: "777",
+        userId: "user-a",
+        spaceId: "ws-a",
+        botId: "bot-a",
+        outboundSinceInbound: 0,
+      },
+      {
+        id: "mi-bob",
+        provider: "telegram",
+        address: "888",
+        userId: "user-b",
+        spaceId: "ws-b",
+        botId: "bot-b",
+        outboundSinceInbound: 0,
+      },
+    ];
+    Object.assign(deps.prisma.messagingIdentity, {
+      findUnique: vi.fn(
+        async ({ where }: { where: { provider_address?: { address: string }; id?: string } }) => {
+          if (where.provider_address) {
+            return (
+              identities.find((row) => row.address === where.provider_address?.address) ?? null
+            );
+          }
+          return identities.find((row) => row.id === where.id) ?? null;
+        },
+      ),
+    });
+    const handle = createMessagingInboundHandler(deps);
+    await handle({
+      type: "message",
+      provider: "telegram",
+      handle: "-1001234:31",
+      threadId: "telegram:-1001234",
+      isDirect: false,
+      from: "888",
+      fromLabel: "Bob",
+      channelName: "Family",
+      participants: [],
+      content: "",
+      mediaUrl: null,
+      departures: { addresses: ["777"], botLeft: false },
+    });
+
+    expect(deps.prisma.messagingChannelMember.updateMany).toHaveBeenCalledWith({
+      where: {
+        channelId: { in: ["ch-1"] },
+        address: { in: ["777"] },
+        status: { in: ["invited", "approved"] },
+      },
+      data: { status: "left" },
+    });
+    expect(alice.status).toBe("left");
+    // The service message itself reaches no bot and starts no run.
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    expect(deps.enqueue).not.toHaveBeenCalled();
+
+    // Alice's bot no longer receives the group's later messages.
+    await handle({
+      type: "message",
+      provider: "telegram",
+      handle: "-1001234:32",
+      threadId: "telegram:-1001234",
+      isDirect: false,
+      from: "888",
+      fromLabel: "Bob",
+      channelName: "Family",
+      participants: [],
+      content: "still here",
+      mediaUrl: null,
+    });
+    expect(deps.sendUserMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("ends a departed member's forum-topic memberships too", async () => {
+    // The group and its forum topic are separate channels of the same chat.
+    const aliceGroup = {
+      id: "cm-1",
+      channelId: "ch-1",
+      address: "777",
+      identityId: "mi-alice",
+      status: "approved",
+    };
+    const aliceTopic = {
+      id: "cm-2",
+      channelId: "ch-topic",
+      address: "777",
+      identityId: "mi-alice",
+      status: "approved",
+    };
+    const bobTopic = {
+      id: "cm-3",
+      channelId: "ch-topic",
+      address: "888",
+      identityId: "mi-bob",
+      status: "approved",
+    };
+    const otherChat = {
+      id: "cm-4",
+      channelId: "ch-other",
+      address: "777",
+      identityId: "mi-alice",
+      status: "approved",
+    };
+    const deps = createDeps({ members: [aliceGroup, aliceTopic, bobTopic, otherChat] });
+    const findMany = vi.fn(async () => [{ id: "ch-1" }, { id: "ch-topic" }]);
+    Object.assign(deps.prisma.messagingChannel, { findMany });
+    await createMessagingInboundHandler(deps)({
+      type: "message",
+      provider: "telegram",
+      handle: "-1001234:40",
+      threadId: "telegram:-1001234",
+      isDirect: false,
+      from: "888",
+      fromLabel: "Bob",
+      channelName: "Family",
+      participants: [],
+      content: "",
+      mediaUrl: null,
+      departures: { addresses: ["777"], botLeft: false },
+    });
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        provider: "telegram",
+        OR: [{ threadId: "telegram:-1001234" }, { threadId: { startsWith: "telegram:-1001234:" } }],
+      },
+      select: { id: true },
+    });
+    expect(aliceGroup.status).toBe("left");
+    expect(aliceTopic.status).toBe("left");
+    expect(bobTopic.status).toBe("approved");
+    expect(otherChat.status).toBe("approved");
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["she leaves the group", { addresses: ["777"], botLeft: false }],
+    ["she removes the bot", { addresses: [], botLeft: true }],
+  ])(
+    "invites nobody when a linked sender the channel has not seen departs: %s",
+    async (_case, departures) => {
+      // Alice is linked but has never written in this group; her first event is a departure.
+      const deps = createDeps({ members: [] });
+      Object.assign(deps.prisma.messagingIdentity, {
+        findUnique: vi.fn(async () => ({
+          id: "mi-alice",
+          provider: "telegram",
+          address: "777",
+          userId: "user-a",
+          spaceId: "ws-a",
+          botId: "bot-a",
+          outboundSinceInbound: 0,
+        })),
+      });
+      await createMessagingInboundHandler(deps)({
+        type: "message",
+        provider: "telegram",
+        handle: "-1001234:43",
+        threadId: "telegram:-1001234",
+        isDirect: false,
+        from: "777",
+        fromLabel: "Alice",
+        channelName: "Family",
+        participants: [],
+        content: "",
+        mediaUrl: null,
+        departures,
+      });
+
+      // No "Reply YES" invitation she could never accept, and no member row to answer it.
+      expect(deps.prisma.messagingOutbound.createMany).not.toHaveBeenCalled();
+      expect(deps.prisma.messagingChannelMember.upsert).not.toHaveBeenCalled();
+      expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    },
+  );
+
+  it("ends every membership when the Telegram bot itself is removed", async () => {
+    const alice = {
+      id: "cm-1",
+      channelId: "ch-1",
+      address: "777",
+      identityId: "mi-1",
+      status: "approved",
+    };
+    const carol = {
+      id: "cm-3",
+      channelId: "ch-1",
+      address: "999",
+      identityId: null,
+      status: "invited",
+    };
+    const deps = createDeps({ members: [alice, carol] });
+    const handle = createMessagingInboundHandler(deps);
+    await handle({
+      type: "message",
+      provider: "telegram",
+      handle: "-1001234:41",
+      threadId: "telegram:-1001234",
+      isDirect: false,
+      from: "777",
+      fromLabel: "Alice",
+      channelName: "Family",
+      participants: [],
+      content: "",
+      mediaUrl: null,
+      departures: { addresses: [], botLeft: true },
+    });
+
+    expect(deps.prisma.messagingChannelMember.updateMany).toHaveBeenCalledWith({
+      where: { channelId: { in: ["ch-1"] }, status: { in: ["invited", "approved"] } },
+      data: { status: "left" },
+    });
+    expect(alice.status).toBe("left");
+    expect(carol.status).toBe("left");
+    // The removal service message itself starts no run.
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+
+    // With every membership ended, nothing in the group reaches a bot.
+    await handle({
+      type: "message",
+      provider: "telegram",
+      handle: "-1001234:42",
+      threadId: "telegram:-1001234",
+      isDirect: false,
+      from: "777",
+      fromLabel: "Alice",
+      channelName: "Family",
+      participants: [],
+      content: "anyone there",
+      mediaUrl: null,
+    });
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
 });
 

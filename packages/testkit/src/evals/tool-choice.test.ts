@@ -76,6 +76,20 @@ describe("tool-choice grading", () => {
     expect(passes(gradeToolChoice({ maxCalls: { find: 1 } }, evidence({ toolCalls })))).toBe(false);
   });
 
+  it("grades use_tool calls as the tool they ran, and only on tools find_tool loaded", () => {
+    const found = { step: 2, name: "find_tool", args: { query: "chart" } };
+    const plot = { step: 2, name: "render_plot", args: {}, viaUseTool: true };
+    const expect_ = { order: ["find_tool", "render_plot"] };
+    const grade = (toolCalls: Evidence["toolCalls"]) =>
+      passes(gradeToolChoice(expect_, evidence({ toolCalls })));
+    expect(grade([found, { ...plot, loaded: true }])).toBe(true);
+    expect(grade([found, { ...plot, loaded: false }])).toBe(false);
+    expect(grade([found, { ...plot, loaded: true }, { step: 2, name: "use_tool", args: {} }])).toBe(
+      false,
+    );
+    expect(passes(gradeToolChoice({ notCalls: ["find_tool"] }, evidence()))).toBe(true);
+  });
+
   it("grades settings by state, and treats a field-less update_bot as a read", () => {
     const before = { bot: { name: "Assistant", modelId: "a" }, user: { timezone: null } };
     const after = { bot: { name: "Assistant", modelId: "b" }, user: { timezone: null } };
@@ -90,7 +104,7 @@ describe("tool-choice grading", () => {
     expect(passes(gradeToolChoice({ bot: { modelId: "b" } }, evidence({ settings: after })))).toBe(
       true,
     );
-    const read = [{ step: 2, name: "update_bot", args: {} }];
+    const read = [{ step: 2, name: "update_bot", args: { model: null, name: " " } }];
     expect(
       passes(
         gradeToolChoice(

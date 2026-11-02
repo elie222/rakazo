@@ -50,7 +50,12 @@ import { requireIdentityConfirmation } from "../identity-confirmation.js";
 import type { RouterDeps } from "../router.js";
 import { loadMessagePage } from "../thread-message-pages.js";
 import type { RouterContext } from "./context.js";
-import { computerContext, modelSetup, THREAD_MESSAGE_PAGE_SIZE } from "./shared.js";
+import {
+  computerContext,
+  isRecordNotFound,
+  modelSetup,
+  THREAD_MESSAGE_PAGE_SIZE,
+} from "./shared.js";
 
 /** Surface a Space deletion race as a retryable conflict instead of a generic failure. */
 function mapSpaceLifecycleError(error: unknown): unknown {
@@ -356,8 +361,9 @@ export function botsRoutes(ctx: RouterContext) {
           spaceId: context.actor.spaceId,
           threadId: existing.thread.id,
           botId: input.botId,
-          emitBotUpdated: botProfileLabelsChanged(input),
+          emitBotUpdated: botProfileLabelsChanged(input) || input.expectedSettings !== undefined,
           expectedInstructions: input.expectedInstructions,
+          expectedSettings: input.expectedSettings,
           data: {
             name: input.name,
             description: input.description,
@@ -389,6 +395,10 @@ export function botsRoutes(ctx: RouterContext) {
               : {}),
           },
         }).catch((error) => {
+          if (input.expectedSettings && isRecordNotFound(error))
+            throw new ORPCError("CONFLICT", {
+              message: "Settings changed; review the current settings first.",
+            });
           if (!(error instanceof InstructionConflictError)) throw error;
           throw new ORPCError("CONFLICT", { message: error.message });
         });
