@@ -57,7 +57,7 @@ type ComputerUpdateProgress = (
   stage: Exclude<ComputerUpdate["stage"], "preparing">,
 ) => Promise<void>;
 
-const EXECUTION_LEASE_MS = 5 * 60_000;
+export const EXECUTION_LEASE_MS = 5 * 60_000;
 const BOOT_WAIT_ATTEMPTS = 40;
 const BOOT_WAIT_MS = 250;
 const RUNNING_CHECK_RETRY_MS = [250, 750];

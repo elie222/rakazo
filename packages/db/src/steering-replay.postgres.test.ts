@@ -4,7 +4,7 @@ import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
 import { claimSteering, createPendingSteeringRun, finalizeRun, sendUserMessage } from "./events.js";
 import { expireStuckRun } from "./expire-stuck-run.js";
-import { createThreadMessage } from "./messages.js";
+import { createThreadMessage, loadRunHistoryMessages } from "./messages.js";
 import { provisionMessagingIdentity } from "./messaging.js";
 import { asSystem, runAsSystem, runAsTenant } from "./row-security.js";
 
@@ -214,7 +214,7 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
     expect(await system.steeringMessage.findUnique({ where: { id: steering.id } })).not.toBeNull();
   });
 
-  it("never releases a chat message that steered an app run as an app follow-up", async () => {
+  it("holds a chat message sent during an app run for a messaging continuation", async () => {
     const { task, run, attempt } = await runSteeredByMessage("running");
     // Messaging inbound runs as system until it resolves the thread.
     const inbound = await runAsSystem("messaging inbound", () =>
@@ -229,6 +229,30 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
       }),
     );
     expect(inbound.runId).toBe(run.id);
+    expect(
+      await system.steeringMessage.findFirstOrThrow({ where: { messageId: inbound.messageId } }),
+    ).toMatchObject({ runId: null, originTrigger: "messaging" });
+    // The held text is marked as waiting for this bot; one only another bot waits on is not.
+    const peer = await system.bot.create({
+      data: { spaceId, userId, name: "Peer", color: "blue" },
+    });
+    const peerWaiting = await createThreadMessage(system, {
+      threadId,
+      role: "user",
+      blocks: [{ kind: "text", text: "For the other bot" }],
+    });
+    await system.steeringMessage.create({
+      data: { messageId: peerWaiting.id, botId: peer.id, userId },
+    });
+    const waiting = new Map(
+      (await asOwner(() => loadRunHistoryMessages(prisma, run, 100))).map((message) => [
+        message.id,
+        message.steeringMessages.length > 0,
+      ]),
+    );
+    expect(waiting.get(peerWaiting.id)).toBe(false);
+    expect(waiting.get(inbound.messageId)).toBe(true);
+    await system.bot.delete({ where: { id: peer.id } });
 
     const result = await asOwner(() =>
       finalizeRun(prisma, {

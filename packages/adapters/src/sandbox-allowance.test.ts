@@ -17,6 +17,7 @@ function allowanceDeps(input: {
     status: string;
     cancelAtPeriodEnd?: boolean;
     currentPeriodStartsAt?: Date | null;
+    byokInterval?: "month" | "year";
   };
   hours?: Array<{ kind: string; hours: number }>;
   sandbox?: Partial<SandboxProvider>;
@@ -36,6 +37,7 @@ function allowanceDeps(input: {
                 status: input.subscription?.status ?? null,
                 cancelAtPeriodEnd: input.subscription?.cancelAtPeriodEnd ?? false,
                 currentPeriodStartsAt: input.subscription?.currentPeriodStartsAt ?? null,
+                byokInterval: input.subscription?.byokInterval ?? null,
               },
       }),
     },
@@ -115,6 +117,30 @@ describe("computer allowance", () => {
     const values = prisma.$queryRaw.mock.calls[0]?.slice(1);
     expect(values).toContainEqual(periodStart);
     expect(values).toContainEqual(now);
+  });
+
+  it("renews a yearly plan's allowance monthly, on the day the year began", async () => {
+    const periodStart = new Date("2026-01-31T14:00:00.000Z");
+    const since = async (now: string) => {
+      const { deps, prisma } = allowanceDeps({
+        billing: true,
+        mode: "byok",
+        subscription: {
+          status: "active",
+          currentPeriodStartsAt: periodStart,
+          byokInterval: "year",
+        },
+      });
+      await sandboxAllowance(deps, "organization", new Date(now));
+      // The query reads `now`, `now`, then `since`.
+      return prisma.$queryRaw.mock.calls[0]?.[3];
+    };
+    expect(await since("2026-01-31T15:00:00.000Z")).toEqual(periodStart);
+    // February is short, so its anniversary is the 28th.
+    expect(await since("2026-03-10T00:00:00.000Z")).toEqual(new Date("2026-02-28T14:00:00.000Z"));
+    expect(await since("2026-03-31T13:00:00.000Z")).toEqual(new Date("2026-02-28T14:00:00.000Z"));
+    expect(await since("2026-03-31T14:00:00.000Z")).toEqual(new Date("2026-03-31T14:00:00.000Z"));
+    expect(await since("2026-12-05T00:00:00.000Z")).toEqual(new Date("2026-11-30T14:00:00.000Z"));
   });
 
   it("counts the calendar month without a live subscription", async () => {

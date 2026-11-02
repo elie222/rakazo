@@ -73,6 +73,9 @@ const subscriptionSchema = z.object({
         price: idSchema.extend({
           product: z.string().optional(),
           unit_amount: z.number().int().nullish(),
+          recurring: z
+            .object({ interval: z.string(), interval_count: z.number().int().nullish() })
+            .nullish(),
         }),
       }),
     ),
@@ -113,7 +116,7 @@ export class StripeBillingProvider implements BillingProvider {
   private readonly apiBase: string;
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
-  private readonly monthlyPrices = new Map<string, string>();
+  private readonly recurringPrices = new Map<string, string>();
 
   constructor(config: StripeBillingConfig) {
     this.config = config;
@@ -205,7 +208,7 @@ export class StripeBillingProvider implements BillingProvider {
           input.monthly
             ? {
                 quantity: 1,
-                price: await this.monthlyPrice(
+                price: await this.recurringPrice(
                   `rakazo_monthly_credits_${input.amountCents}`,
                   input.amountCents,
                   "Rakazo monthly model credits",
@@ -247,7 +250,7 @@ export class StripeBillingProvider implements BillingProvider {
       items: [
         {
           id: item.id,
-          price: await this.monthlyPrice(
+          price: await this.recurringPrice(
             `rakazo_monthly_credits_${amountCents}`,
             amountCents,
             "Rakazo monthly model credits",
@@ -270,6 +273,7 @@ export class StripeBillingProvider implements BillingProvider {
     )
       throw new BillingCheckoutCompletedError();
     const metadata = { [BYOK_PLAN_METADATA]: "byok" };
+    const interval = input.interval ?? "month";
     const session = urlSchema.parse(
       await this.request("POST", "/v1/checkout/sessions", {
         customer: input.customerId,
@@ -280,11 +284,7 @@ export class StripeBillingProvider implements BillingProvider {
         line_items: [
           {
             quantity: 1,
-            price: await this.monthlyPrice(
-              `rakazo_byok_monthly_${input.amountCents}`,
-              input.amountCents,
-              "Rakazo own-key plan",
-            ),
+            price: await this.byokPrice(input.amountCents, interval),
           },
         ],
         metadata,
@@ -298,6 +298,50 @@ export class StripeBillingProvider implements BillingProvider {
       }),
     );
     return { url: session.url };
+  }
+
+  async switchByokToYearly(customerId: string, subscriptionId: string, amountCents: number) {
+    // Re-read just before charging: a credit checkout may have completed since the caller checked.
+    const subscriptions = await this.listSubscriptions(customerId);
+    const live = (s: StripeSubscription) =>
+      holdsBillingSubscription(mapStripeSubscriptionStatus(s.status));
+    const subscription = subscriptions.find((s) => s.id === subscriptionId);
+    const item = subscription?.items.data[0];
+    const status = subscription && mapStripeSubscriptionStatus(subscription.status);
+    if (
+      !subscription ||
+      !item ||
+      !isByokPlan(subscription) ||
+      // Paid up and not cancelling: an overdue month must not be credited against the year.
+      (status !== "active" && status !== "trialing") ||
+      subscription.cancel_at_period_end ||
+      subscription.cancel_at != null ||
+      // One plan billed every month, as own-key checkout creates it.
+      subscription.items.data.length !== 1 ||
+      (item.quantity ?? 1) !== 1 ||
+      item.price.recurring?.interval !== "month" ||
+      (item.price.recurring.interval_count ?? 1) !== 1 ||
+      // Twelve months at the current price must still cost more than the year.
+      (item.price.unit_amount ?? 0) * 12 <= amountCents ||
+      subscriptions.some((s) => live(s) && creditAmount(s.metadata?.rakazo_credit_cents))
+    )
+      return false;
+    // A new interval restarts the billing cycle today; the unused month is credited against it.
+    await this.request("POST", `/v1/subscriptions/${encodeURIComponent(subscription.id)}`, {
+      items: [{ id: item.id, price: await this.byokPrice(amountCents, "year"), quantity: 1 }],
+      proration_behavior: "always_invoice",
+      payment_behavior: "error_if_incomplete",
+    });
+    return true;
+  }
+
+  private byokPrice(amountCents: number, interval: "month" | "year") {
+    return this.recurringPrice(
+      `rakazo_byok_${interval === "year" ? "yearly" : "monthly"}_${amountCents}`,
+      amountCents,
+      "Rakazo own-key plan",
+      interval,
+    );
   }
 
   async endByokPlans(customerId: string) {
@@ -319,22 +363,24 @@ export class StripeBillingProvider implements BillingProvider {
     }
   }
 
-  private async monthlyPrice(
+  private async recurringPrice(
     lookupKey: string,
     amountCents: number,
     productName: string,
+    interval: "month" | "year" = "month",
   ): Promise<string> {
-    const cached = this.monthlyPrices.get(lookupKey);
+    const cached = this.recurringPrices.get(lookupKey);
     if (cached) return cached;
-    const id = await this.findOrCreateMonthlyPrice(lookupKey, amountCents, productName);
-    this.monthlyPrices.set(lookupKey, id);
+    const id = await this.findOrCreateRecurringPrice(lookupKey, amountCents, productName, interval);
+    this.recurringPrices.set(lookupKey, id);
     return id;
   }
 
-  private async findOrCreateMonthlyPrice(
+  private async findOrCreateRecurringPrice(
     lookupKey: string,
     amountCents: number,
     productName: string,
+    interval: "month" | "year",
   ): Promise<string> {
     const query = encodeStripeForm({
       active: true,
@@ -355,7 +401,7 @@ export class StripeBillingProvider implements BillingProvider {
         price.product.active &&
         price.currency === "usd" &&
         price.unit_amount === amountCents &&
-        price.recurring.interval === "month" &&
+        price.recurring.interval === interval &&
         price.recurring.interval_count === 1,
     );
     if (existing) return existing.id;
@@ -364,7 +410,7 @@ export class StripeBillingProvider implements BillingProvider {
       await this.request("POST", "/v1/prices", {
         currency: "usd",
         unit_amount: amountCents,
-        recurring: { interval: "month" },
+        recurring: { interval },
         product_data: { name: productName },
         lookup_key: lookupKey,
         transfer_lookup_key: true,
@@ -839,6 +885,7 @@ function toSnapshot(
     ...(isByokPlan(subscription)
       ? {
           byokPlan: true,
+          byokInterval: item.price.recurring?.interval === "year" ? "year" : "month",
           ...(item.price.unit_amount != null
             ? { byokPriceCents: item.price.unit_amount * (item.quantity ?? 1) }
             : {}),

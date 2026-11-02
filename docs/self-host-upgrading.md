@@ -23,7 +23,9 @@ GIT_SHA=$(git rev-parse HEAD) docker compose --env-file .env -f infra/compose/do
 ```
 
 `up --wait` does not report success until the new API is healthy and the worker and web containers
-are running. The API starts only after the `migrate` container finishes, so a migration failure keeps the new API
+are running. Compose stops the old worker before it starts the new one, and the stop waits for the
+jobs it is running to finish, for up to 45 minutes, instead of cutting them off; new jobs start once
+the new worker is up. The API starts only after the `migrate` container finishes, so a migration failure keeps the new API
 from starting. A failed CLI recreate does not auto-roll back; recover with the previous
 `RAKAZO_IMAGE_TAG` (or rebuild `local`) and `up -d --wait --pull never`.
 

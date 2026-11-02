@@ -122,6 +122,8 @@ export function sanitizeNativeEvent(
         return safeImage;
       }),
     };
+  // Native code records breadcrumbs the app's own filter never sees.
+  if (surface === "mobile") event.breadcrumbs = input.breadcrumbs;
   if (!event.message && !event.exception) event.message = `${surface} native process crashed`;
   // Never attribute a cached crash from an earlier native session to the current signed-in user.
   const userId = object(input.user).id;

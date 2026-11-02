@@ -251,7 +251,7 @@ describe("setup preload bridge", () => {
   });
 
   it("hands the page its language before the page runs, English when main refuses", () => {
-    const locale = { lang: "es", messages: { Continue: "Continuar" } };
+    const locale = { lang: "es", dir: "ltr", messages: { Continue: "Continuar" } };
     const sendSync = vi.fn(() => locale);
     const [, bridge] = runPreload("setup-preload.cjs", { sendSync }).exposeInMainWorld.mock
       .calls[0] as [string, RakazoSetup];
@@ -262,6 +262,6 @@ describe("setup preload bridge", () => {
       string,
       RakazoSetup,
     ];
-    expect(refused.locale).toEqual({ lang: "en", messages: {} });
+    expect(refused.locale).toEqual({ lang: "en", dir: "ltr", messages: {} });
   });
 });

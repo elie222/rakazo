@@ -1,6 +1,7 @@
 import { MenuView } from "@expo/ui/community/menu";
 import type { BillingStatus } from "@rakazo/contracts";
 import {
+  byokYearlySwitchSavings,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
@@ -89,6 +90,8 @@ export default function BillingScreen() {
   const credits = status.funding === "credits" || (status.balanceUsd ?? 0) > 0 || status.canManage;
   const referral = status.referral;
   const endTrial = status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd;
+  const yearlySavings = byokYearlySwitchSavings(status);
+  const annualCents = status.byokAnnualPriceCents;
   return (
     <ScrollView
       style={sideInsets}
@@ -99,7 +102,11 @@ export default function BillingScreen() {
         <SettingsRow
           title={t("Plan")}
           detail={
-            ownKeyCents ? t("{price} / month", { price: `$${ownKeyCents / 100}` }) : undefined
+            ownKeyCents
+              ? status.byokInterval === "year"
+                ? t("{price} / year", { price: `$${ownKeyCents / 100}` })
+                : t("{price} / month", { price: `$${ownKeyCents / 100}` })
+              : undefined
           }
           value={
             status.state === "trialing" || status.byokFreeUntil
@@ -118,6 +125,35 @@ export default function BillingScreen() {
           />
         ) : status.access && status.currentPeriodEndsAt ? (
           <SettingsRow title={t("Renews")} value={formatDate(status.currentPeriodEndsAt)} />
+        ) : null}
+        {yearlySavings !== null && annualCents ? (
+          <SettingsRow
+            title={t("Switch to yearly")}
+            value={`−${yearlySavings}%`}
+            disabled={pending}
+            onPress={() =>
+              Alert.alert(
+                t("Switch to yearly?"),
+                status.state === "trialing"
+                  ? t("Your plan becomes {price} / year when your trial ends.", {
+                      price: `$${annualCents / 100}`,
+                    })
+                  : t("Your card is charged {price} today, less the unused part of this month.", {
+                      price: `$${annualCents / 100}`,
+                    }),
+                [
+                  { text: t("Cancel"), style: "cancel" },
+                  {
+                    text: t("Switch"),
+                    onPress: () =>
+                      void action(async () => {
+                        show(await rpc("billing/switchToYearly"));
+                      }),
+                  },
+                ],
+              )
+            }
+          />
         ) : null}
         {status.canManage ? (
           <SettingsRow

@@ -237,6 +237,7 @@ export async function redeemMessagingLinkCode(
     spaceId?: string;
     installationId?: string;
   },
+  confirm?: (tx: Prisma.TransactionClient, redeemed: RedeemedMessagingLink) => Promise<void>,
 ): Promise<RedeemedMessagingLink | null> {
   const row = await prisma.messagingLinkCode.findUnique({ where: { code: request.code } });
   if (
@@ -253,6 +254,7 @@ export async function redeemMessagingLinkCode(
       const existing = await tx.messagingIdentity.findUnique({
         where: { provider_address: { provider: request.provider, address: request.address } },
       });
+      let identityId: string;
       if (existing) {
         if (existing.userId !== row.userId) return null;
         await tx.messagingIdentity.update({
@@ -266,32 +268,30 @@ export async function redeemMessagingLinkCode(
             installationId: request.installationId ?? null,
           },
         });
-        return {
-          identityId: existing.id,
-          userId: row.userId,
-          spaceId: row.spaceId,
-          botId: row.botId,
-          confirmationKey: `link:${row.id}`,
-        };
+        identityId = existing.id;
+      } else {
+        const identity = await tx.messagingIdentity.create({
+          data: {
+            provider: request.provider,
+            address: request.address,
+            dmThreadId: request.dmThreadId,
+            installationId: request.installationId,
+            userId: row.userId,
+            spaceId: row.spaceId,
+            botId: row.botId,
+          },
+        });
+        identityId = identity.id;
       }
-      const identity = await tx.messagingIdentity.create({
-        data: {
-          provider: request.provider,
-          address: request.address,
-          dmThreadId: request.dmThreadId,
-          installationId: request.installationId,
-          userId: row.userId,
-          spaceId: row.spaceId,
-          botId: row.botId,
-        },
-      });
-      return {
-        identityId: identity.id,
+      const redeemed = {
+        identityId,
         userId: row.userId,
         spaceId: row.spaceId,
         botId: row.botId,
         confirmationKey: `link:${row.id}`,
       };
+      await confirm?.(tx, redeemed);
+      return redeemed;
     });
   } catch (error) {
     // botId is unique (one chat app per bot) and (provider, address) can race

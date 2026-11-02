@@ -29,10 +29,10 @@ shortening results over 12,000 characters). Tokens are estimated at four charact
 pages, measured for size and latency only.
 
 The suite covers a link, a text form, a native select, a checkbox, same-site and cross-site frames,
-a form far below the fold, a page much larger than the snapshot budget with its form last, a page
-that replaces its form after load (stale refs), a page whose HTML and data each arrive late, a saved
-login fill, and a card fill by card field. The long page is expected to fail while the snapshot keeps
-the first controls: it shows what the budget hides.
+a form far below the fold, a page much larger than the snapshot budget with its form last (reached with a snapshot query, as
+a model would after the snapshot says controls were cut), a page that replaces its form after load
+(stale refs), a page whose HTML and data each arrive late, a search box whose suggestions load after
+typing stops, a saved login fill, and a card fill by card field.
 
 An agent-level mode, where a model drives the real tools through the shared model connection and
 completion, steps, tokens and cost are recorded, is not built yet.

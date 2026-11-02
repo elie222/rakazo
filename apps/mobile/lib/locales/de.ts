@@ -211,6 +211,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Custom server {host}": "Eigener Server {host}",
   "Don’t have an account?": "Du hast noch kein Konto?",
   Email: "E-Mail",
+  "Did you mean {email}?": "Meintest du {email}?",
   "Forgot password?": "Passwort vergessen?",
   "Loading…": "Wird geladen…",
   Password: "Passwort",
@@ -1002,6 +1003,12 @@ export const DE_MESSAGES: Record<string, string> = {
   "Your trial ends and your card is charged today.":
     "Dein Testzeitraum endet und deine Karte wird heute belastet.",
   "Start plan": "Plan starten",
+  "Switch to yearly": "Zu jährlich wechseln",
+  "Switch to yearly?": "Zu jährlich wechseln?",
+  "Your card is charged {price} today, less the unused part of this month.":
+    "Deine Karte wird heute mit {price} belastet, abzüglich des ungenutzten Teils dieses Monats.",
+  "Your plan becomes {price} / year when your trial ends.":
+    "Nach dem Testzeitraum kostet dein Plan {price} / Jahr.",
   "Monthly credits": "Monatliches Guthaben",
   "Upgrade now": "Jetzt upgraden",
   "Downgrade at renewal": "Bei Verlängerung downgraden",
@@ -1040,6 +1047,13 @@ export const DE_MESSAGES: Record<string, string> = {
   "Full access, nothing to pay": "Voller Zugriff, nichts zu zahlen",
   "Day {days}": "Tag {days}",
   "{price} / month begins": "Ab dann {price} / Monat",
+  "Billing period": "Abrechnungszeitraum",
+  "Yearly −{percent}%": "Jährlich −{percent} %",
+  "{days} days free, then {price} / year. Cancel anytime.":
+    "{days} Tage kostenlos, danach {price} / Jahr. Jederzeit kündbar.",
+  "{price} / year": "{price} / Jahr",
+  "{price} / year begins": "Ab dann {price} / Jahr",
+  "{price} / year. Cancel anytime.": "{price} / Jahr. Jederzeit kündbar.",
   "Only the owner of this account can choose a plan.":
     "Nur der Inhaber dieses Kontos kann einen Tarif wählen.",
   Terms: "AGB",
@@ -1240,6 +1254,20 @@ export const DE_MESSAGES: Record<string, string> = {
   "Won't do": "Wird nicht gemacht",
   "Could not move the ticket": "Ticket konnte nicht verschoben werden",
   "No tickets yet.": "Noch keine Tickets.",
+  "Bot models": "Bot-Modelle",
+  "1 bot has its own model:": "1 Bot hat ein eigenes Modell:",
+  "{count} bots have their own model:": "{count} Bots haben ein eigenes Modell:",
+  "Use space default": "Space-Standard verwenden",
+  "Switching…": "Wird gewechselt…",
+  "Switch 1 bot to the space default?": "1 Bot auf den Space-Standard umstellen?",
+  "Switch {count} bots to the space default?": "{count} Bots auf den Space-Standard umstellen?",
+  "Their own model is cleared. You can pick one again in each bot.":
+    "Ihr eigenes Modell wird entfernt. Du kannst in jedem Bot wieder eines wählen.",
+  Switch: "Umstellen",
+  "1 bot now uses the space default.": "1 Bot verwendet jetzt den Space-Standard.",
+  "{count} bots now use the space default.": "{count} Bots verwenden jetzt den Space-Standard.",
+  "Could not switch {failedNames}. Try again.":
+    "{failedNames} konnte nicht umgestellt werden. Versuche es erneut.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

@@ -2,6 +2,7 @@ import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as setupStore from "./setup-store.js";
 import type { DeviceTokenCipher } from "./user-device.js";
 import {
   createUserDeviceAccess,
@@ -11,6 +12,11 @@ import {
   saveDeviceConsent,
   savePairedDevice,
 } from "./user-device.js";
+
+vi.mock("./setup-store.js", async (actual) => {
+  const store = await actual<typeof setupStore>();
+  return { ...store, writePrivateFile: vi.fn(store.writePrivateFile) };
+});
 
 const origin = "https://rakazo.example.com";
 const other = "https://other.example.com";
@@ -202,6 +208,24 @@ describe("remote computer access", () => {
     await access.setAllowed(origin, false);
     expect(clients).toMatchObject([{ closed: false, cancelled: 1 }]);
     expect(await clients[0]!.authorize()).toBe(false);
+  });
+
+  it("stops work and stays off when saving the choice fails", async () => {
+    await saveDeviceConsent(userData, origin, "allowed");
+    const { access, clients } = setup();
+    await access.select(origin);
+    await access.pair();
+    const failure = Object.assign(new Error("Permission denied"), { code: "EACCES" });
+    vi.mocked(setupStore.writePrivateFile).mockRejectedValueOnce(failure);
+    await expect(access.setAllowed(origin, false)).rejects.toBe(failure);
+    expect(clients).toMatchObject([{ cancelled: 1 }]);
+    expect(await clients[0]!.authorize()).toBe(false);
+    expect(await readDeviceConsent(userData, origin)).toBeNull();
+
+    await access.select(other);
+    await access.select(origin);
+    expect(await clients.at(-1)!.authorize()).toBe(false);
+    expect(access.state(origin)?.allowed).toBe(false);
   });
 
   it("ignores a prompt answered after access was turned off or revoked", async () => {

@@ -1,27 +1,43 @@
 ---
 import SiteFrame from "../../components/SiteFrame.astro";
+import type { SubmissionField } from "../../components/SubmissionForm.astro";
+import SubmissionForm from "../../components/SubmissionForm.astro";
 import { docsPath } from "../../docs";
-import { GITHUB_URL, PLUGIN_SUBMISSIONS_URL } from "../../site";
+import { GITHUB_URL } from "../../site";
 
-const fields = [
+const fields: SubmissionField[] = [
   { name: "email", label: "Email", placeholder: "you@acme.com", type: "email", required: true },
   { name: "name", label: "Plugin name", placeholder: "Acme", type: "text", required: true },
-  { name: "website", label: "Website URL", placeholder: "https://acme.com", type: "url", required: false },
+  { name: "website", label: "Website URL", placeholder: "acme.com", type: "url" },
   {
     name: "logo",
     label: "Logo URL",
-    placeholder: "https://acme.com/logo.svg",
+    placeholder: "acme.com/logo.svg",
     type: "url",
     required: true,
   },
   {
     name: "source",
     label: "GitHub repository",
-    placeholder: "https://github.com/acme/plugin",
+    placeholder: "github.com/acme/plugin",
     type: "url",
     required: true,
   },
-] as const;
+  {
+    name: "description",
+    label: "Description",
+    placeholder: "What your plugin does and how it helps people",
+    type: "textarea",
+    required: true,
+  },
+  {
+    name: "testing",
+    label: "Testing instructions",
+    placeholder: "How to try it in Rakazo, without real credentials",
+    type: "textarea",
+    required: true,
+  },
+];
 ---
 
 <SiteFrame
@@ -39,139 +55,9 @@ const fields = [
     <a href={`${GITHUB_URL}/tree/main/examples/plugins/mcp-server`}>MCP server example</a> or{" "}
     <a href={`${GITHUB_URL}/tree/main/examples/plugins/hello-world`}>skills-only example</a>.
   </p>
-  <form class="plugin-form" action={PLUGIN_SUBMISSIONS_URL} data-plugin-form novalidate>
-    {
-      fields.map((field) => (
-        <label>
-          <span>{field.label}</span>
-          <input
-            name={field.name}
-            type={field.type}
-            placeholder={field.placeholder}
-            required={field.required}
-          />
-        </label>
-      ))
-    }
-    <label>
-      <span>Description</span>
-      <textarea name="description" rows="3" placeholder="What your plugin does and how it helps people" required
-      ></textarea>
-    </label>
-    <label>
-      <span>Testing instructions</span>
-      <textarea name="testing" rows="3" placeholder="How to try it in Rakazo, without real credentials" required
-      ></textarea>
-    </label>
-    <label class="plugin-form__check">
-      <input name="tested" type="checkbox" required />
-      <span>I've tested this plugin in Rakazo and it works</span>
-    </label>
-    <p class="plugin-form__error" role="alert" data-plugin-error hidden></p>
-    <button class="button button--primary" type="submit">Submit plugin</button>
-  </form>
-  <p class="plugin-form__done" role="status" data-plugin-done hidden>
-    Thanks. We'll email you when it's reviewed.
-  </p>
+  <SubmissionForm
+    fields={fields}
+    confirm={{ name: "tested", label: "I've tested this plugin in Rakazo and it works" }}
+    submitLabel="Submit plugin"
+  />
 </SiteFrame>
-
-<script>
-  type Issue = { field: string; message: string };
-
-  const form = document.querySelector<HTMLFormElement>("[data-plugin-form]");
-  const error = document.querySelector<HTMLElement>("[data-plugin-error]");
-  const done = document.querySelector<HTMLElement>("[data-plugin-done]");
-
-  const control = (name: string) =>
-    form?.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[name="${name}"]`) ?? null;
-
-  function clearIssues() {
-    if (!form || !error) return;
-    for (const message of form.querySelectorAll("[data-field-error]")) message.remove();
-    for (const field of form.querySelectorAll("[aria-invalid]")) {
-      field.removeAttribute("aria-invalid");
-      field.removeAttribute("aria-describedby");
-    }
-    error.hidden = true;
-  }
-
-  // Each message sits under its field, so it stays readable after the page scrolls to it.
-  function showIssues(issues: Issue[]) {
-    if (!error) return;
-    const general: string[] = [];
-    let first: HTMLElement | null = null;
-    for (const issue of issues) {
-      const field = control(issue.field);
-      const label = field?.closest("label");
-      if (!field || !label) {
-        general.push(issue.message);
-        continue;
-      }
-      if (field.hasAttribute("aria-invalid")) continue;
-      const message = document.createElement("p");
-      message.id = `${issue.field}-error`;
-      message.className = "plugin-form__error plugin-form__error--field";
-      message.dataset.fieldError = "";
-      message.textContent = issue.message;
-      label.after(message);
-      field.setAttribute("aria-invalid", "true");
-      field.setAttribute("aria-describedby", message.id);
-      first ??= field;
-    }
-    if (general.length) {
-      error.textContent = general.join(". ");
-      error.hidden = false;
-    }
-    first?.focus();
-  }
-
-  form?.addEventListener("input", (event) => {
-    const field = event.target as HTMLElement;
-    if (!field.hasAttribute("aria-invalid")) return;
-    document.getElementById(field.getAttribute("aria-describedby") ?? "")?.remove();
-    field.removeAttribute("aria-invalid");
-    field.removeAttribute("aria-describedby");
-  });
-
-  form?.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    if (!error || !done) return;
-    clearIssues();
-    const invalid = [...form.elements].filter(
-      (field): field is HTMLInputElement | HTMLTextAreaElement =>
-        (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) &&
-        !field.validity.valid,
-    );
-    if (invalid.length) {
-      showIssues(invalid.map((field) => ({ field: field.name, message: field.validationMessage })));
-      return;
-    }
-    const button = form.querySelector("button");
-    const values = Object.fromEntries(new FormData(form)) as Record<string, string>;
-    const body = { ...values, website: values.website || undefined, tested: true };
-    if (button) button.disabled = true;
-    try {
-      const response = await fetch(form.action, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (response.ok) {
-        form.hidden = true;
-        done.hidden = false;
-        return;
-      }
-      const result = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        issues?: Issue[];
-      };
-      showIssues(
-        result.issues ?? [{ field: "", message: result.error ?? "Could not submit. Try again." }],
-      );
-    } catch {
-      showIssues([{ field: "", message: "Could not submit. Try again." }]);
-    } finally {
-      if (button) button.disabled = false;
-    }
-  });
-</script>
