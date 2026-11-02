@@ -1451,12 +1451,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await teamChatBridge?.stop();
       await stopInstalledBridges?.();
       await stopReferralEmails?.();
-      await email?.drain?.();
       await reconciler?.stop();
       await oauthTokenUpgrade;
       await mcpArgsMove;
       await runsStopped;
       await requestsSettled;
+      await email?.drain?.();
       await jobs.close();
       await secrets.close();
       await realtime.close();
