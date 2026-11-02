@@ -2746,7 +2746,7 @@ msgstr "需要验证邮箱"
 msgid "Enable {0}"
 msgstr "启用 {0}"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr "将于 {day} 结束"
 
@@ -4877,7 +4877,7 @@ msgstr "重命名"
 msgid "Rename section"
 msgstr "重命名分组"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Renews {day}"
 msgstr "将于 {day} 续订"
 
@@ -6113,7 +6113,7 @@ msgstr "Treg token"
 msgid "Trial"
 msgstr "试用"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Trial ends {day}"
 msgstr "试用将于 {day} 结束"
 

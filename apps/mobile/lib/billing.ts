@@ -24,6 +24,22 @@ export function currentPlan(status: BillingStatus): Plan | null {
   return status.funding === "byok" ? "byok" : status.funding === "credits" ? "credits" : null;
 }
 
+/** The plan the organization is on, as shown when changing plans; a free period is no plan yet. */
+export function subscribedPlan(status: BillingStatus): Plan | null {
+  if (status.byokFreeUntil) return null;
+  const plan = currentPlan(status);
+  // Credits bought once are a balance, not a plan to keep.
+  return plan === "byok" || status.monthlyAmountCents ? plan : null;
+}
+
+/** What an own-key subscriber pays each month, which stays at the price they subscribed at. */
+export function ownKeySubscriptionCents(status: BillingStatus): number | null {
+  if (!status.byokPriceCents || status.monthlyAmountCents || status.byokFreeUntil) return null;
+  return ["trialing", "active", "past_due", "unpaid", "paused"].includes(status.state)
+    ? status.byokPriceCents
+    : null;
+}
+
 /**
  * Whether a checkout changed the plan. A canceled checkout returns to the same status, and
  * an organization that already had access (a free period, or changing plans) still has it.

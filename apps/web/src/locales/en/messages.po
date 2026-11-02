@@ -2746,7 +2746,7 @@ msgstr "Email verification required"
 msgid "Enable {0}"
 msgstr "Enable {0}"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr "Ends {day}"
 
@@ -4877,7 +4877,7 @@ msgstr "Rename"
 msgid "Rename section"
 msgstr "Rename section"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Renews {day}"
 msgstr "Renews {day}"
 
@@ -6113,7 +6113,7 @@ msgstr "Treg token"
 msgid "Trial"
 msgstr "Trial"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Trial ends {day}"
 msgstr "Trial ends {day}"
 

@@ -1037,6 +1037,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Use Rakazo credits": "Использовать кредиты Rakazo",
   "Choose a plan": "Выбрать тариф",
   "Change plan": "Сменить тариф",
+  "Current plan": "Текущий тариф",
   Plan: "Тариф",
   None: "Нет",
   "Free trial": "Бесплатный пробный период",

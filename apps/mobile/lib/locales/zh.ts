@@ -1020,6 +1020,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Use Rakazo credits": "使用 Rakazo 额度",
   "Choose a plan": "选择方案",
   "Change plan": "更改方案",
+  "Current plan": "当前方案",
   Plan: "方案",
   None: "无",
   "Free trial": "免费试用",

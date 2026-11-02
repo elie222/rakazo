@@ -2747,7 +2747,7 @@ msgstr "需要驗證電子信箱"
 msgid "Enable {0}"
 msgstr "啟用 {0}"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr "於 {day} 結束"
 
@@ -4878,7 +4878,7 @@ msgstr "重新命名"
 msgid "Rename section"
 msgstr "重新命名分組"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Renews {day}"
 msgstr "於 {day} 續訂"
 
@@ -6114,7 +6114,7 @@ msgstr "Treg 權杖"
 msgid "Trial"
 msgstr "試用"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Trial ends {day}"
 msgstr "試用於 {day} 結束"
 

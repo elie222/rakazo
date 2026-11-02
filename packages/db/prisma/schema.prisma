@@ -241,6 +241,7 @@ model BillingAccount {
   organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   customerId          String       @unique
   creditAmountCents   Int?
+  byokPriceCents      Int?
   subscriptionId      String?
   subscriptionItemId  String?
   priceId             String?

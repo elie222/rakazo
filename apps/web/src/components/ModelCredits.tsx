@@ -25,11 +25,25 @@ import {
 } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { formatBillingAmount, formatBillingDate, formatBillingPrice } from "../lib/billing";
+import {
+  billingDateLabel,
+  formatBillingAmount,
+  formatBillingDate,
+  formatBillingPrice,
+} from "../lib/billing";
 import { rpc } from "../lib/rpc";
 import { useSignOut } from "../lib/sign-out";
 
 type CreditAmount = (typeof MODEL_CREDIT_AMOUNTS)[number];
+
+/** Subscription states that still bill: access now, or resumed from the billing portal. */
+const LIVE_STATES: BillingStatus["state"][] = [
+  "trialing",
+  "active",
+  "past_due",
+  "unpaid",
+  "paused",
+];
 
 function formatMonthlyUsd(cents: number, locale: string): string {
   return formatBillingPrice(
@@ -281,8 +295,30 @@ export function ModelCreditsSettings({
   const price = status.byokPriceCents
     ? formatBillingAmount(status.byokPriceCents, "usd", i18n.locale)
     : null;
+  // A live subscription without monthly credits is the own-key plan, at the price it was bought at.
+  const ownKeyPlan =
+    status.byokPriceCents &&
+    !status.monthlyAmountCents &&
+    LIVE_STATES.includes(status.state) &&
+    !status.byokFreeUntil
+      ? {
+          price: formatMonthlyUsd(status.byokPriceCents, i18n.locale),
+          date: billingDateLabel(status, i18n.locale || "en"),
+        }
+      : null;
   return (
     <div data-testid="model-credits" className="space-y-5">
+      {ownKeyPlan ? (
+        <div data-testid="own-key-plan" className="rounded-xl border border-border p-5">
+          <h3 className="text-sm text-muted-foreground">
+            <Trans>Your subscription or API key</Trans>
+          </h3>
+          <p className="mt-2 text-3xl font-medium tabular-nums">{ownKeyPlan.price}</p>
+          {ownKeyPlan.date ? (
+            <p className="mt-2 text-sm text-muted-foreground">{ownKeyPlan.date}</p>
+          ) : null}
+        </div>
+      ) : null}
       <div className="rounded-xl border border-border p-5">
         <div className="flex items-center justify-between">
           <h3 className="text-sm text-muted-foreground">
