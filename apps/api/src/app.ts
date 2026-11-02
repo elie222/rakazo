@@ -1029,6 +1029,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       prisma,
       events,
       jobs,
+      sandbox,
       provision: (request, policyEnv) => provisionMessagingIdentity(prisma, request, policyEnv),
       openSignup: env.messagingOpenSignup,
       signupPolicy: {
