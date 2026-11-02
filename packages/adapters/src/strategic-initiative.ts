@@ -93,7 +93,7 @@ export function isStrategicInitiativeRun(input: {
 }): boolean {
   if (input.trigger !== "routine") return false;
   const nonce = input.clientNonce?.trim();
-  return Boolean(nonce && nonce.startsWith(`${STRATEGIC_INITIATIVE_NONCE_PREFIX}:`));
+  return Boolean(nonce?.startsWith(`${STRATEGIC_INITIATIVE_NONCE_PREFIX}:`));
 }
 
 /** Strategic sweeps are read-mostly and user-facing: no autonomous side effects. */

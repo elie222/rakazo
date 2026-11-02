@@ -35,11 +35,13 @@ function strategicPrisma(options: {
     runs.push({ id: "run-existing", clientNonce: options.existingNonce, trigger: "routine" });
   }
   const run = {
-    findUnique: vi.fn(async ({ where }: { where: { spaceId_clientNonce: { clientNonce: string } } }) => {
-      const nonce = where.spaceId_clientNonce.clientNonce;
-      const found = runs.find((item) => item.clientNonce === nonce);
-      return found ? { id: found.id } : null;
-    }),
+    findUnique: vi.fn(
+      async ({ where }: { where: { spaceId_clientNonce: { clientNonce: string } } }) => {
+        const nonce = where.spaceId_clientNonce.clientNonce;
+        const found = runs.find((item) => item.clientNonce === nonce);
+        return found ? { id: found.id } : null;
+      },
+    ),
     create: vi.fn(async ({ data }: { data: { clientNonce: string; trigger: string } }) => {
       if (options.uniqueOnCreate) throw { code: "P2002" };
       const id = `run-${runs.length + 1}`;
@@ -57,8 +59,9 @@ function strategicPrisma(options: {
     bot: { findMany: vi.fn(async () => options.bots) },
     run,
     task,
-    $transaction: vi.fn(async (fn: (tx: { run: typeof run; task: typeof task }) => Promise<unknown>) =>
-      fn({ run, task }),
+    $transaction: vi.fn(
+      async (fn: (tx: { run: typeof run; task: typeof task }) => Promise<unknown>) =>
+        fn({ run, task }),
     ),
   } as unknown as PrismaClient;
   return { prisma, tasks, runs };
@@ -77,7 +80,11 @@ describe("reconcileStrategicInitiatives", () => {
           name: "Scout",
           thread: { id: "thread-1" },
           scratchpadItems: [
-            { title: "Cerrar bug de login", notes: "falta validar refresh token", updatedAt: stale },
+            {
+              title: "Cerrar bug de login",
+              notes: "falta validar refresh token",
+              updatedAt: stale,
+            },
           ],
         },
       ],
@@ -178,9 +185,7 @@ describe("strategic initiative tool guard", () => {
         clientNonce: "strategic-initiative:bot-1:123",
       }),
     ).toBe(true);
-    expect(isStrategicInitiativeRun({ trigger: "routine", clientNonce: "manual-run" })).toBe(
-      false,
-    );
+    expect(isStrategicInitiativeRun({ trigger: "routine", clientNonce: "manual-run" })).toBe(false);
     expect(
       isStrategicInitiativeRun({
         trigger: "user",
