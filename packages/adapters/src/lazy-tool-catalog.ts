@@ -383,14 +383,15 @@ function hoistPointerRefs(root: Record<string, unknown>): Record<string, unknown
   let changed = false;
 
   const resolve = (pointer: string): unknown => {
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(pointer.slice(2));
+    } catch {
+      return;
+    }
     let node: unknown = root;
-    for (const raw of pointer.slice(2).split("/")) {
-      let segment: string;
-      try {
-        segment = decodeURIComponent(raw).replace(/~1/g, "/").replace(/~0/g, "~");
-      } catch {
-        return;
-      }
+    for (const raw of decoded.split("/")) {
+      const segment = raw.replace(/~1/g, "/").replace(/~0/g, "~");
       if (node == null || typeof node !== "object" || !Object.hasOwn(node, segment)) return;
       node = (node as Record<string, unknown>)[segment];
     }
@@ -400,8 +401,9 @@ function hoistPointerRefs(root: Record<string, unknown>): Record<string, unknown
   const walk = (node: unknown): unknown => {
     if (Array.isArray(node)) return node.map(walk);
     if (node == null || typeof node !== "object") return node;
-    const result: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(node)) result[key] = walk(value);
+    const result: Record<string, unknown> = Object.fromEntries(
+      Object.entries(node).map(([key, value]) => [key, walk(value)]),
+    );
     const ref = result.$ref;
     if (typeof ref !== "string" || !ref.startsWith("#/")) return result;
     const segments = ref.slice(2).split("/");

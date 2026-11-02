@@ -538,6 +538,23 @@ describe("lazy tool catalog", () => {
     ).toThrow(/invalid/i);
   });
 
+  it("decodes pointer refs per RFC 6901 and keeps a property named __proto__", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        "a/properties/b": { type: "number" },
+        a: { type: "object", properties: { b: { type: "string" } } },
+        slash: { $ref: "#/properties/a%2Fproperties%2Fb" },
+        ["__proto__"]: { type: "string" },
+      },
+      required: ["__proto__"],
+    };
+    const args = JSON.parse('{"slash":"1","__proto__":"x"}');
+
+    expect(() => assertConnectorToolArgs(schema, args)).not.toThrow();
+    expect(() => assertConnectorToolArgs(schema, { ...args, slash: 1 })).toThrow(/invalid/i);
+  });
+
   it("accepts group-qualified names a model builds from search output", () => {
     const route = (resourceId: string, toolName: string, catalogGroup: string) => ({
       connectorId: "mcp",
