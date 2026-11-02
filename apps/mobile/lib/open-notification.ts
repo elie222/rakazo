@@ -66,7 +66,11 @@ export async function openNotificationResponse(
   openedResponses.add(key);
   const attempt = ++openAttempt;
   try {
-    const account = await selectNotificationAccount(target.params.userId, target.params.apiBase);
+    const account = await selectNotificationAccount(
+      target.params.userId,
+      target.params.apiBase,
+      () => attempt === openAttempt,
+    );
     if (attempt !== openAttempt) {
       openedResponses.delete(key);
       return false;

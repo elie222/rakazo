@@ -24,12 +24,13 @@ trust; those sites are listed under **Trusted sites**, where you can remove them
 Under **Security** you can **Change password** and **Add passkey** to sign in with your device
 instead of a password. Some actions, such as exporting data, ask you to confirm it's you first.
 
-Choose **Add account** from the web account menu or the mobile account settings to stay signed in
-to another login, then pick it from the same place to switch. Other accounts show their unread
-count. Browsers keep up to five accounts.
+Choose **Switch accounts** from the web account menu or the mobile account settings to open the
+account picker. Choose **Add account** there to keep another login signed in. The picker shows
+the selected account and each account's unread count. Browsers keep up to five accounts.
 
-Notifications arrive for every signed-in account and open in the account they belong to. Browser
-notifications need Rakazo open in a tab. **Log out** signs out the current account; **Log out all
+Notifications arrive for every signed-in account. Receiving one leaves the current account
+displayed; opening it selects the account it belongs to. Browser notifications need Rakazo open
+in a tab. **Log out** signs out the current account; **Log out all
 accounts** signs out every account on that device.
 
 ## Credentials

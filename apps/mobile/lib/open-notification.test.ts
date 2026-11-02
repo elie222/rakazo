@@ -40,7 +40,11 @@ it("routes an authenticated server alias through the configured API", async () =
       botId: "work-bot",
     }),
   );
-  expect(selectNotificationAccount).toHaveBeenCalledWith("work", "https://web.example.test");
+  expect(selectNotificationAccount).toHaveBeenCalledWith(
+    "work",
+    "https://web.example.test",
+    expect.any(Function),
+  );
   expect(router.push).toHaveBeenCalledWith(
     {
       pathname: "/thread",
@@ -244,7 +248,7 @@ it("selects the payload account before opening its chat and refuses unavailable 
   await expect(
     openNotificationResponse(tap("account-work", { userId: "work", botId: "bot-work" })),
   ).resolves.toBe(true);
-  expect(selectNotificationAccount).toHaveBeenCalledWith("work", undefined);
+  expect(selectNotificationAccount).toHaveBeenCalledWith("work", undefined, expect.any(Function));
   expect(vi.mocked(selectNotificationAccount).mock.invocationCallOrder[0]).toBeLessThan(
     vi.mocked(router.push).mock.invocationCallOrder[0]!,
   );

@@ -1,13 +1,16 @@
+import type { NotificationResponse } from "expo-notifications";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
   loadAccountSummaries,
   refreshAccountSummaries,
   refreshAppBadge,
+  rememberCurrentAccount,
   selectNotificationAccount,
   selectSavedAccount,
   signOutAllAccounts,
 } from "./account-sessions";
 import { forgetAppBadge } from "./app-badge";
+import { openNotificationResponse } from "./open-notification";
 import { pendingSessionTokens } from "./pending-session-revocations";
 import { loadSavedAccounts, rememberSavedAccount } from "./saved-accounts";
 
@@ -19,6 +22,9 @@ const state = vi.hoisted(() => ({
   save: vi.fn(),
   signOut: vi.fn(),
   badge: vi.fn(),
+  notifications: vi.fn(),
+  push: vi.fn(),
+  alert: vi.fn(),
 }));
 vi.mock("expo-secure-store", () => ({
   deleteItemAsync: vi.fn(async (key: string) => {
@@ -29,7 +35,16 @@ vi.mock("expo-secure-store", () => ({
     state.disk.set(key, value);
   }),
 }));
-vi.mock("expo-notifications", () => ({ setBadgeCountAsync: state.badge }));
+vi.mock("expo-notifications", () => ({
+  setBadgeCountAsync: state.badge,
+  DEFAULT_ACTION_IDENTIFIER: "expo.modules.notifications.actions.DEFAULT",
+  getLastNotificationResponse: () => null,
+}));
+vi.mock("expo-router", () => ({
+  router: { push: state.push, dismissTo: vi.fn(), replace: vi.fn() },
+}));
+vi.mock("react-native", () => ({ Alert: { alert: state.alert } }));
+vi.mock("./settings-sheet", () => ({ closeSettingsSheet: vi.fn() }));
 vi.mock("./api", () => ({
   currentApiBase: () => state.apiBase,
   loadSessionToken: async () => state.token,
@@ -41,7 +56,10 @@ vi.mock("./session", () => ({
   loadSessionToken: async () => state.token,
   saveSessionToken: state.save,
 }));
-vi.mock("./live-notifications", () => ({ stopLiveNotifications: vi.fn(async () => undefined) }));
+vi.mock("./live-notifications", () => ({
+  stopLiveNotifications: vi.fn(async () => undefined),
+  getLiveNotificationSettings: state.notifications,
+}));
 vi.mock("./server-headers", () => ({
   fetchServer: (...args: Parameters<typeof fetch>) => fetch(...args),
 }));
@@ -62,6 +80,14 @@ beforeEach(async () => {
   state.generation = 0;
   state.apiBase = apiBase;
   state.badge.mockReset().mockResolvedValue(true);
+  state.notifications.mockReset().mockResolvedValue({
+    liveConnection: true,
+    messages: false,
+    scheduledTasks: false,
+    needsAttention: true,
+  });
+  state.push.mockReset();
+  state.alert.mockReset();
   state.signOut.mockReset().mockImplementation(async () => {
     state.token = "";
     state.generation++;
@@ -93,6 +119,81 @@ it("returns local recovery identities without credentials", async () => {
     { userId: "work", email: "work@example.test", unread: 0 },
   ]);
   expect(fetch).not.toHaveBeenCalled();
+});
+
+it("preserves the first legacy login's notification preferences without copying them to another account", async () => {
+  state.disk.clear();
+  await rememberCurrentAccount();
+  expect((await loadSavedAccounts(apiBase))[0]).toMatchObject({
+    userId: "family",
+    notifications: {
+      liveConnection: true,
+      messages: false,
+      scheduledTasks: false,
+      needsAttention: true,
+    },
+  });
+  state.token = "work-token";
+  state.generation++;
+  await rememberCurrentAccount();
+  const work = (await loadSavedAccounts(apiBase)).find((row) => row.userId === "work");
+  expect(work?.notifications).toBeUndefined();
+  expect(state.notifications).toHaveBeenCalledTimes(1);
+});
+
+it("does not adopt a legacy login after its session changes while reading preferences", async () => {
+  state.disk.clear();
+  state.notifications.mockImplementation(async () => {
+    state.generation++;
+    return { liveConnection: false, messages: true, scheduledTasks: true, needsAttention: true };
+  });
+  await rememberCurrentAccount();
+  expect(await loadSavedAccounts(apiBase)).toEqual([]);
+});
+
+it("only selects and opens the newest notification when an older account verifies first", async () => {
+  const pending = new Map<string, (response: Response) => void>();
+  vi.mocked(fetch).mockImplementation(
+    async (_url, init) => new Promise<Response>((resolve) => pending.set(userFor(init), resolve)),
+  );
+  const tap = (userId: string): NotificationResponse => ({
+    actionIdentifier: "expo.modules.notifications.actions.DEFAULT",
+    notification: {
+      date: Date.UTC(2026, 10, 3),
+      request: {
+        identifier: `overlapping-${userId}`,
+        trigger: { type: "push" },
+        content: {
+          title: null,
+          subtitle: null,
+          body: null,
+          categoryIdentifier: null,
+          sound: null,
+          launchImageName: null,
+          badge: null,
+          attachments: [],
+          threadIdentifier: null,
+          data: { userId, botId: `${userId}-bot` },
+        },
+      },
+    },
+  });
+  const older = openNotificationResponse(tap("work"));
+  await vi.waitFor(() => expect(pending.has("work")).toBe(true));
+  const newer = openNotificationResponse(tap("family"));
+  await vi.waitFor(() => expect(pending.has("family")).toBe(true));
+  pending.get("work")!(Response.json({ user: { id: "work", email: "work@example.test" } }));
+  expect(await older).toBe(false);
+  const tokenAfterOlder = state.token;
+  pending.get("family")!(Response.json({ user: { id: "family", email: "family@example.test" } }));
+  expect(await newer).toBe(true);
+  expect(tokenAfterOlder).toBe("family-token");
+  expect(state.save).not.toHaveBeenCalled();
+  expect(state.push).toHaveBeenCalledExactlyOnceWith(
+    { pathname: "/thread", params: { userId: "family", botId: "family-bot" } },
+    expect.any(Object),
+  );
+  expect(state.alert).not.toHaveBeenCalled();
 });
 
 it("validates and selects the notification owner while preserving the other login", async () => {

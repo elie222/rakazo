@@ -2,7 +2,7 @@ import { readBoundedJsonResponse } from "@rakazo/core";
 import { clearSpace, currentApiBase, loadSessionToken, signOut } from "./api";
 import { appBadgeGeneration, syncAppBadge } from "./app-badge";
 import { t } from "./i18n";
-import { stopLiveNotifications } from "./live-notifications";
+import { getLiveNotificationSettings, stopLiveNotifications } from "./live-notifications";
 import {
   completeSessionRevocation,
   pendingSessionTokens,
@@ -77,12 +77,16 @@ export async function rememberCurrentAccount(): Promise<void> {
   const apiBase = currentApiBase();
   const token = await loadSessionToken();
   if (!token || (await pendingSessionTokens(apiBase)).has(token)) return;
-  if ((await loadSavedAccounts(apiBase)).some((row) => row.token === token)) return;
+  const accounts = await loadSavedAccounts(apiBase);
+  if (accounts.some((row) => row.token === token)) return;
   const verified = await verifiedAccount(apiBase, token);
   if (!verified) return;
   await rememberSavedAccount(
     apiBase,
-    verified,
+    {
+      ...verified,
+      ...(accounts.length ? {} : { notifications: await getLiveNotificationSettings() }),
+    },
     () => generation === currentSessionGeneration() && apiBase === currentApiBase(),
   );
 }
@@ -128,31 +132,40 @@ export async function refreshAppBadge(): Promise<void> {
 }
 
 /** Validate ownership before changing the active bearer or any private screen. */
-export async function selectSavedAccount(userId: string): Promise<boolean> {
+export async function selectSavedAccount(
+  userId: string,
+  stillCurrent: () => boolean = () => true,
+): Promise<boolean> {
   const generation = currentSessionGeneration();
   const apiBase = currentApiBase();
+  const current = () =>
+    stillCurrent() && generation === currentSessionGeneration() && apiBase === currentApiBase();
   const account = (await loadSavedAccounts(apiBase)).find((row) => row.userId === userId);
-  if (!account) return false;
+  if (!account || !current()) return false;
   const verified = await verifiedAccount(apiBase, account.token);
+  if (!current()) return false;
   if (verified?.userId !== userId) {
     await forgetSavedToken(apiBase, account.token);
     return false;
   }
-  const current = () => generation === currentSessionGeneration() && apiBase === currentApiBase();
+  const active = await loadSessionToken();
   if (!current()) return false;
-  if ((await loadSessionToken()) === account.token) return current();
+  if (active === account.token) return true;
   if (!(await clearSpace())) throw new Error(t("Could not clear the local session"));
   if (!current()) return false;
   await stopLiveNotifications(false).catch(() => undefined);
   if (!current()) return false;
   await saveSessionToken(account.token);
-  return generation + 1 === currentSessionGeneration() && apiBase === currentApiBase();
+  return (
+    stillCurrent() && generation + 1 === currentSessionGeneration() && apiBase === currentApiBase()
+  );
 }
 
 /** "other-server" targets cannot open here: signing in again would not reach their server. */
 export async function selectNotificationAccount(
   userId?: string,
   apiBase?: string,
+  stillCurrent: () => boolean = () => true,
 ): Promise<"selected" | "signed-out" | "other-server"> {
   const server = currentApiBase();
   if (apiBase !== undefined && !(await isSavedServer(server, apiBase))) {
@@ -165,7 +178,10 @@ export async function selectNotificationAccount(
   if (!userId && !rows.length) return (await loadSessionToken()) ? "selected" : "signed-out";
   // Older deliveries have no account. They are safe only with one saved login.
   const target = userId ?? (rows.length === 1 ? rows[0]?.userId : undefined);
-  return target && (await selectSavedAccount(target)) ? "selected" : "signed-out";
+  return target &&
+    (await selectSavedAccount(target, () => stillCurrent() && server === currentApiBase()))
+    ? "selected"
+    : "signed-out";
 }
 
 /** Removes every saved login locally; remote failures are reported after that. */
