@@ -148,7 +148,7 @@ export function promptTextForAttachments(
     name: string;
     mimeType: string;
     size: number;
-    /** Spoken words transcribed from an inbound audio attachment. */
+    /** Normalized words transcribed from an inbound audio attachment. */
     transcript?: string;
   }>,
 ): string {
@@ -157,8 +157,9 @@ export function promptTextForAttachments(
     .filter((artifact) => !isAttachmentImageMimeType(artifact.mimeType))
     .map((artifact) => {
       const note = `User attached file ${JSON.stringify(artifact.name)} (${artifact.mimeType}, ${artifact.size} bytes).`;
-      const transcript = normalizeVoiceTranscript(artifact.transcript);
-      return transcript ? `${note}\n[voice note transcript: ${transcript}]` : note;
+      return artifact.transcript
+        ? `${note}\n[voice note transcript: ${artifact.transcript}]`
+        : note;
     });
   return [caption, ...notes].filter(Boolean).join("\n\n") || "See attached files.";
 }

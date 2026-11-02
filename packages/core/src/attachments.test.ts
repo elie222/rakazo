@@ -120,7 +120,7 @@ describe("attachment helpers", () => {
     ).toBe("hello\n[image: shot.png]\n[file: brief.pdf (application/pdf, 99 bytes)]");
   });
 
-  it("appends a bounded voice note transcript after the file note", () => {
+  it("appends a voice note transcript after the file note", () => {
     expect(
       promptTextForAttachments("listen to this", [
         { name: "voice.oga", mimeType: "audio/ogg", size: 10, transcript: "hello there" },
@@ -129,24 +129,13 @@ describe("attachment helpers", () => {
       'listen to this\n\nUser attached file "voice.oga" (audio/ogg, 10 bytes).' +
         "\n[voice note transcript: hello there]",
     );
-    // A blank or control-only transcript adds no line.
-    expect(
-      promptTextForAttachments(undefined, [
-        { name: "voice.oga", mimeType: "audio/ogg", size: 10, transcript: " \r\u0000 " },
-      ]),
-    ).toBe('User attached file "voice.oga" (audio/ogg, 10 bytes).');
-    // Untrusted transcript text stays bounded.
-    const unbounded = `x${"a".repeat(8000)}`;
-    const bounded = promptTextForAttachments(undefined, [
-      { name: "voice.oga", mimeType: "audio/ogg", size: 10, transcript: unbounded },
-    ]);
-    expect(bounded.length).toBeLessThan(unbounded.length);
-    expect(bounded).toContain("[voice note transcript: ");
   });
 
-  it("drops DEL and C1 control characters from a voice note transcript", () => {
+  it("normalizes and bounds a voice note transcript", () => {
     expect(normalizeVoiceTranscript("a\u007fb\u0085c\u009fd\te\nf")).toBe("abcd\te\nf");
     expect(normalizeVoiceTranscript(" \u0080 ")).toBe("");
+    expect(normalizeVoiceTranscript(" \r\u0000 ")).toBe("");
+    expect(normalizeVoiceTranscript("a".repeat(8000))).toHaveLength(4000);
   });
 
   it("infers attachment mime types from extensions", () => {

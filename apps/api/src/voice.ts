@@ -572,40 +572,26 @@ export async function transcribeVoice(
 }
 
 /**
- * Best-effort transcription of inbound messaging audio (for example a Telegram
- * voice note) through the bot owner's default voice connection, resolved like
- * the app's own dictation path. Null — never a throw — keeps delivery at
- * today's file-reference-only behaviour when no provider can transcribe, the
- * audio is empty or too large, or transcription fails. Providers bound their
- * own transcribe deadlines; the caller's `signal` cancels the call earlier.
+ * Transcribes inbound messaging audio (for example a Telegram voice note) with
+ * the bot owner's default voice connection, as the app's dictation does. Null
+ * when no provider can transcribe or the audio is too large; the caller treats
+ * a throw the same way, so the file is delivered without a transcript.
  */
 export async function transcribeInboundVoice(
   deps: VoiceDeps,
   owner: Pick<Actor, "userId" | "spaceId">,
   input: { audio: Uint8Array; mimeType: string; signal?: AbortSignal },
 ): Promise<string | null> {
-  try {
-    if (input.audio.byteLength === 0 || input.audio.byteLength > MAX_TRANSCRIBE_BYTES) return null;
-    const loaded = await loadDefaultVoiceCredential(deps, owner);
-    if (!loaded) return null;
-    const provider = await voiceProviderFor(deps, loaded.cred.provider);
-    if (!provider.transcribe) return null;
-    const { text } = await provider.transcribe(
-      {
-        audio: input.audio,
-        mimeType: input.mimeType,
-        apiKey: loaded.apiKey,
-      },
-      voiceContext(owner, input.signal),
-    );
-    return text.trim() || null;
-  } catch (error) {
-    // Reason only: the audio and the transcript never reach the log.
-    getLogger().warn("inbound voice transcription failed", {
-      reason: error instanceof Error ? error.message : String(error),
-    });
-    return null;
-  }
+  if (input.audio.byteLength > MAX_TRANSCRIBE_BYTES) return null;
+  const loaded = await loadDefaultVoiceCredential(deps, owner);
+  if (!loaded) return null;
+  const provider = await voiceProviderFor(deps, loaded.cred.provider);
+  if (!provider.transcribe) return null;
+  const { text } = await provider.transcribe(
+    { audio: input.audio, mimeType: input.mimeType, apiKey: loaded.apiKey },
+    voiceContext(owner, input.signal),
+  );
+  return text;
 }
 
 export function mountVoiceHttpRoutes(

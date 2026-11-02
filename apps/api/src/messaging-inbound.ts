@@ -74,9 +74,9 @@ export interface MessagingInboundDeps {
     bytes?: Uint8Array;
   }>;
   /**
-   * Transcribes inbound audio with the bot owner's voice provider. Resolves
-   * null when no provider can transcribe or transcription fails; only the
-   * file reference is delivered then. `signal` aborts when the budget runs out.
+   * Transcribes inbound audio with the bot owner's voice provider. On null or
+   * a throw only the file reference is delivered. `signal` aborts when the
+   * budget runs out.
    */
   transcribe?: (input: {
     spaceId: string;
