@@ -10,4 +10,4 @@ CREATE TABLE "call_push_devices" (
 CREATE INDEX "call_push_devices_userId_sessionId_idx" ON "call_push_devices"("userId", "sessionId");
 ALTER TABLE "call_push_devices" ENABLE ROW LEVEL SECURITY;
 CREATE POLICY call_push_devices_system ON "call_push_devices"
-  USING (current_setting('app.rls_bypass', true) = 'on');
+  USING ((SELECT app_rls_bypass()));
