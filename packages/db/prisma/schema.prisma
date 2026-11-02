@@ -314,6 +314,9 @@ model PluginSubmission {
   logo         String?
   /// The integration page slug this claims; claims have no source or testing.
   claim        String?
+  /// Hash of the emailed link that moves an unconfirmed claim into review.
+  confirmToken     String?   @unique
+  confirmExpiresAt DateTime?
   source       String?
   description  String
   testing      String?

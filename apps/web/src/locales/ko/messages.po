@@ -2744,10 +2744,6 @@ msgstr "이메일"
 msgid "Email is not allowed to register"
 msgstr "이 이메일은 가입이 허용되지 않습니다"
 
-#: src/pages/PluginSubmissionsPanel.tsx
-msgid "Email isn't at this website's domain"
-msgstr "이메일이 이 웹사이트 도메인이 아닙니다"
-
 #: src/components/ConfirmIdentityDialog.tsx
 msgid "Email me a code"
 msgstr ""

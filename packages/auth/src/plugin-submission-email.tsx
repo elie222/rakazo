@@ -7,24 +7,42 @@ import { emailText, linkStyle, message } from "./email.js";
 export function pluginSubmissionReceivedEmail(
   email: string,
   locale = "en",
-  claim = false,
 ): Promise<TransactionalEmail> {
   const say = emailText(locale);
   return message(
     email,
     locale,
-    claim ? say("We received your Rakazo page claim") : say("We received your Rakazo plugin"),
+    say("We received your Rakazo plugin"),
+    <>
+      <Text>{say("Thanks for submitting a plugin to the Rakazo marketplace.")}</Text>
+      <Text>{say("We review every submission and will email you when it's done.")}</Text>
+      <Text>{say("If you did not submit a plugin, ignore this email.")}</Text>
+    </>,
+  );
+}
+
+/** A claim proves the claimant reads mail at the app's domain before anyone reviews it. */
+export function integrationClaimConfirmEmail(
+  email: string,
+  url: string,
+  locale = "en",
+): Promise<TransactionalEmail> {
+  const say = emailText(locale);
+  return message(
+    email,
+    locale,
+    say("Confirm your Rakazo page claim"),
     <>
       <Text>
-        {claim
-          ? say("Thanks for claiming your app's page on Rakazo.")
-          : say("Thanks for submitting a plugin to the Rakazo marketplace.")}
+        <Link href={url} style={linkStyle}>
+          {say("Confirm claim")}
+        </Link>
       </Text>
-      <Text>{say("We review every submission and will email you when it's done.")}</Text>
       <Text>
-        {claim
-          ? say("If you did not claim a page, ignore this email.")
-          : say("If you did not submit a plugin, ignore this email.")}
+        {say("We review every claim once it's confirmed and will email you when it's done.")}
+      </Text>
+      <Text>
+        {say("This link expires in one day. If you did not claim a page, ignore this email.")}
       </Text>
     </>,
   );

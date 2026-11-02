@@ -909,6 +909,8 @@ export type PluginMarketplaceCatalog = z.infer<typeof PluginMarketplaceCatalogSc
 export const PLUGIN_SUBMISSIONS_PATH = "/api/v1/plugin-submissions";
 /** Approved claims, public so the marketing site can show each owner's page at build time. */
 export const INTEGRATION_CLAIMS_PATH = "/api/v1/integration-claims";
+/** Opened from the email that proves a claimant reads mail at the app's domain. */
+export const INTEGRATION_CLAIM_CONFIRM_PATH = "/api/v1/integration-claims/confirm";
 export const SUBMIT_PLUGIN_URL = "https://rakazo.com/plugins/submit/";
 export const integrationPageUrl = (slug: string) => `https://rakazo.com/integrations/${slug}/`;
 
@@ -969,8 +971,6 @@ export const PluginSubmissionSchema = PluginSubmissionInputSchema.omit({ tested:
   description: z.string(),
   /** The integration page URL slug a claim is for; null for plugins. */
   claim: z.string().nullable(),
-  /** For a claim, whether the submitter's email is at the website's domain. */
-  emailMatchesWebsite: z.boolean(),
   status: PluginSubmissionStatusSchema,
   reason: z.string().nullable(),
   createdAt: z.string(),

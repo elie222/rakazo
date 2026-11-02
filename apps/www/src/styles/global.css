@@ -2719,7 +2719,7 @@ button.product-demo__dock-icon {
 }
 
 /* Beats the page's paragraph color, so a missing field reads as an error. */
-.plugin-form .plugin-form__error {
+.alt-page .plugin-form__error {
   margin: 0;
   color: var(--destructive);
   font-size: 15px;

@@ -2744,10 +2744,6 @@ msgstr "E-mail"
 msgid "Email is not allowed to register"
 msgstr "Este e-mail não tem permissão para se cadastrar"
 
-#: src/pages/PluginSubmissionsPanel.tsx
-msgid "Email isn't at this website's domain"
-msgstr "O e-mail não é do domínio deste site"
-
 #: src/components/ConfirmIdentityDialog.tsx
 msgid "Email me a code"
 msgstr ""

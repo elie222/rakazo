@@ -44,6 +44,10 @@ type Row = Record<string, unknown> & {
   claim: string | null;
 };
 
+type Status = string | { in: string[] };
+const statusIs = (status: unknown, want: Status) =>
+  typeof want === "string" ? status === want : want.in.includes(status as string);
+
 function fakePrisma(users: Array<{ id: string; email: string; emailVerified: boolean }> = []) {
   const rows: Row[] = [];
   const stamp = (data: Record<string, unknown>): Record<string, unknown> => ({
@@ -55,23 +59,27 @@ function fakePrisma(users: Array<{ id: string; email: string; emailVerified: boo
     findFirst: async ({
       where,
     }: {
-      where: { source?: string; claim?: string; email: string; status: string };
+      where: { source?: string; claim?: string; email: string; status: Status };
     }) =>
       rows.find(
         (row) =>
           (where.claim ? row.claim === where.claim : row.source === where.source) &&
           row.email === where.email &&
-          row.status === where.status,
+          statusIs(row.status, where.status),
       ) ?? null,
-    findUnique: async ({ where }: { where: { id: string } }) => {
-      const row = rows.find((candidate) => candidate.id === where.id);
+    findUnique: async ({ where }: { where: { id?: string; confirmToken?: string } }) => {
+      const row = rows.find((candidate) =>
+        where.confirmToken
+          ? candidate.confirmToken === where.confirmToken
+          : candidate.id === where.id,
+      );
       return row ? { ...row } : null;
     },
     create: async ({ data }: { data: Record<string, unknown> }) => {
       const row = stamp({
+        status: "pending",
         ...data,
         id: `sub-${rows.length + 1}`,
-        status: "pending",
         createdAt: new Date(),
         updatedAt: new Date(0),
       }) as Row;
@@ -89,11 +97,12 @@ function fakePrisma(users: Array<{ id: string; email: string; emailVerified: boo
       where,
       data,
     }: {
-      where: { id: string; status: string; updatedAt?: Date };
+      where: { id: string; status: Status; updatedAt?: Date; confirmToken?: string };
       data: Record<string, unknown>;
     }) => {
       const row = rows.find((candidate) => candidate.id === where.id);
-      if (!row || row.status !== where.status) return { count: 0 };
+      if (!row || !statusIs(row.status, where.status)) return { count: 0 };
+      if (where.confirmToken && where.confirmToken !== row.confirmToken) return { count: 0 };
       if (where.updatedAt && where.updatedAt !== row.updatedAt) return { count: 0 };
       Object.assign(row, data, { updatedAt: new Date() });
       return { count: 1 };
@@ -130,9 +139,10 @@ function routes(prisma: never, email = new EmailEmulator()) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
+  const open = (url: string) => app.request(url.replace("https://app.example.test", ""));
   const claims = async () =>
     (await (await app.request(INTEGRATION_CLAIMS_PATH)).json()) as { claims: unknown[] };
-  return { submit, claims, email };
+  return { submit, claims, open, email };
 }
 
 beforeEach(() => preview.mockReset());
@@ -361,22 +371,71 @@ describe("integration page claims", () => {
     };
   }
 
-  it("queues a claim for review without a repository and tells admins it is a claim", async () => {
+  const confirmLink = (message: { text: string }) =>
+    /https:\/\/app\.example\.test\/api\/v1\/integration-claims\/confirm\?token=[\w-]+/.exec(
+      message.text,
+    )![0];
+
+  it("holds a claim out of review until the owner opens the emailed link", async () => {
     const { rows, prisma } = fakePrisma();
-    const { submit, email } = routes(prisma);
-    const response = await submit(claim);
-    expect(response.status).toBe(201);
+    const { submit, open, email } = routes(prisma);
+    expect((await submit(claim)).status).toBe(201);
     expect(rows[0]).toMatchObject({
       claim: "acme-tickets",
+      status: "unconfirmed",
       source: null,
       testing: null,
       logo: null,
     });
+    await vi.waitFor(() => expect(email.sent).toHaveLength(1));
+    const [confirm] = email.sent;
+    expect(confirm!.to).toBe(claim.email);
+    expect(confirm!.text).not.toContain(claim.name);
+    // Only the hash is stored, so a database read cannot confirm a claim.
+    expect(confirm!.text).not.toContain(String(rows[0]!.confirmToken));
+    expect(await listPluginSubmissions(prisma, "pending")).toEqual([]);
+
+    const opened = await open(confirmLink(confirm!));
+    expect(opened.status).toBe(303);
+    expect(opened.headers.get("location")).toBe(
+      "https://rakazo.com/integrations/acme-tickets/claim/?confirmed",
+    );
+    expect(rows[0]).toMatchObject({ status: "pending", confirmToken: null });
     await vi.waitFor(() => expect(email.sent).toHaveLength(2));
-    const admin = email.sent.find((message) => message.to === "admin@example.test")!;
-    expect(admin.subject).toBe("New page claim: Acme Tickets");
-    const owner = email.sent.find((message) => message.to === claim.email)!;
-    expect(owner.text).not.toContain(claim.name);
+    expect(email.sent[1]).toMatchObject({
+      to: "admin@example.test",
+      subject: "New page claim: Acme Tickets",
+    });
+    // The admin RPC validates its output with this schema, so a claim must pass it.
+    const pending = await listPluginSubmissions(prisma, "pending");
+    expect(PluginSubmissionSchema.safeParse(pending[0]).success).toBe(true);
+    // The link works once.
+    expect((await open(confirmLink(confirm!))).status).toBe(404);
+  });
+
+  it("sends an expired link back to the claim form", async () => {
+    const { rows, prisma } = fakePrisma();
+    const { submit, open, email } = routes(prisma);
+    await submit(claim);
+    await vi.waitFor(() => expect(email.sent).toHaveLength(1));
+    rows[0]!.confirmExpiresAt = new Date(Date.now() - 1);
+    const opened = await open(confirmLink(email.sent[0]!));
+    expect(opened.headers.get("location")).toBe(
+      "https://rakazo.com/integrations/acme-tickets/claim/?expired",
+    );
+    expect(rows[0]!.status).toBe("unconfirmed");
+  });
+
+  it.each([
+    ["a free mail address", "someone@mail.example"],
+    ["a lookalike domain", "owner@notacme.test"],
+  ])("refuses a claim from %s", async (_name, address) => {
+    const { rows, prisma } = fakePrisma();
+    const response = await routes(prisma).submit({ ...claim, email: address });
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { issues: Array<{ field: string }> };
+    expect(body.issues.map((issue) => issue.field)).toEqual(["email"]);
+    expect(rows).toHaveLength(0);
   });
 
   it("updates the owner's pending claim for the same page", async () => {
@@ -414,22 +473,12 @@ describe("integration page claims", () => {
     expect(rows).toHaveLength(0);
   });
 
-  it("shows reviewers whether the email is at the website's domain", async () => {
-    const { prisma } = fakePrisma();
-    const { submit } = routes(prisma);
-    await submit(claim);
-    await submit({ ...claim, email: "someone@mail.example" });
-    const pending = await listPluginSubmissions(prisma, "pending");
-    expect(pending.map((row) => row.emailMatchesWebsite)).toEqual([true, false]);
-    // The admin RPC validates its output with this schema, so a claim must pass it.
-    for (const row of pending) expect(PluginSubmissionSchema.safeParse(row).success).toBe(true);
-  });
-
   it("approves without previewing a plugin and publishes the newest claim per page", async () => {
     const { rows, prisma } = fakePrisma();
     const { submit, claims } = routes(prisma);
     await submit(claim);
     await submit({ ...claim, email: "other@acme.test", website: "https://acme.test/app" });
+    for (const row of rows) Object.assign(row, { status: "pending" });
     await reviewPluginSubmission(reviewDeps(prisma), { id: "sub-1", decision: "approve" });
     await reviewPluginSubmission(reviewDeps(prisma), { id: "sub-2", decision: "approve" });
     rows[0]!.reviewedAt = new Date(1);

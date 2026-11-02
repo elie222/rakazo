@@ -147,11 +147,6 @@ export function PluginSubmissionsPanel() {
                   >
                     {submission.email}
                   </a>
-                  {submission.claim && !submission.emailMatchesWebsite ? (
-                    <p className="text-warning">
-                      <Trans>Email isn't at this website's domain</Trans>
-                    </p>
-                  ) : null}
                 </div>
                 {submission.status === "pending" ? (
                   <div className="flex shrink-0 gap-2">

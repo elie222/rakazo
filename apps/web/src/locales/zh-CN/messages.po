@@ -2744,10 +2744,6 @@ msgstr "邮箱"
 msgid "Email is not allowed to register"
 msgstr "该邮箱不允许注册"
 
-#: src/pages/PluginSubmissionsPanel.tsx
-msgid "Email isn't at this website's domain"
-msgstr "邮箱不属于此网站的域名"
-
 #: src/components/ConfirmIdentityDialog.tsx
 msgid "Email me a code"
 msgstr "把验证码发到我的邮箱"

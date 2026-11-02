@@ -2745,10 +2745,6 @@ msgstr "電子信箱"
 msgid "Email is not allowed to register"
 msgstr "該電子信箱不允許註冊"
 
-#: src/pages/PluginSubmissionsPanel.tsx
-msgid "Email isn't at this website's domain"
-msgstr "電子郵件不屬於此網站的網域"
-
 #: src/components/ConfirmIdentityDialog.tsx
 msgid "Email me a code"
 msgstr ""

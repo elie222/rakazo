@@ -15,7 +15,6 @@ function submission(overrides: Partial<PluginSubmission>): PluginSubmission {
     description: "Plans your day from your calendar and notes.",
     testing: "Connect the plugin, then ask a bot to plan tomorrow.\nIt should list three blocks.",
     claim: null,
-    emailMatchesWebsite: false,
     status: "pending",
     reason: null,
     createdAt: "2026-10-01T09:00:00.000Z",
@@ -43,7 +42,7 @@ test("an admin reviews plugin submissions from the emailed admin link", async ({
     submission({
       id: "submission-claim",
       name: "Acme Tickets",
-      email: "someone@mail.example.test",
+      email: "owner@acme.example.test",
       website: "https://acme.example.test",
       logo: null,
       source: null,
@@ -91,7 +90,6 @@ test("an admin reviews plugin submissions from the emailed admin link", async ({
   await expect(rows.first()).toContainText("github.com/example/planning-notes");
   const claim = panel.getByRole("listitem", { name: "Acme Tickets" });
   await expect(claim).toContainText("rakazo.com/integrations/acme-tickets");
-  await expect(claim).toContainText("Email isn't at this website's domain");
   await expect(claim.getByRole("button", { name: "Testing" })).toHaveCount(0);
   await expect(rows.first()).toContainText("maker@example.test");
   await rows.first().getByRole("button", { name: "Testing" }).click();

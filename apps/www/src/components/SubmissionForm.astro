@@ -18,9 +18,16 @@ type Props = {
   /** A box the submitter must tick. */
   confirm?: { name: string; label: string };
   submitLabel: string;
+  doneMessage?: string;
 };
 
-const { fields, hidden = {}, confirm, submitLabel } = Astro.props;
+const {
+  fields,
+  hidden = {},
+  confirm,
+  submitLabel,
+  doneMessage = "Thanks. We'll email you when it's reviewed.",
+} = Astro.props;
 ---
 
 <form class="plugin-form" action={PLUGIN_SUBMISSIONS_URL} data-plugin-form novalidate>
@@ -61,9 +68,7 @@ const { fields, hidden = {}, confirm, submitLabel } = Astro.props;
   <p class="plugin-form__error" role="alert" data-plugin-error hidden></p>
   <button class="button button--primary" type="submit">{submitLabel}</button>
 </form>
-<p class="plugin-form__done" role="status" data-plugin-done hidden>
-  Thanks. We'll email you when it's reviewed.
-</p>
+<p class="plugin-form__done" role="status" data-plugin-done hidden>{doneMessage}</p>
 
 <script>
   type Issue = { field: string; message: string };

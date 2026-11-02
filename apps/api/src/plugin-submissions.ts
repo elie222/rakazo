@@ -1,8 +1,10 @@
+import { createHash, randomBytes } from "node:crypto";
 import { ORPCError } from "@orpc/server";
 import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import { parsePluginSource, previewPluginInstall } from "@rakazo/adapters";
 import {
   emailLocale,
+  integrationClaimConfirmEmail,
   pluginSubmissionAdminEmail,
   pluginSubmissionReceivedEmail,
   pluginSubmissionReviewedEmail,
@@ -15,8 +17,10 @@ import type {
   PluginSubmissionStatus,
 } from "@rakazo/contracts";
 import {
+  INTEGRATION_CLAIM_CONFIRM_PATH,
   INTEGRATION_CLAIMS_PATH,
   IntegrationClaimInputSchema,
+  integrationPageUrl,
   PLUGIN_SUBMISSIONS_PATH,
   PluginSubmissionInputSchema,
 } from "@rakazo/contracts";
@@ -35,6 +39,7 @@ const HOUR_MS = 60 * 60_000;
 const SUBMISSIONS_PER_IP_PER_HOUR = 10;
 // Anyone can type any address, so one inbox gets at most a few confirmations a day.
 const CONFIRMATIONS_PER_EMAIL_PER_DAY = 3;
+const CLAIM_LINK_MS = 24 * HOUR_MS;
 
 type EmailDeps = Pick<RouterDeps, "email" | "onEmailError">;
 type SourceRef = ReturnType<typeof parsePluginSource>;
@@ -55,18 +60,14 @@ function browseUrl(source: string): string {
     : ref.gitUrl;
 }
 
-/** Only a hint for the reviewer: anyone can type any address, and a mail provider's own app matches. */
-function emailMatchesWebsite(email: string, website: string | null): boolean {
-  if (!website) return false;
+/** A claimant who reads mail at the website's domain speaks for the app. */
+function emailMatchesWebsite(email: string, website: string): boolean {
   const domain = email.slice(email.lastIndexOf("@") + 1).toLowerCase();
-  let host: string;
-  try {
-    host = new URL(website).hostname.toLowerCase().replace(/^www\./, "");
-  } catch {
-    return false;
-  }
+  const host = new URL(website).hostname.toLowerCase().replace(/^www\./, "");
   return domain === host || domain.endsWith(`.${host}`) || host.endsWith(`.${domain}`);
 }
+
+const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
 function pluginSubmissionDto(row: PluginSubmissionRow): PluginSubmission {
   return {
@@ -76,7 +77,6 @@ function pluginSubmissionDto(row: PluginSubmissionRow): PluginSubmission {
     website: row.website,
     logo: row.logo,
     claim: row.claim,
-    emailMatchesWebsite: row.claim !== null && emailMatchesWebsite(row.email, row.website),
     source: row.source ? browseUrl(row.source) : null,
     description: row.description,
     testing: row.testing,
@@ -101,6 +101,9 @@ function submissionData(body: unknown) {
     const parsed = IntegrationClaimInputSchema.safeParse(body);
     if (!parsed.success) return { issues: issuesOf(parsed.error) };
     const input = parsed.data;
+    if (!emailMatchesWebsite(input.email, input.website)) {
+      return { issues: [{ field: "email", message: "Use an email at your website's domain" }] };
+    }
     return {
       match: { claim: input.claim },
       // A claim only links the page to the owner's site; the page keeps the catalog's words.
@@ -135,6 +138,12 @@ export function pluginSubmissionRoutes(
   const app = new Hono();
   const submissions = windowCounter(HOUR_MS);
   const confirmations = windowCounter(24 * HOUR_MS);
+  const notifyAdmins = (row: PluginSubmissionRow) => {
+    const reviewUrl = new URL("/admin/plugins", deps.webOrigin).href;
+    for (const admin of deps.adminEmails) {
+      sendLater(deps, pluginSubmissionAdminEmail(admin, row, reviewUrl));
+    }
+  };
 
   app.post(PLUGIN_SUBMISSIONS_PATH, async (c) => {
     if (submissions(throttleKey(deps.clientIp(c))) > SUBMISSIONS_PER_IP_PER_HOUR) {
@@ -155,11 +164,22 @@ export function pluginSubmissionRoutes(
       return c.json({ error: "Invalid submission", issues: submission.issues }, 400);
     }
     const email = submission.data.email.toLowerCase();
-    const data = { ...submission.data, email };
-    const claim = data.claim !== null;
+    const claim = submission.data.claim;
+    const token = claim ? randomBytes(32).toString("base64url") : null;
+    // A claim waits unconfirmed, out of the review queue, until its emailed link is opened.
+    const data = {
+      ...submission.data,
+      email,
+      ...(token && {
+        status: "unconfirmed",
+        confirmToken: hashToken(token),
+        confirmExpiresAt: new Date(Date.now() + CLAIM_LINK_MS),
+      }),
+    };
+    const waiting = claim ? ["unconfirmed", "pending"] : ["pending"];
     // The same author resubmitting while it waits updates theirs; anyone else's is kept apart.
     const pending = await deps.prisma.pluginSubmission.findFirst({
-      where: { ...submission.match, email, status: "pending" },
+      where: { ...submission.match, email, status: { in: waiting } },
       select: { id: true },
     });
     // A submission reviewed since the lookup keeps what the admin saw; this becomes a new one.
@@ -167,7 +187,7 @@ export function pluginSubmissionRoutes(
       pending &&
       (
         await deps.prisma.pluginSubmission.updateMany({
-          where: { id: pending.id, status: "pending" },
+          where: { id: pending.id, status: { in: waiting } },
           data,
         })
       ).count > 0;
@@ -175,18 +195,39 @@ export function pluginSubmissionRoutes(
       ? await deps.prisma.pluginSubmission.findUniqueOrThrow({ where: { id: pending.id } })
       : await deps.prisma.pluginSubmission.create({ data });
     if (confirmations(email) <= CONFIRMATIONS_PER_EMAIL_PER_DAY) {
-      sendLater(
-        deps,
-        pluginSubmissionReceivedEmail(email, emailLocale(null, c.req.raw.headers), claim),
-      );
-    }
-    if (!updated) {
-      const reviewUrl = new URL("/admin/plugins", deps.webOrigin).href;
-      for (const admin of deps.adminEmails) {
-        sendLater(deps, pluginSubmissionAdminEmail(admin, row, reviewUrl));
+      const locale = emailLocale(null, c.req.raw.headers);
+      if (token) {
+        const url = new URL(INTEGRATION_CLAIM_CONFIRM_PATH, deps.webOrigin);
+        url.searchParams.set("token", token);
+        sendLater(deps, integrationClaimConfirmEmail(email, url.href, locale));
+      } else {
+        sendLater(deps, pluginSubmissionReceivedEmail(email, locale));
       }
     }
+    if (!updated && !claim) notifyAdmins(row);
     return c.json({ id: row.id, status: row.status }, updated ? 200 : 201);
+  });
+
+  // Opening the link proves the claimant reads mail at the app's domain; only then is it reviewed.
+  app.get(INTEGRATION_CLAIM_CONFIRM_PATH, async (c) => {
+    const token = c.req.query("token");
+    const row = token
+      ? await deps.prisma.pluginSubmission.findUnique({
+          where: { confirmToken: hashToken(token) },
+        })
+      : null;
+    if (!row?.claim || row.status !== "unconfirmed" || !row.confirmExpiresAt) {
+      return c.text("This link was already used or is invalid.", 404);
+    }
+    if (row.confirmExpiresAt.getTime() < Date.now()) {
+      return c.redirect(`${integrationPageUrl(row.claim)}claim/?expired`, 303);
+    }
+    const confirmed = await deps.prisma.pluginSubmission.updateMany({
+      where: { id: row.id, status: "unconfirmed", confirmToken: row.confirmToken },
+      data: { status: "pending", confirmToken: null, confirmExpiresAt: null },
+    });
+    if (confirmed.count > 0) notifyAdmins(row);
+    return c.redirect(`${integrationPageUrl(row.claim)}claim/?confirmed`, 303);
   });
 
   // The marketing site reads this when it builds; a few minutes of staleness is fine.
