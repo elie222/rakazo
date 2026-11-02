@@ -1,4 +1,5 @@
 import type { LoginFieldInput } from "@rakazo/contracts";
+import { normalizeOneTimeCode } from "@rakazo/contracts";
 import { isSecretAskBlock } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useRef, useState } from "react";
@@ -55,7 +56,11 @@ export function AskBlock({
     ? secretDestinationLabel(ask.credential)
     : ask.oneTimeCode &&
       t("Only enter a code {host} sent you.", { host: siteHost(ask.oneTimeCode.origin) });
-  const incomplete = secretInput ? answer.length === 0 : !answer.trim();
+  const incomplete = ask.oneTimeCode
+    ? !normalizeOneTimeCode(answer)
+    : secretInput
+      ? answer.length === 0
+      : !answer.trim();
   const secretLabel =
     ask.purpose === "password"
       ? t("Password")

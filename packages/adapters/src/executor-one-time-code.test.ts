@@ -409,6 +409,20 @@ describe("request_secret for a one-time code", () => {
     expect(run.asked).toHaveLength(2);
   });
 
+  it("never hands a waiting code to a request for another site", async () => {
+    const run = world();
+    await run.attempt([requestCode()]);
+    await run.userAnswers();
+    const results = await run.attempt([
+      requestCode(),
+      requestCode({ oneTimeCode: { origin: "https://other.example.test" } }),
+    ]);
+    expect(results[0]).toMatchObject({ submitted: true });
+    expect(results[1]).toMatchObject({ details: { secret: "paused" } });
+    expect(run.secrets).toEqual([]);
+    expect(run.asked).toHaveLength(2);
+  });
+
   it.each(["run-code", "run-code-spent"])(
     "keeps hiding a code from what a later attempt reads, while it is %s",
     async (kind) => {

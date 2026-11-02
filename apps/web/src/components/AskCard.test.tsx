@@ -622,6 +622,8 @@ it("asks for a one-time code in a masked field, with the site and no Save to Vau
   expect(container.textContent).toContain("Only enter a code login.example.test sent you.");
   expect(container.querySelector('[role="switch"]')).toBeNull();
   expect(button("Save")).toBeUndefined();
+  await type("Code", "12");
+  expect(button("Continue")!.disabled).toBe(true);
   await type("Code", "123 456");
   await act(async () => button("Continue")!.click());
   expect(onAnswer).toHaveBeenCalledWith("123 456", undefined);

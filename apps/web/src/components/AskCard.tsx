@@ -7,6 +7,7 @@ import {
   commandVariableName,
   LoginSecretValue,
   loginCardFields,
+  normalizeOneTimeCode,
 } from "@rakazo/contracts";
 import {
   isApprovalAskBlock,
@@ -484,7 +485,13 @@ export function AskCard({
           <div className="flex gap-2">
             <Button
               type="submit"
-              disabled={(loginInput ? !loginReady : answer.length === 0) || submitting}
+              disabled={
+                (loginInput
+                  ? !loginReady
+                  : codeInput
+                    ? !normalizeOneTimeCode(answer)
+                    : answer.length === 0) || submitting
+              }
             >
               {(loginInput && !remember) || codeInput ? (
                 pendingAction === "submit" ? (
