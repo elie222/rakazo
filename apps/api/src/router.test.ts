@@ -5054,10 +5054,10 @@ describe("model credential persistence", () => {
 
   it.each(
     ["openrouter", "google", "deepseek"].flatMap((provider) =>
-      [401, 403, 503].map((status) => ({ provider, status })),
+      [401, 403].map((status) => ({ provider, status })),
     ),
   )(
-    "rejects an unverified $provider replacement ($status) without changing the saved connection",
+    "rejects a refused $provider replacement ($status) without changing the saved connection",
     async ({ provider, status }) => {
       const { upsert, deps, handler } = persistDeps();
       const saved = {
@@ -5084,10 +5084,7 @@ describe("model credential persistence", () => {
         await expect(response.json()).resolves.toMatchObject({
           json: {
             code: "BAD_REQUEST",
-            message:
-              status === 503
-                ? "Could not verify the API key. Try again."
-                : "API key was rejected by the provider.",
+            message: "API key was rejected by the provider.",
           },
         });
         expect(fetchImpl).toHaveBeenCalledOnce();

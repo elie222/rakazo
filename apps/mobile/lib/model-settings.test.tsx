@@ -10,7 +10,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ModelConnection from "../app/(settings)/model-connection";
 import Models from "../app/(settings)/models";
 import type { ModelConnectionRequest } from "./model-connection-request";
-import { modelConnectionRequest, openModelConnection } from "./model-connection-request";
+import {
+  MODEL_CONNECT_TIMEOUT_MS,
+  modelConnectionRequest,
+  openModelConnection,
+} from "./model-connection-request";
 import { modelPickerRequest } from "./model-picker-selection";
 import { queryClient } from "./query";
 
@@ -19,7 +23,11 @@ const { push, back, params, rpcCalls, saved } = vi.hoisted(() => ({
   push: vi.fn(),
   back: vi.fn(),
   params: {} as { requestId?: string; spaceId?: string },
-  rpcCalls: [] as [string, unknown, { requestContext?: { headers: object } }?][],
+  rpcCalls: [] as [
+    string,
+    unknown,
+    { requestContext?: { headers: object }; timeoutMs?: number }?,
+  ][],
   saved: {
     baseUrl: "https://models.example.test/v1",
     hasKey: false,
@@ -43,7 +51,7 @@ vi.mock("./api", () => ({
   rpc: async (
     procedure: string,
     input?: unknown,
-    options?: { requestContext?: { headers: object } },
+    options?: { requestContext?: { headers: object }; timeoutMs?: number },
   ) => {
     rpcCalls.push([procedure, input, options]);
     if (saved.held) await saved.held;
@@ -405,7 +413,10 @@ describe("a Space's model override", () => {
     await act(async () => save.click());
     const connect = rpcCalls.find(([procedure]) => procedure === "models/connect");
     expect(connect?.[1]).toMatchObject({ makeDefault: true, scope: "space" });
-    expect(connect?.[2]).toEqual({ requestContext: otherSpace });
+    expect(connect?.[2]).toEqual({
+      requestContext: otherSpace,
+      timeoutMs: MODEL_CONNECT_TIMEOUT_MS,
+    });
   });
 });
 

@@ -65,7 +65,10 @@ import {
   finishModelOAuthAttempt,
   waitForModelOAuth,
 } from "../../lib/model-auth";
-import { modelConnectionRequest } from "../../lib/model-connection-request";
+import {
+  MODEL_CONNECT_TIMEOUT_MS,
+  modelConnectionRequest,
+} from "../../lib/model-connection-request";
 import { native, useThemedStyles } from "../../lib/native";
 import { ACCOUNT_SETTINGS, settingsRpc } from "../../lib/settings-target";
 import { thinkingLevelLabel } from "../../lib/thinking-level";
@@ -334,12 +337,16 @@ export default function ModelConnection() {
       baseUrl,
       apiKey,
       request: (input) =>
-        rpc("models/probeOpenAiCompatible", {
-          ...input,
-          apiProtocol,
-          headers: modelHeadersInput(headerRows),
-          credentialId: credential?.id,
-        }),
+        rpc(
+          "models/probeOpenAiCompatible",
+          {
+            ...input,
+            apiProtocol,
+            headers: modelHeadersInput(headerRows),
+            credentialId: credential?.id,
+          },
+          { timeoutMs: MODEL_CONNECT_TIMEOUT_MS },
+        ),
       onSuccess: (models) => {
         const next = modelId.trim() || models[0] || "";
         if (next !== modelId) stageCompatibleModelId(next);
@@ -439,7 +446,9 @@ export default function ModelConnection() {
     const { savingLimitOnly, activeModelId } = connect;
     setPending("connect");
     try {
-      const saved = await rpc("models/connect", connect.input);
+      const saved = await rpc("models/connect", connect.input, {
+        timeoutMs: MODEL_CONNECT_TIMEOUT_MS,
+      });
       credentialIdRef.current = saved.id;
       setCredentialId(saved.id);
       if (!limitsOnly) setApiKey("");
