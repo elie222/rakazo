@@ -416,11 +416,19 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
 
     async continue() {
       fakeAgentState.continueCalls += 1;
-      // A wrongly continued model answers the terminating result with more work.
+      const message = {
+        role: "assistant",
+        content: [{ type: "text", text: "Trying again anyway." }],
+        stopReason: "stop",
+      };
+      this.emit({ type: "message_start", message });
       this.emit({
         type: "message_update",
         assistantMessageEvent: { type: "text_delta", delta: "Trying again anyway." },
       });
+      this.state.messages.push(message);
+      this.emit({ type: "message_end", message });
+      this.emit({ type: "turn_end", message, toolResults: [] });
     }
 
     steer(message: unknown) {
@@ -465,7 +473,11 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
   registerOpenAiCompatibleRuntime: (models: unknown) => models,
 }));
 
-import { approvalPausedToolResult, terminatingToolResult } from "./approval-effect.js";
+import {
+  approvalPausedToolResult,
+  OWNER_SETTINGS_REFUSAL_REPLY,
+  terminatingToolResult,
+} from "./approval-effect.js";
 import { MISSING_TOOL_FINAL_RESPONSE_ERROR, PiAgentRuntime } from "./pi-runtime.js";
 import { providerFailureText } from "./pi-runtime-errors.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
@@ -1914,14 +1926,10 @@ describe("Pi connector tool dispatch", () => {
 
   it("ends the run with the reply a terminating tool result carries", async () => {
     fakeAgentState.mode = "terminating-tool";
-    const terminatingReply =
-      "I can't change that here — make the change in Settings, or ask me again in a fresh chat.";
-    const executeTool = vi.fn(async () => ({
-      kind: "agent_tool_result",
-      content: [{ type: "text", text: terminatingReply }],
-      details: { refused: "owner-settings" },
-      terminate: true,
-    }));
+    const terminatingReply = OWNER_SETTINGS_REFUSAL_REPLY;
+    const executeTool = vi.fn(async () =>
+      terminatingToolResult(terminatingReply, { refused: "owner-settings" }),
+    );
     const runtime = new PiAgentRuntime();
     const events: unknown[] = [];
 
@@ -1953,66 +1961,70 @@ describe("Pi connector tool dispatch", () => {
     expect(events.at(-1)).toEqual({ type: "done", text: terminatingReply });
   });
 
-  it("ends a restored turn at a terminating result without continuing the model", async () => {
-    const terminatingReply =
-      "I can't change that here — make the change in Settings, or ask me again in a fresh chat.";
-    const executed: string[] = [];
-    const executeTool = vi.fn(async (name: string) => {
-      executed.push(name);
-      return name === "update_bot"
-        ? terminatingToolResult(terminatingReply, { refused: "owner-settings" })
-        : { ok: true };
-    });
-    const checkpoint = serializeTurnCheckpoint({
-      version: 1,
-      provider: "test",
-      model: "dispatch-test-model",
-      systemPrompt: "You are a test bot.",
-      pendingToolCallId: "call-1",
-      executionMode: "sequential",
-      messages: [
-        { role: "user", content: "change your model", timestamp: new Date(0) },
+  it.each([true, false])(
+    "requires internal provenance to end a restored turn (trusted: %s)",
+    async (trusted) => {
+      const terminatingReply = OWNER_SETTINGS_REFUSAL_REPLY;
+      const executed: string[] = [];
+      const executeTool = vi.fn(async (name: string) => {
+        executed.push(name);
+        if (name !== "update_bot") return { ok: true };
+        const result = terminatingToolResult(terminatingReply, { refused: "owner-settings" });
+        return trusted ? result : JSON.parse(JSON.stringify(result));
+      });
+      const checkpoint = serializeTurnCheckpoint({
+        version: 1,
+        provider: "test",
+        model: "dispatch-test-model",
+        systemPrompt: "You are a test bot.",
+        pendingToolCallId: "call-1",
+        executionMode: "sequential",
+        messages: [
+          { role: "user", content: "change your model", timestamp: new Date(0) },
+          {
+            role: "assistant",
+            content: [
+              {
+                type: "toolCall",
+                id: "call-1",
+                name: "update_bot",
+                arguments: { notifyOnFinish: false },
+              },
+              { type: "toolCall", id: "call-2", name: "list_files", arguments: { path: "" } },
+            ],
+            stopReason: "toolUse",
+          },
+        ] as never,
+      });
+      const runtime = new PiAgentRuntime();
+      const events: unknown[] = [];
+
+      for await (const event of runtime.run(
         {
-          role: "assistant",
-          content: [
-            {
-              type: "toolCall",
-              id: "call-1",
-              name: "update_bot",
-              arguments: { notifyOnFinish: false },
-            },
-            { type: "toolCall", id: "call-2", name: "list_files", arguments: { path: "" } },
-          ],
-          stopReason: "toolUse",
+          botId: "b",
+          threadId: "t",
+          runId: "replay-terminated",
+          prompt: "resume the turn",
+          instructions: "Use update_bot.",
+          history: [],
+          tools: [updateBotTool, listFilesTool],
+          model: { provider: "test", id: "dispatch-test-model" },
+          turnCheckpoint: checkpoint,
+          executeTool,
         },
-      ] as never,
-    });
-    const runtime = new PiAgentRuntime();
-    const events: unknown[] = [];
+        { signal: new AbortController().signal },
+      )) {
+        events.push(event);
+      }
 
-    for await (const event of runtime.run(
-      {
-        botId: "b",
-        threadId: "t",
-        runId: "replay-terminated",
-        prompt: "resume the turn",
-        instructions: "Use update_bot.",
-        history: [],
-        tools: [updateBotTool, listFilesTool],
-        model: { provider: "test", id: "dispatch-test-model" },
-        turnCheckpoint: checkpoint,
-        executeTool,
-      },
-      { signal: new AbortController().signal },
-    )) {
-      events.push(event);
-    }
-
-    expect(executed).toEqual(["update_bot"]);
-    expect(fakeAgentState.continueCalls).toBe(0);
-    expect(events).toContainEqual({ type: "text", text: terminatingReply });
-    expect(events.at(-1)).toEqual({ type: "done", text: terminatingReply });
-  });
+      expect(executed).toEqual(trusted ? ["update_bot"] : ["update_bot", "list_files"]);
+      expect(fakeAgentState.continueCalls).toBe(trusted ? 0 : 1);
+      expect(events.at(-1)).toEqual({
+        type: "done",
+        text: trusted ? terminatingReply : "Trying again anyway.",
+      });
+    },
+  );
 
   it("keeps a restored turn paused, without a final reply, when a replayed call pauses", async () => {
     const executed: string[] = [];

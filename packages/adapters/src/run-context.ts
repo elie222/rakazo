@@ -22,6 +22,7 @@ import type {
 import {
   approvalPausedToolResult,
   approvedEffectOccurrence,
+  OWNER_SETTINGS_REFUSAL_REPLY,
   terminatingToolResult,
 } from "./approval-effect.js";
 import type { loadBotMessageContext } from "./bot-messages.js";
@@ -348,10 +349,7 @@ export function refuseOwnerSettingsChange(
   error: string,
 ): { error: string } | TerminatingToolResult {
   if (ctx.state.ownerSettingsRefused) {
-    return terminatingToolResult(
-      "I can't change that here — make the change in Settings, or ask me again in a fresh chat.",
-      { refused: "owner-settings" },
-    );
+    return terminatingToolResult(OWNER_SETTINGS_REFUSAL_REPLY, { refused: "owner-settings" });
   }
   ctx.state.ownerSettingsRefused = true;
   return { error };

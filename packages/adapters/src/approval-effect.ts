@@ -6,6 +6,20 @@ import { argumentGiven } from "./update-bot-patch.js";
 
 export type ApprovalPausedToolResult = AgentToolExecutionResult & { terminate: true };
 
+const internalTermination = Symbol("internalTermination");
+
+export const OWNER_SETTINGS_REFUSAL_REPLY =
+  "I can't change that here. Make the change in Settings, or ask me again in a fresh chat.";
+
+/** Preserve trusted control provenance across result copies without exposing it in JSON. */
+export function internalTerminatingResult<T extends AgentToolExecutionResult>(result: T): T {
+  return Object.assign(result, { [internalTermination]: true });
+}
+
+export function isInternalTermination(result: unknown): boolean {
+  return !!result && typeof result === "object" && internalTermination in result;
+}
+
 /** A tool result that ends the turn with a final reply instead of pausing it. */
 export type TerminatingToolResult = AgentToolExecutionResult & { terminate: true };
 
@@ -13,12 +27,12 @@ export function terminatingToolResult(
   text: string,
   details: Record<string, unknown>,
 ): TerminatingToolResult {
-  return {
+  return internalTerminatingResult({
     kind: "agent_tool_result",
     content: [{ type: "text", text }],
     details,
     terminate: true,
-  };
+  });
 }
 
 export interface ApprovedEffectReplay {
@@ -350,12 +364,12 @@ export function catalogApprovalInnerArgs(catalog: {
 }
 
 export function approvalPausedToolResult(): ApprovalPausedToolResult {
-  return {
+  return internalTerminatingResult({
     kind: "agent_tool_result",
     content: [{ type: "text", text: "Waiting for approval." }],
     details: { approval: "paused" },
     terminate: true,
-  };
+  });
 }
 
 export function isToolPauseResult(result: unknown): result is ApprovalPausedToolResult {
@@ -371,8 +385,7 @@ export function isToolPauseResult(result: unknown): result is ApprovalPausedTool
 /** Whether this tool result ends the live turn with a final reply rather than a pause. */
 export function isTerminatingReplyResult(result: unknown): boolean {
   return (
-    !!result &&
-    typeof result === "object" &&
+    isInternalTermination(result) &&
     (result as { terminate?: unknown }).terminate === true &&
     !isToolPauseResult(result)
   );

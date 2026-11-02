@@ -1,6 +1,6 @@
 import { Agent } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { isToolPauseResult, terminatingReplyText } from "./approval-effect.js";
+import { isTerminatingReplyResult, terminatingReplyText } from "./approval-effect.js";
 import { withAutomatedLabels } from "./automated-messages.js";
 import { DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
 import { withCloudflareAuth } from "./cloudflare-ai-gateway.js";
@@ -277,11 +277,7 @@ export async function executeSubagent(
   // A tool result that ended the child's turn carries the reply the parent must read.
   let terminatedReply: string | undefined;
   nested.subscribe((event) => {
-    if (
-      event.type === "tool_execution_end" &&
-      event.result.terminate === true &&
-      !isToolPauseResult(event.result)
-    ) {
+    if (event.type === "tool_execution_end" && isTerminatingReplyResult(event.result)) {
       terminatedReply = terminatingReplyText(event.result) ?? terminatedReply;
     }
     if (event.type === "message_start" && event.message.role === "assistant") {

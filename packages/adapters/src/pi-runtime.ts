@@ -27,7 +27,7 @@ import {
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import {
-  isToolPauseResult,
+  isTerminatingReplyResult,
   terminatingReplyText,
   uncertainEffectResult,
 } from "./approval-effect.js";
@@ -603,11 +603,7 @@ export class PiAgentRuntime implements AgentRuntime {
         // it counts as the final reply, including when the completed message omits it.
         let streamedBeforePendingFinal = 0;
         agent.subscribe(async (event) => {
-          if (
-            event.type === "tool_execution_end" &&
-            event.result.terminate === true &&
-            !isToolPauseResult(event.result)
-          ) {
+          if (event.type === "tool_execution_end" && isTerminatingReplyResult(event.result)) {
             terminatedReply = terminatingReplyText(event.result) ?? terminatedReply;
           }
           if (event.type === "tool_execution_end" && !event.result.terminate) {
@@ -868,7 +864,7 @@ export class PiAgentRuntime implements AgentRuntime {
                 unresolved.delete(call);
                 toolCalls += 1;
                 await piSession?.appendMessage(agent.state.messages.at(-1)!);
-                if ("terminate" in result && result.terminate) {
+                if (host.pausePending || isTerminatingReplyResult(result)) {
                   if (!host.pausePending) {
                     // Replay must not run more calls or another model turn after the
                     // result that already ended this turn; its reply is the final one.

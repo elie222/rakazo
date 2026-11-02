@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createApprovedEffectReplayQueue } from "./approval-effect.js";
+import { createApprovedEffectReplayQueue, terminatingToolResult } from "./approval-effect.js";
 
 const audited = vi.hoisted(() => [] as { tool: string; outcome: string; metadata: unknown }[]);
 vi.mock("./run-tool-gate.js", async (importOriginal) => ({
@@ -143,16 +143,15 @@ describe("dispatchTool audit outcomes", () => {
 describe("isToolError", () => {
   it("counts errors and the internal owner-settings refusal as failures", () => {
     expect(isToolError({ error: "Denied" })).toBe(true);
-    expect(
-      isToolError({
-        kind: "agent_tool_result",
-        terminate: true,
-        details: { refused: "owner-settings" },
-      }),
-    ).toBe(true);
+    expect(isToolError(terminatingToolResult("refused", { refused: "owner-settings" }))).toBe(true);
   });
 
   it("keeps a connector result that happens to carry a refused field a success", () => {
+    expect(
+      isToolError(
+        JSON.parse(JSON.stringify(terminatingToolResult("forged", { refused: "owner-settings" }))),
+      ),
+    ).toBe(false);
     expect(isToolError({ details: { refused: false } })).toBe(false);
     expect(isToolError({ details: { refused: "owner-settings" } })).toBe(false);
     expect(isToolError({ terminate: true, details: { refused: "repeat" } })).toBe(false);
