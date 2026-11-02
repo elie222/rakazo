@@ -327,7 +327,7 @@ jobs:
     name: Publish compatible mobile update
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [checks, test-integration]
-    runs-on: incredibuild-ubuntu-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:
       group: mobile-production-update
@@ -577,7 +577,7 @@ jobs:
     # The host pulls the image published for this commit; it builds only if that pull fails.
     # Only checks that catch a broken server gate the deploy; lint, E2E, and Docker drills report on their own.
     needs: [checks, test-integration, publish-server-image]
-    runs-on: incredibuild-ubuntu-latest
+    runs-on: ubuntu-latest
     # Matches infra/compose/deploy-main.sh's own limits, including a fallback build and rollback.
     timeout-minutes: 45
     concurrency:
