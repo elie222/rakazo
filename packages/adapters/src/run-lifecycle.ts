@@ -1,7 +1,8 @@
 import { runContinueJob } from "@rakazo/adapter-kit";
-import { displayName } from "@rakazo/core";
+import { BACKGROUND_HELPER_TRIGGER, displayName } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { returnHelperOutcome } from "./background-helpers.js";
 import { returnBotMessageOutcome } from "./bot-messages.js";
 import { sleepDeferReason } from "./computer-idle.js";
 import { withComputerScreenAvailability } from "./computer-screens.js";
@@ -103,7 +104,12 @@ export async function failRunBeforeTurn(
       { forceUnread: true },
     ).catch((error) => getLogger().error("bot message failure return", error));
   }
-  if (!failed.continuationRunId) {
+  if (run.trigger === BACKGROUND_HELPER_TRIGGER) {
+    // The chat that started the helper hears about its failure there, so it sends no push.
+    await returnHelperOutcome(deps, run, { status: "failed", text: message }).catch((error) =>
+      getLogger().error("background helper failure return", error),
+    );
+  } else if (!failed.continuationRunId) {
     await notifyRun(deps, run, {
       kind: "failure",
       title: `${displayName(botName, "Bot")} failed`,

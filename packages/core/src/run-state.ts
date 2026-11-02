@@ -84,6 +84,15 @@ export function isTerminal(status: string): boolean {
   return TERMINAL.includes(status as RunStatus);
 }
 
+/**
+ * A helper the bot started in the background. It works in a thread of its own, so the chat
+ * that started it stays free, and its result comes back there as a HELPER_RESULT_TRIGGER run.
+ */
+export const BACKGROUND_HELPER_TRIGGER = "helper";
+export const HELPER_RESULT_TRIGGER = "helper_result";
+/** Runs that may use their bot's computer: a background helper never does. */
+export const COMPUTER_USING_RUNS = { trigger: { not: BACKGROUND_HELPER_TRIGGER } } as const;
+
 /** Prompt of a run created to answer messages that waited behind another turn. */
 export const STEERING_CONTINUATION_PROMPT = "Respond to the user's steering context.";
 

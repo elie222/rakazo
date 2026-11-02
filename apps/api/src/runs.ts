@@ -2,9 +2,11 @@ import type { Actor, RunActivityRow } from "@rakazo/contracts";
 import { MessageBlock } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
+  BACKGROUND_HELPER_TRIGGER,
   BACKGROUND_RUN_TRIGGERS,
   botMessageContext,
   displayName,
+  HELPER_RESULT_TRIGGER,
   truncatePlainText,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
@@ -65,8 +67,11 @@ export async function listSpaceRuns(
       spaceId: actor.spaceId,
       userId: actor.userId,
       bot: { archivedAt: null },
-      // Background ticket work belongs on the board, not in the activity list.
-      trigger: { notIn: [...BACKGROUND_RUN_TRIGGERS] },
+      // Background ticket work belongs on the board, not in the activity list. A background
+      // helper and the turn passing on its result show in the chat, on the helper's card.
+      trigger: {
+        notIn: [...BACKGROUND_RUN_TRIGGERS, BACKGROUND_HELPER_TRIGGER, HELPER_RESULT_TRIGGER],
+      },
       ...(filter === "active"
         ? { status: { in: [...ACTIVE_RUN_STATUSES] } }
         : { status: { in: [...TERMINAL_STATUSES] } }),

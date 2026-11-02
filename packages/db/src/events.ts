@@ -17,6 +17,7 @@ import {
 } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
+  BACKGROUND_HELPER_TRIGGER,
   blocksToAgentHistoryText,
   callIdFromClientNonce,
   instructionUpdateDiff,
@@ -380,8 +381,15 @@ export async function clearThread(
     const activeRuns = await tx.run.findMany({
       where: {
         spaceId: input.spaceId,
-        threadId: input.threadId,
-        ...(input.groupId ? {} : { botId: input.botId }),
+        ...(input.groupId
+          ? { threadId: input.threadId }
+          : {
+              OR: [
+                { threadId: input.threadId, botId: input.botId },
+                // Background helpers this chat started work in threads of their own.
+                { trigger: BACKGROUND_HELPER_TRIGGER, sourceMessage: { threadId: input.threadId } },
+              ],
+            }),
         status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
       },
       select: { id: true, taskId: true, userId: true, spaceId: true },

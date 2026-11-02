@@ -175,6 +175,56 @@ describe("builtin tools", () => {
     for (const name of FLEET_TOOL_NAMES) expect(DELEGATION_TOOL_NAMES.has(name), name).toBe(true);
   });
 
+  it("gives a background helper only tools that read, never the computer, memory, skills or routines", () => {
+    const options = {
+      graphicalToolsAllowed: true,
+      pageBrowserAllowed: true,
+      groupId: null,
+      semanticMemoryEnabled: true,
+      cloudAgentEnabled: true,
+      historyRetrievalEnabled: true,
+      ticketBoardEnabled: true,
+      messagingChannelRun: false,
+    };
+    const owner = selectBuiltinToolsForRun({ ...options, trigger: "user" }).map(
+      (tool) => tool.name,
+    );
+    const helper = selectBuiltinToolsForRun({ ...options, trigger: "helper" }).map(
+      (tool) => tool.name,
+    );
+    expect(helper.sort()).toEqual(
+      [
+        "board_tickets",
+        "cloud_agent_status",
+        "read_history",
+        "recall_memory",
+        "scratchpad_list",
+        "search_history",
+        "skill_read",
+        "task_catalog",
+        "ticket_get",
+        "web_fetch",
+        "web_search",
+      ].sort(),
+    );
+    for (const name of [
+      "shell",
+      "computer_act",
+      "browser_act",
+      "write_file",
+      "save_memory",
+      "remember",
+      "skill_create",
+      "schedule_create",
+      "run_subagent",
+      "ask_user",
+      "message_user",
+    ]) {
+      expect(owner, name).toContain(name);
+      expect(helper, name).not.toContain(name);
+    }
+  });
+
   it("exposes the tools the executor actually applies", async () => {
     expect([...BUILTIN_TOOL_NAMES].sort()).toEqual(
       [...builtinAgentTools, ...agentConnectionTools].map((tool) => tool.name).sort(),

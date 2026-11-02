@@ -3436,3 +3436,53 @@ describe("user computer screen control", () => {
     expect(requests).toEqual([]);
   });
 });
+
+describe("background helpers only read", () => {
+  it("runs a declared read in Never ask", async () => {
+    const f = fixture({ trigger: "helper", skipApprovals: true });
+    await f.run();
+    expect(f.execute).toHaveBeenCalledOnce();
+  });
+
+  it("refuses a declared write whatever the mode or rules", async () => {
+    for (const options of [
+      { skipApprovals: true },
+      { rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "demo_get_item" }] },
+    ] as Parameters<typeof fixture>[0][]) {
+      const f = fixture({ trigger: "helper", readOnly: false, ...options });
+      await f.run();
+      expect(f.execute).not.toHaveBeenCalled();
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+      expect(JSON.stringify(f.results[0])).toContain("a background helper may only read");
+    }
+  });
+
+  it("runs a batch of declared reads, but not one naming no action or an undeclared one", async () => {
+    const batchOf = (...slugs: Array<string | undefined>) => ({
+      id: "batch",
+      tools: slugs.map((slug) => (slug ? { tool_slug: slug, arguments: {} } : { arguments: {} })),
+    });
+    const helperBatch = () =>
+      fixture({
+        name: "COMPOSIO_MULTI_EXECUTE_TOOL",
+        readOnly: true,
+        secondResource: true,
+        batch: { items: "tools", action: "tool_slug", arguments: "arguments" },
+        trigger: "helper",
+        skipApprovals: true,
+      });
+    const named = helperBatch();
+    named.setCalls([{ args: batchOf("demo_get_other"), executionId: "call-1" }]);
+    await named.run();
+    expect(named.execute).toHaveBeenCalledOnce();
+    const unnamed = helperBatch();
+    unnamed.setCalls([{ args: batchOf("demo_get_other", undefined), executionId: "call-1" }]);
+    await unnamed.run();
+    expect(unnamed.execute).not.toHaveBeenCalled();
+    // An action no tool declares read-only is not a read either.
+    const undeclared = helperBatch();
+    undeclared.setCalls([{ args: batchOf("gmail_archive_thread"), executionId: "call-1" }]);
+    await undeclared.run();
+    expect(undeclared.execute).not.toHaveBeenCalled();
+  });
+});

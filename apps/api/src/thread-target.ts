@@ -1,7 +1,12 @@
 import { ORPCError } from "@orpc/server";
 import type { JobPublisher, ProductAnalytics, SandboxProvider } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
-import { cancelComputerRunWork, screenLeaseIdForRun, toComputerRef } from "@rakazo/adapters";
+import {
+  cancelComputerRunWork,
+  returnHelperOutcome,
+  screenLeaseIdForRun,
+  toComputerRef,
+} from "@rakazo/adapters";
 import type {
   Actor,
   GroupMember,
@@ -17,6 +22,7 @@ import {
 } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
+  BACKGROUND_HELPER_TRIGGER,
   BACKGROUND_RUN_TRIGGERS,
   callIdFromClientNonce,
   isConversationalRun,
@@ -1447,25 +1453,43 @@ export async function stopThreadRuns(
   },
   actor: Actor,
   target: ThreadTarget,
+  /** Stop only the background helper behind this card in the chat. */
+  helperMessageId?: string,
 ) {
-  const { runIds, computers, leases, eventSeq } = await deps.prisma.$transaction(async (tx) => {
+  // Background helpers this chat started work in threads of their own.
+  const helpers = {
+    trigger: BACKGROUND_HELPER_TRIGGER,
+    sourceMessage: { threadId: target.threadId },
+  };
+  const stopped = await deps.prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
     const cancelled = await tx.run.updateManyAndReturn({
       where: {
-        threadId: target.threadId,
+        ...(helperMessageId
+          ? { ...helpers, sourceMessageId: helperMessageId }
+          : { OR: [{ threadId: target.threadId }, helpers] }),
         status: { in: [...ACTIVE_RUN_STATUSES] },
       },
       data: { status: "cancelled", completedAt: new Date() },
-      select: { id: true, botId: true, userId: true, spaceId: true },
+      select: {
+        id: true,
+        botId: true,
+        userId: true,
+        spaceId: true,
+        trigger: true,
+        sourceMessageId: true,
+      },
     });
     const ids = cancelled.map((run) => run.id);
     await clearEndedRunState(tx, ids);
-    await tx.steeringMessage.deleteMany({
-      where: {
-        botId: { in: target.kind === "bot" ? [target.botId] : target.memberBotIds },
-        message: { threadId: target.threadId },
-      },
-    });
+    if (!helperMessageId) {
+      await tx.steeringMessage.deleteMany({
+        where: {
+          botId: { in: target.kind === "bot" ? [target.botId] : target.memberBotIds },
+          message: { threadId: target.threadId },
+        },
+      });
+    }
     // Snapshot teardown coordinates before commit. Once cancellation becomes
     // visible, a worker can release its lease / execution columns immediately; a
     // later lookup would then miss the sandbox work this request must stop.
@@ -1520,12 +1544,25 @@ export async function stopThreadRuns(
         },
       });
     }
-    return { runIds: ids, computers, leases, eventSeq };
+    return {
+      runIds: ids,
+      computers,
+      leases,
+      eventSeq,
+      stoppedHelpers: cancelled.filter((run) => run.trigger === BACKGROUND_HELPER_TRIGGER),
+    };
   });
+  const { runIds, computers, leases, eventSeq, stoppedHelpers } = stopped;
   if (eventSeq !== null) {
     // The events are durable; subscribers refetch from their persisted cursor.
     await deps.events.notify(target.threadId, eventSeq).catch((error) => {
       getLogger().error("thread stop realtime notification", error);
+    });
+  }
+  // Settle each stopped helper's card now rather than at the next reconciliation.
+  for (const helper of stoppedHelpers) {
+    await returnHelperOutcome(deps, helper, { status: "stopped", text: "" }).catch((error) => {
+      getLogger().error("stopped helper card", error);
     });
   }
   // Keep the DB lease until after teardown so a replacement run cannot claim the

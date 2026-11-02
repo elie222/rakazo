@@ -16,6 +16,8 @@ import {
   STEERING_CONTINUATION_PROMPT,
 } from "@rakazo/core";
 
+import { BACKGROUND_HELPER_TASK_CUE } from "./background-helpers.js";
+
 const running = new Map<string, AbortController>();
 
 export class ScriptedAgentRuntime implements AgentRuntime {
@@ -56,13 +58,16 @@ export class ScriptedAgentRuntime implements AgentRuntime {
       // message it quotes.
       const hangMs = hangDuration(peerMessage(prompt)?.text ?? prompt.replace(REPLY_CONTEXT, ""));
       if (hangMs !== undefined) {
-        // Long-running work happens on the computer, which starts it like any real run would.
-        yield {
-          type: "tool",
-          name: "list_files",
-          args: { path: "" },
-          executionId: `${request.runId}:list_files:hang`,
-        };
+        // Long-running work happens on the computer, which starts it like any real run would;
+        // a background helper has none and works with what it was given.
+        if (!prompt.startsWith(BACKGROUND_HELPER_TASK_CUE)) {
+          yield {
+            type: "tool",
+            name: "list_files",
+            args: { path: "" },
+            executionId: `${request.runId}:list_files:hang`,
+          };
+        }
         yield { type: "progress", text: "still working…", activity: true };
         const hangUntil = Date.now() + hangMs;
         while (!controller.signal.aborted && !signal.aborted && Date.now() < hangUntil) {
@@ -91,7 +96,7 @@ export class ScriptedAgentRuntime implements AgentRuntime {
         }
         for (const call of turn.toolCalls ?? []) {
           const executionId = `${request.runId}:${call.name}:${toolCallSeq++}`;
-          if (call.name === "run_subagent") {
+          if (call.name === "run_subagent" && call.args.background !== true) {
             const agentId = `${request.runId}:subagent`;
             const name = String(call.args.name ?? "helper");
             const task = String(call.args.task ?? request.prompt);
@@ -577,6 +582,43 @@ code-b
       },
     ];
   }
+  if (lower.startsWith(BACKGROUND_HELPER_TASK_CUE.toLowerCase())) {
+    const task = prompt.split("Task from the bot (not from the user):\n").at(-1) ?? prompt;
+    const url = /\bfetch (https?:\/\/\S+)/i.exec(task)?.[1];
+    const write = /\bcrm\b/i.test(task);
+    return [
+      ...(url ? [{ toolCalls: [{ name: "web_fetch", args: { url } }] }] : []),
+      ...(write
+        ? [
+            {
+              toolCalls: [
+                {
+                  name: "destination.write",
+                  args: { collection: "notes", title: "Helper note", body: task },
+                },
+              ],
+            },
+          ]
+        : []),
+      { assistant: `helper result: ${summarize(task)}`, complete: true },
+    ];
+  }
+  const helperResult = /<helper_result from="[^"]*">\n([\s\S]*?)\n<\/helper_result>/.exec(
+    prompt,
+  )?.[1];
+  if (helperResult) {
+    return [{ assistant: `your helper finished: ${helperResult}`, complete: true }];
+  }
+  if (lower.includes("in the background")) {
+    const task = prompt.replace(/\s*in the background/i, "").trim();
+    return [
+      {
+        assistant: "a background helper is on it; ask me anything meanwhile.",
+        toolCalls: [{ name: "run_subagent", args: { name: "helper", task, background: true } }],
+        complete: true,
+      },
+    ];
+  }
   if (lower.includes("subagent") || lower.includes("delegate to a helper")) {
     return [
       {
@@ -716,7 +758,9 @@ code-b
 }
 
 function shouldFail(prompt: string): boolean {
-  return prompt.toLowerCase().includes("fail this run");
+  const lower = prompt.toLowerCase();
+  // Asking a background helper to fail makes the helper's run fail, not this one.
+  return lower.includes("fail this run") && !lower.includes("in the background");
 }
 
 /**
@@ -751,8 +795,12 @@ function scriptedFailure(prompt: string): string {
 /** How long a scripted run keeps working before it finishes; undefined runs its script. */
 function hangDuration(prompt: string): number | undefined {
   const lower = prompt.toLowerCase();
-  // Asking another bot to keep working makes that bot's run hang, not this one.
-  if (lower.includes("message the bot named") || lower.includes("message bot named")) {
+  // Asking another bot or a background helper to keep working makes that run hang, not this one.
+  if (
+    lower.includes("message the bot named") ||
+    lower.includes("message bot named") ||
+    lower.includes("in the background")
+  ) {
     return undefined;
   }
   const seconds = /\bwork for (\d+) seconds?\b/.exec(lower)?.[1];

@@ -10,6 +10,7 @@ import type { MessageBlock, ModelRoleChoice, RunStatus } from "@rakazo/contracts
 import { disabledBuiltinToolSet } from "@rakazo/contracts";
 import {
   assertTransition,
+  BACKGROUND_HELPER_TRIGGER,
   botMessageAllowsSilence,
   expandSkillReferencesInPrompt,
   formatSkillRunPrompt,
@@ -376,15 +377,19 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         }
       }
       let computerLease: ComputerExecutionLease | null = null;
+      // A background helper never uses the computer, so it must not hold the bot's next turn.
+      const backgroundHelper = run.trigger === BACKGROUND_HELPER_TRIGGER;
       try {
-        computerLease = await acquireComputerExecutionLease(deps.prisma, {
-          computerId: leaseTarget.computerId,
-          runId,
-          botId: run.botId,
-          workerId,
-          runFence: fence,
-        });
-        if (!computerLease && leaseTarget.computer?.scope === "dedicated") {
+        computerLease = backgroundHelper
+          ? null
+          : await acquireComputerExecutionLease(deps.prisma, {
+              computerId: leaseTarget.computerId,
+              runId,
+              botId: run.botId,
+              workerId,
+              runFence: fence,
+            });
+        if (!computerLease && !backgroundHelper && leaseTarget.computer?.scope === "dedicated") {
           computerLease = await acquireDedicatedScreenLeaseFence(deps.prisma, {
             computerId: leaseTarget.computerId,
             runId,

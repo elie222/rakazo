@@ -8,6 +8,7 @@ export * from "./audit-forwarding.js";
 export * from "./auto-review.js";
 export * from "./auto-review-factory.js";
 export * from "./aws-kms-key-provider.js";
+export { returnHelperOutcome, startBackgroundHelper } from "./background-helpers.js";
 export * from "./background-job-handlers.js";
 export * from "./billing-emulator.js";
 export * from "./boat-sandbox.js";

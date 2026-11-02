@@ -284,6 +284,11 @@ describe("background ticket runs", () => {
     expect(runReplyGuidance("tickets")).toContain("ticket_comment");
   });
 
+  it("sends no finish notice for a background helper; the turn passing on its result does", () => {
+    expect(runSendsFinishNotification("helper")).toBe(false);
+    expect(runSendsFinishNotification("helper_result")).toBe(true);
+  });
+
   it("drops a tool-only ticket final so the transcript gets no bubble", () => {
     const steps = [{ kind: "steps" as const, steps: [{ label: "Ticket comment", count: 1 }] }];
     const blocks = finalBlocksAfterMidTurnProgress(steps, runAllowsSilentEmpty("tickets"));

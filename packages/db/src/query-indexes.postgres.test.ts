@@ -35,6 +35,13 @@ const hotQueries = [
       ORDER BY "updatedAt", id LIMIT 100`,
   },
   {
+    name: "background-helper outcomes still to return",
+    index: "runs_helper_outcome_pending_idx",
+    sql: `SELECT id FROM runs WHERE trigger = 'helper' AND "botOutcomeReturnedAt" IS NULL
+      AND status IN ('completed', 'failed', 'cancelled') AND id <> $1
+      ORDER BY "updatedAt", id LIMIT 100`,
+  },
+  {
     name: "a bot thread's latest run",
     index: "runs_threadId_createdAt_id_idx",
     sql: `SELECT id FROM runs WHERE "threadId" = $1 AND trigger NOT IN ('bot_message', 'tickets')
