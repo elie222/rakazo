@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { ModelConnectInputSchema } from "@rakazo/contracts";
@@ -45,10 +46,25 @@ import {
 import type { ObservedToolCall, ObservedToolList } from "../evals/tool-calls.js";
 import { loadToolChoiceCases, TOOL_CHOICE_FIXTURE_VERSION } from "../evals/tool-choice.js";
 import { TOOL_CHOICE_CASES } from "../evals/tool-choice-cases.js";
+import {
+  VERBOSITY_EVAL_CASES,
+  VERBOSITY_FIXTURE_VERSION,
+  VERBOSITY_JUDGE_CALIBRATION,
+  VERBOSITY_JUDGE_VERSION,
+} from "../evals/verbosity.js";
 import type { DiagnosticWireObservation } from "../evals/wire-observer.js";
 import { diagnosticWireFetch } from "../evals/wire-observer.js";
 import { runApprovalSuite } from "./approval-eval.js";
 import { disposableDatabaseEnv, startPostgres } from "./postgres.js";
+
+const DEFAULT_EVAL_MODEL = {
+  provider: "openrouter",
+  model: "anthropic/claude-haiku-5.5",
+  apiKeyEnv: "OPENROUTER_API_KEY",
+  pricing: fileURLToPath(
+    new URL("../evals/fixtures/pricing-openrouter-haiku-5.5-2026-10-27.json", import.meta.url),
+  ),
+};
 
 async function main() {
   const { values } = parseArgs({
@@ -82,6 +98,13 @@ async function main() {
   });
   if (values["cases-file"] && values.suite !== "tool-choice")
     throw new Error("--cases-file adds tool-choice cases; use --suite tool-choice");
+  // One fixed model unless the caller picks one, so results do not depend on a local .env.
+  if (!values.connection && !values.provider && !values.model) {
+    values.provider = DEFAULT_EVAL_MODEL.provider;
+    values.model = DEFAULT_EVAL_MODEL.model;
+    values["api-key-env"] ??= DEFAULT_EVAL_MODEL.apiKeyEnv;
+    values.pricing ??= DEFAULT_EVAL_MODEL.pricing;
+  }
   if (values.suite === "approval")
     return runApprovalSuite(values, {
       codeRevision: codeRevision(),
@@ -119,10 +142,15 @@ async function main() {
       judge: { version: GROUP_JUDGE_VERSION, calibration: GROUP_JUDGE_CALIBRATION },
     },
     "tool-choice": { cases: TOOL_CHOICE_CASES, fixtureVersion: TOOL_CHOICE_FIXTURE_VERSION },
+    verbosity: {
+      cases: VERBOSITY_EVAL_CASES,
+      fixtureVersion: VERBOSITY_FIXTURE_VERSION,
+      judge: { version: VERBOSITY_JUDGE_VERSION, calibration: VERBOSITY_JUDGE_CALIBRATION },
+    },
   };
   if (!Object.hasOwn(suites, values.suite!))
     throw new Error(
-      "Unknown suite; use product, history, group, silence, deliberation, memory, tool-choice, or approval",
+      "Unknown suite; use product, history, group, silence, deliberation, memory, tool-choice, verbosity, or approval",
     );
   const suite = suites[values.suite!]!;
   const suiteJudge = suite.judge;
@@ -173,7 +201,7 @@ async function main() {
     version: 2,
     kind: "real-model-product-eval",
     startedAt: new Date().toISOString(),
-    model: values.model ?? process.env.PI_DEFAULT_MODEL ?? null,
+    model: values.model ?? null,
     provider: values.provider ?? null,
     modelLimits: {
       contextWindow: values["context-window"] ? Number(values["context-window"]) : null,
@@ -220,7 +248,7 @@ async function main() {
     limitations: [
       "Does not evaluate browser perception, native recording perception, or real external services.",
       "Silence cases observe routine chat, transient progress, and provider notification requests; native push delivery and UI pixels are outside the fixture.",
-      "Silence replies and memory contents are graded by meaning with a calibrated LLM judge; other suites retain their existing task-specific graders.",
+      "Silence and verbosity replies and memory contents are graded by meaning with a calibrated LLM judge; other suites retain their existing task-specific graders.",
       "Cost uses provider-reported charges where available and explicit pricing estimates otherwise. Spend reservations are a guard, not a billing guarantee.",
       "Tool trace contains names and statuses only; raw requests and responses are omitted. The tool-calls artifact keeps model-supplied arguments, with only configured secrets redacted.",
     ],
@@ -271,7 +299,7 @@ async function main() {
     ? readConnection(values.connection)
     : {
         provider: values.provider,
-        modelId: values.model ?? process.env.PI_DEFAULT_MODEL,
+        modelId: values.model,
         apiKey: values["api-key-env"] ? process.env[values["api-key-env"]] : undefined,
         baseUrl: values["base-url"],
         cacheCapabilities: values["cache-capabilities"]

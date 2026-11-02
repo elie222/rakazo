@@ -13,7 +13,7 @@ import { createThreadEvents } from "@rakazo/db";
 import { discardBotIntroRun } from "../discard-bot-intro.js";
 import { sessionCookieHeader } from "../index.js";
 import { asSystem } from "../system-db.js";
-import type { EvalCase, Evidence, SettingsSnapshot } from "./cases.js";
+import type { EvalCase, Evidence, SettingsSnapshot, TurnMessage } from "./cases.js";
 import { EMPTY_SETTINGS } from "./cases.js";
 import type { ClarificationBlock } from "./clarification.js";
 import { expectedClarificationText } from "./clarification.js";
@@ -204,6 +204,9 @@ export async function runTrial(
         botId,
         modelProvider: options.connection.provider,
         modelId: options.connection.modelId,
+        ...(scenario.disabledBuiltinTools
+          ? { disabledBuiltinTools: scenario.disabledBuiltinTools }
+          : {}),
       });
       // Direct synthetic fixture state, so setup never depends on the behavior under test.
       if (scenario.botSetup)
@@ -261,6 +264,12 @@ export async function runTrial(
         });
         group = { ...created, memberIds };
       }
+      for (const tool of scenario.allowTools ?? [])
+        await rpc(app, cookie, "approvalRules/set", {
+          effect: "always_allow",
+          matchKind: "tool",
+          matchValue: tool,
+        });
       messagingLinked = false;
       messagingAddress = `U-eval-${randomUUID()}`;
       messaging.resetWitnesses();
@@ -442,6 +451,7 @@ export async function runTrial(
       };
     };
     let settingsBefore = EMPTY_SETTINGS;
+    const turnMessages: TurnMessage[][] = [];
     for (const [stepIndex, step] of scenario.steps.entries()) {
       if (Date.now() >= deadline) throw new EvalFailure("incomplete", "Trial time budget exceeded");
       if (stepIndex === scenario.steps.length - 1) settingsBefore = await settingsSnapshot();
@@ -727,6 +737,23 @@ export async function runTrial(
           reply: returned.length ? returned.join("\n") : null,
         });
       }
+      const firstTool = await prisma.event.findFirst({
+        where: { runId, type: "agent.tool.called" },
+        orderBy: { createdAt: "asc" },
+        select: { createdAt: true },
+      });
+      turnMessages.push(
+        (
+          await prisma.message.findMany({
+            where: { runId, role: "bot" },
+            orderBy: { seq: "asc" },
+            select: { blocks: true, createdAt: true },
+          })
+        ).map((m) => ({
+          blocks: m.blocks as MessageBlock[],
+          beforeTools: !firstTool || m.createdAt < firstTool.createdAt,
+        })),
+      );
       if (scenario.routine && "wakeRoutine" in step) {
         const messages = await prisma.message.findMany({
           where: { runId, role: "bot" },
@@ -777,6 +804,7 @@ export async function runTrial(
     const evidence: Evidence = {
       text: lastText,
       replies,
+      turnMessages,
       routineRuns,
       peerExchanges,
       files,

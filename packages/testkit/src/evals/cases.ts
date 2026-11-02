@@ -1,3 +1,4 @@
+import type { MessageBlock } from "@rakazo/contracts";
 import type { HistoryScenario } from "./history-fixtures.js";
 import { balancedAmbiguityFixture, gradeHistory, historyFixture } from "./history-fixtures.js";
 import type { JudgeInput } from "./judge.js";
@@ -20,6 +21,8 @@ export type Step =
 export type Evidence = {
   text: string;
   replies?: string[];
+  /** Each answered step's bot messages in order, including hidden tool steps. */
+  turnMessages?: TurnMessage[][];
   routineRuns?: RoutineEvidence[];
   /** Per fromPeer step: what the peer sent and what came back to it, or null if nothing did. */
   peerExchanges?: Array<{ message: string; reply: string | null }>;
@@ -58,6 +61,8 @@ export type SettingsSnapshot = {
 };
 export const EMPTY_SETTINGS: SettingsSnapshot = { bot: {}, user: {} };
 export type Criterion = { id: string; pass: boolean };
+/** A bot message of one turn; `beforeTools` when it was saved before the turn's first tool call. */
+export type TurnMessage = { blocks: MessageBlock[]; beforeTools: boolean };
 export type EvalCase = {
   id: string;
   purpose: string;
@@ -73,6 +78,9 @@ export type EvalCase = {
   /** The bot's MEMORY.md, written through the memory API before the first step. */
   botMemory?: string;
   taughtSkill?: true;
+  /** Tools the owner already trusts, so the turn does not stop for approval. */
+  allowTools?: string[];
+  disabledBuiltinTools?: string[];
   history?: ReturnType<typeof historyFixture>;
   configure?: (services: EvalServices) => void;
   routine?: { prompt: string };

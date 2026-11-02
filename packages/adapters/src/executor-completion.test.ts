@@ -15,7 +15,9 @@ import {
   emptyDelegatedToolTurnShouldFail,
   longWorkProgressGuidance,
   REACTION_SILENT_REPLY_GUIDANCE,
+  REPLY_STYLE_GUIDANCE,
   ROUTINE_SILENT_REPLY_GUIDANCE,
+  replyGuidanceForOfferedTools,
   runAllowsSilentEmpty,
   runPromotesMidTurnNarration,
   runReplyGuidance,
@@ -592,9 +594,18 @@ describe("runReplyGuidance", () => {
   it("keeps progress guidance for user-triggered runs", () => {
     expect(runPromotesMidTurnNarration("user")).toBe(true);
     expect(runPromotesMidTurnNarration("messaging")).toBe(true);
-    expect(runReplyGuidance("user")).toBe(longWorkProgressGuidance());
+    expect(runReplyGuidance("user")).toBe(`${REPLY_STYLE_GUIDANCE} ${longWorkProgressGuidance()}`);
     expect(runReplyGuidance("user")).toContain("message_user");
-    expect(runReplyGuidance("messaging")).toBe(longWorkProgressGuidance());
+    expect(runReplyGuidance("messaging")).toBe(runReplyGuidance("user"));
+  });
+
+  it("keeps reply style when message_user is turned off", () => {
+    const guidance = replyGuidanceForOfferedTools(
+      runReplyGuidance("user"),
+      new Set(["message_user"]),
+    );
+    expect(guidance).toContain(REPLY_STYLE_GUIDANCE);
+    expect(guidance).not.toContain("message_user");
   });
 });
 
