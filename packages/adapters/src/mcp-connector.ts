@@ -144,6 +144,7 @@ const UNREACHABLE_CODES = new Set([
 function expectedFailure(error: unknown, depth = 0): ExpectedFailure | undefined {
   if (depth > 5 || !(error instanceof Error)) return undefined;
   if (error instanceof McpConnectFailure) return error.expected;
+  if (error instanceof McpDiscoveryTimeoutError) return "unreachable";
   if (error instanceof McpReauthorizationRequiredError || error instanceof UnauthorizedError)
     return "reconnect";
   if (error instanceof StreamableHTTPError) {
@@ -531,7 +532,8 @@ export class McpConnector implements ConnectorProvider {
             ? "it is still installing its package; its tools will be available on a later turn"
             : sanitizeConnectorError(error, secrets);
           // A single unavailable server must not hide tools from other connectors.
-          const expected = expectedFailure(error);
+          // A cancelled run says nothing about the server.
+          const expected = context.signal.aborted ? "unreachable" : expectedFailure(error);
           if (expected)
             getLogger().warn(`mcp discovery failed for server ${assignment.server.slug}`, {
               reason,
