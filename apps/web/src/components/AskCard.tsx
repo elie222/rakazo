@@ -444,7 +444,6 @@ export function AskCard({
               aria-label={secretLabel}
               type="password"
               autoComplete={codeInput ? "one-time-code" : "off"}
-              {...(codeInput ? { inputMode: "numeric" as const } : {})}
               spellCheck={false}
               disabled={submitting}
               readOnly={pastedLines}

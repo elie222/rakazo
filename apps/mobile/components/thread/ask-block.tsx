@@ -176,7 +176,6 @@ export function AskBlock({
             secureTextEntry={secretInput}
             autoComplete="off"
             {...(secretInput ? secretFieldTraits(ask.purpose, ask.credential) : {})}
-            keyboardType={ask.oneTimeCode ? "number-pad" : "default"}
             autoCorrect={secretInput ? false : undefined}
             autoCapitalize={secretInput ? "none" : "sentences"}
             editable={!submitting}

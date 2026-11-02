@@ -613,12 +613,11 @@ const codeCard: AskBlock = {
   status: "pending",
 };
 
-it("asks for a one-time code in a masked numeric field, with the site and no Save to Vault", async () => {
+it("asks for a one-time code in a masked field, with the site and no Save to Vault", async () => {
   const onAnswer = vi.fn(async () => undefined);
   await render(codeCard, undefined, onAnswer);
   const input = container.querySelector<HTMLInputElement>('input[aria-label="Code"]')!;
   expect(input.type).toBe("password");
-  expect(input.inputMode).toBe("numeric");
   expect(input.autocomplete).toBe("one-time-code");
   expect(container.textContent).toContain("Only enter a code login.example.test sent you.");
   expect(container.querySelector('[role="switch"]')).toBeNull();
@@ -664,9 +663,7 @@ it("shows the bot's label on a code card as plain text beneath the site's own ti
   expect(container.textContent).not.toContain("hidden detail");
 });
 
-it("keeps the other secret cards off the numeric keyboard", async () => {
+it("keeps one-time-code autofill off the other secret cards", async () => {
   await render(secretCard);
-  const input = container.querySelector<HTMLInputElement>("input")!;
-  expect(input.inputMode).toBe("");
-  expect(input.autocomplete).toBe("off");
+  expect(container.querySelector<HTMLInputElement>("input")!.autocomplete).toBe("off");
 });
