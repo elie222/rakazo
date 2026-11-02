@@ -1,11 +1,25 @@
 export type NotificationRoute =
   | {
       pathname: "/thread";
-      params: { botId: string; threadId?: string; spaceId?: string; name?: string };
+      params: {
+        botId: string;
+        threadId?: string;
+        spaceId?: string;
+        name?: string;
+        userId?: string;
+        apiBase?: string;
+      };
     }
   | {
       pathname: "/group-thread";
-      params: { groupId: string; threadId?: string; spaceId?: string; name?: string };
+      params: {
+        groupId: string;
+        threadId?: string;
+        spaceId?: string;
+        name?: string;
+        userId?: string;
+        apiBase?: string;
+      };
     };
 
 export type ThreadSpaceRequest =
@@ -15,7 +29,9 @@ export type ThreadSpaceRequest =
 
 export function threadRouteId(name: string, params: Record<string, unknown>): string | undefined {
   const ownerId = params.groupId ?? params.botId;
-  return typeof ownerId === "string" && ownerId ? JSON.stringify([name, ownerId]) : undefined;
+  return typeof ownerId === "string" && ownerId
+    ? JSON.stringify([name, params.userId ?? "", ownerId])
+    : undefined;
 }
 
 function singleRouteParam(value: string | string[] | undefined): string | undefined {
@@ -44,7 +60,11 @@ export function notificationOpenTarget(data: unknown): NotificationRoute | null 
   const threadId = notificationField(record, "threadId");
   const spaceId = notificationField(record, "spaceId");
   const name = notificationField(record, "name");
+  const userId = notificationField(record, "userId");
+  const apiBase = notificationField(record, "apiBase");
   const shared = {
+    ...(userId ? { userId } : {}),
+    ...(apiBase ? { apiBase } : {}),
     ...(threadId ? { threadId } : {}),
     ...(spaceId ? { spaceId } : {}),
     ...(name ? { name } : {}),
@@ -126,4 +146,11 @@ export function threadRouteSpaceOnFocus(input: ThreadRouteFocus): ThreadRouteFoc
     liveSpaceId: input.liveSpaceId,
     switchFailed: false,
   };
+}
+
+export function notificationTargetLink(route: NotificationRoute): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(route.params))
+    if (typeof value === "string") params.set(key, value);
+  return `rakazo:/${route.pathname}?${params}`;
 }

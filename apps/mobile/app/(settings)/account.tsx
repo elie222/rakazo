@@ -30,6 +30,13 @@ import {
   useStackedSettings,
 } from "../../components/settings-group";
 import { createAccountNameEditor } from "../../lib/account-name-editor";
+import type { AccountSummary } from "../../lib/account-sessions";
+import {
+  refreshAccountSummaries,
+  rememberCurrentAccount,
+  selectSavedAccount,
+  signOutAllAccounts,
+} from "../../lib/account-sessions";
 import type { MobileMe } from "../../lib/api";
 import {
   currentApiBase,
@@ -82,8 +89,13 @@ import {
   setResponseStreamingPreference,
   subscribeResponseStreaming,
 } from "../../lib/response-streaming";
+import { loadSavedAccounts } from "../../lib/saved-accounts";
 import { promptSectionName } from "../../lib/section-name-prompt";
-import { isSettingsLink, openFromSettingsSheet } from "../../lib/settings-sheet";
+import {
+  closeSettingsSheet,
+  isSettingsLink,
+  openFromSettingsSheet,
+} from "../../lib/settings-sheet";
 import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { continueWithSso } from "../../lib/sso";
@@ -133,6 +145,7 @@ export default function Account() {
   const deletion = useAccountDeletion({ onSecurity: setSecurity });
   const { run: securityAction } = deletion;
   const [signingOut, setSigningOut] = useState(false);
+  const [savedAccounts, setSavedAccounts] = useState<AccountSummary[]>([]);
   const pending = deletion.pending || signingOut;
   const [notifications, setNotifications] = useState<LiveNotificationSettings>(
     DEFAULT_LIVE_NOTIFICATION_SETTINGS,
@@ -300,12 +313,69 @@ export default function Account() {
     }, []),
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      void refreshAccountSummaries()
+        .then((rows) => {
+          if (active) setSavedAccounts(rows);
+        })
+        .catch(() => undefined);
+      return () => {
+        active = false;
+      };
+    }, []),
+  );
+
+  async function switchAccount(userId: string) {
+    setSigningOut(true);
+    setSignOutError(null);
+    try {
+      if (!(await selectSavedAccount(userId))) throw new Error(t("Sign in to open this account"));
+      closeSettingsSheet();
+      router.dismissTo("/");
+    } catch (error) {
+      setSignOutError(errorText(error));
+      setSigningOut(false);
+    }
+  }
+
+  async function addAccount() {
+    try {
+      await rememberCurrentAccount();
+      closeSettingsSheet();
+      router.push({ pathname: "/sign-in", params: { mode: "in", addAccount: "1" } });
+    } catch (error) {
+      setSignOutError(errorText(error));
+    }
+  }
+
+  function confirmSignOutAll() {
+    Alert.alert(t("Sign out all accounts?"), undefined, [
+      { text: t("Cancel"), style: "cancel" },
+      {
+        text: t("Sign out all"),
+        style: "destructive",
+        onPress: () => {
+          setSigningOut(true);
+          void signOutAllAccounts()
+            .catch((error) => Alert.alert(t("Could not sign out"), errorText(error)))
+            .finally(() => replaceWithSignIn());
+        },
+      },
+    ]);
+  }
+
   async function handleSignOut() {
     setSigningOut(true);
     setSignOutError(null);
     try {
       await signOut();
-      replaceWithSignIn();
+      const next = (await loadSavedAccounts(currentApiBase()))[0];
+      if (next && (await selectSavedAccount(next.userId))) {
+        closeSettingsSheet();
+        router.dismissTo("/");
+      } else replaceWithSignIn();
     } catch (err) {
       setSignOutError(errorText(err, t("Could not sign out")));
       setSigningOut(false);
@@ -425,6 +495,42 @@ export default function Account() {
             onPress={editName}
           />
           {focus !== "usage" ? usageBlock : null}
+        </SettingsGroup>
+
+        <SettingsGroup>
+          {savedAccounts.length > 1
+            ? savedAccounts.map((saved) => (
+                <SettingsRow
+                  key={saved.userId}
+                  title={saved.email}
+                  value={[
+                    saved.userId === me?.userId ? "✓" : "",
+                    saved.unread ? String(saved.unread) : "",
+                  ]
+                    .filter(Boolean)
+                    .join("  ")}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: saved.userId === me?.userId }}
+                  disabled={pending || saved.userId === me?.userId}
+                  onPress={() => void switchAccount(saved.userId)}
+                />
+              ))
+            : null}
+          <SettingsRow
+            title={t("Add account")}
+            accessibilityRole="button"
+            disabled={pending}
+            onPress={() => void addAccount()}
+          />
+          {savedAccounts.length > 1 ? (
+            <SettingsRow
+              title={t("Sign out all")}
+              accessibilityRole="button"
+              destructive
+              disabled={pending}
+              onPress={confirmSignOutAll}
+            />
+          ) : null}
         </SettingsGroup>
 
         {(security?.sso && !security.ssoLinked) || canChangePassword ? (

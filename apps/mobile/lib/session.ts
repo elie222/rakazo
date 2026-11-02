@@ -2,6 +2,7 @@ import * as SecureStore from "expo-secure-store";
 import { invalidateArtifactCacheSession } from "./artifact-cache-session";
 import { stopLiveNotifications } from "./live-notifications";
 import { clearNetworkCache } from "./network-cache";
+import { setSelectedSavedAccount } from "./saved-accounts";
 import { clearFailedSends } from "./thread-feedback";
 
 const SESSION_KEY = "rakazo.session_token";
@@ -33,6 +34,7 @@ export function registerSessionDiskCache(clear: () => void): void {
 }
 
 function invalidateSessionCaches(): Promise<void> {
+  setSelectedSavedAccount(null);
   scopeInvalidated = true;
   clearFailedSends();
   clearNetworkCache();
@@ -172,9 +174,10 @@ export async function clearSessionToken(): Promise<boolean> {
   publishSessionGeneration(false);
   sessionInvalidated = true;
   sessionFallback = undefined;
+  const stoppingNotifications = stopLiveNotifications(true).catch(() => undefined);
   const clearingScope = invalidateSessionCaches();
   const clearingToken = clearStoredSessionToken(generation);
-  await stopLiveNotifications(true).catch(() => undefined);
+  await stoppingNotifications;
   const tokenCleared = await clearingToken;
   await clearingScope;
   if (generation === sessionGeneration) publishSessionGeneration();

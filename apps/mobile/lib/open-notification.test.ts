@@ -8,10 +8,10 @@ vi.mock("expo-notifications", () => ({
   useLastNotificationResponse: vi.fn(),
 }));
 vi.mock("expo-router", () => ({
-  router: { push: vi.fn() },
+  router: { push: vi.fn(), dismissTo: vi.fn(), replace: vi.fn() },
 }));
-vi.mock("./api", () => ({
-  loadSessionToken: vi.fn(),
+vi.mock("./account-sessions", () => ({
+  selectNotificationAccount: vi.fn(),
 }));
 vi.mock("./settings-sheet", () => ({
   closeSettingsSheet: vi.fn(),
@@ -19,7 +19,7 @@ vi.mock("./settings-sheet", () => ({
 
 import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
-import { loadSessionToken } from "./api";
+import { selectNotificationAccount } from "./account-sessions";
 import { threadRouteId } from "./notification-open";
 import { openNotificationResponse } from "./open-notification";
 import { closeSettingsSheet } from "./settings-sheet";
@@ -38,8 +38,33 @@ beforeEach(() => {
 });
 
 describe("opening a notification tap", () => {
+  it("ignores an older tap that finishes after a newer account was opened", async () => {
+    let finishOlder!: (selected: boolean) => void;
+    vi.mocked(selectNotificationAccount)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishOlder = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(true);
+    const older = openNotificationResponse(
+      tap("older-account", { userId: "family", botId: "family-bot" }),
+    );
+    await expect(
+      openNotificationResponse(tap("newer-account", { userId: "work", botId: "work-bot" })),
+    ).resolves.toBe(true);
+    finishOlder(false);
+    await expect(older).resolves.toBe(false);
+    expect(router.push).toHaveBeenCalledExactlyOnceWith(
+      { pathname: "/thread", params: { userId: "work", botId: "work-bot" } },
+      { dangerouslySingular: threadRouteId },
+    );
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
   it("closes the settings sheet before opening the thread, so it doesn't open behind it", async () => {
-    vi.mocked(loadSessionToken).mockResolvedValue("token");
+    vi.mocked(selectNotificationAccount).mockResolvedValue(true);
 
     await expect(openNotificationResponse(tap("tap-over-settings"))).resolves.toBe(true);
     expect(closeSettingsSheet).toHaveBeenCalledTimes(1);
@@ -49,8 +74,8 @@ describe("opening a notification tap", () => {
   });
 
   it("opens a signed-in tap once when the cold start and the listener both see it", async () => {
-    let release: (token: string) => void = () => undefined;
-    vi.mocked(loadSessionToken).mockImplementation(
+    let release: (token: boolean) => void = () => undefined;
+    vi.mocked(selectNotificationAccount).mockImplementation(
       () =>
         new Promise((resolve) => {
           release = resolve;
@@ -59,7 +84,7 @@ describe("opening a notification tap", () => {
     const response = tap("tap-signed-in");
     const first = openNotificationResponse(response);
     const second = openNotificationResponse(response);
-    release("token");
+    release(true);
     await expect(first).resolves.toBe(true);
     await expect(second).resolves.toBe(false);
     expect(router.push).toHaveBeenCalledTimes(1);
@@ -71,7 +96,7 @@ describe("opening a notification tap", () => {
   });
 
   it("drops a signed-out tap so a later cold start cannot replay it", async () => {
-    vi.mocked(loadSessionToken).mockResolvedValue("");
+    vi.mocked(selectNotificationAccount).mockResolvedValue(false);
     const response = tap("tap-signed-out", {
       botId: "bot-1",
       threadId: "thread-1",
@@ -82,32 +107,32 @@ describe("opening a notification tap", () => {
     expect(router.push).not.toHaveBeenCalled();
     expect(Notifications.clearLastNotificationResponse).toHaveBeenCalledTimes(1);
 
-    vi.mocked(loadSessionToken).mockResolvedValue("token");
+    vi.mocked(selectNotificationAccount).mockResolvedValue(true);
     await expect(openNotificationResponse(response)).resolves.toBe(true);
     expect(router.push).toHaveBeenCalledTimes(1);
   });
 
   it("leaves the last response in place when the tap cannot be opened or the session read fails", async () => {
-    vi.mocked(loadSessionToken).mockResolvedValue("");
+    vi.mocked(selectNotificationAccount).mockResolvedValue(false);
     await expect(openNotificationResponse(null)).resolves.toBe(false);
     await expect(openNotificationResponse(tap("tap-empty", { kind: "completion" }))).resolves.toBe(
       false,
     );
     expect(Notifications.clearLastNotificationResponse).not.toHaveBeenCalled();
 
-    vi.mocked(loadSessionToken).mockRejectedValue(new Error("locked"));
+    vi.mocked(selectNotificationAccount).mockRejectedValue(new Error("locked"));
     await expect(openNotificationResponse(tap("tap-locked"))).resolves.toBe(false);
     expect(router.push).not.toHaveBeenCalled();
     expect(Notifications.clearLastNotificationResponse).not.toHaveBeenCalled();
 
-    vi.mocked(loadSessionToken).mockResolvedValue("token");
+    vi.mocked(selectNotificationAccount).mockResolvedValue(true);
     await expect(openNotificationResponse(tap("tap-locked"))).resolves.toBe(true);
     expect(router.push).toHaveBeenCalledTimes(1);
   });
 
   it("leaves a newer last response in place when an older signed-out tap is rejected", async () => {
-    let release: (token: string) => void = () => undefined;
-    vi.mocked(loadSessionToken).mockImplementation(
+    let release: (token: boolean) => void = () => undefined;
+    vi.mocked(selectNotificationAccount).mockImplementation(
       () =>
         new Promise((resolve) => {
           release = resolve;
@@ -118,12 +143,12 @@ describe("opening a notification tap", () => {
     vi.mocked(Notifications.getLastNotificationResponse).mockReturnValue(older);
     const pending = openNotificationResponse(older);
     vi.mocked(Notifications.getLastNotificationResponse).mockReturnValue(newer);
-    release("");
+    release(false);
     await expect(pending).resolves.toBe(false);
     expect(Notifications.clearLastNotificationResponse).not.toHaveBeenCalled();
     expect(router.push).not.toHaveBeenCalled();
 
-    vi.mocked(loadSessionToken).mockResolvedValue("token");
+    vi.mocked(selectNotificationAccount).mockResolvedValue(true);
     await expect(openNotificationResponse(newer)).resolves.toBe(true);
     expect(router.push).toHaveBeenCalledTimes(1);
     expect(router.push).toHaveBeenCalledWith(
@@ -133,8 +158,8 @@ describe("opening a notification tap", () => {
   });
 
   it("treats two deliveries that share a request identifier as different taps", async () => {
-    const releases: Array<(token: string) => void> = [];
-    vi.mocked(loadSessionToken).mockImplementation(
+    const releases: Array<(token: boolean) => void> = [];
+    vi.mocked(selectNotificationAccount).mockImplementation(
       () =>
         new Promise((resolve) => {
           releases.push(resolve);
@@ -148,20 +173,20 @@ describe("opening a notification tap", () => {
     vi.mocked(Notifications.getLastNotificationResponse).mockReturnValue(newer);
     const pendingNewer = openNotificationResponse(newer);
 
-    releases[0]?.("");
+    releases[0]?.(false);
     await expect(pendingOlder).resolves.toBe(false);
     expect(Notifications.clearLastNotificationResponse).not.toHaveBeenCalled();
     expect(router.push).not.toHaveBeenCalled();
 
-    releases[1]?.("token");
+    releases[1]?.(true);
     await expect(pendingNewer).resolves.toBe(true);
     expect(router.push).toHaveBeenCalledTimes(1);
     expect(Notifications.clearLastNotificationResponse).toHaveBeenCalledTimes(1);
   });
 
-  it("opens both signed-in deliveries that share a request identifier", async () => {
-    const releases: Array<(token: string) => void> = [];
-    vi.mocked(loadSessionToken).mockImplementation(
+  it("opens the latest concurrent delivery when request identifiers are shared", async () => {
+    const releases: Array<(token: boolean) => void> = [];
+    vi.mocked(selectNotificationAccount).mockImplementation(
       () =>
         new Promise((resolve) => {
           releases.push(resolve);
@@ -173,19 +198,36 @@ describe("opening a notification tap", () => {
     vi.mocked(Notifications.getLastNotificationResponse).mockReturnValue(second);
     const pendingFirst = openNotificationResponse(first);
     const pendingSecond = openNotificationResponse(second);
-    releases[0]?.("token");
-    releases[1]?.("token");
-    await expect(pendingFirst).resolves.toBe(true);
+    releases[0]?.(true);
+    releases[1]?.(true);
+    await expect(pendingFirst).resolves.toBe(false);
     await expect(pendingSecond).resolves.toBe(true);
-    expect(router.push).toHaveBeenCalledTimes(2);
+    expect(router.push).toHaveBeenCalledTimes(1);
     expect(Notifications.clearLastNotificationResponse).toHaveBeenCalledTimes(1);
   });
 
   it("opens one shared-identifier delivery only once", async () => {
-    vi.mocked(loadSessionToken).mockResolvedValue("token");
+    vi.mocked(selectNotificationAccount).mockResolvedValue(true);
     const data = { botId: "bot-1", threadId: "thread-1", deliveryId: "delivery-once" };
     await expect(openNotificationResponse(tap("thread-shared-once", data))).resolves.toBe(true);
     await expect(openNotificationResponse(tap("thread-shared-once", data))).resolves.toBe(false);
     expect(router.push).toHaveBeenCalledTimes(1);
   });
+});
+
+it("selects the payload account before opening its chat and refuses unavailable accounts", async () => {
+  vi.mocked(selectNotificationAccount).mockResolvedValue(true);
+  await expect(
+    openNotificationResponse(tap("account-work", { userId: "work", botId: "bot-work" })),
+  ).resolves.toBe(true);
+  expect(selectNotificationAccount).toHaveBeenCalledWith("work", undefined);
+  expect(vi.mocked(selectNotificationAccount).mock.invocationCallOrder[0]).toBeLessThan(
+    vi.mocked(router.push).mock.invocationCallOrder[0]!,
+  );
+  vi.mocked(selectNotificationAccount).mockResolvedValue(false);
+  vi.mocked(router.push).mockClear();
+  await expect(
+    openNotificationResponse(tap("account-removed", { userId: "removed", botId: "bot-removed" })),
+  ).resolves.toBe(false);
+  expect(router.push).not.toHaveBeenCalled();
 });

@@ -1,4 +1,12 @@
 export const JA_MESSAGES: Record<string, string> = {
+  "Add account": "アカウントを追加",
+  "Sign in to open this account": "このアカウントを開くにはログインしてください",
+  "Sign in to open this notification": "この通知を開くにはログインしてください",
+  "Sign in to the account for this notification": "この通知のアカウントにログインしてください",
+  "Sign out all": "すべてログアウト",
+  "Sign out all accounts?": "すべてのアカウントからログアウトしますか？",
+  "Signed out on this device. Some server sessions could not be revoked.":
+    "この端末からログアウトしました。一部のサーバーセッションを無効にできませんでした。",
   "How other bots see it": "他のボットからの見え方",
   "Share to": "共有先",
   "{count} files": "{count}個のファイル",

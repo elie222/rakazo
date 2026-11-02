@@ -19,6 +19,7 @@ import {
   setOpenNotificationThread,
   stopLiveNotifications,
 } from "./live-notifications";
+import { setSelectedSavedAccount } from "./saved-accounts";
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -147,11 +148,59 @@ describe("after a chat's notifications change", () => {
 });
 
 describe("when the session ends", () => {
-  it("clears the previous account's delivered notifications", async () => {
+  it("keeps deliveries when no account owns the cleanup", async () => {
     await stopLiveNotifications();
     expect(Notifications.dismissAllNotificationsAsync).not.toHaveBeenCalled();
 
     await stopLiveNotifications(true);
-    expect(Notifications.dismissAllNotificationsAsync).toHaveBeenCalledOnce();
+    expect(Notifications.dismissAllNotificationsAsync).not.toHaveBeenCalled();
   });
+});
+
+it("keeps inactive-account completions visible and never dismisses their matching thread ID", async () => {
+  setSelectedSavedAccount({ apiBase: "https://app.example.test", userId: "family" });
+  await setOpenNotificationThread({ botId: "bot-1", threadId: "thread-1" });
+  await expect(
+    foregroundHandler()?.handleNotification({
+      request: { content: { data: { userId: "work", kind: "completion", threadId: "thread-1" } } },
+    } as never),
+  ).resolves.toMatchObject({ shouldShowBanner: true });
+  expect(
+    notificationTargetsThread({ userId: "work", threadId: "thread-1" }, { threadId: "thread-1" }),
+  ).toBe(false);
+  setSelectedSavedAccount(null);
+});
+
+it("signing out dismisses only the selected account's delivered notifications", async () => {
+  setSelectedSavedAccount({ apiBase: "https://app.example.test", userId: "family" });
+  vi.mocked(Notifications.getPresentedNotificationsAsync).mockResolvedValueOnce([
+    { request: { identifier: "family-notice", content: { data: { userId: "family" } } } },
+    { request: { identifier: "work-notice", content: { data: { userId: "work" } } } },
+  ] as never);
+  await stopLiveNotifications(true);
+  expect(Notifications.dismissNotificationAsync).toHaveBeenCalledWith("family-notice");
+  expect(Notifications.dismissNotificationAsync).not.toHaveBeenCalledWith("work-notice");
+  setSelectedSavedAccount(null);
+});
+
+it("keeps another server's notification when cloned account and thread IDs match", async () => {
+  setSelectedSavedAccount({ apiBase: "https://app.example.test", userId: "family" });
+  await setOpenNotificationThread({ threadId: "thread-1" });
+  expect(
+    notificationTargetsThread(
+      { userId: "family", apiBase: "https://other.example.test", threadId: "thread-1" },
+      { threadId: "thread-1" },
+    ),
+  ).toBe(false);
+  vi.mocked(Notifications.getPresentedNotificationsAsync).mockResolvedValueOnce([
+    {
+      request: {
+        identifier: "other-server",
+        content: { data: { userId: "family", apiBase: "https://other.example.test" } },
+      },
+    },
+  ] as never);
+  await stopLiveNotifications(true);
+  expect(Notifications.dismissNotificationAsync).not.toHaveBeenCalledWith("other-server");
+  setSelectedSavedAccount(null);
 });

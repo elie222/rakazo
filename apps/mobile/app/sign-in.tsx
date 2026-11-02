@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../components/native-action-button";
+import { selectNotificationAccount } from "../lib/account-sessions";
 import { FORM_COLUMN_WIDTH } from "../lib/adaptive-layout";
 import type { PasswordResetCapabilities } from "../lib/api";
 import {
@@ -36,6 +37,7 @@ import { initialAuthMode } from "../lib/auth-routing";
 import { useI18n } from "../lib/i18n";
 import { hasIncomingShare } from "../lib/incoming-share";
 import { useMobileTokens } from "../lib/native";
+import { notificationOpenTargetFromLink } from "../lib/notification-open";
 import { passkeysAvailable, signInWithPasskey } from "../lib/passkey";
 import { continueWithSso } from "../lib/sso";
 import { credentialIssueText, errorText } from "../lib/user-error";
@@ -46,7 +48,15 @@ export default function SignIn() {
   const { t } = useI18n();
   const tokens = useMobileTokens();
   const router = useRouter();
-  const { mode: requestedMode } = useLocalSearchParams<{ mode?: string | string[] }>();
+  const {
+    mode: requestedMode,
+    addAccount,
+    notificationTarget,
+  } = useLocalSearchParams<{
+    mode?: string | string[];
+    addAccount?: string;
+    notificationTarget?: string;
+  }>();
   const [mode, setMode] = useState<AuthMode>(() => initialAuthMode(requestedMode));
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -130,7 +140,8 @@ export default function SignIn() {
       </View>
     );
   }
-  if (hasSession) return <Redirect href={hasIncomingShare() ? "/share" : "/"} />;
+  if (hasSession && addAccount !== "1")
+    return <Redirect href={hasIncomingShare() ? "/share" : "/"} />;
 
   const codeFlow = Boolean(reset?.passwordAuth && reset.emailCode && mode !== "forgot");
   // A blank password asks for an emailed code, so code-only accounts need no toggle.
@@ -202,6 +213,17 @@ export default function SignIn() {
   async function openApp() {
     if (hasIncomingShare()) return router.replace("/share");
     const me = await rpc("me").catch(() => null);
+    if (notificationTarget) {
+      const target = notificationOpenTargetFromLink(notificationTarget);
+      if (
+        !target?.params.userId ||
+        me?.userId !== target.params.userId ||
+        !(await selectNotificationAccount(target.params.userId, target.params.apiBase))
+      )
+        throw new Error(t("Sign in to the account for this notification"));
+      router.replace(target);
+      return;
+    }
     router.replace(me?.needsSignupSurvey ? "/signup-survey" : "/");
   }
 
@@ -240,6 +262,13 @@ export default function SignIn() {
               keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
               keyboardShouldPersistTaps="handled"
             >
+              {addAccount === "1" && hasSession ? (
+                <NativeActionButton
+                  label={t("Cancel")}
+                  prominence="secondary"
+                  onPress={() => router.replace("/")}
+                />
+              ) : null}
               <Text
                 accessibilityRole="header"
                 style={{

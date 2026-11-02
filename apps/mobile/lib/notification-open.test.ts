@@ -222,3 +222,19 @@ describe("notification space switch", () => {
     ).toBe("space-1");
   });
 });
+
+it("retains account ownership for Expo payloads and native deep links", () => {
+  const target = {
+    pathname: "/thread",
+    params: { userId: "work", botId: "bot-1", threadId: "thread-1" },
+  };
+  expect(notificationOpenTarget({ userId: "work", botId: "bot-1", threadId: "thread-1" })).toEqual(
+    target,
+  );
+  expect(
+    notificationOpenTargetFromLink("rakazo://thread?userId=work&botId=bot-1&threadId=thread-1"),
+  ).toEqual(target);
+  expect(threadRouteId("thread", { userId: "work", botId: "bot-1" })).not.toBe(
+    threadRouteId("thread", { userId: "family", botId: "bot-1" }),
+  );
+});

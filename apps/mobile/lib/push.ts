@@ -1,7 +1,8 @@
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
-import { rpc } from "./api";
+import { currentApiBase, loadSessionToken, rpc } from "./api";
+import { loadSavedAccounts } from "./saved-accounts";
 
 async function notificationsAllowed() {
   // On iOS getPermissionsAsync holds Expo's shared native queue until the system answers,
@@ -13,13 +14,45 @@ async function notificationsAllowed() {
 }
 
 export async function registerPushToken() {
+  const apiBase = currentApiBase();
   if (!(await notificationsAllowed())) return;
   try {
     const projectId = Constants.easConfig?.projectId ?? Constants.expoConfig?.extra?.eas?.projectId;
     if (!projectId) return;
     const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     if (!token) return;
-    await rpc("notifications/registerPush", { token });
+    const accounts = await loadSavedAccounts(apiBase);
+    if (accounts.length === 0) {
+      if (apiBase === currentApiBase()) await rpc("notifications/registerPush", { token });
+    } else {
+      const activeToken = apiBase === currentApiBase() ? await loadSessionToken() : "";
+      const registering = accounts.map((account) =>
+        rpc(
+          "notifications/registerPush",
+          { token },
+          {
+            requestContext: {
+              apiBase,
+              headers: {
+                authorization: `Bearer ${account.token}`,
+                "x-rakazo-user-id": account.userId,
+              },
+            },
+          },
+        ).catch(() => undefined),
+      );
+      if (activeToken && !accounts.some((account) => account.token === activeToken))
+        registering.push(
+          rpc(
+            "notifications/registerPush",
+            { token },
+            {
+              requestContext: { apiBase, headers: { authorization: `Bearer ${activeToken}` } },
+            },
+          ).catch(() => undefined),
+        );
+      await Promise.all(registering);
+    }
   } catch {
     // Expo Go without an EAS project id and Android builds without a Firebase config
     // cannot mint an Expo push token.

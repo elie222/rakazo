@@ -134,3 +134,30 @@ name: Settings
     timeout: 15000
 - assertNotVisible: ".*Change password.*"
 - takeScreenshot: 18-artifacts
+# Both disposable catalog identities stay signed in; switching back needs no credentials.
+- openLink: "rakazo:///account"
+- tapOn: "Add account"
+- extendedWaitUntil:
+    visible: "Sign in to Rakazo"
+    timeout: 15000
+- tapOn: "Email"
+- inputText: ${RAKAZO_SCREENSHOT_EMPTY_EMAIL}
+- tapOn: "Password"
+- inputText: ${RAKAZO_SCREENSHOT_PASSWORD}
+- hideKeyboard
+- tapOn: "Sign in"
+- extendedWaitUntil:
+    visible: "Account"
+    timeout: 40000
+- openLink: "rakazo:///account"
+- extendedWaitUntil:
+    visible: "Sign out all"
+    timeout: 15000
+- takeScreenshot: 19-account-switcher
+- tapOn: ${RAKAZO_SCREENSHOT_EMAIL}
+- extendedWaitUntil:
+    visible: "Account"
+    timeout: 15000
+- openLink: "rakazo:///account"
+- tapOn: "Sign out all"
+- tapOn: "Sign out all"

@@ -18,10 +18,19 @@ import {
 import type { NativeActionButtonProps } from "./native-controls";
 import { passkeysAvailable, signInWithPasskey } from "./passkey";
 import { continueWithSso } from "./sso";
+import { errorText } from "./user-error";
 
-const route = vi.hoisted(() => ({ mode: "in", waiting: false, redirect: vi.fn() }));
+const route = vi.hoisted(() => ({
+  mode: "in",
+  addAccount: undefined as string | undefined,
+  notificationTarget: undefined as string | undefined,
+  waiting: false,
+  redirect: vi.fn(),
+}));
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 const server = vi.hoisted(() => ({ base: "https://example.invalid", refocus: () => {} }));
+
+vi.mock("./account-sessions", () => ({ selectNotificationAccount: vi.fn(async () => true) }));
 
 vi.mock("expo-router", () => ({
   Redirect: ({ href }: { href: string }) => {
@@ -149,6 +158,9 @@ let host: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  route.addAccount = undefined;
+  route.notificationTarget = undefined;
+  vi.mocked(loadSessionToken).mockResolvedValue("");
   route.mode = "in";
   route.waiting = false;
   server.base = "https://example.invalid";
@@ -517,4 +529,43 @@ it("returns an existing session to the pending share", async () => {
   vi.mocked(loadSessionToken).mockResolvedValue("fake-session");
   await render();
   expect(route.redirect).toHaveBeenCalledWith("/share");
+});
+
+it("shows the existing sign-in form when adding an account without signing out the current login", async () => {
+  route.addAccount = "1";
+  vi.mocked(loadSessionToken).mockResolvedValue("family-session");
+  await render();
+  expect(route.redirect).not.toHaveBeenCalled();
+  expect(input("Email")).not.toBeNull();
+  expect(button("Cancel")).toBeDefined();
+});
+
+it("reauthenticates a notification owner before opening its chat", async () => {
+  route.addAccount = "1";
+  route.notificationTarget = "rakazo://thread?userId=work&botId=work-bot";
+  vi.mocked(rpc).mockResolvedValue({ userId: "work" } as never);
+  vi.mocked(signIn).mockResolvedValue({ verificationRequired: false });
+  await render();
+  await type(input("Email")!, "work@example.test");
+  await type(input("Password")!, "fixture-password");
+  await press("Sign in");
+  expect(router.replace).toHaveBeenCalledWith({
+    pathname: "/thread",
+    params: { userId: "work", botId: "work-bot" },
+  });
+});
+it("never opens a notification chat after signing into another account", async () => {
+  vi.mocked(errorText).mockImplementationOnce((error) =>
+    error instanceof Error ? error.message : "error",
+  );
+  route.addAccount = "1";
+  route.notificationTarget = "rakazo://thread?userId=work&botId=work-bot";
+  vi.mocked(rpc).mockResolvedValue({ userId: "family" } as never);
+  vi.mocked(signIn).mockResolvedValue({ verificationRequired: false });
+  await render();
+  await type(input("Email")!, "family@example.test");
+  await type(input("Password")!, "fixture-password");
+  await press("Sign in");
+  expect(router.replace).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("Sign in to the account for this notification");
 });

@@ -1,4 +1,13 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "Add account": "Konto hinzufügen",
+  "Sign in to open this account": "Melde dich an, um dieses Konto zu öffnen",
+  "Sign in to open this notification": "Melde dich an, um diese Benachrichtigung zu öffnen",
+  "Sign in to the account for this notification":
+    "Melde dich beim Konto für diese Benachrichtigung an",
+  "Sign out all": "Alle abmelden",
+  "Sign out all accounts?": "Von allen Konten abmelden?",
+  "Signed out on this device. Some server sessions could not be revoked.":
+    "Auf diesem Gerät abgemeldet. Einige Serversitzungen konnten nicht widerrufen werden.",
   "How other bots see it": "So sehen andere Bots ihn",
   "Share to": "Teilen mit",
   "{count} files": "{count} Dateien",

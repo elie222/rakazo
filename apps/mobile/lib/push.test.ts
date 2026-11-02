@@ -44,7 +44,7 @@ vi.mock("expo-notifications", () => ({
 
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
-import { rpc, selectInitialSpace } from "./api";
+import { currentApiBase, rpc, selectInitialSpace } from "./api";
 import { registerPushToken } from "./push";
 import { restoreSessionToken } from "./session";
 
@@ -59,7 +59,7 @@ function deferred<T>() {
 const settled = <T>(promise: Promise<T>) =>
   Promise.race([promise, new Promise((done) => setTimeout(done, 100, "still waiting"))]);
 
-const fetch = vi.fn(async (url: string) => {
+const fetch = vi.fn(async (url: string, _init?: RequestInit) => {
   const json = url.endsWith("/rpc/me")
     ? { userId: "user-1", spaceId: "space-1" }
     : url.endsWith("/rpc/spaces/list")
@@ -138,4 +138,43 @@ describe("push registration on Android", () => {
       expect.anything(),
     );
   });
+});
+
+it("registers one device token independently for every saved signed-in account", async () => {
+  native.store.set(
+    "rakazo.saved_accounts",
+    JSON.stringify({
+      [currentApiBase()]: [
+        {
+          userId: "family",
+          token: "family-token",
+          name: "Family",
+          email: "family@example.test",
+          image: null,
+          unread: 1,
+        },
+        {
+          userId: "work",
+          token: "work-token",
+          name: "Work",
+          email: "work@example.test",
+          image: null,
+          unread: 2,
+        },
+      ],
+    }),
+  );
+  await restoreSessionToken("family-token");
+  permission.resolve({ granted: true });
+  await registerPushToken();
+  const registrations = fetch.mock.calls.filter(([url]) =>
+    url.endsWith("/rpc/notifications/registerPush"),
+  );
+  expect(registrations).toHaveLength(2);
+  expect(
+    registrations
+      .map(([, init]) => (init as RequestInit).headers)
+      .map((headers) => (headers as Record<string, string>).authorization)
+      .sort(),
+  ).toEqual(["Bearer family-token", "Bearer work-token"]);
 });

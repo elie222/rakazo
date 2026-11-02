@@ -13,6 +13,14 @@ class RakazoNotificationsModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("RakazoNotifications")
 
+    AsyncFunction("setAccount") { userId: String, label: String ->
+      val context = context()
+      val storage = NotificationStorage(context)
+      if (storage.userId != userId) RakazoNotificationService.stop(context)
+      storage.userId = userId
+      storage.accountLabel = label
+    }
+
     AsyncFunction("getSettings") {
       NotificationStorage(context()).settings.toMap()
     }

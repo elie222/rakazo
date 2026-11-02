@@ -74,7 +74,6 @@ class RakazoNotificationService : Service() {
     manager = getSystemService(NotificationManager::class.java)
     val state = getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE)
     if (!state.getBoolean(THREAD_NOTIFICATION_IDS, false)) {
-      manager.cancelAll()
       state.edit().putBoolean(THREAD_NOTIFICATION_IDS, true).apply()
     }
     createChannels(localizedContext(NotificationStorage(this).locale))
@@ -270,11 +269,13 @@ class RakazoNotificationService : Service() {
     if (!run.notificationsEnabled || isOpenThread(run)) return
     val notification = builder(copy.channel)
       .setSmallIcon(R.drawable.ic_rakazo_notification)
-      .setContentTitle(copy.title)
+      .setContentTitle(accountTitle(copy.title))
       .setContentText(copy.body)
       .setStyle(Notification.BigTextStyle().bigText(copy.body))
       .setContentIntent(openApp(run))
       .addExtras(Bundle().apply {
+        putString("rakazo.userId", NotificationStorage(this@RakazoNotificationService).userId)
+        putString("rakazo.apiBase", NotificationStorage(this@RakazoNotificationService).endpoint)
         putString("rakazo.spaceId", run.spaceId)
         putString("rakazo.botId", run.botId)
         putString("rakazo.threadId", run.threadId)
@@ -282,7 +283,7 @@ class RakazoNotificationService : Service() {
       .setAutoCancel(true)
       .setCategory(Notification.CATEGORY_MESSAGE)
       .build()
-    manager.notify(run.threadId.hashCode(), notification)
+    manager.notify(accountNotificationId(run.threadId), notification)
   }
 
   private fun showLive(active: List<RunRecord>, avatarStyle: String, context: Context) {
@@ -299,7 +300,7 @@ class RakazoNotificationService : Service() {
       .setSmallIcon(
         liveStatusIcon(primary, avatarStyle),
       )
-      .setContentTitle(title)
+      .setContentTitle(accountTitle(title))
       .setContentText(body)
       .setStyle(Notification.BigTextStyle().bigText(body))
       .setContentIntent(openApp(primary))
@@ -373,15 +374,23 @@ class RakazoNotificationService : Service() {
       }
       Intent(
         Intent.ACTION_VIEW,
-        Uri.parse(destination),
+        Uri.parse(destination + "&userId=" + Uri.encode(NotificationStorage(this).userId) + "&apiBase=" + Uri.encode(NotificationStorage(this).endpoint)),
       ).setPackage(packageName)
     }.apply { flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP }
     return PendingIntent.getActivity(
       this,
-      run?.threadId?.hashCode() ?: 0,
+      run?.threadId?.let(::accountNotificationId) ?: 0,
       intent,
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
+  }
+
+  private fun accountNotificationId(threadId: String): Int =
+    "${NotificationStorage(this).endpoint}:${NotificationStorage(this).userId}:$threadId".hashCode()
+
+  private fun accountTitle(title: String): String {
+    val label = NotificationStorage(this).accountLabel
+    return if (label.isBlank()) title else "$title · $label"
   }
 
   private fun localizedContext(tag: String): Context {
@@ -452,7 +461,10 @@ class RakazoNotificationService : Service() {
     }
 
     fun stop(context: Context) {
-      context.stopService(Intent(context, RakazoNotificationService::class.java))
+      synchronized(sessionLock) {
+        sessionGeneration.incrementAndGet()
+        context.stopService(Intent(context, RakazoNotificationService::class.java))
+      }
     }
 
     fun setOpenThread(context: Context, botId: String?, threadId: String?) {
@@ -461,7 +473,7 @@ class RakazoNotificationService : Service() {
         openThreadId = threadId
       }
       if (threadId != null) {
-        context.getSystemService(NotificationManager::class.java).cancel(threadId.hashCode())
+        context.getSystemService(NotificationManager::class.java).cancel("${NotificationStorage(context).endpoint}:${NotificationStorage(context).userId}:$threadId".hashCode())
       }
       start(context, resetToken = false, action = ACTION_THREAD_CHANGED)
     }
@@ -473,7 +485,14 @@ class RakazoNotificationService : Service() {
         openThreadId = null
         stop(context)
         context.getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).edit().clear().apply()
-        context.getSystemService(NotificationManager::class.java).cancelAll()
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val storage = NotificationStorage(context)
+        manager.activeNotifications.filter {
+          it.id == LIVE_NOTIFICATION_ID || (
+            it.notification.extras.getString("rakazo.userId") == storage.userId &&
+              it.notification.extras.getString("rakazo.apiBase") == storage.endpoint
+            )
+        }.forEach { manager.cancel(it.tag, it.id) }
       }
     }
   }

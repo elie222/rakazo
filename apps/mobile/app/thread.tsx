@@ -4,6 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Alert, Pressable, Text, View } from "react-native";
 import { Thread } from "../components/thread/thread-screen";
 import { currentApiBase, selectedSpaceId, selectSpace } from "../lib/api";
+import { normalizeApiBase } from "../lib/endpoint";
 import { t, useI18n } from "../lib/i18n";
 import { integrationsCacheScope } from "../lib/integrations-cache";
 import { useMobileTokens } from "../lib/native";
@@ -63,7 +64,17 @@ export default function ThreadRoute() {
   const { t } = useI18n();
   const router = useRouter();
   const focused = useIsFocused();
-  const { spaceId } = useLocalSearchParams<{ spaceId?: string | string[] }>();
+  const { spaceId, userId, apiBase } = useLocalSearchParams<{
+    spaceId?: string | string[];
+    userId?: string | string[];
+    apiBase?: string | string[];
+  }>();
+  const requestedServer = typeof apiBase === "string" ? normalizeApiBase(apiBase) : null;
+  const wrongServer =
+    apiBase !== undefined && (!requestedServer?.ok || requestedServer.url !== currentApiBase());
+  const wrongAccount =
+    wrongServer ||
+    (userId !== undefined && (typeof userId !== "string" || owner?.userId !== userId));
   const [activeSpaceId, setActiveSpaceId] = useState<string | null>(() => selectedSpaceId());
   const [switchFailed, setSwitchFailed] = useState(false);
   const [appliedFocus, setAppliedFocus] = useState(focused);
@@ -82,7 +93,7 @@ export default function ThreadRoute() {
   const request = threadSpaceRequest(spaceId, focusSync.activeSpaceId);
 
   useEffect(() => {
-    if (!focused) return;
+    if (!focused || wrongAccount) return;
     const next = threadSpaceRequest(spaceId, activeSpaceId);
     if (next.action === "show") {
       setSwitchFailed(false);
@@ -107,15 +118,33 @@ export default function ThreadRoute() {
     return () => {
       cancelled = true;
     };
-  }, [activeSpaceId, focused, spaceId]);
+  }, [activeSpaceId, focused, spaceId, wrongAccount]);
 
+  if (wrongAccount)
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: tokens.background,
+        }}
+      >
+        <Text style={{ color: tokens.foreground }}>{t("Sign in to open this notification")}</Text>
+        <Pressable accessibilityRole="button" onPress={() => router.replace("/")}>
+          <Text style={{ color: tokens.foreground }}>{t("Return to inbox")}</Text>
+        </Pressable>
+      </View>
+    );
   if (request.action === "show" && !focusSync.switchFailed)
     return (
       <>
         {owner?.generation !== generation ? <ActivityIndicator color={tokens.foreground} /> : null}
-        <View style={{ flex: 1, display: owner?.generation === generation ? "flex" : "none" }}>
-          {owner ? <Thread key={owner.key} sessionEpoch={ready} userId={owner.userId} /> : null}
-        </View>
+        {owner?.generation === generation && generation === ready ? (
+          <View style={{ flex: 1 }}>
+            <Thread key={owner.key} sessionEpoch={ready} userId={owner.userId} />
+          </View>
+        ) : null}
       </>
     );
   return (

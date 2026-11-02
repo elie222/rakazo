@@ -73,6 +73,13 @@ import {
   syncMobileAvatarSession,
 } from "./logo-avatar-activity";
 import { reportMobileError } from "./monitoring";
+import {
+  cachedSavedAccounts,
+  forgetSavedToken,
+  rememberSavedAccount,
+  replaceSavedToken,
+  setSelectedSavedAccount,
+} from "./saved-accounts";
 import { API_BASE_STORAGE_KEY as ENDPOINT_KEY } from "./server-config";
 import { fetchServer, loadServerHeaders, saveServerHeaders, serverHeaders } from "./server-headers";
 import {
@@ -720,6 +727,11 @@ async function replaceSessionAfterPasswordChange(currentPassword: string, newPas
     await maybeResume();
     throw error;
   }
+  await replaceSavedToken(
+    apiBase,
+    (headers.authorization ?? "").replace(/^Bearer /, ""),
+    token,
+  ).catch(() => undefined);
   await maybeResume();
 }
 
@@ -727,6 +739,7 @@ export async function fetchMobileJson<T>(
   input: Parameters<typeof fetch>[0],
   init: RequestInit,
   invalidJsonFallback?: T,
+  apiBase = currentApiBase(),
 ): Promise<{ response: Response; body: T; invalidJson?: boolean }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("Request timed out")), RPC_TIMEOUT_MS);
@@ -735,10 +748,11 @@ export async function fetchMobileJson<T>(
       fetchServer(
         input,
         {
+          credentials: "omit",
           ...init,
           signal: controller.signal,
         },
-        currentApiBase(),
+        apiBase,
       ),
       controller.signal,
       "Request timed out",
@@ -764,54 +778,58 @@ export async function fetchMobileJson<T>(
 }
 
 export async function signOut() {
-  await rpc("notifications/unregisterPush").catch(() => undefined);
-  const headers = await authHeaders();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
+  const { apiBase, headers, sessionGeneration } = await captureApiRequestContext(null);
+  const accountToken = (headers.authorization ?? "").replace(/^Bearer /, "");
+  // Cleanup remains bound to this login even if a notification selects another account.
+  await rpc("notifications/unregisterPush", undefined, {
+    requestContext: { apiBase, headers },
+  }).catch(() => undefined);
   try {
-    await withAbort(
-      fetchServer(
-        `${currentApiBase()}/api/auth/sign-out`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
-          body: "{}",
-          signal: controller.signal,
-        },
-        currentApiBase(),
-      ),
-      controller.signal,
-      "Request timed out",
-    ).catch(() => undefined);
-  } finally {
-    clearTimeout(timer);
+    await fetchMobileJson<unknown>(
+      `${apiBase}/api/auth/sign-out`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
+        body: "{}",
+      },
+      {},
+      apiBase,
+    );
+  } catch {
+    // Local sign-out still works offline.
   }
+  await forgetSavedToken(apiBase, accountToken);
+  if (sessionGeneration !== currentSessionGeneration() || apiBase !== currentApiBase()) return;
   const sessionCleared = await clearSessionToken();
+  if (currentSessionGeneration() !== sessionGeneration + 1 || apiBase !== currentApiBase()) return;
   const spaceCleared = await clearSpace();
   if (!sessionCleared || !spaceCleared) throw new Error(t("Could not clear the local session"));
 }
 
 export async function deleteAccount(password?: string, token?: string) {
-  await rpc("notifications/unregisterPush").catch(() => undefined);
+  const { apiBase, headers, sessionGeneration } = await captureApiRequestContext(null);
+  const accountToken = (headers.authorization ?? "").replace(/^Bearer /, "");
+  await rpc("notifications/unregisterPush", undefined, {
+    requestContext: { apiBase, headers },
+  }).catch(() => undefined);
   const { response, body, invalidJson } = await fetchMobileJson<unknown>(
-    `${currentApiBase()}/api/auth/delete-user`,
+    `${apiBase}/api/auth/delete-user`,
     {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        origin: "rakazo://",
-        ...(await authHeaders()),
-      },
+      headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
       body: JSON.stringify({ password, token }),
     },
     {},
+    apiBase,
   );
-  if (!response.ok) {
+  if (!response.ok)
     throw new Error(
       authResponseErrorText(response.status, body, invalidJson, t("Could not delete account")),
     );
-  }
+  await forgetSavedToken(apiBase, accountToken);
+  if (sessionGeneration !== currentSessionGeneration() || apiBase !== currentApiBase()) return;
   await clearSessionToken();
+  if (currentSessionGeneration() !== sessionGeneration + 1 || apiBase !== currentApiBase()) return;
   await clearSpace();
 }
 
@@ -825,8 +843,10 @@ export function subscribeSessionRejected(listener: () => void): () => void {
   };
 }
 
-async function rejectSession() {
+async function rejectSession(token: string) {
+  const apiBase = currentApiBase();
   await clearSessionToken();
+  await forgetSavedToken(apiBase, token).catch(() => undefined);
   for (const listener of sessionRejectedListeners) listener();
 }
 
@@ -974,7 +994,7 @@ async function request(
         !passwordChangesInFlight &&
         requestSessionGeneration === currentSessionGeneration()
       ) {
-        await rejectSession();
+        await rejectSession(requestHeaders.authorization.replace(/^Bearer /, ""));
       }
       // After a delete where SecureStore could not clear the stale id, restart
       // reloads it and the first RPCs 401. Probe once without a Space header:
@@ -1052,6 +1072,33 @@ async function request(
       typeof verifiedUser?.userId === "string" &&
       typeof verifiedUser.spaceId === "string"
     ) {
+      const identity = parsed.json as { userId: string; name?: string; email?: string };
+      if (
+        requestSessionGeneration === currentSessionGeneration() &&
+        requestApiBase === currentApiBase() &&
+        typeof identity.email === "string"
+      ) {
+        const token = (requestHeaders.authorization ?? "").replace(/^Bearer /, "");
+        if (token) {
+          setSelectedSavedAccount({ apiBase: requestApiBase, userId: identity.userId });
+          await rememberSavedAccount(
+            requestApiBase,
+            {
+              userId: identity.userId,
+              token,
+              name: identity.name ?? "",
+              email: identity.email,
+              image: null,
+              unread:
+                cachedSavedAccounts(requestApiBase).find((row) => row.userId === identity.userId)
+                  ?.unread ?? 0,
+            },
+            () =>
+              requestSessionGeneration === currentSessionGeneration() &&
+              requestApiBase === currentApiBase(),
+          ).catch(() => undefined);
+        }
+      }
       await saveVerifiedIntegrationsScope(requestSessionGeneration, {
         apiBase: requestApiBase,
         userId: verifiedUser.userId,

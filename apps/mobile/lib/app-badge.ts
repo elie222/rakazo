@@ -1,4 +1,9 @@
 import * as Notifications from "expo-notifications";
+import {
+  cachedSavedAccounts,
+  selectedSavedAccount,
+  updateSavedAccountIfCurrent,
+} from "./saved-accounts";
 
 type InboxChats = {
   bots: readonly { unread?: boolean }[];
@@ -46,7 +51,25 @@ export async function syncInboxAppBadge(
   loadedGeneration: number | null,
 ): Promise<void> {
   if (loadedGeneration !== generation) return;
-  await syncAppBadge(count);
+  const selected = selectedSavedAccount();
+  if (!selected) return syncAppBadge(count);
+  const accounts = cachedSavedAccounts(selected.apiBase);
+  const current = accounts.find((row) => row.userId === selected.userId);
+  if (!current) return syncAppBadge(count);
+  const updated = await updateSavedAccountIfCurrent(selected.apiBase, current.token, (row) => ({
+    ...row,
+    unread: count,
+  })).catch(() => undefined);
+  if (
+    !updated ||
+    loadedGeneration !== generation ||
+    selectedSavedAccount()?.userId !== selected.userId ||
+    selectedSavedAccount()?.apiBase !== selected.apiBase
+  )
+    return;
+  await syncAppBadge(
+    accounts.reduce((sum, row) => sum + (row.userId === selected.userId ? count : row.unread), 0),
+  );
 }
 
 export async function clearAppBadge(): Promise<void> {

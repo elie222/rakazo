@@ -100,7 +100,7 @@ describe("settings links", () => {
     expect(close).not.toHaveBeenCalled();
 
     expect(redirectSystemPath({ path: "rakazo:///thread?botId=bot-1", initial: false })).toBe(
-      "rakazo:///thread?botId=bot-1",
+      "/notification-open?target=rakazo%3A%2F%2F%2Fthread%3FbotId%3Dbot-1",
     );
     expect(close).toHaveBeenCalledTimes(1);
     expect(redirectSystemPath({ path: "rakazo://expo-sharing", initial: true })).toBe("/share");

@@ -1,6 +1,12 @@
 import { getArtifactById } from "./artifacts";
 
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
+vi.mock("./saved-accounts", () => ({
+  forgetSavedToken: vi.fn(async () => undefined),
+  rememberSavedAccount: vi.fn(async () => undefined),
+  replaceSavedToken: vi.fn(async () => undefined),
+  setSelectedSavedAccount: vi.fn(),
+}));
 
 import type { RpcInput } from "@rakazo/contracts";
 import {
@@ -959,6 +965,47 @@ describe("mobile API authentication", () => {
     }
   });
 
+  it.each([
+    ["sign-out", signOut],
+    ["account deletion", deleteAccount],
+  ] as const)(
+    "keeps %s bound to the original login during a notification switch",
+    async (_label, action) => {
+      let storedToken = "family-session";
+      vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) =>
+        key === "rakazo.session_token" ? storedToken : null,
+      );
+      vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+        if (key === "rakazo.session_token") storedToken = value;
+      });
+      await saveSessionToken("family-session");
+      let release!: () => void;
+      const waiting = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const requests: Array<{ url: string; authorization: string | null }> = [];
+      const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        requests.push({ url, authorization: new Headers(init?.headers).get("authorization") });
+        if (url.endsWith("/notifications/unregisterPush")) {
+          await waiting;
+          return Response.json({ json: { ok: true } });
+        }
+        return Response.json({ success: true });
+      });
+      vi.stubGlobal("fetch", fetch);
+      const signingOut = action();
+      await vi.waitFor(() => expect(requests).toHaveLength(1));
+      await saveSessionToken("work-session");
+      release();
+      await signingOut;
+      expect(requests.every((request) => request.authorization === "Bearer family-session")).toBe(
+        true,
+      );
+      expect(await snapshotSessionToken()).toEqual({ ok: true, value: "work-session" });
+    },
+  );
+
   it("clears the local session even when the sign-out request fails", async () => {
     vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
     vi.stubGlobal(
@@ -998,6 +1045,7 @@ describe("mobile API authentication", () => {
 
     const [, init] = fetchMock.mock.calls[1] as [string, RequestInit];
     expect(init.headers).toMatchObject({ "content-type": "application/json" });
+    expect(init.credentials).toBe("omit");
     expect(init.body).toBe("{}");
   });
 
@@ -4621,4 +4669,14 @@ describe("stale helper projection", () => {
       status: "running",
     });
   });
+});
+
+it("keeps the native cookie jar out of account sign-in", async () => {
+  const fetchMock = vi.fn(async () => jsonResponse({ token: "fixture-signed-session" }));
+  vi.stubGlobal("fetch", fetchMock);
+  await signIn("work@example.test", "fixture-password");
+  expect(fetchMock).toHaveBeenCalledWith(
+    expect.stringContaining("/api/auth/sign-in/email"),
+    expect.objectContaining({ credentials: "omit" }),
+  );
 });

@@ -1,11 +1,16 @@
 import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import { useEffect } from "react";
-import { loadSessionToken } from "./api";
-import { notificationResponseRoute, threadRouteId } from "./notification-open";
+import { selectNotificationAccount } from "./account-sessions";
+import {
+  notificationResponseRoute,
+  notificationTargetLink,
+  threadRouteId,
+} from "./notification-open";
 import { closeSettingsSheet } from "./settings-sheet";
 
 const openedResponses = new Set<string>();
+let openAttempt = 0;
 
 /** Expo's request identifier is the scheduled request. These pushes use the
  * thread id for that value, so a later delivery of the same thread shares it.
@@ -39,16 +44,28 @@ export async function openNotificationResponse(
   // Claim before the session read so a cold-start hook and the tap listener
   // cannot both open the same response.
   openedResponses.add(key);
+  const attempt = ++openAttempt;
   try {
-    if (!(await loadSessionToken())) {
+    const selected = await selectNotificationAccount(target.params.userId, target.params.apiBase);
+    if (attempt !== openAttempt) {
+      openedResponses.delete(key);
+      return false;
+    }
+    if (!selected) {
       // Expo keeps this tap as the last response. Leaving it there would open
       // the thread on a later cold start, after sign-in, with no new tap.
       // A newer delivery can become last while this session read is in flight.
       clearNotificationResponseIfCurrent(response);
       openedResponses.delete(key);
+      closeSettingsSheet();
+      router.replace({
+        pathname: "/notification-open",
+        params: { target: notificationTargetLink(target) },
+      });
       return false;
     }
     closeSettingsSheet();
+    router.dismissTo("/");
     router.push(target, { dangerouslySingular: threadRouteId });
     clearNotificationResponseIfCurrent(response);
     return true;

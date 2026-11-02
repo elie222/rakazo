@@ -7,6 +7,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Account from "../app/(settings)/account";
+import { refreshAccountSummaries, selectSavedAccount } from "./account-sessions";
 import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode } from "./api";
 import { replaceWithSignIn } from "./auth-routing";
 import { promptAccountDeletion } from "./delete-account-prompt";
@@ -39,6 +40,13 @@ const { element, account } = vi.hoisted(() => ({
   },
 }));
 
+vi.mock("./account-sessions", () => ({
+  refreshAccountSummaries: vi.fn(async () => []),
+  rememberCurrentAccount: vi.fn(async () => undefined),
+  selectSavedAccount: vi.fn(async () => false),
+  signOutAllAccounts: vi.fn(async () => undefined),
+}));
+vi.mock("./saved-accounts", () => ({ loadSavedAccounts: vi.fn(async () => []) }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("expo-notifications", () => ({
   getPermissionsAsync: vi.fn(async () => ({ status: "granted" })),
@@ -273,6 +281,7 @@ beforeEach(() => {
   account.me = { userId: "user-1", name: "Tester", email: "tester@example.test" };
   account.rules = [];
   vi.mocked(fetchAccountSecurity).mockResolvedValue(security());
+  vi.mocked(refreshAccountSummaries).mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -531,4 +540,25 @@ it("shows the approval mode as the Approvals row's value, with Rules only once t
   expect(view.button("Rules")!.dataset.value).toBe("2");
   await view.press("Rules");
   expect(account.push).toHaveBeenCalledWith("/approvals");
+});
+
+it("shows each saved account's unread count and makes the selected identity explicit", async () => {
+  vi.mocked(refreshAccountSummaries).mockResolvedValue([
+    { userId: "user-1", name: "Family", email: "family@example.test", image: null, unread: 2 },
+    { userId: "user-2", name: "Work", email: "work@example.test", image: null, unread: 3 },
+  ]);
+  vi.mocked(selectSavedAccount).mockResolvedValue(false);
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => root?.render(<Account />));
+  const rows = [...container.querySelectorAll<HTMLButtonElement>("button")];
+  const selected = rows.find((row) => row.textContent === "family@example.test")!;
+  const work = rows.find((row) => row.textContent === "work@example.test")!;
+  expect(selected.dataset.value).toBe("✓  2");
+  expect(selected.disabled).toBe(true);
+  expect(work.dataset.value).toBe("3");
+  await act(async () => work.click());
+  expect(selectSavedAccount).toHaveBeenCalledWith("user-2");
 });

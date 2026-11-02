@@ -58,6 +58,14 @@ internal class NotificationStorage(context: Context) {
     get() = preferences.getString(SPACE_ID, "").orEmpty()
     set(value) = commit { putString(SPACE_ID, value) }
 
+  var userId: String
+    get() = preferences.getString(USER_ID, "").orEmpty()
+    set(value) = commit { putString(USER_ID, value) }
+
+  var accountLabel: String
+    get() = preferences.getString(ACCOUNT_LABEL, "").orEmpty()
+    set(value) = commit { putString(ACCOUNT_LABEL, value) }
+
   var locale: String
     get() = preferences.getString(LOCALE, "").orEmpty()
     set(value) = commit { putString(LOCALE, value) }
@@ -125,6 +133,8 @@ internal class NotificationStorage(context: Context) {
     const val ENDPOINT = "endpoint"
     const val SPACE_ID = "space_id"
     const val LOCALE = "locale"
+    const val USER_ID = "user_id"
+    const val ACCOUNT_LABEL = "account_label"
     const val TOKEN = "token"
     const val HEADERS = "server_headers"
     const val KEY_ALIAS = "rakazo.notifications.session"

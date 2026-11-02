@@ -19,7 +19,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Platform, StyleSheet, View } from "react-native";
+import { AppState, Platform, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
@@ -35,6 +35,7 @@ import { MessageMenuHost } from "../components/message-action-menu";
 import { MessageActionSheetHost } from "../components/message-action-sheet-host";
 import { NativeSymbol } from "../components/native-symbol";
 import { VoicePlayerBar } from "../components/voice-player-bar";
+import { refreshAccountSummaries } from "../lib/account-sessions";
 import {
   currentApiBase,
   loadApiBase,
@@ -44,7 +45,7 @@ import {
   subscribeApiBase,
   subscribeSessionRejected,
 } from "../lib/api";
-import { clearAppBadge } from "../lib/app-badge";
+import { appBadgeGeneration, forgetAppBadge, syncAppBadge } from "../lib/app-badge";
 import { loadAppearancePreference, mobileTokens } from "../lib/appearance";
 import { replaceWithSignIn } from "../lib/auth-routing";
 import { AvatarScreenFocus } from "../lib/avatar-life";
@@ -100,7 +101,7 @@ configureForegroundNotifications();
 registerSessionDiskCache(clearSavedChats);
 registerSessionDiskCache(clearQueries);
 installClientUpdates();
-registerSessionDiskCache(() => void clearAppBadge());
+registerSessionDiskCache(forgetAppBadge);
 // Keep the splash up until the saved appearance applies, so the first frame isn't in the OS scheme.
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -264,6 +265,33 @@ function LayoutContent() {
   const chatAnimation = split ? "none" : undefined;
   const [ready, setReady] = useState(false);
   useNotificationResponses(ready);
+  const accountGeneration = useSyncExternalStore(
+    subscribeSessionGeneration,
+    currentReadySessionGeneration,
+  );
+  useEffect(() => {
+    if (!ready) return;
+    let active = true;
+    const refresh = () => {
+      const badgeGeneration = appBadgeGeneration();
+      void refreshAccountSummaries()
+        .then((accounts) => {
+          if (active && badgeGeneration === appBadgeGeneration())
+            return syncAppBadge(accounts.reduce((sum, row) => sum + row.unread, 0));
+        })
+        .catch(() => undefined);
+    };
+    refresh();
+    const timer = setInterval(refresh, 30_000);
+    const foreground = AppState.addEventListener("change", (state) => {
+      if (state === "active") refresh();
+    });
+    return () => {
+      active = false;
+      clearInterval(timer);
+      foreground.remove();
+    };
+  }, [ready, accountGeneration]);
   const screen = analyticsScreen(usePathname());
   useEffect(() => setMobileMonitoringScreen(screen), [screen]);
   useEffect(() => {

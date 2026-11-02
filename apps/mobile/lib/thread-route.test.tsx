@@ -10,7 +10,7 @@ const state = vi.hoisted(() => ({
   selected: "space-1" as string | null,
   selectSpace: vi.fn(),
   replace: vi.fn(),
-  params: {} as { spaceId?: string },
+  params: {} as { spaceId?: string; userId?: string },
 }));
 
 const { element } = vi.hoisted(() => ({
@@ -105,4 +105,12 @@ it("shows the thread without switching when no space is requested", async () => 
   await render();
   expect(state.selectSpace).not.toHaveBeenCalled();
   expect(container.textContent).toBe("thread:user-1");
+});
+
+it("never mounts a thread when its notification belongs to another account", async () => {
+  state.params = { userId: "other-user", spaceId: "other-space" };
+  await render();
+  expect(container.textContent).toContain("Sign in to open this notification");
+  expect(container.textContent).not.toContain("thread:");
+  expect(state.selectSpace).not.toHaveBeenCalled();
 });

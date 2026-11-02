@@ -1,4 +1,12 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Add account": "Добавить аккаунт",
+  "Sign in to open this account": "Войдите, чтобы открыть этот аккаунт",
+  "Sign in to open this notification": "Войдите, чтобы открыть это уведомление",
+  "Sign in to the account for this notification": "Войдите в аккаунт этого уведомления",
+  "Sign out all": "Выйти из всех",
+  "Sign out all accounts?": "Выйти из всех аккаунтов?",
+  "Signed out on this device. Some server sessions could not be revoked.":
+    "Вы вышли на этом устройстве. Некоторые сеансы на сервере не удалось отозвать.",
   "How other bots see it": "Как его видят другие боты",
   "Share to": "Отправить в",
   "{count} files": "Файлов: {count}",

@@ -72,9 +72,11 @@ describe("Android mobile platform contract", () => {
     expect(service).toContain(
       "if (openThreadId != null) openThreadId == run.threadId else openBotId == run.botId",
     );
-    expect(service).toContain("manager.notify(run.threadId.hashCode(), notification)");
+    expect(service).toContain("manager.notify(accountNotificationId(run.threadId), notification)");
     expect(service).toContain("THREAD_NOTIFICATION_IDS");
-    expect(service).toContain("cancel(threadId.hashCode())");
+    expect(service).toContain(
+      'cancel("${NotificationStorage(context).endpoint}:${NotificationStorage(context).userId}:$threadId".hashCode())',
+    );
     for (const request of [
       "        val avatarStyle = selectedAvatarStyle",
       "        val active = runs(",
@@ -96,7 +98,7 @@ describe("Android mobile platform contract", () => {
     expect(service).toContain('if (run.groupId != null) put("groupId", run.groupId)');
     expect(service).toContain('if (message.optString("runId") != run.runId) continue');
     expect(service).toContain('if (block.optString("kind") == "handoff") return null');
-    expect(service).toContain("run?.threadId?.hashCode() ?: 0");
+    expect(service).toContain("run?.threadId?.let(::accountNotificationId) ?: 0");
   });
 
   it("shows live updates only for working runs and ties the pill to a real bot", () => {

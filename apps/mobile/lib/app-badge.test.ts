@@ -1,5 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const accountDisk = vi.hoisted(() => new Map<string, string>());
+vi.mock("expo-secure-store", () => ({
+  getItemAsync: vi.fn(async (key: string) => accountDisk.get(key) ?? null),
+  setItemAsync: vi.fn(async (key: string, value: string) => {
+    accountDisk.set(key, value);
+  }),
+}));
+
 vi.mock("expo-notifications", () => ({ setBadgeCountAsync: vi.fn(async () => true) }));
 
 import * as Notifications from "expo-notifications";
@@ -67,4 +75,30 @@ it("does not write before a live inbox has loaded", async () => {
   const badge = await load();
   await badge.syncInboxAppBadge(0, null);
   expect(Notifications.setBadgeCountAsync).not.toHaveBeenCalled();
+});
+
+it("keeps inactive-account unread counts when the selected inbox updates", async () => {
+  accountDisk.clear();
+  const badge = await load();
+  const accounts = await import("./saved-accounts");
+  const apiBase = "https://app.example.test";
+  await accounts.rememberSavedAccount(apiBase, {
+    userId: "family",
+    token: "family-token",
+    name: "Family",
+    email: "family@example.test",
+    image: null,
+    unread: 2,
+  });
+  await accounts.rememberSavedAccount(apiBase, {
+    userId: "work",
+    token: "work-token",
+    name: "Work",
+    email: "work@example.test",
+    image: null,
+    unread: 5,
+  });
+  accounts.setSelectedSavedAccount({ apiBase, userId: "family" });
+  await badge.syncInboxAppBadge(3, badge.appBadgeGeneration());
+  expect(Notifications.setBadgeCountAsync).toHaveBeenLastCalledWith(8);
 });

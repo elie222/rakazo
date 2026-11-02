@@ -3,6 +3,13 @@ import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { apiBaseWarning, normalizeApiBase } from "./endpoint";
 import { getActiveUiLocale, t } from "./i18n";
+import {
+  cachedSavedAccounts,
+  loadSavedAccounts,
+  savedAccountServers,
+  selectedSavedAccount,
+  updateSavedAccountIfCurrent,
+} from "./saved-accounts";
 import { serverHeaders } from "./server-headers";
 
 export interface LiveNotificationSettings {
@@ -21,6 +28,7 @@ export const DEFAULT_LIVE_NOTIFICATION_SETTINGS: LiveNotificationSettings = {
 
 type NativeNotifications = {
   getSettings(): Promise<LiveNotificationSettings>;
+  setAccount?: (userId: string, label: string) => Promise<void>;
   setSettings(
     settings: LiveNotificationSettings,
     endpoint: string,
@@ -50,7 +58,13 @@ const nativeNotifications =
     ? requireNativeModule<NativeNotifications>("RakazoNotifications")
     : null;
 
-export type NotificationThreadTarget = { botId?: string; threadId?: string; groupId?: string };
+export type NotificationThreadTarget = {
+  botId?: string;
+  threadId?: string;
+  groupId?: string;
+  userId?: string;
+  apiBase?: string;
+};
 
 let openThread: NotificationThreadTarget | null = null;
 let lastConfirmed: NotificationThreadTarget | null = null;
@@ -64,6 +78,15 @@ export function notificationTargetsThread(
   target: NotificationThreadTarget | null,
 ): boolean {
   if (!data || !target) return false;
+  const userId = data.userId ?? data["rakazo.userId"];
+  const targetUserId = target.userId ?? selectedSavedAccount()?.userId;
+  if (typeof userId === "string" && userId !== targetUserId) return false;
+  const apiBase = data.apiBase ?? data["rakazo.apiBase"];
+  if (
+    typeof apiBase === "string" &&
+    apiBase !== (target.apiBase ?? selectedSavedAccount()?.apiBase)
+  )
+    return false;
   const dataThreadId = data.threadId ?? data["rakazo.threadId"];
   if (target.threadId && dataThreadId) return dataThreadId === target.threadId;
   const dataGroupId = data.groupId ?? data["rakazo.groupId"];
@@ -82,9 +105,15 @@ export function configureForegroundNotifications(): void {
   Notifications.setNotificationHandler({
     handleNotification: async ({ request }) => {
       // Finished work is already on screen while the app is open; only questions and failures alert.
+      const data = request.content.data;
+      const userId = data?.userId ?? data?.["rakazo.userId"];
+      const apiBase = data?.apiBase ?? data?.["rakazo.apiBase"];
+      const anotherAccount =
+        (typeof userId === "string" && userId !== selectedSavedAccount()?.userId) ||
+        (typeof apiBase === "string" && apiBase !== selectedSavedAccount()?.apiBase);
       const show =
-        request.content.data?.kind !== "completion" &&
-        !notificationTargetsThread(request.content.data, openThread);
+        anotherAccount ||
+        (data?.kind !== "completion" && !notificationTargetsThread(data, openThread));
       return {
         shouldShowBanner: show,
         shouldShowList: show,
@@ -96,7 +125,12 @@ export function configureForegroundNotifications(): void {
 }
 
 export async function getLiveNotificationSettings(): Promise<LiveNotificationSettings> {
-  return nativeNotifications?.getSettings() ?? DEFAULT_LIVE_NOTIFICATION_SETTINGS;
+  const selected = selectedSavedAccount();
+  const saved = selected
+    ? cachedSavedAccounts(selected.apiBase).find((row) => row.userId === selected.userId)
+        ?.notifications
+    : undefined;
+  return saved ?? nativeNotifications?.getSettings() ?? DEFAULT_LIVE_NOTIFICATION_SETTINGS;
 }
 
 export async function setLiveNotificationSettings(
@@ -106,6 +140,7 @@ export async function setLiveNotificationSettings(
   spaceId: string,
 ): Promise<void> {
   if (!nativeNotifications) return;
+  const selection = selectedSavedAccount();
   const parsed = normalizeApiBase(endpoint);
   if (!parsed.ok) throw new Error(parsed.error);
   const endpointWarning = apiBaseWarning(parsed.url);
@@ -115,6 +150,22 @@ export async function setLiveNotificationSettings(
     const granted = existing.granted || (await Notifications.requestPermissionsAsync()).granted;
     if (!granted) throw new Error(t("Android blocked notifications."));
   }
+  const accounts = await loadSavedAccounts(parsed.url).catch(() => []);
+  const account = accounts.find((row) => row.token === token);
+  if (selectedSavedAccount() !== selection) return;
+  if (account)
+    await updateSavedAccountIfCurrent(parsed.url, account.token, (row) => ({
+      ...row,
+      notifications: settings,
+    }));
+  if (selectedSavedAccount() !== selection) return;
+  if (accounts.length > 1 && !nativeNotifications.setAccount) {
+    await nativeNotifications.stop(false);
+    return;
+  }
+  if (account && nativeNotifications.setAccount)
+    await nativeNotifications.setAccount(account.userId, account.email);
+  if (selectedSavedAccount() !== selection) return;
   await nativeNotifications.setSettings(
     settings,
     parsed.url,
@@ -131,8 +182,43 @@ export async function resumeLiveNotifications(
   spaceId: string,
 ): Promise<void> {
   if (!nativeNotifications || !token) return;
+  const selection = selectedSavedAccount();
   const parsed = normalizeApiBase(endpoint);
   if (!parsed.ok || apiBaseWarning(parsed.url)) return;
+  const accounts = await loadSavedAccounts(parsed.url).catch(() => []);
+  const account = accounts.find((row) => row.token === token);
+  if (selectedSavedAccount() !== selection) return;
+  // Older native binaries cannot attach an account to links; their poller pauses for multiple logins.
+  if (accounts.length > 1 && !nativeNotifications.setAccount) {
+    await nativeNotifications.stop(false);
+    return;
+  }
+  if (account && nativeNotifications.setAccount) {
+    await nativeNotifications.stop(false);
+    if (selectedSavedAccount() !== selection) return;
+    await nativeNotifications.setAccount(account.userId, account.email);
+    if (selectedSavedAccount() !== selection) return;
+    const settings =
+      account.notifications ??
+      (accounts.length === 1
+        ? await nativeNotifications.getSettings()
+        : DEFAULT_LIVE_NOTIFICATION_SETTINGS);
+    if (!account.notifications)
+      await updateSavedAccountIfCurrent(parsed.url, account.token, (row) => ({
+        ...row,
+        notifications: settings,
+      }));
+    if (selectedSavedAccount() !== selection) return;
+    await nativeNotifications.setSettings(
+      settings,
+      parsed.url,
+      token,
+      spaceId,
+      getActiveUiLocale(),
+      nativeServerHeaders(parsed.url),
+    );
+    return;
+  }
   await nativeNotifications.resume(
     parsed.url,
     token,
@@ -149,9 +235,29 @@ function nativeServerHeaders(apiBase: string): string {
 }
 
 export async function stopLiveNotifications(clearSession = false): Promise<void> {
-  // Android's native service clears delivered notifications itself.
-  if (nativeNotifications) await nativeNotifications.stop(clearSession);
-  else if (clearSession) await Notifications.dismissAllNotificationsAsync();
+  const selected = selectedSavedAccount();
+  const accounts = selected ? cachedSavedAccounts(selected.apiBase) : [];
+  const servers = clearSession
+    ? await savedAccountServers().catch(() => ["unavailable", "unavailable"])
+    : [];
+  const multipleAccounts = accounts.length > 1 || servers.length > 1;
+  if (nativeNotifications && (!selectedSavedAccount() || selectedSavedAccount() === selected))
+    await nativeNotifications.stop(
+      clearSession && (!multipleAccounts || Boolean(nativeNotifications.setAccount)),
+    );
+  if (!clearSession || !selected) return;
+  const presented = await Notifications.getPresentedNotificationsAsync();
+  await Promise.all(
+    presented
+      .filter(({ request }) => {
+        const data = request.content.data ?? {};
+        const userId = data.userId ?? data["rakazo.userId"];
+        const apiBase = data.apiBase ?? data["rakazo.apiBase"];
+        if (typeof apiBase === "string" && apiBase !== selected.apiBase) return false;
+        return userId === selected.userId || (!userId && !multipleAccounts);
+      })
+      .map(({ request }) => Notifications.dismissNotificationAsync(request.identifier)),
+  );
 }
 
 export async function setOpenNotificationThread(
@@ -161,12 +267,22 @@ export async function setOpenNotificationThread(
   // The foreground handler reads openThread immediately. Native is skipped only
   // for the last target it accepted when no report is pending, so overlapping
   // changes reach native and a rejection stays eligible for retry.
+  const selected = selectedSavedAccount();
+  target = target
+    ? {
+        ...target,
+        userId: target.userId ?? selected?.userId,
+        apiBase: target.apiBase ?? selected?.apiBase,
+      }
+    : null;
   openThread = target;
   if (
     pendingReports === 0 &&
     hasConfirmed &&
     lastConfirmed?.botId === target?.botId &&
-    lastConfirmed?.threadId === target?.threadId
+    lastConfirmed?.threadId === target?.threadId &&
+    lastConfirmed?.userId === target?.userId &&
+    lastConfirmed?.apiBase === target?.apiBase
   ) {
     return;
   }
