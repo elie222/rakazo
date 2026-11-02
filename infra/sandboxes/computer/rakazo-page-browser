@@ -62,10 +62,12 @@ CUT_CONTROLS = "Snapshot with a query to find the rest."
 SETTLE_SECONDS = 3.0
 # The most an action's result waits for its requests and the snapshot after them together.
 ACTION_WAIT_SECONDS = 2.0
-# Requests an action sets off begin a moment after its last step.
-ACTION_QUIET_SECONDS = 0.3
-# A page is quiet once no request has begun for this long and none is still waiting for its answer.
-QUIET_SECONDS = 0.5
+# A page is quiet once none of its requests has begun or finished for this long, none is still waiting
+# for its answer, and, after an action, this long has passed since its last step. Reading the page
+# runs on its main thread, so it already waits for scripts that are still running.
+QUIET_SECONDS = 0.15
+# How often a wait reads the page again.
+POLL_SECONDS = 0.05
 # A request still unanswered after this long is a stream or a lost request, not the page loading.
 REQUEST_PATIENCE_SECONDS = 10.0
 # browser_navigate returns the page as an action does when the navigation took less than
@@ -271,9 +273,11 @@ NAVIGATE = r"""(() => {
   return { timeOrigin, href: location.href };
 })()"""
 
-# Whether the page has loaded, when its document began, and the requests it has finished, failed ones included.
+# Whether the page has loaded, when its document began, and the requests it has finished (failed ones
+# included) with when each ended.
 PAGE_LOAD = r"""({ href: location.href, ready: document.readyState, began: performance.timeOrigin,
-  done: performance.getEntriesByType("resource").slice(-500).map((entry) => entry.name) })"""
+  done: performance.getEntriesByType("resource").slice(-500)
+    .map((entry) => [entry.name, performance.timeOrigin + entry.responseEnd]) })"""
 
 # The page's address, title and text, the values a snapshot must not show (password fields, fields
 # holding a saved login or card, and fields drawn as dots), and the merchant account a pay token checkout names in the page itself.
@@ -556,8 +560,8 @@ class PageBrowser:
     # -- reading the page -------------------------------------------------------------------------
 
     def pending_requests(self) -> tuple[bool, float, bool]:
-        """Whether the page is waiting on a request of its current document, when its latest began, and
-        whether the page may be waiting on requests the log never saw.
+        """Whether the page is waiting on a request of its current document, when its latest began or
+        ended, and whether the page may be waiting on requests the log never saw.
 
         agent-browser logs requests only from when its session attached, which can be after the page
         began loading: the person opened it, or the session started or moved to this tab since.
@@ -565,7 +569,7 @@ class PageBrowser:
         state, log = self.ab.batch([["eval", PAGE_LOAD], ["network", "requests"]])
         page = state.get("result") or {}
         # agent-browser logs a response but never a failure; the page lists failed requests as done.
-        done = set(page.get("done") or [])
+        done = {str(name): float(ended or 0) for name, ended in page.get("done") or []}
         requests = [r for r in log.get("requests") or [] if isinstance(r, dict)]
         documents = [r for r in requests if r.get("resourceType") == "Document"]
         current = [r for r in documents if r.get("url") == page.get("href")] or documents
@@ -577,7 +581,9 @@ class PageBrowser:
         waiting = [r for r in recent if r.get("status") is None and r.get("url") not in done
                    and r.get("resourceType") not in ("EventSource", "WebSocket")
                    and now - float(r.get("timestamp") or 0) < REQUEST_PATIENCE_SECONDS * 1000]
-        latest = max((float(r.get("timestamp") or 0) for r in recent), default=0.0)
+        started = [float(r.get("timestamp") or 0) for r in recent]
+        ended = [at for name, at in done.items() if at >= since and same_site(name) == site]
+        latest = max(started + ended, default=0.0)
         unseen = (not any(r.get("url") == page.get("href") for r in documents)
                   and now - float(page.get("began") or 0) < REQUEST_PATIENCE_SECONDS * 1000)
         return bool(waiting) or page.get("ready") != "complete", latest / 1000, unseen
@@ -596,13 +602,16 @@ class PageBrowser:
                 if not busy and unseen:
                     load = load or PageLoad(self.port, self.target)
                     busy = not load.idle()
-                if not busy and time.time() - max(latest, quiet_from) >= QUIET_SECONDS:
+                quiet_in = QUIET_SECONDS - (time.time() - max(latest, quiet_from))
+                if not busy and quiet_in <= 0:
                     # agent-browser keeps every request it sees; once none is waiting, the log can start over.
                     self.ab.batch([["network", "requests", "--clear"]])
                     return True
                 if time.monotonic() >= deadline:
                     return not busy
-                time.sleep(min(0.15, max(0.0, deadline - time.monotonic())))
+                # A quiet page is read again just as it has been quiet long enough.
+                wait = POLL_SECONDS if busy else min(POLL_SECONDS, quiet_in)
+                time.sleep(max(0.0, min(wait, deadline - time.monotonic())))
         finally:
             if load:
                 load.close()
@@ -783,7 +792,7 @@ class PageBrowser:
                 break
             if time.monotonic() - started > NAVIGATE_SECONDS:
                 raise RuntimeError("Navigation did not settle; inspect the screen before continuing")
-            time.sleep(0.1)
+            time.sleep(POLL_SECONDS)
         while True:
             (now,) = self.ab.batch([["eval", "({ timeOrigin: performance.timeOrigin, href: location.href, "
                                               "ready: document.readyState })"]])
@@ -797,7 +806,7 @@ class PageBrowser:
                 break
             if time.monotonic() - started > NAVIGATE_SECONDS:
                 raise RuntimeError("Navigation did not settle; inspect the screen before continuing")
-            time.sleep(0.1)
+            time.sleep(POLL_SECONDS)
         page: dict[str, Any] = {}
         left = NAVIGATE_SNAPSHOT_BY - (time.monotonic() - started)
         if left > 0:
@@ -948,11 +957,9 @@ class PageBrowser:
                 if dialog:
                     return self.dialog_result(dialog, {"completed": completed, "uncertain": False},
                                               remaining=completed < len(actions))
-            ended = time.time()
-            time.sleep(ACTION_QUIET_SECONDS)
             started = time.monotonic()
-            busy = not self.settle(ACTION_WAIT_SECONDS - ACTION_QUIET_SECONDS, quiet_from=ended)
-            left = ACTION_WAIT_SECONDS - ACTION_QUIET_SECONDS - (time.monotonic() - started)
+            busy = not self.settle(ACTION_WAIT_SECONDS, quiet_from=time.time())
+            left = ACTION_WAIT_SECONDS - (time.monotonic() - started)
             snap = self.snapshot(0.0 if busy else max(0.0, left))
             return {**snap, "completed": completed, **({"loading": True} if busy else {})}
         except (Settled, TypingStopped, KeysNotKept) as exc:

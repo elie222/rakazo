@@ -451,11 +451,22 @@ class SnapshotTest(unittest.TestCase):
                 "timestamp": now - 1000},
                {"resourceType": "XHR", "url": "https://status.widget-vendor.test/status.json", "status": None,
                 "timestamp": now - 1000}]
-        busy, *_ = page(FakeAgentBrowser(requests=log, state={"done": ["https://beacon.example.test/event"]})
+        busy, *_ = page(FakeAgentBrowser(requests=log, state={"done": [["https://beacon.example.test/event", now - 900]]})
                         ).pending_requests()
         self.assertFalse(busy)
         busy, *_ = page(FakeAgentBrowser(state={"ready": "loading"})).pending_requests()
         self.assertTrue(busy)
+
+    def test_the_page_is_quiet_only_once_its_last_answer_has_arrived_too(self):
+        now = time.time() * 1000
+        log = [{"resourceType": "Document", "url": "https://portal.example.test/", "status": 200,
+                "timestamp": now - 2000},
+               {"resourceType": "Fetch", "url": "https://portal.example.test/api/me", "status": 200,
+                "timestamp": now - 1500}]
+        done = [["https://portal.example.test/api/me", now - 20], ["https://cdn.widget-vendor.test/w.js", now - 5]]
+        busy, latest, _ = page(FakeAgentBrowser(requests=log, state={"done": done})).pending_requests()
+        self.assertFalse(busy)
+        self.assertEqual(latest, (now - 20) / 1000)
 
 
 class ActTest(unittest.TestCase):
