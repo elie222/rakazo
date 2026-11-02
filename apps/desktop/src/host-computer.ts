@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { rm } from "node:fs/promises";
 import path from "node:path";
 import { startHostComputerServer } from "@rakazo/adapters/host-computer-server";
 import { readPrivateFile, writePrivateFile } from "./setup-store.js";
@@ -64,7 +65,13 @@ export async function prepareHostComputer(userDataDir: string) {
       ++consentIntent;
       allowed = false;
       server.setEnabled(false);
-      await persistConsent("");
+      try {
+        await persistConsent("");
+      } catch (error) {
+        await rm(consentFile, { force: true }).catch(() => {
+          throw error;
+        });
+      }
     },
     close: server.close,
   };

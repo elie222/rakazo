@@ -163,7 +163,16 @@ export function createUserDeviceAccess(deps: {
   async function decide(origin: string, choice: DeviceConsent) {
     consent.set(origin, choice);
     changes.set(origin, (changes.get(origin) ?? 0) + 1);
-    await saveDeviceConsent(deps.userDataDir, origin, choice);
+    try {
+      await saveDeviceConsent(deps.userDataDir, origin, choice);
+    } catch (error) {
+      // An earlier "allowed" left on disk would be honoured on the next launch.
+      if (choice === "declined")
+        await rm(deviceFile(deps.userDataDir, origin, ".consent"), { force: true }).catch(
+          () => undefined,
+        );
+      throw error;
+    }
   }
 
   function ask(origin: string) {
@@ -282,7 +291,7 @@ export function createUserDeviceAccess(deps: {
         readDeviceConsent(deps.userDataDir, origin),
       ]);
       if (selection !== generation) return;
-      consent.set(origin, choice);
+      if (consent.get(origin) !== "declined") consent.set(origin, choice);
       if (device) {
         paired.set(origin, device.deviceId);
         start(origin, device.token);
@@ -307,8 +316,9 @@ export function createUserDeviceAccess(deps: {
     async setAllowed(origin: string, allowed: boolean) {
       if (origin !== current) return;
       if (!allowed) {
-        await decide(origin, "declined");
+        const saving = decide(origin, "declined");
         if (client?.origin === origin) client.cancelAll();
+        await saving;
         return;
       }
       const seen = changes.get(origin);
