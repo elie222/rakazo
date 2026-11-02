@@ -112,8 +112,7 @@ export interface ToolCall {
 export type ToolHandler = (ctx: RunContext, call: ToolCall) => Promise<unknown>;
 export type ToolHandlers = Record<string, ToolHandler>;
 
-/** refused: a rule or an earlier denial stopped the call, so it never runs. */
-type GateOutcome = { result: unknown; refused?: boolean } | { call: ToolCall };
+type GateOutcome = { result: unknown } | { call: ToolCall };
 
 type ToolReview = {
   name: string;
@@ -326,7 +325,6 @@ export async function gateToolCall(
       reason: approvalResolved.decision === "deny" ? "rule" : "never_asks",
     });
     return {
-      refused: true,
       result: {
         error:
           approvalResolved.decision === "deny"
@@ -411,7 +409,7 @@ export async function gateToolCall(
       where: { id: applied.effect.id, status: "intended" },
       data: { status: "denied", result: { refused: "repeat" } },
     });
-    return { refused: true, result: { error: DENIED_ACTION_ERROR } };
+    return { result: { error: DENIED_ACTION_ERROR } };
   }
 
   const runAutoReview = async () => {
@@ -513,7 +511,7 @@ export async function gateToolCall(
           return { result: gate.result };
         }
       } else {
-        return { result: gate.result, refused: applied.effect.status === "denied" };
+        return { result: gate.result };
       }
     }
     if (gate.action === "paused") {

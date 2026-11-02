@@ -6,6 +6,7 @@ import type { RunContext } from "./run-context.js";
 import { noteComputerTaskStep } from "./run-progress.js";
 import type { ToolHandler } from "./run-tool-gate.js";
 import { auditToolCall, gateToolCall } from "./run-tool-gate.js";
+import type { ToolRequest } from "./run-tool-request.js";
 import { prepareToolRequest, resolveToolRequest } from "./run-tool-request.js";
 import { PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
 import { computerTools, pageBrowserTool } from "./run-tools-computer.js";
@@ -98,13 +99,25 @@ async function dispatchTool(
   const refused = await prepareToolRequest(ctx, request);
   if (refused) return refused;
   // Before the gate and the tool, so a step waiting for approval counts and a message_user
-  // running alongside it already sees the step. A step the gate refuses is taken back.
+  // running alongside it already sees the step. One that ends in an error is taken back.
   noteComputerTaskStep(ctx.state.reply, request.name);
-  const gate = await gateToolCall(ctx, request, observer);
-  if ("result" in gate) {
-    if (gate.refused) noteComputerTaskStep(ctx.state.reply, request.name, -1);
-    return gate.result;
+  let failed = true;
+  try {
+    const result = await gateAndRunTool(ctx, request, observer);
+    failed = isToolError(result);
+    return result;
+  } finally {
+    if (failed) noteComputerTaskStep(ctx.state.reply, request.name, -1);
   }
+}
+
+async function gateAndRunTool(
+  ctx: RunContext,
+  request: ToolRequest,
+  observer: AgentToolExecutionObserver | undefined,
+) {
+  const gate = await gateToolCall(ctx, request, observer);
+  if ("result" in gate) return gate.result;
   if (!gate.call.applied) return toolHandler(gate.call.name)(ctx, gate.call);
   let outcome: "success" | "failure" = "failure";
   try {
