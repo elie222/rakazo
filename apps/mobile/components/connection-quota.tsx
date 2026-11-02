@@ -53,11 +53,7 @@ export function ConnectionQuota({
           }
         />
       ))}
-      <SettingsRow
-        title={t("Refresh")}
-        disabled={currentPending}
-        onPress={onRefresh}
-      />
+      <SettingsRow title={t("Refresh")} disabled={currentPending} onPress={onRefresh} />
     </SettingsGroup>
   );
 }
