@@ -94,11 +94,22 @@ for (const [name, create] of Object.entries(factories)) {
         endedAt: null,
       });
       expect(snapshot?.trialEndsAt?.getTime()).toBe(NOW + 14 * 86_400_000);
+      expect(snapshot?.currentPeriodStartsAt?.getTime()).toBe(NOW);
       expect(snapshot?.currentPeriodEndsAt).toBeInstanceOf(Date);
       expect(await harness.provider.getCustomerSubscription(customerId)).toEqual(snapshot);
       expect(
         (await harness.provider.createPortal({ customerId, returnUrl: urls.successUrl })).url,
       ).toMatch(/^https:\/\//);
+    });
+
+    it("ends a trial early and starts the first paid period now", async () => {
+      const harness = create();
+      const customerId = await subscribe(harness, 14);
+      await harness.provider.endTrial?.(customerId);
+      const snapshot = await harness.provider.getCustomerSubscription(customerId);
+      expect(snapshot?.status).toBe("active");
+      expect(snapshot?.currentPeriodStartsAt?.getTime()).toBe(NOW);
+      expect(snapshot?.currentPeriodEndsAt?.getTime()).toBeGreaterThan(NOW);
     });
 
     it("refuses a deleted customer with a classified error and reports no access", async () => {

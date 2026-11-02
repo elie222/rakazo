@@ -251,6 +251,7 @@ model BillingAccount {
   status              String?
   seats               Int?
   trialEndsAt         DateTime?
+  currentPeriodStartsAt DateTime?
   currentPeriodEndsAt DateTime?
   cancelAtPeriodEnd   Boolean      @default(false)
   endedAt             DateTime?

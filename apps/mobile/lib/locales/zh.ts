@@ -1007,6 +1007,13 @@ export const ZH_MESSAGES: Record<string, string> = {
   Credits: "额度",
   "Available credits": "可用额度",
   "Computer hours left": "剩余电脑时长",
+  "Trials get fewer hours to prevent abuse.": "为防止滥用，试用期的时长较少。",
+  "Start plan now": "立即开始套餐",
+  "Start your plan now?": "立即开始你的套餐？",
+  "Your trial ends and your card is charged {price} today.":
+    "试用将结束，今天将从你的卡中扣款 {price}。",
+  "Your trial ends and your card is charged today.": "试用将结束，今天将从你的卡中扣款。",
+  "Start plan": "开始套餐",
   "Monthly credits": "每月额度",
   "Upgrade now": "立即升级",
   "Downgrade at renewal": "下次续费时降级",

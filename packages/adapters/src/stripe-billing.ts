@@ -48,6 +48,7 @@ const subscriptionSchema = z.object({
   metadata: z.record(z.string(), z.string()).optional(),
   created: z.number(),
   trial_end: z.number().nullish(),
+  current_period_start: z.number().nullish(),
   current_period_end: z.number().nullish(),
   cancel_at_period_end: z.boolean().nullish(),
   cancel_at: z.number().nullish(),
@@ -63,6 +64,7 @@ const subscriptionSchema = z.object({
       z.object({
         id: z.string(),
         quantity: z.number().int().nullish(),
+        current_period_start: z.number().nullish(),
         current_period_end: z.number().nullish(),
         price: idSchema.extend({
           product: z.string().optional(),
@@ -574,6 +576,20 @@ export class StripeBillingProvider implements BillingProvider {
     }
   }
 
+  async endTrial(customerId: string) {
+    const chosen = pickStripeSubscription(await this.listLiveSubscriptions(customerId));
+    if (
+      chosen?.status !== "trialing" ||
+      toSnapshot(chosen.subscription, chosen.status).cancelAtPeriodEnd
+    )
+      return;
+    // Bills the first period now; a declined card fails the request and the trial runs on.
+    await this.request("POST", `/v1/subscriptions/${encodeURIComponent(chosen.subscription.id)}`, {
+      trial_end: "now",
+      payment_behavior: "error_if_incomplete",
+    });
+  }
+
   async cancelCustomerSubscriptions(customerId: string) {
     // First, so an abandoned checkout cannot start a subscription after the cancel.
     await this.expireOpenCheckouts(customerId).catch(ignoreDeletedCustomer);
@@ -808,6 +824,9 @@ function toSnapshot(
     status,
     seats: item.quantity ?? 1,
     trialEndsAt: fromSeconds(subscription.trial_end),
+    currentPeriodStartsAt: fromSeconds(
+      item.current_period_start ?? subscription.current_period_start,
+    ),
     currentPeriodEndsAt: fromSeconds(item.current_period_end ?? subscription.current_period_end),
     cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end) || subscription.cancel_at != null,
     endedAt: fromSeconds(subscription.ended_at),

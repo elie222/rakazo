@@ -109,6 +109,15 @@ export class BillingEmulator implements BillingProvider {
     return { url: `https://billing.emulator.invalid/byok/${input.customerId}` };
   }
 
+  async endTrial(customerId: string) {
+    const chosen = pickBillingSubscription(this.forCustomer(customerId));
+    if (chosen?.status !== "trialing" || chosen.cancelAtPeriodEnd) return;
+    chosen.status = "active";
+    chosen.trialEndsAt = new Date(this.now());
+    chosen.currentPeriodStartsAt = new Date(this.now());
+    chosen.currentPeriodEndsAt = new Date(this.now() + 30 * 86400000);
+  }
+
   async endByokPlans(customerId: string) {
     for (const subscription of this.forCustomer(customerId))
       if (subscription.priceId === BYOK_PRICE_ID) subscription.cancelAtPeriodEnd = true;
@@ -144,6 +153,7 @@ export class BillingEmulator implements BillingProvider {
       status: trialEndsAt ? "trialing" : "active",
       seats: 1,
       trialEndsAt,
+      currentPeriodStartsAt: new Date(this.now()),
       currentPeriodEndsAt: trialEndsAt ?? new Date(this.now() + 30 * 86400000),
       cancelAtPeriodEnd: false,
       endedAt: null,
@@ -202,6 +212,7 @@ export class BillingEmulator implements BillingProvider {
         seats: 1,
         creditAmountCents: checkout.amountCents,
         trialEndsAt: null,
+        currentPeriodStartsAt: new Date(this.now()),
         currentPeriodEndsAt: new Date(this.now() + 30 * 86400000),
         cancelAtPeriodEnd: false,
         endedAt: null,
@@ -258,6 +269,7 @@ export class BillingEmulator implements BillingProvider {
       status: status ?? (trialEnd ? "trialing" : "active"),
       seats: checkout.seats,
       trialEndsAt: trialEnd === null ? null : new Date(trialEnd * 1000),
+      currentPeriodStartsAt: new Date(nowSeconds * 1000),
       currentPeriodEndsAt: new Date((trialEnd ?? nowSeconds + 30 * 86_400) * 1000),
       cancelAtPeriodEnd: false,
       endedAt: null,
@@ -311,6 +323,7 @@ export class BillingEmulator implements BillingProvider {
           subscription.endedAt = subscription.currentPeriodEndsAt;
           break;
         }
+        subscription.currentPeriodStartsAt = subscription.currentPeriodEndsAt;
         subscription.currentPeriodEndsAt = new Date(
           subscription.currentPeriodEndsAt.getTime() + 30 * 86400000,
         );
