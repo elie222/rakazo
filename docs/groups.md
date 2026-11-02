@@ -40,5 +40,5 @@ the task; they have no chat or memory of their own.
 
 ## Bots that build bots
 
-A bot can create new bots, and with **Manage the bots it creates** turned on it can also organize and
-configure them. See [Bots that manage bots](./fleet-management.md).
+A bot can create new bots, and with **Manage other bots** turned on it can also organize and
+configure your bots. See [Bots that manage bots](./fleet-management.md).

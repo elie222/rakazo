@@ -100,6 +100,11 @@ export * from "./mcp-server-tool.js";
 export * from "./mcp-transport.js";
 export * from "./media-generation-factory.js";
 export * from "./media-generation-provider.js";
+export {
+  AGENT_MEMORY_MAX_BYTES,
+  buildAgentMemoryPrompt,
+  readAgentMemory,
+} from "./memory-context.js";
 export * from "./memory-provider-factory.js";
 export * from "./messaging-composition.js";
 export * from "./messaging-context.js";
@@ -134,6 +139,8 @@ export * from "./pi-models.js";
 export * from "./pi-oauth.js";
 export * from "./pi-openai-compatible-provider.js";
 export * from "./pi-runtime.js";
+export { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
+export { serializeToolResult } from "./pi-runtime-tools.js";
 export * from "./pi-session.js";
 export { shutdownPiTelemetry } from "./pi-telemetry.js";
 export * from "./pipedream-connector.js";

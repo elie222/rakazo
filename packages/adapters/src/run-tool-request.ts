@@ -3,6 +3,7 @@ import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
 import { prepareAgentConnectionResponse } from "./agent-connections.js";
 import type { FleetCardSummary } from "./approval-ask.js";
+import type { TerminatingToolResult } from "./approval-effect.js";
 import {
   approvalReplayPathError,
   approvalReplayResourceError,
@@ -29,7 +30,12 @@ import {
   purchaseCardSummary,
 } from "./purchase-gate.js";
 import type { RunContext } from "./run-context.js";
-import { isRunTainted, neverAsks } from "./run-context.js";
+import {
+  isRunTainted,
+  neverAsks,
+  OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR,
+  refuseOwnerSettingsChange,
+} from "./run-context.js";
 import {
   approvalReplayEffectToolName,
   CATALOG_APPROVAL_TOOL,
@@ -63,6 +69,9 @@ export interface ToolRequest {
 }
 
 type ToolError = { error: string };
+
+/** A prepare-step refusal: a plain error, or a result that ends the turn on a repeat. */
+type PrepareRefusal = ToolError | TerminatingToolResult;
 
 /**
  * Resolve catalog and bound connector routes, and line the call up with the next approved
@@ -280,7 +289,7 @@ export async function resolveToolRequest(
 export async function prepareToolRequest(
   ctx: RunContext,
   request: ToolRequest,
-): Promise<ToolError | undefined> {
+): Promise<PrepareRefusal | undefined> {
   const { deps, run, bot } = ctx;
   const { name, executionId, nextApprovedTool } = request;
   let { args } = request;
@@ -416,8 +425,8 @@ const OWN_FIELDS = new Set([
 async function prepareOwnBotUpdate(
   ctx: RunContext,
   request: ToolRequest,
-): Promise<ToolError | undefined> {
-  const { deps, run, bot } = ctx;
+): Promise<PrepareRefusal | undefined> {
+  const { run } = ctx;
   const { executionId, nextApprovedTool } = request;
   if (nextApprovedTool === "update_bot") {
     // The approved replay runs the stored request.
@@ -439,10 +448,10 @@ async function prepareOwnBotUpdate(
           "Only the owner can change your model, thinking, voice or read-aloud, from their own chat.",
       };
     if (!unguarded && (await isRunTainted(ctx)))
-      return {
-        error:
-          "Model, thinking, voice and read-aloud changes are blocked for the rest of this run because it read outside content.",
-      };
+      return refuseOwnerSettingsChange(
+        ctx,
+        "Model, thinking, voice and read-aloud changes are blocked for the rest of this run because it read outside content.",
+      );
   }
   if (!argumentGiven(args.instructions)) return undefined;
   if (isSubagentToolExecution(executionId)) return { error: "Helpers cannot set instructions." };
@@ -457,14 +466,17 @@ async function prepareOwnBotUpdate(
     return { error: "Instruction changes are blocked for runs someone else started." };
   if (Object.keys(args).some((key) => key !== "instructions"))
     return { error: "Change your instructions in their own update_bot call." };
-  const current = await deps.prisma.bot.findUniqueOrThrow({
-    where: { id: bot.id },
-    select: { instructions: true },
-  });
+  // An older checkpoint predates the baseline; this attempt must not guess.
+  if (ctx.state.ownInstructionsBaseline === undefined)
+    return { error: OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR };
   request.args = {
     instructions,
     reason: "Set in chat",
-    previousInstructions: current.instructions,
+    // The text the model worked from, not a fresh read: a change that landed since the
+    // attempt started conflicts at approval instead of being overwritten.
+    previousInstructions: ctx.state.ownInstructionsBaseline,
+    // Provenance the approved replay checks; requests stored before the baseline lack it.
+    previousInstructionsFromBaseline: true,
   };
   request.heldForApproval = true;
   return undefined;

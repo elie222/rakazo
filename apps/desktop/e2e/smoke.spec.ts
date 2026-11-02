@@ -50,6 +50,8 @@ test("launches with a narrow preload bridge and an isolated renderer", async () 
       "badge",
       "computer",
       "device",
+      "locale",
+      "menu",
       "monitoring",
       "nativeWindowFrame",
       "oauth",

@@ -54,6 +54,7 @@ import {
 } from "../lib/composer-enter-to-send-pref";
 import { computersAreUnavailable } from "../lib/computer-sandbox";
 import { desktopBridge } from "../lib/desktop";
+import { hasOpenDialog } from "../lib/has-open-dialog";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { usePreloadRecoveryState } from "../lib/preload-recovery";
 import { lastChatKey, lastChatOf, queryClient, spaceQueries, spaceSeedKey } from "../lib/query";
@@ -81,9 +82,9 @@ import type { CreateBotDialogInput } from "./shell/create-bot-dialog";
 import type { ImportSetupTarget } from "./shell/import-setup-card";
 import { ShellDialogs, useShellDialogs } from "./shell/shell-dialogs";
 import { AppOverlays, SettingsOverlays } from "./shell/shell-overlays";
-import { ShellSidebar } from "./shell/shell-sidebar";
+import { cycleBotId, useShellShortcuts } from "./shell/shell-shortcuts";
+import { focusSidebarSearch, ShellSidebar } from "./shell/shell-sidebar";
 import { ShellSidePanel } from "./shell/side-panel";
-import { useCreateMenu } from "./shell/sidebar-header";
 import { BotsSidebarLayout } from "./shell/sidebar-layout";
 import { SidebarRoster } from "./shell/sidebar-roster";
 import { commitSpaceRename, countUnreadChats, sidebarGroupsForSpaces } from "./shell/space-sidebar";
@@ -96,6 +97,7 @@ import { useComputerControls, useComputerState } from "./shell/use-computer";
 import { useMessageJump } from "./shell/use-message-jump";
 import { useMobileSidebar } from "./shell/use-mobile-sidebar";
 import { useReadAloud } from "./shell/use-read-aloud";
+import { useReportedUiLocale } from "./shell/use-reported-ui-locale";
 import { useRightPanel, useRightPanelRestore } from "./shell/use-right-panel";
 import { useRoutineEditor } from "./shell/use-routine-editor";
 import { useShellNavigation } from "./shell/use-shell-navigation";
@@ -123,7 +125,8 @@ function SpaceShell() {
   const [rpc] = useState(() => createSpaceRpc(shellSpaceId));
   const session = authClient.useSession();
   const userId = session.data?.user.id;
-  const [createMenuOpen, setCreateMenuOpen] = useCreateMenu();
+  // Held from the first render, so Cmd/Ctrl+N works before the sidebar has data.
+  const [createMenuOpen, setCreateMenuOpen] = useState(false);
   // A revisited space, or the shell reopened from another page, starts from what it showed
   // last time while its fresh bootstrap loads.
   const [{ seed, startChat }] = useState(() => {
@@ -287,15 +290,56 @@ function SpaceShell() {
   activeGroupId.current = groupId;
   const computerState = useComputerState({ rpc, panel, activeId: active?.id, activeBotId });
   const { computer, computerOpen, setComputerOpen, booting, commitComputer } = computerState;
+  useReportedUiLocale(rpc, bootstrapMe?.locale);
   const cycleBots = useMemo(
     () => groupBotsForSidebar(bots, botSections).flatMap((group) => group.bots),
     [bots, botSections],
   );
-  const dialogs = useShellDialogs({
-    bots: cycleBots,
-    activeId: active?.id,
-    onSelectBot: selectBot,
-    computerOpen,
+  const dialogs = useShellDialogs();
+  useShellShortcuts({
+    run: (shortcut) => {
+      switch (shortcut.type) {
+        case "command-menu":
+          dialogs.setCommandPaletteOpen((open) => !open);
+          return true;
+        case "new":
+          setCreateMenuOpen(true);
+          return true;
+        case "back":
+        case "forward":
+          void navigate(shortcut.type === "back" ? -1 : 1);
+          return true;
+      }
+      // The full-screen computer covers the sidebar and takes the keyboard.
+      if (computerOpen) return false;
+      if (shortcut.type === "toggle-sidebar") {
+        if (isMobileSidebar) setMobileSidebarOpen((open) => !open);
+        else setBotsSidebarCollapsedPref(!botsSidebarCollapsed);
+        return true;
+      }
+      if (shortcut.type === "search") {
+        if (isMobileSidebar) setMobileSidebarOpen(true);
+        else if (botsSidebarCollapsed) setBotsSidebarCollapsedPref(false);
+        if (!search.activityMode) search.setSearchOpen(true);
+        focusSidebarSearch();
+        return true;
+      }
+      // The command menu picks its own Cmd/Ctrl+1–9 from what it lists.
+      if (hasOpenDialog(document, true)) return false;
+      const botId =
+        shortcut.type === "bot"
+          ? cycleBots[shortcut.index]?.id
+          : cycleBotId(cycleBots, active?.id, shortcut.type === "next-bot" ? 1 : -1);
+      if (!botId) return false;
+      selectBot(botId);
+      return true;
+    },
+    onTyping: () => {
+      if (computerOpen || hasOpenDialog(document, true)) return;
+      document
+        .querySelector<HTMLTextAreaElement>('textarea[name="chat-message"]:not(:disabled)')
+        ?.focus();
+    },
   });
   useSpaceBootstrap({
     rpc,
@@ -946,6 +990,7 @@ function SpaceShell() {
             activeGroup={activeGroup}
             activeSnapshot={activeSnapshot}
             phoneCallsEnabled={Boolean(bootstrapMe?.phoneCallsEnabled)}
+            voiceReady={Boolean(voiceStatus?.ready)}
             inCall={Boolean(active) && call?.botId === active?.id}
             panelOpen={chatPanelOpen}
             onOpenNavigation={() => setMobileSidebarOpen(true)}

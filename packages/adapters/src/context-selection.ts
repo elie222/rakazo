@@ -288,19 +288,20 @@ function shortenStructuredResult(
   else visit(payload);
   if (payload && typeof payload === "object" && !Array.isArray(payload))
     (payload as Record<string, unknown>).contextTruncated = true;
-  let encoded = JSON.stringify(holder.payload);
-  while (encoded.length > size) {
-    const largest = leaves.reduce<(typeof leaves)[number] | undefined>((best, leaf) => {
-      const value = (leaf.parent as Record<string, unknown>)[leaf.key];
-      const prior = best ? (best.parent as Record<string, unknown>)[best.key] : undefined;
-      return typeof value === "string" &&
-        value.length > 128 &&
-        (!best || typeof prior !== "string" || value.length > prior.length)
-        ? leaf
-        : best;
-    }, undefined);
-    if (!largest) break; // Required metadata alone may still need explicit budget failure.
-    const value = (largest.parent as Record<string, unknown>)[largest.key] as string;
+  // Re-encoding the whole payload and rescanning every leaf per cut blocked the event loop for
+  // tens of seconds on large connector results, so track the length and the longest leaf instead.
+  let encodedLength = JSON.stringify(holder.payload).length;
+  const leafText = (index: number) =>
+    (leaves[index]!.parent as Record<string, unknown>)[leaves[index]!.key] as string;
+  const longest = new LongestFirst(
+    leaves.flatMap((_, index) =>
+      leafText(index).length > 128 ? [[index, leafText(index).length] as const] : [],
+    ),
+  );
+  while (encodedLength > size) {
+    const index = longest.peek();
+    if (index === undefined) break; // Required metadata alone may still need explicit budget failure.
+    const value = leafText(index);
     // Keep a quarter at each end when that still shrinks the field. Otherwise size the ends net
     // of the marker, so each pass on a medium-length field halves what is left to cut.
     const preferredKeep = Math.max(8, Math.floor(value.length / 4));
@@ -311,10 +312,57 @@ function shortenStructuredResult(
     if (keep < 1) break;
     const shortened = `${value.slice(0, keep)}\n${marker}\n${value.slice(-keep)}`;
     if (shortened.length >= value.length) break;
-    (largest.parent as Record<string, unknown>)[largest.key] = shortened;
-    encoded = JSON.stringify(holder.payload);
+    (leaves[index]!.parent as Record<string, unknown>)[leaves[index]!.key] = shortened;
+    encodedLength += JSON.stringify(shortened).length - JSON.stringify(value).length;
+    longest.pop();
+    if (shortened.length > 128) longest.push(index, shortened.length);
   }
-  return encoded;
+  return JSON.stringify(holder.payload);
+}
+
+/** Max-heap of leaf indexes by string length; ties go to the earlier leaf. */
+class LongestFirst {
+  private readonly heap: Array<readonly [index: number, length: number]> = [];
+
+  constructor(entries: ReadonlyArray<readonly [index: number, length: number]>) {
+    for (const [index, length] of entries) this.push(index, length);
+  }
+
+  peek(): number | undefined {
+    return this.heap[0]?.[0];
+  }
+
+  push(index: number, length: number) {
+    const heap = this.heap;
+    heap.push([index, length]);
+    for (let child = heap.length - 1; child > 0; ) {
+      const parent = (child - 1) >> 1;
+      if (!this.before(child, parent)) break;
+      [heap[child], heap[parent]] = [heap[parent]!, heap[child]!];
+      child = parent;
+    }
+  }
+
+  pop() {
+    const heap = this.heap;
+    const last = heap.pop();
+    if (!last || heap.length === 0) return;
+    heap[0] = last;
+    for (let parent = 0; ; ) {
+      let first = parent;
+      for (const child of [2 * parent + 1, 2 * parent + 2])
+        if (child < heap.length && this.before(child, first)) first = child;
+      if (first === parent) return;
+      [heap[first], heap[parent]] = [heap[parent]!, heap[first]!];
+      parent = first;
+    }
+  }
+
+  private before(a: number, b: number) {
+    const [indexA, lengthA] = this.heap[a]!;
+    const [indexB, lengthB] = this.heap[b]!;
+    return lengthA > lengthB || (lengthA === lengthB && indexA < indexB);
+  }
 }
 
 /**

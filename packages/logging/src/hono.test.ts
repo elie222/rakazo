@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import { runWithLogContext } from "./context.js";
-import { requestLogging } from "./hono.js";
+import { markExpectedFailure, requestLogging } from "./hono.js";
 import { outgoingCorrelationHeaders, parseTraceparent } from "./index.js";
 import { createLogger } from "./logger.js";
 import { createTestSink } from "./test-sink.js";
@@ -17,6 +17,10 @@ function appWith(logger: Logger) {
   });
   app.get("/bad", (c) => c.json({ error: "nope" }, 400));
   app.get("/crash", (c) => c.json({ error: "down" }, 500));
+  app.get("/outage", (c) => {
+    markExpectedFailure();
+    return c.json({ error: "provider down" }, 503);
+  });
   return app;
 }
 
@@ -122,6 +126,17 @@ describe("hono request logging", () => {
         expect.objectContaining({ "request.id": "req-b" }),
       ]),
     );
+  });
+
+  it("completes an expected 5xx as a warning", async () => {
+    const sink = createTestSink();
+    const app = appWith(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    expect((await app.request("/outage")).status).toBe(503);
+    expect((await app.request("/crash")).status).toBe(500);
+    expect(sink.events.map((event) => [event.level, event["http.route"]])).toEqual([
+      ["warn", "/outage"],
+      ["error", "/crash"],
+    ]);
   });
 
   it("reports handler exceptions as failed requests", async () => {

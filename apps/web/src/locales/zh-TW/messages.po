@@ -421,6 +421,10 @@ msgstr "{toolCount, plural, one {# 個工具} other {# 個工具}}"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/ModelCredits.tsx
+msgid "/ month"
+msgstr "/ 月"
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr ""
@@ -443,6 +447,10 @@ msgstr "已開啟 <0>{0}</0> 的登入分頁。請在該分頁輸入以下代碼
 msgid "A subscription credential is stored securely."
 msgstr "訂閱憑證已安全儲存。"
 
+#: src/pages/KnowledgeSection.tsx
+msgid "About {kb} KB of memory no longer reaches the bot."
+msgstr ""
+
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
 msgstr "關於 {label}"
@@ -451,6 +459,7 @@ msgstr "關於 {label}"
 msgid "Access token (optional)"
 msgstr "存取權杖（選填）"
 
+#: src/components/AccountMenu.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Account"
 msgstr "帳號"
@@ -845,6 +854,10 @@ msgstr "核准"
 msgid "Approve"
 msgstr "核准"
 
+#: src/lib/call-session.ts
+msgid "Approve or deny it on screen."
+msgstr "請在螢幕上核准或拒絕。"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
 msgstr "核准此伺服器，讓代理程式使用它的工具。"
@@ -1015,6 +1028,10 @@ msgstr "Bearer 權杖"
 msgid "Billing"
 msgstr "帳務"
 
+#: src/components/ModelCredits.tsx
+msgid "Billing period"
+msgstr "帳單週期"
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "封鎖"
@@ -1135,7 +1152,6 @@ msgid "Can't reach the server."
 msgstr "無法連線伺服器。"
 
 #: src/components/TextOnlyMark.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "無法讀取影像"
@@ -1144,6 +1160,7 @@ msgstr "無法讀取影像"
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/VaultSettings.tsx
@@ -1459,10 +1476,6 @@ msgstr "第 {index} 欄"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Comfortable"
 msgstr "寬鬆"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Coming soon"
-msgstr "即將推出"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -2484,6 +2497,7 @@ msgid "Delete {0}?"
 msgstr "刪除 {0}？"
 
 #: src/components/AccountAccess.tsx
+#: src/components/AccountMenu.tsx
 msgid "Delete account"
 msgstr "刪除帳號"
 
@@ -2567,6 +2581,10 @@ msgstr ""
 #: src/lib/dictation.ts
 msgid "Dictation failed."
 msgstr ""
+
+#: src/pages/Auth.tsx
+msgid "Did you mean <0>{emailSuggestion}</0>?"
+msgstr "你是指 <0>{emailSuggestion}</0> 嗎？"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
@@ -2747,13 +2765,17 @@ msgstr "需要驗證電子信箱"
 msgid "Enable {0}"
 msgstr "啟用 {0}"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr "於 {day} 結束"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Engage when... Ignore..."
 msgstr "何時參與… 忽略哪些內容…"
+
+#: src/components/GitHubStarPrompt.tsx
+msgid "Enjoying Rakazo?"
+msgstr ""
 
 #: src/lib/user-error.ts
 msgid "Enter a password"
@@ -3003,7 +3025,6 @@ msgid "Forgot password?"
 msgstr "忘記密碼？"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "免費"
 
@@ -3442,10 +3463,6 @@ msgstr "讓機器人在 MEMORY.md 之外，依語意儲存和回想事實。"
 msgid "Light"
 msgstr "淺色"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Linear issue"
-msgstr "Linear 工單"
-
 #: src/pages/SpaceSearch.tsx
 msgid "Link"
 msgstr ""
@@ -3541,9 +3558,8 @@ msgstr "本機存取權限允許機器人無需詢問就執行命令。請勿在
 msgid "Local computer access requires the latest desktop app."
 msgstr "存取本機電腦需要最新版桌面應用程式。"
 
-#: src/components/ModelCredits.tsx
+#: src/components/AccountMenu.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/Paywall.tsx
 msgid "Log out"
 msgstr "登出"
 
@@ -3592,8 +3608,8 @@ msgid "Manage MCP servers"
 msgstr "管理 MCP 伺服器"
 
 #: src/pages/shell/bot-panel.tsx
-msgid "Manage the bots it creates"
-msgstr "管理它建立的機器人"
+msgid "Manage other bots"
+msgstr "管理其他機器人"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
@@ -3804,7 +3820,6 @@ msgstr "模式"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3825,7 +3840,7 @@ msgstr "模型連線"
 msgid "Model id"
 msgstr "模型 ID"
 
-#: src/pages/model-settings/model-picker.tsx
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 msgid "Model options"
 msgstr "模型選項"
@@ -3840,8 +3855,8 @@ msgstr "模型"
 msgid "Models at provider cost"
 msgstr "按供應商成本計價的模型"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Models from server"
 msgstr "來自伺服器的模型"
 
@@ -3857,6 +3872,7 @@ msgstr "週一"
 msgid "month"
 msgstr "月"
 
+#: src/components/ModelCredits.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "每月"
@@ -4070,7 +4086,6 @@ msgid "No matching artifacts on this page."
 msgstr "此頁面沒有符合的成品。"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -4168,6 +4183,7 @@ msgstr "不在 Rakazo 目錄中"
 msgid "Not in the plugin catalog"
 msgstr "不在外掛程式目錄中"
 
+#: src/components/GitHubStarPrompt.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Not now"
 msgstr "暫不"
@@ -4349,8 +4365,8 @@ msgstr ""
 msgid "Original message unavailable"
 msgstr "原訊息不可用"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "其他模型…"
 
@@ -4370,10 +4386,6 @@ msgstr "第 {page} 頁，共 {count} 頁"
 #: src/pages/NotFound.tsx
 msgid "Page not found"
 msgstr "找不到頁面"
-
-#: src/pages/RoutineEditor.tsx
-msgid "PagerDuty incident"
-msgstr "PagerDuty 事件"
 
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
@@ -4873,7 +4885,7 @@ msgstr "重新命名"
 msgid "Rename section"
 msgstr "重新命名分組"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Renews {day}"
 msgstr "於 {day} 續訂"
 
@@ -5194,8 +5206,8 @@ msgstr "範圍（選填）"
 msgid "Screen not connected"
 msgstr "螢幕未連線"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5228,8 +5240,8 @@ msgstr "依網域搜尋"
 msgid "Search integrations.sh"
 msgstr "搜尋 integrations.sh"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"
@@ -5316,10 +5328,6 @@ msgstr "正在傳送…"
 #: src/components/AskCard.tsx
 msgid "Sent"
 msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Sentry alert"
-msgstr "Sentry 警示"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Serenity endpoint is required."
@@ -5608,6 +5616,10 @@ msgstr ""
 msgid "SSO is temporarily unavailable. Try again."
 msgstr "SSO 暫時不可用，請重試。"
 
+#: src/components/GitHubStarPrompt.tsx
+msgid "Star on GitHub"
+msgstr ""
+
 #: src/pages/shell/computer-overlay.tsx
 msgid "Start"
 msgstr "啟動"
@@ -5617,9 +5629,21 @@ msgstr "啟動"
 msgid "Start {trialDays}-day free trial"
 msgstr "開始 {trialDays} 天免費試用"
 
+#: src/components/ModelCredits.tsx
+msgid "Start plan"
+msgstr "開始方案"
+
+#: src/components/ModelCredits.tsx
+msgid "Start plan now"
+msgstr "立即開始方案"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"
 msgstr "開始錄製"
+
+#: src/components/ModelCredits.tsx
+msgid "Start your plan now?"
+msgstr "立即開始你的方案？"
 
 #: src/pages/ActivityList.tsx
 msgid "Starting"
@@ -5696,6 +5720,10 @@ msgid "Subscribe"
 msgstr "訂閱"
 
 #: src/components/ModelCredits.tsx
+msgid "Subscribe for {annualPrice} / year"
+msgstr "以每年 {annualPrice} 訂閱"
+
+#: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
 msgstr "以每月 {price} 訂閱"
 
@@ -5725,9 +5753,18 @@ msgstr "支援圖片"
 msgid "Supports thinking"
 msgstr "支援思考"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
 msgstr "切換"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly"
+msgstr "切換為按年"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly?"
+msgstr "切換為按年付費？"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
@@ -5765,10 +5802,6 @@ msgstr "團隊電腦"
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
 msgstr "Teams 訊息"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Teams not enabled"
-msgstr "未啟用 Teams"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
@@ -6105,9 +6138,13 @@ msgstr "Treg 權杖"
 msgid "Trial"
 msgstr "試用"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Trial ends {day}"
 msgstr "試用於 {day} 結束"
+
+#: src/components/ModelCredits.tsx
+msgid "Trials get fewer hours to prevent abuse."
+msgstr "為防止濫用，試用期的時數較少。"
 
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
@@ -6115,6 +6152,7 @@ msgstr "受信任的網站"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "重試"
 
@@ -6521,6 +6559,10 @@ msgstr "工作空間"
 msgid "year"
 msgstr "年"
 
+#: src/components/ModelCredits.tsx
+msgid "Yearly"
+msgstr "按年"
+
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Yesterday"
@@ -6555,6 +6597,10 @@ msgstr "你已接管"
 msgid "Your Anthropic"
 msgstr "你的 Anthropic"
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged {annualPrice} today, less the unused part of this month."
+msgstr "今天將從你的卡中扣款 {annualPrice}，並抵扣本月未使用的部分。"
+
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr ""
@@ -6586,6 +6632,10 @@ msgstr "你的 OpenAI"
 msgid "Your OpenRouter"
 msgstr "你的 OpenRouter"
 
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {annualPrice} / year when your trial ends."
+msgstr "試用結束後，你的方案將變為每年 {annualPrice}。"
+
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"
 msgstr ""
@@ -6597,6 +6647,14 @@ msgstr "你的訂閱或 API 金鑰"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "隨時待命的代理程式團隊<0/>讓你交付實際工作。"
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged {price} today."
+msgstr "試用將結束，今天將從你的卡片扣款 {price}。"
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged today."
+msgstr "試用將結束，今天將從你的卡片扣款。"
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

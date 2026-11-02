@@ -1,4 +1,5 @@
 import { globSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
@@ -20,10 +21,14 @@ const include = [
 // Database runs give every file its own database, so they never share.
 const mutatesSharedState =
   /vi\.(mock|doMock|stubGlobal|stubEnv|resetModules|useFakeTimers|spyOn)\(|globalThis\.\w+ *=[^=]|(globalThis|global|window)\[[^\]]+\] *=[^=]|process\.env(\.\w+|\[[^\]]+\]) *=[^=]|delete process\.env|defineProperty\((globalThis|global|window|document|navigator|process)|process\.chdir|@vitest-environment/;
+// Package scripts run from their own folder, so paths resolve from the repo root, not the cwd.
+const root = path.dirname(fileURLToPath(import.meta.url));
 const isolated = include
-  .flatMap((pattern) => globSync(pattern))
+  .flatMap((pattern) => globSync(pattern, { cwd: root }))
   .filter(
-    (file) => process.env.COPY_TEST_DATABASE || mutatesSharedState.test(readFileSync(file, "utf8")),
+    (file) =>
+      process.env.COPY_TEST_DATABASE ||
+      mutatesSharedState.test(readFileSync(path.join(root, file), "utf8")),
   );
 
 export default defineConfig({

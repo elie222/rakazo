@@ -335,6 +335,121 @@ describeIntegration("reusable credential lifecycle", () => {
     },
   );
 
+  it("reuses a website login saved for the same site under another name", async () => {
+    const site = "https://www.login.example.test";
+    const password = "fake-site-password-3b9e";
+    const seen: string[] = [];
+    let calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const requestLogin = (name: string, origin = site) => ({
+      name: "request_secret",
+      args: {
+        label: "Sign in",
+        purpose: "password",
+        credential: { name, origin, auth: { type: "login" } },
+        fields: ["Username", "Password"],
+      },
+    });
+    const runtime = vi
+      .spyOn(ScriptedAgentRuntime.prototype, "run")
+      .mockImplementation(async function* (request): AsyncIterable<AgentRuntimeEvent> {
+        seen.push(JSON.stringify({ prompt: request.prompt, history: request.history }));
+        for (const [index, call] of calls.entries()) {
+          yield { type: "tool", ...call, executionId: `${request.runId}:${index}` };
+        }
+        yield { type: "done", text: "Done" };
+      });
+    try {
+      calls = [requestLogin("site_login")];
+      const seeded = await seedRun("site-login", "Sign in to the site");
+      await runAsSystem("background job run.continue", () =>
+        handles.executor.continueRun(seeded.run.id, "test-worker"),
+      );
+      const card = await db.message.findFirstOrThrow({
+        where: { runId: seeded.run.id, role: "bot" },
+        orderBy: { seq: "desc" },
+      });
+      await rpc(seeded.cookie, "threads/answer", {
+        botId: seeded.bot.id,
+        runId: seeded.run.id,
+        messageId: card.id,
+        answer: "",
+        fields: [
+          { label: "Username", value: "fake-user", hidden: false },
+          { label: "Password", value: password, hidden: true },
+        ],
+      });
+      await vi.waitFor(
+        async () => {
+          expect(await db.run.findUniqueOrThrow({ where: { id: seeded.run.id } })).toMatchObject({
+            status: "completed",
+            error: null,
+          });
+        },
+        { timeout: 15_000 },
+      );
+
+      const nextRun = async (owner: typeof seeded, nextCalls: typeof calls) => {
+        calls = nextCalls;
+        const task = await db.task.create({
+          data: {
+            userId: owner.me.userId,
+            spaceId: owner.me.spaceId,
+            botId: owner.bot.id,
+            threadId: owner.thread.id,
+            prompt: "Sign in again",
+            status: "queued",
+          },
+        });
+        const run = await db.run.create({
+          data: {
+            userId: owner.me.userId,
+            spaceId: owner.me.spaceId,
+            botId: owner.bot.id,
+            threadId: owner.thread.id,
+            taskId: task.id,
+            trigger: "user",
+            status: "queued",
+          },
+        });
+        await runAsSystem("background job run.continue", () =>
+          handles.executor.continueRun(run.id, "test-worker"),
+        );
+        return db.run.findUniqueOrThrow({ where: { id: run.id } });
+      };
+
+      // Another name for the same site gets the saved login's name, without a card.
+      const reused = await nextRun(seeded, [requestLogin("my_site_account")]);
+      expect(reused).toMatchObject({ status: "completed", error: null });
+      expect(
+        await db.externalEffect.findFirstOrThrow({
+          where: { runId: reused.id, kind: "request_secret" },
+        }),
+      ).toMatchObject({
+        status: "completed",
+        result: { saved: true, name: "site_login", origin: site, auth: { type: "login" } },
+      });
+      // The host without www. is another site.
+      expect(
+        await nextRun(seeded, [requestLogin("bare_login", "https://login.example.test")]),
+      ).toMatchObject({ status: "waiting_input" });
+      // Another member's vault is not searched.
+      const other = await seedRun("site-login-other", "Sign in to the site");
+      expect(await nextRun(other, [requestLogin("my_site_account")])).toMatchObject({
+        status: "waiting_input",
+      });
+      expect(await db.vaultCredential.count({ where: { origin: site } })).toBe(1);
+
+      const [messages, events, effects] = await Promise.all([
+        db.message.findMany({ where: { threadId: seeded.thread.id } }),
+        db.event.findMany({ where: { threadId: seeded.thread.id } }),
+        db.externalEffect.findMany({ where: { spaceId: seeded.me.spaceId } }),
+      ]);
+      expect(JSON.stringify({ seen, messages, events, effects })).not.toContain(password);
+    } finally {
+      runtime.mockRestore();
+    }
+  });
+
   async function seedRun(
     label: string,
     prompt: string,

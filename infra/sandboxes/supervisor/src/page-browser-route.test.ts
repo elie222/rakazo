@@ -392,8 +392,8 @@ it.each([["a", "b", "c"], [""], ["x".repeat(1025)]])(
   },
 );
 
-async function browserRequest(body: unknown) {
-  return supervisorApp.request("/computers/computer-upload/browser", {
+async function browserRequest(body: Record<string, unknown>) {
+  return supervisorApp.request("/computers/computer-downloads/browser", {
     method: "POST",
     headers: {
       authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
@@ -404,6 +404,30 @@ async function browserRequest(body: unknown) {
     body: JSON.stringify(body),
   });
 }
+
+it.each([
+  { command: "navigate", url: "https://bank.example/files/statement.pdf" },
+  { command: "act", actions: [{ kind: "click", ref: "e1" }] },
+])("forwards the bot's download folder: $command", async (command) => {
+  const body = { ...command, downloads: "bots/b1/Downloads" };
+  expect(await (await browserRequest(body)).json()).toMatchObject({ ok: true });
+  expect(JSON.parse(mock.stdin.join(""))).toEqual(body);
+});
+
+it("forwards a snapshot's query", async () => {
+  const body = { command: "snapshot", query: "newsletter signup" };
+  expect(await (await browserRequest(body)).json()).toMatchObject({ ok: true });
+  expect(JSON.parse(mock.stdin.join(""))).toEqual(body);
+});
+
+it.each(["", "x".repeat(1025), 7])(
+  "rejects an invalid download folder before running commands: %j",
+  async (downloads) => {
+    const body = { command: "act", actions: [{ kind: "click", ref: "e1" }], downloads };
+    expect((await browserRequest(body)).status).toBeGreaterThanOrEqual(400);
+    expect(mock.exec).not.toHaveBeenCalled();
+  },
+);
 
 it("forwards a purchase approval on a click step, and nothing else on it", async () => {
   const click = {

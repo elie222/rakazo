@@ -1,4 +1,4 @@
-import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
+import type { AdapterContext, ComputerRef, PageBrowserCommand } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBrowserProvider, resolveBrowserProviderKind } from "./browser-provider-factory.js";
 import { ComputerBrowserProvider } from "./computer-browser.js";
@@ -322,6 +322,46 @@ describe("page browser safety", () => {
       elements,
     });
     expect(result.tree).toContain("Digit 1");
+  });
+
+  it.each([
+    { ok: true, completed: 2 },
+    {
+      ok: false,
+      completed: 1,
+      uncertain: false,
+      error: "Stale element ref. Take a fresh snapshot.",
+    },
+    { ok: false, completed: 1, uncertain: true, error: "lost", fallback: "computer_act" as const },
+  ])("keeps the files a call saved, also when a later step failed: %j", async (outcome) => {
+    const downloads = [
+      { name: "statement.pdf", path: "bots/b1/Downloads/statement.pdf", size: 4 },
+      {
+        name: "slow.pdf",
+        path: "bots/b1/Downloads/slow.pdf",
+        state: "downloading" as const,
+        size: 1,
+      },
+    ];
+    const liveDriver = vi.fn(async (_computer: ComputerRef, _request: PageBrowserCommand) => ({
+      url: "https://bank.example/",
+      title: "Bank",
+      ...outcome,
+      downloads,
+    }));
+    const result = await new ComputerBrowserProvider({ liveDriver }).act(
+      computer,
+      {
+        actions: [
+          { kind: "click", ref: "e1" },
+          { kind: "click", ref: "e2" },
+        ],
+        downloads: "bots/b1/Downloads",
+      },
+      baseContext,
+    );
+    expect(liveDriver.mock.calls[0]?.[1]).toMatchObject({ downloads: "bots/b1/Downloads" });
+    expect(result).toMatchObject({ ok: outcome.ok, downloads });
   });
 
   it("reports a refused saved-login fill as settled, without desktop tools", async () => {

@@ -1,5 +1,6 @@
 import type { AgentToolExecutionObserver } from "@rakazo/adapter-kit";
 import { toolResultTaintsRun } from "@rakazo/core";
+import { isTerminatingReplyResult } from "./approval-effect.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS, MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.js";
 import type { RunContext } from "./run-context.js";
 import type { ToolHandler } from "./run-tool-gate.js";
@@ -7,6 +8,7 @@ import { auditToolCall, gateToolCall } from "./run-tool-gate.js";
 import { prepareToolRequest, resolveToolRequest } from "./run-tool-request.js";
 import { PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
 import { computerTools, pageBrowserTool } from "./run-tools-computer.js";
+import { feedbackTools } from "./run-tools-feedback.js";
 import { fileTools } from "./run-tools-files.js";
 import { fleetTools } from "./run-tools-fleet.js";
 import { cloudAgentTool, connectorTool, integrationTools } from "./run-tools-integrations.js";
@@ -40,6 +42,7 @@ const TOOL_HANDLERS = new Map<string, ToolHandler>([
   [USER_COMPUTER_ACT_TOOL, userComputerAct],
   ...Object.entries(purchaseTools),
   ...Object.entries(preferenceTools),
+  ...Object.entries(feedbackTools),
   ...[...PAGE_BROWSER_TOOL_NAMES].map((name) => [name, pageBrowserTool] as const),
 ]);
 
@@ -109,6 +112,8 @@ async function dispatchTool(
   }
 }
 
-function isToolError(result: unknown): boolean {
-  return typeof result === "object" && result !== null && "error" in result;
+export function isToolError(result: unknown): boolean {
+  if (typeof result !== "object" || result === null) return false;
+  if ("error" in result) return true;
+  return isTerminatingReplyResult(result);
 }

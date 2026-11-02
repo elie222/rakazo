@@ -5,7 +5,8 @@ import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { resolveSupervisorToken } from "@rakazo/core";
-import { describe, expect, it } from "vitest";
+import type Docker from "dockerode";
+import { describe, expect, it, vi } from "vitest";
 import {
   MAX_SUPERVISOR_FILE_REQUEST_BYTES,
   MAX_SUPERVISOR_REQUEST_BYTES,
@@ -30,6 +31,7 @@ import {
   containerActionStep,
   containerActionSteps,
   controlHandlesActions,
+  createComputerWithNameRetry,
   createDockerStreamDemuxer,
   currentComputerScreens,
   DOCKER_BROWSER_ALIASES,
@@ -39,6 +41,7 @@ import {
   hasValidBearerToken,
   interactiveScreenCommand,
   isComputerControlUnavailable,
+  isManagedComputer,
   nextScreenIndex,
   normalizeWorkspaceRelative,
   oldestIdleScreen,
@@ -46,6 +49,7 @@ import {
   parseObservation,
   preferComputerControl,
   releaseAssignedScreen,
+  removeOwnedComputer,
   resetManagedScreensCommand,
   SCREEN_REUSE_MS,
   sandboxCommandTimedOut,
@@ -1275,5 +1279,100 @@ describe("computer command identity", () => {
       "NPM_CONFIG_PREFIX=/home/rakazo/.local",
       "PIP_USER=1",
     ]);
+  });
+});
+
+describe("computer name recovery", () => {
+  const conflict = Object.assign(new Error("container name already in use"), { statusCode: 409 });
+  function holder(labels: Record<string, string>, image = "computer") {
+    return {
+      Id: "leftover",
+      Config: { Labels: labels, Image: image },
+    } as Docker.ContainerInspectInfo;
+  }
+  const owned = { "rakazo.botId": "bot", "rakazo.spaceId": "space", "rakazo.managed": "true" };
+  function recovery(info: Docker.ContainerInspectInfo) {
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const cleared = vi.fn();
+    const inspect = vi.fn().mockResolvedValue(info);
+    const reclaim = () =>
+      removeOwnedComputer(
+        { inspect } as Pick<Docker.Container, "inspect">,
+        remove,
+        (candidate) => isManagedComputer(candidate, "bot", "space", "computer"),
+        cleared,
+      );
+    return { remove, cleared, inspect, reclaim };
+  }
+
+  it("clears an owned leftover by inspected ID and retries create once", async () => {
+    const { reclaim, remove, cleared } = recovery(holder(owned));
+    const created = { id: "new" };
+    const create = vi.fn().mockRejectedValueOnce(conflict).mockResolvedValue(created);
+    await expect(createComputerWithNameRetry(create, reclaim)).resolves.toBe(created);
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(remove).toHaveBeenCalledExactlyOnceWith("leftover");
+    expect(cleared).toHaveBeenCalledExactlyOnceWith("leftover");
+  });
+
+  it.each([
+    { ...owned, "rakazo.botId": "other" },
+    { ...owned, "rakazo.spaceId": "other" },
+    {} as Record<string, string>,
+    { "rakazo.botId": "bot", "rakazo.spaceId": "space" },
+  ])("preserves a non-owned name holder and the original error: %j", async (labels) => {
+    const { reclaim, remove, cleared } = recovery(holder(labels, "unmanaged"));
+    const create = vi.fn().mockRejectedValue(conflict);
+    await expect(createComputerWithNameRetry(create, reclaim)).rejects.toBe(conflict);
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(remove).not.toHaveBeenCalled();
+    expect(cleared).not.toHaveBeenCalled();
+  });
+
+  it("accepts the existing legacy identity and image management rule", () => {
+    expect(
+      isManagedComputer(
+        holder({ "rakazo.botId": "bot", "rakazo.workspaceId": "space" }),
+        "bot",
+        "space",
+        "computer",
+      ),
+    ).toBe(true);
+  });
+
+  it("preserves the original error when inspection or removal fails", async () => {
+    for (const stage of ["inspect", "remove"] as const) {
+      const recoveryAttempt = recovery(holder(owned));
+      recoveryAttempt[stage].mockRejectedValue(new Error("unavailable"));
+      await expect(
+        createComputerWithNameRetry(async () => {
+          throw conflict;
+        }, recoveryAttempt.reclaim),
+      ).rejects.toBe(conflict);
+      expect(recoveryAttempt.cleared).not.toHaveBeenCalled();
+    }
+  });
+
+  it("does not retry a second create conflict", async () => {
+    const create = vi.fn().mockRejectedValue(conflict);
+    const reclaim = vi.fn().mockResolvedValue(true);
+    await expect(createComputerWithNameRetry(create, reclaim)).rejects.toBe(conflict);
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(reclaim).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([409, 500])("does not retry a start failure (status %s)", async (statusCode) => {
+    const error = Object.assign(new Error("address already in use"), { statusCode });
+    const start = vi.fn().mockRejectedValue(error);
+    const create = vi.fn(async () => ({ start }));
+    const reclaim = vi.fn();
+    await expect(
+      (async () => {
+        const container = await createComputerWithNameRetry(create, reclaim);
+        await container.start();
+      })(),
+    ).rejects.toBe(error);
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(reclaim).not.toHaveBeenCalled();
   });
 });

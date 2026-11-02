@@ -52,10 +52,18 @@ The app checks for updates and downloads them in the background. When one is rea
 
 ## Shortcuts
 
-- Cmd+N (Ctrl+N): create a bot, group or space.
-- Cmd+K (Ctrl+K): jump to any bot.
-- Cmd+, (Ctrl+, in the desktop app): open Settings.
+Windows and Linux use Ctrl where macOS uses Cmd. The desktop app lists them in its menus.
+
+- Cmd+N: create a bot, group or space.
+- Cmd+K: open the command menu to jump to any bot.
+- Cmd+1 to Cmd+9 (desktop app): open one of the first nine bots in the sidebar.
 - Ctrl+Tab / Ctrl+Shift+Tab (desktop app): switch to the next or previous bot.
 - Cmd/Ctrl+Shift+Down / Cmd/Ctrl+Shift+Up (browser): switch to the next or previous bot.
+- Cmd+[ / Cmd+] (Alt+Left / Alt+Right on Windows and Linux, desktop app): go back or forward.
+- Cmd+F (desktop app): search.
+- Cmd+B: show or hide the sidebar.
+- Cmd+, (desktop app): open Settings.
+- Esc in the message box: stop the bot's reply.
+- Typing anywhere outside a text field starts a message.
 
 The dock icon shows a badge count of unread chats.

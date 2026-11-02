@@ -10,16 +10,11 @@ type Purchase = {
   amountFrom: "button" | "page";
 } | null;
 type Helper = {
-  snapshot: () => { elements: Array<{ ref: string; name: string }> };
-  purchaseIntent: (
-    ref: string,
-    frame?: boolean,
-  ) => { purchase: Purchase; host: string; frames: boolean };
-  paymentPage: (frame?: boolean, enter?: boolean) => { purchase: Purchase; host: string };
+  paymentPage: (frame?: boolean, enter?: boolean) => { purchase: Purchase };
   pagePoint: (
     x: number,
     y: number,
-  ) => { x: number; y: number; inside: boolean; scrollX: number; scrollY: number } | null;
+  ) => { x: number; y: number; inside: boolean } | null;
   purchaseAt: (
     x: number,
     y: number,
@@ -28,13 +23,25 @@ type Helper = {
   purchaseOfNode: (node: Element, frame?: boolean) => Purchase;
 };
 
+function nameOf(el: Element) {
+  const text = (value: string | null | undefined) => value?.replace(/\s+/g, " ").trim() || "";
+  return (
+    text(el.getAttribute("aria-label")) ||
+    text(Array.from((el as HTMLInputElement).labels ?? [], (label) => label.textContent).join(" ")) ||
+    text(el.getAttribute("placeholder")) ||
+    text(el.getAttribute("name")) ||
+    text(el.getAttribute("title")) ||
+    text(el.textContent)
+  );
+}
+
 /** The live page helper's isolated-world script, run here against a page. */
 function page(html: string) {
   const source = readFileSync(
     new URL("../../../infra/sandboxes/computer/rakazo-page-browser", import.meta.url),
     "utf8",
   );
-  const script = source.match(/EVAL_HELPERS = r"""\n([\s\S]*?)\n"""/)?.[1];
+  const script = source.match(/PURCHASE_HELPERS = r"""\n([\s\S]*?)\n"""/)?.[1];
   if (!script) throw new Error("page browser helper script was not found");
   const dom = new JSDOM(
     `<!doctype html><html><head><title>Shop</title></head><body>${html}</body></html>`,
@@ -54,15 +61,17 @@ function page(html: string) {
     },
   });
   vm.runInContext(script, dom.getInternalVMContext());
-  const helper = (win as unknown as { __rakazoPageBrowser: Helper }).__rakazoPageBrowser;
+  const helper = (win as unknown as { __rakazoPurchase: Helper }).__rakazoPurchase;
   return {
     win,
     helper,
-    /** What a click on the control with this name would complete, from a fresh snapshot. */
+    /** What a click on the control with this name, as a snapshot names it, would complete. */
     intent(name: string, frame = false) {
-      const found = helper.snapshot().elements.find((el) => el.name === name);
+      const found = [
+        ...win.document.querySelectorAll("a, button, input, select, textarea, [role], [onclick]"),
+      ].find((el) => nameOf(el) === name);
       if (!found) throw new Error(`missing ${name}`);
-      return helper.purchaseIntent(found.ref, frame).purchase;
+      return helper.purchaseOfNode(found, frame);
     },
   };
 }
@@ -294,22 +303,12 @@ describe("purchase detection in the page helper", () => {
     expect(none.intent("Pay now")?.amount).toBe("");
   });
 
-  it("counts a stale, hidden or disabled control as no purchase", () => {
+  it("counts a disabled control as no purchase", () => {
     const { helper, win } = page(`<button id="b">Pay now</button>`);
-    const ref = helper.snapshot().elements[0]!.ref;
-    expect(helper.purchaseIntent(ref).purchase).not.toBeNull();
-    win.document.getElementById("b")!.setAttribute("disabled", "");
-    expect(helper.purchaseIntent(ref).purchase).toBeNull();
-    win.document.getElementById("b")!.remove();
-    expect(helper.purchaseIntent(ref).purchase).toBeNull();
-    expect(helper.purchaseIntent("e1").purchase).toBeNull();
-  });
-
-  it("reports the page's host, which an approval is bound to", () => {
-    const { helper } = page(`<button>Pay now</button>`);
-    expect(helper.purchaseIntent(helper.snapshot().elements[0]!.ref).host).toBe(
-      "shop.example.test",
-    );
+    const button = win.document.getElementById("b")!;
+    expect(helper.purchaseOfNode(button)).not.toBeNull();
+    button.setAttribute("disabled", "");
+    expect(helper.purchaseOfNode(button)).toBeNull();
   });
 });
 

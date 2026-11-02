@@ -5,12 +5,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { HostScreenError } from "@rakazo/adapters/host-screen";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ScreenPermissionApi } from "./host-screen.js";
+import type { ScreenDriverRelease, ScreenPermissionApi } from "./host-screen.js";
 import {
   createDesktopHostScreen,
   ensureScreenPermissions,
   SCREEN_DRIVER_DOWNLOAD_MESSAGE,
-  SCREEN_DRIVER_RELEASE,
+  SCREEN_DRIVER_RELEASES,
   SCREEN_LOCKED_MESSAGE,
   SCREEN_PERMISSION_MESSAGE,
   screenDriverInstaller,
@@ -55,14 +55,29 @@ describe("desktop screen", () => {
     locked: () => false,
   };
 
-  it("exists only on macOS", () => {
+  it("exists on macOS and Windows", () => {
     const api = permissions(true, []);
+    for (const platform of ["darwin", "win32"] as const)
+      expect(createDesktopHostScreen({ ...options, permissions: api, platform })).toBeDefined();
     expect(
-      createDesktopHostScreen({ ...options, permissions: api, platform: "darwin" }),
-    ).toBeDefined();
-    expect(
-      createDesktopHostScreen({ ...options, permissions: api, platform: "win32" }),
+      createDesktopHostScreen({ ...options, permissions: api, platform: "linux" }),
     ).toBeUndefined();
+  });
+
+  it("asks Windows for no permission and fetches the driver on first use", async () => {
+    const api = permissions(false, []);
+    const driver = vi.fn(async () => {
+      throw new HostScreenError(SCREEN_DRIVER_DOWNLOAD_MESSAGE);
+    });
+    const screen = createDesktopHostScreen({
+      ...options,
+      driver,
+      permissions: api,
+      platform: "win32",
+    })!;
+    expect(driver).not.toHaveBeenCalled();
+    await expect(screen.observe(scope, "notepad")).rejects.toThrow(SCREEN_DRIVER_DOWNLOAD_MESSAGE);
+    expect(api.isTrustedAccessibilityClient).not.toHaveBeenCalled();
   });
 
   it("says the screen is locked before starting anything", async () => {
@@ -110,7 +125,7 @@ describe("desktop screen", () => {
 describe("screen driver download", () => {
   let dir: string;
   let archive: Buffer;
-  let release: typeof SCREEN_DRIVER_RELEASE;
+  let release: ScreenDriverRelease;
   beforeEach(async () => {
     dir = await mkdtemp(path.join(tmpdir(), "rakazo-screen-driver-"));
     const source = path.join(dir, "source");
@@ -129,6 +144,7 @@ describe("screen driver download", () => {
     release = {
       url: "https://example.test/driver.tar.gz",
       sha256: createHash("sha256").update(archive).digest("hex"),
+      driver: "cua-driver",
       driverSha256: createHash("sha256").update("#!/bin/sh\n").digest("hex"),
     };
   });
@@ -178,11 +194,17 @@ describe("screen driver download", () => {
     await expect(install()).resolves.toBe(path.join(bin, release.driverSha256, "cua-driver"));
   });
 
-  it("pins one checksummed release from the driver's publisher", () => {
-    expect(SCREEN_DRIVER_RELEASE.url).toMatch(
+  it("pins one checksummed release per platform from each driver's publisher", () => {
+    const { darwin, win32 } = SCREEN_DRIVER_RELEASES;
+    expect(darwin.url).toMatch(
       /^https:\/\/github\.com\/trycua\/cua\/releases\/download\/cua-driver-rs-v[\d.]+\/cua-driver-rs-[\d.]+-darwin-universal-binary\.tar\.gz$/,
     );
-    expect(SCREEN_DRIVER_RELEASE.sha256).toMatch(/^[a-f0-9]{64}$/);
-    expect(SCREEN_DRIVER_RELEASE.driverSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(win32.url).toMatch(
+      /^https:\/\/github\.com\/vercel-labs\/agent-desktop\/releases\/download\/v([\d.]+)\/agent-desktop-v\1-x86_64-pc-windows-msvc\.tar\.gz$/,
+    );
+    for (const release of [darwin, win32]) {
+      expect(release.sha256).toMatch(/^[a-f0-9]{64}$/);
+      expect(release.driverSha256).toMatch(/^[a-f0-9]{64}$/);
+    }
   });
 });

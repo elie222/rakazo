@@ -22,6 +22,7 @@ import {
   redactSecrets,
   repeatsDeniedAction,
   resolveActionApprovalForTools,
+  SITE_SENDING_TOOLS,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
   unattendedTriggerToolRequiresApproval,
@@ -32,7 +33,7 @@ import type { AuditEventInput } from "@rakazo/db";
 import { recordAuditEvent, runSecretKind } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { FleetCardSummary } from "./approval-ask.js";
-import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH, SITE_SENDING_TOOLS } from "./approval-ask.js";
+import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH } from "./approval-ask.js";
 import {
   boundDirectApprovalDetails,
   DENIED_ACTION_ERROR,

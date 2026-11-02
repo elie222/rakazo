@@ -2,31 +2,11 @@ import { useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
 import { Button, Popover, PopoverContent, PopoverTrigger } from "@rakazo/ui-web";
 import { Bell, PanelLeftClose, PanelLeftOpen, Plus, Search } from "lucide-react";
-import { useEffect, useState } from "react";
 import { IconTooltip } from "../../components/IconTooltip";
 import { desktopBridge } from "../../lib/desktop";
 import type { Panel } from "../../lib/right-panel-state";
 import { WindowChrome } from "../WindowChrome";
 import { BotCreatePicker } from "./bot-picker";
-import { isCreateMenuHotkey } from "./command-palette-hotkey";
-
-/**
- * Whether the create menu is open, opened by Cmd/Ctrl-N. The shell holds it from its first render,
- * so the shortcut is not lost while the sidebar is still waiting for its first data.
- */
-export function useCreateMenu() {
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (!isCreateMenuHotkey(event)) return;
-      event.preventDefault();
-      setOpen(true);
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-  return [open, setOpen] as const;
-}
 
 export function SidebarHeader({
   mini = false,

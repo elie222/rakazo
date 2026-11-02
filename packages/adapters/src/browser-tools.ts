@@ -2,6 +2,7 @@ import type {
   AdapterContext,
   AgentToolExecutionResult,
   BrowserActStep,
+  BrowserDownload,
   BrowserProvider,
   ComputerRef,
 } from "@rakazo/adapter-kit";
@@ -12,8 +13,8 @@ import { getLogger } from "@rakazo/logging";
 import { redactConnectorPayload } from "./connector-safety.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
 import type { PurchaseApproval } from "./purchase-gate.js";
+import { MAX_ACTIONS_PER_CALL } from "./tool-loop.js";
 
-const MAX_BROWSER_ACTIONS = 24;
 /** The action kinds `browser_act` takes, as its tool schema lists them. */
 export const BROWSER_ACT_KINDS = [
   "click",
@@ -24,6 +25,7 @@ export const BROWSER_ACT_KINDS = [
   "fill_card",
   "fill_pay_token",
 ] as const;
+const MAX_QUERY = 200;
 const NAVIGATE_URL_REQUIRED = "An HTTP(S) URL without embedded credentials is required";
 
 /** Fills a saved website login's field by its label; the model never supplies or sees the value. */
@@ -43,8 +45,15 @@ export type CardFillStep = {
 /** The model never supplies or sees the token. */
 export type PayTokenFillStep = { kind: "fill_pay_token"; purchase: string };
 export type BrowserActInput = BrowserActStep | SecretFillStep | CardFillStep | PayTokenFillStep;
-/** desktopTools: the run also has computer_act, so a page-tool failure can fall back to it. */
-export type PageToolOptions = { desktopTools?: boolean };
+/**
+ * desktopTools: the run also has computer_act, so a page-tool failure can fall back to it.
+ * downloads: the folder in the computer's home that the page's file downloads are saved to, and the
+ * path the bot's own tools use for a file there.
+ */
+export type PageToolOptions = {
+  desktopTools?: boolean;
+  downloads?: { folder: string; botPath: (path: string) => string };
+};
 export type ResolveSecretFill = (
   step: SecretFillStep,
 ) => Promise<{ text: string; origin: string; hidden: boolean } | { error: string }>;
@@ -81,8 +90,12 @@ export async function browserNavigateFromTool(
     return refusedInput(NAVIGATE_URL_REQUIRED);
   }
   try {
-    const result = await browser.navigate(computer, { url, signal: context.signal }, context);
-    return formatBrowserResult(result, options);
+    const result = await browser.navigate(
+      computer,
+      { url, downloads: options.downloads?.folder, signal: context.signal },
+      context,
+    );
+    return formatBrowserResult(withBotPaths(result, options), options);
   } catch (error) {
     context.signal.throwIfAborted();
     return formatBrowserResult(
@@ -99,9 +112,13 @@ export async function browserSnapshotFromTool(
   args: Record<string, unknown>,
   options: PageToolOptions = {},
 ) {
-  void args;
+  const query = typeof args.query === "string" ? args.query.trim().slice(0, MAX_QUERY) : "";
   try {
-    const result = await browser.snapshot(computer, { signal: context.signal }, context);
+    const result = await browser.snapshot(
+      computer,
+      { ...(query ? { query } : {}), signal: context.signal },
+      context,
+    );
     return formatBrowserResult(result, options);
   } catch (error) {
     context.signal.throwIfAborted();
@@ -223,8 +240,15 @@ export async function browserActFromTool(
         actions[index] = { ...step, approved: true, site, label, amount };
       }
     }
-    const result = await browser.act(computer, { actions, signal: context.signal }, context);
-    return redactBrowserResult(formatBrowserResult(result, options), options.redactions?.() ?? []);
+    const result = await browser.act(
+      computer,
+      { actions, downloads: options.downloads?.folder, signal: context.signal },
+      context,
+    );
+    return redactBrowserResult(
+      formatBrowserResult(withBotPaths(result, options), options),
+      options.redactions?.() ?? [],
+    );
   } catch (error) {
     context.signal.throwIfAborted();
     if (error instanceof BrowserToolInputError)
@@ -245,8 +269,10 @@ export function parseBrowserActions(value: unknown): BrowserActInput[] {
   if (!Array.isArray(value) || value.length === 0) {
     throw new BrowserToolInputError("browser_act requires at least one action");
   }
-  if (value.length > MAX_BROWSER_ACTIONS) {
-    throw new BrowserToolInputError(`browser_act accepts at most ${MAX_BROWSER_ACTIONS} actions`);
+  if (value.length > MAX_ACTIONS_PER_CALL) {
+    throw new BrowserToolInputError(
+      `browser_act accepts at most ${MAX_ACTIONS_PER_CALL} actions but got ${value.length}; none ran. Send the first ${MAX_ACTIONS_PER_CALL} or fewer now, then the rest in a separate call.`,
+    );
   }
   return value.map((raw, index) => {
     if (!raw || typeof raw !== "object") {
@@ -355,11 +381,37 @@ export function browserResultForModel<T>(result: T): T | AgentToolExecutionResul
   return { kind: "agent_tool_result", content: [{ type: "text", text }], details: result };
 }
 
-function formatBrowserResult<T extends { fallback?: "computer_act"; error?: string }>(
+function withBotPaths<T extends { downloads?: BrowserDownload[] }>(
   result: T,
-  { desktopTools = true }: PageToolOptions,
-) {
+  { downloads }: PageToolOptions,
+): T {
+  if (!downloads || !Array.isArray(result.downloads)) return result;
+  return {
+    ...result,
+    downloads: result.downloads.map((file) =>
+      typeof file.path === "string" ? { ...file, path: downloads.botPath(file.path) } : file,
+    ),
+  };
+}
+
+function formatBrowserResult<
+  T extends { fallback?: "computer_act"; error?: string; dialog?: string },
+>(result: T, { desktopTools = true }: PageToolOptions) {
   if (result.fallback !== "computer_act") return result;
+  // A confirm, prompt or "Leave site?" dialog asks something; page tools never answer it.
+  if (result.dialog) {
+    if (desktopTools) {
+      return {
+        ...result,
+        note: "Answer it with computer_act, or request_takeover if the user should decide. Do not repeat the step that opened it.",
+      };
+    }
+    const { fallback: _fallback, ...rest } = result;
+    return {
+      ...rest,
+      note: "Use request_takeover so the user can answer it. Do not repeat the step that opened it.",
+    };
+  }
   if (desktopTools) {
     return {
       ...result,

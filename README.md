@@ -290,7 +290,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the development workflow and test m
 - [Desktop releases](./docs/desktop-release.md)
 - [Mobile releases](./docs/mobile-release.md)
 - [Performance testing](./docs/performance.md)
-- [Manage the bots it creates](./docs/fleet-management.md)
+- [Bots that manage bots](./docs/fleet-management.md)
 
 ## How Rakazo compares
 

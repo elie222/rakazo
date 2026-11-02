@@ -9,6 +9,7 @@ import {
   parseBrowserActions,
   redactBrowserResult,
 } from "./browser-tools.js";
+import { builtinAgentTools } from "./builtin-tools.js";
 import { ComputerBrowserProvider } from "./computer-browser.js";
 import { redactConnectorPayload } from "./connector-safety.js";
 import { FakeBrowserProvider } from "./fake-browser.js";
@@ -110,6 +111,31 @@ describe("browser tools", () => {
       tree,
     });
     expect(view.details).toBe(navigated);
+  });
+
+  it("passes a snapshot's query on to the computer's page browser, trimmed, and leaves it out when blank", async () => {
+    const commands: unknown[] = [];
+    const browser = new ComputerBrowserProvider({
+      liveDriver: async (_computer, request) => {
+        commands.push(request);
+        return {
+          ok: true,
+          url: "https://shop.example.test/",
+          title: "Shop",
+          tree: "",
+          elements: [],
+        };
+      },
+    });
+    const live: ComputerRef = { id: "c1", botId: "b1", kind: "docker", providerRef: "c1" };
+    await browserSnapshotFromTool(browser, live, context, { query: "  postal code " });
+    await browserSnapshotFromTool(browser, live, context, { query: "  " });
+    await browserSnapshotFromTool(browser, live, context, {});
+    expect(commands).toEqual([
+      { command: "snapshot", query: "postal code" },
+      { command: "snapshot" },
+      { command: "snapshot" },
+    ]);
   });
 
   it("sends a navigation that brought no page as it is", async () => {
@@ -842,7 +868,7 @@ describe("browser tools", () => {
     [
       "too many actions",
       Array.from({ length: 25 }, () => ({ kind: "click", ref: "e1" })),
-      "browser_act accepts at most 24 actions",
+      "browser_act accepts at most 24 actions but got 25; none ran. Send the first 24 or fewer now, then the rest in a separate call.",
     ],
     ["an action without its ref", [{ kind: "click" }], "browser_act action 0 requires ref"],
     ["a fill without its text", [{ kind: "fill", ref: "e1" }], "browser_act fill requires text"],
@@ -926,6 +952,66 @@ describe("browser tools", () => {
     expect(
       await browserSnapshotFromTool(browser, computer, context, {}, { desktopTools: true }),
     ).toMatchObject({ fallback: "computer_act", note: expect.stringContaining("computer_act") });
+  });
+
+  it("keeps the page tools' descriptions short", () => {
+    const length = (name: string) =>
+      builtinAgentTools.find((tool) => tool.name === name)?.description.length ?? Infinity;
+    expect(length("browser_act")).toBeLessThanOrEqual(1400);
+    expect(length("browser_navigate")).toBeLessThanOrEqual(300);
+  });
+
+  it("points a dialog the page left open at the tools that can answer it", async () => {
+    const live = {
+      ok: true,
+      url: "https://example.test/",
+      title: "Example",
+      tree: "",
+      elements: [],
+    };
+    const opened = {
+      ok: false,
+      completed: 1,
+      uncertain: false,
+      error: 'A confirm dialog is open on the screen: "Delete this?"',
+      dialog: "confirm",
+      fallback: "computer_act" as const,
+    };
+    const liveDriver = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ...live,
+        completed: 1,
+        note: 'The page showed an alert, now closed: "Saved".',
+      })
+      .mockResolvedValue(opened);
+    const browser = new ComputerBrowserProvider({ liveDriver });
+    const liveComputer: ComputerRef = { ...computer, kind: "docker" };
+    const click = { actions: [{ kind: "click", ref: "e1" }] };
+    expect(await browserActFromTool(browser, liveComputer, context, click)).toMatchObject({
+      ok: true,
+      note: 'The page showed an alert, now closed: "Saved".',
+    });
+    expect(
+      await browserActFromTool(browser, liveComputer, context, click, { desktopTools: true }),
+    ).toMatchObject({
+      completed: 1,
+      error: opened.error,
+      fallback: "computer_act",
+      note: expect.stringMatching(/^Answer it with computer_act/),
+    });
+    const pageOnly = await browserSnapshotFromTool(
+      browser,
+      liveComputer,
+      context,
+      {},
+      { desktopTools: false },
+    );
+    expect(pageOnly).toMatchObject({
+      error: opened.error,
+      note: expect.stringMatching(/^Use request_takeover/),
+    });
+    expect(JSON.stringify(pageOnly)).not.toContain("computer_act");
   });
 
   it("hides page browser tools when the computer is not graphical", () => {

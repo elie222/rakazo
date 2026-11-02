@@ -387,6 +387,267 @@ describe("call session", () => {
     expect(callIdFromClientNonce(String(answer.mock.calls[0]?.[0]?.clientNonce))).toBeDefined();
   });
 
+  it("answers the caller's turn, never a bot message from before it", async () => {
+    const earlier = { ...botMessage("earlier-1", "Booked for Friday"), runId: "run-0" };
+    const turn = callerMessage("check the site");
+    await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
+    const feed = vi.mocked(runThreadSubscription).mock.calls.at(-1)?.[0];
+    // The caller's message lands before its run does; the earlier run already ended.
+    getThread.mockResolvedValue(snapshot([earlier, turn]) as never);
+    await heard("check the site");
+    expect(speak).not.toHaveBeenCalled();
+    expect(getSnapshot()?.phase).toBe("thinking");
+
+    // A refreshed snapshot puts the working run's progress message last; until that run
+    // stops, the call keeps waiting instead of reading another run's note.
+    const note = { ...botMessage("note-1", "Daily summary ready"), runId: "run-9" };
+    getThread.mockResolvedValue(
+      snapshot([earlier, turn, note, streamingMessage("Checking")], runningRun) as never,
+    );
+    await feed?.refresh();
+    expect(speak).not.toHaveBeenCalled();
+
+    getThread.mockResolvedValue(
+      snapshot([earlier, turn, note, botMessage("message-1", "On it.")]) as never,
+    );
+    await feed?.refresh();
+    expect(speak).toHaveBeenCalledTimes(1);
+    expect(speak).toHaveBeenCalledWith(
+      "On it.",
+      expect.objectContaining({ messageId: "message-1" }),
+    );
+  });
+
+  it.each(["failed", "cancelled", "completed"])(
+    "listens after a first turn ends with run.%s and no reply, then speaks a later reply",
+    async (status) => {
+      await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
+      const feed = vi.mocked(runThreadSubscription).mock.calls.at(-1)![0];
+      getThread.mockResolvedValue(snapshot([callerMessage("hello")], runningRun) as never);
+      await heard("hello");
+      expect(getSnapshot()?.phase).toBe("thinking");
+      feed.applyEvent({
+        ...userMessageEvent("call-1"),
+        seq: 10,
+        type: `run.${status}`,
+        runId: "run-1",
+        payload: status === "failed" ? { error: "Something went wrong. Try again." } : {},
+      } as ProductEvent);
+      expect(getSnapshot()).toMatchObject({
+        phase: "listening",
+        caption: "Something went wrong. Try again.",
+      });
+      expect(speak).not.toHaveBeenCalled();
+
+      send.mockResolvedValue({ runId: "run-2", taskId: "task-2" } as never);
+      getThread.mockResolvedValue({
+        ...snapshot([
+          callerMessage("hello"),
+          { ...callerMessage("try again"), id: "turn-2", runId: "run-2" },
+          { ...botMessage("message-2", "Ready."), runId: "run-2" },
+        ]),
+        cursor: 11,
+      } as never);
+      await heard("try again");
+      expect(speak).toHaveBeenLastCalledWith(
+        "Ready.",
+        expect.objectContaining({ messageId: "message-2" }),
+      );
+    },
+  );
+
+  it.each(["failed", "cancelled"])("stops waiting after an approval run is %s", async (status) => {
+    const turn = callerMessage("check the site");
+    const approval = approvalMessage();
+    const feed = await approvalWait(turn, approval);
+    getThread.mockResolvedValue(snapshot([turn, answered(approval)], runningRun) as never);
+    await feed?.refresh();
+    getThread.mockResolvedValue(
+      snapshot(
+        [turn, answered(approval)],
+        status === "failed"
+          ? ({
+              ...runningRun,
+              status: "failed",
+              error: "Something went wrong. Try again.",
+            } as ThreadSnapshot["run"])
+          : null,
+      ) as never,
+    );
+    await feed?.refresh();
+    expect(getSnapshot()).toMatchObject({
+      phase: "listening",
+      caption: "Something went wrong. Try again.",
+    });
+    expect(speak).toHaveBeenCalledTimes(1);
+    // A late unrelated message cannot become the failed approval's answer.
+    getThread.mockResolvedValue(
+      snapshot([turn, answered(approval), botMessage("late", "Late reply")]) as never,
+    );
+    await feed?.refresh();
+    expect(speak).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores an unrelated run's reply while awaiting the caller's run", async () => {
+    await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
+    const feed = vi.mocked(runThreadSubscription).mock.calls.at(-1)![0];
+    getThread.mockResolvedValue(snapshot([callerMessage("hello")], runningRun) as never);
+    await heard("hello");
+    getThread.mockResolvedValue(
+      snapshot(
+        [callerMessage("hello"), { ...botMessage("note", "Unrelated"), runId: "run-9" }],
+        runningRun,
+      ) as never,
+    );
+    await feed.refresh();
+    expect(speak).not.toHaveBeenCalled();
+    expect(getSnapshot()?.phase).toBe("thinking");
+  });
+
+  it("waits for the reply's own active run when another run is primary", async () => {
+    await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
+    const feed = vi.mocked(runThreadSubscription).mock.calls.at(-1)![0];
+    const messages = [callerMessage("hello"), botMessage("message-1", "Still writing")];
+    getThread.mockResolvedValue({
+      ...snapshot(messages, { ...runningRun, id: "run-9" } as ThreadSnapshot["run"]),
+      activeRuns: [runningRun],
+    } as never);
+    await heard("hello");
+    expect(speak).not.toHaveBeenCalled();
+    getThread.mockResolvedValue(
+      snapshot([callerMessage("hello"), botMessage("message-1", "Finished.")]) as never,
+    );
+    await feed.refresh();
+    expect(speak).toHaveBeenLastCalledWith(
+      "Finished.",
+      expect.objectContaining({ messageId: "message-1" }),
+    );
+  });
+
+  it("speaks only an approval's own reply to the tap, and keeps spoken answers off it", async () => {
+    const turn = callerMessage("check the site");
+    const approval = approvalMessage();
+    const note = { ...botMessage("note-1", "Daily summary ready"), runId: "run-9" };
+    const feed = await approvalWait(turn, approval);
+
+    // Another run posting meanwhile is not the reply.
+    getThread.mockResolvedValue(snapshot([turn, approval, note], waitingRun) as never);
+    await feed?.refresh();
+    expect(speak).toHaveBeenCalledTimes(1);
+
+    // Allow on screen sends no turn; the resumed run's reply is still this call's to speak.
+    getThread.mockResolvedValue(
+      snapshot([turn, answered(approval), note, botMessage("message-1", "Fetched it.")]) as never,
+    );
+    await feed?.refresh();
+    expect(speak).toHaveBeenCalledTimes(2);
+    expect(speak).toHaveBeenLastCalledWith(
+      "Fetched it.",
+      expect.objectContaining({ messageId: "message-1" }),
+    );
+
+    endCall();
+    await approvalWait(turn, approval);
+    const listens = listen.mock.calls.length;
+    await heard("yes");
+    expect(answer).not.toHaveBeenCalled();
+    expect(getSnapshot()).toMatchObject({
+      phase: "listening",
+      caption: "Approve or deny it on screen.",
+    });
+    expect(listen.mock.calls.length).toBeGreaterThan(listens);
+    await heard("bye");
+    expect(answer).not.toHaveBeenCalled();
+    expect(getSnapshot()).toBeNull();
+  });
+
+  it("never reads an approval that was pending before the caller spoke as the reply", async () => {
+    const turn = callerMessage("check the site");
+    const approval = approvalMessage();
+    await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
+    const feed = vi.mocked(runThreadSubscription).mock.calls.at(-1)?.[0];
+    getThread.mockResolvedValue(snapshot([turn, approval], waitingRun) as never);
+    await feed?.refresh();
+    await heard("hi");
+    expect(answer).not.toHaveBeenCalled();
+
+    // The tap updates the card before the run leaves waiting_input.
+    getThread.mockResolvedValue(snapshot([turn, answered(approval)], waitingRun) as never);
+    await feed?.refresh();
+    getThread.mockResolvedValue(
+      snapshot([turn, answered(approval), botMessage("message-1", "Fetched it.")]) as never,
+    );
+    await feed?.refresh();
+    expect(speak).toHaveBeenCalledTimes(1);
+    expect(speak).toHaveBeenCalledWith(
+      "Fetched it.",
+      expect.objectContaining({ messageId: "message-1" }),
+    );
+  });
+
+  it("answers the next turn after an approval denied without a reply", async () => {
+    const turn = callerMessage("check the site");
+    const approval = approvalMessage();
+    const note = { ...botMessage("note-1", "Daily summary ready"), runId: "run-9" };
+    const feed = await approvalWait(turn, approval);
+    getThread.mockResolvedValue(snapshot([turn, answered(approval), note]) as never);
+    await feed?.refresh();
+    expect(speak).toHaveBeenCalledTimes(1);
+
+    const next = { ...callerMessage("try another site"), id: "turn-2", runId: "run-2" };
+    getThread.mockResolvedValue(
+      snapshot([
+        turn,
+        answered(approval),
+        note,
+        next,
+        { ...botMessage("message-2", "Sure."), runId: "run-2" },
+      ]) as never,
+    );
+    send.mockResolvedValue({ runId: "run-2", taskId: "task-2" } as never);
+    await heard("try another site");
+    expect(speak).toHaveBeenLastCalledWith(
+      "Sure.",
+      expect.objectContaining({ messageId: "message-2" }),
+    );
+  });
+
+  it("reads a card past its stopped run's progress, then listens without reading it again", async () => {
+    const progress = {
+      ...streamingMessage(""),
+      blocks: [{ kind: "steps", steps: [{ label: "Web fetch", count: 1 }] }],
+    } as ThreadMessage;
+    const choice = askMessage("choice-1", {
+      text: "Allow or deny?",
+      actions: [
+        { id: "allow", label: "Allow once" },
+        { id: "deny", label: "Deny" },
+      ],
+    });
+    await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
+    const feed = vi.mocked(runThreadSubscription).mock.calls.at(-1)?.[0];
+    getThread.mockResolvedValue(
+      snapshot([callerMessage("pick for me"), choice, progress], waitingRun) as never,
+    );
+    await heard("pick for me");
+    expect(speak).toHaveBeenCalledWith(
+      "Allow or deny?. Say yes or no, or answer in a sentence.",
+      expect.objectContaining({ messageId: "choice-1" }),
+    );
+    const listens = listen.mock.calls.length;
+    await finishSpeaking();
+    // A spoken answer is the next turn: nothing else the bot posts meanwhile is read out.
+    const note = { ...botMessage("note-1", "Daily summary ready"), runId: "run-9" };
+    getThread.mockResolvedValue(
+      snapshot([callerMessage("pick for me"), choice, progress, note], waitingRun) as never,
+    );
+    await feed?.refresh();
+
+    expect(speak).toHaveBeenCalledTimes(1);
+    expect(getSnapshot()?.phase).toBe("listening");
+    expect(listen.mock.calls.length).toBeGreaterThan(listens);
+  });
+
   it("drops a send that finishes after the same bot is called again", async () => {
     let finishSend: (value: { runId: string; taskId: string }) => void = () => undefined;
     let failSend: (error: Error) => void = () => undefined;
@@ -1071,6 +1332,65 @@ function botMessage(id: string, text: string): ThreadMessage {
   };
 }
 
+function askMessage(id: string, block: Record<string, unknown>): ThreadMessage {
+  return {
+    ...botMessage(id, ""),
+    blocks: [{ kind: "ask", status: "pending", ...block }],
+  } as ThreadMessage;
+}
+
+/** Calls, takes the turn, and reads the approval card it stops on. */
+async function approvalWait(turn: ThreadMessage, approval: ThreadMessage) {
+  await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
+  const feed = vi.mocked(runThreadSubscription).mock.calls.at(-1)?.[0];
+  getThread.mockResolvedValue(snapshot([turn, approval], waitingRun) as never);
+  await heard("check the site");
+  expect(speak).toHaveBeenLastCalledWith(
+    "Open example.com?. Approve or deny it on screen.",
+    expect.objectContaining({ messageId: "approval-1" }),
+  );
+  await finishSpeaking();
+  return feed;
+}
+
+function approvalMessage(): ThreadMessage {
+  return askMessage("approval-1", {
+    text: "Open example.com?",
+    approvalEffectId: "effect-1",
+    actions: [
+      { id: "allow", label: "Allow once" },
+      { id: "deny", label: "Deny" },
+    ],
+  });
+}
+
+function answered(message: ThreadMessage): ThreadMessage {
+  return {
+    ...message,
+    blocks: message.blocks.map((block) => ({ ...block, status: "answered" })),
+  } as ThreadMessage;
+}
+
+/** The reply's audio ends and the echo guard runs out. */
+async function finishSpeaking() {
+  const speech = vi.mocked(speaker.subscribe).mock.calls.at(-1)?.[0];
+  speech?.({ status: "speaking" });
+  speech?.({ status: "idle" });
+  await vi.advanceTimersByTimeAsync(ECHO_GUARD_MS);
+}
+
+function callerMessage(text: string): ThreadMessage {
+  return {
+    id: "turn-1",
+    threadId: "thread-1",
+    seq: 3,
+    role: "user",
+    runId: "run-1",
+    blocks: [{ kind: "text", text }],
+    createdAt: "2026-09-20T00:00:00.000Z",
+  };
+}
+
 /** The live message the thread streams the reply into while the run is still going. */
 function streamingMessage(text: string): ThreadMessage {
   return {
@@ -1113,6 +1433,8 @@ const runningRun = {
   completedAt: null,
   createdAt: "2026-09-20T00:00:00.000Z",
 } as ThreadSnapshot["run"];
+
+const waitingRun = { ...runningRun, status: "waiting_input" } as ThreadSnapshot["run"];
 
 function callEndedEvent(callId: string, farewell = "Talk soon"): ProductEvent {
   return {

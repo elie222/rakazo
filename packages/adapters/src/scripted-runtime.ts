@@ -388,6 +388,27 @@ export function inferScript(
       },
     ];
   }
+  // The site is not in the message, so the owner did not name it and the call asks.
+  const paidRequest = /paid request card(?: on (\w+))?/.exec(lower);
+  if (paidRequest) {
+    const url = `https://api.${paidRequest[1] ?? "example"}.test/quote`;
+    return [
+      {
+        assistant: "i will call that paid api.",
+        toolCalls: [
+          {
+            name: "paid_request",
+            args: {
+              url,
+              method: "GET",
+              reason:
+                "The owner asked for a live price quote from this paid API, which answers only after a small per-request payment.",
+            },
+          },
+        ],
+      },
+    ];
+  }
   if (lower.includes("mcp approval card")) {
     return [
       {
