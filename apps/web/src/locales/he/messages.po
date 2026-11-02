@@ -1155,7 +1155,6 @@ msgid "Can't reach the server."
 msgstr "אין גישה לשרת."
 
 #: src/components/TextOnlyMark.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "לא ניתן לקרוא תמונות"
@@ -1480,10 +1479,6 @@ msgstr "עמודה {index}"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Comfortable"
 msgstr "מרווח"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Coming soon"
-msgstr "בקרוב"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -3039,7 +3034,6 @@ msgid "Forgot password?"
 msgstr "שכחת סיסמה?"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "חינם"
 
@@ -3478,10 +3472,6 @@ msgstr "מאפשר לבוטים לשמור ולשלוף עובדות לפי מש
 msgid "Light"
 msgstr "בהיר"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Linear issue"
-msgstr "Issue ב-Linear"
-
 #: src/pages/SpaceSearch.tsx
 msgid "Link"
 msgstr ""
@@ -3847,7 +3837,6 @@ msgstr "מצב"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3868,7 +3857,7 @@ msgstr "חיבורים למודלים"
 msgid "Model id"
 msgstr "מזהה מודל"
 
-#: src/pages/model-settings/model-picker.tsx
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 msgid "Model options"
 msgstr "אפשרויות מודל"
@@ -3883,8 +3872,8 @@ msgstr "מודלים"
 msgid "Models at provider cost"
 msgstr ""
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Models from server"
 msgstr "מודלים מהשרת"
 
@@ -4114,7 +4103,6 @@ msgid "No matching artifacts on this page."
 msgstr "אין תוצרים תואמים בדף הזה."
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -4394,8 +4382,8 @@ msgstr ""
 msgid "Original message unavailable"
 msgstr "ההודעה המקורית אינה זמינה"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "מודל אחר…"
 
@@ -4415,10 +4403,6 @@ msgstr "עמוד {page} מתוך {count}"
 #: src/pages/NotFound.tsx
 msgid "Page not found"
 msgstr "הדף לא נמצא"
-
-#: src/pages/RoutineEditor.tsx
-msgid "PagerDuty incident"
-msgstr "תקרית PagerDuty"
 
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
@@ -5239,8 +5223,8 @@ msgstr "היקפים (אופציונלי)"
 msgid "Screen not connected"
 msgstr "המסך אינו מחובר"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5273,8 +5257,8 @@ msgstr "חיפוש לפי דומיין"
 msgid "Search integrations.sh"
 msgstr "חיפוש ב-integrations.sh"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"
@@ -5361,10 +5345,6 @@ msgstr "שולח…"
 #: src/components/AskCard.tsx
 msgid "Sent"
 msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Sentry alert"
-msgstr "התראת Sentry"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Serenity endpoint is required."
@@ -5839,10 +5819,6 @@ msgstr "מחשב הצוות"
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
 msgstr "הודעת Teams"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Teams not enabled"
-msgstr "Teams לא מופעל"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"

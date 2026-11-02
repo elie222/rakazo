@@ -12,6 +12,7 @@ const { native } = vi.hoisted(() => ({
     setSettings: vi.fn(async (..._args: unknown[]) => undefined),
     setOpenThread: vi.fn(async (): Promise<void> => undefined),
     resume: vi.fn(async (): Promise<void> => undefined),
+    resumeAfterMute: vi.fn(async (): Promise<void> => undefined),
     stop: vi.fn(async (): Promise<void> => undefined),
   },
 }));
@@ -37,6 +38,7 @@ vi.mock("expo-secure-store", () => ({
 import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import {
+  afterChatNotifyChange,
   DEFAULT_LIVE_NOTIFICATION_SETTINGS,
   resumeLiveNotifications,
   setLiveNotificationSettings,
@@ -51,6 +53,7 @@ beforeEach(() => {
   native.stop.mockClear();
   native.setSettings.mockClear();
   native.resume.mockClear();
+  native.resumeAfterMute.mockClear();
   native.getSettings.mockReset().mockResolvedValue({
     liveConnection: false,
     messages: true,
@@ -69,6 +72,7 @@ const account = (userId: string) => ({
 describe("Android live notification resume", () => {
   beforeEach(() => {
     native.resume.mockReset();
+    native.resumeAfterMute.mockClear();
   });
 
   it("resumes the native poller with the normalized server and the active UI locale", async () => {
@@ -100,6 +104,51 @@ describe("Android live notification resume", () => {
     await resumeLiveNotifications("not a url", "token-1", "space-1");
     await resumeLiveNotifications("https://app.example.test", "", "space-1");
     expect(native.resume).not.toHaveBeenCalled();
+  });
+
+  it("passes the muted bot to the native restart even without a thread id", async () => {
+    await afterChatNotifyChange("https://app.example.test", "token-1", "space-1", {
+      botId: "bot-1",
+      notify: false,
+    });
+    expect(native.resumeAfterMute).toHaveBeenCalledExactlyOnceWith(
+      "https://app.example.test",
+      "token-1",
+      "space-1",
+      "de",
+      "",
+      "bot-1",
+    );
+    expect(native.resume).not.toHaveBeenCalled();
+  });
+
+  it("keeps pending replies when notifications are turned on", async () => {
+    await afterChatNotifyChange("https://app.example.test", "token-1", "space-1", {
+      botId: "bot-1",
+      notify: true,
+    });
+    expect(native.resumeAfterMute).not.toHaveBeenCalled();
+    expect(native.resume).toHaveBeenCalled();
+  });
+
+  it("keeps the existing resume path on older native builds", async () => {
+    const resumeAfterMute = native.resumeAfterMute;
+    Reflect.deleteProperty(native, "resumeAfterMute");
+    try {
+      await afterChatNotifyChange("https://app.example.test", "token-1", "space-1", {
+        botId: "bot-1",
+        notify: false,
+      });
+      expect(native.resume).toHaveBeenCalledExactlyOnceWith(
+        "https://app.example.test",
+        "token-1",
+        "space-1",
+        "de",
+        "",
+      );
+    } finally {
+      native.resumeAfterMute = resumeAfterMute;
+    }
   });
 });
 
@@ -149,6 +198,73 @@ describe("Android account ownership", () => {
       "",
     );
     expect(native.resume).not.toHaveBeenCalled();
+  });
+
+  it("restores account settings before forwarding a mute restart without stopping pending work", async () => {
+    const settings = { ...DEFAULT_LIVE_NOTIFICATION_SETTINGS, liveConnection: true };
+    await rememberSavedAccount(endpoint, { ...account("family"), notifications: settings });
+    await afterChatNotifyChange(endpoint, "family-token", "space-1", {
+      botId: "bot-1",
+      notify: false,
+    });
+    expect(native.setAccount).toHaveBeenCalledWith("family", "");
+    expect(native.setSettings).toHaveBeenCalledExactlyOnceWith(
+      settings,
+      endpoint,
+      "family-token",
+      "space-1",
+      "de",
+      "",
+    );
+    expect(native.resumeAfterMute).toHaveBeenCalledExactlyOnceWith(
+      endpoint,
+      "family-token",
+      "space-1",
+      "de",
+      "",
+      "bot-1",
+    );
+    expect(native.setSettings.mock.invocationCallOrder[0]).toBeLessThan(
+      native.resumeAfterMute.mock.invocationCallOrder[0] as number,
+    );
+    expect(native.stop).not.toHaveBeenCalled();
+    expect(native.resume).not.toHaveBeenCalled();
+  });
+
+  it("keeps account preferences on builds without the mute restart method", async () => {
+    const settings = { ...DEFAULT_LIVE_NOTIFICATION_SETTINGS, liveConnection: true };
+    await rememberSavedAccount(endpoint, { ...account("family"), notifications: settings });
+    const resumeAfterMute = native.resumeAfterMute;
+    Reflect.deleteProperty(native, "resumeAfterMute");
+    try {
+      await afterChatNotifyChange(endpoint, "family-token", "space-1", {
+        botId: "bot-1",
+        notify: false,
+      });
+      expect(native.setSettings).toHaveBeenCalledWith(
+        settings,
+        endpoint,
+        "family-token",
+        "space-1",
+        "de",
+        "",
+      );
+      expect(native.resume).not.toHaveBeenCalled();
+      expect(native.stop).not.toHaveBeenCalled();
+    } finally {
+      native.resumeAfterMute = resumeAfterMute;
+    }
+  });
+
+  it("does not forward a mute restart for an unrecognized bearer", async () => {
+    await rememberSavedAccount(endpoint, account("family"));
+    await afterChatNotifyChange(endpoint, "unknown-token", "space-1", {
+      botId: "bot-1",
+      notify: false,
+    });
+    expect(native.stop).toHaveBeenCalledWith(false);
+    expect(native.resumeAfterMute).not.toHaveBeenCalled();
+    expect(native.setSettings).not.toHaveBeenCalled();
   });
 
   it("keeps a legacy login polling before its account is saved", async () => {

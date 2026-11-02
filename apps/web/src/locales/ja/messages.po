@@ -1155,7 +1155,6 @@ msgid "Can't reach the server."
 msgstr "サーバーに接続できません。"
 
 #: src/components/TextOnlyMark.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "画像を読み取れません"
@@ -1480,10 +1479,6 @@ msgstr "列 {index}"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Comfortable"
 msgstr "ゆったり"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Coming soon"
-msgstr "近日公開"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -3039,7 +3034,6 @@ msgid "Forgot password?"
 msgstr "パスワードをお忘れですか？"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "無料"
 
@@ -3478,10 +3472,6 @@ msgstr "MEMORY.md に加えて、ボットが意味に基づいて事実を保�
 msgid "Light"
 msgstr "ライト"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Linear issue"
-msgstr "Linear課題"
-
 #: src/pages/SpaceSearch.tsx
 msgid "Link"
 msgstr ""
@@ -3847,7 +3837,6 @@ msgstr "モード"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3868,7 +3857,7 @@ msgstr "モデル接続"
 msgid "Model id"
 msgstr "モデルID"
 
-#: src/pages/model-settings/model-picker.tsx
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 msgid "Model options"
 msgstr "モデルのオプション"
@@ -3883,8 +3872,8 @@ msgstr "モデル"
 msgid "Models at provider cost"
 msgstr "プロバイダー原価でのモデル利用"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Models from server"
 msgstr "サーバーのモデル"
 
@@ -4114,7 +4103,6 @@ msgid "No matching artifacts on this page."
 msgstr "このページに一致するアーティファクトはありません。"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -4394,8 +4382,8 @@ msgstr ""
 msgid "Original message unavailable"
 msgstr "元のメッセージを表示できません"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "その他のモデル…"
 
@@ -4415,10 +4403,6 @@ msgstr "{page} / {count} ページ"
 #: src/pages/NotFound.tsx
 msgid "Page not found"
 msgstr "ページが見つかりません"
-
-#: src/pages/RoutineEditor.tsx
-msgid "PagerDuty incident"
-msgstr "PagerDutyインシデント"
 
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
@@ -5239,8 +5223,8 @@ msgstr "スコープ（任意）"
 msgid "Screen not connected"
 msgstr "画面が接続されていません"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5273,8 +5257,8 @@ msgstr "ドメインで検索"
 msgid "Search integrations.sh"
 msgstr "integrations.shを検索"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"
@@ -5361,10 +5345,6 @@ msgstr "送信中…"
 #: src/components/AskCard.tsx
 msgid "Sent"
 msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Sentry alert"
-msgstr "Sentryアラート"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Serenity endpoint is required."
@@ -5839,10 +5819,6 @@ msgstr "チームのコンピューター"
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
 msgstr "Teamsメッセージ"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Teams not enabled"
-msgstr "Teamsが有効になっていません"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
