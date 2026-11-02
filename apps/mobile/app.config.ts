@@ -1,4 +1,3 @@
-import { DEFAULT_MOBILE_BUNDLE_ID } from "@rakazo/contracts/mobile-app";
 import type { ConfigContext, ExpoConfig } from "expo/config";
 
 const RELEASE_PROFILES = new Set(["production", "android-apk", "diagnostic"]);
@@ -24,9 +23,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   }
 
   let result = config as ExpoConfig;
-  if (!result.ios?.bundleIdentifier) {
-    result = { ...result, ios: { ...result.ios, bundleIdentifier: DEFAULT_MOBILE_BUNDLE_ID } };
-  }
   const rpId = passkeyRpId(process.env.EXPO_PUBLIC_API_URL);
   if (rpId) {
     // Native passkeys only work for domains the binary is associated with, so the app reads the

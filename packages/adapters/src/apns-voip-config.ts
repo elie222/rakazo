@@ -1,5 +1,8 @@
-import { DEFAULT_MOBILE_BUNDLE_ID } from "@rakazo/contracts/mobile-app";
 import type { ApnsVoipConfig } from "./apns-voip.js";
+
+/** The published app's bundle id (apps/mobile/app.json); self-built apps set their own. */
+const DEFAULT_BUNDLE_ID = "com.rakazo.app";
+
 export function apnsVoipConfig(
   source: Record<string, string | undefined>,
 ): ApnsVoipConfig | undefined {
@@ -19,7 +22,7 @@ export function apnsVoipConfig(
     teamId: source.APNS_VOIP_TEAM_ID,
     privateKey: source.APNS_VOIP_PRIVATE_KEY.replace(/\\n/g, "\n"),
     environment: source.APNS_VOIP_ENVIRONMENT === "sandbox" ? "sandbox" : "production",
-    bundleId: source.APNS_VOIP_BUNDLE_ID || DEFAULT_MOBILE_BUNDLE_ID,
+    bundleId: source.APNS_VOIP_BUNDLE_ID || DEFAULT_BUNDLE_ID,
   };
 }
 
