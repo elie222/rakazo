@@ -570,8 +570,8 @@ async function stopOwnerWork(
     }
     return stop;
   });
-  if (stop?.runIds.length) await finishThreadStop(deps, identity, target, stop);
   await enqueueDeliverJob(deps);
+  if (stop?.runIds.length) await finishThreadStop(deps, identity, target, stop);
 }
 
 /** Returns true when the command matched a pending item and was handled. */
