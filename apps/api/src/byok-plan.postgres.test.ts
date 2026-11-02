@@ -185,6 +185,10 @@ dbTests("own-key plan", () => {
     plan.byokPriceCents = 1000;
     await expect(service.switchToYearly(actor)).rejects.toMatchObject({ code: "CONFLICT" });
     plan.byokPriceCents = BYOK_MONTHLY_PRICE_CENTS!;
+    // An overdue month must not be credited against the year.
+    plan.status = "past_due";
+    await expect(service.switchToYearly(actor)).rejects.toMatchObject({ code: "CONFLICT" });
+    plan.status = "active";
     await service.switchToYearly(actor);
     await expect(service.status(actor)).resolves.toMatchObject({
       access: true,

@@ -305,11 +305,15 @@ export class StripeBillingProvider implements BillingProvider {
       holdsBillingSubscription(mapStripeSubscriptionStatus(s.status));
     const subscription = subscriptions.find((s) => s.id === subscriptionId);
     const item = subscription?.items.data[0];
+    const status = subscription && mapStripeSubscriptionStatus(subscription.status);
     if (
       !subscription ||
       !item ||
       !isByokPlan(subscription) ||
-      !live(subscription) ||
+      // Paid up and not cancelling: an overdue month must not be credited against the year.
+      (status !== "active" && status !== "trialing") ||
+      subscription.cancel_at_period_end ||
+      subscription.cancel_at != null ||
       item.price.recurring?.interval !== "month" ||
       subscriptions.some((s) => live(s) && creditAmount(s.metadata?.rakazo_credit_cents))
     )

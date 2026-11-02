@@ -481,8 +481,8 @@ export interface BillingProvider {
   /**
    * Moves the customer's live monthly own-key subscription `subscriptionId` to `amountCents` a
    * year, charging the difference now less the unused part of the month. A failed payment leaves
-   * the plan unchanged. Returns false without charging when that subscription is no longer a live
-   * monthly own-key plan or monthly credits have started.
+   * the plan unchanged. Returns false without charging when that subscription is no longer an active
+   * or trialing monthly own-key plan, is set to cancel, or monthly credits have started.
    */
   switchByokToYearly?(
     customerId: string,

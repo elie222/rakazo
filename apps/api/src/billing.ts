@@ -554,7 +554,8 @@ export function createBillingService(deps: {
         account.byokInterval === "year" ||
         account.creditAmountCents ||
         account.cancelAtPeriodEnd ||
-        !hasBillingAccess(account.status) ||
+        // Paid up: an overdue month must not be credited against the year.
+        (account.status !== "active" && account.status !== "trialing") ||
         // A subscriber on an older, cheaper price would pay more.
         account.byokPriceCents * 12 <= amountCents
       )

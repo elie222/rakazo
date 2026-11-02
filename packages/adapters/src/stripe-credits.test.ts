@@ -134,6 +134,11 @@ describe("Stripe prepaid model credits", () => {
           plan("sub_active", "active", { rakazo_plan: "byok" }),
           plan("sub_unpaid", "canceled", { rakazo_plan: "byok" }),
           plan("sub_yearly", "active", { rakazo_plan: "byok" }, "year"),
+          plan("sub_overdue", "past_due", { rakazo_plan: "byok" }),
+          {
+            ...plan("sub_cancelling", "active", { rakazo_plan: "byok" }),
+            cancel_at_period_end: true,
+          },
         ],
         has_more: false,
       },
@@ -141,9 +146,8 @@ describe("Stripe prepaid model credits", () => {
     await expect(provider.switchByokToYearly("cus_fixture", "sub_unpaid", 14400)).resolves.toBe(
       false,
     );
-    await expect(provider.switchByokToYearly("cus_fixture", "sub_yearly", 14400)).resolves.toBe(
-      false,
-    );
+    for (const id of ["sub_yearly", "sub_overdue", "sub_cancelling"])
+      await expect(provider.switchByokToYearly("cus_fixture", id, 14400)).resolves.toBe(false);
     const withCredits = fixture({
       "GET /v1/subscriptions": {
         data: [
