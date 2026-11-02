@@ -73,12 +73,20 @@ describe("memory outcome grading", () => {
     expect(failed("moved-city", e)).toEqual(["first-entry-rewritten"]);
   });
 
-  it("ignores headings in the first save when checking for a pure append", () => {
+  it("rejects a pure append after a first save with a heading", () => {
     const e = evidence("# Home\n\nLives in London.\nMoved to Berlin.\n", [
       remember(1, "# Home\nLives in London."),
       remember(3, "Moved to Berlin."),
     ]);
     expect(failed("moved-city", e)).toEqual(["first-entry-rewritten"]);
+  });
+
+  it("compares a heading-only fact like any other line", () => {
+    const e = evidence("# Home: Berlin\n", [
+      remember(1, "# Home: London"),
+      remember(3, "# Home: Berlin", "# Home: London"),
+    ]);
+    expect(failed("moved-city", e)).toEqual([]);
   });
 
   it("does not credit an update when no home was saved first", () => {

@@ -161,8 +161,14 @@ export const MEMORY_EVAL_CASES: EvalCase[] = [
     ],
     grade: (e) => {
       // The first session only asks to remember London, so whatever it saved is the old home.
-      const first = saves(e, 1).flatMap((c) => entries(String(c.args.content ?? "")));
-      const current = new Set(entries(e.memory));
+      // Every non-empty line, headings included, so a heading-only fact still counts.
+      const lines = (text: string) =>
+        text
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean);
+      const first = saves(e, 1).flatMap((c) => lines(String(c.args.content ?? "")));
+      const current = new Set(lines(e.memory));
       return [
         check("home-saved-first", first.length > 0),
         // A pure append leaves every first line in place; the judge decides whether the old home is still current.
