@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setAccountIdentity } from "./account-identity";
 import {
   clearSpaceSelection,
   createSpaceRpc,
@@ -13,6 +14,7 @@ const notify = vi.hoisted(() => vi.fn());
 vi.mock("./auth", () => ({ authClient: { $store: { notify } } }));
 
 afterEach(() => {
+  setAccountIdentity(null);
   vi.unstubAllGlobals();
   notify.mockClear();
 });
@@ -146,6 +148,16 @@ describe("space selection storage", () => {
 });
 
 describe("shell RPC space isolation", () => {
+  it("pins the user to the page identity when another account becomes the browser's selection", async () => {
+    setAccountIdentity("family");
+    const fetch = vi.fn(async (_request: Request, _init: RequestInit) =>
+      Response.json({ json: {} }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    setAccountIdentity("work");
+    await rpc.me();
+    expect(new Headers(fetch.mock.calls[0]?.[1].headers).get("x-rakazo-user-id")).toBe("family");
+  });
   it.each([rpc, createSpaceRpc("space-a")])(
     "passes the caller's cancellation signal directly to fetch",
     async (client) => {

@@ -547,6 +547,10 @@ msgstr ""
 msgid "Add a voice provider key and pick a voice in Voice settings."
 msgstr ""
 
+#: src/components/SidebarFooter.tsx
+msgid "Add account"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Add an HTTPS server URL."
 msgstr "יש להוסיף URL של שרת HTTPS."
@@ -1849,6 +1853,7 @@ msgstr "לא ניתן להתחבר למסך המחשב"
 #: src/components/PasskeySettings.tsx
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/lib/account-security.ts
+#: src/lib/account-sessions.ts
 #: src/lib/sso-flow.ts
 #: src/lib/user-error.ts
 #: src/pages/Auth.tsx
@@ -1960,6 +1965,7 @@ msgstr ""
 
 #: src/components/ErrorBoundary.tsx
 #: src/components/PasskeySettings.tsx
+#: src/lib/account-sessions.ts
 #: src/lib/user-devices.ts
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load"
@@ -2587,6 +2593,10 @@ msgstr "מושבת"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Discard recording"
+msgstr ""
+
+#: src/lib/account-sessions.ts
+msgid "Discard unsaved attachments and pending messages?"
 msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
@@ -3558,6 +3568,14 @@ msgstr ""
 #: src/components/SidebarFooter.tsx
 msgid "Log out"
 msgstr "התנתקות"
+
+#: src/components/SidebarFooter.tsx
+msgid "Log out all accounts"
+msgstr ""
+
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Log out all accounts?"
+msgstr ""
 
 #: src/pages/shell/agent-import.tsx
 msgid "Looks like it contains a key"

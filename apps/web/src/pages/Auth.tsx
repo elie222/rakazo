@@ -9,6 +9,7 @@ import { Button, Input, InputOTP, InputOTPGroup, InputOTPSlot, Label } from "@ra
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { PasskeySignIn } from "../components/PasskeySignIn";
+import { switchSavedAccount, useSavedAccounts } from "../lib/account-sessions";
 import { authClient } from "../lib/auth";
 import type { AuthCapabilities } from "../lib/auth-capabilities";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
@@ -25,6 +26,7 @@ export const submitClass = "mt-3 h-12 w-full rounded-xl text-base";
 export function AuthPage({ mode }: { mode: AuthMode }) {
   const { t } = useLingui();
   const [searchParams, setSearchParams] = useSearchParams();
+  const saved = useSavedAccounts();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -179,6 +181,10 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
 
   function enterApp() {
     clearSpaceSelection();
+    if (searchParams.get("add") === "1") {
+      window.location.assign("/app");
+      return;
+    }
     // The routes move a signed-in user on once the session refetch lands. Navigating
     // first beats it, so the guards bounce through sign-in and the shell.
     entering.current = true;
@@ -227,6 +233,22 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
         </div>
       ) : (
         <>
+          {mode === "in" && !codeStep
+            ? saved.accounts.map((account) => (
+                <Button
+                  key={account.userId}
+                  type="button"
+                  variant="outline"
+                  className="mb-3 h-12 w-full justify-between gap-3"
+                  onClick={() => void switchSavedAccount(account.userId)}
+                >
+                  <span className="truncate">{account.email}</span>
+                  {account.unread > 0 ? (
+                    <span className="tabular-nums">{account.unread}</span>
+                  ) : null}
+                </Button>
+              ))
+            : null}
           {capabilityError ? (
             <div role="alert" className="w-full text-center">
               <p>

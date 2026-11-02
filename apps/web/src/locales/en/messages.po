@@ -547,6 +547,10 @@ msgstr "Add a trigger to run this routine."
 msgid "Add a voice provider key and pick a voice in Voice settings."
 msgstr "Add a voice provider key and pick a voice in Voice settings."
 
+#: src/components/SidebarFooter.tsx
+msgid "Add account"
+msgstr "Add account"
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Add an HTTPS server URL."
 msgstr "Add an HTTPS server URL."
@@ -1849,6 +1853,7 @@ msgstr "Could not connect to the computer screen"
 #: src/components/PasskeySettings.tsx
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/lib/account-security.ts
+#: src/lib/account-sessions.ts
 #: src/lib/sso-flow.ts
 #: src/lib/user-error.ts
 #: src/pages/Auth.tsx
@@ -1960,6 +1965,7 @@ msgstr "Could not install plugin"
 
 #: src/components/ErrorBoundary.tsx
 #: src/components/PasskeySettings.tsx
+#: src/lib/account-sessions.ts
 #: src/lib/user-devices.ts
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load"
@@ -2588,6 +2594,10 @@ msgstr "Disabled"
 #: src/components/composer/HoldToTalk.tsx
 msgid "Discard recording"
 msgstr "Discard recording"
+
+#: src/lib/account-sessions.ts
+msgid "Discard unsaved attachments and pending messages?"
+msgstr "Discard unsaved attachments and pending messages?"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/MemorySettingsOverlay.tsx
@@ -3558,6 +3568,14 @@ msgstr "Local computer access requires the latest desktop app."
 #: src/components/SidebarFooter.tsx
 msgid "Log out"
 msgstr "Log out"
+
+#: src/components/SidebarFooter.tsx
+msgid "Log out all accounts"
+msgstr "Log out all accounts"
+
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Log out all accounts?"
+msgstr "Log out all accounts?"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Looks like it contains a key"

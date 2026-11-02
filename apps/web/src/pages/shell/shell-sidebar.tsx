@@ -16,6 +16,7 @@ import { InviteDialog } from "../../components/InviteDialog";
 import { PasskeyOffer } from "../../components/PasskeyOffer";
 import { SidebarFooter } from "../../components/SidebarFooter";
 import { useBilling } from "../../components/SubscriptionGate";
+import { addSavedAccount, switchSavedAccount, useSavedAccounts } from "../../lib/account-sessions";
 import { formatBillingDate } from "../../lib/billing";
 import type { BotsSidebarDensity } from "../../lib/bots-sidebar-density-pref";
 import type { Panel } from "../../lib/right-panel-state";
@@ -306,7 +307,8 @@ function ShellSidebarFooter({
   const [inviteOpen, setInviteOpen] = useState(false);
   const referral = billing?.referral;
   const [logOutError, setLogOutError] = useState<string | null>(null);
-  const { signingOut, logOut } = useSignOut("/sign-in", (message) => {
+  const saved = useSavedAccounts();
+  const { signingOut, logOut, logOutAll } = useSignOut("/sign-in", (message) => {
     // A failed sign-out reloads the page: reopen the menu so its error shows.
     setMenuOpen(true);
     setLogOutError(message);
@@ -334,6 +336,13 @@ function ShellSidebarFooter({
         initials={initials}
         image={user?.image}
         email={user?.email}
+        accounts={saved.accounts}
+        activeUserId={saved.activeUserId}
+        onSwitchAccount={(userId) => void switchSavedAccount(userId)}
+        onAddAccount={saved.accounts.length ? () => void addSavedAccount() : undefined}
+        onLogOutAll={() => {
+          if (window.confirm(t`Log out all accounts?`)) void logOutAll();
+        }}
         open={menuOpen}
         onOpenChange={(open) => {
           setMenuOpen(open);

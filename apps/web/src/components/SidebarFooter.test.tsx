@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { DesktopUpdateState } from "@rakazo/contracts";
 import { Toaster } from "@rakazo/ui-web";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -34,6 +34,7 @@ async function render(
   onIntegrations = vi.fn(),
   onBoard?: () => void,
   logos?: Array<{ name: string; logo?: string }>,
+  accountProps?: Partial<ComponentProps<typeof SidebarFooter>>,
 ) {
   const email = "account@rakazo.test";
   await act(async () =>
@@ -61,12 +62,40 @@ async function render(
           onLogOut={() => {}}
           signingOut={false}
           logOutError={null}
+          {...accountProps}
         />
         <Toaster />
       </DesktopUpdatesProvider>,
     ),
   );
 }
+it("shows the selected account, each unread count and deliberate all-account sign-out", async () => {
+  const switchAccount = vi.fn();
+  const all = vi.fn();
+  const shared = { sessionId: "session", name: "Account", image: null, notifications: [] };
+  await render("Family", undefined, undefined, undefined, undefined, {
+    accounts: [
+      { ...shared, userId: "family", email: "family@example.test", unread: 2 },
+      { ...shared, userId: "work", email: "work@example.test", unread: 4 },
+    ],
+    activeUserId: "family",
+    onSwitchAccount: switchAccount,
+    onLogOutAll: all,
+    onAddAccount: vi.fn(),
+  });
+  const selected = document.querySelector<HTMLButtonElement>('button[aria-pressed="true"]')!;
+  expect(selected.disabled).toBe(true);
+  expect(selected.textContent).toBe("family@example.test2");
+  const work = document.querySelector<HTMLButtonElement>('button[aria-pressed="false"]')!;
+  expect(work.textContent).toBe("work@example.test4");
+  await act(async () => work.click());
+  expect(switchAccount).toHaveBeenCalledWith("work");
+  const logOutAll = [...document.querySelectorAll("button")].find(
+    (button) => button.textContent === "Log out all accounts",
+  )!;
+  await act(async () => logOutAll.click());
+  expect(all).toHaveBeenCalledOnce();
+});
 function bridge(phase: DesktopUpdateState["phase"]) {
   const state: DesktopUpdateState = {
     phase,

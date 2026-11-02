@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import { setAccountIdentity } from "./account-identity";
 
 import {
   beginComposerDraftSubmission,
+  clearComposerDrafts,
   composerDraftBindingsKey,
   composerDraftStorageKey,
   readComposerDraft,
@@ -24,6 +26,41 @@ function memoryStorage(initial: Record<string, string> = {}) {
 }
 
 describe("composer drafts", () => {
+  it("keeps drafts separate by account and signs out only one account's saved text", () => {
+    const map = new Map<string, string>([["rakazo.composerDraft.bot:1", "unowned legacy"]]);
+    const storage = {
+      ...memoryStorage(),
+      getItem: (key: string) => map.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        map.set(key, value);
+      },
+      removeItem: (key: string) => {
+        map.delete(key);
+      },
+      get length() {
+        return map.size;
+      },
+      key: (index: number) => [...map.keys()][index] ?? null,
+    };
+    vi.stubGlobal("localStorage", storage);
+    try {
+      setAccountIdentity("family");
+      expect(readComposerDraft("bot:1", storage)).toBe("");
+      writeComposerDraft("bot:1", "family draft", storage);
+      setAccountIdentity(null);
+      setAccountIdentity("work");
+      expect(readComposerDraft("bot:1", storage)).toBe("");
+      writeComposerDraft("bot:1", "work draft", storage);
+      clearComposerDrafts("family");
+      expect(readComposerDraft("bot:1", storage)).toBe("work draft");
+      setAccountIdentity(null);
+      setAccountIdentity("family");
+      expect(readComposerDraft("bot:1", storage)).toBe("");
+    } finally {
+      setAccountIdentity(null);
+      vi.unstubAllGlobals();
+    }
+  });
   it("scopes stored drafts per thread", () => {
     expect(composerDraftStorageKey("bot:1")).toBe("rakazo.composerDraft.bot:1");
     expect(composerDraftStorageKey("group:2")).toBe("rakazo.composerDraft.group:2");

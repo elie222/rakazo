@@ -2,6 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { isIdentityConfirmationRequired } from "@rakazo/contracts";
 import { Button, Spinner } from "@rakazo/ui-web";
 import { useRef, useState } from "react";
+import { accountRequestHeaders } from "../lib/account-identity";
 import { recheckSessionOnUnauthorized, rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 import { SuccessPop } from "./ai/primitives";
@@ -49,7 +50,7 @@ export function AccountDataSettings({
     try {
       const response = await fetch("/api/account/import", {
         method: "POST",
-        headers: { "content-type": "application/zip" },
+        headers: accountRequestHeaders({ "content-type": "application/zip" }),
         credentials: "include",
         body: file,
       });

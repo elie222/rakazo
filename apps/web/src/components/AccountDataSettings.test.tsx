@@ -142,7 +142,7 @@ it("uploads the chosen archive and refreshes spaces", async () => {
 
   expect(fetchMock).toHaveBeenCalledWith("/api/account/import", {
     method: "POST",
-    headers: { "content-type": "application/zip" },
+    headers: new Headers({ "content-type": "application/zip" }),
     credentials: "include",
     body: file,
   });

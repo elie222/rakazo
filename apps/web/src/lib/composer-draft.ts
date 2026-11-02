@@ -1,5 +1,6 @@
 import type { ComposerMentionBinding } from "@rakazo/core";
 import { validateComposerMentionBindings } from "@rakazo/core";
+import { accountIdentity } from "./account-identity";
 
 export const COMPOSER_DRAFT_STORAGE_PREFIX = "rakazo.composerDraft.";
 const COMPOSER_BINDINGS_STORAGE_PREFIX = "rakazo.composerBindings.";
@@ -55,9 +56,13 @@ export function hasUnsentComposerDraft(storage: Storage | null = null): boolean 
   if (composerHoldsUnsavedWork()) return true;
   try {
     const drafts = storage ?? localStorage;
+    const userId = accountIdentity();
+    const prefix = userId
+      ? `${COMPOSER_DRAFT_STORAGE_PREFIX}user:${encodeURIComponent(userId)}.`
+      : COMPOSER_DRAFT_STORAGE_PREFIX;
     for (let index = 0; index < drafts.length; index++) {
       const key = drafts.key(index);
-      if (key?.startsWith(COMPOSER_DRAFT_STORAGE_PREFIX) && drafts.getItem(key)) return true;
+      if (key?.startsWith(prefix) && drafts.getItem(key)) return true;
     }
   } catch {
     // Without storage the draft lives only in memory, so treat it as unsent.
@@ -67,13 +72,19 @@ export function hasUnsentComposerDraft(storage: Storage | null = null): boolean 
 }
 
 /** Signing out leaves no saved draft, or its mentions, for whoever uses this browser next. */
-export function clearComposerDrafts(): void {
+export function clearComposerDrafts(userId = accountIdentity(), all = false): void {
   try {
     const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
     for (const key of keys) {
       if (
-        key?.startsWith(COMPOSER_DRAFT_STORAGE_PREFIX) ||
-        key?.startsWith(COMPOSER_BINDINGS_STORAGE_PREFIX)
+        key &&
+        [COMPOSER_DRAFT_STORAGE_PREFIX, COMPOSER_BINDINGS_STORAGE_PREFIX].some((prefix) =>
+          all
+            ? key.startsWith(prefix)
+            : userId
+              ? key.startsWith(`${prefix}user:${encodeURIComponent(userId)}.`)
+              : key.startsWith(prefix) && !key.startsWith(`${prefix}user:`),
+        )
       )
         localStorage.removeItem(key);
     }
@@ -109,11 +120,16 @@ function getLocalStorage(): DraftStorage | null {
 }
 
 export function composerDraftStorageKey(threadKey: string): string {
-  return `${COMPOSER_DRAFT_STORAGE_PREFIX}${threadKey}`;
+  return `${COMPOSER_DRAFT_STORAGE_PREFIX}${accountDraftKey(threadKey)}`;
 }
 
 export function composerDraftBindingsKey(threadKey: string): string {
-  return `${COMPOSER_BINDINGS_STORAGE_PREFIX}${threadKey}`;
+  return `${COMPOSER_BINDINGS_STORAGE_PREFIX}${accountDraftKey(threadKey)}`;
+}
+
+function accountDraftKey(threadKey: string): string {
+  const userId = accountIdentity();
+  return userId ? `user:${encodeURIComponent(userId)}.${threadKey}` : threadKey;
 }
 
 function readBindingRecord(threadKey: string, storage = getLocalStorage()): string | null {

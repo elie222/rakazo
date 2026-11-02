@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { NavLink } from "@rakazo/contracts";
+import type { NavLink, SavedAccountSummary } from "@rakazo/contracts";
 import { ANDROID_APK_URL, IOS_APP_STORE_URL } from "@rakazo/contracts";
 import {
   AppMarkStack,
@@ -11,6 +11,7 @@ import {
 } from "@rakazo/ui-web";
 import {
   BookOpen,
+  Check,
   Download,
   FolderOpen,
   Gauge,
@@ -49,6 +50,11 @@ type Props = {
   onLogOut: () => void;
   signingOut: boolean;
   logOutError: string | null;
+  accounts?: SavedAccountSummary[];
+  activeUserId?: string | null;
+  onSwitchAccount?: (userId: string) => void;
+  onAddAccount?: () => void;
+  onLogOutAll?: () => void;
 };
 
 // Marks are 24px wide, overlap by 2px, and need 2px for the outer ring.
@@ -77,6 +83,11 @@ export function SidebarFooter({
   onLogOut,
   signingOut,
   logOutError,
+  accounts = [],
+  activeUserId,
+  onSwitchAccount,
+  onAddAccount,
+  onLogOutAll,
 }: Props) {
   const { t } = useLingui();
   const update = useSidebarUpdate();
@@ -144,6 +155,39 @@ export function SidebarFooter({
                 <p className="truncate text-xs text-muted-foreground">{email}</p>
               ) : null}
             </div>
+            {accounts.length > 1
+              ? accounts.map((account) => (
+                  <Button
+                    key={account.userId}
+                    variant="ghost"
+                    className="h-auto min-h-9 w-full justify-start gap-2.5 py-2 font-normal"
+                    aria-pressed={account.userId === activeUserId}
+                    disabled={signingOut || account.userId === activeUserId}
+                    onClick={() => onSwitchAccount?.(account.userId)}
+                  >
+                    <span className="grid size-4 shrink-0 place-items-center">
+                      {account.userId === activeUserId ? (
+                        <Check aria-hidden="true" size={16} />
+                      ) : null}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-start">{account.email}</span>
+                    {account.unread > 0 ? (
+                      <span className="text-xs tabular-nums">{account.unread}</span>
+                    ) : null}
+                  </Button>
+                ))
+              : null}
+            {onAddAccount ? (
+              <Button
+                variant="ghost"
+                className="h-9 w-full justify-start gap-2.5 font-normal"
+                disabled={signingOut}
+                onClick={onAddAccount}
+              >
+                <UserPlus className="text-muted-foreground" strokeWidth={1.75} />
+                <Trans>Add account</Trans>
+              </Button>
+            ) : null}
             {mini ? (
               <Button
                 variant="ghost"
@@ -247,6 +291,17 @@ export function SidebarFooter({
               <LogOut className="text-muted-foreground" strokeWidth={1.75} />
               <Trans>Log out</Trans>
             </Button>
+            {accounts.length > 1 && onLogOutAll ? (
+              <Button
+                variant="ghost"
+                className="h-9 w-full justify-start gap-2.5 font-normal"
+                disabled={signingOut}
+                onClick={onLogOutAll}
+              >
+                <LogOut className="text-muted-foreground" strokeWidth={1.75} />
+                <Trans>Log out all accounts</Trans>
+              </Button>
+            ) : null}
             {logOutError ? (
               <p role="alert" className="px-2.5 pt-1 pb-2 text-[13px] text-destructive">
                 {logOutError}

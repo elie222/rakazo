@@ -17,6 +17,13 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { MarkdownLinkPrompt } from "./components/markdown-link-prompt";
 import { PageLoading } from "./components/PageLoading";
 import { SubscriptionGate } from "./components/SubscriptionGate";
+import { setAccountIdentity } from "./lib/account-identity";
+import { accountUnreadCount } from "./lib/account-notifications";
+import {
+  hasAccountNotificationFeed,
+  useAccountNotifications,
+  useSavedAccounts,
+} from "./lib/account-sessions";
 import { authClient } from "./lib/auth";
 import { getTicketBoardEnabled, subscribeTicketBoardEnabled } from "./lib/bootstrap";
 import { syncCallIdentity } from "./lib/call-session";
@@ -37,6 +44,7 @@ import {
 } from "./lib/session-gate";
 import { syncLogOutFailure } from "./lib/sign-out";
 import { completeSsoCallback, SSO_CALLBACK_PATH } from "./lib/sso-flow";
+import { useDesktopBadge } from "./lib/use-desktop-badge";
 import { IntegrationCallbackPage } from "./pages/IntegrationCallback";
 import { IntegrationSetupPage } from "./pages/IntegrationSetup";
 import { McpOAuthCallbackPage } from "./pages/McpOAuthCallback";
@@ -129,6 +137,11 @@ function SessionApp() {
   const { pathname, search } = useLocation();
   const screen = analyticsScreen(pathname);
   const analyticsUserId = session.data?.user.id;
+  useAccountNotifications(analyticsUserId ?? null);
+  const savedAccounts = useSavedAccounts();
+  useDesktopBadge(
+    hasAccountNotificationFeed() ? accountUnreadCount(savedAccounts.accounts) : undefined,
+  );
   const lastScreen = useRef<string | undefined>(undefined);
   useEffect(() => {
     // A pending session is not a sign-out; startup already tagged the signed-in user.
@@ -151,6 +164,7 @@ function SessionApp() {
   const gate = sessionGate(session);
   useLayoutEffect(() => {
     if (gate !== "authenticated" && gate !== "anonymous") return;
+    setAccountIdentity(analyticsUserId ?? null);
     syncWebLogoAvatarIdentity(analyticsUserId ?? null);
     syncCallIdentity(analyticsUserId ?? null);
     syncLogOutFailure(gate === "authenticated");
@@ -179,6 +193,9 @@ function SessionApp() {
   }
 
   const user = session.data?.user;
+  // Descendants read drafts and can start queries during their first render.
+  // Pin that render before mounting them; a later identity change still reloads below.
+  setAccountIdentity(user?.id ?? null);
   return (
     <QueryUserProvider value={user?.id ?? null}>
       <MarkdownLinkPrompt>
@@ -189,7 +206,7 @@ function SessionApp() {
               <Route
                 path="/sign-in"
                 element={
-                  user ? (
+                  user && searchParams.get("add") !== "1" ? (
                     <Navigate to={signInDestination} replace />
                   ) : (
                     <AuthPage key="in" mode="in" />

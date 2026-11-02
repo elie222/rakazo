@@ -547,6 +547,10 @@ msgstr "Añade un activador para ejecutar esta rutina."
 msgid "Add a voice provider key and pick a voice in Voice settings."
 msgstr "Agrega la clave de un proveedor de voz y elige una voz en la configuración de voz."
 
+#: src/components/SidebarFooter.tsx
+msgid "Add account"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Add an HTTPS server URL."
 msgstr "Agrega una URL de servidor HTTPS."
@@ -1849,6 +1853,7 @@ msgstr "No se pudo conectar a la pantalla de la computadora"
 #: src/components/PasskeySettings.tsx
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/lib/account-security.ts
+#: src/lib/account-sessions.ts
 #: src/lib/sso-flow.ts
 #: src/lib/user-error.ts
 #: src/pages/Auth.tsx
@@ -1960,6 +1965,7 @@ msgstr "No se pudo instalar el plugin"
 
 #: src/components/ErrorBoundary.tsx
 #: src/components/PasskeySettings.tsx
+#: src/lib/account-sessions.ts
 #: src/lib/user-devices.ts
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load"
@@ -2588,6 +2594,10 @@ msgstr "Desactivado"
 #: src/components/composer/HoldToTalk.tsx
 msgid "Discard recording"
 msgstr "Descartar grabación"
+
+#: src/lib/account-sessions.ts
+msgid "Discard unsaved attachments and pending messages?"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/MemorySettingsOverlay.tsx
@@ -3558,6 +3568,14 @@ msgstr "El acceso a la computadora local requiere la versión más reciente de l
 #: src/components/SidebarFooter.tsx
 msgid "Log out"
 msgstr "Cerrar sesión"
+
+#: src/components/SidebarFooter.tsx
+msgid "Log out all accounts"
+msgstr ""
+
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Log out all accounts?"
+msgstr ""
 
 #: src/pages/shell/agent-import.tsx
 msgid "Looks like it contains a key"

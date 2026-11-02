@@ -3,6 +3,8 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setAccountIdentity } from "./account-identity";
+import { fetchSavedAccounts } from "./account-sessions";
 import type * as CallSessionModule from "./call-session";
 import { SIGNED_IN_USER_KEY } from "./call-session";
 import {
@@ -41,6 +43,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setAccountIdentity(null);
   vi.unstubAllGlobals();
   localStorage.clear();
   sessionStorage.clear();
@@ -65,6 +68,36 @@ function mountSignOut(destination: string, onError: (message: string) => void = 
 }
 
 describe("signOut", () => {
+  it("removes only the displayed saved account and preserves another account's draft", async () => {
+    setAccountIdentity("work");
+    writeComposerDraft("bot:shared", "work draft");
+    setAccountIdentity(null);
+    setAccountIdentity("family");
+    writeComposerDraft("bot:shared", "family draft");
+    const fetch = vi.fn(async () => Response.json({ ok: true }));
+    vi.stubGlobal("fetch", fetch);
+    await signOut("/sign-in");
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/accounts/remove",
+      expect.objectContaining({ body: JSON.stringify({ userId: "family" }) }),
+    );
+    expect(requestSignOut).not.toHaveBeenCalled();
+    setAccountIdentity(null);
+    setAccountIdentity("work");
+    expect(readComposerDraft("bot:shared")).toBe("work draft");
+  });
+
+  it("keeps sign-out working when a desktop client connects to an older API", async () => {
+    setAccountIdentity("family");
+    const fetch = vi.fn(async () => new Response(null, { status: 404 }));
+    vi.stubGlobal("fetch", fetch);
+    await signOut("/sign-in");
+    expect(requestSignOut).toHaveBeenCalledOnce();
+    expect(location.assign).toHaveBeenCalledWith("/sign-in");
+    // Restore the shared capability snapshot for later cases in this module.
+    fetch.mockResolvedValue(Response.json({ activeUserId: null, accounts: [] }));
+    await fetchSavedAccounts();
+  });
   it("ends the call first, then leaves for the destination signed out", async () => {
     await signOut("/sign-in");
     expect(endCallBeforeSignOut.mock.invocationCallOrder[0]).toBeLessThan(

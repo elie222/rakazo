@@ -1,6 +1,7 @@
 import type { Bot, ProductEvent } from "@rakazo/contracts";
 import type { RefObject } from "react";
 import { useCallback, useRef } from "react";
+import { hasAccountNotificationFeed } from "../../lib/account-sessions";
 import {
   deliverBrowserNotification as deliverNativeBrowserNotification,
   shouldNotifyBrowser,
@@ -18,6 +19,7 @@ export function useBrowserNotifications(botsRef: RefObject<Bot[]>) {
   const notifiedBrowserEvents = useRef(new Set<string>());
   const pendingBrowserNotifications = useRef(new Map<string, PendingBrowserNotification>());
   const deliverBrowserNotification = useCallback((pending: PendingBrowserNotification): boolean => {
+    if (hasAccountNotificationFeed()) return true;
     const currentBot = botsRef.current.find((bot) => bot.id === pending.botId);
     if (!currentBot || typeof Notification === "undefined") return true;
     const result = deliverNativeBrowserNotification(
@@ -51,6 +53,7 @@ export function useBrowserNotifications(botsRef: RefObject<Bot[]>) {
       enabled: boolean,
       groupNotification: boolean,
     ) => {
+      if (hasAccountNotificationFeed()) return;
       const botId = event.botId;
       if (typeof botId !== "string") return;
       const eligible = shouldNotifyBrowser(event, {
