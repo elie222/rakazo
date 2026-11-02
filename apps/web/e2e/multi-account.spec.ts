@@ -110,6 +110,10 @@ test("saved accounts switch, receive hidden-account notifications, and sign out 
         }, workEmail),
       )
       .toBe(true);
+    await expect(page.getByTestId("user-menu-trigger")).toHaveAttribute(
+      "aria-label",
+      "Account menu for Family",
+    );
     await page.evaluate((email) => {
       const state = window as unknown as {
         accountNotifications: Array<{ body?: string; onclick?: () => void }>;
