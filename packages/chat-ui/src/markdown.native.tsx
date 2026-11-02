@@ -13,7 +13,7 @@ import Markdown, {
 } from "@ronradtke/react-native-markdown-display";
 import { Highlight, themes } from "prism-react-renderer";
 import type { ComponentType, ReactNode } from "react";
-import { createContext, memo, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, Fragment, memo, useCallback, useContext, useMemo, useState } from "react";
 import type { StyleProp, TextStyle, ViewStyle } from "react-native";
 import {
   Alert,
@@ -1304,6 +1304,8 @@ type LinkifiedTextProps = {
   color: string;
   linkColor: string;
   palette: ColorTokens;
+  /** Renders the runs between links, which are plain strings by default. */
+  renderText?: (text: string) => ReactNode;
 };
 
 export const LinkifiedText = memo(function LinkifiedText({
@@ -1311,6 +1313,7 @@ export const LinkifiedText = memo(function LinkifiedText({
   color,
   linkColor,
   palette,
+  renderText,
 }: LinkifiedTextProps) {
   const openLink = useNativeLinkConfirm();
   const labelStyle: TextStyle = {
@@ -1323,7 +1326,13 @@ export const LinkifiedText = memo(function LinkifiedText({
   return (
     <Text style={[{ color, ...typeScale.body }, contraryDirection(children) && layout.farSideText]}>
       {plainTextLinkParts(children).map((part, index) => {
-        if (part.type === "text") return part.value;
+        if (part.type === "text") {
+          return renderText ? (
+            <Fragment key={index}>{renderText(part.value)}</Fragment>
+          ) : (
+            part.value
+          );
+        }
         const open = () => {
           openLink(part.href);
         };
@@ -1500,5 +1509,10 @@ const layout = StyleSheet.create({
 });
 
 export type { ChatMarkdownProps, LinkFavicons } from "./markdown";
-export { LinkFaviconsContext, RemoteImagesContext, withBlockMentions } from "./markdown";
+export {
+  LinkFaviconsContext,
+  plainTextLinkParts,
+  RemoteImagesContext,
+  withBlockMentions,
+} from "./markdown";
 export { MarkdownLinkPromptProvider } from "./markdown-link-prompt";
