@@ -4790,6 +4790,7 @@ msgid "Release control"
 msgstr "Liberar o controle"
 
 #: src/components/InstructionSettings.tsx
+#: src/lib/client-update.ts
 msgid "Reload"
 msgstr "Recarregar"
 
@@ -6236,6 +6237,10 @@ msgstr "Atualizar instruções?"
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
 msgstr ""
+
+#: src/lib/client-update.ts
+msgid "Update required"
+msgstr "Atualização necessária"
 
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"

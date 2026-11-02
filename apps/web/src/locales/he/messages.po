@@ -4790,6 +4790,7 @@ msgid "Release control"
 msgstr "שחרור השליטה"
 
 #: src/components/InstructionSettings.tsx
+#: src/lib/client-update.ts
 msgid "Reload"
 msgstr "טעינה מחדש"
 
@@ -6236,6 +6237,10 @@ msgstr "לעדכן את ההוראות?"
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
 msgstr "התקדמות העדכון"
+
+#: src/lib/client-update.ts
+msgid "Update required"
+msgstr "נדרש עדכון"
 
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"
