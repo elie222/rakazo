@@ -416,7 +416,7 @@ export default function SignIn() {
                           onPress={() => setEmail(emailSuggestion)}
                           style={{ marginTop: 8, paddingHorizontal: 4 }}
                         >
-                          <Text style={{ color: tokens.foreground, fontSize: 14 }}>
+                          <Text style={{ color: tokens.warning, fontSize: 14 }}>
                             {t("Did you mean {email}?", { email: emailSuggestion })}
                           </Text>
                         </Pressable>

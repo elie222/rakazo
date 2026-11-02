@@ -328,12 +328,12 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                     className={fieldClass}
                   />
                   {emailSuggestion && emailBlurred ? (
-                    <p role="status" className="mt-2 text-sm text-muted-foreground">
+                    <p role="status" className="mt-2 text-sm text-warning">
                       <Trans>
                         Did you mean{" "}
                         <button
                           type="button"
-                          className="font-medium text-foreground underline"
+                          className="font-medium underline"
                           onClick={() => setEmail(emailSuggestion)}
                         >
                           {emailSuggestion}
