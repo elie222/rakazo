@@ -1,17 +1,22 @@
 name: Review bot
 
-# Each PR gets one review bot for its whole life: even PR numbers go to
-# CodeRabbit (label review:cr), odd ones to Qodo (label review:qodo). CodeRabbit
-# reviews only labeled PRs (.coderabbit.yaml); Qodo reviews only when asked
-# (.pr_agent.toml), so this workflow posts /agentic_review on open and on every
-# push. When the assigned bot says it is rate limited or blocked, the PR moves
-# to the other bot, unless that one has already said the same.
+# Greptile reviews PRs by default. Once it is out of credits for the month (it
+# replies "Reactivate Greptile", or the CODERABBIT_UNTIL repository variable
+# holds a later date, YYYY-MM-DD), new PRs go to the next tools instead: even
+# numbers to CodeRabbit (label review:cr), odd ones to Qodo (label review:qodo).
+# Greptile skips both labels (greptile.json), CodeRabbit reviews only review:cr
+# (.coderabbit.yaml), and Qodo reviews only when asked (.pr_agent.toml), so
+# this workflow posts /agentic_review on open and on every push. When
+# CodeRabbit or Qodo says it is rate limited or blocked, the PR moves to the
+# other one, unless that one has already said the same.
 #
-# pull_request_target and issue_comment so fork PRs get a reviewer; this
-# workflow never checks out or runs PR code.
+# pull_request_target, pull_request_review and issue_comment so fork PRs get a
+# reviewer; this workflow never checks out or runs PR code.
 on:
   pull_request_target:
     types: [opened, reopened, synchronize]
+  pull_request_review:
+    types: [submitted]
   issue_comment:
     types: [created, edited]
 
@@ -20,10 +25,14 @@ permissions: {}
 jobs:
   assign:
     if: >-
-      github.event_name == 'pull_request_target' &&
-      github.event.action != 'synchronize' &&
       !contains(github.event.pull_request.labels.*.name, 'review:cr') &&
-      !contains(github.event.pull_request.labels.*.name, 'review:qodo')
+      !contains(github.event.pull_request.labels.*.name, 'review:qodo') &&
+      ((github.event_name == 'pull_request_target' &&
+        github.event.action != 'synchronize' &&
+        vars.CODERABBIT_UNTIL != '') ||
+       (github.event_name == 'pull_request_review' &&
+        github.event.review.user.login == 'greptile-apps[bot]' &&
+        contains(github.event.review.body, 'Reactivate Greptile')))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -34,7 +43,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
+          EVENT: ${{ github.event_name }}
+          UNTIL: ${{ vars.CODERABBIT_UNTIL }}
         run: |
+          if [[ "$EVENT" == pull_request_target && ! "$(date -u +%F)" < "$UNTIL" ]]; then
+            exit 0
+          fi
           if (( PR % 2 == 0 )); then
             gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=review:cr" --silent
           else
