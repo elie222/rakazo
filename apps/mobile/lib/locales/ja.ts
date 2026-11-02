@@ -250,7 +250,8 @@ export const JA_MESSAGES: Record<string, string> = {
   Agent: "エージェント",
   "Allowed once": "今回のみ許可しました",
   "Always allowed": "常に許可済み",
-  Answer: "回答",
+  Answer: "応答",
+  "This call is no longer ringing.": "この通話の呼び出しは終了しました。",
   Answered: "回答済み",
   Approve: "承認",
   "Approve this server to let your agent use its tools.":

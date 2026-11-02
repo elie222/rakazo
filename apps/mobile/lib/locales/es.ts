@@ -252,7 +252,8 @@ export const ES_MESSAGES: Record<string, string> = {
   Agent: "Agente",
   "Allowed once": "Permitido una vez",
   "Always allowed": "Siempre permitido",
-  Answer: "Responder",
+  Answer: "Contestar",
+  "This call is no longer ringing.": "Esta llamada ya no está sonando.",
   Answered: "Respondido",
   Approve: "Aprobar",
   "Approve this server to let your agent use its tools.":

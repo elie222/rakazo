@@ -138,40 +138,57 @@ export class PrismaPushTokenStore implements PushTokenStore {
     transport?: "voip" | "expo",
   ): Promise<void> {
     const id = credentialDigest(deviceId);
-    const where = { userId, id, ciphertext: revision };
-    await runAsSystem("remove an invalid call notification token", async () => {
-      if (!transport) {
-        await this.prisma.callPushDevice.deleteMany({ where });
-        return;
-      }
-      const registration = JSON.parse(
-        await this.encryption.load(revision, `call-push:${id}`),
-      ) as CallPushRegistration;
-      if (transport === "voip") delete registration.voipToken;
-      else delete registration.expoToken;
-      if (!registration.voipToken && !registration.expoToken) {
-        await this.prisma.callPushDevice.deleteMany({ where });
-        return;
-      }
-      const sealed = await this.encryption.put(
-        JSON.stringify(registration),
-        {
-          operationId: "push.invalidate",
-          traceId: "push.invalidate",
-          spaceId: "",
-          userId,
-          signal: new AbortController().signal,
-        },
-        { recordId: `call-push:${id}` },
-      );
-      await this.prisma.callPushDevice.updateMany({
-        where,
-        data: {
-          ciphertext: sealed.ciphertext,
-          ...(transport === "voip" ? { voipTokenDigest: null } : { expoTokenDigest: null }),
-        },
-      });
-    });
+    const failed = JSON.parse(
+      await this.encryption.load(revision, `call-push:${id}`),
+    ) as CallPushRegistration;
+    await runAsSystem("remove an invalid call notification token", () =>
+      withTransactionRetry(() =>
+        this.prisma.$transaction(async (tx) => {
+          // Serialized with registration: concurrent invalidations each apply to the latest row.
+          await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`push-device:${id}`}, 0))::text`;
+          const row = await tx.callPushDevice.findUnique({ where: { id } });
+          if (row?.userId !== userId) return;
+          const registration =
+            row.ciphertext === revision
+              ? { ...failed }
+              : (JSON.parse(
+                  await this.encryption.load(row.ciphertext, `call-push:${id}`),
+                ) as CallPushRegistration);
+          // Only the token that actually failed goes; a newer one registered meanwhile stays.
+          if (transport !== "expo" && registration.voipToken === failed.voipToken)
+            delete registration.voipToken;
+          if (transport !== "voip" && registration.expoToken === failed.expoToken)
+            delete registration.expoToken;
+          if (!registration.voipToken && !registration.expoToken) {
+            await tx.callPushDevice.deleteMany({ where: { id, userId } });
+            return;
+          }
+          const sealed = await this.encryption.put(
+            JSON.stringify(registration),
+            {
+              operationId: "push.invalidate",
+              traceId: "push.invalidate",
+              spaceId: "",
+              userId,
+              signal: new AbortController().signal,
+            },
+            { recordId: `call-push:${id}` },
+          );
+          await tx.callPushDevice.updateMany({
+            where: { id, userId },
+            data: {
+              ciphertext: sealed.ciphertext,
+              voipTokenDigest: registration.voipToken
+                ? credentialDigest(registration.voipToken)
+                : null,
+              expoTokenDigest: registration.expoToken
+                ? credentialDigest(registration.expoToken)
+                : null,
+            },
+          });
+        }),
+      ),
+    );
   }
 
   async load(userId: string): Promise<PushRecord | undefined> {

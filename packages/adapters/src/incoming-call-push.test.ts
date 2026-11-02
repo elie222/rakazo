@@ -83,6 +83,19 @@ describe("incoming call delivery", () => {
     expect(body.title).toBeUndefined();
     expect(body.body).toBeUndefined();
   });
+  it("stops the ring through VoIP and Android data pushes but never a visible iOS alert", async () => {
+    const { provider, device, voip, fetch } = fixture();
+    const ended = { ...call, ended: true as const };
+    await provider.incomingCall("user-1", ended);
+    expect(voip.send).toHaveBeenCalledWith("fake-voip-token", ended);
+    voip.send.mockResolvedValue("unavailable");
+    await provider.incomingCall("user-1", ended);
+    expect(fetch).not.toHaveBeenCalled();
+    device.platform = "android";
+    await provider.incomingCall("user-1", ended);
+    const body = JSON.parse(fetch.mock.calls[0]![1]!.body as string);
+    expect(body.data).toEqual({ kind: "incoming_call_ended", ...call });
+  });
   it("ignores expired calls, revoked sessions, and registrations changed during authorization", async () => {
     const { provider, voip, fetch, sessions, tokens } = fixture();
     await provider.incomingCall("user-1", { ...call, expiresAt: new Date(0).toISOString() });

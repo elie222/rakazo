@@ -19,6 +19,7 @@ import {
   createThreadMessageInTransaction,
   runAsSystem,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { isUniqueViolation, publishMessage, runLeaseFor } from "./run-messages.js";
 
@@ -97,7 +98,11 @@ export function newCallRequest(input: {
  * devices answering, or an answer racing the ring-out, settle exactly once.
  */
 export async function settleCallRequest(
-  deps: { prisma: PrismaClient; events: Pick<ThreadEvents, "notify" | "notifyIncomingCalls"> },
+  deps: {
+    prisma: PrismaClient;
+    events: Pick<ThreadEvents, "notify" | "notifyIncomingCalls">;
+    notifications?: NotificationProvider;
+  },
   input: {
     threadId: string;
     callId: string;
@@ -120,7 +125,7 @@ export async function settleCallRequest(
         id: true,
         blocks: true,
         botId: true,
-        thread: { select: { spaceId: true, userId: true } },
+        thread: { select: { spaceId: true, userId: true, bot: { select: { name: true } } } },
       },
     });
     if (!message?.botId) return null;
@@ -148,11 +153,31 @@ export async function settleCallRequest(
       type: "thread.message.updated",
       payload: { messageId: message.id, role: "bot", blocks, callId: input.callId },
     });
-    return { next, eventSeq: event.seq, userId: message.thread.userId };
+    return {
+      next,
+      eventSeq: event.seq,
+      userId: message.thread.userId,
+      // Rung out phones end on their own deadline; anything else must stop their ring.
+      stopRinging: block.status === "ringing" && !expired,
+      botId: message.botId,
+      botName: message.thread.bot?.name ?? "",
+    };
   });
   if (!result) return null;
   await deps.events.notify(input.threadId, result.eventSeq).catch(() => undefined);
-  if (result.userId) await deps.events.notifyIncomingCalls?.(result.userId).catch(() => undefined);
+  if (result.userId) {
+    await deps.events.notifyIncomingCalls?.(result.userId).catch(() => undefined);
+    if (result.stopRinging)
+      void deps.notifications
+        ?.incomingCall?.(result.userId, {
+          callId: input.callId,
+          botId: result.botId,
+          botName: result.botName,
+          expiresAt: result.next.expiresAt,
+          ended: true,
+        })
+        .catch((error: unknown) => getLogger().warn("call.push_failed", { error }));
+  }
   return result.next;
 }
 
@@ -256,7 +281,7 @@ export async function requestUserCall(
           botName: bot.name,
           expiresAt: request.expiresAt.toISOString(),
         })
-        .catch(() => undefined);
+        .catch((error: unknown) => getLogger().warn("call.push_failed", { error }));
   }
   return { ok: true, status: "ringing" };
 }
@@ -291,12 +316,14 @@ export async function loadUserIncomingCalls(
       orderBy: { createdAt: "desc" },
       take: 50,
     });
+    // Newest first: a bot's newer request replaces its older one, as one bot rings once.
+    const seen = new Set<string>();
     return messages.flatMap((message) => {
       const incomingCall = ringingCall([message]);
       const bot = message.thread.bot;
-      return incomingCall && bot
-        ? [{ ...bot, avatarSet: resolveBotAvatarSet(bot.avatarSet), incomingCall }]
-        : [];
+      if (!incomingCall || !bot || seen.has(bot.id)) return [];
+      seen.add(bot.id);
+      return [{ ...bot, avatarSet: resolveBotAvatarSet(bot.avatarSet), incomingCall }];
     });
   });
 }

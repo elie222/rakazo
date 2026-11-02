@@ -19,7 +19,8 @@ final class IncomingCalls: NSObject, PKPushRegistryDelegate, CXProviderDelegate,
   private var registry: PKPushRegistry!
   private var calls: [UUID: [String: String]] = [:]
   private var deadlines: [UUID: DispatchWorkItem] = [:]
-  private var answers: [UUID: CXAnswerCallAction] = [:]
+  /** Calls the app has joined; an earlier end only backs out of the join. */
+  private var joined: Set<UUID> = []
   private var pending: [[String: String]] = []
   private var token: String?
   private var active: UUID?
@@ -51,7 +52,7 @@ final class IncomingCalls: NSObject, PKPushRegistryDelegate, CXProviderDelegate,
   }
   func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {
     var call: [String: String] = [:]
-    for key in ["callId", "botId", "botName", "expiresAt"] {
+    for key in ["callId", "botId", "botName", "expiresAt", "ended"] {
       if let value = payload.dictionaryPayload[key] as? String { call[key] = value }
     }
     // Even malformed or expired VoIP pushes must be reported before completion.
@@ -77,6 +78,11 @@ final class IncomingCalls: NSObject, PKPushRegistryDelegate, CXProviderDelegate,
     provider.reportNewIncomingCall(with: id, update: update) { error in
       DispatchQueue.main.async {
       defer { completion() }
+      // Settled on another device. Reporting first satisfies PushKit; a joined call keeps going.
+      if call["ended"] != nil {
+        if self.active != id { self.end(id, reason: .answeredElsewhere) }
+        return
+      }
       guard error == nil else { return }
       guard self.hasSession(), self.expiry(call) > Date(), call["botId"] != nil, call["callId"] != nil else {
         self.provider.reportCall(with: id, endedAt: Date(), reason: .unanswered)
@@ -97,34 +103,30 @@ final class IncomingCalls: NSObject, PKPushRegistryDelegate, CXProviderDelegate,
     do {
       try AVAudioSession.sharedInstance().setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetoothHFP])
     } catch { action.fail(); end(action.callUUID, reason: .failed); return }
-    deadlines.removeValue(forKey: action.callUUID)?.cancel()
-    if accepted.remove(action.callUUID) != nil { action.fulfill(); active = action.callUUID; return }
-    answers[action.callUUID] = action
     active = action.callUUID
+    action.fulfill()
+    // Answered in the app, which has already joined.
+    if accepted.remove(action.callUUID) != nil { return }
+    // Answered from the system UI, possibly on the lock screen. Fulfilled now so CallKit never
+    // times the answer out; the app joins once it is opened (and unlocked), which needs the
+    // user's SecureStore session. The ring deadline still ends a call the app never joins.
     pending.append(call.merging(["action": "answer"]) { _, new in new })
     NotificationCenter.default.post(name: Self.changed, object: nil)
-    // User-initiated handoff opens the app (and unlocks it) before SecureStore/audio setup.
     // A URL alone cannot answer: only the pending native action grants that intent.
     if let url = URL(string: "rakazo:///") { UIApplication.shared.open(url, options: [:]) }
-    // The bridge starts the authenticated join before fulfilling.
   }
   func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
-    if let call = calls[action.callUUID] {
-      if active == action.callUUID {
-        pending.append(call.merging(["action": "end"]) { _, new in new })
-      } else { decline(call) }
-    }
+    // Not joined yet: the server still has it ringing, so this is a decline.
+    if let call = calls[action.callUUID], !joined.contains(action.callUUID) { decline(call) }
     end(action.callUUID, reason: .remoteEnded)
     action.fulfill()
-    NotificationCenter.default.post(name: Self.changed, object: nil)
   }
   func provider(_ provider: CXProvider, timedOutPerforming action: CXAction) {
     if let call = action as? CXCallAction { end(call.callUUID, reason: .failed) }
   }
   func providerDidReset(_ provider: CXProvider) {
-    let ended = active.flatMap { calls[$0] }.map { $0.merging(["action": "end"]) { _, new in new } }
     for id in Array(calls.keys) { end(id, reason: .failed) }
-    pending = ended.map { [$0] } ?? []
+    pending.removeAll { $0["action"] == "answer" }
     NotificationCenter.default.post(name: Self.changed, object: nil)
   }
   func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
@@ -132,23 +134,34 @@ final class IncomingCalls: NSObject, PKPushRegistryDelegate, CXProviderDelegate,
   }
   func finishAnswer(_ callId: String, success: Bool) {
     guard let id = UUID(uuidString: callId) else { return }
-    if success {
-      if let action = answers.removeValue(forKey: id) { action.fulfill() }
-      else if calls[id] != nil {
-        accepted.insert(id)
-        CXCallController().request(CXTransaction(action: CXAnswerCallAction(call: id))) { error in
-          if error != nil { DispatchQueue.main.async { self.end(id, reason: .failed) } }
-        }
+    guard success else { end(id, reason: .failed); return }
+    // Ended while joining: end() already queued the end that backs the app out.
+    guard calls[id] != nil else { return }
+    deadlines.removeValue(forKey: id)?.cancel()
+    joined.insert(id)
+    if active == id { return }
+    accepted.insert(id)
+    CXCallController().request(CXTransaction(action: CXAnswerCallAction(call: id))) { error in
+      guard error != nil else { return }
+      DispatchQueue.main.async {
+        // The app already holds this call; it carries on without the system call UI.
+        self.accepted.remove(id)
+        self.joined.remove(id)
+        self.end(id, reason: .failed)
       }
     }
-    else { answers.removeValue(forKey: id)?.fail(); end(id, reason: .failed) }
   }
   func end(_ id: UUID, reason: CXCallEndedReason) {
     deadlines.removeValue(forKey: id)?.cancel()
-    answers.removeValue(forKey: id)?.fail()
-    calls.removeValue(forKey: id)
+    let call = calls.removeValue(forKey: id)
     pending.removeAll { $0["callId"].flatMap(UUID.init(uuidString:)) == id && $0["action"] == "answer" }
+    // The app is in, or joining, this call: tell it, so it hangs up or abandons the join.
+    if let call, active == id || accepted.contains(id) || joined.contains(id) {
+      pending.append(call.merging(["action": "end"]) { _, new in new })
+      NotificationCenter.default.post(name: Self.changed, object: nil)
+    }
     accepted.remove(id)
+    joined.remove(id)
     if active == id { active = nil }
     provider.reportCall(with: id, endedAt: Date(), reason: reason)
   }

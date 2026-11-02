@@ -39,7 +39,7 @@ function prismaWith(options: {
         id: "message-1",
         blocks,
         botId: "bot-1",
-        thread: { spaceId: "space-1" },
+        thread: { spaceId: "space-1", userId: "user-1", bot: { name: "Caller" } },
       })),
       updateMany: vi.fn(async () => ({ count: options.updated ?? 1 })),
     },
@@ -188,6 +188,33 @@ describe("settleCallRequest", () => {
       ),
     ).resolves.toBeNull();
     expect(events.notify).not.toHaveBeenCalled();
+  });
+
+  it("stops the ring on other devices unless the call already rang out", async () => {
+    const incomingCall = vi.fn(async () => undefined);
+    const events = { notify: vi.fn(async () => undefined) };
+    await settleCallRequest(
+      {
+        prisma: prismaWith({}),
+        events,
+        notifications: { describe: vi.fn(), send: vi.fn(), incomingCall },
+      },
+      { threadId: "thread-1", callId: "call-1", from: ["ringing"], status: "declined" },
+    );
+    expect(incomingCall).toHaveBeenCalledWith(
+      "user-1",
+      expect.objectContaining({ callId: "call-1", botName: "Caller", ended: true }),
+    );
+    incomingCall.mockClear();
+    await settleCallRequest(
+      {
+        prisma: prismaWith({ expiresAt: new Date(0).toISOString() }),
+        events,
+        notifications: { describe: vi.fn(), send: vi.fn(), incomingCall },
+      },
+      { threadId: "thread-1", callId: "call-1", from: ["ringing"], status: "declined" },
+    );
+    expect(incomingCall).not.toHaveBeenCalled();
   });
 
   it("records how long an answered call lasted", async () => {

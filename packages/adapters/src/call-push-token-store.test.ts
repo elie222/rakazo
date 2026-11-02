@@ -146,6 +146,14 @@ describe("call push registrations", () => {
     expect((await store.devices("user-1"))[0]).toMatchObject({ expoToken: registration.expoToken });
     expect((await store.devices("user-1"))[0]?.voipToken).toBeUndefined();
   });
+  it("applies both transports' invalidations taken from the same revision", async () => {
+    const { store } = fixture();
+    await store.saveDevice("user-1", registration, "session-1");
+    const { revision } = (await store.devices("user-1"))[0]!;
+    await store.removeDevice("user-1", registration.deviceId, revision, "voip");
+    await store.removeDevice("user-1", registration.deviceId, revision, "expo");
+    expect(await store.devices("user-1")).toEqual([]);
+  });
   it("revokes only the session's devices", async () => {
     const { store } = fixture();
     await store.saveDevice("user-1", registration, "session-1");

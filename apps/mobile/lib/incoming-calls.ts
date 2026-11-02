@@ -56,6 +56,8 @@ let snapshot: IncomingBotCall | null = null;
 let running = false;
 let responding = false;
 let activeNativeCall: string | undefined;
+/** Native calls that ended while their answer was still joining. */
+let nativeEnded = new Set<string>();
 
 export function subscribeIncomingCalls(listener: () => void) {
   listeners.add(listener);
@@ -168,6 +170,8 @@ export async function respondToMobileCall(call: IncomingBotCall, action: "answer
       if (generation !== currentSessionGeneration()) return;
       const voice = await rpc("voice/status", {}, { requestContext: context });
       if (generation !== currentSessionGeneration()) return;
+      if (nativeEnded.has(target.callId)) throw new Error(t("This call is no longer ringing."));
+      activeNativeCall = target.callId;
       startCall({
         botId: call.id,
         botName: call.name,
@@ -179,7 +183,6 @@ export async function respondToMobileCall(call: IncomingBotCall, action: "answer
         session: generation,
         requestContext: context,
       });
-      activeNativeCall = target.callId;
       await native?.finishAnswer(target.callId, true);
     }
     handled.add(target.callId);
@@ -212,6 +215,7 @@ async function drainNative() {
   }
   for (const action of state.actions) {
     if (action.action === "end") {
+      nativeEnded.add(action.callId);
       if (activeNativeCall === action.callId) endCall();
       continue;
     }
@@ -248,16 +252,21 @@ async function notificationResponse(response: Notifications.NotificationResponse
   const key = `${data.callId}:${response.actionIdentifier}`;
   if (notificationActions.has(key)) return;
   notificationActions.add(key);
-  await loadRoster();
-  const bot = roster.get(data.botId);
-  if (!bot) return;
-  await respondToMobileCall(
-    {
-      ...bot,
-      incomingCall: { callId: data.callId, expiresAt: data.expiresAt, reason: "", opening: "" },
-    },
-    response.actionIdentifier,
-  );
+  try {
+    await loadRoster();
+    const bot = roster.get(data.botId);
+    if (!bot) throw new Error("Unknown caller");
+    await respondToMobileCall(
+      {
+        ...bot,
+        incomingCall: { callId: data.callId, expiresAt: data.expiresAt, reason: "", opening: "" },
+      },
+      response.actionIdentifier,
+    );
+  } catch (error) {
+    notificationActions.delete(key);
+    throw error;
+  }
 }
 
 export function stopIncomingCalls() {
@@ -268,6 +277,7 @@ export function stopIncomingCalls() {
   notificationActions.clear();
   calls = [];
   handled = new Set();
+  nativeEnded = new Set();
   clearTimeout(expiry);
   snapshot = null;
   activeNativeCall = undefined;

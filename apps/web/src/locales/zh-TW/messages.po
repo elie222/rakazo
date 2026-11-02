@@ -779,7 +779,7 @@ msgstr "回答"
 #: src/components/call/IncomingCall.tsx
 msgctxt "incoming call"
 msgid "Answer"
-msgstr "回答"
+msgstr "接聽"
 
 #: src/components/AskCard.tsx
 msgid "Answered"

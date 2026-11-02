@@ -1,5 +1,6 @@
 import { newClientId } from "@rakazo/core";
 import Constants from "expo-constants";
+import { requireOptionalNativeModule } from "expo-modules-core";
 import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
@@ -54,7 +55,13 @@ async function installationId() {
     throw error;
   }
 }
+/** Builds without native call handling keep the account's ordinary push for incoming calls. */
+const nativeCalls = Boolean(
+  requireOptionalNativeModule<{ incomingState?: unknown }>("RakazoNotifications")?.incomingState,
+);
+
 export async function registerCallPushToken(tokens: { expoToken?: string; voipToken?: string }) {
+  if (!nativeCalls) return;
   const generation = currentSessionGeneration();
   if (generation !== tokenGeneration) {
     callTokens = {};

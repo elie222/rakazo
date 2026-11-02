@@ -143,7 +143,10 @@ export function IncomingCall({
       );
       setHandled((current) => new Set(current).add(call.callId));
     } catch (cause) {
-      setError(errorText(cause, t`Could not send that`));
+      // Already answered elsewhere or rung out: there is nothing left to decline.
+      if ((cause as { code?: string } | null)?.code === "CONFLICT")
+        setHandled((current) => new Set(current).add(call.callId));
+      else setError(errorText(cause, t`Could not send that`));
     } finally {
       setBusy(false);
     }

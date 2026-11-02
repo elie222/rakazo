@@ -778,7 +778,7 @@ msgstr "Antwoorden"
 #: src/components/call/IncomingCall.tsx
 msgctxt "incoming call"
 msgid "Answer"
-msgstr "Antwoorden"
+msgstr "Opnemen"
 
 #: src/components/AskCard.tsx
 msgid "Answered"

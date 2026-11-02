@@ -75,7 +75,8 @@ independent of permission for ordinary notifications.
 Without APNs configuration, or if APNs delivery fails, iOS falls back to the Expo notification.
 That fallback cannot provide CallKit ringing when iOS has suspended the app. Every VoIP
 push is reported immediately to CallKit in native code; an expired push is reported and
-immediately ended. Declining from the lock screen uses the authenticated decline endpoint.
+immediately ended. When the call is answered or declined elsewhere, VoIP and Android devices
+get a second push that stops the ring; the iOS fallback notification stays until it expires. Declining from the lock screen uses the authenticated decline endpoint.
 Its session is kept in the device keychain with access after first unlock, on that device
 only, so a locked phone can reject the call; sign-out clears it and revokes delivery.
 Payloads contain only the call ID, bot ID/name, and expiry, never message content or credentials.

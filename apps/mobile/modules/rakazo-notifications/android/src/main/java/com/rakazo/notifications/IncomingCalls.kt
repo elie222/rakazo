@@ -20,9 +20,12 @@ import java.util.concurrent.Executors
 /** Expo remains the single FCM token owner; non-call messages use its normal delegate. */
 class RakazoMessagingService : ExpoFirebaseMessagingService() {
   override fun onMessageReceived(message: RemoteMessage) {
-    val call = runCatching { JSONObject(message.data["body"] ?: "{}") }.getOrNull()
-    if (call?.optString("kind") == "incoming_call") IncomingCalls.report(this, call)
-    else super.onMessageReceived(message)
+    val call = runCatching { JSONObject(message.data["body"] ?: "{}") }.getOrNull() ?: JSONObject()
+    when (call.optString("kind")) {
+      "incoming_call" -> IncomingCalls.report(this, call)
+      "incoming_call_ended" -> IncomingCalls.end(this, call.optString("callId"))
+      else -> super.onMessageReceived(message)
+    }
   }
 }
 
@@ -72,8 +75,8 @@ internal object IncomingCalls {
       builder.addAction(Notification.Action.Builder(null, context.getString(R.string.rakazo_call_decline), decline).build())
       builder.addAction(Notification.Action.Builder(null, context.getString(R.string.rakazo_call_answer), answer).build())
     }
-    // Android 14 may deny special access. A high-importance heads-up remains available.
-    if (Build.VERSION.SDK_INT < 34 || manager.canUseFullScreenIntent()) builder.setFullScreenIntent(open, true)
+    // CallStyle requires a full-screen intent; without full-screen access Android 14+ shows it as a heads-up.
+    builder.setFullScreenIntent(open, true)
     val notification = builder.build()
     if (Build.VERSION.SDK_INT >= 26) notification.flags = notification.flags or Notification.FLAG_INSISTENT
     runCatching { manager.notify(id(call), notification) }

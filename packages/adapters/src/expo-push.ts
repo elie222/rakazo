@@ -52,7 +52,7 @@ function incomingCallPayload(token: string, call: IncomingCallPush, dataOnly = f
     ttl: Math.floor((Date.parse(call.expiresAt) - Date.now()) / 1000),
     expiration,
     data: {
-      kind: "incoming_call",
+      kind: call.ended ? "incoming_call_ended" : "incoming_call",
       callId: call.callId,
       botId: call.botId,
       botName,
@@ -219,18 +219,15 @@ export class ExpoPushProvider implements NotificationProvider {
             if (result === "sent") return;
             invalidVoip = result === "invalid";
           }
-          if (!device.expoToken) return;
-          const payload = incomingCallPayload(
-            device.expoToken,
-            call,
-            device.platform === "android",
-          );
-          if (payload.ttl <= 0) return;
-          const { status, body } = await postToExpo(EXPO_PUSH_URL, payload, this.accessToken);
-          const ticket = expoPushTickets(body)[0];
-          invalidExpo = ticket?.details?.error === "DeviceNotRegistered";
-          if (!invalidExpo && status < 300 && ticket?.id)
-            await this.scheduleReceiptCheck(userId, device.expoToken, ticket.id);
+          // Only Android's native handler can stop a ring; a visible iOS alert cannot be recalled.
+          if (!device.expoToken || (call.ended && device.platform !== "android")) return;
+          invalidExpo =
+            (await this.sendCallPush(
+              userId,
+              device.expoToken,
+              call,
+              device.platform === "android",
+            )) === "invalid";
         } finally {
           // Invalidate once, against the authorized revision, after both transports finish.
           if (invalidVoip || invalidExpo)
@@ -244,16 +241,41 @@ export class ExpoPushProvider implements NotificationProvider {
       }),
     );
     // Old native builds registered only the account's Expo token.
-    if (devices.length === 0) {
+    if (devices.length === 0 && !call.ended) {
       const token = await this.deliverableToken(userId);
-      if (!token) return;
-      const payload = incomingCallPayload(token, call);
-      if (payload.ttl <= 0) return;
-      const result = await postToExpo(EXPO_PUSH_URL, payload, this.accessToken);
-      const ticket = expoPushTickets(result.body)[0];
-      if (ticket?.details?.error === "DeviceNotRegistered")
+      if (token && (await this.sendCallPush(userId, token, call)) === "invalid")
         await this.tokens.remove(userId, credentialDigest(token));
-      else if (ticket?.id) await this.scheduleReceiptCheck(userId, token, ticket.id);
+    }
+  }
+
+  /** Retries Expo back-off until the call stops ringing; a ring that cannot arrive is logged. */
+  private async sendCallPush(
+    userId: string,
+    token: string,
+    call: IncomingCallPush,
+    dataOnly = false,
+  ): Promise<"sent" | "invalid" | "failed"> {
+    const payload = incomingCallPayload(token, call, dataOnly);
+    if (payload.ttl <= 0) return "failed";
+    try {
+      const { status, body } = await this.postWithBackoff(
+        EXPO_PUSH_URL,
+        payload,
+        AbortSignal.timeout(payload.ttl * 1000),
+      );
+      const [ticket] = expoPushTickets(body);
+      if (ticket?.details?.error === "DeviceNotRegistered") return "invalid";
+      const failure =
+        expoUnauthorizedError(body, status, this.accessToken) ?? expoPushErrorMessage(body, status);
+      if (failure) {
+        getLogger().warn("call.push_failed", { status, error: failure });
+        return "failed";
+      }
+      if (ticket?.id) await this.scheduleReceiptCheck(userId, token, ticket.id);
+      return "sent";
+    } catch (error) {
+      getLogger().warn("call.push_failed", { error });
+      return "failed";
     }
   }
 
