@@ -38,7 +38,6 @@ import { ComputerUpdateProgress } from "../components/ComputerUpdateProgress";
 import { CallCard, CallReturnBar } from "../components/call/CallCard";
 import { IncomingCall } from "../components/call/IncomingCall";
 import { PageLoading } from "../components/PageLoading";
-import { hasAccountNotificationFeed } from "../lib/account-sessions";
 import type { ArtifactTarget } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
 import { peekBootstrapSeed } from "../lib/bootstrap";
@@ -462,15 +461,12 @@ function SpaceShell() {
       }),
     [sidebarSpaces, search.query, miniSidebar, t],
   );
-  // Older APIs have no saved-account feed; retain their selected-account Dock badge.
+  // The Dock badge ignores the roster search box: a filter must not hide unread chats.
   const unreadChatCount = useMemo(
     () => countUnreadChats(sidebarGroupsForSpaces(sidebarSpaces, "")),
     [sidebarSpaces],
   );
-  useDesktopBadge(
-    hasAccountNotificationFeed() ? undefined : userId ? unreadChatCount : 0,
-    "roster",
-  );
+  useDesktopBadge(userId ? unreadChatCount : 0, "roster");
   const openSpaceChat = useOpenSpaceChat({
     bootstrapSpaceId: bootstrapMe?.spaceId,
     userId,

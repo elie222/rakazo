@@ -10,7 +10,6 @@ import { clearSpaceSelection, selectSpace } from "./rpc";
 
 const empty: AccountSessions = { activeUserId: null, accounts: [] };
 let snapshot = empty;
-let feedAvailable = false;
 let unsupported = false;
 const listeners = new Set<() => void>();
 
@@ -40,7 +39,6 @@ export async function fetchSavedAccounts(signal?: AbortSignal): Promise<AccountS
   });
   if (response.status === 404 || response.status === 401) {
     if (response.status === 404) unsupported = true;
-    feedAvailable = false;
     return empty;
   }
   if (!response.ok) throw new Error(t`Could not load`);
@@ -49,13 +47,8 @@ export async function fetchSavedAccounts(signal?: AbortSignal): Promise<AccountS
     512 * 1024,
     requestSignal,
   );
-  feedAvailable = true;
   unsupported = false;
   return result;
-}
-
-export function hasAccountNotificationFeed(): boolean {
-  return feedAvailable;
 }
 
 export function savedAccountsUnsupported(): boolean {
@@ -147,10 +140,10 @@ export function useAccountNotifications(userId: string | null): void {
         for (const { account, notification } of accountNotificationChanges(next.accounts, seen)) {
           if (typeof Notification === "undefined" || Notification.permission !== "granted")
             continue;
-          const displayed = account.userId === accountIdentity();
-          if (displayed && document.visibilityState === "visible" && document.hasFocus()) continue;
+          // The shell's live stream already notifies for the account on screen.
+          if (account.userId === accountIdentity()) continue;
           const alert = new Notification(notification.title, {
-            body: displayed ? notification.body : `${notification.body}\n${account.email}`,
+            body: `${notification.body}\n${account.email}`,
             tag: `${account.userId}:${notification.threadId}`,
           });
           openNotifications.add(alert);
@@ -165,7 +158,10 @@ export function useAccountNotifications(userId: string | null): void {
         // A failed feed read is not a sign-out; retry without replaying its history.
       } finally {
         if (!controller.signal.aborted)
-          timer = setTimeout(poll, document.visibilityState === "hidden" ? 30_000 : 5_000);
+          timer = setTimeout(
+            poll,
+            snapshot.accounts.length > 1 && document.visibilityState !== "hidden" ? 5_000 : 30_000,
+          );
       }
     }
     void poll();

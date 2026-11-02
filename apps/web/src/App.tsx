@@ -19,11 +19,7 @@ import { PageLoading } from "./components/PageLoading";
 import { SubscriptionGate } from "./components/SubscriptionGate";
 import { setAccountIdentity } from "./lib/account-identity";
 import { accountUnreadCount } from "./lib/account-notifications";
-import {
-  hasAccountNotificationFeed,
-  useAccountNotifications,
-  useSavedAccounts,
-} from "./lib/account-sessions";
+import { useAccountNotifications, useSavedAccounts } from "./lib/account-sessions";
 import { authClient } from "./lib/auth";
 import { getTicketBoardEnabled, subscribeTicketBoardEnabled } from "./lib/bootstrap";
 import { syncCallIdentity } from "./lib/call-session";
@@ -139,8 +135,9 @@ function SessionApp() {
   const analyticsUserId = session.data?.user.id;
   useAccountNotifications(analyticsUserId ?? null);
   const savedAccounts = useSavedAccounts();
+  // With one account the shell's live roster count is fresher than the feed.
   useDesktopBadge(
-    hasAccountNotificationFeed() ? accountUnreadCount(savedAccounts.accounts) : undefined,
+    savedAccounts.accounts.length > 1 ? accountUnreadCount(savedAccounts.accounts) : undefined,
   );
   const lastScreen = useRef<string | undefined>(undefined);
   useEffect(() => {

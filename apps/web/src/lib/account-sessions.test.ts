@@ -106,7 +106,10 @@ it("keeps polling hidden tabs at a lower rate and cancels the feed on cleanup", 
   let signal: AbortSignal | undefined;
   const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
     signal = init?.signal ?? undefined;
-    return Response.json({ activeUserId: "family", accounts: [] });
+    return Response.json({
+      activeUserId: "family",
+      accounts: [summary("family"), summary("work")],
+    });
   });
   vi.stubGlobal("fetch", fetch);
   const { useAccountNotifications } = await import("./account-sessions");
@@ -131,3 +134,36 @@ it("keeps polling hidden tabs at a lower rate and cancels the feed on cleanup", 
     vi.useRealTimers();
   }
 });
+
+it("polls a lone account slowly even while visible", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("document", { visibilityState: "visible" });
+  const fetch = vi.fn(async () =>
+    Response.json({ activeUserId: "family", accounts: [summary("family")] }),
+  );
+  vi.stubGlobal("fetch", fetch);
+  const { useAccountNotifications } = await import("./account-sessions");
+  useAccountNotifications("family");
+  const cleanup = calls.effect.mock.calls[0]![0]();
+  try {
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  } finally {
+    if (typeof cleanup === "function") cleanup();
+    vi.useRealTimers();
+  }
+});
+
+function summary(userId: string) {
+  return {
+    userId,
+    sessionId: `${userId}-session`,
+    name: userId,
+    email: `${userId}@example.test`,
+    image: null,
+    unread: 0,
+    notifications: [],
+  };
+}
