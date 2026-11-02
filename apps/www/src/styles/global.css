@@ -2700,6 +2700,11 @@ button.product-demo__dock-icon {
   border-color: var(--destructive);
 }
 
+.plugin-form input[aria-invalid="true"]:focus-visible,
+.plugin-form textarea[aria-invalid="true"]:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--destructive) 20%, transparent);
+}
+
 .plugin-form .plugin-form__check {
   display: flex;
   align-items: center;

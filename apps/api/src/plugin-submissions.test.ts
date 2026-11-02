@@ -1,5 +1,9 @@
 import { EmailEmulator } from "@rakazo/adapters";
-import { INTEGRATION_CLAIMS_PATH, PLUGIN_SUBMISSIONS_PATH } from "@rakazo/contracts";
+import {
+  INTEGRATION_CLAIMS_PATH,
+  PLUGIN_SUBMISSIONS_PATH,
+  PluginSubmissionSchema,
+} from "@rakazo/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const preview = vi.hoisted(() => vi.fn());
@@ -405,9 +409,10 @@ describe("integration page claims", () => {
     const { submit } = routes(prisma);
     await submit(claim);
     await submit({ ...claim, email: "someone@mail.example" });
-    expect(
-      (await listPluginSubmissions(prisma, "pending")).map((row) => row.emailMatchesWebsite),
-    ).toEqual([true, false]);
+    const pending = await listPluginSubmissions(prisma, "pending");
+    expect(pending.map((row) => row.emailMatchesWebsite)).toEqual([true, false]);
+    // The admin RPC validates its output with this schema, so a claim must pass it.
+    for (const row of pending) expect(PluginSubmissionSchema.safeParse(row).success).toBe(true);
   });
 
   it("approves without previewing a plugin and publishes the newest claim per page", async () => {

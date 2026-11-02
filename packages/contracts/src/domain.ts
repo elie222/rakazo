@@ -965,6 +965,8 @@ export const PluginSubmissionSchema = PluginSubmissionInputSchema.omit({ tested:
   logo: z.string().nullable(),
   source: z.string().nullable(),
   testing: z.string().nullable(),
+  /** Empty for a claim, which only links the page. */
+  description: z.string(),
   /** The integration page URL slug a claim is for; null for plugins. */
   claim: z.string().nullable(),
   /** For a claim, whether the submitter's email is at the website's domain. */
