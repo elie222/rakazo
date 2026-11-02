@@ -9,6 +9,31 @@ import org.junit.Test
 
 class NotificationPollingTest {
   @Test
+  fun `distinct portrait loads can make progress concurrently`() {
+    val cache = PollPortraitCache<String>()
+    val started = java.util.concurrent.CountDownLatch(2)
+    val release = java.util.concurrent.CountDownLatch(1)
+    val workers = java.util.concurrent.Executors.newFixedThreadPool(2)
+    try {
+      val results = listOf("first", "second").map { botId ->
+        workers.submit<String?> {
+          cache.get(botId, 0) {
+            started.countDown()
+            release.await()
+            botId
+          }
+        }
+      }
+      assertTrue(started.await(5, java.util.concurrent.TimeUnit.SECONDS))
+      release.countDown()
+      assertEquals(listOf("first", "second"), results.map { it.get(5, java.util.concurrent.TimeUnit.SECONDS) })
+    } finally {
+      release.countDown()
+      workers.shutdownNow()
+    }
+  }
+
+  @Test
   fun `portrait failures retry and successful portraits refresh without restarting the service`() {
     val cache = PollPortraitCache<String>()
     var calls = 0

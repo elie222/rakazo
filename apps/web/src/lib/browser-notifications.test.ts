@@ -179,3 +179,28 @@ it("alerts for questions and takeover, but keeps tool-only messages quiet", () =
     ),
   ).toBe(false);
 });
+
+it("notifies for an answered ask-only reply but excludes pending asks and tool-only messages", () => {
+  const reply = event({
+    payload: {
+      role: "bot",
+      blocks: [{ kind: "ask", status: "answered", text: "Instructions updated" }],
+    },
+  });
+  expect(shouldNotifyBrowser(reply, context())).toBe(true);
+  expect(browserNotificationMessage(reply, "Marketing").body).toBe("Instructions updated");
+  expect(
+    shouldNotifyBrowser(
+      event({
+        payload: { role: "bot", blocks: [{ kind: "ask", status: "pending", text: "Approve?" }] },
+      }),
+      context(),
+    ),
+  ).toBe(false);
+  expect(
+    shouldNotifyBrowser(
+      event({ payload: { role: "bot", blocks: [{ kind: "tool", name: "write_file" }] } }),
+      context(),
+    ),
+  ).toBe(false);
+});

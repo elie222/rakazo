@@ -120,6 +120,7 @@ export const BotSchema = z.object({
   runErrorId: Id.nullable().default(null),
   /** Distinguishes group work from the bot's private conversation. */
   activeRunThreadId: Id.nullable().optional(),
+  activeRunId: Id.nullable().optional(),
   computerMode: ComputerModeSchema,
   updatedAt: z.string(),
   createdAt: z.string(),

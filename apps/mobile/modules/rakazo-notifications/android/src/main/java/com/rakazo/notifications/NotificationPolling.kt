@@ -158,7 +158,7 @@ internal class PollCadence {
 /** Per-generation portrait cache: transient errors retry sooner than successful images refresh. */
 internal class PollPortraitCache<T> {
   private data class Entry<T>(val value: T?, val expiresAt: Long)
-  private val entries = mutableMapOf<String, Entry<T>>()
+  private val entries = java.util.concurrent.ConcurrentHashMap<String, Entry<T>>()
 
   fun get(botId: String, now: Long, load: () -> T?): T? {
     val cached = entries[botId]

@@ -119,3 +119,143 @@ it("notifies for another agent's reply with its name and avatar, without replayi
     await act(async () => root.unmount());
   }
 });
+
+it.each(["run.waiting_input", "computer.takeover.requested", "run.failed"] as const)(
+  "deduplicates %s between stream and a delayed roster transition",
+  async (type) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const show = vi.fn();
+    vi.stubGlobal(
+      "Notification",
+      class {
+        static permission = "granted";
+        constructor(title: string, options: NotificationOptions) {
+          show(title, options);
+        }
+      },
+    );
+    Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+    const bot = {
+      id: "agent",
+      threadId: "thread",
+      name: "Marketing",
+      status: "running",
+      notifyOnFinish: true,
+      unread: true,
+      activeRunId: "run-1",
+    } as Bot;
+    let controls!: ReturnType<typeof useBrowserNotifications>;
+    function Harness({ bots, open }: { bots: Bot[]; open: string }) {
+      const ref = useRef(bots);
+      ref.current = bots;
+      controls = useBrowserNotifications(ref, bots, open, "space");
+      return null;
+    }
+    const root = createRoot(document.createElement("div"));
+    try {
+      await act(async () => root.render(<Harness bots={[bot]} open="agent" />));
+      await act(async () =>
+        controls.notifyBrowserForEvent(
+          {
+            id: "stream-1",
+            runId: "run-1",
+            threadId: "thread",
+            botId: "agent",
+            seq: 1,
+            type,
+            payload: {},
+          },
+          "thread",
+          0,
+          true,
+          "Marketing",
+          true,
+          false,
+        ),
+      );
+      expect(show).toHaveBeenCalledTimes(1);
+      await act(async () =>
+        root.render(
+          <Harness
+            bots={[
+              {
+                ...bot,
+                status:
+                  type === "run.failed"
+                    ? "idle"
+                    : type === "computer.takeover.requested"
+                      ? "waiting_takeover"
+                      : "waiting_input",
+                runErrorId: type === "run.failed" ? "run-1" : null,
+                updatedAt: "later",
+              },
+            ]}
+            open="other"
+          />,
+        ),
+      );
+      expect(show).toHaveBeenCalledTimes(1);
+      await act(async () =>
+        controls.notifyBrowserForEvent(
+          {
+            id: "stream-2",
+            runId: "run-2",
+            threadId: "thread",
+            botId: "agent",
+            seq: 2,
+            type,
+            payload: {},
+          },
+          "thread",
+          0,
+          true,
+          "Marketing",
+          true,
+          false,
+        ),
+      );
+      expect(show).toHaveBeenCalledTimes(2);
+      await act(async () =>
+        controls.notifyBrowserForEvent(
+          {
+            id: "resume",
+            runId: "run-1",
+            threadId: "thread",
+            botId: "agent",
+            seq: 3,
+            type: "run.started",
+            payload: {},
+          },
+          "thread",
+          0,
+          true,
+          "Marketing",
+          true,
+          false,
+        ),
+      );
+      await act(async () =>
+        controls.notifyBrowserForEvent(
+          {
+            id: "new-interruption",
+            runId: "run-1",
+            threadId: "thread",
+            botId: "agent",
+            seq: 4,
+            type,
+            payload: {},
+          },
+          "thread",
+          0,
+          true,
+          "Marketing",
+          true,
+          false,
+        ),
+      );
+      expect(show).toHaveBeenCalledTimes(3);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  },
+);

@@ -919,3 +919,38 @@ it("uses data-only delivery only for Android builds that registered sender suppo
   });
   expect(request.priority).toBe("high");
 });
+
+it.each([undefined, "android_sender"] as const)(
+  "retains the longest whole-code-point preview near the byte limit: %s",
+  async (presentation) => {
+    const tokens = new MemoryPushTokenStore();
+    await tokens.save("user-1", "ExponentPushToken[test]", "", presentation);
+    const fetchMock = vi.fn(async () => jsonResponse({ data: { status: "ok" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new ExpoPushProvider(tokens);
+    const message = {
+      kind: "help" as const,
+      title: "Marketing",
+      body: "🔔".repeat(100),
+      botId: "bot",
+      threadId: "thread",
+      groupId: "g",
+      sender: { botId: "bot", name: "Marketing", avatar: "a".repeat(1400) },
+    };
+    await provider.send(message, notifyContext);
+    const read = () =>
+      JSON.parse(String((fetchMock.mock.calls.at(-1) as unknown as [string, RequestInit])[1].body));
+    const baseline = read();
+    const bytes = Buffer.byteLength(JSON.stringify(baseline));
+    await provider.send({ ...message, groupId: "g".repeat(3305 - bytes + 1) }, notifyContext);
+    const sent = read();
+    const preview = presentation ? sent.data.notificationBody : sent.body;
+    expect(Buffer.byteLength(JSON.stringify(sent))).toBeLessThanOrEqual(3300);
+    expect(Array.from(preview)).toHaveLength(98);
+    expect(Array.from(preview).every((character) => character === "🔔")).toBe(true);
+    const extended = structuredClone(sent);
+    if (presentation) extended.data.notificationBody += "🔔";
+    else extended.body += "🔔";
+    expect(Buffer.byteLength(JSON.stringify(extended))).toBeGreaterThan(3300);
+  },
+);

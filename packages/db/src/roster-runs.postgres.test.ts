@@ -182,6 +182,8 @@ describePostgres("bounded latest bot roster runs (PostgreSQL)", () => {
     );
     const waiting = bots.find((bot) => bot.name === "Waiting")!;
     expect(waiting.activeRunThreadId).toBe(waiting.threadId);
+    expect(waiting.activeRunId).toBeTruthy();
+    expect(bots.find((bot) => bot.name === "Failed")?.activeRunId).toBeNull();
     expect(bots.find((bot) => bot.name === "Failed")?.activeRunThreadId).toBeNull();
     // Three latest runs plus the Waiting bot's one foreground active run.
     expect(reads.slice(start).reduce((a, b) => a + b, 0)).toBe(4);

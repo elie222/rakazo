@@ -10,7 +10,7 @@ import {
 import { selectSpace } from "../../lib/rpc";
 
 type PendingBrowserNotification = {
-  event: Pick<ProductEvent, "id" | "type" | "threadId" | "botId" | "payload">;
+  event: Pick<ProductEvent, "id" | "type" | "threadId" | "botId" | "runId" | "payload">;
   botId: string;
   botName: string;
   groupNotification: boolean;
@@ -32,6 +32,14 @@ export function useBrowserNotifications(
     (pending: PendingBrowserNotification): boolean => {
       const currentBot = botsRef.current.find((bot) => bot.id === pending.botId);
       if (!currentBot || typeof Notification === "undefined") return true;
+      const interruptionKey =
+        pending.event.runId && pending.event.type !== "thread.message.created"
+          ? `interruption:${pending.event.threadId}:${pending.event.runId}:${pending.event.type}`
+          : undefined;
+      if (interruptionKey && notifiedBrowserEvents.current.has(interruptionKey)) {
+        notifiedBrowserEvents.current.add(pending.event.id);
+        return true;
+      }
       const result = deliverNativeBrowserNotification(
         pending.event,
         currentBot.name || pending.botName,
@@ -58,6 +66,8 @@ export function useBrowserNotifications(
           },
         },
       );
+      if (result === "delivered" && interruptionKey)
+        notifiedBrowserEvents.current.add(interruptionKey);
       return result !== "pending";
     },
     [openBotId],
@@ -69,6 +79,17 @@ export function useBrowserNotifications(
     for (const bot of bots) {
       const before = previous.bots.find((entry) => entry.id === bot.id);
       if (!before || bot.id === openBotId || !bot.notifyOnFinish) continue;
+      if (
+        notificationAttention(before.status, before.unread, Boolean(before.runErrorId)) ===
+          "needs_attention" &&
+        notificationAttention(bot.status, bot.unread, Boolean(bot.runErrorId)) !== "needs_attention"
+      ) {
+        const runId = before.runErrorId ?? before.activeRunId;
+        if (runId)
+          for (const type of ["run.failed", "run.waiting_input", "computer.takeover.requested"]) {
+            notifiedBrowserEvents.current.delete(`interruption:${bot.threadId}:${runId}:${type}`);
+          }
+      }
       const attention = notificationAttention(bot.status, bot.unread, Boolean(bot.runErrorId));
       const interrupted =
         attention === "needs_attention" &&
@@ -81,8 +102,15 @@ export function useBrowserNotifications(
         type: interrupted
           ? bot.status === "failed" || bot.runErrorId
             ? ("run.failed" as const)
-            : ("run.waiting_input" as const)
+            : bot.status === "waiting_takeover"
+              ? ("computer.takeover.requested" as const)
+              : ("run.waiting_input" as const)
           : ("thread.message.created" as const),
+        runId: interrupted
+          ? bot.status === "failed" || bot.runErrorId
+            ? (bot.runErrorId ?? undefined)
+            : (bot.activeRunId ?? undefined)
+          : undefined,
         threadId: bot.threadId,
         botId: bot.id,
         payload: replied ? { role: "bot", blocks: [{ kind: "text", text: bot.preview }] } : {},
@@ -107,7 +135,7 @@ export function useBrowserNotifications(
   }, [deliverBrowserNotification]);
   const notifyBrowserForEvent = useCallback(
     (
-      event: Pick<ProductEvent, "id" | "type" | "threadId" | "seq" | "botId" | "payload">,
+      event: Pick<ProductEvent, "id" | "type" | "threadId" | "seq" | "botId" | "runId" | "payload">,
       subscribedThreadId: string | undefined,
       initialCursor: number,
       streamReady: boolean,
@@ -118,6 +146,19 @@ export function useBrowserNotifications(
     ) => {
       const botId = event.botId;
       if (typeof botId !== "string") return;
+      if (
+        streamReady &&
+        event.threadId === subscribedThreadId &&
+        event.seq > initialCursor &&
+        event.runId &&
+        (event.type === "run.started" || event.type === "computer.takeover.released")
+      ) {
+        for (const type of ["run.failed", "run.waiting_input", "computer.takeover.requested"]) {
+          notifiedBrowserEvents.current.delete(
+            `interruption:${event.threadId}:${event.runId}:${type}`,
+          );
+        }
+      }
       const eligible = shouldNotifyBrowser(event, {
         subscribedThreadId: subscribedThreadId ?? "",
         initialCursor,

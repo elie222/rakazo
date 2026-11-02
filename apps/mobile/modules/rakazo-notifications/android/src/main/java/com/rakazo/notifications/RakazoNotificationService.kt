@@ -27,6 +27,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -136,7 +139,6 @@ class RakazoNotificationService : Service() {
         val working = active.filter(::isWorking).filter { it.notificationsEnabled }
         if (generation != sessionGeneration.get()) return
         val recent = runs(storage.endpoint, token, storage.spaceId, storage.headers, "recent")
-        val preparedPortraits = mutableMapOf<String, Bitmap?>()
         fun portrait(run: RunRecord): Bitmap? = portraits.get(run.botId, SystemClock.elapsedRealtime()) {
           runCatching {
             val identity = rpc(storage.endpoint, token, storage.spaceId, storage.headers, "notifications/identity",
@@ -144,10 +146,16 @@ class RakazoNotificationService : Service() {
             senderPortrait(identity)
           }.getOrNull()
         }
-        val workingPortrait = working.firstOrNull { !isOpenThread(it) }?.let { portrait(it) }
-        (active + recent).filter {
+        val primaryWorking = working.firstOrNull { !isOpenThread(it) }
+        val candidates = (active + recent).filter {
           it.status == "waiting_input" || it.status == "waiting_takeover" || it.status == "failed"
-        }.forEach { preparedPortraits[it.botId] = portrait(it) }
+        } + listOfNotNull(primaryWorking)
+        val preparedPortraits = coroutineScope {
+          candidates.distinctBy { it.botId }.map { run ->
+            async { run.botId to portrait(run) }
+          }.awaitAll().toMap()
+        }
+        val workingPortrait = primaryWorking?.let { preparedPortraits[it.botId] }
         var replyLookups = emptyList<RunRecord>()
         val immediate = mutableListOf<Pair<RunRecord, NotificationCopy>>()
         if (!runIfCurrent(generation) {

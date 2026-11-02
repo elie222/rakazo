@@ -59,7 +59,8 @@ export function shouldNotifyBrowser(
           block &&
           typeof block === "object" &&
           "kind" in block &&
-          block.kind === "text" &&
+          (block.kind === "text" ||
+            (block.kind === "ask" && "status" in block && block.status === "answered")) &&
           "text" in block &&
           typeof block.text === "string" &&
           block.text.trim(),

@@ -184,11 +184,7 @@ export class ExpoPushProvider implements NotificationProvider {
         ? { priority: "high" }
         : {}),
     };
-    // APNs caps the entire payload, including UTF-8 text and the sender thumbnail.
-    while (Buffer.byteLength(JSON.stringify(payload)) > 3300 && payload.body.length > 0) {
-      payload.body = payload.body.slice(0, Math.floor(payload.body.length / 2));
-    }
-    const deliveryPayload =
+    const buildDeliveryPayload = () =>
       registration.presentation === "android_sender"
         ? {
             to: token,
@@ -208,6 +204,18 @@ export class ExpoPushProvider implements NotificationProvider {
             },
           }
         : payload;
+    // Size the complete UTF-8 envelope; code points keep surrogate pairs intact.
+    const characters = Array.from(payload.body);
+    let low = 0;
+    let high = characters.length;
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      payload.body = characters.slice(0, middle).join("");
+      if (Buffer.byteLength(JSON.stringify(buildDeliveryPayload())) <= 3300) low = middle;
+      else high = middle - 1;
+    }
+    payload.body = characters.slice(0, low).join("");
+    const deliveryPayload = buildDeliveryPayload();
     const { status, body } = await this.postWithBackoff(
       EXPO_PUSH_URL,
       deliveryPayload,

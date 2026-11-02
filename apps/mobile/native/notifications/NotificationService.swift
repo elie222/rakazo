@@ -18,7 +18,13 @@ final class NotificationService: UNNotificationServiceExtension {
       return
     }
     let encoded = sender["avatar"] as? String ?? ""
-    let image = encoded.count <= 1400 ? Data(base64Encoded: encoded).map { INImage(imageData: $0) } : nil
+    let image: INImage?
+    if !encoded.isEmpty, encoded.count <= 1400,
+       let bytes = Data(base64Encoded: encoded), !bytes.isEmpty {
+      image = INImage(imageData: bytes)
+    } else {
+      image = nil
+    }
     let person = INPerson(
       personHandle: INPersonHandle(value: botId, type: .unknown),
       nameComponents: nil, displayName: name, image: image,
