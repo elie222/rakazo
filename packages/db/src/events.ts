@@ -41,6 +41,7 @@ import { saveApprovalRule, storedBatchActions } from "./approval-settings.js";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
+import { contentEncryptionOf } from "./content-encryption.js";
 import {
   CrossSpaceCommunicationBlockedError,
   crossSpaceCommunicationAllowed,
@@ -1116,6 +1117,8 @@ export async function answerRunInput(
     prisma.$transaction(async (tx: Prisma.TransactionClient) =>
       commitAnswerRunInput(tx, input, writer),
     );
+  // Unwrapping space keys can wait on the key manager; keep that wait outside the transaction.
+  await contentEncryptionOf(prisma)?.ring.all(input.spaceId);
   // A dismissal has no secret to prepare.
   const committed =
     runSecretWriter?.withPrepared && !input.dismiss

@@ -1,5 +1,10 @@
 import type { NotificationMessage } from "@rakazo/adapter-kit";
-import { ModelAccountError, SandboxRateLimitError, TransientModelError } from "@rakazo/adapter-kit";
+import {
+  ModelAccountError,
+  SandboxAllowanceUsedError,
+  SandboxRateLimitError,
+  TransientModelError,
+} from "@rakazo/adapter-kit";
 import type * as DbModule from "@rakazo/db";
 import { countUnreadInboxChats } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
@@ -369,6 +374,13 @@ describe("backing off a routine after its model connection refuses it", () => {
       error: new ModelAccountError(message),
       personalKey: true,
     });
+
+    expect(prisma.$transaction).toHaveBeenCalledOnce();
+    expect(retries).toEqual([]);
+  });
+
+  it("counts a spent computer allowance, without a quick retry", async () => {
+    const { prisma, retries } = await failRun({ error: new SandboxAllowanceUsedError() });
 
     expect(prisma.$transaction).toHaveBeenCalledOnce();
     expect(retries).toEqual([]);
