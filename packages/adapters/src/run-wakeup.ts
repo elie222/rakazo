@@ -252,7 +252,9 @@ export class RunWorkerHost implements JobWorkerHost {
   }
 
   /**
-   * Runs waiting for their own bot's earlier run on its computer are expected to wait.
+   * Runs waiting for their own bot's earlier run on its computer are expected to wait, including
+   * in the handoff after that run releases the computer (release expires the lease and touches
+   * `updatedAt`) until the next one takes it.
    * Any other run still unstarted thirty seconds after it was due means starting failed,
    * which is an error reported with this process's database pool and event-loop health.
    */
@@ -279,7 +281,8 @@ export class RunWorkerHost implements JobWorkerHost {
           AND NOT EXISTS (
             SELECT 1 FROM computer_execution_leases lease
             WHERE lease."botId" = runs."botId" AND lease."computerId" = bot."computerId"
-              AND lease."runId" <> runs.id AND lease."expiresAt" > ${new Date(now)}
+              AND lease."runId" <> runs.id
+              AND (lease."expiresAt" > ${new Date(now)} OR lease."updatedAt" > ${cutoff})
           )
       `;
       if (this.stopping) return;
