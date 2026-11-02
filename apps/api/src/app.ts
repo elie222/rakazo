@@ -82,6 +82,7 @@ import {
   reconcileCloudAgents,
   reconcileComputerUpdates,
   reconcilePurchases,
+  reconcileStrategicInitiatives,
   removePiUserSessions,
   resolveDeploymentModel,
   ScriptedAgentRuntime,
@@ -684,6 +685,13 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         reconcileCloudAgents: () => reconcileCloudAgents({ prisma, jobs, cloudAgent }),
         reconcilePurchases: () => reconcilePurchases({ prisma, jobs, paymentWallet }),
         reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs }),
+        reconcileStrategicInitiatives: () =>
+          reconcileStrategicInitiatives({
+            prisma,
+            jobs,
+            now: new Date(),
+            batchSize: 100,
+          }).then(() => undefined),
         reconcileSecurityEventRetention: createSecurityEventPruner(
           prisma,
           securityEventRetentionDays(),
