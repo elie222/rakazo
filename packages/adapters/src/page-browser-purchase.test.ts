@@ -314,6 +314,13 @@ describe("purchase detection in the page helper", () => {
     expect(intent("הוסף לסל")).toBeNull();
   });
 
+  it("finds card fields a checkout draws in an open shadow tree", () => {
+    const { win, helper } = page(`<div id="host"></div><div onclick="go()" id="go">Continue</div>`);
+    const shadow = win.document.getElementById("host")!.attachShadow({ mode: "open" });
+    shadow.innerHTML = `<input autocomplete="cc-number" aria-label="Card">`;
+    expect(helper.purchaseOfNode(win.document.getElementById("go")!)?.reason).toBe("payment_page");
+  });
+
   it("counts a disabled control as no purchase", () => {
     const { helper, win } = page(`<button id="b">Pay now</button>`);
     const button = win.document.getElementById("b")!;

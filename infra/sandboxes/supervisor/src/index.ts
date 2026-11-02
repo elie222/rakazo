@@ -692,8 +692,9 @@ app.post("/computers/:id/browser", async (c) => {
   try {
     const reusable = await screen(true);
     let result = await runHelper(reusable);
-    // A reused screen skipped setup, so a browser that has since exited gets it before one retry.
-    if (reusable.reused && pageBrowserNotReady(result))
+    // A reused screen skipped setup, so a browser that has since exited gets it before one retry. A
+    // purchase check presses nothing and never starts the browser again: no browser has nothing to buy.
+    if (reusable.reused && body.command !== "purchase_check" && pageBrowserNotReady(result))
       result = await runHelper(await screen(false));
     // A nonzero exit or malformed output cannot establish which mutations ran.
     if (result.code !== 0 || Buffer.byteLength(result.stdout) > 512 * 1024) {

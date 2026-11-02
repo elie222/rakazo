@@ -160,11 +160,14 @@ def page_tabs(port: int) -> list[dict[str, Any]]:
             if isinstance(target, dict) and target.get("type") == "page"]
 
 
+NO_TAB = "No browser tab is open. Use desktop tools to open one."
+
+
 def front_tab(port: int) -> tuple[str, str]:
     """The tab the person sees, and its address."""
     for target in page_tabs(port):
         return str(target["id"]), str(target.get("url") or "")
-    raise RuntimeError("No browser tab is open. Use desktop tools to open one.")
+    raise RuntimeError(NO_TAB)
 
 
 # A page may open tabs: a pop-up, a link to a new tab, or a report it opens once it has made it.
@@ -1812,7 +1815,15 @@ PURCHASE_HELPERS = r"""
       ...Array.from(el.labels || [], (label) => label.textContent)].join(" ");
     return CARD_NAMING.test(naming) && !NOT_A_CARD.test(naming);
   }
-  const pageCards = () => [...document.querySelectorAll("input")].filter(cardLike);
+  // Inputs of the page and of its open shadow trees, where some checkouts draw their card fields.
+  function deepInputs(root = document, found = []) {
+    for (const el of root.querySelectorAll("*")) {
+      if (el instanceof HTMLInputElement) found.push(el);
+      if (el.shadowRoot && found.length < 2000) deepInputs(el.shadowRoot, found);
+    }
+    return found;
+  }
+  const pageCards = () => deepInputs().filter(cardLike);
   // What the control says, in each way it can say it: its own text or value, its aria label, its title.
   const tidy = (text) => clean(String(text ?? "").replace(/[‎‏‪-‮ ]/g, " "));
   function wordsOf(el) {
@@ -2358,17 +2369,21 @@ def run(argv: list[str]) -> int:
     opened = False
     page: PageBrowser | None = None
     try:
-        version = wait_for_cdp(port)
-        connected = True
         if command == "purchase_check":
+            # No browser running, no tab open, or one of Chromium's own pages: nothing on it can be bought.
+            # Any other failure is a failed check, which asks.
             try:
+                wait_for_cdp(port)
                 address = front_tab(port)[1]
-            except RuntimeError:
+            except RuntimeError as error:
+                if not str(error).startswith(("CDP not ready", NO_TAB)):
+                    raise
                 address = ""
             if not address or internal(address):
-                # No page is showing, or one of Chromium's own: nothing on it can be bought.
                 print(json.dumps({"ok": True, "site": "", "purchase": None, "url": address, "title": ""}))
                 return 0
+        version = wait_for_cdp(port)
+        connected = True
         browser = AgentBrowser(port)
         tabs: Tabs | None = None
         # Best effort here and below: a tab list that fails leaves the call as it was.

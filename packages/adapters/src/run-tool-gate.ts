@@ -400,14 +400,13 @@ export async function gateToolCall(
   // so only real denies match. A stored row is checked only while it still waits for an
   // answer. web_fetch and secret_request target one site per call; request_secret and
   // connect_app name their own target.
-  // Browsing goes on after a denied purchase: only a purchase is checked against earlier denied ones,
-  // on the same site.
+  // Browsing goes on after a denied purchase: a purchase is checked against earlier denied purchases
+  // on the same site, and other page work against earlier denied page work that bought nothing.
   const pageAction = PURCHASE_CHECKED_TOOLS.has(name);
   const repeatChecked =
     applied &&
     (!applied.duplicate || applied.effect.status === "intended") &&
-    !["web_fetch", "secret_request", "request_secret", "connect_app"].includes(name) &&
-    (!pageAction || Boolean(purchase));
+    !["web_fetch", "secret_request", "request_secret", "connect_app"].includes(name);
   const deniedEarlier = repeatChecked
     ? (
         await deps.prisma.externalEffect.findMany({

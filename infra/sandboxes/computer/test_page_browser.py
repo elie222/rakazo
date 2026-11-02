@@ -628,6 +628,18 @@ class PurchaseTest(unittest.TestCase):
             with self.subTest(step=step), self.assertRaisesRegex(RuntimeError, "approv"):
                 helper.validate_actions([step])
 
+    def test_a_purchase_check_with_no_browser_finds_nothing_and_one_that_cannot_list_tabs_fails(self):
+        with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), patch.object(
+                helper, "wait_for_cdp", side_effect=RuntimeError("CDP not ready on port 1: refused")), \
+                patch("builtins.print") as printed:
+            helper.run(["rakazo-page-browser", "purchase_check", '{"desktop": true}'])
+        self.assertEqual(json.loads(printed.call_args.args[0])["purchase"], None)
+        with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), patch.object(helper, "wait_for_cdp"), \
+                patch.object(helper, "page_tabs", side_effect=RuntimeError("tab list too large")), \
+                patch("builtins.print") as printed:
+            helper.run(["rakazo-page-browser", "purchase_check", '{"desktop": true}'])
+        self.assertEqual(json.loads(printed.call_args.args[0])["ok"], False)
+
     def test_a_purchase_check_with_no_page_or_a_browser_page_showing_finds_nothing_to_buy(self):
         for listing in ([], [{"type": "page", "id": "newtab", "url": "chrome://newtab/"}]):
             with self.subTest(listing=listing), patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), \
