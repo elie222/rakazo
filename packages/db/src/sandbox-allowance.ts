@@ -36,6 +36,7 @@ export async function sandboxAllowancePlan(
             status: true,
             cancelAtPeriodEnd: true,
             currentPeriodStartsAt: true,
+            byokInterval: true,
           },
         },
       },
@@ -47,7 +48,10 @@ export async function sandboxAllowancePlan(
   const periodStart = live ? billing?.currentPeriodStartsAt : null;
   const since =
     periodStart && periodStart <= now
-      ? periodStart
+      ? // A yearly plan's allowance still renews monthly, on the day its period began.
+        billing?.byokInterval === "year"
+        ? latestMonthlyAnniversary(periodStart, now)
+        : periodStart
       : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   const limitCents =
     billing?.status === "trialing"
@@ -58,6 +62,24 @@ export async function sandboxAllowancePlan(
         ? BYOK_SANDBOX_ALLOWANCE_CENTS
         : Math.floor(((billing?.creditAmountCents ?? 0) * CREDITS_SANDBOX_ALLOWANCE_PERCENT) / 100);
   return { limitCents, since };
+}
+
+/** The latest monthly anniversary of `start` at or before `now`, on a shorter month's last day. */
+function latestMonthlyAnniversary(start: Date, now: Date): Date {
+  const monthsLater = (months: number) => {
+    const shifted = new Date(start);
+    shifted.setUTCDate(1);
+    shifted.setUTCMonth(start.getUTCMonth() + months);
+    const lastDay = new Date(
+      Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1, 0),
+    ).getUTCDate();
+    shifted.setUTCDate(Math.min(start.getUTCDate(), lastDay));
+    return shifted;
+  };
+  const months =
+    (now.getUTCFullYear() - start.getUTCFullYear()) * 12 + now.getUTCMonth() - start.getUTCMonth();
+  const anniversary = monthsLater(months);
+  return anniversary <= now ? anniversary : monthsLater(months - 1);
 }
 
 /**

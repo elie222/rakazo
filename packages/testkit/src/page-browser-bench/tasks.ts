@@ -22,8 +22,11 @@ type ActSpec =
 export type ScriptStep =
   | { navigate: string }
   | { snapshot: true }
-  /** Snapshot again until the target shows up, as a model waiting on a slow page would. */
-  | { until: Target; tries: number }
+  /**
+   * Snapshot again until the target shows up, as a model waiting on a slow page would, or with a
+   * query, as one looking for a control the snapshot left out would.
+   */
+  | { until: Target; tries: number; query?: string }
   | { wait: number }
   /**
    * `staleRefs` acts on refs from the first page this task saw, not the latest. An `optional` step is
@@ -138,10 +141,10 @@ export const TASKS: BenchTask[] = [
   },
   {
     id: "long-page",
-    covers: "snapshot budget on a page with 660 controls and the form last",
+    covers: "snapshot query on a page with 660 controls and the form last",
     steps: [
       { navigate: "/long.html" },
-      { until: { name: "Newsletter email" }, tries: 2 },
+      { until: { name: "Newsletter email" }, tries: 1, query: "newsletter" },
       {
         act: [
           { kind: "fill", target: { name: "Newsletter email" }, text: "reader@example.test" },
@@ -176,6 +179,16 @@ export const TASKS: BenchTask[] = [
       },
     ],
     expect: { submitted: { order: "A-123" } },
+  },
+  {
+    id: "search",
+    covers: "suggestions 300 ms after typing stops, then 200 ms to answer",
+    steps: [
+      { navigate: "/search.html" },
+      { act: [{ kind: "type", target: { name: "Search countries" }, text: "Can" }] },
+      { act: [{ kind: "click", target: { name: "Canada" } }] },
+    ],
+    expect: { submitted: { country: "ca" } },
   },
   {
     id: "login",
@@ -361,7 +374,7 @@ export async function runTask(
       await call({ command: "snapshot" });
     } else if ("until" in step) {
       for (let attempt = 0; !findRef(latest, step.until) && attempt < step.tries; attempt += 1) {
-        await call({ command: "snapshot" });
+        await call({ command: "snapshot", ...(step.query ? { query: step.query } : {}) });
       }
     } else if ("wait" in step) {
       await new Promise((resolve) => setTimeout(resolve, step.wait));

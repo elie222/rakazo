@@ -87,7 +87,7 @@ export function accountRoutes(ctx: RouterContext) {
           const record = await firstModelConnectAnalytics(deps, context.actor, "credits");
           record(undefined, { name: "model_connect_started" });
         }
-        return billing.selectFunding(context.actor, input.funding, input.client);
+        return billing.selectFunding(context.actor, input.funding, input.client, input.interval);
       }),
       purchaseCredits: authed.billing.purchaseCredits.handler(async ({ context, input }) =>
         requireBilling(deps).purchaseCredits(context.actor, input),
@@ -104,7 +104,7 @@ export function accountRoutes(ctx: RouterContext) {
         return billing.status(context.actor);
       }),
       checkout: authed.billing.checkout.handler(async ({ context, input }) =>
-        requireBilling(deps).checkout(context.actor, input?.client),
+        requireBilling(deps).checkout(context.actor, input?.client, input?.interval),
       ),
       portal: authed.billing.portal.handler(async ({ context, input }) =>
         requireBilling(deps).portal(context.actor, input?.client),
@@ -112,6 +112,11 @@ export function accountRoutes(ctx: RouterContext) {
       endTrial: authed.billing.endTrial.handler(async ({ context }) => {
         const billing = requireBilling(deps);
         await billing.endTrial(context.actor);
+        return billing.status(context.actor);
+      }),
+      switchToYearly: authed.billing.switchToYearly.handler(async ({ context }) => {
+        const billing = requireBilling(deps);
+        await billing.switchToYearly(context.actor);
         return billing.status(context.actor);
       }),
       claimReferral: authed.billing.claimReferral.handler(async ({ context, input }) => {

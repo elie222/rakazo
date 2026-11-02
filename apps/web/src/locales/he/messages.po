@@ -420,6 +420,10 @@ msgstr "{toolCount, plural, one {# כלי} other {# כלים}}"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/ModelCredits.tsx
+msgid "/ month"
+msgstr "/ חודש"
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr ""
@@ -1022,6 +1026,10 @@ msgstr "Bearer token"
 #: src/pages/settings-nav.ts
 msgid "Billing"
 msgstr "חיוב"
+
+#: src/components/ModelCredits.tsx
+msgid "Billing period"
+msgstr "תקופת חיוב"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
@@ -3870,6 +3878,7 @@ msgstr "יום שני"
 msgid "month"
 msgstr "חודש"
 
+#: src/components/ModelCredits.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "חודשי"
@@ -5726,6 +5735,10 @@ msgid "Subscribe"
 msgstr "הרשמה למנוי"
 
 #: src/components/ModelCredits.tsx
+msgid "Subscribe for {annualPrice} / year"
+msgstr "הרשמה ב-{annualPrice} / שנה"
+
+#: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
 msgstr "הרשמה במחיר {price} לחודש"
 
@@ -5755,9 +5768,18 @@ msgstr "תומך בתמונות"
 msgid "Supports thinking"
 msgstr "תומך בחשיבה"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
-msgstr ""
+msgstr "החלפה"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly"
+msgstr "מעבר לתשלום שנתי"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly?"
+msgstr "לעבור לתשלום שנתי?"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
@@ -6149,6 +6171,7 @@ msgstr "אתרים מהימנים"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "לנסות שוב"
 
@@ -6555,6 +6578,10 @@ msgstr ""
 msgid "year"
 msgstr "שנה"
 
+#: src/components/ModelCredits.tsx
+msgid "Yearly"
+msgstr "שנתי"
+
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Yesterday"
@@ -6589,6 +6616,10 @@ msgstr "השליטה אצלך"
 msgid "Your Anthropic"
 msgstr "Anthropic"
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged {annualPrice} today, less the unused part of this month."
+msgstr "הכרטיס שלך יחויב היום ב-{annualPrice}, בניכוי החלק שלא נוצל מהחודש הזה."
+
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr ""
@@ -6619,6 +6650,10 @@ msgstr "OpenAI"
 #: src/lib/run-error.ts
 msgid "Your OpenRouter"
 msgstr "OpenRouter"
+
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {annualPrice} / year when your trial ends."
+msgstr "בסיום תקופת הניסיון, המינוי שלך יעלה {annualPrice} / שנה."
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"

@@ -45,6 +45,17 @@ export const ES_MESSAGES: Record<string, string> = {
   "If you're enjoying Rakazo,": "Si te está gustando Rakazo,",
   "give us a star on GitHub": "danos una estrella en GitHub",
   "We received your Rakazo plugin": "Recibimos tu plugin de Rakazo",
+  "Confirm your Rakazo page claim": "Confirma tu solicitud de página en Rakazo",
+  "Confirm claim": "Confirmar solicitud",
+  "We review every claim once it's confirmed and will email you when it's done.":
+    "Revisamos cada solicitud una vez confirmada y te escribiremos cuando terminemos.",
+  "This link expires in one day. If you did not claim a page, ignore this email.":
+    "Este enlace vence en un día. Si no reclamaste ninguna página, ignora este correo.",
+  "Your Rakazo page claim: {name}": "Tu solicitud de página en Rakazo: {name}",
+  "Your changes to the {name} page are approved.":
+    "Tus cambios en la página de {name} están aprobados.",
+  "We couldn't approve your changes to the {name} page.":
+    "No pudimos aprobar tus cambios en la página de {name}.",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Gracias por enviar un plugin al marketplace de Rakazo.",
   "We review every submission and will email you when it's done.":

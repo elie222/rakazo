@@ -420,6 +420,10 @@ msgstr "{toolCount, plural, one {# tool} other {# tools}}"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/ModelCredits.tsx
+msgid "/ month"
+msgstr "/ month"
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr "1 space"
@@ -1022,6 +1026,10 @@ msgstr "Bearer token"
 #: src/pages/settings-nav.ts
 msgid "Billing"
 msgstr "Billing"
+
+#: src/components/ModelCredits.tsx
+msgid "Billing period"
+msgstr "Billing period"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
@@ -3870,6 +3878,7 @@ msgstr "Monday"
 msgid "month"
 msgstr "month"
 
+#: src/components/ModelCredits.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "Monthly"
@@ -5726,6 +5735,10 @@ msgid "Subscribe"
 msgstr "Subscribe"
 
 #: src/components/ModelCredits.tsx
+msgid "Subscribe for {annualPrice} / year"
+msgstr "Subscribe for {annualPrice} / year"
+
+#: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
 msgstr "Subscribe for {price} / month"
 
@@ -5755,9 +5768,18 @@ msgstr "Supports images"
 msgid "Supports thinking"
 msgstr "Supports thinking"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
 msgstr "Switch"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly"
+msgstr "Switch to yearly"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly?"
+msgstr "Switch to yearly?"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
@@ -6149,6 +6171,7 @@ msgstr "Trusted sites"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "Try again"
 
@@ -6555,6 +6578,10 @@ msgstr "Workspace"
 msgid "year"
 msgstr "year"
 
+#: src/components/ModelCredits.tsx
+msgid "Yearly"
+msgstr "Yearly"
+
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Yesterday"
@@ -6589,6 +6616,10 @@ msgstr "You have control"
 msgid "Your Anthropic"
 msgstr "Your Anthropic"
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged {annualPrice} today, less the unused part of this month."
+msgstr "Your card is charged {annualPrice} today, less the unused part of this month."
+
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr "Your data"
@@ -6619,6 +6650,10 @@ msgstr "Your OpenAI"
 #: src/lib/run-error.ts
 msgid "Your OpenRouter"
 msgstr "Your OpenRouter"
+
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {annualPrice} / year when your trial ends."
+msgstr "Your plan becomes {annualPrice} / year when your trial ends."
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"

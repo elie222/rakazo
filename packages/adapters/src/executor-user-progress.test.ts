@@ -202,6 +202,7 @@ async function runTurn(
               replyQuote: null,
               replyTo: null,
               clientNonce: message.clientNonce ?? null,
+              steeringMessages: [],
             }))
           : where.runId === run.id && options.priorProgressText
             ? [

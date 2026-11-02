@@ -66,6 +66,14 @@ describe("normalizeRunError", () => {
       "Your model provider can't run this model.",
     ],
     ['{"error":{"code":"model_not_found"}}', "Your model provider can't run this model."],
+    [
+      '400: {"message":"Model example is not a chat model; call /v1/example instead of /v1/chat/completions","type":"invalid_request_error"}',
+      "Your model provider can't run this model.",
+    ],
+    [
+      '400: {"type":"server_error","message":"Upstream request failed: This example model requires Global regions. Select Global in your workspace\'s Privacy settings to use it."}',
+      "Your model provider can't run this model.",
+    ],
     ["Request timed out", "Your model provider took too long to respond. Try again."],
     [
       '504: {"message":"Gateway error"}',

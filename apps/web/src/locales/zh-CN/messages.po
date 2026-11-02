@@ -420,6 +420,10 @@ msgstr "{toolCount, plural, one {# 个工具} other {# 个工具}}"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/ModelCredits.tsx
+msgid "/ month"
+msgstr "/ 月"
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr "1 个工作区"
@@ -1022,6 +1026,10 @@ msgstr "Bearer token"
 #: src/pages/settings-nav.ts
 msgid "Billing"
 msgstr "账单"
+
+#: src/components/ModelCredits.tsx
+msgid "Billing period"
+msgstr "账单周期"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
@@ -3870,6 +3878,7 @@ msgstr "周一"
 msgid "month"
 msgstr "月"
 
+#: src/components/ModelCredits.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "每月"
@@ -5726,6 +5735,10 @@ msgid "Subscribe"
 msgstr "订阅"
 
 #: src/components/ModelCredits.tsx
+msgid "Subscribe for {annualPrice} / year"
+msgstr "以每年 {annualPrice} 订阅"
+
+#: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
 msgstr "以每月 {price} 订阅"
 
@@ -5755,9 +5768,18 @@ msgstr "支持图片"
 msgid "Supports thinking"
 msgstr "支持思考"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
 msgstr "切换"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly"
+msgstr "切换为按年"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly?"
+msgstr "切换为按年付费？"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
@@ -6149,6 +6171,7 @@ msgstr "受信任的网站"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "重试"
 
@@ -6555,6 +6578,10 @@ msgstr "工作区"
 msgid "year"
 msgstr "年"
 
+#: src/components/ModelCredits.tsx
+msgid "Yearly"
+msgstr "按年"
+
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Yesterday"
@@ -6589,6 +6616,10 @@ msgstr "你已接管"
 msgid "Your Anthropic"
 msgstr "你的 Anthropic"
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged {annualPrice} today, less the unused part of this month."
+msgstr "今天将从你的卡中扣款 {annualPrice}，并抵扣本月未使用的部分。"
+
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr ""
@@ -6619,6 +6650,10 @@ msgstr "你的 OpenAI"
 #: src/lib/run-error.ts
 msgid "Your OpenRouter"
 msgstr "你的 OpenRouter"
+
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {annualPrice} / year when your trial ends."
+msgstr "试用结束后，你的套餐将变为每年 {annualPrice}。"
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"

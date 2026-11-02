@@ -940,6 +940,12 @@ export const ES_MESSAGES: Record<string, string> = {
   "Your trial ends and your card is charged today.":
     "Tu prueba termina y se cobrará a tu tarjeta hoy.",
   "Start plan": "Iniciar plan",
+  "Switch to yearly": "Cambiar a anual",
+  "Switch to yearly?": "¿Cambiar a anual?",
+  "Your card is charged {price} today, less the unused part of this month.":
+    "Hoy se cobrará {price} a tu tarjeta, menos la parte no usada de este mes.",
+  "Your plan becomes {price} / year when your trial ends.":
+    "Cuando termine tu prueba, tu plan pasará a {price} / año.",
   "Monthly credits": "Créditos mensuales",
   "Upgrade now": "Mejorar plan ahora",
   "Downgrade at renewal": "Bajar de plan al renovar",
@@ -977,6 +983,13 @@ export const ES_MESSAGES: Record<string, string> = {
   "Full access, nothing to pay": "Acceso completo, sin pagar nada",
   "Day {days}": "Día {days}",
   "{price} / month begins": "Empieza el cobro de {price} / mes",
+  "Billing period": "Periodo de facturación",
+  "Yearly −{percent}%": "Anual −{percent} %",
+  "{days} days free, then {price} / year. Cancel anytime.":
+    "{days} días gratis y luego {price} / año. Cancela cuando quieras.",
+  "{price} / year": "{price} / año",
+  "{price} / year begins": "Empieza el cobro de {price} / año",
+  "{price} / year. Cancel anytime.": "{price} / año. Cancela cuando quieras.",
   "Only the owner of this account can choose a plan.":
     "Solo el titular de esta cuenta puede elegir un plan.",
   Terms: "Términos",
@@ -1180,6 +1193,22 @@ export const ES_MESSAGES: Record<string, string> = {
   "Won't do": "No se hará",
   "Could not move the ticket": "No se pudo mover el ticket",
   "No tickets yet.": "Aún no hay tickets.",
+  "Bot models": "Modelos de los bots",
+  "1 bot has its own model:": "1 bot tiene su propio modelo:",
+  "{count} bots have their own model:": "{count} bots tienen su propio modelo:",
+  "Use space default": "Usar el predeterminado del espacio",
+  "Switching…": "Cambiando…",
+  "Switch 1 bot to the space default?": "¿Cambiar 1 bot al modelo predeterminado del espacio?",
+  "Switch {count} bots to the space default?":
+    "¿Cambiar {count} bots al modelo predeterminado del espacio?",
+  "Their own model is cleared. You can pick one again in each bot.":
+    "Se quitará su modelo propio. Puedes volver a elegir uno en cada bot.",
+  Switch: "Cambiar",
+  "1 bot now uses the space default.": "1 bot ahora usa el modelo predeterminado del espacio.",
+  "{count} bots now use the space default.":
+    "{count} bots ahora usan el modelo predeterminado del espacio.",
+  "Could not switch {failedNames}. Try again.":
+    "No se pudo cambiar {failedNames}. Vuelve a intentarlo.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

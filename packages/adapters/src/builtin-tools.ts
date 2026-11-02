@@ -44,7 +44,7 @@ function secretAskToolSurface() {
       allowPrivateHttpOrigins
         ? "HTTPS origin, or an HTTP origin on a private LAN host"
         : "HTTPS origin"
-    }, or connectionId for a one-use connector code. Credential names must start with a lowercase letter and use only lowercase letters, digits, hyphens, or underscores (max 64 characters). For a website login the user wants saved, use auth {type:"login"} with the HTTPS origin of the sign-in form's page or frame, and fields with the labels the site signs in with (default Username and Password); the card asks for each, and browser_act fill_secret types one by its label. The user decides which fields are hidden: a hidden field is typed only into a password field. A field whose label is an ID, phone, email or username starts visible on the card and any other starts hidden, so label each field by what the site calls it. If one is refused in another field, ask again with replace true so the user can make it visible. The user may choose not to save a login: the result then says saved false, the login works only until this run ends, and a later run must ask again, so never say it was saved. For a value this bot's shell commands need, use auth {type:"command"} with no origin; it is exported to them as an environment variable named after the credential in upper case with hyphens as underscores (netbird-setup-key becomes $NETBIRD_SETUP_KEY). Existing named credentials are reused unless replace is true. A sign-in without a password, such as fields ["ID number","Phone"], still uses auth {type:"login"}; never ask for those in chat or on the screen. For a texted or emailed code, CAPTCHA, passkeys, or anything else that needs the live desktop, call request_takeover.`,
+    }, or connectionId for a one-use connector code. Credential names must start with a lowercase letter and use only lowercase letters, digits, hyphens, or underscores (max 64 characters). For a website login the user wants saved, use auth {type:"login"} with the HTTPS origin of the sign-in form's page or frame, and fields with the labels the site signs in with (default Username and Password); the card asks for each, and browser_act fill_secret types one by its label. The user decides which fields are hidden: a hidden field is typed only into a password field. A field whose label is an ID, phone, email or username starts visible on the card and any other starts hidden, so label each field by what the site calls it. If one is refused in another field, ask again with replace true so the user can make it visible. The user may choose not to save a login: the result then says saved false, the login works only until this run ends, and a later run must ask again, so never say it was saved. For a value this bot's shell commands need, use auth {type:"command"} with no origin; it is exported to them as an environment variable named after the credential in upper case with hyphens as underscores (netbird-setup-key becomes $NETBIRD_SETUP_KEY). Existing named credentials are reused unless replace is true, as is a site's saved login. A sign-in without a password, such as fields ["ID number","Phone"], still uses auth {type:"login"}; never ask for those in chat or on the screen. For a texted or emailed code, CAPTCHA, passkeys, or anything else that needs the live desktop, call request_takeover.`,
     inputSchema: {
       oneOf: [
         {
@@ -334,8 +334,13 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "browser_snapshot",
     description:
-      "Capture an accessibility-style snapshot of the current page with element refs (e1, e2, …). Use refs with browser_act. A dropdown lists its options, and a line says when page text or controls were cut off. Frames follow the page, under their site. Prefer this over computer_observe for web pages. If loading is true, take another snapshot before deciding what the page shows. If fallback is computer_act, use the desktop tools instead.",
-    inputSchema: { type: "object", properties: {} },
+      "Capture an accessibility-style snapshot of the current page with element refs (e1, e2, …). Use refs with browser_act. A dropdown lists its options, and a line says when page text or controls were cut off. query lists only the controls whose name, label or nearby text match it, from anywhere on the page. Frames follow the page, under their site. Prefer this over computer_observe for web pages. If loading is true, take another snapshot before deciding what the page shows. If fallback is computer_act, use the desktop tools instead.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", maxLength: 200 },
+      },
+    },
     readOnly: true,
   },
   {

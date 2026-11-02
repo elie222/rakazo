@@ -982,6 +982,12 @@ export const JA_MESSAGES: Record<string, string> = {
   "Your trial ends and your card is charged today.":
     "トライアルが終了し、本日カードに請求されます。",
   "Start plan": "プランを開始",
+  "Switch to yearly": "年払いに切り替え",
+  "Switch to yearly?": "年払いに切り替えますか？",
+  "Your card is charged {price} today, less the unused part of this month.":
+    "本日カードに{price}が請求されます（今月の未使用分を差し引きます）。",
+  "Your plan becomes {price} / year when your trial ends.":
+    "トライアル終了後、プランは年額 {price} になります。",
   "Monthly credits": "月間クレジット",
   "Upgrade now": "今すぐアップグレード",
   "Downgrade at renewal": "更新時にダウングレード",
@@ -1020,6 +1026,13 @@ export const JA_MESSAGES: Record<string, string> = {
   "Full access, nothing to pay": "すべての機能を無料で利用",
   "Day {days}": "{days}日目",
   "{price} / month begins": "月額 {price} の支払いを開始",
+  "Billing period": "請求期間",
+  "Yearly −{percent}%": "年払い −{percent}%",
+  "{days} days free, then {price} / year. Cancel anytime.":
+    "{days}日間無料、その後は年額 {price}。いつでも解約できます。",
+  "{price} / year": "年額 {price}",
+  "{price} / year begins": "年額 {price} の支払いを開始",
+  "{price} / year. Cancel anytime.": "年額 {price}。いつでも解約できます。",
   "Only the owner of this account can choose a plan.":
     "プランを選択できるのはこのアカウントのオーナーのみです。",
   Terms: "利用規約",
@@ -1263,6 +1276,23 @@ export const JA_MESSAGES: Record<string, string> = {
   "Won't do": "対応しない",
   "Could not move the ticket": "チケットを移動できませんでした",
   "No tickets yet.": "チケットはまだありません。",
+  "Bot models": "ボットのモデル",
+  "1 bot has its own model:": "1個のボットが独自のモデルを使用しています:",
+  "{count} bots have their own model:": "{count}個のボットが独自のモデルを使用しています:",
+  "Use space default": "スペースのデフォルトを使用",
+  "Switching…": "切り替え中…",
+  "Switch 1 bot to the space default?": "1個のボットをスペースのデフォルトに切り替えますか？",
+  "Switch {count} bots to the space default?":
+    "{count}個のボットをスペースのデフォルトに切り替えますか？",
+  "Their own model is cleared. You can pick one again in each bot.":
+    "個別のモデル設定は解除されます。各ボットで再度選択できます。",
+  Switch: "切り替え",
+  "1 bot now uses the space default.":
+    "1個のボットがスペースのデフォルトを使用するようになりました。",
+  "{count} bots now use the space default.":
+    "{count}個のボットがスペースのデフォルトを使用するようになりました。",
+  "Could not switch {failedNames}. Try again.":
+    "{failedNames}を切り替えられませんでした。もう一度お試しください。",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "{peer}とのメッセージ{count}件" };
