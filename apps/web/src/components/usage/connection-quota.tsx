@@ -104,7 +104,8 @@ export function ConnectionQuota({
 
 function QuotaWindow({ window, compact }: { window: ModelQuotaWindow; compact: boolean }) {
   const { t, i18n } = useLingui();
-  const remaining = Math.round((100 - window.usedPercent) * 10) / 10;
+  const left = Math.round((100 - window.usedPercent) * 10) / 10;
+  const remaining = new Intl.NumberFormat(i18n.locale).format(left);
   const label =
     window.id === "five_hour"
       ? t`Session`
@@ -139,13 +140,13 @@ function QuotaWindow({ window, compact }: { window: ModelQuotaWindow; compact: b
           ) : null}
         </span>
         <span
-          className={remaining === 0 ? "text-destructive" : "text-foreground"}
+          className={left === 0 ? "text-destructive" : "text-foreground"}
         >{t`${remaining}% remaining`}</span>
       </div>
       <meter
         min={0}
         max={100}
-        value={remaining}
+        value={left}
         aria-label={label}
         className="h-2 w-full appearance-none [&::-moz-meter-bar]:bg-foreground [&::-webkit-meter-bar]:border-0 [&::-webkit-meter-bar]:bg-muted [&::-webkit-meter-bar]:bg-none [&::-webkit-meter-optimum-value]:bg-foreground [&::-webkit-meter-optimum-value]:bg-none"
       />

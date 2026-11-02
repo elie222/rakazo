@@ -3,7 +3,7 @@ import { connectionDisplayName, connectionUsageGroups } from "@rakazo/contracts"
 import type { ModelUsageSort, ModelUsageSortInverted } from "@rakazo/core";
 import { modelUsageRoleRank, sortModelUsageEntries } from "@rakazo/core";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ConnectionQuota } from "../../components/connection-quota";
@@ -35,19 +35,26 @@ export default function Usage() {
   const [approvalRole, setApprovalRole] = useState<ModelRoleView | null>(null);
   const [quotas, setQuotas] = useState<Record<string, ModelQuota>>({});
   const [quotaLoading, setQuotaLoading] = useState<Record<string, boolean>>({});
+  const latestQuotaRequest = useRef<Record<string, number>>({});
+  const sortChanged = useRef(false);
+  const sortInvertedChanged = useRef(false);
   const loadQuota = useCallback(
     async (credentialId: string, fresh: boolean, active: () => boolean = () => true) => {
       if (!active()) return;
-      setQuotaLoading((current) => ({ ...current, [credentialId]: true }));
+      const request = (latestQuotaRequest.current[credentialId] ?? 0) + 1;
+      latestQuotaRequest.current[credentialId] = request;
+      // Only the newest read for a connection may change what the screen shows.
+      const current = () => active() && latestQuotaRequest.current[credentialId] === request;
+      setQuotaLoading((loading) => ({ ...loading, [credentialId]: true }));
       try {
         const quota = await rpc("models/quota", { credentialId, fresh });
-        if (active()) setQuotas((current) => ({ ...current, [credentialId]: quota }));
+        if (current()) setQuotas((quotas) => ({ ...quotas, [credentialId]: quota }));
       } catch {
-        if (active()) {
-          setQuotas((current) => {
-            const previous = current[credentialId];
+        if (current()) {
+          setQuotas((quotas) => {
+            const previous = quotas[credentialId];
             return {
-              ...current,
+              ...quotas,
               [credentialId]:
                 previous && (previous.status === "fresh" || previous.status === "stale")
                   ? { ...previous, status: "stale" }
@@ -62,7 +69,7 @@ export default function Usage() {
           });
         }
       } finally {
-        if (active()) setQuotaLoading((current) => ({ ...current, [credentialId]: false }));
+        if (current()) setQuotaLoading((loading) => ({ ...loading, [credentialId]: false }));
       }
     },
     [],
@@ -71,17 +78,22 @@ export default function Usage() {
     useCallback(() => {
       let active = true;
       setFailed(false);
+      // A choice made while these reads are pending is newer than what they return.
+      sortChanged.current = false;
+      sortInvertedChanged.current = false;
       void loadModelUsageSort().then((value) => {
-        if (active) setSortOrder(value);
+        if (active && !sortChanged.current) setSortOrder(value);
       });
       void loadModelUsageSortInverted().then((value) => {
-        if (active) setSortInverted(value);
+        if (active && !sortInvertedChanged.current) setSortInverted(value);
       });
       void rpc("usage/summary")
         .then((value) => {
           if (active) setSummary(value);
         })
-        .catch(() => undefined);
+        .catch(() => {
+          if (active) setSummary(null);
+        });
       void Promise.all([
         rpc("models/credentials"),
         rpc("models/list").catch(() => []),
@@ -103,7 +115,10 @@ export default function Usage() {
           }
         })
         .catch(() => {
-          if (active) setFailed(true);
+          if (active) {
+            setCredentials(null);
+            setFailed(true);
+          }
         });
       return () => {
         active = false;
@@ -169,6 +184,7 @@ export default function Usage() {
               ]}
               onChange={(value) => {
                 const next = value as ModelUsageSort;
+                sortChanged.current = true;
                 setSortOrder(next);
                 void saveModelUsageSort(next);
               }}
@@ -183,6 +199,7 @@ export default function Usage() {
                 value={sortInverted ? "inverted" : "normal"}
                 onChange={(value) => {
                   const next = value === "inverted";
+                  sortInvertedChanged.current = true;
                   setSortInverted(next);
                   void saveModelUsageSortInverted(next);
                 }}

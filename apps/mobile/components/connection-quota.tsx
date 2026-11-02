@@ -44,7 +44,9 @@ export function ConnectionQuota({
                     : window.id
           }
           value={t("{remaining}% remaining", {
-            remaining: Math.round((100 - window.usedPercent) * 10) / 10,
+            remaining: new Intl.NumberFormat(dateLocaleForUi(locale)).format(
+              Math.round((100 - window.usedPercent) * 10) / 10,
+            ),
           })}
           detail={
             window.resetsAt
