@@ -1,7 +1,5 @@
 export const ZH_TW_MESSAGES: Record<string, string> = {
   "Daily check-ins on unfinished work": "每天追蹤未完成的工作",
-  "Once a day, check in about scratchpad items untouched for 12 hours.":
-    "每天追蹤一次已超過12小時未更新的便箋事項。",
   "How other bots see it": "其他機器人如何瞭解它",
   "Share to": "分享到",
   "{count} files": "{count} 個檔案",

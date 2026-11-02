@@ -4268,10 +4268,6 @@ msgstr "{day} 日 {time}"
 msgid "on the 1st at {0}"
 msgstr "每月 1 日 {0}"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Once a day, check in about scratchpad items untouched for 12 hours."
-msgstr "每天追蹤一次已超過12小時未更新的便箋事項。"
-
 #: src/lib/cron.ts
 msgid "One-time"
 msgstr "一次性"

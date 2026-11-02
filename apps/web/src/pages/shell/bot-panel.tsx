@@ -731,21 +731,10 @@ export function BotSettings({
             </SettingsGroup>
             <SettingsGroup label={t`Permissions`}>
               <div className="flex min-h-11 items-center justify-between gap-3 text-sm">
-                <div>
-                  <label htmlFor={`${ids}-daily-check-ins`} className={rowLabelClass}>
-                    <Trans>Daily check-ins on unfinished work</Trans>
-                  </label>
-                  <p
-                    id={`${ids}-daily-check-ins-description`}
-                    className="text-xs text-muted-foreground"
-                  >
-                    <Trans>
-                      Once a day, check in about scratchpad items untouched for 12 hours.
-                    </Trans>
-                  </p>
-                </div>
+                <label htmlFor={`${ids}-daily-check-ins`} className={rowLabelClass}>
+                  <Trans>Daily check-ins on unfinished work</Trans>
+                </label>
                 <Switch
-                  aria-describedby={`${ids}-daily-check-ins-description`}
                   id={`${ids}-daily-check-ins`}
                   checked={dailyCheckIns}
                   disabled={saving}

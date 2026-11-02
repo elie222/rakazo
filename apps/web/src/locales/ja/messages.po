@@ -4267,10 +4267,6 @@ msgstr "{day}日 {time}"
 msgid "on the 1st at {0}"
 msgstr "1日 {0}"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Once a day, check in about scratchpad items untouched for 12 hours."
-msgstr "12時間更新されていないメモについて、1日1回確認します。"
-
 #: src/lib/cron.ts
 msgid "One-time"
 msgstr "1回のみ"

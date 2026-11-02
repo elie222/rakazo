@@ -1,7 +1,5 @@
 export const JA_MESSAGES: Record<string, string> = {
   "Daily check-ins on unfinished work": "未完了の作業を毎日確認",
-  "Once a day, check in about scratchpad items untouched for 12 hours.":
-    "12時間更新されていないメモについて、1日1回確認します。",
   "How other bots see it": "他のボットからの見え方",
   "Share to": "共有先",
   "{count} files": "{count}個のファイル",

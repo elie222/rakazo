@@ -1,7 +1,5 @@
 export const ZH_MESSAGES: Record<string, string> = {
   "Daily check-ins on unfinished work": "每天跟进未完成的工作",
-  "Once a day, check in about scratchpad items untouched for 12 hours.":
-    "每天跟进一次已超过12小时未更新的便笺事项。",
   "How other bots see it": "其他机器人如何了解它",
   "Share to": "分享到",
   "{count} files": "{count} 个文件",

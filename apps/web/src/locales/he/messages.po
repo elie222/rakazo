@@ -4267,10 +4267,6 @@ msgstr "ביום {day} בשעה {time}"
 msgid "on the 1st at {0}"
 msgstr "ב-1 לחודש בשעה {0}"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Once a day, check in about scratchpad items untouched for 12 hours."
-msgstr "פעם ביום, לבדוק פריטים בפנקס שלא עודכנו במשך 12 שעות."
-
 #: src/lib/cron.ts
 msgid "One-time"
 msgstr "חד-פעמי"

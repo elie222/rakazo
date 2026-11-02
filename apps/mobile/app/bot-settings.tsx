@@ -109,7 +109,7 @@ export default function BotSettingsScreen() {
   );
   const dailyCheckInsSave = useMemo(
     () =>
-      createQueuedSave<boolean>(false, {
+      createQueuedSave<boolean>(true, {
         save: async (value) => {
           await rpc("bots/update", { botId, dailyCheckIns: value });
         },
@@ -665,19 +665,11 @@ export default function BotSettingsScreen() {
             </SettingsGroup>
             <SettingsGroup label={t("Permissions")}>
               <View style={styles.row}>
-                <View style={{ flex: 1, gap: 4 }}>
-                  <Text style={[styles.rowLabel, { color: tokens.foreground }]}>
-                    {t("Daily check-ins on unfinished work")}
-                  </Text>
-                  <Text style={{ color: tokens.mutedForeground, fontSize: 13 }}>
-                    {t("Once a day, check in about scratchpad items untouched for 12 hours.")}
-                  </Text>
-                </View>
+                <Text style={[styles.rowLabel, { color: tokens.foreground }]}>
+                  {t("Daily check-ins on unfinished work")}
+                </Text>
                 <NativeSwitch
                   accessibilityLabel={t("Daily check-ins on unfinished work")}
-                  accessibilityHint={t(
-                    "Once a day, check in about scratchpad items untouched for 12 hours.",
-                  )}
                   value={dailyCheckIns}
                   onValueChange={(value) => {
                     if (!botId) return;

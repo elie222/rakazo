@@ -4267,10 +4267,6 @@ msgstr "am {day}. um {time}"
 msgid "on the 1st at {0}"
 msgstr "am 1. um {0}"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Once a day, check in about scratchpad items untouched for 12 hours."
-msgstr "Einmal täglich nach Notizen fragen, die seit 12 Stunden unverändert sind."
-
 #: src/lib/cron.ts
 msgid "One-time"
 msgstr "Einmalig"

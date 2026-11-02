@@ -1,7 +1,5 @@
 export const DE_MESSAGES: Record<string, string> = {
   "Daily check-ins on unfinished work": "Tägliche Rückfragen zu offenen Aufgaben",
-  "Once a day, check in about scratchpad items untouched for 12 hours.":
-    "Einmal täglich nach Notizen fragen, die seit 12 Stunden unverändert sind.",
   "How other bots see it": "So sehen andere Bots ihn",
   "Share to": "Teilen mit",
   "{count} files": "{count} Dateien",

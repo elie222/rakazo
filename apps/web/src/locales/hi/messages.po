@@ -4267,10 +4267,6 @@ msgstr "{day} तारीख को {time} पर"
 msgid "on the 1st at {0}"
 msgstr "1 तारीख को {0} बजे"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Once a day, check in about scratchpad items untouched for 12 hours."
-msgstr "दिन में एक बार उन नोट्स के बारे में पूछें जिन्हें 12 घंटे से बदला नहीं गया है।"
-
 #: src/lib/cron.ts
 msgid "One-time"
 msgstr "एक बार"
