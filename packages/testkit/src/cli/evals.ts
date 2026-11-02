@@ -10,6 +10,12 @@ import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import type { StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import type { EvalCase } from "../evals/cases.js";
 import { EVAL_CASES, HISTORY_EVAL_CASES, wakesRoutines } from "../evals/cases.js";
+import {
+  DELIBERATION_EVAL_CASES,
+  DELIBERATION_FIXTURE_VERSION,
+  DELIBERATION_JUDGE_CALIBRATION,
+  DELIBERATION_JUDGE_VERSION,
+} from "../evals/deliberation.js";
 import { HISTORY_FIXTURE_VERSION } from "../evals/history-fixtures.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "../evals/history-observer.js";
 import { observeSyntheticHistory } from "../evals/history-observer.js";
@@ -96,11 +102,16 @@ async function main() {
       fixtureVersion: INITIATIVE_FIXTURE_VERSION,
       judge: { version: INITIATIVE_JUDGE_VERSION, calibration: INITIATIVE_JUDGE_CALIBRATION },
     },
+    deliberation: {
+      cases: DELIBERATION_EVAL_CASES,
+      fixtureVersion: DELIBERATION_FIXTURE_VERSION,
+      judge: { version: DELIBERATION_JUDGE_VERSION, calibration: DELIBERATION_JUDGE_CALIBRATION },
+    },
     "tool-choice": { cases: TOOL_CHOICE_CASES, fixtureVersion: TOOL_CHOICE_FIXTURE_VERSION },
   };
   if (!Object.hasOwn(suites, values.suite!))
     throw new Error(
-      "Unknown suite; use product, history, silence, initiative, tool-choice, or approval",
+      "Unknown suite; use product, history, silence, initiative, deliberation, tool-choice, or approval",
     );
   const suite = suites[values.suite!]!;
   const suiteJudge = suite.judge;

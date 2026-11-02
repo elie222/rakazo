@@ -68,7 +68,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Ex: Project Falcon": "例: Project Falcon",
   "Search bots": "ボットを検索",
   "About {label}": "{label}について",
-  "Manage the bots it creates": "作成したボットを管理",
+  "Manage other bots": "他のボットを管理",
   "Allow cross-space bot communication": "スペースをまたいだボット間の通信を許可",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "サイドバーの整理とボットの編集ができます。指示、モデル、ルーティン、グループの編集には承認が必要です。",
@@ -986,6 +986,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Use Rakazo credits": "Rakazoクレジットを使用",
   "Choose a plan": "プランを選択",
   "Change plan": "プランを変更",
+  "Current plan": "現在のプラン",
   Plan: "プラン",
   None: "なし",
   "Free trial": "無料トライアル",

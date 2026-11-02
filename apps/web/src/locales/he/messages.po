@@ -442,6 +442,10 @@ msgstr "נפתחה לשונית התחברות בכתובת <0>{0}</0>. יש ל�
 msgid "A subscription credential is stored securely."
 msgstr "פרטי גישה של המנוי נשמרים בצורה מאובטחת."
 
+#: src/pages/KnowledgeSection.tsx
+msgid "About {kb} KB of memory no longer reaches the bot."
+msgstr ""
+
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
 msgstr "על {label}"
@@ -450,6 +454,7 @@ msgstr "על {label}"
 msgid "Access token (optional)"
 msgstr "טוקן גישה (אופציונלי)"
 
+#: src/components/AccountMenu.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Account"
 msgstr "חשבון"
@@ -843,6 +848,10 @@ msgstr "אישורים"
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
 msgstr "אישור"
+
+#: src/lib/call-session.ts
+msgid "Approve or deny it on screen."
+msgstr "יש לאשר או לדחות על המסך."
 
 #: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
@@ -2483,6 +2492,7 @@ msgid "Delete {0}?"
 msgstr "למחוק את {0}?"
 
 #: src/components/AccountAccess.tsx
+#: src/components/AccountMenu.tsx
 msgid "Delete account"
 msgstr "מחיקת החשבון"
 
@@ -2746,7 +2756,7 @@ msgstr "נדרש אימות אימייל"
 msgid "Enable {0}"
 msgstr "הפעלת {0}"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr "מסתיים ב-{day}"
 
@@ -3544,9 +3554,8 @@ msgstr "גישה מקומית מאפשרת לבוטים להריץ פקודות 
 msgid "Local computer access requires the latest desktop app."
 msgstr ""
 
-#: src/components/ModelCredits.tsx
+#: src/components/AccountMenu.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/Paywall.tsx
 msgid "Log out"
 msgstr "התנתקות"
 
@@ -3595,8 +3604,8 @@ msgid "Manage MCP servers"
 msgstr "ניהול שרתי MCP"
 
 #: src/pages/shell/bot-panel.tsx
-msgid "Manage the bots it creates"
-msgstr "ניהול הבוטים שהוא יוצר"
+msgid "Manage other bots"
+msgstr "ניהול בוטים אחרים"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
@@ -4877,7 +4886,7 @@ msgstr "שינוי שם"
 msgid "Rename section"
 msgstr "שינוי שם המקטע"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Renews {day}"
 msgstr "מתחדש ב-{day}"
 
@@ -6113,7 +6122,7 @@ msgstr "טוקן Treg"
 msgid "Trial"
 msgstr "תקופת ניסיון"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Trial ends {day}"
 msgstr "תקופת הניסיון מסתיימת {day}"
 

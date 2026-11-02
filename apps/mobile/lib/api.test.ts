@@ -240,7 +240,11 @@ describe("mobile API authentication", () => {
       "http://127.0.0.1:3100/api/auth/sign-in/email",
       expect.objectContaining({
         method: "POST",
-        headers: { "content-type": "application/json", origin: "rakazo://" },
+        headers: {
+          "content-type": "application/json",
+          origin: "rakazo://",
+          "accept-language": "en",
+        },
         body: JSON.stringify({ email: "ada@example.com", password: "correct horse" }),
       }),
     );
@@ -276,7 +280,11 @@ describe("mobile API authentication", () => {
       "http://127.0.0.1:3100/api/auth/sign-up/email",
       expect.objectContaining({
         method: "POST",
-        headers: { "content-type": "application/json", origin: "rakazo://" },
+        headers: {
+          "content-type": "application/json",
+          origin: "rakazo://",
+          "accept-language": "en",
+        },
         body: JSON.stringify({
           email: "new@example.com",
           password: "correct horse",
@@ -302,7 +310,11 @@ describe("mobile API authentication", () => {
       "http://127.0.0.1:3100/api/auth/email-otp/send-verification-otp",
       expect.objectContaining({
         method: "POST",
-        headers: { "content-type": "application/json", origin: "rakazo://" },
+        headers: {
+          "content-type": "application/json",
+          origin: "rakazo://",
+          "accept-language": "en",
+        },
         body: JSON.stringify({ email: "ada@example.test", type: "sign-in" }),
       }),
     );
@@ -311,7 +323,11 @@ describe("mobile API authentication", () => {
       "http://127.0.0.1:3100/api/auth/sign-in/email-otp",
       expect.objectContaining({
         method: "POST",
-        headers: { "content-type": "application/json", origin: "rakazo://" },
+        headers: {
+          "content-type": "application/json",
+          origin: "rakazo://",
+          "accept-language": "en",
+        },
         body: JSON.stringify({ email: "ada@example.test", otp: "123456", name: "Ada" }),
       }),
     );

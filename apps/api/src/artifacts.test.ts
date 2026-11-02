@@ -538,16 +538,53 @@ describe("storeInboundAttachment", () => {
       createdAt: new Date("2026-10-01T00:00:00.000Z"),
     });
     const fetch = vi.fn(async () => new Uint8Array(3));
-    await expect(
-      store({ name: "a.png", mimeType: "image/png", fetch }, Date.now() - 1),
-    ).resolves.toMatchObject({
+    const replayed = await store({ name: "a.png", mimeType: "image/png", fetch }, Date.now() - 1);
+    expect(replayed).toMatchObject({
       id: "artifact-1",
     });
+    expect(replayed.bytes).toBeUndefined();
     expect(findFirst).toHaveBeenCalledWith({
       where: { spaceId: actor.spaceId, userId: actor.userId, clientNonce: "nonce-1" },
     });
     expect(fetch).not.toHaveBeenCalled();
     expect(put).not.toHaveBeenCalled();
+  });
+
+  it("returns the downloaded bytes with a freshly stored artifact", async () => {
+    const bytes = new Uint8Array([7, 8, 9]);
+    const row = {
+      id: "artifact-9",
+      botId: "bot-1",
+      groupId: null,
+      runId: null,
+      name: "voice.oga",
+      description: null,
+      mimeType: "audio/ogg",
+      size: bytes.byteLength,
+      version: 1,
+      createdAt: new Date(0),
+    };
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      artifact: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue(row),
+      },
+    };
+    const deps = {
+      prisma: {
+        artifact: { findFirst: vi.fn().mockResolvedValue(null) },
+        $transaction: vi.fn(async (fn: (t: unknown) => Promise<unknown>) => fn(tx)),
+      } as unknown as PrismaClient,
+      artifacts: { put: vi.fn().mockResolvedValue({ id: "store-1" }) } as unknown as ArtifactStore,
+    };
+    const stored = await storeInboundAttachment(deps, actor, {
+      botId: "bot-1",
+      attachment: { name: "voice.oga", mimeType: "audio/ogg", fetch: async () => bytes },
+      clientNonce: "nonce-2",
+    });
+    expect(stored).toMatchObject({ id: "artifact-9", mimeType: "audio/ogg" });
+    expect(stored.bytes).toBe(bytes);
   });
 });
 

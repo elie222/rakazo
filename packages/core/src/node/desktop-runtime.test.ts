@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  BROWSER_STILL_RUNNING_EXIT,
   browserCloseProgram,
   DEFAULT_DESKTOP_ENV,
   desktopControlCommand,
@@ -691,7 +692,7 @@ describe("shared Linux desktop lifecycle", () => {
           ["-eu", "-c", `${close}\n${stopBrowserProfileCommand(profile, shellQuote(pidFile))}`],
           { encoding: "utf8", timeout: 20_000 },
         );
-        expect(result.status, result.stderr).toBe(1);
+        expect(result.status, result.stderr).toBe(BROWSER_STILL_RUNNING_EXIT);
         expect(result.stderr).toContain("browser still running");
         for (const lock of locks) {
           expect(readFileSync(path.join(profile, lock), "utf8")).toBe("keep");

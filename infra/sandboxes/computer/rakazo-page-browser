@@ -9,15 +9,19 @@ Saved logins, cards and pay tokens go through page_secrets instead.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import mimetypes
 import os
 import re
+import socket
 import stat
 import subprocess
 import sys
 import tempfile
 import threading
 import time
+import unicodedata
 import urllib.request
 from typing import Any
 from urllib.parse import urljoin, urlsplit
@@ -25,6 +29,8 @@ from urllib.parse import urljoin, urlsplit
 sys.path[:0] = [os.path.dirname(os.path.realpath(__file__)), "/usr/local/lib/rakazo"]
 import page_secrets  # noqa: E402
 from page_secrets import CardFieldUncertain, Refused, payment_frame_origin  # noqa: E402
+
+discover_ws_url = page_secrets.discover_ws_url
 
 AGENT_BROWSER = os.environ.get("RAKAZO_AGENT_BROWSER") or "/usr/local/bin/agent-browser"
 
@@ -178,7 +184,7 @@ class AgentBrowser:
             # Always the Chromium on this display: without it, agent-browser would start a browser of its own.
             "AGENT_BROWSER_CDP": str(port),
             "AGENT_BROWSER_IDLE_TIMEOUT_MS": "900000",
-            # Dialogs are the person's and the page's to answer, as on the screen.
+            # Dialogs are the person's and the page's to answer, as on the screen; see PageBrowser.dialog_result.
             "AGENT_BROWSER_NO_AUTO_DIALOG": "1",
             "AGENT_BROWSER_NO_WEBMCP": "1",
         })
@@ -216,18 +222,32 @@ class AgentBrowser:
             raise AbError("agent-browser stopped early", len(results))
         return results
 
-    def use_tab(self, target_id: str) -> None:
-        """Point the session at the tab on screen when the person has switched tabs since the last call."""
-        bound = os.path.join(self.home, f"{self.session}.rakazo-tab")
+    def session_tab(self) -> str | None:
+        """The tab the session reads now; it also follows tabs opened while it was attached."""
+        # One answer or none: a probe that hangs must leave the call's short budget to the work after it.
         try:
-            with open(bound, encoding="utf-8") as file:
-                if file.read() == target_id:
-                    return
-        except OSError:
-            pass
+            proc = subprocess.run(
+                [AGENT_BROWSER, "tab", "list", "--json"], capture_output=True, text=True,
+                env=self.env, cwd=self.home, timeout=1.0)
+            envelope = json.loads(proc.stdout)
+            data = envelope.get("data") if isinstance(envelope, dict) else None
+            tabs = data.get("tabs") if isinstance(data, dict) else None
+        except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
+            return None
+        for tab in tabs if isinstance(tabs, list) else []:
+            if isinstance(tab, dict) and tab.get("active") and tab.get("type") == "page":
+                return str(tab.get("targetId"))
+        return None
+
+    def use_tab(self, target_id: str) -> None:
+        """Point the session at the tab on screen when the person has switched tabs since the last call.
+
+        agent-browser follows a newly opened tab on its own, so the tab it was last pointed at is
+        not enough: ask where the session is and move it only when it reads another tab.
+        """
+        if self.session_tab() == target_id:
+            return
         self.batch([["tab", target_id]])
-        with open(bound, "w", encoding="utf-8") as file:
-            file.write(target_id)
 
 
 # A navigation as from the address bar: no referrer leaves for the next site.
@@ -426,6 +446,10 @@ def frame_site(src: Any) -> str:
 class PageBrowser:
     def __init__(self, port: int, target_id: str, browser: AgentBrowser) -> None:
         self.port, self.target, self.ab = port, target_id, browser
+        self.downloads: Downloads | None = None
+        # Set by a step whose input opened a JavaScript dialog. Reading a page that a dialog blocks
+        # times out, and agent-browser then stops answering for the tab, dialog commands included.
+        self.dialog_opened = False
 
     # -- reading the page -------------------------------------------------------------------------
 
@@ -574,18 +598,26 @@ class PageBrowser:
 
     # -- commands ---------------------------------------------------------------------------------
 
-    def navigate(self, url: str) -> dict[str, Any]:
+    def navigate(self, url: str, opened: bool = False) -> dict[str, Any]:
+        """Go to url, or, when `opened`, read the tab that was just opened on it."""
         check_url(url)
         started = time.monotonic()
-        # agent-browser's own `open` holds its session until the load event, up to 25 seconds; the
-        # page is read while it is still loading instead, as the person would see it.
-        _, before = self.ab.batch([["network", "requests", "--clear"],
-                                   ["eval", NAVIGATE.replace("URL", json.dumps(url))]])
-        before = before.get("result") or {}
-        # Scripts run in a page that is being replaced answer late, so the new document's response is
-        # awaited in the request log first. A new fragment of the same page loads no document.
-        same_document = str(before.get("href") or "").split("#")[0] == url.split("#")[0] and "#" in url
+        before: dict[str, Any] = {}
+        same_document = opened
+        if not opened:
+            # agent-browser's own `open` holds its session until the load event, up to 25 seconds; the
+            # page is read while it is still loading instead, as the person would see it.
+            _, before = self.ab.batch([["network", "requests", "--clear"],
+                                       ["eval", NAVIGATE.replace("URL", json.dumps(url))]])
+            before = before.get("result") or {}
+            # Scripts run in a page that is being replaced answer late, so the new document's response is
+            # awaited in the request log first. A new fragment of the same page loads no document.
+            same_document = str(before.get("href") or "").split("#")[0] == url.split("#")[0] and "#" in url
         while not same_document:
+            if self.downloads:
+                self.downloads.client.listen(0.01)
+                if self.downloads.client.downloads:
+                    return {"ok": True, **self.snapshot(0.0)}
             (log,) = self.ab.batch([["network", "requests"]])
             if any(r.get("resourceType") == "Document" and r.get("status") is not None
                    for r in log.get("requests") or [] if isinstance(r, dict)):
@@ -597,7 +629,11 @@ class PageBrowser:
             (now,) = self.ab.batch([["eval", "({ timeOrigin: performance.timeOrigin, href: location.href, "
                                               "ready: document.readyState })"]])
             now = now.get("result") or {}
-            moved = now.get("timeOrigin") != before.get("timeOrigin") or (same_document and now.get("href") == url)
+            if self.downloads:
+                self.downloads.client.listen(0.01)
+                if self.downloads.client.downloads:
+                    return {"ok": True, **self.snapshot(0.0)}
+            moved = opened or now.get("timeOrigin") != before.get("timeOrigin") or (same_document and now.get("href") == url)
             if moved and now.get("ready") in ("interactive", "complete"):
                 break
             if time.monotonic() - started > NAVIGATE_SECONDS:
@@ -617,13 +653,47 @@ class PageBrowser:
             page = {"url": url_result.get("url"), "title": str(title_result.get("title") or "")[:200]}
         return {"ok": True, **{key: page[key] for key in ("url", "title", "tree", "elements", "loading") if key in page}}
 
+    def dialog(self) -> dict[str, Any] | None:
+        """The JavaScript dialog (alert, confirm, prompt or beforeunload) the page has open, if any."""
+        try:
+            # Short: it can follow a step that already used most of the caller's time limit.
+            (status,) = self.ab.batch([["dialog", "status"]], timeout=3.0)
+        except Exception:  # noqa: BLE001
+            return None
+        return status if status.get("hasDialog") else None
+
+    def dialog_result(self, dialog: dict[str, Any], progress: dict[str, Any], remaining: bool = False) -> dict[str, Any]:
+        """An alert only informs and OK is its one answer, so it is closed and its message reported.
+        Any other dialog asks something: it stays open on the screen for computer_act or the person."""
+        kind = str(dialog.get("type") or "")
+        message = str(dialog.get("message") or "")[:300]
+        quoted = f": {json.dumps(message, ensure_ascii=False)}" if message else ""
+        if kind != "alert":
+            name = '"Leave site?"' if kind == "beforeunload" else kind
+            return {"ok": False, **progress, "error": f"A {name} dialog is open on the screen{quoted}",
+                    "dialog": kind, "fallback": "computer_act"}
+        note = f"The page showed an alert, now closed{quoted}."
+        try:
+            self.ab.batch([["dialog", "dismiss"]])
+            snap = self.snapshot(ACTION_WAIT_SECONDS)
+        except Exception:  # noqa: BLE001
+            return {"ok": False, **progress, "error": f"The page showed an alert{quoted}.", "fallback": "computer_act"}
+        # A step that was still running when the alert came may or may not have taken effect.
+        unsure = " Check whether the last step took effect." if progress.get("uncertain") else ""
+        if remaining or unsure:
+            after = " The remaining steps did not run." if remaining else ""
+            return {**snap, **progress, "ok": False, "error": f"{note}{unsure}{after}"}
+        return {**snap, **progress, "note": note}
+
     def step(self, commands: list[list[str]]) -> list[Any]:
         try:
-            return self.ab.batch(commands)
+            results = self.ab.batch(commands)
         except AbError as error:
             if any(marker in str(error) for marker in SETTLED_ERRORS):
                 raise Settled(str(error)) from None
             raise
+        self.dialog_opened = any(result.get("dialogOpened") is True for result in results)
+        return results
 
     def fill(self, ref: str, text: str) -> None:
         _, kept = self.step([["fill", f"@{ref}", text], ["get", "value", f"@{ref}"]])
@@ -691,6 +761,12 @@ class PageBrowser:
                     # on the page, so a click on a frame below the fold would land on whatever is there.
                     frame = node.frame  # type: ignore[union-attr]
                     # A native dropdown takes its option from fill; a click would open a list the page cannot see.
+                    if self.downloads:
+                        with contextlib.suppress(Exception):
+                            self.step([["focus", f"@{ref}"]])
+                            (link,) = self.ab.batch([["eval", "Boolean(document.activeElement?.closest('a[download]'))"]])
+                            if link.get("result"):
+                                self.downloads.client.download_links.append(time.monotonic())
                     self.step([*([["scrollintoview", f"@{frame.ref}"]] if frame else []),
                                ["focus" if native_options(node) else "click", f"@{ref}"]])  # type: ignore[arg-type]
                 elif kind == "upload":
@@ -707,6 +783,10 @@ class PageBrowser:
                         raise
                 completed += 1
                 uncertain = False
+                dialog = self.dialog() if self.dialog_opened else None
+                if dialog:
+                    return self.dialog_result(dialog, {"completed": completed, "uncertain": False},
+                                              remaining=completed < len(actions))
             ended = time.time()
             time.sleep(ACTION_QUIET_SECONDS)
             started = time.monotonic()
@@ -728,6 +808,10 @@ class PageBrowser:
         except CardFieldUncertain as exc:
             return {"ok": False, "completed": completed, "uncertain": True, "error": str(exc)}
         except Exception as exc:  # noqa: BLE001
+            dialog = self.dialog()
+            if dialog:
+                return self.dialog_result(dialog, {"completed": completed, "uncertain": uncertain},
+                                          remaining=completed + uncertain < len(actions))
             return {"ok": False, "completed": completed, "uncertain": uncertain, "error": str(exc),
                     "fallback": "computer_act"}
 
@@ -837,6 +921,326 @@ def key_command(char: str) -> list[str]:
     return ["keyboard", "inserttext", char]
 
 
+class CdpClient(page_secrets.CdpClient):
+    """The shared CDP transport with events for this call's downloads."""
+
+    def __init__(self, ws_url: str) -> None:
+        super().__init__(ws_url)
+        # Downloads Chromium began since download events were turned on, by guid, in the order they began.
+        self.downloads: dict[str, dict[str, Any]] = {}
+        # The MIME type each document response was sent with, by URL, for the type of a download.
+        self._mime_types: dict[str, str] = {}
+        # The page's top frame while its downloads are saved, and the documents it requested since then
+        # that have not loaded: when each was requested and when its answer came. A download's answer
+        # ends its request just before the download begins.
+        self.download_frame: str | None = None
+        self._documents: dict[str, list[float | None]] = {}
+        # When the bot clicked links that download (`<a download>`) whose downloads have not begun: the
+        # browser makes their requests, so the page has no document for them.
+        self.download_links: list[float] = []
+
+    def _handle_event(self, message: dict[str, Any]) -> None:
+        super()._handle_event(message)
+        method = message.get("method")
+        params = message.get("params") or {}
+        if method == "Browser.downloadWillBegin":
+            if self.download_links:
+                self.download_links.pop(0)
+            guid = params.get("guid")
+            if isinstance(guid, str):
+                self.downloads.setdefault(guid, {"name": params.get("suggestedFilename"), "url": params.get("url"),
+                                                 "state": "inProgress", "received": 0, "total": 0})
+        elif method == "Browser.downloadProgress":
+            download = self.downloads.get(params.get("guid"))
+            if download is not None:
+                download.update(state=params.get("state"), received=params.get("receivedBytes") or 0,
+                                total=params.get("totalBytes") or 0)
+        elif method == "Network.responseReceived":
+            response = params.get("response") or {}
+            if params.get("type") == "Document" and isinstance(response.get("mimeType"), str):
+                self._mime_types[str(response.get("url"))] = response["mimeType"]
+            if params.get("requestId") in self._documents:
+                self._documents[params["requestId"]][1] = time.monotonic()
+        elif method == "Network.requestWillBeSent":
+            request_id = params.get("requestId")
+            if (self.download_frame and params.get("frameId") == self.download_frame
+                    and params.get("type") == "Document" and isinstance(request_id, str)):
+                self._documents.setdefault(request_id, [time.monotonic(), None])
+        elif method in ("Network.loadingFinished", "Network.loadingFailed"):
+            if method == "Network.loadingFinished":
+                self._documents.pop(params.get("requestId"), None)
+            elif params.get("requestId") in self._documents:
+                self._documents[params["requestId"]][1] = time.monotonic()
+
+    def mime_type(self, url: Any) -> str | None:
+        kind = self._mime_types.get(str(url), "")
+        # A server's text that reaches the bot, so only a plain type/subtype is kept.
+        return kind if len(kind) <= 100 and re.fullmatch(r"[\w.+-]+/[\w.+-]+", kind, re.ASCII) else None
+
+    def documents_pending(self, grace: float, wait: float) -> bool:
+        """Whether a document the page requested may still turn out to be a download."""
+        now = time.monotonic()
+        return any(now - clicked < wait for clicked in self.download_links) or any(
+            now - requested < wait if answered is None else now - answered < grace
+            for requested, answered in self._documents.values())
+
+    def listen(self, seconds: float) -> None:
+        """Handle the events that arrive within `seconds`, as they arrive, so their times are true."""
+        assert self._sock is not None
+        deadline = time.monotonic() + seconds
+        while (left := deadline - time.monotonic()) > 0:
+            self._sock.settimeout(left)
+            try:
+                frame = self._read_frame()
+            except socket.timeout:
+                return
+            message = json.loads(frame.decode("utf-8"))
+            if isinstance(message, dict) and message.get("method"):
+                self._handle_event(message)
+
+
+def max_file_bytes() -> int:
+    """The most bytes a file moved between this computer and a page may have, uploaded or downloaded."""
+    try:
+        override = int(os.environ.get("RAKAZO_BROWSER_UPLOAD_MAX_BYTES", ""))
+    except ValueError:
+        return MAX_UPLOAD_BYTES
+    return override if override > 0 else MAX_UPLOAD_BYTES
+
+
+# A navigate or act that the host gives the bot's download folder saves the files its page downloads
+# there, under the name the site gave (made safe), and lists them in its result.
+MAX_DOWNLOADS = MAX_UPLOAD_FILES
+# Downloads are waited for until this long after the helper started, inside the supervisor's limit on
+# one call. One still running then is listed as downloading and given its name when it finishes.
+DOWNLOAD_WAIT_UNTIL = 15.0
+# A document whose answer is a download ends its request a moment before the download begins. A
+# document still unanswered this long after it was requested is a slow page, not waited for longer.
+DOWNLOAD_BEGIN_SECONDS = 0.5
+DOCUMENT_WAIT_SECONDS = 5.0
+FINISH_LATER_SECONDS = 15 * 60
+STARTED = time.monotonic()
+DOWNLOAD_FAILED = "The download failed."
+DOWNLOADS_UNUSABLE = "Downloads cannot be saved on this computer: its Downloads folder is not usable."
+TOO_MANY_DOWNLOADS = f"downloads not saved: a call saves at most {MAX_DOWNLOADS} files."
+
+
+def download_folder(folder: Any, home: str) -> str:
+    """The bot's download folder, made inside the home folder without passing through a symlink.
+
+    A folder reached through a symlink (bots/b1 -> bots/b2) could put files in another bot's folder.
+    """
+    if not isinstance(folder, str) or not folder or "\0" in folder or os.path.isabs(folder):
+        raise RuntimeError(DOWNLOADS_UNUSABLE)
+    expected = os.path.normpath(os.path.join(home, folder))
+    if expected == home or os.path.commonpath([home, expected]) != home:
+        raise RuntimeError(DOWNLOADS_UNUSABLE)
+    path = home
+    for part in os.path.relpath(expected, home).split(os.sep):
+        path = os.path.join(path, part)
+        with contextlib.suppress(FileExistsError):
+            os.mkdir(path, 0o755)
+        if os.path.islink(path) or not os.path.isdir(path):
+            raise RuntimeError(DOWNLOADS_UNUSABLE)
+    return expected
+
+
+def download_name(name: Any) -> str:
+    """A site's name for a file as one short, plain path segment: it is untrusted text the bot reads and
+    puts in its shell, so shell characters such as `$`, backticks, quotes and `;` become `_` too."""
+    text = "".join(
+        "_" if char in "/\\$`;|&<>!\"'" else " " if unicodedata.category(char)[0] in "CZ" else char
+        for char in unicodedata.normalize("NFC", str(name or ""))
+    )
+    stem, ext = os.path.splitext(" ".join(text.split()).strip(". "))
+    if len(ext) > 12 or " " in ext:
+        stem, ext = stem + ext, ""
+    while stem and (len(stem) + len(ext) > 80 or len((stem + ext).encode()) > 200):
+        stem = stem[:-1]
+    stem = stem.rstrip(". ")
+    return stem + ext if stem else "download" + ext
+
+
+def free_name(folder: str, name: str, taken: set[str]) -> str:
+    """`name`, or `name (1)` and so on, that nothing in the folder or `taken` already has."""
+    stem, ext = os.path.splitext(name)
+    for number in range(1000):
+        candidate = name if number == 0 else f"{stem} ({number}){ext}"
+        if candidate not in taken and not os.path.lexists(os.path.join(folder, candidate)):
+            return candidate
+    raise RuntimeError(DOWNLOAD_FAILED)
+
+
+def place_download(staged: str, folder: str, name: str, taken: set[str]) -> str:
+    """Give a finished download its name. A link never replaces an existing entry or writes through a symlink."""
+    info = os.lstat(staged)
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > max_file_bytes():
+        raise RuntimeError(DOWNLOAD_FAILED)
+    while True:
+        chosen = free_name(folder, name, taken)
+        try:
+            os.link(staged, os.path.join(folder, chosen))
+        except FileExistsError:
+            taken.add(chosen)
+            continue
+        os.unlink(staged)
+        return chosen
+
+
+def remove_partial(staged: str) -> None:
+    for path in (staged, staged + ".crdownload"):
+        with contextlib.suppress(OSError):
+            os.unlink(path)
+
+
+class Downloads:
+    """Saves the files a call's page downloads into the bot's folder, from when it is made until `finish`.
+
+    Chromium's download setting covers the whole browser and goes back to its default when the CDP
+    connection that made it closes, so the person's own downloads afterwards are unaffected.
+    """
+
+    def __init__(self, client: CdpClient, folder: Any, session_id: str | None = None, home: str | None = None) -> None:
+        self.client = client
+        self.home = os.path.realpath(home or os.environ.get("HOME") or "/home/rakazo")
+        try:
+            self.folder: str | None = download_folder(folder, self.home)
+        except (RuntimeError, OSError):
+            # Fail closed: the call's downloads are refused rather than saved anywhere else.
+            self.folder = None
+        try:
+            client.call("Browser.setDownloadBehavior", {
+                "behavior": "allowAndName" if self.folder else "deny",
+                **({"downloadPath": self.folder} if self.folder else {}),
+                "eventsEnabled": True,
+            })
+        except Exception:  # noqa: BLE001
+            # A browser that cannot be told downloads as it would without a folder; the call goes on.
+            self.folder = None
+        self.max_bytes = max_file_bytes()
+        self.stopped: dict[str, str] = {}
+        # Only the page's own navigations can turn into downloads; a frame's slow document is not waited for.
+        with contextlib.suppress(Exception):
+            if session_id:
+                frame = client.call("Page.getFrameTree", session_id=session_id)["frameTree"]["frame"]
+                client.download_frame = frame["id"]
+
+    def check_limits(self) -> None:
+        """Cancel a download past the call's count or over the size limit; Chromium deletes what it wrote."""
+        for index, (guid, download) in enumerate(self.client.downloads.items()):
+            if guid in self.stopped or download["state"] not in ("inProgress", "completed"):
+                continue
+            if index >= MAX_DOWNLOADS:
+                self.stopped[guid] = TOO_MANY_DOWNLOADS
+            elif max(download["total"], download["received"]) > self.max_bytes:
+                self.stopped[guid] = f"Not saved: larger than {self.max_bytes / (1024 * 1024):g} MB."
+            else:
+                continue
+            with contextlib.suppress(Exception):
+                self.client.call("Browser.cancelDownload", {"guid": guid})
+
+    def finish(self) -> list[dict[str, Any]]:
+        """Wait for the call's downloads within its time, then list each one as the bot will find it."""
+        while True:
+            self.check_limits()
+            running = any(download["state"] == "inProgress" and guid not in self.stopped
+                          for guid, download in self.client.downloads.items())
+            left = STARTED + DOWNLOAD_WAIT_UNTIL - time.monotonic()
+            documents = self.client.documents_pending(DOWNLOAD_BEGIN_SECONDS, DOCUMENT_WAIT_SECONDS)
+            if left <= 0 or not (running or documents):
+                break
+            self.client.listen(min(0.05, left))
+        taken: set[str] = set()
+        later: list[dict[str, str]] = []
+        found = [self.entry(guid, download, taken, later) for guid, download in self.client.downloads.items()]
+        if later:
+            # Detached and holding none of this call's files or connections, so the call ends now. Each
+            # call that leaves a download running starts one; it ends with them or after FINISH_LATER_SECONDS.
+            env = {key: value for key, value in os.environ.items()
+                   if key not in ("RAKAZO_BROWSER_ARGS_STDIN", "RAKAZO_BROWSER_WATCH_STDIN")}
+            subprocess.Popen([sys.executable, os.path.abspath(__file__), "finish", json.dumps({"downloads": later})],
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             start_new_session=True, close_fds=True, env=env)
+        if len(found) > MAX_DOWNLOADS:
+            found = found[:MAX_DOWNLOADS] + [{"error": f"{len(found) - MAX_DOWNLOADS} more {TOO_MANY_DOWNLOADS}"}]
+        return found
+
+    def entry(self, guid: str, download: dict[str, Any], taken: set[str],
+              later: list[dict[str, str]]) -> dict[str, Any]:
+        name = download_name(download["name"])
+        if self.folder is None:
+            return {"name": name, "error": DOWNLOADS_UNUSABLE}
+        staged = os.path.join(self.folder, guid)
+        if guid in self.stopped or download["state"] not in ("completed", "inProgress"):
+            remove_partial(staged)
+            return {"name": name, "error": self.stopped.get(guid, DOWNLOAD_FAILED)}
+        shown = os.path.relpath(self.folder, self.home)
+        if download["state"] == "inProgress":
+            # Not held on disk until it finishes: a file given this name meanwhile makes it `name (1)`.
+            name = free_name(self.folder, name, taken)
+            taken.add(name)
+            later.append({"guid": guid, "staged": staged, "folder": self.folder, "name": name})
+            return {"name": name, "path": f"{shown}/{name}", "state": "downloading", "size": download["received"]}
+        try:
+            name = place_download(staged, self.folder, name, taken)
+            size = os.stat(os.path.join(self.folder, name)).st_size
+        except (OSError, RuntimeError):
+            remove_partial(staged)
+            return {"name": name, "error": DOWNLOAD_FAILED}
+        taken.add(name)
+        kind = self.client.mime_type(download["url"]) or mimetypes.guess_type(name)[0]
+        return {"name": name, "path": f"{shown}/{name}", "size": size, **({"type": kind} if kind else {})}
+
+
+def finish_later(pending: list[dict[str, str]], seconds: float = FINISH_LATER_SECONDS) -> None:
+    """Name the downloads still running when their call ended once Chromium finishes them.
+
+    Chromium writes `<guid>.crdownload` and renames it `<guid>` when complete. Over the size limit,
+    the download is cancelled.
+    """
+    until = time.monotonic() + seconds
+    max_bytes = max_file_bytes()
+    begun: set[str] = set()
+    placement_failed: set[str] = set()
+    while pending and time.monotonic() < until:
+        time.sleep(0.5)
+        for item in list(pending):
+            staged = item["staged"]
+            try:
+                size = os.path.getsize(staged + ".crdownload")
+            except OSError:
+                if os.path.exists(staged):
+                    try:
+                        place_download(staged, item["folder"], item["name"], set())
+                    except (OSError, RuntimeError):
+                        placement_failed.add(staged)
+                    else:
+                        pending.remove(item)
+                        placement_failed.discard(staged)
+                elif staged in begun:
+                    # Cancelled or failed: Chromium removed what it wrote.
+                    pending.remove(item)
+                continue
+            begun.add(staged)
+            if size > max_bytes:
+                pending.remove(item)
+                with contextlib.suppress(Exception):
+                    client = CdpClient(discover_ws_url(cdp_port()))
+                    client.connect()
+                    try:
+                        client.call("Browser.cancelDownload", {"guid": item["guid"]})
+                    finally:
+                        client.close()
+                remove_partial(staged)
+
+    if any(item["staged"] in placement_failed for item in pending):
+        # Keep completed files available for retries until the deadline, then fail like entry().
+        for item in pending:
+            if item["staged"] in placement_failed:
+                remove_partial(item["staged"])
+        raise RuntimeError(DOWNLOAD_FAILED)
+
+
 def resolve_upload_paths(paths: Any, home: str | None = None, roots: list[str] | None = None) -> list[str]:
     """Resolve regular files within trusted roots before handing them to Chromium."""
     if not isinstance(paths, list) or not 1 <= len(paths) <= MAX_UPLOAD_FILES:
@@ -855,12 +1259,7 @@ def resolve_upload_paths(paths: Any, home: str | None = None, roots: list[str] |
             # A folder that does not exist yet holds no files; the other root still applies.
             if os.path.isdir(full):
                 allowed.append(full)
-    max_bytes = MAX_UPLOAD_BYTES
-    try:
-        if int(os.environ.get("RAKAZO_BROWSER_UPLOAD_MAX_BYTES", "")) > 0:
-            max_bytes = int(os.environ["RAKAZO_BROWSER_UPLOAD_MAX_BYTES"])
-    except ValueError:
-        pass
+    max_bytes = max_file_bytes()
     resolved = []
     total = 0
     for path in paths:
@@ -942,19 +1341,35 @@ def run(argv: list[str]) -> int:
                           "fallback": "computer_act"}))
         return 2
     command = argv[1]
-    if command not in ("navigate", "snapshot", "act"):
+    if command not in ("navigate", "snapshot", "act", "finish"):
         print(json.dumps({"ok": False, "error": f"unknown command: {command}", "fallback": "computer_act"}))
         return 2
     raw_args = stdin_args if stdin_args is not None else (argv[2] if len(argv) >= 3 else "")
     args: dict[str, Any] = json.loads(raw_args) if raw_args.strip() else {}
+    if command == "finish":
+        try:
+            finish_later(args.get("downloads") or [])
+        except (OSError, RuntimeError):
+            print(json.dumps({"downloads": [{"error": DOWNLOAD_FAILED}]}))
+            return 1
+        return 0
     port = cdp_port()
+    downloads: Downloads | None = None
+    client: CdpClient | None = None
+    saved: list[dict[str, Any]] = []
     # Set once the browser answers: before that, no action can have reached the page.
     connected = False
+    opened = False
+    page: PageBrowser | None = None
     try:
         wait_for_cdp(port)
         connected = True
         target, address = front_tab(port)
         browser = AgentBrowser(port)
+        if command in ("navigate", "act") and args.get("downloads") is not None:
+            client = CdpClient(discover_ws_url(port))
+            client.connect()
+            downloads = Downloads(client, args["downloads"])
         if internal(address):
             if command != "navigate":
                 raise RuntimeError(INTERNAL_PAGE)
@@ -966,10 +1381,19 @@ def run(argv: list[str]) -> int:
             if urlsplit(address).netloc in ("newtab", "new-tab-page"):
                 urllib.request.urlopen(f"http://127.0.0.1:{port}/json/close/{target}", timeout=5.0).close()
             target, address = front_tab(port)
+            # The new tab is already on the site: navigating it again would go unseen by the request log
+            # it has only just started.
+            opened = True
         browser.use_tab(target)
         page = PageBrowser(port, target, browser)
+        if downloads:
+            session = client.call("Target.attachToTarget", {"targetId": target, "flatten": True})["sessionId"]
+            frame = client.call("Page.getFrameTree", session_id=session)["frameTree"]["frame"]
+            client.download_frame = frame["id"]
+            client.call("Network.enable", {"maxPostDataSize": 1}, session_id=session)
+            page.downloads = downloads
         if command == "navigate":
-            result = page.navigate(str(args.get("url") or ""))
+            result = page.navigate(str(args.get("url") or ""), opened=opened)
         elif command == "snapshot":
             result = page.snapshot()
         else:
@@ -977,12 +1401,27 @@ def run(argv: list[str]) -> int:
             if not isinstance(actions, list):
                 raise RuntimeError("actions must be an array")
             result = page.act(actions)
-        print(json.dumps(result))
+        if downloads:
+            client.listen(0.01)
+            saved = downloads.finish()
+            downloads = None
+        print(json.dumps({**result, **({"downloads": saved} if saved else {})}))
         return 0  # Structured failures preserve partial action progress.
     except Exception as exc:  # noqa: BLE001
-        print(json.dumps({"ok": False, "error": str(exc), "fallback": "computer_act",
-                          "uncertain": command == "act" and connected}))
+        if downloads:
+            try:
+                client.listen(0.01)
+                saved = downloads.finish()
+            except Exception:
+                saved = [{"error": DOWNLOAD_FAILED}]
+        dialog = page.dialog() if page else None
+        failure = page.dialog_result(dialog, {}) if page and dialog else {
+            "ok": False, "error": str(exc), "fallback": "computer_act", "uncertain": command == "act" and connected}
+        print(json.dumps({**failure, **({"downloads": saved} if saved else {})}))
         return 0
+    finally:
+        if client:
+            client.close()
 
 
 if __name__ == "__main__":

@@ -58,7 +58,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Search bots": "搜索 Bot",
   "{count} messages with {peer}": "与 {peer} 的 {count} 条消息",
   "About {label}": "关于{label}",
-  "Manage the bots it creates": "管理它创建的机器人",
+  "Manage other bots": "管理其他机器人",
   "Allow cross-space bot communication": "允许跨空间机器人通信",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "整理侧边栏并编辑机器人。更改群组、指令、模型和例行任务需要你的批准。",
@@ -1020,6 +1020,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Use Rakazo credits": "使用 Rakazo 额度",
   "Choose a plan": "选择方案",
   "Change plan": "更改方案",
+  "Current plan": "当前方案",
   Plan: "方案",
   None: "无",
   "Free trial": "免费试用",

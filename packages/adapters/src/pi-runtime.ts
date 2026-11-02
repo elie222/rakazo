@@ -26,7 +26,11 @@ import {
   modelFallbackFailure,
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
-import { uncertainEffectResult } from "./approval-effect.js";
+import {
+  isTerminatingReplyResult,
+  terminatingReplyText,
+  uncertainEffectResult,
+} from "./approval-effect.js";
 import { automated, withAutomatedLabels } from "./automated-messages.js";
 import { withCloudflareAuth } from "./cloudflare-ai-gateway.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
@@ -369,6 +373,8 @@ export class PiAgentRuntime implements AgentRuntime {
         const hasBackups = Boolean(request.fallbackModels?.length);
         let agent: Agent;
         let activeStreamTarget = host.activeModel;
+        // A tool result that ended the turn carries the reply the user must still see.
+        let terminatedReply: string | undefined;
         const fallbackState: FallbackStreamState = {
           request,
           getActive: () => activeStreamTarget,
@@ -467,6 +473,10 @@ export class PiAgentRuntime implements AgentRuntime {
           },
           prepareNextTurnWithContext: async () => {
             if (!request.claimSteering) return undefined;
+            // The turn is ending at a terminating result that aborted the agent; no
+            // model request would answer a follow-up claimed now, and a completed run
+            // deletes its claimed steering. Leave the message queued for the next run.
+            if (terminatedReply && !host.pausePending) return undefined;
             const steering = await request.claimSteering([...seenSteeringIds]);
             if (steering.length === 0) return undefined;
             seenSteeringIds.push(...steering.map((item) => item.id));
@@ -593,6 +603,9 @@ export class PiAgentRuntime implements AgentRuntime {
         // it counts as the final reply, including when the completed message omits it.
         let streamedBeforePendingFinal = 0;
         agent.subscribe(async (event) => {
+          if (event.type === "tool_execution_end" && isTerminatingReplyResult(event.result)) {
+            terminatedReply = terminatingReplyText(event.result) ?? terminatedReply;
+          }
           if (event.type === "tool_execution_end" && !event.result.terminate) {
             finishedCalls.set(event.toolCallId, {
               role: "toolResult",
@@ -625,6 +638,9 @@ export class PiAgentRuntime implements AgentRuntime {
           if (event.type === "message_start" && event.message.role === "assistant") {
             host.modelResponses = (host.modelResponses ?? 0) + 1;
             currentMessageStreamed = "";
+            // A later assistant turn supersedes a terminating result's carried reply,
+            // except the empty aborted message of a turn the result itself ended.
+            if (event.message.stopReason !== "aborted") terminatedReply = undefined;
             if (!joinCutReply) joinDropped = "";
             // A later message (after a finished shell or steering, not only a tool call)
             // must not run its text straight on from the previous one.
@@ -766,6 +782,8 @@ export class PiAgentRuntime implements AgentRuntime {
           if (restored) {
             // Complete unresolved calls before another model choice. The executor
             // still enforces canonical approved arguments, routes and idempotency.
+            // A terminating result ends the resumed turn like the live one.
+            let replayTerminated = false;
             const unresolved = new Set(unresolvedTurnCheckpointCalls(history as Message[]));
             if (restored.executionMode !== "sequential") {
               for (const message of [...history]) {
@@ -846,12 +864,20 @@ export class PiAgentRuntime implements AgentRuntime {
                 unresolved.delete(call);
                 toolCalls += 1;
                 await piSession?.appendMessage(agent.state.messages.at(-1)!);
-                if ("terminate" in result && result.terminate) break;
+                if (host.pausePending || isTerminatingReplyResult(result)) {
+                  if (!host.pausePending) {
+                    // Replay must not run more calls or another model turn after the
+                    // result that already ended this turn; its reply is the final one.
+                    terminatedReply = terminatingReplyText(result) ?? terminatedReply;
+                    replayTerminated = true;
+                  }
+                  break;
+                }
               }
-              if (host.pausePending) break;
+              if (host.pausePending || replayTerminated) break;
             }
             restoringCalls = false;
-            if (!host.pausePending) {
+            if (!host.pausePending && !replayTerminated) {
               const addedHistory = withoutSteeringMessages(request.history, initialSteering).filter(
                 (message) => message.id && !representedHistoryIds.has(message.id),
               );
@@ -898,7 +924,15 @@ export class PiAgentRuntime implements AgentRuntime {
         const error = outputCutFailed
           ? MODEL_OUTPUT_CUT_ERROR
           : agent.state.errorMessage || providerFailure;
-        if (error && !budgetExceeded && (!host.pausePending || signal.aborted)) {
+        // A turn ended at a terminating tool result leaves the abort's message on the
+        // agent; the reply that result carries is the answer, not a failure.
+        const endedAtToolResult = Boolean(terminatedReply) && !host.pausePending && !signal.aborted;
+        if (
+          error &&
+          !budgetExceeded &&
+          !endedAtToolResult &&
+          (!host.pausePending || signal.aborted)
+        ) {
           let message = sanitizeProviderError(activeStreamTarget.model.provider, error);
           if (
             !signal.aborted &&
@@ -919,7 +953,13 @@ export class PiAgentRuntime implements AgentRuntime {
           }
           throw modelFailure(error, message);
         }
-        if (!budgetExceeded && terminalMessage && !messageHasToolCall(terminalMessage)) {
+        // Only an assistant message can hold the answer a provider left off the deltas;
+        // a trailing tool result is tool output, not the model's reply.
+        if (
+          !budgetExceeded &&
+          terminalMessage?.role === "assistant" &&
+          !messageHasToolCall(terminalMessage)
+        ) {
           const completedText = assistantText(terminalMessage);
           const terminalText =
             joinDropped && completedText.startsWith(joinDropped)
@@ -947,6 +987,16 @@ export class PiAgentRuntime implements AgentRuntime {
           } else {
             queue.push({ type: "text", text: budgetMessage });
             streamed = budgetMessage;
+          }
+        } else if (terminatedReply && !host.pausePending) {
+          // The turn ended at a terminating tool result; its reply is the final answer.
+          if (streamed.trim()) {
+            const suffix = `\n\n${terminatedReply}`;
+            queue.push({ type: "text", text: suffix });
+            streamed += suffix;
+          } else {
+            queue.push({ type: "text", text: terminatedReply });
+            streamed = terminatedReply;
           }
         } else if (!host.pausePending && toolWorkPendingFinal) {
           if (request.allowSilentEmpty) {

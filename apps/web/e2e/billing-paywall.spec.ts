@@ -77,6 +77,16 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
   await page.keyboard.press("Escape");
   await expect(page.getByText("All $30 goes to model usage.", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "billing-credit-choice");
+  // Leaving before choosing a plan: log out or delete the account, without reaching settings.
+  await page.getByRole("button", { name: "Account", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: "Log out" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "billing-account-menu");
+  await page.getByRole("menuitem", { name: "Delete account" }).click();
+  const deletion = page.getByRole("dialog", { name: "Delete account" });
+  await expect(deletion.getByLabel("Current password")).toBeVisible();
+  await captureScreenshot(page, testInfo, "billing-delete-account");
+  await page.keyboard.press("Escape");
+  await expect(deletion).toHaveCount(0);
   let purchase: { amountCents: number; monthly: boolean } | undefined;
   await page.route("**/rpc/billing/purchaseCredits", async (route) => {
     purchase = route.request().postDataJSON().json;
@@ -153,7 +163,7 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
   await expect(
     plans.getByRole("button", { name: "Subscribe with your own AI", exact: true }),
   ).toBeVisible();
-  await expect(plans.getByRole("button", { name: "Log out" })).toHaveCount(0);
+  await expect(plans.getByRole("button", { name: "Account", exact: true })).toHaveCount(0);
   await expect(page).toHaveURL(/[?&]plans/);
   await captureScreenshot(page, testInfo, "billing-upgrade-plans");
   await page.keyboard.press("Escape");

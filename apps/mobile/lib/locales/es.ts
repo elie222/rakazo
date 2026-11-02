@@ -69,7 +69,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Ex: Project Falcon": "Ej.: Proyecto Halcón",
   "Search bots": "Buscar bots",
   "About {label}": "Acerca de {label}",
-  "Manage the bots it creates": "Gestionar los bots que crea",
+  "Manage other bots": "Gestionar otros bots",
   "Allow cross-space bot communication":
     "Permitir la comunicación entre bots de distintos espacios",
   Headers: "Encabezados",
@@ -944,6 +944,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Use Rakazo credits": "Usar créditos de Rakazo",
   "Choose a plan": "Elige un plan",
   "Change plan": "Cambiar de plan",
+  "Current plan": "Plan actual",
   Plan: "Plan",
   None: "Ninguno",
   "Free trial": "Prueba gratuita",

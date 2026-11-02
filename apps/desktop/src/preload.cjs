@@ -28,6 +28,9 @@ contextBridge.exposeInMainWorld("rakazoDesktop", {
     state: () => ipcRenderer.invoke("desktop.device.state"),
     setAllowed: (allowed) => ipcRenderer.invoke("desktop.device.setAllowed", allowed),
   },
+  locale: {
+    set: (locale) => ipcRenderer.invoke("desktop.locale.set", locale),
+  },
   menu: {
     onCommand: (listener) => {
       // The IpcRendererEvent stays in the preload: the renderer only sees the command.

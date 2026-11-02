@@ -352,6 +352,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["computer/terminalUrl"],
       ["computer/commands"],
       ["memory/list", {}],
+      ["memory/budget", { botId: "missing-bot" }],
       ["memory/update", { documentId: "missing-memory", content: "Nope" }],
       ["memory/exportMarkdown", {}],
       ["memory/remove"],

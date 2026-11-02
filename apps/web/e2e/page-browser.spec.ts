@@ -18,6 +18,10 @@ test.skip(
   "set RAKAZO_AGENT_BROWSER (infra/sandboxes/computer/install-agent-browser.sh)",
 );
 
+// The helper reads the tab the person sees through Chromium's target list, which only the full
+// browser orders by the front tab; the headless shell Playwright picks for headless: true does not.
+const BROWSER: { channel: "chromium"; headless: true } = { channel: "chromium", headless: true };
+
 test("live page helper preserves identity, masks passwords, and reports partial actions", async () => {
   const profile = await mkdtemp(path.join(os.tmpdir(), "page-browser-test-"));
   const server = http.createServer((_req, res) => {
@@ -34,7 +38,7 @@ test("live page helper preserves identity, masks passwords, and reports partial 
   let context: Awaited<ReturnType<typeof chromium.launchPersistentContext>> | undefined;
   try {
     context = await chromium.launchPersistentContext(profile, {
-      headless: true,
+      ...BROWSER,
       args: ["--remote-debugging-port=0"],
     });
     let port = "";
@@ -202,7 +206,7 @@ test("live page helper waits for a site's sign-in check, or says the page is sti
   let context: Awaited<ReturnType<typeof chromium.launchPersistentContext>> | undefined;
   try {
     context = await chromium.launchPersistentContext(profile, {
-      headless: true,
+      ...BROWSER,
       args: ["--remote-debugging-port=0"],
     });
     let port = "";
@@ -219,6 +223,9 @@ test("live page helper waits for a site's sign-in check, or says the page is sti
     };
     const page = context.pages()[0]!;
 
+    // The session sees a page's requests and frames only from when it attaches, so start it
+    // before the page loads, as a bot's browser_navigate does.
+    await snapshot();
     // The check answers within the wait: the snapshot shows the signed-in page.
     await page.goto(`http://127.0.0.1:${address.port}/?check=500`);
     const settled = await snapshot();
@@ -386,7 +393,7 @@ test("live page helper types codes as real key presses into one-box-per-digit fi
   let context: Awaited<ReturnType<typeof chromium.launchPersistentContext>> | undefined;
   try {
     context = await chromium.launchPersistentContext(profile, {
-      headless: true,
+      ...BROWSER,
       args: ["--remote-debugging-port=0"],
     });
     let port = "";
@@ -657,7 +664,7 @@ test("live page helper types a purchase's card into a payment provider's frame o
   let context: Awaited<ReturnType<typeof chromium.launchPersistentContext>> | undefined;
   try {
     context = await chromium.launchPersistentContext(profile, {
-      headless: true,
+      ...BROWSER,
       // Payment frames run in their own renderer, as on any real checkout.
       args: ["--remote-debugging-port=0", "--site-per-process"],
     });
@@ -692,6 +699,9 @@ test("live page helper types a purchase's card into a payment provider's frame o
         actions: [{ kind: "fill", text, origin: merchant, field: "card", cardField }],
       });
     const page = context.pages()[0]!;
+    // The session sees a page's frames only from when it attaches, so start it before the page
+    // loads, as a bot's browser_navigate does.
+    await command("snapshot");
     await page.goto(`${merchant}/checkout`);
     const card = page.frameLocator("iframe").locator("body");
     await expect(card.locator("#number")).toBeVisible();

@@ -443,6 +443,10 @@ msgstr "已開啟 <0>{0}</0> 的登入分頁。請在該分頁輸入以下代碼
 msgid "A subscription credential is stored securely."
 msgstr "訂閱憑證已安全儲存。"
 
+#: src/pages/KnowledgeSection.tsx
+msgid "About {kb} KB of memory no longer reaches the bot."
+msgstr ""
+
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
 msgstr "關於 {label}"
@@ -451,6 +455,7 @@ msgstr "關於 {label}"
 msgid "Access token (optional)"
 msgstr "存取權杖（選填）"
 
+#: src/components/AccountMenu.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Account"
 msgstr "帳號"
@@ -844,6 +849,10 @@ msgstr "核准"
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
 msgstr "核准"
+
+#: src/lib/call-session.ts
+msgid "Approve or deny it on screen."
+msgstr "請在螢幕上核准或拒絕。"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
@@ -2484,6 +2493,7 @@ msgid "Delete {0}?"
 msgstr "刪除 {0}？"
 
 #: src/components/AccountAccess.tsx
+#: src/components/AccountMenu.tsx
 msgid "Delete account"
 msgstr "刪除帳號"
 
@@ -2747,7 +2757,7 @@ msgstr "需要驗證電子信箱"
 msgid "Enable {0}"
 msgstr "啟用 {0}"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr "於 {day} 結束"
 
@@ -3545,9 +3555,8 @@ msgstr "本機存取權限允許機器人無需詢問就執行命令。請勿在
 msgid "Local computer access requires the latest desktop app."
 msgstr "存取本機電腦需要最新版桌面應用程式。"
 
-#: src/components/ModelCredits.tsx
+#: src/components/AccountMenu.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/Paywall.tsx
 msgid "Log out"
 msgstr "登出"
 
@@ -3596,8 +3605,8 @@ msgid "Manage MCP servers"
 msgstr "管理 MCP 伺服器"
 
 #: src/pages/shell/bot-panel.tsx
-msgid "Manage the bots it creates"
-msgstr "管理它建立的機器人"
+msgid "Manage other bots"
+msgstr "管理其他機器人"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
@@ -4878,7 +4887,7 @@ msgstr "重新命名"
 msgid "Rename section"
 msgstr "重新命名分組"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Renews {day}"
 msgstr "於 {day} 續訂"
 
@@ -6114,7 +6123,7 @@ msgstr "Treg 權杖"
 msgid "Trial"
 msgstr "試用"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Trial ends {day}"
 msgstr "試用於 {day} 結束"
 

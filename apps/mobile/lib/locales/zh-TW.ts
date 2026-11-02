@@ -49,7 +49,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Ex: Project Falcon": "例如：獵鷹計畫",
   "Search bots": "搜尋機器人",
   "About {label}": "關於 {label}",
-  "Manage the bots it creates": "管理它建立的機器人",
+  "Manage other bots": "管理其他機器人",
   "Allow cross-space bot communication": "允許跨空間機器人通訊",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "整理側邊欄並編輯機器人。更改群組、指令、模型和例行任務需要你的核准。",
@@ -989,6 +989,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Use Rakazo credits": "使用 Rakazo 額度",
   "Choose a plan": "選擇方案",
   "Change plan": "變更方案",
+  "Current plan": "目前方案",
   Plan: "方案",
   None: "無",
   "Free trial": "免費試用",

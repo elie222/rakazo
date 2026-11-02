@@ -1,8 +1,10 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createHmac } from "node:crypto";
 import { getLogger } from "@rakazo/logging";
 import type { Pool, PoolClient } from "pg";
 import type { PrismaClient } from "./generated/prisma/client.js";
 import { Prisma } from "./generated/prisma/client.js";
+import { withTransactionRetry } from "./transaction-retry.js";
 
 /**
  * Who a database operation runs for. Row-level security policies read the
@@ -70,11 +72,15 @@ export async function runAsSystemInTransaction<T>(
   reason: string,
   fn: () => Promise<T>,
 ): Promise<T> {
-  const [previous] = await tx.$queryRaw<Array<{ bypass: string | null }>>`
-    SELECT current_setting('app.rls_bypass', true) AS bypass`;
+  const [previous] = await tx.$queryRaw<
+    Array<{ bypass: string | null; key: string | null; login: string }>
+  >`SELECT current_setting('app.rls_bypass', true) AS bypass,
+      current_setting('app.rls_bypass_key', true) AS key, session_user AS login`;
   const restore = () =>
-    tx.$queryRaw`SELECT set_config('app.rls_bypass', ${previous?.bypass ?? "off"}, true)`;
-  await tx.$queryRaw`SELECT set_config('app.rls_bypass', 'on', true)`;
+    tx.$queryRaw`SELECT set_config('app.rls_bypass', ${previous?.bypass ?? "off"}, true),
+      set_config('app.rls_bypass_key', ${previous?.key ?? ""}, true)`;
+  await tx.$queryRaw`SELECT set_config('app.rls_bypass', 'on', true),
+    set_config('app.rls_bypass_key', ${bypassKeys.get(previous?.login ?? "") ?? ""}, true)`;
   let result: T;
   try {
     result = await within({ kind: "system", reason }, fn);
@@ -155,21 +161,46 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The policy generation this release enforces. Policies added for a newer
- * generation stay open to a connection that does not claim it, which is the
- * previous release while it runs beside this one during a deploy.
+ * Proves a system context to the database. The policies honour app.rls_bypass only
+ * alongside this key, whose digest `pnpm db:migrate` stores where the runtime role
+ * cannot read it, so SQL that runs for a tenant cannot turn the bypass on itself.
+ * Derived from the runtime login's password, so it needs no setting of its own.
  */
-const RLS_VERSION = "2";
+export function rlsBypassKey(connectionString: string | undefined): string {
+  const { password } = credentials(connectionString);
+  return password ? createHmac("sha256", password).update("rakazo rls bypass").digest("hex") : "";
+}
 
-type Settings = [spaceId: string, userId: string, bypass: "on" | "off", version: string];
+// As pg-connection-string reads them: query parameters win over the URL's userinfo, and a
+// stray `%` is escaped first.
+function credentials(connectionString: string | undefined): { user: string; password: string } {
+  let normalized = connectionString ?? "";
+  if (/ |%[^a-f0-9]|%[a-f0-9][^a-f0-9]/i.test(normalized))
+    normalized = encodeURI(normalized).replace(/%25(\d\d)/g, "%$1");
+  try {
+    const url = new URL(normalized);
+    return {
+      user: url.searchParams.get("user") || decodeURIComponent(url.username),
+      password: url.searchParams.get("password") || decodeURIComponent(url.password),
+    };
+  } catch {
+    return { user: "", password: "" };
+  }
+}
 
-function settingsFor(context: DbContext | undefined): Settings {
-  if (context?.kind === "tenant") return [context.spaceId, context.userId, "off", RLS_VERSION];
-  return ["", "", context?.kind === "system" ? "on" : "off", RLS_VERSION];
+// By login, for runAsSystemInTransaction, which only has the transaction's connection.
+const bypassKeys = new Map<string, string>();
+
+type Settings = [spaceId: string, userId: string, bypass: "on" | "off", bypassKey: string];
+
+function settingsFor(context: DbContext | undefined, bypassKey: string): Settings {
+  if (context?.kind === "tenant") return [context.spaceId, context.userId, "off", ""];
+  if (context?.kind === "system") return ["", "", "on", bypassKey];
+  return ["", "", "off", ""];
 }
 
 const SET_SESSION =
-  "SELECT set_config('app.space_id', $1, false), set_config('app.user_id', $2, false), set_config('app.rls_bypass', $3, false), set_config('app.rls_version', $4, false)";
+  "SELECT set_config('app.space_id', $1, false), set_config('app.user_id', $2, false), set_config('app.rls_bypass', $3, false), set_config('app.rls_bypass_key', $4, false)";
 const applied = new WeakMap<PoolClient, string>();
 
 async function applySettings(client: PoolClient, settings: Settings): Promise<void> {
@@ -190,6 +221,9 @@ async function applySettings(client: PoolClient, settings: Settings): Promise<vo
  * with no context clears what an earlier one left behind.
  */
 export function installDbContext(pool: Pool): void {
+  const { connectionString } = pool.options;
+  const bypassKey = rlsBypassKey(connectionString);
+  if (bypassKey) bypassKeys.set(credentials(connectionString).user, bypassKey);
   type ConnectCallback = (
     err: Error | undefined,
     client: PoolClient | undefined,
@@ -203,7 +237,7 @@ export function installDbContext(pool: Pool): void {
   function connect(): Promise<PoolClient>;
   function connect(callback: ConnectCallback): void;
   function connect(callback?: ConnectCallback): Promise<PoolClient> | undefined {
-    const settings = settingsFor(storage.getStore());
+    const settings = settingsFor(storage.getStore(), bypassKey);
     if (!callback) {
       return originalConnect().then(async (client) => {
         try {
@@ -231,7 +265,7 @@ export function installDbContext(pool: Pool): void {
 }
 
 const LOCAL_SETTINGS = (settings: Settings) =>
-  Prisma.sql`SELECT set_config('app.space_id', ${settings[0]}, true), set_config('app.user_id', ${settings[1]}, true), set_config('app.rls_bypass', ${settings[2]}, true), set_config('app.rls_version', ${settings[3]}, true)`;
+  Prisma.sql`SELECT set_config('app.space_id', ${settings[0]}, true), set_config('app.user_id', ${settings[1]}, true), set_config('app.rls_bypass', ${settings[2]}, true), set_config('app.rls_bypass_key', ${settings[3]}, true)`;
 
 // A wrapped read keeps the pool's checkout timeout and no run limit it did not
 // have before, instead of Prisma's 2s/5s transaction defaults.
@@ -303,7 +337,7 @@ export function drainUnscopedDatabaseAccess(): string[] {
  * - a batch `$transaction([...])` starts on the next tick as well, so it is
  *   rejected inside a context; use an interactive transaction instead.
  */
-export function withRowLevelSecurity(prisma: PrismaClient): PrismaClient {
+export function withRowLevelSecurity(prisma: PrismaClient, bypassKey = ""): PrismaClient {
   const models = (prisma as unknown as { _runtimeDataModel?: RuntimeDataModel })._runtimeDataModel
     ?.models;
   const fieldSets = new Map<string, Set<string>>();
@@ -320,20 +354,23 @@ export function withRowLevelSecurity(prisma: PrismaClient): PrismaClient {
   return prisma.$extends({
     query: {
       async $allOperations({ model, operation, args, query, ...rest }) {
+        const internal = (rest as { __internalParams?: InternalParams }).__internalParams;
+        const transaction = internal?.transaction;
+        // A lone statement that lost a deadlock changed nothing, so it can run again; a
+        // transaction's statements are retried by whoever opened the transaction.
+        const run = () => (transaction ? query(args) : withTransactionRetry(() => query(args)));
         const context = storage.getStore();
         if (!context) {
           if (model && ROW_SECURITY_MODELS.has(model)) missingContext(model, operation);
-          return query(args);
+          return run();
         }
-        const internal = (rest as { __internalParams?: InternalParams }).__internalParams;
-        const transaction = internal?.transaction;
         if (transaction?.kind === "batch") {
           throw new Error(
             "Batch $transaction([...]) cannot carry a database context; use an interactive transaction",
           );
         }
         if (transaction || (operation !== "findUnique" && operation !== "findUniqueOrThrow")) {
-          return query(args);
+          return run();
         }
         // Prisma would batch this with other findUnique calls of the same tick and
         // run them all in whichever context came first. findFirst runs at once,
@@ -345,15 +382,22 @@ export function withRowLevelSecurity(prisma: PrismaClient): PrismaClient {
         if (model && filter) {
           const delegate = Reflect.get(prisma, model[0]!.toLowerCase() + model.slice(1));
           const first = operation === "findUnique" ? "findFirst" : "findFirstOrThrow";
-          return Reflect.apply(delegate[first], delegate, [{ ...args, where: filter }]);
+          return withTransactionRetry(
+            () =>
+              Reflect.apply(delegate[first], delegate, [
+                { ...args, where: filter },
+              ]) as Promise<unknown>,
+          );
         }
         // Fluent relation reads (`findUnique(...).messages()`) keep Prisma's own
         // shape, so they run in a short transaction that sets the context first.
-        const [, result] = await prisma.$transaction(
-          [prisma.$executeRaw(LOCAL_SETTINGS(settingsFor(context))), query(args)],
-          WRAPPED_OPERATION_OPTIONS as never,
-        );
-        return result;
+        return withTransactionRetry(async () => {
+          const [, result] = await prisma.$transaction(
+            [prisma.$executeRaw(LOCAL_SETTINGS(settingsFor(context, bypassKey))), query(args)],
+            WRAPPED_OPERATION_OPTIONS as never,
+          );
+          return result;
+        });
       },
     },
   }) as unknown as PrismaClient;

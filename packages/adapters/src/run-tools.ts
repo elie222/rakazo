@@ -1,5 +1,6 @@
 import type { AgentToolExecutionObserver } from "@rakazo/adapter-kit";
 import { toolResultTaintsRun } from "@rakazo/core";
+import { isTerminatingReplyResult } from "./approval-effect.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS, MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.js";
 import type { RunContext } from "./run-context.js";
 import type { ToolHandler } from "./run-tool-gate.js";
@@ -111,6 +112,8 @@ async function dispatchTool(
   }
 }
 
-function isToolError(result: unknown): boolean {
-  return typeof result === "object" && result !== null && "error" in result;
+export function isToolError(result: unknown): boolean {
+  if (typeof result !== "object" || result === null) return false;
+  if ("error" in result) return true;
+  return isTerminatingReplyResult(result);
 }

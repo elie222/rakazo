@@ -442,6 +442,10 @@ msgstr ""
 msgid "A subscription credential is stored securely."
 msgstr "Uma credencial de assinatura está armazenada com segurança."
 
+#: src/pages/KnowledgeSection.tsx
+msgid "About {kb} KB of memory no longer reaches the bot."
+msgstr ""
+
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
 msgstr "Sobre {label}"
@@ -450,6 +454,7 @@ msgstr "Sobre {label}"
 msgid "Access token (optional)"
 msgstr "Token de acesso (opcional)"
 
+#: src/components/AccountMenu.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Account"
 msgstr "Conta"
@@ -843,6 +848,10 @@ msgstr "Aprovações"
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
 msgstr "Aprovar"
+
+#: src/lib/call-session.ts
+msgid "Approve or deny it on screen."
+msgstr "Aprove ou negue na tela."
 
 #: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
@@ -2483,6 +2492,7 @@ msgid "Delete {0}?"
 msgstr "Excluir {0}?"
 
 #: src/components/AccountAccess.tsx
+#: src/components/AccountMenu.tsx
 msgid "Delete account"
 msgstr "Excluir conta"
 
@@ -2746,7 +2756,7 @@ msgstr "É necessário verificar o e-mail"
 msgid "Enable {0}"
 msgstr "Ativar {0}"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr ""
 
@@ -3104,11 +3114,11 @@ msgstr "Desligar"
 
 #: src/lib/call-session.ts
 msgid "Hang up first, then enter the code on screen."
-msgstr ""
+msgstr "Desligue primeiro e depois digite o código na tela."
 
 #: src/lib/call-session.ts
 msgid "Hang up, then enter the code on screen."
-msgstr ""
+msgstr "Desligue e depois digite o código na tela."
 
 #: src/pages/RoutineEditor.tsx
 msgid "header"
@@ -3544,9 +3554,8 @@ msgstr "O acesso local permite que os bots executem comandos sem perguntar. Evit
 msgid "Local computer access requires the latest desktop app."
 msgstr ""
 
-#: src/components/ModelCredits.tsx
+#: src/components/AccountMenu.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/Paywall.tsx
 msgid "Log out"
 msgstr "Sair"
 
@@ -3595,8 +3604,8 @@ msgid "Manage MCP servers"
 msgstr "Gerenciar servidores MCP"
 
 #: src/pages/shell/bot-panel.tsx
-msgid "Manage the bots it creates"
-msgstr "Gerenciar os bots que cria"
+msgid "Manage other bots"
+msgstr "Gerenciar outros bots"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
@@ -4877,7 +4886,7 @@ msgstr "Renomear"
 msgid "Rename section"
 msgstr "Renomear seção"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Renews {day}"
 msgstr ""
 
@@ -6113,7 +6122,7 @@ msgstr "Token Treg"
 msgid "Trial"
 msgstr ""
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Trial ends {day}"
 msgstr ""
 

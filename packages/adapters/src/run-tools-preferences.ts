@@ -1,7 +1,7 @@
 import { TimeZoneSchema } from "@rakazo/contracts";
 import { z } from "zod";
 import type { RunContext } from "./run-context.js";
-import { isRunTainted } from "./run-context.js";
+import { isRunTainted, refuseOwnerSettingsChange } from "./run-context.js";
 import { isSubagentToolExecution } from "./run-effects.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 
@@ -31,10 +31,12 @@ async function updatePreferences(ctx: RunContext, call: ToolCall) {
   // The owner already approved the change itself; its replay runs in a later attempt.
   const approved = call.nextApprovedTool === "update_preferences";
   if (write && !approved && (await isRunTainted(ctx)))
-    return call.finish({
-      error:
+    return call.finish(
+      refuseOwnerSettingsChange(
+        ctx,
         "Account preferences are blocked for the rest of this run because it read outside content.",
-    });
+      ),
+    );
   const select = { timezone: true, marketingEmailOptOutAt: true } as const;
   const user = !write
     ? await deps.prisma.user.findUniqueOrThrow({ where: { id: run.userId }, select })

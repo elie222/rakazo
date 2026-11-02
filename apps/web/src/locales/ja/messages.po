@@ -442,6 +442,10 @@ msgstr "<0>{0}</0>でログイン用のタブが開きました。そこでこ�
 msgid "A subscription credential is stored securely."
 msgstr "サブスクリプションの認証情報は安全に保存されています。"
 
+#: src/pages/KnowledgeSection.tsx
+msgid "About {kb} KB of memory no longer reaches the bot."
+msgstr ""
+
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
 msgstr "{label}について"
@@ -450,6 +454,7 @@ msgstr "{label}について"
 msgid "Access token (optional)"
 msgstr "アクセストークン（任意）"
 
+#: src/components/AccountMenu.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Account"
 msgstr "アカウント"
@@ -843,6 +848,10 @@ msgstr "承認"
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
 msgstr "承認"
+
+#: src/lib/call-session.ts
+msgid "Approve or deny it on screen."
+msgstr "画面で承認または拒否してください。"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
@@ -2483,6 +2492,7 @@ msgid "Delete {0}?"
 msgstr "{0}を削除しますか？"
 
 #: src/components/AccountAccess.tsx
+#: src/components/AccountMenu.tsx
 msgid "Delete account"
 msgstr "アカウントを削除"
 
@@ -2746,7 +2756,7 @@ msgstr "メールアドレスの確認が必要です"
 msgid "Enable {0}"
 msgstr "{0}を有効にする"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr "{day}に終了"
 
@@ -3544,9 +3554,8 @@ msgstr "ローカルアクセスでは、ボットが確認なしでコマンド
 msgid "Local computer access requires the latest desktop app."
 msgstr "ローカルコンピューターへのアクセスには最新のデスクトップアプリが必要です。"
 
-#: src/components/ModelCredits.tsx
+#: src/components/AccountMenu.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/Paywall.tsx
 msgid "Log out"
 msgstr "ログアウト"
 
@@ -3595,8 +3604,8 @@ msgid "Manage MCP servers"
 msgstr "MCPサーバーを管理"
 
 #: src/pages/shell/bot-panel.tsx
-msgid "Manage the bots it creates"
-msgstr "作成したボットを管理"
+msgid "Manage other bots"
+msgstr "他のボットを管理"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
@@ -4877,7 +4886,7 @@ msgstr "名前を変更"
 msgid "Rename section"
 msgstr "セクション名を変更"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Renews {day}"
 msgstr "{day}に更新"
 
@@ -6113,7 +6122,7 @@ msgstr "Tregトークン"
 msgid "Trial"
 msgstr "トライアル"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Trial ends {day}"
 msgstr "トライアル終了: {day}"
 

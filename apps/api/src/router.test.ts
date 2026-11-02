@@ -365,6 +365,18 @@ describe("account preferences", () => {
     });
   });
 
+  it("saves the app language emails are written in", async () => {
+    const setup = preferencesDeps("organic");
+
+    const response = await updatePreferences(setup, { locale: "pt-BR" });
+
+    expect(response.status).toBe(200);
+    expect(setup.update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { locale: "pt-BR" },
+    });
+  });
+
   it.each([null, "Europe/London"])(
     "adopts the browser timezone only while the saved value is null (%s)",
     async (timezone) => {

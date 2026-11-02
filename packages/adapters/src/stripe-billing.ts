@@ -64,7 +64,10 @@ const subscriptionSchema = z.object({
         id: z.string(),
         quantity: z.number().int().nullish(),
         current_period_end: z.number().nullish(),
-        price: idSchema.extend({ product: z.string().optional() }),
+        price: idSchema.extend({
+          product: z.string().optional(),
+          unit_amount: z.number().int().nullish(),
+        }),
       }),
     ),
   }),
@@ -808,7 +811,14 @@ function toSnapshot(
     currentPeriodEndsAt: fromSeconds(item.current_period_end ?? subscription.current_period_end),
     cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end) || subscription.cancel_at != null,
     endedAt: fromSeconds(subscription.ended_at),
-    ...(isByokPlan(subscription) ? { byokPlan: true } : {}),
+    ...(isByokPlan(subscription)
+      ? {
+          byokPlan: true,
+          ...(item.price.unit_amount != null
+            ? { byokPriceCents: item.price.unit_amount * (item.quantity ?? 1) }
+            : {}),
+        }
+      : {}),
     ...(fingerprint ? { cardFingerprint: fingerprint } : {}),
   };
 }

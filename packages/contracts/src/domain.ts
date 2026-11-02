@@ -53,6 +53,24 @@ export const TimeZoneSchema = z
   .min(1)
   .max(64)
   .refine(isValidTimeZone, { message: "Unknown timezone" });
+
+/** An app language code, such as "es", "pt-BR" or "zh-TW". */
+export const AppLocaleSchema = z.enum([
+  "en",
+  "de",
+  "ko",
+  "tr",
+  "hi",
+  "pt-BR",
+  "zh-CN",
+  "zh-TW",
+  "es",
+  "ru",
+  "fr",
+  "he",
+  "nl",
+  "ja",
+]);
 export type AvatarStyle = z.infer<typeof AvatarStyleSchema>;
 
 export { AGENT_SECRET_NAME_PATTERN };
@@ -725,6 +743,25 @@ export const MemoryDocumentSchema = z.object({
   updatedAt: z.string(),
 });
 export type MemoryDocument = z.infer<typeof MemoryDocumentSchema>;
+
+/** Which of a bot's memory documents reach the prompt, and what did not fit. */
+export const MemoryPromptDocumentUseSchema = z.object({
+  scope: MemoryScope,
+  path: z.string(),
+  revision: z.number().int(),
+  totalBytes: z.number().int().nonnegative(),
+  includedBytes: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+});
+export type MemoryPromptDocumentUse = z.infer<typeof MemoryPromptDocumentUseSchema>;
+
+export const MemoryPromptBudgetSchema = z.object({
+  limitBytes: z.number().int().positive(),
+  usedBytes: z.number().int().nonnegative(),
+  documents: z.array(MemoryPromptDocumentUseSchema),
+  omitted: z.array(MemoryPromptDocumentUseSchema),
+});
+export type MemoryPromptBudget = z.infer<typeof MemoryPromptBudgetSchema>;
 
 /** Every bot and Space keeps its MEMORY.md index; other memory documents can be deleted. */
 export const MEMORY_INDEX_PATH = "MEMORY.md";
@@ -1806,6 +1843,11 @@ export const MeSchema = z.object({
    * Absent from servers that predate it.
    */
   timezone: z.string().nullable().optional(),
+  /**
+   * The app language last reported for the user, or null until an app reports it.
+   * Absent from servers that predate it.
+   */
+  locale: z.string().nullable().optional(),
   billingEnabled: z.boolean(),
   /** True until a user of a billing deployment answers or skips the signup survey. Absent from older servers. */
   needsSignupSurvey: z.boolean().optional(),
@@ -1816,7 +1858,7 @@ export type Me = z.infer<typeof MeSchema>;
 
 export const MODEL_CREDIT_AMOUNTS = [1000, 2000, 3000, 5000, 10000, 20000, 50000] as const;
 /** Monthly price in cents of running bots on your own model connection; `null` makes it free. */
-export const BYOK_MONTHLY_PRICE_CENTS: number | null = 1000;
+export const BYOK_MONTHLY_PRICE_CENTS: number | null = 1500;
 export const DEFAULT_MONTHLY_CREDIT_AMOUNT = 3000;
 export const ModelCreditAmountSchema = z.union(
   MODEL_CREDIT_AMOUNTS.map((amount) => z.literal(amount)),
@@ -1854,7 +1896,7 @@ export const BillingStatusSchema = z.object({
   balanceUsd: z.number().optional(),
   monthlyAmountCents: z.number().int().positive().nullable().optional(),
   creditPurchasesEnabled: z.boolean().optional(),
-  /** Monthly price of the own-key plan; `null` when it is free. */
+  /** Monthly price of the own-key plan, as subscribed when the organization has it; `null` when free. */
   byokPriceCents: z.number().int().positive().nullable().optional(),
   /** End of an unpaid own-key organization's free period. */
   byokFreeUntil: z.string().nullable().optional(),

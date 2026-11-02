@@ -11,6 +11,8 @@ export interface TurnCheckpoint {
   pendingToolCallId: string;
   messages: Message[];
   historyMessageIds?: string[];
+  /** The instructions the saved system prompt was built from; own writes resume guarding on it. */
+  ownInstructionsBaseline?: string;
   /** Executor-assigned occurrences include canonical arguments and the paused call. */
   effectOccurrences?: Array<{ executionId: string; fingerprint: string; occurrence: number }>;
   /** Only explicit sequential checkpoints guarantee an unstarted tail. */

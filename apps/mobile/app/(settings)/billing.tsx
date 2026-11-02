@@ -10,7 +10,12 @@ import { useCallback, useState } from "react";
 import { Alert, AppState, ScrollView, Share, StyleSheet } from "react-native";
 import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
 import { rpc } from "../../lib/api";
-import { currentPlan, openBillingPage, planEndsAt } from "../../lib/billing";
+import {
+  currentPlan,
+  openBillingPage,
+  ownKeySubscriptionCents,
+  planEndsAt,
+} from "../../lib/billing";
 import { dateLocaleForUi, useI18n } from "../../lib/i18n";
 import { openFromSettingsSheet } from "../../lib/settings-sheet";
 import { useSideInsets } from "../../lib/side-insets";
@@ -76,6 +81,7 @@ export default function BillingScreen() {
 
   const plan = currentPlan(status);
   const endsAt = planEndsAt(status);
+  const ownKeyCents = ownKeySubscriptionCents(status);
   const recurring = Boolean(
     status.monthlyAmountCents && !["none", "canceled", "incomplete"].includes(status.state),
   );
@@ -91,6 +97,9 @@ export default function BillingScreen() {
       <SettingsGroup>
         <SettingsRow
           title={t("Plan")}
+          detail={
+            ownKeyCents ? t("{price} / month", { price: `$${ownKeyCents / 100}` }) : undefined
+          }
           value={
             status.state === "trialing" || status.byokFreeUntil
               ? t("Free trial")

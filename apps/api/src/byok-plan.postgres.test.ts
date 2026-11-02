@@ -1,5 +1,6 @@
 import { BillingEmulator } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import { BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, billingAccountForOrganization, createDb, spaceHasModelAccess } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -89,6 +90,18 @@ dbTests("own-key plan", () => {
     });
     await expect(spaceHasModelAccess(prisma, spaceId)).resolves.toBe(true);
     await expect(service.checkout(actor)).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  it("keeps showing the price the plan was bought at after the price changes", async () => {
+    const customer = (await billingAccountForOrganization(prisma, organizationId))!.customerId;
+    const plan = provider.subscriptions.find((subscription) => subscription.byokPlan)!;
+    expect(plan.byokPriceCents).toBe(BYOK_MONTHLY_PRICE_CENTS);
+    // Bought before the price rose.
+    plan.byokPriceCents = BYOK_MONTHLY_PRICE_CENTS! - 500;
+    await service.sync(customer);
+    await expect(service.status(actor)).resolves.toMatchObject({
+      byokPriceCents: BYOK_MONTHLY_PRICE_CENTS! - 500,
+    });
   });
 
   it("ends the plan at renewal once monthly credits start", async () => {

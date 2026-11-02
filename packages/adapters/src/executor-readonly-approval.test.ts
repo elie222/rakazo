@@ -20,6 +20,7 @@ import { FakeWebProvider } from "./fake-web.js";
 import type * as FleetToolsModule from "./fleet-tools.js";
 import type { HostComputerRequest } from "./host-computer-protocol.js";
 import { catalogEntries, resolveCatalogCall } from "./lazy-tool-catalog.js";
+import { serializeTurnCheckpoint, type TurnCheckpoint } from "./turn-checkpoint.js";
 import type { UserDeviceGateway } from "./user-device-protocol.js";
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
@@ -206,11 +207,20 @@ function fixture({
         where?: {
           id?: string;
           runId?: string;
+          spaceId?: string;
+          idempotencyKey?: string;
           status?: string | { in: string[] };
           kind?: string | { in: string[] };
         };
-      } = {}) =>
-        effects.filter((effect) => {
+      } = {}) => {
+        if (where?.kind === "runtime_checkpoint")
+          return turnCheckpoints.map((row) => ({
+            ...row,
+            kind: "runtime_checkpoint",
+            status: "runtime_checkpoint",
+            runId: run.id,
+          }));
+        return effects.filter((effect) => {
           const matches = (value: string, condition: string | { in: string[] }) =>
             typeof condition === "string" ? value === condition : condition.in.includes(value);
           if (where?.status && !matches(effect.status, where.status)) return false;
@@ -218,8 +228,26 @@ function fixture({
           if (where?.runId && effect.runId && effect.runId !== where.runId) return false;
           if (where?.id && effect.id !== where.id) return false;
           return true;
-        }),
+        });
+      },
     ),
+    upsert: vi.fn(
+      async ({
+        where,
+        create,
+      }: {
+        where: { idempotencyKey: string };
+        create: { result: string };
+      }) => {
+        const existing = turnCheckpoints.find((row) => row.idempotencyKey === where.idempotencyKey);
+        if (existing) existing.result = create.result;
+        else turnCheckpoints.push({ idempotencyKey: where.idempotencyKey, result: create.result });
+      },
+    ),
+    deleteMany: vi.fn(async ({ where }: { where?: { kind?: string } }) => {
+      if (where?.kind === "runtime_checkpoint") turnCheckpoints.length = 0;
+      return { count: 0 };
+    }),
     findUnique: vi.fn(
       async ({ where }: { where: { id?: string; idempotencyKey?: string } }) =>
         effects.find((effect) =>
@@ -250,6 +278,8 @@ function fixture({
     instructions: "Draft only",
     instructionHistory: [],
   };
+  // Turn checkpoints live in external_effects too, but outside the approval fixtures' rows.
+  const turnCheckpoints: { idempotencyKey: string; result: string }[] = [];
   const liveBot = { fleetManagement };
   const reviewCredential =
     approvalRole && checkerConnected
@@ -266,6 +296,9 @@ function fixture({
   let outsideSteering = false;
   let offeredTools: string[] = [];
   let instructions = "";
+  let checkpointCapture:
+    | { executionId: string; checkpoint: Omit<TurnCheckpoint, "provider" | "model"> }
+    | undefined;
   const prisma = {
     user: { findUnique: vi.fn(async () => null) },
     run: {
@@ -451,6 +484,19 @@ function fixture({
   const runtimeRun = vi.fn(async function* (request: AgentRunRequest) {
     offeredTools = request.tools.map((tool) => tool.name);
     instructions = request.instructions ?? "";
+    if (checkpointCapture) {
+      // The runtime hands the executor a capture it can serialize when the turn pauses.
+      const pending = checkpointCapture;
+      await request.onCheckpoint?.(
+        () =>
+          serializeTurnCheckpoint({
+            ...(pending.checkpoint as TurnCheckpoint),
+            provider: request.model.provider,
+            model: request.model.id,
+          }),
+        pending.executionId,
+      );
+    }
     const executeCall = async (call: (typeof calls)[number]) => {
       const result = call.name
         ? await request.executeTool!(call.name, call.args, call.executionId)
@@ -566,6 +612,27 @@ function fixture({
         if (String(values[0]).includes("FROM threads")) run.status = "cancelled";
         return [];
       });
+    },
+    overwriteInstructionsAfterAttemptStart(text: string) {
+      const original = prisma.bot.findUniqueOrThrow.getMockImplementation()!;
+      let applied = false;
+      prisma.bot.findUniqueOrThrow.mockImplementation(async () => {
+        // The attempt-start snapshot is read before the model runs; a read while it
+        // works is past it, as when an import lands mid-run.
+        if (!applied && runtimeRun.mock.calls.length > 0) {
+          applied = true;
+          instructionState.instructions = text;
+        }
+        return original();
+      });
+    },
+    turnCheckpoints,
+    /** Lets the next pause save this turn, as the real runtime does before a gated call. */
+    pauseWithTurnCheckpoint(
+      executionId: string,
+      checkpoint: Omit<TurnCheckpoint, "provider" | "model">,
+    ) {
+      checkpointCapture = { executionId, checkpoint };
     },
     results,
     execute,
@@ -1447,6 +1514,242 @@ describe("own instructions through update_bot", () => {
       result: { error: expect.stringContaining("Instructions changed") },
     });
     expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  it("refuses to overwrite instructions changed after the attempt started", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
+    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+    f.overwriteInstructionsAfterAttemptStart("Imported profile");
+    await f.run();
+    expect(f.results).toEqual([
+      {
+        error: expect.stringContaining(
+          "Instructions changed since this run started, so your instructions were not saved",
+        ),
+      },
+    ]);
+    expect(f.instructionState.instructions).toBe("Imported profile");
+    expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  it("refuses a rewrite after re-reading the changed instructions in the same run", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
+    f.setCalls([
+      { args: { instructions: first }, executionId: "call-1" },
+      { args: {}, executionId: "call-2" },
+      { args: { instructions: "Rewritten from the import" }, executionId: "call-3" },
+    ]);
+    f.overwriteInstructionsAfterAttemptStart("Imported profile");
+    await f.run();
+    expect(f.results[0]).toMatchObject({ error: expect.stringContaining("Instructions changed") });
+    expect(f.results[1]).toMatchObject({ instructions: "Imported profile" });
+    expect(f.results[2]).toMatchObject({
+      error: expect.stringContaining("send their request again"),
+    });
+    expect(f.instructionState.instructions).toBe("Imported profile");
+    expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  it("does not rebase a write on a read no model generation has seen yet", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
+    f.setCalls([
+      { args: {}, executionId: "call-1" },
+      { args: { instructions: "Rewritten from the draft" }, executionId: "call-2" },
+    ]);
+    f.overwriteInstructionsAfterAttemptStart("Imported profile");
+    await f.run();
+    expect(f.results[0]).toMatchObject({ instructions: "Imported profile" });
+    expect(f.results[1]).toEqual({ error: expect.stringContaining("Instructions changed") });
+    expect(f.instructionState.instructions).toBe("Imported profile");
+    expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  it("does not rebase the parent's write on a helper's settings read", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
+    f.setCalls([
+      { args: {}, executionId: JSON.stringify(["pi-tool", "helper-1", "call-1"]) },
+      { args: { instructions: "Rewritten from the draft" }, executionId: "call-2" },
+    ]);
+    f.overwriteInstructionsAfterAttemptStart("Imported profile");
+    await f.run();
+    expect(f.results[0]).toMatchObject({ instructions: "Imported profile" });
+    expect(f.results[1]).toEqual({ error: expect.stringContaining("Instructions changed") });
+    expect(f.instructionState.instructions).toBe("Imported profile");
+    expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  it("applies a second instruction change later in the same run", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
+    f.setCalls([
+      { args: { instructions: "First rewrite" }, executionId: "call-1" },
+      { args: { instructions: "Second rewrite" }, executionId: "call-2" },
+    ]);
+    await f.run();
+    expect(f.results).toEqual([
+      { ok: true, instructions: "updated" },
+      { ok: true, instructions: "updated" },
+    ]);
+    expect(f.instructionState.instructions).toBe("Second rewrite");
+    expect(f.instructionState.instructionHistory).toHaveLength(2);
+  });
+  it("refuses at approval a proposal an import made stale after the attempt started", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
+    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+    f.overwriteInstructionsAfterAttemptStart("Imported profile");
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.effects[0]).toMatchObject({
+      status: "intended",
+      request: { instructions: first, previousInstructions: "Draft only" },
+    });
+    f.effects[0]!.status = "approved";
+    await f.run();
+    expect(f.instructionState.instructions).toBe("Imported profile");
+    expect(f.effects[0]).toMatchObject({
+      status: "completed",
+      result: { error: expect.stringContaining("Instructions changed") },
+    });
+    expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  /** A saved turn whose pending tool the run no longer offers cannot be restored. */
+  function retireSavedTurnTool(checkpoint: { result: string }) {
+    const saved = JSON.parse(checkpoint.result) as {
+      messages: { content: string | Array<{ type: string; name?: string }> }[];
+    };
+    for (const message of saved.messages) {
+      if (typeof message.content === "string") continue;
+      for (const call of message.content) {
+        if (call.type === "toolCall") call.name = "retired_tool";
+      }
+    }
+    checkpoint.result = JSON.stringify(saved);
+  }
+  /** A turn that pauses mid-approval, saved as the real runtime serializes it. */
+  function savedTurn(): Omit<TurnCheckpoint, "provider" | "model"> {
+    return {
+      version: 1,
+      systemPrompt: "You are Assistant. Draft only.",
+      pendingToolCallId: "call-1",
+      executionMode: "sequential",
+      messages: [
+        { role: "user", content: "Update your instructions", timestamp: new Date(0) },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "toolCall",
+              id: "call-1",
+              name: "update_bot",
+              arguments: { instructions: first },
+            },
+          ],
+          stopReason: "toolUse",
+        },
+      ] as never,
+    };
+  }
+  it("guards a resumed rewrite on the instructions its restored prompt was built from", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
+    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+    f.pauseWithTurnCheckpoint("call-1", savedTurn());
+    await f.run();
+    // An import lands between the pause and the resume.
+    f.instructionState.instructions = "Imported profile";
+    f.setCalls([{ args: { instructions: "Rewritten from the old draft" }, executionId: "call-2" }]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledTimes(2);
+    expect(f.effects[1]).toMatchObject({
+      status: "intended",
+      request: {
+        instructions: "Rewritten from the old draft",
+        previousInstructions: "Draft only",
+      },
+    });
+    f.effects[1]!.status = "approved";
+    await f.run();
+    expect(f.instructionState.instructions).toBe("Imported profile");
+    expect(f.effects[1]).toMatchObject({
+      status: "completed",
+      result: { error: expect.stringContaining("Instructions changed") },
+    });
+    expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  it("refuses own instruction writes resumed from a checkpoint without a baseline", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
+    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+    f.pauseWithTurnCheckpoint("call-1", savedTurn());
+    await f.run();
+    // Older checkpoints predate the stored baseline; the import also landed before resume.
+    const saved = JSON.parse(f.turnCheckpoints[0]!.result) as Record<string, unknown>;
+    delete saved.ownInstructionsBaseline;
+    f.turnCheckpoints[0]!.result = JSON.stringify(saved);
+    f.instructionState.instructions = "Imported profile";
+    f.setCalls([{ args: { instructions: "Rewritten from the old draft" }, executionId: "call-2" }]);
+    await f.run();
+    expect(f.results.at(-1)).toEqual({
+      error: expect.stringContaining("cannot safely change its own instructions"),
+    });
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.effects).toHaveLength(1);
+    expect(f.instructionState.instructions).toBe("Imported profile");
+    expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  it("refuses an approval left pending from before the baseline existed", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
+    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+    f.pauseWithTurnCheckpoint("call-1", savedTurn());
+    await f.run();
+    // Pre-upgrade code stored a fresh read as the expected text, not the baseline, and its
+    // checkpoint has no baseline to restore; approving it must not apply the rewrite.
+    const saved = JSON.parse(f.turnCheckpoints[0]!.result) as Record<string, unknown>;
+    delete saved.ownInstructionsBaseline;
+    f.turnCheckpoints[0]!.result = JSON.stringify(saved);
+    (f.effects[0]!.request as { previousInstructions: string }).previousInstructions =
+      "Imported profile";
+    f.instructionState.instructions = "Imported profile";
+    f.effects[0]!.status = "approved";
+    await f.run();
+    expect(f.instructionState.instructions).toBe("Imported profile");
+    expect(f.effects[0]).toMatchObject({
+      status: "completed",
+      result: { error: expect.stringContaining("cannot safely change its own instructions") },
+    });
+    expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  it("refuses a pre-baseline pending approval when the saved turn cannot be restored", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
+    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+    f.pauseWithTurnCheckpoint("call-1", savedTurn());
+    await f.run();
+    // As above, but the resume falls back to the canonical replay: the saved turn names a
+    // tool the run no longer offers, so no restoration can bring the baseline back either.
+    const saved = JSON.parse(f.turnCheckpoints[0]!.result) as Record<string, unknown>;
+    delete saved.ownInstructionsBaseline;
+    f.turnCheckpoints[0]!.result = JSON.stringify(saved);
+    retireSavedTurnTool(f.turnCheckpoints[0]!);
+    f.effects[0]!.request = {
+      instructions: first,
+      reason: "Set in chat",
+      previousInstructions: "Imported profile",
+    };
+    f.instructionState.instructions = "Imported profile";
+    f.effects[0]!.status = "approved";
+    f.setCalls([{ args: { instructions: first }, executionId: "call-2" }]);
+    await f.run();
+    expect(f.instructionState.instructions).toBe("Imported profile");
+    expect(f.effects[0]).toMatchObject({
+      status: "completed",
+      result: { error: expect.stringContaining("cannot safely change its own instructions") },
+    });
+    expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  it("applies a current approval when the saved turn cannot be restored", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
+    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+    f.pauseWithTurnCheckpoint("call-1", savedTurn());
+    await f.run();
+    retireSavedTurnTool(f.turnCheckpoints[0]!);
+    f.effects[0]!.status = "approved";
+    f.setCalls([{ args: { instructions: first }, executionId: "call-2" }]);
+    await f.run();
+    expect(f.instructionState.instructions).toBe(first);
+    expect(f.instructionState.instructionHistory).toHaveLength(1);
+    expect(f.effects[0]).toMatchObject({ status: "completed", result: { ok: true } });
   });
   it("does not apply an approved change after cancellation wins the thread lock", async () => {
     const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });

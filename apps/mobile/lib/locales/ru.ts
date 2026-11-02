@@ -59,7 +59,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Search bots": "Поиск ботов",
   "{count} messages with {peer}": "{count} сообщения с {peer}",
   "About {label}": "О настройке «{label}»",
-  "Manage the bots it creates": "Управлять созданными им ботами",
+  "Manage other bots": "Управлять другими ботами",
   "Allow cross-space bot communication": "Разрешить общение ботов из разных пространств",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "Упорядочивайте боковую панель и редактируйте ботов. Изменения групп, инструкций, моделей и процедур требуют вашего одобрения.",
@@ -1037,6 +1037,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Use Rakazo credits": "Использовать кредиты Rakazo",
   "Choose a plan": "Выбрать тариф",
   "Change plan": "Сменить тариф",
+  "Current plan": "Текущий тариф",
   Plan: "Тариф",
   None: "Нет",
   "Free trial": "Бесплатный пробный период",

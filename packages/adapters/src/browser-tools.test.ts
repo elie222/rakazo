@@ -9,6 +9,7 @@ import {
   parseBrowserActions,
   redactBrowserResult,
 } from "./browser-tools.js";
+import { builtinAgentTools } from "./builtin-tools.js";
 import { ComputerBrowserProvider } from "./computer-browser.js";
 import { redactConnectorPayload } from "./connector-safety.js";
 import { FakeBrowserProvider } from "./fake-browser.js";
@@ -926,6 +927,66 @@ describe("browser tools", () => {
     expect(
       await browserSnapshotFromTool(browser, computer, context, {}, { desktopTools: true }),
     ).toMatchObject({ fallback: "computer_act", note: expect.stringContaining("computer_act") });
+  });
+
+  it("keeps the page tools' descriptions short", () => {
+    const length = (name: string) =>
+      builtinAgentTools.find((tool) => tool.name === name)?.description.length ?? Infinity;
+    expect(length("browser_act")).toBeLessThanOrEqual(1400);
+    expect(length("browser_navigate")).toBeLessThanOrEqual(300);
+  });
+
+  it("points a dialog the page left open at the tools that can answer it", async () => {
+    const live = {
+      ok: true,
+      url: "https://example.test/",
+      title: "Example",
+      tree: "",
+      elements: [],
+    };
+    const opened = {
+      ok: false,
+      completed: 1,
+      uncertain: false,
+      error: 'A confirm dialog is open on the screen: "Delete this?"',
+      dialog: "confirm",
+      fallback: "computer_act" as const,
+    };
+    const liveDriver = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ...live,
+        completed: 1,
+        note: 'The page showed an alert, now closed: "Saved".',
+      })
+      .mockResolvedValue(opened);
+    const browser = new ComputerBrowserProvider({ liveDriver });
+    const liveComputer: ComputerRef = { ...computer, kind: "docker" };
+    const click = { actions: [{ kind: "click", ref: "e1" }] };
+    expect(await browserActFromTool(browser, liveComputer, context, click)).toMatchObject({
+      ok: true,
+      note: 'The page showed an alert, now closed: "Saved".',
+    });
+    expect(
+      await browserActFromTool(browser, liveComputer, context, click, { desktopTools: true }),
+    ).toMatchObject({
+      completed: 1,
+      error: opened.error,
+      fallback: "computer_act",
+      note: expect.stringMatching(/^Answer it with computer_act/),
+    });
+    const pageOnly = await browserSnapshotFromTool(
+      browser,
+      liveComputer,
+      context,
+      {},
+      { desktopTools: false },
+    );
+    expect(pageOnly).toMatchObject({
+      error: opened.error,
+      note: expect.stringMatching(/^Use request_takeover/),
+    });
+    expect(JSON.stringify(pageOnly)).not.toContain("computer_act");
   });
 
   it("hides page browser tools when the computer is not graphical", () => {

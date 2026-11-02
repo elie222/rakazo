@@ -54,11 +54,61 @@ export async function heldBackMigrations(
   }
 }
 
-/** `prisma migrate deploy` from the database package, without the migrations held back this run. */
+async function forgetHeldBack(migrationUrl: string, names: string[]) {
+  const client = new Client({ connectionString: migrationUrl });
+  await client.connect();
+  try {
+    await client.query('DELETE FROM "_deferred_migrations" WHERE name = ANY($1)', [names]);
+  } finally {
+    await client.end();
+  }
+}
+
+const LOCK_CONFLICT = /\b(40P01|55P03)\b/;
+const NOT_ONE_TRANSACTION = /\b(CONCURRENTLY|COMMIT)\b/i;
+const LOCK_RETRY_DELAYS_MS = [2_000, 10_000];
+
+/**
+ * Marks the failed migration rolled back when it lost a lock to live traffic (a deadlock or lock
+ * timeout) and ran as one transaction, so nothing of it stayed applied and running it again is safe.
+ */
+async function rollBackLockConflict(migrationUrl: string, migrationsPath: string) {
+  const client = new Client({ connectionString: migrationUrl });
+  await client.connect();
+  try {
+    const { rows } = await client.query<{
+      id: string;
+      migration_name: string;
+      logs: string | null;
+    }>(
+      "SELECT id, migration_name, logs FROM _prisma_migrations WHERE finished_at IS NULL AND rolled_back_at IS NULL",
+    );
+    const failed = rows.length === 1 ? rows[0]! : undefined;
+    if (!failed || !LOCK_CONFLICT.test(failed.logs ?? "")) return undefined;
+    const sql = readFileSync(
+      path.join(migrationsPath, failed.migration_name, "migration.sql"),
+      "utf8",
+    );
+    if (NOT_ONE_TRANSACTION.test(sql)) return undefined;
+    await client.query(
+      "UPDATE _prisma_migrations SET rolled_back_at = now() WHERE id = $1 AND finished_at IS NULL AND rolled_back_at IS NULL",
+      [failed.id],
+    );
+    return failed.migration_name;
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * `prisma migrate deploy` from the database package, without the migrations held back this run.
+ * A migration that loses a lock to the running release is retried after a pause.
+ */
 export async function deployMigrations(input: {
   migrationUrl: string;
   dbPackageDir: string;
   migrationsDir?: string;
+  lockRetryDelaysMs?: number[];
 }) {
   const migrationsDir = input.migrationsDir ?? path.join(input.dbPackageDir, "prisma/migrations");
   const held = await heldBackMigrations(input.migrationUrl, migrationsDir);
@@ -72,15 +122,33 @@ export async function deployMigrations(input: {
     process.stdout.write(`Holding back until the next migration run: ${held.join(", ")}\n`);
   }
   try {
-    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
-      cwd: input.dbPackageDir,
-      stdio: "inherit",
-      env: {
-        ...process.env,
-        DATABASE_MIGRATION_URL: input.migrationUrl,
-        RAKAZO_MIGRATIONS_PATH: migrationsPath,
-      },
-    });
+    for (let attempt = 0; ; attempt++) {
+      try {
+        execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
+          cwd: input.dbPackageDir,
+          stdio: "inherit",
+          env: {
+            ...process.env,
+            DATABASE_MIGRATION_URL: input.migrationUrl,
+            RAKAZO_MIGRATIONS_PATH: migrationsPath,
+          },
+        });
+        break;
+      } catch (error) {
+        const delay = (input.lockRetryDelaysMs ?? LOCK_RETRY_DELAYS_MS)[attempt];
+        const retried =
+          delay === undefined
+            ? undefined
+            : await rollBackLockConflict(input.migrationUrl, migrationsPath).catch(() => undefined);
+        if (!retried) throw error;
+        process.stdout.write(`${retried} lost a lock to running queries; retrying\n`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  } catch (error) {
+    // A failed run may leave the previous release running, so the hold lasts until a run succeeds.
+    if (held.length) await forgetHeldBack(input.migrationUrl, held);
+    throw error;
   } finally {
     if (migrationsPath !== migrationsDir) rmSync(migrationsPath, { recursive: true, force: true });
   }
