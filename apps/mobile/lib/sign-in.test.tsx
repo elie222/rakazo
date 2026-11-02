@@ -672,3 +672,14 @@ it("retries a transient notification lookup without authenticating again", async
     params: { userId: "work", botId: "work-bot" },
   });
 });
+
+it("normalizes an attested notification alias before mounting its thread", async () => {
+  route.target =
+    "rakazo://thread?userId=work&botId=work-bot&apiBase=https%3A%2F%2Fweb.example.test";
+  await act(async () => root.render(<NotificationOpen />));
+  expect(selectNotificationAccount).toHaveBeenCalledWith("work", "https://web.example.test");
+  expect(router.replace).toHaveBeenLastCalledWith({
+    pathname: "/thread",
+    params: { userId: "work", botId: "work-bot", apiBase: server.base },
+  });
+});

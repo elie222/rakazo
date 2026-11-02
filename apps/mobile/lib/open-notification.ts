@@ -2,6 +2,7 @@ import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import { useEffect } from "react";
 import { selectNotificationAccount } from "./account-sessions";
+import { currentApiBase } from "./api";
 import {
   notificationResponseRoute,
   notificationTargetLink,
@@ -66,7 +67,16 @@ export async function openNotificationResponse(
     }
     closeSettingsSheet();
     router.dismissTo("/");
-    router.push(target, { dangerouslySingular: threadRouteId });
+    router.push(
+      {
+        ...target,
+        params: {
+          ...target.params,
+          ...(target.params.apiBase ? { apiBase: currentApiBase() } : {}),
+        },
+      },
+      { dangerouslySingular: threadRouteId },
+    );
     clearNotificationResponseIfCurrent(response);
     return true;
   } catch {

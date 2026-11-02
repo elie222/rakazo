@@ -31,36 +31,40 @@ export async function registerPushToken() {
     const pending = await pendingSessionTokens(apiBase);
     const selectedToken = apiBase === currentApiBase() ? await loadSessionToken() : "";
     const activeToken = pending.has(selectedToken) ? "" : selectedToken;
-    if (accounts.length === 0) {
-      if (activeToken) await rpc("notifications/registerPush", { token });
-    } else {
-      const registering = accounts.map((account) =>
-        rpc(
-          "notifications/registerPush",
-          { token },
-          {
-            requestContext: {
-              apiBase,
-              headers: {
-                authorization: `Bearer ${account.token}`,
-                "x-rakazo-user-id": account.userId,
-              },
-            },
-          },
-        ).catch(() => undefined),
-      );
-      if (activeToken && !accounts.some((account) => account.token === activeToken))
-        registering.push(
-          rpc(
-            "notifications/registerPush",
-            { token },
-            {
-              requestContext: { apiBase, headers: { authorization: `Bearer ${activeToken}` } },
-            },
-          ).catch(() => undefined),
-        );
-      await Promise.all(registering);
+    const stillSignedIn = async (sessionToken: string) => {
+      const saved = await loadSavedAccounts(apiBase);
+      const owned =
+        saved.some((account) => account.token === sessionToken) ||
+        (apiBase === currentApiBase() && (await loadSessionToken()) === sessionToken);
+      return owned && !(await pendingSessionTokens(apiBase)).has(sessionToken);
+    };
+    const register = async (sessionToken: string, userId?: string) => {
+      const requestContext = {
+        apiBase,
+        headers: {
+          authorization: `Bearer ${sessionToken}`,
+          ...(userId ? { "x-rakazo-user-id": userId } : {}),
+        },
+      };
+      if (!(await stillSignedIn(sessionToken))) return;
+      try {
+        await rpc("notifications/registerPush", { token }, { requestContext });
+      } finally {
+        // A register response can arrive after sign-out's unregister. Remove only
+        // this login's late association, retaining its queued session revocation.
+        if (!(await stillSignedIn(sessionToken)))
+          await rpc("notifications/unregisterPush", undefined, { requestContext }).catch(
+            () => undefined,
+          );
+      }
+    };
+    const registering = accounts.map((account) =>
+      register(account.token, account.userId).catch(() => undefined),
+    );
+    if (activeToken && !accounts.some((account) => account.token === activeToken)) {
+      registering.push(register(activeToken).catch(() => undefined));
     }
+    await Promise.all(registering);
   } catch {
     // Expo Go without an EAS project id and Android builds without a Firebase config
     // cannot mint an Expo push token.

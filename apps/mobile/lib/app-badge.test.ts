@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const accountDisk = vi.hoisted(() => new Map<string, string>());
+const refreshSummary = vi.hoisted(() => vi.fn(async (_userId?: string) => []));
+vi.mock("./account-sessions", () => ({ refreshAccountSummaries: refreshSummary }));
 vi.mock("expo-secure-store", () => ({
   deleteItemAsync: vi.fn(async (key: string) => {
     accountDisk.delete(key);
@@ -20,7 +22,11 @@ async function load() {
   return import("./app-badge");
 }
 
-beforeEach(() => vi.mocked(Notifications.setBadgeCountAsync).mockReset().mockResolvedValue(true));
+beforeEach(() => {
+  vi.mocked(Notifications.setBadgeCountAsync).mockReset().mockResolvedValue(true);
+  refreshSummary.mockReset().mockResolvedValue([]);
+  accountDisk.clear();
+});
 
 describe("app icon badge", () => {
   it("counts unread chats, bots and groups, across every Space", async () => {
@@ -102,6 +108,84 @@ it("keeps inactive-account unread counts when the selected inbox updates", async
     unread: 5,
   });
   accounts.setSelectedSavedAccount({ apiBase, userId: "family" });
+  refreshSummary.mockImplementation(async () => {
+    await accounts.updateSavedAccountIfCurrent(apiBase, "family-token", (row) => ({
+      ...row,
+      unread: 3,
+    }));
+    return [];
+  });
   await badge.syncInboxAppBadge(3, badge.appBadgeGeneration());
   expect(Notifications.setBadgeCountAsync).toHaveBeenLastCalledWith(8);
 });
+
+it("preserves other organizations when the selected inbox changes across two saved accounts", async () => {
+  const badge = await load();
+  const accounts = await import("./saved-accounts");
+  const apiBase = "https://app.example.test";
+  const organizations = { personal: 2, shared: 4 };
+  for (const [userId, unread] of [
+    ["family", 6],
+    ["work", 5],
+  ] as const)
+    await accounts.rememberSavedAccount(apiBase, {
+      userId,
+      token: `${userId}-token`,
+      name: userId,
+      email: `${userId}@example.test`,
+      image: null,
+      unread,
+    });
+  accounts.setSelectedSavedAccount({ apiBase, userId: "family" });
+  refreshSummary.mockImplementation(async (userId) => {
+    expect(userId).toBe("family");
+    await accounts.updateSavedAccountIfCurrent(apiBase, "family-token", (row) => ({
+      ...row,
+      unread: organizations.personal + organizations.shared,
+    }));
+    return [];
+  });
+  await badge.syncInboxAppBadge(organizations.personal, badge.appBadgeGeneration());
+  expect(Notifications.setBadgeCountAsync).toHaveBeenLastCalledWith(11);
+  organizations.personal = 1;
+  await badge.syncInboxAppBadge(organizations.personal, badge.appBadgeGeneration());
+  expect(Notifications.setBadgeCountAsync).toHaveBeenLastCalledWith(10);
+  expect(accounts.cachedSavedAccounts(apiBase).map((row) => [row.userId, row.unread])).toEqual([
+    ["family", 5],
+    ["work", 5],
+  ]);
+});
+
+it.each(["account", "foreground", "token"])(
+  "does not publish a late summary after the %s changes",
+  async (change) => {
+    const badge = await load();
+    const accounts = await import("./saved-accounts");
+    const apiBase = "https://app.example.test";
+    await accounts.rememberSavedAccount(apiBase, {
+      userId: "family",
+      token: "family-token",
+      name: "Family",
+      email: "family@example.test",
+      image: null,
+      unread: 6,
+    });
+    accounts.setSelectedSavedAccount({ apiBase, userId: "family" });
+    let release!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    refreshSummary.mockImplementation(async () => {
+      await waiting;
+      return [];
+    });
+    const pending = badge.syncInboxAppBadge(2, badge.appBadgeGeneration());
+    await vi.waitFor(() => expect(refreshSummary).toHaveBeenCalledWith("family"));
+    if (change === "account") accounts.setSelectedSavedAccount({ apiBase, userId: "work" });
+    else if (change === "foreground") badge.forgetAppBadge();
+    else await accounts.replaceSavedToken(apiBase, "family-token", "replacement-token");
+    release();
+    await pending;
+    expect(Notifications.setBadgeCountAsync).not.toHaveBeenCalled();
+  },
+);

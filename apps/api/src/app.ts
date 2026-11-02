@@ -904,6 +904,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   mountScreenTarget(app, prisma, env.screenProxySecret);
   mountDiagramScript(app);
   const auditAuthResponse = createAuthResponseAudit();
+  const handleAuthRequest = async (request: Request, ip: string | undefined) => {
+    const path = new URL(request.url).pathname.replace("/api/auth", "");
+    const response = await auth.handler(withClientIp(emptyAuthBodyAsJson(request), ip));
+    await auditAuthResponse(path, ip, response);
+    return response;
+  };
   // Account and session tables, signup bootstrap and account deletion span tenants;
   // webhooks authenticate a bot or provider, then resolve the tenant from it.
   for (const [path, reason] of [
@@ -919,15 +925,15 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     if (isBlockedAuthPath(path)) {
       return c.json({ error: "Not available in version 1" }, 404);
     }
-    const ip = requestClientIp(c);
-    const response = await auth.handler(withClientIp(emptyAuthBodyAsJson(c.req.raw), ip));
-    await auditAuthResponse(path, ip, response);
-    return response;
+    return handleAuthRequest(c.req.raw, requestClientIp(c));
   });
   mountAccountSessions(app, {
     auth,
     prisma,
     trustedOrigin: (origin) => isTrustedOrigin(origin, env),
+    handleAuthRequest,
+    serverOrigin: new URL(env.authUrl?.trim() || env.webOrigin?.trim() || "http://127.0.0.1:5173")
+      .origin,
   });
   mountLocalComputerHost(app, {
     token: env.desktopStackToken,

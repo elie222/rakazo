@@ -91,6 +91,7 @@ import {
   subscribeResponseStreaming,
 } from "../../lib/response-streaming";
 import { promptSectionName } from "../../lib/section-name-prompt";
+import { currentSessionGeneration } from "../../lib/session";
 import {
   closeSettingsSheet,
   isSettingsLink,
@@ -369,14 +370,17 @@ export default function Account() {
   async function handleSignOut() {
     setSigningOut(true);
     setSignOutError(null);
+    const server = currentApiBase();
+    let recoveryGeneration: number | undefined;
     try {
-      const server = currentApiBase();
       await signOut();
+      const generation = currentSessionGeneration();
       const token = await loadSessionToken();
-      if (server !== currentApiBase() || token) {
+      if (server !== currentApiBase() || token || generation !== currentSessionGeneration()) {
         setSigningOut(false);
         return;
       }
+      recoveryGeneration = generation;
       const next = await selectNextSavedAccount();
       if (next === "selected") {
         closeSettingsSheet();
@@ -384,6 +388,19 @@ export default function Account() {
       } else if (next === "unavailable") replaceWithSignIn();
       else setSigningOut(false);
     } catch (err) {
+      if (recoveryGeneration !== undefined) {
+        const token = await loadSessionToken().catch(() => "unavailable");
+        if (
+          server === currentApiBase() &&
+          recoveryGeneration === currentSessionGeneration() &&
+          !token
+        ) {
+          // Local sign-out succeeded. The sign-in screen keeps saved identities
+          // available for another attempt when verification can reach the server.
+          replaceWithSignIn("/sign-in");
+          return;
+        }
+      }
       setSignOutError(errorText(err, t("Could not sign out")));
       setSigningOut(false);
     }

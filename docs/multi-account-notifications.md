@@ -81,7 +81,7 @@ series. Commits use a generic fictional contributor identity because no Git auth
 | `pnpm check` | All 22 package tasks passed |
 | `pnpm lint` | Passed with existing warnings/informational diagnostics |
 | Web production build | Passed; existing bundle-size warning remains |
-| Final full unit run | 19,944 passed and 712 skipped; three unchanged shell/backup failures remain across two suites |
+| Full unit run before final review follow-ups | 19,944 passed and 712 skipped; three unchanged shell/backup failures remain across two suites |
 
 The three remaining full-suite failures also reproduce from pristine starting-revision source:
 the shell environment test's failed-reader fixture still runs its command, and the two backup
@@ -173,6 +173,25 @@ another” appears only at the browser limit. These labels and contextual recove
 needed to distinguish the actions and prevent private content from opening under another login.
 Persistent explanatory chrome was not added. Account identity and unread counts are the switcher
 itself. Web and mobile localization catalogs were updated.
+
+## Final review follow-ups
+
+Offline logout enters saved-account recovery when fallback verification cannot reach the server,
+without overriding a newer login or server selection. Push registration rechecks local ownership
+before and after delivery; a late response is compensated using only its original session. Failed
+network cleanup retains the revocation retry record. The icon uses account-wide unread summaries
+rather than replacing them with the selected organization's inbox count.
+
+Split API/auth origins are accepted only when the configured API authenticates the saved target
+account and attests the canonical notification origin. Credentials never go to the payload URL;
+accepted routes retain the configured API origin. Account-switch proxies use the same trusted-IP
+sanitization and response audit as other authentication requests. The account feed pages past
+filtered events to find eligible alerts within its existing daily window; attention alerts retain
+an event error/reason or the existing needs-answer, needs-screen and failure wording.
+
+The combined follow-up run passed all 184 tests across 11 mobile and API suites. The real
+Postgres account-session suite passed all six tests, including pagination past 110 filtered events. The full suite result above predates
+these final follow-ups; native build and device-delivery limits remain unchanged.
 
 ## Browser evidence
 

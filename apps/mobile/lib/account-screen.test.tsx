@@ -47,6 +47,7 @@ const { element, account } = vi.hoisted(() => ({
     push: vi.fn(),
     dismissTo: vi.fn(),
     apiBase: "http://127.0.0.1:3100",
+    generation: 0,
     approvals: { mode: "ask", enabled: false, skipApprovals: false, checkerAvailable: true },
     rules: [] as { id: string }[],
   },
@@ -62,6 +63,7 @@ vi.mock("./account-sessions", () => ({
   signOutAllAccounts: vi.fn(async () => undefined),
 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("./session", () => ({ currentSessionGeneration: () => account.generation }));
 vi.mock("expo-notifications", () => ({
   getPermissionsAsync: vi.fn(async () => ({ status: "granted" })),
 }));
@@ -294,6 +296,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   account.me = { userId: "user-1", name: "Tester", email: "tester@example.test" };
   account.apiBase = "http://127.0.0.1:3100";
+  account.generation = 0;
   account.rules = [];
   vi.mocked(fetchAccountSecurity).mockResolvedValue(security());
   vi.mocked(refreshAccountSummaries).mockResolvedValue([]);
@@ -606,6 +609,38 @@ it.each(["session", "server"])(
     const view = await renderAccount();
     await view.press("Sign out");
     expect(selectNextSavedAccount).not.toHaveBeenCalled();
+    expect(replaceWithSignIn).not.toHaveBeenCalled();
+    expect(account.dismissTo).not.toHaveBeenCalled();
+    expect(view.button("Sign out")?.disabled).toBe(false);
+  },
+);
+
+it("opens saved-account recovery when fallback verification fails after local sign-out", async () => {
+  vi.mocked(loadSessionToken).mockResolvedValue("");
+  vi.mocked(selectNextSavedAccount).mockRejectedValueOnce(new Error("offline"));
+  const view = await renderAccount();
+  await view.press("Sign out");
+  expect(signOut).toHaveBeenCalledOnce();
+  expect(selectNextSavedAccount).toHaveBeenCalledOnce();
+  expect(replaceWithSignIn).toHaveBeenCalledWith("/sign-in");
+  expect(account.dismissTo).not.toHaveBeenCalled();
+  expect(view.alert()).toBeNull();
+});
+
+it.each(["session", "server"])(
+  "does not navigate over a concurrent %s change when fallback verification fails",
+  async (change) => {
+    vi.mocked(loadSessionToken).mockResolvedValue("");
+    vi.mocked(selectNextSavedAccount).mockImplementationOnce(async () => {
+      if (change === "session") {
+        account.generation++;
+        vi.mocked(loadSessionToken).mockResolvedValue("replacement-token");
+      } else account.apiBase = "https://other.example.test";
+      throw new Error("offline");
+    });
+    const view = await renderAccount();
+    await view.press("Sign out");
+    expect(selectNextSavedAccount).toHaveBeenCalledOnce();
     expect(replaceWithSignIn).not.toHaveBeenCalled();
     expect(account.dismissTo).not.toHaveBeenCalled();
     expect(view.button("Sign out")?.disabled).toBe(false);

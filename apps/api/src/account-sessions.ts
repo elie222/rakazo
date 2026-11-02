@@ -5,6 +5,7 @@ import { isBackgroundRunTrigger, truncatedPlainText } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { Prisma, runAsSystem } from "@rakazo/db";
 import type { Hono } from "hono";
+import { requestClientIp, withClientIp } from "./client-ip.js";
 import { readBoundedBody } from "./http-body.js";
 
 /** Reject stale pages before any handler can reuse their body under a replacement cookie. */
@@ -38,96 +39,123 @@ async function accountActivity(prisma: PrismaClient, userId: string) {
     });
     const spaceIds = memberships.map((member) => member.spaceId);
     if (!spaceIds.length) return { unread: count?.count ?? 0, notifications: [] };
-    const events = await prisma.event.findMany({
-      where: {
-        spaceId: { in: spaceIds },
-        thread: { userId, externalConversationId: null },
-        type: {
-          in: [
-            "thread.message.created",
-            "run.failed",
-            "run.waiting_input",
-            "computer.takeover.requested",
-          ],
+    const notifications: AccountNotification[] = [];
+    const since = new Date(Date.now() - 24 * 60 * 60_000);
+    let before: { createdAt: Date; id: string } | undefined;
+    while (notifications.length < 50) {
+      const events = await prisma.event.findMany({
+        where: {
+          spaceId: { in: spaceIds },
+          thread: { userId, externalConversationId: null },
+          type: {
+            in: [
+              "thread.message.created",
+              "run.failed",
+              "run.waiting_input",
+              "computer.takeover.requested",
+            ],
+          },
+          createdAt: { gt: since },
+          ...(before
+            ? {
+                OR: [
+                  { createdAt: { lt: before.createdAt } },
+                  { createdAt: before.createdAt, id: { lt: before.id } },
+                ],
+              }
+            : {}),
         },
-        createdAt: { gt: new Date(Date.now() - 24 * 60 * 60_000) },
-      },
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      take: 100,
-      include: {
-        thread: {
-          select: {
-            bot: { select: { name: true, userId: true, archivedAt: true, notifyOnFinish: true } },
-            group: {
-              select: {
-                id: true,
-                name: true,
-                userId: true,
-                archivedAt: true,
-                members: { where: { bot: { archivedAt: null } }, select: { id: true } },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: 100,
+        include: {
+          thread: {
+            select: {
+              bot: { select: { name: true, userId: true, archivedAt: true, notifyOnFinish: true } },
+              group: {
+                select: {
+                  id: true,
+                  name: true,
+                  userId: true,
+                  archivedAt: true,
+                  members: { where: { bot: { archivedAt: null } }, select: { id: true } },
+                },
               },
             },
           },
         },
-      },
-    });
-    const runIds = [...new Set(events.flatMap((event) => (event.runId ? [event.runId] : [])))];
-    const runs = await prisma.run.findMany({
-      where: { id: { in: runIds }, userId, spaceId: { in: spaceIds } },
-      select: { id: true, trigger: true, status: true, routine: { select: { notify: true } } },
-    });
-    const byRun = new Map(runs.map((run) => [run.id, run]));
-    const notifications: AccountNotification[] = [];
-    for (const event of events) {
-      const { bot, group } = event.thread;
-      if (
-        group
-          ? group.userId !== userId || group.archivedAt || group.members.length < GROUP_MEMBER_MIN
-          : !bot || bot.userId !== userId || bot.archivedAt
-      )
-        continue;
-      const run = event.runId ? byRun.get(event.runId) : undefined;
-      const payload =
-        event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
-          ? event.payload
-          : {};
-      const message = event.type === "thread.message.created";
-      if (message && payload.role !== "bot") continue;
-      if (message && (run?.status === "waiting_input" || run?.status === "waiting_takeover"))
-        continue;
-      const kind = message
-        ? "completion"
-        : event.type === "run.failed"
-          ? "failure"
-          : event.type === "run.waiting_input"
-            ? "help"
-            : "takeover";
-      if (run && isBackgroundRunTrigger(run.trigger) && kind !== "help" && kind !== "takeover")
-        continue;
-      const enabled =
-        kind === "failure" && run?.routine
-          ? run.routine.notify
-          : Boolean(group || bot?.notifyOnFinish);
-      if (!enabled) continue;
-      const blocks = Array.isArray(payload.blocks) ? payload.blocks : [];
-      const text = blocks
-        .flatMap((block) =>
-          block && typeof block === "object" && "text" in block && typeof block.text === "string"
-            ? [block.text]
-            : [],
-        )
-        .join("\n");
-      notifications.push({
-        id: event.id,
-        kind,
-        title: group?.name ?? bot?.name ?? "",
-        body: truncatedPlainText(text, 180),
-        botId: event.botId,
-        threadId: event.threadId,
-        spaceId: event.spaceId,
-        ...(group ? { groupId: group.id } : {}),
       });
-      if (notifications.length >= 50) break;
+      if (!events.length) break;
+      const runIds = [...new Set(events.flatMap((event) => (event.runId ? [event.runId] : [])))];
+      const runs = await prisma.run.findMany({
+        where: { id: { in: runIds }, userId, spaceId: { in: spaceIds } },
+        select: { id: true, trigger: true, status: true, routine: { select: { notify: true } } },
+      });
+      const byRun = new Map(runs.map((run) => [run.id, run]));
+      for (const event of events) {
+        const { bot, group } = event.thread;
+        if (
+          group
+            ? group.userId !== userId || group.archivedAt || group.members.length < GROUP_MEMBER_MIN
+            : !bot || bot.userId !== userId || bot.archivedAt
+        )
+          continue;
+        const run = event.runId ? byRun.get(event.runId) : undefined;
+        const payload =
+          event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
+            ? event.payload
+            : {};
+        const message = event.type === "thread.message.created";
+        if (message && payload.role !== "bot") continue;
+        if (message && (run?.status === "waiting_input" || run?.status === "waiting_takeover"))
+          continue;
+        const kind = message
+          ? "completion"
+          : event.type === "run.failed"
+            ? "failure"
+            : event.type === "run.waiting_input"
+              ? "help"
+              : "takeover";
+        if (run && isBackgroundRunTrigger(run.trigger) && kind !== "help" && kind !== "takeover")
+          continue;
+        const enabled =
+          kind === "failure" && run?.routine
+            ? run.routine.notify
+            : Boolean(group || bot?.notifyOnFinish);
+        if (!enabled) continue;
+        const blocks = Array.isArray(payload.blocks) ? payload.blocks : [];
+        const text = blocks
+          .flatMap((block) =>
+            block && typeof block === "object" && "text" in block && typeof block.text === "string"
+              ? [block.text]
+              : [],
+          )
+          .join("\n");
+        const name = group?.name ?? bot?.name ?? "Bot";
+        const attention =
+          typeof payload.error === "string"
+            ? payload.error
+            : typeof payload.reason === "string"
+              ? payload.reason
+              : kind === "help"
+                ? `${name} needs an answer`
+                : kind === "takeover"
+                  ? `${name} needs you on the screen`
+                  : `${name} failed`;
+        notifications.push({
+          id: event.id,
+          kind,
+          title: group?.name ?? bot?.name ?? "",
+          body: truncatedPlainText(message ? text : text || attention, 180),
+          botId: event.botId,
+          threadId: event.threadId,
+          spaceId: event.spaceId,
+          ...(group ? { groupId: group.id } : {}),
+        });
+        if (notifications.length >= 50) break;
+      }
+      if (events.length < 100) break;
+      const last = events.at(-1)!;
+      before = { createdAt: last.createdAt, id: last.id };
     }
     return { unread: count?.count ?? 0, notifications };
   });
@@ -135,7 +163,13 @@ async function accountActivity(prisma: PrismaClient, userId: string) {
 
 export function mountAccountSessions(
   app: Hono,
-  deps: { auth: Auth; prisma: PrismaClient; trustedOrigin: (origin: string) => boolean },
+  deps: {
+    auth: Auth;
+    prisma: PrismaClient;
+    trustedOrigin: (origin: string) => boolean;
+    handleAuthRequest?: (request: Request, ip: string | undefined) => Promise<Response>;
+    serverOrigin?: string;
+  },
 ) {
   app.use("/api/accounts*", async (c, next) => {
     await next();
@@ -174,7 +208,11 @@ export function mountAccountSessions(
           }) satisfies SavedAccountSummary,
       ),
     );
-    return c.json({ activeUserId: active?.user.id ?? null, accounts } satisfies AccountSessions);
+    return c.json({
+      activeUserId: active?.user.id ?? null,
+      accounts,
+      ...(deps.serverOrigin ? { serverOrigin: deps.serverOrigin } : {}),
+    } satisfies AccountSessions);
   });
   for (const action of ["select", "remove"] as const) {
     app.post(`/api/accounts/${action}`, async (c) => {
@@ -186,14 +224,17 @@ export function mountAccountSessions(
       if (body === null) return c.json({ error: "Request too large" }, 413);
       const url = new URL(c.req.url);
       url.pathname = `/api/auth/accounts/${action}`;
+      const ip = requestClientIp(c);
+      const request = withClientIp(
+        new Request(url, {
+          method: "POST",
+          headers: c.req.raw.headers,
+          body,
+        }),
+        ip,
+      );
       return runAsSystem("select or remove a saved account session", () =>
-        deps.auth.handler(
-          new Request(url, {
-            method: "POST",
-            headers: c.req.raw.headers,
-            body,
-          }),
-        ),
+        deps.handleAuthRequest ? deps.handleAuthRequest(request, ip) : deps.auth.handler(request),
       );
     });
   }

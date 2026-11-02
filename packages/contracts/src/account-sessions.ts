@@ -21,6 +21,7 @@ export type SavedAccountSummary = {
 };
 
 export type AccountSessions = {
+  serverOrigin?: string;
   activeUserId: string | null;
   accounts: SavedAccountSummary[];
 };

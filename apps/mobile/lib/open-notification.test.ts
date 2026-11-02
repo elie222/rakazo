@@ -13,6 +13,7 @@ vi.mock("expo-router", () => ({
 vi.mock("./account-sessions", () => ({
   selectNotificationAccount: vi.fn(),
 }));
+vi.mock("./api", () => ({ currentApiBase: () => "https://api.example.test" }));
 vi.mock("./settings-sheet", () => ({
   closeSettingsSheet: vi.fn(),
 }));
@@ -25,6 +26,25 @@ import { openNotificationResponse } from "./open-notification";
 import { closeSettingsSheet } from "./settings-sheet";
 
 const DEFAULT_ACTION = "expo.modules.notifications.actions.DEFAULT";
+
+it("routes an authenticated server alias through the configured API", async () => {
+  vi.mocked(selectNotificationAccount).mockResolvedValue(true);
+  await openNotificationResponse(
+    tap("canonical-alias", {
+      userId: "work",
+      apiBase: "https://web.example.test",
+      botId: "work-bot",
+    }),
+  );
+  expect(selectNotificationAccount).toHaveBeenCalledWith("work", "https://web.example.test");
+  expect(router.push).toHaveBeenCalledWith(
+    {
+      pathname: "/thread",
+      params: { userId: "work", apiBase: "https://api.example.test", botId: "work-bot" },
+    },
+    { dangerouslySingular: threadRouteId },
+  );
+});
 
 function tap(id: string, data: Record<string, unknown> = { botId: "bot-1", threadId: "thread-1" }) {
   return {

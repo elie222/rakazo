@@ -217,6 +217,65 @@ suite("saved account sessions and notifications (PostgreSQL)", () => {
     expect(await invalid.json()).toEqual({ activeUserId: null, accounts: [] });
   });
 
+  it("pages past filtered events and gives attention notices a readable body", async () => {
+    const userId = ids.family;
+    const spaceId = `space-${userId}`;
+    const botId = `bot-${userId}-0`;
+    const threadId = `thread-${userId}-0`;
+    const older = new Date(Date.now() - 60_000);
+    const events = [
+      ...Array.from({ length: 110 }, (_, index) => ({
+        id: `filtered-${stamp}-${index}`,
+        spaceId,
+        botId,
+        threadId,
+        seq: 100 + index,
+        type: "thread.message.created",
+        payload: { role: "user", blocks: [{ kind: "text", text: "Fixture" }] },
+        createdAt: new Date(),
+      })),
+      ...["run.failed", "run.waiting_input", "computer.takeover.requested"].map((type, index) => ({
+        id: `attention-${stamp}-${index}`,
+        spaceId,
+        botId,
+        threadId,
+        seq: 300 + index,
+        type,
+        payload:
+          index === 0
+            ? { error: "Fixture failure" }
+            : index === 2
+              ? { reason: "Fixture needs a click" }
+              : {},
+        createdAt: older,
+      })),
+    ];
+    await runAsSystem("seed paginated account notification fixtures", () =>
+      db.prisma.event.createMany({ data: events }),
+    );
+    try {
+      const body = (await (
+        await request("/api/accounts", { headers: { cookie: cookie() } })
+      ).json()) as AccountSessions;
+      const notices = body.accounts.find((account) => account.userId === userId)!.notifications;
+      for (let index = 0; index < 3; index++)
+        expect(
+          notices.find((notice) => notice.id === `attention-${stamp}-${index}`)?.body,
+        ).toBeTruthy();
+      expect(notices.find((notice) => notice.id === `attention-${stamp}-0`)?.body).toBe(
+        "Fixture failure",
+      );
+      expect(notices.find((notice) => notice.id === `attention-${stamp}-2`)?.body).toBe(
+        "Fixture needs a click",
+      );
+      expect(notices.some((notice) => notice.id.startsWith(`filtered-${stamp}-`))).toBe(false);
+    } finally {
+      await runAsSystem("remove paginated account notification fixtures", () =>
+        db.prisma.event.deleteMany({ where: { id: { in: events.map((event) => event.id) } } }),
+      );
+    }
+  });
+
   it("rejects a stale page's mutation before the handler uses its body under a different account", async () => {
     const stale = await request("/private", {
       method: "POST",

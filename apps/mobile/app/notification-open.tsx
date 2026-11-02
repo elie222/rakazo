@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { NativeActionButton } from "../components/native-action-button";
 import { selectNotificationAccount } from "../lib/account-sessions";
+import { currentApiBase } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens, useThemedStyles } from "../lib/native";
@@ -28,7 +29,14 @@ export default function NotificationOpen() {
     void selectNotificationAccount(route.params.userId, route.params.apiBase)
       .then((selected) => {
         if (!active) return;
-        if (selected) router.replace(route);
+        if (selected)
+          router.replace({
+            ...route,
+            params: {
+              ...route.params,
+              ...(route.params.apiBase ? { apiBase: currentApiBase() } : {}),
+            },
+          });
         else setResult("sign-in");
       })
       .catch(() => {

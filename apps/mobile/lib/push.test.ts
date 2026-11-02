@@ -44,9 +44,14 @@ vi.mock("expo-notifications", () => ({
 
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
-import { currentApiBase, rpc, selectInitialSpace } from "./api";
-import { queueSessionRevocation } from "./pending-session-revocations";
+import { currentApiBase, rpc, selectInitialSpace, signOut } from "./api";
+import {
+  pendingSessionTokens,
+  queueSessionRevocation,
+  retryPendingSessionRevocations,
+} from "./pending-session-revocations";
 import { registerPushToken } from "./push";
+import { rememberSavedAccount } from "./saved-accounts";
 import { restoreSessionToken } from "./session";
 
 function deferred<T>() {
@@ -188,3 +193,71 @@ it("does not register a locally signed-out credential while its revocation retry
   expect(fetch.mock.calls.some(([url]) => url.endsWith("/api/auth/sign-out"))).toBe(true);
   expect(fetch.mock.calls.some(([url]) => url.endsWith("/notifications/registerPush"))).toBe(false);
 });
+
+it.each([false, true])(
+  "cleans up a registration after local sign-out, retaining retries when cleanup is offline (%s)",
+  async (cleanupOffline) => {
+    const apiBase = currentApiBase();
+    for (const userId of ["family", "work"]) {
+      await rememberSavedAccount(apiBase, {
+        userId,
+        token: `${userId}-token`,
+        name: userId,
+        email: `${userId}@example.test`,
+        image: null,
+        unread: 0,
+      });
+    }
+    await restoreSessionToken("family-token");
+    const started = deferred<void>();
+    const late = deferred<void>();
+    const bindings = new Set(["family-token", "work-token"]);
+    const unregisters: string[] = [];
+    let offline = true;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const credential = (new Headers(init?.headers).get("authorization") ?? "").replace(
+          /^Bearer /,
+          "",
+        );
+        if (url.endsWith("/notifications/registerPush")) {
+          if (credential === "family-token") {
+            started.resolve();
+            await late.promise;
+          }
+          bindings.add(credential);
+        }
+        if (url.endsWith("/notifications/unregisterPush")) {
+          unregisters.push(credential);
+          if (cleanupOffline && unregisters.length > 1) throw new Error("offline cleanup");
+          bindings.delete(credential);
+        }
+        if (url.endsWith("/api/auth/sign-out")) {
+          if (offline) throw new Error("offline revocation");
+          bindings.delete(credential);
+          return Response.json({ success: true });
+        }
+        return Response.json({ json: {} });
+      }),
+    );
+    permission.resolve({ granted: true });
+    const registering = registerPushToken();
+    await started.promise;
+    await signOut();
+    expect(bindings.has("family-token")).toBe(false);
+    await restoreSessionToken("work-token");
+    late.resolve();
+    await registering;
+    expect(bindings).toEqual(
+      new Set(cleanupOffline ? ["family-token", "work-token"] : ["work-token"]),
+    );
+    expect(unregisters).toEqual(["family-token", "family-token"]);
+    expect(await pendingSessionTokens(apiBase)).toEqual(new Set(["family-token"]));
+    offline = false;
+    await retryPendingSessionRevocations(apiBase);
+    expect(bindings).toEqual(new Set(["work-token"]));
+    expect(await pendingSessionTokens(apiBase)).toEqual(new Set());
+  },
+);

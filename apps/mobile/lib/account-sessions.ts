@@ -107,10 +107,12 @@ export async function rememberCurrentAccount(): Promise<void> {
 }
 
 /** Every request retains its account bearer; polling never changes the displayed account. */
-export async function refreshAccountSummaries(): Promise<AccountSummary[]> {
+export async function refreshAccountSummaries(onlyUserId?: string): Promise<AccountSummary[]> {
   const apiBase = currentApiBase();
   await rememberCurrentAccount();
-  const rows = await loadSavedAccounts(apiBase);
+  const rows = (await loadSavedAccounts(apiBase)).filter(
+    (account) => onlyUserId === undefined || account.userId === onlyUserId,
+  );
   const summaries = await Promise.all(
     rows.map(async (account): Promise<AccountSummary | null> => {
       try {
@@ -204,15 +206,51 @@ export async function selectNotificationAccount(
   userId?: string,
   apiBase?: string,
 ): Promise<boolean> {
-  if (apiBase !== undefined) {
-    const parsed = normalizeApiBase(apiBase);
-    if (!parsed.ok || parsed.url !== currentApiBase()) return false;
-  } else if ((await savedAccountServers()).length > 1) return false;
+  const request = ++selectionRequest;
+  const endpoint = currentApiBase();
+  const generation = currentSessionGeneration();
+  const requested = apiBase === undefined ? null : normalizeApiBase(apiBase);
+  if (requested && !requested.ok) return false;
+  if (!requested && (await savedAccountServers()).length > 1) return false;
   await rememberCurrentAccount();
-  const rows = await loadSavedAccounts(currentApiBase());
+  const rows = await loadSavedAccounts(endpoint);
+  if (
+    request !== selectionRequest ||
+    generation !== currentSessionGeneration() ||
+    endpoint !== currentApiBase()
+  )
+    return false;
   // Older deliveries have no account. They are safe only with one verified saved login.
   const target = userId ?? (rows.length === 1 ? rows[0]?.userId : undefined);
-  return target ? selectSavedAccount(target) : false;
+  if (!target) return false;
+  if (requested?.ok && requested.url !== endpoint) {
+    const account = rows.find((row) => row.userId === target);
+    if (!account) return false;
+    const { response, body } = await accountJson(endpoint, account.token, "/api/accounts");
+    const data = body as {
+      serverOrigin?: unknown;
+      activeUserId?: unknown;
+      accounts?: Array<{ userId?: unknown }>;
+    } | null;
+    const origin =
+      typeof data?.serverOrigin === "string" ? normalizeApiBase(data.serverOrigin) : null;
+    if (
+      !response.ok ||
+      !origin?.ok ||
+      origin.url !== requested.url ||
+      data?.activeUserId !== target ||
+      !Array.isArray(data.accounts) ||
+      !data.accounts.some((saved) => saved.userId === target)
+    )
+      return false;
+  }
+  if (
+    request !== selectionRequest ||
+    generation !== currentSessionGeneration() ||
+    endpoint !== currentApiBase()
+  )
+    return false;
+  return selectSavedAccount(target);
 }
 
 /** A revoked first choice must not hide a later valid saved account. */

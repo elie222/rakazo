@@ -149,6 +149,26 @@ it("late unread refresh cannot restore an account removed while the request was 
   await refreshing;
   expect((await loadSavedAccounts(apiBase)).map((row) => row.userId)).toEqual(["family"]);
 });
+
+it("refreshes one selected account's aggregate without polling other saved accounts", async () => {
+  await rememberSavedAccount(apiBase, { ...account("work", "work-token"), unread: 5 });
+  vi.mocked(fetch).mockImplementation(async () =>
+    Response.json({ accounts: [{ userId: "family", unread: 6 }] }),
+  );
+  expect(await refreshAccountSummaries("family")).toMatchObject([{ userId: "family", unread: 6 }]);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(fetch).toHaveBeenCalledWith(
+    `${apiBase}/api/accounts`,
+    expect.objectContaining({
+      headers: expect.objectContaining({ authorization: "Bearer family-token" }),
+    }),
+    apiBase,
+  );
+  expect((await loadSavedAccounts(apiBase)).map((row) => [row.userId, row.unread])).toEqual([
+    ["family", 6],
+    ["work", 5],
+  ]);
+});
 it("a late revoked response cannot delete a replacement bearer for the same account", async () => {
   let release!: () => void;
   const waiting = new Promise<void>((resolve) => {
@@ -174,11 +194,84 @@ it("a late revoked response cannot delete a replacement bearer for the same acco
 
 it("refuses another server's notification even if its user ID is cloned", async () => {
   expect(await selectNotificationAccount("work", "https://other.example.test")).toBe(false);
-  expect(fetch).not.toHaveBeenCalled();
+  expect(fetch).toHaveBeenCalledWith(
+    `${apiBase}/api/accounts`,
+    expect.objectContaining({
+      headers: expect.objectContaining({ authorization: "Bearer work-token" }),
+    }),
+    apiBase,
+  );
   expect(state.save).not.toHaveBeenCalled();
   await rememberSavedAccount("https://other.example.test", account("work", "other-work-token"));
   expect(await selectNotificationAccount("work")).toBe(false);
   expect(state.save).not.toHaveBeenCalled();
+});
+
+it("accepts a canonical web origin only when the current server attests to it for the saved bearer", async () => {
+  const canonical = "https://web.example.test";
+  vi.mocked(fetch).mockImplementation(async (url, init) => {
+    expect(String(url).startsWith(apiBase)).toBe(true);
+    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer work-token");
+    return String(url).endsWith("/api/accounts")
+      ? Response.json({
+          serverOrigin: canonical,
+          activeUserId: "work",
+          accounts: [{ userId: "work" }],
+        })
+      : Response.json({ user: { id: "work", email: "work@example.test" } });
+  });
+  expect(await selectNotificationAccount("work", canonical)).toBe(true);
+  expect(state.token).toBe("work-token");
+  expect(fetch).toHaveBeenCalledTimes(2);
+});
+
+it.each([
+  {
+    serverOrigin: "https://different.example.test",
+    activeUserId: "work",
+    accounts: [{ userId: "work" }],
+  },
+  {
+    serverOrigin: "https://web.example.test",
+    activeUserId: "family",
+    accounts: [{ userId: "work" }],
+  },
+  {
+    serverOrigin: "https://web.example.test",
+    activeUserId: "work",
+    accounts: [{ userId: "family" }],
+  },
+  { activeUserId: "work", accounts: [{ userId: "work" }] },
+])("rejects an unproven canonical origin without selecting an account (%j)", async (body) => {
+  vi.mocked(fetch).mockResolvedValue(Response.json(body));
+  expect(await selectNotificationAccount("work", "https://web.example.test")).toBe(false);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toBe(`${apiBase}/api/accounts`);
+  expect(state.save).not.toHaveBeenCalled();
+});
+
+it("drops a delayed canonical attestation when a newer account selection supersedes it", async () => {
+  let release!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  vi.mocked(fetch).mockImplementation(async (url) => {
+    if (String(url).endsWith("/api/accounts")) {
+      await waiting;
+      return Response.json({
+        serverOrigin: "https://web.example.test",
+        activeUserId: "work",
+        accounts: [{ userId: "work" }],
+      });
+    }
+    return Response.json({ user: { id: "family", email: "family@example.test" } });
+  });
+  const selecting = selectNotificationAccount("work", "https://web.example.test");
+  await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+  expect(await selectSavedAccount("family")).toBe(true);
+  release();
+  expect(await selecting).toBe(false);
+  expect(state.token).toBe("family-token");
 });
 
 it("sign-out-all revokes each saved bearer and removes all local logins", async () => {
