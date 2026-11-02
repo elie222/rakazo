@@ -39,13 +39,13 @@ import {
 import type { NativeProcessTree } from "./desktop-process-tree.js";
 import { spawnOwnedCommand } from "./desktop-process-tree.js";
 import { isAllowedDesktopPath, normalizeDesktopWorkspacePath } from "./desktop-sandbox-paths.js";
+import type { Win32FileHandle } from "./desktop-sandbox-win32-path.js";
 import {
   createExclusiveChildViaDirectoryFdWin32,
   mkdirChildViaDirectoryFdWin32,
   openChildDirectoryViaDirectoryFdWin32,
   openExistingChildViaDirectoryFdWin32,
   pathFromDirectoryFd,
-  type Win32FileHandle,
   win32NtRelativeAvailable,
 } from "./desktop-sandbox-win32-path.js";
 import { removeOwnedWorkspaceChildren } from "./desktop-workspace-cleanup.js";

@@ -50,7 +50,6 @@ const nightlySpecs = [
   "model-header-discovery",
   "nav-links",
   "new-bot-ux",
-  "page-browser",
   "readable-names",
   "resizable-side-panel",
   "run-failure",

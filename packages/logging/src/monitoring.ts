@@ -66,12 +66,117 @@ function scrubbed(value: unknown, scrub: (text: string) => string, depth = 0): u
   );
 }
 
+export interface MonitoringBreadcrumb {
+  type?: string;
+  category: string;
+  level?: "fatal" | "error" | "warning" | "info" | "debug" | "log";
+  data?: Record<string, string | number | boolean>;
+  timestamp?: number;
+}
+
+const SYSTEM_BREADCRUMBS = new Set([
+  "navigation",
+  "app.lifecycle",
+  "ui.lifecycle",
+  "device.event",
+  "device.orientation",
+  "network.event",
+  "system",
+]);
+const HTTP_BREADCRUMBS = new Set(["http", "xhr", "fetch"]);
+// Native view controller breadcrumbs also carry titles, which can be a chat name.
+const SYSTEM_DATA_KEYS = [
+  "screen",
+  "state",
+  "action",
+  "from",
+  "to",
+  "level",
+  "charging",
+  "plugged",
+  "position",
+  "orientation",
+  "type",
+] as const;
+const BREADCRUMB_LEVELS = new Set(["fatal", "error", "warning", "info", "debug", "log"]);
+const IDENTIFIER = /^[\w.:-]{1,100}$/;
+
+/** Only API paths survive, with any segment that could be an id or token replaced. */
+function breadcrumbUrl(value: string): string {
+  let path: string;
+  try {
+    path = new URL(value, "http://relative.invalid").pathname;
+  } catch {
+    return "[external]";
+  }
+  const segments = path.split("/");
+  if (segments[1] !== "api" && segments[1] !== "rpc") return "[external]";
+  return segments
+    .map((segment) =>
+      segment === "" || /^(?:[a-zA-Z][a-zA-Z_.-]{0,63}|v\d{1,2})$/.test(segment) ? segment : ":id",
+    )
+    .join("/")
+    .slice(0, 200);
+}
+
+/** An allowlist: no message, console output, bodies, headers, titles or touch targets. */
+export function sanitizeMonitoringBreadcrumb(value: unknown): MonitoringBreadcrumb | null {
+  if (!value || typeof value !== "object") return null;
+  const source = value as Record<string, unknown>;
+  const { category } = source;
+  if (typeof category !== "string") return null;
+  const http = HTTP_BREADCRUMBS.has(category);
+  if (!http && !SYSTEM_BREADCRUMBS.has(category)) return null;
+  const crumb: MonitoringBreadcrumb = { category };
+  if (typeof source.type === "string" && /^[a-z]{1,20}$/.test(source.type))
+    crumb.type = source.type;
+  if (typeof source.level === "string" && BREADCRUMB_LEVELS.has(source.level))
+    crumb.level = source.level as MonitoringBreadcrumb["level"];
+  // Native SDKs send ISO strings; the event protocol accepts either as seconds.
+  const timestamp =
+    typeof source.timestamp === "string" ? Date.parse(source.timestamp) / 1000 : source.timestamp;
+  if (typeof timestamp === "number" && Number.isFinite(timestamp)) crumb.timestamp = timestamp;
+  const input =
+    source.data && typeof source.data === "object" ? (source.data as Record<string, unknown>) : {};
+  const data: Record<string, string | number | boolean> = {};
+  if (http) {
+    if (typeof input.method === "string" && /^[A-Z]{1,10}$/.test(input.method))
+      data.method = input.method;
+    if (Number.isInteger(input.status_code)) data.status_code = input.status_code as number;
+    if (typeof input.url === "string") data.url = breadcrumbUrl(input.url);
+  } else {
+    for (const key of SYSTEM_DATA_KEYS) {
+      const item = input[key];
+      if (
+        typeof item === "boolean" ||
+        (typeof item === "number" && Number.isFinite(item)) ||
+        (typeof item === "string" && IDENTIFIER.test(item))
+      )
+        data[key] = item;
+    }
+  }
+  if (Object.keys(data).length) crumb.data = data;
+  return crumb;
+}
+
+function sanitizedBreadcrumbs(value: unknown): MonitoringBreadcrumb[] {
+  const list = Array.isArray(value)
+    ? value
+    : value && typeof value === "object" && Array.isArray((value as { values?: unknown }).values)
+      ? (value as { values: unknown[] }).values
+      : [];
+  return list
+    .slice(-100)
+    .map(sanitizeMonitoringBreadcrumb)
+    .filter((crumb) => crumb !== null);
+}
+
 interface MonitoringEvent {
   message?: string;
   request?: { url?: string; headers?: unknown; cookies?: unknown; data?: unknown };
   user?: { id?: string | number; ip_address?: string | null };
   extra?: Record<string, unknown>;
-  breadcrumbs?: unknown[];
+  breadcrumbs?: unknown;
   server_name?: string;
   exception?: {
     values?: Array<{
@@ -91,7 +196,11 @@ export function sanitizeMonitoringEvent<T extends MonitoringEvent>(event: T, use
   }
   event.user = isMonitoringUserId(userId) ? { id: userId, ip_address: null } : { ip_address: null };
   delete event.extra;
-  delete event.breadcrumbs;
+  if (event.breadcrumbs !== undefined) {
+    const breadcrumbs = sanitizedBreadcrumbs(event.breadcrumbs);
+    if (breadcrumbs.length) (event as MonitoringEvent).breadcrumbs = breadcrumbs;
+    else delete event.breadcrumbs;
+  }
   delete event.server_name;
   if (event.message) event.message = scrubMonitoringText(event.message);
   for (const value of event.exception?.values ?? []) {

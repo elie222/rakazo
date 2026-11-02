@@ -58,12 +58,23 @@ export function LoadEarlierButton({ loading, onPress }: { loading: boolean; onPr
   );
 }
 
-/** Floats over the list's corner, with a dot while newer messages wait below. */
-export function JumpToLatestButton({ unread, onPress }: { unread: boolean; onPress: () => void }) {
+/** Floats over the column's trailing corner, with a dot while newer messages wait below. */
+export function JumpToLatestButton({
+  bottomInset,
+  insetEnd,
+  unread,
+  onPress,
+}: {
+  bottomInset: number;
+  /** Distance from the trailing screen edge to the chat column. */
+  insetEnd: number;
+  unread: boolean;
+  onPress: () => void;
+}) {
   const tokens = mobileTokens();
   const { t } = useI18n();
   return (
-    <View style={{ position: "absolute", end: 0, bottom: 12 }}>
+    <View style={{ position: "absolute", end: insetEnd, bottom: bottomInset + 12 }}>
       <ScrollToBottomButton
         accessibilityLabel={unread ? t("Jump to latest, new messages") : t("Jump to latest")}
         onPress={onPress}

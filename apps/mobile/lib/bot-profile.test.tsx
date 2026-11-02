@@ -472,7 +472,7 @@ describe("bot profile notifications", () => {
       "https://api.example",
       "token",
       "space-a",
-      { threadId: "thread-fixture", notify: true },
+      { botId: "bot-fixture", threadId: "thread-fixture", notify: true },
     );
   });
 
@@ -590,7 +590,7 @@ describe("bot profile notifications", () => {
         "https://api.example",
         "token",
         "space-a",
-        { threadId: "thread-fixture", notify },
+        { botId: "bot-fixture", threadId: "thread-fixture", notify },
       );
     },
   );

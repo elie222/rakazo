@@ -1,5 +1,5 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
-import { computerControlExpireJobKey } from "@rakazo/adapter-kit";
+import { computerControlExpireJobKey, SandboxAllowanceUsedError } from "@rakazo/adapter-kit";
 import type { ComputerUpdate } from "@rakazo/contracts";
 import { ComputerUpdateSchema } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
@@ -565,7 +565,18 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
     );
     await finishUpdate(deps.prisma, updateId, update.computerId, "completed");
   } catch (error) {
-    getLogger().error("computer update failed", error, { updateId, computerId: update.computerId });
+    if (error instanceof SandboxAllowanceUsedError) {
+      getLogger().warn("computer update failed", {
+        updateId,
+        computerId: update.computerId,
+        reason: error.message,
+      });
+    } else {
+      getLogger().error("computer update failed", error, {
+        updateId,
+        computerId: update.computerId,
+      });
+    }
     // Provider errors may contain credentials or private URLs. Expose only the failed stage.
     await finishUpdate(deps.prisma, updateId, update.computerId, "failed");
   } finally {

@@ -656,6 +656,7 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       remove: authed.groups.remove.handler(async ({ context, input }) => {
         const removed = await groupRepos.removeGroup(context.actor, input.groupId);
+        await stopCancelledGroupRuns(deps, context.actor, removed);
         const cleanup = await Promise.allSettled(
           removed.artifactStorageKeys.map((storageKey) =>
             deps.artifacts.remove(

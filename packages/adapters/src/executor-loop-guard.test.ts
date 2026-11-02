@@ -241,6 +241,7 @@ async function runLoop(
           runId: run.id,
           seq: 1,
           blocks: [{ kind: "text", text: "Click through the form" }],
+          steeringMessages: [],
         },
       ]),
       findUnique: vi.fn(async () => ({

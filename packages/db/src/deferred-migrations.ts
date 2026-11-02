@@ -7,6 +7,18 @@ import { Client } from "pg";
 /** First line of a migration that may only run once the release before it has stopped. */
 export const DEFERRED_MIGRATION_MARKER = "-- deferred";
 
+/** Finished migrations, or undefined on a database no migration run has touched. */
+async function appliedMigrations(client: Client): Promise<Set<string> | undefined> {
+  const { rows: tables } = await client.query<{ exists: boolean }>(
+    "SELECT to_regclass('_prisma_migrations') IS NOT NULL AS exists",
+  );
+  if (!tables[0]?.exists) return undefined;
+  const { rows } = await client.query<{ migration_name: string }>(
+    "SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL",
+  );
+  return new Set(rows.map((row) => row.migration_name));
+}
+
 /**
  * Names of `-- deferred` migrations to leave out of this run. Each is held back the first time a
  * migration run sees it and applied on the next, so it lands one release after the code that stops
@@ -30,15 +42,8 @@ export async function heldBackMigrations(
   const client = new Client({ connectionString: migrationUrl });
   await client.connect();
   try {
-    const { rows: tables } = await client.query<{ exists: boolean }>(
-      "SELECT to_regclass('_prisma_migrations') IS NOT NULL AS exists",
-    );
-    if (!tables[0]?.exists) return [];
-    const { rows: applied } = await client.query<{ migration_name: string }>(
-      "SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL",
-    );
-    if (applied.length === 0) return [];
-    const done = new Set(applied.map((row) => row.migration_name));
+    const done = await appliedMigrations(client);
+    if (!done?.size) return [];
     const pending = deferred.filter((name) => !done.has(name));
     if (pending.length === 0) return [];
     await client.query(
@@ -62,6 +67,43 @@ async function forgetHeldBack(migrationUrl: string, names: string[]) {
   } finally {
     await client.end();
   }
+}
+
+const BUILDS_INDEX_CONCURRENTLY = /\bCONCURRENTLY\b/i;
+const SQL_COMMENTS = /--[^\n]*|\/\*[\s\S]*?\*\//g;
+const LOCK_TIMEOUT_MS = 5_000;
+
+/**
+ * Whether a migration this run applies builds an index concurrently. Such a build waits for every
+ * open transaction to finish, which a lock timeout would cancel.
+ */
+async function buildsIndexConcurrently(migrationUrl: string, migrationsPath: string) {
+  const client = new Client({ connectionString: migrationUrl });
+  await client.connect();
+  try {
+    const done = (await appliedMigrations(client)) ?? new Set<string>();
+    return readdirSync(migrationsPath, { withFileTypes: true }).some(
+      (entry) =>
+        entry.isDirectory() &&
+        !done.has(entry.name) &&
+        BUILDS_INDEX_CONCURRENTLY.test(
+          readFileSync(path.join(migrationsPath, entry.name, "migration.sql"), "utf8").replace(
+            SQL_COMMENTS,
+            "",
+          ),
+        ),
+    );
+  } finally {
+    await client.end();
+  }
+}
+
+/** A migration waiting on a lock queues every later query on that table behind it. */
+function withLockTimeout(url: string, ms: number) {
+  const parsed = new URL(url);
+  const options = [parsed.searchParams.get("options"), `-c lock_timeout=${ms}`];
+  parsed.searchParams.set("options", options.filter(Boolean).join(" "));
+  return parsed.toString();
 }
 
 const LOCK_CONFLICT = /\b(40P01|55P03)\b/;
@@ -102,13 +144,15 @@ async function rollBackLockConflict(migrationUrl: string, migrationsPath: string
 
 /**
  * `prisma migrate deploy` from the database package, without the migrations held back this run.
- * A migration that loses a lock to the running release is retried after a pause.
+ * A migration gives up on a lock the running release holds after a short wait, instead of stalling
+ * live queries behind it, and is retried after a pause.
  */
 export async function deployMigrations(input: {
   migrationUrl: string;
   dbPackageDir: string;
   migrationsDir?: string;
   lockRetryDelaysMs?: number[];
+  lockTimeoutMs?: number;
 }) {
   const migrationsDir = input.migrationsDir ?? path.join(input.dbPackageDir, "prisma/migrations");
   const held = await heldBackMigrations(input.migrationUrl, migrationsDir);
@@ -122,6 +166,9 @@ export async function deployMigrations(input: {
     process.stdout.write(`Holding back until the next migration run: ${held.join(", ")}\n`);
   }
   try {
+    const deployUrl = (await buildsIndexConcurrently(input.migrationUrl, migrationsPath))
+      ? input.migrationUrl
+      : withLockTimeout(input.migrationUrl, input.lockTimeoutMs ?? LOCK_TIMEOUT_MS);
     for (let attempt = 0; ; attempt++) {
       try {
         execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
@@ -129,7 +176,7 @@ export async function deployMigrations(input: {
           stdio: "inherit",
           env: {
             ...process.env,
-            DATABASE_MIGRATION_URL: input.migrationUrl,
+            DATABASE_MIGRATION_URL: deployUrl,
             RAKAZO_MIGRATIONS_PATH: migrationsPath,
           },
         });

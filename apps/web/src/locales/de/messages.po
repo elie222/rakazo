@@ -420,6 +420,10 @@ msgstr "{toolCount, plural, one {# Tool} other {# Tools}}"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/ModelCredits.tsx
+msgid "/ month"
+msgstr "/ Monat"
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr ""
@@ -1023,6 +1027,10 @@ msgstr "Bearer-Token"
 msgid "Billing"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Billing period"
+msgstr "Abrechnungszeitraum"
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "Blockieren"
@@ -1143,7 +1151,6 @@ msgid "Can't reach the server."
 msgstr "Server nicht erreichbar."
 
 #: src/components/TextOnlyMark.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "Kann keine Bilder lesen"
@@ -1152,6 +1159,7 @@ msgstr "Kann keine Bilder lesen"
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/VaultSettings.tsx
@@ -1466,10 +1474,6 @@ msgstr "Spalte {index}"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Comfortable"
-msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Coming soon"
 msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
@@ -2581,6 +2585,10 @@ msgstr ""
 msgid "Dictation failed."
 msgstr ""
 
+#: src/pages/Auth.tsx
+msgid "Did you mean <0>{emailSuggestion}</0>?"
+msgstr "Meintest du <0>{emailSuggestion}</0>?"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "Tool deaktivieren"
@@ -3020,7 +3028,6 @@ msgid "Forgot password?"
 msgstr "Passwort vergessen?"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "Kostenlos"
 
@@ -3459,10 +3466,6 @@ msgstr "Bots können Fakten nach Bedeutung speichern und abrufen, zusätzlich zu
 msgid "Light"
 msgstr "Hell"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Linear issue"
-msgstr ""
-
 #: src/pages/SpaceSearch.tsx
 msgid "Link"
 msgstr ""
@@ -3820,7 +3823,6 @@ msgstr "Modus"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3841,7 +3843,7 @@ msgstr "Modellverbindungen"
 msgid "Model id"
 msgstr "Modell-ID"
 
-#: src/pages/model-settings/model-picker.tsx
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 msgid "Model options"
 msgstr "Modelloptionen"
@@ -3856,8 +3858,8 @@ msgstr "Modelle"
 msgid "Models at provider cost"
 msgstr ""
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Models from server"
 msgstr "Modelle vom Server"
 
@@ -3873,6 +3875,7 @@ msgstr "Montag"
 msgid "month"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "Monatlich"
@@ -4086,7 +4089,6 @@ msgid "No matching artifacts on this page."
 msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -4370,8 +4372,8 @@ msgstr ""
 msgid "Original message unavailable"
 msgstr "Originalnachricht nicht verfügbar"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "Anderes Modell…"
 
@@ -4391,10 +4393,6 @@ msgstr "Seite {page} von {count}"
 #: src/pages/NotFound.tsx
 msgid "Page not found"
 msgstr "Seite nicht gefunden"
-
-#: src/pages/RoutineEditor.tsx
-msgid "PagerDuty incident"
-msgstr ""
 
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
@@ -5215,8 +5213,8 @@ msgstr "Bereiche (optional)"
 msgid "Screen not connected"
 msgstr "Bildschirm nicht verbunden"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5249,8 +5247,8 @@ msgstr ""
 msgid "Search integrations.sh"
 msgstr ""
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"
@@ -5336,10 +5334,6 @@ msgstr "Wird gesendet…"
 
 #: src/components/AskCard.tsx
 msgid "Sent"
-msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Sentry alert"
 msgstr ""
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
@@ -5642,9 +5636,21 @@ msgstr ""
 msgid "Start {trialDays}-day free trial"
 msgstr "Kostenlose {trialDays}-Tage-Testphase starten"
 
+#: src/components/ModelCredits.tsx
+msgid "Start plan"
+msgstr "Plan starten"
+
+#: src/components/ModelCredits.tsx
+msgid "Start plan now"
+msgstr "Plan jetzt starten"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"
 msgstr "Aufnahme starten"
+
+#: src/components/ModelCredits.tsx
+msgid "Start your plan now?"
+msgstr "Plan jetzt starten?"
 
 #: src/pages/ActivityList.tsx
 msgid "Starting"
@@ -5721,6 +5727,10 @@ msgid "Subscribe"
 msgstr "Abonnieren"
 
 #: src/components/ModelCredits.tsx
+msgid "Subscribe for {annualPrice} / year"
+msgstr "Für {annualPrice} / Jahr abonnieren"
+
+#: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
 msgstr "Für {price} / Monat abonnieren"
 
@@ -5750,9 +5760,18 @@ msgstr "Unterstützt Bilder"
 msgid "Supports thinking"
 msgstr "Unterstützt Denkmodus"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
-msgstr ""
+msgstr "Wechseln"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly"
+msgstr "Zu jährlich wechseln"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly?"
+msgstr "Zu jährlich wechseln?"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
@@ -5789,10 +5808,6 @@ msgstr "Team-Computer"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
-msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Teams not enabled"
 msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
@@ -6134,12 +6149,17 @@ msgstr ""
 msgid "Trial ends {day}"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Trials get fewer hours to prevent abuse."
+msgstr "Testzeiträume erhalten weniger Stunden, um Missbrauch zu verhindern."
+
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "Vertrauenswürdige Websites"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "Erneut versuchen"
 
@@ -6546,6 +6566,10 @@ msgstr ""
 msgid "year"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Yearly"
+msgstr "Jährlich"
+
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Yesterday"
@@ -6580,6 +6604,10 @@ msgstr "Du hast die Kontrolle"
 msgid "Your Anthropic"
 msgstr "Dein Anthropic"
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged {annualPrice} today, less the unused part of this month."
+msgstr "Deine Karte wird heute mit {annualPrice} belastet, abzüglich des ungenutzten Teils dieses Monats."
+
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr ""
@@ -6611,6 +6639,10 @@ msgstr "Dein OpenAI"
 msgid "Your OpenRouter"
 msgstr "Dein OpenRouter"
 
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {annualPrice} / year when your trial ends."
+msgstr "Nach dem Testzeitraum kostet dein Plan {annualPrice} / Jahr."
+
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"
 msgstr ""
@@ -6622,6 +6654,14 @@ msgstr ""
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Dein Team aus jederzeit verfügbaren Agents<0/>für echte Aufgaben."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged {price} today."
+msgstr "Dein Testzeitraum endet und deine Karte wird heute mit {price} belastet."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged today."
+msgstr "Dein Testzeitraum endet und deine Karte wird heute belastet."
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

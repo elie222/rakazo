@@ -1,4 +1,5 @@
 import type {
+  BillingCancellationReason,
   CacheCapabilities as ConnectionCacheCapabilities,
   ConnectionCatalogItem,
   ModelApiProtocol,
@@ -531,12 +532,20 @@ export interface AgentRunRequest {
   routineId?: string | null;
   sourceMessageId?: string | null;
   prompt: string;
+  /** Group threads: the label ("User") the model sees on the prompt, the same as on history. */
+  promptSpeaker?: string;
   instructions: string;
   history: Array<{
     id?: string;
     createdAt?: string;
     role: "user" | "assistant" | "system";
     content: string;
+    /**
+     * Who wrote this message when it is neither this bot nor the human of a direct chat: another
+     * bot's current name, or "User" for the human in a group thread. The runtime shows such a
+     * message to the model as a user turn that starts with "[speaker]: ". Never a real person's name.
+     */
+    speaker?: string;
     /** Images attached to this message, hydrated only for recent user turns. */
     images?: AgentInputImage[];
   }>;
@@ -1072,6 +1081,8 @@ export interface BrowserNavigateResult {
 }
 
 export interface BrowserSnapshotRequest {
+  /** Words to find controls by anywhere on the page, such as "newsletter signup". */
+  query?: string;
   signal?: AbortSignal;
 }
 
@@ -1172,7 +1183,7 @@ export interface BrowserActResult {
 /** A sandbox must route these commands through its owned screen, never generic host execution. */
 export type PageBrowserCommand =
   | { command: "navigate"; url: string; downloads?: string }
-  | { command: "snapshot" }
+  | { command: "snapshot"; query?: string }
   | { command: "act"; actions: BrowserActStep[]; downloads?: string };
 
 export type PageBrowserResult = Partial<BrowserSnapshotResult & BrowserActResult> & { ok: boolean };
@@ -1301,6 +1312,8 @@ export interface BillingCreditCheckoutRequest {
 }
 
 export interface BillingByokCheckoutRequest extends Omit<BillingCreditCheckoutRequest, "monthly"> {
+  /** How often `amountCents` bills; monthly when omitted. */
+  interval?: "month" | "year";
   /** Omitted when the customer has already used its trial. */
   trialDays?: number;
 }
@@ -1314,15 +1327,21 @@ export interface BillingSubscriptionSnapshot {
   status: BillingSubscriptionStatus;
   seats: number;
   trialEndsAt: Date | null;
+  /** Start of the period being billed, or of the trial while one runs. */
+  currentPeriodStartsAt: Date | null;
   currentPeriodEndsAt: Date | null;
   cancelAtPeriodEnd: boolean;
   endedAt: Date | null;
   /** The flat own-key plan, which grants access without credits. */
   byokPlan?: boolean;
-  /** What the own-key plan bills each month, which stays at the price it was bought at. */
+  /** What the own-key plan bills each period, which stays at the price it was bought at. */
   byokPriceCents?: number;
+  /** The own-key plan's billing period. */
+  byokInterval?: "month" | "year";
   /** Stable identity of the subscription's card across customers, when the provider has one. */
   cardFingerprint?: string;
+  cancellationReason?: BillingCancellationReason;
+  cancellationComment?: string;
 }
 
 export interface BillingCheckoutRequest {

@@ -479,6 +479,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Failed to send message": "发送消息失败",
   "Failed to stop work": "停止工作失败",
   File: "文件",
+  "Did you mean {email}?": "你是不是想输入 {email}？",
   "Forgot password?": "忘记密码？",
   "Find models": "查找模型",
   "Finding…": "正在查找…",
@@ -1010,6 +1011,19 @@ export const ZH_MESSAGES: Record<string, string> = {
   Credits: "额度",
   "Available credits": "可用额度",
   "Computer hours left": "剩余电脑时长",
+  "Trials get fewer hours to prevent abuse.": "为防止滥用，试用期的时长较少。",
+  "Start plan now": "立即开始套餐",
+  "Start your plan now?": "立即开始你的套餐？",
+  "Your trial ends and your card is charged {price} today.":
+    "试用将结束，今天将从你的卡中扣款 {price}。",
+  "Your trial ends and your card is charged today.": "试用将结束，今天将从你的卡中扣款。",
+  "Start plan": "开始套餐",
+  "Switch to yearly": "切换为按年",
+  "Switch to yearly?": "切换为按年付费？",
+  "Your card is charged {price} today, less the unused part of this month.":
+    "今天将从你的卡中扣款 {price}，并抵扣本月未使用的部分。",
+  "Your plan becomes {price} / year when your trial ends.":
+    "试用结束后，你的套餐将变为每年 {price}。",
   "Monthly credits": "每月额度",
   "Upgrade now": "立即升级",
   "Downgrade at renewal": "下次续费时降级",
@@ -1048,6 +1062,13 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Full access, nothing to pay": "完整功能，无需付费",
   "Day {days}": "第 {days} 天",
   "{price} / month begins": "开始按每月 {price} 计费",
+  "Billing period": "账单周期",
+  "Yearly −{percent}%": "按年 −{percent}%",
+  "{days} days free, then {price} / year. Cancel anytime.":
+    "免费 {days} 天，之后每年 {price}。可随时取消。",
+  "{price} / year": "每年 {price}",
+  "{price} / year begins": "开始按每年 {price} 计费",
+  "{price} / year. Cancel anytime.": "每年 {price}。可随时取消。",
   "Only the owner of this account can choose a plan.": "只有此账户的所有者可以选择方案。",
   Terms: "条款",
   Privacy: "隐私",
@@ -1243,6 +1264,19 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Won't do": "不做",
   "Could not move the ticket": "无法移动工单",
   "No tickets yet.": "还没有工单。",
+  "Bot models": "Bot 模型",
+  "1 bot has its own model:": "1 个 Bot 使用自己的模型：",
+  "{count} bots have their own model:": "{count} 个 Bot 使用自己的模型：",
+  "Use space default": "使用空间默认",
+  "Switching…": "正在切换…",
+  "Switch 1 bot to the space default?": "将 1 个 Bot 切换为空间默认？",
+  "Switch {count} bots to the space default?": "将 {count} 个 Bot 切换为空间默认？",
+  "Their own model is cleared. You can pick one again in each bot.":
+    "将清除它们各自的模型。你可以在每个 Bot 里重新选择。",
+  Switch: "切换",
+  "1 bot now uses the space default.": "1 个 Bot 已改用空间默认。",
+  "{count} bots now use the space default.": "{count} 个 Bot 已改用空间默认。",
+  "Could not switch {failedNames}. Try again.": "无法切换 {failedNames}。请重试。",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

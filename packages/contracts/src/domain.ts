@@ -768,6 +768,8 @@ export type MemoryPromptBudget = z.infer<typeof MemoryPromptBudgetSchema>;
 
 /** Every bot and Space keeps its MEMORY.md index; other memory documents can be deleted. */
 export const MEMORY_INDEX_PATH = "MEMORY.md";
+/** What a bot may write to its memory. People can still write more by hand. */
+export const BOT_MEMORY_MAX_BYTES = 4 * 1024;
 export function isDeletableMemoryDocument(path: string): boolean {
   return path !== MEMORY_INDEX_PATH;
 }
@@ -908,14 +910,25 @@ export const PluginMarketplaceCatalogSchema = z.object({
 export type PluginMarketplaceCatalog = z.infer<typeof PluginMarketplaceCatalogSchema>;
 
 export const PLUGIN_SUBMISSIONS_PATH = "/api/v1/plugin-submissions";
+/** Approved claims, public so the marketing site can show each owner's page at build time. */
+export const INTEGRATION_CLAIMS_PATH = "/api/v1/integration-claims";
+/** Opened from the email that proves a claimant reads mail at the app's domain. */
+export const INTEGRATION_CLAIM_CONFIRM_PATH = "/api/v1/integration-claims/confirm";
 export const SUBMIT_PLUGIN_URL = "https://rakazo.com/plugins/submit/";
+export const integrationPageUrl = (slug: string) => `https://rakazo.com/integrations/${slug}/`;
 
+/** People type a bare domain like `acme.com`, so a URL without a scheme gets `https://`. */
 const HttpsUrlSchema = z
   .string()
   .trim()
-  .max(2048)
-  .url()
-  .refine((value) => value.startsWith("https://"), "Use an https:// URL");
+  .transform((value) => (/^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `https://${value}`))
+  .pipe(
+    z
+      .string()
+      .max(2048)
+      .url()
+      .refine((value) => value.startsWith("https://"), "Use an https:// URL"),
+  );
 
 export const PluginSubmissionInputSchema = z.object({
   email: z.string().trim().max(254).email(),
@@ -929,12 +942,38 @@ export const PluginSubmissionInputSchema = z.object({
 });
 export type PluginSubmissionInput = z.infer<typeof PluginSubmissionInputSchema>;
 
+/** An app's owner claiming its integration page so it links to their site. */
+export const IntegrationClaimInputSchema = z.object({
+  /** The page's URL slug, as in `integrationPageUrl`. */
+  claim: z
+    .string()
+    .max(100)
+    .regex(/^[a-z0-9-]+$/, "Use the page's URL slug"),
+  email: z.string().trim().max(254).email(),
+  name: z.string().trim().min(1).max(80),
+  website: HttpsUrlSchema,
+});
+export type IntegrationClaimInput = z.infer<typeof IntegrationClaimInputSchema>;
+
+export const IntegrationClaimSchema = z.object({
+  slug: z.string(),
+  website: z.string(),
+});
+export type IntegrationClaim = z.infer<typeof IntegrationClaimSchema>;
+
 export const PluginSubmissionStatusSchema = z.enum(["pending", "approved", "rejected"]);
 export type PluginSubmissionStatus = z.infer<typeof PluginSubmissionStatusSchema>;
 
 export const PluginSubmissionSchema = PluginSubmissionInputSchema.omit({ tested: true }).extend({
   id: z.string(),
   website: z.string().nullable(),
+  logo: z.string().nullable(),
+  source: z.string().nullable(),
+  testing: z.string().nullable(),
+  /** Empty for a claim, which only links the page. */
+  description: z.string(),
+  /** The integration page URL slug a claim is for; null for plugins. */
+  claim: z.string().nullable(),
   status: PluginSubmissionStatusSchema,
   reason: z.string().nullable(),
   createdAt: z.string(),
@@ -1862,6 +1901,10 @@ export type Me = z.infer<typeof MeSchema>;
 export const MODEL_CREDIT_AMOUNTS = [1000, 2000, 3000, 5000, 10000, 20000, 50000] as const;
 /** Monthly price in cents of running bots on your own model connection; `null` makes it free. */
 export const BYOK_MONTHLY_PRICE_CENTS: number | null = 1500;
+/** Yearly price in cents of the same plan; `null` offers it monthly only. */
+export const BYOK_ANNUAL_PRICE_CENTS: number | null = 14400;
+export const ByokIntervalSchema = z.enum(["month", "year"]);
+export type ByokInterval = z.infer<typeof ByokIntervalSchema>;
 export const DEFAULT_MONTHLY_CREDIT_AMOUNT = 3000;
 export const ModelCreditAmountSchema = z.union(
   MODEL_CREDIT_AMOUNTS.map((amount) => z.literal(amount)),
@@ -1894,6 +1937,18 @@ export const BillingClientSchema = z.literal("mobile").optional();
 /** The deep link the API sends a mobile checkout back to; it closes the in-app browser. */
 export const MOBILE_BILLING_CALLBACK_URL = "rakazo://billing";
 
+export const BILLING_CANCELLATION_REASONS = [
+  "too_expensive",
+  "missing_features",
+  "switched_service",
+  "unused",
+  "customer_service",
+  "too_complex",
+  "low_quality",
+  "other",
+] as const;
+export type BillingCancellationReason = (typeof BILLING_CANCELLATION_REASONS)[number];
+
 export const BillingStatusSchema = z.object({
   funding: z.enum(["byok", "credits"]).nullable().optional(),
   balanceUsd: z.number().optional(),
@@ -1901,6 +1956,10 @@ export const BillingStatusSchema = z.object({
   creditPurchasesEnabled: z.boolean().optional(),
   /** Monthly price of the own-key plan, as subscribed when the organization has it; `null` when free. */
   byokPriceCents: z.number().int().positive().nullable().optional(),
+  /** How often `byokPriceCents` bills. Absent from older servers, which bill monthly. */
+  byokInterval: ByokIntervalSchema.optional(),
+  /** Yearly price of the own-key plan for new subscriptions, when offered. */
+  byokAnnualPriceCents: z.number().int().positive().nullable().optional(),
   /** End of an unpaid own-key organization's free period. */
   byokFreeUntil: z.string().nullable().optional(),
   access: z.boolean(),
@@ -1940,6 +1999,32 @@ export const BillingStatusSchema = z.object({
     .optional(),
 });
 export type BillingStatus = z.infer<typeof BillingStatusSchema>;
+
+/** The percent a yearly own-key price saves over twelve months at `monthlyCents`. */
+export function byokYearlySavingsPercent(monthlyCents: number, annualCents: number): number {
+  return Math.round((1 - annualCents / (monthlyCents * 12)) * 100);
+}
+
+/**
+ * What switching a paid monthly own-key plan to yearly saves, in percent, or null when the switch
+ * is not offered: not the owner, no live monthly plan, or a yearly price that saves nothing.
+ */
+export function byokYearlySwitchSavings(status: BillingStatus): number | null {
+  if (
+    !status.canManage ||
+    status.funding !== "byok" ||
+    status.byokInterval === "year" ||
+    status.byokFreeUntil ||
+    status.monthlyAmountCents ||
+    status.cancelAtPeriodEnd ||
+    (status.state !== "active" && status.state !== "trialing") ||
+    !status.byokPriceCents ||
+    !status.byokAnnualPriceCents
+  )
+    return null;
+  const savings = byokYearlySavingsPercent(status.byokPriceCents, status.byokAnnualPriceCents);
+  return savings > 0 ? savings : null;
+}
 
 export const AppBootstrapSchema = z.object({
   me: MeSchema,

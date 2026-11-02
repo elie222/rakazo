@@ -443,6 +443,28 @@ export async function findBotSecret(prisma: PrismaClient, scope: BotSecretScope,
   return row ? normalizeSecretDestination(row) : null;
 }
 
+/**
+ * The one login saved for exactly this HTTPS site, whatever its name. Bots name logins themselves,
+ * so a later request under another name for the same site still finds it. None when two are saved.
+ */
+export async function findSiteLogin(prisma: PrismaClient, scope: BotSecretScope, origin: string) {
+  if (!origin.startsWith("https://")) return null;
+  const rows = await prisma.vaultCredential.findMany({
+    where: { ...(await vaultFields(prisma, scope)), origin },
+    select: metadata,
+  });
+  // A row saved before today's name or site rules can't be filled, so it doesn't count.
+  const logins = rows.flatMap((row) => {
+    try {
+      const login = normalizeSecretDestination(row);
+      return login.auth.type === "login" ? [login] : [];
+    } catch {
+      return [];
+    }
+  });
+  return logins.length === 1 ? logins[0] : null;
+}
+
 export async function prepareBotSecret(input: {
   prisma: PrismaClient;
   secretStore: SecretStore;

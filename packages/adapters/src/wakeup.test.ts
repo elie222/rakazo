@@ -1,7 +1,15 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import type { BackgroundJobHandlers } from "@rakazo/adapter-kit";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDeadJobPruner, DEAD_JOB_RETENTION_DAYS, InMemoryJobQueue } from "./wakeup.js";
+import { ABANDONED_SUSPEND_CLAIM_MS } from "./computer-idle.js";
+import {
+  createDeadJobPruner,
+  DEAD_JOB_RETENTION_DAYS,
+  InMemoryJobQueue,
+  JOB_DRAIN_TIMEOUT_MS,
+} from "./wakeup.js";
 
 function handlers(): BackgroundJobHandlers {
   return {
@@ -466,4 +474,25 @@ describe("createDeadJobPruner", () => {
     expect(query).toHaveBeenCalledTimes(3);
     expect(sink.events.filter((event) => event.message === "jobs.dead_pruned")).toHaveLength(1);
   });
+});
+
+describe("JOB_DRAIN_TIMEOUT_MS", () => {
+  it("ends before the idle sweep would replace a sleep job that is still draining", () => {
+    expect(JOB_DRAIN_TIMEOUT_MS).toBeLessThan(ABANDONED_SUSPEND_CLAIM_MS);
+  });
+
+  // Docker kills the worker once its stop_grace_period runs out, which would leave its jobs locked.
+  it.each(["docker-compose.yml", "docker-compose.images.yml", "docker-compose.prod.yml"])(
+    "ends before %s kills a stopping worker",
+    (file) => {
+      const compose = readFileSync(
+        path.resolve(import.meta.dirname, "../../../infra/compose", file),
+        "utf8",
+      );
+      const worker = compose.slice(compose.indexOf("\n  worker:\n") + 1);
+      const block = worker.slice(0, worker.search(/\n {2}[a-z]/));
+      const minutes = Number(/\n {4}stop_grace_period: (\d+)m\n/.exec(block)?.[1]);
+      expect(minutes * 60_000).toBeGreaterThanOrEqual(JOB_DRAIN_TIMEOUT_MS + 5 * 60_000);
+    },
+  );
 });
