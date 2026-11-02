@@ -241,6 +241,8 @@ describe("strategic initiative tool guard", () => {
   });
 });
 
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
 const candidate = {
   id: "bot-1",
   spaceId: "space-1",
@@ -371,17 +373,30 @@ it.each(["owner", "billing"])("throttles bots skipped for %s for an hour", async
     now: () => now,
   });
   await reconcile();
+  await settle();
   const calls = vi.mocked(prisma.bot.findMany).mock.calls.length;
   now = new Date(now.getTime() + 30_000);
   await reconcile();
   now = new Date("2026-11-02T12:59:59Z");
   await reconcile();
+  await settle();
   expect(prisma.bot.findMany).toHaveBeenCalledTimes(calls);
   now = new Date("2026-11-02T13:00:00Z");
   await reconcile();
+  await settle();
   expect(prisma.bot.findMany).toHaveBeenCalledTimes(calls * 2);
   expect(enqueue).not.toHaveBeenCalled();
   vi.mocked(spaceHasModelAccess).mockReset().mockResolvedValue(true);
+});
+
+it("runs the sweep without holding up the reconciler pass", async () => {
+  const { prisma } = strategicPrisma({ bots: [] });
+  vi.mocked(prisma.bot.findMany).mockReturnValueOnce(new Promise(() => {}) as never);
+  const { jobs } = publisher();
+  const reconcile = createStrategicInitiativeReconciler({ prisma, jobs, billingEnabled: false });
+  await reconcile();
+  await reconcile();
+  expect(prisma.bot.findMany).toHaveBeenCalledTimes(1);
 });
 
 it("retries a failed sweep on the next pass", async () => {
@@ -389,8 +404,10 @@ it("retries a failed sweep on the next pass", async () => {
   vi.mocked(prisma.bot.findMany).mockRejectedValueOnce(new Error("connection reset"));
   const { jobs } = publisher();
   const reconcile = createStrategicInitiativeReconciler({ prisma, jobs, billingEnabled: false });
-  await expect(reconcile()).rejects.toThrow("connection reset");
   await reconcile();
+  await settle();
+  await reconcile();
+  await settle();
   expect(prisma.bot.findMany).toHaveBeenCalledTimes(2);
 });
 
@@ -402,6 +419,7 @@ it("reads the worker model-credit billing flag from deployment settings", async 
   vi.mocked(spaceHasModelAccess).mockResolvedValueOnce(false);
   const { jobs, enqueue } = publisher();
   await createStrategicInitiativeReconciler({ prisma, jobs })();
+  await settle();
   expect(prisma.deploymentSettings.findUnique).toHaveBeenCalledWith({
     where: { id: "default" },
     select: { modelCreditsEnabled: true },

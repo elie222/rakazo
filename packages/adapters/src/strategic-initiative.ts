@@ -60,17 +60,29 @@ export function createStrategicInitiativeReconciler(deps: {
   now?: () => Date;
 }): () => Promise<void> {
   let lastRun: number | undefined;
+  let sweeping = false;
   return async () => {
     const now = deps.now?.() ?? new Date();
-    if (lastRun !== undefined && now.getTime() - lastRun < 60 * 60 * 1000) return;
-    await reconcileStrategicInitiatives({
-      prisma: deps.prisma,
-      jobs: deps.jobs,
-      billingEnabled: await modelCreditBillingEnabled(deps),
-      now,
-      pageSize: 100,
-    });
-    lastRun = now.getTime();
+    if (sweeping || (lastRun !== undefined && now.getTime() - lastRun < 60 * 60 * 1000)) return;
+    sweeping = true;
+    // Runs beside the reconciler pass so a large sweep never delays run recovery.
+    void (async () =>
+      reconcileStrategicInitiatives({
+        prisma: deps.prisma,
+        jobs: deps.jobs,
+        billingEnabled: await modelCreditBillingEnabled(deps),
+        now,
+        pageSize: 100,
+      }))()
+      .then(
+        () => {
+          lastRun = now.getTime();
+        },
+        (error) => getLogger().error("strategic initiative sweep", error),
+      )
+      .finally(() => {
+        sweeping = false;
+      });
   };
 }
 
