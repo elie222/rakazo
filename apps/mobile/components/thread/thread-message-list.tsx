@@ -3,18 +3,10 @@ import { threadWindowMessages } from "@rakazo/core";
 import type { ReactElement, ReactNode } from "react";
 import { useMemo } from "react";
 import type { ListRenderItem } from "react-native";
-import {
-  ActivityIndicator,
-  FlatList,
-  I18nManager,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  View,
-} from "react-native";
+import { ActivityIndicator, FlatList, Platform, ScrollView, StyleSheet, View } from "react-native";
 import type { MobileMessage } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
-import { threadColumnTrailingInset } from "../../lib/thread-edges";
+import type { ThreadColumnPadding } from "../../lib/thread-edges";
 import type { ThreadListScroll } from "../../lib/thread-list-scroll";
 import type { useThreadPaging } from "../../lib/thread-paging";
 import { ThreadScrollSurface } from "../thread-scroll-surface";
@@ -60,7 +52,7 @@ export function ThreadMessageList({
   /** Space under the list that the composer does not cover. */
   bottomInset: number;
   /** Message inset. Applied to the content, never the scroll view frame. */
-  columnPadding: { paddingLeft: number; paddingRight: number };
+  columnPadding: ThreadColumnPadding;
   visibleMessages: MobileMessage[];
   liveItems: ThreadItem<MobileMessage>[];
   renderItem: ListRenderItem<ThreadItem<MobileMessage>>;
@@ -83,17 +75,11 @@ export function ThreadMessageList({
       paddingBottom: headerClearance.padding,
       paddingTop: bottomInset + 16,
       // An inverted Android list mirrors with scale: -1, so asymmetric padding swaps sides.
-      paddingLeft:
-        Platform.OS === "android" ? columnPadding.paddingRight : columnPadding.paddingLeft,
-      paddingRight:
-        Platform.OS === "android" ? columnPadding.paddingLeft : columnPadding.paddingRight,
+      paddingStart:
+        Platform.OS === "android" ? columnPadding.paddingEnd : columnPadding.paddingStart,
+      paddingEnd: Platform.OS === "android" ? columnPadding.paddingStart : columnPadding.paddingEnd,
     }),
     [headerClearance.padding, bottomInset, columnPadding],
-  );
-  const jumpInset = threadColumnTrailingInset(
-    columnPadding,
-    I18nManager.isRTL,
-    I18nManager.doLeftAndRightSwapInRTL,
   );
 
   return (
@@ -167,7 +153,7 @@ export function ThreadMessageList({
       )}
       {showPinnedPage || state.detached ? (
         <JumpToLatestButton
-          insetEnd={jumpInset}
+          insetEnd={columnPadding.paddingEnd}
           unread={state.unread}
           onPress={() => {
             if (showPinnedPage) {

@@ -15,24 +15,20 @@ export const threadScrollEdgeEffects = {
  */
 export const THREAD_COLUMN_GUTTER = 20;
 
-/** Column padding for messages and the composer. Left and right follow the physical edges. */
-export function threadColumnPadding(columnInsets: { left: number; right: number }) {
-  return {
-    paddingLeft: THREAD_COLUMN_GUTTER + columnInsets.left,
-    paddingRight: THREAD_COLUMN_GUTTER + columnInsets.right,
-  };
-}
+export type ThreadColumnPadding = { paddingStart: number; paddingEnd: number };
 
 /**
- * How far the jump button sits in from the trailing screen edge to meet the column.
- * When React Native already swaps left and right, paddingRight is that trailing edge.
+ * Column padding for messages and the composer. Insets are physical (a cutout's side);
+ * start and end are logical, so in RTL the start edge takes the right inset.
  */
-export function threadColumnTrailingInset(
-  padding: { paddingLeft: number; paddingRight: number },
+export function threadColumnPadding(
+  columnInsets: { left: number; right: number },
   rtl: boolean,
-  swapLeftAndRight: boolean,
-) {
-  return rtl && !swapLeftAndRight ? padding.paddingLeft : padding.paddingRight;
+): ThreadColumnPadding {
+  return {
+    paddingStart: THREAD_COLUMN_GUTTER + (rtl ? columnInsets.right : columnInsets.left),
+    paddingEnd: THREAD_COLUMN_GUTTER + (rtl ? columnInsets.left : columnInsets.right),
+  };
 }
 
 // The pill bottoms sit 10pt above the native header bottom; content rests 14pt below them.

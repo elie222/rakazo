@@ -10,6 +10,7 @@ import { mobileTokens } from "../../lib/appearance";
 import type { MobileArtifactTarget } from "../../lib/artifact-open";
 import { useI18n } from "../../lib/i18n";
 import type { PendingAttachment } from "../../lib/thread-attachments";
+import type { ThreadColumnPadding } from "../../lib/thread-edges";
 import { previewMessageText } from "../../lib/thread-message-text";
 import { ComposerReplyPreview } from "../composer-reply-preview";
 import { GlassSurface } from "../glass-surface";
@@ -36,7 +37,7 @@ export function ThreadComposerDock({
 }: {
   hidden: boolean;
   /** Insets the composer into the chat column without narrowing the fade above it. */
-  columnPadding: { paddingLeft: number; paddingRight: number };
+  columnPadding: ThreadColumnPadding;
   fadeStyle: StyleProp<ViewStyle>;
   replyTarget: MobileMessage | null;
   replyAuthor: string;

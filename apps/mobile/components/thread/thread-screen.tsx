@@ -14,7 +14,7 @@ import {
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Platform, View } from "react-native";
+import { I18nManager, Platform, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { readableGutters } from "../../lib/adaptive-layout";
@@ -100,7 +100,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const columnWidth = windowWidth - columnInsets.left - columnInsets.right;
   // Pad the column, not the scroll view, so the indicator stays on the screen edge.
   const columnPadding = useMemo(
-    () => threadColumnPadding(columnInsets),
+    () => threadColumnPadding(columnInsets, I18nManager.isRTL),
     [columnInsets.left, columnInsets.right],
   );
   const {

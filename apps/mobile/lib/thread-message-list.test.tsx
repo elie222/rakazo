@@ -10,7 +10,6 @@ import type { ThreadListScroll } from "./thread-list-scroll";
 
 const native = vi.hoisted(() => ({
   os: "ios",
-  rtl: false,
   flat: null as Record<string, unknown> | null,
   scroll: null as Record<string, unknown> | null,
 }));
@@ -22,12 +21,6 @@ vi.mock("react-native", async () => {
     FlatList: (props: Record<string, unknown>) => {
       native.flat = props;
       return createElement("div", { "data-list": "flat" });
-    },
-    I18nManager: {
-      doLeftAndRightSwapInRTL: false,
-      get isRTL() {
-        return native.rtl;
-      },
     },
     Platform: {
       get OS() {
@@ -94,7 +87,7 @@ function listProps(
     threadKey: "thread-1",
     headerClearance: { padding: 80, minHeight: 80 },
     bottomInset: 0,
-    columnPadding: threadColumnPadding({ left: 40, right: 8 }),
+    columnPadding: threadColumnPadding({ left: 40, right: 8 }, false),
     visibleMessages: [],
     liveItems: [],
     renderItem: () => null,
@@ -114,7 +107,6 @@ let container: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   native.os = "ios";
-  native.rtl = false;
   native.flat = null;
   native.scroll = null;
   container = document.createElement("div");
@@ -131,9 +123,7 @@ it("pads message content and leaves the live list frame on the screen edge", asy
   const frame = flatten(native.flat?.style);
   const content = flatten(native.flat?.contentContainerStyle);
   expect(frame).toEqual({ flex: 1 });
-  expect(frame).not.toHaveProperty("paddingLeft");
-  expect(frame).not.toHaveProperty("paddingRight");
-  expect(content).toMatchObject({ paddingLeft: 60, paddingRight: 28, paddingBottom: 80 });
+  expect(content).toMatchObject({ paddingStart: 60, paddingEnd: 28, paddingBottom: 80 });
   await act(async () => root.unmount());
 });
 
@@ -145,18 +135,8 @@ it("pads a pinned page the same way and keeps the jump button on the column edge
   const frame = flatten(native.scroll?.style);
   const content = flatten(native.scroll?.contentContainerStyle);
   expect(frame).toEqual({ flex: 1 });
-  expect(content).toMatchObject({ paddingLeft: 60, paddingRight: 28, paddingTop: 80 });
+  expect(content).toMatchObject({ paddingStart: 60, paddingEnd: 28, paddingTop: 80 });
   expect(container.querySelector("[data-inset-end]")?.getAttribute("data-inset-end")).toBe("28");
-  await act(async () => root.unmount());
-});
-
-it("mirrors the jump button inset when the layout is right to left", async () => {
-  native.rtl = true;
-  const root = createRoot(container);
-  await act(async () =>
-    root.render(createElement(ThreadMessageList, listProps({ detached: true }))),
-  );
-  expect(container.querySelector("[data-inset-end]")?.getAttribute("data-inset-end")).toBe("60");
   await act(async () => root.unmount());
 });
 
@@ -165,11 +145,11 @@ it("swaps the live list's side padding for Android's mirrored inverted list only
   const root = createRoot(container);
   await act(async () => root.render(createElement(ThreadMessageList, listProps())));
   const live = flatten(native.flat?.contentContainerStyle);
-  expect(live).toMatchObject({ paddingLeft: 28, paddingRight: 60 });
+  expect(live).toMatchObject({ paddingStart: 28, paddingEnd: 60 });
   await act(async () =>
     root.render(createElement(ThreadMessageList, listProps({ showPinnedPage: true }))),
   );
   const pinned = flatten(native.scroll?.contentContainerStyle);
-  expect(pinned).toMatchObject({ paddingLeft: 60, paddingRight: 28 });
+  expect(pinned).toMatchObject({ paddingStart: 60, paddingEnd: 28 });
   await act(async () => root.unmount());
 });

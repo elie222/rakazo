@@ -6,7 +6,6 @@ import { ThreadScrollSurface } from "../components/thread-scroll-surface";
 import {
   THREAD_COLUMN_GUTTER,
   threadColumnPadding,
-  threadColumnTrailingInset,
   threadEdgeOptions,
   threadHeaderClearance,
   threadHeaderFloats,
@@ -85,19 +84,20 @@ it("preserves Android clearance without a floating header", () => {
 
 it("pads the chat column inside the screen, including a cutout and a wide gutter", () => {
   expect(THREAD_COLUMN_GUTTER).toBe(20);
-  expect(threadColumnPadding({ left: 0, right: 0 })).toEqual({
-    paddingLeft: 20,
-    paddingRight: 20,
+  expect(threadColumnPadding({ left: 0, right: 0 }, false)).toEqual({
+    paddingStart: 20,
+    paddingEnd: 20,
   });
-  expect(threadColumnPadding({ left: 40, right: 8 })).toEqual({
-    paddingLeft: 60,
-    paddingRight: 28,
+  expect(threadColumnPadding({ left: 40, right: 8 }, false)).toEqual({
+    paddingStart: 60,
+    paddingEnd: 28,
   });
 });
 
-it("keeps the jump button on the column's trailing edge in both directions", () => {
-  const padding = threadColumnPadding({ left: 40, right: 8 });
-  expect(threadColumnTrailingInset(padding, false, false)).toBe(28);
-  expect(threadColumnTrailingInset(padding, true, false)).toBe(60);
-  expect(threadColumnTrailingInset(padding, true, true)).toBe(padding.paddingRight);
+it("keeps a physical cutout on its own side when the layout is right to left", () => {
+  // In RTL, start is the right edge and end (where the jump button sits) is the left edge.
+  expect(threadColumnPadding({ left: 40, right: 8 }, true)).toEqual({
+    paddingStart: 28,
+    paddingEnd: 60,
+  });
 });
