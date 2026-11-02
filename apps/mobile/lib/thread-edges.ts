@@ -1,4 +1,5 @@
 import { Platform } from "react-native";
+import { THREAD_COLUMN_GUTTER } from "./message-presentation";
 
 // Inversion can spread a side edge's tint across the entire message list.
 export const threadScrollEdgeEffects = {
@@ -7,9 +8,6 @@ export const threadScrollEdgeEffects = {
   left: "hidden",
   right: "hidden",
 } as const;
-
-/** Pads the content, not the scroll view, so the scroll indicator stays on the screen edge. */
-export const THREAD_COLUMN_GUTTER = 20;
 
 export type ThreadColumnPadding = { paddingStart: number; paddingEnd: number };
 

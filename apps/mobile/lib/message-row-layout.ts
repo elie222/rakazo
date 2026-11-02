@@ -1,7 +1,6 @@
 import { isSecretAskBlock } from "@rakazo/core";
 import type { MobileMessage } from "./api";
-import { isCenteredAgentEvent } from "./message-presentation";
-import { THREAD_COLUMN_GUTTER } from "./thread-edges";
+import { isCenteredAgentEvent, THREAD_COLUMN_GUTTER } from "./message-presentation";
 
 const COLUMN_PADDING = THREAD_COLUMN_GUTTER * 2;
 
