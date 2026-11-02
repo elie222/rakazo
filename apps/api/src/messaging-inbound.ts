@@ -706,9 +706,9 @@ async function handleChannelEvent(
     });
   }
 
-  // A service message (a pin, a member joining) carries no text and no file:
-  // discovery above still counts its sender, but no bot has anything to read.
-  if (!event.content.trim() && !event.mediaUrl && !event.attachments?.length) return;
+  // Group runs carry only text: a service message (a pin, a join) or a bare
+  // photo would start every approved bot on an empty prompt.
+  if (!event.content.trim()) return;
 
   // Only approved owners' bots participate.
   const senderMember = await deps.prisma.messagingChannelMember.findUnique({

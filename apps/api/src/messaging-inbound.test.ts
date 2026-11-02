@@ -1466,7 +1466,7 @@ describe("createMessagingInboundHandler channel routing", () => {
     expect(runJobs).toHaveLength(0);
   });
 
-  it("wakes no bot for a group service message without text, like a pin", async () => {
+  it("wakes no bot for a group event without text, like a pin or a bare photo", async () => {
     const alice = {
       id: "cm-1",
       channelId: "ch-1",
@@ -1529,11 +1529,16 @@ describe("createMessagingInboundHandler channel routing", () => {
       mediaUrl: null,
     };
     await handle(event);
+    await handle({
+      ...event,
+      handle: "-1001234:51",
+      mediaUrl: "https://cdn.example.com/pic.jpg",
+    });
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
     expect(deps.enqueue.mock.calls.filter(([job]) => job.name === "run.continue")).toHaveLength(0);
 
     // The same sender's next real message still reaches both bots.
-    await handle({ ...event, handle: "-1001234:51", content: "dinner at 7" });
+    await handle({ ...event, handle: "-1001234:52", content: "dinner at 7" });
     expect(deps.sendUserMessage).toHaveBeenCalledTimes(2);
   });
 
