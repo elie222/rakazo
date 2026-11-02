@@ -19,6 +19,8 @@ import type {
   ComputerObservation,
   ComputerRef,
   ControlLeaseRef,
+  PageBrowserCommand,
+  PageBrowserResult,
   PortableFile,
   ProcessEvent,
   SandboxProvider,
@@ -46,10 +48,16 @@ import {
 } from "./boat-errors.js";
 import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
 import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
-import { LinuxDesktop, PREPARE_LINUX_DESKTOP, VERIFY_LINUX_DESKTOP } from "./linux-desktop.js";
+import {
+  LinuxDesktop,
+  onBotScreen,
+  PREPARE_LINUX_DESKTOP,
+  VERIFY_LINUX_DESKTOP,
+} from "./linux-desktop.js";
+import { installAgentBrowserCommand, installPageBrowserCommand } from "./page-browser-install.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
-import { shellExportScript } from "./sandbox-shell-environment.js";
+import { shellExportScript, sourceEnvironmentCommand } from "./sandbox-shell-environment.js";
 import { withAbort } from "./web-ssrf.js";
 import { readWorkspaceArchive } from "./workspace-archive.js";
 import {
@@ -57,6 +65,7 @@ import {
   workspaceSaveFindExpression,
 } from "./workspace-save-policy.js";
 
+const DISPLAY_START = 20;
 const BOAT_API_BASE = "https://boat.dev/api/v1";
 const BOAT_WORKSPACE = "/home/user/rakazo-home";
 const BOAT_BROWSER_PROFILES = `${BOAT_WORKSPACE}/.browser-profiles`;
@@ -148,7 +157,7 @@ export class BoatSandboxProvider implements SandboxProvider {
       homeDir: "/home/user",
       workspaceDir: BOAT_WORKSPACE,
       browserProfilesDir: BOAT_BROWSER_PROFILES,
-      displayStart: 20,
+      displayStart: DISPLAY_START,
       portStart: 6100,
       // The provider port proxy reaches the isolated sandbox through its network interface.
       bindHost: "0.0.0.0",
@@ -185,6 +194,27 @@ export class BoatSandboxProvider implements SandboxProvider {
         throw new Error("Boat desktop URL is not protected");
       url.pathname = "/vnc.html";
       return url.toString();
+    },
+    runWithInput: async (computer, command, input, timeoutMs, context) => {
+      const id = this.id(computer);
+      const inputFile = `${BOAT_COMMAND_ENV}/${randomUUID()}`;
+      let removed = false;
+      try {
+        await this.writePrivateFile(id, inputFile, input, context.signal);
+        const result = await this.runCommand(
+          id,
+          `exec 0< ${shellQuote(inputFile)} || exit 1; rm -f -- ${shellQuote(inputFile)}; ${command}`,
+          undefined,
+          timeoutMs,
+          context.signal,
+        );
+        removed = !result.timedOut;
+        return { code: result.timedOut ? 124 : result.exitCode, stdout: result.stdout };
+      } finally {
+        if (!removed) {
+          await this.rawCommand(id, `rm -f -- ${shellQuote(inputFile)}`, 10).catch(() => undefined);
+        }
+      }
     },
   });
   private readonly pendingProvisions = new Map<string, Promise<ComputerRef>>();
@@ -437,6 +467,9 @@ export class BoatSandboxProvider implements SandboxProvider {
         60_000,
         context.signal,
       );
+      // Creating two directories outlasting a minute means the machine stopped answering.
+      if (result.timedOut)
+        throw new SandboxUnresponsiveError("could not prepare Boat workspace (timed out)");
       if (result.exitCode !== 0) {
         throw new Error(`could not prepare Boat workspace (${commandFailure(result)})`);
       }
@@ -451,6 +484,20 @@ export class BoatSandboxProvider implements SandboxProvider {
         throw new Error("could not prepare computer desktop tools", {
           cause: new Error(commandFailure(runtime)),
         });
+      const pageBrowser = await this.runCommand(
+        id,
+        installPageBrowserCommand(),
+        undefined,
+        120_000,
+        context.signal,
+      );
+      // Without it the page tools fall back to the desktop tools, which still work.
+      if (pageBrowser.exitCode !== 0 || pageBrowser.timedOut)
+        getLogger().warn("sandbox.page_browser", {
+          provider: "boat",
+          outcome: "install_failed",
+          error: commandFailure(pageBrowser),
+        });
       if (this.preparations.get(id) !== preparation) {
         throw new Error("Boat workspace preparation was invalidated during teardown");
       }
@@ -464,9 +511,10 @@ export class BoatSandboxProvider implements SandboxProvider {
 
   async *execute(
     computer: ComputerRef,
-    request: CommandRequest,
+    requested: CommandRequest,
     context: AdapterContext,
   ): AsyncIterable<ProcessEvent> {
+    const request = onBotScreen(requested, context, DISPLAY_START);
     if (context.signal.aborted) {
       yield { type: "stderr", data: "command aborted\n" };
       yield { type: "exit", code: 130 };
@@ -485,7 +533,7 @@ export class BoatSandboxProvider implements SandboxProvider {
     const envFile = environment ? `${BOAT_COMMAND_ENV}/${randomUUID()}` : undefined;
     let envFileRemoved = !envFile;
     try {
-      if (envFile) await this.writeCommandEnvironment(id, envFile, environment, context.signal);
+      if (envFile) await this.writePrivateFile(id, envFile, environment, context.signal);
       const result = await this.runCommand(
         id,
         envFile ? sourceEnvironmentCommand(envFile, argv) : argv,
@@ -493,7 +541,7 @@ export class BoatSandboxProvider implements SandboxProvider {
         timeoutMs,
         context.signal,
       );
-      envFileRemoved = !result.timedOut;
+      envFileRemoved = !envFile || !result.timedOut;
       if (context.signal.aborted) {
         yield { type: "stderr", data: "command aborted\n" };
         yield { type: "exit", code: 130 };
@@ -571,6 +619,13 @@ export class BoatSandboxProvider implements SandboxProvider {
   async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
     return this.desktops.act(computer, request, context);
   }
+  async pageBrowser(
+    computer: ComputerRef,
+    request: PageBrowserCommand,
+    context: AdapterContext,
+  ): Promise<PageBrowserResult> {
+    return this.desktops.pageBrowser(computer, request, context);
+  }
 
   async listFiles(
     computer: ComputerRef,
@@ -585,6 +640,8 @@ export class BoatSandboxProvider implements SandboxProvider {
       60_000,
       context.signal,
     );
+    // The file browser can ask for a folder deleted since it last listed.
+    if (result.exitCode === BOAT_LISTING_MISSING && !result.timedOut) return [];
     if (result.exitCode !== 0 || result.timedOut) {
       throw new Error(`could not list Boat workspace (${commandStatus(result)})`);
     }
@@ -658,6 +715,17 @@ export class BoatSandboxProvider implements SandboxProvider {
   ): Promise<void> {
     const id = this.id(computer);
     await this.desktops.stopBrowsers(computer, context);
+    // A restore can land on a computer that kept its disk, which can hold read-only files such as
+    // git packs, and Boat's file API cannot replace a read-only file.
+    const writable = await this.runCommand(
+      id,
+      BOAT_WRITABLE_WORKSPACE_COMMAND,
+      undefined,
+      60_000,
+      context.signal,
+    );
+    if (writable.timedOut)
+      throw new Error("could not prepare Boat workspace for restore (timed out)");
     let batch: PortableFile[] = [];
     let batchBytes = 0;
     const flush = async () => {
@@ -927,16 +995,18 @@ export class BoatSandboxProvider implements SandboxProvider {
       if (states.has(response.sandbox.state)) return response.sandbox;
       if (response.sandbox.state === "error") throw new Error(`Boat ${id} entered the error state`);
       await onWait?.(response.sandbox);
+      // A transition Boat has not finished in time is a delay on its side; the caller retries.
       if (Date.now() >= deadline)
-        throw new Error(`Boat ${id} did not reach ${[...states].join("/")}`);
+        throw new SandboxUnresponsiveError(`Boat ${id} did not reach ${[...states].join("/")}`);
       await delay(pause, undefined, { signal: context.signal });
     }
   }
 
-  private async writeCommandEnvironment(
+  /** Writes a file only `user` can read, into the command environment directory. */
+  private async writePrivateFile(
     id: string,
-    envFile: string,
-    environment: string,
+    file: string,
+    content: string,
     signal: AbortSignal,
   ): Promise<void> {
     // Preparation makes the private directory; repeat it for commands that skipped preparation.
@@ -957,8 +1027,8 @@ export class BoatSandboxProvider implements SandboxProvider {
         {
           sandboxId: id,
           fileWriteRequest: {
-            path: envFile,
-            content: Buffer.from(environment).toString("base64"),
+            path: file,
+            content: Buffer.from(content).toString("base64"),
             encoding: "base64",
           },
         },
@@ -1032,10 +1102,10 @@ export class BoatSandboxProvider implements SandboxProvider {
       });
     } catch {
       if (signal.aborted) throw signal.reason;
-      throw new Error("Boat file upload failed");
+      throw new SandboxUnresponsiveError("Boat file upload failed");
     }
     await response.body?.cancel().catch(() => undefined);
-    if (!response.ok) throw new Error(`Boat file upload failed (HTTP ${response.status})`);
+    if (!response.ok) throw transferError("upload", response.status);
   }
 
   private async readRemoteFile(
@@ -1155,11 +1225,11 @@ export class BoatSandboxProvider implements SandboxProvider {
       });
     } catch {
       if (downloadSignal.aborted) throw downloadSignal.reason;
-      throw new Error("Boat file download failed");
+      throw new SandboxUnresponsiveError("Boat file download failed");
     }
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      throw new Error(`Boat file download failed (HTTP ${response.status})`);
+      throw transferError("download", response.status);
     }
     return response;
   }
@@ -1399,6 +1469,12 @@ function logRecovery(
   getLogger().warn("sandbox.recover", { provider: "boat", step, ...(reason ? { reason } : {}) });
 }
 
+/** A signed transfer Boat failed on its side is an outage there, like any other Boat call. */
+function transferError(direction: "upload" | "download", status: number): Error {
+  const message = `Boat file ${direction} failed (HTTP ${status})`;
+  return status >= 500 ? new SandboxUnresponsiveError(message) : new Error(message);
+}
+
 /** Boat deletes a stopped sandbox's data after 14 days but keeps the record; it cannot resume. */
 /** Named so the shared `isSandboxGoneError` lets callers replace it from its last checkpoint. */
 function boatSandboxGone(sandboxId: string, cause?: unknown): Error {
@@ -1622,10 +1698,14 @@ function configureBoatWorkspaceCommand(): string {
   return `mkdir -p ${shellQuote(BOAT_BROWSER_PROFILES)} && ${commandEnvDirectoryCommand()}`;
 }
 
-/** What a computer snapshot captures, in order: the same setup `prepare` repeats, then a check. */
+/**
+ * What a computer snapshot captures, in order: the same setup `prepare` repeats, then a check.
+ * The page browser's own files are left to `prepare`, so changing them never rebuilds this.
+ */
 const BOAT_COMPUTER_SETUP = [
   configureBoatWorkspaceCommand(),
   PREPARE_LINUX_DESKTOP,
+  installAgentBrowserCommand(),
   VERIFY_LINUX_DESKTOP,
 ] as const;
 
@@ -1641,16 +1721,6 @@ export const BOAT_COMPUTER_SNAPSHOT = boatComputerSnapshotName(BOAT_COMPUTER_SET
 function commandEnvDirectoryCommand(): string {
   const directory = shellQuote(BOAT_COMMAND_ENV);
   return `mkdir -p -m 700 ${directory} && chmod 700 ${directory}`;
-}
-
-/**
- * Opens the env file, deletes it, then loads it from the open descriptor, so it is gone before
- * the requested env (which may change PATH) applies and before `argv` runs. No shell variables:
- * the requested env may set any name.
- */
-function sourceEnvironmentCommand(envFile: string, argv: string): string {
-  const file = shellQuote(envFile);
-  return `exec 3< ${file} || exit 1; rm -f -- ${file}; . /dev/fd/3 || exit 1; exec 3<&-; ${argv}`;
 }
 
 /**
@@ -1687,12 +1757,15 @@ function boatListingWalk(
   ].join("\n");
 }
 
+/** Exit status of a listing whose folder is not there. */
+const BOAT_LISTING_MISSING = 2;
+
 /** Lists a directory's files and folders, following links as the file browser shows them. */
 function listBoatFilesCommand(directory: string): string {
   return [
     "set -o pipefail",
     `directory=${shellQuote(directory)}`,
-    'test -d "$directory" || exit 2',
+    `test -d "$directory" || exit ${BOAT_LISTING_MISSING}`,
     "{",
     "exec 3>&1",
     // A link that loops is left out, like a broken one.
@@ -1702,6 +1775,9 @@ function listBoatFilesCommand(directory: string): string {
     "} | base64 -w0",
   ].join("\n");
 }
+
+/** Gives the owner write access to everything in the workspace; find does not follow links. */
+export const BOAT_WRITABLE_WORKSPACE_COMMAND = `find ${shellQuote(BOAT_WORKSPACE)} \\( -type f -o -type d \\) ! -perm -0200 -exec chmod u+w -- {} + 2>/dev/null || true`;
 
 /** tar reports these for a file that vanished or changed while it was archived. */
 const BOAT_ARCHIVE_TOLERATED_ERRORS = [

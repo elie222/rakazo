@@ -1,5 +1,7 @@
+import { createHash, createHmac, pbkdf2Sync, randomBytes } from "node:crypto";
 import { Client, escapeIdentifier, escapeLiteral } from "pg";
 import type { PrismaClient } from "./generated/prisma/client.js";
+import { rlsBypassKey, runAsSystem } from "./row-security.js";
 
 /**
  * NOLOGIN group role created by the row-level security migration. It holds the
@@ -28,7 +30,7 @@ function loginOf(url: string): string {
 }
 
 export const SINGLE_DATABASE_URL_WARNING =
-  "DATABASE_URL is used for both migrations and the app, so row-level security is not enforced. Set DATABASE_MIGRATION_URL to the owner role and DATABASE_URL to a runtime login (docs/self-host.md#database-roles).";
+  "DATABASE_URL is used for both migrations and the app, so row-level security is not enforced. Set DATABASE_MIGRATION_URL to the owner role and DATABASE_URL to a runtime login (docs/self-host-configuration.md#database-roles).";
 
 /**
  * Create or update the runtime login named in `runtimeUrl` and give it the
@@ -43,7 +45,23 @@ export async function provisionRuntimeRole(
   const owner = new Client({ connectionString: migrationUrl });
   await owner.connect();
   try {
-    return await provisionWith(owner, runtimeUrl);
+    const provisioned = await provisionWith(owner, runtimeUrl);
+    if (provisioned.warning) return provisioned;
+    // A key from a password the login does not have would lock out the running release.
+    const runtime = new Client({ connectionString: runtimeUrl });
+    const connected = await runtime.connect().then(
+      () => true,
+      () => false,
+    );
+    await runtime.end().catch(() => undefined);
+    if (!connected) return { warning: RUNTIME_LOGIN_FAILED_WARNING };
+    if (!rlsBypassKey(runtimeUrl)) {
+      // With no digest stored, the policies accept the keyless bypass this login sends.
+      await owner.query("DELETE FROM rakazo_private.rls_bypass_keys");
+      return { warning: NO_BYPASS_KEY_WARNING };
+    }
+    await storeBypassKey(owner, runtimeUrl);
+    return {};
   } finally {
     await owner.end();
   }
@@ -74,6 +92,7 @@ async function provisionWith(owner: Client, runtimeUrl: string): Promise<{ warni
     GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${RUNTIME_ROLE};
     REVOKE ALL ON TABLE "_prisma_migrations" FROM ${RUNTIME_ROLE};
     REVOKE UPDATE ON TABLE "security_events" FROM ${RUNTIME_ROLE};
+    REVOKE UPDATE ON TABLE "audit_events" FROM ${RUNTIME_ROLE};
     ALTER DEFAULT PRIVILEGES IN SCHEMA public
       GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${RUNTIME_ROLE};
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO ${RUNTIME_ROLE};
@@ -118,7 +137,7 @@ async function provisionWith(owner: Client, runtimeUrl: string): Promise<{ warni
     throw cannotChange();
   }
   const name = escapeIdentifier(login);
-  const secret = password ? `PASSWORD ${escapeLiteral(password)}` : "";
+  const secret = password ? `PASSWORD ${escapeLiteral(scramSha256Verifier(password))}` : "";
   // Only a superuser may set SUPERUSER, BYPASSRLS or REPLICATION, even to false. A
   // CREATEROLE owner leaves them at their defaults (off), and a login that already has
   // one of them was returned above.
@@ -136,6 +155,45 @@ async function provisionWith(owner: Client, runtimeUrl: string): Promise<{ warni
     throw error;
   }
   return {};
+}
+
+const RUNTIME_LOGIN_FAILED_WARNING =
+  "Could not log in with DATABASE_URL, so its row-level security bypass key was not registered.";
+
+const NO_BYPASS_KEY_WARNING =
+  "DATABASE_URL has no password, so SQL run for one tenant could turn on the cross-tenant bypass. Give the runtime login a password.";
+
+/** Lets the runtime login's system context through the policies (see rlsBypassKey). */
+async function storeBypassKey(owner: Client, runtimeUrl: string): Promise<void> {
+  // One statement, so the table is never empty, which would accept the bypass alone.
+  await owner.query(
+    `WITH stored AS (
+       INSERT INTO rakazo_private.rls_bypass_keys (digest) VALUES (sha256(convert_to($1, 'UTF8')))
+       ON CONFLICT (digest) DO NOTHING
+     )
+     DELETE FROM rakazo_private.rls_bypass_keys WHERE digest <> sha256(convert_to($1, 'UTF8'))`,
+    [rlsBypassKey(runtimeUrl)],
+  );
+}
+
+/**
+ * The SCRAM-SHA-256 verifier PostgreSQL would store for `password`. Sending it
+ * instead of the password keeps the plaintext out of server logs and audit trails.
+ */
+export function scramSha256Verifier(password: string, salt = randomBytes(16), iterations = 4096) {
+  // SASLprep's mappings (RFC 4013), as PostgreSQL and pg apply them.
+  const prepared = password
+    .replace(/[\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000]/g, " ")
+    .replace(
+      /\u00AD|\u034F|\u1806|[\u180B-\u180D]|\u200C|\u200D|\u2060|[\uFE00-\uFE0F]|\uFEFF/g,
+      "",
+    )
+    .normalize("NFKC");
+  const salted = pbkdf2Sync(prepared, salt, iterations, 32, "sha256");
+  const hmac = (text: string) => createHmac("sha256", salted).update(text).digest();
+  const storedKey = createHash("sha256").update(hmac("Client Key")).digest("base64");
+  const serverKey = hmac("Server Key").toString("base64");
+  return `SCRAM-SHA-256$${iterations}:${salt.toString("base64")}$${storedKey}:${serverKey}`;
 }
 
 /** Policy on each graphile-worker table that lets the runtime role use the job queue. */
@@ -195,6 +253,8 @@ export interface RowSecurityStatus {
   enforced: boolean;
   role: string;
   reason?: string;
+  /** The bypass key does not match the one `pnpm db:migrate` registered. */
+  systemBlocked?: boolean;
 }
 
 /** Whether the connected login is actually subject to the row-level security policies. */
@@ -218,10 +278,17 @@ export async function describeRowSecurity(prisma: PrismaClient): Promise<RowSecu
       : row.owns
         ? "owns the tables"
         : undefined;
-  return { enforced: !reason, role: row.role, ...(reason ? { reason } : {}) };
+  if (reason) return { enforced: false, role: row.role, reason };
+  const [system] = await runAsSystem(
+    "check the row-level security bypass key",
+    () => prisma.$queryRaw<Array<{ ok: boolean }>>`SELECT app_rls_bypass() AS ok`,
+  );
+  return { enforced: true, role: row.role, ...(system?.ok ? {} : { systemBlocked: true }) };
 }
 
 export function rowSecurityWarning(status: RowSecurityStatus): string | undefined {
+  if (status.systemBlocked)
+    return "Background work across Spaces is blocked: DATABASE_URL's password changed since `pnpm db:migrate` last ran. Run it again.";
   if (status.enforced) return undefined;
-  return `Row-level security is not enforced: the app connects as ${status.role}, which ${status.reason}. Point DATABASE_URL at a runtime login and DATABASE_MIGRATION_URL at the owner (docs/self-host.md#database-roles).`;
+  return `Row-level security is not enforced: the app connects as ${status.role}, which ${status.reason}. Point DATABASE_URL at a runtime login and DATABASE_MIGRATION_URL at the owner (docs/self-host-configuration.md#database-roles).`;
 }

@@ -16,3 +16,12 @@ graph LR
   expect(config.flowchart?.htmlLabels).toBe(false);
   expect(config.secure).toContain("htmlLabels");
 });
+
+it("keeps CSS from a diagram's init directive out of the page", async () => {
+  mermaid.initialize(chatMermaidConfig(darkTokens, "dark"));
+  const css = "background:url(https://example.test/a.png)";
+  await mermaid.parse(`%%{init: {"themeCSS":"${css}","fontFamily":"${css}","altFontFamily":"${css}"}}%%
+graph LR
+  A --> B`);
+  expect(JSON.stringify(mermaid.mermaidAPI.getConfig())).not.toContain("example.test");
+});

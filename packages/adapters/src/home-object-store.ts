@@ -299,11 +299,17 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
     )
       throw new HomeSaveConflictError();
     if (!(await this.hasCache(botId))) return { stored, local: undefined };
-    if (stored?.storageId !== pending.storageId) throw new HomeSaveConflictError();
-    // An unrelated revision cannot prove whether this save committed. Replacing the
-    // cache or uploading over that revision could destroy either writer's work.
-    if (stored.revision !== pending.revision && stored.revision !== pending.base)
+    if (
+      stored?.storageId !== pending.storageId ||
+      (stored.revision !== pending.revision && stored.revision !== pending.base)
+    ) {
+      // Only a Docker computer works in the cached copy. Any other computer saves from its own
+      // files, so a revision stored since the proposal supersedes this copy.
+      if (!(await this.isLiveCache(botId))) return { stored, local: undefined };
+      // An unrelated revision cannot prove whether this save committed. Replacing the
+      // cache or uploading over that revision could destroy either writer's work.
       throw new HomeSaveConflictError();
+    }
     if (stored.revision === pending.revision) return { stored, local: pending.revision };
     // Still at the base: save the latest local bytes with the usual compare-and-swap.
     // Never republish the old upload: it may have been swept during the outage.
@@ -322,6 +328,11 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
       if (!(await this.hasCache(botId)) && (await this.localRevision(botId)))
         await super.writeRevision(botId, "");
     });
+  }
+
+  private async isLiveCache(botId: string) {
+    const kind = (await this.records.kinds([botId])).get(botId);
+    return kind === undefined || kind === "docker";
   }
 
   private async hasCache(botId: string) {

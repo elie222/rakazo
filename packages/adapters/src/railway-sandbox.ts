@@ -29,7 +29,12 @@ import { z } from "zod";
 import { computerIdleSleepEnabled, sandboxIdleMs } from "./computer-idle.js";
 import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
 import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
-import { INSTALL_LINUX_BROWSER, LinuxDesktop, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
+import {
+  INSTALL_LINUX_BROWSER,
+  LinuxDesktop,
+  onBotScreen,
+  PREPARE_LINUX_DESKTOP,
+} from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { readBodyCapped } from "./web-ssrf.js";
 import {
@@ -37,6 +42,7 @@ import {
   workspaceSaveFindExpression,
 } from "./workspace-save-policy.js";
 
+const DISPLAY_START = 1;
 const WORKSPACE = "/home/rakazo";
 const SCREEN_PORT = 6080;
 const RAILWAY_API = "https://backboard.railway.com/graphql/v2";
@@ -64,7 +70,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
       homeDir: WORKSPACE,
       workspaceDir: WORKSPACE,
       browserProfilesDir: `${WORKSPACE}/.browser-profiles`,
-      displayStart: 1,
+      displayStart: DISPLAY_START,
       portStart: SCREEN_PORT,
       // The provider port proxy reaches the isolated sandbox through its network interface.
       bindHost: "0.0.0.0",
@@ -222,9 +228,10 @@ export class RailwaySandboxProvider implements SandboxProvider {
 
   async *execute(
     computer: ComputerRef,
-    request: CommandRequest,
+    requested: CommandRequest,
     context: AdapterContext,
   ): AsyncIterable<ProcessEvent> {
+    const request = onBotScreen(requested, context, DISPLAY_START);
     try {
       const sandbox = await this.connect(computer, context);
       const result = await sandbox.exec(sandboxCommandArgv(request).map(shellQuote).join(" "), {

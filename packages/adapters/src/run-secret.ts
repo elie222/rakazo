@@ -10,7 +10,7 @@ import { isSecretAskBlock } from "@rakazo/core";
 import type { PrismaClient, RunSecretWriter } from "@rakazo/db";
 import { runLoginKind, runSecretKind, withTransactionRetry } from "@rakazo/db";
 import type { ApprovalPausedToolResult } from "./approval-effect.js";
-import { resolveDuplicateEffectGate } from "./approval-effect.js";
+import { internalTerminatingResult, resolveDuplicateEffectGate } from "./approval-effect.js";
 import { encodeRunLogin, prepareBotSecret } from "./bot-secrets.js";
 import { persistPreparedSecret } from "./secret-persistence.js";
 
@@ -19,12 +19,12 @@ export function normalizeSecretAskPurpose(purpose: string | undefined): SecretAs
 }
 
 export function secretPausedToolResult(): ApprovalPausedToolResult {
-  return {
+  return internalTerminatingResult({
     kind: "agent_tool_result",
     content: [{ type: "text", text: "Waiting for protected input." }],
     details: { secret: "paused" },
     terminate: true,
-  };
+  });
 }
 
 /**

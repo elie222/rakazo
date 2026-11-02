@@ -374,17 +374,24 @@ describe("run computer provisioning", () => {
   });
 
   it("spreads retries over minutes while the computer provider is down", async () => {
-    const before = Date.now();
-    const { run, enqueue } = await runRoutine([], {
-      setupError: new SandboxUnresponsiveError("Boat could not be reached"),
-      onRunStarted: vi.fn(),
-      priorSetupFailures: 2,
-    });
+    // Every clock read moves on a millisecond, so two separate reads would disagree.
+    let clock = Date.now();
+    const now = vi.spyOn(Date, "now").mockImplementation(() => (clock += 1));
+    try {
+      const before = Date.now();
+      const { run, enqueue } = await runRoutine([], {
+        setupError: new SandboxUnresponsiveError("Boat could not be reached"),
+        onRunStarted: vi.fn(),
+        priorSetupFailures: 2,
+      });
 
-    const [[job]] = enqueue.mock.calls as unknown as [[{ availableAt: Date }]];
-    expect(job.availableAt.getTime() - before).toBeGreaterThanOrEqual(60_000);
-    expect(job.availableAt.getTime() - Date.now()).toBeLessThanOrEqual(60_000);
-    expect(run.wakeAt).toEqual(job.availableAt);
+      const [[job]] = enqueue.mock.calls as unknown as [[{ availableAt: Date }]];
+      expect(job.availableAt.getTime() - before).toBeGreaterThanOrEqual(60_000);
+      expect(job.availableAt.getTime() - Date.now()).toBeLessThanOrEqual(60_000);
+      expect(run.wakeAt).toEqual(job.availableAt);
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it("retains the setup-failure limit after handing off a run", async () => {
@@ -617,6 +624,33 @@ describe("run computer provisioning", () => {
     await expect(runRoutine([{ name: "list_files", args: { path: "" } }])).rejects.toThrow(
       "Run setup failed; retrying",
     );
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({ level: "warn", message: "run setup failed" }),
+    );
+    expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
+  });
+
+  it("does not report setup that a lost run lease aborted", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      provisionComputer.mockImplementation(
+        async (
+          deps: { prisma: { run: { updateMany: ReturnType<typeof vi.fn> } } },
+          _id: string,
+          context: { signal: AbortSignal },
+        ) => {
+          deps.prisma.run.updateMany.mockResolvedValueOnce({ count: 0 });
+          vi.advanceTimersByTime(60_000);
+          await new Promise((resolve) => context.signal.addEventListener("abort", resolve));
+          throw context.signal.reason;
+        },
+      );
+
+      await runRoutine([{ name: "list_files", args: { path: "" } }]).catch(() => undefined);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(provisionComputer).toHaveBeenCalledOnce();
     expect(sink.events).toContainEqual(
       expect.objectContaining({ level: "warn", message: "run setup failed" }),
     );

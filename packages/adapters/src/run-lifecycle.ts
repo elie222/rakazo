@@ -305,6 +305,7 @@ export async function requeueComputerRun(
   heldForTakeover = false,
   untilReleased = false,
 ): Promise<void> {
+  const retryAt = new Date(Date.now() + computerRetryDelay(fence));
   const released = await writeComputerRunRequeue(
     deps,
     runId,
@@ -313,11 +314,11 @@ export async function requeueComputerRun(
     resumeCheckpoint,
     heldForTakeover,
     null,
-    untilReleased ? null : undefined,
+    untilReleased ? null : retryAt,
   );
   if (!released || untilReleased) return;
   await deps.jobs.enqueue({
     ...runContinueJob(runId),
-    availableAt: new Date(Date.now() + computerRetryDelay(fence)),
+    availableAt: retryAt,
   });
 }

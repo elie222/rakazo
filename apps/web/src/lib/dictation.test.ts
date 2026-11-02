@@ -898,13 +898,49 @@ describe("Dictation web speech", () => {
     expect(instances[0]?.lang).toBe("nl-NL");
   });
 
-  it("maps a regional browser language onto the app's own tag", async () => {
-    vi.stubGlobal("navigator", { language: "nl-BE" });
+  it("hears the browser's regional variant of the app's language", async () => {
+    vi.stubGlobal("navigator", { language: "es-CL" });
 
     const dictation = new Dictation();
     await dictation.listen({ mode: "hold", onFinal: () => undefined });
 
-    expect(instances[0]?.lang).toBe("nl-NL");
+    expect(instances[0]?.lang).toBe("es-CL");
+  });
+
+  it("keeps the app's language when the browser speaks another one", async () => {
+    vi.stubGlobal("navigator", { language: "de-DE" });
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => (key === "rakazo.uiLocale" ? "es" : null),
+      setItem: () => undefined,
+      removeItem: () => undefined,
+      clear: () => undefined,
+    });
+
+    const dictation = new Dictation();
+    await dictation.listen({ mode: "hold", onFinal: () => undefined });
+
+    expect(instances[0]?.lang).toBe("es-ES");
+  });
+
+  it.each([
+    ["es-CL", "es-CL"],
+    ["es-ES", "es-ES"],
+    ["es-419", "es-MX"],
+    ["es_AR", "es-AR"],
+    ["it-IT", "it-IT"],
+  ])("follows browser %s as %s when the UI is English", async (browser, expected) => {
+    vi.stubGlobal("navigator", { language: browser });
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => (key === "rakazo.uiLocale" ? "en" : null),
+      setItem: () => undefined,
+      removeItem: () => undefined,
+      clear: () => undefined,
+    });
+
+    const dictation = new Dictation();
+    await dictation.listen({ mode: "hold", onFinal: () => undefined });
+
+    expect(instances[0]?.lang).toBe(expected);
   });
 
   it("keeps the browser language when the app has no catalog for it", async () => {

@@ -200,6 +200,15 @@ describe("sandbox supervisor HTTP boundary", () => {
     expect(hasValidBearerToken("Basic credentials", token)).toBe(false);
     expect(hasValidBearerToken(`Bearer ${"x".repeat(token.length)}`, token)).toBe(false);
     expect(hasValidBearerToken(`Bearer ${token}`, token)).toBe(true);
+    expect(hasValidBearerToken(`bearer ${token}`, token)).toBe(true);
+    expect(hasValidBearerToken(`BEARER ${token}`, token)).toBe(true);
+    expect(hasValidBearerToken(`bEaReR ${token}`, token)).toBe(true);
+    expect(hasValidBearerToken("bearer Secret-token", "secret-token")).toBe(false);
+    expect(hasValidBearerToken(`Bearer${token}`, token)).toBe(false);
+    expect(hasValidBearerToken(`Bearer  ${token}`, token)).toBe(false);
+    expect(hasValidBearerToken(`Bearer\t${token}`, token)).toBe(false);
+    expect(hasValidBearerToken(`Bearer ${token}x`, token)).toBe(false);
+    expect(hasValidBearerToken(`Bearer ${token.slice(0, -1)}`, token)).toBe(false);
   });
 
   it("bounds authenticated control request bodies before JSON parsing", async () => {

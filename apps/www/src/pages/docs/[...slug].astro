@@ -4,7 +4,7 @@ import { getCollection, render } from "astro:content";
 import DocsNav from "../../components/DocsNav.astro";
 import Footer from "../../components/Footer.astro";
 import Header from "../../components/Header.astro";
-import { DOCS_PAGES, DOCS_SLUGS, docsPath } from "../../docs";
+import { DOCS_PAGES, DOCS_PATH, DOCS_SLUGS, docsPath } from "../../docs";
 import { githubStarsLabel } from "../../github";
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import { GITHUB_URL } from "../../site";
@@ -24,25 +24,39 @@ export async function getStaticPaths() {
 const { entry } = Astro.props;
 const { Content, headings } = await render(entry);
 const title = headings[0]?.text ?? entry.id;
-const labels = new Map(DOCS_PAGES.map((page) => [page.slug, page.label]));
+const pages = new Map(DOCS_PAGES.map((page) => [page.slug, page]));
 const toc = headings.filter((heading) => heading.depth === 2);
 const index = DOCS_SLUGS.indexOf(entry.id);
-const previous = DOCS_SLUGS[index - 1];
-const next = DOCS_SLUGS[index + 1];
+const previous = pages.get(DOCS_SLUGS[index - 1]);
+const next = pages.get(DOCS_SLUGS[index + 1]);
 const starsLabel = await githubStarsLabel();
 const currentPath = docsPath(entry.id);
+const COPY_ICONS =
+  '<svg class="docs-icon-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg><svg class="docs-icon-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>';
+const markdownPath = currentPath === DOCS_PATH ? "/docs.md" : `${currentPath.slice(0, -1)}.md`;
 ---
 
 <BaseLayout
   title={`${title} | Rakazo docs`}
-  description={`${title} in the Rakazo documentation.`}
+  description={entry.data.description ?? `${title} in the Rakazo documentation.`}
   localeAlternates={false}
-  markdownAlternate={currentPath === "/docs/" ? "/docs.md" : `${currentPath.slice(0, -1)}.md`}
+  markdownAlternate={markdownPath}
 >
-  <div class="container">
-    <Header starsLabel={starsLabel} />
+  <div class="docs-topbar">
+    <div class="docs-shell">
+      <Header starsLabel={starsLabel} section={{ label: "Docs", href: DOCS_PATH }}>
+        <button class="docs-search-trigger" type="button" aria-label="Search" aria-keyshortcuts="Meta+K Control+K">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="7"></circle>
+            <path d="m20 20-3.5-3.5"></path>
+          </svg>
+          <span>Search</span>
+          <kbd>⌘K</kbd>
+        </button>
+      </Header>
+    </div>
   </div>
-  <div class="container docs">
+  <div class="docs-shell docs">
     <DocsNav currentPath={currentPath} class="docs-nav--desktop" />
     <details class="docs-menu">
       <summary>Docs menu</summary>
@@ -50,15 +64,22 @@ const currentPath = docsPath(entry.id);
     </details>
 
     <main id="main" class="docs-main">
-      <article class="docs-prose">
+      <div class="docs-page-head">
+        <p class="docs-eyebrow">{pages.get(entry.id)?.section}</p>
+        <button class="docs-copy-page" type="button" data-markdown={markdownPath}>
+          <Fragment set:html={COPY_ICONS} />
+          <span>Copy page</span>
+        </button>
+      </div>
+      <article class="docs-prose" data-pagefind-body>
         <Content />
       </article>
       <footer class="docs-pager">
         {
           previous ? (
-            <a href={docsPath(previous)}>
+            <a href={docsPath(previous.slug)}>
               <span>Previous</span>
-              {labels.get(previous)}
+              {previous.label}
             </a>
           ) : (
             <span />
@@ -66,9 +87,9 @@ const currentPath = docsPath(entry.id);
         }
         {
           next && (
-            <a class="docs-pager__next" href={docsPath(next)}>
+            <a class="docs-pager__next" href={docsPath(next.slug)}>
               <span>Next</span>
-              {labels.get(next)}
+              {next.label}
             </a>
           )
         }
@@ -90,12 +111,133 @@ const currentPath = docsPath(entry.id);
           </>
         )
       }
-      <a class="docs-edit" href={`${GITHUB_URL}/edit/main/docs/${entry.id}.md`} target="_blank" rel="noopener">
-        Edit on GitHub
-      </a>
+      <div class="docs-toc__links">
+        <a href={markdownPath}>View as Markdown</a>
+        <a href={`${GITHUB_URL}/edit/main/docs/${entry.id}.md`} target="_blank" rel="noopener">
+          Edit on GitHub
+        </a>
+      </div>
     </aside>
   </div>
   <div class="container">
     <Footer />
   </div>
+  <dialog class="docs-search" aria-label="Search docs">
+    <div id="docs-search"></div>
+  </dialog>
 </BaseLayout>
+
+<script>
+  const copyIcons = document.querySelector(".docs-copy-page")?.querySelectorAll("svg") ?? [];
+
+  async function copy(button: HTMLElement, text: Promise<string>) {
+    const blob = text.then((value) => new Blob([value], { type: "text/plain" }));
+    await navigator.clipboard.write([new ClipboardItem({ "text/plain": blob })]);
+    button.dataset.copied = "";
+    setTimeout(() => delete button.dataset.copied, 1500);
+  }
+
+  const prose = document.querySelector<HTMLElement>(".docs-prose");
+
+  prose?.querySelectorAll<HTMLElement>("h2[id], h3[id]").forEach((heading) => {
+    const anchor = document.createElement("a");
+    anchor.className = "docs-anchor";
+    anchor.href = `#${heading.id}`;
+    anchor.setAttribute("aria-label", `Link to ${heading.textContent}`);
+    anchor.textContent = "#";
+    heading.append(anchor);
+  });
+
+  prose?.querySelectorAll("pre").forEach((pre) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "docs-copy-code";
+    button.setAttribute("aria-label", "Copy code");
+    button.append(...[...copyIcons].map((icon) => icon.cloneNode(true)));
+    button.addEventListener("click", () =>
+      copy(button, Promise.resolve(pre.querySelector("code")?.innerText ?? pre.innerText)),
+    );
+    const frame = document.createElement("div");
+    frame.className = "docs-code";
+    pre.replaceWith(frame);
+    frame.append(pre, button);
+  });
+
+  const copyPage = document.querySelector<HTMLButtonElement>(".docs-copy-page");
+  copyPage?.addEventListener("click", () =>
+    copy(
+      copyPage,
+      fetch(copyPage.dataset.markdown ?? "").then((response) => response.text()),
+    ),
+  );
+
+  const searchDialog = document.querySelector<HTMLDialogElement>(".docs-search");
+  const searchTrigger = document.querySelector<HTMLButtonElement>(".docs-search-trigger");
+  let searchReady: Promise<void> | undefined;
+
+  if (!/Mac|iPhone|iPad/.test(navigator.platform)) {
+    const kbd = searchTrigger?.querySelector("kbd");
+    if (kbd) kbd.textContent = "Ctrl K";
+  }
+
+  function loadSearch(): Promise<void> {
+    const stylesheet = Object.assign(document.createElement("link"), {
+      rel: "stylesheet",
+      href: "/pagefind/pagefind-ui.css",
+    });
+    const script = Object.assign(document.createElement("script"), { src: "/pagefind/pagefind-ui.js" });
+    document.head.append(stylesheet, script);
+    return new Promise((resolve, reject) => {
+      script.onload = () => {
+        const { PagefindUI } = window as unknown as {
+          PagefindUI: new (options: Record<string, unknown>) => unknown;
+        };
+        new PagefindUI({ element: "#docs-search", showSubResults: true, showImages: false });
+        resolve();
+      };
+      script.onerror = reject;
+    });
+  }
+
+  async function openSearch() {
+    if (!searchDialog) return;
+    searchReady ??= loadSearch();
+    searchDialog.showModal();
+    await searchReady;
+    searchDialog.querySelector("input")?.focus();
+  }
+
+  searchTrigger?.addEventListener("click", openSearch);
+  searchDialog?.addEventListener("click", (event) => {
+    if (event.target === searchDialog) searchDialog.close();
+    if ((event.target as HTMLElement).closest("a")) searchDialog.close();
+  });
+  document.addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      if (searchDialog?.open) searchDialog.close();
+      else openSearch();
+    }
+  });
+
+  const tocLinks = [...document.querySelectorAll<HTMLAnchorElement>(".docs-toc li a")];
+  const sections = tocLinks
+    .map((link) => document.getElementById(decodeURIComponent(link.hash.slice(1))))
+    .filter((section): section is HTMLElement => section !== null);
+
+  function highlightSection() {
+    const offset = 120;
+    const atBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 2;
+    const current = atBottom
+      ? sections.at(-1)
+      : sections.findLast((section) => section.getBoundingClientRect().top <= offset);
+    for (const link of tocLinks) {
+      link.toggleAttribute("data-active", link.hash === `#${current?.id}`);
+    }
+  }
+
+  if (sections.length > 0) {
+    highlightSection();
+    window.addEventListener("scroll", highlightSection, { passive: true });
+  }
+</script>

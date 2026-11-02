@@ -461,7 +461,8 @@ describe("ObjectAgentHomeStore", () => {
   it.each([true, false])(
     "preserves the live cache when another writer wins after an uncertain save (committed: %s)",
     async (committed) => {
-      const { root, store, storage, records, otherHost } = await setup();
+      const { root, rows, store, storage, records, otherHost } = await setup();
+      rows[0]!.kind = "docker";
       await store.commit("bot-1", await staged({ "a.txt": "booted" }), context);
       await store.hydrate("bot-1");
       const advance = records.advance.bind(records);
@@ -484,7 +485,8 @@ describe("ObjectAgentHomeStore", () => {
   );
 
   it("keeps an uncertain proposal when its recovery save is refused", async () => {
-    const { root, store, storage, records, otherHost } = await setup();
+    const { root, rows, store, storage, records, otherHost } = await setup();
+    rows[0]!.kind = "docker";
     await store.commit("bot-1", await staged({ "a.txt": "booted" }), context);
     await store.hydrate("bot-1");
     const advance = records.advance.bind(records);
@@ -512,6 +514,33 @@ describe("ObjectAgentHomeStore", () => {
     await expect(restarted.revise("bot-1")).rejects.toThrow(HomeSaveConflictError);
     expect(await readFile(recent, "utf8")).toBe("after the lost reply");
   });
+
+  it.each([true, false])(
+    "downloads a remote computer's newer save over a cached proposal (committed: %s)",
+    async (committed) => {
+      const { root, store, storage, records, otherHost } = await setup();
+      await store.commit("bot-1", await staged({ "a.txt": "booted" }), context);
+      await store.hydrate("bot-1");
+      const advance = records.advance.bind(records);
+      records.advance = async (...args) => {
+        if (committed) return advance(...args);
+        throw new Error("connection terminated");
+      };
+      await writeFile(path.join(store.pathFor("bot-1"), "a.txt"), "folder removed");
+      await store.revise("bot-1").catch(() => undefined);
+      records.advance = advance;
+      await (await otherHost()).commit(
+        "bot-1",
+        await staged({ "a.txt": "saved by the computer" }),
+        context,
+      );
+
+      const restarted = new ObjectAgentHomeStore(root, storage, records);
+      expect(await restarted.readFile("bot-1", "a.txt", context)).toBe("saved by the computer");
+      await restarted.writeFile("bot-1", "b.txt", "after the save", context);
+      expect(await (await otherHost()).readFile("bot-1", "b.txt", context)).toBe("after the save");
+    },
+  );
 
   it("reads the marker after the database when another process saves during hydration", async () => {
     const { root, store, storage, records } = await setup();

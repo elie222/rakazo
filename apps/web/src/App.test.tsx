@@ -8,7 +8,7 @@ import { expect, it, vi } from "vitest";
 interface SessionState {
   isPending: boolean;
   data: { user: { id: string } } | null;
-  error: null;
+  error: { status: number } | null;
 }
 
 const signedIn: SessionState = { isPending: false, data: { user: { id: "user-1" } }, error: null };
@@ -18,6 +18,7 @@ const capability = vi.hoisted(() => ({
   screen: vi.fn(async () => ({ ok: true })),
   session: null as SessionState | null,
   authMounts: 0,
+  syncCallIdentity: vi.fn(),
 }));
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
@@ -43,6 +44,7 @@ vi.mock("./pages/Auth", async () => {
     },
   };
 });
+vi.mock("./lib/call-session", () => ({ syncCallIdentity: capability.syncCallIdentity }));
 vi.mock("./lib/remote-images-preference", () => ({
   getRemoteImagesEnabled: () => false,
   subscribeRemoteImages: () => () => {},
@@ -184,3 +186,34 @@ it.each(["throw", "reject"])(
     }
   },
 );
+
+it("tells the call session who is signed in, without counting an unreachable lookup", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const render = async (session: SessionState) => {
+    capability.session = session;
+    await act(async () =>
+      root.render(
+        <MemoryRouter initialEntries={["/app"]}>
+          <App />
+        </MemoryRouter>,
+      ),
+    );
+  };
+  try {
+    capability.syncCallIdentity.mockClear();
+    await render(signedIn);
+    expect(capability.syncCallIdentity).toHaveBeenLastCalledWith("user-1");
+    await render({ isPending: false, data: null, error: { status: 503 } });
+    expect(capability.syncCallIdentity).not.toHaveBeenCalledWith(null);
+    await render({ isPending: false, data: { user: { id: "user-2" } }, error: null });
+    expect(capability.syncCallIdentity).toHaveBeenLastCalledWith("user-2");
+    await render({ isPending: false, data: null, error: null });
+    expect(capability.syncCallIdentity).toHaveBeenLastCalledWith(null);
+  } finally {
+    capability.session = null;
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});

@@ -23,6 +23,7 @@ const hooks = vi.hoisted(() => ({
   beforeReaddir: undefined as ((target: string) => Promise<void>) | undefined,
   beforeOpen: undefined as ((target: string) => Promise<void>) | undefined,
   afterOpen: undefined as ((target: string) => Promise<void>) | undefined,
+  beforeMkdir: undefined as ((target: string) => Promise<void>) | undefined,
 }));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -37,6 +38,10 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     readdir: async (...args: Parameters<typeof fs.readdir>) => {
       await hooks.beforeReaddir?.(String(args[0]));
       return fs.readdir(...args);
+    },
+    mkdir: async (...args: Parameters<typeof fs.mkdir>) => {
+      await hooks.beforeMkdir?.(String(args[0]));
+      return fs.mkdir(...args);
     },
     open: async (...args: Parameters<typeof fs.open>) => {
       await hooks.beforeOpen?.(String(args[0]));
@@ -61,6 +66,7 @@ afterEach(async () => {
   hooks.beforeReaddir = undefined;
   hooks.beforeOpen = undefined;
   hooks.afterOpen = undefined;
+  hooks.beforeMkdir = undefined;
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
@@ -446,6 +452,28 @@ describe("LocalAgentHomeStore path containment", () => {
     await expect(exported(store)).rejects.toBe(error);
   });
 
+  it("lists a folder another request creates at the same moment", async () => {
+    const { store, home } = await fixture();
+    hooks.beforeMkdir = async (target) => {
+      if (target === path.join(await realpath(home), "shared")) {
+        hooks.beforeMkdir = undefined;
+        await mkdir(target);
+      }
+    };
+
+    expect(await store.list("bot-1", "shared", context)).toEqual([]);
+  });
+
+  it("still refuses a dangling link where a folder would be made", async () => {
+    const { root, store, home } = await fixture();
+    await symlink(path.join(root, "outside"), path.join(home, "shared"));
+
+    await expect(store.list("bot-1", "shared", context)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(stat(path.join(root, "outside"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("skips hidden names before resolving their targets", async () => {
     const { store, home } = await fixture();
     await writeFile(path.join(home, "mine.txt"), "mine");
@@ -537,7 +565,8 @@ describe("LocalAgentHomeStore with Go's read-only module cache", () => {
     expect((await stat(outside)).mode & 0o777).toBe(0o555);
   });
 
-  it("only makes directories writable that are not", async () => {
+  // Root removes read-only directories without making them writable first.
+  it.skipIf(process.getuid?.() === 0)("only makes directories writable that are not", async () => {
     const { root, store, home } = await fixture();
     await seedModuleCache(home, root);
     const probe = await open(home, "r");
@@ -552,30 +581,34 @@ describe("LocalAgentHomeStore with Go's read-only module cache", () => {
     expect(chmodHandle).toHaveBeenCalledTimes(2);
   });
 
-  it("stops at a directory swapped for a link while it makes the tree writable", async () => {
-    const { root, store, home } = await fixture();
-    const module = path.join(home, "go/pkg/mod");
-    await mkdir(module, { recursive: true });
-    await writeFile(path.join(module, "go.mod"), "module example.com/m\n");
-    await chmod(module, 0o555);
-    const outside = path.join(root, "outside");
-    // Empty, so cleanup can still remove it.
-    await mkdir(outside);
-    await mkdir(path.join(outside, "pkg"), { mode: 0o555 });
-    hooks.beforeOpen = async (target) => {
-      if (target !== path.join(home, "go/pkg")) return;
-      hooks.beforeOpen = undefined;
-      await rename(path.join(home, "go"), path.join(home, "go-moved"));
-      await symlink(outside, path.join(home, "go"));
-    };
+  // Root removes read-only directories without making them writable first.
+  it.skipIf(process.getuid?.() === 0)(
+    "stops at a directory swapped for a link while it makes the tree writable",
+    async () => {
+      const { root, store, home } = await fixture();
+      const module = path.join(home, "go/pkg/mod");
+      await mkdir(module, { recursive: true });
+      await writeFile(path.join(module, "go.mod"), "module example.com/m\n");
+      await chmod(module, 0o555);
+      const outside = path.join(root, "outside");
+      // Empty, so cleanup can still remove it.
+      await mkdir(outside);
+      await mkdir(path.join(outside, "pkg"), { mode: 0o555 });
+      hooks.beforeOpen = async (target) => {
+        if (target !== path.join(home, "go/pkg")) return;
+        hooks.beforeOpen = undefined;
+        await rename(path.join(home, "go"), path.join(home, "go-moved"));
+        await symlink(outside, path.join(home, "go"));
+      };
 
-    try {
-      await expect(store.remove("bot-1")).rejects.toThrow(/escapes/);
-      expect((await stat(path.join(outside, "pkg"))).mode & 0o777).toBe(0o555);
-    } finally {
-      await chmod(path.join(home, "go-moved/pkg/mod"), 0o755);
-    }
-  });
+      try {
+        await expect(store.remove("bot-1")).rejects.toThrow(/escapes/);
+        expect((await stat(path.join(outside, "pkg"))).mode & 0o777).toBe(0o555);
+      } finally {
+        await chmod(path.join(home, "go-moved/pkg/mod"), 0o755);
+      }
+    },
+  );
 
   it("replaces a home that holds the module cache", async () => {
     const { root, store, home } = await fixture();

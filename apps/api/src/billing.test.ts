@@ -52,3 +52,48 @@ describe("billing status", () => {
     await expect(billing.portal(actor)).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });
+
+describe("model credit checkout", () => {
+  it("calls the provider without holding a database transaction", async () => {
+    let openTransactions = 0;
+    const account = { organizationId: "org-1", customerId: "cus-1" };
+    const prisma = {
+      space: { findUnique: vi.fn().mockResolvedValue({ organizationId: "org-1" }) },
+      member: { findUnique: vi.fn().mockResolvedValue({ role: "owner" }) },
+      billingAccount: {
+        findUnique: vi.fn().mockResolvedValue(account),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      modelCreditAccount: {
+        upsert: vi.fn().mockResolvedValue({ organizationId: "org-1" }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => {
+        openTransactions++;
+        try {
+          return await run(prisma);
+        } finally {
+          openTransactions--;
+        }
+      }),
+    };
+    const provider = {
+      describe: () => ({ capabilities: { modelCredits: true } }),
+      createCreditCheckout: vi.fn(async () => {
+        expect(openTransactions).toBe(0);
+        return { url: "https://checkout.example.com" };
+      }),
+    } as unknown as BillingProvider;
+    const billing = createBillingService({
+      prisma: prisma as unknown as PrismaClient,
+      provider,
+      webOrigin: "https://app.example.com",
+    });
+    for (const monthly of [true, false]) {
+      await expect(billing.purchaseCredits(actor, { amountCents: 1000, monthly })).resolves.toEqual(
+        { url: "https://checkout.example.com" },
+      );
+    }
+    expect(provider.createCreditCheckout).toHaveBeenCalledTimes(2);
+  });
+});

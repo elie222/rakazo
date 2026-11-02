@@ -90,6 +90,7 @@ describe("Pi runtime errors", () => {
     "You have no credits remaining. Add credits to continue using the API.",
     'xai API error (400): 400 "Incorrect API key provided."',
     "Your authentication token has expired. Please try refreshing it.",
+    "Provided authentication token is expired.",
     "Encountered invalidated oauth token for user, failing request",
     'Headers.append: "example key\nclient = Client(timeout=30, rate_limit=1)" is an invalid header value.',
     "Cannot convert argument to a ByteString because the character at index 0 has a value of 48120 which is greater than 255.",
@@ -97,6 +98,9 @@ describe("Pi runtime errors", () => {
     'opencode API error (410): {"type":"ModelDeprecated","message":"Model example-free has been deprecated."}',
     '404: {"message":"No endpoints found that support tool use.","code":404}',
     '400: {"message":"`tool calling` is not supported with this model","type":"invalid_request_error"}',
+    `400: {"message":"feature 'tool calls' is not currently supported"}`,
+    '400: {"message":"Too many images provided.  This model supports up to 3 images","type":"invalid_request_error"}',
+    '400 {"type":"error","error":{"type":"invalid_request_error","message":"This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header with the ID of the workspace to use."}}',
     '413: {"message":"Request too large for model `example/model` on tokens per minute (TPM)."}',
     MODEL_CONTEXT_TOO_SMALL_ERROR,
     '400: {"code":"400","message":"Unsupported model example-model"}',
@@ -117,7 +121,10 @@ describe("Pi runtime errors", () => {
     "Provider returned an empty response",
     "Failed to parse tool call arguments as JSON",
     "Tool call validation failed: attempted to call tool 'commentary' which was not in request.tools",
+    "Parsing failed. The model generated output that could not be parsed. Please adjust your prompt. See 'failed_generation' for more details.",
+    '400 {"type":"error","error":{"type":"api_error","message":"Upstream request failed: [api_error] Upstream response was not valid JSON"}}',
     MODEL_OUTPUT_LIMIT_ERROR,
+    "Upstream error from Example: HttpError: HTTP 400: Tool calls cutoff by max_tokens.",
   ])("marks unusable model output as the model's failure: %s", async (message) => {
     provider.errorMessage = message;
     const failure = consume();
@@ -143,6 +150,8 @@ describe("Pi runtime errors", () => {
     // The Google SDK reports a stream that closed partway through an event this way.
     "Incomplete JSON segment at the end",
     "OpenCode rejected this chat session. Send the message again.",
+    "The upstream model provider could not complete this request. Please retry shortly.",
+    "server_error: The model failed to generate a response.",
   ])("keeps a dropped connection transient: %s", async (message) => {
     provider.errorMessage = message;
     await expect(consume()).rejects.toBeInstanceOf(TransientModelError);
@@ -163,6 +172,15 @@ describe("Pi runtime errors after every backup failed", () => {
     '403: {"type":"FreeTierError","message":"This free tier can only be used from within its own app."}';
   const unknown = "Cannot read properties of undefined (reading 'content')";
   const emptyReply = "Provider returned an empty response";
+  const dailyQuota = `429 ${JSON.stringify({
+    error: {
+      message: "Rate limit exceeded: free-models-per-day",
+      code: 429,
+      metadata: { headers: { "X-RateLimit-Reset": String(Date.now() + 10 * 60 * 60_000) } },
+    },
+  })}`;
+  const rateLimited =
+    '429 {"type":"error","error":{"type":"rate_limit_error","message":"Rate limited"}}';
 
   function exhausted(primaryError: string, reasons: string[], skipped: string[] = []) {
     return modelFallbackFailure(primaryError, [
@@ -194,7 +212,19 @@ describe("Pi runtime errors after every backup failed", () => {
       exhausted(timedOut, [timedOut, freeTier]),
       ModelAccountError,
     ],
+    [
+      "a quota that resets hours away outranks a rate-limited backup",
+      exhausted(dailyQuota, [rateLimited]),
+      ModelAccountError,
+    ],
     ["bad output outranks timeouts", exhausted(timedOut, [emptyReply]), ModelOutputError],
+    [
+      "a provider out of credits backed by a key the provider rejects",
+      exhausted('402: {"message":"Add usage credits to use cloud models."}', [
+        '400 {"type":"error","error":{"type":"invalid_request_error","message":"This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header with the ID of the workspace to use."}}',
+      ]),
+      ModelAccountError,
+    ],
     [
       "an account failure outranks bad output",
       exhausted(emptyReply, [freeTier]),

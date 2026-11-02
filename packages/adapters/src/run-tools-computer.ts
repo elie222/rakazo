@@ -16,6 +16,7 @@ import {
 } from "./browser-tools.js";
 import { BACKGROUND_WORK_LAUNCH } from "./computer-idle.js";
 import {
+  displayBotWorkspacePath,
   resolveBotUploadPath,
   resolveBotWorkspaceCwd,
   resolveBotWorkspacePath,
@@ -34,7 +35,7 @@ import {
   desktopProtectionGuardMessage,
   protectedComputerLifecycleRefusal,
 } from "./desktop-command-guard.js";
-import { nativeShellCommandArgv } from "./native-shell.js";
+import { nativeShellCommandArgv, usesNativeShell } from "./native-shell.js";
 import { resolvePurchaseCardFill, resolvePurchasePayTokenFill } from "./purchase-service.js";
 import type { RunContext } from "./run-context.js";
 import { addRunSecrets } from "./run-context.js";
@@ -142,6 +143,13 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
   const redactions = () => [...ctx.secrets];
   const desktopTools =
     ctx.computer.graphicalToolsAllowed && builtinOffered(ctx.tools.disabled, "computer_act");
+  // A file the page downloads goes to the bot's own Downloads folder. Its name is redacted like any
+  // page text, so one that echoes a secret is listed under another name than it has on disk.
+  const downloads = {
+    folder: resolveBotWorkspacePath(ctx.computer.mode, bot.id, "Downloads"),
+    botPath: (path: string) =>
+      displayBotWorkspacePath(ctx.computer.mode, bot.id, "Downloads", path),
+  };
   const tool =
     name === "browser_navigate"
       ? browserNavigateFromTool
@@ -153,6 +161,7 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
       ? redactBrowserResult(
           await tool(ctx.providers.browser, await ctx.computer.get("tool", name), context, args, {
             desktopTools,
+            downloads,
           }),
           redactions(),
         )
@@ -163,6 +172,7 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
           args,
           {
             desktopTools,
+            downloads,
             redactions,
             // Team bots may send only their own folder or shared/ off the computer; a
             // private computer's helper already confines uploads to its home folder.
@@ -339,7 +349,7 @@ export const computerTools: ToolHandlers = {
       const computer = await ctx.computer.get("tool", name);
       const shellEnvironment =
         ctx.computer.hostEnvironment ??
-        (computer.kind === "desktop"
+        (usesNativeShell(computer.kind)
           ? await deps.sandbox.environment?.(computer, context)
           : undefined);
       const observed = await observeShellCommand(

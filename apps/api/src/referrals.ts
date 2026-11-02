@@ -5,6 +5,8 @@ import { BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
   billingAccountForOrganization,
+  extendByokFreePeriod,
+  FREE_MONTH_DAYS,
   hasBillingAccess,
   Prisma,
   reconcileCreditPurchase,
@@ -74,15 +76,12 @@ export function createReferrals(deps: {
         create: { organizationId: referrerOrganizationId },
         update: {},
       });
-      // One statement, so concurrent rewards each add their month.
-      await tx.$executeRaw`
-        UPDATE model_credit_accounts
-        SET "byokFreeUntil" = GREATEST(COALESCE("byokFreeUntil", now()), now()) + interval '30 days'
-        WHERE "organizationId" = ${referrerOrganizationId}`;
+      await extendByokFreePeriod(tx, referrerOrganizationId, FREE_MONTH_DAYS);
     });
   }
 
   return {
+    enabled,
     async status(organizationId: string, isOwner: boolean): Promise<BillingStatus["referral"]> {
       if (!enabled || !isOwner) return null;
       const [code, rewards] = await Promise.all([

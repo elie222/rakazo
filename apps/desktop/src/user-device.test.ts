@@ -263,7 +263,7 @@ describe("remote computer access", () => {
     respond();
     await turningOn;
     expect(await readDeviceConsent(userData, origin)).toBe("declined");
-    expect(access.state(origin).allowed).toBe(false);
+    expect(access.state(origin)?.allowed).toBe(false);
   });
 
   it("ignores a page asking for a server it no longer shows", async () => {

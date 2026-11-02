@@ -1,5 +1,6 @@
 import { BillingEmulator } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import { BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, billingAccountForOrganization, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -78,7 +79,7 @@ dbTests("model credit billing service", () => {
     await expect(service.status(actor)).resolves.toMatchObject({
       access: false,
       funding: null,
-      byokPriceCents: 1000,
+      byokPriceCents: BYOK_MONTHLY_PRICE_CENTS,
       byokFreeUntil: null,
     });
   });
@@ -159,5 +160,13 @@ dbTests("model credit billing service", () => {
     await expect(service.setMonthlyCredits(other, 2000)).rejects.toMatchObject({
       code: "FORBIDDEN",
     });
+  });
+  it("answers a change to an ended monthly plan as a conflict and resyncs the plan", async () => {
+    const customer = (await billingAccountForOrganization(prisma, organizationId))!.customerId;
+    provider.setStatus(customer, "canceled");
+    await expect(service.setMonthlyCredits(actor, 5000)).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    await expect(service.status(actor)).resolves.toMatchObject({ state: "canceled" });
   });
 });

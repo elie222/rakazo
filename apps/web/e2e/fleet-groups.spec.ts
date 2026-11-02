@@ -25,7 +25,7 @@ test("a group a bot creates after approval appears in the sidebar without a relo
     timeout: 30_000,
   });
   await expect(page.getByText("Members: Alpha, Beta", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Always allow this tool" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Always allow this tool" })).toBeVisible();
   await expect(sidebar.getByRole("button", { name: /^Crew/ })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "fleet-create-group-approval");
 

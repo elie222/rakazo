@@ -1,16 +1,24 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import { ORPCError } from "@orpc/server";
 import type {
   BillingPrice,
   BillingProvider,
   BillingSubscriptionSnapshot,
+  SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { BillingCheckoutCompletedError, BillingCustomerNotFoundError } from "@rakazo/adapter-kit";
+import {
+  BillingCheckoutCompletedError,
+  BillingCustomerNotFoundError,
+  BillingNoMonthlyCreditsError,
+} from "@rakazo/adapter-kit";
+import { sandboxAllowance, sandboxHoursLeft } from "@rakazo/adapters";
 import type { Actor, BillingStatus } from "@rakazo/contracts";
 import { BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
 import type { BillingAccount, PrismaClient } from "@rakazo/db";
 import {
   billingAccountForOrganization,
   byokFreeUntil,
+  claimCheckoutLease,
   createBillingAccount,
   creditAccount,
   expireModelCredits,
@@ -22,14 +30,18 @@ import {
   organizationSeatCount,
   ownedBillingAccounts,
   reconcileCreditPurchase,
+  releaseCheckoutLease,
   replaceBillingCustomer,
   syncBillingSnapshot,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { applyAccessGrants } from "./access-grants.js";
 import { createReferrals } from "./referrals.js";
 
 export const TRIAL_DAYS = 7;
 const PRICE_CACHE_MS = 60 * 60 * 1000;
+const CHECKOUT_LEASE_MS = 120_000;
+const CHECKOUT_LEASE_POLL_MS = 250;
 /** Stripe returns here after checkout; served by the API through the web origin. */
 export const BILLING_RETURN_PATH = "/api/v1/billing/return";
 
@@ -39,6 +51,7 @@ export type BillingClient = "mobile" | undefined;
 /** Product-side billing: access rules, checkout, and pull-based sync from the provider. */
 export interface BillingService {
   readonly modelCreditsEnabled: boolean;
+  readonly referralsEnabled: boolean;
   status(actor: Actor): Promise<BillingStatus>;
   selectFunding(
     actor: Actor,
@@ -73,9 +86,17 @@ function byokTrialAvailable(
   return !account?.subscribedAt && !credits.byokFreeUntil;
 }
 
+/** A subscriber keeps the own-key price they signed up at until the subscription ends. */
+function subscribedByokPrice(account: BillingAccount | null) {
+  const status = account?.status ?? null;
+  return hasBillingAccess(status) || needsBillingPortal(status) ? account?.byokPriceCents : null;
+}
+
 export function createBillingService(deps: {
   prisma: PrismaClient;
   provider: BillingProvider;
+  /** Prices computer time for the monthly allowance; without it none is shown. */
+  sandbox?: SandboxProvider;
   managedModelsAvailable?: boolean;
   /** The session cookie lives on the web origin, which also proxies /api to this server. */
   webOrigin: string;
@@ -205,15 +226,21 @@ export function createBillingService(deps: {
     serialize: boolean,
     call: (customerId: string) => Promise<{ url: string }>,
   ) {
-    return prisma.$transaction(
-      async (tx) => {
-        // Opening another recurring checkout expires the old one.
-        if (serialize)
-          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`model-credit-checkout:${account.organizationId}`}, 0))`;
-        return withLiveCustomer(actor, account, call);
-      },
-      { timeout: 120_000 },
-    );
+    if (!serialize) return withLiveCustomer(actor, account, call);
+    // Opening another recurring checkout expires the old one.
+    const { organizationId } = account;
+    const deadline = Date.now() + CHECKOUT_LEASE_MS;
+    let leaseId = await claimCheckoutLease(prisma, organizationId, CHECKOUT_LEASE_MS);
+    while (!leaseId) {
+      if (Date.now() > deadline) throw new ORPCError("CONFLICT");
+      await sleep(CHECKOUT_LEASE_POLL_MS);
+      leaseId = await claimCheckoutLease(prisma, organizationId, CHECKOUT_LEASE_MS);
+    }
+    try {
+      return await withLiveCustomer(actor, account, call);
+    } finally {
+      await releaseCheckoutLease(prisma, organizationId, leaseId);
+    }
   }
 
   async function billingAccountFor(actor: Actor, organizationId: string) {
@@ -252,6 +279,7 @@ export function createBillingService(deps: {
 
   return {
     modelCreditsEnabled: modelCredits,
+    referralsEnabled: referrals.enabled,
     async selectFunding(actor, funding, client) {
       const { organizationId } = await managedOrganization(actor);
       const account = await creditAccount(prisma, organizationId);
@@ -315,7 +343,14 @@ export function createBillingService(deps: {
       const { organizationId } = await managedOrganization(actor);
       const account = await billingAccountForOrganization(prisma, organizationId);
       if (!account) throw new ORPCError("NOT_FOUND");
-      await provider.setMonthlyCredits(account.customerId, amountCents);
+      try {
+        await provider.setMonthlyCredits(account.customerId, amountCents);
+      } catch (error) {
+        if (!(error instanceof BillingNoMonthlyCreditsError)) throw error;
+        // The plan ended after the page loaded; syncing lets the next status offer Subscribe.
+        await sync(account.customerId);
+        throw new ORPCError("CONFLICT", { message: error.message, cause: error });
+      }
       await sync(account.customerId);
       return { ok: true };
     },
@@ -323,10 +358,15 @@ export function createBillingService(deps: {
     async status(actor) {
       if (modelCredits) {
         const { organizationId, isOwner } = await organization(actor);
+        if (isOwner)
+          await applyAccessGrants(prisma, { ...actor, organizationId }).catch((error) =>
+            getLogger().error("access grant failed", error),
+          );
         await expireModelCredits(prisma, organizationId);
-        const [credits, account] = await Promise.all([
+        const [credits, account, computerAllowance] = await Promise.all([
           creditAccount(prisma, organizationId),
           billingAccountForOrganization(prisma, organizationId),
+          deps.sandbox ? sandboxAllowance({ prisma, sandbox: deps.sandbox }, organizationId) : null,
         ]);
         const freeUntil =
           credits.mode === "byok" &&
@@ -345,7 +385,8 @@ export function createBillingService(deps: {
           balanceUsd: Number(credits.balanceMicros) / MICROS_PER_DOLLAR,
           monthlyAmountCents: account?.creditAmountCents ?? null,
           creditPurchasesEnabled: deps.managedModelsAvailable ?? true,
-          byokPriceCents: BYOK_MONTHLY_PRICE_CENTS,
+          byokPriceCents:
+            BYOK_MONTHLY_PRICE_CENTS && (subscribedByokPrice(account) ?? BYOK_MONTHLY_PRICE_CENTS),
           byokFreeUntil: freeUntil?.toISOString() ?? null,
           canManage: isOwner,
           trialAvailable: BYOK_MONTHLY_PRICE_CENTS !== null && byokTrialAvailable(account, credits),
@@ -364,6 +405,7 @@ export function createBillingService(deps: {
           currentPeriodEndsAt: account?.currentPeriodEndsAt?.toISOString() ?? null,
           cancelAtPeriodEnd: account?.cancelAtPeriodEnd ?? false,
           hasCustomer: Boolean(account),
+          computerHoursLeft: computerAllowance && sandboxHoursLeft(computerAllowance),
           referral: await referrals.status(organizationId, isOwner),
         };
       }

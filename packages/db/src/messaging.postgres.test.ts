@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
-import { provisionMessagingIdentity } from "./messaging.js";
+import { issueMessagingLinkCode, provisionMessagingIdentity } from "./messaging.js";
 import { asSystem, runAsSystem } from "./row-security.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -194,6 +194,19 @@ describePostgres("provisionMessagingIdentity (PostgreSQL)", () => {
       });
       await asSystem(prisma).organization.deleteMany({ where: { id: first.spaceId } });
       await asSystem(prisma).user.deleteMany({ where: { id: first.userId } });
+    }
+  });
+
+  it("keeps one active link code per user when codes are issued concurrently", async () => {
+    const request = { userId: `linkrace${Date.now()}`, spaceId: "space", botId: "bot" };
+    try {
+      await Promise.all(Array.from({ length: 8 }, () => issueMessagingLinkCode(prisma, request)));
+      const codes = await asSystem(prisma).messagingLinkCode.findMany({
+        where: { userId: request.userId },
+      });
+      expect(codes).toHaveLength(1);
+    } finally {
+      await asSystem(prisma).messagingLinkCode.deleteMany({ where: { userId: request.userId } });
     }
   });
 });

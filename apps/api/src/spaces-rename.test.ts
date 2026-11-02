@@ -72,6 +72,15 @@ function renameRequest(name: string, spaceId = "space-target") {
   });
 }
 
+async function rename(handler: ReturnType<typeof renameHarness>["handler"], name: string) {
+  const { response } = await handler.handle(renameRequest(name), {
+    prefix: "/rpc",
+    context: { actor },
+  });
+  if (!response) throw new Error("no response");
+  return response;
+}
+
 describe("spaces.rename", () => {
   it("lets the owner rename a space with the same name rules as create", async () => {
     const { update, handler } = renameHarness({
@@ -80,10 +89,7 @@ describe("spaces.rename", () => {
       deletingAt: null,
     });
 
-    const { response } = await handler.handle(renameRequest("  Customer support  "), {
-      prefix: "/rpc",
-      context: { actor },
-    });
+    const response = await rename(handler, "  Customer support  ");
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
@@ -102,10 +108,7 @@ describe("spaces.rename", () => {
       deletingAt: null,
     });
 
-    const { response } = await handler.handle(renameRequest("Stolen"), {
-      prefix: "/rpc",
-      context: { actor },
-    });
+    const response = await rename(handler, "Stolen");
 
     expect(response.status).toBe(403);
     expect(update).not.toHaveBeenCalled();
@@ -114,10 +117,7 @@ describe("spaces.rename", () => {
   it("rejects a caller who is not a member of the space", async () => {
     const { update, handler } = renameHarness(null);
 
-    const { response } = await handler.handle(renameRequest("Stolen"), {
-      prefix: "/rpc",
-      context: { actor },
-    });
+    const response = await rename(handler, "Stolen");
 
     expect(response.status).toBe(404);
     expect(update).not.toHaveBeenCalled();
@@ -130,10 +130,7 @@ describe("spaces.rename", () => {
       deletingAt: null,
     });
 
-    const { response } = await handler.handle(renameRequest("Stolen"), {
-      prefix: "/rpc",
-      context: { actor },
-    });
+    const response = await rename(handler, "Stolen");
 
     expect(response.status).toBe(404);
     expect(update).not.toHaveBeenCalled();
@@ -148,10 +145,7 @@ describe("spaces.rename", () => {
         deletingAt: null,
       });
 
-      const { response } = await handler.handle(renameRequest(name), {
-        prefix: "/rpc",
-        context: { actor },
-      });
+      const response = await rename(handler, name);
 
       expect(response.status).toBeGreaterThanOrEqual(400);
       expect(transaction).not.toHaveBeenCalled();
@@ -165,10 +159,7 @@ describe("spaces.rename", () => {
       deletingAt: new Date(),
     });
 
-    const { response } = await handler.handle(renameRequest("Still here"), {
-      prefix: "/rpc",
-      context: { actor },
-    });
+    const response = await rename(handler, "Still here");
 
     expect(response.status).toBe(409);
     expect(update).not.toHaveBeenCalled();
@@ -181,10 +172,7 @@ describe("spaces.rename", () => {
       deletingAt: new Date(Date.now() - 6 * 60_000),
     });
 
-    const { response } = await handler.handle(renameRequest("Still here"), {
-      prefix: "/rpc",
-      context: { actor },
-    });
+    const response = await rename(handler, "Still here");
 
     expect(response.status).toBe(409);
     expect(update).not.toHaveBeenCalled();

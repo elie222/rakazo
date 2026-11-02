@@ -25,6 +25,7 @@ describe("desktop release workflow", () => {
   });
 
   it("requires signed platform builds before a single publication job", () => {
+    expect(workflow).toContain('RAKAZO_DESKTOP_RELEASE: "1"');
     expect(workflow).toContain("-c.forceCodeSigning=true");
     expect(workflow).toContain("codesign --verify --deep --strict");
     expect(workflow).toContain("Get-AuthenticodeSignature");
@@ -124,7 +125,10 @@ describe("desktop release workflow", () => {
     expect(workflow).toContain("latest.yml");
     expect(workflow).toContain("latest-mac.yml");
     expect(workflow).toContain("latest-linux.yml");
-    expect(workflow).toContain("--draft --generate-notes");
+    expect(workflow).toContain(
+      '--draft --notes-file "$RUNNER_TEMP/release-notes.md" --generate-notes',
+    );
+    expect(workflow).toContain("CHANGELOG.md has no [$version] section");
     expect(workflow).toContain("--draft=false --latest");
   });
 });

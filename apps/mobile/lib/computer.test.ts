@@ -71,6 +71,28 @@ describe("embeddableScreenUrl", () => {
     ).toBeNull();
   });
 
+  it("moves a proxied screen sealed for an unreachable address onto an HTTPS API origin", () => {
+    for (const sealed of [
+      "http://127.0.0.1:5173/novnc/session/view/1.t/embed.html?view_only=true",
+      "https://192.168.1.20/novnc/session/view/1.t/embed.html?view_only=true",
+    ]) {
+      expect(embeddableScreenUrl(sealed, "https://rakazo.example.test")).toBe(
+        "https://rakazo.example.test/novnc/session/view/1.t/embed.html?view_only=true",
+      );
+    }
+  });
+
+  it("keeps a proxied screen on its own public HTTPS host or for a local API", () => {
+    const remote = "https://screens.example.test/novnc/session/view/1.t/embed.html";
+    expect(embeddableScreenUrl(remote, "https://api.example.test")).toBe(remote);
+    expect(
+      embeddableScreenUrl(
+        "http://127.0.0.1:5173/novnc/session/view/1.t/embed.html",
+        "http://10.0.2.2:3100",
+      ),
+    ).toBe("http://10.0.2.2:5173/novnc/session/view/1.t/embed.html");
+  });
+
   it("keeps loopback screens when the API is also loopback", () => {
     const url = "http://127.0.0.1:16080/embed.html?view_only=true";
     expect(embeddableScreenUrl(url, "http://127.0.0.1:3100")).toBe(url);

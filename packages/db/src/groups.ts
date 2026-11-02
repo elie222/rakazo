@@ -457,7 +457,7 @@ export function createGroupRepos(prisma: PrismaClient) {
         pinned?: boolean;
         sectionId?: string | null;
       },
-    ): Promise<{ group: Group; cancelledRunIds: string[] }> {
+    ): Promise<{ group: Group; cancelledRunIds: string[]; computers: RunTeardownTarget[] }> {
       const members = input.botIds ? await assertOwnedBots(prisma, actor, input.botIds) : undefined;
       const updated = await prisma.$transaction(async (tx) => {
         await lockOwnedGroup(tx, actor, input.groupId);
@@ -510,10 +510,12 @@ export function createGroupRepos(prisma: PrismaClient) {
               select: { id: true, taskId: true, userId: true, spaceId: true },
             })
           : [];
-        if (activeRuns.length) {
-          const now = new Date();
-          await cancelRunsInTransaction(tx, activeRuns, now);
-        }
+        const runIds = (await cancelRunsInTransaction(tx, activeRuns, new Date())).map(
+          (run) => run.id,
+        );
+        // After cancelling: its row locks keep these runs from acquiring a computer, so every
+        // lease they hold is in the snapshot.
+        const { targets } = await snapshotRunTeardownTargets(tx, runIds);
         if (input.name !== undefined) {
           await tx.chatGroup.update({
             where: { id: input.groupId },
@@ -543,13 +545,15 @@ export function createGroupRepos(prisma: PrismaClient) {
         });
         return {
           group: await attachNewestGroupMessage(tx, loaded),
-          cancelledRunIds: activeRuns.map((run) => run.id),
+          cancelledRunIds: runIds,
+          computers: targets,
         };
       });
       if (!updated.group.thread) throw new IsolationError();
       return {
         group: mapGroup(updated.group as GroupRecord),
         cancelledRunIds: updated.cancelledRunIds,
+        computers: updated.computers,
       };
     },
 
@@ -574,18 +578,16 @@ export function createGroupRepos(prisma: PrismaClient) {
           },
           select: { id: true, taskId: true, userId: true, spaceId: true },
         });
-        const runIds = activeRuns.map((run) => run.id);
         const now = new Date();
-        // Snapshot before cancellation commits. An expired lease that has not been
-        // reclaimed still names this run's screen.
-        const { targets } = await snapshotRunTeardownTargets(tx, runIds);
-
+        const runIds = (await cancelRunsInTransaction(tx, activeRuns, now)).map((run) => run.id);
         if (runIds.length) {
-          await cancelRunsInTransaction(tx, activeRuns, now);
           await tx.event.deleteMany({
             where: { ...transientRunEventsWhere(), runId: { in: runIds } },
           });
         }
+        // Snapshot after cancelling, before commit: the run row locks keep these runs from
+        // acquiring a computer, and an expired lease not yet reclaimed still names a screen.
+        const { targets } = await snapshotRunTeardownTargets(tx, runIds);
 
         await tx.chatGroup.update({
           where: { id: groupId },
@@ -596,7 +598,7 @@ export function createGroupRepos(prisma: PrismaClient) {
       });
     },
 
-    /** After an archive's teardown: expire the cancelled runs' leases and legacy columns. */
+    /** After teardown: expire the cancelled runs' leases and legacy columns. */
     async releaseArchivedRunLeases(runIds: string[]) {
       if (runIds.length === 0) return;
       await expireComputerExecutionLeases(prisma, { runId: { in: runIds } });

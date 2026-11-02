@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  BROWSER_STILL_RUNNING_EXIT,
   browserCloseProgram,
   DEFAULT_DESKTOP_ENV,
   desktopControlCommand,
@@ -27,6 +28,7 @@ import {
   quiesceBrowserProfilesCommand,
   releaseDesktopCommand,
   resetDesktopRuntimeCommand,
+  screenDisplayArgv,
   screenPorts,
   shellQuote,
   stopBrowserProfileCommand,
@@ -172,6 +174,33 @@ describe("shared Linux desktop lifecycle", () => {
     expect(() =>
       interactiveScreenCommand(true, "control", { ...screenPorts(0), bindHost }),
     ).toThrow("invalid screen gateway bind host");
+  });
+
+  it("runs a bot's commands on its own assigned display", () => {
+    const f = fixture();
+    f.ensure("becky");
+    f.ensure("beto");
+    const run = (bot: string, argv: string[]) => {
+      const [program, ...args] = screenDisplayArgv(argv, bot, env.displayStart).map((word) =>
+        word.replaceAll("/tmp/rakazo/desktop-assignments", f.root),
+      );
+      return spawnSync(program ?? "", args, {
+        encoding: "utf8",
+        env: { PATH: process.env.PATH, DISPLAY: ":1" },
+      });
+    };
+    const printDisplay = ["sh", "-c", 'printf "%s|%s" "$DISPLAY" "$1"', "sh", "a b'c $HOME"];
+
+    expect(run("becky", printDisplay).stdout).toBe(":20|a b'c $HOME");
+    expect(run("beto", printDisplay).stdout).toBe(":21|a b'c $HOME");
+    // No screen yet: the command keeps the display it inherited.
+    expect(run("tori", printDisplay).stdout).toBe(":1|a b'c $HOME");
+    writeFileSync(
+      path.join(f.root, `${createHash("sha256").update("bad").digest("hex").slice(0, 32)}.slot`),
+      "x;1\n",
+    );
+    expect(run("bad", printDisplay).stdout).toBe(":1|a b'c $HOME");
+    expect(run("beto", ["sh", "-c", "exit 7"]).status).toBe(7);
   });
 
   it("allocates live slots past 1000 bots, keeps assignments across callers, and rejects stale leases", () => {
@@ -663,7 +692,7 @@ describe("shared Linux desktop lifecycle", () => {
           ["-eu", "-c", `${close}\n${stopBrowserProfileCommand(profile, shellQuote(pidFile))}`],
           { encoding: "utf8", timeout: 20_000 },
         );
-        expect(result.status, result.stderr).toBe(1);
+        expect(result.status, result.stderr).toBe(BROWSER_STILL_RUNNING_EXIT);
         expect(result.stderr).toContain("browser still running");
         for (const lock of locks) {
           expect(readFileSync(path.join(profile, lock), "utf8")).toBe("keep");

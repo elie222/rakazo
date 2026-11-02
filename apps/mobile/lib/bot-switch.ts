@@ -38,15 +38,24 @@ export function findSwitchTarget<T extends { id: string; name: string }>(
 
 /** Keep hand-over requests in memory so links cannot open the microphone. */
 const RING_WINDOW_MS = 10_000;
-let pendingRing: { botId: string; at: number } | undefined;
+let pendingRing: { botId: string; session: number; at: number } | undefined;
 
-export function ringOnArrival(botId: string, now = Date.now()): void {
-  pendingRing = { botId, at: now };
+/** `session`: the session generation the hand-over was asked in. */
+export function ringOnArrival(botId: string, session: number, now = Date.now()): void {
+  pendingRing = { botId, session, at: now };
 }
 
-/** True once, for the bot a hand-over just asked to ring; any other arrival drops the request. */
-export function takeRingOnArrival(botId: string, now = Date.now()): boolean {
+/**
+ * True once, for the bot a hand-over just asked to ring in this session; any other arrival,
+ * or a session change since, drops the request.
+ */
+export function takeRingOnArrival(botId: string, session: number, now = Date.now()): boolean {
   const ring = pendingRing;
   pendingRing = undefined;
-  return ring !== undefined && ring.botId === botId && now - ring.at <= RING_WINDOW_MS;
+  return (
+    ring !== undefined &&
+    ring.botId === botId &&
+    ring.session === session &&
+    now - ring.at <= RING_WINDOW_MS
+  );
 }

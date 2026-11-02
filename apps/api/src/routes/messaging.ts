@@ -30,6 +30,15 @@ export function messagingRoutes(ctx: RouterContext) {
           if (!deps.messagingInstallations) throw new ORPCError("BAD_REQUEST");
           return { url: await deps.messagingInstallations.start(context.actor, input.botId) };
         }),
+        complete: authed.messaging.installations.complete.handler(async ({ context, input }) => {
+          if (!deps.messagingInstallations) throw new ORPCError("BAD_REQUEST");
+          try {
+            await deps.messagingInstallations.complete(context.actor, input.state, input.code);
+          } catch {
+            throw new ORPCError("BAD_REQUEST");
+          }
+          return { ok: true as const };
+        }),
         remove: authed.messaging.installations.remove.handler(async ({ context, input }) => {
           if (!deps.messagingInstallations) throw new ORPCError("BAD_REQUEST");
           await deps.messagingInstallations.remove(context.actor, input.id);

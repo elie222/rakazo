@@ -86,8 +86,8 @@ describePostgres("messaging workspace installation (PostgreSQL)", () => {
     expect(await runAsTenant(actors[1]!, () => prisma.messagingInstallSession.count())).toBe(0);
     expect(await runAsTenant(actors[0]!, () => prisma.messagingInstallSession.count())).toBe(1);
     const results = await Promise.allSettled([
-      manager.complete(state, "code"),
-      manager.complete(state, "code"),
+      manager.complete(actors[0]!, state, "code"),
+      manager.complete(actors[0]!, state, "code"),
     ]);
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(fetcher).toHaveBeenCalledTimes(1);
@@ -162,7 +162,7 @@ describePostgres("messaging workspace installation (PostgreSQL)", () => {
 
   it("cannot move another tenant's workspace or disconnect its installation", async () => {
     const state = await start(1);
-    await expect(manager.complete(state, "code")).rejects.toThrow("already connected");
+    await expect(manager.complete(actors[1]!, state, "code")).rejects.toThrow("already connected");
     const row = (await runAsTenant(actors[0]!, () => manager.list(actors[0]!)))[0]!;
     await runAsTenant(actors[1]!, () => manager.remove(actors[1]!, row.id));
     expect((await manager.get("slack", "T-TEST"))?.spaceId).toBe(actors[0]!.spaceId);
@@ -195,7 +195,7 @@ describePostgres("messaging workspace installation (PostgreSQL)", () => {
   it("allows only one tenant to win a concurrent workspace installation", async () => {
     const states = await Promise.all([start(0), start(1)]);
     const results = await Promise.allSettled(
-      states.map((state) => manager.complete(state, "code")),
+      states.map((state, index) => manager.complete(actors[index]!, state, "code")),
     );
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(

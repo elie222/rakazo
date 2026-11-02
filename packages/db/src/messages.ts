@@ -64,6 +64,8 @@ export interface CreateThreadMessageInput {
   markUnread?: boolean;
   /** Terminal echo after the run is already cancelled. Every other write stays rejected. */
   allowCancelledRun?: boolean;
+  /** The executing attempt's lease; a superseded attempt cannot write. */
+  lease?: RunLease;
 }
 
 export async function createThreadMessage(prisma: PrismaClient, input: CreateThreadMessageInput) {
@@ -86,7 +88,10 @@ export async function createThreadMessageInTransaction(
     },
     select: { nextMessageSeq: true },
   });
-  await assertRunCanWriteHistory(tx, input.runId, { allowCancelled: input.allowCancelledRun });
+  await assertRunCanWriteHistory(tx, input.runId, {
+    allowCancelled: input.allowCancelledRun,
+    lease: input.lease,
+  });
   return tx.message.create({
     data: {
       threadId: input.threadId,
@@ -109,20 +114,51 @@ export class RunHistoryWriteError extends Error {
   }
 }
 
+export interface RunLease {
+  owner: string;
+  fence: number;
+}
+
+/**
+ * Writes from a run's executing attempt pass its lease. The row stays share-locked until the
+ * write commits, so no worker can reclaim the run between this check and the write. Pausing
+ * or finishing releases the owner but keeps the fence, so only a newer claim supersedes it.
+ */
 export async function assertRunCanWriteHistory(
   tx: Prisma.TransactionClient,
   runId?: string,
-  options?: { allowCancelled?: boolean },
+  options?: { allowCancelled?: boolean; lease?: RunLease },
 ): Promise<
-  | { status: string; startedAt: Date | null; firstResponseAt: Date | null; userId: string }
+  | {
+      status: string;
+      startedAt: Date | null;
+      firstResponseAt: Date | null;
+      userId: string;
+      leaseOwner: string | null;
+    }
   | undefined
 > {
   if (!runId) return;
+  const lease = options?.lease;
+  if (lease) await tx.$queryRaw`SELECT id FROM runs WHERE id = ${runId} FOR SHARE`;
   const run = await tx.run.findUnique({
     where: { id: runId },
-    select: { status: true, startedAt: true, firstResponseAt: true, userId: true },
+    select: {
+      status: true,
+      startedAt: true,
+      firstResponseAt: true,
+      userId: true,
+      leaseOwner: true,
+      leaseFence: true,
+    },
   });
   if (!run || (run.status === "cancelled" && !options?.allowCancelled)) {
+    throw new RunHistoryWriteError();
+  }
+  if (
+    lease &&
+    (run.leaseFence !== lease.fence || (run.leaseOwner !== null && run.leaseOwner !== lease.owner))
+  ) {
     throw new RunHistoryWriteError();
   }
   return run;

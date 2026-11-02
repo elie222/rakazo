@@ -17,7 +17,7 @@ describe("runDocker UTF-8 output", () => {
         stdout: new PassThrough(),
         stderr: new PassThrough(),
       });
-      vi.mocked(spawn).mockReturnValueOnce(child as ReturnType<typeof spawn>);
+      vi.mocked(spawn).mockReturnValueOnce(child as unknown as ReturnType<typeof spawn>);
       const lines: string[] = [];
       const pending = runDocker("fake-docker", [], {
         cwd: ".",
@@ -41,7 +41,7 @@ describe("runDocker UTF-8 output", () => {
       stdout: new PassThrough(),
       stderr: new PassThrough(),
     });
-    vi.mocked(spawn).mockReturnValueOnce(child as ReturnType<typeof spawn>);
+    vi.mocked(spawn).mockReturnValueOnce(child as unknown as ReturnType<typeof spawn>);
     const lines: string[] = [];
     const pending = runDocker("fake-docker", [], {
       cwd: ".",
@@ -68,7 +68,7 @@ describe("runDocker UTF-8 output", () => {
         stdout: new PassThrough(),
         stderr: new PassThrough(),
       });
-      vi.mocked(spawn).mockReturnValueOnce(child as ReturnType<typeof spawn>);
+      vi.mocked(spawn).mockReturnValueOnce(child as unknown as ReturnType<typeof spawn>);
       const lines: string[] = [];
       const pending = runDocker("fake-docker", [], {
         cwd: ".",

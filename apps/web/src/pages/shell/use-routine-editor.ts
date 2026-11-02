@@ -111,7 +111,7 @@ export function useRoutineEditor({
         saving: savingRoutine,
         running: runningRoutine,
         error: routineError,
-        onBack: () => setPanel("computer"),
+        onBack: () => setPanel("routines"),
         onClose: () => setPanel(null),
         onEnsureWebhook: async () => {
           await ensureWebhookSecret(active.id);
@@ -179,7 +179,11 @@ export function useRoutineEditor({
                 name: routineDraft.name || t`Routine`,
                 prompt: routineDraft.prompt || t`Check in.`,
                 crons,
-                active: armOneShot ? true : routineDraft.active,
+                // Send on/off only when this save changes it, so a stale draft cannot undo a
+                // disable made elsewhere since the editor opened.
+                ...(armOneShot || routineDraft.active !== targetRoutine.active
+                  ? { active: armOneShot ? true : routineDraft.active }
+                  : {}),
                 webhookEnabled: routineDraft.webhookEnabled,
                 githubEnabled: routineDraft.githubEnabled,
                 messageProvider: routineDraft.messageProvider,
@@ -209,7 +213,17 @@ export function useRoutineEditor({
             }
             if (routineSaveRequest.current === saveRequest && activeBotId.current === targetBotId) {
               setEditingRoutine(saved);
-              setRoutineDraft(draftFromRoutine(saved));
+              // Fields edited while the save was in flight keep the newer value.
+              const fresh = draftFromRoutine(saved);
+              setRoutineDraft(
+                (current) =>
+                  Object.fromEntries(
+                    Object.entries(fresh).map(([key, value]) => {
+                      const field = key as keyof RoutineDraftState;
+                      return [key, current[field] === routineDraft[field] ? value : current[field]];
+                    }),
+                  ) as RoutineDraftState,
+              );
             }
           } catch (error) {
             if (routineSaveRequest.current !== saveRequest || activeBotId.current !== targetBotId) {
@@ -251,7 +265,7 @@ export function useRoutineEditor({
             setDeleteRoutineTarget(editingRoutine);
             return;
           }
-          setPanel("computer");
+          setPanel("routines");
         },
       } satisfies ComponentProps<typeof RoutineEditor>)
     : null;
@@ -267,7 +281,7 @@ export function useRoutineEditor({
           setEditingRoutine((current) => (current?.id === target.id ? null : current));
           if (activeBotId.current !== target.botId) return;
           await refreshThread(target.botId);
-          if (activeBotId.current === target.botId) setPanel("computer");
+          if (activeBotId.current === target.botId) setPanel("routines");
         },
       }
     : null;

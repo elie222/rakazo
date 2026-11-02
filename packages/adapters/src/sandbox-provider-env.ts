@@ -13,6 +13,18 @@ export function resolveSandboxProvider(source: NodeJS.ProcessEnv = process.env):
   if (requested === "boat" && !boatApiKeyFromEnv(source)) return "none";
   if (requested === "boxd" && !optional(source.BOXD_API_KEY)) return "none";
   if (
+    requested === "wuying" &&
+    [
+      source.WUYING_ACCESS_KEY_ID,
+      source.WUYING_ACCESS_KEY_SECRET,
+      source.WUYING_DESKTOP_ID,
+      source.WUYING_END_USER_ID,
+      source.WUYING_MCP_URL,
+      source.WUYING_MCP_TOKEN,
+    ].some((value) => !optional(value))
+  )
+    return "none";
+  if (
     requested === "railway" &&
     (!optional(source.RAILWAY_API_TOKEN) || !optional(source.RAILWAY_ENVIRONMENT_ID))
   )
@@ -63,6 +75,13 @@ export function sandboxProviderOptionsFromEnv(
   | "kubernetesHomeClaim"
   | "kubernetesHomeColocateNamespace"
   | "kubernetesHomeColocateLabels"
+  | "wuyingAccessKeyId"
+  | "wuyingAccessKeySecret"
+  | "wuyingRegionId"
+  | "wuyingDesktopId"
+  | "wuyingEndUserId"
+  | "wuyingMcpUrl"
+  | "wuyingMcpToken"
 > {
   return {
     hostComputerUrl: source.SANDBOX_HOST_URL,
@@ -110,6 +129,13 @@ export function sandboxProviderOptionsFromEnv(
       source.KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS,
       "KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS",
     ),
+    wuyingAccessKeyId: optional(source.WUYING_ACCESS_KEY_ID),
+    wuyingAccessKeySecret: optional(source.WUYING_ACCESS_KEY_SECRET),
+    wuyingRegionId: optional(source.WUYING_REGION_ID),
+    wuyingDesktopId: optional(source.WUYING_DESKTOP_ID),
+    wuyingEndUserId: optional(source.WUYING_END_USER_ID),
+    wuyingMcpUrl: optional(source.WUYING_MCP_URL),
+    wuyingMcpToken: optional(source.WUYING_MCP_TOKEN),
   };
 }
 

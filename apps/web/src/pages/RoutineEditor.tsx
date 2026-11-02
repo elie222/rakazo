@@ -239,28 +239,48 @@ export function routineTriggerSummary(
   return parts.length > 0 ? parts.join(", ") : t`No trigger`;
 }
 
-export function RoutineListHeader({ onCreate }: { onCreate: () => void }) {
+export function RoutineList({
+  routines,
+  runningRoutineId,
+  onCreate,
+  onEdit,
+  onStop,
+}: {
+  routines: Routine[];
+  runningRoutineId?: string;
+  onCreate: () => void;
+  onEdit: (routine: Routine) => void;
+  onStop: () => void;
+}) {
   const { t } = useLingui();
   return (
-    <div className="mt-[30px] mb-3 flex items-center justify-between gap-3">
-      <div className="text-sm text-muted-foreground">
-        <Trans>Routines</Trans>
+    <div>
+      <div className="mb-2 flex justify-end">
+        <Button
+          variant="secondary"
+          size="icon-sm"
+          data-testid="routine-create-button"
+          aria-label={t`Create Routine`}
+          title={t`Create Routine`}
+          onClick={onCreate}
+        >
+          <Plus strokeWidth={1.9} />
+        </Button>
       </div>
-      <Button
-        variant="secondary"
-        size="icon-sm"
-        data-testid="routine-create-button"
-        aria-label={t`Create Routine`}
-        title={t`Create Routine`}
-        onClick={onCreate}
-      >
-        <Plus strokeWidth={1.9} />
-      </Button>
+      {routines.map((routine) => (
+        <RoutineListRow
+          key={routine.id}
+          routine={routine}
+          running={runningRoutineId === routine.id}
+          onOpen={() => onEdit(routine)}
+          onStop={onStop}
+        />
+      ))}
     </div>
   );
 }
 
-export function RoutineListRow({
+function RoutineListRow({
   routine,
   running,
   onOpen,

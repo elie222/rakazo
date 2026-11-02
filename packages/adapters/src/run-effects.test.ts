@@ -1,3 +1,4 @@
+import { RunHistoryWriteError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { legacyPiToolCallId, recordEffect, runScopedToolExecutionId } from "./run-effects.js";
 
@@ -61,6 +62,33 @@ const effect = (idempotencyKey: string, runId: string, spaceId = "space-a"): Eff
 });
 
 describe("executor tool effect ownership", () => {
+  it("refuses a new effect from an attempt a newer claim superseded", async () => {
+    const f = fixture();
+    const tx = {
+      $queryRaw: vi.fn(async () => []),
+      run: {
+        findUnique: vi.fn(async () => ({
+          status: "running",
+          leaseOwner: "worker-2",
+          leaseFence: 2,
+        })),
+      },
+      externalEffect: { create: f.create },
+    };
+    const prisma = Object.assign(f.deps.prisma, {
+      $transaction: vi.fn(async (write: (client: typeof tx) => unknown) => write(tx)),
+    });
+    const stale = {
+      ...f.deps,
+      prisma,
+      runLease: { runId: "one", owner: "worker-1", fence: 1 },
+    } as unknown as Parameters<typeof recordEffect>[0];
+    await expect(
+      recordEffect(stale, run("one"), "write_fixture", "fixture-key", {}),
+    ).rejects.toBeInstanceOf(RunHistoryWriteError);
+    expect(f.create).not.toHaveBeenCalled();
+  });
+
   it("rejects the reserved checkpoint kind before reading or recording effects", async () => {
     const f = fixture();
     await expect(

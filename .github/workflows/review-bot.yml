@@ -1,41 +1,115 @@
 name: Review bot
 
-# Greptile reviews PRs by default. A PR labeled review:coderabbit goes to
-# CodeRabbit instead (.coderabbit.yaml opts it in, greptile.json opts it out).
-# The label is added when Greptile replies that it can no longer review, or,
-# while the CODERABBIT_UNTIL repository variable holds a later date
-# (YYYY-MM-DD), to every new PR.
+# Greptile reviews PRs by default. Once it is out of credits for the month (it
+# replies "Reactivate Greptile", or the CODERABBIT_UNTIL repository variable
+# holds a later date, YYYY-MM-DD), new PRs go to the next tools instead: even
+# numbers to CodeRabbit (label review:cr), odd ones to Qodo (label review:qodo).
+# Greptile skips both labels (greptile.json), CodeRabbit reviews only review:cr
+# (.coderabbit.yaml), and Qodo reviews only when asked (.pr_agent.toml), so
+# this workflow posts /agentic_review on open and on every push. When
+# CodeRabbit or Qodo says it is rate limited or blocked, the PR moves to the
+# other one, unless that one has already said the same.
 #
-# pull_request_target so fork PRs can be labeled on open; this workflow never
-# checks out or runs PR code.
+# pull_request_target, pull_request_review and issue_comment so fork PRs get a
+# reviewer; this workflow never checks out or runs PR code.
 on:
   pull_request_target:
-    types: [opened, reopened]
+    types: [opened, reopened, synchronize]
   pull_request_review:
     types: [submitted]
+  issue_comment:
+    types: [created, edited]
 
 permissions: {}
 
 jobs:
-  label:
+  assign:
+    if: >-
+      !contains(github.event.pull_request.labels.*.name, 'review:cr') &&
+      !contains(github.event.pull_request.labels.*.name, 'review:qodo') &&
+      ((github.event_name == 'pull_request_target' &&
+        github.event.action != 'synchronize' &&
+        vars.CODERABBIT_UNTIL != '') ||
+       (github.event_name == 'pull_request_review' &&
+        github.event.review.user.login == 'greptile-apps[bot]' &&
+        contains(github.event.review.body, 'Reactivate Greptile')))
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: >-
-      (github.event_name == 'pull_request_target' && vars.CODERABBIT_UNTIL != '') ||
-      (github.event.review.user.login == 'greptile-apps[bot]' &&
-        contains(github.event.review.body, 'Reactivate Greptile'))
     permissions:
       issues: write
       pull-requests: write
     steps:
-      - name: Hand the PR to CodeRabbit
-        env:
+      - env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
           EVENT: ${{ github.event_name }}
           UNTIL: ${{ vars.CODERABBIT_UNTIL }}
         run: |
-          if [[ "$EVENT" == pull_request_review || "$(date -u +%F)" < "$UNTIL" ]]; then
-            gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=review:coderabbit" --silent
+          if [[ "$EVENT" == pull_request_target && ! "$(date -u +%F)" < "$UNTIL" ]]; then
+            exit 0
+          fi
+          if (( PR % 2 == 0 )); then
+            gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=review:cr" --silent
+          else
+            gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=review:qodo" --silent
+            gh pr comment "$PR" --repo "$REPO" --body "/agentic_review"
+          fi
+
+  rereview:
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      github.event.action == 'synchronize' &&
+      contains(github.event.pull_request.labels.*.name, 'review:qodo')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: gh pr comment "$PR" --repo "$REPO" --body "/agentic_review"
+
+  handoff:
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      github.event.issue.state == 'open' &&
+      ((github.event.comment.user.login == 'coderabbitai[bot]' &&
+        contains(github.event.comment.body, 'rate limited by coderabbit.ai') &&
+        contains(github.event.issue.labels.*.name, 'review:cr')) ||
+       (startsWith(github.event.comment.user.login, 'qodo-') &&
+        endsWith(github.event.comment.user.login, '[bot]') &&
+        startsWith(github.event.comment.body, '<!-- qodo:') &&
+        contains(github.event.issue.labels.*.name, 'review:qodo')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.issue.number }}
+          FROM_BOT: ${{ github.event.comment.user.login }}
+        run: |
+          if [[ "$FROM_BOT" == "coderabbitai[bot]" ]]; then
+            from=review:cr to=review:qodo
+            blocked='(.user.login | startswith("qodo-") and endswith("[bot]")) and (.body | startswith("<!-- qodo:"))'
+          else
+            from=review:qodo to=review:cr
+            blocked='.user.login == "coderabbitai[bot]" and (.body | contains("rate limited by coderabbit.ai"))'
+          fi
+          if [[ "$(gh api --paginate "repos/$REPO/issues/$PR/comments" --jq "[.[] | select($blocked)] | length" |
+                  awk '{ n += $1 } END { print n + 0 }')" != 0 ]]; then
+            echo "Both review bots are blocked on this PR; leaving it with $from."
+            exit 0
+          fi
+          gh api -X DELETE "repos/$REPO/issues/$PR/labels/$from" --silent
+          gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=$to" --silent
+          if [[ "$to" == review:qodo ]]; then
+            gh pr comment "$PR" --repo "$REPO" --body "/agentic_review"
           fi

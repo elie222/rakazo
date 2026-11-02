@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Point-in-time recovery for the Compose Postgres (docs/self-host.md#point-in-time-recovery).
+# Point-in-time recovery for the Compose Postgres (docs/self-host-backups.md#point-in-time-recovery).
 #
 #   run                 stream WAL with pg_receivewal over a replication slot, upload each finished
 #                       segment, and take a daily pg_basebackup; everything is age-encrypted to

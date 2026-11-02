@@ -70,7 +70,13 @@ export function ComputerCard({
             },
           ]}
         >
-          {block.state}
+          {block.state === "Needs you"
+            ? t("Needs you")
+            : block.state === "Skipped"
+              ? t("Skipped")
+              : block.state === "Done"
+                ? t("Done")
+                : block.state}
         </Text>
       </View>
       {block.text ? (

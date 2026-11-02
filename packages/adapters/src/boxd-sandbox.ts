@@ -30,16 +30,18 @@ import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
 import {
   INSTALL_LINUX_BROWSER,
   LinuxDesktop,
+  onBotScreen,
   PREPARE_LINUX_DESKTOP,
   VERIFY_LINUX_DESKTOP,
 } from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
-import { shellExportScript } from "./sandbox-shell-environment.js";
+import { shellExportScript, sourceEnvironmentCommand } from "./sandbox-shell-environment.js";
 import {
   shouldSkipPortableWorkspaceFile,
   workspaceSaveFindExpression,
 } from "./workspace-save-policy.js";
 
+const DISPLAY_START = 20;
 const HOME = "/home/boxd";
 const WORKSPACE = `${HOME}/rakazo-home`;
 const BROWSER_PROFILES = `${WORKSPACE}/.browser-profiles`;
@@ -95,7 +97,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
       homeDir: HOME,
       workspaceDir: WORKSPACE,
       browserProfilesDir: BROWSER_PROFILES,
-      displayStart: 20,
+      displayStart: DISPLAY_START,
       portStart: SCREEN_PORT,
       // boxd's HTTPS proxy reaches the machine through its network interface.
       bindHost: "0.0.0.0",
@@ -281,9 +283,10 @@ export class BoxdSandboxProvider implements SandboxProvider {
 
   async *execute(
     computer: ComputerRef,
-    request: CommandRequest,
+    requested: CommandRequest,
     context: AdapterContext,
   ): AsyncIterable<ProcessEvent> {
+    const request = onBotScreen(requested, context, DISPLAY_START);
     if (context.signal.aborted) {
       yield { type: "stderr", data: "command aborted\n" };
       yield { type: "exit", code: 130 };
@@ -808,15 +811,6 @@ function commandFailure(result: BoxdCommandResult): string {
   if (result.timedOut) return "timed out";
   const last = (result.stderr || result.stdout).trim().split("\n").at(-1)?.slice(0, 300);
   return last ? `exit ${result.exitCode}: ${last}` : `exit ${result.exitCode}`;
-}
-
-/**
- * Opens the env file, deletes it, then loads it from the open descriptor, so it is gone before
- * the requested env (which may change PATH) applies and before `argv` runs.
- */
-function sourceEnvironmentCommand(envFile: string, argv: string): string {
-  const file = shellQuote(envFile);
-  return `exec 3< ${file} || exit 1; rm -f -- ${file}; . /dev/fd/3 || exit 1; exec 3<&-; ${argv}`;
 }
 
 function boxdCwd(cwd: string | undefined): string {

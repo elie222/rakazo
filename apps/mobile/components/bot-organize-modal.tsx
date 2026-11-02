@@ -1,5 +1,8 @@
-import { useState } from "react";
+import type { ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ViewStyle } from "react-native";
 import {
+  findNodeHandle,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -10,6 +13,11 @@ import {
   TextInput,
   View,
 } from "react-native";
+import {
+  KeyboardControllerNative,
+  KeyboardEvents,
+  KeyboardAvoidingView as SheetKeyboardAvoidingView,
+} from "react-native-keyboard-controller";
 import type { MobileBot, MobileBotSection } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { confirmDeleteSection } from "../lib/confirm-delete-section";
@@ -91,7 +99,15 @@ export function BotOrganizeModal({
   if (Sheet === undefined) return null;
 
   const content = (
-    <View style={Sheet ? styles.nativeSheet : styles.sheet}>
+    <View
+      style={
+        Sheet
+          ? styles.nativeSheet
+          : Platform.OS === "ios"
+            ? [styles.nativeSheet, styles.formSheetContent]
+            : styles.sheet
+      }
+    >
       <Text style={styles.title} numberOfLines={1}>
         {bot.name}
       </Text>
@@ -231,12 +247,23 @@ export function BotOrganizeModal({
       </NativeSheet>
     );
   }
+  if (Platform.OS === "ios") {
+    return (
+      <Modal
+        animationType="slide"
+        presentationStyle="formSheet"
+        allowSwipeDismissal
+        onRequestClose={onClose}
+      >
+        <FormSheetKeyboardAvoidingView style={styles.formSheet}>
+          {content}
+        </FormSheetKeyboardAvoidingView>
+      </Modal>
+    );
+  }
   return (
     <Modal transparent animationType="fade" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.overlay}
-      >
+      <KeyboardAvoidingView style={styles.overlay}>
         <Pressable
           accessibilityLabel={t("Close chat organization")}
           style={StyleSheet.absoluteFill}
@@ -245,6 +272,44 @@ export function BotOrganizeModal({
         {content}
       </KeyboardAvoidingView>
     </Modal>
+  );
+}
+
+// The sheet starts below the top of the screen; offsetting by its window position keeps Cancel
+// above the keyboard. The measurement fails while the sheet is still being presented, so it is
+// repeated whenever the keyboard is about to show. React Native's `measureInWindow` cannot replace
+// it: on the New Architecture it ignores the form sheet's own position.
+function FormSheetKeyboardAvoidingView({
+  style,
+  children,
+}: {
+  style: ViewStyle;
+  children: ReactNode;
+}) {
+  const ref = useRef<View>(null);
+  const [offset, setOffset] = useState(0);
+  const measure = useCallback(() => {
+    const tag = findNodeHandle(ref.current);
+    if (tag === null) return;
+    KeyboardControllerNative.viewPositionInWindow(tag).then(
+      ({ y }) => setOffset(y),
+      () => {},
+    );
+  }, []);
+  useEffect(() => {
+    const subscription = KeyboardEvents.addListener("keyboardWillShow", measure);
+    return () => subscription.remove();
+  }, [measure]);
+  return (
+    <SheetKeyboardAvoidingView
+      ref={ref}
+      behavior="padding"
+      keyboardVerticalOffset={offset}
+      onLayout={measure}
+      style={style}
+    >
+      {children}
+    </SheetKeyboardAvoidingView>
   );
 }
 
@@ -295,6 +360,9 @@ function createBotOrganizeStyles() {
       paddingTop: 18,
       paddingBottom: 28,
     },
+    formSheet: { flex: 1, backgroundColor: tokens.background, paddingTop: 18 },
+    // The keyboard shrinks the section list so the name field stays visible.
+    formSheetContent: { flexShrink: 1 },
     nativeSheet: {
       paddingHorizontal: 16,
       paddingBottom: 28,

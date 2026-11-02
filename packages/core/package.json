@@ -29,6 +29,11 @@
       "development": "./src/node/load-root-env.ts",
       "default": "./src/node/load-root-env.ts"
     },
+    "./node/shutdown-signals": {
+      "types": "./src/node/shutdown-signals.ts",
+      "development": "./src/node/shutdown-signals.ts",
+      "default": "./src/node/shutdown-signals.ts"
+    },
     "./node/approval-effect-key": {
       "types": "./src/approval-effect-key.ts",
       "development": "./src/approval-effect-key.ts",

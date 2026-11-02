@@ -578,5 +578,6 @@
   "Nothing is still running": "Nichts läuft mehr",
   "Credentials are encrypted and never sent to the model.": "Zugangsdaten werden verschlüsselt und dem Modell nie gesendet.",
   "Rename section": "Abschnitt umbenennen",
-  "Could not rename section": "Abschnitt konnte nicht umbenannt werden"
+  "Could not rename section": "Abschnitt konnte nicht umbenannt werden",
+  "{count, plural, one {# message with {peer}} other {# messages with {peer}}}": "{count, plural, one {# Nachricht mit {peer}} other {# Nachrichten mit {peer}}}"
 }

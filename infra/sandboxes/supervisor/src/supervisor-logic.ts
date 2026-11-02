@@ -112,7 +112,8 @@ export function hasComputerIdentity(
 }
 
 export function hasValidBearerToken(authorization: string | undefined, expectedToken: string) {
-  const supplied = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
+  const supplied =
+    authorization?.slice(0, 7).toLowerCase() === "bearer " ? authorization.slice(7) : "";
   const actual = Buffer.from(expectedToken);
   const candidate = Buffer.from(supplied);
   return actual.length === candidate.length && timingSafeEqual(actual, candidate);

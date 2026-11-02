@@ -2,6 +2,7 @@ import { ORPCError } from "@orpc/server";
 import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import { parsePluginSource, previewPluginInstall } from "@rakazo/adapters";
 import {
+  emailLocale,
   pluginSubmissionAdminEmail,
   pluginSubmissionReceivedEmail,
   pluginSubmissionReviewedEmail,
@@ -20,7 +21,7 @@ import { Hono } from "hono";
 import { readBoundedBody } from "./http-body.js";
 import { assertMcpRemoteEndpoint } from "./mcp-servers.js";
 import type { RouterDeps } from "./router.js";
-import { windowCounter } from "./window-counter.js";
+import { throttleKey, windowCounter } from "./window-counter.js";
 
 const PLUGIN_REGISTRY = "Rakazo";
 const MAX_BODY_BYTES = 32 * 1024;
@@ -35,19 +36,6 @@ type SourceRef = ReturnType<typeof parsePluginSource>;
 // The provider tracks the send, so shutdown drains it; requests do not wait on delivery.
 function sendLater({ email, onEmailError }: EmailDeps, message: Promise<TransactionalEmail>) {
   if (email) void message.then((built) => email.send(built)).catch((e) => onEmailError?.(e));
-}
-
-export async function isAdmin(
-  deps: Pick<RouterDeps, "prisma" | "env">,
-  userId: string,
-): Promise<boolean> {
-  const admins = deps.env.adminEmails ?? [];
-  if (admins.length === 0) return false;
-  const user = await deps.prisma.user.findUnique({
-    where: { id: userId },
-    select: { email: true, emailVerified: true },
-  });
-  return Boolean(user?.emailVerified && admins.includes(user.email.toLowerCase()));
 }
 
 function sourceString(ref: SourceRef, pin: string | undefined): string {
@@ -93,7 +81,7 @@ export function pluginSubmissionRoutes(
     c.json({ error: "Invalid submission", issues }, 400);
 
   app.post(PLUGIN_SUBMISSIONS_PATH, async (c) => {
-    if (submissions(`ip:${deps.clientIp(c) ?? "unknown"}`) > SUBMISSIONS_PER_IP_PER_HOUR) {
+    if (submissions(throttleKey(deps.clientIp(c))) > SUBMISSIONS_PER_IP_PER_HOUR) {
       return c.json({ error: "Too many submissions. Try again later." }, 429, {
         "retry-after": String(HOUR_MS / 1000),
       });
@@ -146,7 +134,7 @@ export function pluginSubmissionRoutes(
       ? await deps.prisma.pluginSubmission.findUniqueOrThrow({ where: { id: pending.id } })
       : await deps.prisma.pluginSubmission.create({ data });
     if (confirmations(email) <= CONFIRMATIONS_PER_EMAIL_PER_DAY) {
-      sendLater(deps, pluginSubmissionReceivedEmail(email));
+      sendLater(deps, pluginSubmissionReceivedEmail(email, emailLocale(null, c.req.raw.headers)));
     }
     if (!updated) {
       const reviewUrl = new URL("/admin/plugins", deps.webOrigin).href;
@@ -215,9 +203,18 @@ export async function reviewPluginSubmission(
   });
   if (decided.count === 0)
     throw new ORPCError("CONFLICT", { message: "Changed or already reviewed. Reload to see it." });
+  // The decision is saved: the author's language (English without an account) only shapes the email.
   sendLater(
     deps,
-    pluginSubmissionReviewedEmail({ email: row.email, name: row.name, status, reason }),
+    deps.prisma.user
+      .findUnique({ where: { email: row.email }, select: { locale: true } })
+      .catch(() => null)
+      .then((author) =>
+        pluginSubmissionReviewedEmail(
+          { email: row.email, name: row.name, status, reason },
+          emailLocale(author?.locale),
+        ),
+      ),
   );
   return pluginSubmissionDto(
     await deps.prisma.pluginSubmission.findUniqueOrThrow({ where: { id: row.id } }),

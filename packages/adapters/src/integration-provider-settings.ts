@@ -125,11 +125,20 @@ export class IntegrationProviderSettings {
 }
 
 class ConfiguredIntegrationProvider implements ManagedConnectorProvider {
+  readonly resolveConnectedAccountId?: ManagedConnectorProvider["resolveConnectedAccountId"];
+  readonly cancelAuthorizationRequest?: ManagedConnectorProvider["cancelAuthorizationRequest"];
+  readonly revokeUnreferencedAccounts?: ManagedConnectorProvider["revokeUnreferencedAccounts"];
+
   constructor(
     private readonly id: IntegrationProviderId,
     private readonly settings: IntegrationProviderSettings,
     private readonly prepared?: ManagedConnectorProvider,
-  ) {}
+  ) {
+    // Only a prepared provider is known up front; callers branch on which of these exist.
+    this.resolveConnectedAccountId = prepared?.resolveConnectedAccountId?.bind(prepared);
+    this.cancelAuthorizationRequest = prepared?.cancelAuthorizationRequest?.bind(prepared);
+    this.revokeUnreferencedAccounts = prepared?.revokeUnreferencedAccounts?.bind(prepared);
+  }
   async prepareForTransaction() {
     const prepared = await this.settings.prepare(this.id);
     return {

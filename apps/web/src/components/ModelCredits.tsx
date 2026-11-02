@@ -25,11 +25,33 @@ import {
 } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { formatBillingDate } from "../lib/billing";
+import {
+  billingDateLabel,
+  formatBillingAmount,
+  formatBillingDate,
+  formatBillingPrice,
+} from "../lib/billing";
 import { rpc } from "../lib/rpc";
 import { useSignOut } from "../lib/sign-out";
+import { AccountMenu } from "./AccountMenu";
 
 type CreditAmount = (typeof MODEL_CREDIT_AMOUNTS)[number];
+
+/** Subscription states that still bill: access now, or resumed from the billing portal. */
+const LIVE_STATES: BillingStatus["state"][] = [
+  "trialing",
+  "active",
+  "past_due",
+  "unpaid",
+  "paused",
+];
+
+function formatMonthlyUsd(cents: number, locale: string): string {
+  return formatBillingPrice(
+    { amount: cents, currency: "usd", interval: "month", intervalCount: 1 },
+    locale,
+  );
+}
 
 export function CreditAmountSelect({
   value,
@@ -40,10 +62,12 @@ export function CreditAmountSelect({
   onChange: (amount: CreditAmount) => void;
   monthly?: boolean;
 }) {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const items = MODEL_CREDIT_AMOUNTS.map((amount) => ({
     value: amount,
-    label: monthly ? t`$${amount / 100} / month` : `$${amount / 100}`,
+    label: monthly
+      ? formatMonthlyUsd(amount, i18n.locale)
+      : formatBillingAmount(amount, "usd", i18n.locale),
   }));
   return (
     <Select
@@ -79,7 +103,7 @@ export function CreditChoice({
   status: BillingStatus;
   dismissible?: boolean;
 }) {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const features = [
     t`Bots and browser automation`,
     t`Scheduled routines`,
@@ -87,12 +111,10 @@ export function CreditChoice({
   ];
   const trialDays = status.trialDays;
   const [amount, setAmount] = useState<CreditAmount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
+  const credit = formatBillingAmount(amount, "usd", i18n.locale);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
-  const { logOut, signingOut } = useSignOut(
-    () => window.location.assign("/sign-in"),
-    () => setError(true),
-  );
+  const { logOut, signingOut } = useSignOut("/sign-in", () => setError(true));
   // A choice that answers after the plans were closed must not leave the app.
   const closed = useRef(false);
   useEffect(() => {
@@ -131,14 +153,7 @@ export function CreditChoice({
       className="mx-auto flex min-h-dvh max-w-3xl flex-col justify-center gap-8 px-6 py-12"
     >
       {dismissible ? null : (
-        <Button
-          className="fixed top-4 right-6"
-          variant="text"
-          disabled={pending || signingOut}
-          onClick={() => void logOut()}
-        >
-          <Trans>Log out</Trans>
-        </Button>
+        <AccountMenu disabled={pending} signingOut={signingOut} onLogOut={() => void logOut()} />
       )}
       <h1 className="text-heading1 font-medium">
         <Trans>Choose how to use Rakazo</Trans>
@@ -153,7 +168,7 @@ export function CreditChoice({
           <CardContent className="flex flex-1 flex-col gap-4">
             <p className="flex h-12 items-center text-3xl font-medium tracking-tight">
               {status.byokPriceCents ? (
-                t`$${status.byokPriceCents / 100} / month`
+                formatMonthlyUsd(status.byokPriceCents, i18n.locale)
               ) : (
                 <Trans>Free</Trans>
               )}
@@ -201,7 +216,7 @@ export function CreditChoice({
           <CardContent className="flex flex-1 flex-col gap-4">
             <CreditAmountSelect monthly value={amount} onChange={setAmount} />
             <p className="text-sm text-muted-foreground">
-              <Trans>All ${amount / 100} goes to model usage.</Trans>
+              <Trans>All {credit} goes to model usage.</Trans>
             </p>
             <ul className="space-y-3 text-sm">
               {[...features, t`Models at provider cost`].map((feature) => (
@@ -271,8 +286,34 @@ export function ModelCreditsSettings({
   const freeUntil = status.byokFreeUntil
     ? formatBillingDate(status.byokFreeUntil, i18n.locale || "en")
     : null;
+  const price = status.byokPriceCents
+    ? formatBillingAmount(status.byokPriceCents, "usd", i18n.locale)
+    : null;
+  // A live subscription without monthly credits is the own-key plan, at the price it was bought at.
+  const ownKeyPlan =
+    status.funding === "byok" &&
+    status.byokPriceCents &&
+    !status.monthlyAmountCents &&
+    LIVE_STATES.includes(status.state) &&
+    !status.byokFreeUntil
+      ? {
+          price: formatMonthlyUsd(status.byokPriceCents, i18n.locale),
+          date: billingDateLabel(status, i18n.locale || "en"),
+        }
+      : null;
   return (
     <div data-testid="model-credits" className="space-y-5">
+      {ownKeyPlan ? (
+        <div data-testid="own-key-plan" className="rounded-xl border border-border p-5">
+          <h3 className="text-sm text-muted-foreground">
+            <Trans>Your subscription or API key</Trans>
+          </h3>
+          <p className="mt-2 text-3xl font-medium tabular-nums">{ownKeyPlan.price}</p>
+          {ownKeyPlan.date ? (
+            <p className="mt-2 text-sm text-muted-foreground">{ownKeyPlan.date}</p>
+          ) : null}
+        </div>
+      ) : null}
       <div className="rounded-xl border border-border p-5">
         <div className="flex items-center justify-between">
           <h3 className="text-sm text-muted-foreground">
@@ -300,7 +341,7 @@ export function ModelCreditsSettings({
         </p>
         {status.canManage ? (
           <div className="mt-5 flex flex-wrap gap-3">
-            {freeUntil && status.byokPriceCents ? (
+            {freeUntil && price ? (
               <Button
                 disabled={pending}
                 onClick={() =>
@@ -310,7 +351,7 @@ export function ModelCreditsSettings({
                   })
                 }
               >
-                <Trans>Subscribe for ${status.byokPriceCents / 100} / month</Trans>
+                <Trans>Subscribe for {price} / month</Trans>
               </Button>
             ) : null}
             <Button
@@ -323,6 +364,14 @@ export function ModelCreditsSettings({
           </div>
         ) : null}
       </div>
+      {status.computerHoursLeft != null ? (
+        <div className="rounded-xl border border-border p-5">
+          <h3 className="text-sm text-muted-foreground">
+            <Trans>Computer hours left</Trans>
+          </h3>
+          <p className="mt-2 text-3xl font-medium tabular-nums">{status.computerHoursLeft}</p>
+        </div>
+      ) : null}
       {status.canManage ? (
         <div className="rounded-xl border border-border p-5">
           <h3 className="font-medium">
@@ -403,7 +452,7 @@ export function ModelCreditsSettings({
           onClick={() =>
             void action(async () => {
               const { url } = await rpc.billing.selectFunding({ funding: "byok" });
-              window.location.assign(url ?? "/onboarding");
+              window.location.assign(url ?? "/app?settings=models");
             })
           }
         >

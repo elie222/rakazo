@@ -4,23 +4,61 @@ import { Button, Input, Label } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { fetchAccountSecurity, requestAccountDeletionCode } from "../lib/account-security";
 import { authClient } from "../lib/auth";
+import { clearComposerDrafts } from "../lib/composer-draft";
 import { runSsoFlow } from "../lib/sso-flow";
 import { authErrorText } from "../lib/user-error";
+import { SettingsRow } from "./SettingsRows";
 
 export function AccountAccess({
   onSecurity,
 }: {
   onSecurity?: (security: AccountSecurity) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <SettingsRow
+      label={<Trans>Delete account</Trans>}
+      control={
+        <Button
+          variant="secondary"
+          size="sm"
+          data-testid="delete-account"
+          className="text-destructive hover:text-destructive"
+          onClick={() => setOpen((value) => !value)}
+        >
+          <Trans>Delete</Trans>
+        </Button>
+      }
+    >
+      <DeleteAccountForm open={open} onSecurity={onSecurity} />
+    </SettingsRow>
+  );
+}
+
+/** True when an SSO sign-in started to delete the account came back with an error. */
+export function hasDeleteRedirectError(): boolean {
+  return redirectError("delete") !== null;
+}
+
+/**
+ * Confirms it's the account owner, then deletes the account. Security is looked up while closed
+ * too, so settings can report it, and a redirect's error shows either way.
+ */
+export function DeleteAccountForm({
+  open,
+  onSecurity,
+}: {
+  open: boolean;
+  onSecurity?: (security: AccountSecurity) => void;
+}) {
   const { t } = useLingui();
   const [security, setSecurity] = useState<AccountSecurity | null>(null);
-  const [open, setOpen] = useState(false);
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(() => {
-    const code = new URLSearchParams(window.location.search).get("error");
+    const code = redirectError("delete");
     return code ? authErrorText({ code }, t`Could not continue`) : null;
   });
   const [attempt, setAttempt] = useState(0);
@@ -52,39 +90,9 @@ export function AccountAccess({
     }
   }
   return (
-    <div className="space-y-3">
-      {security?.sso && !security.ssoLinked ? (
-        <Button
-          variant="outline"
-          disabled={pending}
-          onClick={() =>
-            void action(async () => {
-              const result = await runSsoFlow(
-                (disableRedirect, callbackURL) =>
-                  authClient.linkSocial({
-                    disableRedirect,
-                    provider: "oidc",
-                    callbackURL: callbackURL(window.location.href),
-                    errorCallbackURL: callbackURL(window.location.href),
-                  }),
-                [window.location.href],
-              );
-              if (result.error) throw new Error(authErrorText(result.error, t`Could not continue`));
-            }, true)
-          }
-        >
-          <Trans>Link SSO</Trans>
-        </Button>
-      ) : null}
-      <Button
-        variant="outline"
-        className="text-destructive hover:text-destructive"
-        onClick={() => setOpen((value) => !value)}
-      >
-        <Trans>Delete account</Trans>
-      </Button>
+    <>
       {open ? (
-        <div className="space-y-3">
+        <div className="mt-3 space-y-3">
           <p className="text-sm">
             <Trans>This permanently deletes your account and data.</Trans>
           </p>
@@ -93,7 +101,7 @@ export function AccountAccess({
               <Trans>Retry</Trans>
             </Button>
           ) : security.hasPassword ? (
-            <div>
+            <div className="space-y-2">
               <Label htmlFor="delete-password">
                 <Trans>Current password</Trans>
               </Label>
@@ -113,16 +121,17 @@ export function AccountAccess({
                   disabled={pending}
                   onClick={() =>
                     void action(async () => {
+                      const returnTo = ssoReturnURL(false);
                       const result = await runSsoFlow(
                         (disableRedirect, callbackURL) =>
                           authClient.signIn.social({
                             disableRedirect,
                             provider: "oidc",
                             additionalData: { reauthenticate: true },
-                            callbackURL: callbackURL(window.location.href),
-                            errorCallbackURL: callbackURL(window.location.href),
+                            callbackURL: callbackURL(returnTo),
+                            errorCallbackURL: callbackURL(returnTo),
                           }),
-                        [window.location.href],
+                        [returnTo],
                       );
                       if (result.error)
                         throw new Error(authErrorText(result.error, t`Could not continue`));
@@ -147,7 +156,7 @@ export function AccountAccess({
                 </Button>
               ) : null}
               {sent ? (
-                <div>
+                <div className="space-y-2">
                   <Label htmlFor="deletion-code">
                     <Trans>Deletion code</Trans>
                   </Label>
@@ -181,6 +190,7 @@ export function AccountAccess({
                 );
                 if (result.error)
                   throw new Error(authErrorText(result.error, t`Could not continue`));
+                clearComposerDrafts();
                 window.location.assign("/sign-in");
               })
             }
@@ -190,10 +200,72 @@ export function AccountAccess({
         </div>
       ) : null}
       {error ? (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="mt-2 text-[12.5px] text-destructive">
           {error}
         </p>
       ) : null}
-    </div>
+    </>
   );
+}
+
+/** Links the organization's SSO identity to an account that signed up another way. */
+export function LinkSsoRow() {
+  const { t } = useLingui();
+  const [error, setError] = useState<string | null>(() => {
+    const code = redirectError("link");
+    return code ? authErrorText({ code }, t`Could not continue`) : null;
+  });
+  async function link() {
+    setError(null);
+    const returnTo = ssoReturnURL(false);
+    const failed = ssoReturnURL(true);
+    try {
+      const result = await runSsoFlow(
+        (disableRedirect, callbackURL) =>
+          authClient.linkSocial({
+            disableRedirect,
+            provider: "oidc",
+            callbackURL: callbackURL(returnTo),
+            errorCallbackURL: callbackURL(failed),
+          }),
+        [returnTo, failed],
+      );
+      if (result.error) setError(authErrorText(result.error, t`Could not continue`));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t`Could not continue`);
+    }
+  }
+  return (
+    <SettingsRow
+      label={<Trans>SSO</Trans>}
+      control={
+        <Button variant="secondary" size="sm" onClick={() => void link()}>
+          <Trans>Link SSO</Trans>
+        </Button>
+      }
+    >
+      {error ? (
+        <p role="alert" className="mt-2 text-[12.5px] text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </SettingsRow>
+  );
+}
+
+const LINK_RETURN = "sso-link";
+
+/** This page without an earlier redirect's result; a failed link's return is marked as one. */
+function ssoReturnURL(failedLink: boolean): string {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("error");
+  url.searchParams.delete(LINK_RETURN);
+  if (failedLink) url.searchParams.set(LINK_RETURN, "1");
+  return url.href;
+}
+
+/** The error an SSO redirect came back with, for the flow that started it. */
+function redirectError(flow: "link" | "delete"): string | null {
+  const params = new URLSearchParams(window.location.search);
+  return params.has(LINK_RETURN) === (flow === "link") ? params.get("error") : null;
 }

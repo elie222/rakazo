@@ -85,9 +85,17 @@ export function forwardedRendererRequestInit(request: Request, webOrigin: string
     credentials: "include",
   };
   if (new URL(request.url).origin !== webOrigin) return init;
+  // OAuth popups and sandboxed previews share this session, so only app pages get the app origin.
+  if (!fromAppPage(request, webOrigin)) return init;
   const headers = new Headers(request.headers);
   headers.set("origin", webOrigin);
   return { ...init, headers };
+}
+
+function fromAppPage(request: Request, webOrigin: string) {
+  const origin = request.headers.get("origin");
+  if (origin !== null) return origin === webOrigin;
+  return URL.parse(request.referrer)?.origin === webOrigin;
 }
 
 function matchesPrefix(pathname: string, prefix: string) {

@@ -10,7 +10,7 @@
 # flips the default SANDBOX_PROVIDER to docker and adds the in-stack supervisor,
 # matching docker-compose.images.yml. When the `updater` profile is enabled too,
 # mirror the file list into RAKAZO_COMPOSE_FILE and add supervisor to
-# RAKAZO_UPDATE_SERVICES (see docs/self-host.md).
+# RAKAZO_UPDATE_SERVICES (see docs/self-host-upgrading.md).
 
 services:
   # One-shot stub whose build produces the image the supervisor launches bot

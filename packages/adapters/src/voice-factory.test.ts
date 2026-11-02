@@ -100,7 +100,11 @@ describe("createVoiceProvider", () => {
     expect(() => createVoiceProvider("macos")).toThrow(/unknown voice provider/i);
 
     macOs.available = true;
-    expect(listVoiceCatalog()[0]).toMatchObject({ id: "macos", name: "macOS", keyless: true });
+    expect(listVoiceCatalog()[0]).toMatchObject({
+      id: "macos",
+      name: "Server (Mac)",
+      keyless: true,
+    });
     expect(isVoiceProviderId("macos")).toBe(true);
     expect(createVoiceProvider("macos").describe().capabilities.transcribe).toBe(false);
   });

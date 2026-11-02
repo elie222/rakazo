@@ -9,6 +9,7 @@ import type {
 import {
   canonicalPiProviderId,
   DEFAULT_NEW_BOT_AVATAR_SET,
+  disabledBuiltinToolSet,
   InstructionVersionSchema,
   initialBotMemory,
   resolveBotAvatarSet,
@@ -149,9 +150,10 @@ function mapBot(
     thinkingLevel: (bot.thinkingLevel as Bot["thinkingLevel"]) ?? null,
     teamChatAmbientEnabled: bot.teamChatAmbientEnabled ?? false,
     teamChatRules: bot.teamChatRules ?? "",
-    crossSpaceCommunication: bot.crossSpaceCommunication ?? false,
-    fleetManagement: bot.fleetManagement ?? false,
-    disabledBuiltinTools: bot.disabledBuiltinTools ?? [],
+    crossSpaceCommunication: bot.crossSpaceCommunication ?? true,
+    fleetManagement: bot.fleetManagement ?? true,
+    // Stored lists may name a tool that no longer exists; settings resend what they read.
+    disabledBuiltinTools: [...disabledBuiltinToolSet(bot.disabledBuiltinTools)],
     webhookConfigured: Boolean(bot.webhookSecretId),
     spawnKey: bot.spawnKey ?? null,
     incomingCall,

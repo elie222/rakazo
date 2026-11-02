@@ -78,7 +78,8 @@ export type AgentImportServices<PreparedKey = unknown> = {
   connectedProviders: (actor: Actor, providers: string[]) => Promise<Set<string>>;
   /** `bots.update`'s model check; an error message or null. */
   validateBotModel: (actor: Actor, provider: string, modelId: string) => Promise<string | null>;
-  stdioAllowed: (command: string) => boolean;
+  /** Which stdio commands this actor may import; only admins add stdio servers. */
+  stdioAllowed: (actor: Actor) => Promise<(command: string) => boolean>;
   /** `models.connect`'s checks and encryption for a key, without writing it. */
   prepareModelKey: (
     actor: Actor,
@@ -185,7 +186,7 @@ async function buildPlan(
   if (!folder) return { plan, settings: null, routineInputs, mcpConfigs, connectedKeyIds };
   const settings = readAgentImportSettings(folder, {
     includeSecrets,
-    stdioAllowed: services.stdioAllowed,
+    stdioAllowed: await services.stdioAllowed(actor),
   });
 
   let model: AgentImportPlan["model"] = null;

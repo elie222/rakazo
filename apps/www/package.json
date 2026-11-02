@@ -6,12 +6,13 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "astro build && pagefind --site dist",
     "preview": "astro preview",
     "check": "astro check",
     "e2e": "playwright test"
   },
   "dependencies": {
+    "@astrojs/markdown-satteri": "0.4.4",
     "@astrojs/react": "6.0.6",
     "@astrojs/sitemap": "3.7.4",
     "@rakazo/core": "workspace:*",
@@ -29,6 +30,7 @@
     "@tailwindcss/vite": "4.3.3",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.7",
+    "pagefind": "1.5.2",
     "tailwindcss": "4.3.3",
     "typescript": "6.0.3"
   }

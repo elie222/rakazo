@@ -108,7 +108,7 @@ jobs:
     needs: [build-depot]
     # Each architecture builds natively on its own runner and pushes by digest only.
     # No QEMU: GitHub hosts native arm64 runners, and emulated arm64 took hours for the
-    # desktop-sized computer image. See docs/self-host.md (Published images and tags).
+    # desktop-sized computer image. See docs/self-host-upgrading.md (Published images and tags).
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     permissions:

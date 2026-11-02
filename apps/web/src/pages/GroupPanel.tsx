@@ -270,7 +270,12 @@ export function GroupSettings({
   useEffect(() => {
     if (saving || confirmingDelete || covered) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !event.defaultPrevented && !event.isComposing) {
+      if (
+        event.key === "Escape" &&
+        !event.defaultPrevented &&
+        !event.isComposing &&
+        event.keyCode !== 229
+      ) {
         event.preventDefault();
         onClose();
       }

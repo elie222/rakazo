@@ -1,4 +1,5 @@
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { RunHistoryWriteError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   callRequestRefusal,
@@ -294,6 +295,24 @@ describe("requestUserCall security", () => {
     } finally {
       vi.restoreAllMocks();
     }
+  });
+
+  it("does not ring from an attempt a newer claim superseded", async () => {
+    const { deps, tx, saved } = fixture();
+    tx.run.findUnique.mockResolvedValue({
+      status: "running",
+      leaseOwner: "worker-2",
+      leaseFence: 2,
+    } as never);
+    await expect(
+      requestUserCall(
+        { ...deps, runLease: { runId: run.id, owner: "worker-1", fence: 1 } },
+        run,
+        input,
+      ),
+    ).rejects.toBeInstanceOf(RunHistoryWriteError);
+    expect(saved()).toBeNull();
+    expect(deps.jobs.enqueue).not.toHaveBeenCalled();
   });
 
   it("does no work while disabled", async () => {

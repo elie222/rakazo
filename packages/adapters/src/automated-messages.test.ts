@@ -93,6 +93,11 @@ describe("automated messages are labelled as not from the user", () => {
     beforeEach(async () => {
       bodies.length = 0;
       server = createServer((req, res) => {
+        // Local tools can probe any listening loopback port; only model calls are recorded.
+        if (req.method !== "POST" || req.url !== "/v1/chat/completions") {
+          res.writeHead(404).end();
+          return;
+        }
         let raw = "";
         req.on("data", (chunk) => (raw += chunk));
         req.on("end", () => {

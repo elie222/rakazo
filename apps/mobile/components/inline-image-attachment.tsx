@@ -102,7 +102,7 @@ export function InlineImageAttachment({
 }
 
 const styles = StyleSheet.create({
-  image: { borderRadius: 12 },
+  image: { borderRadius: 12, overflow: "hidden" },
   placeholder: {
     minHeight: 44,
     justifyContent: "center",

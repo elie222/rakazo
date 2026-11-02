@@ -34,7 +34,9 @@ vi.mock("@rakazo/chat-ui/web", () => ({
   useLinkFavicon: () => ({ icon: null, unusable: () => undefined }),
 }));
 vi.mock("@lingui/react/macro", () => ({
-  useLingui: () => ({ t: (parts: TemplateStringsArray) => parts.join("") }),
+  useLingui: () => ({
+    t: (parts: TemplateStringsArray, ...values: unknown[]) => String.raw({ raw: parts }, ...values),
+  }),
   Trans: ({ children }: { children: ReactNode }) => children,
   Plural: ({ value, other }: { value: number; other: string }) => other.replace("#", `${value}`),
 }));
@@ -224,6 +226,18 @@ describe("plugin detail", () => {
     expect(container.textContent).toContain("Not added: hooks/");
     await click("Add");
     expect(api.install).toHaveBeenCalledWith(expect.objectContaining({ pluginParts: ["skills"] }));
+  });
+
+  it("says why a skill repeating a built-in one was not added", async () => {
+    api.preview.mockResolvedValue({
+      ...preview,
+      skipped: [{ kind: "editor_only", name: "hooks/", reason: "Runs only inside an editor" }],
+      builtinNames: ["interrogate"],
+    });
+    await render();
+    expect(container.textContent).toContain(
+      "Not added: hooks/, interrogate (same name as a built-in skill)",
+    );
   });
 
   it("connects the managed app of the same brand instead of the plugin's connector", async () => {

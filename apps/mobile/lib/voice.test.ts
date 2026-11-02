@@ -5,6 +5,7 @@ import * as Speech from "expo-speech";
 import { Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { captureApiRequestContext, currentApiBase, rpc } from "./api";
+import { DEVICE_VOICE_KEY } from "./device-voice";
 import {
   createSpeechOwner,
   getVoicePlaybackState,
@@ -218,7 +219,9 @@ class ControllableAudio {
 describe("hosted voice playback controls", () => {
   beforeEach(() => {
     ControllableAudio.instances = [];
-    vi.mocked(SecureStore.getItemAsync).mockResolvedValue(null);
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) =>
+      key === DEVICE_VOICE_KEY ? "0" : null,
+    );
     vi.mocked(captureApiRequestContext).mockResolvedValue({
       apiBase: "https://support.example",
       headers: { authorization: "Bearer support-token", "x-rakazo-space-id": "space-support" },

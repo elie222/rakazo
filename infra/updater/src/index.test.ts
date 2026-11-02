@@ -457,7 +457,7 @@ describe("child process environment", () => {
   it("declares the deployment directory safe so git works on a non-root checkout", () => {
     // The child environment is rebuilt from an allowlist, so GIT_CONFIG_* set on the Compose
     // service never reaches git. Without these three, every git call exits 128 with "detected
-    // dubious ownership" on the layout docs/self-host.md recommends.
+    // dubious ownership" on the layout docs/self-host-production.md recommends.
     const env = commandEnvironment({ RAKAZO_DEPLOY_DIR: "/srv/rakazo" });
     expect(env.GIT_CONFIG_COUNT).toBe("1");
     expect(env.GIT_CONFIG_KEY_0).toBe("safe.directory");

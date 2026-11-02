@@ -151,6 +151,8 @@ function fixture(runId = "run-1") {
     ),
   };
   const prisma = {
+    $transaction: vi.fn(async (write: (tx: unknown) => unknown) => write(prisma)),
+    $queryRaw: vi.fn(async () => []),
     user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async () => run),
@@ -828,7 +830,7 @@ describe("mutating tool effect idempotency keys", () => {
 });
 
 describe("add_mcp_server", () => {
-  it("refuses a stdio server this deployment can't run", async () => {
+  it("never adds a local (stdio) server", async () => {
     const f = fixture();
     f.setCalls([
       {
@@ -840,6 +842,8 @@ describe("add_mcp_server", () => {
 
     await f.run();
 
-    expect(f.results[0]).toEqual({ error: "Stdio MCP servers aren't available here" });
+    expect(f.results[0]).toEqual({
+      error: "Bots can't add local (stdio) MCP servers. Ask an admin to add it in Settings.",
+    });
   });
 });

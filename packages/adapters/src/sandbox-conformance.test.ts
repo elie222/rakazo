@@ -13,6 +13,7 @@ import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { emulatedNovita } from "./novita-sandbox.test-support.js";
 import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
+import { FakeWuyingDesktop } from "./wuying-sandbox.test-support.js";
 
 let restoreFetch: () => void;
 beforeAll(() => {
@@ -69,6 +70,7 @@ describe("sandbox conformance", () => {
       fakeBoxdProvider(),
       emulatedNovita().provider(),
       new DesktopSandboxProvider(),
+      new FakeWuyingDesktop().provider(),
     ];
     for (const [index, provider] of providers.entries()) {
       const computer = await provisionPrepared(

@@ -8,7 +8,11 @@ import type {
   BillingSubscriptionSnapshot,
   BillingSubscriptionStatus,
 } from "@rakazo/adapter-kit";
-import { BillingCheckoutCompletedError, BillingCustomerNotFoundError } from "@rakazo/adapter-kit";
+import {
+  BillingCheckoutCompletedError,
+  BillingCustomerNotFoundError,
+  BillingNoMonthlyCreditsError,
+} from "@rakazo/adapter-kit";
 import {
   holdsBillingSubscription,
   parseStripeWebhook,
@@ -135,6 +139,7 @@ export class BillingEmulator implements BillingProvider {
       subscriptionItemId: `si_byok_${n}`,
       priceId: BYOK_PRICE_ID,
       byokPlan: true,
+      byokPriceCents: checkout.amountCents,
       cardFingerprint,
       status: trialEndsAt ? "trialing" : "active",
       seats: 1,
@@ -155,7 +160,8 @@ export class BillingEmulator implements BillingProvider {
   async setMonthlyCredits(customerId: string, amountCents: number) {
     this.renewCredits(customerId);
     const chosen = pickBillingSubscription(this.forCustomer(customerId));
-    if (!chosen?.creditAmountCents) throw new Error("No monthly credit subscription");
+    if (!chosen?.creditAmountCents || !holdsBillingSubscription(chosen.status))
+      throw new BillingNoMonthlyCreditsError();
     if (amountCents > chosen.creditAmountCents) {
       this.creditPurchases.set(customerId, [
         ...(this.creditPurchases.get(customerId) ?? []),

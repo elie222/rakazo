@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.js";
 import type { PluginRepoFile } from "./plugin-connectors.js";
 import {
@@ -175,13 +176,70 @@ describe("portable plugin parser", () => {
       ...files(),
       {
         path: "skills/interrogate/SKILL.md",
-        content: "---\nname: interrogate\ndescription: Review a diff\n---\n\nReview it.\n",
+        content: "---\nname: Interrogate\ndescription: Review a diff\n---\n\nReview it.\n",
       },
       { path: "commands/INTERROGATE.md", content: "Review the diff" },
       { path: "commands/ interrogate.md", content: "Review the diff" },
     ]);
     expect(preview.skills.map((s) => s.name)).toEqual(["example-skill"]);
     expect(preview.skipped).toEqual([]);
+    expect(preview.builtinNames).toEqual(["Interrogate", " interrogate"]);
+  });
+  it("saves a preview that clients released before the built-in skip still read", () => {
+    // PluginPreviewSchema as released, which installed clients parse saved plugin installs with.
+    const released = z.object({
+      format: z.enum(["agent-plugins", "cursor", "grok"]),
+      name: z.string(),
+      version: z.string().nullable(),
+      description: z.string(),
+      author: z.string().nullable(),
+      homepage: z.string().nullable(),
+      repository: z.string().nullable(),
+      license: z.string().nullable(),
+      keywords: z.array(z.string()),
+      resolvedSha: z.string().regex(/^[a-f0-9]{40}$/),
+      pinnedSource: z.string().optional(),
+      installedSource: z.string().optional(),
+      digest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+      skills: z.array(
+        z.object({
+          name: z.string(),
+          description: z.string(),
+          files: z.array(z.string()).optional(),
+        }),
+      ),
+      mcpServers: z.array(
+        z.object({
+          name: z.string(),
+          transport: z.enum(["streamable_http", "sse"]),
+          endpoint: z.string(),
+          staticHeaderKeys: z.array(z.string()),
+        }),
+      ),
+      skipped: z.array(
+        z.object({
+          kind: z.enum([
+            "mcp_stdio",
+            "mcp_invalid",
+            "skill_invalid",
+            "editor_only",
+            "unsupported_transport",
+            "unsupported_field",
+          ]),
+          name: z.string(),
+          reason: z.string(),
+        }),
+      ),
+    });
+    const preview = parse([
+      ...files(),
+      { path: "commands/interrogate.md", content: "Review the diff" },
+    ]);
+    const saved = JSON.parse(JSON.stringify(pluginPreviewDto(preview)));
+    const read = released.safeParse(saved);
+    expect(read.success).toBe(true);
+    expect(read.data?.skills.map((s) => s.name)).toEqual(["example-skill"]);
+    expect(saved.builtinNames).toEqual(["interrogate"]);
   });
   it("tells from a file list whether every part installs", () => {
     const remote = JSON.stringify({

@@ -10,6 +10,7 @@ import type { VoiceDeps } from "./voice.js";
 import {
   disconnectVoiceCredential,
   fishSpeechModelValue,
+  isVoiceProviderFailure,
   MAX_SPEAK_REQUEST_BYTES,
   MAX_TRANSCRIBE_REQUEST_BYTES,
   mountVoiceHttpRoutes,
@@ -18,6 +19,7 @@ import {
   synthesizeVoice,
   toVoiceCredential,
   toVoiceStatus,
+  transcribeInboundVoice,
   updateVoiceSpeechModel,
   voiceChoicesChanged,
   voiceCredentialPlaintext,
@@ -302,6 +304,17 @@ describe("disconnectVoiceCredential", () => {
       },
     );
     expect(transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("isVoiceProviderFailure", () => {
+  it("treats provider refusals and timeouts as expected but keeps bugs reported", () => {
+    expect(isVoiceProviderFailure(new Error("Fish Audio could not speak that (500)."))).toBe(true);
+    expect(isVoiceProviderFailure(new DOMException("timed out", "TimeoutError"))).toBe(true);
+    expect(isVoiceProviderFailure(new TypeError("Cannot read properties of undefined"))).toBe(
+      false,
+    );
+    expect(isVoiceProviderFailure("boom")).toBe(false);
   });
 });
 
@@ -1020,4 +1033,119 @@ it.each([
       },
     ),
   ).rejects.toThrow(/blocked metadata or link-local/);
+});
+
+describe("transcribeInboundVoice", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const owner = { userId: "user-1", spaceId: "space-1" };
+
+  function deps(
+    provider: string,
+    overrides: { preference?: unknown | null; load?: () => string } = {},
+  ) {
+    return {
+      prisma: {
+        spaceSettingOverride: { findUnique: vi.fn().mockResolvedValue(null) },
+        userVoicePreference: {
+          findFirst: vi.fn().mockResolvedValue(
+            overrides.preference === undefined
+              ? {
+                  isDefault: true,
+                  voiceId: "voice-1",
+                  speechModel: null,
+                  credential: {
+                    id: "cred-1",
+                    userId: owner.userId,
+                    provider,
+                    secretId: "secret-1",
+                    createdAt: new Date(0),
+                    updatedAt: new Date(0),
+                  },
+                }
+              : overrides.preference,
+          ),
+        },
+        secret: { findFirst: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "c" }) },
+      },
+      secrets: {
+        load: vi.fn().mockImplementation(async () => overrides.load?.() ?? "key"),
+        put: vi.fn(),
+      },
+    } as unknown as VoiceDeps;
+  }
+
+  it("returns the transcript from the owner's default voice provider", async () => {
+    const transcribe = vi.fn().mockResolvedValue({ text: "spoken words " });
+    vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({ transcribe } as never);
+
+    await expect(
+      transcribeInboundVoice(deps("openai"), owner, {
+        audio: new Uint8Array([1, 2]),
+        mimeType: "audio/ogg",
+      }),
+    ).resolves.toBe("spoken words ");
+    expect(transcribe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audio: expect.any(Uint8Array),
+        mimeType: "audio/ogg",
+        apiKey: "key",
+      }),
+      expect.objectContaining({ spaceId: "space-1", userId: "user-1" }),
+    );
+  });
+
+  it("passes the caller's cancel signal to the provider", async () => {
+    const transcribe = vi.fn().mockResolvedValue({ text: "spoken words" });
+    vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({ transcribe } as never);
+    const controller = new AbortController();
+
+    await transcribeInboundVoice(deps("openai"), owner, {
+      audio: new Uint8Array([1, 2]),
+      mimeType: "audio/ogg",
+      signal: controller.signal,
+    });
+    expect(transcribe).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ signal: controller.signal }),
+    );
+  });
+
+  it("returns null when the owner has no default voice credential", async () => {
+    const create = vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({} as never);
+
+    await expect(
+      transcribeInboundVoice(deps("openai", { preference: null }), owner, {
+        audio: new Uint8Array([1]),
+        mimeType: "audio/ogg",
+      }),
+    ).resolves.toBeNull();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("returns null when the provider does not transcribe", async () => {
+    vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({ synthesize: vi.fn() } as never);
+
+    await expect(
+      transcribeInboundVoice(deps("cartesia"), owner, {
+        audio: new Uint8Array([1]),
+        mimeType: "audio/ogg",
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("skips oversize audio without calling the provider", async () => {
+    const transcribe = vi.fn();
+    vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({ transcribe } as never);
+
+    await expect(
+      transcribeInboundVoice(deps("openai"), owner, {
+        audio: new Uint8Array(adapters.MAX_TRANSCRIBE_BYTES + 1),
+        mimeType: "audio/ogg",
+      }),
+    ).resolves.toBeNull();
+    expect(transcribe).not.toHaveBeenCalled();
+  });
 });

@@ -376,6 +376,10 @@ describeWithDatabase("Composio catalog reconciliation", () => {
         connectionId: started.connectionId,
       }),
     ).resolves.toMatchObject({ status: "connected" });
+    const stored = await asSystem(handles.prisma).connection.findUniqueOrThrow({
+      where: { id: started.connectionId },
+    });
+    expect(stored.providerRef).toBe("account-linear");
 
     const context = {
       operationId: "pipedream-product-test",
@@ -389,6 +393,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
           connectorId: "pipedream",
           externalId: "linear",
           displayName: "Linear",
+          providerRef: stored.providerRef ?? undefined,
         },
       ],
     };

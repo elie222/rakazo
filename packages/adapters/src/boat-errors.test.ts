@@ -139,6 +139,20 @@ describe("Boat API errors", () => {
     expect(call).toHaveBeenCalledTimes(1);
   });
 
+  it("reports a stop refused while the sandbox is updating as a passing condition", async () => {
+    const call = vi.fn(async () => {
+      throw new ResponseError(
+        Response.json(
+          { code: "stop_failed", message: "Sandbox is updating, so it cannot be stopped." },
+          { status: 400 },
+        ),
+      );
+    });
+    const error = await wrapBoatCall(call, "fake-key")().catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SandboxUnresponsiveError);
+    expect(call).toHaveBeenCalledTimes(1);
+  });
+
   it("reports a rate limit as a provider-neutral error that keeps the upstream detail", async () => {
     const call = wrapBoatCall(async () => {
       throw new ResponseError(
@@ -319,7 +333,7 @@ describe("Boat API errors", () => {
     expect(call).toHaveBeenCalledOnce();
   });
 
-  it("reports a Boat server error as unresponsive but keeps account errors as they are", async () => {
+  it("reports a Boat server error or unpaid account as unresponsive", async () => {
     const failing = (status: number, code: string) =>
       wrapBoatCall(async () => {
         throw new ResponseError(Response.json({ code, message: "upstream" }, { status }));
@@ -330,9 +344,18 @@ describe("Boat API errors", () => {
     expect((outage as Error).message).toContain("HTTP 500, internal");
     expect((outage as Error).cause).toMatchObject({ response: { status: 500 } });
 
+    const edge = await failing(525, "ssl_handshake_failed")().catch((failure: unknown) => failure);
+    expect(edge).toBeInstanceOf(SandboxUnresponsiveError);
+    expect((edge as Error).cause).toMatchObject({ response: { status: 525 } });
+
     const billing = await failing(402, "billing_required")().catch((failure: unknown) => failure);
-    expect(billing).toBeInstanceOf(BoatApiError);
-    expect(billing).toMatchObject({ code: "billing_required" });
+    expect(billing).toBeInstanceOf(SandboxUnresponsiveError);
+    expect((billing as Error).cause).toMatchObject({ code: "billing_required" });
+
+    const forbidden = await failing(403, "api_key_action_forbidden")().catch(
+      (failure: unknown) => failure,
+    );
+    expect(forbidden).toBeInstanceOf(BoatApiError);
   });
 
   it("retries once when the connection drops during the TLS handshake", async () => {

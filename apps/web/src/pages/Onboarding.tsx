@@ -42,6 +42,7 @@ import {
 import { Check, Copy } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { AccountMenu } from "../components/AccountMenu";
 import {
   ModelPreflightFeedback,
   modelPreflightTestingLabel,
@@ -60,6 +61,7 @@ import {
   unavailableSelectedModel,
 } from "../lib/model-connection-preflight";
 import { rpc } from "../lib/rpc";
+import { useSignOut } from "../lib/sign-out";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 import { errorText } from "../lib/user-error";
 import { CompatibleKeyField } from "./model-settings/compatible-key-field";
@@ -175,6 +177,7 @@ export function OnboardingPage() {
   const resetOpenAiCompatibleProbe = modelProbe.reset;
   const createStartedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  const { signingOut, logOut } = useSignOut("/sign-in", setError);
   const [notice, setNotice] = useState<string | null>(null);
   const [preflightTesting, setPreflightTesting] = useState(false);
   const [preflightTarget, setPreflightTarget] = useState<"api-key" | "compatible" | null>(null);
@@ -556,7 +559,8 @@ export function OnboardingPage() {
   if (step === "loading" || (step === "bot" && !error)) return <PageLoading />;
 
   return (
-    <div className="min-h-full bg-background px-6 py-12">
+    <div className="min-h-full bg-background px-6 py-12" data-rakazo-surface="onboarding">
+      <AccountMenu signingOut={signingOut} onLogOut={() => void logOut()} />
       <div className="mx-auto w-full max-w-[560px]">
         {step === "survey" ? <SignupSurvey onDone={() => setSurveyDone(true)} /> : null}
         {step === "model" ? (

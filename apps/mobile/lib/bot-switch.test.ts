@@ -64,19 +64,25 @@ describe("findSwitchTarget", () => {
 
 describe("ringOnArrival", () => {
   it("rings only the requested bot, once, and only soon after the hand-over", () => {
-    ringOnArrival("max", 1_000);
-    expect(takeRingOnArrival("max", 2_000)).toBe(true);
-    expect(takeRingOnArrival("max", 2_000)).toBe(false);
+    ringOnArrival("max", 1, 1_000);
+    expect(takeRingOnArrival("max", 1, 2_000)).toBe(true);
+    expect(takeRingOnArrival("max", 1, 2_000)).toBe(false);
 
-    ringOnArrival("max", 1_000);
-    expect(takeRingOnArrival("riley", 2_000)).toBe(false);
-    expect(takeRingOnArrival("max", 2_000)).toBe(false);
+    ringOnArrival("max", 1, 1_000);
+    expect(takeRingOnArrival("riley", 1, 2_000)).toBe(false);
+    expect(takeRingOnArrival("max", 1, 2_000)).toBe(false);
 
-    ringOnArrival("max", 1_000);
-    expect(takeRingOnArrival("max", 12_000)).toBe(false);
+    ringOnArrival("max", 1, 1_000);
+    expect(takeRingOnArrival("max", 1, 12_000)).toBe(false);
+  });
+
+  it("drops a hand-over asked in an earlier session", () => {
+    ringOnArrival("max", 1, 1_000);
+    expect(takeRingOnArrival("max", 2, 2_000)).toBe(false);
+    expect(takeRingOnArrival("max", 1, 2_000)).toBe(false);
   });
 
   it("does not ring without a hand-over", () => {
-    expect(takeRingOnArrival("max")).toBe(false);
+    expect(takeRingOnArrival("max", 1)).toBe(false);
   });
 });

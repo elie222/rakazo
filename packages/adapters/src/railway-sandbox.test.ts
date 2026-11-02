@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
+import { screenDisplayArgv, shellQuote } from "@rakazo/core/node/desktop-runtime";
 import type { RailwayGraphQLErrorItem, SandboxInfo } from "railway";
 import {
   RailwayGraphQLError,
@@ -857,6 +858,19 @@ describe("Railway computers", () => {
         }),
         timeoutSec: 5,
       }),
+    );
+  });
+
+  it("runs a bot's commands on that bot's own screen", async () => {
+    sandbox.exec.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0, timedOut: false });
+    for await (const _event of provider.execute(
+      computer,
+      { argv: ["ffmpeg", "out.mp4"] },
+      { ...ctx, botId: "becky" },
+    ));
+    expect(sandbox.exec).toHaveBeenCalledWith(
+      screenDisplayArgv(["ffmpeg", "out.mp4"], "becky", 1).map(shellQuote).join(" "),
+      expect.anything(),
     );
   });
 

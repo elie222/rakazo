@@ -1,4 +1,5 @@
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { RunHistoryWriteError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   connectAgent,
@@ -39,6 +40,8 @@ function createDeps(
     connectionRevokedInsideTx?: boolean;
     /** Simulates a revoke landing after the in-transaction approval read. */
     connectionRevokedAfterReadInsideTx?: boolean;
+    /** A newer claim of the sending run holds this lease. */
+    runLease?: { leaseOwner: string; leaseFence: number };
   } = {},
 ) {
   const policyRows = () =>
@@ -69,7 +72,7 @@ function createDeps(
         txCalls.runCreate.push(data);
         return { id: "run-wake", ...(data as object) };
       }),
-      findUnique: vi.fn(async () => ({ id: "run-1", status: "running" })),
+      findUnique: vi.fn(async () => ({ id: "run-1", status: "running", ...overrides.runLease })),
     },
     task: {
       create: vi.fn(async ({ data }: { data: unknown }) => {
@@ -371,6 +374,22 @@ describe("messageConnectedAgent", () => {
       }),
     );
     expect(deps.enqueue).toHaveBeenCalled();
+  });
+
+  it("does not deliver from an attempt a newer claim superseded", async () => {
+    const deps = createDeps({
+      connection: { id: "ac-1", requesterBotId: "bot-1", targetBotId: "bot-2", status: "approved" },
+      runLease: { leaseOwner: "worker-2", leaseFence: 2 },
+    });
+    await expect(
+      messageConnectedAgent(
+        { ...deps, runLease: { runId: run.id, owner: "worker-1", fence: 1 } },
+        run,
+        sender,
+        { address: "+15552222222", message: "results are in" },
+      ),
+    ).rejects.toBeInstanceOf(RunHistoryWriteError);
+    expect(deps.enqueue).not.toHaveBeenCalled();
   });
 
   it("delivers repeated messages when each call has a distinct deliveryKey", async () => {

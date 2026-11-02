@@ -859,7 +859,10 @@ export function pinnedModelCredentialError(
   return undefined;
 }
 
-/** A server key is available only to the funded organization and only for its configured provider. */
+/**
+ * A server key is available only to a funded organization and only for its configured provider.
+ * Outside credits mode a balance still pays until the member connects that provider themselves.
+ */
 export async function hasHostedModelCredits(
   prisma: PrismaClient,
   scope: { userId: string; spaceId: string },
@@ -869,7 +872,15 @@ export async function hasHostedModelCredits(
   if (!deployment.configured || deployment.provider !== provider) return false;
   const space = await prisma.space.findFirst({
     where: { id: scope.spaceId, organization: { members: { some: { userId: scope.userId } } } },
-    select: { organization: { select: { modelCredits: { select: { mode: true } } } } },
+    select: {
+      organization: { select: { modelCredits: { select: { mode: true, balanceMicros: true } } } },
+    },
   });
-  return space?.organization.modelCredits?.mode === "credits";
+  const credits = space?.organization.modelCredits;
+  if (credits?.mode === "credits") return true;
+  if (!credits || credits.balanceMicros <= 0n) return false;
+  return !(await prisma.userModelCredential.findFirst({
+    where: { userId: scope.userId, provider },
+    select: { id: true },
+  }));
 }

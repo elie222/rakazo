@@ -38,7 +38,11 @@ import { ResponseError } from "@boatdev/sdk";
 import { parse } from "shell-quote";
 import { vi } from "vitest";
 import type { BoatSandboxSdk } from "./boat-sandbox.js";
-import { BOAT_COMPUTER_SNAPSHOT, BoatSandboxProvider } from "./boat-sandbox.js";
+import {
+  BOAT_COMPUTER_SNAPSHOT,
+  BOAT_WRITABLE_WORKSPACE_COMMAND,
+  BoatSandboxProvider,
+} from "./boat-sandbox.js";
 import { shouldSkipPortableWorkspaceFile } from "./computer-workspace.js";
 import { desktopCommandResponder, simpleCommand } from "./linux-desktop.test-support.js";
 import { workspaceArchive } from "./workspace-archive.test-support.js";
@@ -53,12 +57,19 @@ export type BoatRecovery =
   | "recover_unsupported"
   | "reset_failed";
 
+interface FakeFile {
+  content: Uint8Array;
+  executable: boolean;
+  /** Like a git pack: Boat's file API cannot overwrite it. */
+  readOnly?: boolean;
+}
+
 interface FakeSandbox {
   sandbox: Sandbox;
   env: Record<string, string>;
-  files: Map<string, { content: Uint8Array; executable: boolean }>;
+  files: Map<string, FakeFile>;
   /** The disk as of Boat's last good snapshot. */
-  snapshot: Map<string, { content: Uint8Array; executable: boolean }>;
+  snapshot: Map<string, FakeFile>;
   recovery: BoatRecovery;
   /** Set while Boat's storage under the sandbox is broken; whether a resume mends it. */
   damaged?: "resume_heals" | "persists";
@@ -122,6 +133,8 @@ export class FakeBoatApi implements BoatSandboxSdk {
   attachReconnects = 0;
   /** Answer attaches as a sandbox agent too old to stream output does. */
   attachOutdated = false;
+  /** Answers a command that reads its stdin from a private file, given that file's content. */
+  withInput: (command: string, input: string) => Partial<CommandResponse> = () => ({});
   private created = 0;
   private readonly uploads = new Map<string, { sandboxId: string; path: string }>();
   private readonly downloads = new Map<string, { sandboxId: string; path: string }>();
@@ -202,7 +215,7 @@ export class FakeBoatApi implements BoatSandboxSdk {
     return this.sandboxes.get(id)?.sandbox.state;
   }
 
-  files(id: string): Map<string, { content: Uint8Array; executable: boolean }> {
+  files(id: string): Map<string, FakeFile> {
     return this.require(id).files;
   }
 
@@ -430,6 +443,13 @@ export class FakeBoatApi implements BoatSandboxSdk {
     if (content.byteLength > 5 * 1024 * 1024) {
       throw boatError(400, "sandbox_direct_failed", "File exceeds the inline write limit");
     }
+    if (box.files.get(fileWriteRequest.path)?.readOnly) {
+      throw boatError(
+        400,
+        "sandbox_direct_failed",
+        `EACCES: permission denied, open '${fileWriteRequest.path}'`,
+      );
+    }
     box.files.set(fileWriteRequest.path, { content, executable: false });
     return {
       ok: true,
@@ -625,9 +645,9 @@ export class FakeBoatApi implements BoatSandboxSdk {
     const desktop = this.desktop(command);
     if (desktop) return finished(desktop);
 
-    // `exec 3< FILE || exit 1; rm -f -- FILE; . /dev/fd/3 || exit 1; exec 3<&-; argv`
+    // `exec 3< FILE || exit 1; rm -f -- FILE; eval "$(cat <&3 || echo exit 1)" || exit 1; exec 3<&-; argv`
     const sourced = command.match(
-      /^exec 3< ('[^']*') \|\| exit 1; rm -f -- \1; \. \/dev\/fd\/3 \|\| exit 1; exec 3<&-; ([\s\S]*)$/,
+      /^exec 3< ('[^']*') \|\| exit 1; rm -f -- \1; eval "\$\(cat <&3 \|\| echo exit 1\)" \|\| exit 1; exec 3<&-; ([\s\S]*)$/,
     );
     if (sourced) {
       const envFile = String(parse(sourced[1]!)[0]);
@@ -642,6 +662,16 @@ export class FakeBoatApi implements BoatSandboxSdk {
       }
       const argv = parse(sourced[2]!).filter((token): token is string => typeof token === "string");
       return finished(simpleCommand(argv, env));
+    }
+
+    // `exec 0< FILE || exit 1; rm -f -- FILE; command`
+    const withInput = command.match(/^exec 0< ('[^']*') \|\| exit 1; rm -f -- \1; ([\s\S]*)$/);
+    if (withInput) {
+      const inputFile = String(parse(withInput[1]!)[0]);
+      const file = box.files.get(inputFile);
+      if (!file) return finished({ exitCode: 1, stderr: "No such file or directory\n" });
+      box.files.delete(inputFile);
+      return finished(this.withInput(withInput[2]!, Buffer.from(file.content).toString("utf8")));
     }
 
     const directory = command.match(/^directory=(.*)$/m)?.[1];
@@ -683,6 +713,13 @@ export class FakeBoatApi implements BoatSandboxSdk {
       return finished({});
     }
 
+    if (command === BOAT_WRITABLE_WORKSPACE_COMMAND) {
+      for (const [filePath, file] of box.files) {
+        if (filePath.startsWith(`${BOAT_WORKSPACE}/`) && file.readOnly)
+          box.files.set(filePath, { ...file, readOnly: false });
+      }
+      return finished({});
+    }
     const parsed = parse(command, (name) => box.env[name] ?? "");
     const argv = parsed.filter((token): token is string => typeof token === "string");
     if (argv[0] === "chmod") {

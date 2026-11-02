@@ -19,6 +19,17 @@ describe("resolveSandboxProvider", () => {
     expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "daytona" })).toBe("none");
     expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "createos" })).toBe("none");
     expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "boat" })).toBe("none");
+    const wuying = {
+      SANDBOX_PROVIDER: "wuying",
+      WUYING_ACCESS_KEY_ID: "test-id",
+      WUYING_ACCESS_KEY_SECRET: "test-secret",
+      WUYING_DESKTOP_ID: "ecd-test",
+      WUYING_END_USER_ID: "test-user",
+      WUYING_MCP_URL: "https://gateway.example.com/mcp",
+      WUYING_MCP_TOKEN: "test-token",
+    };
+    expect(resolveSandboxProvider(wuying)).toBe("wuying");
+    expect(resolveSandboxProvider({ ...wuying, WUYING_MCP_TOKEN: " " })).toBe("none");
   });
 
   it("loads Novita credentials and the shared template setting", () => {

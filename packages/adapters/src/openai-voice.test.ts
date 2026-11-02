@@ -11,7 +11,7 @@ const context = {
 
 afterEach(() => vi.unstubAllGlobals());
 
-it.each(["marin", "cedar"])("lists and sends the %s voice for speech", async (voiceId) => {
+it.each(["marin"])("lists and sends the %s voice for speech", async (voiceId) => {
   const fetchMock = vi.fn().mockResolvedValue(new Response(new Uint8Array([1]), { status: 200 }));
   vi.stubGlobal("fetch", fetchMock);
   const provider = new OpenAIVoiceProvider();

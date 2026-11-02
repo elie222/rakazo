@@ -15,3 +15,12 @@ export class BillingCheckoutCompletedError extends Error {
     this.name = "BillingCheckoutCompletedError";
   }
 }
+
+/** The customer has no monthly credit plan to change, e.g. it ended after the page loaded. */
+export class BillingNoMonthlyCreditsError extends Error {
+  readonly code = "BILLING_NO_MONTHLY_CREDITS";
+  constructor() {
+    super("No monthly credit subscription");
+    this.name = "BillingNoMonthlyCreditsError";
+  }
+}

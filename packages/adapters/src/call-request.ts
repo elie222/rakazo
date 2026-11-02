@@ -17,7 +17,7 @@ import {
   runAsSystem,
 } from "@rakazo/db";
 import type { ExecutorDeps } from "./executor-deps.js";
-import { isUniqueViolation, publishMessage } from "./run-messages.js";
+import { isUniqueViolation, publishMessage, runLeaseFor } from "./run-messages.js";
 
 const REASON_MAX = 120;
 const OPENING_MAX = 240;
@@ -156,6 +156,7 @@ export async function requestUserCall(
     phoneCallsEnabled?: boolean;
     phoneCallCooldownMinutes?: number;
     phoneCallRingSeconds?: number;
+    runLease?: ExecutorDeps["runLease"];
   },
   run: { id: string; spaceId: string; userId: string; threadId: string; botId: string },
   input: { reason: string; opening: string },
@@ -195,12 +196,14 @@ export async function requestUserCall(
         blocks: request.blocks,
         clientNonce: request.clientNonce,
         markUnread: true,
+        lease: runLeaseFor(deps, run.id),
       });
       const event = await appendEventInTransaction(tx, {
         spaceId: run.spaceId,
         threadId: run.threadId,
         botId: run.botId,
         runId: run.id,
+        lease: runLeaseFor(deps, run.id),
         type: "thread.message.created",
         payload: {
           messageId: message.id,

@@ -1,3 +1,4 @@
+import { BillingNoMonthlyCreditsError } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { StripeBillingProvider } from "./stripe-billing.js";
 
@@ -92,6 +93,28 @@ describe("Stripe prepaid model credits", () => {
       cancelUrl: "https://example.test/app",
     });
     expect(requests.at(-1)!.params.get("subscription_data[trial_period_days]")).toBe("7");
+  });
+  it("reports the price an own-key subscription was bought at", async () => {
+    const { provider } = fixture({
+      "/v1/subscriptions": {
+        data: [
+          {
+            id: "sub_byok",
+            status: "active",
+            metadata: { rakazo_plan: "byok" },
+            created: 1,
+            items: {
+              data: [{ id: "si_byok", quantity: 1, price: { id: "price_old", unit_amount: 1000 } }],
+            },
+          },
+        ],
+        has_more: false,
+      },
+    });
+    await expect(provider.getCustomerSubscription("cus_fixture")).resolves.toMatchObject({
+      byokPlan: true,
+      byokPriceCents: 1000,
+    });
   });
   it("rejects invalid purchase amounts without contacting Stripe", async () => {
     const { provider, requests } = fixture();
@@ -289,6 +312,15 @@ describe("Stripe prepaid model credits", () => {
     expect(requests.find((r) => r.params.has("product_data[name]"))?.params.get("lookup_key")).toBe(
       "rakazo_monthly_credits_2000",
     );
+  });
+  it("names a change to an ended monthly plan as having no plan to change", async () => {
+    const ended = subscription(1000);
+    ended.data[0]!.status = "canceled";
+    const { provider, requests } = fixture({ "/v1/subscriptions": ended });
+    await expect(provider.setMonthlyCredits("cus_fixture", 2000)).rejects.toBeInstanceOf(
+      BillingNoMonthlyCreditsError,
+    );
+    expect(requests.some((r) => r.path === "/v1/subscriptions/sub_fixture")).toBe(false);
   });
   it("changes the renewal price without a charge or proration when downgrading", async () => {
     const { provider, requests } = fixture({ "/v1/subscriptions": subscription(2000) });

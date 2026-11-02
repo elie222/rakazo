@@ -95,3 +95,30 @@ it("reloads after adding a passkey", async () => {
   await act(async () => buttonNamed("Add passkey")?.click());
   expect(host.querySelectorAll("li")).toHaveLength(1);
 });
+
+it.each([{ isComposing: true }, { keyCode: 229 }])(
+  "keeps a passkey rename open on the Escape that ends an IME composition (%o)",
+  async (composition) => {
+    vi.mocked(authClient.passkey.listUserPasskeys).mockResolvedValue({
+      data: [{ id: "passkey-1", name: "Laptop", createdAt: new Date().toISOString() }],
+      error: null,
+    } as never);
+    await act(async () => root.render(<PasskeySettings />));
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Rename"]')?.click());
+    const pressEscape = (init: KeyboardEventInit) =>
+      act(async () => {
+        host
+          .querySelector("input")
+          ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, ...init }));
+      });
+    const onWindowKey = vi.fn();
+    window.addEventListener("keydown", onWindowKey);
+    await pressEscape(composition);
+    window.removeEventListener("keydown", onWindowKey);
+    expect(host.querySelector("input")?.value).toBe("Laptop");
+    // A composing Escape must not reach page-level Escape listeners such as the reply chip.
+    expect(onWindowKey).not.toHaveBeenCalled();
+    await pressEscape({});
+    expect(host.querySelector("input")).toBeNull();
+  },
+);

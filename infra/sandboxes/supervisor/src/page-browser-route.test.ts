@@ -392,6 +392,37 @@ it.each([["a", "b", "c"], [""], ["x".repeat(1025)]])(
   },
 );
 
+async function browserRequest(body: Record<string, unknown>) {
+  return supervisorApp.request("/computers/computer-downloads/browser", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+      "content-type": "application/json",
+      "x-rakazo-bot-id": "home",
+      "x-rakazo-space-id": "space",
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+it.each([
+  { command: "navigate", url: "https://bank.example/files/statement.pdf" },
+  { command: "act", actions: [{ kind: "click", ref: "e1" }] },
+])("forwards the bot's download folder: $command", async (command) => {
+  const body = { ...command, downloads: "bots/b1/Downloads" };
+  expect(await (await browserRequest(body)).json()).toMatchObject({ ok: true });
+  expect(JSON.parse(mock.stdin.join(""))).toEqual(body);
+});
+
+it.each(["", "x".repeat(1025), 7])(
+  "rejects an invalid download folder before running commands: %j",
+  async (downloads) => {
+    const body = { command: "act", actions: [{ kind: "click", ref: "e1" }], downloads };
+    expect((await browserRequest(body)).status).toBeGreaterThanOrEqual(400);
+    expect(mock.exec).not.toHaveBeenCalled();
+  },
+);
+
 it.each([undefined, "5"])("forwards the upload size override only when set: %j", async (limit) => {
   const original = process.env.RAKAZO_BROWSER_UPLOAD_MAX_BYTES;
   try {

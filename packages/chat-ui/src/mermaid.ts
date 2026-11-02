@@ -71,7 +71,8 @@ export const CHAT_DIAGRAM_FONT =
  *
  * `securityLevel: "strict"` keeps Mermaid's sanitizer on and turns off click handlers, and
  * labels are SVG text rather than HTML. `secure` lists the keys a diagram's own `%%{init}%%`
- * directive cannot change: Mermaid's defaults plus `htmlLabels`.
+ * directive cannot change: Mermaid's defaults plus `htmlLabels` and the raw CSS options, which
+ * Mermaid applies while measuring the diagram in the live page.
  *
  * `surface` is the colour the diagram is drawn on, which edge labels are filled with.
  */
@@ -92,6 +93,9 @@ export function chatMermaidConfig(
       "suppressErrorRendering",
       "maxEdges",
       "htmlLabels",
+      "themeCSS",
+      "fontFamily",
+      "altFontFamily",
     ],
     suppressErrorRendering: true,
     htmlLabels: false,

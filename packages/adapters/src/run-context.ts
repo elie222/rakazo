@@ -9,15 +9,24 @@ import type {
   WebProvider,
 } from "@rakazo/adapter-kit";
 import type { ComputerMode, MessageBlock } from "@rakazo/contracts";
-import type { ToolCallStreak } from "@rakazo/core";
 import { createStreamingRedactor } from "@rakazo/core";
 import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { Bot, Computer, effectiveMemoryScope, Run, Task, Thread } from "@rakazo/db";
 import { dropRunTurnCheckpoint, saveRunTurnCheckpoint } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import type { ApprovalPausedToolResult, ApprovedEffectReplayQueue } from "./approval-effect.js";
-import { approvalPausedToolResult, approvedEffectOccurrence } from "./approval-effect.js";
+import type {
+  ApprovalPausedToolResult,
+  ApprovedEffectReplayQueue,
+  TerminatingToolResult,
+} from "./approval-effect.js";
+import {
+  approvalPausedToolResult,
+  approvedEffectOccurrence,
+  OWNER_SETTINGS_REFUSAL_REPLY,
+  terminatingToolResult,
+} from "./approval-effect.js";
 import type { loadBotMessageContext } from "./bot-messages.js";
+import { partitionTools } from "./builtin-tool-bridge.js";
 import type { ComputerExecutionLease } from "./computer-lifecycle.js";
 import type { UnchangedVisualStreak } from "./computer-tools.js";
 import type { selectRunConnections } from "./connection-context.js";
@@ -31,6 +40,7 @@ import { subagentMarksUnread } from "./run-notifications.js";
 import { secretPausedToolResult } from "./run-secret.js";
 import type { createRunTrustLoaders } from "./run-trust.js";
 import type { inferScript } from "./scripted-runtime.js";
+import type { LoopGuardStreak } from "./tool-loop.js";
 import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-checkpoint.js";
 
 export type RunningHelper = Omit<Extract<MessageBlock, { kind: "subagent" }>, "kind">;
@@ -121,8 +131,6 @@ export interface ApprovalState {
   pausePending: boolean;
   /** The first card of parallel calls that need approval; the others wait for it. */
   request: Promise<ApprovalPausedToolResult> | undefined;
-  /** Runtimes may dispatch parallel calls; a run can open only one proposal at a time. */
-  proposalInFlight: boolean;
 }
 
 /** Which occurrence of an identical effect each tool call claims, across pauses. */
@@ -156,12 +164,30 @@ export interface RunState {
   approval: ApprovalState;
   effects: EffectState;
   screen: ScreenState;
-  toolCallStreak: ToolCallStreak;
+  toolCallStreak: LoopGuardStreak;
+  /** Result fingerprints of finished calls, read when the next call is tracked. */
+  toolResults: Map<string, string>;
+  /** Consecutive `computer_act`/`browser_act` batches over the action limit, this one included. */
+  overLimitActionCalls: number;
   /**
    * Whether outside content has entered the run. A run someone else started begins tainted,
    * and so does a later attempt, including one with restored untrusted tool results.
    */
   tainted: boolean;
+  /**
+   * The taint refusal for owner settings was returned in this attempt. A model that calls
+   * again gets the turn ended instead of the same error a second time.
+   */
+  ownerSettingsRefused: boolean;
+  /**
+   * The instructions this attempt's model works from: the attempt-start snapshot its prompt
+   * was built with, restored from the turn checkpoint on resume, and advanced only after a
+   * successful own-instruction write in this attempt. Own instruction writes guard on it, so
+   * a change that landed since the model last saw the text conflicts instead of being
+   * overwritten. Undefined when an older checkpoint predates the baseline: such a resumed
+   * attempt refuses own instruction writes rather than guessing.
+   */
+  ownInstructionsBaseline: string | undefined;
   earlierAttempt: Promise<boolean> | undefined;
   handedOff: boolean;
   terminalCheckpointComplete: boolean;
@@ -308,6 +334,27 @@ export function pauseForSecret(ctx: RunContext) {
   return secretPausedToolResult();
 }
 
+/** The owner chose Never ask for this space. */
+export async function neverAsks(ctx: RunContext) {
+  return (await ctx.trust.loadAutoReviewPreference()).skipApprovals;
+}
+
+/**
+ * Refuse an owner-settings change in a run that read outside content. The first refusal
+ * explains the block; a repeat ends the turn, because a model that ignored the explanation
+ * would otherwise retry the same call without a bound.
+ */
+export function refuseOwnerSettingsChange(
+  ctx: RunContext,
+  error: string,
+): { error: string } | TerminatingToolResult {
+  if (ctx.state.ownerSettingsRefused) {
+    return terminatingToolResult(OWNER_SETTINGS_REFUSAL_REPLY, { refused: "owner-settings" });
+  }
+  ctx.state.ownerSettingsRefused = true;
+  return { error };
+}
+
 export async function isRunTainted(ctx: RunContext) {
   const { state } = ctx;
   if (state.tainted) return true;
@@ -318,6 +365,14 @@ export async function isRunTainted(ctx: RunContext) {
     state.tainted = true;
   return state.tainted;
 }
+
+/** A change landed after this attempt's snapshot; only a fresh run can apply the rewrite. */
+export const OWN_INSTRUCTIONS_CHANGED_ERROR =
+  "Instructions changed since this run started, so your instructions were not saved. Ask the user to send their request again so a new run starts from the current instructions.";
+
+/** An older checkpoint predates the baseline; a resumed attempt must not guess. */
+export const OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR =
+  "This resumed run cannot safely change its own instructions. Ask the user to send their request again so a new run starts from the current instructions.";
 
 export function nextMutatingEffectOccurrence(
   ctx: RunContext,
@@ -349,6 +404,7 @@ export async function persistTurnCheckpoint(ctx: RunContext, executionId?: strin
   if (capture) {
     const saved = JSON.parse(capture());
     saved.effectOccurrences = effects.occurrences;
+    saved.ownInstructionsBaseline = ctx.state.ownInstructionsBaseline;
     await saveRunTurnCheckpoint(deps.prisma, run, workerId, fence, JSON.stringify(saved));
     effects.storedTurnCheckpoint = true;
   } else if (effects.storedTurnCheckpoint) {
@@ -372,7 +428,7 @@ export function restoreTurnCheckpointEffects(
   try {
     const saved = restoreTurnCheckpoint(turnCheckpoint, model);
     const unresolved = new Set(unresolvedTurnCheckpointCalls(saved.messages));
-    const namedTools = namedAgentTools(ctx.tools.offered);
+    const namedTools = namedAgentTools(partitionTools(ctx.tools.offered).listed);
     const available = new Set(namedTools.map((tool) => tool.name));
     if (
       saved.messages.some(
@@ -421,6 +477,10 @@ export function restoreTurnCheckpointEffects(
         }
       }
     }
+    // The restored system prompt still carries the instructions it was built from; the
+    // baseline must match it, not the current row. Checkpoints without one (older saves)
+    // leave it undefined, which refuses own instruction writes in this attempt.
+    ctx.state.ownInstructionsBaseline = saved.ownInstructionsBaseline;
     return turnCheckpoint;
   } catch {
     // Incompatible transcripts use the existing canonical approval replay.

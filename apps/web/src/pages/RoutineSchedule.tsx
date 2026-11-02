@@ -7,6 +7,7 @@ import {
   cronFromPreset,
   cronIntervalAmounts,
   describeCronPreset,
+  localizedClock,
   russianIntervalUnit,
 } from "@rakazo/core";
 import { Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
@@ -112,7 +113,7 @@ export function RoutineSchedule({
     >
       {times.map((time) => (
         <NativeSelectOption key={time} value={time}>
-          {time}
+          {localizedClock(time, i18n.locale)}
         </NativeSelectOption>
       ))}
     </NativeSelect>

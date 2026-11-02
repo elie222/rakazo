@@ -36,6 +36,29 @@ describe("lingui catalogs", () => {
     }
   });
 
+  it("translates dictation and voice errors into Spanish", () => {
+    const catalog = readFileSync(
+      fileURLToPath(new URL("../locales/es/messages.po", import.meta.url)),
+      "utf8",
+    );
+    for (const message of [
+      "Allow Rakazo to use Speech Recognition and the microphone in System Settings.",
+      "This browser can't detect when you stop talking. Use Chrome, the desktop app, or hold-to-talk in the composer.",
+      "Dictation failed: {code}",
+      "Transcription request timed out.",
+      "Add a voice provider key and pick a voice in Voice settings.",
+      "Voice request timed out.",
+    ]) {
+      const entry = catalog
+        .split("\n\n")
+        .find((block) => block.includes(`msgid ${JSON.stringify(message)}\n`));
+      const translated = entry?.split("msgstr ")[1];
+      expect(translated, message).toBeTruthy();
+      expect(translated, message).not.toBe('""');
+      if (message.includes("{code}")) expect(translated).toContain("{code}");
+    }
+  });
+
   it("localizes provider error guidance and retains its placeholders", () => {
     const messages = [
       ...Object.values(RUN_ERROR_LIMIT_MESSAGES).flatMap(Object.values),
@@ -123,6 +146,19 @@ describe("lingui catalogs", () => {
           message.match(/\{\w+\}/g) ?? [],
         );
       }
+    }
+  });
+
+  it("names a fixed minute every few hours in every locale", () => {
+    for (const locale of UI_LOCALES) {
+      const catalog = readFileSync(
+        fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
+        "utf8",
+      );
+      const entry = catalog
+        .split("\n\n")
+        .find((block) => block.includes('msgid "Every {n} hours at :{minute}"\n'));
+      expect(entry, locale).toMatch(/msgstr ".*\{n\}.*\{minute\}.*"/);
     }
   });
 
@@ -230,24 +266,28 @@ describe("lingui catalogs", () => {
     );
   });
 
-  it("translates the peer marker toggle names and fills in the marker label", () => {
+  it("translates counted peer exchanges and close controls in every locale", () => {
+    const message = "{count, plural, one {# message with {peer}} other {# messages with {peer}}}";
     for (const locale of UI_LOCALES.filter((locale) => locale !== "en")) {
       const catalog = readFileSync(
         fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
         "utf8",
       );
-      for (const message of ["Expand {label}", "Collapse {label}"]) {
-        const msgstr = catalog
+      for (const id of [message, "Close"]) {
+        const entry = catalog
           .split("\n\n")
-          .find((block) => block.includes(`msgid ${JSON.stringify(message)}\n`))
-          ?.match(/msgstr "(.+)"/)?.[1];
-        expect(msgstr, `${locale}: ${message}`).toBeTruthy();
-        expect(msgstr, `${locale}: ${message}`).not.toBe(message);
-        i18n.load(locale, { [message]: msgstr ?? "" });
-        i18n.activate(locale);
-        const name = i18n._({ id: message, message, values: { label: "Writer" } });
-        expect(name, `${locale}: ${message}`).toContain("Writer");
-        expect(name, `${locale}: ${message}`).not.toContain("{label}");
+          .find((block) => block.includes(`msgid ${JSON.stringify(id)}\n`));
+        const translation = entry?.match(/msgstr "(.+)"/)?.[1];
+        expect(translation, `${locale}: ${id}`).toBeTruthy();
+        expect(translation).not.toBe(id);
+        i18n.load(locale, { [id]: translation ?? "" });
+      }
+      i18n.activate(locale);
+      for (const count of [2, 5, 21]) {
+        const label = i18n._({ id: message, values: { count, peer: "Writer" } });
+        expect(label).toContain("Writer");
+        expect(label).toContain(String(count));
+        expect(label).not.toContain("{peer}");
       }
     }
   });
