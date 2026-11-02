@@ -1710,6 +1710,47 @@ export const DeploymentSettingsSchema = z.object({
   sandboxProvider: z.string(),
 });
 
+/** Where new computers run, as an admin set it in Settings. Secrets are never returned. */
+export const ComputerProviderSettingsSchema = z.object({
+  /** "default" keeps the deployment's SANDBOX_PROVIDER. */
+  provider: z.enum(["default", "wuying"]),
+  /** The deployment's own SANDBOX_PROVIDER, used while provider is "default". */
+  defaultProvider: z.string(),
+  wuying: z
+    .object({
+      regionId: z.string(),
+      desktopId: z.string(),
+      endUserId: z.string(),
+      mcpUrl: z.string(),
+      hasAccessKey: z.boolean(),
+      hasMcpToken: z.boolean(),
+    })
+    .nullable(),
+});
+export type ComputerProviderSettings = z.infer<typeof ComputerProviderSettingsSchema>;
+
+const settingText = (max: number) => z.string().trim().max(max);
+
+export const ComputerProviderUpdateSchema = z.object({
+  provider: z.enum(["default", "wuying"]),
+  /** Blank secret fields keep the ones already saved. */
+  wuying: z
+    .object({
+      // Part of the API endpoint's host name, such as cn-hangzhou.
+      regionId: settingText(64)
+        .regex(/^([a-z]+(-[a-z0-9]+)+)?$/)
+        .optional(),
+      desktopId: settingText(128),
+      endUserId: settingText(256),
+      mcpUrl: settingText(2048).url(),
+      accessKeyId: settingText(256).optional(),
+      accessKeySecret: settingText(256).optional(),
+      mcpToken: settingText(4096).optional(),
+    })
+    .optional(),
+});
+export type ComputerProviderUpdate = z.infer<typeof ComputerProviderUpdateSchema>;
+
 export const ServerUpdateSourceSchema = z.object({
   repoUrl: z.string().max(400),
   branch: z.string().max(200),

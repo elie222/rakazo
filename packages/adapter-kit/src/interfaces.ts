@@ -133,9 +133,10 @@ export interface SandboxProvider {
   ): Promise<ComputerRef>;
   /**
    * The kind provision() would return now, without starting anything. Only providers that
-   * choose between kinds at provision time implement it.
+   * choose between kinds at provision time implement it. `homeKey` names the computer when the
+   * choice can depend on whose it is.
    */
-  provisionKind?(): Promise<ComputerRef["kind"]>;
+  provisionKind?(homeKey?: string): Promise<ComputerRef["kind"]>;
   /**
    * Read-only probe that never starts or resumes anything. Resolves true only when the provider
    * reports this exact reference running, and false only when it reports it not running or gone;

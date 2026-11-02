@@ -7,6 +7,12 @@ export function computersAreUnavailable(sandboxProvider: string | null | undefin
   return sandboxProvider === "none" || sandboxProvider === "";
 }
 
+/** Whether an account may run its computers on its own Wuying desktop on this deployment. */
+export function canChooseOwnComputer(sandboxProvider: string | null | undefined): boolean {
+  // Those deployments run every computer on the server's own provider.
+  return sandboxProvider != null && sandboxProvider !== "desktop" && sandboxProvider !== "fake";
+}
+
 export type SandboxAvailabilityPhase = "idle" | "loading" | "recovered" | "unavailable" | "failure";
 
 /** Lines to paste into `.env` — placeholders only, never real secrets. */

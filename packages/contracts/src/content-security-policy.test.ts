@@ -75,6 +75,12 @@ describe("app content security policy", () => {
     expect(screen.get("connect-src")).not.toContain("'self'");
     expect(screen.get("script-src")).not.toContain("'unsafe-eval'");
     expect(screen.get("script-src")).toContain("'wasm-unsafe-eval'");
+    expect(screen.get("script-src")).toContain(
+      "https://o.alicdn.com/aliyun-ecs/eds-cdn/paho-mqtt/mqttws31.min.js",
+    );
+    expect(screen.get("connect-src")).toContain("data:");
+    expect(screen.get("connect-src")).toContain("wss://*.wuying.aliyuncs.com:*");
+    expect(screen.get("script-src")).not.toContain("data:");
     const nested = directives(contentSecurityPolicyFor("/wuying/sdk/ASP/container.html")!);
     expect(nested.get("sandbox")).toEqual(screen.get("sandbox"));
     expect(nested.get("frame-ancestors")).toBeUndefined();

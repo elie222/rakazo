@@ -383,7 +383,9 @@ export async function provisionComputer(
     await cache?.forgetMissingCache(existing.homeKey);
     const hydrated =
       cache !== undefined &&
-      mountsServerHome((await deps.sandbox.provisionKind?.()) ?? deps.sandbox.describe().id);
+      mountsServerHome(
+        (await deps.sandbox.provisionKind?.(existing.homeKey)) ?? deps.sandbox.describe().id,
+      );
     if (hydrated)
       await cache.hydrate(existing.homeKey, {
         keepLiveCache: reconnecting && existing.kind === "docker",

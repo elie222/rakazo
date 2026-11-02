@@ -53,6 +53,7 @@ export * from "./computer-support.js";
 export * from "./computer-tools.js";
 export * from "./computer-update.js";
 export * from "./computer-workspace.js";
+export * from "./configured-sandbox.js";
 export * from "./createos-sandbox.js";
 export * from "./current-time.js";
 export * from "./cursor-cloud-agent.js";

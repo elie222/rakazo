@@ -24,6 +24,7 @@ const WUYING_CONTENT_SECURITY_POLICY = serialize({
     "'wasm-unsafe-eval'",
     "blob:",
     "https://g.alicdn.com",
+    "https://o.alicdn.com/aliyun-ecs/eds-cdn/paho-mqtt/mqttws31.min.js",
     "'sha256-YWDKpAXTqwkBgKv52boPcHHeIFM0KgmGRB7P5BAYG1g='",
     "'sha256-rukASNY1jEwwaAb4qYHy6q+Vz2CBb8DRFWqOn3yc534='",
     "'sha256-QrA3rhcCnVi1raBBazigw1S+co1eZTAaQED3N3leMaw='",
@@ -33,8 +34,12 @@ const WUYING_CONTENT_SECURITY_POLICY = serialize({
   "font-src": ["data:", "https://g.alicdn.com"],
   "media-src": ["blob:"],
   "connect-src": [
+    // The software video decoder fetches its embedded WebAssembly data URL.
+    "data:",
     "https://*.aliyuncs.com",
     "wss://*.aliyuncs.com",
+    // The desktop ticket chooses a gateway port outside the default TLS port.
+    "wss://*.wuying.aliyuncs.com:*",
     "https://eds.aliyun.com",
     "https://eds-intl.aliyun.com",
     "https://g.alicdn.com",

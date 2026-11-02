@@ -507,6 +507,10 @@ model DeploymentSettings {
   defaultModelId                  String?
   deploymentModelCredentialCipher String?
   computerHost                    String?
+  /// Provider for new computers chosen in Settings ("wuying"); null keeps SANDBOX_PROVIDER.
+  computerProvider                String?
+  /// Secret row holding that provider's encrypted connection settings.
+  computerProviderSecretId        String?
   createdAt                       DateTime @default(now())
   updatedAt                       DateTime @updatedAt
 

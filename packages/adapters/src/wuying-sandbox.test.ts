@@ -1,9 +1,10 @@
 import type * as TimersPromises from "node:timers/promises";
 import type { ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
+import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
-import { quoteWindowsArgument, windowsKeyChord } from "./wuying-sandbox.js";
+import { psLiteral, quoteWindowsArgument, windowsKeyChord } from "./wuying-sandbox.js";
 import { FAKE_PROFILE, FakeWuyingDesktop } from "./wuying-sandbox.test-support.js";
 
 // Power polling advances a virtual clock, so start and stop tests run instantly.
@@ -53,14 +54,49 @@ describe("WuyingSandboxProvider", () => {
     await expect(provider.provision({ botId: "a/../b", homePath: "/h" }, ctx)).rejects.toThrow();
   });
 
-  it("starts a stopped desktop and reports that it did", async () => {
+  it("starts a stopped desktop, and leaves the shared desktop on when a computer stops", async () => {
     const desktop = new FakeWuyingDesktop();
     desktop.status = "Stopped";
     const computer = await desktop.provider().provision({ botId: "bot", homePath: "/h" }, ctx);
     expect(computer.started).toBe(true);
     expect(desktop.control).toEqual(["start"]);
-    await desktop.provider().stop(computer, ctx);
-    expect(desktop.status).toBe("Stopped");
+    await desktop.provider().stop();
+    expect(desktop.status).toBe("Running");
+    expect(desktop.control).toEqual(["start"]);
+  });
+
+  it("saves a workspace without dependency folders, and reports one too large to save", async () => {
+    const desktop = new FakeWuyingDesktop();
+    const provider = desktop.provider();
+    const computer = await provisionPrepared(provider, { botId: "bot", homePath: "/h" }, ctx);
+    const text = (value: string) => new TextEncoder().encode(value);
+    await provider.writeFile(
+      computer,
+      { path: "src/run.sh", content: text("x"), executable: true },
+      ctx,
+    );
+    await provider.writeFile(
+      computer,
+      { path: "node_modules/pkg/index.js", content: text("y") },
+      ctx,
+    );
+    const saved = [];
+    for await (const file of provider.exportWorkspace(computer, ctx)) saved.push(file);
+    expect(saved).toEqual([{ path: "src/run.sh", content: text("x"), executable: true }]);
+    await expect(
+      (async () => {
+        for await (const _ of provider.exportWorkspace(computer, ctx, {
+          maxBytes: 0,
+          maxFiles: 10,
+        }));
+      })(),
+    ).rejects.toBeInstanceOf(WorkspaceTooLargeError);
+  });
+
+  it("escapes every quote PowerShell reads as a single quote", () => {
+    expect(psLiteral("C:\\it's \u2018a\u2019 \u201Ab\u201B")).toBe(
+      "'C:\\it''s \u2018\u2018a\u2019\u2019 \u201A\u201Ab\u201B\u201B'",
+    );
   });
 
   it("treats a desktop the control plane no longer lists as gone", async () => {
@@ -131,8 +167,16 @@ describe("WuyingSandboxProvider", () => {
       { type: "exit", code: 7 },
     ]);
     expect(desktop.calls.some((call) => call.tool === "process_exec")).toBe(false);
-    // The command reaches PowerShell through a file, untouched by command-line quoting.
+    // The command reaches PowerShell encoded, untouched by command-line quoting.
     expect(desktop.backgroundCommand).toMatch(/^\[Console\]::OutputEncoding=.*npm install$/);
+    const long = `Write-Output '${"x".repeat(20_000)}'`;
+    for await (const _ of provider.execute(
+      computer,
+      { argv: ["powershell.exe", "-Command", long], timeoutMs: 600_000 },
+      ctx,
+    ));
+    // One too long for a command line goes through a file instead.
+    expect(desktop.backgroundCommand?.endsWith(long)).toBe(true);
     const launch = desktop.calls.find((call) => call.tool === "app_start");
     const dir = /'([^']+)\\run\.ps1'/.exec(
       String((launch?.args.args as string[] | undefined)?.at(-1)),

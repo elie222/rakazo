@@ -163,3 +163,34 @@ export function parseMcpOAuthAuthorizationParams(value: string): Record<string, 
   }
   return params;
 }
+
+/**
+ * The remote server in a pasted MCP client config, such as
+ * `{"mcpServers": {"name": {"url": "...", "headers": {"Authorization": "Bearer ..."}}}}`, a single
+ * server's `{"url": ...}`, or `{"name": {"url": ...}}`. The token comes from a bearer
+ * Authorization header. Null when the text is not such a config.
+ */
+export function parseMcpServerConfig(text: string): { url: string; token?: string } | null {
+  if (!text.trim().startsWith("{")) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  const record = (entry: unknown) =>
+    entry && typeof entry === "object" && !Array.isArray(entry)
+      ? (entry as Record<string, unknown>)
+      : null;
+  const root = record(value);
+  const servers = record(root?.mcpServers) ?? (typeof root?.url === "string" ? { root } : root);
+  const server = Object.values(servers ?? {})
+    .map(record)
+    .find((entry) => typeof entry?.url === "string");
+  if (!server) return null;
+  const headers = Object.entries(record(server.headers) ?? {});
+  const authorization = headers.find(([name]) => name.toLowerCase() === "authorization")?.[1];
+  const token =
+    typeof authorization === "string" ? /^Bearer\s+(\S+)\s*$/i.exec(authorization)?.[1] : undefined;
+  return token ? { url: server.url as string, token } : { url: server.url as string };
+}

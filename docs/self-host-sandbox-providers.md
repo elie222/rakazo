@@ -169,7 +169,9 @@ private ranges, is recommended.
 
 ## `wuying`
 
-Bot computers run on one existing Wuying (无影) cloud computer. Each computer's home is a folder
+Bot computers run on one existing Wuying (无影) cloud computer. An admin can also set this up in
+**Settings → Computer** instead of these variables; see [Wuying cloud computers](./wuying-computers.md)
+for the full setup. Each computer's home is a folder
 under the desktop user's profile (`%USERPROFILE%\rakazo\<home>`), and the desktop's own disk
 keeps it between stops, so nothing is copied in or out. Commands run in PowerShell; files,
 screenshots and input go through the desktop's MCP gateway. Stopping the computer powers the
@@ -177,7 +179,7 @@ desktop off; deleting it removes only its home folder, never the desktop.
 
 | Variable | Notes |
 | --- | --- |
-| `WUYING_ACCESS_KEY_ID` / `WUYING_ACCESS_KEY_SECRET` | RAM user allowed `ecd:DescribeDesktops`, `ecd:StartDesktops`, `ecd:StopDesktops` and `appstream-center:GetAuthCode`. API and worker only |
+| `WUYING_ACCESS_KEY_ID` / `WUYING_ACCESS_KEY_SECRET` | RAM user allowed `ecd:DescribeDesktops`, `ecd:StartDesktops` and `appstream-center:GetAuthCode`. API and worker only |
 | `WUYING_REGION_ID` | Defaults to `cn-hangzhou` |
 | `WUYING_DESKTOP_ID` | The cloud computer, assigned to the end user below |
 | `WUYING_END_USER_ID` | Screen logins are issued for this user |

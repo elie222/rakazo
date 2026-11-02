@@ -33,6 +33,7 @@ import {
   STATIC_SHELL_EXPANSIONS,
   unresolvedVariableReason,
 } from "./desktop-guard-words.js";
+import { usesNativeShell } from "./native-shell.js";
 
 type ShellSeparator = "pipe" | "and" | "or" | "seq" | "background";
 
@@ -608,6 +609,11 @@ export function protectedComputerLifecycleRefusal(command: string): string | und
   const tokenized = tokenizeProtectedShellCommand(prepared.command, prepared.literals);
   if ("reason" in tokenized) return tokenized.reason;
   return protectedWordRefusal(tokenized.words);
+}
+
+/** Whether commands reach the Linux desktop this guard protects rather than a native shell. */
+export function desktopGuardApplies(computer: { graphical: boolean; stored: { kind: string } }) {
+  return computer.graphical && !usesNativeShell(computer.stored.kind);
 }
 
 export function isProtectedComputerLifecycleCommand(command: string): boolean {

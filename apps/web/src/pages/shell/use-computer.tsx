@@ -515,7 +515,9 @@ export function useComputerControls({
       await refreshComputerFor(targetBotId);
     } catch (error) {
       if (!stillThisBoot() || !stillThisBot()) return;
-      setComputerError(errorText(error, t`Could not take control`));
+      setComputerError(
+        errorText(error, takeControl ? t`Could not take control` : t`Computer failed to boot`),
+      );
       setComputerErrorFromScreen(false);
       throw error;
     } finally {

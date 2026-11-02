@@ -10,6 +10,7 @@ import type {
   ProcessEvent,
   SandboxProvider,
   ScreenRequest,
+  SecretStore,
   TerminalRequest,
   WorkspaceDirectoryRequest,
   WorkspaceExportLimits,
@@ -17,6 +18,11 @@ import type {
 import type { PrismaClient } from "@rakazo/db";
 import { cancelComputerRunWork } from "./computer-idle.js";
 import { manageComputerWorkspaceDirectories } from "./computer-workspace.js";
+import {
+  ConfiguredSandbox,
+  loadComputerOwnerWuyingSettings,
+  loadComputerProviderSelection,
+} from "./configured-sandbox.js";
 import { assertHostCommandsAllowed, DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { HostComputerSandbox } from "./host-computer-sandbox.js";
 import type { SandboxProviderOptions } from "./sandbox-factory.js";
@@ -28,6 +34,20 @@ export function sandboxKindForBot(envKind: string, computerHost: string | null |
 }
 
 export async function createRunSandbox(
+  kind: string,
+  opts: SandboxProviderOptions & { prisma?: PrismaClient; secrets?: Pick<SecretStore, "load"> },
+): Promise<SandboxProvider> {
+  const base = await createBaseRunSandbox(kind, opts);
+  // With the database at hand, Settings can send computers elsewhere: an admin's choice for
+  // everyone, or the Wuying desktop an account saved for its own.
+  if (!opts.prisma || !opts.secrets || kind === "desktop" || kind === "fake") return base;
+  const { prisma, secrets } = opts;
+  return new ConfiguredSandbox(base, () => loadComputerProviderSelection(prisma, secrets), {
+    loadOwn: (homeKey) => loadComputerOwnerWuyingSettings(prisma, secrets, homeKey),
+  });
+}
+
+async function createBaseRunSandbox(
   kind: string,
   opts: SandboxProviderOptions & { prisma?: PrismaClient },
 ): Promise<SandboxProvider> {

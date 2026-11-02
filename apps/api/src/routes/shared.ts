@@ -1,4 +1,5 @@
 import {
+  ACCOUNT_WUYING_SECRET_KIND,
   deploymentModelRole,
   findConnectedModelCredential,
   hasHostedModelCredits,
@@ -10,6 +11,7 @@ import {
 import type { Actor, Me } from "@rakazo/contracts";
 import { attachmentMaxBytes, attachmentMaxCount, canonicalPiProviderId } from "@rakazo/contracts";
 import { isAdmin } from "../admins.js";
+import { effectiveSandboxProvider } from "../computer-provider-config.js";
 import type { RouterDeps } from "../router.js";
 
 export { createAdapterContext as computerContext } from "@rakazo/adapter-kit";
@@ -30,6 +32,11 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
         timezone: true,
         locale: true,
         signupSurvey: { select: { userId: true } },
+        secrets: {
+          where: { spaceId: null, kind: ACCOUNT_WUYING_SECRET_KIND },
+          select: { id: true },
+          take: 1,
+        },
       },
     }),
     modelSetup(deps, actor),
@@ -60,7 +67,11 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     computerHost: computerHostFor(setup.settings?.computerHost, deps.env.sandboxProvider),
     canChooseHostComputer:
       Boolean(deps.env.desktopHostChoiceEnabled) && deps.env.sandboxProvider === "docker",
-    sandboxProvider: deps.env.sandboxProvider,
+    sandboxProvider: effectiveSandboxProvider(
+      setup.settings,
+      deps.env.sandboxProvider,
+      user.secrets.length > 0,
+    ),
     mcpStdioEnabled:
       admin &&
       mcpStdioAvailable({

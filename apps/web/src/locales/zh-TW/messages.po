@@ -455,6 +455,14 @@ msgstr "關於 {label}"
 msgid "Access token (optional)"
 msgstr "存取權杖（選填）"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "AccessKey ID"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "AccessKey secret"
+msgstr ""
+
 #: src/components/AccountMenu.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Account"
@@ -1295,6 +1303,7 @@ msgstr "正在檢查電腦設定…"
 msgid "Checking connection…"
 msgstr "正在檢查連線…"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/ComputersUnavailableHint.tsx
 #: src/components/DesktopUpdates.tsx
 #: src/pages/HostComputerPrompt.tsx
@@ -1986,6 +1995,10 @@ msgstr "無法載入帳務資訊"
 msgid "Could not load bots. Reload to try again."
 msgstr "無法載入機器人，請重新載入後再試。"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not load computer settings"
+msgstr ""
+
 #: src/components/VaultSettings.tsx
 msgid "Could not load credentials."
 msgstr "無法載入憑證。"
@@ -2146,6 +2159,10 @@ msgstr "無法儲存"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
 msgstr "無法儲存自動審查"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not save computer settings"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "Could not save group"
@@ -2540,6 +2557,11 @@ msgstr "已拒絕"
 msgid "Deny"
 msgstr "拒絕"
 
+#. placeholder {0}: settings.defaultProvider
+#: src/components/ComputerProviderSettings.tsx
+msgid "Deployment default ({0})"
+msgstr ""
+
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Description"
@@ -2552,6 +2574,10 @@ msgstr ""
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop app"
 msgstr "桌面應用程式"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Desktop ID"
+msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop update"
@@ -2756,6 +2782,10 @@ msgstr "需要驗證電子信箱"
 #: src/pages/shell/bot-panel.tsx
 msgid "Enable {0}"
 msgstr "啟用 {0}"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "End user ID"
+msgstr ""
 
 #: src/lib/billing.ts
 msgid "Ends {day}"
@@ -3665,6 +3695,10 @@ msgstr "最大輸出 token 數"
 msgid "MCP endpoint"
 msgstr "MCP 端點"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "MCP gateway URL"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "MCP server"
 msgstr ""
@@ -3673,6 +3707,10 @@ msgstr ""
 #: src/pages/shell/agent-import.tsx
 msgid "MCP servers"
 msgstr "MCP 伺服器"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "MCP token"
+msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -3992,6 +4030,10 @@ msgstr "新增"
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "New bot"
 msgstr "新增機器人"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "New computers run on"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"
@@ -4767,6 +4809,10 @@ msgstr "重新整理畫面"
 msgid "Refreshing…"
 msgstr "重新整理中…"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Region"
+msgstr ""
+
 #: src/lib/user-error.ts
 msgid "Registration is closed"
 msgstr "註冊已關閉"
@@ -5120,6 +5166,7 @@ msgid "Saturday"
 msgstr "週六"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5154,6 +5201,7 @@ msgid "Save to Vault"
 msgstr "儲存到保管庫"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Saved"
@@ -6534,6 +6582,10 @@ msgstr "可使用你的 ChatGPT 或 Claude 方案。"
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "Workspace"
 msgstr "工作空間"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Wuying cloud computer"
+msgstr ""
 
 #: src/lib/billing.ts
 msgid "year"

@@ -33,7 +33,11 @@ import { AccountAccess, LinkSsoRow } from "../components/AccountAccess";
 import { AccountDataSettings } from "../components/AccountDataSettings";
 import { SuccessPop } from "../components/ai/primitives";
 import { ComputerDeviceSettings } from "../components/ComputerDeviceSettings";
-import { ComputersUnavailableHint } from "../components/ComputersUnavailableHint";
+import { ComputerProviderSettings } from "../components/ComputerProviderSettings";
+import {
+  ComputersUnavailableHint,
+  computersAreUnavailable,
+} from "../components/ComputersUnavailableHint";
 import { DesktopUpdateSection } from "../components/DesktopUpdates";
 import { PasskeySettings } from "../components/PasskeySettings";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
@@ -50,6 +54,7 @@ import {
   setComposerEnterToSend,
   subscribeComposerEnterToSend,
 } from "../lib/composer-enter-to-send-pref";
+import { canChooseOwnComputer } from "../lib/computer-sandbox";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
 import { localTimezone, sameTimeZone, timezoneOptions } from "../lib/local-timezone";
 import { usePasskeysSupported } from "../lib/passkeys";
@@ -556,10 +561,12 @@ export function ComputerSettingsPanel({
   sandboxProvider,
   onSandboxProviderChange,
   onRecoveryDismissed,
+  canConfigureComputers = false,
 }: {
   sandboxProvider?: string | null;
   onSandboxProviderChange?: (sandboxProvider: string) => void;
   onRecoveryDismissed?: () => void;
+  canConfigureComputers?: boolean;
 }) {
   return (
     <div
@@ -569,12 +576,20 @@ export function ComputerSettingsPanel({
       <h3 className="text-heading3 font-medium text-foreground">
         <Trans>Computers</Trans>
       </h3>
-      <ComputersUnavailableHint
-        className="mt-3 text-[13px] leading-relaxed text-muted-foreground"
-        sandboxProvider={sandboxProvider}
-        onRecovered={onSandboxProviderChange}
-        onRecoveryDismissed={onRecoveryDismissed}
-      />
+      {computersAreUnavailable(sandboxProvider) ? (
+        <ComputersUnavailableHint
+          className="mt-3 text-[13px] leading-relaxed text-muted-foreground"
+          sandboxProvider={sandboxProvider}
+          onRecovered={onSandboxProviderChange}
+          onRecoveryDismissed={onRecoveryDismissed}
+        />
+      ) : null}
+      {canConfigureComputers || canChooseOwnComputer(sandboxProvider) ? (
+        <ComputerProviderSettings
+          scope={canConfigureComputers ? "deployment" : "account"}
+          onProviderChange={onSandboxProviderChange}
+        />
+      ) : null}
     </div>
   );
 }

@@ -9,11 +9,10 @@ export interface WuyingOpenApiConfig {
   regionId: string;
 }
 
-/** The control-plane calls a Wuying computer needs: its state, power and screen login. */
+/** The control-plane calls a Wuying computer needs: its state, power-on and screen login. */
 export interface WuyingControlPlane {
   desktopStatus(desktopId: string, signal: AbortSignal): Promise<WuyingDesktopStatus | null>;
   startDesktop(desktopId: string, signal: AbortSignal): Promise<void>;
-  stopDesktop(desktopId: string, signal: AbortSignal): Promise<void>;
   authCode(endUserId: string, signal: AbortSignal): Promise<string>;
 }
 
@@ -82,17 +81,6 @@ export class WuyingOpenApi implements WuyingControlPlane {
     });
   }
 
-  async stopDesktop(desktopId: string, signal: AbortSignal) {
-    await this.call("StopDesktops", signal, async () => {
-      const { ecd, desktop, runtime } = await this.load();
-      signal.throwIfAborted();
-      await desktop.stopDesktopsWithOptions(
-        new ecd.StopDesktopsRequest({ regionId: this.config.regionId, desktopId: [desktopId] }),
-        runtime,
-      );
-    });
-  }
-
   async authCode(endUserId: string, signal: AbortSignal) {
     const code = await this.call("GetAuthCode", signal, async () => {
       const { appstream, login, runtime } = await this.load();
@@ -142,6 +130,14 @@ export class WuyingOpenApi implements WuyingControlPlane {
         missing.name = "SandboxNotFoundError";
         throw missing;
       }
+      // A refused AccessKey stays refused, so it is reported as such rather than as a retry.
+      if (typeof code === "string" && /^(InvalidAccessKey|SignatureDoesNotMatch)/.test(code))
+        throw new Error(`Wuying ${action}: the AccessKey was refused`);
+      if (
+        statusCode === 403 ||
+        (typeof code === "string" && /^(Forbidden|NoPermission)/.test(code))
+      )
+        throw new Error(`Wuying ${action}: the AccessKey is not allowed this action`);
       throw new SandboxUnresponsiveError(`Wuying ${action} failed`);
     }
   }

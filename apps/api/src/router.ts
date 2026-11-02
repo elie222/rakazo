@@ -38,6 +38,7 @@ import { availabilityRoutes } from "./routes/availability.js";
 import { boardsRoutes } from "./routes/boards.js";
 import { botsRoutes } from "./routes/bots.js";
 import { computerRoutes } from "./routes/computer.js";
+import { computerProviderRoutes } from "./routes/computer-provider.js";
 import { connectionsRoutes } from "./routes/connections.js";
 import { contentRoutes } from "./routes/content.js";
 import { createRouterContext } from "./routes/context.js";
@@ -151,6 +152,7 @@ export function createRouter(deps: RouterDeps) {
     ...botsRoutes(ctx),
     ...threadsRoutes(ctx),
     ...computerRoutes(ctx),
+    ...computerProviderRoutes(ctx),
     ...memoryRoutes(ctx),
     ...routinesRoutes(ctx),
     ...boardsRoutes(ctx),

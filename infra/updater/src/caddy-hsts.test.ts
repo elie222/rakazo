@@ -20,8 +20,12 @@ describe.each(caddyfiles)("%s HSTS", (filename) => {
 
   it("stops other sites framing the app and sniffing responses", () => {
     expect(httpsSite).toContain("X-Content-Type-Options nosniff");
-    expect(httpsSite).toContain("X-Frame-Options SAMEORIGIN");
+    expect(httpsSite).toContain("header @framed X-Frame-Options SAMEORIGIN");
     expect(httpsSite).not.toContain("frame-ancestors 'none'");
+  });
+
+  it("lets the Wuying screen frame its SDK runtime from an opaque origin", () => {
+    expect(httpsSite).toContain("@framed not path /wuying/*");
   });
 
   it("replaces the client-supplied forwarding header on API and RPC requests", () => {
