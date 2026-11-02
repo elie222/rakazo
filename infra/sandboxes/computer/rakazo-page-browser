@@ -68,6 +68,9 @@ ACTION_WAIT_SECONDS = 2.0
 QUIET_SECONDS = 0.15
 # How often a wait reads the page again.
 POLL_SECONDS = 0.05
+# A search box or autocomplete sends its request a moment after typing stops (a debounce), so an act
+# that ends by typing starts its quiet wait this long after the last key.
+TYPING_PAUSE_SECONDS = 0.35
 # A request still unanswered after this long is a stream or a lost request, not the page loading.
 REQUEST_PATIENCE_SECONDS = 10.0
 # browser_navigate returns the page as an action does when the navigation took less than
@@ -917,10 +920,12 @@ class PageBrowser:
         validate_actions(actions)
         completed = 0
         uncertain = False
+        typed = False
         try:
             for step in actions:
                 kind, ref = step["kind"], step.get("ref")
                 node = self.control(ref, check_disabled=kind in ("fill", "type")) if ref is not None else None
+                typed = kind == "type" or (kind == "fill" and not (node and native_options(node)))
                 uncertain = True
                 if kind == "pay_token" or step.get("origin"):
                     if ref is not None:
@@ -958,7 +963,8 @@ class PageBrowser:
                     return self.dialog_result(dialog, {"completed": completed, "uncertain": False},
                                               remaining=completed < len(actions))
             started = time.monotonic()
-            busy = not self.settle(ACTION_WAIT_SECONDS, quiet_from=time.time())
+            quiet_from = time.time() + (TYPING_PAUSE_SECONDS if typed else 0.0)
+            busy = not self.settle(ACTION_WAIT_SECONDS, quiet_from=quiet_from)
             left = ACTION_WAIT_SECONDS - (time.monotonic() - started)
             snap = self.snapshot(0.0 if busy else max(0.0, left))
             return {**snap, "completed": completed, **({"loading": True} if busy else {})}

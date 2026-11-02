@@ -181,6 +181,16 @@ export const TASKS: BenchTask[] = [
     expect: { submitted: { order: "A-123" } },
   },
   {
+    id: "search",
+    covers: "suggestions 300 ms after typing stops, then 200 ms to answer",
+    steps: [
+      { navigate: "/search.html" },
+      { act: [{ kind: "type", target: { name: "Search countries" }, text: "Can" }] },
+      { act: [{ kind: "click", target: { name: "Canada" } }] },
+    ],
+    expect: { submitted: { country: "ca" } },
+  },
+  {
     id: "login",
     covers: "saved login fill bound to the site",
     steps: [

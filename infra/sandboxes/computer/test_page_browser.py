@@ -482,6 +482,18 @@ class ActTest(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(browser.actions(), [["click", "@e8"], ["fill", "@e2", "Grace"], ["select", "@e4", "Choose"]])
 
+    def test_an_act_that_ends_by_typing_waits_for_a_debounced_request_to_begin(self):
+        for actions, pause in (([{"kind": "fill", "ref": "e2", "text": "Can"}], helper.TYPING_PAUSE_SECONDS),
+                               ([{"kind": "fill", "ref": "e2", "text": "Can"}, {"kind": "click", "ref": "e8"}], 0.0),
+                               ([{"kind": "fill", "ref": "e4", "text": "Choose"}], 0.0)):
+            current = page(FakeAgentBrowser())
+            with patch.object(current, "settle", return_value=True) as settle, \
+                    patch.object(current, "snapshot", return_value={"ok": True}):
+                before = time.time()
+                current.act(actions)
+            waited = settle.call_args_list[0].kwargs["quiet_from"] - before
+            self.assertTrue(pause <= waited < pause + 0.1, (actions, waited))
+
     def test_a_frame_below_the_fold_is_brought_into_view_before_a_click_inside_it(self):
         _, browser = self.act([{"kind": "click", "ref": "e10"}])
         self.assertEqual(browser.actions(), [["scrollintoview", "@e9"], ["click", "@e10"]])
