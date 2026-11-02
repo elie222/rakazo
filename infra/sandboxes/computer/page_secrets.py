@@ -379,6 +379,9 @@ EVAL_HELPERS = r"""
       el.dispatchEvent(new Event("input", { bubbles: true }));
       return el.value === String(token);
     },
+    hasCardField() {
+      return ["cc-number", "cc-exp", "cc-csc"].some((token) => cardFields(token).length > 0);
+    },
     findCard(token) {
       const found = cardFields(String(token));
       cardTarget = found.length === 1 ? found[0] : null;
@@ -778,14 +781,19 @@ def run_step(port: int, target_id: str, step: dict[str, Any]) -> None:
         client.close()
 
 
-def stripe_pay_token_account(port: int, target_id: str) -> str | None:
-    """The merchant account a pay token checkout names inside Stripe's frame, for the snapshot's hint."""
+def frame_hints(client: CdpClient, session_id: str) -> tuple[bool, str | None]:
+    """Whether a payment frame the page shows holds a card field, and the merchant account a pay token
+    checkout names inside Stripe's frame: what the snapshot tells the bot about its payment frames."""
+    frames = payment_frames(client, session_id)
+    card = any(frame_eval(client, frames, "window.__rakazoPageBrowser.hasCardField()"))
+    accounts = [found for found in frame_eval(client, pay_token_frames(client, frames),
+                                              "window.__rakazoPageBrowser.payTokenAccount()") if found]
+    return card, accounts[0] if len(accounts) == 1 else None
+
+
+def payment_frame_hints(port: int, target_id: str) -> tuple[bool, str | None]:
     client = connect(port)
     try:
-        session_id = attach(client, target_id)
-        frames = pay_token_frames(client, payment_frames(client, session_id))
-        accounts = [found for found in frame_eval(client, frames, "window.__rakazoPageBrowser.payTokenAccount()")
-                    if found]
-        return accounts[0] if len(accounts) == 1 else None
+        return frame_hints(client, attach(client, target_id))
     finally:
         client.close()

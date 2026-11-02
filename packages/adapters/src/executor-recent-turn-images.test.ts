@@ -38,6 +38,8 @@ type RunHooks = {
   trigger?: string;
   /** A reply bound to this run as steering, claimed before any tool runs. */
   steeringBlocks?: MessageBlock[];
+  /** The newest user message points at this run, sends a picture and may wait for its own run. */
+  pictureMessage?: { waiting: boolean };
 };
 
 function deferred<T>(): Deferred<T> {
@@ -48,7 +50,7 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve };
 }
 
-function historyMessages(): Array<{
+function historyMessages(pictureMessage?: { waiting: boolean }): Array<{
   id: string;
   threadId: string;
   seq: number;
@@ -58,6 +60,7 @@ function historyMessages(): Array<{
   replyToMessageId: null;
   replyQuote: null;
   replyTo: null;
+  steeringMessages: Array<{ id: string }>;
 }> {
   return [
     {
@@ -66,10 +69,23 @@ function historyMessages(): Array<{
       seq: 2,
       role: "user",
       runId: "run-1",
-      blocks: [{ kind: "text", text: "what was in the screenshot?" }],
+      blocks: [
+        { kind: "text", text: "what was in the screenshot?" },
+        ...(pictureMessage
+          ? [
+              {
+                kind: "image" as const,
+                artifactId: "art-2",
+                mimeType: "image/png",
+                name: "reply.png",
+              },
+            ]
+          : []),
+      ],
       replyToMessageId: null,
       replyQuote: null,
       replyTo: null,
+      steeringMessages: pictureMessage?.waiting ? [{ id: "held-steering" }] : [],
     },
     {
       id: "earlier",
@@ -81,6 +97,7 @@ function historyMessages(): Array<{
       replyToMessageId: null,
       replyQuote: null,
       replyTo: null,
+      steeringMessages: [],
     },
   ];
 }
@@ -185,7 +202,7 @@ async function runWithModel(
     },
     message: {
       findMany: vi.fn(async (args: { where?: { threadId?: string } }) =>
-        args.where?.threadId ? historyMessages() : [],
+        args.where?.threadId ? historyMessages(hooks?.pictureMessage) : [],
       ),
       findUnique: vi.fn(async () => null),
       // A claimed steering reply looks up the message it quotes; this one quotes nothing.
@@ -380,6 +397,21 @@ describe("recent turn images follow model vision", () => {
     });
     expect(request.history.find((entry) => entry.id === "current")?.images).toBeUndefined();
     expect(get).toHaveBeenCalledWith("shot.png", expect.anything());
+  });
+
+  it("does not take a chat message waiting for its own run as a sourceless app run's turn", async () => {
+    // An app run with no source message, like the one queued after an MCP server connects.
+    const held = await runWithModel(VISION_MODEL, undefined, false, false, true, {
+      pictureMessage: { waiting: true },
+    });
+    expect(held.request.currentTurnImages).toBeUndefined();
+
+    const bound = await runWithModel(VISION_MODEL, undefined, false, false, true, {
+      pictureMessage: { waiting: false },
+    });
+    expect(bound.request.currentTurnImages).toEqual([
+      { name: "reply.png", mimeType: "image/png", data: new Uint8Array([1, 2, 3, 4]) },
+    ]);
   });
 
   it("continues with no backups when the indexed lookup fails", async () => {

@@ -25,6 +25,7 @@ import {
   isSecretAskBlock,
   messageBypassesTakeoverWait,
   messageReaction,
+  messageSteersRun,
   messagingChannelId,
   normalizeRunError,
   QUEUE_HOLDING_RUN_STATUSES,
@@ -528,15 +529,34 @@ export async function sendUserMessage(
                   in: [...QUEUE_HOLDING_RUN_STATUSES],
                 },
               },
-              select: { id: true, taskId: true, trigger: true, status: true },
+              select: {
+                id: true,
+                taskId: true,
+                trigger: true,
+                status: true,
+                sourceMessage: { select: { blocks: true } },
+              },
             })
           : [];
+      // A group text never ends the owner's paused app task: it waits for it like any other turn.
+      const fromGroup = hasChannelMessage(input.blocks);
+      const channelId = messagingChannelId(input.blocks);
+      const steersRun = (run: (typeof activeRuns)[number]) =>
+        messageSteersRun(
+          input.trigger,
+          run.trigger,
+          channelId,
+          messagingChannelId(run.sourceMessage?.blocks as MessageBlock[] | undefined),
+        );
       const holdingRuns = activeRuns.filter(
-        (run) => !messageBypassesTakeoverWait(run, input.trigger !== "webhook"),
+        (run) => !messageBypassesTakeoverWait(run, fromGroup || steersRun(run)),
       );
-      // Steer a conversational run when there is one; a routine, webhook, or intro turn only holds the queue.
+      // Prefer a run that can take this message, then preserve the conversational queue fallback.
       const busy =
-        holdingRuns.find((run) => isConversationalRun(run.trigger)) ?? holdingRuns[0] ?? null;
+        holdingRuns.find(steersRun) ??
+        holdingRuns.find((run) => isConversationalRun(run.trigger)) ??
+        holdingRuns[0] ??
+        null;
       let task = null;
       let run = null;
       if (createRun && !busy) {
@@ -575,7 +595,7 @@ export async function sendUserMessage(
           await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });
         }
       } else if (createRun && busy) {
-        const held = input.trigger === "webhook" || !isConversationalRun(busy.trigger);
+        const held = !steersRun(busy);
         await tx.steeringMessage.create({
           data: {
             messageId: message.id,
