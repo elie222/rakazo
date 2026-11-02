@@ -912,12 +912,18 @@ export const INTEGRATION_CLAIMS_PATH = "/api/v1/integration-claims";
 export const SUBMIT_PLUGIN_URL = "https://rakazo.com/plugins/submit/";
 export const integrationPageUrl = (slug: string) => `https://rakazo.com/integrations/${slug}/`;
 
+/** People type a bare domain like `acme.com`, so a URL without a scheme gets `https://`. */
 const HttpsUrlSchema = z
   .string()
   .trim()
-  .max(2048)
-  .url()
-  .refine((value) => value.startsWith("https://"), "Use an https:// URL");
+  .transform((value) => (/^[a-z][a-z0-9+.-]*:/i.test(value) ? value : `https://${value}`))
+  .pipe(
+    z
+      .string()
+      .max(2048)
+      .url()
+      .refine((value) => value.startsWith("https://"), "Use an https:// URL"),
+  );
 
 export const PluginSubmissionInputSchema = z.object({
   email: z.string().trim().max(254).email(),

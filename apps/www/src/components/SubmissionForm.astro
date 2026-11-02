@@ -1,6 +1,7 @@
 ---
 import { PLUGIN_SUBMISSIONS_URL } from "../site";
 
+/** A "url" field accepts a bare domain; the server adds https:// and checks it. */
 export type SubmissionField = {
   name: string;
   label: string;
@@ -39,7 +40,8 @@ const { fields, hidden = {}, confirm, submitLabel } = Astro.props;
         ) : (
           <input
             name={field.name}
-            type={field.type}
+            type={field.type === "url" ? "text" : field.type}
+            inputmode={field.type === "url" ? "url" : undefined}
             placeholder={field.placeholder}
             required={field.required}
             value={field.value}
