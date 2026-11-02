@@ -996,7 +996,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       stats: [
         { value: "stars", label: "GitHub stars" },
         { value: "license", label: "License" },
-        { value: "openSource", label: "No seats, no gates" },
+        { value: "openSource", label: "Every feature, free" },
         { value: "selfHost", label: "Your machine" },
       ],
     },
@@ -1149,7 +1149,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       stats: [
         { value: "stars", label: "GitHub Stars" },
         { value: "license", label: "Lizenz" },
-        { value: "openSource", label: "Keine Seats, keine Gates" },
+        { value: "openSource", label: "Alle Funktionen, kostenlos" },
         { value: "selfHost", label: "Deine Maschine" },
       ],
     },
@@ -1301,7 +1301,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       stats: [
         { value: "stars", label: "GitHub 스타" },
         { value: "license", label: "라이선스" },
-        { value: "openSource", label: "시트·게이트 없음" },
+        { value: "openSource", label: "모든 기능 무료" },
         { value: "selfHost", label: "당신 머신" },
       ],
     },
@@ -1453,7 +1453,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       stats: [
         { value: "stars", label: "GitHub 星标" },
         { value: "license", label: "许可证" },
-        { value: "openSource", label: "无席位、无门槛" },
+        { value: "openSource", label: "全部功能，免费使用" },
         { value: "selfHost", label: "你的机器" },
       ],
     },
@@ -1606,7 +1606,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       stats: [
         { value: "stars", label: "GitHub スター" },
         { value: "license", label: "ライセンス" },
-        { value: "openSource", label: "シート課金なし、機能制限なし" },
+        { value: "openSource", label: "全機能を無料で" },
         { value: "selfHost", label: "あなたのマシン" },
       ],
     },
@@ -1759,7 +1759,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       stats: [
         { value: "stars", label: "Estrellas en GitHub" },
         { value: "license", label: "Licencia" },
-        { value: "openSource", label: "Sin licencias por usuario ni bloqueos" },
+        { value: "openSource", label: "Todas las funciones, gratis" },
         { value: "selfHost", label: "Tu máquina" },
       ],
     },
@@ -1912,7 +1912,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       stats: [
         { value: "stars", label: "Étoiles GitHub" },
         { value: "license", label: "Licence" },
-        { value: "openSource", label: "Ni licences par siège, ni restrictions" },
+        { value: "openSource", label: "Toutes les fonctionnalités, gratuites" },
         { value: "selfHost", label: "Votre machine" },
       ],
     },
@@ -2065,7 +2065,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       stats: [
         { value: "stars", label: "Estrelas no GitHub" },
         { value: "license", label: "Licença" },
-        { value: "openSource", label: "Sem licenças por usuário, sem bloqueios" },
+        { value: "openSource", label: "Todos os recursos, grátis" },
         { value: "selfHost", label: "Sua máquina" },
       ],
     },
@@ -2218,7 +2218,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       stats: [
         { value: "stars", label: "GitHub-sterren" },
         { value: "license", label: "Licentie" },
-        { value: "openSource", label: "Geen seats, geen drempels" },
+        { value: "openSource", label: "Alle functies, gratis" },
         { value: "selfHost", label: "Jouw machine" },
       ],
     },
@@ -2371,7 +2371,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       stats: [
         { value: "stars", label: "Звёзды на GitHub" },
         { value: "license", label: "Лицензия" },
-        { value: "openSource", label: "Без платы за места, без ограничений" },
+        { value: "openSource", label: "Все функции бесплатно" },
         { value: "selfHost", label: "Ваш компьютер" },
       ],
     },
@@ -2524,7 +2524,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       stats: [
         { value: "stars", label: "GitHub yıldızı" },
         { value: "license", label: "Lisans" },
-        { value: "openSource", label: "Kullanıcı başı ücret yok, kısıtlama yok" },
+        { value: "openSource", label: "Tüm özellikler ücretsiz" },
         { value: "selfHost", label: "Sizin makineniz" },
       ],
     },
@@ -2677,7 +2677,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       stats: [
         { value: "stars", label: "כוכבים ב-GitHub" },
         { value: "license", label: "רישיון" },
-        { value: "openSource", label: "בלי מושבים, בלי חסימות" },
+        { value: "openSource", label: "כל הפיצ׳רים, בחינם" },
         { value: "selfHost", label: "המכונה שלך" },
       ],
     },
@@ -2830,7 +2830,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       stats: [
         { value: "stars", label: "GitHub स्टार्स" },
         { value: "license", label: "लाइसेंस" },
-        { value: "openSource", label: "न सीट्स, न पाबंदियां" },
+        { value: "openSource", label: "सभी फ़ीचर, मुफ़्त" },
         { value: "selfHost", label: "आपकी मशीन" },
       ],
     },
@@ -2982,7 +2982,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       stats: [
         { value: "stars", label: "GitHub 星號" },
         { value: "license", label: "授權" },
-        { value: "openSource", label: "不限席次，沒有門檻" },
+        { value: "openSource", label: "全部功能，免費使用" },
         { value: "selfHost", label: "你的機器" },
       ],
     },
