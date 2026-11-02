@@ -95,7 +95,8 @@ export function useBrowserNotifications(
         attention === "needs_attention" &&
         (!bot.activeRunThreadId || bot.activeRunThreadId === bot.threadId) &&
         (before.status !== bot.status || before.runErrorId !== bot.runErrorId);
-      const replied = attention === "unread" && bot.preview !== before.preview;
+      const replied =
+        attention === "unread" && bot.previewRole === "bot" && bot.preview !== before.preview;
       if (!interrupted && !replied) continue;
       const event = {
         id: `roster:${bot.threadId}:${bot.updatedAt}:${bot.status}`,

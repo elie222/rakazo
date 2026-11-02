@@ -34,6 +34,7 @@ it("notifies for another agent's reply with its name and avatar, without replayi
     status: "completed",
     unread: true,
     preview: "Old reply",
+    previewRole: "bot",
     notifyOnFinish: true,
     updatedAt: "old",
   } as Bot;
@@ -259,3 +260,59 @@ it.each(["run.waiting_input", "computer.takeover.requested", "run.failed"] as co
     }
   },
 );
+
+it("does not turn mirrored user messages into synthetic bot replies", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const show = vi.fn();
+  vi.stubGlobal(
+    "Notification",
+    class {
+      static permission = "granted";
+      constructor(title: string, options: NotificationOptions) {
+        show(title, options);
+      }
+    },
+  );
+  Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+  const bot = {
+    id: "agent",
+    threadId: "thread",
+    name: "Marketing",
+    status: "idle",
+    unread: true,
+    notifyOnFinish: true,
+    preview: "Old reply",
+    previewRole: "bot",
+  } as Bot;
+  function Harness({ bots }: { bots: Bot[] }) {
+    const ref = useRef(bots);
+    ref.current = bots;
+    useBrowserNotifications(ref, bots, "other", "space");
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root.render(<Harness bots={[bot]} />));
+    await act(async () =>
+      root.render(
+        <Harness
+          bots={[
+            { ...bot, preview: "My external message", previewRole: "user", updatedAt: "user" },
+          ]}
+        />,
+      ),
+    );
+    expect(show).not.toHaveBeenCalled();
+    await act(async () =>
+      root.render(
+        <Harness
+          bots={[{ ...bot, preview: "Agent response", previewRole: "bot", updatedAt: "bot" }]}
+        />,
+      ),
+    );
+    expect(show).toHaveBeenCalledOnce();
+    expect(show.mock.calls[0]?.[1].body).toBe("Agent response");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});

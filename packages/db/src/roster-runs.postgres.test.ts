@@ -215,4 +215,32 @@ describePostgres("bounded latest bot roster runs (PostgreSQL)", () => {
       ),
     ).resolves.toEqual([]);
   });
+  it("returns the actual author of the visible preview without starting a run", async () => {
+    await runAsTenant(owner, async () => {
+      const repos = createRepos(prisma);
+      const bot = (await repos.listBots(actorFor(owner.spaceId))).find(
+        (bot) => bot.name === "Empty",
+      )!;
+      await prisma.thread.update({ where: { id: bot.threadId }, data: { unread: true } });
+      for (const [index, role] of (["user", "bot"] as const).entries()) {
+        const text = role === "user" ? "External owner message" : "Agent response";
+        await prisma.message.create({
+          data: {
+            threadId: bot.threadId,
+            seq: index + 1,
+            role,
+            blocks: [{ kind: "text", text }],
+            searchTokens: [],
+          },
+        });
+        const current = (await repos.listBots(actorFor(owner.spaceId))).find(
+          (entry) => entry.id === bot.id,
+        )!;
+        expect(current.previewRole).toBe(role);
+        expect(current.preview).toBe(text);
+        expect(current.unread).toBe(true);
+        expect(current.activeRunId).toBeNull();
+      }
+    });
+  });
 });

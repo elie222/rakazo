@@ -9,7 +9,7 @@ import {
   isCloudflareModelProvider,
 } from "./cloudflare-ai-gateway.js";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "./connector-errors.js";
-import { BotSettingsValuesSchema, ThreadMessageSchema } from "./events.js";
+import { BotSettingsValuesSchema, MessageRole, ThreadMessageSchema } from "./events.js";
 import { Id, MemoryScope, RunStatus, SandboxKind, ThinkingLevelSchema } from "./ids.js";
 import {
   McpHeadersSchema,
@@ -116,6 +116,7 @@ export const BotSchema = z.object({
   memoryScope: MemoryScopeSchema.nullable(),
   threadId: Id,
   preview: z.string(),
+  previewRole: MessageRole.nullable().optional(),
   status: z.string(),
   runErrorId: Id.nullable().default(null),
   /** Distinguishes group work from the bot's private conversation. */

@@ -12,6 +12,7 @@ import {
   disabledBuiltinToolSet,
   InstructionVersionSchema,
   initialBotMemory,
+  MessageRole,
   resolveBotAvatarSet,
 } from "@rakazo/contracts";
 import {
@@ -117,6 +118,7 @@ function mapBot(
   incomingCall: Bot["incomingCall"] = null,
   activeRunThreadId: string | null = null,
   activeRunId: string | null = null,
+  previewRole: Bot["previewRole"] = null,
 ): Bot {
   if (!bot.thread) {
     throw new IsolationError("Bot is missing its thread");
@@ -140,6 +142,7 @@ function mapBot(
     memoryScope: bot.memoryScope as "isolated" | "shared" | null,
     threadId: bot.thread.id,
     preview,
+    previewRole,
     status,
     runErrorId,
     activeRunThreadId,
@@ -450,6 +453,7 @@ export function createRepos(
           let messages = bot.thread?.messages ?? [];
           const updatedAt = rosterUpdatedAt(messages[0], bot.updatedAt);
           let preview = "";
+          let previewRole: Bot["previewRole"] = null;
           for (let attempt = 0; attempt < 5; attempt++) {
             const windowRunIds = [
               ...new Set(messages.flatMap((message) => (message.runId ? [message.runId] : []))),
@@ -471,7 +475,10 @@ export function createRepos(
             );
             for (const message of visible) {
               preview = previewFromBlocks(message.blocks);
-              if (preview) break;
+              if (preview) {
+                previewRole = MessageRole.safeParse(message.role).data ?? null;
+                break;
+              }
             }
             if (preview || messages.length === 0 || !bot.thread || attempt === 4) break;
             const oldest = messages[messages.length - 1];
@@ -497,6 +504,7 @@ export function createRepos(
             ),
             activeRun?.threadId ?? null,
             activeRun?.id ?? null,
+            previewRole,
           );
         }),
       );

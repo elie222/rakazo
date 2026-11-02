@@ -415,13 +415,19 @@ export function useSpaceBootstrap({
         });
       });
     let refreshTimer: number | undefined;
+    let lastHiddenRefresh = Number.NEGATIVE_INFINITY;
     const refreshVisibleBots = () => {
-      if (
-        document.visibilityState !== "visible" &&
-        !callsEnabledRef.current &&
-        (typeof Notification === "undefined" || Notification.permission !== "granted")
-      )
-        return;
+      if (document.visibilityState !== "visible" && !callsEnabledRef.current) {
+        if (
+          typeof Notification === "undefined" ||
+          Notification.permission !== "granted" ||
+          !seedStateRef.current?.bots.some((bot) => bot.notifyOnFinish)
+        )
+          return;
+        const now = Date.now();
+        if (now - lastHiddenRefresh < 30_000) return;
+        lastHiddenRefresh = now;
+      }
       window.clearTimeout(refreshTimer);
       refreshTimer = window.setTimeout(
         () =>
