@@ -9,13 +9,13 @@ import type { CallToolResult, ListToolsResult } from "@modelcontextprotocol/sdk/
 import { isLocalhostOrLoopbackIp } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
 import { combineSignals } from "./connector-safety.js";
-
 import type { InstalledMcpBin } from "./mcp-package-installer.js";
 import {
   isInstalledMcpBin,
   isNpxCommand,
   isPackageRunnerCommand,
 } from "./mcp-package-installer.js";
+import { limitMcpResponseBody } from "./mcp-response-limit.js";
 
 import type { RemoteTransportDependencies, SafeRemoteFetch } from "./remote-mcp.js";
 import { createSafeRemoteFetch, listMcpTools } from "./remote-mcp.js";
@@ -223,7 +223,7 @@ export function secureFetch(
       cancelResponseBody(response);
       throw new Error("MCP redirects are not permitted; configure the final HTTPS URL explicitly");
     }
-    return response;
+    return limitMcpResponseBody(response, headers);
   };
   const result = request as SafeRemoteFetch;
   result.close = () => safeRemoteFetch.close();
