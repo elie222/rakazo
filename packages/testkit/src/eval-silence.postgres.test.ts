@@ -104,7 +104,6 @@ describe.skipIf(!databaseAvailable)("routine silence eval through the product", 
                   id: "remember-notified",
                   name: "remember",
                   arguments: {
-                    path: "MEMORY.md",
                     content: `Already notified the user: ${releaseReply}`,
                   },
                 }

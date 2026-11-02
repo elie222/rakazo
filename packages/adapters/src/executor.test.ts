@@ -1,4 +1,5 @@
 import { normalizeContext } from "@earendil-works/pi-ai";
+import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import {
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
@@ -342,9 +343,11 @@ describe("tool completion audit", () => {
 });
 
 describe("run workspace checkpoint", () => {
+  const computer = { id: "computer", kind: "fake" };
+
   it("skips clean turns and flushes once after a mutation", async () => {
     const persist = vi.fn(async () => undefined);
-    const checkpoint = createRunWorkspaceCheckpoint(persist);
+    const checkpoint = createRunWorkspaceCheckpoint(persist, computer);
 
     await expect(checkpoint.flush()).resolves.toBe(false);
     checkpoint.markDirty();
@@ -355,7 +358,7 @@ describe("run workspace checkpoint", () => {
 
   it("marks materialized steering files for checkpointing", async () => {
     const persist = vi.fn(async () => undefined);
-    const checkpoint = createRunWorkspaceCheckpoint(persist);
+    const checkpoint = createRunWorkspaceCheckpoint(persist, computer);
 
     checkpoint.markFiles([]);
     await expect(checkpoint.flush()).resolves.toBe(false);
@@ -364,25 +367,38 @@ describe("run workspace checkpoint", () => {
   });
 
   it("defers a failed checkpoint without failing the run and keeps it dirty for retry", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
     const persist = vi
       .fn<() => Promise<void>>()
-      .mockRejectedValueOnce(new Error("checkpoint failed"))
+      .mockRejectedValueOnce(new WorkspaceTooLargeError("bytes"))
       .mockResolvedValueOnce(undefined);
-    const checkpoint = createRunWorkspaceCheckpoint(persist);
+    const checkpoint = createRunWorkspaceCheckpoint(persist, computer);
     checkpoint.markDirty();
 
-    await expect(checkpoint.flush()).resolves.toBe(false);
-    await expect(checkpoint.flush()).resolves.toBe(true);
-    expect(persist).toHaveBeenCalledTimes(2);
+    try {
+      await expect(checkpoint.flush()).resolves.toBe(false);
+      await expect(checkpoint.flush()).resolves.toBe(true);
+      expect(persist).toHaveBeenCalledTimes(2);
+      expect(
+        sink.events.find((event) => event.message === "computer.checkpoint_deferred"),
+      ).toMatchObject({ "computer.id": "computer", provider: "fake", reason: "too_large" });
+    } finally {
+      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+    }
   });
 
   it("still stops a cancelled run whose checkpoint fails", async () => {
     const controller = new AbortController();
     const aborted = new DOMException("Aborted", "AbortError");
-    const checkpoint = createRunWorkspaceCheckpoint(async () => {
-      controller.abort(aborted);
-      throw aborted;
-    }, controller.signal);
+    const checkpoint = createRunWorkspaceCheckpoint(
+      async () => {
+        controller.abort(aborted);
+        throw aborted;
+      },
+      computer,
+      controller.signal,
+    );
     checkpoint.markDirty();
 
     await expect(checkpoint.flush()).rejects.toBe(aborted);

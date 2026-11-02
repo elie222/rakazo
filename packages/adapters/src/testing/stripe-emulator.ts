@@ -106,6 +106,7 @@ export class StripeEmulator {
             object: "subscription_item",
             price: { id: checkout.form["line_items[0][price]"]!, object: "price" },
             quantity: Number(checkout.form["line_items[0][quantity]"]),
+            current_period_start: nowSeconds,
             current_period_end: trialEnd ?? nowSeconds + 30 * 86_400,
           },
         ],
@@ -283,6 +284,19 @@ export class StripeEmulator {
       return Response.json(found);
     }
     const subscription = /^\/v1\/subscriptions\/([^/]+)$/.exec(path);
+    if (method === "POST" && subscription && form.trial_end === "now") {
+      const found = this.subscriptions.find((s) => s.id === decodeURIComponent(subscription[1]!));
+      if (!found) return stripeError({ status: 404, message: "No such subscription" });
+      if (isTerminal(found.status)) return canceledSubscriptionError();
+      const nowSeconds = Math.floor(this.now() / 1000);
+      found.status = "active";
+      found.trial_end = nowSeconds;
+      for (const entry of found.items.data) {
+        entry.current_period_start = nowSeconds;
+        entry.current_period_end = nowSeconds + 30 * 86_400;
+      }
+      return Response.json(found);
+    }
     if (method === "DELETE" && subscription) {
       const found = this.subscriptions.find((s) => s.id === decodeURIComponent(subscription[1]!));
       if (!found) return stripeError({ status: 404, message: "No such subscription" });
@@ -318,6 +332,7 @@ export interface StripeSubscriptionRecord {
   cancel_at_period_end: boolean;
   cancel_at: number | null;
   ended_at: number | null;
+  cancellation_details?: { feedback: string | null; comment: string | null };
   default_payment_method?: string | null;
   /** Emulator-only: the card's fingerprint, returned when the payment method is expanded. */
   cardFingerprint?: string;
@@ -328,6 +343,7 @@ export interface StripeSubscriptionRecord {
       object: "subscription_item";
       price: { id: string; object: "price" };
       quantity: number;
+      current_period_start?: number;
       current_period_end: number;
     }>;
   };

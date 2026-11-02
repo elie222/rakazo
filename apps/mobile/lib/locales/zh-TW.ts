@@ -976,6 +976,13 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   Credits: "額度",
   "Available credits": "可用額度",
   "Computer hours left": "剩餘電腦時數",
+  "Trials get fewer hours to prevent abuse.": "為防止濫用，試用期的時數較少。",
+  "Start plan now": "立即開始方案",
+  "Start your plan now?": "立即開始你的方案？",
+  "Your trial ends and your card is charged {price} today.":
+    "試用將結束，今天將從你的卡片扣款 {price}。",
+  "Your trial ends and your card is charged today.": "試用將結束，今天將從你的卡片扣款。",
+  "Start plan": "開始方案",
   "Monthly credits": "每月額度",
   "Upgrade now": "立即升級",
   "Downgrade at renewal": "下次續訂時降級",

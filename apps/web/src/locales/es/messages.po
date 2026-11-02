@@ -1152,6 +1152,7 @@ msgstr "No puede leer imágenes"
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/VaultSettings.tsx
@@ -5634,9 +5635,21 @@ msgstr "Iniciar"
 msgid "Start {trialDays}-day free trial"
 msgstr "Empezar prueba gratuita de {trialDays} días"
 
+#: src/components/ModelCredits.tsx
+msgid "Start plan"
+msgstr "Iniciar plan"
+
+#: src/components/ModelCredits.tsx
+msgid "Start plan now"
+msgstr "Iniciar el plan ahora"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"
 msgstr "Iniciar grabación"
+
+#: src/components/ModelCredits.tsx
+msgid "Start your plan now?"
+msgstr "¿Iniciar tu plan ahora?"
 
 #: src/pages/ActivityList.tsx
 msgid "Starting"
@@ -6126,6 +6139,10 @@ msgstr "Prueba"
 msgid "Trial ends {day}"
 msgstr "La prueba termina el {day}"
 
+#: src/components/ModelCredits.tsx
+msgid "Trials get fewer hours to prevent abuse."
+msgstr "Las pruebas tienen menos horas para evitar abusos."
+
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "Sitios de confianza"
@@ -6614,6 +6631,14 @@ msgstr "Tu suscripción o clave de API"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Tu equipo de agentes siempre activos<0/>a los que puedes dar trabajo real."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged {price} today."
+msgstr "Tu prueba termina y se cobrará {price} a tu tarjeta hoy."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged today."
+msgstr "Tu prueba termina y se cobrará a tu tarjeta hoy."
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

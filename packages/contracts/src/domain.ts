@@ -765,6 +765,8 @@ export type MemoryPromptBudget = z.infer<typeof MemoryPromptBudgetSchema>;
 
 /** Every bot and Space keeps its MEMORY.md index; other memory documents can be deleted. */
 export const MEMORY_INDEX_PATH = "MEMORY.md";
+/** What a bot may write to its memory. People can still write more by hand. */
+export const BOT_MEMORY_MAX_BYTES = 4 * 1024;
 export function isDeletableMemoryDocument(path: string): boolean {
   return path !== MEMORY_INDEX_PATH;
 }
@@ -1890,6 +1892,18 @@ export function signupSurveyAsksTeamSize(use: SignupSurvey["use"]): boolean {
 export const BillingClientSchema = z.literal("mobile").optional();
 /** The deep link the API sends a mobile checkout back to; it closes the in-app browser. */
 export const MOBILE_BILLING_CALLBACK_URL = "rakazo://billing";
+
+export const BILLING_CANCELLATION_REASONS = [
+  "too_expensive",
+  "missing_features",
+  "switched_service",
+  "unused",
+  "customer_service",
+  "too_complex",
+  "low_quality",
+  "other",
+] as const;
+export type BillingCancellationReason = (typeof BILLING_CANCELLATION_REASONS)[number];
 
 export const BillingStatusSchema = z.object({
   funding: z.enum(["byok", "credits"]).nullable().optional(),

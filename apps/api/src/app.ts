@@ -467,6 +467,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         sandbox,
         webOrigin: env.webOrigin,
         managedModelsAvailable: resolveDeploymentModel().configured,
+        analytics,
       })
     : undefined;
   const modelCreditsEnabled = billing?.modelCreditsEnabled ?? false;
@@ -1576,7 +1577,7 @@ export function handleRpcError(
     });
     throw new ORPCError("TOO_MANY_REQUESTS", { message: error.message, cause: error });
   }
-  // The organization spent this month's computer allowance; its message says so.
+  // The organization spent this period's computer allowance; its message says so.
   if (error instanceof SandboxAllowanceUsedError) {
     getLogger().warn(`rpc ${path.join("/")} computer allowance used up`);
     throw new ORPCError("FORBIDDEN", { message: error.message, cause: error });

@@ -1152,6 +1152,7 @@ msgstr "Görselleri okuyamaz"
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/VaultSettings.tsx
@@ -5634,9 +5635,21 @@ msgstr ""
 msgid "Start {trialDays}-day free trial"
 msgstr "{trialDays} günlük ücretsiz denemeyi başlat"
 
+#: src/components/ModelCredits.tsx
+msgid "Start plan"
+msgstr "Planı başlat"
+
+#: src/components/ModelCredits.tsx
+msgid "Start plan now"
+msgstr "Planı şimdi başlat"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"
 msgstr "Kaydı başlat"
+
+#: src/components/ModelCredits.tsx
+msgid "Start your plan now?"
+msgstr "Planınız şimdi başlatılsın mı?"
 
 #: src/pages/ActivityList.tsx
 msgid "Starting"
@@ -6126,6 +6139,10 @@ msgstr ""
 msgid "Trial ends {day}"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Trials get fewer hours to prevent abuse."
+msgstr "Kötüye kullanımı önlemek için denemelerde daha az saat verilir."
+
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "Güvenilen siteler"
@@ -6614,6 +6631,14 @@ msgstr ""
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Gerçek işler verebileceğin,<0/>her zaman açık agent takımın."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged {price} today."
+msgstr "Denemeniz biter ve kartınızdan bugün {price} çekilir."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged today."
+msgstr "Denemeniz biter ve kartınızdan bugün ödeme alınır."
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."
