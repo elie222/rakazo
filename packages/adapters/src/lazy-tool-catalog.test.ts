@@ -11,6 +11,7 @@ import {
   lazyCatalogTools,
   loadCatalogEntry,
   NAME_INDEX_MAX_NAMES,
+  parseConnectorToolArgs,
   resolveCatalogCall,
   SELECTED_SCHEMA_MAX_BYTES,
   searchCatalog,
@@ -553,6 +554,25 @@ describe("lazy tool catalog", () => {
 
     expect(() => assertConnectorToolArgs(schema, args)).not.toThrow();
     expect(() => assertConnectorToolArgs(schema, { ...args, slash: 1 })).toThrow(/invalid/i);
+  });
+
+  it("leaves ref-shaped data in defaults untouched while hoisting refs", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        a: { type: "string" },
+        b: { $ref: "#/properties/a" },
+        default: { $ref: "#/properties/a" },
+        payload: { type: "object", default: { $ref: "#/properties/a" } },
+      },
+    };
+
+    expect(parseConnectorToolArgs(schema, { b: "x", default: "y" })).toEqual({
+      b: "x",
+      default: "y",
+      payload: { $ref: "#/properties/a" },
+    });
+    expect(() => parseConnectorToolArgs(schema, { default: 1 })).toThrow(/invalid/i);
   });
 
   it("accepts group-qualified names a model builds from search output", () => {
