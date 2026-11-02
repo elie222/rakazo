@@ -43,11 +43,8 @@ describe("model quota observations", () => {
         ],
       }),
     ).toHaveLength(2);
-    expect(() =>
-      parseClaudeQuota({ ...claude, limits: [{ kind: "unknown_scope", scope: null, percent: 0 }] }),
-    ).toThrow();
   });
-  it("ignores a weekly limit scoped to one model when reading the shared allowance", () => {
+  it("leaves limits on particular models out of the shared allowance", () => {
     const limits = [
       { kind: "session", scope: null, percent: 0 },
       { kind: "weekly_all", scope: null, percent: 91 },
@@ -57,16 +54,49 @@ describe("model quota observations", () => {
         percent: 20,
       },
     ];
-    expect(parseClaudeQuota({ ...claude, limits })).toMatchObject([
+    const shared = [
       { id: "five_hour", usedPercent: 0 },
       { id: "seven_day", usedPercent: 91 },
-    ]);
-    expect(() =>
+    ];
+    expect(parseClaudeQuota({ ...claude, limits })).toMatchObject(shared);
+    expect(
       parseClaudeQuota({
         ...claude,
-        limits: [...limits.slice(0, 2), { kind: "weekly_scoped", scope: null, percent: 20 }],
+        limits: [...limits, { kind: "unknown_scope", scope: null, percent: 50 }],
       }),
+    ).toMatchObject(shared);
+    expect(parseClaudeQuota({ ...claude, seven_day_sonnet: { utilization: 100 } })).toMatchObject(
+      shared,
+    );
+    expect(
+      parseCodexQuota({ ...codex, additional_rate_limits: [{ limit_name: "model-a" }] }),
+    ).toMatchObject([{ id: "primary_window", usedPercent: 59 }]);
+  });
+  it("still rejects a shared Claude limit that disagrees with its window", () => {
+    expect(() =>
+      parseClaudeQuota({ ...claude, limits: [{ kind: "session", scope: null, percent: 40 }] }),
     ).toThrow();
+  });
+  it("names Codex windows by the length the provider reports", () => {
+    const window = (seconds: number, used: number) => ({
+      used_percent: used,
+      limit_window_seconds: seconds,
+      reset_at: 1_900_000_000,
+    });
+    expect(
+      parseCodexQuota({
+        rate_limit: { primary_window: window(18_000, 10), secondary_window: window(604_800, 20) },
+      }),
+    ).toMatchObject([
+      { id: "five_hour", usedPercent: 10 },
+      { id: "seven_day", usedPercent: 20 },
+    ]);
+    expect(
+      parseCodexQuota({ rate_limit: { primary_window: window(2_592_000, 30) } }),
+    ).toMatchObject([{ id: "monthly", usedPercent: 30 }]);
+    expect(parseCodexQuota({ rate_limit: { primary_window: window(3_600, 40) } })).toMatchObject([
+      { id: "primary_window", usedPercent: 40 },
+    ]);
   });
   it("keeps known zero distinct from unknown and preserves provider resets", () => {
     expect(parseClaudeQuota(claude)).toMatchObject([{ usedPercent: 0 }, { usedPercent: 91 }]);
@@ -85,12 +115,8 @@ describe("model quota observations", () => {
     { rate_limit: {} },
     { rate_limit: { primary_window: { used_percent: -1 } } },
     { rate_limit: { primary_window: { used_percent: 101 } } },
-    { ...codex, additional_rate_limits: [{}] },
   ])("rejects incomplete or unknown limiting windows: %j", (value) => {
     expect(() => parseCodexQuota(value)).toThrow();
-  });
-  it("does not apply an unmapped Claude model window to every model", () => {
-    expect(() => parseClaudeQuota({ ...claude, seven_day_sonnet: { utilization: 100 } })).toThrow();
   });
   it("refreshes admission reads instead of reusing the settings cache", async () => {
     let clock = Date.parse("2030-01-01T00:00:00Z");
@@ -103,10 +129,23 @@ describe("model quota observations", () => {
     const first = await reader.read(connection);
     await reader.read(connection);
     expect(fetcher).toHaveBeenCalledTimes(1);
+    clock += 5_000;
     const fresh = await reader.read(connection, { fresh: true });
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(fresh.view.observedAt).not.toBe(first.view.observedAt);
     expect(fresh.view.observedAt).toBe(new Date(clock - 1000).toISOString());
+  });
+  it("does not repeat provider requests for repeated refreshes", async () => {
+    let clock = Date.parse("2030-01-01T00:00:00Z");
+    const fetcher = vi.fn(async () => response(codex));
+    const reader = new ModelQuotaReader(fetcher, () => clock);
+    await reader.read(connection, { fresh: true });
+    clock += 4_999;
+    await reader.read(connection, { fresh: true });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    clock += 1;
+    await reader.read(connection, { fresh: true });
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
   it("deduplicates concurrent refreshes and retains a bounded successful cache", async () => {
     const fetcher = vi.fn(async (_url: string | URL | Request) => response(codex));
@@ -302,11 +341,32 @@ it("rejects incomplete CommandCode billing and never counts purchased credits as
   ]) {
     expect(() => parseCommandCodeQuota(credits, commandCodeSubscription)).toThrow();
   }
-  expect(() =>
-    parseCommandCodeQuota(commandCodeCredits, {
-      data: { ...commandCodeSubscription.data, status: "inactive" },
-    }),
-  ).toThrow();
+});
+it("treats a CommandCode account without a GOAT allowance as having nothing to read", async () => {
+  for (const [credits, subscription] of [
+    [commandCodeCredits, { data: { ...commandCodeSubscription.data, status: "inactive" } }],
+    [commandCodeCredits, { data: { ...commandCodeSubscription.data, planId: "individual-pro" } }],
+    [commandCodeCredits, { data: null }],
+    [{ credits: {}, windowLimits: { limited: false } }, commandCodeSubscription],
+  ]) {
+    expect(parseCommandCodeQuota(credits, subscription)).toBeNull();
+  }
+  let clock = Date.parse("2030-01-01T00:00:00Z");
+  const fetcher = vi.fn(async (url: string | URL | Request) =>
+    response(String(url).includes("/subscriptions") ? { data: null } : { credits: {} }),
+  );
+  const reader = new ModelQuotaReader(fetcher, () => clock);
+  const plan = {
+    ...connection,
+    provider: "openai-compatible",
+    baseUrl: "https://api.commandcode.ai/provider/v1",
+  };
+  const first = await reader.read(plan);
+  expect(first.view).toMatchObject({ status: "unsupported", observedAt: null, windows: [] });
+  const requests = fetcher.mock.calls.length;
+  clock += 10 * 60_000;
+  await reader.read(plan);
+  expect(fetcher).toHaveBeenCalledTimes(requests);
 });
 it("reads individual CommandCode usage without adding an organization and keeps failures private", async () => {
   let fail = false;
@@ -326,7 +386,8 @@ it("reads individual CommandCode usage without adding an organization and keeps 
           : commandCodeSubscription,
     );
   });
-  const reader = new ModelQuotaReader(fetcher);
+  let clock = Date.parse("2030-01-01T00:00:00Z");
+  const reader = new ModelQuotaReader(fetcher, () => clock);
   const goat = {
     ...connection,
     provider: "openai-compatible",
@@ -338,6 +399,7 @@ it("reads individual CommandCode usage without adding an organization and keeps 
     "https://api.commandcode.ai/alpha/billing/credits",
   );
   fail = true;
+  clock += 5_000;
   const failed = await reader.read(goat, { fresh: true });
   expect(failed.view.status).toBe("stale");
   expect(failed.view.observedAt).toBe(first.view.observedAt);
@@ -372,7 +434,7 @@ const synthetic = {
     nextRegenPercent: 2,
   },
 };
-it("reads Synthetic's request and weekly windows with the exact compatible key", async () => {
+it("reads Synthetic's weekly limit with the exact compatible key", async () => {
   const fetcher = vi.fn(async () => response(synthetic));
   const result = await new ModelQuotaReader(fetcher).read({
     ...connection,
@@ -388,10 +450,7 @@ it("reads Synthetic's request and weekly windows with the exact compatible key",
   );
   expect(result.view).toMatchObject({
     status: "fresh",
-    windows: [
-      { id: "five_hour", usedPercent: 25, resetsAt: "2030-03-17T17:00:00.000Z" },
-      { id: "seven_day", usedPercent: 44.5, resetsAt: null },
-    ],
+    windows: [{ id: "seven_day", usedPercent: 44.5, resetsAt: null }],
   });
   expect(JSON.stringify(result)).not.toContain("test-access-token");
 });
@@ -405,12 +464,8 @@ it("does not send a compatible key to a Synthetic look-alike host", async () => 
   expect(fetcher).not.toHaveBeenCalled();
   expect(result.view.status).toBe("unsupported");
 });
-it("rejects a Synthetic response without a usable request allowance", () => {
-  expect(parseSyntheticQuota({ subscription: synthetic.subscription })).toHaveLength(1);
-  expect(() => parseSyntheticQuota({ ...synthetic, subscription: null })).toThrow();
-  expect(() =>
-    parseSyntheticQuota({ ...synthetic, subscription: { ...synthetic.subscription, limit: 0 } }),
-  ).toThrow();
+it("rejects a Synthetic response without a usable weekly limit", () => {
+  expect(() => parseSyntheticQuota({ subscription: synthetic.subscription })).toThrow();
   expect(() =>
     parseSyntheticQuota({ ...synthetic, planWeeklyLimit: { percentRemaining: 140 } }),
   ).toThrow();

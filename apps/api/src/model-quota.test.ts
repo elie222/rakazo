@@ -83,6 +83,17 @@ describe("connection quota authorization", () => {
       fresh: false,
     });
   });
+  it("keeps the same revision when a token renewal rewrites the secret", async () => {
+    const f = fixture();
+    f.deps.prisma.secret.findFirst.mockResolvedValue({
+      id: "secret-a",
+      ciphertext: "renewed-ciphertext",
+    });
+    await readConnectionQuota(f.ctx, f.reader, actor, "connection-a");
+    expect(f.read).toHaveBeenCalledWith(expect.objectContaining({ revision: "secret-a" }), {
+      fresh: false,
+    });
+  });
   it("reports an API-key connection as having no quota without reading", async () => {
     const f = fixture();
     f.deps.prisma.userModelCredential.findFirst.mockResolvedValue({

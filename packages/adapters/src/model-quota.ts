@@ -5,7 +5,17 @@ import { isCommandCodeBaseUrl, isOpenCodeGoBaseUrl, isSyntheticBaseUrl } from "@
 const MAX_BYTES = 64 * 1024;
 const MAX_AGE_MS = 60_000;
 const FAILURE_TTL_MS = 15_000;
+// A plan with no readable allowance rarely changes, so it is not re-read on every poll.
+const UNSUPPORTED_TTL_MS = 60 * 60_000;
+// Refresh skips the caches above, but repeated presses must not repeat provider requests.
+const MIN_REFRESH_MS = 5_000;
 const MAX_ENTRIES = 256;
+// Codex reports each window's length, and which window is which depends on the plan.
+const CODEX_WINDOW_IDS = new Map<unknown, string>([
+  [18_000, "five_hour"],
+  [604_800, "seven_day"],
+  [2_592_000, "monthly"],
+]);
 
 type ObjectValue = Record<string, unknown>;
 function object(value: unknown): ObjectValue {
@@ -27,29 +37,21 @@ function reset(value: unknown): string | null {
 
 /** Parse only applicable provider windows; a missing required window is unknown. */
 export function parseCodexQuota(payload: unknown): ModelQuotaWindow[] {
-  const body = object(payload);
-  const limits = object(body.rate_limit);
+  const limits = object(object(payload).rate_limit);
   const windows: ModelQuotaWindow[] = [];
   for (const key of ["primary_window", "secondary_window"]) {
     const raw = limits[key];
     if (raw === null || raw === undefined) continue;
     const window = object(raw);
     windows.push({
-      id: key,
+      id: CODEX_WINDOW_IDS.get(window.limit_window_seconds) ?? key,
       usedPercent: percent(window.used_percent),
       resetsAt: reset(window.reset_at),
       modelIds: null,
     });
   }
   if (!windows.length) throw new Error("schema");
-  // Additional buckets can constrain particular models. Do not silently discard
-  // unknown bucket shapes and report an apparently complete allowance.
-  if (
-    body.additional_rate_limits !== undefined &&
-    body.additional_rate_limits !== null &&
-    (!Array.isArray(body.additional_rate_limits) || body.additional_rate_limits.length > 0)
-  )
-    throw new Error("schema");
+  // additional_rate_limits constrain particular models, so they do not gate the shared allowance.
   return windows;
 }
 
@@ -65,31 +67,16 @@ export function parseClaudeQuota(payload: unknown): ModelQuotaWindow[] {
       modelIds: null,
     });
   }
-  // Model-specific windows must not gate unrelated models. Until the provider
-  // supplies an unambiguous model mapping, report this observation unavailable.
-  for (const [key, value] of Object.entries(body)) {
-    if (
-      key.startsWith("seven_day_") &&
-      key !== "seven_day_breakdown" &&
-      value !== null &&
-      value !== undefined
-    )
-      throw new Error("schema");
-  }
+  // seven_day_* fields and other limit kinds constrain particular models, so they
+  // do not gate the shared allowance.
   if (body.limits !== undefined) {
     if (!Array.isArray(body.limits)) throw new Error("schema");
     for (const raw of body.limits) {
       const limit = object(raw);
-      // A weekly limit scoped to one model (reported by display name, not id)
-      // constrains only that model, so it must not gate the shared allowance.
-      if (limit.kind === "weekly_scoped") {
-        object(object(limit.scope).model);
-        continue;
-      }
       const id =
         limit.kind === "session" ? "five_hour" : limit.kind === "weekly_all" ? "seven_day" : null;
+      if (!id) continue;
       if (
-        !id ||
         limit.scope !== null ||
         percent(limit.percent) !== windows.find((window) => window.id === id)?.usedPercent
       )
@@ -114,57 +101,44 @@ export function parseGoQuota(payload: unknown): ModelQuotaWindow[] {
 }
 
 /**
- * Synthetic's request allowance and weekly credit limit both gate every model.
- * The hourly search allowance gates only its search tool, so it is not read.
+ * Synthetic plans have one weekly credit limit that gates every model. The hourly
+ * search allowance gates only its search tool, so it is not read.
  */
 export function parseSyntheticQuota(payload: unknown): ModelQuotaWindow[] {
-  const body = object(payload);
-  const subscription = object(body.subscription);
-  const { limit, requests } = subscription;
-  if (
-    typeof limit !== "number" ||
-    !Number.isFinite(limit) ||
-    limit <= 0 ||
-    typeof requests !== "number" ||
-    !Number.isFinite(requests) ||
-    requests < 0
-  )
-    throw new Error("schema");
-  const windows: ModelQuotaWindow[] = [
+  const weekly = object(object(payload).planWeeklyLimit);
+  // The weekly limit regenerates in small steps; nextRegenAt is the next
+  // step, not a full reset, so it is not reported as one.
+  return [
     {
-      id: "five_hour",
-      usedPercent: Math.min(100, (requests / limit) * 100),
-      resetsAt: reset(subscription.renewsAt),
-      modelIds: null,
-    },
-  ];
-  if (body.planWeeklyLimit !== undefined && body.planWeeklyLimit !== null) {
-    const weekly = object(body.planWeeklyLimit);
-    // The weekly limit regenerates in small steps; nextRegenAt is the next
-    // step, not a full reset, so it is not reported as one.
-    windows.push({
       id: "seven_day",
       usedPercent: 100 - percent(weekly.percentRemaining),
       resetsAt: null,
       modelIds: null,
-    });
-  }
-  return windows;
+    },
+  ];
 }
 
-/** GOAT includes 70 monthly plan credits; purchased credits do not expand that pool. */
+/**
+ * GOAT includes 70 monthly plan credits; purchased credits do not expand that pool.
+ * Other plans have no allowance to read, which is null rather than a failed reading.
+ */
 export function parseCommandCodeQuota(
   creditsPayload: unknown,
   subscriptionPayload: unknown,
-): ModelQuotaWindow[] {
-  const billing = object(creditsPayload);
-  const credits = object(billing.credits);
-  const limits = object(billing.windowLimits);
-  const subscription = object(object(subscriptionPayload).data);
+): ModelQuotaWindow[] | null {
+  const data = object(subscriptionPayload).data;
+  const subscription = data === null || data === undefined ? {} : object(data);
   if (
     subscription.status !== "active" ||
     typeof subscription.planId !== "string" ||
-    !/^individual-goat(?:$|-)/.test(subscription.planId.toLowerCase().replace(/_/g, "-")) ||
+    !/^individual-goat(?:$|-)/.test(subscription.planId.toLowerCase().replace(/_/g, "-"))
+  )
+    return null;
+  const billing = object(creditsPayload);
+  const credits = object(billing.credits);
+  const limits = object(billing.windowLimits);
+  if (limits.limited === false) return null;
+  if (
     limits.limited !== true ||
     typeof credits.monthlyCredits !== "number" ||
     !Number.isFinite(credits.monthlyCredits) ||
@@ -219,7 +193,7 @@ export type QuotaConnection = {
   userId: string;
   credentialId: string;
   provider: string;
-  /** Changes whenever encrypted credential material changes. Never returned to clients. */
+  /** Changes with a new key or sign-in, not a token renewal. Never returned to clients. */
   revision: string;
   accessToken: string | null;
   accountId?: string;
@@ -262,7 +236,7 @@ function staleOr(previous: QuotaRead | undefined, empty: QuotaRead): QuotaRead {
 
 /** Read-only, bounded readers. Authentication and refresh remain with the caller. */
 export class ModelQuotaReader {
-  private readonly cache = new Map<string, { read: QuotaRead; retryAt: number }>();
+  private readonly cache = new Map<string, { read: QuotaRead; readAt: number; retryAt: number }>();
   private readonly pending = new Map<string, Promise<QuotaRead>>();
   constructor(
     private readonly fetchImpl: typeof fetch = fetch,
@@ -297,7 +271,10 @@ export class ModelQuotaReader {
     ]);
     const cached = this.cache.get(key);
     if (!connection.accessToken) return staleOr(cached?.read, empty);
-    if (!options.fresh && cached && cached.retryAt > this.now()) return cached.read;
+    if (cached) {
+      const reuseUntil = options.fresh ? cached.readAt + MIN_REFRESH_MS : cached.retryAt;
+      if (reuseUntil > this.now()) return cached.read;
+    }
     const inFlight = this.pending.get(key);
     if (inFlight) return inFlight;
     const task = this.refresh(key, connection, empty, cached?.read).finally(() =>
@@ -339,7 +316,7 @@ export class ModelQuotaReader {
             signal: AbortSignal.timeout(10_000),
           }),
         );
-      let commandCodeWindows: ModelQuotaWindow[] | undefined;
+      let commandCodeWindows: ModelQuotaWindow[] | null | undefined;
       if (commandCode) {
         const who = object(await get("https://api.commandcode.ai/alpha/whoami?limits=1"));
         const org = who.org === null || who.org === undefined ? null : object(who.org);
@@ -362,22 +339,25 @@ export class ModelQuotaReader {
                   ? "https://api.synthetic.new/v2/quotas"
                   : "https://api.anthropic.com/api/oauth/usage",
           );
-      read = {
-        view: {
-          ...empty.view,
-          status: "fresh",
-          observedAt: new Date(observedAt).toISOString(),
-          windows:
-            commandCodeWindows ??
-            (codex
-              ? parseCodexQuota(payload)
-              : go
-                ? parseGoQuota(payload)
-                : synthetic
-                  ? parseSyntheticQuota(payload)
-                  : parseClaudeQuota(payload)),
-        },
-      };
+      read =
+        commandCodeWindows === null
+          ? { view: { ...empty.view, status: "unsupported" } }
+          : {
+              view: {
+                ...empty.view,
+                status: "fresh",
+                observedAt: new Date(observedAt).toISOString(),
+                windows:
+                  commandCodeWindows ??
+                  (codex
+                    ? parseCodexQuota(payload)
+                    : go
+                      ? parseGoQuota(payload)
+                      : synthetic
+                        ? parseSyntheticQuota(payload)
+                        : parseClaudeQuota(payload)),
+              },
+            };
     } catch {
       // Provider errors can contain tokens and account identifiers. Preserve only
       // the last good observation with its original timestamp, never the body.
@@ -386,10 +366,14 @@ export class ModelQuotaReader {
     // Re-inserting moves the key to the end, so eviction drops the least recently read entry.
     this.cache.delete(key);
     if (this.cache.size >= MAX_ENTRIES) this.cache.delete(this.cache.keys().next().value!);
-    this.cache.set(key, {
-      read,
-      retryAt: this.now() + (read.view.status === "fresh" ? MAX_AGE_MS : FAILURE_TTL_MS),
-    });
+    const readAt = this.now();
+    const ttl =
+      read.view.status === "fresh"
+        ? MAX_AGE_MS
+        : read.view.status === "unsupported"
+          ? UNSUPPORTED_TTL_MS
+          : FAILURE_TTL_MS;
+    this.cache.set(key, { read, readAt, retryAt: readAt + ttl });
     return read;
   }
 }

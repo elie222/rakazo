@@ -59,7 +59,8 @@ export async function readConnectionQuota(
       userId: actor.userId,
       credentialId,
       provider: row.provider,
-      revision: secret?.ciphertext ?? row.secretId,
+      // Renewing a token rewrites this secret in place; a new key or sign-in replaces it.
+      revision: row.secretId,
       accessToken,
       accountId,
       baseUrl,
