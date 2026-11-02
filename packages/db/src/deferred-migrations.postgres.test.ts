@@ -26,6 +26,7 @@ dbTests("deferred migrations", () => {
   const laterDropped = `29990101000004_drop_${stamp}`;
   const lockTable = `deferred_lock_${stamp}`;
   const lockAdded = `29990101000005_lock_${stamp}`;
+  const indexAdded = `29990101000006_index_${stamp}`;
   const freshSchema = `deferred_fresh_${stamp}`;
   const dir = mkdtempSync(path.join(tmpdir(), "deferred-migrations-"));
   let client: Client;
@@ -57,7 +58,7 @@ dbTests("deferred migrations", () => {
     await client.query(`DROP TABLE IF EXISTS "${laterTable}"`);
     await client.query(`DROP TABLE IF EXISTS "${lockTable}"`);
     await client.query("DELETE FROM _prisma_migrations WHERE migration_name = ANY($1)", [
-      [added, dropped, broken, laterAdded, laterDropped, lockAdded],
+      [added, dropped, broken, laterAdded, laterDropped, lockAdded, indexAdded],
     ]);
     await client.query('DELETE FROM "_deferred_migrations" WHERE name = ANY($1)', [
       [dropped, laterDropped],
@@ -106,10 +107,7 @@ dbTests("deferred migrations", () => {
 
   it("retries a migration that lost a lock to a running query", async () => {
     await client.query(`CREATE TABLE "${lockTable}" (id INT)`);
-    migration(
-      lockAdded,
-      `SET lock_timeout = '200ms';\nALTER TABLE "${lockTable}" ADD COLUMN extra INT;\n`,
-    );
+    migration(lockAdded, `ALTER TABLE "${lockTable}" ADD COLUMN extra INT;\n`);
     const reader = new Client({ connectionString: databaseUrl });
     await reader.connect();
     await reader.query("BEGIN");
@@ -124,8 +122,34 @@ dbTests("deferred migrations", () => {
       dbPackageDir,
       migrationsDir: dir,
       lockRetryDelaysMs: [2_000],
+      lockTimeoutMs: 200,
     });
     await released;
     expect(await columns(lockTable)).toEqual(["extra", "id"]);
+  });
+
+  it("lets a concurrent index build wait for open transactions", async () => {
+    migration(indexAdded, `CREATE INDEX CONCURRENTLY "${lockTable}_id" ON "${lockTable}" (id);\n`);
+    const reader = new Client({ connectionString: databaseUrl });
+    await reader.connect();
+    await reader.query("BEGIN");
+    await reader.query("SELECT txid_current()");
+    const released = new Promise((resolve) => setTimeout(resolve, 1_000)).then(async () => {
+      await reader.query("COMMIT");
+      await reader.end();
+    });
+
+    await deployMigrations({
+      migrationUrl: databaseUrl!,
+      dbPackageDir,
+      migrationsDir: dir,
+      lockRetryDelaysMs: [],
+      lockTimeoutMs: 200,
+    });
+    await released;
+    const { rows } = await client.query("SELECT 1 FROM pg_indexes WHERE indexname = $1", [
+      `${lockTable}_id`,
+    ]);
+    expect(rows).toHaveLength(1);
   });
 });
