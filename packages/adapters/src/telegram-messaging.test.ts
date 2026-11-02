@@ -407,7 +407,7 @@ describe("Telegram groups", () => {
     expect(inbound[1]?.type === "message" && inbound[1].mentionsBot).toBeUndefined();
   });
 
-  it("counts a reply to the bot's message as a mention on the group's own thread", async () => {
+  it("keeps a plain reply on the group's own thread", async () => {
     const { surface, inbound } = createGroupSurface();
 
     expect(
@@ -437,7 +437,6 @@ describe("Telegram groups", () => {
       expect.objectContaining({
         threadId: "telegram:-1001234",
         content: "yes please",
-        mentionsBot: true,
       }),
     ]);
   });

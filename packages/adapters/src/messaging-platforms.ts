@@ -552,9 +552,6 @@ function telegramAdapter(
   return createTelegramAdapter({
     botToken,
     secretToken,
-    // A group reply to one of the bot's messages addresses the bot, the way
-    // repeating its handle would; count it as a mention.
-    mentionOnReply: true,
     // Auto mode long-polls when no webhook is registered, for deployments
     // without a public HTTPS endpoint. Only the API process may poll: it
     // owns the inbound sink, and Telegram allows one getUpdates per bot.
