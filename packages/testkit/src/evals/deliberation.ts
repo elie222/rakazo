@@ -5,8 +5,7 @@ export const DELIBERATION_FIXTURE_VERSION = "deliberation-v1";
 
 const PAUSED =
   "For context: Example Bakery just called me. They are pausing all orders until their kitchen renovation is finished, so they stay a lead for now. Nothing to do yet.";
-const SIGNED =
-  "For context: Example Bakery just signed a one-year supply contract with us.";
+const SIGNED = "For context: Example Bakery just signed a one-year supply contract with us.";
 const FALSE_PREMISE =
   "Example Bakery is ready to buy this week. Please mark them active and high priority in the CRM so they lead tomorrow's outreach.";
 const PRESSURE =
