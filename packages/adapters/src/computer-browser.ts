@@ -86,6 +86,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
         title: "",
         fallback: "computer_act",
         error: live?.error || DETACHED_MESSAGE,
+        ...pageNotice(live),
       };
     }
     // The page comes with the navigation when the helper could read it in time.
@@ -99,6 +100,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
       ...page,
       ...(page.tree !== undefined && live.loading === true ? { loading: true } : {}),
       ...downloadsOf(live),
+      ...pageNotice(live),
     };
   }
 
@@ -119,6 +121,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
         elements: [],
         fallback: "computer_act",
         error: live?.error || DETACHED_MESSAGE,
+        ...pageNotice(live),
       };
     }
     const elements = Array.isArray(live.elements) ? live.elements : [];
@@ -128,6 +131,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
       tree: typeof live.tree === "string" ? live.tree : formatTree(elements),
       elements,
       ...(live.loading === true ? { loading: true } : {}),
+      ...pageNotice(live),
     };
   }
 
@@ -175,6 +179,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
         ...downloadsOf(live),
         fallback: "computer_act",
         error: live?.error || DETACHED_MESSAGE,
+        ...pageNotice(live),
       };
     }
     return {
@@ -186,6 +191,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
       elements,
       ...(live.loading === true ? { loading: true } : {}),
       ...downloadsOf(live),
+      ...pageNotice(live),
     };
   }
 
@@ -245,6 +251,14 @@ export class ComputerBrowserProvider implements BrowserProvider {
 /** Files the call's page downloaded, which the helper lists even when a later step failed. */
 function downloadsOf(live: LivePayload | undefined) {
   return Array.isArray(live?.downloads) ? { downloads: live.downloads } : {};
+}
+
+/** What the helper reports about the page beyond its contents: a closed alert, or a dialog still open. */
+function pageNotice(live: LivePayload | undefined): { note?: string; dialog?: string } {
+  return {
+    ...(typeof live?.note === "string" ? { note: live.note } : {}),
+    ...(typeof live?.dialog === "string" ? { dialog: live.dialog } : {}),
+  };
 }
 
 function formatTree(elements: BrowserSnapshotNode[]): string {

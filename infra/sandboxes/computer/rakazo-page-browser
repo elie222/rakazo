@@ -184,7 +184,7 @@ class AgentBrowser:
             # Always the Chromium on this display: without it, agent-browser would start a browser of its own.
             "AGENT_BROWSER_CDP": str(port),
             "AGENT_BROWSER_IDLE_TIMEOUT_MS": "900000",
-            # Dialogs are the person's and the page's to answer, as on the screen.
+            # Dialogs are the person's and the page's to answer, as on the screen; see PageBrowser.dialog_result.
             "AGENT_BROWSER_NO_AUTO_DIALOG": "1",
             "AGENT_BROWSER_NO_WEBMCP": "1",
         })
@@ -433,6 +433,9 @@ class PageBrowser:
     def __init__(self, port: int, target_id: str, browser: AgentBrowser) -> None:
         self.port, self.target, self.ab = port, target_id, browser
         self.downloads: Downloads | None = None
+        # Set by a step whose input opened a JavaScript dialog. Reading a page that a dialog blocks
+        # times out, and agent-browser then stops answering for the tab, dialog commands included.
+        self.dialog_opened = False
 
     # -- reading the page -------------------------------------------------------------------------
 
@@ -636,13 +639,43 @@ class PageBrowser:
             page = {"url": url_result.get("url"), "title": str(title_result.get("title") or "")[:200]}
         return {"ok": True, **{key: page[key] for key in ("url", "title", "tree", "elements", "loading") if key in page}}
 
+    def dialog(self) -> dict[str, Any] | None:
+        """The JavaScript dialog (alert, confirm, prompt or beforeunload) the page has open, if any."""
+        try:
+            (status,) = self.ab.batch([["dialog", "status"]])
+        except Exception:  # noqa: BLE001
+            return None
+        return status if status.get("hasDialog") else None
+
+    def dialog_result(self, dialog: dict[str, Any], progress: dict[str, Any], remaining: bool = False) -> dict[str, Any]:
+        """An alert only informs and OK is its one answer, so it is closed and its message reported.
+        Any other dialog asks something: it stays open on the screen for computer_act or the person."""
+        kind = str(dialog.get("type") or "")
+        message = str(dialog.get("message") or "")[:300]
+        quoted = f": {json.dumps(message, ensure_ascii=False)}" if message else ""
+        if kind != "alert":
+            name = '"Leave site?"' if kind == "beforeunload" else kind
+            return {"ok": False, **progress, "error": f"A {name} dialog is open on the screen{quoted}",
+                    "dialog": kind, "fallback": "computer_act"}
+        note = f"The page showed an alert, now closed{quoted}."
+        try:
+            self.ab.batch([["dialog", "dismiss"]])
+            snap = self.snapshot(ACTION_WAIT_SECONDS)
+        except Exception:  # noqa: BLE001
+            return {"ok": False, **progress, "error": f"The page showed an alert{quoted}.", "fallback": "computer_act"}
+        if remaining:
+            return {**snap, **progress, "ok": False, "error": f"{note} The steps after it did not run."}
+        return {**snap, **progress, "note": note}
+
     def step(self, commands: list[list[str]]) -> list[Any]:
         try:
-            return self.ab.batch(commands)
+            results = self.ab.batch(commands)
         except AbError as error:
             if any(marker in str(error) for marker in SETTLED_ERRORS):
                 raise Settled(str(error)) from None
             raise
+        self.dialog_opened = any(result.get("dialogOpened") is True for result in results)
+        return results
 
     def fill(self, ref: str, text: str) -> None:
         _, kept = self.step([["fill", f"@{ref}", text], ["get", "value", f"@{ref}"]])
@@ -732,6 +765,10 @@ class PageBrowser:
                         raise
                 completed += 1
                 uncertain = False
+                dialog = self.dialog() if self.dialog_opened else None
+                if dialog:
+                    return self.dialog_result(dialog, {"completed": completed, "uncertain": False},
+                                              remaining=completed < len(actions))
             ended = time.time()
             time.sleep(ACTION_QUIET_SECONDS)
             started = time.monotonic()
@@ -753,6 +790,10 @@ class PageBrowser:
         except CardFieldUncertain as exc:
             return {"ok": False, "completed": completed, "uncertain": True, "error": str(exc)}
         except Exception as exc:  # noqa: BLE001
+            dialog = self.dialog()
+            if dialog:
+                return self.dialog_result(dialog, {"completed": completed, "uncertain": uncertain},
+                                          remaining=completed < len(actions))
             return {"ok": False, "completed": completed, "uncertain": uncertain, "error": str(exc),
                     "fallback": "computer_act"}
 
@@ -1301,6 +1342,7 @@ def run(argv: list[str]) -> int:
     # Set once the browser answers: before that, no action can have reached the page.
     connected = False
     opened = False
+    page: PageBrowser | None = None
     try:
         wait_for_cdp(port)
         connected = True
@@ -1354,8 +1396,10 @@ def run(argv: list[str]) -> int:
                 saved = downloads.finish()
             except Exception:
                 saved = [{"error": DOWNLOAD_FAILED}]
-        print(json.dumps({"ok": False, "error": str(exc), "fallback": "computer_act",
-                          "uncertain": command == "act" and connected, **({"downloads": saved} if saved else {})}))
+        dialog = page.dialog() if page else None
+        failure = page.dialog_result(dialog, {}) if page and dialog else {
+            "ok": False, "error": str(exc), "fallback": "computer_act", "uncertain": command == "act" and connected}
+        print(json.dumps({**failure, **({"downloads": saved} if saved else {})}))
         return 0
     finally:
         if client:

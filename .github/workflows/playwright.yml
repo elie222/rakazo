@@ -2,25 +2,8 @@ name: Playwright
 
 on:
   workflow_dispatch:
-    inputs:
-      sandbox_provider:
-        description: Sandbox provider
-        required: true
-        type: choice
-        options:
-          - fake
-          - e2b
-          - novita
-          - daytona
-          - boat
-        default: fake
   workflow_call:
     inputs:
-      sandbox_provider:
-        description: Sandbox provider
-        required: false
-        type: string
-        default: fake
       publish_report:
         description: Publish this run to the persistent visual dashboard
         required: false
@@ -47,18 +30,6 @@ on:
         required: false
       S3_SECRET_ACCESS_KEY:
         description: Secret key used to publish visual reports
-        required: false
-      E2B_API_KEY:
-        description: E2B API key used only when the E2B sandbox is selected
-        required: false
-      NOVITA_API_KEY:
-        description: Novita API key used only when the Novita sandbox is selected
-        required: false
-      DAYTONA_API_KEY:
-        description: Daytona API key used only when the Daytona sandbox is selected
-        required: false
-      BOAT_API_KEY:
-        description: Boat API key used only when the Boat sandbox is selected
         required: false
 
 permissions:
@@ -102,37 +73,12 @@ jobs:
         run: |
           infra/sandboxes/computer/install-agent-browser.sh "$RUNNER_TEMP/agent-browser"
           echo "RAKAZO_AGENT_BROWSER=$RUNNER_TEMP/agent-browser/agent-browser" >> "$GITHUB_ENV"
-      - name: Validate E2B credentials
-        if: inputs.sandbox_provider == 'e2b'
-        env:
-          E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
-        run: test -n "$E2B_API_KEY"
-      - name: Validate Novita credentials
-        if: inputs.sandbox_provider == 'novita'
-        env:
-          NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
-        run: test -n "$NOVITA_API_KEY"
-      - name: Validate Daytona credentials
-        if: inputs.sandbox_provider == 'daytona'
-        env:
-          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
-        run: test -n "$DAYTONA_API_KEY"
-      - name: Validate Boat credentials
-        if: inputs.sandbox_provider == 'boat'
-        env:
-          BOAT_API_KEY: ${{ secrets.BOAT_API_KEY }}
-        run: test -n "$BOAT_API_KEY"
       - name: Run Playwright tests
         id: playwright_tests
         env:
-          SANDBOX_TEST_PROVIDER: ${{ inputs.sandbox_provider }}
-          E2B_API_KEY: ${{ inputs.sandbox_provider == 'e2b' && secrets.E2B_API_KEY || '' }}
-          NOVITA_API_KEY: ${{ inputs.sandbox_provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
-          DAYTONA_API_KEY: ${{ inputs.sandbox_provider == 'daytona' && secrets.DAYTONA_API_KEY || '' }}
-          BOAT_API_KEY: ${{ inputs.sandbox_provider == 'boat' && secrets.BOAT_API_KEY || '' }}
           SHARD: ${{ matrix.shard }}/${{ inputs.nightly && 4 || 2 }}
           E2E_SKIP_NIGHTLY: ${{ !inputs.nightly && '1' || '' }}
-        run: pnpm test:e2e -- --sandbox="$SANDBOX_TEST_PROVIDER" --shard="$SHARD"
+        run: pnpm test:e2e -- --shard="$SHARD"
       # Homepage screenshots only: no copy or layout assertions.
       # Runs after product e2e so shared apps/web/test-results is not wiped by the product run.
       - name: Capture marketing homepage screenshots
