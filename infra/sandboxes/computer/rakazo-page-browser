@@ -25,7 +25,7 @@ import time
 import unicodedata
 import urllib.request
 from typing import Any, Callable
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import unquote, urljoin, urlsplit
 
 sys.path[:0] = [os.path.dirname(os.path.realpath(__file__)), "/usr/local/lib/rakazo"]
 import page_secrets  # noqa: E402
@@ -177,6 +177,8 @@ MAX_OPENED_TABS = 8
 # session moves to a tab that stays before any is closed. Closing tabs, moving the session and reading
 # the bot's tab again share one deadline per step, so a flood never holds a call much longer.
 TAB_WORK_SECONDS = 8.0
+# Tab work ends by then, after the helper started, so the call still fits the supervisor's 25 seconds.
+TABS_DONE_BY = 20.0
 REREAD_FAILED = ("The page opened tabs that were closed, and this tab could not be read again in time. "
                  "Take a snapshot to read it.")
 
@@ -1001,7 +1003,9 @@ class PageBrowser:
         if not self.downloads:
             return
         title, url = str(tab.get("title") or "").strip(), str(tab.get("url") or "")
-        name = "" if not title or title in url else download_name(title if title.lower().endswith(".pdf") else f"{title}.pdf")
+        # The viewer titles a PDF without one by the last piece of its address, such as a blob: URL's id.
+        last = urlsplit(url).path.rstrip("/").rsplit("/", 1)[-1]
+        name = "" if not title or title in (last, unquote(last)) else download_name(title if title.lower().endswith(".pdf") else f"{title}.pdf")
         with contextlib.suppress(Exception):
             (saved,) = self.ab.batch([["eval", SAVE_PDF.replace("NAME", json.dumps(name))]], timeout=3.0)
             if saved.get("result") is True:
@@ -1774,6 +1778,10 @@ def read_stdin_line() -> str:
     return data.decode("utf-8")
 
 
+def tab_deadline() -> float:
+    return min(time.monotonic() + TAB_WORK_SECONDS, STARTED + TABS_DONE_BY)
+
+
 def run(argv: list[str]) -> int:
     stdin_args = read_stdin_line() if os.environ.get("RAKAZO_BROWSER_ARGS_STDIN") == "1" else None
     if os.environ.get("RAKAZO_BROWSER_WATCH_STDIN") == "1":
@@ -1811,7 +1819,7 @@ def run(argv: list[str]) -> int:
         # Best effort here and below: a tab list that fails leaves the call as it was.
         with contextlib.suppress(Exception):
             started = Tabs(browser.home, port, (version or {}).get("webSocketDebuggerUrl"), browser.use_tab)
-            browser.deadline = started.deadline = time.monotonic() + TAB_WORK_SECONDS
+            browser.deadline = started.deadline = tab_deadline()
             try:
                 started.begin()
             finally:
@@ -1861,7 +1869,7 @@ def run(argv: list[str]) -> int:
             closed = tabs.closed
             now: list[dict[str, Any]] = []
             new: list[dict[str, Any]] = []
-            browser.deadline = tabs.deadline = time.monotonic() + TAB_WORK_SECONDS
+            browser.deadline = tabs.deadline = tab_deadline()
             try:
                 now, new, _ = tabs.end(target, ours=target if opened else None)
             except Exception:  # noqa: BLE001

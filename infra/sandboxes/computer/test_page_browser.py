@@ -973,6 +973,10 @@ class NewTabTest(unittest.TestCase):
         with patch.object(helper.urllib.request, "urlopen", chromium.urlopen):
             self.assertEqual(tabs.close(["p2"], None), [])
 
+    def test_tab_work_ends_inside_the_supervisor_s_limit(self):
+        with patch.object(helper, "STARTED", time.monotonic() - 18):
+            self.assertLessEqual(helper.tab_deadline() - time.monotonic(), helper.TABS_DONE_BY - 18 + 0.1)
+
     def test_a_front_tab_that_cannot_be_brought_back_still_leaves_the_note_and_the_tabs_kept(self):
         chromium = FakeTabs("own")
         self.call(chromium, "own")
@@ -2033,9 +2037,10 @@ class DownloadTest(unittest.TestCase):
                                ("4b1d", "blob:https://bank.example/4b1d"),
                                ("statement.pdf", "https://bank.example/files/statement.pdf"),
                                ("../../.ssh/id `rm -rf`.PDF", "blob:https://bank.example/9c2e"),
-                               ("", "blob:https://bank.example/9c2e")):
+                               ("", "blob:https://bank.example/9c2e"),
+                               ("2026", "https://bank.example/reports/2026/export")):
                 current.save_pdf({"title": title, "url": url})
-        self.assertEqual(names, ["Larkspur annual statement 2031.pdf", "", "", "_.._.ssh_id _rm -rf_.PDF", ""])
+        self.assertEqual(names, ["Larkspur annual statement 2031.pdf", "", "", "_.._.ssh_id _rm -rf_.PDF", "", "2026.pdf"])
 
     def test_a_snapshot_saves_and_lists_the_pdf_its_tab_shows(self):
         page_result = {"ok": True, "url": "blob:https://bank.example/4b1d", "title": "", "tree": "", "elements": []}
