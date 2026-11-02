@@ -56,7 +56,12 @@ const COMPUTER_RUNTIME_CONTENT_SECURITY_POLICY = serialize({
     ...WUYING_DIRECTIVES["script-src"]!,
     "https://o.alicdn.com/aliyun-ecs/eds-cdn/paho-mqtt/mqttws31.min.js",
   ],
-  "connect-src": [...WUYING_DIRECTIVES["connect-src"]!, "data:"],
+  "connect-src": [
+    ...WUYING_DIRECTIVES["connect-src"]!,
+    // The desktop ticket can pick a gateway port other than 443.
+    "wss://*.wuying.aliyuncs.com:*",
+    "data:",
+  ],
 });
 
 /** Same-origin endpoint browsers send violation reports to, so a blocked resource is not silent. */

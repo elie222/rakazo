@@ -50,7 +50,8 @@ Bot 可以把一台现有的[无影云电脑](https://www.aliyun.com/product/ecs
 
 ### 每个账号用自己的云电脑
 
-每个账号都可以在 **设置 → Computer** 配置自己的电脑；管理员展开部署表单下的 **My computers**。此表单设置账号自己的 Team Computer 跑在哪里：
+每个账号都可以在 **设置 → Computer** 配置自己的电脑；管理员展开部署表单下的 **My computers**。
+此表单设置账号自己的 Team Computer 跑在哪里：
 选 **Deployment default** 就用部署默认的电脑（上面管理员的选择，或 `SANDBOX_PROVIDER`）；
 选 **Wuying** 就用这个账号自己的云电脑、自己的 AccessKey 和 MCP 网关。保存前同样会先检查。
 
@@ -78,7 +79,8 @@ SDK 的本地模式在屏幕页内加载 `/wuying/sdk/ASP/container.html`。屏�
 `allow-same-origin`，其不透明来源无法匹配运行时的 `frame-ancestors 'self'`。
 只有这个精确路径省略祖先限制与 X-Frame-Options；其他 `/wuying/` 路径仍限制为同源嵌入。
 运行时仍受沙箱 CSP 限制，服务器不会给它发送凭据；屏幕登录码由已登录的应用传入。
-屏幕 WebSocket 只允许默认 TLS 端口，非标准端口暂不支持，MCP 网关端口不受此限制。
+只有嵌套运行时允许连接到 `*.wuying.aliyuncs.com` 任意端口的 TLS WebSocket，
+因为云电脑登录票据可能指定 443 以外的网关端口。MCP 网关端口与此无关。
 
 ## 限制
 

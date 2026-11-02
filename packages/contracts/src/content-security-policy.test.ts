@@ -86,7 +86,11 @@ describe("app content security policy", () => {
     expect(nested.get("script-src")).toContain(
       "https://o.alicdn.com/aliyun-ecs/eds-cdn/paho-mqtt/mqttws31.min.js",
     );
-    expect(nested.get("connect-src")).toContain("data:");
+    expect(nested.get("connect-src")).toEqual([
+      ...screen.get("connect-src")!,
+      "wss://*.wuying.aliyuncs.com:*",
+      "data:",
+    ]);
     expect(nested.get("frame-ancestors")).toBeUndefined();
     for (const path of [
       "/wuying/",
@@ -99,6 +103,7 @@ describe("app content security policy", () => {
       const restricted = directives(contentSecurityPolicyFor(path)!);
       expect(restricted.get("frame-ancestors")).toEqual(["'self'"]);
       expect(restricted.get("sandbox")).toEqual(screen.get("sandbox"));
+      expect(restricted.get("connect-src")).toEqual(screen.get("connect-src"));
     }
     expect(contentSecurityPolicyFor("/chat")).toBe(APP_CONTENT_SECURITY_POLICY);
   });
