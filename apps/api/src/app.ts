@@ -513,6 +513,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const notifications =
     notificationsOverride ??
     new ExpoPushProvider(pushTokens, {
+      apiBase: new URL(env.authUrl).origin,
       sessionExpiresAt: (sessionId) => pushSessionExpiresAt(prisma, sessionId),
       accountLabel: (userId) =>
         runAsSystem(

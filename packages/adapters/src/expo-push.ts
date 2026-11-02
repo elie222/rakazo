@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import type {
   AdapterContext,
@@ -12,6 +12,7 @@ import { getLogger } from "@rakazo/logging";
 import { combineSignals } from "./connector-safety.js";
 import { credentialDigest } from "./credential-digest.js";
 import type { PushTokenStore } from "./push-token-store.js";
+import { PushSessionEndedError } from "./push-token-store.js";
 import { readBodyCapped, withAbort } from "./web-ssrf.js";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
@@ -36,6 +37,7 @@ export function expoPushData(
   deliveryId: string,
   userId?: string,
   accountLabel?: string,
+  apiBase?: string,
 ) {
   return {
     kind: message.kind,
@@ -44,6 +46,7 @@ export function expoPushData(
     deliveryId,
     ...(userId ? { userId } : {}),
     ...(accountLabel ? { accountLabel } : {}),
+    ...(apiBase ? { apiBase } : {}),
     ...(spaceId ? { spaceId } : {}),
     ...(message.groupId ? { groupId: message.groupId } : {}),
   };
@@ -136,6 +139,8 @@ export type ExpoPushOptions = {
   retryDelaysMs?: readonly number[];
   accountLabel?: (userId: string) => Promise<string>;
   badgeForToken?: (token: string) => Promise<number>;
+  /** Canonical public server origin; prevents opening an old server's push on another server. */
+  apiBase?: string;
 };
 
 export class ExpoPushProvider implements NotificationProvider {
@@ -180,6 +185,10 @@ export class ExpoPushProvider implements NotificationProvider {
     const tokens = await this.deliverableTokens(context.userId);
     if (!tokens.length) return "undeliverable";
     const label = await this.options.accountLabel?.(context.userId);
+    // APNs collapse identifiers have a 64-byte limit; include server and account ownership.
+    const tag = createHash("sha256")
+      .update(JSON.stringify([this.options.apiBase ?? "", context.userId, message.threadId]))
+      .digest("hex");
     const results = await Promise.allSettled(
       tokens.map(async (token) => {
         const badge = this.options.badgeForToken
@@ -192,12 +201,30 @@ export class ExpoPushProvider implements NotificationProvider {
             MAX_PUSH_TITLE_CHARS,
           ),
           body: capped(message.body, MAX_PUSH_BODY_CHARS),
-          collapseId: `${context.userId}:${message.threadId}`,
-          tag: `${context.userId}:${message.threadId}`,
+          collapseId: tag,
+          tag,
           ...(badge === undefined ? {} : { badge }),
-          data: expoPushData(message, context.spaceId, randomUUID(), context.userId, label),
+          data: expoPushData(
+            message,
+            context.spaceId,
+            randomUUID(),
+            context.userId,
+            label,
+            this.options.apiBase,
+          ),
         };
-        const { status, body } = await this.postWithBackoff(EXPO_PUSH_URL, payload, context.signal);
+        let reply: { status: number; body: unknown };
+        try {
+          reply = await this.postWithBackoff(EXPO_PUSH_URL, payload, context.signal, async () => {
+            // Metadata and retry delays can outlive a logout or device-token rotation.
+            if (!(await this.deliverableTokens(context.userId, token)).includes(token))
+              throw new PushSessionEndedError();
+          });
+        } catch (error) {
+          if (error instanceof PushSessionEndedError) return "undeliverable" as const;
+          throw error;
+        }
+        const { status, body } = reply;
         const [ticket] = expoPushTickets(body);
         if (status < 300 && body === undefined)
           throw new Error("Expo push returned an invalid response.");
@@ -251,8 +278,14 @@ export class ExpoPushProvider implements NotificationProvider {
     );
   }
 
-  private async postWithBackoff(url: string, payload: unknown, signal?: AbortSignal) {
+  private async postWithBackoff(
+    url: string,
+    payload: unknown,
+    signal?: AbortSignal,
+    beforeSend?: () => Promise<void>,
+  ) {
     for (let attempt = 0; ; attempt += 1) {
+      await beforeSend?.();
       const reply = await postToExpo(url, payload, this.accessToken, signal);
       const retryDelay = this.retryDelaysMs[attempt];
       if (retryDelay === undefined || !expoAskedToBackOff(reply.status, reply.body)) return reply;
@@ -278,8 +311,10 @@ export class ExpoPushProvider implements NotificationProvider {
    * row is removed. The token is read again after the lookup so a handover
    * during that wait is not sent.
    */
-  private async deliverableTokens(userId: string): Promise<string[]> {
-    const saved = await this.tokens.list(userId);
+  private async deliverableTokens(userId: string, targetToken?: string): Promise<string[]> {
+    const saved = (await this.tokens.list(userId)).filter(
+      (row) => !targetToken || row.token === targetToken,
+    );
     const valid = await Promise.all(
       saved.map(async (record) => {
         if (!record.token) return undefined;

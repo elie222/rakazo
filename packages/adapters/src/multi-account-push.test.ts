@@ -34,6 +34,7 @@ it("delivers two saved accounts to one device with distinct account targets", as
   const provider = new ExpoPushProvider(tokens, {
     sessionExpiresAt: async () => new Date(Date.now() + 60_000),
     accountLabel: async (id) => `${id}@example.test`,
+    apiBase: "https://api.example.test",
   });
   await provider.deliver(message, context("family"));
   await provider.deliver(message, context("work"));
@@ -41,14 +42,17 @@ it("delivers two saved accounts to one device with distinct account targets", as
   expect(payloads[0]).toMatchObject({
     to: "ExponentPushToken[shared]",
     title: "family@example.test · Finished",
-    collapseId: "family:thread",
-    data: { userId: "family", accountLabel: "family@example.test" },
+    data: {
+      userId: "family",
+      accountLabel: "family@example.test",
+      apiBase: "https://api.example.test",
+    },
   });
   expect(payloads[1]).toMatchObject({
     to: "ExponentPushToken[shared]",
-    collapseId: "work:thread",
     data: { userId: "work" },
   });
+  expect(payloads[0]?.collapseId).not.toBe(payloads[1]?.collapseId);
   await tokens.endSession("family", "family-session");
   expect(await provider.hasPushRecipient("family")).toBe(false);
   expect(await provider.hasPushRecipient("work")).toBe(true);
@@ -74,4 +78,62 @@ it("fans out to live devices, deduplicates their sessions, and ignores revoked s
   });
   expect(await provider.deliver(message, context("family"))).toBe("delivered");
   expect(sent.sort()).toEqual(["ExponentPushToken[phone]", "ExponentPushToken[tablet]"]);
+});
+
+it.each(["label", "badge"])(
+  "does not deliver after logout while the %s lookup waits",
+  async (lookup) => {
+    const tokens = new MemoryPushTokenStore();
+    await tokens.save("family", "ExponentPushToken[phone]", "phone-session");
+    let release!: () => void;
+    let entered!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const fetch = vi.fn(async () => Response.json({ data: { status: "ok" } }));
+    vi.stubGlobal("fetch", fetch);
+    const provider = new ExpoPushProvider(tokens, {
+      sessionExpiresAt: async () => new Date(Date.now() + 60_000),
+      ...(lookup === "label"
+        ? {
+            accountLabel: async () => {
+              entered();
+              await waiting;
+              return "family@example.test";
+            },
+          }
+        : {
+            badgeForToken: async () => {
+              entered();
+              await waiting;
+              return 0;
+            },
+          }),
+    });
+    const delivering = provider.deliver(message, context("family"));
+    await ready;
+    await tokens.endSession("family", "phone-session");
+    release();
+    expect(await delivering).toBe("undeliverable");
+    expect(fetch).not.toHaveBeenCalled();
+  },
+);
+
+it("does not retry a private push after its login ends", async () => {
+  const tokens = new MemoryPushTokenStore();
+  await tokens.save("family", "ExponentPushToken[phone]", "phone-session");
+  const fetch = vi.fn(async () => {
+    await tokens.endSession("family", "phone-session");
+    return Response.json({ errors: [{ message: "retry" }] }, { status: 429 });
+  });
+  vi.stubGlobal("fetch", fetch);
+  const provider = new ExpoPushProvider(tokens, {
+    sessionExpiresAt: async () => new Date(Date.now() + 60_000),
+    retryDelaysMs: [0],
+  });
+  expect(await provider.deliver(message, context("family"))).toBe("undeliverable");
+  expect(fetch).toHaveBeenCalledOnce();
 });

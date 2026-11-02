@@ -93,7 +93,6 @@ async function accountActivity(prisma: PrismaClient, userId: string) {
           : {};
       const message = event.type === "thread.message.created";
       if (message && payload.role !== "bot") continue;
-      if (message && run && isBackgroundRunTrigger(run.trigger)) continue;
       if (message && (run?.status === "waiting_input" || run?.status === "waiting_takeover"))
         continue;
       const kind = message
@@ -103,6 +102,8 @@ async function accountActivity(prisma: PrismaClient, userId: string) {
           : event.type === "run.waiting_input"
             ? "help"
             : "takeover";
+      if (run && isBackgroundRunTrigger(run.trigger) && kind !== "help" && kind !== "takeover")
+        continue;
       const enabled =
         kind === "failure" && run?.routine
           ? run.routine.notify

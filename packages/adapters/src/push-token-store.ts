@@ -156,8 +156,22 @@ export class PrismaPushTokenStore implements PushTokenStore {
             create: { userId, sessionId, ...data },
             update: data,
           });
-          // Clear an older fallback for the same login so receipt/unregister cannot resurrect it.
-          await tx.pushToken.deleteMany({ where: { userId, sessionId } });
+          // Keep single-account delivery working in old workers during the rolling upgrade.
+          // The old schema can project only one owner for a shared token; never evict it.
+          const legacyOwner = await tx.pushToken.findUnique({
+            where: { tokenDigest },
+            select: { userId: true },
+          });
+          if (!legacyOwner || legacyOwner.userId === userId) {
+            await tx.pushToken.upsert({
+              where: { userId },
+              create: { userId, sessionId, ...data },
+              update: { sessionId, ...data },
+            });
+          } else {
+            // A rotated login must not fall back to a token it no longer registered.
+            await tx.pushToken.deleteMany({ where: { userId, sessionId } });
+          }
           return true;
         }),
       ),

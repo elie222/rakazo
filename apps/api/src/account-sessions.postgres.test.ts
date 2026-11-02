@@ -168,6 +168,42 @@ suite("saved account sessions and notifications (PostgreSQL)", () => {
     expect(response.headers.get("set-cookie")).toBeNull();
   });
 
+  it("keeps internal background failures out of account notifications", async () => {
+    const userId = ids.family;
+    const data = {
+      userId,
+      spaceId: `space-${userId}`,
+      botId: `bot-${userId}-0`,
+      threadId: `thread-${userId}-0`,
+    };
+    await runAsSystem("seed an internal background failure", async () => {
+      const task = await db.prisma.task.create({
+        data: { ...data, prompt: "Fixture", status: "failed" },
+      });
+      const run = await db.prisma.run.create({
+        data: { ...data, taskId: task.id, trigger: "tickets", status: "failed" },
+      });
+      await db.prisma.event.create({
+        data: {
+          spaceId: data.spaceId,
+          botId: data.botId,
+          threadId: data.threadId,
+          id: `background-${stamp}`,
+          runId: run.id,
+          type: "run.failed",
+          seq: 1,
+          payload: {},
+        },
+      });
+    });
+    const body = (await (
+      await request("/api/accounts", { headers: { cookie: cookie() } })
+    ).json()) as AccountSessions;
+    const notifications = body.accounts.find((account) => account.userId === userId)!.notifications;
+    expect(notifications.some((item) => item.id === `event-${userId}-0`)).toBe(true);
+    expect(notifications.some((item) => item.id === `background-${stamp}`)).toBe(false);
+  });
+
   it("returns only the native bearer identity even when the HTTP host also sends cookies", async () => {
     const response = await request("/api/accounts", {
       headers: { authorization: `Bearer ${sign(tokens.family)}`, cookie: cookie() },

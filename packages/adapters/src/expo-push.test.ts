@@ -127,8 +127,8 @@ describe("expo push", () => {
     };
     expect(body.to).toBe("ExponentPushToken[test]");
     expect(body.title).toBe("Need you");
-    expect(body.collapseId).toBe("user-1:th-1");
-    expect(body.tag).toBe("user-1:th-1");
+    expect(body.collapseId).toHaveLength(64);
+    expect(body.tag).toBe(body.collapseId);
     expect(body.data).toEqual({
       kind: "takeover",
       userId: "user-1",

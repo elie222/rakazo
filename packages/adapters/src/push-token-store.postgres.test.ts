@@ -88,6 +88,17 @@ suite("database push registrations", () => {
     expect(registrations.filter(Boolean)).toHaveLength(3);
   });
 
+  it("preserves the previous release's single-account device without evicting another account", async () => {
+    await api.save(user("a"), token("shared"), session("a"));
+    await worker.save(user("b"), token("shared"), session("b"));
+    const legacy = await runAsSystem("read previous-release push registration", () =>
+      a.prisma.pushToken.findUnique({ where: { userId: user("a") } }),
+    );
+    expect(legacy?.tokenDigest).toBe(credentialDigest(token("shared")));
+    expect(legacy?.sessionId).toBe(session("a"));
+    expect((await worker.list(user("b")))[0]?.token).toBe(token("shared"));
+  });
+
   it("keeps newer registrations when an old receipt or logout arrives", async () => {
     await api.save(user("a"), token("a"), session("a"));
     await worker.save(user("a"), token("new"), session("a2"));
@@ -149,7 +160,7 @@ suite("database push registrations", () => {
       const row = await a.prisma.pushRegistration.findFirstOrThrow({
         where: { userId: user("a") },
       });
-      await a.prisma.pushToken.create({ data: row });
+      await a.prisma.pushToken.upsert({ where: { userId: user("a") }, create: row, update: row });
       await a.prisma.pushRegistration.deleteMany({ where: { userId: user("a") } });
     });
     expect((await worker.list(user("a")))[0]?.token).toBe(token("legacy"));
