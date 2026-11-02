@@ -100,10 +100,11 @@ function submissionData(body: unknown) {
   if (body && typeof body === "object" && "claim" in body) {
     const parsed = IntegrationClaimInputSchema.safeParse(body);
     if (!parsed.success) return { issues: issuesOf(parsed.error) };
-    const { logo, ...input } = parsed.data;
+    const input = parsed.data;
     return {
       match: { claim: input.claim },
-      data: { ...input, logo: logo ?? null, source: null, testing: null },
+      // A claim only links the page to the owner's site; the page keeps the catalog's words.
+      data: { ...input, description: "", logo: null, source: null, testing: null },
     };
   }
   const parsed = PluginSubmissionInputSchema.safeParse(body);
@@ -316,14 +317,12 @@ export async function approvedIntegrationClaims(prisma: PrismaClient): Promise<I
   const rows = await prisma.pluginSubmission.findMany({
     where: { status: "approved", claim: { not: null } },
     orderBy: { reviewedAt: "desc" },
-    select: { claim: true, website: true, logo: true, description: true },
+    select: { claim: true, website: true },
   });
   const claimed = new Set<string>();
   return rows.flatMap((row) => {
     if (!row.claim || !row.website || claimed.has(row.claim)) return [];
     claimed.add(row.claim);
-    return [
-      { slug: row.claim, website: row.website, logo: row.logo, description: row.description },
-    ];
+    return [{ slug: row.claim, website: row.website }];
   });
 }

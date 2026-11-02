@@ -49,7 +49,7 @@ test("an admin reviews plugin submissions from the emailed admin link", async ({
       source: null,
       testing: null,
       claim: "acme-tickets",
-      description: "Tickets your whole team can search.",
+      description: "",
     }),
   ];
   const reviews: unknown[] = [];

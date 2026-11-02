@@ -28,13 +28,11 @@ const ClaimsSchema = z.object({
     z.object({
       slug: z.string(),
       website: z.url(),
-      logo: z.url().nullable(),
-      description: z.string(),
     }),
   ),
 });
 
-/** Owners' reviewed edits to their pages, keyed by URL slug. Without them the catalog's words ship. */
+/** Owners' reviewed links to their sites, keyed by page URL slug. */
 async function loadClaims(): Promise<Map<string, z.infer<typeof ClaimsSchema>["claims"][number]>> {
   try {
     // Optional, so a slow API never holds up the build.
@@ -52,14 +50,7 @@ async function loadIntegrations(): Promise<Integration[]> {
   const [catalog, claims] = await Promise.all([loadCatalog(), loadClaims()]);
   return catalog.map((integration) => {
     const claim = claims.get(integrationUrlSlug(integration.slug));
-    return claim
-      ? {
-          ...integration,
-          description: claim.description,
-          logo: claim.logo ?? integration.logo,
-          website: claim.website,
-        }
-      : integration;
+    return claim ? { ...integration, website: claim.website } : integration;
   });
 }
 

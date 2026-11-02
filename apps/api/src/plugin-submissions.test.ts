@@ -31,7 +31,6 @@ const claim = {
   email: "owner@acme.test",
   name: "Acme Tickets",
   website: "https://www.acme.test",
-  description: "Tickets your whole team can search.",
 };
 
 type Row = Record<string, unknown> & {
@@ -380,9 +379,9 @@ describe("integration page claims", () => {
     const { rows, prisma } = fakePrisma();
     const { submit } = routes(prisma);
     await submit(claim);
-    expect((await submit({ ...claim, description: "Sharper." })).status).toBe(200);
+    expect((await submit({ ...claim, website: "https://acme.test" })).status).toBe(200);
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.description).toBe("Sharper.");
+    expect(rows[0]!.website).toBe("https://acme.test");
   });
 
   it("needs a website to link to", async () => {
@@ -409,19 +408,14 @@ describe("integration page claims", () => {
     const { rows, prisma } = fakePrisma();
     const { submit, claims } = routes(prisma);
     await submit(claim);
-    await submit({ ...claim, email: "other@acme.test", description: "Newer words." });
+    await submit({ ...claim, email: "other@acme.test", website: "https://acme.test/app" });
     await reviewPluginSubmission(reviewDeps(prisma), { id: "sub-1", decision: "approve" });
     await reviewPluginSubmission(reviewDeps(prisma), { id: "sub-2", decision: "approve" });
     rows[0]!.reviewedAt = new Date(1);
     rows[1]!.reviewedAt = new Date(2);
     expect(preview).not.toHaveBeenCalled();
     expect(await approvedIntegrationClaims(prisma)).toEqual([
-      {
-        slug: "acme_tickets",
-        website: "https://www.acme.test",
-        logo: null,
-        description: "Newer words.",
-      },
+      { slug: "acme_tickets", website: "https://acme.test/app" },
     ]);
     expect((await claims()).claims).toHaveLength(1);
     // A claim never becomes an installable plugin.

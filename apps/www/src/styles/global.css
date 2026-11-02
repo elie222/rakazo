@@ -34,6 +34,7 @@
   --panel-cream: #f1f1ef;
   --panel-cream-ink: #1a1a1a;
   --success: #30a24b;
+  --destructive: #dc2626;
   --coral: #f2622a;
   --coral-soft: #fde3d6;
   --indigo: #6a6bf5;
@@ -2694,6 +2695,11 @@ button.product-demo__dock-icon {
   border-color: var(--blue);
 }
 
+.plugin-form input[aria-invalid="true"],
+.plugin-form textarea[aria-invalid="true"] {
+  border-color: var(--destructive);
+}
+
 .plugin-form .plugin-form__check {
   display: flex;
   align-items: center;
@@ -2707,13 +2713,14 @@ button.product-demo__dock-icon {
   accent-color: var(--blue);
 }
 
-.plugin-form__error {
+/* Beats the page's paragraph color, so a missing field reads as an error. */
+.plugin-form .plugin-form__error {
   margin: 0;
-  color: var(--coral);
+  color: var(--destructive);
   font-size: 15px;
 }
 
-.plugin-form__error--field {
+.plugin-form .plugin-form__error--field {
   margin-top: -12px;
   font-size: 14px;
 }

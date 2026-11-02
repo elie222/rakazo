@@ -185,9 +185,11 @@ export function PluginSubmissionsPanel() {
                   </div>
                 ) : null}
               </div>
-              <p className="whitespace-pre-wrap text-[14px] leading-6 text-foreground" dir="auto">
-                {submission.description}
-              </p>
+              {submission.description ? (
+                <p className="whitespace-pre-wrap text-[14px] leading-6 text-foreground" dir="auto">
+                  {submission.description}
+                </p>
+              ) : null}
               {submission.testing ? (
                 <Disclosure
                   summary={<Trans>Testing</Trans>}

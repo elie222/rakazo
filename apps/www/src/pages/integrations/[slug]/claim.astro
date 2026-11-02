@@ -28,26 +28,18 @@ const fields: SubmissionField[] = [
     type: "url",
     required: true,
   },
-  { name: "logo", label: "Logo URL", placeholder: integration.logo ?? "https://acme.com/logo.svg", type: "url" },
-  {
-    name: "description",
-    label: "Description",
-    type: "textarea",
-    required: true,
-    value: integration.description,
-  },
 ];
 ---
 
 <SiteFrame
   title={`Claim the ${name} page on Rakazo`}
-  description={`Edit how ${name} appears on Rakazo.`}
+  description={`Link the ${name} page on Rakazo to your site.`}
   index={false}
 >
   <h1>Claim {name}</h1>
   <p>
-    Edit how <a href={integrationPath(integration.slug)}>{name}</a> appears on Rakazo and link to
-    your site. We review every claim.
+    Link the <a href={integrationPath(integration.slug)}>{name}</a> page to your site. We review
+    every claim.
   </p>
   <SubmissionForm
     fields={fields}

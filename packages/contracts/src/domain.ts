@@ -931,7 +931,7 @@ export const PluginSubmissionInputSchema = z.object({
 });
 export type PluginSubmissionInput = z.infer<typeof PluginSubmissionInputSchema>;
 
-/** An app's owner claiming its integration page to describe it and link their site. */
+/** An app's owner claiming its integration page so it links to their site. */
 export const IntegrationClaimInputSchema = z.object({
   /** The page's URL slug, as in `integrationPageUrl`. */
   claim: z
@@ -941,16 +941,12 @@ export const IntegrationClaimInputSchema = z.object({
   email: z.string().trim().max(254).email(),
   name: z.string().trim().min(1).max(80),
   website: HttpsUrlSchema,
-  logo: HttpsUrlSchema.optional(),
-  description: z.string().trim().min(1).max(2000),
 });
 export type IntegrationClaimInput = z.infer<typeof IntegrationClaimInputSchema>;
 
 export const IntegrationClaimSchema = z.object({
   slug: z.string(),
   website: z.string(),
-  logo: z.string().nullable(),
-  description: z.string(),
 });
 export type IntegrationClaim = z.infer<typeof IntegrationClaimSchema>;
 
