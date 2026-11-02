@@ -98,7 +98,11 @@ export default function BillingScreen() {
         <SettingsRow
           title={t("Plan")}
           detail={
-            ownKeyCents ? t("{price} / month", { price: `$${ownKeyCents / 100}` }) : undefined
+            ownKeyCents
+              ? status.byokInterval === "year"
+                ? t("{price} / year", { price: `$${ownKeyCents / 100}` })
+                : t("{price} / month", { price: `$${ownKeyCents / 100}` })
+              : undefined
           }
           value={
             status.state === "trialing" || status.byokFreeUntil

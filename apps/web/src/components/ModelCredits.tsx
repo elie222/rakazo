@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { BillingStatus } from "@rakazo/contracts";
+import type { BillingStatus, ByokInterval } from "@rakazo/contracts";
 import {
+  ByokIntervalSchema,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
@@ -22,6 +23,8 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  ToggleGroup,
+  ToggleGroupItem,
 } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -50,6 +53,42 @@ function formatMonthlyUsd(cents: number, locale: string): string {
   return formatBillingPrice(
     { amount: cents, currency: "usd", interval: "month", intervalCount: 1 },
     locale,
+  );
+}
+
+/** Monthly or yearly own-key plan, with what the yearly plan saves. */
+function ByokIntervalToggle({
+  monthlyCents,
+  annualCents,
+  value,
+  onChange,
+}: {
+  monthlyCents: number;
+  annualCents: number;
+  value: ByokInterval;
+  onChange: (interval: ByokInterval) => void;
+}) {
+  const { t } = useLingui();
+  const savings = Math.round((1 - annualCents / (monthlyCents * 12)) * 100);
+  const segment = "h-7 px-3 text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm";
+  return (
+    <ToggleGroup
+      aria-label={t`Billing period`}
+      value={[value]}
+      onValueChange={([next]) => {
+        if (next) onChange(ByokIntervalSchema.parse(next));
+      }}
+      spacing={1}
+      className="shrink-0 rounded-lg bg-foreground/5 p-1"
+    >
+      <ToggleGroupItem value="month" className={segment}>
+        <Trans>Monthly</Trans>
+      </ToggleGroupItem>
+      <ToggleGroupItem value="year" className={segment}>
+        <Trans>Yearly</Trans>
+        {savings > 0 ? <span className="text-success">−{savings}%</span> : null}
+      </ToggleGroupItem>
+    </ToggleGroup>
   );
 }
 
@@ -111,6 +150,7 @@ export function CreditChoice({
   ];
   const trialDays = status.trialDays;
   const [amount, setAmount] = useState<CreditAmount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
+  const [interval, setByokInterval] = useState<ByokInterval>("month");
   const credit = formatBillingAmount(amount, "usd", i18n.locale);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
@@ -131,9 +171,9 @@ export function CreditChoice({
     setError(false);
     try {
       if (ownKey && status.byokFreeUntil) {
-        go((await rpc.billing.checkout()).url);
+        go((await rpc.billing.checkout({ interval })).url);
       } else if (ownKey) {
-        const { url } = await rpc.billing.selectFunding({ funding: "byok" });
+        const { url } = await rpc.billing.selectFunding({ funding: "byok", interval });
         go(url ?? "/onboarding");
       } else {
         const { url } = await rpc.billing.purchaseCredits({
@@ -166,13 +206,38 @@ export function CreditChoice({
             </h2>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col gap-4">
-            <p className="flex h-12 items-center text-3xl font-medium tracking-tight">
-              {status.byokPriceCents ? (
-                formatMonthlyUsd(status.byokPriceCents, i18n.locale)
-              ) : (
-                <Trans>Free</Trans>
-              )}
-            </p>
+            {status.byokPriceCents && status.byokAnnualPriceCents ? (
+              <div className="flex h-12 items-center justify-between gap-3">
+                <p className="flex items-baseline gap-1">
+                  <span className="text-3xl font-medium tracking-tight">
+                    {formatBillingAmount(
+                      interval === "year"
+                        ? Math.round(status.byokAnnualPriceCents / 12)
+                        : status.byokPriceCents,
+                      "usd",
+                      i18n.locale,
+                    )}
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    <Trans>/ month</Trans>
+                  </span>
+                </p>
+                <ByokIntervalToggle
+                  monthlyCents={status.byokPriceCents}
+                  annualCents={status.byokAnnualPriceCents}
+                  value={interval}
+                  onChange={setByokInterval}
+                />
+              </div>
+            ) : (
+              <p className="flex h-12 items-center text-3xl font-medium tracking-tight">
+                {status.byokPriceCents ? (
+                  formatMonthlyUsd(status.byokPriceCents, i18n.locale)
+                ) : (
+                  <Trans>Free</Trans>
+                )}
+              </p>
+            )}
             <p className="text-sm text-muted-foreground">
               <Trans>Works with your ChatGPT or Claude plan.</Trans>
             </p>
@@ -261,6 +326,7 @@ export function ModelCreditsSettings({
   );
   const [topupAmount, setTopupAmount] = useState<CreditAmount>(1000);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [interval, setByokInterval] = useState<ByokInterval>("month");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
   const balance = new Intl.NumberFormat(i18n.locale, {
@@ -289,6 +355,9 @@ export function ModelCreditsSettings({
   const price = status.byokPriceCents
     ? formatBillingAmount(status.byokPriceCents, "usd", i18n.locale)
     : null;
+  const annualPrice = status.byokAnnualPriceCents
+    ? formatBillingAmount(status.byokAnnualPriceCents, "usd", i18n.locale)
+    : null;
   // A live subscription without monthly credits is the own-key plan, at the price it was bought at.
   const ownKeyPlan =
     status.funding === "byok" &&
@@ -297,7 +366,15 @@ export function ModelCreditsSettings({
     LIVE_STATES.includes(status.state) &&
     !status.byokFreeUntil
       ? {
-          price: formatMonthlyUsd(status.byokPriceCents, i18n.locale),
+          price: formatBillingPrice(
+            {
+              amount: status.byokPriceCents,
+              currency: "usd",
+              interval: status.byokInterval ?? "month",
+              intervalCount: 1,
+            },
+            i18n.locale,
+          ),
           date: billingDateLabel(status, i18n.locale || "en"),
         }
       : null;
@@ -340,18 +417,30 @@ export function ModelCreditsSettings({
           )}
         </p>
         {status.canManage ? (
-          <div className="mt-5 flex flex-wrap gap-3">
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            {freeUntil && status.byokPriceCents && status.byokAnnualPriceCents ? (
+              <ByokIntervalToggle
+                monthlyCents={status.byokPriceCents}
+                annualCents={status.byokAnnualPriceCents}
+                value={interval}
+                onChange={setByokInterval}
+              />
+            ) : null}
             {freeUntil && price ? (
               <Button
                 disabled={pending}
                 onClick={() =>
                   void action(async () => {
-                    const { url } = await rpc.billing.checkout();
+                    const { url } = await rpc.billing.checkout({ interval });
                     window.location.assign(url);
                   })
                 }
               >
-                <Trans>Subscribe for {price} / month</Trans>
+                {annualPrice && interval === "year" ? (
+                  <Trans>Subscribe for {annualPrice} / year</Trans>
+                ) : (
+                  <Trans>Subscribe for {price} / month</Trans>
+                )}
               </Button>
             ) : null}
             <Button

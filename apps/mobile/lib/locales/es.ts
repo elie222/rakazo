@@ -969,6 +969,13 @@ export const ES_MESSAGES: Record<string, string> = {
   "Full access, nothing to pay": "Acceso completo, sin pagar nada",
   "Day {days}": "Día {days}",
   "{price} / month begins": "Empieza el cobro de {price} / mes",
+  "Billing period": "Periodo de facturación",
+  "Yearly −{percent}%": "Anual −{percent} %",
+  "{days} days free, then {price} / year. Cancel anytime.":
+    "{days} días gratis y luego {price} / año. Cancela cuando quieras.",
+  "{price} / year": "{price} / año",
+  "{price} / year begins": "Empieza el cobro de {price} / año",
+  "{price} / year. Cancel anytime.": "{price} / año. Cancela cuando quieras.",
   "Only the owner of this account can choose a plan.":
     "Solo el titular de esta cuenta puede elegir un plan.",
   Terms: "Términos",

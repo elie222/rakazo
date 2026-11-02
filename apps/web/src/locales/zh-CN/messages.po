@@ -420,6 +420,10 @@ msgstr "{toolCount, plural, one {# 个工具} other {# 个工具}}"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/ModelCredits.tsx
+msgid "/ month"
+msgstr ""
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr "1 个工作区"
@@ -1022,6 +1026,10 @@ msgstr "Bearer token"
 #: src/pages/settings-nav.ts
 msgid "Billing"
 msgstr "账单"
+
+#: src/components/ModelCredits.tsx
+msgid "Billing period"
+msgstr ""
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
@@ -3869,6 +3877,7 @@ msgstr "周一"
 msgid "month"
 msgstr "月"
 
+#: src/components/ModelCredits.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "每月"
@@ -5713,6 +5722,10 @@ msgid "Subscribe"
 msgstr "订阅"
 
 #: src/components/ModelCredits.tsx
+msgid "Subscribe for {annualPrice} / year"
+msgstr ""
+
+#: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
 msgstr "以每月 {price} 订阅"
 
@@ -6537,6 +6550,10 @@ msgstr "工作区"
 #: src/lib/billing.ts
 msgid "year"
 msgstr "年"
+
+#: src/components/ModelCredits.tsx
+msgid "Yearly"
+msgstr ""
 
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx

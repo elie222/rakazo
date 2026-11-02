@@ -109,6 +109,7 @@ export async function replaceBillingCustomer(
       customerId: input.customerId,
       creditAmountCents: null,
       byokPriceCents: null,
+      byokInterval: null,
       subscriptionId: null,
       subscriptionItemId: null,
       priceId: null,
@@ -183,6 +184,7 @@ export async function syncBillingSnapshot(
     data: {
       creditAmountCents: snapshot?.creditAmountCents ?? null,
       byokPriceCents: snapshot?.byokPriceCents ?? null,
+      byokInterval: snapshot?.byokInterval ?? null,
       subscriptionId: snapshot?.subscriptionId ?? null,
       subscriptionItemId: snapshot?.subscriptionItemId ?? null,
       priceId: snapshot?.priceId ?? null,

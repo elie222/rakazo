@@ -1011,6 +1011,13 @@ export const JA_MESSAGES: Record<string, string> = {
   "Full access, nothing to pay": "すべての機能を無料で利用",
   "Day {days}": "{days}日目",
   "{price} / month begins": "月額 {price} の支払いを開始",
+  "Billing period": "請求期間",
+  "Yearly −{percent}%": "年払い −{percent}%",
+  "{days} days free, then {price} / year. Cancel anytime.":
+    "{days}日間無料、その後は年額 {price}。いつでも解約できます。",
+  "{price} / year": "年額 {price}",
+  "{price} / year begins": "年額 {price} の支払いを開始",
+  "{price} / year. Cancel anytime.": "年額 {price}。いつでも解約できます。",
   "Only the owner of this account can choose a plan.":
     "プランを選択できるのはこのアカウントのオーナーのみです。",
   Terms: "利用規約",

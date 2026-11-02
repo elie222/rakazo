@@ -420,6 +420,10 @@ msgstr "{toolCount, plural, other {도구 #개}}"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/ModelCredits.tsx
+msgid "/ month"
+msgstr ""
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr ""
@@ -1021,6 +1025,10 @@ msgstr "Bearer 토큰"
 
 #: src/pages/settings-nav.ts
 msgid "Billing"
+msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "Billing period"
 msgstr ""
 
 #: src/components/ApprovalRulesSettings.tsx
@@ -3869,6 +3877,7 @@ msgstr "월요일"
 msgid "month"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "매월"
@@ -5713,6 +5722,10 @@ msgid "Subscribe"
 msgstr "구독"
 
 #: src/components/ModelCredits.tsx
+msgid "Subscribe for {annualPrice} / year"
+msgstr ""
+
+#: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
 msgstr "월 {price}에 구독"
 
@@ -6536,6 +6549,10 @@ msgstr ""
 
 #: src/lib/billing.ts
 msgid "year"
+msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "Yearly"
 msgstr ""
 
 #: src/pages/shell/chat-context.tsx

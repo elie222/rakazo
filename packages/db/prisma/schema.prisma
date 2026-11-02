@@ -245,6 +245,8 @@ model BillingAccount {
   customerId          String       @unique
   creditAmountCents   Int?
   byokPriceCents      Int?
+  /// "month" or "year": how often byokPriceCents bills.
+  byokInterval        String?
   subscriptionId      String?
   subscriptionItemId  String?
   priceId             String?

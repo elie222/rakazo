@@ -1023,6 +1023,13 @@ export const NL_MESSAGES: Record<string, string> = {
   "Full access, nothing to pay": "Volledige toegang, niets te betalen",
   "Day {days}": "Dag {days}",
   "{price} / month begins": "Vanaf dan {price} per maand",
+  "Billing period": "Factuurperiode",
+  "Yearly −{percent}%": "Jaarlijks −{percent}%",
+  "{days} days free, then {price} / year. Cancel anytime.":
+    "{days} dagen gratis, daarna {price} per jaar. Altijd opzegbaar.",
+  "{price} / year": "{price} per jaar",
+  "{price} / year begins": "Vanaf dan {price} per jaar",
+  "{price} / year. Cancel anytime.": "{price} per jaar. Altijd opzegbaar.",
   "Only the owner of this account can choose a plan.":
     "Alleen de eigenaar van dit account kan een abonnement kiezen.",
   Terms: "Voorwaarden",

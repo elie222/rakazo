@@ -1045,6 +1045,13 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Full access, nothing to pay": "完整功能，无需付费",
   "Day {days}": "第 {days} 天",
   "{price} / month begins": "开始按每月 {price} 计费",
+  "Billing period": "账单周期",
+  "Yearly −{percent}%": "按年 −{percent}%",
+  "{days} days free, then {price} / year. Cancel anytime.":
+    "免费 {days} 天，之后每年 {price}。可随时取消。",
+  "{price} / year": "每年 {price}",
+  "{price} / year begins": "开始按每年 {price} 计费",
+  "{price} / year. Cancel anytime.": "每年 {price}。可随时取消。",
   "Only the owner of this account can choose a plan.": "只有此账户的所有者可以选择方案。",
   Terms: "条款",
   Privacy: "隐私",
