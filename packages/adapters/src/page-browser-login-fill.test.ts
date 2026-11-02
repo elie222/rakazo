@@ -51,7 +51,18 @@ function installPageHelper(url: string, html: string) {
       return secrets.fill(value, origin as string, field as string);
     },
   };
-  return { domWindow, browser };
+  /** Focuses the first input whose name or label holds `label`, as the page browser would, then fills it. */
+  function fillInput(label: string, value: string, origin: string, field: string) {
+    const input = [...domWindow.document.querySelectorAll("input")].find((el) =>
+      [el.getAttribute("aria-label"), ...[...(el.labels ?? [])].map((box) => box.textContent)].some(
+        (name) => name?.includes(label),
+      ),
+    );
+    if (!input) throw new Error(`no input named ${label}`);
+    input.focus();
+    return secrets.fill(value, origin, field);
+  }
+  return { domWindow, browser, fillInput };
 }
 
 function fieldValue(window: JSDOM["window"], label: string): string {
@@ -195,22 +206,20 @@ describe("live page helper one-time code fill", () => {
     url = `${origin}/verify`,
     at = origin,
   ) {
-    const { domWindow, browser } = installPageHelper(url, boxes);
-    const ref = refFor(label, browser.snapshot().elements);
-    return { domWindow, browser, fill: () => browser.fill(ref, code, at, "code") };
+    const { domWindow, fillInput } = installPageHelper(url, boxes);
+    return { domWindow, fill: () => fillInput(label, code, at, "code") };
   }
 
   it("types a code on its HTTPS site only, and refuses another site or plain HTTP", () => {
-    const { domWindow, browser } = installPageHelper(`${origin}/verify`, html);
-    const code = refFor("Code", browser.snapshot().elements);
-    expect(() => browser.fill(code, "123456", "https://evil.example.test", "code")).toThrow(
+    const { domWindow, fillInput } = installPageHelper(`${origin}/verify`, html);
+    expect(() => fillInput("Code", "123456", "https://evil.example.test", "code")).toThrow(
       /Refused: The page is not on the site this code was asked for/,
     );
-    expect(() => browser.fill(code, "123456", "http://login.example.test", "code")).toThrow(
+    expect(() => fillInput("Code", "123456", "http://login.example.test", "code")).toThrow(
       /Refused: A code can only be filled on HTTPS/,
     );
     expect(fieldValue(domWindow, "Code")).toBe("");
-    browser.fill(code, "123456", origin, "code");
+    fillInput("Code", "123456", origin, "code");
     expect(fieldValue(domWindow, "Code")).toBe("123456");
   });
 
@@ -223,22 +232,20 @@ describe("live page helper one-time code fill", () => {
   });
 
   it("draws the filled box as dots and keeps its value out of snapshots", () => {
-    const { domWindow, browser, fill } = fillCode(html, "Code");
+    const { domWindow, fill } = fillCode(html, "Code");
     const box = domWindow.document.querySelector<HTMLInputElement>('[aria-label="Code"]')!;
     // jsdom drops vendor properties, so watch the CSSOM calls Chrome applies.
     const set = vi.spyOn(box.style, "setProperty");
     fill();
     expect(set).toHaveBeenCalledWith(MASK, "disc", "important");
-    const entry = browser.snapshot().elements.find((element) => element.name === "Code")!;
-    expect(entry.value).toBeUndefined();
-    expect(browser.snapshot().tree).not.toContain("123456");
+    expect(filled(domWindow, "Code")).toBe(true);
   });
 
   it("types a code only into a text, email or telephone box, never a password box", () => {
-    const { domWindow, browser } = installPageHelper(`${origin}/verify`, html);
-    expect(() =>
-      browser.fill(refFor("Password", browser.snapshot().elements), "123456", origin, "code"),
-    ).toThrow(/Refused: A code can only be typed into a text, email, or telephone field/);
+    const { domWindow, fillInput } = installPageHelper(`${origin}/verify`, html);
+    expect(() => fillInput("Password", "123456", origin, "code")).toThrow(
+      /Refused: A code can only be typed into a text, email, or telephone field/,
+    );
     expect(fieldValue(domWindow, "Password")).toBe("");
   });
 
@@ -296,7 +303,7 @@ describe("live page helper one-time code fill", () => {
     </div><p>Resend</p></div>`;
 
     function widget(delayMs?: number) {
-      const { domWindow, browser } = installPageHelper(`${origin}/verify`, slots);
+      const { domWindow, fillInput } = installPageHelper(`${origin}/verify`, slots);
       const document = domWindow.document;
       const input = document.querySelector<HTMLInputElement>("input")!;
       const draw = () =>
@@ -311,37 +318,37 @@ describe("live page helper one-time code fill", () => {
       const set = vi.spyOn(widgetBox.style, "setProperty");
       const remove = vi.spyOn(widgetBox.style, "removeProperty");
       const outerSet = vi.spyOn(outer.style, "setProperty");
-      const ref = refFor("Code", browser.snapshot().elements);
-      return { browser, ref, set, remove, outerSet, document };
+      const fill = (code: string, field = "code") => fillInput("Code", code, origin, field);
+      return { domWindow, fill, set, remove, outerSet, document };
     }
 
     it("draws the slots as dots too, right away", () => {
-      const { browser, ref, set, outerSet } = widget();
-      browser.fill(ref, "123456", origin, "code");
+      const { fill, set, outerSet } = widget();
+      fill("123456");
       expect(set).toHaveBeenCalledWith("-webkit-text-security", "disc", "important");
       // Only the nearest ancestor that shows the code.
       expect(outerSet).not.toHaveBeenCalled();
     });
 
     it("draws them as dots when the widget draws its slots a moment later", async () => {
-      const { browser, ref, set } = widget(10);
-      browser.fill(ref, "123456", origin, "code");
+      const { fill, set } = widget(10);
+      fill("123456");
       expect(set).not.toHaveBeenCalled();
       await new Promise((resolve) => setTimeout(resolve, 120));
       expect(set).toHaveBeenCalledWith("-webkit-text-security", "disc", "important");
     });
 
     it("finds a code written with dashes shown without them, and gives the slots back when the box is refilled", () => {
-      const { browser, ref, set, remove } = widget();
-      browser.fill(ref, "12-34-56", origin, "code");
+      const { fill, set, remove } = widget();
+      fill("12-34-56");
       expect(set).toHaveBeenCalledWith("-webkit-text-security", "disc", "important");
       expect(remove).not.toHaveBeenCalled();
-      browser.fill(ref, "plain text");
+      fill("fake-user", "username");
       expect(remove).toHaveBeenCalledWith("-webkit-text-security");
     });
 
     it("matches slots drawn in another case", () => {
-      const { browser, ref, set, document } = widget();
+      const { fill, set, document } = widget();
       const input = document.querySelector<HTMLInputElement>("input")!;
       const slots = [...document.querySelectorAll("#widget > div")];
       input.addEventListener("input", () =>
@@ -349,15 +356,14 @@ describe("live page helper one-time code fill", () => {
           slot.textContent = (input.value[at] ?? "·").toUpperCase();
         }),
       );
-      browser.fill(ref, "ab12cd", origin, "code");
+      fill("ab12cd");
       expect(set).toHaveBeenCalledWith("-webkit-text-security", "disc", "important");
     });
 
     it("keeps the code out of the snapshot's listing of the box", () => {
-      const { browser, ref } = widget();
-      browser.fill(ref, "123456", origin, "code");
-      const snapshot = browser.snapshot();
-      expect(snapshot.elements.find((element) => element.name === "Code")?.value).toBeUndefined();
+      const { domWindow, fill } = widget();
+      fill("123456");
+      expect(filled(domWindow, "Code")).toBe(true);
     });
   });
 

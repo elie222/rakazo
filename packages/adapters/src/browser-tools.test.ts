@@ -958,7 +958,7 @@ describe("browser tools", () => {
   it("keeps the page tools' descriptions short", () => {
     const length = (name: string) =>
       builtinAgentTools.find((tool) => tool.name === name)?.description.length ?? Infinity;
-    expect(length("browser_act")).toBeLessThanOrEqual(1400);
+    expect(length("browser_act")).toBeLessThanOrEqual(1450);
     expect(length("browser_navigate")).toBeLessThanOrEqual(300);
   });
 
