@@ -156,9 +156,12 @@ function isCurrent(href: string): boolean {
       });
       close(true);
       // If copying fails, open the file so it can still be saved.
-      navigator.clipboard.write([new ClipboardItem({ "text/plain": svg })]).catch(() => {
-        window.location.assign(url);
-      });
+      const openFile = () => window.location.assign(url);
+      try {
+        navigator.clipboard.write([new ClipboardItem({ "text/plain": svg })]).catch(openFile);
+      } catch {
+        openFile();
+      }
     });
 
     logoMenu.addEventListener("click", (event) => {
@@ -172,9 +175,11 @@ function isCurrent(href: string): boolean {
         event.preventDefault();
         const step = event.key === "ArrowDown" ? 1 : -1;
         list[(index + step + list.length) % list.length]?.focus();
-      } else if (event.key === "Escape" || event.key === "Tab") {
+      } else if (event.key === "Escape") {
         event.preventDefault();
         close(true);
+      } else if (event.key === "Tab") {
+        close();
       }
     });
 
