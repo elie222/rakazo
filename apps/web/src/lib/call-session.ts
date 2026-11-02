@@ -7,9 +7,11 @@ import {
   createCallSendTracker,
   createInterimBargeIn,
   errorStatus,
+  isActive,
   isApprovalAskBlock,
   isCallBargeIn,
   isFarewell,
+  isRunTerminalEvent,
   isSecretAskBlock,
   newClientId,
   runThreadSubscription,
@@ -109,6 +111,8 @@ let bargedIn = false;
 let awaitingReply = false;
 /** The run whose approval card the caller was sent to answer on screen. */
 let approvalRunId: string | null = null;
+let awaitedRunId: string | null = null;
+const finishedRunIds = new Set<string>();
 /** Counting down an interim phrase heard over the reply, before it counts as cutting in. */
 const interim = createInterimBargeIn(() => {
   if (state?.phase !== "speaking") return;
@@ -163,6 +167,8 @@ export function startCall(call: {
   bargedIn = false;
   awaitingReply = false;
   approvalRunId = null;
+  awaitedRunId = null;
+  finishedRunIds.clear();
   state = {
     botId: call.botId,
     botName: call.botName,
@@ -274,6 +280,8 @@ function dropCall(): void {
   bargedIn = false;
   awaitingReply = false;
   approvalRunId = null;
+  awaitedRunId = null;
+  finishedRunIds.clear();
   unsubSpeech?.();
   unsubDictation?.();
   unsubSpeech = null;
@@ -461,6 +469,7 @@ function watchThread(botId: string) {
       ),
     beforeEvent: (event) => webLogoAvatarActivity.apply(avatarSource, event),
     applyEvent: (event) => {
+      if (event.runId && isRunTerminalEvent(event)) finishedRunIds.add(event.runId);
       if (isThreadSnapshotEvent(event)) commit(reduceThreadSnapshot(thread, event));
     },
     onEvent: (event) => {
@@ -496,6 +505,19 @@ function speakFarewell(payload: Record<string, unknown>) {
 
 function commit(next: ThreadSnapshot | null) {
   if (!next) return null;
+  const nextRuns = [...(next.activeRuns ?? []), ...(next.run ? [next.run] : [])];
+  for (const run of [...(thread?.activeRuns ?? []), ...(thread?.run ? [thread.run] : [])]) {
+    if (
+      isActive(run.status) &&
+      !nextRuns.some((nextRun) => nextRun.id === run.id && isActive(nextRun.status))
+    ) {
+      finishedRunIds.add(run.id);
+    }
+  }
+  for (const run of nextRuns) {
+    if (isActive(run.status)) finishedRunIds.delete(run.id);
+    else finishedRunIds.add(run.id);
+  }
   thread = next;
   reactToThread();
   return next;
@@ -607,6 +629,7 @@ async function handleTranscript(text: string) {
     return;
   }
   approvalRunId = null;
+  awaitedRunId = askMessage?.runId ?? null;
   awaitingReply = true;
   set({ heard: text, phase: "thinking", exchanges: [...exchanges, { role: "user", text }] });
   if (closing) {
@@ -631,7 +654,9 @@ async function handleTranscript(text: string) {
         ? rpc.threads.followUp({ botId, text, clientNonce })
         : rpc.threads.send({ botId, clientNonce, text });
     releasePendingSend = callSends.track(turnCallId, sendRequest);
-    await sendRequest;
+    const receipt = await sendRequest;
+    if (!state || state.botId !== botId || callId !== turnCallId) return;
+    if ("runId" in receipt) awaitedRunId = receipt.runId;
   } catch (error) {
     if (!state || state.botId !== botId || callId !== turnCallId) return;
     awaitingReply = false;
@@ -684,13 +709,14 @@ function reactToThread() {
   // Only what the bot wrote after the caller's latest turn answers it. A run that stopped on a
   // card keeps its live progress message after the card; that is not a reply.
   const turnIndex = messages.findLastIndex((message) => message.role === "user");
+  const replyRunId = approvalRunId ?? awaitedRunId;
   const lastBot = messages
     .slice(turnIndex + 1)
     .findLast(
       (message) =>
         message.role === "bot" &&
         !(message.id.startsWith("progress:") && replyFinished(message)) &&
-        (!approvalRunId || message.runId === approvalRunId),
+        (!replyRunId || message.runId === replyRunId),
     );
   if (lastBot && !spokenMessageIds.has(lastBot.id) && replyFinished(lastBot)) {
     const text = speechFromBlocks(lastBot.blocks);
@@ -724,6 +750,13 @@ function reactToThread() {
       void listen();
     }
   }
+  if (awaitingReply && replyRunId && finishedRunIds.has(replyRunId)) {
+    awaitingReply = false;
+    approvalRunId = null;
+    awaitedRunId = null;
+    set({ caption: errorText(thread?.run?.id === replyRunId ? thread.run.error : undefined) });
+    void listen();
+  }
 }
 
 /**
@@ -731,7 +764,7 @@ function reactToThread() {
  * still streaming clips it, and later updates of the same id never get a turn.
  */
 function replyFinished(message: ThreadMessage) {
-  const run = thread?.run;
+  const run = thread?.activeRuns?.find((run) => run.id === message.runId) ?? thread?.run;
   if (!run) return true;
   if (message.runId && message.runId !== run.id) return true;
   return !RUN_ACTIVE.includes(run.status);
