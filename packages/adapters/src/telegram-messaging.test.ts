@@ -409,7 +409,9 @@ describe("Telegram groups", () => {
 
   it("delivers /stop from a private chat as a message, keeps dropping it in groups, and retries a failure", async () => {
     const { surface, inbound } = createGroupSurface();
-    const command = (text: string) => [{ type: "bot_command", offset: 0, length: text.length }];
+    const command = (text: string) => [
+      { type: "bot_command", offset: 0, length: text.split(" ")[0]!.length },
+    ];
     const privateStop = (text: string, messageId: number, updateId: number) =>
       surface.handleWebhook(
         "telegram",
@@ -427,6 +429,8 @@ describe("Telegram groups", () => {
       );
     await privateStop("/stop", 21, 201);
     await privateStop("/stop@testbot", 22, 202);
+    await privateStop("/stop@otherbot", 25, 205);
+    await privateStop("/stop@testbot now", 26, 206);
     await surface.handleWebhook(
       "telegram",
       webhook(
@@ -437,9 +441,13 @@ describe("Telegram groups", () => {
         ),
       ),
     );
-    expect(inbound).toHaveLength(2);
-    expect(inbound[0]).toMatchObject({ isDirect: true, from: "777", content: "/stop" });
-    expect(inbound[1]).toMatchObject({ isDirect: true, content: "/stop@testbot" });
+    expect(inbound.map((event) => event.type === "message" && event.content)).toEqual([
+      "/stop",
+      "/stop",
+      "/stop@otherbot",
+      "/stop@testbot now",
+    ]);
+    expect(inbound[0]).toMatchObject({ isDirect: true, from: "777" });
 
     surface.onInbound(async () => {
       throw new Error("database unavailable");

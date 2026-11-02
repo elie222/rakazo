@@ -199,10 +199,11 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
       if (adapterName === "telegram") {
         chat.onSlashCommand("/stop", async (event) => {
           if ((event.raw as { chat?: { type?: string } }).chat?.type !== "private") return;
-          await deliver(
-            { id: event.channel.id, isDM: true },
-            platform.adapter.parseMessage(event.raw),
-          );
+          const message = platform.adapter.parseMessage(event.raw);
+          // The SDK only calls this for /stop or /stop@<this bot>; /stop@<other bot> arrives as
+          // a plain message, so drop the name here and the shared parser accepts bare /stop only.
+          if (!event.text) message.text = event.command;
+          await deliver({ id: event.channel.id, isDM: true }, message);
         });
       }
     }

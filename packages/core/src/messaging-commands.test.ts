@@ -19,10 +19,9 @@ describe("parseMessagingCommand", () => {
       expect(parseMessagingCommand(text)).toBeNull();
   });
 
-  it("reads Telegram's /stop command, with or without the bot's name", () => {
-    for (const text of ["/stop", " /STOP ", "/stop@rakazo_bot"])
-      expect(parseMessagingCommand(text)).toBe("stop");
-    for (const text of ["/stop now", "/stopper", "/stop@", "stop/"])
+  it("reads Telegram's bare /stop command, not one addressed to a named bot", () => {
+    for (const text of ["/stop", " /STOP "]) expect(parseMessagingCommand(text)).toBe("stop");
+    for (const text of ["/stop@other_bot", "/stop now", "/stopper", "/stop@", "stop/"])
       expect(parseMessagingCommand(text)).toBeNull();
   });
 

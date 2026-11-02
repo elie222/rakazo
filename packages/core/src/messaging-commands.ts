@@ -10,7 +10,7 @@ export function parseMessagingCommand(text: string): MessagingCommand | null {
   if (normalized === "NO") return "decline";
   if (normalized === "LEAVE") return "leave";
   if (/^STOP(?: NOW)?[.!?…]*$/.test(normalized.replace(/\s+/g, " "))) return "stop";
-  // Telegram's /stop command, with the bot's name when sent from a group's command menu.
-  if (/^\/STOP(?:@\w+)?$/.test(normalized)) return "stop";
+  // Telegram's /stop command; the Telegram surface drops this bot's own @name before it gets here.
+  if (normalized === "/STOP") return "stop";
   return null;
 }
