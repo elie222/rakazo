@@ -450,6 +450,7 @@ msgstr "Acerca de {label}"
 msgid "Access token (optional)"
 msgstr "Token de acceso (opcional)"
 
+#: src/components/AccountMenu.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Account"
 msgstr "Cuenta"
@@ -2483,6 +2484,7 @@ msgid "Delete {0}?"
 msgstr "¿Eliminar {0}?"
 
 #: src/components/AccountAccess.tsx
+#: src/components/AccountMenu.tsx
 msgid "Delete account"
 msgstr "Eliminar cuenta"
 
@@ -3544,9 +3546,8 @@ msgstr "El acceso local permite que los bots ejecuten comandos sin preguntar. Ev
 msgid "Local computer access requires the latest desktop app."
 msgstr "El acceso a la computadora local requiere la versión más reciente de la app de escritorio."
 
-#: src/components/ModelCredits.tsx
+#: src/components/AccountMenu.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/Paywall.tsx
 msgid "Log out"
 msgstr "Cerrar sesión"
 

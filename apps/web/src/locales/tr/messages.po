@@ -450,6 +450,7 @@ msgstr "{label} hakkında"
 msgid "Access token (optional)"
 msgstr "Erişim token'ı (isteğe bağlı)"
 
+#: src/components/AccountMenu.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Account"
 msgstr "Hesap"
@@ -2483,6 +2484,7 @@ msgid "Delete {0}?"
 msgstr "{0} silinsin mi?"
 
 #: src/components/AccountAccess.tsx
+#: src/components/AccountMenu.tsx
 msgid "Delete account"
 msgstr "Hesabı sil"
 
@@ -3544,9 +3546,8 @@ msgstr "Yerel erişim, botların sormadan komut çalıştırmasına izin verir. 
 msgid "Local computer access requires the latest desktop app."
 msgstr ""
 
-#: src/components/ModelCredits.tsx
+#: src/components/AccountMenu.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/Paywall.tsx
 msgid "Log out"
 msgstr "Çıkış yap"
 

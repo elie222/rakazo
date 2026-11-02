@@ -451,6 +451,7 @@ msgstr "關於 {label}"
 msgid "Access token (optional)"
 msgstr "存取權杖（選填）"
 
+#: src/components/AccountMenu.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Account"
 msgstr "帳號"
@@ -2484,6 +2485,7 @@ msgid "Delete {0}?"
 msgstr "刪除 {0}？"
 
 #: src/components/AccountAccess.tsx
+#: src/components/AccountMenu.tsx
 msgid "Delete account"
 msgstr "刪除帳號"
 
@@ -3545,9 +3547,8 @@ msgstr "本機存取權限允許機器人無需詢問就執行命令。請勿在
 msgid "Local computer access requires the latest desktop app."
 msgstr "存取本機電腦需要最新版桌面應用程式。"
 
-#: src/components/ModelCredits.tsx
+#: src/components/AccountMenu.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/Paywall.tsx
 msgid "Log out"
 msgstr "登出"
 

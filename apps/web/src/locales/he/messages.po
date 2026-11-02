@@ -450,6 +450,7 @@ msgstr "על {label}"
 msgid "Access token (optional)"
 msgstr "טוקן גישה (אופציונלי)"
 
+#: src/components/AccountMenu.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Account"
 msgstr "חשבון"
@@ -2483,6 +2484,7 @@ msgid "Delete {0}?"
 msgstr "למחוק את {0}?"
 
 #: src/components/AccountAccess.tsx
+#: src/components/AccountMenu.tsx
 msgid "Delete account"
 msgstr "מחיקת החשבון"
 
@@ -3544,9 +3546,8 @@ msgstr "גישה מקומית מאפשרת לבוטים להריץ פקודות 
 msgid "Local computer access requires the latest desktop app."
 msgstr ""
 
-#: src/components/ModelCredits.tsx
+#: src/components/AccountMenu.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/Paywall.tsx
 msgid "Log out"
 msgstr "התנתקות"
 

@@ -450,6 +450,7 @@ msgstr "{label} के बारे में"
 msgid "Access token (optional)"
 msgstr "एक्सेस टोकन (वैकल्पिक)"
 
+#: src/components/AccountMenu.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Account"
 msgstr "खाता"
@@ -2483,6 +2484,7 @@ msgid "Delete {0}?"
 msgstr "{0} डिलीट करें?"
 
 #: src/components/AccountAccess.tsx
+#: src/components/AccountMenu.tsx
 msgid "Delete account"
 msgstr "खाता हटाएँ"
 
@@ -3544,9 +3546,8 @@ msgstr "स्थानीय पहुँच मिलने पर बॉट�
 msgid "Local computer access requires the latest desktop app."
 msgstr ""
 
-#: src/components/ModelCredits.tsx
+#: src/components/AccountMenu.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/Paywall.tsx
 msgid "Log out"
 msgstr "लॉग आउट"
 
