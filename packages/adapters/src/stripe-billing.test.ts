@@ -308,6 +308,26 @@ describe("Stripe billing HTTP boundary", () => {
     });
   });
 
+  it("reads the cancellation survey answer", async () => {
+    const { wire, provider } = setup();
+    const { customerId } = await provider.createCustomer(owner);
+    await provider.createCheckout({ customerId, seats: 1, ...urls });
+    wire.completeCheckout(customerId);
+    wire.subscriptions[0]!.cancel_at_period_end = true;
+    wire.subscriptions[0]!.cancellation_details = {
+      feedback: "too_expensive",
+      comment: " Pricey ",
+    };
+    expect(await provider.getCustomerSubscription(customerId)).toMatchObject({
+      cancellationReason: "too_expensive",
+      cancellationComment: "Pricey",
+    });
+    wire.subscriptions[0]!.cancellation_details = { feedback: "a_new_reason", comment: "  " };
+    const snapshot = await provider.getCustomerSubscription(customerId);
+    expect(snapshot?.cancellationReason).toBe("other");
+    expect(snapshot).not.toHaveProperty("cancellationComment");
+  });
+
   it("classifies a deleted customer without wedging", async () => {
     const { wire, provider } = setup();
     const { customerId } = await provider.createCustomer(owner);

@@ -467,6 +467,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         sandbox,
         webOrigin: env.webOrigin,
         managedModelsAvailable: resolveDeploymentModel().configured,
+        analytics,
       })
     : undefined;
   const modelCreditsEnabled = billing?.modelCreditsEnabled ?? false;

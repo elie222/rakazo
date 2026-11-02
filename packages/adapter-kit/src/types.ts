@@ -1,4 +1,5 @@
 import type {
+  BillingCancellationReason,
   CacheCapabilities as ConnectionCacheCapabilities,
   ConnectionCatalogItem,
   ModelApiProtocol,
@@ -1323,6 +1324,8 @@ export interface BillingSubscriptionSnapshot {
   byokPriceCents?: number;
   /** Stable identity of the subscription's card across customers, when the provider has one. */
   cardFingerprint?: string;
+  cancellationReason?: BillingCancellationReason;
+  cancellationComment?: string;
 }
 
 export interface BillingCheckoutRequest {

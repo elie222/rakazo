@@ -318,6 +318,7 @@ export interface StripeSubscriptionRecord {
   cancel_at_period_end: boolean;
   cancel_at: number | null;
   ended_at: number | null;
+  cancellation_details?: { feedback: string | null; comment: string | null };
   default_payment_method?: string | null;
   /** Emulator-only: the card's fingerprint, returned when the payment method is expanded. */
   cardFingerprint?: string;

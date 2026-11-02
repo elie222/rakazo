@@ -118,6 +118,8 @@ export async function replaceBillingCustomer(
       currentPeriodEndsAt: null,
       cancelAtPeriodEnd: false,
       endedAt: null,
+      cancellationReason: null,
+      cancellationComment: null,
       syncedAt: null,
     },
   });
@@ -192,6 +194,8 @@ export async function syncBillingSnapshot(
       currentPeriodEndsAt: snapshot?.currentPeriodEndsAt ?? null,
       cancelAtPeriodEnd: snapshot?.cancelAtPeriodEnd ?? false,
       endedAt: snapshot?.endedAt ?? null,
+      cancellationReason: snapshot?.cancellationReason ?? null,
+      cancellationComment: snapshot?.cancellationComment ?? null,
       syncedAt: startedAt,
     },
   });
