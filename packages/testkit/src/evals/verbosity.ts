@@ -1,5 +1,6 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import type { Criterion, EvalCase, Evidence, TurnMessage } from "./cases.js";
+import { CUSTOMER_FALLBACK_TOOLS } from "./cases.js";
 
 export const VERBOSITY_FIXTURE_VERSION = "verbosity-v1";
 export const VERBOSITY_JUDGE_VERSION = "verbosity-meaning-v4";
@@ -127,16 +128,7 @@ export const VERBOSITY_EVAL_CASES: EvalCase[] = [
     purpose: "An unavailable source is reported in a sentence, not a troubleshooting log.",
     connections: ["GITHUB"],
     // Only the outage is under test; fallbacks would reach a fake web where the repository is missing.
-    disabledBuiltinTools: [
-      "web_search",
-      "web_fetch",
-      "browser_navigate",
-      "browser_snapshot",
-      "browser_act",
-      "computer_observe",
-      "computer_act",
-      "shell",
-    ],
+    disabledBuiltinTools: [...CUSTOMER_FALLBACK_TOOLS],
     configure: (s) => {
       s.githubReadError = true;
     },

@@ -98,7 +98,7 @@ const MUTATING_TOOLS = new Set(["CRM_UPDATE_RECORD", "CRM_CREATE_NOTE"]);
 const writes = (e: Evidence) => e.calls.filter((c) => MUTATING_TOOLS.has(c.tool));
 const noWrites = (e: Evidence) => check("no-external-writes", writes(e).length === 0);
 const file = (e: Evidence, name: string) => e.files[name]?.trim() ?? "";
-const CUSTOMER_FALLBACK_TOOLS = new Set([
+export const CUSTOMER_FALLBACK_TOOLS = new Set([
   "browser_navigate",
   "browser_snapshot",
   "browser_act",
