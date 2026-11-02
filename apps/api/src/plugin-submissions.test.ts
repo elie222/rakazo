@@ -31,7 +31,7 @@ const valid = {
   tested: true,
 };
 const claim = {
-  claim: "acme_tickets",
+  claim: "acme-tickets",
   email: "owner@acme.test",
   name: "Acme Tickets",
   website: "https://www.acme.test",
@@ -367,7 +367,7 @@ describe("integration page claims", () => {
     const response = await submit(claim);
     expect(response.status).toBe(201);
     expect(rows[0]).toMatchObject({
-      claim: "acme_tickets",
+      claim: "acme-tickets",
       source: null,
       testing: null,
       logo: null,
@@ -395,6 +395,13 @@ describe("integration page claims", () => {
     const { rows, prisma } = fakePrisma();
     expect((await routes(prisma).submit({ ...claim, website })).status).toBe(201);
     expect(rows[0]!.website).toBe(stored);
+  });
+
+  it("only takes a page's URL slug, which is what the site matches", async () => {
+    const { rows, prisma } = fakePrisma();
+    const response = await routes(prisma).submit({ ...claim, claim: "acme_tickets" });
+    expect(response.status).toBe(400);
+    expect(rows).toHaveLength(0);
   });
 
   it("needs a website to link to", async () => {
@@ -429,7 +436,7 @@ describe("integration page claims", () => {
     rows[1]!.reviewedAt = new Date(2);
     expect(preview).not.toHaveBeenCalled();
     expect(await approvedIntegrationClaims(prisma)).toEqual([
-      { slug: "acme_tickets", website: "https://acme.test/app" },
+      { slug: "acme-tickets", website: "https://acme.test/app" },
     ]);
     expect((await claims()).claims).toHaveLength(1);
     // A claim never becomes an installable plugin.

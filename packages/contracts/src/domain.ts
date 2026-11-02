@@ -943,7 +943,7 @@ export const IntegrationClaimInputSchema = z.object({
   claim: z
     .string()
     .max(100)
-    .regex(/^[a-z0-9_-]+$/),
+    .regex(/^[a-z0-9-]+$/, "Use the page's URL slug"),
   email: z.string().trim().max(254).email(),
   name: z.string().trim().min(1).max(80),
   website: HttpsUrlSchema,
