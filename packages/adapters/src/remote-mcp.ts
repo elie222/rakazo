@@ -277,7 +277,7 @@ async function withRemoteMcpClient<T>(
       redirect: "manual",
       signal,
     },
-    fetch: async (input, init) => limitMcpResponseBody(await safeFetch(input, init)),
+    fetch: async (input, init) => limitMcpResponseBody(await safeFetch(input, init), init?.headers),
   });
   const client = new Client({ name: "rakazo", version: "0.1.0" }, { capabilities: {} });
   try {
@@ -471,7 +471,7 @@ export class RemoteMcpSessionCache {
             { cause: error },
           );
         }
-        return limitMcpResponseBody(response);
+        return limitMcpResponseBody(response, init?.headers);
       },
     });
     const client = new Client({ name: "rakazo", version: "0.1.0" }, { capabilities: {} });

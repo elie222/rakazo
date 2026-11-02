@@ -223,7 +223,7 @@ export function secureFetch(
       cancelResponseBody(response);
       throw new Error("MCP redirects are not permitted; configure the final HTTPS URL explicitly");
     }
-    return limitMcpResponseBody(response);
+    return limitMcpResponseBody(response, headers);
   };
   const result = request as SafeRemoteFetch;
   result.close = () => safeRemoteFetch.close();
