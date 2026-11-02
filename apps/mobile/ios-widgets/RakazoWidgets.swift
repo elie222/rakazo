@@ -130,6 +130,7 @@ struct VoiceMessageLiveActivity: Widget {
     Text(state.status == .listening ? "" : state.text).lineLimit(2)
       .foregroundStyle(state.status == .thinking ? Color.white : Color.muted)
       .contentTransition(.interpolate)
+      .privacySensitive()
   }
 
   /// Cancel and send while listening: 44pt circles, send as the primary.

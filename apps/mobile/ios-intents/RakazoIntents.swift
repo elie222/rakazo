@@ -150,12 +150,16 @@ private struct Delivery {
 
 /// Sends with the app's own session and the same procedures as the composer, so the bot runs it
 /// as a message the user sent. Without a chosen bot it goes to the one whose chat was opened last.
-private func send(
-  _ message: String, file: IntentFile?, to bot: BotEntity?, timeout: TimeInterval = 60
-) async throws -> Delivery {
+private func send(_ message: String, file: IntentFile?, to bot: BotEntity?) async throws -> Delivery {
   guard let target = target(bot) else { throw MessageBotError.noBot }
+  return try await send(message, file: file, to: target, with: RakazoSession.load(), timeout: 60)
+}
+
+private func send(
+  _ message: String, file: IntentFile?, to target: (botId: String, spaceId: String?),
+  with session: RakazoSession, timeout: TimeInterval
+) async throws -> Delivery {
   let botId = target.botId
-  let session = try RakazoSession.load()
   let spaceId = target.spaceId ?? session.selectedSpaceId
   try await session.requireConsent(["botId": botId], spaceId: spaceId, timeout: timeout)
   var input: [String: Any] = [
@@ -182,9 +186,14 @@ private func send(
 }
 
 /// A voice message goes to the bot whose chat was opened last; its reply arrives as a notification.
-/// Its island waits on the send, so a lost connection gives up sooner than a typed message would.
-func sendToLastBot(_ message: String) async throws {
-  _ = try await send(message, file: nil, to: nil, timeout: 15)
+/// The bot and session are read now, while unlocked. Its island waits on the send, so a lost
+/// connection gives up sooner than a typed message would.
+func lastBotSender() throws -> (String) async throws -> Void {
+  guard let target = target(nil) else { throw MessageBotError.noBot }
+  let session = try RakazoSession.load()
+  return { message in
+    _ = try await send(message, file: nil, to: target, with: session, timeout: 15)
+  }
 }
 
 /// The bot's text for the run, once it finishes or stops to wait for the user; nil if it is still

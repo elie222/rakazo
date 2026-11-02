@@ -48,6 +48,9 @@ final class VoiceMessageRecorder {
   private var text = ""
   private var timer: Task<Void, Never>?
   private var started = Date()
+  private var sendMessage: ((String) async throws -> Void)?
+  /// Messages still sending or showing their result; each keeps the microphone, and so the app, open.
+  private var finishing = 0
 
   private var staleCleanup: Task<Void, Never>?
 
@@ -72,6 +75,8 @@ final class VoiceMessageRecorder {
     guard ActivityAuthorizationInfo().areActivitiesEnabled else {
       throw VoiceMessageError.liveActivitiesOff
     }
+    // Read while unlocked: the recording can end after the iPhone locks again.
+    let sendMessage = try lastBotSender()
     let activity: Activity<VoiceMessageAttributes>
     do {
       activity = try Activity.request(
@@ -111,6 +116,7 @@ final class VoiceMessageRecorder {
 
     self.activity = activity
     self.request = request
+    self.sendMessage = sendMessage
     text = ""
     started = Date()
     SendVoiceMessageIntent.send = { [weak self] in await self?.finish() }
@@ -134,24 +140,30 @@ final class VoiceMessageRecorder {
       Task { [activity] in await activity?.update(content(.listening, heard)) }
       waitForPause(seconds: 2.5)
     }
-    if failed { Task { await finish(recognizerFailed: true) } }
+    if failed { Task { await finish(recognizerFailed: true, only: request) } }
   }
 
   /// Sends after a pause in speech, or after a minute at most.
   private func waitForPause(seconds: Double) {
     timer?.cancel()
     let limit = max(0, 60 - Date().timeIntervalSince(started))
+    let request = request
     timer = Task { [weak self] in
       try? await Task.sleep(nanoseconds: UInt64(min(seconds, limit) * 1_000_000_000))
       // finish() cancels this timer, so it runs in its own task to keep its waits from ending early.
-      if !Task.isCancelled { Task { await self?.finish() } }
+      if !Task.isCancelled { Task { await self?.finish(only: request) } }
     }
   }
 
-  func finish(recognizerFailed: Bool = false) async {
-    guard let request, let activity else { return }
+  /// `only` keeps a timer or recognizer callback from finishing a newer recording.
+  func finish(
+    recognizerFailed: Bool = false, only expected: SFSpeechAudioBufferRecognitionRequest? = nil
+  ) async {
+    guard let request, let activity, let sendMessage, expected == nil || expected === request
+    else { return }
     // The rest works on this message's own activity, so a press meanwhile can start the next one.
     stopListening(request)
+    finishing += 1
     // iOS suspends a background app as soon as it stops recording, so the microphone stays open,
     // its audio dropped, until the message is sent; end() releases it.
     let input = engine.inputNode
@@ -168,7 +180,7 @@ final class VoiceMessageRecorder {
     }
     await activity.update(content(.sending, message))
     do {
-      try await sendToLastBot(message)
+      try await sendMessage(message)
       // The reply arrives as the bot's usual notification, so the island ends here rather than
       // showing it twice.
       await activity.update(content(.thinking, message))
@@ -195,6 +207,7 @@ final class VoiceMessageRecorder {
   private func stopListening(_ request: SFSpeechAudioBufferRecognitionRequest) {
     self.request = nil
     activity = nil
+    sendMessage = nil
     timer?.cancel()
     request.endAudio()
     task?.cancel()
@@ -216,8 +229,9 @@ final class VoiceMessageRecorder {
       await activity.update(content(status, text))
       try? await Task.sleep(nanoseconds: 4_000_000_000)
     }
-    // A newer message may be listening on the microphone by now.
-    if !isRecording { releaseMicrophone() }
+    // A newer message may be listening on the microphone, or still sending, by now.
+    finishing -= 1
+    if !isRecording && finishing == 0 { releaseMicrophone() }
     await activity.end(
       content(status, text), dismissalPolicy: .after(Date().addingTimeInterval(seconds)))
   }
