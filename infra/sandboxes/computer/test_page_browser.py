@@ -302,12 +302,20 @@ class ActTest(unittest.TestCase):
 
     def test_a_step_agent_browser_declines_before_acting_is_settled_with_the_page(self):
         for message in ("Element '@e8' is covered by <div> at its click point, so the input would land there.",
-                        "Element '@e8' is disabled, so the click would not reach it",
                         'No option matched ["Spain"]. Available options: Choose, France'):
             with self.subTest(message=message):
                 result, _ = self.act([{"kind": "click", "ref": "e8"}], FakeAgentBrowser(fail={"click": message}))
                 self.assertEqual((result["ok"], result["uncertain"], result["completed"]), (False, False, 0))
                 self.assertEqual(result["error"], message)
+                self.assertNotIn("fallback", result)
+                self.assertIn("tree", result)
+
+    def test_a_click_on_a_disabled_control_is_settled_with_the_page(self):
+        for message in ("Element is disabled.", "Element '@e8' is disabled, so the click would not reach it"):
+            with self.subTest(message=message):
+                result, _ = self.act([{"kind": "click", "ref": "e8"}], FakeAgentBrowser(fail={"click": message}))
+                self.assertEqual((result["ok"], result["uncertain"], result["completed"]), (False, False, 0))
+                self.assertEqual(result["error"], helper.DISABLED)
                 self.assertNotIn("fallback", result)
                 self.assertIn("tree", result)
 
