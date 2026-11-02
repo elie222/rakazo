@@ -57,4 +57,14 @@ export const KO_MESSAGES: Record<string, string> = {
     "{name}이(가) 이제 Rakazo 플러그인 마켓플레이스에 등록되었습니다.",
   "We couldn't list {name} in the Rakazo plugin marketplace.":
     "{name}을(를) Rakazo 플러그인 마켓플레이스에 등록하지 못했습니다.",
+  "Confirm your Rakazo page claim": "Rakazo 페이지 소유권 요청을 확인하세요",
+  "Confirm claim": "요청 확인",
+  "We review every claim once it's confirmed and will email you when it's done.":
+    "확인된 모든 요청을 검토한 후 완료되면 이메일로 알려 드립니다.",
+  "This link expires in one day. If you did not claim a page, ignore this email.":
+    "이 링크는 하루 후에 만료됩니다. 페이지 소유권을 요청하지 않았다면 이 이메일을 무시하세요.",
+  "Your Rakazo page claim: {name}": "Rakazo 페이지 소유권 요청: {name}",
+  "Your changes to the {name} page are approved.": "{name} 페이지 변경 사항이 승인되었습니다.",
+  "We couldn't approve your changes to the {name} page.":
+    "{name} 페이지 변경 사항을 승인하지 못했습니다.",
 };

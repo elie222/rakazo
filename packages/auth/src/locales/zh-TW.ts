@@ -51,4 +51,13 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "{name} is now listed in the Rakazo plugin marketplace.": "{name} 現已在 Rakazo 外掛市集上架。",
   "We couldn't list {name} in the Rakazo plugin marketplace.":
     "我們無法將 {name} 上架到 Rakazo 外掛市集。",
+  "Confirm your Rakazo page claim": "確認你在 Rakazo 的頁面認領",
+  "Confirm claim": "確認認領",
+  "We review every claim once it's confirmed and will email you when it's done.":
+    "每項認領確認後我們都會審核，完成後會寄電子郵件通知你。",
+  "This link expires in one day. If you did not claim a page, ignore this email.":
+    "此連結將在一天後失效。如果你沒有認領頁面，請忽略這封電子郵件。",
+  "Your Rakazo page claim: {name}": "你在 Rakazo 的頁面認領：{name}",
+  "Your changes to the {name} page are approved.": "你對 {name} 頁面的修改已獲核准。",
+  "We couldn't approve your changes to the {name} page.": "我們無法核准你對 {name} 頁面的修改。",
 };

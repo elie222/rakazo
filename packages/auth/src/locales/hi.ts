@@ -55,4 +55,14 @@ export const HI_MESSAGES: Record<string, string> = {
     "{name} अब Rakazo प्लगइन मार्केटप्लेस में लिस्ट है।",
   "We couldn't list {name} in the Rakazo plugin marketplace.":
     "हम {name} को Rakazo प्लगइन मार्केटप्लेस में लिस्ट नहीं कर सके।",
+  "Confirm your Rakazo page claim": "Rakazo पर अपने पेज दावे की पुष्टि करें",
+  "Confirm claim": "दावे की पुष्टि करें",
+  "We review every claim once it's confirmed and will email you when it's done.":
+    "पुष्टि होने के बाद हम हर दावे की समीक्षा करते हैं और पूरा होने पर आपको ईमेल करेंगे।",
+  "This link expires in one day. If you did not claim a page, ignore this email.":
+    "यह लिंक एक दिन में समाप्त हो जाएगा। अगर आपने किसी पेज का दावा नहीं किया है, तो इस ईमेल को अनदेखा करें।",
+  "Your Rakazo page claim: {name}": "Rakazo पर आपका पेज दावा: {name}",
+  "Your changes to the {name} page are approved.": "{name} पेज में आपके बदलाव स्वीकृत हो गए हैं।",
+  "We couldn't approve your changes to the {name} page.":
+    "हम {name} पेज में आपके बदलावों को स्वीकृत नहीं कर सके।",
 };
