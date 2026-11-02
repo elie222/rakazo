@@ -98,6 +98,12 @@ async function main() {
   });
   if (values["cases-file"] && values.suite !== "tool-choice")
     throw new Error("--cases-file adds tool-choice cases; use --suite tool-choice");
+  if (values.suite === "approval")
+    return runApprovalSuite(values, {
+      codeRevision: codeRevision(),
+      workingDiffHash: workingDiffHash(),
+      readConnection,
+    });
   // One fixed model unless the caller picks one, so results do not depend on a local .env.
   if (!values.connection && !values.provider && !values.model) {
     values.provider = DEFAULT_EVAL_MODEL.provider;
@@ -105,12 +111,6 @@ async function main() {
     values["api-key-env"] ??= DEFAULT_EVAL_MODEL.apiKeyEnv;
     values.pricing ??= DEFAULT_EVAL_MODEL.pricing;
   }
-  if (values.suite === "approval")
-    return runApprovalSuite(values, {
-      codeRevision: codeRevision(),
-      workingDiffHash: workingDiffHash(),
-      readConnection,
-    });
   const suites: Record<
     string,
     {

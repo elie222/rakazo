@@ -209,7 +209,8 @@ List the cases without inference:
 pnpm test:evals --list
 ```
 
-By default every suite runs Claude Haiku 5.5 through OpenRouter, reading the key
+By default every suite except approval, which keeps its configured reviewer,
+runs Claude Haiku 5.5 through OpenRouter, reading the key
 from `OPENROUTER_API_KEY` and pricing from the committed fixture, so results do
 not depend on a local `PI_DEFAULT_MODEL`:
 
