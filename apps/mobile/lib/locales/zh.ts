@@ -1014,7 +1014,6 @@ export const ZH_MESSAGES: Record<string, string> = {
     "试用将结束，今天将从你的卡中扣款 {price}。",
   "Your trial ends and your card is charged today.": "试用将结束，今天将从你的卡中扣款。",
   "Start plan": "开始套餐",
-  Switch: "切换",
   "Switch to yearly": "切换为按年",
   "Switch to yearly?": "切换为按年付费？",
   "Your card is charged {price} today, less the unused part of this month.":

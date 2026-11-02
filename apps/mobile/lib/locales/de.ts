@@ -1002,7 +1002,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Your trial ends and your card is charged today.":
     "Dein Testzeitraum endet und deine Karte wird heute belastet.",
   "Start plan": "Plan starten",
-  Switch: "Wechseln",
   "Switch to yearly": "Zu jährlich wechseln",
   "Switch to yearly?": "Zu jährlich wechseln?",
   "Your card is charged {price} today, less the unused part of this month.":
