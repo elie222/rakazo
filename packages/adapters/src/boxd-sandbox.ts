@@ -35,7 +35,7 @@ import {
   VERIFY_LINUX_DESKTOP,
 } from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
-import { shellExportScript } from "./sandbox-shell-environment.js";
+import { shellExportScript, sourceEnvironmentCommand } from "./sandbox-shell-environment.js";
 import {
   shouldSkipPortableWorkspaceFile,
   workspaceSaveFindExpression,
@@ -811,15 +811,6 @@ function commandFailure(result: BoxdCommandResult): string {
   if (result.timedOut) return "timed out";
   const last = (result.stderr || result.stdout).trim().split("\n").at(-1)?.slice(0, 300);
   return last ? `exit ${result.exitCode}: ${last}` : `exit ${result.exitCode}`;
-}
-
-/**
- * Opens the env file, deletes it, then loads it from the open descriptor, so it is gone before
- * the requested env (which may change PATH) applies and before `argv` runs.
- */
-function sourceEnvironmentCommand(envFile: string, argv: string): string {
-  const file = shellQuote(envFile);
-  return `exec 3< ${file} || exit 1; rm -f -- ${file}; . /dev/fd/3 || exit 1; exec 3<&-; ${argv}`;
 }
 
 function boxdCwd(cwd: string | undefined): string {

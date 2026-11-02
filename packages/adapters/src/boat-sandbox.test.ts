@@ -267,7 +267,7 @@ describe("BoatSandboxProvider", () => {
     // The same command opens, deletes, and loads the file before running argv.
     const run = parse(commands.find((text) => text.includes(envFile)) ?? "").at(-1);
     expect(run).toBe(
-      `exec 3< '${envFile}' || exit 1; rm -f -- '${envFile}'; . /dev/fd/3 || exit 1; exec 3<&-; ${screenDisplayArgv(["printenv", "FAKE_TOKEN"], context.botId, 20).map(shellQuote).join(" ")}`,
+      `exec 3< '${envFile}' || exit 1; rm -f -- '${envFile}'; eval "$(cat <&3 || echo exit 1)" || exit 1; exec 3<&-; ${screenDisplayArgv(["printenv", "FAKE_TOKEN"], context.botId, 20).map(shellQuote).join(" ")}`,
     );
     expect(api.files(computer.id).has(envFile)).toBe(false);
   });

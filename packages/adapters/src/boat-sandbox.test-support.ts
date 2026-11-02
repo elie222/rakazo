@@ -645,9 +645,9 @@ export class FakeBoatApi implements BoatSandboxSdk {
     const desktop = this.desktop(command);
     if (desktop) return finished(desktop);
 
-    // `exec 3< FILE || exit 1; rm -f -- FILE; . /dev/fd/3 || exit 1; exec 3<&-; argv`
+    // `exec 3< FILE || exit 1; rm -f -- FILE; eval "$(cat <&3 || echo exit 1)" || exit 1; exec 3<&-; argv`
     const sourced = command.match(
-      /^exec 3< ('[^']*') \|\| exit 1; rm -f -- \1; \. \/dev\/fd\/3 \|\| exit 1; exec 3<&-; ([\s\S]*)$/,
+      /^exec 3< ('[^']*') \|\| exit 1; rm -f -- \1; eval "\$\(cat <&3 \|\| echo exit 1\)" \|\| exit 1; exec 3<&-; ([\s\S]*)$/,
     );
     if (sourced) {
       const envFile = String(parse(sourced[1]!)[0]);

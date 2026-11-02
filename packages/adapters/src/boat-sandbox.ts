@@ -57,7 +57,7 @@ import {
 import { installAgentBrowserCommand, installPageBrowserCommand } from "./page-browser-install.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
-import { shellExportScript } from "./sandbox-shell-environment.js";
+import { shellExportScript, sourceEnvironmentCommand } from "./sandbox-shell-environment.js";
 import { withAbort } from "./web-ssrf.js";
 import { readWorkspaceArchive } from "./workspace-archive.js";
 import {
@@ -1721,16 +1721,6 @@ export const BOAT_COMPUTER_SNAPSHOT = boatComputerSnapshotName(BOAT_COMPUTER_SET
 function commandEnvDirectoryCommand(): string {
   const directory = shellQuote(BOAT_COMMAND_ENV);
   return `mkdir -p -m 700 ${directory} && chmod 700 ${directory}`;
-}
-
-/**
- * Opens the env file, deletes it, then loads it from the open descriptor, so it is gone before
- * the requested env (which may change PATH) applies and before `argv` runs. No shell variables:
- * the requested env may set any name.
- */
-function sourceEnvironmentCommand(envFile: string, argv: string): string {
-  const file = shellQuote(envFile);
-  return `exec 3< ${file} || exit 1; rm -f -- ${file}; . /dev/fd/3 || exit 1; exec 3<&-; ${argv}`;
 }
 
 /**
