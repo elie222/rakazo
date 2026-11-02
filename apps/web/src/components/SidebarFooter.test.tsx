@@ -69,7 +69,7 @@ async function render(
     ),
   );
 }
-it("shows the selected account, each unread count and deliberate all-account sign-out", async () => {
+it("lists the other saved accounts with their unread counts and deliberate all-account sign-out", async () => {
   const switchAccount = vi.fn();
   const all = vi.fn();
   const shared = { sessionId: "session", name: "Account", image: null, notifications: [] };
@@ -83,11 +83,11 @@ it("shows the selected account, each unread count and deliberate all-account sig
     onLogOutAll: all,
     onAddAccount: vi.fn(),
   });
-  const selected = document.querySelector<HTMLButtonElement>('button[aria-pressed="true"]')!;
-  expect(selected.disabled).toBe(true);
-  expect(selected.textContent).toBe("family@example.test2");
-  const work = document.querySelector<HTMLButtonElement>('button[aria-pressed="false"]')!;
-  expect(work.textContent).toBe("work@example.test4");
+  const rows = [...document.querySelectorAll("button")].filter((button) =>
+    button.textContent?.includes("@example.test"),
+  );
+  expect(rows.map((row) => row.textContent)).toEqual(["AAccountwork@example.test4"]);
+  const work = rows[0]!;
   await act(async () => work.click());
   expect(switchAccount).toHaveBeenCalledWith("work");
   const logOutAll = [...document.querySelectorAll("button")].find(

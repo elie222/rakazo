@@ -66,7 +66,7 @@ export class PrismaPushTokenStore implements PushTokenStore {
   }
 
   /** The icon counts all valid accounts on this device, rather than the last sender. */
-  async badgeForToken(token: string): Promise<number> {
+  async deviceForToken(token: string): Promise<{ badge: number; accounts: number }> {
     return runAsSystem("count unread chats for a notification device", async () => {
       const tokenDigest = credentialDigest(token);
       const rows = [
@@ -79,7 +79,7 @@ export class PrismaPushTokenStore implements PushTokenStore {
           select: { userId: true, sessionId: true },
         })),
       ];
-      if (!rows.length) return 0;
+      if (!rows.length) return { badge: 0, accounts: 0 };
       const sessions = await this.prisma.session.findMany({
         where: {
           expiresAt: { gt: new Date() },
@@ -87,22 +87,11 @@ export class PrismaPushTokenStore implements PushTokenStore {
         },
         select: { userId: true },
       });
-      const memberships = await this.prisma.spaceMember.findMany({
-        where: { userId: { in: [...new Set(sessions.map((session) => session.userId))] } },
-        select: { userId: true, spaceId: true, organizationId: true },
-      });
-      const organizations = new Map(
-        memberships.map((membership) => [
-          `${membership.userId}:${membership.organizationId}`,
-          membership,
-        ]),
-      );
+      const users = [...new Set(sessions.map((session) => session.userId))];
       const counts = await Promise.all(
-        [...organizations.values()].map(({ userId, spaceId }) =>
-          countUnreadInboxChats(this.prisma, { userId, spaceId }),
-        ),
+        users.map((userId) => countUnreadInboxChats(this.prisma, { userId })),
       );
-      return counts.reduce((sum, count) => sum + count, 0);
+      return { badge: counts.reduce((sum, count) => sum + count, 0), accounts: users.length };
     });
   }
 

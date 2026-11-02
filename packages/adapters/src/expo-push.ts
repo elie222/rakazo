@@ -36,7 +36,6 @@ export function expoPushData(
   spaceId: string,
   deliveryId: string,
   userId?: string,
-  accountLabel?: string,
   apiBase?: string,
 ) {
   return {
@@ -45,7 +44,6 @@ export function expoPushData(
     threadId: message.threadId,
     deliveryId,
     ...(userId ? { userId } : {}),
-    ...(accountLabel ? { accountLabel } : {}),
     ...(apiBase ? { apiBase } : {}),
     ...(spaceId ? { spaceId } : {}),
     ...(message.groupId ? { groupId: message.groupId } : {}),
@@ -138,7 +136,8 @@ export type ExpoPushOptions = {
   accessToken?: string;
   retryDelaysMs?: readonly number[];
   accountLabel?: (userId: string) => Promise<string>;
-  badgeForToken?: (token: string) => Promise<number>;
+  /** Unread chats and live logins across every account registered on the device. */
+  deviceForToken?: (token: string) => Promise<{ badge: number; accounts: number }>;
   /** Canonical public server origin; prevents opening an old server's push on another server. */
   apiBase?: string;
 };
@@ -184,22 +183,23 @@ export class ExpoPushProvider implements NotificationProvider {
   async deliver(message: NotificationMessage, context: AdapterContext): Promise<ExpoPushDelivery> {
     const tokens = await this.deliverableTokens(context.userId);
     if (!tokens.length) return "undeliverable";
-    const label = await this.options.accountLabel?.(context.userId);
     // APNs collapse identifiers have a 64-byte limit; include server and account ownership.
     const tag = createHash("sha256")
       .update(JSON.stringify([this.options.apiBase ?? "", context.userId, message.threadId]))
       .digest("hex");
     const results = await Promise.allSettled(
       tokens.map(async (token) => {
-        const badge = this.options.badgeForToken
-          ? await this.options.badgeForToken(token).catch(() => undefined)
-          : message.badge;
+        const device = await this.options.deviceForToken?.(token).catch(() => undefined);
+        const badge = this.options.deviceForToken ? device?.badge : message.badge;
+        // Only a device with several logins needs to say which account a push belongs to.
+        const label =
+          device && device.accounts > 1
+            ? await this.options.accountLabel?.(context.userId)
+            : undefined;
         const payload = {
           to: token,
-          title: capped(
-            label ? `${label} · ${message.title}` : message.title,
-            MAX_PUSH_TITLE_CHARS,
-          ),
+          title: capped(message.title, MAX_PUSH_TITLE_CHARS),
+          ...(label ? { subtitle: capped(label, MAX_PUSH_TITLE_CHARS) } : {}),
           body: capped(message.body, MAX_PUSH_BODY_CHARS),
           collapseId: tag,
           tag,
@@ -209,7 +209,6 @@ export class ExpoPushProvider implements NotificationProvider {
             context.spaceId,
             randomUUID(),
             context.userId,
-            label,
             this.options.apiBase,
           ),
         };

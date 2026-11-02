@@ -34,6 +34,7 @@ it("delivers two saved accounts to one device with distinct account targets", as
   const provider = new ExpoPushProvider(tokens, {
     sessionExpiresAt: async () => new Date(Date.now() + 60_000),
     accountLabel: async (id) => `${id}@example.test`,
+    deviceForToken: async () => ({ badge: 0, accounts: 2 }),
     apiBase: "https://api.example.test",
   });
   await provider.deliver(message, context("family"));
@@ -41,12 +42,9 @@ it("delivers two saved accounts to one device with distinct account targets", as
   expect(payloads).toHaveLength(2);
   expect(payloads[0]).toMatchObject({
     to: "ExponentPushToken[shared]",
-    title: "family@example.test · Finished",
-    data: {
-      userId: "family",
-      accountLabel: "family@example.test",
-      apiBase: "https://api.example.test",
-    },
+    title: "Finished",
+    subtitle: "family@example.test",
+    data: { userId: "family", apiBase: "https://api.example.test" },
   });
   expect(payloads[1]).toMatchObject({
     to: "ExponentPushToken[shared]",
@@ -99,6 +97,7 @@ it.each(["label", "badge"])(
       sessionExpiresAt: async () => new Date(Date.now() + 60_000),
       ...(lookup === "label"
         ? {
+            deviceForToken: async () => ({ badge: 0, accounts: 2 }),
             accountLabel: async () => {
               entered();
               await waiting;
@@ -106,10 +105,10 @@ it.each(["label", "badge"])(
             },
           }
         : {
-            badgeForToken: async () => {
+            deviceForToken: async () => {
               entered();
               await waiting;
-              return 0;
+              return { badge: 0, accounts: 1 };
             },
           }),
     });

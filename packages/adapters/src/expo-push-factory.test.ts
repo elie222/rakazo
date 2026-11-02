@@ -31,8 +31,8 @@ async function fixture() {
   const sessions = new Map<string, Date>();
   const store = new MemoryPushTokenStore();
   const tokens = Object.assign(store, {
-    badgeForToken: vi.fn(async (token: string): Promise<number> => {
-      const counts = await Promise.all(
+    deviceForToken: vi.fn(async (token: string) => {
+      const live = await Promise.all(
         [...unread].map(async ([userId, count]) =>
           (await store.list(userId)).some(
             (row) =>
@@ -40,11 +40,14 @@ async function fixture() {
               row.sessionId &&
               (sessions.get(row.sessionId)?.getTime() ?? 0) > Date.now(),
           )
-            ? count
-            : 0,
+            ? [count]
+            : [],
         ),
       );
-      return counts.reduce((sum, count) => sum + count, 0);
+      return {
+        badge: live.flat().reduce((sum, count) => sum + count, 0),
+        accounts: live.flat().length,
+      };
     }),
   });
   for (const userId of unread.keys()) {
@@ -79,7 +82,7 @@ it.each([
   [{ authUrl: " ", webOrigin: "https://web.example.test" }, "https://web.example.test"],
   [{}, "http://127.0.0.1:5173"],
 ])(
-  "composes API and worker pushes with account labels, canonical server and shared-device badges (%j)",
+  "composes API and worker pushes with account subtitles, canonical server and shared-device badges (%j)",
   async (options, origin) => {
     const { prisma, tokens } = await fixture();
     const payloads: Array<Record<string, unknown>> = [];
@@ -104,19 +107,22 @@ it.each([
     expect(payloads).toMatchObject([
       {
         to: sharedToken,
-        title: "family@example.test · Finished",
+        title: "Finished",
+        subtitle: "family@example.test",
         badge: 5,
-        data: { userId: "family", accountLabel: "family@example.test", apiBase: origin },
+        data: { userId: "family", apiBase: origin },
       },
       {
         to: sharedToken,
-        title: "work@example.test · Finished",
+        title: "Finished",
+        subtitle: "work@example.test",
         badge: 5,
-        data: { userId: "work", accountLabel: "work@example.test", apiBase: origin },
+        data: { userId: "work", apiBase: origin },
       },
     ]);
-    expect(tokens.badgeForToken).toHaveBeenNthCalledWith(1, sharedToken);
-    expect(tokens.badgeForToken).toHaveBeenNthCalledWith(2, sharedToken);
+    expect(payloads[0]?.data).not.toHaveProperty("accountLabel");
+    expect(tokens.deviceForToken).toHaveBeenNthCalledWith(1, sharedToken);
+    expect(tokens.deviceForToken).toHaveBeenNthCalledWith(2, sharedToken);
     expect(jobs.enqueue).toHaveBeenCalledTimes(2);
     expect(jobs.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -131,7 +137,7 @@ it.each([
   },
 );
 
-it("excludes a revoked account from delivery and the next shared-device badge", async () => {
+it("names the account only while the device holds several live logins", async () => {
   const { prisma, tokens, sessions } = await fixture();
   const payloads: Array<Record<string, unknown>> = [];
   vi.stubGlobal(
@@ -148,12 +154,9 @@ it("excludes a revoked account from delivery and the next shared-device badge", 
   expect(await provider.deliver(message, context("family"))).toBe("undeliverable");
   expect(await provider.deliver(message, context("work"))).toBe("delivered");
   expect(payloads).toMatchObject([
-    {
-      title: "work@example.test · Finished",
-      badge: 3,
-      data: { userId: "work", apiBase: "https://api.example.test" },
-    },
+    { title: "Finished", badge: 3, data: { userId: "work", apiBase: "https://api.example.test" } },
   ]);
+  expect(payloads[0]).not.toHaveProperty("subtitle");
 });
 
 it.each(["file:///tmp/server", "rakazo://thread"])(

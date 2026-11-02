@@ -218,9 +218,9 @@ suite("database push registrations", () => {
       await api.save(user("a"), token("shared"), session("a"));
       await api.save(user("b"), token("shared"), session("b"));
       await api.save(user("c"), token("other-device"), session("c"));
-      expect(await worker.badgeForToken(token("shared"))).toBe(2);
+      expect(await worker.deviceForToken(token("shared"))).toEqual({ badge: 2, accounts: 2 });
       await api.endSession(user("b"), session("b"));
-      expect(await worker.badgeForToken(token("shared"))).toBe(1);
+      expect(await worker.deviceForToken(token("shared"))).toEqual({ badge: 1, accounts: 1 });
     } finally {
       await runAsSystem("remove unread device badge fixtures", () =>
         a.prisma.organization.deleteMany({ where: { id: { in: organizations } } }),

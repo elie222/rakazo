@@ -42,9 +42,39 @@ async function runNotice(
   });
   if (!source) return { enabled: false, groupId: null };
   return {
-    enabled: routine ? routine.notify : Boolean(source.thread.groupId || source.bot.notifyOnFinish),
+    enabled: noticeEnabled(routine, source.thread.groupId, source.bot.notifyOnFinish),
     groupId: source.thread.groupId,
   };
+}
+
+function noticeEnabled(
+  routine: { notify: boolean } | null,
+  groupId: string | null,
+  notifyOnFinish: boolean,
+): boolean {
+  return routine ? routine.notify : Boolean(groupId || notifyOnFinish);
+}
+
+/** The push rule, for surfaces that rebuild notifications from stored run events. */
+export function runEventNotifies(input: {
+  kind: NotificationMessage["kind"];
+  trigger: string | null;
+  routine: { notify: boolean } | null;
+  groupId: string | null;
+  notifyOnFinish: boolean;
+}): boolean {
+  if (
+    input.trigger &&
+    isBackgroundRunTrigger(input.trigger) &&
+    input.kind !== "help" &&
+    input.kind !== "takeover"
+  )
+    return false;
+  return noticeEnabled(
+    input.kind === "failure" ? input.routine : null,
+    input.groupId,
+    input.notifyOnFinish,
+  );
 }
 
 export async function notifyRun(

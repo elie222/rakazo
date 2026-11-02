@@ -1,8 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { NavLink, SavedAccountSummary } from "@rakazo/contracts";
 import { ANDROID_APK_URL, IOS_APP_STORE_URL } from "@rakazo/contracts";
+import { accountDisplay } from "@rakazo/core";
 import {
   AppMarkStack,
+  Badge,
   Button,
   buttonVariants,
   Popover,
@@ -11,7 +13,6 @@ import {
 } from "@rakazo/ui-web";
 import {
   BookOpen,
-  Check,
   Download,
   FolderOpen,
   Gauge,
@@ -23,9 +24,9 @@ import {
   Smartphone,
   SquareKanban,
   UserPlus,
-  UserRound,
 } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
+import { AccountAvatar } from "./AccountAvatar";
 import { useSidebarUpdate } from "./DesktopUpdates";
 import { IconTooltip } from "./IconTooltip";
 
@@ -91,7 +92,7 @@ export function SidebarFooter({
 }: Props) {
   const { t } = useLingui();
   const update = useSidebarUpdate();
-  const [failedImage, setFailedImage] = useState<string | null>(null);
+  const otherAccounts = accounts.filter((account) => account.userId !== activeUserId);
   const pillRef = useRef<HTMLButtonElement>(null);
   const labelRef = useRef<HTMLSpanElement>(null);
   const [markCount, setMarkCount] = useState(3);
@@ -124,20 +125,9 @@ export function SidebarFooter({
         <PopoverTrigger
           data-testid="user-menu-trigger"
           aria-label={t`Account menu for ${name}`}
-          className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full border border-border bg-sidebar-accent text-sm font-medium text-foreground outline-none hover:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring"
+          className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full border border-border bg-sidebar-accent text-sm outline-none hover:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring"
         >
-          {image && failedImage !== image ? (
-            <img
-              src={image}
-              alt=""
-              className="size-full object-cover"
-              onError={() => setFailedImage(image)}
-            />
-          ) : initials ? (
-            initials
-          ) : (
-            <UserRound size={18} aria-hidden="true" />
-          )}
+          <AccountAvatar image={image} initials={initials} className="size-full border-0" />
         </PopoverTrigger>
         {open ? (
           <PopoverContent
@@ -146,37 +136,43 @@ export function SidebarFooter({
             align="start"
             className="max-h-(--available-height) w-[295px] max-w-[calc(100vw-69px)] gap-0 overflow-y-auto p-1 *:shrink-0 data-closed:animate-none"
           >
-            <div
-              data-testid="account-menu-header"
-              className="mb-1 min-w-0 border-b border-border px-2.5 py-2.5"
-            >
+            <div data-testid="account-menu-header" className="min-w-0 px-2.5 py-2">
               <p className="truncate text-sm font-medium">{name}</p>
               {email && email !== name ? (
                 <p className="truncate text-xs text-muted-foreground">{email}</p>
               ) : null}
             </div>
-            {accounts.length > 1
-              ? accounts.map((account) => (
-                  <Button
-                    key={account.userId}
-                    variant="ghost"
-                    className="h-auto min-h-9 w-full justify-start gap-2.5 py-2 font-normal"
-                    aria-pressed={account.userId === activeUserId}
-                    disabled={signingOut || account.userId === activeUserId}
-                    onClick={() => onSwitchAccount?.(account.userId)}
-                  >
-                    <span className="grid size-4 shrink-0 place-items-center">
-                      {account.userId === activeUserId ? (
-                        <Check aria-hidden="true" size={16} />
-                      ) : null}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-start">{account.email}</span>
-                    {account.unread > 0 ? (
-                      <span className="text-xs tabular-nums">{account.unread}</span>
+            {otherAccounts.map((account) => {
+              const display = accountDisplay(account, account.email);
+              return (
+                <Button
+                  key={account.userId}
+                  variant="ghost"
+                  className="h-auto w-full justify-start gap-2.5 py-1.5 font-normal"
+                  disabled={signingOut}
+                  onClick={() => onSwitchAccount?.(account.userId)}
+                >
+                  <AccountAvatar
+                    image={display.image}
+                    initials={display.initial}
+                    className="size-6 text-[11px]"
+                  />
+                  <span className="min-w-0 flex-1 text-start">
+                    <span className="block truncate">{display.label}</span>
+                    {display.label !== account.email ? (
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {account.email}
+                      </span>
                     ) : null}
-                  </Button>
-                ))
-              : null}
+                  </span>
+                  {account.unread > 0 ? (
+                    <Badge variant="secondary" className="tabular-nums">
+                      {account.unread}
+                    </Badge>
+                  ) : null}
+                </Button>
+              );
+            })}
             {onAddAccount ? (
               <Button
                 variant="ghost"
@@ -188,6 +184,7 @@ export function SidebarFooter({
                 <Trans>Add account</Trans>
               </Button>
             ) : null}
+            <div className="my-1 border-t border-border" />
             {mini ? (
               <Button
                 variant="ghost"
@@ -291,7 +288,7 @@ export function SidebarFooter({
               <LogOut className="text-muted-foreground" strokeWidth={1.75} />
               <Trans>Log out</Trans>
             </Button>
-            {accounts.length > 1 && onLogOutAll ? (
+            {otherAccounts.length && onLogOutAll ? (
               <Button
                 variant="ghost"
                 className="h-9 w-full justify-start gap-2.5 font-normal"

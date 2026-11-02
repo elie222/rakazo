@@ -149,8 +149,8 @@ export function useAccountNotifications(userId: string | null): void {
             continue;
           const displayed = account.userId === accountIdentity();
           if (displayed && document.visibilityState === "visible" && document.hasFocus()) continue;
-          const alert = new Notification(`${notification.title} · ${account.email}`, {
-            body: notification.body,
+          const alert = new Notification(notification.title, {
+            body: displayed ? notification.body : `${notification.body}\n${account.email}`,
             tag: `${account.userId}:${notification.threadId}`,
           });
           openNotifications.add(alert);

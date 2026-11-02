@@ -1,14 +1,16 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import {
+  accountDisplay,
   credentialIssue,
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
   signupRequiresEmailVerification,
   suggestEmailCorrection,
 } from "@rakazo/core";
-import { Button, Input, InputOTP, InputOTPGroup, InputOTPSlot, Label } from "@rakazo/ui-web";
+import { Badge, Button, Input, InputOTP, InputOTPGroup, InputOTPSlot, Label } from "@rakazo/ui-web";
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { AccountAvatar } from "../components/AccountAvatar";
 import { PasskeySignIn } from "../components/PasskeySignIn";
 import { switchSavedAccount, useSavedAccounts } from "../lib/account-sessions";
 import { authClient } from "../lib/auth";
@@ -243,20 +245,37 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
       ) : (
         <>
           {mode === "in" && !codeStep
-            ? saved.accounts.map((account) => (
-                <Button
-                  key={account.userId}
-                  type="button"
-                  variant="outline"
-                  className="mb-3 h-12 w-full justify-between gap-3"
-                  onClick={() => void switchSavedAccount(account.userId)}
-                >
-                  <span className="truncate">{account.email}</span>
-                  {account.unread > 0 ? (
-                    <span className="tabular-nums">{account.unread}</span>
-                  ) : null}
-                </Button>
-              ))
+            ? saved.accounts.map((account) => {
+                const display = accountDisplay(account, account.email);
+                return (
+                  <Button
+                    key={account.userId}
+                    type="button"
+                    variant="outline"
+                    className="mb-3 h-14 w-full justify-start gap-3 rounded-xl px-3 font-normal"
+                    onClick={() => void switchSavedAccount(account.userId)}
+                  >
+                    <AccountAvatar
+                      image={display.image}
+                      initials={display.initial}
+                      className="size-8 text-sm"
+                    />
+                    <span className="min-w-0 flex-1 text-start">
+                      <span className="block truncate">{display.label}</span>
+                      {display.label !== account.email ? (
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {account.email}
+                        </span>
+                      ) : null}
+                    </span>
+                    {account.unread > 0 ? (
+                      <Badge variant="secondary" className="tabular-nums">
+                        {account.unread}
+                      </Badge>
+                    ) : null}
+                  </Button>
+                );
+              })
             : null}
           {capabilityError ? (
             <div role="alert" className="w-full text-center">

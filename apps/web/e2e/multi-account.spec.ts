@@ -12,14 +12,19 @@ test("saved accounts switch, receive hidden-account notifications, and sign out 
   const workEmail = `work+${stamp}@example.test`;
   const password = "password12";
   await page.addInitScript(() => {
-    const notifications: Array<{ title: string; onclick?: () => void }> = [];
+    const notifications: Array<{ title: string; body?: string; onclick?: () => void }> = [];
     Object.assign(window, { accountNotifications: notifications });
     class NotificationFixture {
       static permission = "granted";
       static requestPermission = async () => "granted";
       onclick?: () => void;
       onclose?: () => void;
-      constructor(public title: string) {
+      body?: string;
+      constructor(
+        public title: string,
+        options?: { body?: string },
+      ) {
+        this.body = options?.body;
         notifications.push(this);
       }
       close() {
@@ -53,9 +58,13 @@ test("saved accounts switch, receive hidden-account notifications, and sign out 
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/app/${workBot}$`));
     await page.getByTestId("user-menu-trigger").click();
-    const familyRow = page.getByRole("button", { name: familyEmail, exact: true });
-    const workRow = page.getByRole("button", { name: workEmail, exact: true });
-    await expect(workRow).toHaveAttribute("aria-pressed", "true");
+    const escaped = (email: string) => new RegExp(email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const familyRow = page.getByRole("button", { name: escaped(familyEmail) });
+    const workRow = page.getByRole("button", { name: escaped(workEmail) });
+    const header = page.getByTestId("account-menu-header");
+    await expect(header).toContainText(workEmail);
+    await expect(familyRow).toBeVisible();
+    await expect(workRow).toHaveCount(0);
     await captureScreenshot(page, testInfo, "multi-account-switcher");
     await page.setViewportSize({ width: 390, height: 844 });
     await page.keyboard.press("Escape");
@@ -64,7 +73,7 @@ test("saved accounts switch, receive hidden-account notifications, and sign out 
     if (await navigation.isVisible()) await navigation.click();
     await expect(sidebar).toBeInViewport();
     await sidebar.click();
-    await expect(page.getByRole("button", { name: workEmail, exact: true })).toBeVisible();
+    await expect(header).toContainText(workEmail);
     await expect(page.locator("body")).toHaveJSProperty("scrollWidth", 390);
     await captureScreenshot(page, testInfo, "multi-account-switcher-phone");
     await page.setViewportSize({ width: 1280, height: 900 });
@@ -91,25 +100,21 @@ test("saved accounts switch, receive hidden-account notifications, and sign out 
       })
       .toBeGreaterThan(0);
     await page.getByTestId("user-menu-trigger").click();
-    await expect(
-      page.getByRole("button", {
-        name: new RegExp(workEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
-      }),
-    ).toHaveAccessibleName(`${workEmail} 1`);
+    await expect(workRow).toContainText(/1$/);
     await captureScreenshot(page, testInfo, "multi-account-unread");
     await expect
       .poll(() =>
         page.evaluate((email) => {
-          const state = window as unknown as { accountNotifications: Array<{ title: string }> };
-          return state.accountNotifications.some((item) => item.title.includes(email));
+          const state = window as unknown as { accountNotifications: Array<{ body?: string }> };
+          return state.accountNotifications.some((item) => item.body?.includes(email));
         }, workEmail),
       )
       .toBe(true);
     await page.evaluate((email) => {
       const state = window as unknown as {
-        accountNotifications: Array<{ title: string; onclick?: () => void }>;
+        accountNotifications: Array<{ body?: string; onclick?: () => void }>;
       };
-      state.accountNotifications.findLast((item) => item.title.includes(email))?.onclick?.();
+      state.accountNotifications.findLast((item) => item.body?.includes(email))?.onclick?.();
     }, workEmail);
     await expect(page).toHaveURL(new RegExp(`/app/${workBot}$`));
     await expect(otherTab.getByTestId("user-menu-trigger")).toHaveAttribute(

@@ -1,9 +1,18 @@
+import {
+  completionNotificationBody,
+  completionNotificationPreview,
+  runEventNotifies,
+} from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
-import type { AccountNotification, AccountSessions, SavedAccountSummary } from "@rakazo/contracts";
+import type {
+  AccountNotification,
+  AccountSessions,
+  MessageBlock,
+  SavedAccountSummary,
+} from "@rakazo/contracts";
 import { GROUP_MEMBER_MIN } from "@rakazo/contracts";
-import { isBackgroundRunTrigger, truncatedPlainText } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { Prisma, runAsSystem } from "@rakazo/db";
+import { countUnreadInboxChats, runAsSystem } from "@rakazo/db";
 import type { Hono } from "hono";
 import { requestClientIp, withClientIp } from "./client-ip.js";
 import { readBoundedBody } from "./http-body.js";
@@ -24,21 +33,13 @@ export function mountAccountIdentityGuard(
 /** Reads only owned inbox chats in Spaces where this account still has membership. */
 async function accountActivity(prisma: PrismaClient, userId: string) {
   return runAsSystem("read saved account notification summaries", async () => {
-    const [count] = await prisma.$queryRaw<Array<{ count: number }>>(Prisma.sql`
-      SELECT count(*)::int AS count FROM threads t
-      WHERE t."userId" = ${userId} AND t.unread AND t."externalConversationId" IS NULL
-        AND EXISTS (SELECT 1 FROM space_members m WHERE m."spaceId" = t."spaceId" AND m."userId" = ${userId})
-        AND (
-          EXISTS (SELECT 1 FROM bots b WHERE b.id = t."botId" AND b."spaceId" = t."spaceId" AND b."userId" = ${userId} AND b."archivedAt" IS NULL)
-          OR EXISTS (SELECT 1 FROM chat_groups g WHERE g.id = t."groupId" AND g."spaceId" = t."spaceId" AND g."userId" = ${userId} AND g."archivedAt" IS NULL
-            AND (SELECT count(*) FROM chat_group_members gm JOIN bots b ON b.id = gm."botId" WHERE gm."groupId" = g.id AND b."archivedAt" IS NULL) >= ${GROUP_MEMBER_MIN})
-        )`);
+    const unread = await countUnreadInboxChats(prisma, { userId });
     const memberships = await prisma.spaceMember.findMany({
       where: { userId },
       select: { spaceId: true },
     });
     const spaceIds = memberships.map((member) => member.spaceId);
-    if (!spaceIds.length) return { unread: count?.count ?? 0, notifications: [] };
+    if (!spaceIds.length) return { unread, notifications: [] };
     const notifications: AccountNotification[] = [];
     const since = new Date(Date.now() - 24 * 60 * 60_000);
     let before: { createdAt: Date; id: string } | undefined;
@@ -115,21 +116,20 @@ async function accountActivity(prisma: PrismaClient, userId: string) {
             : event.type === "run.waiting_input"
               ? "help"
               : "takeover";
-        if (run && isBackgroundRunTrigger(run.trigger) && kind !== "help" && kind !== "takeover")
+        if (
+          !runEventNotifies({
+            kind,
+            trigger: run?.trigger ?? null,
+            routine: run?.routine ?? null,
+            groupId: group?.id ?? null,
+            notifyOnFinish: bot?.notifyOnFinish ?? false,
+          })
+        )
           continue;
-        const enabled =
-          kind === "failure" && run?.routine
-            ? run.routine.notify
-            : Boolean(group || bot?.notifyOnFinish);
-        if (!enabled) continue;
-        const blocks = Array.isArray(payload.blocks) ? payload.blocks : [];
-        const text = blocks
-          .flatMap((block) =>
-            block && typeof block === "object" && "text" in block && typeof block.text === "string"
-              ? [block.text]
-              : [],
-          )
-          .join("\n");
+        const text = completionNotificationBody(
+          "",
+          Array.isArray(payload.blocks) ? (payload.blocks as MessageBlock[]) : [],
+        );
         const name = group?.name ?? bot?.name ?? "Bot";
         const attention =
           typeof payload.error === "string"
@@ -145,7 +145,7 @@ async function accountActivity(prisma: PrismaClient, userId: string) {
           id: event.id,
           kind,
           title: group?.name ?? bot?.name ?? "",
-          body: truncatedPlainText(message ? text : text || attention, 180),
+          body: completionNotificationPreview(message ? text : text || attention),
           botId: event.botId,
           threadId: event.threadId,
           spaceId: event.spaceId,
@@ -157,7 +157,7 @@ async function accountActivity(prisma: PrismaClient, userId: string) {
       const last = events.at(-1)!;
       before = { createdAt: last.createdAt, id: last.id };
     }
-    return { unread: count?.count ?? 0, notifications };
+    return { unread, notifications };
   });
 }
 

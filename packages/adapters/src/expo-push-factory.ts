@@ -7,7 +7,7 @@ import type { PrismaPushTokenStore, PushTokenStore } from "./push-token-store.js
 /** API and worker deliveries must carry the same account, server and device badge. */
 export function createExpoPushProvider(
   prisma: Pick<PrismaClient, "user" | "session">,
-  tokens: PushTokenStore & Pick<PrismaPushTokenStore, "badgeForToken">,
+  tokens: PushTokenStore & Pick<PrismaPushTokenStore, "deviceForToken">,
   options: Pick<ExpoPushOptions, "jobs" | "accessToken"> & {
     authUrl?: string;
     webOrigin?: string;
@@ -28,7 +28,7 @@ export function createExpoPushProvider(
           (await prisma.user.findUnique({ where: { id: userId }, select: { email: true } }))
             ?.email ?? userId,
       ),
-    badgeForToken: (token) => tokens.badgeForToken(token),
+    deviceForToken: (token) => tokens.deviceForToken(token),
     jobs: options.jobs,
     accessToken: options.accessToken,
   });
