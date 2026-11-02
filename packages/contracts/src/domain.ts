@@ -1997,6 +1997,32 @@ export const BillingStatusSchema = z.object({
 });
 export type BillingStatus = z.infer<typeof BillingStatusSchema>;
 
+/** The percent a yearly own-key price saves over twelve months at `monthlyCents`. */
+export function byokYearlySavingsPercent(monthlyCents: number, annualCents: number): number {
+  return Math.round((1 - annualCents / (monthlyCents * 12)) * 100);
+}
+
+/**
+ * What switching a paid monthly own-key plan to yearly saves, in percent, or null when the switch
+ * is not offered: not the owner, no live monthly plan, or a yearly price that saves nothing.
+ */
+export function byokYearlySwitchSavings(status: BillingStatus): number | null {
+  if (
+    !status.canManage ||
+    status.funding !== "byok" ||
+    status.byokInterval === "year" ||
+    status.byokFreeUntil ||
+    status.monthlyAmountCents ||
+    status.cancelAtPeriodEnd ||
+    (status.state !== "active" && status.state !== "trialing") ||
+    !status.byokPriceCents ||
+    !status.byokAnnualPriceCents
+  )
+    return null;
+  const savings = byokYearlySavingsPercent(status.byokPriceCents, status.byokAnnualPriceCents);
+  return savings > 0 ? savings : null;
+}
+
 export const AppBootstrapSchema = z.object({
   me: MeSchema,
   bots: z.array(BotSchema),
