@@ -3,11 +3,13 @@ import {
   contentKeyProviderFromEnv,
   createAgentHomeStore,
   ObjectAgentHomeStore,
+  unwrapEnvFromKeyManager,
 } from "@rakazo/adapters";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { createDb } from "@rakazo/db";
 
 loadRootEnv();
+await unwrapEnvFromKeyManager();
 
 const USAGE = `Usage: home-storage migrate [--dry-run]
   migrate   Upload homes that exist only under DATA_DIR/homes to object storage and verify

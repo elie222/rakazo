@@ -639,6 +639,105 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     ).toBe(0);
   });
 
+  describe("in a group chat", () => {
+    /** The waiting run belongs to the second member; the first member has nothing to do with it. */
+    async function setupGroup() {
+      const fixture = await setup();
+      const first = await system.bot.create({
+        data: {
+          spaceId: fixture.actor.spaceId,
+          userId: fixture.actor.userId,
+          name: "Bystander",
+          color: "test",
+        },
+      });
+      const group = await system.chatGroup.create({
+        data: {
+          spaceId: fixture.actor.spaceId,
+          userId: fixture.actor.userId,
+          name: "Fixture group",
+          members: { create: [{ botId: first.id }, { botId: fixture.bot.id }] },
+          thread: { create: { spaceId: fixture.actor.spaceId, userId: fixture.actor.userId } },
+        },
+        include: { thread: true },
+      });
+      const threadId = group.thread!.id;
+      await system.task.updateMany({ where: { id: fixture.run.taskId }, data: { threadId } });
+      await system.run.update({ where: { id: fixture.run.id }, data: { threadId } });
+      const card = await system.message.create({
+        data: {
+          threadId,
+          botId: fixture.bot.id,
+          runId: fixture.run.id,
+          seq: 1,
+          role: "bot",
+          blocks: [{ kind: "text", text: "Please enter the code on the screen." }],
+        },
+      });
+      const call = async (path: "send" | "react", json: Record<string, unknown>) => {
+        const { response } = await new RPCHandler(createRouter(fixture.deps)).handle(
+          new Request(`http://127.0.0.1/rpc/threads/${path}`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ json: { groupId: group.id, ...json } }),
+          }),
+          { prefix: "/rpc", context: { actor: fixture.actor } },
+        );
+        return response!;
+      };
+      return { ...fixture, first, threadId, card, call };
+    }
+
+    it.each(["send", "react"] as const)(
+      "hands the screen back to the member that asked for it on a group %s",
+      async (path) => {
+        const group = await setupGroup();
+        const revoke = vi.spyOn(group.sandbox, "setScreenControl");
+        const response = await group.call(
+          path,
+          path === "send"
+            ? { text: "@Fixture the code is 1234.", clientNonce: "group-reply" }
+            : { messageId: group.card.id, reaction: "👍", clientNonce: "group-thumb" },
+        );
+        expect(response.status).toBe(200);
+        expect(await group.control()).toMatchObject({
+          controlHolder: "bot",
+          controlRunId: null,
+          controlBotId: null,
+          controlLeaseId: null,
+        });
+        expect(revoke).toHaveBeenCalledWith(
+          expect.anything(),
+          false,
+          expect.anything(),
+          group.leaseId,
+        );
+        expect(
+          await system.event.findMany({
+            where: { runId: group.run.id, type: "computer.takeover.released" },
+          }),
+        ).toMatchObject([{ payload: { holder: "bot", reason: "done", leaseId: group.leaseId } }]);
+        expect(await system.run.findUniqueOrThrow({ where: { id: group.run.id } })).toMatchObject({
+          status: "queued",
+          checkpoint: "takeover",
+        });
+      },
+    );
+
+    it("keeps the screen when the reply is for a member that is not waiting", async () => {
+      const group = await setupGroup();
+      const before = await group.control();
+      const revoke = vi.spyOn(group.sandbox, "setScreenControl");
+      const response = await group.call("send", {
+        text: "@Bystander how are you?",
+        clientNonce: "group-other-member",
+      });
+      expect(response.status).toBe(200);
+      expect(await group.control()).toEqual(before);
+      expect(revoke).not.toHaveBeenCalled();
+    });
+  });
+
   it("does not release the takeover of a routine run that the reply does not steer", async () => {
     const fixture = await setup("opened", "routine");
     const before = await fixture.control();

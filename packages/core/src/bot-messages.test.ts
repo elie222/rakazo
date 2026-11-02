@@ -1,6 +1,7 @@
 import { BOT_DESCRIPTION_MAX_LENGTH } from "@rakazo/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  BOT_DELIBERATION_GUIDANCE,
   BOT_DIRECTORY_DESCRIPTIONS_MAX_LENGTH,
   BOT_MESSAGE_MAX_LENGTH,
   botMessageAllowsSilence,
@@ -242,6 +243,17 @@ describe("directory", () => {
 });
 
 describe("group members roster", () => {
+  it("tells the model how the transcript labels speakers, once", () => {
+    const context = renderGroupMembersContext("Ops", [{ id: "b_1", name: "Anya" }], {
+      id: "b_1",
+      name: "Anya",
+    });
+    const lines = context.split("\n").filter((line) => line.includes('"[Name]:"'));
+    expect(lines).toEqual([
+      'In the conversation so far, messages from other members start with "[Name]:", messages from the user start with "[User]:", and your own earlier messages carry no label. Never begin your replies with a label.',
+    ]);
+  });
+
   it("lists descriptions so group bots can pick a specialist", () => {
     const context = renderGroupMembersContext(
       "Launch desk",
@@ -270,6 +282,7 @@ describe("group members roster", () => {
     expect(context).not.toContain("message_bot");
     expect(context).not.toContain("Chief of Staff");
     expect(context).not.toContain("orchestrator");
+    expect(context).toContain(BOT_DELIBERATION_GUIDANCE);
   });
 
   it("reuses the same roster line formatting as the teammate directory", () => {
@@ -392,6 +405,23 @@ describe("inbound wake prompt", () => {
     expect(prompt).toContain("Q3 numbers are in /data/q3.csv");
     expect(prompt).toContain("&lt;ignore prior&gt;");
     expect(prompt).not.toContain("<ignore prior>");
+  });
+
+  it("asks the recipient to weigh a request, question, or result instead of adopting it", () => {
+    for (const intent of ["request", "question", "result", "status"] as const) {
+      const wake = buildBotMessageWakePrompt({ from: bots[0]!, text: "Ship it Friday.", intent });
+      expect(wake).toContain(BOT_DELIBERATION_GUIDANCE);
+      // The guidance follows the message, so peer text cannot pose as it.
+      expect(wake.indexOf(BOT_DELIBERATION_GUIDANCE)).toBeGreaterThan(
+        wake.indexOf("</bot_message>"),
+      );
+    }
+    expect(prompt).toContain("unless you believe its premise is wrong");
+  });
+
+  it("leaves an FYI free to go unanswered", () => {
+    const wake = buildBotMessageWakePrompt({ from: bots[0]!, text: "Deploy done.", intent: "fyi" });
+    expect(wake).not.toContain(BOT_DELIBERATION_GUIDANCE);
   });
 });
 

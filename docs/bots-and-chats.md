@@ -50,7 +50,7 @@ Under **Advanced**:
 - **Computer**: **Team** or **Private**. See [The bot's computer](./computer.md).
 - **Voice**: **Read replies aloud** and the bot's voice.
 - **Permissions**: **Allow cross-space bot communication** and
-  [**Manage the bots it creates**](./fleet-management.md).
+  [**Manage other bots**](./fleet-management.md).
 - **Instructions**: the bot's standing instructions. You can also ask the bot in chat to change
   them, or its name, model, thinking, voice and read-aloud; instruction and setting changes
   show **Undo** in the chat. Memory scope stays in Settings, since shared memory changes what the bot can read.

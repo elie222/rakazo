@@ -1189,4 +1189,218 @@ describe("per-connection wire protocol", () => {
     expect(result.stopReason).toBe("error");
     expect(transport).not.toHaveBeenCalled();
   });
+
+  it("stores and round-trips Anthropic Messages as a connection protocol", () => {
+    const saved = connectAsOwner({ ...input, apiProtocol: "anthropic-messages" });
+    expect(parseModelSecret(saved)).toMatchObject({ apiProtocol: "anthropic-messages" });
+    expect(parseModelSecret(connectAsOwner(input, saved))).toMatchObject({
+      apiProtocol: "anthropic-messages",
+    });
+    expect(ModelConnectInputSchema.safeParse(input).success).toBe(true);
+  });
+
+  it("still blocks private Anthropic Messages endpoints without operator opt-in", async () => {
+    const transport = vi.fn();
+    const models = registerOpenAiCompatibleRuntime(createModels(), {
+      ...input,
+      apiProtocol: "anthropic-messages",
+    });
+    const result = await models
+      .getProvider(OPENAI_COMPATIBLE_PROVIDER_ID)!
+      .streamSimple(
+        models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, input.modelId)!,
+        normalizeContext({ messages: [] }),
+        { apiKey: "fake-api-key", fetch: transport },
+      )
+      .result();
+    expect(result.stopReason).toBe("error");
+    expect(transport).not.toHaveBeenCalled();
+  });
+});
+
+/** Minimal Anthropic Messages SSE, as `event:`/`data:` pairs. */
+const anthropicSse = (events: ReadonlyArray<readonly [string, unknown]>) =>
+  events.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join("");
+
+const ANTHROPIC_TEXT_EVENTS: ReadonlyArray<readonly [string, unknown]> = [
+  [
+    "message_start",
+    {
+      type: "message_start",
+      message: { id: "msg_fixture", model: "fixture-model", usage: { input_tokens: 3 } },
+    },
+  ],
+  [
+    "content_block_start",
+    { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+  ],
+  [
+    "content_block_delta",
+    { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Bonjour" } },
+  ],
+  ["content_block_stop", { type: "content_block_stop", index: 0 }],
+  [
+    "message_delta",
+    { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 5 } },
+  ],
+  ["message_stop", { type: "message_stop" }],
+];
+
+const anthropicTextResponse = () =>
+  new Response(anthropicSse(ANTHROPIC_TEXT_EVENTS), {
+    headers: { "content-type": "text/event-stream" },
+  });
+
+describe("anthropic-messages wire protocol", () => {
+  const input = {
+    provider: OPENAI_COMPATIBLE_PROVIDER_ID,
+    baseUrl: "http://127.0.0.1:8000/v1",
+    modelId: "fixture-model",
+  };
+
+  function registerAnthropic() {
+    const models = registerOpenAiCompatibleRuntime(createModels(), {
+      ...input,
+      apiProtocol: "anthropic-messages",
+      allowPrivate: true,
+    });
+    const provider = models.getProvider(OPENAI_COMPATIBLE_PROVIDER_ID)!;
+    const model = models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, input.modelId)!;
+    return { provider, model };
+  }
+
+  it("registers the model on the Anthropic API at the endpoint root", () => {
+    const { model } = registerAnthropic();
+    expect(model.api).toBe("anthropic-messages");
+    // The endpoint the SDK appends /v1/messages to must not carry /v1 itself.
+    expect(model.baseUrl).toBe("http://127.0.0.1:8000");
+    expect(model.thinkingLevelMap).toBeUndefined();
+  });
+
+  it.each(["stream", "streamSimple"] as const)(
+    "streams text from /v1/messages with Anthropic auth headers through %s",
+    async (method) => {
+      const { provider, model } = registerAnthropic();
+      let requestUrl = "";
+      let headers: Headers | undefined;
+      let body: Record<string, unknown> = {};
+      const result = await provider[method](
+        model,
+        normalizeContext({
+          messages: [{ role: "user" as const, content: "Salut", timestamp: 1 }],
+        }),
+        {
+          apiKey: "fake-api-key",
+          fetch: async (url, init) => {
+            requestUrl = String(url);
+            headers = new Headers(init?.headers);
+            body = JSON.parse(String(init?.body));
+            expect(init?.redirect).toBe("error");
+            return anthropicTextResponse();
+          },
+        },
+      ).result();
+      expect(requestUrl).toBe("http://127.0.0.1:8000/v1/messages?beta=true");
+      expect(headers?.get("x-api-key")).toBe("fake-api-key");
+      expect(headers?.get("anthropic-version")).toBe("2023-06-01");
+      expect(body).toMatchObject({ model: input.modelId, stream: true });
+      expect(body.messages).toEqual([
+        expect.objectContaining({
+          role: "user",
+          content: [expect.objectContaining({ type: "text", text: "Salut" })],
+        }),
+      ]);
+      expect(result.stopReason, JSON.stringify(result)).toBe("stop");
+      expect(JSON.stringify(result.content)).toContain("Bonjour");
+    },
+  );
+
+  it("carries custom headers on the guarded request", async () => {
+    const models = registerOpenAiCompatibleRuntime(createModels(), {
+      ...input,
+      apiProtocol: "anthropic-messages",
+      allowPrivate: true,
+      headers: { "x-session": "fake-session" },
+    });
+    const provider = models.getProvider(OPENAI_COMPATIBLE_PROVIDER_ID)!;
+    const model = models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, input.modelId)!;
+    let received: string | null = null;
+    await provider
+      .streamSimple(model, normalizeContext({ messages: [] }), {
+        apiKey: "fake-api-key",
+        fetch: async (_url, init) => {
+          received = new Headers(init?.headers).get("x-session");
+          return anthropicTextResponse();
+        },
+      })
+      .result();
+    expect(received).toBe("fake-session");
+  });
+
+  it("sends a thinking budget when reasoning is on", async () => {
+    const models = registerOpenAiCompatibleRuntime(createModels(), {
+      ...input,
+      apiProtocol: "anthropic-messages",
+      allowPrivate: true,
+      reasoning: true,
+    });
+    const provider = models.getProvider(OPENAI_COMPATIBLE_PROVIDER_ID)!;
+    const model = models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, input.modelId)!;
+    let body: Record<string, any> = {};
+    await provider
+      .streamSimple(model, normalizeContext({ messages: [] }), {
+        apiKey: "fake-api-key",
+        reasoning: "medium",
+        fetch: async (_url, init) => {
+          body = JSON.parse(String(init?.body));
+          return anthropicTextResponse();
+        },
+      })
+      .result();
+    expect(body.thinking).toMatchObject({ type: "enabled" });
+    expect(typeof body.thinking.budget_tokens).toBe("number");
+  });
+
+  it("probes /v1/models with Anthropic auth headers", async () => {
+    let seenHeaders: Headers | undefined;
+    let seenUrl = "";
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      seenUrl = String(input);
+      seenHeaders = new Headers(init?.headers);
+      return Response.json({ data: [{ id: "claude-fixture" }] });
+    });
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: input.baseUrl, apiKey: "fake-api-key", apiProtocol: "anthropic-messages" },
+        fetchImpl,
+        undefined,
+        OWNER,
+      ),
+    ).resolves.toEqual(["claude-fixture"]);
+    expect(seenUrl).toBe("http://127.0.0.1:8000/v1/models");
+    expect(seenHeaders?.get("x-api-key")).toBe("fake-api-key");
+    expect(seenHeaders?.get("anthropic-version")).toBe("2023-06-01");
+    expect(seenHeaders?.get("authorization")).toBeNull();
+  });
+
+  it("probes keyless Anthropic-compatible servers with the version header", async () => {
+    // A keyless endpoint can still require the version header the SDK always sends.
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (new Headers(init?.headers).get("anthropic-version") !== "2023-06-01") {
+        return new Response(JSON.stringify({ error: "missing anthropic-version" }), {
+          status: 400,
+        });
+      }
+      return Response.json({ data: [{ id: "claude-fixture" }] });
+    });
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: input.baseUrl, apiProtocol: "anthropic-messages" },
+        fetchImpl,
+        undefined,
+        OWNER,
+      ),
+    ).resolves.toEqual(["claude-fixture"]);
+    expect(new Headers(fetchImpl.mock.calls[0]?.[1]?.headers).get("x-api-key")).toBeNull();
+  });
 });

@@ -10,6 +10,7 @@ import {
   dockerSpawnEnv,
   resolveDockerBinary,
 } from "./docker-cli.js";
+import { t } from "./i18n.js";
 import { readPrivateFile, writePrivateFile } from "./setup-store.js";
 
 export const STACK_DIR_NAME = "stack";
@@ -197,7 +198,7 @@ export type LocalStackEvent =
   | { type: "wait-start" }
   | { type: "output"; line: string }
   | { type: "ready" }
-  | { type: "failed"; message: string };
+  | { type: "failed"; message: string; output?: string[] };
 
 export function initialStackState(imageTag: string): DesktopLocalStackState {
   return { phase: "idle", message: null, output: [], layerBytes: {}, imageTag };
@@ -256,14 +257,20 @@ export function reduceStackState(
     case "ready":
       return { ...state, phase: "ready", message: null };
     case "failed":
-      return { ...state, phase: "failed", message: event.message };
+      return {
+        ...state,
+        phase: "failed",
+        message: event.message,
+        output: [...state.output, ...(event.output ?? [])].slice(-STACK_OUTPUT_LINES),
+      };
   }
 }
 
-const DOCKER_GROUP_HINT =
-  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.";
-const STOP_FAILED = "Could not stop the local stack. Check that Docker is running, then try again.";
-const START_INTERRUPTED = "The start was interrupted. Retry to continue.";
+const dockerGroupHint = () =>
+  t(
+    "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.",
+  );
+const startInterrupted = () => t("The start was interrupted. Retry to continue.");
 
 /** Docker output may contain paths and hostnames, so the person only ever sees these. */
 export function stackFailureMessage(
@@ -273,23 +280,29 @@ export function stackFailureMessage(
 ): string {
   switch (kind) {
     case "image-not-found":
-      return `Images for ${imageTag} are not published yet. Try again in a few minutes.`;
+      return t("Images for {tag} are not published yet. Try again in a few minutes.", {
+        tag: imageTag,
+      });
     case "port-in-use":
-      return "Could not bind a local port after retrying. Retry to choose another port.";
+      return t("Could not bind a local port after retrying. Retry to choose another port.");
     case "address-pool-exhausted":
-      return "Docker has no free network address pools. Remove unused Docker networks or expand Docker’s address pools, then retry.";
+      return t(
+        "Docker has no free network address pools. Remove unused Docker networks or expand Docker’s address pools, then retry.",
+      );
     case "network":
-      return "Could not reach the image registry. Check the internet connection, then retry.";
+      return t("Could not reach the image registry. Check the internet connection, then retry.");
     case "daemon-down":
-      return "Docker stopped answering. Start Docker, then retry.";
+      return t("Docker stopped answering. Start Docker, then retry.");
     case "socket-permission":
-      return DOCKER_GROUP_HINT;
+      return dockerGroupHint();
     case "compose-missing":
-      return "Docker Compose is missing. Install Docker Desktop or the docker-compose-plugin, then retry.";
+      return t(
+        "Docker Compose is missing. Install Docker Desktop or the docker-compose-plugin, then retry.",
+      );
     case "other":
       return phase === "pulling"
-        ? "Downloading Rakazo images failed. Check the output below, then retry."
-        : "Rakazo services did not start. Check the output below, then retry.";
+        ? t("Downloading Rakazo images failed. Check the output below, then retry.")
+        : t("Rakazo services did not start. Check the output below, then retry.");
   }
 }
 
@@ -431,7 +444,13 @@ export class LocalStackController {
     this.setState(
       stopped?.code === 0
         ? initialStackState(this.deps.imageTag)
-        : { ...this.current, phase: "failed", message: STOP_FAILED },
+        : {
+            ...this.current,
+            phase: "failed",
+            message: t(
+              "Could not stop the local stack. Check that Docker is running, then try again.",
+            ),
+          },
     );
     return this.current;
   }
@@ -453,7 +472,7 @@ export class LocalStackController {
       await this.attempt(controller.signal);
     } catch {
       // Copying the bundled compose files failed; the path would not help the person.
-      this.push({ type: "failed", message: "Could not prepare the local stack. Retry." });
+      this.push({ type: "failed", message: t("Could not prepare the local stack. Retry.") });
     } finally {
       if (this.inFlight === controller) this.inFlight = null;
     }
@@ -466,7 +485,10 @@ export class LocalStackController {
 
     const binary = resolveDockerBinary(this.deps.platform, this.deps.env, this.deps.exists);
     if (binary === null) {
-      this.push({ type: "docker-missing", message: "Docker is not installed on this computer." });
+      this.push({
+        type: "docker-missing",
+        message: t("Docker is not installed on this computer."),
+      });
       return;
     }
     const version = await this.docker(
@@ -476,13 +498,25 @@ export class LocalStackController {
       signal,
     );
     if (interrupted(signal, version))
-      return this.push({ type: "failed", message: START_INTERRUPTED });
+      return this.push({ type: "failed", message: startInterrupted() });
     if (version.code !== 0) {
-      this.push({
-        type: "docker-missing",
-        message:
-          "Docker is installed, but Docker Compose is missing. Install Docker Desktop or the docker-compose-plugin.",
-      });
+      if (failureKind(version) === "compose-missing") {
+        this.push({
+          type: "docker-missing",
+          message: t(
+            "Docker is installed, but Docker Compose is missing. Install Docker Desktop or the docker-compose-plugin.",
+          ),
+        });
+      } else {
+        this.push({
+          type: "failed",
+          message: t("Could not check Docker Compose. Check the output below, then retry."),
+          output: [
+            ...`${version.stdout}\n${version.stderr}`.split(/\r?\n/).filter((line) => line !== ""),
+            `docker compose version --short exited with code ${version.code}.`,
+          ],
+        });
+      }
       return;
     }
     const info = await this.docker(
@@ -491,14 +525,15 @@ export class LocalStackController {
       DOCKER_INFO_TIMEOUT_MS,
       signal,
     );
-    if (interrupted(signal, info)) return this.push({ type: "failed", message: START_INTERRUPTED });
+    if (interrupted(signal, info))
+      return this.push({ type: "failed", message: startInterrupted() });
     if (info.code !== 0) {
       this.push({
         type: "docker-not-running",
         message:
           failureKind(info) === "socket-permission"
-            ? DOCKER_GROUP_HINT
-            : "Docker is installed but not running. Start Docker, then check again.",
+            ? dockerGroupHint()
+            : t("Docker is installed but not running. Start Docker, then check again."),
       });
       return;
     }
@@ -514,12 +549,12 @@ export class LocalStackController {
     this.currentStackToken = stackToken;
 
     const imagesCached = await this.hasLocalReleaseImages(binary, signal);
-    if (signal.aborted) return this.push({ type: "failed", message: START_INTERRUPTED });
+    if (signal.aborted) return this.push({ type: "failed", message: startInterrupted() });
     if (!imagesCached) {
       this.push({ type: "pull-start" });
       const pulled = await this.compose(binary, ["pull"], PULL_TIMEOUT_MS, signal);
       if (interrupted(signal, pulled))
-        return this.push({ type: "failed", message: START_INTERRUPTED });
+        return this.push({ type: "failed", message: startInterrupted() });
       if (pulled.code !== 0) {
         this.push({
           type: "failed",
@@ -546,7 +581,7 @@ export class LocalStackController {
       await writePrivateFile(path.join(this.deps.stackDir, STACK_WEB_URL_FILE), this.currentWebUrl);
       up = await this.compose(binary, upArgs, UP_TIMEOUT_MS, signal);
     }
-    if (interrupted(signal, up)) return this.push({ type: "failed", message: START_INTERRUPTED });
+    if (interrupted(signal, up)) return this.push({ type: "failed", message: startInterrupted() });
     if (up.code !== 0) {
       // Best effort: recent service logs usually name the failing service.
       await this.compose(binary, ["logs", "--tail", "30", "--no-color"], LOGS_TIMEOUT_MS, signal);
@@ -576,8 +611,8 @@ export class LocalStackController {
     this.push({
       type: "failed",
       message: signal.aborted
-        ? START_INTERRUPTED
-        : "The stack started but the web app did not answer. Retry, and check the output below.",
+        ? startInterrupted()
+        : t("The stack started but the web app did not answer. Retry, and check the output below."),
     });
   }
 

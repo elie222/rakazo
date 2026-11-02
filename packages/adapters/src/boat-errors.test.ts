@@ -139,6 +139,20 @@ describe("Boat API errors", () => {
     expect(call).toHaveBeenCalledTimes(1);
   });
 
+  it("reports a stop refused while the sandbox is updating as a passing condition", async () => {
+    const call = vi.fn(async () => {
+      throw new ResponseError(
+        Response.json(
+          { code: "stop_failed", message: "Sandbox is updating, so it cannot be stopped." },
+          { status: 400 },
+        ),
+      );
+    });
+    const error = await wrapBoatCall(call, "fake-key")().catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SandboxUnresponsiveError);
+    expect(call).toHaveBeenCalledTimes(1);
+  });
+
   it("reports a rate limit as a provider-neutral error that keeps the upstream detail", async () => {
     const call = wrapBoatCall(async () => {
       throw new ResponseError(

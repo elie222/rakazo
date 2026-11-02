@@ -52,8 +52,9 @@ export class ScriptedAgentRuntime implements AgentRuntime {
           ? steering.map((item) => item.historyText ?? item.text).join("\n")
           : undefined;
       const prompt = steeredPrompt ?? request.prompt;
-      // A peer's wake hangs on the peer's words, not on the quoted message it replies to.
-      const hangMs = hangDuration(peerMessage(prompt)?.text ?? prompt);
+      // A run hangs on its own words: a peer's wake on the peer's text, a reply without the
+      // message it quotes.
+      const hangMs = hangDuration(peerMessage(prompt)?.text ?? prompt.replace(REPLY_CONTEXT, ""));
       if (hangMs !== undefined) {
         // Long-running work happens on the computer, which starts it like any real run would.
         yield {
@@ -165,10 +166,10 @@ export function inferScript(
   prompt: string,
   resumeFromCheckpoint?: string,
 ): NonNullable<AgentRunRequest["script"]> {
-  // A bot-message wake embeds the sender's name and id around the peer's words, and a
-  // generated id can contain a journey keyword by chance ("crm" inside a cuid), so the
-  // recipient's branches key on the words alone — as hangDuration already does.
-  const lower = (peerMessage(prompt)?.text ?? prompt).toLowerCase();
+  // A bot-message wake embeds the sender's name and id around the peer's words, and an
+  // ordinary reply opens with the quoted target; a generated id can contain a journey
+  // keyword by chance ("crm" inside a cuid), so the branches key on the words alone.
+  const lower = (peerMessage(prompt)?.text ?? prompt.replace(REPLY_CONTEXT, "")).toLowerCase();
   if (lower.includes("can you check my gmail inbox?")) {
     return [
       {

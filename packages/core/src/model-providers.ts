@@ -1,4 +1,4 @@
-import type { ModelCatalogEntry } from "@rakazo/contracts";
+import type { Bot, ModelApiProtocol, ModelCatalogEntry } from "@rakazo/contracts";
 import {
   canonicalPiProviderId,
   DEFAULT_MODEL_MAX_TOKENS,
@@ -9,6 +9,13 @@ import {
 } from "@rakazo/contracts";
 import { matchesSearchQuery } from "./search.js";
 
+/** Bots that pick their own model ignore the space default and its changes. */
+export function botsWithOwnModel<T extends Pick<Bot, "modelProvider" | "modelId">>(
+  bots: readonly T[],
+): T[] {
+  return bots.filter((bot) => Boolean(bot.modelProvider && bot.modelId));
+}
+
 /** Effort choices an OpenAI-compatible endpoint stores when reasoning is enabled. */
 export const COMPATIBLE_THINKING_LEVELS = [
   "minimal",
@@ -18,6 +25,19 @@ export const COMPATIBLE_THINKING_LEVELS = [
   "xhigh",
   "max",
 ] as const;
+
+/**
+ * Effort choices by wire protocol. Anthropic Messages maps every level to a
+ * budget, and pi-ai's budgets top out at the "high" level, so the two levels
+ * above it are not offered for that protocol.
+ */
+export function compatibleThinkingLevels(
+  apiProtocol: ModelApiProtocol | undefined,
+): readonly (typeof COMPATIBLE_THINKING_LEVELS)[number][] {
+  return apiProtocol === "anthropic-messages"
+    ? COMPATIBLE_THINKING_LEVELS.filter((level) => level !== "xhigh" && level !== "max")
+    : COMPATIBLE_THINKING_LEVELS;
+}
 
 const THINKING_LEVELS = ["off", ...COMPATIBLE_THINKING_LEVELS] as const;
 

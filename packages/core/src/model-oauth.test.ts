@@ -26,6 +26,13 @@ describe("waitForModelOAuthCompletion", () => {
     expect(complete).toHaveBeenCalledTimes(1);
   });
 
+  it("fails with the provider's error instead of polling again", async () => {
+    const complete = vi.fn().mockResolvedValue({ status: "error" as const, error: "Denied" });
+
+    await expect(waitForModelOAuthCompletion(complete)).rejects.toThrow("Denied");
+    expect(complete).toHaveBeenCalledTimes(1);
+  });
+
   it("stops after the configured attempt limit", async () => {
     const complete = vi.fn().mockResolvedValue({ status: "pending" as const });
 

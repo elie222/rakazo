@@ -25,7 +25,7 @@ test(
     await page.getByRole("option", { name: "한국어", exact: true }).click();
     await page.getByRole("button", { name: "계정 설정 닫기" }).click();
 
-    await page.getByRole("button", { name: "Agent 컴퓨터", exact: true }).click();
+    await openBotPanelTab(page, "자동 실행");
     await page.getByRole("button", { name: "자동 실행 만들기" }).click();
     await page.getByPlaceholder("이 루틴의 이름을 정하세요").fill("한국어 웹훅 확인");
     await page
@@ -168,4 +168,69 @@ test("a routine run that failed to start shows the error in Details", async ({
   await history.getByText("Details", { exact: true }).click();
   await expect(history.locator("pre")).toHaveText(error);
   await captureScreenshot(page, testInfo, "routine-run-computer-dns-error");
+});
+
+test("run history links runs that replied and marks silent ones", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `routine-states-${stamp}@rakazo.test`, "password12", "Routine");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+  await rpc<Routine>(page, "routines/create", {
+    botId,
+    name: "Price watch",
+    prompt: "Only message me when the price drops",
+    crons: ["0 * * * *"],
+    timezone: "UTC",
+    active: false,
+    notify: false,
+  });
+  const minute = 60_000;
+  const run = (index: number, status: string, extra: Record<string, unknown> = {}) => {
+    const at = new Date(Date.now() - index * 60 * minute).toISOString();
+    return {
+      id: `run-${stamp}-${index}`,
+      botId,
+      groupId: null,
+      status,
+      error: null,
+      createdAt: at,
+      startedAt: at,
+      completedAt: status === "running" ? null : at,
+      messageId: null,
+      ...extra,
+    };
+  };
+  await page.route("**/rpc/routines/history", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        json: {
+          runs: [
+            run(0, "running"),
+            run(1, "completed", { messageId: `message-${stamp}` }),
+            run(2, "completed"),
+            run(3, "failed", { error: "504: request timed out" }),
+            run(4, "completed"),
+          ],
+          nextCursor: null,
+        },
+      }),
+    }),
+  );
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.reload();
+  await openBotPanelTab(page, "Routines");
+  await page.getByRole("button", { name: /Price watch/ }).click();
+  const history = page.getByTestId("routine-run-history");
+  await expect(history.getByRole("heading", { name: "Run history" })).toBeVisible();
+  const rows = history.getByTestId("routine-run-row");
+  await expect(rows).toHaveCount(5);
+  await expect(history.getByRole("link")).toHaveCount(1);
+  await expect(rows.nth(1).getByRole("link")).toHaveAttribute(
+    "href",
+    `/app/${botId}?m=message-${stamp}`,
+  );
+  await expect(history.getByText("No reply", { exact: true })).toHaveCount(2);
+  await history.scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "routine-run-history-states");
 });

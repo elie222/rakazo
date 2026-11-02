@@ -1,8 +1,10 @@
 import type { Socket } from "node:net";
+import { unwrapEnvFromKeyManager } from "@rakazo/adapters";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { stopOnShutdownSignals } from "@rakazo/core/node/shutdown-signals";
 
 loadRootEnv();
+await unwrapEnvFromKeyManager();
 
 import { serve } from "@hono/node-server";
 import { SERVICE_NAMES } from "@rakazo/logging";

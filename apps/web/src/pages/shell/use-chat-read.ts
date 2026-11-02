@@ -191,20 +191,23 @@ export function useChatRead({
   }, [activeGroup?.id, groupId, markGroupReadIfVisible]);
 
   /** Mark as Unread from a group message: the next open starts the New divider there. */
-  function markGroupUnreadFrom(groupId: string, messageId: string) {
-    manuallyUnread.current.add(groupId);
-    const visit = readVisit.current.visit;
-    void readInOrder(`group:${groupId}`, () => rpc.threads.markUnread({ groupId, messageId }))
-      .then(() => {
-        if (readVisit.current.visit === visit) {
-          setMarkedUnread({ visit, messageId });
-        }
-        setGroups((current) =>
-          current.map((group) => (group.id === groupId ? { ...group, unread: true } : group)),
-        );
-      })
-      .catch(() => manuallyUnread.current.delete(groupId));
-  }
+  const markGroupUnreadFrom = useCallback(
+    (groupId: string, messageId: string) => {
+      manuallyUnread.current.add(groupId);
+      const visit = readVisit.current.visit;
+      void readInOrder(`group:${groupId}`, () => rpc.threads.markUnread({ groupId, messageId }))
+        .then(() => {
+          if (readVisit.current.visit === visit) {
+            setMarkedUnread({ visit, messageId });
+          }
+          setGroups((current) =>
+            current.map((group) => (group.id === groupId ? { ...group, unread: true } : group)),
+          );
+        })
+        .catch(() => manuallyUnread.current.delete(groupId));
+    },
+    [readInOrder, rpc, setGroups],
+  );
 
   /** Mark as Read or Unread from the chat list. */
   function toggleGroupUnread(groupId: string, unread: boolean) {

@@ -30,6 +30,9 @@ vi.mock("@lingui/react/macro", () => {
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 vi.mock("@rakazo/ui-web", () => ({
+  SectionHeading: ({ variant, ...props }: ComponentProps<"h3"> & { variant?: string }) => (
+    <h3 data-variant={variant} {...props} />
+  ),
   Button: ({
     variant: _variant,
     size: _size,
@@ -187,7 +190,7 @@ describe("BotSettings help", () => {
     const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async () => undefined);
     await renderSettings(onSave, { ...bot, fleetManagement: false });
     const label = [...container.querySelectorAll("label")].find(
-      (entry) => entry.textContent === "Manage the bots it creates",
+      (entry) => entry.textContent === "Manage other bots",
     );
     const toggle = document.getElementById(label?.htmlFor ?? "");
     const speechToggle = container.querySelector<HTMLButtonElement>('[id$="-auto-speak"]');
@@ -196,7 +199,7 @@ describe("BotSettings help", () => {
     expect(speechRow?.firstElementChild?.textContent).toBe("Read replies aloud");
     expect(speechRow?.lastElementChild).toBe(speechToggle);
     expect(toggle?.getAttribute("aria-checked")).toBe("false");
-    expect(container.querySelector('[aria-label="About Manage the bots it creates"]')).toBeNull();
+    expect(container.querySelector('[aria-label="About Manage other bots"]')).toBeNull();
     expect(toggle?.getAttribute("aria-checked")).toBe("false");
     expect(onSave).not.toHaveBeenCalled();
     await act(async () => toggle?.click());
@@ -476,19 +479,19 @@ it("uses section headings without repeating notification or model row labels", a
     (node) => node.textContent === "Notifications",
   );
   expect(heading).toBeDefined();
-  expect(heading?.className).toContain("mb-2 text-xs font-medium text-muted-foreground");
+  expect(heading?.dataset.variant).toBe("label");
   const notification = container.querySelector('label[id$="-notify-finish-label"]');
   expect(notification?.textContent?.trim()).toBe("When it finishes or needs input");
   const model = container.querySelector('label[for$="-model"]');
   expect(model?.className).toBe("sr-only");
 });
 
-it("keeps cross-space communication off until explicitly enabled", async () => {
+it("treats cross-space communication as on unless turned off", async () => {
   const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async () => undefined);
   await renderSettings(onSave);
   const toggle = container.querySelector<HTMLButtonElement>('[id$="-cross-space"]');
-  expect(toggle?.getAttribute("aria-checked")).toBe("false");
+  expect(toggle?.getAttribute("aria-checked")).toBe("true");
   await act(async () => toggle?.click());
   await flush();
-  expect(onSave).toHaveBeenCalledWith({ crossSpaceCommunication: true });
+  expect(onSave).toHaveBeenCalledWith({ crossSpaceCommunication: false });
 });

@@ -270,7 +270,7 @@ pnpm test:e2e
 - [桌面端发布](./docs/desktop-release.md)
 - [移动端发布](./docs/mobile-release.md)
 - [性能测试](./docs/performance.md)
-- [计算机集群管理](./docs/fleet-management.md)
+- [管理机器人的机器人](./docs/fleet-management.md)
 
 ## 参与贡献
 

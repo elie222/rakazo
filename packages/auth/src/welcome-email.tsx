@@ -1,65 +1,71 @@
 /** @jsxRuntime automatic */
 import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import { ANDROID_APK_URL, IOS_APP_STORE_URL } from "@rakazo/contracts";
-import { displayName } from "@rakazo/core";
 import { Link, Text } from "react-email";
-import { linkStyle, message } from "./email.js";
+import { emailText, greeting, linkStyle, message } from "./email.js";
 
-const APPS = [
-  ["iPhone", IOS_APP_STORE_URL],
-  ["Android", ANDROID_APK_URL],
-  ["Mac", "https://rakazo.com/api/download?platform=mac"],
-  ["Windows", "https://rakazo.com/api/download?platform=windows"],
-  ["Linux", "https://rakazo.com/api/download?platform=linux"],
-] as const;
+const APPS: Readonly<Record<string, string>> = {
+  iPhone: IOS_APP_STORE_URL,
+  Android: ANDROID_APK_URL,
+  Mac: "https://rakazo.com/api/download?platform=mac",
+  Windows: "https://rakazo.com/api/download?platform=windows",
+  Linux: "https://rakazo.com/api/download?platform=linux",
+};
 
 export function welcomeEmail(
   user: { email: string; name: string },
   unsubscribeUrl: string,
+  locale = "en",
 ): Promise<TransactionalEmail> {
+  const say = emailText(locale);
   return message(
     user.email,
-    "Welcome to Rakazo",
+    locale,
+    say("Welcome to Rakazo"),
     <>
-      <Text>Hi {displayName(user.name, "there")},</Text>
-      <Text>Thanks for signing up for Rakazo.</Text>
+      <Text>{greeting(say, user.name)}</Text>
+      <Text>{say("Thanks for signing up for Rakazo.")}</Text>
       <Text>
-        Rakazo also has apps for{" "}
-        {APPS.map(([name, href], index) => (
-          <span key={name}>
-            {index === APPS.length - 1 ? "and " : ""}
-            <Link href={href} style={linkStyle}>
-              {name}
-            </Link>
-            {index === APPS.length - 1 ? "." : ", "}
-          </span>
-        ))}
+        {say("Rakazo also has apps for")}{" "}
+        {/* The language's own list ("A, B, and C", "A, B y C"), with each app a link. */}
+        {new Intl.ListFormat(locale, { type: "conjunction" })
+          .formatToParts(Object.keys(APPS))
+          .map((part, index) =>
+            part.type === "element" ? (
+              <Link key={part.value} href={APPS[part.value]} style={linkStyle}>
+                {part.value}
+              </Link>
+            ) : (
+              <span key={`${index}${part.value}`}>{part.value}</span>
+            ),
+          )}
+        .
       </Text>
       <Text>
-        Questions or ideas?{" "}
+        {say("Questions or ideas?")}{" "}
         <Link href="https://discord.gg/RWwKa2Sn7h" style={linkStyle}>
-          Join us on Discord
+          {say("Join us on Discord")}
         </Link>
         .
       </Text>
       <Text>
-        Rakazo is open source. If you like it,{" "}
+        {say("Rakazo is open source. If you like it,")}{" "}
         <Link href="https://github.com/elie222/rakazo" style={linkStyle}>
-          a star on GitHub
+          {say("a star on GitHub")}
         </Link>{" "}
-        helps others find it.
+        {say("helps others find it.")}
       </Text>
       <Text>
-        Want to run it on your own servers?{" "}
+        {say("Want to run it on your own servers?")}{" "}
         <Link
           href="https://github.com/elie222/rakazo/blob/main/docs/self-host.md"
           style={linkStyle}
         >
-          Self-host Rakazo
+          {say("Self-host Rakazo")}
         </Link>
         .
       </Text>
-      <Text>Have any questions? Reply to this email.</Text>
+      <Text>{say("Have any questions? Reply to this email.")}</Text>
       <Text>Elie</Text>
     </>,
     unsubscribeUrl,

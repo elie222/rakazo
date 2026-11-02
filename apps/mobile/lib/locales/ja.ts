@@ -34,6 +34,8 @@ export const JA_MESSAGES: Record<string, string> = {
     "この接続のリクエスト上限が小さすぎます。別のモデルを選択してください。",
   "This model's context window is too small. Choose another model.":
     "このモデルのコンテキストウィンドウは小さすぎます。別のモデルを選択してください。",
+  "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.":
+    "このサーバーのツール結果はモデルに収まりません。そのサーバーの「ツール結果を省略しない」をオフにするか、別のモデルを選んでください。",
   "{provider} denied access to this model.": "{provider}がこのモデルへのアクセスを拒否しました。",
   "{summary} Backup models failed or were unavailable for this request.":
     "{summary} 予備のモデルでエラーが発生したか、このリクエストでは利用できませんでした。",
@@ -66,7 +68,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Ex: Project Falcon": "例: Project Falcon",
   "Search bots": "ボットを検索",
   "About {label}": "{label}について",
-  "Manage the bots it creates": "作成したボットを管理",
+  "Manage other bots": "他のボットを管理",
   "Allow cross-space bot communication": "スペースをまたいだボット間の通信を許可",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "サイドバーの整理とボットの編集ができます。指示、モデル、ルーティン、グループの編集には承認が必要です。",
@@ -510,6 +512,10 @@ export const JA_MESSAGES: Record<string, string> = {
   "Saved.": "保存しました。",
   "Search models": "モデルを検索",
   "Server URL": "サーバーURL",
+  Protocol: "プロトコル",
+  "Chat Completions": "Chat Completions",
+  Responses: "Responses",
+  "Anthropic Messages": "Anthropic Messages",
   "Server found. Enter a model name.": "サーバーが見つかりました。モデル名を入力してください。",
   "Setup help": "セットアップのヘルプ",
   "Show less": "表示を減らす",
@@ -661,6 +667,8 @@ export const JA_MESSAGES: Record<string, string> = {
   "New password": "新しいパスワード",
   "Passwords do not match": "パスワードが一致しません",
   "Allow once": "今回のみ許可",
+  "Allow in this space": "このスペースで許可",
+  "Allowed in this space": "このスペースで許可しました",
   "Always allow": "常に許可",
   "Always allow this tool": "このツールを常に許可",
   "Always allow {site}": "{site} を常に許可",
@@ -965,6 +973,15 @@ export const JA_MESSAGES: Record<string, string> = {
   Credits: "クレジット",
   "Available credits": "利用可能なクレジット",
   "Computer hours left": "コンピューターの残り時間",
+  "Trials get fewer hours to prevent abuse.":
+    "不正利用を防ぐため、トライアルでは時間が少なくなっています。",
+  "Start plan now": "今すぐプランを開始",
+  "Start your plan now?": "今すぐプランを開始しますか？",
+  "Your trial ends and your card is charged {price} today.":
+    "トライアルが終了し、本日カードに{price}が請求されます。",
+  "Your trial ends and your card is charged today.":
+    "トライアルが終了し、本日カードに請求されます。",
+  "Start plan": "プランを開始",
   "Monthly credits": "月間クレジット",
   "Upgrade now": "今すぐアップグレード",
   "Downgrade at renewal": "更新時にダウングレード",
@@ -978,6 +995,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Use Rakazo credits": "Rakazoクレジットを使用",
   "Choose a plan": "プランを選択",
   "Change plan": "プランを変更",
+  "Current plan": "現在のプラン",
   Plan: "プラン",
   None: "なし",
   "Free trial": "無料トライアル",
@@ -1002,6 +1020,13 @@ export const JA_MESSAGES: Record<string, string> = {
   "Full access, nothing to pay": "すべての機能を無料で利用",
   "Day {days}": "{days}日目",
   "{price} / month begins": "月額 {price} の支払いを開始",
+  "Billing period": "請求期間",
+  "Yearly −{percent}%": "年払い −{percent}%",
+  "{days} days free, then {price} / year. Cancel anytime.":
+    "{days}日間無料、その後は年額 {price}。いつでも解約できます。",
+  "{price} / year": "年額 {price}",
+  "{price} / year begins": "年額 {price} の支払いを開始",
+  "{price} / year. Cancel anytime.": "年額 {price}。いつでも解約できます。",
   "Only the owner of this account can choose a plan.":
     "プランを選択できるのはこのアカウントのオーナーのみです。",
   Terms: "利用規約",
@@ -1144,6 +1169,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Always open {site}": "{site} を常に開く",
   "Trusted sites": "信頼済みサイト",
   "Run history": "実行履歴",
+  "No reply": "返信なし",
   "No runs yet": "実行はまだありません",
   "Load older runs": "過去の実行を読み込む",
   "Could not load run history": "実行履歴を読み込めませんでした",
@@ -1169,15 +1195,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "Add field": "フィールドを追加",
   Label: "ラベル",
   "Could not show the credential": "認証情報を表示できませんでした",
-  "Allow rule": "許可ルール",
-  "Ask rule": "確認ルール",
-  "Block rule": "ブロックルール",
-  "Candidate rule": "変更案",
-  "Could not preview rule": "ルールをプレビューできませんでした",
-  Current: "現在",
-  "No matching rule": "一致するルールなし",
-  "Test rule": "ルールを試す",
-  "Tool name": "ツール名",
   Wallet: "ウォレット",
   "Connect {name}": "{name}に接続",
   "Could not load wallet": "ウォレットを読み込めませんでした",
@@ -1245,6 +1262,31 @@ export const JA_MESSAGES: Record<string, string> = {
   "1 free month earned": "1か月分の無料期間を獲得",
   "{count} free months earned": "{count}か月分の無料期間を獲得",
   "Submit a plugin": "プラグインを申請",
+  Board: "ボード",
+  "To do": "未着手",
+  "In progress": "進行中",
+  "In review": "レビュー中",
+  Blocked: "ブロック中",
+  "Won't do": "対応しない",
+  "Could not move the ticket": "チケットを移動できませんでした",
+  "No tickets yet.": "チケットはまだありません。",
+  "Bot models": "ボットのモデル",
+  "1 bot has its own model:": "1個のボットが独自のモデルを使用しています:",
+  "{count} bots have their own model:": "{count}個のボットが独自のモデルを使用しています:",
+  "Use space default": "スペースのデフォルトを使用",
+  "Switching…": "切り替え中…",
+  "Switch 1 bot to the space default?": "1個のボットをスペースのデフォルトに切り替えますか？",
+  "Switch {count} bots to the space default?":
+    "{count}個のボットをスペースのデフォルトに切り替えますか？",
+  "Their own model is cleared. You can pick one again in each bot.":
+    "個別のモデル設定は解除されます。各ボットで再度選択できます。",
+  Switch: "切り替え",
+  "1 bot now uses the space default.":
+    "1個のボットがスペースのデフォルトを使用するようになりました。",
+  "{count} bots now use the space default.":
+    "{count}個のボットがスペースのデフォルトを使用するようになりました。",
+  "Could not switch {failedNames}. Try again.":
+    "{failedNames}を切り替えられませんでした。もう一度お試しください。",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "{peer}とのメッセージ{count}件" };

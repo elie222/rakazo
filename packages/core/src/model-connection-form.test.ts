@@ -36,6 +36,7 @@ function draft(overrides: Partial<ConnectionFormDraft> = {}): ConnectionFormDraf
     modelId: "",
     enabledModelIds: [],
     baseUrl: "",
+    apiProtocol: "chat-completions",
     headerRows: null,
     reasoning: false,
     thinkingLevel: null,
@@ -109,6 +110,7 @@ describe("connectionFormFields", () => {
     ).toEqual({
       enabledModelIds: [],
       baseUrl: "https://ollama.com/v1",
+      apiProtocol: "chat-completions",
       reasoning: false,
       thinkingLevel: null,
       maxTokens: "4096",
@@ -143,6 +145,7 @@ describe("connectionFormFields", () => {
     expect(fields).toMatchObject({
       enabledModelIds: ["local", "other"],
       baseUrl: "http://127.0.0.1:8000/v1",
+      apiProtocol: "chat-completions",
       reasoning: true,
       thinkingLevel: "high",
       maxTokens: "2048",
@@ -154,6 +157,46 @@ describe("connectionFormFields", () => {
       connectionFormFields({ catalog, provider: COMPATIBLE, modelId: "other", credential: saved })
         .thinkingLevel,
     ).toBeNull();
+  });
+
+  it("keeps a saved protocol and clamps its effort levels to what the protocol runs", () => {
+    const saved = credential({
+      provider: COMPATIBLE,
+      baseUrl: "http://127.0.0.1:8000/v1",
+      modelId: "local",
+      reasoning: true,
+      thinkingLevel: "max",
+      apiProtocol: "anthropic-messages",
+    });
+    expect(
+      connectionFormFields({ catalog, provider: COMPATIBLE, modelId: "local", credential: saved })
+        .apiProtocol,
+    ).toBe("anthropic-messages");
+    // Anthropic Messages has no budget above high, so a saved max clamps down.
+    expect(
+      connectionFormFields({ catalog, provider: COMPATIBLE, modelId: "local", credential: saved })
+        .thinkingLevel,
+    ).toBe("high");
+    const request = modelConnectRequest({
+      form: draft({
+        baseUrl: "http://127.0.0.1:8000/v1",
+        modelId: "local",
+        apiProtocol: "anthropic-messages",
+        reasoning: true,
+        thinkingLevel: "xhigh",
+        maxTokens: "4096",
+      }),
+      selected: {
+        provider: COMPATIBLE,
+        id: "openai-compatible",
+        providerName: "OpenAI-compatible",
+      },
+      credentialId: null,
+    });
+    expect(request.status === "ready" && request.input).toMatchObject({
+      apiProtocol: "anthropic-messages",
+      thinkingLevel: "high",
+    });
   });
 
   it("clamps a catalog connection's effort to its model and leaves the endpoint empty", () => {
@@ -330,6 +373,7 @@ describe("modelConnectRequest", () => {
       input: {
         provider: COMPATIBLE,
         baseUrl: "http://h/v1",
+        apiProtocol: "chat-completions",
         headers: { "X-Team": "v" },
         modelId: "m",
         enabledModelIds: ["n"],

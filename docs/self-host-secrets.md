@@ -72,6 +72,10 @@ off it, set `ENCRYPTION_MASTER_KEYS` and run the rotation in
 without stranding content. Keep `ENCRYPTION_KEY` unchanged afterwards: stored
 credentials still depend on it.
 
+With `MASTER_KEY_PROVIDER=aws-kms`, these and the other API and worker
+secrets can be kept in `.env` wrapped by the key manager instead of in
+plaintext ([wrapped settings](content-encryption.md#wrapped-settings)).
+
 ## Optional keys (leave blank if unused)
 
 From `.env.images.example` (images installer). Leave blank if unused:

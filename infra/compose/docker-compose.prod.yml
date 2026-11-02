@@ -253,6 +253,9 @@ x-app-environment: &app-environment
   LARK_VERIFICATION_TOKEN:
   LARK_ENCRYPT_KEY:
   LARK_DOMAIN:
+  PHOTON_PROJECT_ID:
+  PHOTON_PROJECT_SECRET:
+  PHOTON_WEBHOOK_SECRET:
   # Optional egress proxy (Mainland / corporate). Empty = unset; either case works.
   HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
   HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}
@@ -668,6 +671,8 @@ services:
     mem_limit: 256m
     environment:
       RAKAZO_HOST: ${RAKAZO_HOST:-app.example.com}
+      # Go listens with multipath TCP by default, which widens the kernel attack surface.
+      GODEBUG: multipathtcp=0
     ports:
       - "80:80"
       - "443:443"

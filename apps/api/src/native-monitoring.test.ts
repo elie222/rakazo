@@ -43,6 +43,22 @@ describe("native error collector privacy boundary", () => {
     ).toEqual({ surface: "desktop" });
   });
 
+  it("keeps a sanitized mobile breadcrumb trail, including native ones", () => {
+    const breadcrumbs = [
+      { category: "app.lifecycle", type: "navigation", data: { state: "background" } },
+      { category: "ui.lifecycle", data: { screen: "RNSScreen", title: "Private chat" } },
+      { category: "console", message: "private output" },
+      { category: "touch", message: "Send private", data: { view: "Private" } },
+    ];
+    expect(
+      sanitizeNativeEvent({ breadcrumbs: { values: breadcrumbs } }, "mobile").breadcrumbs,
+    ).toEqual([
+      { category: "app.lifecycle", type: "navigation", data: { state: "background" } },
+      { category: "ui.lifecycle", data: { screen: "RNSScreen" } },
+    ]);
+    expect(sanitizeNativeEvent({ breadcrumbs }, "desktop").breadcrumbs).toBeUndefined();
+  });
+
   it("keeps replayed startup failures anonymous", () => {
     const event = sanitizeNativeEvent(
       {

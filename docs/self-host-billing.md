@@ -10,8 +10,10 @@ monthly model credits in USD: $10, $20, $50, $100, $200, or $500. One-time top-u
 amounts. Monthly credits expire at the end of their service period; one-time top-ups do not expire.
 The hosted computer is included in both paths, and monthly credits include the own-key plan.
 
-`BYOK_MONTHLY_PRICE_CENTS` in `@rakazo/contracts` sets the own-key plan's price; `null` makes it
-free and ends paid own-key subscriptions at their period end. Runs check access on the server, so a
+`BYOK_MONTHLY_PRICE_CENTS` in `@rakazo/contracts` sets the own-key plan's price for new
+subscriptions; existing subscribers keep the price they signed up at. `null` makes it
+free and ends paid own-key subscriptions at their period end. `BYOK_ANNUAL_PRICE_CENTS` offers the
+same plan billed yearly, shown as its monthly equivalent; `null` offers it monthly only. Runs check access on the server, so a
 lapsed organization's bots and routines stop until it subscribes.
 
 ## Model credits

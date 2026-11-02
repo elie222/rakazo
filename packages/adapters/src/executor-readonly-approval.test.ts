@@ -20,6 +20,8 @@ import { FakeWebProvider } from "./fake-web.js";
 import type * as FleetToolsModule from "./fleet-tools.js";
 import type { HostComputerRequest } from "./host-computer-protocol.js";
 import { catalogEntries, resolveCatalogCall } from "./lazy-tool-catalog.js";
+import type { TurnCheckpoint } from "./turn-checkpoint.js";
+import { serializeTurnCheckpoint } from "./turn-checkpoint.js";
 import type { UserDeviceGateway } from "./user-device-protocol.js";
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
@@ -89,7 +91,7 @@ function fixture({
   existingSharedMemory,
   advanceRevisionAfterRead = false,
   fleetManagement = false,
-  fleetBots = [] as { id: string; name: string }[],
+  fleetBots = [] as { id: string; name: string; thread?: { id: string } }[],
   secondResource = false,
   routines = [] as { name: string; prompt: string }[],
   connectedApps = [] as string[],
@@ -109,7 +111,7 @@ function fixture({
   /** The switch as the run starts; `liveBot` is what a later read sees. */
   fleetManagement?: boolean;
   /** Other active bots of the same user, found by id or exact name. */
-  fleetBots?: { id: string; name: string }[];
+  fleetBots?: { id: string; name: string; thread?: { id: string } }[];
   parallelCalls?: boolean;
   sourceRole?: string;
   builtin?: boolean;
@@ -184,11 +186,19 @@ function fixture({
     sourceMessageId: sourceRole ? "source-1" : null,
     leaseFence: 0,
   };
+  const createdAt = new Map<string, Date>();
   const externalEffect = {
     findFirst: vi.fn(
-      async ({ where }: { where: { kind: string; status: { in: string[] } } }) =>
+      async ({
+        where,
+      }: {
+        where: { kind: string; status: { in: string[] }; createdAt?: { gte: Date } };
+      }) =>
         effects.find(
-          (effect) => effect.kind === where.kind && where.status.in.includes(effect.status),
+          (effect) =>
+            effect.kind === where.kind &&
+            where.status.in.includes(effect.status) &&
+            !(where.createdAt && createdAt.get(effect.id)! < where.createdAt.gte),
         ) ?? null,
     ),
     findMany: vi.fn(
@@ -198,11 +208,20 @@ function fixture({
         where?: {
           id?: string;
           runId?: string;
+          spaceId?: string;
+          idempotencyKey?: string;
           status?: string | { in: string[] };
           kind?: string | { in: string[] };
         };
-      } = {}) =>
-        effects.filter((effect) => {
+      } = {}) => {
+        if (where?.kind === "runtime_checkpoint")
+          return turnCheckpoints.map((row) => ({
+            ...row,
+            kind: "runtime_checkpoint",
+            status: "runtime_checkpoint",
+            runId: run.id,
+          }));
+        return effects.filter((effect) => {
           const matches = (value: string, condition: string | { in: string[] }) =>
             typeof condition === "string" ? value === condition : condition.in.includes(value);
           if (where?.status && !matches(effect.status, where.status)) return false;
@@ -210,8 +229,26 @@ function fixture({
           if (where?.runId && effect.runId && effect.runId !== where.runId) return false;
           if (where?.id && effect.id !== where.id) return false;
           return true;
-        }),
+        });
+      },
     ),
+    upsert: vi.fn(
+      async ({
+        where,
+        create,
+      }: {
+        where: { idempotencyKey: string };
+        create: { result: string };
+      }) => {
+        const existing = turnCheckpoints.find((row) => row.idempotencyKey === where.idempotencyKey);
+        if (existing) existing.result = create.result;
+        else turnCheckpoints.push({ idempotencyKey: where.idempotencyKey, result: create.result });
+      },
+    ),
+    deleteMany: vi.fn(async ({ where }: { where?: { kind?: string } }) => {
+      if (where?.kind === "runtime_checkpoint") turnCheckpoints.length = 0;
+      return { count: 0 };
+    }),
     findUnique: vi.fn(
       async ({ where }: { where: { id?: string; idempotencyKey?: string } }) =>
         effects.find((effect) =>
@@ -220,6 +257,7 @@ function fixture({
     ),
     create: vi.fn(async ({ data }: { data: Omit<Effect, "id"> }) => {
       const effect = { ...data, id: `effect-${effects.length + 1}` };
+      createdAt.set(effect.id, new Date());
       effects.push(effect);
       return { ...effect };
     }),
@@ -241,6 +279,8 @@ function fixture({
     instructions: "Draft only",
     instructionHistory: [],
   };
+  // Turn checkpoints live in external_effects too, but outside the approval fixtures' rows.
+  const turnCheckpoints: { idempotencyKey: string; result: string }[] = [];
   const liveBot = { fleetManagement };
   const reviewCredential =
     approvalRole && checkerConnected
@@ -257,6 +297,9 @@ function fixture({
   let outsideSteering = false;
   let offeredTools: string[] = [];
   let instructions = "";
+  let checkpointCapture:
+    | { executionId: string; checkpoint: Omit<TurnCheckpoint, "provider" | "model"> }
+    | undefined;
   const prisma = {
     user: { findUnique: vi.fn(async () => null) },
     run: {
@@ -442,6 +485,19 @@ function fixture({
   const runtimeRun = vi.fn(async function* (request: AgentRunRequest) {
     offeredTools = request.tools.map((tool) => tool.name);
     instructions = request.instructions ?? "";
+    if (checkpointCapture) {
+      // The runtime hands the executor a capture it can serialize when the turn pauses.
+      const pending = checkpointCapture;
+      await request.onCheckpoint?.(
+        () =>
+          serializeTurnCheckpoint({
+            ...(pending.checkpoint as TurnCheckpoint),
+            provider: request.model.provider,
+            model: request.model.id,
+          }),
+        pending.executionId,
+      );
+    }
     const executeCall = async (call: (typeof calls)[number]) => {
       const result = call.name
         ? await request.executeTool!(call.name, call.args, call.executionId)
@@ -557,6 +613,27 @@ function fixture({
         if (String(values[0]).includes("FROM threads")) run.status = "cancelled";
         return [];
       });
+    },
+    overwriteInstructionsAfterAttemptStart(text: string) {
+      const original = prisma.bot.findUniqueOrThrow.getMockImplementation()!;
+      let applied = false;
+      prisma.bot.findUniqueOrThrow.mockImplementation(async () => {
+        // The attempt-start snapshot is read before the model runs; a read while it
+        // works is past it, as when an import lands mid-run.
+        if (!applied && runtimeRun.mock.calls.length > 0) {
+          applied = true;
+          instructionState.instructions = text;
+        }
+        return original();
+      });
+    },
+    turnCheckpoints,
+    /** Lets the next pause save this turn, as the real runtime does before a gated call. */
+    pauseWithTurnCheckpoint(
+      executionId: string,
+      checkpoint: Omit<TurnCheckpoint, "provider" | "model">,
+    ) {
+      checkpointCapture = { executionId, checkpoint };
     },
     results,
     execute,
@@ -958,7 +1035,7 @@ describe("connector read-only metadata and approval enforcement", () => {
       expect(f.pauseRunForInput).not.toHaveBeenCalled();
     });
 
-    it("refuses a webhook-triggered write in Never ask instead of asking", async () => {
+    it("runs a webhook-triggered write in Never ask", async () => {
       const f = fixture({
         catalog,
         name: "demo_send_message",
@@ -966,9 +1043,8 @@ describe("connector read-only metadata and approval enforcement", () => {
         skipApprovals: true,
       });
       await f.run();
-      expect(f.execute).not.toHaveBeenCalled();
+      expect(f.execute).toHaveBeenCalledOnce();
       expect(f.pauseRunForInput).not.toHaveBeenCalled();
-      expect(JSON.stringify(f.results[0])).toContain("never asks");
     });
 
     it("refuses a blocked tool in Never ask without asking or running it", async () => {
@@ -1309,6 +1385,16 @@ describe("create_space", () => {
     expect(skipped.pauseRunForInput).not.toHaveBeenCalled();
     expect(skipped.effects[0]?.status).not.toBe("intended");
   });
+
+  it("creates it in Never ask after outside content", async () => {
+    const f = fixture({ name: "create_space", builtin: true, skipApprovals: true });
+    f.claimedOutsideSteering(true);
+    f.setCalls([{ args: { name: "Support" }, executionId: "call-1" }]);
+    await f.run(true);
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.effects).toHaveLength(1);
+    expect(f.effects[0]?.status).not.toBe("intended");
+  });
 });
 
 describe("own instructions through update_bot", () => {
@@ -1319,39 +1405,46 @@ describe("own instructions through update_bot", () => {
     f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
     return f;
   }
-  const updated = { ok: true, instructions: "updated" };
+  const updated = { ok: true };
   const held = { instructions: first, reason: "Set in chat", previousInstructions: "Draft only" };
-  it.each(["user", "created"])(
-    "sets a bot's first instructions without a card in a %s run",
+  beforeEach(() => {
+    reviewMock.mockReset();
+    reviewMock.mockResolvedValue({ decision: "pass", reason: "Asked for", model: "mock" });
+  });
+  it.each(["user", "created", "routine"])(
+    "sets instructions without a card once Auto Review passes them in a %s run",
     async (trigger) => {
-      const f = emptyBot({ trigger });
+      const f = emptyBot({ trigger, autoReview: true });
       await f.run();
+      expect(reviewMock).toHaveBeenCalledWith(
+        expect.objectContaining({ toolName: "update_bot" }),
+        expect.anything(),
+      );
       expect(f.pauseRunForInput).not.toHaveBeenCalled();
       expect(f.results).toEqual([updated]);
       expect(f.instructionState.instructions).toBe(first);
       expect(f.instructionState.instructionHistory).toHaveLength(1);
     },
   );
-  it("replaces existing instructions the owner asked to change, keeping the old text in history", async () => {
-    const f = fixture({ name: "update_bot", builtin: true });
-    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+  it("sets them after outside content entered the run, once Auto Review passes them", async () => {
+    const f = emptyBot({ autoReview: true });
+    f.claimedOutsideSteering(true);
     await f.run();
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.instructionState.instructions).toBe(first);
+  });
+  it("replaces existing instructions, keeping the old text in history", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, autoReview: true });
+    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+    await f.run();
     expect(f.results).toEqual([updated]);
     expect(f.instructionState.instructions).toBe(first);
     expect(f.instructionState.instructionHistory).toEqual([
       expect.objectContaining({ instructions: "Draft only", reason: "Set in chat" }),
     ]);
   });
-  it("sets them on a later attempt, as when the owner answers the intro question", async () => {
-    const f = emptyBot();
-    f.prisma.attempt.count.mockResolvedValue(2);
-    await f.run();
-    expect(f.results).toEqual([updated]);
-    expect(f.instructionState.instructions).toBe(first);
-  });
   it("sets them after a profile edit earlier in the run", async () => {
-    const f = emptyBot();
+    const f = emptyBot({ autoReview: true });
     f.setCalls([
       { args: { description: "Drafts replies" }, executionId: "call-1" },
       { args: { instructions: first }, executionId: "call-2" },
@@ -1360,56 +1453,25 @@ describe("own instructions through update_bot", () => {
     expect(f.results.at(-1)).toEqual(updated);
     expect(f.instructionState.instructions).toBe(first);
   });
-  it("leaves instructions unset when another field in the same call is rejected", async () => {
-    const f = emptyBot();
-    f.setCalls([{ args: { name: "N".repeat(200), instructions: first }, executionId: "call-1" }]);
+  it("follows an always-allow rule for update_bot", async () => {
+    const f = emptyBot({
+      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "update_bot" }],
+    });
     await f.run();
-    expect(f.results[0]).toMatchObject({ error: expect.stringContaining("name") });
-    expect(f.instructionState.instructions).toBe("");
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.instructionState.instructions).toBe(first);
   });
-  it("holds the change for the owner when the chat already holds outside messages", async () => {
+  it("asks the owner when the space asks before actions", async () => {
     const f = fixture({ name: "update_bot", builtin: true });
     f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
-    f.prisma.message.findFirst.mockImplementation(async (query?: { where?: { OR?: unknown } }) =>
-      query?.where?.OR ? { id: "channel-message" } : null,
-    );
     await f.run();
     expect(f.pauseRunForInput).toHaveBeenCalledOnce();
     expect(f.effects[0]).toMatchObject({ kind: "update_bot", status: "intended", request: held });
     expect(f.instructionState.instructions).toBe("Draft only");
   });
-  it("holds the change when an outside run already wrote in the chat", async () => {
-    const f = emptyBot();
-    f.prisma.run.findFirst.mockImplementation(
-      async (query?: { where?: { trigger?: { in?: string[] } } }) =>
-        query?.where?.trigger?.in?.includes("webhook") ? { id: "webhook-run" } : null,
-    );
-    await f.run();
-    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
-    expect(f.instructionState.instructions).toBe("");
-  });
-  it("holds the change once outside content entered a user run", async () => {
-    const f = emptyBot();
-    f.claimedOutsideSteering(true);
-    await f.run();
-    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
-    expect(f.instructionState.instructions).toBe("");
-  });
-  it("holds a routine's change for the owner", async () => {
-    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
-    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
-    await f.run();
-    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
-    expect(f.effects[0]).toMatchObject({ status: "intended", request: held });
-  });
-  it("asks for a held change even when rules and auto review allow it, then applies the approved text", async () => {
-    const f = fixture({
-      name: "update_bot",
-      builtin: true,
-      trigger: "routine",
-      autoReview: true,
-      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "update_bot" }],
-    });
+  it("asks the owner when Auto Review does, then applies the approved text", async () => {
+    reviewMock.mockResolvedValue({ decision: "ask", reason: "Unclear", model: "mock" });
+    const f = fixture({ name: "update_bot", builtin: true, autoReview: true });
     f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
     await f.run();
     expect(f.instructionState.instructions).toBe("Draft only");
@@ -1422,25 +1484,24 @@ describe("own instructions through update_bot", () => {
     expect(f.effects).toHaveLength(1);
     expect(f.effects[0]!.status).toBe("completed");
   });
-  it("applies a held change directly when the owner skips approvals in their own run", async () => {
+  it("applies a change directly when the owner skips approvals", async () => {
     const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
-    f.prisma.message.findFirst.mockImplementation(async (query?: { where?: { OR?: unknown } }) =>
-      query?.where?.OR ? { id: "channel-message" } : null,
-    );
     f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
     await f.run();
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
     expect(f.instructionState.instructions).toBe(first);
   });
-  it("refuses a held change in Never ask once outside content entered the run", async () => {
-    const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
-    f.claimedOutsideSteering(true);
-    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
-    await f.run();
-    expect(f.pauseRunForInput).not.toHaveBeenCalled();
-    expect(f.results[0]).toMatchObject({ error: expect.stringContaining("owner's approval") });
-    expect(f.instructionState.instructions).toBe("Draft only");
-  });
+  it.each(["user", "bot_message"])(
+    "applies a change in Never ask after outside content in a %s run",
+    async (trigger) => {
+      const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true, trigger });
+      f.claimedOutsideSteering(true);
+      f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+      await f.run();
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+      expect(f.instructionState.instructions).toBe(first);
+    },
+  );
   it("completes a stale approved change with an error", async () => {
     const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
     f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
@@ -1454,6 +1515,242 @@ describe("own instructions through update_bot", () => {
       result: { error: expect.stringContaining("Instructions changed") },
     });
     expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  it("refuses to overwrite instructions changed after the attempt started", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
+    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+    f.overwriteInstructionsAfterAttemptStart("Imported profile");
+    await f.run();
+    expect(f.results).toEqual([
+      {
+        error: expect.stringContaining(
+          "Instructions changed since this run started, so your instructions were not saved",
+        ),
+      },
+    ]);
+    expect(f.instructionState.instructions).toBe("Imported profile");
+    expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  it("refuses a rewrite after re-reading the changed instructions in the same run", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
+    f.setCalls([
+      { args: { instructions: first }, executionId: "call-1" },
+      { args: {}, executionId: "call-2" },
+      { args: { instructions: "Rewritten from the import" }, executionId: "call-3" },
+    ]);
+    f.overwriteInstructionsAfterAttemptStart("Imported profile");
+    await f.run();
+    expect(f.results[0]).toMatchObject({ error: expect.stringContaining("Instructions changed") });
+    expect(f.results[1]).toMatchObject({ instructions: "Imported profile" });
+    expect(f.results[2]).toMatchObject({
+      error: expect.stringContaining("send their request again"),
+    });
+    expect(f.instructionState.instructions).toBe("Imported profile");
+    expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  it("does not rebase a write on a read no model generation has seen yet", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
+    f.setCalls([
+      { args: {}, executionId: "call-1" },
+      { args: { instructions: "Rewritten from the draft" }, executionId: "call-2" },
+    ]);
+    f.overwriteInstructionsAfterAttemptStart("Imported profile");
+    await f.run();
+    expect(f.results[0]).toMatchObject({ instructions: "Imported profile" });
+    expect(f.results[1]).toEqual({ error: expect.stringContaining("Instructions changed") });
+    expect(f.instructionState.instructions).toBe("Imported profile");
+    expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  it("does not rebase the parent's write on a helper's settings read", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
+    f.setCalls([
+      { args: {}, executionId: JSON.stringify(["pi-tool", "helper-1", "call-1"]) },
+      { args: { instructions: "Rewritten from the draft" }, executionId: "call-2" },
+    ]);
+    f.overwriteInstructionsAfterAttemptStart("Imported profile");
+    await f.run();
+    expect(f.results[0]).toMatchObject({ instructions: "Imported profile" });
+    expect(f.results[1]).toEqual({ error: expect.stringContaining("Instructions changed") });
+    expect(f.instructionState.instructions).toBe("Imported profile");
+    expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  it("applies a second instruction change later in the same run", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
+    f.setCalls([
+      { args: { instructions: "First rewrite" }, executionId: "call-1" },
+      { args: { instructions: "Second rewrite" }, executionId: "call-2" },
+    ]);
+    await f.run();
+    expect(f.results).toEqual([
+      { ok: true, instructions: "updated" },
+      { ok: true, instructions: "updated" },
+    ]);
+    expect(f.instructionState.instructions).toBe("Second rewrite");
+    expect(f.instructionState.instructionHistory).toHaveLength(2);
+  });
+  it("refuses at approval a proposal an import made stale after the attempt started", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
+    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+    f.overwriteInstructionsAfterAttemptStart("Imported profile");
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.effects[0]).toMatchObject({
+      status: "intended",
+      request: { instructions: first, previousInstructions: "Draft only" },
+    });
+    f.effects[0]!.status = "approved";
+    await f.run();
+    expect(f.instructionState.instructions).toBe("Imported profile");
+    expect(f.effects[0]).toMatchObject({
+      status: "completed",
+      result: { error: expect.stringContaining("Instructions changed") },
+    });
+    expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  /** A saved turn whose pending tool the run no longer offers cannot be restored. */
+  function retireSavedTurnTool(checkpoint: { result: string }) {
+    const saved = JSON.parse(checkpoint.result) as {
+      messages: { content: string | Array<{ type: string; name?: string }> }[];
+    };
+    for (const message of saved.messages) {
+      if (typeof message.content === "string") continue;
+      for (const call of message.content) {
+        if (call.type === "toolCall") call.name = "retired_tool";
+      }
+    }
+    checkpoint.result = JSON.stringify(saved);
+  }
+  /** A turn that pauses mid-approval, saved as the real runtime serializes it. */
+  function savedTurn(): Omit<TurnCheckpoint, "provider" | "model"> {
+    return {
+      version: 1,
+      systemPrompt: "You are Assistant. Draft only.",
+      pendingToolCallId: "call-1",
+      executionMode: "sequential",
+      messages: [
+        { role: "user", content: "Update your instructions", timestamp: new Date(0) },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "toolCall",
+              id: "call-1",
+              name: "update_bot",
+              arguments: { instructions: first },
+            },
+          ],
+          stopReason: "toolUse",
+        },
+      ] as never,
+    };
+  }
+  it("guards a resumed rewrite on the instructions its restored prompt was built from", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
+    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+    f.pauseWithTurnCheckpoint("call-1", savedTurn());
+    await f.run();
+    // An import lands between the pause and the resume.
+    f.instructionState.instructions = "Imported profile";
+    f.setCalls([{ args: { instructions: "Rewritten from the old draft" }, executionId: "call-2" }]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledTimes(2);
+    expect(f.effects[1]).toMatchObject({
+      status: "intended",
+      request: {
+        instructions: "Rewritten from the old draft",
+        previousInstructions: "Draft only",
+      },
+    });
+    f.effects[1]!.status = "approved";
+    await f.run();
+    expect(f.instructionState.instructions).toBe("Imported profile");
+    expect(f.effects[1]).toMatchObject({
+      status: "completed",
+      result: { error: expect.stringContaining("Instructions changed") },
+    });
+    expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  it("refuses own instruction writes resumed from a checkpoint without a baseline", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
+    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+    f.pauseWithTurnCheckpoint("call-1", savedTurn());
+    await f.run();
+    // Older checkpoints predate the stored baseline; the import also landed before resume.
+    const saved = JSON.parse(f.turnCheckpoints[0]!.result) as Record<string, unknown>;
+    delete saved.ownInstructionsBaseline;
+    f.turnCheckpoints[0]!.result = JSON.stringify(saved);
+    f.instructionState.instructions = "Imported profile";
+    f.setCalls([{ args: { instructions: "Rewritten from the old draft" }, executionId: "call-2" }]);
+    await f.run();
+    expect(f.results.at(-1)).toEqual({
+      error: expect.stringContaining("cannot safely change its own instructions"),
+    });
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.effects).toHaveLength(1);
+    expect(f.instructionState.instructions).toBe("Imported profile");
+    expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  it("refuses an approval left pending from before the baseline existed", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
+    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+    f.pauseWithTurnCheckpoint("call-1", savedTurn());
+    await f.run();
+    // Pre-upgrade code stored a fresh read as the expected text, not the baseline, and its
+    // checkpoint has no baseline to restore; approving it must not apply the rewrite.
+    const saved = JSON.parse(f.turnCheckpoints[0]!.result) as Record<string, unknown>;
+    delete saved.ownInstructionsBaseline;
+    f.turnCheckpoints[0]!.result = JSON.stringify(saved);
+    (f.effects[0]!.request as { previousInstructions: string }).previousInstructions =
+      "Imported profile";
+    f.instructionState.instructions = "Imported profile";
+    f.effects[0]!.status = "approved";
+    await f.run();
+    expect(f.instructionState.instructions).toBe("Imported profile");
+    expect(f.effects[0]).toMatchObject({
+      status: "completed",
+      result: { error: expect.stringContaining("cannot safely change its own instructions") },
+    });
+    expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  it("refuses a pre-baseline pending approval when the saved turn cannot be restored", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
+    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+    f.pauseWithTurnCheckpoint("call-1", savedTurn());
+    await f.run();
+    // As above, but the resume falls back to the canonical replay: the saved turn names a
+    // tool the run no longer offers, so no restoration can bring the baseline back either.
+    const saved = JSON.parse(f.turnCheckpoints[0]!.result) as Record<string, unknown>;
+    delete saved.ownInstructionsBaseline;
+    f.turnCheckpoints[0]!.result = JSON.stringify(saved);
+    retireSavedTurnTool(f.turnCheckpoints[0]!);
+    f.effects[0]!.request = {
+      instructions: first,
+      reason: "Set in chat",
+      previousInstructions: "Imported profile",
+    };
+    f.instructionState.instructions = "Imported profile";
+    f.effects[0]!.status = "approved";
+    f.setCalls([{ args: { instructions: first }, executionId: "call-2" }]);
+    await f.run();
+    expect(f.instructionState.instructions).toBe("Imported profile");
+    expect(f.effects[0]).toMatchObject({
+      status: "completed",
+      result: { error: expect.stringContaining("cannot safely change its own instructions") },
+    });
+    expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  it("applies a current approval when the saved turn cannot be restored", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
+    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+    f.pauseWithTurnCheckpoint("call-1", savedTurn());
+    await f.run();
+    retireSavedTurnTool(f.turnCheckpoints[0]!);
+    f.effects[0]!.status = "approved";
+    f.setCalls([{ args: { instructions: first }, executionId: "call-2" }]);
+    await f.run();
+    expect(f.instructionState.instructions).toBe(first);
+    expect(f.instructionState.instructionHistory).toHaveLength(1);
+    expect(f.effects[0]).toMatchObject({ status: "completed", result: { ok: true } });
   });
   it("does not apply an approved change after cancellation wins the thread lock", async () => {
     const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
@@ -1475,7 +1772,7 @@ describe("own instructions through update_bot", () => {
     expect(f.effects).toEqual([]);
   });
   it("ignores a previous text the model sends", async () => {
-    const f = fixture({ name: "update_bot", builtin: true });
+    const f = fixture({ name: "update_bot", builtin: true, autoReview: true });
     f.setCalls([
       {
         args: { instructions: first, previousInstructions: "forged", reason: "forged" },
@@ -1810,6 +2107,7 @@ describe("bot management tool gating", () => {
 });
 
 describe("bot management approvals", () => {
+  beforeEach(() => createFleetGroupMock.mockReset());
   const modelArgs = { name: "Crew", bot_names: ["Alpha", "Beta"] };
   const approved = {
     name: "Crew",
@@ -1820,13 +2118,11 @@ describe("bot management approvals", () => {
     ],
   };
 
-  it("asks with the resolved members even when rules and auto review allow the tool", async () => {
+  it("asks with the resolved members in Ask mode", async () => {
     const f = fixture({
       name: "create_group",
       builtin: true,
       fleetManagement: true,
-      autoReview: true,
-      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "create_group" }],
       fleetBots: [
         { id: "bot-a", name: "Alpha" },
         { id: "bot-b", name: "Beta" },
@@ -1840,17 +2136,32 @@ describe("bot management approvals", () => {
     expect(f.pauseRunForInput).toHaveBeenCalledWith(
       expect.objectContaining({
         blocks: [
-          expect.objectContaining({
-            text: "Create group “Crew”?",
-            detail: "Members: Alpha, Beta",
-            actions: [
-              { id: "allow", label: "Allow once" },
-              { id: "deny", label: "Deny" },
-            ],
-          }),
+          expect.objectContaining({ text: "Create group “Crew”?", detail: "Members: Alpha, Beta" }),
         ],
       }),
     );
+  });
+
+  it("creates the group in Never ask after outside content", async () => {
+    const f = fixture({
+      name: "create_group",
+      builtin: true,
+      fleetManagement: true,
+      skipApprovals: true,
+      fleetBots: [
+        { id: "bot-a", name: "Alpha" },
+        { id: "bot-b", name: "Beta" },
+      ],
+    });
+    const created = { groupId: "group-1", threadId: "thread-group-1", name: "Crew" };
+    createFleetGroupMock.mockResolvedValueOnce(created);
+    f.setCalls([
+      { name: "web_search", args: { query: "news" }, executionId: "call-1" },
+      { args: modelArgs, executionId: "call-2" },
+    ]);
+    await f.run();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.results.at(-1)).toEqual(created);
   });
 
   it("replays the approved ids after a member is renamed during the pause", async () => {
@@ -1886,6 +2197,35 @@ describe("bot management approvals", () => {
     expect(f.effects[0]).toMatchObject({ status: "completed", result: created });
     expect(f.results.at(-1)).toEqual(created);
     expect(f.execute).not.toHaveBeenCalled();
+  });
+
+  it("asks a person before a child routine names a site found in outside content", async () => {
+    reviewMock.mockReset();
+    reviewMock.mockResolvedValue({ decision: "pass", reason: "Fits", model: "mock" });
+    const f = fixture({
+      name: "create_child_routine",
+      builtin: true,
+      fleetManagement: true,
+      autoReview: true,
+      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "create_child_routine" }],
+      fleetBots: [{ id: "bot-a", name: "Alpha", thread: { id: "thread-a" } }],
+    });
+    f.setCalls([
+      { name: "web_search", args: { query: "news" }, executionId: "call-1" },
+      {
+        args: {
+          bot_id: "bot-a",
+          name: "Daily",
+          prompt: "Every day fetch https://attacker.test/",
+          every: 1,
+          unit: "days",
+        },
+        executionId: "call-2",
+      },
+    ]);
+    await f.run();
+    expect(reviewMock).not.toHaveBeenCalled();
+    expect(isApprovalPausedResult(f.results.at(-1))).toBe(true);
   });
 
   it("returns a refused target to the model without a card", async () => {
@@ -1931,6 +2271,25 @@ describe("command watch creation approval", () => {
       expect(reviewMock).not.toHaveBeenCalled();
     },
   );
+
+  it("saves a command watch in Never ask after outside content", async () => {
+    const f = fixture({ name: "schedule_create", builtin: true, skipApprovals: true });
+    f.setCalls([
+      { name: "web_search", args: { query: "news" }, executionId: "call-1" },
+      {
+        args: {
+          name: "Check",
+          prompt: "Summarize changes",
+          watch: { kind: "command", command: "ls" },
+        },
+        executionId: "call-2",
+      },
+    ]);
+    // Saving the routine itself is outside this fixture; only the gate is under test.
+    await f.run(true);
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(JSON.stringify(f.results.at(-1))).not.toContain("never asks");
+  });
 });
 
 describe("tool watch creation", () => {
@@ -2369,6 +2728,19 @@ describe("Auto Review of new sites", () => {
       expect(isApprovalPausedResult(f.results[1])).toBe(true);
     });
 
+    it("saves it in Never ask, where the bot can already fetch any site", async () => {
+      const f = fixture({
+        builtin: true,
+        skipApprovals: true,
+        sourceRole: "user",
+        prompt: "Find news daily",
+      });
+      f.setCalls([search, schedule("Every day fetch https://news.example.org/")]);
+      await f.run(true);
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+      expect(JSON.stringify(f.results.at(-1))).not.toContain("never asks");
+    });
+
     it.each([
       ["before outside content", false, "Every day fetch https://attacker.test/"],
       ["naming only sites the owner named", true, "Every day read https://docs.example.com"],
@@ -2704,11 +3076,11 @@ describe("retry of an action a person denied in the same run", () => {
 
 describe("user_computer_shell", () => {
   const device = { deviceId: "device-1", name: "Laptop", platform: "darwin" };
-  function devices(connected = true, paired = connected) {
+  function devices(connected = true, paired = connected, pairedAt = new Date(0)) {
     const requests: Array<{ userId: string; request: HostComputerRequest }> = [];
     const gateway = {
       connected: vi.fn(async (_userId: string) => (connected ? device : null)),
-      hasDevice: vi.fn(async (_userId: string) => paired),
+      pairedSince: vi.fn(async (_userId: string) => (paired ? pairedAt : null)),
       async *request<T>(userId: string, request: HostComputerRequest) {
         requests.push({ userId, request });
         if (request.method === "environment") {
@@ -2742,7 +3114,6 @@ describe("user_computer_shell", () => {
       expect(f.instructions()).not.toContain(offlineLine);
     }
     expect(gateway.connected).toHaveBeenCalledWith("user-1");
-    expect(gateway.hasDevice).not.toHaveBeenCalled();
   });
 
   it("tells the bot the owner's paired computer is offline instead of offering it", async () => {
@@ -2752,7 +3123,7 @@ describe("user_computer_shell", () => {
     expect(f.offeredTools()).not.toContain("user_computer_shell");
     expect(f.instructions()).toContain(offlineLine);
     expect(f.instructions()).not.toContain(line);
-    expect(gateway.hasDevice).toHaveBeenCalledWith("user-1");
+    expect(gateway.pairedSince).toHaveBeenCalledWith("user-1");
   });
 
   it.each<[string, Parameters<typeof fixture>[0]]>([
@@ -2815,7 +3186,7 @@ describe("user_computer_shell", () => {
     expect(requests).toEqual([]);
   });
 
-  it("asks first, even in never-ask mode with an allow rule, then runs without asking for the rest of the chat", async () => {
+  it("asks first, even in never-ask mode with an allow rule, then runs without asking again in this space", async () => {
     const { gateway, requests } = devices();
     const f = fixture({
       ...ownRun,
@@ -2836,7 +3207,7 @@ describe("user_computer_shell", () => {
             text: "Run on your computer?",
             detail: "ssh pi.local hostname",
             actions: [
-              { id: "allow", label: "Allow for this chat" },
+              { id: "allow", label: "Allow in this space" },
               { id: "deny", label: "Deny" },
             ],
           }),
@@ -2861,8 +3232,33 @@ describe("user_computer_shell", () => {
     f.setCalls([call("ssh pi.local uptime", "call-2")]);
     await f.run();
     expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    // Any chat of this user in this space counts, not just this one.
+    expect(f.prisma.externalEffect.findFirst).toHaveBeenLastCalledWith({
+      where: {
+        spaceId: "space-1",
+        status: { in: ["approved", "executing", "completed", "uncertain"] },
+        createdAt: { gte: new Date(0) },
+        run: { userId: "user-1" },
+        kind: "user_computer_shell",
+      },
+      select: { id: true },
+    });
     expect(f.results.at(-1)).toEqual({ stdout: "pi.local\n", stderr: "", code: 0 });
     expect(f.effects.map((effect) => effect.status)).toEqual(["completed", "completed"]);
+  });
+
+  it("asks again after the computer is removed and paired again", async () => {
+    const { gateway } = devices();
+    const f = fixture({ ...ownRun, userDevices: gateway });
+    f.setCalls([call("hostname")]);
+    await f.run();
+    f.effects[0]!.status = "approved";
+    await f.run();
+    gateway.pairedSince.mockResolvedValue(new Date(Date.now() + 60_000));
+    f.setCalls([call("uptime", "call-2")]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledTimes(2);
+    expect(isApprovalPausedResult(f.results.at(-1))).toBe(true);
   });
 
   it("refuses with a block rule", async () => {
@@ -2916,7 +3312,7 @@ describe("user computer screen control", () => {
         name: "Laptop",
         platform,
       })),
-      hasDevice: vi.fn(async (_userId: string) => true),
+      pairedSince: vi.fn(async (_userId: string) => new Date(0)),
       async *request<T>(_userId: string, request: HostComputerRequest) {
         requests.push(request);
         yield (
@@ -2941,23 +3337,25 @@ describe("user computer screen control", () => {
           kind: "ask",
           text: `Use ${app} on your computer?`,
           actions: [
-            { id: "allow", label: "Allow for this chat" },
+            { id: "allow", label: "Allow in this space" },
             { id: "deny", label: "Deny" },
           ],
         }),
       ],
     });
 
-  it("is offered only with a connected Mac", async () => {
-    const mac = fixture({ ...ownRun, userDevices: devices().gateway });
-    await mac.run();
-    expect(mac.offeredTools()).toEqual(
-      expect.arrayContaining(["user_computer_observe", "user_computer_act"]),
-    );
-    const windows = fixture({ ...ownRun, userDevices: devices("win32").gateway });
-    await windows.run();
-    expect(windows.offeredTools()).toContain("user_computer_shell");
-    expect(windows.offeredTools()).not.toContain("user_computer_observe");
+  it("is offered only with a connected Mac or Windows PC", async () => {
+    for (const platform of ["darwin", "win32"]) {
+      const connected = fixture({ ...ownRun, userDevices: devices(platform).gateway });
+      await connected.run();
+      expect(connected.offeredTools()).toEqual(
+        expect.arrayContaining(["user_computer_observe", "user_computer_act"]),
+      );
+    }
+    const linux = fixture({ ...ownRun, userDevices: devices("linux").gateway });
+    await linux.run();
+    expect(linux.offeredTools()).toContain("user_computer_shell");
+    expect(linux.offeredTools()).not.toContain("user_computer_observe");
     const disabled = fixture({
       ...ownRun,
       userDevices: devices().gateway,
@@ -2967,7 +3365,7 @@ describe("user computer screen control", () => {
     expect(disabled.offeredTools()).not.toContain("user_computer_act");
   });
 
-  it("asks per app, then uses an allowed app for the rest of the chat", async () => {
+  it("asks per app, then uses an allowed app across this space", async () => {
     const { gateway, requests } = devices();
     const f = fixture({
       ...ownRun,

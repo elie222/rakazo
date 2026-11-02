@@ -234,11 +234,13 @@ export async function gateToolCall(
   // site this run was not given needs a person: a reviewer would judge it on this run's
   // context, and passing it would trust the site for every later run.
   const scheduleNamesNewSite =
-    (name === "schedule_create" || (name === "schedule_update" && Boolean(args.prompt))) &&
+    (name === "schedule_create" ||
+      name === "create_child_routine" ||
+      (name === "schedule_update" && Boolean(args.prompt))) &&
     (await isRunTainted(ctx)) &&
     (await ctx.trust.routineNamesNewSite(String(args.prompt ?? "")));
   const requiresApprovalByDefault =
-    request.ownerApproval ||
+    request.heldForApproval ||
     commandWatch ||
     requiresUnattendedApproval ||
     siteGate === "new" ||
@@ -249,11 +251,12 @@ export async function gateToolCall(
   // A gated read still fails closed when its review errors, and keeps its approval key.
   const gated = requiresApprovalByDefault || connectorReadGated;
   const requiresMandatoryApproval =
-    request.ownerApproval ||
     commandWatch ||
     scheduleNamesNewSite ||
     requiresUnattendedApproval ||
     toolRequiresExplicitApproval(name);
+  // Never ask runs everything else: only another owner's connection could have been steered into it.
+  const guardedInNeverAsk = name === "respond_agent_connection";
   const resolvedRules = resolveActionApprovalForTools({
     tools: approvalToolNames.map((toolName) => ({
       name: toolName,
@@ -309,7 +312,7 @@ export async function gateToolCall(
         mode,
         mandatory: requiresMandatoryApproval,
         steerable:
-          requiresMandatoryApproval && mode === "never"
+          guardedInNeverAsk && mode === "never"
             ? !ctx.source.ownerStartedRun || (await isRunTainted(ctx))
             : undefined,
         consequential: requiresApprovalByDefault,
