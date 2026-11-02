@@ -123,8 +123,12 @@ findings() {
             or startswith("<!-- This is an auto-generated comment: rate limited by coderabbit.ai -->")))
         or (.user.login == "greptile-apps[bot]" and (.body |
           startswith("<h3>Greptile Summary</h3>") or startswith("<!-- greptile_summary -->")))
+        or ((.user.login | startswith("qodo-")) and (.body | ltrimstr("\n") |
+          startswith("<h3>PR Summary by Qodo</h3>") or startswith("<h3>Code Review by Qodo</h3>")
+            or startswith("<h3>Qodo is busy working</h3>") or startswith("<!-- qodo:")))
         or (.user.login == "github-actions[bot]" and (.body |
-          startswith("<!-- rakazo-playwright-screenshots -->\n### Playwright screenshots")))
+          startswith("<!-- rakazo-playwright-screenshots -->\n### Playwright screenshots")
+            or . == "/agentic_review"))
       );'
 
   # Compare complete URL tokens, never substrings or bare comment IDs.
