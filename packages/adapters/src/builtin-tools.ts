@@ -1469,11 +1469,8 @@ export const builtinAgentTools: ConnectorTool[] = [
           description:
             "If true, use the latest image attached on this user message as the profile picture.",
         },
-        dailyCheckIns: {
-          type: "boolean",
-          description:
-            "Daily check-ins on unfinished scratchpad work. Switch it off when the user asks you to stop checking in.",
-        },
+        // Explained in the update_bot instructions; kept short for the listed-tool budget.
+        dailyCheckIns: { type: "boolean" },
         notifyOnFinish: {
           type: "boolean",
           description: "true notifies the user when this bot finishes a run; false silences that.",
