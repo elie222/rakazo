@@ -3,10 +3,9 @@ import type { ActionApprovalRule } from "@rakazo/contracts";
 import { humanizeToolName } from "@rakazo/core";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LoadFailure } from "../../components/load-failure";
-import { NativeActionButton } from "../../components/native-action-button";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
@@ -19,7 +18,7 @@ type RuleAction = "always_allow" | "require_approval" | "deny" | "remove";
 
 /**
  * The tools and sites allowed, blocked or requiring approval. This screen
- * can add tool rules and switch or remove saved rules. The approval mode is in settings. With a
+ * can switch or remove saved rules. The approval mode is in settings. With a
  * Space, it edits that Space's override instead of the account's.
  */
 export default function ApprovalRules() {
@@ -33,8 +32,6 @@ export default function ApprovalRules() {
   const styles = useThemedStyles(createStyles);
   // Null until the first load lands.
   const [rules, setRules] = useState<ActionApprovalRule[] | null>(null);
-  const [adding, setAdding] = useState(false);
-  const [tool, setTool] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -127,52 +124,6 @@ export default function ApprovalRules() {
           <Text accessibilityRole="alert" style={styles.error}>
             {shownError}
           </Text>
-        ) : null}
-        {rules ? (
-          <NativeActionButton
-            label={t("Add rule")}
-            disabled={pending}
-            onPress={() => setAdding(!adding)}
-          />
-        ) : null}
-        {adding ? (
-          <View style={{ gap: 12 }}>
-            <TextInput
-              accessibilityLabel={t("Tool name")}
-              placeholder={t("Tool name")}
-              value={tool}
-              onChangeText={setTool}
-              autoCapitalize="none"
-              autoCorrect={false}
-              maxLength={200}
-              editable={!pending}
-              style={{ color: mobileTokens().foreground, padding: 12 }}
-            />
-            <NativeActionButton
-              label={t("Save")}
-              disabled={pending || !tool.trim()}
-              onPress={() =>
-                void save(async () => {
-                  const saved = await rpc("approvalRules/set", {
-                    scope,
-                    matchKind: "tool",
-                    matchValue: tool.trim(),
-                    effect: "require_approval",
-                  });
-                  setRules((current) => [
-                    ...(current ?? []).filter(
-                      (rule) =>
-                        rule.matchKind !== saved.matchKind ||
-                        rule.matchValue.toLowerCase() !== saved.matchValue.toLowerCase(),
-                    ),
-                    saved,
-                  ]);
-                  setTool("");
-                  setAdding(false);
-                })
-              }
-            />
-          </View>
         ) : null}
         <SettingsGroup>
           {rules?.map((rule) => {

@@ -855,7 +855,8 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                     activityMode &&
                     (activity.active.length > 0 ||
                       activity.recent.length > 0 ||
-                      bots.some((bot) => bot.unread)) ? (
+                      bots.some((bot) => bot.unread) ||
+                      groups.some((group) => group.unread)) ? (
                       <ActivitySection activity={activity} bots={bots} groups={groups} />
                     ) : null}
                   </>

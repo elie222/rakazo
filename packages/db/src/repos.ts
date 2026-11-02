@@ -115,6 +115,7 @@ function mapBot(
   runErrorId: string | null = null,
   updatedAt: Date = bot.updatedAt,
   incomingCall: Bot["incomingCall"] = null,
+  activeRunThreadId: string | null = null,
 ): Bot {
   if (!bot.thread) {
     throw new IsolationError("Bot is missing its thread");
@@ -140,6 +141,7 @@ function mapBot(
     preview,
     status,
     runErrorId,
+    activeRunThreadId,
     computerMode: bot.computer ? parseComputerMode(bot.computer.scope) : "team",
     createdAt: bot.createdAt.toISOString(),
     updatedAt: updatedAt.toISOString(),
@@ -491,6 +493,7 @@ export function createRepos(
                 ? [callsByThread.get(bot.thread.id)!]
                 : [],
             ),
+            activeRun?.threadId ?? null,
           );
         }),
       );

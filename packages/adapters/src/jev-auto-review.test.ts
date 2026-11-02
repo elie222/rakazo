@@ -238,7 +238,7 @@ it.each(["userTask", "botDescription"] as const)(
       },
     });
     expect(
-      (await provider.review({ ...request, [field]: "x".repeat(2001) }, context)).decision,
+      (await provider.review({ ...request, [field]: "x".repeat(16_001) }, context)).decision,
     ).toBe("ask");
     expect(calls).toBe(0);
   },

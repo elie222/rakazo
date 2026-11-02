@@ -14,15 +14,15 @@ import {
   autoReviewMinConfidence,
   autoReviewTimeoutMs,
   incompleteAutoReviewContext,
+  MAX_BOT_CHARS,
   MAX_OWNER_WORDS_CHARS,
+  MAX_TASK_CHARS,
   reviewArgsTooLong,
   sanitizeAutoReviewReason,
   TOO_LONG_TO_REVIEW,
   truncateReviewText,
 } from "./auto-review.js";
 
-const MAX_TASK_CHARS = 400;
-const MAX_BOT_CHARS = 240;
 export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v2";
 export class DecisionAutoReviewProvider implements AutoReviewProvider {
   constructor(

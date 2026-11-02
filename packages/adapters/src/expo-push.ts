@@ -181,8 +181,8 @@ export class ExpoPushProvider implements NotificationProvider {
       data: expoPushData(message, context.spaceId, randomUUID()),
       ...(message.sender ? { mutableContent: true } : {}),
       ...(message.kind === "help" || message.kind === "takeover" || message.kind === "failure"
-        ? { priority: "high", channelId: "rakazo_attention" }
-        : { channelId: "rakazo_messages" }),
+        ? { priority: "high" }
+        : {}),
     };
     // APNs caps the entire payload, including UTF-8 text and the sender thumbnail.
     while (Buffer.byteLength(JSON.stringify(payload)) > 3300 && payload.body.length > 0) {
@@ -193,7 +193,10 @@ export class ExpoPushProvider implements NotificationProvider {
         ? {
             to: token,
             priority: "high",
-            channelId: payload.channelId,
+            channelId:
+              message.kind === "help" || message.kind === "takeover" || message.kind === "failure"
+                ? "rakazo_attention"
+                : "rakazo_messages",
             collapseId: message.threadId,
             tag: message.threadId,
             ...(message.badge === undefined ? {} : { badge: message.badge }),

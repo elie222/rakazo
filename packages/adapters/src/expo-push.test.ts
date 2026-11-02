@@ -886,8 +886,8 @@ it("carries sender identity, marks actionable notifications high priority, and b
   expect(request).toMatchObject({
     mutableContent: true,
     priority: "high",
-    channelId: "rakazo_attention",
   });
+  expect(request.channelId).toBeUndefined();
   expect(Buffer.byteLength(JSON.stringify(request))).toBeLessThanOrEqual(3500);
 });
 

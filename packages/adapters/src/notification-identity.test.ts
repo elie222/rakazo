@@ -33,3 +33,22 @@ it("uses a saved profile picture, with no external avatar fetch", async () => {
     notificationAvatarSource({ id: "bot", color: "https://untrusted.example/avatar.png" }),
   ).toMatch(/^data:image\/svg\+xml,/);
 });
+
+it.each(["data:image/png;base64,AAAA", "large"])(
+  "retains sender identity for an invalid or oversized image: %s",
+  async (value) => {
+    const { default: sharp } = await import("sharp");
+    const color =
+      value === "large"
+        ? `data:image/png;base64,${(
+            await sharp({ create: { width: 2048, height: 2048, channels: 3, background: "red" } })
+              .png()
+              .toBuffer()
+          ).toString("base64")}`
+        : value;
+    await expect(notificationIdentity({ id: "agent", name: "Marketing", color })).resolves.toEqual({
+      botId: "agent",
+      name: "Marketing",
+    });
+  },
+);

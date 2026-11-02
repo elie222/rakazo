@@ -63,3 +63,25 @@ it("shows attention before work and unread, with sender identities on the phone"
   for (const identity of ["marketing", "research", "writer"])
     expect(markup).toContain(`data-agent="${identity}"`);
 });
+
+it("keeps roster-only failures and unread groups visible without run history", () => {
+  const markup = renderToStaticMarkup(
+    createElement(ActivitySection, {
+      activity: { active: [], recent: [] },
+      bots: [
+        {
+          id: "failed",
+          name: "Failed agent",
+          status: "idle",
+          unread: true,
+          runErrorId: "error",
+          color: "orange",
+        },
+      ] as never,
+      groups: [{ id: "group", name: "Unread team", unread: true, members: [] }] as never,
+    }),
+  );
+  expect(markup).toContain("Needs attention");
+  expect(markup).toContain("Failed agent");
+  expect(markup).toContain("Unread team");
+});

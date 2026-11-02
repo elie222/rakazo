@@ -20,6 +20,7 @@ vi.mock("@lingui/react/macro", () => {
 vi.mock("@rakazo/ui-web", () => {
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
+    SectionHeading: Container,
     BotAvatar: () => <span data-testid="agent-avatar" />,
     Button: (props: ComponentProps<"button">) => <button type="button" {...props} />,
     Collapsible: Container,
@@ -150,3 +151,74 @@ it("separates attention, working and unread and keeps the agent beside every run
     vi.unstubAllGlobals();
   }
 });
+
+it.each(["all", "status", "query", "date"])(
+  "keeps roster failures and filtered unread runs visible: %s",
+  async (mode) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    runs.list.mockImplementation(async ({ filter }: { filter: string }) => ({
+      runs: filter === "recent" ? [{ ...run, promptSnippet: "needle", botId: "unread" }] : [],
+    }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    const filters = emptyActivityFilters();
+    if (mode === "status") filters.status = "completed";
+    if (mode === "query") filters.query = "needle";
+    if (mode === "date") filters.dateRange = { from: "2000-01-01", to: "2100-01-01" };
+    try {
+      await act(async () =>
+        root.render(
+          <QueryClientProvider client={client}>
+            <ActivityList
+              bots={
+                [
+                  {
+                    id: "unread",
+                    name: "Writer",
+                    status: "idle",
+                    unread: true,
+                    preview: "Done",
+                    color: "orange",
+                  },
+                  {
+                    id: "failed",
+                    name: "Failed agent",
+                    status: "idle",
+                    unread: true,
+                    runErrorId: "error",
+                    color: "orange",
+                  },
+                ] as never
+              }
+              onOpenBot={() => undefined}
+              onOpenRun={() => undefined}
+              filters={filters}
+              onFiltersChange={() => undefined}
+              filtersExpanded={false}
+              filtersId="filters"
+            />
+          </QueryClientProvider>,
+        ),
+      );
+      if (mode === "all") {
+        await vi.waitFor(() =>
+          expect(
+            container.querySelector('section[aria-label="Needs attention"]')?.textContent,
+          ).toContain("Failed agent"),
+        );
+      } else {
+        await vi.waitFor(() =>
+          expect(
+            container.querySelector('section[aria-labelledby="activity-recent-heading"]')
+              ?.textContent,
+          ).toContain("Scout"),
+        );
+      }
+    } finally {
+      await act(async () => root.unmount());
+      client.clear();
+      vi.unstubAllGlobals();
+    }
+  },
+);

@@ -98,6 +98,21 @@ it("notifies for another agent's reply with its name and avatar, without replayi
         />,
       ),
     );
+    await act(async () =>
+      root.render(
+        <Harness
+          bots={[
+            {
+              ...bot,
+              status: "waiting_input",
+              activeRunThreadId: "group-thread",
+              updatedAt: "group",
+            },
+          ]}
+        />,
+      ),
+    );
+    expect(notices).toHaveLength(3);
     expect(notices).toHaveLength(3);
     expect(notices[2]!.title).toBe("Head of Marketing failed");
   } finally {

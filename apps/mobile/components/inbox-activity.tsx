@@ -50,18 +50,39 @@ export function ActivitySection({
     (group) =>
       group.unread && ![...attentionRuns, ...workingRuns].some((run) => run.groupId === group.id),
   );
+  const attentionBots = bots.filter(
+    (bot) =>
+      notificationAttention(bot.status, bot.unread, Boolean(bot.runErrorId)) ===
+        "needs_attention" && !attentionRuns.some((run) => !run.groupId && run.botId === bot.id),
+  );
+  const botRow = (bot: MobileBot, state: string) => (
+    <ConversationRow
+      key={bot.id}
+      title={bot.name}
+      preview={bot.preview}
+      time=""
+      accessibilityLabel={`${bot.name}, ${state}`}
+      onPress={() =>
+        router.push({ pathname: "/thread", params: { botId: bot.id, name: bot.name } })
+      }
+      avatar={
+        <BotAvatar identity={bot.id} color={bot.color} avatarSet={bot.avatarSet} motion="lazy" />
+      }
+    />
+  );
   const readRecent = activity.recent.filter(
     (run) => !attentionRuns.includes(run) && !runUnread(run),
   );
   return (
     <View style={styles.activitySection}>
       {[
-        { title: t("Needs attention"), runs: attentionRuns },
-        { title: t("Working"), runs: workingRuns },
-      ].map(({ title, runs }) =>
-        runs.length ? (
+        { title: t("Needs attention"), runs: attentionRuns, roster: attentionBots },
+        { title: t("Working"), runs: workingRuns, roster: [] },
+      ].map(({ title, runs, roster }) =>
+        runs.length || roster.length ? (
           <View key={title}>
             <Text style={styles.sectionHeading}>{title}</Text>
+            {roster.map((bot) => botRow(bot, title))}
             {runs.map((run) => (
               <ActivityRow
                 key={run.runId}
@@ -101,26 +122,7 @@ export function ActivitySection({
               (bot) =>
                 notificationAttention(bot.status, bot.unread, Boolean(bot.runErrorId)) === "unread",
             )
-            .map((bot) => (
-              <ConversationRow
-                key={bot.id}
-                title={bot.name}
-                preview={bot.preview}
-                time=""
-                accessibilityLabel={`${bot.name}, ${t("Unread")}`}
-                onPress={() =>
-                  router.push({ pathname: "/thread", params: { botId: bot.id, name: bot.name } })
-                }
-                avatar={
-                  <BotAvatar
-                    identity={bot.id}
-                    color={bot.color}
-                    avatarSet={bot.avatarSet}
-                    motion="lazy"
-                  />
-                }
-              />
-            ))}
+            .map((bot) => botRow(bot, t("Unread")))}
         </View>
       ) : null}
       {readRecent.length > 0 ? (

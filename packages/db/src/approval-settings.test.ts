@@ -141,3 +141,28 @@ describe("auto review", () => {
     expect(client.userActionAutoReviewPreference.upsert).not.toHaveBeenCalled();
   });
 });
+
+it.each([false, true])(
+  "replaces same-effect case variants without duplicating the match (space override: %s)",
+  async (overridden) => {
+    const client = confirmationsClient({ overridden });
+    const table = overridden ? client.actionApprovalRule : client.userActionApprovalRule;
+    table.findMany.mockResolvedValue([
+      { id: "old", matchValue: "WRITE_FILE" },
+      { id: "other", matchValue: "writeXfile" },
+    ] as never);
+    await saveApprovalRule(client.prisma, scope, {
+      effect: "require_approval",
+      matchKind: "tool",
+      matchValue: "write_file",
+    });
+    expect(table.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ["old"] } } });
+    expect(table.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          NOT: { effect: "require_approval", matchValue: "write_file" },
+        }),
+      }),
+    );
+  },
+);

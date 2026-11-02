@@ -101,6 +101,7 @@ class RakazoNotificationService : Service() {
 
   private suspend fun poll(generation: Long) {
     var selectedAvatarStyle: String? = null
+    val portraits = mutableMapOf<String, Bitmap?>()
     val startedAt = SystemClock.elapsedRealtime()
     val cadence = PollCadence()
     while (scope.isActive) {
@@ -135,15 +136,18 @@ class RakazoNotificationService : Service() {
         val working = active.filter(::isWorking).filter { it.notificationsEnabled }
         if (generation != sessionGeneration.get()) return
         val recent = runs(storage.endpoint, token, storage.spaceId, storage.headers, "recent")
-        val portraits = mutableMapOf<String, Bitmap?>()
-        fun portrait(run: RunRecord): Bitmap? = portraits.getOrPut(run.botId) {
-          runCatching {
+        fun portrait(run: RunRecord): Bitmap? {
+          if (portraits.containsKey(run.botId)) return portraits[run.botId]
+          return runCatching {
             val identity = rpc(storage.endpoint, token, storage.spaceId, storage.headers, "notifications/identity",
-              JSONObject().put("botId", run.botId))
+              JSONObject().put("botId", run.botId), timeoutMs = 2_000)
             senderPortrait(identity)
-          }.getOrNull()
+          }.getOrNull().also { portraits[run.botId] = it }
         }
         val workingPortrait = working.firstOrNull { !isOpenThread(it) }?.let { portrait(it) }
+        (active + recent).filter {
+          it.status == "waiting_input" || it.status == "waiting_takeover" || it.status == "failed"
+        }.forEach { portrait(it) }
         var replyLookups = emptyList<RunRecord>()
         val immediate = mutableListOf<Pair<RunRecord, NotificationCopy>>()
         if (!runIfCurrent(generation) {
@@ -163,14 +167,10 @@ class RakazoNotificationService : Service() {
                 .forEach { immediate += it to attentionCopy(copyContext, it) }
             }
             alertedAttention.retainAll(active.map { "${it.runId}:${it.status}" }.toSet())
-
+            immediate.forEach { (run, copy) -> post(run, copy, portraits[run.botId]) }
           }
         ) {
           return
-        }
-        for ((run, copy) in immediate) {
-          val image = portrait(run)
-          if (!runIfCurrent(generation) { post(run, copy, image) }) return
         }
         for (run in replyLookups) {
           if (generation != sessionGeneration.get()) return
@@ -1013,13 +1013,14 @@ private fun rpc(
   headers: String,
   procedure: String,
   input: JSONObject,
+  timeoutMs: Int = 15_000,
 ): JSONObject {
   if (!isAllowedNotificationEndpoint(endpoint)) throw IOException("Disallowed notification endpoint")
   val connection = URL("$endpoint/rpc/$procedure").openConnection() as HttpURLConnection
   return try {
     connection.requestMethod = "POST"
-    connection.connectTimeout = 8_000
-    connection.readTimeout = 15_000
+    connection.connectTimeout = minOf(8_000, timeoutMs)
+    connection.readTimeout = timeoutMs
     connection.doOutput = true
     // An access proxy in front of the server answers a refused request with a redirect to its login
     // page; following it would read that page as the server's answer.

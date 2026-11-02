@@ -27,7 +27,6 @@ vi.mock("@rakazo/ui-web", async () => {
     onValueChange: () => undefined,
   });
   return {
-    Input: (props: ComponentProps<"input">) => <input {...props} />,
     Button: ({
       variant: _variant,
       size: _size,
@@ -316,48 +315,6 @@ it("switches an allowed tool back to Ask", async () => {
     expect(
       button(container, "Ask", '[data-testid="approval-rules"]')!.getAttribute("aria-pressed"),
     ).toBe("true");
-  } finally {
-    await act(async () => root.unmount());
-    container.remove();
-    vi.unstubAllGlobals();
-  }
-});
-
-it("adds an explicit tool rule without waiting for an approval card", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  rpcMock.approvalRules.list.mockResolvedValue([]);
-  rpcMock.autoReview.get.mockResolvedValue(settings);
-  rpcMock.approvalRules.set.mockResolvedValue({
-    id: "new",
-    effect: "require_approval",
-    matchKind: "tool",
-    matchValue: "write_file",
-  });
-  const { container, root } = await render("space");
-  try {
-    await vi.waitFor(() => expect(button(container, "Add rule")!.disabled).toBe(false));
-    await act(async () => button(container, "Add rule")!.click());
-    const input = container.querySelector<HTMLInputElement>('input[aria-label="Tool name"]')!;
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-        input,
-        " write_file ",
-      );
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    await act(async () =>
-      container
-        .querySelector("form")!
-        .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
-    );
-    expect(rpcMock.approvalRules.set).toHaveBeenCalledWith({
-      scope: "space",
-      effect: "require_approval",
-      matchKind: "tool",
-      matchValue: "write_file",
-    });
-    expect(container.querySelector("form")).toBeNull();
-    expect(container.textContent).toContain("Write file");
   } finally {
     await act(async () => root.unmount());
     container.remove();

@@ -24,9 +24,9 @@ Electron and mobile. Submitted values stay outside conversation text and model i
 reusable credentials are encrypted. See [Reusable credentials](bot-secrets.md) for supported
 destinations and the limits of shell variables and browser login protection.
 
-Individual permissions use exact tool names, with Allow, Ask and Block choices. Settings can
-now create a tool rule before an action happens and switch existing tool, connector and site
-rules back to Ask. These changes apply to account settings or a Space's separate settings,
+Individual permissions use exact tool names, with Allow, Ask and Block choices. Settings switch existing tool, connector and site rules back to Ask.
+Rules originate from approval cards, which retain the exact runtime tool identifier; free-text
+rule creation is deferred until it can select a verified tool. These changes apply to account settings or a Space's separate settings,
 using the same backend on every surface. Existing block precedence, explicit human approval
 requirements and Never ask mode behavior remain unchanged. A tool rule covers that tool;
 it does not interpret arbitrary shell code as separate email, deletion or purchase actions.

@@ -19,8 +19,8 @@ import { localModelIds } from "./pi-local-provider-id.js";
 import { secretValuesToRedact } from "./pi-oauth.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
-const MAX_TASK_CHARS = 400;
-/** A new site is judged on the owner's words alone, so they get more room. */
+export const MAX_TASK_CHARS = 16_000;
+/** A new site is judged on a bounded copy of the owner's words alone. */
 export const MAX_OWNER_WORDS_CHARS = 2_000;
 const NEW_SITE_REVIEW_RULES = [
   "This fetch goes to a site the run was not given, and the whole URL reaches that site.",
@@ -28,7 +28,7 @@ const NEW_SITE_REVIEW_RULES = [
   "Pass only when the owner's words or the bot's role clearly call for this site and the URL carries nothing beyond what that needs.",
   "Ask when the site does not fit, or the path or query holds data that looks taken from private context, such as names, emails, tokens or encoded text.",
 ];
-const MAX_BOT_CHARS = 240;
+export const MAX_BOT_CHARS = 8_000;
 const MAX_ARGS_CHARS = 8_000;
 const MAX_REASON_CHARS = 160;
 const SENSITIVE_REVIEW_ARG_KEY =

@@ -602,7 +602,7 @@ describe("incomplete review context", () => {
         userTask: "Draft a reply",
         botDescription: "Mail helper",
         matchingRules: [],
-        [field]: "x".repeat(2001),
+        [field]: "x".repeat(16_001),
       };
       const result = await provider.review(request, {
         operationId: "review",
@@ -615,4 +615,45 @@ describe("incomplete review context", () => {
       expect(run).not.toHaveBeenCalled();
     },
   );
+});
+
+it("sends a full normal-length task and persona to the checker", async () => {
+  const run = vi.fn(() =>
+    (async function* () {
+      yield { type: "done", text: '{"decision":"pass","reason":"fits the task"}' } as never;
+    })(),
+  );
+  const provider = new LlmAutoReviewProvider({
+    runtime: { run } as never,
+    checker: { provider: "local", model: "checker" },
+    runId: "run",
+    spaceId: "space",
+    userId: "user",
+    botId: "bot",
+    threadId: "thread",
+  });
+  const userTask = "task ".repeat(200);
+  const botDescription = "persona ".repeat(200);
+  const result = await provider.review(
+    {
+      toolName: "write_file",
+      connectorKind: "system",
+      args: {},
+      userTask,
+      botDescription,
+      matchingRules: [],
+    },
+    {
+      operationId: "review",
+      traceId: "trace",
+      spaceId: "space",
+      userId: "user",
+      signal: new AbortController().signal,
+    },
+  );
+  expect(run).toHaveBeenCalledOnce();
+  expect(result.decision).toBe("pass");
+  const prompt = JSON.stringify(run.mock.calls[0]);
+  expect(prompt).toContain(userTask.trim());
+  expect(prompt).toContain(botDescription.trim());
 });

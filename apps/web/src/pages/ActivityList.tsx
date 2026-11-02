@@ -12,6 +12,7 @@ import {
   Label,
   NativeSelect,
   NativeSelectOption,
+  SectionHeading,
   Spinner,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
@@ -120,12 +121,54 @@ export function ActivityList({
           .toLowerCase()
           .includes(filters.query.trim().toLowerCase())),
   );
+  const showRoster =
+    Boolean(onOpenBot) &&
+    filters.status === "all" &&
+    !filters.dateRange.from &&
+    !filters.dateRange.to;
+  const attentionBots = showRoster
+    ? bots.filter(
+        (bot) =>
+          notificationAttention(bot.status, bot.unread, Boolean(bot.runErrorId)) ===
+            "needs_attention" &&
+          !attentionRuns.some((run) => !run.groupId && run.botId === bot.id) &&
+          (!filters.query.trim() ||
+            `${bot.name} ${bot.preview}`
+              .toLowerCase()
+              .includes(filters.query.trim().toLowerCase())),
+      )
+    : [];
+  const botRow = (bot: Bot) => (
+    <button
+      key={bot.id}
+      type="button"
+      onClick={() => onOpenBot?.(bot)}
+      className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left hover:bg-accent"
+    >
+      <BotAvatar identity={bot.id} color={bot.color} avatarSet={bot.avatarSet} size={28} />
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-medium">{bot.name}</span>
+        <span className="block truncate text-xs text-muted-foreground">{bot.preview}</span>
+      </span>
+    </button>
+  );
   const readRecent = filteredRecent.filter(
-    (run) => !attentionRuns.includes(run) && !runUnread(run),
+    (run) =>
+      !attentionRuns.includes(run) &&
+      !(
+        showRoster &&
+        (run.groupId
+          ? unreadGroups.some((group) => group.id === run.groupId)
+          : [...unreadBots, ...attentionBots].some((bot) => bot.id === run.botId))
+      ),
   );
   const filtersOn = activityFiltersActive(filters);
   const hasAnyRuns = activeRuns.length > 0 || recentRuns.length > 0;
-  const hasVisibleRuns = filteredActive.length > 0 || filteredRecent.length > 0;
+  const hasVisibleRuns =
+    attentionRuns.length > 0 ||
+    workingRuns.length > 0 ||
+    readRecent.length > 0 ||
+    (showRoster && (unreadBots.length > 0 || unreadGroups.length > 0 || attentionBots.length > 0));
 
   return (
     <div
@@ -161,11 +204,12 @@ export function ActivityList({
         { title: t`Needs attention`, runs: attentionRuns, id: "attention" },
         { title: t`Working`, runs: workingRuns, id: "working" },
       ].map(({ title, runs, id }) =>
-        runs.length ? (
+        runs.length || (id === "attention" && attentionBots.length) ? (
           <section key={id} aria-label={title}>
-            <div className="px-2.5 pb-1 pt-1 text-[12.5px] font-medium text-muted-foreground">
+            <SectionHeading variant="label" className="px-2.5 pb-1 pt-1">
               {title}
-            </div>
+            </SectionHeading>
+            {id === "attention" ? attentionBots.map(botRow) : null}
             {runs.map((run) => (
               <ActivityRow
                 key={run.runId}
@@ -177,15 +221,11 @@ export function ActivityList({
           </section>
         ) : null,
       )}
-      {(unreadBots.length || unreadGroups.length) &&
-      onOpenBot &&
-      filters.status === "all" &&
-      !filters.dateRange.from &&
-      !filters.dateRange.to ? (
+      {(unreadBots.length || unreadGroups.length) && showRoster ? (
         <section aria-label={t`Unread`}>
-          <div className="px-2.5 pb-1 pt-1 text-[12.5px] font-medium text-muted-foreground">
+          <SectionHeading variant="label" className="px-2.5 pb-1 pt-1">
             <Trans>Unread</Trans>
-          </div>
+          </SectionHeading>
           {unreadGroups.map((group) => (
             <button
               key={group.id}
@@ -202,20 +242,7 @@ export function ActivityList({
               </span>
             </button>
           ))}
-          {unreadBots.map((bot) => (
-            <button
-              key={bot.id}
-              type="button"
-              onClick={() => onOpenBot(bot)}
-              className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left hover:bg-accent"
-            >
-              <BotAvatar identity={bot.id} color={bot.color} avatarSet={bot.avatarSet} size={28} />
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-medium">{bot.name}</span>
-                <span className="block truncate text-xs text-muted-foreground">{bot.preview}</span>
-              </span>
-            </button>
-          ))}
+          {unreadBots.map(botRow)}
         </section>
       ) : null}
       {readRecent.length > 0 ? (
@@ -223,12 +250,13 @@ export function ActivityList({
           className={filteredActive.length > 0 ? "mt-2" : undefined}
           aria-labelledby="activity-recent-heading"
         >
-          <div
+          <SectionHeading
+            variant="label"
             id="activity-recent-heading"
             className="px-2.5 pb-1 pt-1 text-[12.5px] font-medium text-muted-foreground/80"
           >
             <Trans>Recent</Trans>
-          </div>
+          </SectionHeading>
           {readRecent.map((run) => (
             <ActivityRow
               key={run.runId}

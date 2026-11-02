@@ -72,6 +72,7 @@ export function useBrowserNotifications(
       const attention = notificationAttention(bot.status, bot.unread, Boolean(bot.runErrorId));
       const interrupted =
         attention === "needs_attention" &&
+        (!bot.activeRunThreadId || bot.activeRunThreadId === bot.threadId) &&
         (before.status !== bot.status || before.runErrorId !== bot.runErrorId);
       const replied = attention === "unread" && bot.preview !== before.preview;
       if (!interrupted && !replied) continue;

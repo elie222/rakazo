@@ -1114,6 +1114,29 @@ describeWithDatabase("API authorization and resource isolation", () => {
     }
   });
 
+  it("replaces case variants without resurrecting removed approval rules", async () => {
+    const cookie = await signup(app, `rule-case-${stamp}@rakazo.test`, "Rule Owner");
+    for (const scope of ["account", "space"] as const) {
+      await rpc(app, cookie, "approvalRules/set", {
+        scope,
+        effect: "require_approval",
+        matchKind: "tool",
+        matchValue: "Write_File",
+      });
+      const saved = await rpc<{ id: string }>(app, cookie, "approvalRules/set", {
+        scope,
+        effect: "require_approval",
+        matchKind: "tool",
+        matchValue: "write_file",
+      });
+      expect(
+        await rpc<Array<{ id: string }>>(app, cookie, "approvalRules/list", { scope }),
+      ).toEqual([expect.objectContaining({ id: saved.id })]);
+      await rpc(app, cookie, "approvalRules/remove", { scope, id: saved.id });
+      expect(await rpc(app, cookie, "approvalRules/list", { scope })).toEqual([]);
+    }
+  });
+
   it("keeps approval rules private to each user in a shared Space", async () => {
     const owner = await signup(app, `approval-owner-${stamp}@rakazo.test`, "Approval Owner");
     const member = await signup(app, `approval-member-${stamp}@rakazo.test`, "Approval Member");
