@@ -832,9 +832,14 @@ class FakeTabs:
     def __init__(self, *ids):
         self.ids = list(ids)
         self.closed, self.activated = [], []
+        # What happened, in order: agent-browser's session moved to a tab, or a tab closed.
+        self.events = []
         # Tabs a page opens while the call runs, as Chromium would show them at its end.
         self.opening = []
         self.broken = False
+
+    def select(self, tab):
+        self.events.append(("select", tab))
 
     def list(self, _port=None):
         return [{"type": "page", "id": tab, "title": f"Report {tab}", "url": f"https://portal.example.test/{tab}"}
@@ -845,6 +850,7 @@ class FakeTabs:
         if "/json/activate/" in url and self.broken:
             raise OSError("no answer")
         if "/json/close/" in url:
+            self.events.append(("close", tab))
             self.closed.append(tab)
             self.ids.remove(tab)
         else:
@@ -866,7 +872,7 @@ class NewTabTest(unittest.TestCase):
         """One call's view of the tabs: those opened since the last call, and the note it gives."""
         with patch.object(helper, "page_tabs", chromium.list), \
                 patch.object(helper.urllib.request, "urlopen", chromium.urlopen):
-            tabs = helper.Tabs(self.home, port, browser)
+            tabs = helper.Tabs(self.home, port, browser, chromium.select)
             tabs.begin()
             chromium.ids[:0] = chromium.opening
             chromium.opening = []
@@ -911,10 +917,17 @@ class NewTabTest(unittest.TestCase):
         self.assertEqual(len(chromium.closed), 60)
         self.assertEqual(chromium.activated, ["own"])
         self.assertEqual(note, "The page opened 60 tabs at once, more than 3, so they were closed.")
-        # Between calls: closed before the call picks the tab it reads.
+        # agent-browser's session moves to the bot's tab before any closes: a session whose tab is closed
+        # under it stops answering.
+        self.assertEqual(chromium.events[0], ("select", "own"))
+        self.assertEqual(len(chromium.events), 61)
+        # Between calls: closed before the call picks the tab it reads, after the session moved to the
+        # tab in front of those the last call left.
+        chromium.events = []
         chromium.ids[:0] = [f"q{index}" for index in range(5)]
         opened, note, _ = self.call(chromium, "own")
         self.assertEqual((chromium.ids, opened), (["own"], []))
+        self.assertEqual(chromium.events[0], ("select", "own"))
         self.assertEqual(note, "The page opened 5 tabs at once, more than 3, so they were closed.")
         # A report, or a few tabs, stay open and are named.
         chromium.opening = ["r1", "r2", "r3"]
@@ -960,7 +973,7 @@ class NewTabTest(unittest.TestCase):
         # The ones longest out of sight went first.
         self.assertEqual(sorted(chromium.closed), ["d00", "d01", "d02"])
         self.assertNotIn("Closed", notes[2])
-        one = helper.Tabs(self.home, 9222, "browser-1")
+        one = helper.Tabs(self.home, 9222, "browser-1", print)
         one.trimmed = 1
         self.assertEqual(one.note([], [], ""), "Closed the oldest tab a page had opened, to keep at most 8.")
         self.assertTrue(notes[3].startswith("Closed the 3 oldest tabs pages had opened, to keep at most 8. "))
@@ -990,13 +1003,19 @@ class NewTabTest(unittest.TestCase):
         self.assertLess(len(note), 1000)
         self.assertIn('\\"x', note)
 
-    def run_call(self, chromium, result, note=None, opens=()):
+    def run_call(self, chromium, result, note=None, opens=(), command="snapshot", reread=None):
         browser = FakeAgentBrowser()
         browser.home = self.home
         reads = []
 
+        self.deadlines = []
+
         def snapshot(current, settle=None):
             # The page tools read the tab in front: during the call, a tab the page just opened.
+            if reads:
+                self.deadlines.append(browser.deadline - time.monotonic())
+            if reads and reread:
+                raise reread
             chromium.ids[:0] = opens if not reads else []
             reads.append(chromium.ids[0])
             return {**result, "url": f"https://portal.example.test/{chromium.ids[0]}",
@@ -1009,8 +1028,11 @@ class NewTabTest(unittest.TestCase):
                 patch.object(helper, "AgentBrowser", return_value=browser), \
                 patch.object(browser, "use_tab", create=True) as use_tab, \
                 patch.object(helper.PageBrowser, "snapshot", autospec=True, side_effect=snapshot), \
+                patch.object(helper.PageBrowser, "act", autospec=True,
+                             side_effect=lambda current, _: {**snapshot(current), "completed": 1}), \
                 patch("builtins.print") as printed:
-            self.assertEqual(helper.run(["rakazo-page-browser", "snapshot", "{}"]), 0)
+            args = '{"actions": [{"kind": "click", "ref": "e1"}]}' if command == "act" else "{}"
+            self.assertEqual(helper.run(["rakazo-page-browser", command, args]), 0)
         return json.loads(printed.call_args.args[0]), reads, use_tab
 
     def test_a_report_a_page_opened_after_the_last_call_is_named_in_the_next_result(self):
@@ -1031,8 +1053,48 @@ class NewTabTest(unittest.TestCase):
         self.assertEqual(chromium.ids, ["own"])
         self.assertEqual(reads, ["p0", "own"])
         use_tab.assert_called_with("own")
+        # The re-read answers within the tab work's deadline, not agent-browser's usual 20 seconds.
+        self.assertEqual(len(self.deadlines), 1)
+        self.assertLessEqual(self.deadlines[0], helper.TAB_WORK_SECONDS)
         self.assertEqual(result["url"], "https://portal.example.test/own")
         self.assertEqual(result["note"], "The page opened 60 tabs at once, more than 3, so they were closed.")
+
+    def test_nothing_read_from_a_closed_tab_is_returned_when_the_bot_s_tab_cannot_be_read_again(self):
+        reports = {"ok": True, "title": "Report", "tree": "- link \"Win a prize\" [ref=e1]", "elements": [{"ref": "e1"}]}
+        for command in ("snapshot", "act"):
+            chromium = FakeTabs("own")
+            self.run_call(chromium, reports)
+            # An alert the act reported may have come from a closed pop-up: its text goes too.
+            result = self.run_call(chromium, {**reports, "dialog": "alert"}, opens=[f"p{index}" for index in range(60)],
+                                   command=command, note='The page showed an alert, now closed: "Claim your prize".',
+                                   reread=RuntimeError(helper.NO_ANSWER))[0]
+            self.assertEqual(chromium.ids, ["own"])
+            self.assertEqual(result, {"ok": False, "error": helper.REREAD_FAILED,
+                                      "note": "The page opened 60 tabs at once, more than 3, so they were closed.",
+                                      **({"completed": 1, "uncertain": False} if command == "act" else {})})
+
+    def test_every_command_answers_by_the_deadline_while_tabs_are_closed_and_read_again(self):
+        browser = helper.AgentBrowser(9222)
+        answer = subprocess.CompletedProcess([], 0, json.dumps([{"success": True, "result": {}}]), "")
+        with patch.object(helper.subprocess, "run", return_value=answer) as run:
+            browser.batch([["snapshot"]])
+            browser.deadline = time.monotonic() + 3
+            browser.batch([["snapshot"]])
+            browser.session_tab()
+            browser.deadline = time.monotonic() - 1
+            browser.batch([["snapshot"]])
+        timeouts = [call.kwargs["timeout"] for call in run.call_args_list]
+        self.assertEqual(timeouts[0], 20.0)
+        self.assertTrue(2 < timeouts[1] <= 3)
+        self.assertEqual(timeouts[2], 1.0)
+        self.assertEqual(timeouts[3], 0.2)
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        tabs = helper.Tabs(home.name, 9222, "browser-1", print)
+        tabs.deadline = time.monotonic() + 1
+        with patch.object(helper.urllib.request, "urlopen") as urlopen:
+            tabs.close(["p1"], None)
+        self.assertLessEqual(urlopen.call_args.kwargs["timeout"], 1)
 
     def test_a_tab_list_that_fails_at_the_start_closes_nothing_at_the_end(self):
         chromium = FakeTabs("a")

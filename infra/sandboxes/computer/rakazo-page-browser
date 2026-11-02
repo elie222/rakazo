@@ -24,7 +24,7 @@ import threading
 import time
 import unicodedata
 import urllib.request
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urljoin, urlsplit
 
 sys.path[:0] = [os.path.dirname(os.path.realpath(__file__)), "/usr/local/lib/rakazo"]
@@ -173,13 +173,26 @@ def front_tab(port: int) -> tuple[str, str]:
 # opened, at most MAX_OPENED_TABS stay open; the ones longest out of sight are closed first.
 MAX_NEW_TABS = 3
 MAX_OPENED_TABS = 8
+# agent-browser stops answering for good when the tab its session reads is closed under it, so the
+# session moves to a tab that stays before any is closed. Closing tabs, moving the session and reading
+# the bot's tab again share one deadline per step, so a flood never holds a call much longer.
+TAB_WORK_SECONDS = 8.0
+REREAD_FAILED = ("The page opened tabs that were closed, and this tab could not be read again in time. "
+                 "Take a snapshot to read it.")
+
+
+def left(deadline: float | None, most: float) -> float:
+    """A wait of at most `most` seconds that ends by the deadline, and a short one once it has passed."""
+    return most if deadline is None else max(0.2, min(most, deadline - time.monotonic()))
 
 
 class Tabs:
     """The browser's tabs at the end of the last call, kept in the page browser's own folder."""
 
-    def __init__(self, home: str, port: int, browser_id: Any) -> None:
+    def __init__(self, home: str, port: int, browser_id: Any, select: Callable[[Any], None]) -> None:
         self.path, self.port, self.browser_id = os.path.join(home, f"tabs-{port}.json"), port, browser_id
+        # Points agent-browser's session at a tab, before tabs are closed.
+        self.select = select
         try:
             with open(self.path, encoding="utf-8") as file:
                 last = json.load(file)
@@ -190,12 +203,15 @@ class Tabs:
             self.known, self.opened = None, []
         self.closed = self.trimmed = 0
         self.start: set[Any] = set()
+        self.deadline: float | None = None
 
     def begin(self) -> None:
         """Close a flood of tabs opened since the last call, before the call picks its tab."""
         tabs = page_tabs(self.port)
         if self.known is not None:
-            tabs = self.close_flood(tabs, self.known, None)
+            # The tab in front of those the last call left, which stays.
+            keep = next((tab.get("id") for tab in tabs if tab.get("id") in self.known), None)
+            tabs = self.close_flood(tabs, self.known, keep)
         self.start = {tab.get("id") for tab in tabs}
 
     def end(self, own: str, ours: str | None = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]], bool]:
@@ -214,7 +230,8 @@ class Tabs:
         flooded = self.closed > closed
         if flooded:
             with contextlib.suppress(OSError):
-                urllib.request.urlopen(f"http://127.0.0.1:{self.port}/json/activate/{own}", timeout=5.0).close()
+                urllib.request.urlopen(f"http://127.0.0.1:{self.port}/json/activate/{own}",
+                                       timeout=left(self.deadline, 5.0)).close()
                 tabs = page_tabs(self.port)
         opened = [tab for tab in opened if tab in tabs]
         # Written whole, then moved into place: a reader never sees half of it.
@@ -224,16 +241,21 @@ class Tabs:
         os.replace(temporary, self.path)
         return tabs, opened, flooded
 
-    def close(self, ids: list[Any]) -> None:
+    def close(self, ids: list[Any], keep: Any) -> None:
+        if keep is not None:
+            # Best effort: if the session does not move, the tab it reads is read again or refused after.
+            with contextlib.suppress(Exception):
+                self.select(keep)
         for tab in ids:
             with contextlib.suppress(OSError):
-                urllib.request.urlopen(f"http://127.0.0.1:{self.port}/json/close/{tab}", timeout=5.0).close()
+                urllib.request.urlopen(f"http://127.0.0.1:{self.port}/json/close/{tab}",
+                                       timeout=left(self.deadline, 5.0)).close()
 
-    def close_flood(self, tabs: list[dict[str, Any]], before: set[Any], own: str | None) -> list[dict[str, Any]]:
+    def close_flood(self, tabs: list[dict[str, Any]], before: set[Any], own: Any) -> list[dict[str, Any]]:
         new = [tab.get("id") for tab in tabs if tab.get("id") not in before and tab.get("id") != own]
         if len(new) <= MAX_NEW_TABS:
             return tabs
-        self.close(new)
+        self.close(new, own)
         self.closed += len(new)
         return page_tabs(self.port)
 
@@ -244,7 +266,8 @@ class Tabs:
         extra = by_sight[MAX_OPENED_TABS:]
         if not extra:
             return tabs
-        self.close(extra)
+        # The tab in front stays, as the oldest out of sight go: the session stays on it.
+        self.close(extra, tabs[0].get("id"))
         self.trimmed += len(extra)
         self.opened = [tab for tab in self.opened if tab not in extra]
         return page_tabs(self.port)
@@ -304,6 +327,8 @@ class AgentBrowser:
         with open(self.config, "w", encoding="utf-8") as config:
             config.write("{}")
         self.session = f"display-{port}"
+        # When set, every command answers by then or is given up.
+        self.deadline: float | None = None
         self.env = {key: value for key, value in os.environ.items()
                     if key in ("LANG", "LD_PRELOAD", "NSS_WRAPPER_PASSWD", "NSS_WRAPPER_GROUP")}
         self.env.update({
@@ -326,7 +351,7 @@ class AgentBrowser:
             proc = subprocess.run(
                 [AGENT_BROWSER, "batch", "--json", "--omit-command", *(["--bail"] if bail else [])],
                 input=json.dumps(commands), capture_output=True, text=True, env=self.env, cwd=self.home,
-                timeout=timeout)
+                timeout=left(self.deadline, timeout))
         except subprocess.TimeoutExpired:
             raise RuntimeError(NO_ANSWER) from None
         try:
@@ -359,7 +384,7 @@ class AgentBrowser:
         try:
             proc = subprocess.run(
                 [AGENT_BROWSER, "tab", "list", "--json"], capture_output=True, text=True,
-                env=self.env, cwd=self.home, timeout=1.0)
+                env=self.env, cwd=self.home, timeout=left(self.deadline, 1.0))
             envelope = json.loads(proc.stdout)
             data = envelope.get("data") if isinstance(envelope, dict) else None
             tabs = data.get("tabs") if isinstance(data, dict) else None
@@ -1775,8 +1800,12 @@ def run(argv: list[str]) -> int:
         tabs: Tabs | None = None
         # Best effort here and below: a tab list that fails leaves the call as it was.
         with contextlib.suppress(Exception):
-            started = Tabs(browser.home, port, (version or {}).get("webSocketDebuggerUrl"))
-            started.begin()
+            started = Tabs(browser.home, port, (version or {}).get("webSocketDebuggerUrl"), browser.use_tab)
+            browser.deadline = started.deadline = time.monotonic() + TAB_WORK_SECONDS
+            try:
+                started.begin()
+            finally:
+                browser.deadline = None
             # Only once it knows the tabs the call began with: without them, every tab would look new.
             tabs = started
         target, address = front_tab(port)
@@ -1819,14 +1848,29 @@ def run(argv: list[str]) -> int:
             result = page.act(actions)
         note = None
         if tabs is not None:
-            with contextlib.suppress(Exception):
-                now, new, flooded = tabs.end(target, ours=target if opened else None)
-                if flooded and "tree" in result:
-                    # The page the bot read may have been one of them: it reads its own tab again.
-                    with contextlib.suppress(Exception):
+            closed = tabs.closed
+            now: list[dict[str, Any]] = []
+            new: list[dict[str, Any]] = []
+            browser.deadline = tabs.deadline = time.monotonic() + TAB_WORK_SECONDS
+            try:
+                now, new, _ = tabs.end(target, ours=target if opened else None)
+            except Exception:  # noqa: BLE001
+                pass  # The tabs it closed before failing are still counted below.
+            try:
+                if tabs.closed > closed and any(key in result for key in ("url", "tree")):
+                    # What the bot read may have been one of the closed tabs: its own tab is read again, and
+                    # nothing read from a closed tab, a dialog's text included, is ever returned.
+                    try:
                         browser.use_tab(target)
                         result.update(page.snapshot(0.0))
-                note = tabs.note(now, new, result.get("url"))
+                    except Exception:  # noqa: BLE001
+                        for key in ("url", "title", "tree", "elements", "loading", "note", "dialog"):
+                            result.pop(key, None)
+                        result.update(ok=False, error=REREAD_FAILED,
+                                      **({"uncertain": False} if command == "act" else {}))
+            finally:
+                browser.deadline = None
+            note = tabs.note(now, new, result.get("url"))
         if downloads:
             front: dict[str, Any] = {}
             with contextlib.suppress(Exception):
