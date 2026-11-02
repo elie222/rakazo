@@ -671,6 +671,8 @@ services:
     mem_limit: 256m
     environment:
       RAKAZO_HOST: ${RAKAZO_HOST:-app.example.com}
+      # Go listens with multipath TCP by default, which widens the kernel attack surface.
+      GODEBUG: multipathtcp=0
     ports:
       - "80:80"
       - "443:443"

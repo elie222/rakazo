@@ -67,7 +67,7 @@ import type { McpServerHealthUpdate } from "./mcp-server-health.js";
 import { needsMcpOAuthClient, recordMcpServerHealth } from "./mcp-server-health.js";
 import { McpSession, mcpStdioRefusal } from "./mcp-transport.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
-import { ConnectorRedirectError } from "./remote-mcp.js";
+import { ConnectorRedirectError, isMcpSessionGoneError } from "./remote-mcp.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
 
 type SessionEntry = {
@@ -275,18 +275,6 @@ function unavailableTool(server: McpServer, reason: string): ConnectorTool {
       catalogGroup: server.slug,
     },
   };
-}
-
-/** Whether the server rejected the request because it no longer knows the session. */
-function sessionGone(error: unknown): boolean {
-  if (!(error instanceof StreamableHTTPError)) return false;
-  return (
-    error.code === 404 ||
-    (error.code === 400 &&
-      /\bBad Request: (?:Server not initialized|No valid session ID(?: provided| or initialization request)?|Mcp-Session-Id header is required)(?="|$)/i.test(
-        error.message,
-      ))
-  );
 }
 
 /** Runtime MCP connector. Authorization is re-checked against the bot assignment on every call. */
@@ -898,7 +886,7 @@ export class McpConnector implements ConnectorProvider {
       try {
         return await use(session);
       } catch (error) {
-        if (attempt !== 0 || !sessionGone(error)) throw error;
+        if (attempt !== 0 || !isMcpSessionGoneError(error)) throw error;
         // Stop reusing the expired session immediately, but let its other requests
         // receive their own responses before closing the shared SDK client.
         if (this.sessions.get(sessionKey)?.session === session) this.sessions.delete(sessionKey);

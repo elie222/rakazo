@@ -845,6 +845,11 @@ export class ConnectorRegistry implements ConnectorProvider {
     return provider && isManagedConnectorProvider(provider) ? provider : undefined;
   }
 
+  /** Release run-scoped state of every provider that keeps it. */
+  endRun(runId: string): void {
+    for (const provider of this.providers.values()) provider.endRun?.(runId);
+  }
+
   describe() {
     return {
       id: "connector-registry",

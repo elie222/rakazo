@@ -236,6 +236,9 @@ jobs:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
       - run: pnpm --filter @rakazo/desktop build
       - run: pnpm exec vitest run packages/adapters/src/host-computer.test.ts packages/adapters/src/desktop-sandbox-command.test.ts packages/adapters/src/desktop-sandbox-paths.test.ts packages/adapters/src/desktop-workspace-cleanup.test.ts packages/adapters/src/computer-support.test.ts apps/desktop/src/host-computer.test.ts
+      - name: Screen control on a real Windows desktop
+        if: runner.os == 'Windows'
+        run: pnpm exec vitest run apps/desktop/src/host-screen.windows.test.ts
       - name: Native computer in headless Electron
         run: pnpm --filter @rakazo/desktop exec electron ../../node_modules/vitest/vitest.mjs run --root ../.. packages/adapters/src/host-computer.test.ts apps/desktop/src/host-computer.test.ts
         env:
@@ -582,7 +585,20 @@ jobs:
     environment:
       name: production
       url: https://app.rakazo.com
+    permissions:
+      contents: read
+      id-token: write
     steps:
+      # Production SSH is reachable only over the tailnet; the runner joins with a short-lived
+      # GitHub OIDC identity scoped to this environment, so no Tailscale secret is stored.
+      - name: Join the tailnet
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ vars.TAILSCALE_CLIENT_ID }}
+          audience: ${{ vars.TAILSCALE_AUDIENCE }}
+          tags: tag:ci
+          ping: ${{ secrets.PRODUCTION_SSH_HOST }}
+
       - name: Configure production SSH identity
         env:
           SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}

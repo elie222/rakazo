@@ -136,6 +136,7 @@ function createDeps(
     routine: { findMany: vi.fn(async () => overrides.routines ?? []) },
     thread: { findFirst: vi.fn(async () => ({ id: "thread-1" })) },
     messagingChannel: {
+      findMany: vi.fn(async () => [{ id: channel.id }]),
       findUnique: vi.fn(async () => channel),
       upsert: vi.fn(async () => channel),
       update: vi.fn(async () => ({ ...channel, introPostedAt: new Date() })),
@@ -191,11 +192,16 @@ function createDeps(
           where,
           data,
         }: {
-          where: { id?: string; status?: string };
+          where: {
+            id?: string;
+            channelId?: string | { in?: string[] };
+            address?: { in?: string[]; notIn?: string[] };
+            status?: string | { in?: string[] };
+          };
           data: Record<string, unknown>;
         }) => {
           // Single-row predicated claims (owner commands) honor the status
-          // predicate; the group sweep path is asserted by call args only.
+          // predicate; bulk group writes (sweep, departures) apply to members.
           if (where.id) {
             const row = [overrides.invitedMember, overrides.approvedMember, ...members]
               .filter(Boolean)
@@ -206,6 +212,19 @@ function createDeps(
               Object.assign(row, data);
               return { count: 1 };
             }
+          } else if (where.channelId) {
+            const statuses = typeof where.status === "string" ? [where.status] : where.status?.in;
+            const channelIds =
+              typeof where.channelId === "string" ? [where.channelId] : (where.channelId.in ?? []);
+            const rows = members.filter(
+              (m) =>
+                (m.channelId === undefined || channelIds.includes(m.channelId as string)) &&
+                (!where.address?.in || where.address.in.includes(m.address as string)) &&
+                !where.address?.notIn?.includes(m.address as string) &&
+                (!statuses || statuses.includes(m.status as string)),
+            );
+            for (const row of rows) Object.assign(row, data);
+            return { count: rows.length };
           }
           return { count: 0 };
         },
@@ -1112,6 +1131,41 @@ describe("createMessagingInboundHandler owner commands", () => {
 });
 
 describe("createMessagingInboundHandler channel routing", () => {
+  it("discovers a Telegram group from the senders it has seen, without sweeping members", async () => {
+    const deps = createDeps({ identity: null });
+    const handle = createMessagingInboundHandler(deps);
+    // Telegram names no roster: participants accumulate as senders appear.
+    await handle({
+      type: "message",
+      provider: "telegram",
+      handle: "-1001234:11",
+      threadId: "telegram:-1001234",
+      isDirect: false,
+      from: "777",
+      fromLabel: "Grace",
+      channelName: "Family",
+      participants: [],
+      content: "hello group",
+      mediaUrl: null,
+      mentionsBot: true,
+    });
+
+    expect(deps.prisma.messagingChannel.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          provider: "telegram",
+          threadId: "telegram:-1001234",
+          name: "Family",
+        }),
+      }),
+    );
+    expect(deps.members).toEqual([
+      expect.objectContaining({ address: "777", identityId: null, status: "invited" }),
+    ]);
+    // A rosterless event says nothing about who left; no member may be swept.
+    expect(deps.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
+  });
+
   it("discovers the channel, invites linked members, and posts one intro for unlinked ones", async () => {
     const deps = createDeps();
     const handle = createMessagingInboundHandler(deps);
@@ -1214,7 +1268,12 @@ describe("createMessagingInboundHandler channel routing", () => {
       ),
     });
     const handle = createMessagingInboundHandler(deps);
-    await handle(groupEvent);
+    // The roster names both members; a roster without the peer would sweep
+    // their membership to left before the fan-out.
+    await handle({
+      ...groupEvent,
+      participants: ["+15551111111", "+15553333333"],
+    });
 
     const fanout = deps.sendUserMessage.mock.calls.map(([input]) => input);
     expect(fanout).toHaveLength(2);
@@ -1405,6 +1464,339 @@ describe("createMessagingInboundHandler channel routing", () => {
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
     const runJobs = deps.enqueue.mock.calls.filter(([job]) => job.name === "run.continue");
     expect(runJobs).toHaveLength(0);
+  });
+
+  it("wakes no bot for a group event without text, like a pin or a bare photo", async () => {
+    const alice = {
+      id: "cm-1",
+      channelId: "ch-1",
+      address: "777",
+      identityId: "mi-alice",
+      status: "approved",
+    };
+    const bob = {
+      id: "cm-2",
+      channelId: "ch-1",
+      address: "888",
+      identityId: "mi-bob",
+      status: "approved",
+    };
+    const deps = createDeps({ members: [alice, bob] });
+    const identities = [
+      {
+        id: "mi-alice",
+        provider: "telegram",
+        address: "777",
+        userId: "user-a",
+        spaceId: "ws-a",
+        botId: "bot-a",
+        outboundSinceInbound: 0,
+      },
+      {
+        id: "mi-bob",
+        provider: "telegram",
+        address: "888",
+        userId: "user-b",
+        spaceId: "ws-b",
+        botId: "bot-b",
+        outboundSinceInbound: 0,
+      },
+    ];
+    Object.assign(deps.prisma.messagingIdentity, {
+      findUnique: vi.fn(
+        async ({ where }: { where: { provider_address?: { address: string }; id?: string } }) => {
+          if (where.provider_address) {
+            return (
+              identities.find((row) => row.address === where.provider_address?.address) ?? null
+            );
+          }
+          return identities.find((row) => row.id === where.id) ?? null;
+        },
+      ),
+    });
+    const handle = createMessagingInboundHandler(deps);
+    const event = {
+      type: "message" as const,
+      provider: "telegram",
+      handle: "-1001234:50",
+      threadId: "telegram:-1001234",
+      isDirect: false,
+      from: "888",
+      fromLabel: "Bob",
+      channelName: "Family",
+      participants: [],
+      content: "",
+      mediaUrl: null,
+    };
+    await handle(event);
+    expect(deps.prisma.routine.findMany).not.toHaveBeenCalled();
+    // A bare photo still reaches each bot's routines, but starts no plain run.
+    await handle({
+      ...event,
+      handle: "-1001234:51",
+      mediaUrl: "https://cdn.example.com/pic.jpg",
+    });
+    expect(deps.prisma.routine.findMany).toHaveBeenCalledTimes(2);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    expect(deps.enqueue.mock.calls.filter(([job]) => job.name === "run.continue")).toHaveLength(0);
+
+    // The same sender's next real message still reaches both bots.
+    await handle({ ...event, handle: "-1001234:52", content: "dinner at 7" });
+    expect(deps.sendUserMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it("marks a Telegram member who left as left, without starting a run", async () => {
+    const alice = {
+      id: "cm-1",
+      channelId: "ch-1",
+      address: "777",
+      identityId: "mi-alice",
+      status: "approved",
+    };
+    const bob = {
+      id: "cm-2",
+      channelId: "ch-1",
+      address: "888",
+      identityId: "mi-bob",
+      status: "approved",
+    };
+    const deps = createDeps({ members: [alice, bob] });
+    const identities = [
+      {
+        id: "mi-alice",
+        provider: "telegram",
+        address: "777",
+        userId: "user-a",
+        spaceId: "ws-a",
+        botId: "bot-a",
+        outboundSinceInbound: 0,
+      },
+      {
+        id: "mi-bob",
+        provider: "telegram",
+        address: "888",
+        userId: "user-b",
+        spaceId: "ws-b",
+        botId: "bot-b",
+        outboundSinceInbound: 0,
+      },
+    ];
+    Object.assign(deps.prisma.messagingIdentity, {
+      findUnique: vi.fn(
+        async ({ where }: { where: { provider_address?: { address: string }; id?: string } }) => {
+          if (where.provider_address) {
+            return (
+              identities.find((row) => row.address === where.provider_address?.address) ?? null
+            );
+          }
+          return identities.find((row) => row.id === where.id) ?? null;
+        },
+      ),
+    });
+    const handle = createMessagingInboundHandler(deps);
+    await handle({
+      type: "message",
+      provider: "telegram",
+      handle: "-1001234:31",
+      threadId: "telegram:-1001234",
+      isDirect: false,
+      from: "888",
+      fromLabel: "Bob",
+      channelName: "Family",
+      participants: [],
+      content: "",
+      mediaUrl: null,
+      departures: { addresses: ["777"], botLeft: false },
+    });
+
+    expect(deps.prisma.messagingChannelMember.updateMany).toHaveBeenCalledWith({
+      where: {
+        channelId: { in: ["ch-1"] },
+        address: { in: ["777"] },
+        status: { in: ["invited", "approved"] },
+      },
+      data: { status: "left" },
+    });
+    expect(alice.status).toBe("left");
+    // The service message itself reaches no bot and starts no run.
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    expect(deps.enqueue).not.toHaveBeenCalled();
+
+    // Alice's bot no longer receives the group's later messages.
+    await handle({
+      type: "message",
+      provider: "telegram",
+      handle: "-1001234:32",
+      threadId: "telegram:-1001234",
+      isDirect: false,
+      from: "888",
+      fromLabel: "Bob",
+      channelName: "Family",
+      participants: [],
+      content: "still here",
+      mediaUrl: null,
+    });
+    expect(deps.sendUserMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("ends a departed member's forum-topic memberships too", async () => {
+    // The group and its forum topic are separate channels of the same chat.
+    const aliceGroup = {
+      id: "cm-1",
+      channelId: "ch-1",
+      address: "777",
+      identityId: "mi-alice",
+      status: "approved",
+    };
+    const aliceTopic = {
+      id: "cm-2",
+      channelId: "ch-topic",
+      address: "777",
+      identityId: "mi-alice",
+      status: "approved",
+    };
+    const bobTopic = {
+      id: "cm-3",
+      channelId: "ch-topic",
+      address: "888",
+      identityId: "mi-bob",
+      status: "approved",
+    };
+    const otherChat = {
+      id: "cm-4",
+      channelId: "ch-other",
+      address: "777",
+      identityId: "mi-alice",
+      status: "approved",
+    };
+    const deps = createDeps({ members: [aliceGroup, aliceTopic, bobTopic, otherChat] });
+    const findMany = vi.fn(async () => [{ id: "ch-1" }, { id: "ch-topic" }]);
+    Object.assign(deps.prisma.messagingChannel, { findMany });
+    await createMessagingInboundHandler(deps)({
+      type: "message",
+      provider: "telegram",
+      handle: "-1001234:40",
+      threadId: "telegram:-1001234",
+      isDirect: false,
+      from: "888",
+      fromLabel: "Bob",
+      channelName: "Family",
+      participants: [],
+      content: "",
+      mediaUrl: null,
+      departures: { addresses: ["777"], botLeft: false },
+    });
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        provider: "telegram",
+        OR: [{ threadId: "telegram:-1001234" }, { threadId: { startsWith: "telegram:-1001234:" } }],
+      },
+      select: { id: true },
+    });
+    expect(aliceGroup.status).toBe("left");
+    expect(aliceTopic.status).toBe("left");
+    expect(bobTopic.status).toBe("approved");
+    expect(otherChat.status).toBe("approved");
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["she leaves the group", { addresses: ["777"], botLeft: false }],
+    ["she removes the bot", { addresses: [], botLeft: true }],
+  ])(
+    "invites nobody when a linked sender the channel has not seen departs: %s",
+    async (_case, departures) => {
+      // Alice is linked but has never written in this group; her first event is a departure.
+      const deps = createDeps({ members: [] });
+      Object.assign(deps.prisma.messagingIdentity, {
+        findUnique: vi.fn(async () => ({
+          id: "mi-alice",
+          provider: "telegram",
+          address: "777",
+          userId: "user-a",
+          spaceId: "ws-a",
+          botId: "bot-a",
+          outboundSinceInbound: 0,
+        })),
+      });
+      await createMessagingInboundHandler(deps)({
+        type: "message",
+        provider: "telegram",
+        handle: "-1001234:43",
+        threadId: "telegram:-1001234",
+        isDirect: false,
+        from: "777",
+        fromLabel: "Alice",
+        channelName: "Family",
+        participants: [],
+        content: "",
+        mediaUrl: null,
+        departures,
+      });
+
+      // No "Reply YES" invitation she could never accept, and no member row to answer it.
+      expect(deps.prisma.messagingOutbound.createMany).not.toHaveBeenCalled();
+      expect(deps.prisma.messagingChannelMember.upsert).not.toHaveBeenCalled();
+      expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    },
+  );
+
+  it("ends every membership when the Telegram bot itself is removed", async () => {
+    const alice = {
+      id: "cm-1",
+      channelId: "ch-1",
+      address: "777",
+      identityId: "mi-1",
+      status: "approved",
+    };
+    const carol = {
+      id: "cm-3",
+      channelId: "ch-1",
+      address: "999",
+      identityId: null,
+      status: "invited",
+    };
+    const deps = createDeps({ members: [alice, carol] });
+    const handle = createMessagingInboundHandler(deps);
+    await handle({
+      type: "message",
+      provider: "telegram",
+      handle: "-1001234:41",
+      threadId: "telegram:-1001234",
+      isDirect: false,
+      from: "777",
+      fromLabel: "Alice",
+      channelName: "Family",
+      participants: [],
+      content: "",
+      mediaUrl: null,
+      departures: { addresses: [], botLeft: true },
+    });
+
+    expect(deps.prisma.messagingChannelMember.updateMany).toHaveBeenCalledWith({
+      where: { channelId: { in: ["ch-1"] }, status: { in: ["invited", "approved"] } },
+      data: { status: "left" },
+    });
+    expect(alice.status).toBe("left");
+    expect(carol.status).toBe("left");
+    // The removal service message itself starts no run.
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+
+    // With every membership ended, nothing in the group reaches a bot.
+    await handle({
+      type: "message",
+      provider: "telegram",
+      handle: "-1001234:42",
+      threadId: "telegram:-1001234",
+      isDirect: false,
+      from: "777",
+      fromLabel: "Alice",
+      channelName: "Family",
+      participants: [],
+      content: "anyone there",
+      mediaUrl: null,
+    });
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
 });
 

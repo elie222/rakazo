@@ -281,17 +281,12 @@ export function messagingPlatformsFromEnv(
   // webhook posts, so a forged update could reach inbound processing.
   if (env.telegramBotToken && env.telegramWebhookSecret) {
     telegramTokens.add(env.telegramBotToken.trim());
+    const adapter = telegramAdapter(env.telegramBotToken, env.telegramWebhookSecret, options);
     platforms.push({
       provider: "telegram",
-      capabilities: { direct: true, groups: false, receipt: null, files: true },
-      // Auto mode long-polls when no webhook is registered, for deployments
-      // without a public HTTPS endpoint. Only the API process may poll: it
-      // owns the inbound sink, and Telegram allows one getUpdates per bot.
-      adapter: createTelegramAdapter({
-        botToken: env.telegramBotToken,
-        secretToken: env.telegramWebhookSecret,
-        mode: options.pollInboundMessages ? "auto" : "webhook",
-      }),
+      capabilities: { direct: true, groups: true, receipt: null, files: true },
+      adapter,
+      ...telegramGroupHooks(adapter),
       isPermanentSendError: isTelegramBlocked,
     });
   }
@@ -307,15 +302,13 @@ export function messagingPlatformsFromEnv(
       continue;
     }
     telegramTokens.add(bot.botToken.trim());
+    const adapter = telegramAdapter(bot.botToken, bot.webhookSecret, options);
     platforms.push({
       provider: `telegram-${bot.name}`,
       adapterName: "telegram",
-      capabilities: { direct: true, groups: false, receipt: null, files: true },
-      adapter: createTelegramAdapter({
-        botToken: bot.botToken,
-        secretToken: bot.webhookSecret,
-        mode: options.pollInboundMessages ? "auto" : "webhook",
-      }),
+      capabilities: { direct: true, groups: true, receipt: null, files: true },
+      adapter,
+      ...telegramGroupHooks(adapter),
       isPermanentSendError: isTelegramBlocked,
     });
   }
@@ -549,6 +542,64 @@ function slackRedeliveryKeys(payload: unknown): string[] {
 /** Telegram 403 (Chat SDK PermissionError): the user blocked the bot. */
 function isTelegramBlocked(error: unknown): boolean {
   return error instanceof Error && error.name === "PermissionError";
+}
+
+function telegramAdapter(
+  botToken: string,
+  secretToken: string,
+  options: { pollInboundMessages?: boolean },
+) {
+  return createTelegramAdapter({
+    botToken,
+    secretToken,
+    // Auto mode long-polls when no webhook is registered, for deployments
+    // without a public HTTPS endpoint. Only the API process may poll: it
+    // owns the inbound sink, and Telegram allows one getUpdates per bot.
+    mode: options.pollInboundMessages ? "auto" : "webhook",
+  });
+}
+
+/**
+ * Group facts shared by every Telegram bot mount. Telegram names no roster,
+ * so `participants` stays unset: channel members accumulate from the senders
+ * seen, and a rosterless event never sweeps anyone out. Departures arrive one
+ * service message at a time instead.
+ */
+function telegramGroupHooks(adapter: { readonly botUserId?: string }) {
+  return {
+    channelName: (raw: unknown) =>
+      stringField(asRecord(asRecord(raw)?.chat) ?? {}, "title") ?? null,
+    acceptsGroup: (raw: unknown) => asRecord(asRecord(raw)?.chat)?.type !== "channel",
+    normalizeThreadId: telegramGroupThreadId,
+    departures: (raw: unknown) => telegramDepartures(raw, adapter),
+  };
+}
+
+/**
+ * A `left_chat_member` service message names who left or was removed. When
+ * that member is this mount's own bot, the whole channel ends: Telegram
+ * delivers nothing from a chat the bot is no longer in.
+ */
+function telegramDepartures(
+  raw: unknown,
+  adapter: { readonly botUserId?: string },
+): { addresses: string[]; botLeft: boolean } | undefined {
+  const id = asRecord(asRecord(raw)?.left_chat_member)?.id;
+  if (typeof id !== "number" && typeof id !== "string") return undefined;
+  return adapter.botUserId === String(id)
+    ? { addresses: [], botLeft: true }
+    : { addresses: [String(id)], botLeft: false };
+}
+
+/**
+ * A forum topic (`is_topic_message`) is its own conversation; a plain reply's
+ * message thread id is not, so it collapses onto the group. Business thread
+ * ids (`telegram:biz:<id>:<chat>`) have four segments and pass through.
+ */
+function telegramGroupThreadId(threadId: string, raw: unknown): string {
+  if (asRecord(raw)?.is_topic_message === true) return threadId;
+  const parts = threadId.split(":");
+  return parts.length === 3 && parts[0] === "telegram" ? `${parts[0]}:${parts[1]}` : threadId;
 }
 
 /** Pull Slack team-room fields the Chat SDK does not expose on Message. */

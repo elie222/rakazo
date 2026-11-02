@@ -22,7 +22,7 @@ import { isFleetApprovalTool, prepareFleetRequest } from "./fleet-tools.js";
 import { assertConnectorToolArgs, CATALOG_EXECUTE } from "./lazy-tool-catalog.js";
 import { paidRequestEffect, restorePaidRequest } from "./paid-request.js";
 import type { RunContext } from "./run-context.js";
-import { isRunTainted, neverAsks } from "./run-context.js";
+import { isRunTainted, neverAsks, OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR } from "./run-context.js";
 import {
   approvalReplayEffectToolName,
   CATALOG_APPROVAL_TOOL,
@@ -369,7 +369,7 @@ async function prepareOwnBotUpdate(
   ctx: RunContext,
   request: ToolRequest,
 ): Promise<ToolError | undefined> {
-  const { deps, run, bot } = ctx;
+  const { run } = ctx;
   const { executionId, nextApprovedTool } = request;
   if (nextApprovedTool === "update_bot") {
     // The approved replay runs the stored request.
@@ -409,14 +409,17 @@ async function prepareOwnBotUpdate(
     return { error: "Instruction changes are blocked for runs someone else started." };
   if (Object.keys(args).some((key) => key !== "instructions"))
     return { error: "Change your instructions in their own update_bot call." };
-  const current = await deps.prisma.bot.findUniqueOrThrow({
-    where: { id: bot.id },
-    select: { instructions: true },
-  });
+  // An older checkpoint predates the baseline; this attempt must not guess.
+  if (ctx.state.ownInstructionsBaseline === undefined)
+    return { error: OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR };
   request.args = {
     instructions,
     reason: "Set in chat",
-    previousInstructions: current.instructions,
+    // The text the model worked from, not a fresh read: a change that landed since the
+    // attempt started conflicts at approval instead of being overwritten.
+    previousInstructions: ctx.state.ownInstructionsBaseline,
+    // Provenance the approved replay checks; requests stored before the baseline lack it.
+    previousInstructionsFromBaseline: true,
   };
   request.heldForApproval = true;
   return undefined;

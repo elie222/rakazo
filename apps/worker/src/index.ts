@@ -215,8 +215,14 @@ async function main() {
       pipedream,
     },
   );
+  const installedConnectors = new InstalledConnectorProvider(
+    prisma,
+    secrets,
+    {},
+    allowPrivateEndpoint,
+  );
   const stack = createConnectorStack(undefined, [
-    new InstalledConnectorProvider(prisma, secrets, {}, allowPrivateEndpoint),
+    installedConnectors,
     ...integrationSettings.providers(),
     mcp,
   ]);
@@ -385,6 +391,7 @@ async function main() {
       await secrets.close();
       await realtime.close();
       await mcp.close();
+      await installedConnectors.close();
       await prisma.$disconnect().catch(() => undefined);
       await pool.end().catch(() => undefined);
     } finally {

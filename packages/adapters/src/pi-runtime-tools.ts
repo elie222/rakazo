@@ -95,6 +95,7 @@ function useToolAgentTool(
           name: USE_TOOL,
           args: params as Record<string, unknown>,
           executionId: JSON.stringify(["pi-tool", host.agentNamespace ?? "main", toolCallId]),
+          response: host.modelResponses,
         });
         throw new Error(`${name} is not available. Use a name find_tool lists.`);
       }
@@ -437,6 +438,7 @@ function toAgentTool(
             name: tool.name,
             args,
             executionId,
+            response: host.modelResponses,
             ...(viaUseTool ? { viaUseTool } : {}),
           });
           const startedAt = Date.now();
@@ -714,6 +716,8 @@ export interface ToolHost {
   captureCheckpoint?: (toolCallId: string, executionId: string) => Promise<void>;
   /** Shell commands that returned output and are still running. */
   pendingShells: Array<Promise<FinishedShellCommand>>;
+  /** Model responses started by the main agent. Helpers reset it, so each of their calls counts. */
+  modelResponses?: number;
 }
 
 export function toolCallBudgetExceededMessage(limit: number) {

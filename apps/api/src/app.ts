@@ -1440,6 +1440,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await secrets.close();
       await realtime.close();
       await mcp.close();
+      await installed.close();
       await prisma.$disconnect().catch(() => undefined);
       await created.pool?.end().catch(() => undefined);
       await ownedJobPool?.end().catch(() => undefined);
