@@ -56,4 +56,15 @@ export const NL_MESSAGES: Record<string, string> = {
     "{name} staat nu in de Rakazo-pluginmarketplace.",
   "We couldn't list {name} in the Rakazo plugin marketplace.":
     "We konden {name} niet opnemen in de Rakazo-pluginmarketplace.",
+  "Confirm your Rakazo page claim": "Bevestig je paginaclaim bij Rakazo",
+  "Confirm claim": "Claim bevestigen",
+  "We review every claim once it's confirmed and will email you when it's done.":
+    "We beoordelen elke claim zodra die is bevestigd en mailen je wanneer we klaar zijn.",
+  "This link expires in one day. If you did not claim a page, ignore this email.":
+    "Deze link verloopt over één dag. Als je geen pagina hebt geclaimd, negeer dan deze e-mail.",
+  "Your Rakazo page claim: {name}": "Je paginaclaim bij Rakazo: {name}",
+  "Your changes to the {name} page are approved.":
+    "Je wijzigingen aan de pagina {name} zijn goedgekeurd.",
+  "We couldn't approve your changes to the {name} page.":
+    "We konden je wijzigingen aan de pagina {name} niet goedkeuren.",
 };
