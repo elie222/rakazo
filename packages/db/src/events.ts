@@ -1956,8 +1956,10 @@ export async function createPendingSteeringRun(
   });
   if (pending.length === 0) return null;
   // One origin per continuation so a group channel and the owner's private chat are not answered
-  // together. The app and the owner's direct line are one private conversation.
-  const origin = steeringOrigin(pending[0]!);
+  // together. The app and the owner's direct line are one private conversation, answered first.
+  const origin = pending.some((item) => steeringOrigin(item) === "private")
+    ? "private"
+    : steeringOrigin(pending[0]!);
   const batch = pending.filter((item) => steeringOrigin(item) === origin);
   const source = batch.at(-1)!;
   const modelPin = continuationModelPin(batch);

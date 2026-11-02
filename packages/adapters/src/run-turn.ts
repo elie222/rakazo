@@ -295,23 +295,26 @@ async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) 
 }
 
 /**
- * The run's person wrote while the bot worked. What the bot wrote before that is posted as
- * its own message instead of running on into the reply to them, and the interim-message
- * budget starts again: the first note may answer them at once. Webhooks, external chats and
- * other members stay on the normal budget, and the restart is capped so a stream of messages
- * can't lift it.
+ * The run's person wrote while the bot worked: the next note may answer them at once, each time.
+ * The budget restart for unprompted updates stays capped. Webhooks, external chats and other
+ * members stay on the normal budget.
  */
 async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
   const { deps, run } = ctx;
   const { reply } = ctx.state;
   reply.assistantTurnBreakPending = true;
+  if (!event.fromRunUser) return;
   const now = Date.now();
   if (
-    !event.fromRunUser ||
     reply.steeringResets >= STEERING_RESETS_MAX_PER_RUN ||
     now - reply.lastSteeringResetAt < STEERING_RESET_MIN_GAP_MS
-  )
+  ) {
+    // What the bot wrote before may still use an earlier message's allowance.
+    await flushProgress(ctx);
+    await showNarrationStatus(ctx, await publishMidTurnNarration(ctx));
+    reply.steeringReplyPending = true;
     return;
+  }
   reply.steeringResets += 1;
   reply.lastSteeringResetAt = now;
   await flushProgress(ctx);
