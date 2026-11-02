@@ -66,7 +66,8 @@ jobs:
       ((github.event.comment.user.login == 'coderabbitai[bot]' &&
         contains(github.event.comment.body, 'rate limited by coderabbit.ai') &&
         contains(github.event.issue.labels.*.name, 'review:cr')) ||
-       (github.event.comment.user.login == 'qodo-code-review[bot]' &&
+       (startsWith(github.event.comment.user.login, 'qodo-') &&
+        endsWith(github.event.comment.user.login, '[bot]') &&
         startsWith(github.event.comment.body, '<!-- qodo:') &&
         contains(github.event.issue.labels.*.name, 'review:qodo')))
     runs-on: ubuntu-latest
@@ -83,7 +84,7 @@ jobs:
         run: |
           if [[ "$FROM_BOT" == "coderabbitai[bot]" ]]; then
             from=review:cr to=review:qodo
-            blocked='.user.login == "qodo-code-review[bot]" and (.body | startswith("<!-- qodo:"))'
+            blocked='(.user.login | startswith("qodo-") and endswith("[bot]")) and (.body | startswith("<!-- qodo:"))'
           else
             from=review:qodo to=review:cr
             blocked='.user.login == "coderabbitai[bot]" and (.body | contains("rate limited by coderabbit.ai"))'

@@ -224,11 +224,17 @@ describe("pr-digest", () => {
           kind: "Bot",
           body: "<!-- qodo:billing-blocked -->\n\nQodo reviews are paused.",
         }),
+        comment({
+          id: 49,
+          user: "qodo-free-for-open-source-projects[bot]",
+          kind: "Bot",
+          body: "\n<h3>Qodo is busy working</h3>\n\nCheck back in a few minutes.",
+        }),
         comment({ id: 48, user: "github-actions[bot]", kind: "Bot", body: "/agentic_review" }),
       ],
     });
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("(8 noise)");
+    expect(result.stdout).toContain("(9 noise)");
   });
 
   it("only blocks effective change requests", () => {
