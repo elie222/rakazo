@@ -3,6 +3,7 @@ import { toolResultTaintsRun } from "@rakazo/core";
 import { isTerminatingReplyResult } from "./approval-effect.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS, MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.js";
 import type { RunContext } from "./run-context.js";
+import { noteComputerTaskStep } from "./run-progress.js";
 import type { ToolHandler } from "./run-tool-gate.js";
 import { auditToolCall, gateToolCall } from "./run-tool-gate.js";
 import { prepareToolRequest, resolveToolRequest } from "./run-tool-request.js";
@@ -96,6 +97,9 @@ async function dispatchTool(
   if ("error" in request) return request;
   const refused = await prepareToolRequest(ctx, request);
   if (refused) return refused;
+  // Before the gate and the tool, so a step waiting for approval counts and a message_user
+  // running alongside it already sees the step.
+  noteComputerTaskStep(ctx.state.reply, request.name);
   const gate = await gateToolCall(ctx, request, observer);
   if ("result" in gate) return gate.result;
   if (!gate.call.applied) return toolHandler(gate.call.name)(ctx, gate.call);
