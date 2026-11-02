@@ -1,8 +1,9 @@
 # Multi-account implementation handoff
 
 The implementation follows the approved behavior in the [plan](plans/2026-11-02-1929-feat-multi-account-notifications-plan.md).
-It is local to branch `feat/multi-account-notifications`. Nothing was pushed, published, merged or
-deployed. No live accounts, production data or infrastructure configuration were used.
+It was prepared on branch `feat/multi-account-notifications` and is submitted separately from the
+[review-only dogfooding evidence](https://github.com/christso/rakazo/pull/1). No merge or deployment
+was performed. No live accounts, production data or infrastructure configuration were used.
 
 ## Baseline and local history
 
@@ -110,10 +111,11 @@ changes between the deployed revision and this branch separately from this featu
 
 ## User-facing copy
 
-The added controls are “Add account”, “Log out all accounts” on web and “Sign out all accounts” on
-mobile. Their confirmation questions appear only when invoked. The discard confirmation appears
+The added controls are “Add account”, “Log out all accounts” on web and “Sign out all” on mobile.
+“Log out all accounts?” and “Sign out all accounts?” appear only when invoked. The discard confirmation appears
 only when a switch would lose transient work. “Sign in to open this notification” appears only
-when the owning saved login is unavailable; “Signed out on this device. Some server sessions
+when the owning saved login is unavailable. “Sign in to open this account” and “Sign in to the
+account for this notification” appear only during account recovery; “Signed out on this device. Some server sessions
 could not be revoked.” reports an actual partial sign-out. “Sign out of an account before adding
 another” appears only at the browser limit. These labels and contextual recovery messages are
 needed to distinguish the actions and prevent private content from opening under another login.
@@ -122,10 +124,11 @@ itself. Web and mobile localization catalogs were updated.
 
 ## Browser evidence
 
-These captures contain only fictional fixture accounts.
+These captures contain only fictional fixture accounts. They live on the independent dogfooding
+branch so its draft can be closed without merging the evidence into the product tree.
 
-![Account switcher on desktop](media/multi-account/switcher-desktop.png)
+![Account switcher on desktop](https://raw.githubusercontent.com/christso/rakazo/b43e1ef72bb27bc0abbbffe0b4b0e602a8b9db1c/screenshots/switcher-desktop.png)
 
-![Account switcher at phone width](media/multi-account/switcher-phone.png)
+![Account switcher at phone width](https://raw.githubusercontent.com/christso/rakazo/b43e1ef72bb27bc0abbbffe0b4b0e602a8b9db1c/screenshots/switcher-phone.png)
 
-![Hidden account unread count](media/multi-account/unread.png)
+![Hidden account unread count](https://raw.githubusercontent.com/christso/rakazo/b43e1ef72bb27bc0abbbffe0b4b0e602a8b9db1c/screenshots/unread.png)
