@@ -15,7 +15,14 @@ describe("parseMessagingCommand", () => {
   it("reads a bare stop or stop now, ignoring case, spacing and closing punctuation", () => {
     for (const text of ["stop", "Stop now.", "STOP!", "  stop   now ", "stop…"])
       expect(parseMessagingCommand(text)).toBe("stop");
-    for (const text of ["stop it", "stopper", "don't stop", "/stop", "stop, now"])
+    for (const text of ["stop it", "stopper", "don't stop", "stop, now"])
+      expect(parseMessagingCommand(text)).toBeNull();
+  });
+
+  it("reads Telegram's /stop command, with or without the bot's name", () => {
+    for (const text of ["/stop", " /STOP ", "/stop@rakazo_bot"])
+      expect(parseMessagingCommand(text)).toBe("stop");
+    for (const text of ["/stop now", "/stopper", "/stop@", "stop/"])
       expect(parseMessagingCommand(text)).toBeNull();
   });
 

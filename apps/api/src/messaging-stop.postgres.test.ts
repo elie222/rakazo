@@ -163,6 +163,13 @@ describe.skipIf(!enabled)("a linked owner's stop command (PostgreSQL)", () => {
     ).toBeLessThanOrEqual(Date.now());
   });
 
+  it("takes Telegram's /stop command, with the bot's name, the same way", async () => {
+    const running = await work();
+    await text("/stop@rakazo_bot", "h-slash");
+    expect(await status(running.id)).toBe("cancelled");
+    expect(await replies()).toEqual([STOPPED_BY_MESSAGE_NOTE]);
+  });
+
   it("answers an idle stop without a message, a turn or a routine wake", async () => {
     await system.routine.create({
       data: {

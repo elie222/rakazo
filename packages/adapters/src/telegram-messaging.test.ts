@@ -407,6 +407,46 @@ describe("Telegram groups", () => {
     expect(inbound[1]?.type === "message" && inbound[1].mentionsBot).toBeUndefined();
   });
 
+  it("delivers /stop from a private chat as a message, keeps dropping it in groups, and retries a failure", async () => {
+    const { surface, inbound } = createGroupSurface();
+    const command = (text: string) => [{ type: "bot_command", offset: 0, length: text.length }];
+    const privateStop = (text: string, messageId: number, updateId: number) =>
+      surface.handleWebhook(
+        "telegram",
+        webhook("home-secret", {
+          update_id: updateId,
+          message: {
+            message_id: messageId,
+            date: 1_700_000_000,
+            chat: { id: 777, type: "private" },
+            from: sender,
+            text,
+            entities: command(text),
+          },
+        }),
+      );
+    await privateStop("/stop", 21, 201);
+    await privateStop("/stop@testbot", 22, 202);
+    await surface.handleWebhook(
+      "telegram",
+      webhook(
+        "home-secret",
+        groupMessage(
+          { message_id: 23, text: "/stop@testbot", entities: command("/stop@testbot") },
+          203,
+        ),
+      ),
+    );
+    expect(inbound).toHaveLength(2);
+    expect(inbound[0]).toMatchObject({ isDirect: true, from: "777", content: "/stop" });
+    expect(inbound[1]).toMatchObject({ isDirect: true, content: "/stop@testbot" });
+
+    surface.onInbound(async () => {
+      throw new Error("database unavailable");
+    });
+    expect((await privateStop("/stop", 24, 204))?.status).toBe(500);
+  });
+
   it("keeps a plain reply on the group's own thread", async () => {
     const { surface, inbound } = createGroupSurface();
 

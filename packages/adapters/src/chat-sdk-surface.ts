@@ -148,7 +148,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
       });
       const mounted: MountedPlatform = { platform, adapterName, chat };
       this.byProvider.set(platform.provider, mounted);
-      const deliver = async (thread: Thread, message: Message) => {
+      const deliver = async (thread: Pick<Thread, "id" | "isDM">, message: Message) => {
         if (
           platform.provider === "slack" &&
           message.isMention &&
@@ -194,6 +194,17 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
       chat.onNewMention(deliver);
       chat.onSubscribedMessage(deliver);
       chat.onNewMessage(/(?:)/, deliver);
+      // Telegram hands /commands to slash-command handlers, not messages. /stop in the owner's
+      // private chat is the stop owner command; groups keep dropping commands as before.
+      if (adapterName === "telegram") {
+        chat.onSlashCommand("/stop", async (event) => {
+          if ((event.raw as { chat?: { type?: string } }).chat?.type !== "private") return;
+          await deliver(
+            { id: event.channel.id, isDM: true },
+            platform.adapter.parseMessage(event.raw),
+          );
+        });
+      }
     }
   }
 
