@@ -4794,6 +4794,7 @@ msgid "Release control"
 msgstr "नियंत्रण छोड़ें"
 
 #: src/components/InstructionSettings.tsx
+#: src/lib/client-update.ts
 msgid "Reload"
 msgstr "फिर से लोड करें"
 
@@ -6240,6 +6241,10 @@ msgstr "निर्देश अपडेट करें?"
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
 msgstr ""
+
+#: src/lib/client-update.ts
+msgid "Update required"
+msgstr "अपडेट आवश्यक है"
 
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"

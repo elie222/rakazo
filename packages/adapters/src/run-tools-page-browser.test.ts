@@ -63,6 +63,7 @@ describe("page tools save a page's file downloads in the calling bot's own folde
 
   async function download(name: string, mode: "team" | "dedicated", botId: string, saved = true) {
     const requests: PageBrowserCommand[] = [];
+    const markDirty = vi.fn();
     const browser = new ComputerBrowserProvider({
       liveDriver: async (_computer, request) => {
         requests.push(request);
@@ -98,7 +99,7 @@ describe("page tools save a page's file downloads in the calling bot's own folde
         heldForTakeover: false,
         graphicalToolsAllowed: false,
         mode,
-        checkpoint: { markDirty: () => {} },
+        checkpoint: { markDirty },
         get: async () => ({ ...computer, kind: "docker" }),
       },
       tools: { disabled: new Set<string>() },
@@ -116,16 +117,18 @@ describe("page tools save a page's file downloads in the calling bot's own folde
       details?: unknown;
     };
     const text = result.content?.map((part) => part.text).join("") ?? JSON.stringify(result);
-    return { requests, text, details: JSON.stringify(result.details ?? result) };
+    return { requests, text, details: JSON.stringify(result.details ?? result), markDirty };
   }
 
-  it.each(["browser_act", "browser_navigate"])("%s", async (name) => {
+  // A snapshot saves the PDF its tab shows, such as a report a page opened in a new tab.
+  it.each(["browser_act", "browser_navigate", "browser_snapshot"])("%s", async (name) => {
     for (const [mode, botId, folder] of [
       ["team", "b1", "bots/b1/Downloads"],
       ["team", "b2", "bots/b2/Downloads"],
       ["dedicated", "b1", "Downloads"],
     ] as const) {
-      const { requests, text, details } = await download(name, mode, botId);
+      const { requests, text, details, markDirty } = await download(name, mode, botId);
+      expect(markDirty).toHaveBeenCalled();
       expect(requests).toEqual([expect.objectContaining({ downloads: folder })]);
       // The path the bot reads is the one its shell and file tools take, and leads back to the file.
       const path = "Downloads/statement [redacted].pdf";
@@ -137,11 +140,12 @@ describe("page tools save a page's file downloads in the calling bot's own folde
     }
   });
 
-  it.each(["browser_act", "browser_navigate"])(
+  it.each(["browser_act", "browser_navigate", "browser_snapshot"])(
     "%s result from a helper that saved nothing is unchanged",
     async (name) => {
-      const { text } = await download(name, "team", "b1", false);
+      const { text, markDirty } = await download(name, "team", "b1", false);
       expect(JSON.parse(text)).not.toHaveProperty("downloads");
+      expect(markDirty).toHaveBeenCalledTimes(name === "browser_snapshot" ? 0 : 1);
     },
   );
 });
