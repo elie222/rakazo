@@ -20,7 +20,6 @@ import {
   saveModelUsageSortInverted,
 } from "../../lib/model-usage-sort-preference";
 import { native } from "../../lib/native";
-import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 
 export default function Usage() {
@@ -230,13 +229,10 @@ export default function Usage() {
           return (
             <ConnectionQuota
               key={credential.id}
-              credentialId={credential.id}
-              target={ACCOUNT_SETTINGS}
               label={label}
-              readOnly
-              quotaOverride={quota}
-              quotaLoading={quotaLoading[credential.id] ?? true}
-              onRefreshQuota={() => void loadQuota(credential.id, true)}
+              quota={quota}
+              loading={quotaLoading[credential.id] ?? true}
+              onRefresh={() => void loadQuota(credential.id, true)}
             />
           );
         })}

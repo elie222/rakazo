@@ -383,6 +383,8 @@ export class ModelQuotaReader {
       // the last good observation with its original timestamp, never the body.
       read = staleOr(previous, empty);
     }
+    // Re-inserting moves the key to the end, so eviction drops the least recently read entry.
+    this.cache.delete(key);
     if (this.cache.size >= MAX_ENTRIES) this.cache.delete(this.cache.keys().next().value!);
     this.cache.set(key, {
       read,

@@ -29,7 +29,11 @@ export function ConnectionQuota({
     refetchInterval: 60_000,
     retry: false,
   });
-  const observation = quota.data;
+  // A failed background poll keeps the last reading, so show it as stale rather than unavailable.
+  const observation =
+    quota.isError && quota.data?.observedAt
+      ? { ...quota.data, status: "stale" as const }
+      : quota.data;
   return (
     <section
       aria-label={label ?? t`Quota`}
@@ -71,7 +75,7 @@ export function ConnectionQuota({
           <Trans>Loading</Trans>
         </p>
       ) : null}
-      {quota.isError ||
+      {(quota.isError && !observation) ||
       observation?.status === "unavailable" ||
       observation?.status === "unsupported" ? (
         <p className="text-sm text-muted-foreground" role="status">

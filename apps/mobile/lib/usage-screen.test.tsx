@@ -32,25 +32,21 @@ vi.mock("expo-secure-store", () => ({
 vi.mock("../components/connection-quota", () => ({
   ConnectionQuota: ({
     label,
-    credentialId,
-    quotaOverride,
-    onRefreshQuota,
+    quota,
+    onRefresh,
   }: {
     label: string;
-    credentialId: string;
-    quotaOverride?: ModelQuota | null;
-    onRefreshQuota?: () => void;
+    quota: ModelQuota | null;
+    onRefresh: () => void;
   }) => (
     <section>
-      <div>
-        {label}: {credentialId}
-      </div>
-      <div>{quotaOverride?.status}</div>
-      {quotaOverride?.windows.map((window) => (
+      <div>[{label}]</div>
+      <div>{quota?.status}</div>
+      {quota?.windows.map((window) => (
         <div key={window.id}>{100 - window.usedPercent}% remaining</div>
       ))}
-      <button type="button" onClick={onRefreshQuota}>
-        Refresh {credentialId}
+      <button type="button" onClick={onRefresh}>
+        Refresh
       </button>
     </section>
   ),
@@ -110,9 +106,9 @@ it("shows each connected provider with its own name and the run summary", async 
     root.render(<Usage />);
   });
   expect(host.textContent).toContain("23 runs, — tokens");
-  expect(host.textContent).toContain("OpenCode Go: go");
-  expect(host.textContent).toContain("Codex (account@example.test): codex");
-  expect(host.textContent).not.toContain("Other: empty");
+  expect(host.textContent).toContain("[OpenCode Go]");
+  expect(host.textContent).toContain("[Codex (account@example.test)]");
+  expect(host.textContent).not.toContain("[Other]");
   await act(async () => root.unmount());
 });
 
