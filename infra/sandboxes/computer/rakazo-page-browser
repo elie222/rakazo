@@ -642,7 +642,8 @@ class PageBrowser:
     def dialog(self) -> dict[str, Any] | None:
         """The JavaScript dialog (alert, confirm, prompt or beforeunload) the page has open, if any."""
         try:
-            (status,) = self.ab.batch([["dialog", "status"]])
+            # Short: it can follow a step that already used most of the caller's time limit.
+            (status,) = self.ab.batch([["dialog", "status"]], timeout=3.0)
         except Exception:  # noqa: BLE001
             return None
         return status if status.get("hasDialog") else None
@@ -663,8 +664,11 @@ class PageBrowser:
             snap = self.snapshot(ACTION_WAIT_SECONDS)
         except Exception:  # noqa: BLE001
             return {"ok": False, **progress, "error": f"The page showed an alert{quoted}.", "fallback": "computer_act"}
-        if remaining:
-            return {**snap, **progress, "ok": False, "error": f"{note} The steps after it did not run."}
+        # A step that was still running when the alert came may or may not have taken effect.
+        unsure = " Check whether the last step took effect." if progress.get("uncertain") else ""
+        if remaining or unsure:
+            after = " The remaining steps did not run." if remaining else ""
+            return {**snap, **progress, "ok": False, "error": f"{note}{unsure}{after}"}
         return {**snap, **progress, "note": note}
 
     def step(self, commands: list[list[str]]) -> list[Any]:
@@ -793,7 +797,7 @@ class PageBrowser:
             dialog = self.dialog()
             if dialog:
                 return self.dialog_result(dialog, {"completed": completed, "uncertain": uncertain},
-                                          remaining=completed < len(actions))
+                                          remaining=completed + uncertain < len(actions))
             return {"ok": False, "completed": completed, "uncertain": uncertain, "error": str(exc),
                     "fallback": "computer_act"}
 

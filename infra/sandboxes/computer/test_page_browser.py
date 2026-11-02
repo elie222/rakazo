@@ -105,7 +105,7 @@ class FakeAgentBrowser:
 
     def answer(self, command):
         name = command[0]
-        if name == "click" and self.opens:
+        if name in ("click", "fill") and self.opens:
             self.dialog, self.opens = self.opens, None
             return {"clicked": command[1], "dialogOpened": True}
         if command[:2] == ["dialog", "status"]:
@@ -341,10 +341,19 @@ class ActTest(unittest.TestCase):
         result, _ = self.act([{"kind": "click", "ref": "e8"}, {"kind": "fill", "ref": "e2", "text": "Grace"}], browser)
         self.assertEqual((result["ok"], result["completed"], result["uncertain"]), (False, 1, False))
         self.assertEqual(result["error"],
-                         'The page showed an alert, now closed: "Name is required". The steps after it did not run.')
+                         'The page showed an alert, now closed: "Name is required". The remaining steps did not run.')
         self.assertNotIn("fallback", result)
         self.assertIn("tree", result)
         self.assertEqual(browser.actions(), [["click", "@e8"], ["dialog", "status"], ["dialog", "dismiss"]])
+
+    def test_an_alert_that_blocks_the_read_after_a_fill_leaves_the_fill_in_doubt(self):
+        browser = FakeAgentBrowser()
+        browser.opens = {"type": "alert", "message": "Too long"}
+        result, _ = self.act([{"kind": "fill", "ref": "e2", "text": "Grace"}], browser)
+        self.assertEqual((result["ok"], result["completed"], result["uncertain"]), (False, 0, True))
+        self.assertEqual(result["error"], 'The page showed an alert, now closed: "Too long". '
+                                          "Check whether the last step took effect.")
+        self.assertIn("tree", result)
 
     def test_a_dialog_that_asks_something_is_left_open_for_the_desktop(self):
         for dialog, error in (
