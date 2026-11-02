@@ -395,7 +395,17 @@ export function inferScript(
     return [
       {
         assistant: "i will call that paid api.",
-        toolCalls: [{ name: "paid_request", args: { url, method: "GET" } }],
+        toolCalls: [
+          {
+            name: "paid_request",
+            args: {
+              url,
+              method: "GET",
+              reason:
+                "The owner asked for a live price quote from this paid API, which answers only after a small per-request payment.",
+            },
+          },
+        ],
       },
     ];
   }
