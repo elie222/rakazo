@@ -379,7 +379,7 @@ function hoistPointerRefs(root: Record<string, unknown>): Record<string, unknown
     root.$defs != null ? "$defs" : root.definitions != null ? "definitions" : defsKey;
   const existing = (root[container] ?? {}) as Record<string, unknown>;
   const defs: Record<string, unknown> = {};
-  const hoisted = new Map<string, string>();
+  const hoisted = new Map<unknown, string>();
   let changed = false;
 
   const resolve = (pointer: string): unknown => {
@@ -406,13 +406,13 @@ function hoistPointerRefs(root: Record<string, unknown>): Record<string, unknown
     if (typeof ref !== "string" || !ref.startsWith("#/")) return result;
     const segments = ref.slice(2).split("/");
     if (segments.length === 2 && segments[0] === defsKey) return result;
-    let name = hoisted.get(ref);
+    const target = resolve(ref);
+    if (target === undefined) return result;
+    let name = hoisted.get(target);
     if (!name) {
-      const target = resolve(ref);
-      if (target === undefined) return result;
       name = `ref${hoisted.size}`;
       while (Object.hasOwn(existing, name)) name = `_${name}`;
-      hoisted.set(ref, name);
+      hoisted.set(target, name);
       defs[name] = walk(target);
     }
     changed = true;
