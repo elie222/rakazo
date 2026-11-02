@@ -1,7 +1,7 @@
 import type { AgentRunRequest, AgentRuntime, JobPublisher } from "@rakazo/adapter-kit";
 import { historyCompactJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { blocksToAgentHistoryText, escapePromptData } from "@rakazo/core";
+import { blocksToAgentHistoryText, botMessageContext, escapePromptData } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { recordUsage } from "@rakazo/db";
 import { getLogger, unwrapJobPayload } from "@rakazo/logging";
@@ -291,18 +291,21 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
   if (batch.length === 0) return;
 
   // The summarizer reads who said what: "User" for the person (never their name) and each bot by
-  // its current name, including a bot that has since been archived.
+  // its current name, including a bot that has since been archived or that relayed a message here.
+  const authorBotId = (message: (typeof batch)[number]) =>
+    message.role === "bot"
+      ? (message.botId ?? thread.botId!)
+      : message.role === "user"
+        ? botMessageContext(message.blocks as MessageBlock[])?.fromBotId
+        : undefined;
   const botNames = await loadBotNames(deps.prisma, thread.spaceId, [
-    ...new Set(
-      batch.flatMap((message) => (message.role === "bot" ? [message.botId ?? thread.botId!] : [])),
-    ),
+    ...new Set(batch.flatMap((message) => authorBotId(message) ?? [])),
   ]);
-  const speaker = (message: (typeof batch)[number]) =>
-    message.role === "user"
-      ? USER_SPEAKER
-      : message.role === "bot"
-        ? (botNames.get(message.botId ?? thread.botId!) ?? UNKNOWN_BOT_SPEAKER)
-        : message.role;
+  const speaker = (message: (typeof batch)[number]) => {
+    const botId = authorBotId(message);
+    if (botId) return botNames.get(botId) ?? UNKNOWN_BOT_SPEAKER;
+    return message.role === "user" ? USER_SPEAKER : message.role;
+  };
   const transcriptParts = batch.map(
     (message) =>
       `${speaker(message)}: ${blocksToAgentHistoryText(message.blocks as MessageBlock[])}`,

@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { botMessageContext } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 
 /** What the model reads for the one human of a group thread: never their real name. */
@@ -20,14 +21,20 @@ export function speakerName(name: string): string {
 }
 
 /**
+ * A line that starts like a `[Name]:` label, with the brackets swapped for parentheses, so text
+ * inside a message cannot pose as another speaker's turn once turns are joined.
+ */
+export function neutralizeSpeakerLabels(text: string): string {
+  return text.replace(/^([ \t]*)\[([^\]\n]*)\]:/gm, "$1($2):");
+}
+
+/**
  * Who is speaking in a group thread, from the receiving bot's side. Direct chats have no
  * speakers: the bot and the user are the only two parties there, so roles say it all.
  */
 export interface ThreadSpeakers {
-  spaceId: string;
   /** The receiving bot; its own messages stay unlabelled assistant turns. */
   botId: string;
-  botName: string;
   /** Current names of the other bots, archived ones included. A renamed bot has one name everywhere. */
   names: Map<string, string>;
 }
@@ -36,21 +43,7 @@ type SpeakerRow = {
   role: string;
   botId?: string | null;
   blocks?: unknown;
-  replyTo?: SpeakerRow | null;
 };
-
-/** The other bots named in a batch of rows and their reply targets. */
-function foreignBotIds(rows: SpeakerRow[], botId: string): string[] {
-  const ids = new Set<string>();
-  for (const row of rows) {
-    const candidates = [row, row.replyTo];
-    for (const candidate of candidates) {
-      if (candidate?.role === "bot" && candidate.botId && candidate.botId !== botId)
-        ids.add(candidate.botId);
-    }
-  }
-  return [...ids];
-}
 
 /** Names for bot ids in the space, deleted bots simply absent. No archived filter on purpose. */
 export async function loadBotNames(
@@ -70,23 +63,23 @@ export async function loadBotNames(
 export async function loadThreadSpeakers(
   prisma: Pick<PrismaClient, "bot">,
   thread: { groupId?: string | null },
-  run: { spaceId: string; bot: { id: string; name: string } },
+  run: { spaceId: string; bot: { id: string } },
   rows: SpeakerRow[],
 ): Promise<ThreadSpeakers | null> {
   if (!thread.groupId) return null;
+  const others = new Set(
+    rows.flatMap((row) =>
+      row.role === "bot" && row.botId && row.botId !== run.bot.id ? [row.botId] : [],
+    ),
+  );
   return {
-    spaceId: run.spaceId,
     botId: run.bot.id,
-    botName: speakerName(run.bot.name),
-    names: await loadBotNames(prisma, run.spaceId, foreignBotIds(rows, run.bot.id)),
+    names: await loadBotNames(prisma, run.spaceId, [...others]),
   };
 }
 
-function isPeerRelay(blocks: unknown): boolean {
-  return (
-    Array.isArray(blocks) &&
-    (blocks as MessageBlock[]).some((block) => block.kind === "bot_message_received")
-  );
+function isRelay(blocks: unknown): boolean {
+  return Array.isArray(blocks) && Boolean(botMessageContext(blocks as MessageBlock[]));
 }
 
 /**
@@ -100,20 +93,7 @@ export function historySpeaker(
   row: SpeakerRow,
 ): string | undefined {
   if (!speakers) return undefined;
-  if (row.role === "user") return isPeerRelay(row.blocks) ? undefined : USER_SPEAKER;
+  if (row.role === "user") return isRelay(row.blocks) ? undefined : USER_SPEAKER;
   if (row.role !== "bot" || !row.botId || row.botId === speakers.botId) return undefined;
   return speakers.names.get(row.botId) ?? UNKNOWN_BOT_SPEAKER;
-}
-
-/** The author recorded on a quoted reply target: a bot by name, the human as "User". */
-export function quoteAuthor(
-  speakers: ThreadSpeakers | null | undefined,
-  target: { role: string; botId?: string | null },
-): string | undefined {
-  if (!speakers) return undefined;
-  if (target.role === "user") return USER_SPEAKER;
-  if (target.role !== "bot" || !target.botId) return undefined;
-  return target.botId === speakers.botId
-    ? speakers.botName
-    : (speakers.names.get(target.botId) ?? UNKNOWN_BOT_SPEAKER);
 }

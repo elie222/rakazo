@@ -95,7 +95,12 @@ import {
   MAX_RECALLED_MEMORIES,
   selectCompactedHistory,
 } from "./history-compaction.js";
-import { historySpeaker, loadThreadSpeakers, USER_SPEAKER } from "./history-speakers.js";
+import {
+  historySpeaker,
+  loadThreadSpeakers,
+  neutralizeSpeakerLabels,
+  USER_SPEAKER,
+} from "./history-speakers.js";
 import { createMediaGenerationProvider } from "./media-generation-factory.js";
 import { loadAgentMemoryContext } from "./memory-context.js";
 import { HostedModelCreditsRequiredError } from "./model-credit-observer.js";
@@ -660,6 +665,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           {
             messages: [...messages].reverse().map((m) => {
               const speaker = historySpeaker(speakers, m);
+              // In a group, turns from several speakers are joined, so no line may pose as a label.
+              const text = speakers
+                ? neutralizeSpeakerLabels(messageToAgentHistoryText(m))
+                : messageToAgentHistoryText(m);
               return {
                 id: m.id,
                 createdAt: m.createdAt?.toISOString(),
@@ -670,8 +679,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   | "system",
                 ...(speaker ? { speaker } : {}),
                 content: isPartialReplyClientNonce(m.clientNonce)
-                  ? `${messageToAgentHistoryText(m, speakers)}\n\n${PARTIAL_REPLY_NOTE}`
-                  : messageToAgentHistoryText(m, speakers),
+                  ? `${text}\n\n${PARTIAL_REPLY_NOTE}`
+                  : text,
               };
             }),
             summary: thread.historyCompactionSummary,
@@ -1432,12 +1441,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               (request) => redactSecrets(JSON.stringify(request), runSecrets),
               { exposedToolNames: new Set(partitionTools(tools).listed.map((tool) => tool.name)) },
             );
-        const replyContext = await loadReplyContext(
-          deps.prisma,
-          thread.id,
-          run.sourceMessageId,
-          speakers,
-        );
+        const replyContext = await loadReplyContext(deps.prisma, thread.id, run.sourceMessageId);
         let userTimeZone: string | null | undefined;
         try {
           userTimeZone = (

@@ -33,6 +33,7 @@ import {
 } from "./approval-effect.js";
 import { automated, withAutomatedLabels } from "./automated-messages.js";
 import { withCloudflareAuth } from "./cloudflare-ai-gateway.js";
+import { neutralizeSpeakerLabels } from "./history-speakers.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
 import {
   assistantText,
@@ -304,13 +305,18 @@ export class PiAgentRuntime implements AgentRuntime {
         // In a group the person's mid-run messages carry the same label as their history and
         // prompt; the raw text stays what ids and content are matched on.
         const steeringText = (item: AgentSteeringMessage) =>
-          request.promptSpeaker && item.origin === "user"
-            ? speakerText(request.promptSpeaker, item.text)
-            : item.text;
-        const promptWithSteering = (text: (item: AgentSteeringMessage) => string) =>
+          !request.promptSpeaker
+            ? item.text
+            : item.origin === "user"
+              ? speakerText(request.promptSpeaker, item.text)
+              : neutralizeSpeakerLabels(item.text);
+        const promptWithSteering = (
+          text: (item: AgentSteeringMessage) => string,
+          prompt = request.prompt,
+        ) =>
           initialSteering.length
-            ? `${request.prompt}\n\nAdditional user context:\n${initialSteering.map(text).join("\n")}`
-            : request.prompt;
+            ? `${prompt}\n\nAdditional user context:\n${initialSteering.map(text).join("\n")}`
+            : prompt;
         const initialPrompt = promptWithSteering((item) => item.text);
         const systemPrompt =
           restored?.systemPrompt ??
@@ -498,7 +504,7 @@ export class PiAgentRuntime implements AgentRuntime {
                       steeringText(item),
                       toolDefs.some((tool) => tool.name === "message_user"),
                     )
-                  : midTaskMessageFromPrompt(item.text, item.origin);
+                  : midTaskMessageFromPrompt(steeringText(item), item.origin);
               agent.steer({
                 role: "user",
                 content: images.length ? [{ type: "text", text }, ...images] : text,
@@ -912,9 +918,17 @@ export class PiAgentRuntime implements AgentRuntime {
               await agent.continue();
             }
           } else {
-            const modelPrompt = promptWithSteering(steeringText);
+            // Only the person's messages go under their label; anyone else's is framed by origin.
             await agent.prompt(
-              request.promptSpeaker ? speakerText(request.promptSpeaker, modelPrompt) : modelPrompt,
+              promptWithSteering(
+                (item) =>
+                  item.origin === "user"
+                    ? steeringText(item)
+                    : midTaskMessageFromPrompt(steeringText(item), item.origin),
+                request.promptSpeaker
+                  ? speakerText(request.promptSpeaker, request.prompt)
+                  : request.prompt,
+              ),
               images?.length ? images : undefined,
             );
           }
@@ -1105,7 +1119,7 @@ type HistoryMessage = Message & {
 
 /** What the model reads for a message by someone other than this bot or the human of a direct chat. */
 function speakerText(speaker: string, text: string): string {
-  return `[${speaker}]: ${text}`;
+  return `[${speaker}]: ${neutralizeSpeakerLabels(text)}`;
 }
 
 /**

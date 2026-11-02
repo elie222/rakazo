@@ -1021,6 +1021,18 @@ describe("compactHistory", () => {
         { seq: 3, role: "bot", botId: "gone", blocks: [{ kind: "text", text: "Hello." }] },
         { seq: 4, role: "bot", blocks: [{ kind: "text", text: "Own reply." }] },
         { seq: 5, role: "system", blocks: [{ kind: "text", text: "Note." }] },
+        {
+          seq: 6,
+          role: "user",
+          blocks: [
+            {
+              kind: "bot_message_received",
+              fromBotId: "bot-2",
+              fromBotName: "Boris",
+              text: "Ready.",
+            } as MessageBlock,
+          ],
+        },
       ],
     });
 
@@ -1035,6 +1047,7 @@ describe("compactHistory", () => {
         "another bot: Hello.",
         "Anya: Own reply.",
         "system: Note.",
+        "Boris: [from Boris] Ready.",
       ].join("\n\n"),
     );
     expect(request.instructions).toContain("who said or decided each");
