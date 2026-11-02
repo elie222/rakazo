@@ -168,8 +168,11 @@ export const MEMORY_EVAL_CASES: EvalCase[] = [
       const current = new Set(entries(e.memory));
       return [
         check("home-saved-first", first.length > 0),
-        // That entry must be rewritten or removed, not left beside the new home; the judge reads the meaning.
-        check("first-entry-rewritten", first.length > 0 && first.every((l) => !current.has(l))),
+        // A pure append leaves every first line in place; the judge decides whether the old home is still current.
+        check(
+          "first-entry-rewritten",
+          first.some((l) => !current.has(l)),
+        ),
         withinCap(e),
         entriesShort(e),
       ];

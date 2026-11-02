@@ -57,6 +57,14 @@ describe("memory outcome grading", () => {
     });
   });
 
+  it("keeps an unchanged label line from the first save", () => {
+    const e = evidence("# Assistant\n\nHome:\nBerlin\n", [
+      remember(1, "Home:\nLondon"),
+      remember(3, "Berlin", "London"),
+    ]);
+    expect(failed("moved-city", e)).toEqual([]);
+  });
+
   it("rejects a new home appended beside the old one", () => {
     const e = evidence("# Assistant\n\nLives in London.\nMoved to Berlin.\n", [
       firstSave,
