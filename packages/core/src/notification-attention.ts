@@ -1,4 +1,4 @@
-import type { RunActivityRow } from "@rakazo/contracts";
+import type { Bot, Group, RunActivityRow } from "@rakazo/contracts";
 import { isRunWaitingOnUser, isRunWorking } from "./run-state.js";
 
 export type NotificationAttention = "needs_attention" | "working" | "unread";
@@ -38,4 +38,53 @@ export function notificationAttentionRuns(
       );
     return bots.some((bot) => bot.id === run.botId && bot.unread && bot.runErrorId === run.runId);
   });
+}
+
+type ActivityBot = Pick<Bot, "id" | "status" | "unread"> &
+  Partial<Pick<Bot, "threadId" | "runErrorId" | "activeRunThreadId">>;
+type ActivityGroup = Pick<Group, "id" | "unread">;
+
+/** Shared activity policy; a surface may narrow the visible rows without changing their meaning. */
+export function notificationActivity<B extends ActivityBot, G extends ActivityGroup>(
+  active: readonly RunActivityRow[],
+  recent: readonly RunActivityRow[],
+  bots: readonly B[],
+  groups: readonly G[],
+  visible?: {
+    active: readonly RunActivityRow[];
+    recent: readonly RunActivityRow[];
+    bots: readonly B[];
+    groups: readonly G[];
+  },
+) {
+  const view = visible ?? { active, recent, bots, groups };
+  const attentionIds = new Set(
+    notificationAttentionRuns(active, recent, bots, groups).map((run) => run.runId),
+  );
+  const attentionRuns = [...view.active, ...view.recent].filter((run) =>
+    attentionIds.has(run.runId),
+  );
+  const workingRuns = view.active.filter((run) => notificationAttention(run.status) === "working");
+  const attentionBots = view.bots.filter(
+    (bot) =>
+      (!bot.activeRunThreadId || bot.activeRunThreadId === bot.threadId) &&
+      notificationAttention(bot.status, bot.unread, Boolean(bot.runErrorId)) ===
+        "needs_attention" &&
+      !attentionRuns.some((run) => !run.groupId && run.botId === bot.id),
+  );
+  const unreadBots = view.bots.filter(
+    (bot) => notificationAttention(bot.status, bot.unread, Boolean(bot.runErrorId)) === "unread",
+  );
+  const unreadGroups = view.groups.filter(
+    (group) =>
+      group.unread && ![...attentionRuns, ...workingRuns].some((run) => run.groupId === group.id),
+  );
+  const readRecent = view.recent.filter(
+    (run) =>
+      !attentionIds.has(run.runId) &&
+      !(run.groupId
+        ? unreadGroups.some((group) => group.id === run.groupId)
+        : [...unreadBots, ...attentionBots].some((bot) => bot.id === run.botId)),
+  );
+  return { attentionRuns, workingRuns, attentionBots, unreadBots, unreadGroups, readRecent };
 }

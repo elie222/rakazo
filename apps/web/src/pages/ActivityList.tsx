@@ -1,12 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, Group, RunActivityRow, RunStatus } from "@rakazo/contracts";
-import {
-  isAgedStuckWork,
-  isRetryableError,
-  notificationAttention,
-  notificationAttentionRuns,
-} from "@rakazo/core";
+import { isAgedStuckWork, isRetryableError, notificationActivity } from "@rakazo/core";
 import {
   BotAvatar,
   Button,
@@ -101,48 +96,25 @@ export function ActivityList({
     [recentRuns, filters, t],
   );
 
-  const attentionIds = new Set(
-    notificationAttentionRuns(activeRuns, recentRuns, bots, groups).map((run) => run.runId),
-  );
-  const attentionRuns = [...filteredActive, ...filteredRecent].filter((run) =>
-    attentionIds.has(run.runId),
-  );
-  const workingRuns = filteredActive.filter(
-    (run) => notificationAttention(run.status) === "working",
-  );
-  const unreadBots = bots.filter(
-    (bot) =>
-      notificationAttention(bot.status, bot.unread, Boolean(bot.runErrorId)) === "unread" &&
-      (!filters.query.trim() ||
-        `${bot.name} ${bot.preview}`.toLowerCase().includes(filters.query.trim().toLowerCase())),
-  );
-  const unreadGroups = groups.filter(
-    (group) =>
-      group.unread &&
-      ![...attentionRuns, ...workingRuns].some((run) => run.groupId === group.id) &&
-      (!filters.query.trim() ||
-        `${group.name} ${group.preview}`
-          .toLowerCase()
-          .includes(filters.query.trim().toLowerCase())),
-  );
   const showRoster =
     Boolean(onOpenBot) &&
     filters.status === "all" &&
     !filters.dateRange.from &&
     !filters.dateRange.to;
-  const attentionBots = showRoster
-    ? bots.filter(
-        (bot) =>
-          (!bot.activeRunThreadId || bot.activeRunThreadId === bot.threadId) &&
-          notificationAttention(bot.status, bot.unread, Boolean(bot.runErrorId)) ===
-            "needs_attention" &&
-          !attentionRuns.some((run) => !run.groupId && run.botId === bot.id) &&
-          (!filters.query.trim() ||
-            `${bot.name} ${bot.preview}`
-              .toLowerCase()
-              .includes(filters.query.trim().toLowerCase())),
-      )
-    : [];
+  const query = filters.query.trim().toLowerCase();
+  const { attentionRuns, workingRuns, attentionBots, unreadBots, unreadGroups, readRecent } =
+    notificationActivity(activeRuns, recentRuns, bots, groups, {
+      active: filteredActive,
+      recent: filteredRecent,
+      bots: showRoster
+        ? bots.filter((bot) => !query || `${bot.name} ${bot.preview}`.toLowerCase().includes(query))
+        : [],
+      groups: showRoster
+        ? groups.filter(
+            (group) => !query || `${group.name} ${group.preview}`.toLowerCase().includes(query),
+          )
+        : [],
+    });
   const botRow = (bot: Bot) => (
     <button
       key={bot.id}
@@ -156,16 +128,6 @@ export function ActivityList({
         <span className="block truncate text-xs text-muted-foreground">{bot.preview}</span>
       </span>
     </button>
-  );
-  const readRecent = filteredRecent.filter(
-    (run) =>
-      !attentionRuns.includes(run) &&
-      !(
-        showRoster &&
-        (run.groupId
-          ? unreadGroups.some((group) => group.id === run.groupId)
-          : [...unreadBots, ...attentionBots].some((bot) => bot.id === run.botId))
-      ),
   );
   const filtersOn = activityFiltersActive(filters);
   const hasAnyRuns = activeRuns.length > 0 || recentRuns.length > 0;

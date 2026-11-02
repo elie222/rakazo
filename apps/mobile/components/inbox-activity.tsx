@@ -1,5 +1,5 @@
 import type { RunActivityRow } from "@rakazo/contracts";
-import { notificationAttention, notificationAttentionRuns } from "@rakazo/core";
+import { notificationActivity } from "@rakazo/core";
 import { useRouter } from "expo-router";
 import { useMemo } from "react";
 import { Text, View } from "react-native";
@@ -36,24 +36,8 @@ export function ActivitySection({
     router.push({ pathname: "/thread", params: { botId: run.botId, name: run.botName } });
   };
 
-  const attentionRuns = notificationAttentionRuns(activity.active, activity.recent, bots, groups);
-  const workingRuns = activity.active.filter(
-    (run) => notificationAttention(run.status) === "working",
-  );
-  const unreadGroups = groups.filter(
-    (group) =>
-      group.unread && ![...attentionRuns, ...workingRuns].some((run) => run.groupId === group.id),
-  );
-  const unreadBots = bots.filter(
-    (bot) => notificationAttention(bot.status, bot.unread, Boolean(bot.runErrorId)) === "unread",
-  );
-  const attentionBots = bots.filter(
-    (bot) =>
-      (!bot.activeRunThreadId || bot.activeRunThreadId === bot.threadId) &&
-      notificationAttention(bot.status, bot.unread, Boolean(bot.runErrorId)) ===
-        "needs_attention" &&
-      !attentionRuns.some((run) => !run.groupId && run.botId === bot.id),
-  );
+  const { attentionRuns, workingRuns, attentionBots, unreadBots, unreadGroups, readRecent } =
+    notificationActivity(activity.active, activity.recent, bots, groups);
   const botRow = (bot: MobileBot, state: string) => (
     <ConversationRow
       key={bot.id}
@@ -68,13 +52,6 @@ export function ActivitySection({
         <BotAvatar identity={bot.id} color={bot.color} avatarSet={bot.avatarSet} motion="lazy" />
       }
     />
-  );
-  const readRecent = activity.recent.filter(
-    (run) =>
-      !attentionRuns.includes(run) &&
-      !(run.groupId
-        ? unreadGroups.some((group) => group.id === run.groupId)
-        : [...unreadBots, ...attentionBots].some((bot) => bot.id === run.botId)),
   );
   if (
     !attentionRuns.length &&

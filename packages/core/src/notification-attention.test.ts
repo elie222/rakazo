@@ -1,6 +1,10 @@
 import type { RunActivityRow } from "@rakazo/contracts";
 import { expect, it } from "vitest";
-import { notificationAttention, notificationAttentionRuns } from "./notification-attention.js";
+import {
+  notificationActivity,
+  notificationAttention,
+  notificationAttentionRuns,
+} from "./notification-attention.js";
 
 it.each([
   ["waiting_input", true, "needs_attention"],
@@ -66,4 +70,65 @@ it("does not promote group history after a newer completed or active run, includ
   expect(notificationAttentionRuns([], [failure], [], [{ id: "group", unread: false }])).toEqual(
     [],
   );
+});
+
+it("shares activity sections and suppresses only rows represented in the visible roster", () => {
+  const row = (
+    runId: string,
+    botId: string,
+    status: RunActivityRow["status"],
+    groupId: string | null = null,
+  ) =>
+    ({
+      runId,
+      botId,
+      status,
+      groupId,
+      threadId: groupId ?? botId,
+      updatedAt: "2026-01-01T00:00:00Z",
+    }) as RunActivityRow;
+  const ask = row("ask", "question", "waiting_input");
+  const work = row("work", "busy", "running", "working-group");
+  const recent = [
+    row("busy-reply", "busy", "completed"),
+    row("writer-reply", "writer", "completed"),
+    row("group-reply", "busy", "completed", "working-group"),
+    row("read", "read", "completed"),
+  ];
+  const bots = [
+    { id: "question", status: "waiting_input", unread: false },
+    { id: "orphan", status: "waiting_input", unread: false },
+    { id: "busy", status: "running", unread: true },
+    { id: "writer", status: "idle", unread: true },
+    {
+      id: "group-agent",
+      status: "waiting_input",
+      unread: false,
+      threadId: "private",
+      activeRunThreadId: "group-thread",
+    },
+  ];
+  const groups = [
+    { id: "working-group", unread: true },
+    { id: "unread-group", unread: true },
+  ];
+  const sections = notificationActivity([ask, work], recent, bots, groups);
+  expect(sections.attentionRuns.map((run) => run.runId)).toEqual(["ask"]);
+  expect(sections.workingRuns.map((run) => run.runId)).toEqual(["work"]);
+  expect(sections.attentionBots.map((bot) => bot.id)).toEqual(["orphan"]);
+  expect(sections.unreadBots.map((bot) => bot.id)).toEqual(["writer"]);
+  expect(sections.unreadGroups.map((group) => group.id)).toEqual(["unread-group"]);
+  expect(sections.readRecent.map((run) => run.runId)).toEqual([
+    "busy-reply",
+    "group-reply",
+    "read",
+  ]);
+  const filtered = notificationActivity([ask, work], recent, bots, groups, {
+    active: [],
+    recent: [recent[1]!],
+    bots: [],
+    groups: [],
+  });
+  expect(filtered.readRecent.map((run) => run.runId)).toEqual(["writer-reply"]);
+  expect(filtered.unreadBots).toEqual([]);
 });
