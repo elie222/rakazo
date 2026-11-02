@@ -2713,6 +2713,11 @@ button.product-demo__dock-icon {
   font-size: 15px;
 }
 
+.plugin-form__error--field {
+  margin-top: -12px;
+  font-size: 14px;
+}
+
 .plugin-form__done {
   margin-top: 36px;
 }
