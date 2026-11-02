@@ -67,6 +67,7 @@ import {
   BotSchema,
   BotSectionName,
   BotSectionSchema,
+  ByokIntervalSchema,
   CapabilityInstallSchema,
   CONNECTION_LABEL_MAX_LENGTH,
   ComputerModeSchema,
@@ -266,7 +267,14 @@ export const appContract = {
     /** Re-reads the subscription from the provider, e.g. right after a mobile checkout. */
     refresh: oc.output(BillingStatusSchema),
     selectFunding: oc
-      .input(z.object({ funding: z.enum(["byok", "credits"]), client: BillingClientSchema }))
+      .input(
+        z.object({
+          funding: z.enum(["byok", "credits"]),
+          client: BillingClientSchema,
+          /** Billing period of the own-key plan's checkout; monthly when omitted. */
+          interval: ByokIntervalSchema.optional(),
+        }),
+      )
       /** `url` is the checkout to pay for the own-key plan before it has access. */
       .output(z.object({ ok: z.literal(true), url: z.string().url().optional() })),
     purchaseCredits: oc
@@ -282,7 +290,11 @@ export const appContract = {
       .input(z.object({ amountCents: ModelCreditAmountSchema }))
       .output(z.object({ ok: z.literal(true) })),
     checkout: oc
-      .input(z.object({ client: BillingClientSchema }).optional())
+      .input(
+        z
+          .object({ client: BillingClientSchema, interval: ByokIntervalSchema.optional() })
+          .optional(),
+      )
       .output(z.object({ url: z.string().url() })),
     portal: oc
       .input(z.object({ client: BillingClientSchema }).optional())

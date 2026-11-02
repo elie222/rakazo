@@ -1021,6 +1021,13 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Full access, nothing to pay": "完整功能，無需付費",
   "Day {days}": "第 {days} 天",
   "{price} / month begins": "開始按每月 {price} 計費",
+  "Billing period": "帳單週期",
+  "Yearly −{percent}%": "按年 −{percent}%",
+  "{days} days free, then {price} / year. Cancel anytime.":
+    "免費 {days} 天，之後每年 {price}。可隨時取消。",
+  "{price} / year": "每年 {price}",
+  "{price} / year begins": "開始按每年 {price} 計費",
+  "{price} / year. Cancel anytime.": "每年 {price}。可隨時取消。",
   "Only the owner of this account can choose a plan.": "只有此帳號的擁有者可以選擇方案。",
   Terms: "條款",
   Privacy: "隱私權",

@@ -1302,6 +1302,8 @@ export interface BillingCreditCheckoutRequest {
 }
 
 export interface BillingByokCheckoutRequest extends Omit<BillingCreditCheckoutRequest, "monthly"> {
+  /** How often `amountCents` bills; monthly when omitted. */
+  interval?: "month" | "year";
   /** Omitted when the customer has already used its trial. */
   trialDays?: number;
 }
@@ -1322,8 +1324,10 @@ export interface BillingSubscriptionSnapshot {
   endedAt: Date | null;
   /** The flat own-key plan, which grants access without credits. */
   byokPlan?: boolean;
-  /** What the own-key plan bills each month, which stays at the price it was bought at. */
+  /** What the own-key plan bills each period, which stays at the price it was bought at. */
   byokPriceCents?: number;
+  /** The own-key plan's billing period. */
+  byokInterval?: "month" | "year";
   /** Stable identity of the subscription's card across customers, when the provider has one. */
   cardFingerprint?: string;
   cancellationReason?: BillingCancellationReason;

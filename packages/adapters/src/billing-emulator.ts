@@ -149,12 +149,14 @@ export class BillingEmulator implements BillingProvider {
       priceId: BYOK_PRICE_ID,
       byokPlan: true,
       byokPriceCents: checkout.amountCents,
+      byokInterval: checkout.interval ?? "month",
       cardFingerprint,
       status: trialEndsAt ? "trialing" : "active",
       seats: 1,
       trialEndsAt,
       currentPeriodStartsAt: new Date(this.now()),
-      currentPeriodEndsAt: trialEndsAt ?? new Date(this.now() + 30 * 86400000),
+      currentPeriodEndsAt:
+        trialEndsAt ?? new Date(this.now() + (checkout.interval === "year" ? 365 : 30) * 86400000),
       cancelAtPeriodEnd: false,
       endedAt: null,
     });

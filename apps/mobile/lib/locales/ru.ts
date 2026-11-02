@@ -1071,6 +1071,13 @@ export const RU_MESSAGES: Record<string, string> = {
   "Full access, nothing to pay": "Полный доступ без оплаты",
   "Day {days}": "День {days}",
   "{price} / month begins": "Далее {price} в месяц",
+  "Billing period": "Период оплаты",
+  "Yearly −{percent}%": "Год −{percent}%",
+  "{days} days free, then {price} / year. Cancel anytime.":
+    "{days} дн. бесплатно, затем {price} в год. Отмена в любой момент.",
+  "{price} / year": "{price} в год",
+  "{price} / year begins": "Далее {price} в год",
+  "{price} / year. Cancel anytime.": "{price} в год. Отмена в любой момент.",
   "Only the owner of this account can choose a plan.":
     "Только владелец этого аккаунта может выбрать тариф.",
   Terms: "Условия",

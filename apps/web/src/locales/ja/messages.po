@@ -420,6 +420,10 @@ msgstr "{toolCount, plural, one {#個のツール} other {#個のツール}}"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/ModelCredits.tsx
+msgid "/ month"
+msgstr ""
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr ""
@@ -1022,6 +1026,10 @@ msgstr "Bearerトークン"
 #: src/pages/settings-nav.ts
 msgid "Billing"
 msgstr "請求"
+
+#: src/components/ModelCredits.tsx
+msgid "Billing period"
+msgstr ""
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
@@ -3870,6 +3878,7 @@ msgstr "月曜日"
 msgid "month"
 msgstr "月"
 
+#: src/components/ModelCredits.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "毎月"
@@ -5726,6 +5735,10 @@ msgid "Subscribe"
 msgstr "申し込む"
 
 #: src/components/ModelCredits.tsx
+msgid "Subscribe for {annualPrice} / year"
+msgstr ""
+
+#: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
 msgstr "月額 {price} で登録"
 
@@ -6554,6 +6567,10 @@ msgstr "ワークスペース"
 #: src/lib/billing.ts
 msgid "year"
 msgstr "年"
+
+#: src/components/ModelCredits.tsx
+msgid "Yearly"
+msgstr ""
 
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx

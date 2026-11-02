@@ -1861,6 +1861,10 @@ export type Me = z.infer<typeof MeSchema>;
 export const MODEL_CREDIT_AMOUNTS = [1000, 2000, 3000, 5000, 10000, 20000, 50000] as const;
 /** Monthly price in cents of running bots on your own model connection; `null` makes it free. */
 export const BYOK_MONTHLY_PRICE_CENTS: number | null = 1500;
+/** Yearly price in cents of the same plan; `null` offers it monthly only. */
+export const BYOK_ANNUAL_PRICE_CENTS: number | null = 14400;
+export const ByokIntervalSchema = z.enum(["month", "year"]);
+export type ByokInterval = z.infer<typeof ByokIntervalSchema>;
 export const DEFAULT_MONTHLY_CREDIT_AMOUNT = 3000;
 export const ModelCreditAmountSchema = z.union(
   MODEL_CREDIT_AMOUNTS.map((amount) => z.literal(amount)),
@@ -1912,6 +1916,10 @@ export const BillingStatusSchema = z.object({
   creditPurchasesEnabled: z.boolean().optional(),
   /** Monthly price of the own-key plan, as subscribed when the organization has it; `null` when free. */
   byokPriceCents: z.number().int().positive().nullable().optional(),
+  /** How often `byokPriceCents` bills. Absent from older servers, which bill monthly. */
+  byokInterval: ByokIntervalSchema.optional(),
+  /** Yearly price of the own-key plan for new subscriptions, when offered. */
+  byokAnnualPriceCents: z.number().int().positive().nullable().optional(),
   /** End of an unpaid own-key organization's free period. */
   byokFreeUntil: z.string().nullable().optional(),
   access: z.boolean(),

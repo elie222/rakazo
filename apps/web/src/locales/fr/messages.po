@@ -420,6 +420,10 @@ msgstr "{toolCount, plural, one {# outil} other {# outils}}"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/ModelCredits.tsx
+msgid "/ month"
+msgstr ""
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr ""
@@ -1021,6 +1025,10 @@ msgstr "Jeton porteur"
 
 #: src/pages/settings-nav.ts
 msgid "Billing"
+msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "Billing period"
 msgstr ""
 
 #: src/components/ApprovalRulesSettings.tsx
@@ -3870,6 +3878,7 @@ msgstr "lundi"
 msgid "month"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "Mensuel"
@@ -5726,6 +5735,10 @@ msgid "Subscribe"
 msgstr "S’abonner"
 
 #: src/components/ModelCredits.tsx
+msgid "Subscribe for {annualPrice} / year"
+msgstr ""
+
+#: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
 msgstr "S’abonner pour {price} / mois"
 
@@ -6553,6 +6566,10 @@ msgstr ""
 
 #: src/lib/billing.ts
 msgid "year"
+msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "Yearly"
 msgstr ""
 
 #: src/pages/shell/chat-context.tsx
