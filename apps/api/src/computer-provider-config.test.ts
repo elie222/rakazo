@@ -12,7 +12,7 @@ import {
 
 const actor = { userId: "user-1", spaceId: "space-1", email: "admin@example.com" } as never;
 
-const wuying = {
+const testDesktop = {
   desktopId: "ecd-test",
   endUserId: "test-user",
   mcpUrl: "https://gateway.example.com/mcp",
@@ -85,22 +85,25 @@ describe("computer provider settings", () => {
     const { deps } = makeDeps({ admin: false });
     await expect(getComputerProviderSettings(deps, actor)).rejects.toThrow("Admins only");
     await expect(
-      updateComputerProviderSettings(deps, actor, { provider: "wuying", values: wuying }),
+      updateComputerProviderSettings(deps, actor, {
+        provider: "desktop",
+        values: testDesktop,
+      }),
     ).rejects.toThrow("Admins only");
   });
 
   it("checks the desktop, stores the connection encrypted and never returns secrets", async () => {
     const { deps, state } = makeDeps();
     const saved = await updateComputerProviderSettings(deps, actor, {
-      provider: "wuying",
-      values: wuying,
+      provider: "desktop",
+      values: testDesktop,
     });
     expect(deps.verifyConnection).toHaveBeenCalledOnce();
-    expect(state.settings).toMatchObject({ computerProvider: "wuying" });
+    expect(state.settings).toMatchObject({ computerProvider: "desktop" });
     expect(saved).toMatchObject({
-      provider: "wuying",
+      provider: "desktop",
       defaultProvider: "docker",
-      values: { desktopId: "ecd-test", mcpUrl: wuying.mcpUrl },
+      values: { desktopId: "ecd-test", mcpUrl: testDesktop.mcpUrl },
       savedSecrets: { accessKeyId: true, accessKeySecret: true, mcpToken: true },
     });
     expect(saved.values).not.toHaveProperty("accessKeyId");
@@ -110,10 +113,13 @@ describe("computer provider settings", () => {
 
   it("keeps saved secrets when their fields are left blank", async () => {
     const { deps, state } = makeDeps();
-    await updateComputerProviderSettings(deps, actor, { provider: "wuying", values: wuying });
     await updateComputerProviderSettings(deps, actor, {
-      provider: "wuying",
-      values: { ...wuying, desktopId: "ecd-other", accessKeySecret: "", mcpToken: "" },
+      provider: "desktop",
+      values: testDesktop,
+    });
+    await updateComputerProviderSettings(deps, actor, {
+      provider: "desktop",
+      values: { ...testDesktop, desktopId: "ecd-other", accessKeySecret: "", mcpToken: "" },
     });
     const current = state.secrets.get(state.settings?.computerProviderSecretId ?? "") ?? "";
     expect(JSON.parse(current).values).toMatchObject({
@@ -127,11 +133,14 @@ describe("computer provider settings", () => {
 
   it("sends the saved token only to the gateway it was saved for", async () => {
     const { deps } = makeDeps();
-    await updateComputerProviderSettings(deps, actor, { provider: "wuying", values: wuying });
+    await updateComputerProviderSettings(deps, actor, {
+      provider: "desktop",
+      values: testDesktop,
+    });
     await expect(
       updateComputerProviderSettings(deps, actor, {
-        provider: "wuying",
-        values: { ...wuying, mcpUrl: "https://other.example.com/mcp", mcpToken: "" },
+        provider: "desktop",
+        values: { ...testDesktop, mcpUrl: "https://other.example.com/mcp", mcpToken: "" },
       }),
     ).rejects.toThrow("Could not verify computer settings");
     expect(deps.verifyConnection).toHaveBeenCalledTimes(1);
@@ -141,20 +150,26 @@ describe("computer provider settings", () => {
     const { deps, state } = makeDeps();
     await expect(
       updateComputerProviderSettings(deps, actor, {
-        provider: "wuying",
-        values: { ...wuying, mcpToken: "" },
+        provider: "desktop",
+        values: { ...testDesktop, mcpToken: "" },
       }),
     ).rejects.toThrow("Could not verify computer settings");
-    deps.verifyConnection.mockRejectedValueOnce(new Error("InvalidAccessKeyId"));
+    deps.verifyConnection.mockRejectedValueOnce(new Error("ConnectionRefused"));
     await expect(
-      updateComputerProviderSettings(deps, actor, { provider: "wuying", values: wuying }),
+      updateComputerProviderSettings(deps, actor, {
+        provider: "desktop",
+        values: testDesktop,
+      }),
     ).rejects.toThrow("Could not verify computer settings");
     expect(state.settings).toBeNull();
   });
 
   it("switches back without dropping the saved connection", async () => {
     const { deps, state } = makeDeps();
-    await updateComputerProviderSettings(deps, actor, { provider: "wuying", values: wuying });
+    await updateComputerProviderSettings(deps, actor, {
+      provider: "desktop",
+      values: testDesktop,
+    });
     const back = await updateComputerProviderSettings(deps, actor, {
       provider: "default",
       values: {},
@@ -166,25 +181,25 @@ describe("computer provider settings", () => {
   });
 
   it("reports an account's own desktop over the deployment's provider", () => {
-    expect(effectiveSandboxProvider(null, "docker", "wuying")).toBe("wuying");
+    expect(effectiveSandboxProvider(null, "docker", "desktop")).toBe("desktop");
     // Those deployments never route computers by Settings.
-    expect(effectiveSandboxProvider(null, "desktop", "wuying")).toBe("desktop");
+    expect(effectiveSandboxProvider(null, "desktop", "desktop")).toBe("desktop");
   });
 
-  it("reports Wuying as the sandbox only with a saved connection", () => {
+  it("reports the selected provider as the sandbox only with a saved connection", () => {
     expect(effectiveSandboxProvider(null, "docker")).toBe("docker");
     expect(
       effectiveSandboxProvider(
-        { computerProvider: "wuying", computerProviderSecretId: null },
+        { computerProvider: "desktop", computerProviderSecretId: null },
         "none",
       ),
     ).toBe("none");
     expect(
       effectiveSandboxProvider(
-        { computerProvider: "wuying", computerProviderSecretId: "s" },
+        { computerProvider: "desktop", computerProviderSecretId: "s" },
         "none",
       ),
-    ).toBe("wuying");
+    ).toBe("desktop");
   });
 });
 
@@ -232,12 +247,12 @@ describe("an account's own computer", () => {
       savedSecrets: {},
     });
     const saved = await updateAccountComputerSettings(deps, actor, {
-      provider: "wuying",
-      values: wuying,
+      provider: "desktop",
+      values: testDesktop,
     });
     expect(deps.verifyConnection).toHaveBeenCalledOnce();
     expect(saved).toMatchObject({
-      provider: "wuying",
+      provider: "desktop",
       defaultProvider: "docker",
       values: { desktopId: "ecd-test" },
       savedSecrets: { accessKeyId: true, accessKeySecret: true, mcpToken: true },
@@ -253,10 +268,13 @@ describe("an account's own computer", () => {
 
   it("replaces the saved desktop, keeping blank secrets", async () => {
     const { deps, state, rows } = makeAccountDeps();
-    await updateAccountComputerSettings(deps, actor, { provider: "wuying", values: wuying });
     await updateAccountComputerSettings(deps, actor, {
-      provider: "wuying",
-      values: { ...wuying, desktopId: "ecd-other", accessKeySecret: "", mcpToken: "" },
+      provider: "desktop",
+      values: testDesktop,
+    });
+    await updateAccountComputerSettings(deps, actor, {
+      provider: "desktop",
+      values: { ...testDesktop, desktopId: "ecd-other", accessKeySecret: "", mcpToken: "" },
     });
     expect(rows.map((row) => row.id)).toEqual(["secret-2"]);
     expect(JSON.parse(state.secrets.get("secret-2") ?? "").values).toMatchObject({
@@ -268,8 +286,14 @@ describe("an account's own computer", () => {
 
   it("goes back to the deployment default by removing the saved desktop", async () => {
     const { deps, rows } = makeAccountDeps();
-    await updateAccountComputerSettings(deps, actor, { provider: "wuying", values: wuying });
-    await updateAccountComputerSettings(deps, other, { provider: "wuying", values: wuying });
+    await updateAccountComputerSettings(deps, actor, {
+      provider: "desktop",
+      values: testDesktop,
+    });
+    await updateAccountComputerSettings(deps, other, {
+      provider: "desktop",
+      values: testDesktop,
+    });
     const back = await updateAccountComputerSettings(deps, actor, {
       provider: "default",
       values: {},
@@ -280,14 +304,17 @@ describe("an account's own computer", () => {
 
   it("refuses unreachable desktops and deployments that never route by Settings", async () => {
     const { deps, rows } = makeAccountDeps();
-    deps.verifyConnection.mockRejectedValueOnce(new Error("InvalidAccessKeyId"));
+    deps.verifyConnection.mockRejectedValueOnce(new Error("ConnectionRefused"));
     await expect(
-      updateAccountComputerSettings(deps, actor, { provider: "wuying", values: wuying }),
+      updateAccountComputerSettings(deps, actor, { provider: "desktop", values: testDesktop }),
     ).rejects.toThrow("Could not verify computer settings");
     expect(rows).toEqual([]);
     const local = makeAccountDeps("desktop");
     await expect(
-      updateAccountComputerSettings(local.deps, actor, { provider: "wuying", values: wuying }),
+      updateAccountComputerSettings(local.deps, actor, {
+        provider: "desktop",
+        values: testDesktop,
+      }),
     ).rejects.toThrow("This deployment cannot use account computer settings");
   });
 });
@@ -325,7 +352,10 @@ it("rejects unregistered providers and deployment-only providers for accounts", 
     updateAccountComputerSettings(deps, actor, { provider: "unknown", values: {} }),
   ).rejects.toThrow("Could not verify");
   await expect(
-    updateAccountComputerSettings(deps, actor, { provider: "e2b", values: { apiKey: "test-key" } }),
+    updateAccountComputerSettings(deps, actor, {
+      provider: "test-cloud",
+      values: { apiKey: "test-key" },
+    }),
   ).rejects.toThrow("Could not verify");
 });
 
@@ -333,7 +363,7 @@ it("refuses a gateway resolving to a private address before using credentials", 
   const { deps } = makeDeps();
   deps.resolveHostname.mockResolvedValue([{ address: "127.0.0.1", family: 4 }]);
   await expect(
-    updateComputerProviderSettings(deps, actor, { provider: "wuying", values: wuying }),
+    updateComputerProviderSettings(deps, actor, { provider: "desktop", values: testDesktop }),
   ).rejects.toThrow("Could not verify");
   expect(deps.verifyConnection).not.toHaveBeenCalled();
   expect(deps.secrets.put).not.toHaveBeenCalled();
@@ -341,11 +371,22 @@ it("refuses a gateway resolving to a private address before using credentials", 
 
 it("retains previous deployment connections when changing providers", async () => {
   const { deps, state } = makeDeps();
-  await updateComputerProviderSettings(deps, actor, { provider: "wuying", values: wuying });
   await updateComputerProviderSettings(deps, actor, {
-    provider: "e2b",
+    provider: "desktop",
+    values: testDesktop,
+  });
+  await updateComputerProviderSettings(deps, actor, {
+    provider: "test-cloud",
     values: { apiKey: "test-key" },
   });
   const stored = JSON.parse(state.secrets.get(state.settings!.computerProviderSecretId!)!);
-  expect(stored).toMatchObject({ provider: "e2b", connections: { wuying } });
+  expect(stored).toMatchObject({
+    provider: "test-cloud",
+    connections: { desktop: testDesktop },
+  });
 });
+
+vi.mock(
+  "../../../packages/adapters/src/computer-provider-registry.js",
+  () => import("../../../packages/adapters/src/fake-computer-settings.test-support.js"),
+);

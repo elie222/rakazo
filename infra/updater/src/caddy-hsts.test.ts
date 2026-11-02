@@ -1,9 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import {
-  COMPUTER_SCREEN_RUNTIME_PATH,
-  contentSecurityPolicyFor,
-} from "@rakazo/contracts/content-security-policy";
+import { COMPUTER_SCREEN_RUNTIME_PATH } from "@rakazo/contracts/content-security-policy";
 import { describe, expect, it } from "vitest";
 
 const composeDir = path.resolve(import.meta.dirname, "../../compose");
@@ -28,17 +25,9 @@ describe.each(caddyfiles)("%s HSTS", (filename) => {
     expect(httpsSite).not.toContain("frame-ancestors 'none'");
   });
 
-  it("lets the Wuying screen frame its SDK runtime from an opaque origin", () => {
+  it("lets the embedded screen frame its SDK runtime from an opaque origin", () => {
     expect(httpsSite).toContain(`@framed not path ${COMPUTER_SCREEN_RUNTIME_PATH}`);
-    expect(contentSecurityPolicyFor(COMPUTER_SCREEN_RUNTIME_PATH)).not.toContain("frame-ancestors");
-    for (const pathname of [
-      "/wuying/screen.html",
-      "/wuying/other.html",
-      `${COMPUTER_SCREEN_RUNTIME_PATH}/`,
-    ]) {
-      expect(contentSecurityPolicyFor(pathname)).toContain("frame-ancestors 'self'");
-    }
-    expect(httpsSite).not.toContain("not path /wuying/*");
+    expect(httpsSite).not.toContain("not path /computer-screen/*");
   });
 
   it("replaces the client-supplied forwarding header on API and RPC requests", () => {

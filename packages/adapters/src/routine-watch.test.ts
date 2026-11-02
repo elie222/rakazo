@@ -1063,11 +1063,11 @@ describe("tickRoutineWatch on a computer", () => {
     }
   });
 
-  it("runs a Wuying check in PowerShell without the bash desktop guard", async () => {
+  it("runs a Windows check in PowerShell without the bash desktop guard", async () => {
     const computer = {
       id: "computer-1",
       botId: "bot-1",
-      kind: "wuying" as const,
+      kind: "desktop" as const,
       providerRef: "ecd-1",
     };
     vi.mocked(provisionComputer).mockResolvedValueOnce(computer);
@@ -1076,7 +1076,7 @@ describe("tickRoutineWatch on a computer", () => {
     const { deps, routine, execute } = setupComputer(
       { kind: "command", command },
       { stdout: "3\n" },
-      { id: "computer-1", scope: "team", kind: "wuying" },
+      { id: "computer-1", scope: "team", kind: "desktop" },
       { shell: { platform: "win32", shell: "powershell.exe", home: "C:\\Users\\rakazo" } },
     );
     deps.commandRefusal = protectedComputerLifecycleRefusal;

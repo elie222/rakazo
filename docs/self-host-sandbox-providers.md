@@ -19,17 +19,15 @@ and remote providers. This stack credential does not replace a remote provider's
 
 ## Settings configuration
 
-Admins can choose **Settings → Computer → New computers run on** and save the fields shown for
-E2B, Novita, Daytona, CreateOS, Boat, Boxd, Railway, or Wuying. The API supplies the provider's field
-descriptors and validates values server-side. Credentials are encrypted in the secret store and
+Admins can choose **Settings → Computer → New computers run on** and save a supported provider's fields.
+The API supplies the provider's field descriptors and validates values server-side. Credentials are encrypted in the secret store and
 never returned; a blank secret field keeps its saved value for the same provider and destination.
 Changing a URL requires credentials again. **Deployment default** uses `SANDBOX_PROVIDER`.
 Docker, Kubernetes, desktop, fake, and none remain environment-only. Settings overrides are disabled
 for desktop and fake deployments.
 
-The account form offers only providers that declare support for account-owned computers (currently
-Wuying). Team Computers follow their owner's account choice; Private Computers use the deployment
-choice. See [Wuying setup](./wuying-computers.md) for that adapter's fields and requirements.
+The account form offers only providers that declare support for account-owned computers.
+Team Computers follow their owner's account choice; Private Computers use the deployment choice. See [Wuying setup](./wuying-computers.md) for that adapter's fields and requirements.
 
 ## Choosing a provider
 
@@ -199,7 +197,7 @@ desktop off; deleting it removes only its home folder, never the desktop.
 | `WUYING_END_USER_ID` | Screen logins are issued for this user |
 | `WUYING_MCP_URL` / `WUYING_MCP_TOKEN` | The desktop's MCP gateway and its bearer token |
 
-The web and Electron screen is drawn by the Wuying Web SDK in `/wuying/screen.html`, served by
+The web and Electron screen is drawn by the Wuying Web SDK in `/computer-screen/screen.html`, served by
 the web app. Mobile rejects the custom screen URL and does not embed this SDK. The
 SDK is not committed; fetch the pinned release before building the web app:
 
@@ -208,7 +206,7 @@ node scripts/wuying-web-sdk.mjs
 ```
 
 The SDK runs in an opaque-origin sandboxed frame with an in-memory storage shim and a no-op
-cookie accessor in both its launcher and nested runtime. A CSP scoped to `/wuying/` permits
+cookie accessor in both its launcher and nested runtime. A CSP scoped to `/computer-screen/` permits
 the vendor hosts, blob workers and WebAssembly compilation. The one-time login code stays
 only in the URL fragment, outside HTTP requests and Referer.
 

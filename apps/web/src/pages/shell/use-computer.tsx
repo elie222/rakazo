@@ -28,7 +28,7 @@ import {
   probeScreen,
   probeScreenStatus,
   SCREEN_FRAME_LOAD_TIMEOUT_MS,
-  sameWuyingScreen,
+  sameEmbeddedComputerScreen,
   screenFrameError,
   screenFrameMessage,
   screenFrameStarted,
@@ -330,7 +330,8 @@ export function useComputerState({
           if (
             screen.url?.startsWith("wuying:") &&
             (screenAwaitsRetry.current ||
-              (current === liveWuyingUrl.current && sameWuyingScreen(current, screen.url)))
+              (current === liveWuyingUrl.current &&
+                sameEmbeddedComputerScreen(current, screen.url)))
           )
             return current;
           return screen.url;

@@ -12,7 +12,7 @@ and use the mouse and keyboard there, and you can watch or take over the screen 
 | --- | --- |
 | ECD API (AccessKey) | Reads the desktop's state, starts it, and issues one-time screen logins |
 | The desktop's MCP gateway | Runs commands, reads and writes files, takes screenshots, sends mouse and keyboard input |
-| Wuying Web SDK | Draws the live screen in the computer panel, served by Rakazo at `/wuying/screen.html` |
+| Wuying Web SDK | Draws the live screen in the computer panel, served by Rakazo at `/computer-screen/screen.html` |
 
 Each bot computer's home is a folder on the desktop, `%USERPROFILE%\rakazo\<home>`. The desktop's
 own disk keeps it. Every computer shares the desktop, so stopping one leaves the desktop on;
@@ -89,17 +89,33 @@ computers too. Settings has no effect when `SANDBOX_PROVIDER` is `desktop` or `f
 
 ## Screen isolation
 
-The pinned Web SDK's local mode loads `/wuying/sdk/ASP/container.html` inside the screen page.
+The pinned Web SDK's local mode loads `/computer-screen/sdk/ASP/container.html` inside the screen page.
 The screen page is sandboxed without `allow-same-origin`, so its opaque origin cannot match a
 runtime `frame-ancestors 'self'` policy. Only that exact runtime path omits ancestor restrictions
 and Caddy's X-Frame-Options. Its CSP still denies app-origin connections, forms and objects and
 keeps scripts sandboxed. It can be embedded by another site, but receives no credentials from the
 server; the authenticated app supplies a short-lived screen login in the screen page's fragment.
-Every other `/wuying/` path, including `screen.html`, requires same-origin ancestors and keeps
+Every other `/computer-screen/` path, including `screen.html`, requires same-origin ancestors and keeps
 X-Frame-Options. The policy permits the SDK's exact MQTT script and embedded WebAssembly data
 fetch. Only the nested runtime permits TLS WebSocket connections to `*.wuying.aliyuncs.com` on
 any port, because the desktop ticket can pick a gateway port other than 443. MCP gateway ports
 are independent.
+
+### Upgrading existing installations
+
+Screen assets now live under `/computer-screen/`. Run the SDK download command again before
+building the web or desktop app; it writes the pinned files to the new directory. The browser
+adapter source is bundled from `packages/adapters/src/wuying-screen/` by the web composition root.
+API screen sessions contain fresh `wuying:` tickets, not saved static page paths; the client builds
+the current screen page URL when it reads a ticket. No database URL backfill is needed. Reload an
+already-open computer panel after upgrading; old static screen page links are not durable logins.
+
+For an existing Caddy installation, replace the old `/wuying/sdk/ASP/container.html` exception with
+`/computer-screen/sdk/ASP/container.html` in its active Caddyfile and reload Caddy as part of the
+upgrade. Use the supplied configs as the reference, including for a custom Cloudflare config.
+The updater recreates API, worker and web by default, so it does not reload Caddy automatically;
+include `caddy` in `RAKAZO_UPDATE_SERVICES` or recreate it explicitly with the updated configuration.
+An unchanged Caddy matcher would add X-Frame-Options to the new runtime and block its opaque frame.
 
 ## Limits
 

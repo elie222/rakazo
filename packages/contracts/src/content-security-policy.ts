@@ -9,60 +9,16 @@
  * app policy the way a srcdoc frame would; its own meta CSP governs it and its nested preview. */
 export const HTML_VIEWER_PATH = "/html-viewer.html";
 
-/** The page that draws a Wuying desktop with its vendor Web SDK, next to the SDK's own files. */
-export const COMPUTER_SCREEN_PATH = "/wuying/screen.html";
-const COMPUTER_SCREEN_PREFIX = "/wuying/";
-export const COMPUTER_SCREEN_RUNTIME_PATH = "/wuying/sdk/ASP/container.html";
+/** Embedded computer screen and its local runtime assets. */
+export const COMPUTER_SCREEN_PATH = "/computer-screen/screen.html";
+export const COMPUTER_SCREEN_PREFIX = "/computer-screen/";
+export const COMPUTER_SCREEN_RUNTIME_PATH = "/computer-screen/sdk/ASP/container.html";
 
-// The vendor runs only in opaque frames, including if this page is opened directly.
-// No app-origin fetches, forms, objects or top-level navigation. Inline hashes cover only
-// the pinned container's focus guard, version marker and click listener.
-const WUYING_DIRECTIVES: Record<string, string[]> = {
-  "default-src": ["'none'"],
-  sandbox: ["allow-scripts", "allow-pointer-lock"],
-  "script-src": [
-    "'self'",
-    "'wasm-unsafe-eval'",
-    "blob:",
-    "https://g.alicdn.com",
-    "'sha256-YWDKpAXTqwkBgKv52boPcHHeIFM0KgmGRB7P5BAYG1g='",
-    "'sha256-rukASNY1jEwwaAb4qYHy6q+Vz2CBb8DRFWqOn3yc534='",
-    "'sha256-QrA3rhcCnVi1raBBazigw1S+co1eZTAaQED3N3leMaw='",
-  ],
-  "style-src": ["'unsafe-inline'", "https://g.alicdn.com"],
-  "img-src": ["data:", "blob:", "https://img.alicdn.com", "https://gw.alicdn.com"],
-  "font-src": ["data:", "https://g.alicdn.com"],
-  "media-src": ["blob:"],
-  "connect-src": [
-    "https://*.aliyuncs.com",
-    "wss://*.aliyuncs.com",
-    "https://eds.aliyun.com",
-    "https://eds-intl.aliyun.com",
-    "https://g.alicdn.com",
-  ],
-  "worker-src": ["blob:"],
-  "frame-src": ["'self'"],
-  "base-uri": ["'none'"],
-  "form-action": ["'none'"],
-};
-const WUYING_CONTENT_SECURITY_POLICY = serialize({
-  ...WUYING_DIRECTIVES,
-  "frame-ancestors": ["'self'"],
-});
-// Only the pinned nested runtime loads MQTT and fetches the decoder's embedded Wasm data URL.
-const COMPUTER_RUNTIME_CONTENT_SECURITY_POLICY = serialize({
-  ...WUYING_DIRECTIVES,
-  "script-src": [
-    ...WUYING_DIRECTIVES["script-src"]!,
-    "https://o.alicdn.com/aliyun-ecs/eds-cdn/paho-mqtt/mqttws31.min.js",
-  ],
-  "connect-src": [
-    ...WUYING_DIRECTIVES["connect-src"]!,
-    // The desktop ticket can pick a gateway port other than 443.
-    "wss://*.wuying.aliyuncs.com:*",
-    "data:",
-  ],
-});
+/** Adapter-owned policies for the embedded page and its opaque nested runtime. */
+export interface EmbeddedComputerScreenPolicy {
+  screen: string;
+  runtime: string;
+}
 
 /** Same-origin endpoint browsers send violation reports to, so a blocked resource is not silent. */
 export const CSP_REPORT_PATH = "/api/csp-report";
@@ -183,6 +139,7 @@ const PASSTHROUGH_PREFIXES = ["/api", "/rpc", "/novnc"];
 export function contentSecurityPolicyFor(
   pathname: string,
   appPolicy = APP_CONTENT_SECURITY_POLICY,
+  screenPolicy?: EmbeddedComputerScreenPolicy,
 ): string | null {
   if (
     PASSTHROUGH_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
@@ -191,7 +148,8 @@ export function contentSecurityPolicyFor(
   if (pathname === HTML_VIEWER_PATH) return HTML_VIEWER_CONTENT_SECURITY_POLICY;
   // The nested runtime has an opaque ancestor, which cannot match 'self'. Its sandbox
   // policy still prevents access to the app even when visited directly.
-  if (pathname === COMPUTER_SCREEN_RUNTIME_PATH) return COMPUTER_RUNTIME_CONTENT_SECURITY_POLICY;
-  if (pathname.startsWith(COMPUTER_SCREEN_PREFIX)) return WUYING_CONTENT_SECURITY_POLICY;
+  if (screenPolicy && pathname === COMPUTER_SCREEN_RUNTIME_PATH) return screenPolicy.runtime;
+  if (pathname.startsWith(COMPUTER_SCREEN_PREFIX))
+    return screenPolicy?.screen ?? "default-src 'none'; sandbox; frame-ancestors 'self'";
   return appPolicy;
 }

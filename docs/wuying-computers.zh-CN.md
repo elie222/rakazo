@@ -11,7 +11,7 @@ Bot 可以把一台现有的[无影云电脑](https://www.aliyun.com/product/ecs
 | --- | --- |
 | ECD API（AccessKey） | 查询云电脑状态、开机、签发一次性的屏幕登录码 |
 | 云电脑的 MCP 网关 | 执行命令、读写文件、截屏、发送鼠标和键盘输入 |
-| 无影 Web SDK | 在电脑面板里显示实时画面，由 Rakazo 在 `/wuying/screen.html` 提供 |
+| 无影 Web SDK | 在电脑面板里显示实时画面，由 Rakazo 在 `/computer-screen/screen.html` 提供 |
 
 每台 bot 电脑的 home 是云电脑上的一个文件夹：`%USERPROFILE%\rakazo\<home>`。文件保存在云电脑自己的磁盘上。
 所有 bot 电脑共用这台云电脑，所以停止其中一台不会关机；Rakazo 只在云电脑关机时把它打开。需要关机时在无影控制台操作，
@@ -75,9 +75,9 @@ Bot 可以把一台现有的[无影云电脑](https://www.aliyun.com/product/ecs
 
 ## 屏幕隔离
 
-SDK 的本地模式在屏幕页内加载 `/wuying/sdk/ASP/container.html`。屏幕页没有
+SDK 的本地模式在屏幕页内加载 `/computer-screen/sdk/ASP/container.html`。屏幕页没有
 `allow-same-origin`，其不透明来源无法匹配运行时的 `frame-ancestors 'self'`。
-只有这个精确路径省略祖先限制与 X-Frame-Options；其他 `/wuying/` 路径仍限制为同源嵌入。
+只有这个精确路径省略祖先限制与 X-Frame-Options；其他 `/computer-screen/` 路径仍限制为同源嵌入。
 运行时仍受沙箱 CSP 限制，服务器不会给它发送凭据；屏幕登录码由已登录的应用传入。
 只有嵌套运行时允许连接到 `*.wuying.aliyuncs.com` 任意端口的 TLS WebSocket，
 因为云电脑登录票据可能指定 443 以外的网关端口。MCP 网关端口与此无关。
@@ -106,3 +106,13 @@ SDK 的本地模式在屏幕页内加载 `/wuying/sdk/ASP/container.html`。屏�
 | 中文输出是乱码 | 命令没有经过 PowerShell。Rakazo 会把 PowerShell 的输出切换成 UTF-8，其他 shell 仍使用系统代码页 |
 | 设置里没有切换沙箱的选项 | 当前账号不是管理员。检查 `RAKAZO_ADMIN_EMAILS`，并确认邮箱已验证 |
 | 连接 OpenAI 或 Anthropic 时返回 `unsupported_country_region_territory` | 这是模型提供方的地区限制，与无影无关：rakazo 后端所在网络的出口地区不受支持 |
+
+## 升级现有部署
+
+静态屏幕页现位于 `/computer-screen/`。构建前重新运行 SDK 下载命令，将文件写入新目录。
+API 每次生成新的登录票据，客户端使用当前屏幕路径，不需要回填数据库 URL。升级后重新打开电脑面板。
+
+现有 Caddy 配置须将 `/wuying/sdk/ASP/container.html` 例外改为
+`/computer-screen/sdk/ASP/container.html`，并在升级时重新加载配置。默认 updater 不重建 Caddy；
+可在 `RAKAZO_UPDATE_SERVICES` 中加入 `caddy`，或手动重建。旧 matcher 会给新运行时添加
+X-Frame-Options，阻止不透明来源的嵌套页面。
