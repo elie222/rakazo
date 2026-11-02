@@ -906,7 +906,10 @@ TYPE_START = "(() => {" + CODE_BOXES + r"""
   if (code && code.size > 1 && WHOLE) {
     // A whole code replaces the code: every box is emptied and typing starts at the first. Widgets
     // that draw their boxes again on each input are found again in the same place each time.
-    const boxes = () => like(code.container, code.name).slice(code.from, code.from + code.size);
+    const boxes = () => {
+      cache.delete(code.container);
+      return like(code.container, code.name).slice(code.from, code.from + code.size);
+    };
     for (let i = 0; i < 24; i++) {
       const filled = boxes().find((field) => field.value);
       if (!filled) break;
