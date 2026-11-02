@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -42,16 +42,16 @@ describe("sourceEnvironmentCommand", () => {
     if (directory) rmSync(directory, { recursive: true, force: true });
   });
 
-  function run(envFile: string, argv: string) {
+  function run(envFile: string, argv: string, PATH = process.env.PATH) {
     return spawnSync("bash", ["-c", sourceEnvironmentCommand(envFile, argv)], {
       encoding: "utf8",
-      env: { PATH: process.env.PATH },
+      env: { PATH },
     });
   }
 
   it("reads the open descriptor instead of reopening the deleted file by path", () => {
     expect(sourceEnvironmentCommand("/env/fake id", "printenv FAKE_TOKEN")).toBe(
-      `exec 3< '/env/fake id' || exit 1; rm -f -- '/env/fake id'; eval "$(cat <&3)" || exit 1; exec 3<&-; printenv FAKE_TOKEN`,
+      `exec 3< '/env/fake id' || exit 1; rm -f -- '/env/fake id'; eval "$(cat <&3 || echo exit 1)" || exit 1; exec 3<&-; printenv FAKE_TOKEN`,
     );
   });
 
@@ -72,6 +72,18 @@ describe("sourceEnvironmentCommand", () => {
     expect(run(envFile, "echo ran").stdout).toBe("");
     writeFileSync(envFile, shellExportScript({ EUID: "0" }));
     const result = run(envFile, "echo ran");
+    expect(result.stdout).toBe("");
+    expect(result.status).toBe(1);
+  });
+
+  it("does not run argv when the file cannot be read", () => {
+    directory = mkdtempSync(path.join(tmpdir(), "rakazo-env-"));
+    const envFile = path.join(directory, "env");
+    writeFileSync(envFile, shellExportScript({ FAKE_TOKEN: "fake" }));
+    const bin = path.join(directory, "bin");
+    mkdirSync(bin);
+    writeFileSync(path.join(bin, "cat"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+    const result = run(envFile, "echo ran", `${bin}:${process.env.PATH}`);
     expect(result.stdout).toBe("");
     expect(result.status).toBe(1);
   });

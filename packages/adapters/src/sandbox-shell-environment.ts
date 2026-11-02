@@ -17,11 +17,11 @@ export function shellExportScript(env: Record<string, string>): string {
 
 /**
  * Opens the env file, deletes it, then loads it from the open descriptor, so it is gone before
- * the requested env (which may change PATH) applies and before `argv` runs. It reads the
- * descriptor rather than reopening `/dev/fd/3`, which fails for a deleted file on FUSE homes.
- * No shell variables: the requested env may set any name.
+ * the requested env (which may change PATH) applies and before `argv` runs. Reopening
+ * `/dev/fd/3` fails for a deleted file on FUSE homes, and a failed read must not run `argv`
+ * without its env. No shell variables: the requested env may set any name.
  */
 export function sourceEnvironmentCommand(envFile: string, argv: string): string {
   const file = shellQuote(envFile);
-  return `exec 3< ${file} || exit 1; rm -f -- ${file}; eval "$(cat <&3)" || exit 1; exec 3<&-; ${argv}`;
+  return `exec 3< ${file} || exit 1; rm -f -- ${file}; eval "$(cat <&3 || echo exit 1)" || exit 1; exec 3<&-; ${argv}`;
 }
