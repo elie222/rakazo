@@ -379,11 +379,24 @@ function withBotPaths<T extends { downloads?: BrowserDownload[] }>(
   };
 }
 
-function formatBrowserResult<T extends { fallback?: "computer_act"; error?: string }>(
-  result: T,
-  { desktopTools = true }: PageToolOptions,
-) {
+function formatBrowserResult<
+  T extends { fallback?: "computer_act"; error?: string; dialog?: string },
+>(result: T, { desktopTools = true }: PageToolOptions) {
   if (result.fallback !== "computer_act") return result;
+  // A confirm, prompt or "Leave site?" dialog asks something; page tools never answer it.
+  if (result.dialog) {
+    if (desktopTools) {
+      return {
+        ...result,
+        note: "Answer it with computer_act, or request_takeover if the user should decide. Do not repeat the step that opened it.",
+      };
+    }
+    const { fallback: _fallback, ...rest } = result;
+    return {
+      ...rest,
+      note: "Use request_takeover so the user can answer it. Do not repeat the step that opened it.",
+    };
+  }
   if (desktopTools) {
     return {
       ...result,
