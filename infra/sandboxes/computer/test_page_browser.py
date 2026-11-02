@@ -307,6 +307,32 @@ class SnapshotTest(unittest.TestCase):
         self.assertEqual(none["tree"], '[no controls match "checkout"]')
         self.assertEqual(none["elements"], [])
 
+    def test_a_query_brings_the_whole_form_when_the_match_is_in_a_group_inside_it(self):
+        tree = ('- form\n  - group "Address"\n    - textbox "Street" [ref=e1]\n  - button "Send" [ref=e2]\n'
+                '- button "Other" [ref=e3]\n')
+        with patch.object(helper.time, "sleep"):
+            result = page(FakeAgentBrowser(tree=tree, sources={})).snapshot(0.0, query="street")
+        self.assertEqual([e["ref"] for e in result["elements"]], ["e1", "e2"])
+
+    def test_a_frame_s_line_comes_before_its_matches_even_when_they_are_cut(self):
+        buttons = "".join(f'  - button "Pick {n}" [ref=e{n}]\n' for n in range(1, 120))
+        browser = FakeAgentBrowser(tree="- Iframe [ref=e900]\n" + buttons, sources={"e900": "https://partner.example.test/"})
+        with patch.object(helper.time, "sleep"):
+            result = page(browser).snapshot(0.0, query="pick")
+        self.assertEqual(result["elements"][0]["ref"], "e900")
+        self.assertIn("showing 80 of 120", result["tree"])
+
+    def test_a_frame_above_the_view_leaves_its_controls_out_of_the_part_in_view(self):
+        buttons = "".join(f'  - button "Pick {n}" [ref=e{n}]\n' for n in range(1, 120))
+        tree = "- Iframe [ref=e900]\n" + buttons + '- textbox "Email" [ref=e901]\n- button "Join" [ref=e902]\n'
+        browser = FakeAgentBrowser(tree=tree, sources={"e900": "https://partner.example.test/"})
+        browser.boxes = {"e900": {"y": -5000.0, "height": 400}, "e901": {"y": 100.0, "height": 20}}
+        with patch.object(helper.time, "sleep"):
+            result = page(browser).snapshot(0.0)
+        refs = [e["ref"] for e in result["elements"]]
+        self.assertIn("e901", refs)
+        self.assertIn("e902", refs)
+
     def test_a_query_with_more_matches_than_fit_says_how_many_it_shows(self):
         browser = self.long_page()
         with patch.object(helper.time, "sleep"):

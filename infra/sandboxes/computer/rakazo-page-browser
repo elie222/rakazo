@@ -480,21 +480,35 @@ def matching(controls: list[Control], query: str) -> list[Control]:
     ranked = [index for hits, _, index in sorted(scored, key=lambda s: (-s[1], s[2])) if hits == best]
     chosen = dict.fromkeys(ranked)
     for index in ranked:
-        form = controls[index].node.parent
-        while form is not None and form.role not in FORM_ROLES:
-            form = form.parent
+        form = form_of(controls[index].node)
         if form is not None:
             mates = [position[id(node)] for node in walk(form.children) if id(node) in position]
             if len(mates) <= MAX_FORM_CONTROLS:
                 chosen.update(dict.fromkeys(mates))
-    for index in list(chosen):
+    listed: dict[int, None] = {}
+    for index in chosen:
+        # A control in a frame comes after the frame's line, which names its site, so a cut never parts them.
+        frames: list[int] = []
         frame = controls[index].node.frame
         while frame is not None:
-            # A control in a frame comes with the frame's line, which names its site.
             if id(frame) in position:
-                chosen.setdefault(position[id(frame)])
+                frames.append(position[id(frame)])
             frame = frame.frame
-    return [controls[index] for index in chosen]
+        listed.update(dict.fromkeys([*reversed(frames), index]))
+    return [controls[index] for index in listed]
+
+
+def form_of(node: Node) -> Node | None:
+    """The form a control is in, or else the nearest group-like container."""
+    nearest = None
+    at = node.parent
+    while at is not None:
+        if at.role == "form":
+            return at
+        if nearest is None and at.role in FORM_ROLES:
+            nearest = at
+        at = at.parent
+    return nearest
 
 
 def fit(candidates: list[Control], budget: int) -> list[Control]:
@@ -708,17 +722,18 @@ class PageBrowser:
         Ones in frames are placed by their frame, and a header that stays on screen does not count.
         """
         top = [index for index, control in enumerate(controls) if control.node.frame is None]
-        probes = top[::max(1, math.ceil(len(top) / VIEW_PROBES))]
-        if not probes:
+        sampled = range(0, len(top), max(1, math.ceil(len(top) / VIEW_PROBES)))
+        if not sampled:
             return 0
         try:
-            boxes = self.ab.batch([["get", "box", f"@{controls[index].entry['ref']}"] for index in probes], bail=False)
+            boxes = self.ab.batch([["get", "box", f"@{controls[top[at]].entry['ref']}"] for at in sampled], bail=False)
         except Exception:  # noqa: BLE001
             return 0
         start = 0
-        for index, box in zip(probes, boxes):
+        for at, box in zip(sampled, boxes):
             if box and box.get("height") and float(box.get("y") or 0) + float(box["height"]) <= 0:
-                start = index + 1
+                # The next control outside any frame: a frame above the view takes its own controls with it.
+                start = top[at + 1] if at + 1 < len(top) else len(controls)
         return min(start, len(controls) - 1)
 
     def control(self, ref: str, *, check_disabled: bool = False) -> Node:
