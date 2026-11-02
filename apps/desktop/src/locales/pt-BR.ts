@@ -18,7 +18,7 @@ export const PT_BR_MESSAGES: Record<string, string> = {
   Cut: "Recortar",
   Copy: "Copiar",
   Paste: "Colar",
-  "Paste and Match Style": "Colar e Manter Estilo",
+  "Paste and Match Style": "Colar e Igualar Estilo",
   Delete: "Apagar",
   "Select All": "Selecionar Tudo",
   Speech: "Fala",
