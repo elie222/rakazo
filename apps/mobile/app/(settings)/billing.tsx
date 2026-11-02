@@ -89,6 +89,15 @@ export default function BillingScreen() {
   const credits = status.funding === "credits" || (status.balanceUsd ?? 0) > 0 || status.canManage;
   const referral = status.referral;
   const endTrial = status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd;
+  // A paid monthly plan can move to yearly; the server re-checks this against the provider.
+  const annualCents =
+    ownKeyCents &&
+    status.canManage &&
+    status.byokInterval !== "year" &&
+    (status.state === "active" || status.state === "trialing") &&
+    !status.cancelAtPeriodEnd
+      ? status.byokAnnualPriceCents
+      : null;
   return (
     <ScrollView
       style={sideInsets}
@@ -122,6 +131,35 @@ export default function BillingScreen() {
           />
         ) : status.access && status.currentPeriodEndsAt ? (
           <SettingsRow title={t("Renews")} value={formatDate(status.currentPeriodEndsAt)} />
+        ) : null}
+        {ownKeyCents && annualCents ? (
+          <SettingsRow
+            title={t("Switch to yearly")}
+            value={`−${Math.round((1 - annualCents / (ownKeyCents * 12)) * 100)}%`}
+            disabled={pending}
+            onPress={() =>
+              Alert.alert(
+                t("Switch to yearly?"),
+                status.state === "trialing"
+                  ? t("Your plan becomes {price} / year when your trial ends.", {
+                      price: `$${annualCents / 100}`,
+                    })
+                  : t("Your card is charged {price} today, less the unused part of this month.", {
+                      price: `$${annualCents / 100}`,
+                    }),
+                [
+                  { text: t("Cancel"), style: "cancel" },
+                  {
+                    text: t("Switch"),
+                    onPress: () =>
+                      void action(async () => {
+                        show(await rpc("billing/switchToYearly"));
+                      }),
+                  },
+                ],
+              )
+            }
+          />
         ) : null}
         {status.canManage ? (
           <SettingsRow

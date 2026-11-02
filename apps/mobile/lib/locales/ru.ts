@@ -1033,6 +1033,13 @@ export const RU_MESSAGES: Record<string, string> = {
   "Your trial ends and your card is charged today.":
     "Пробный период закончится, и сегодня с вашей карты будет списана оплата.",
   "Start plan": "Начать тариф",
+  Switch: "Перейти",
+  "Switch to yearly": "Перейти на годовой план",
+  "Switch to yearly?": "Перейти на годовой план?",
+  "Your card is charged {price} today, less the unused part of this month.":
+    "Сегодня с карты спишется {price} за вычетом неиспользованной части месяца.",
+  "Your plan becomes {price} / year when your trial ends.":
+    "После пробного периода план будет стоить {price} в год.",
   "Monthly credits": "Ежемесячные кредиты",
   "Upgrade now": "Повысить тариф сейчас",
   "Downgrade at renewal": "Понизить тариф при продлении",

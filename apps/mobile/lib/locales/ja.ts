@@ -982,6 +982,13 @@ export const JA_MESSAGES: Record<string, string> = {
   "Your trial ends and your card is charged today.":
     "トライアルが終了し、本日カードに請求されます。",
   "Start plan": "プランを開始",
+  Switch: "切り替える",
+  "Switch to yearly": "年払いに切り替え",
+  "Switch to yearly?": "年払いに切り替えますか？",
+  "Your card is charged {price} today, less the unused part of this month.":
+    "本日カードに{price}が請求されます（今月の未使用分を差し引きます）。",
+  "Your plan becomes {price} / year when your trial ends.":
+    "トライアル終了後、プランは年額 {price} になります。",
   "Monthly credits": "月間クレジット",
   "Upgrade now": "今すぐアップグレード",
   "Downgrade at renewal": "更新時にダウングレード",

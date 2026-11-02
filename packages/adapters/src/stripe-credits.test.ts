@@ -107,6 +107,42 @@ describe("Stripe prepaid model credits", () => {
     expect(created?.params.get("recurring[interval]")).toBe("year");
     expect(created?.params.get("lookup_key")).toBe("rakazo_byok_yearly_14400");
   });
+  it("moves a monthly own-key plan to the yearly price, charging the difference now", async () => {
+    const { provider, requests } = fixture({
+      "GET /v1/subscriptions": {
+        data: [
+          {
+            id: "sub_byok",
+            status: "active",
+            metadata: { rakazo_plan: "byok" },
+            created: 1,
+            items: {
+              data: [
+                {
+                  id: "si_byok",
+                  quantity: 1,
+                  price: { id: "price_month", unit_amount: 1500, recurring: { interval: "month" } },
+                },
+              ],
+            },
+          },
+        ],
+        has_more: false,
+      },
+      "POST /v1/subscriptions/sub_byok": { id: "sub_byok" },
+    });
+    await provider.switchByokToYearly("cus_fixture", 14400);
+    const update = requests.find((r) => r.path === "/v1/subscriptions/sub_byok")!.params;
+    expect(update.get("items[0][id]")).toBe("si_byok");
+    expect(update.get("items[0][price]")).toBe("price_credits");
+    expect(update.get("proration_behavior")).toBe("always_invoice");
+    expect(update.get("payment_behavior")).toBe("error_if_incomplete");
+    expect(
+      requests
+        .find((r) => r.path === "/v1/prices" && r.params.has("unit_amount"))
+        ?.params.get("recurring[interval]"),
+    ).toBe("year");
+  });
   it("reports the price an own-key subscription was bought at", async () => {
     const { provider } = fixture({
       "/v1/subscriptions": {

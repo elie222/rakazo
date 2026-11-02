@@ -171,4 +171,21 @@ dbTests("own-key plan", () => {
       byokInterval: "year",
     });
   });
+
+  it("switches a paid monthly plan to yearly, once", async () => {
+    const customer = (await billingAccountForOrganization(prisma, organizationId))!.customerId;
+    for (const subscription of provider.subscriptions) subscription.status = "canceled";
+    await service.sync(customer);
+    await service.selectFunding(actor, "byok");
+    provider.completeByokCheckout(customer);
+    await service.sync(customer);
+    await expect(service.status(actor)).resolves.toMatchObject({ byokInterval: "month" });
+    await service.switchToYearly(actor);
+    await expect(service.status(actor)).resolves.toMatchObject({
+      access: true,
+      byokPriceCents: BYOK_ANNUAL_PRICE_CENTS,
+      byokInterval: "year",
+    });
+    await expect(service.switchToYearly(actor)).rejects.toMatchObject({ code: "CONFLICT" });
+  });
 });

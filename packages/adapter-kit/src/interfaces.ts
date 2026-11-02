@@ -478,6 +478,11 @@ export interface BillingProvider {
   createByokCheckout?(input: BillingByokCheckoutRequest): Promise<{ url: string }>;
   /** Ends the customer's running trial now and bills the first period; a no-op without one. */
   endTrial?(customerId: string): Promise<void>;
+  /**
+   * Moves the live monthly own-key plan to `amountCents` a year, charging the difference now less
+   * the unused part of the month. A failed payment leaves the plan unchanged.
+   */
+  switchByokToYearly?(customerId: string, amountCents: number): Promise<void>;
   /** Ends every live own-key plan at its period end. */
   endByokPlans?(customerId: string): Promise<void>;
   /**

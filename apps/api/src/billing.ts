@@ -69,6 +69,7 @@ export interface BillingService {
   portal(actor: Actor, client?: BillingClient): Promise<{ url: string }>;
   /** Ends the organization's trial and bills the first period now. */
   endTrial(actor: Actor): Promise<void>;
+  switchToYearly(actor: Actor): Promise<void>;
   /** Re-fetches the customer's subscription from the provider and overwrites the stored snapshot. */
   sync(customerId: string): Promise<void>;
   /** Syncs the actor's organization, e.g. on return from checkout before the webhook lands. */
@@ -533,6 +534,27 @@ export function createBillingService(deps: {
       const account = await billingAccountForOrganization(prisma, organizationId);
       if (!account) throw new ORPCError("NOT_FOUND", { message: "No billing account" });
       await provider.endTrial(account.customerId);
+      await sync(account.customerId);
+    },
+
+    async switchToYearly(actor) {
+      const amountCents = byokOfferCents("year");
+      if (amountCents === null || !provider.switchByokToYearly) throw new ORPCError("NOT_FOUND");
+      const { organizationId } = await managedOrganization(actor);
+      const stored = await billingAccountForOrganization(prisma, organizationId);
+      if (!stored) throw new ORPCError("NOT_FOUND", { message: "No billing account" });
+      // Decide from the provider, not a snapshot a missed webhook may have left stale.
+      await sync(stored.customerId);
+      const account = await billingAccountForOrganization(prisma, organizationId);
+      if (
+        !account?.byokPriceCents ||
+        account.byokInterval === "year" ||
+        account.creditAmountCents ||
+        account.cancelAtPeriodEnd ||
+        !hasBillingAccess(account.status)
+      )
+        throw new ORPCError("CONFLICT", { message: "No monthly own-key plan to switch" });
+      await provider.switchByokToYearly(account.customerId, amountCents);
       await sync(account.customerId);
     },
 

@@ -13,7 +13,11 @@ The hosted computer is included in both paths, and monthly credits include the o
 `BYOK_MONTHLY_PRICE_CENTS` in `@rakazo/contracts` sets the own-key plan's price for new
 subscriptions; existing subscribers keep the price they signed up at. `null` makes it
 free and ends paid own-key subscriptions at their period end. `BYOK_ANNUAL_PRICE_CENTS` offers the
-same plan billed yearly, shown as its monthly equivalent; `null` offers it monthly only. Runs check access on the server, so a
+same plan billed yearly, shown as its monthly equivalent; `null` offers it monthly only. Monthly
+subscribers can switch to yearly from Billing, which charges the yearly price less the unused part
+of the month. To also allow it in the Stripe billing portal, add the own-key plan's monthly and
+yearly prices to the portal's plan switching in your Stripe settings. The yearly price is created
+by the first yearly checkout or switch, and Billing reads the new period on the next sync. Runs check access on the server, so a
 lapsed organization's bots and routines stop until it subscribes.
 
 ## Model credits

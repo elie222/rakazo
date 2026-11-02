@@ -64,6 +64,10 @@ function formatMonthlyUsd(cents: number, locale: string): string {
   );
 }
 
+function yearlySavingsPercent(monthlyCents: number, annualCents: number): number {
+  return Math.round((1 - annualCents / (monthlyCents * 12)) * 100);
+}
+
 /** Monthly or yearly own-key plan, with what the yearly plan saves. */
 function ByokIntervalToggle({
   monthlyCents,
@@ -77,7 +81,7 @@ function ByokIntervalToggle({
   onChange: (interval: ByokInterval) => void;
 }) {
   const { t } = useLingui();
-  const savings = Math.round((1 - annualCents / (monthlyCents * 12)) * 100);
+  const savings = yearlySavingsPercent(monthlyCents, annualCents);
   const segment = "h-7 px-3 text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm";
   return (
     <ToggleGroup
@@ -336,6 +340,7 @@ export function ModelCreditsSettings({
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [interval, setByokInterval] = useState<ByokInterval>("month");
   const [endTrialOpen, setEndTrialOpen] = useState(false);
+  const [yearlyOpen, setYearlyOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
   const balance = new Intl.NumberFormat(i18n.locale, {
@@ -387,6 +392,17 @@ export function ModelCreditsSettings({
           date: billingDateLabel(status, i18n.locale || "en"),
         }
       : null;
+  // A paid monthly plan can move to yearly; the server re-checks this against the provider.
+  const yearlySavings =
+    ownKeyPlan &&
+    status.canManage &&
+    status.byokInterval !== "year" &&
+    (status.state === "active" || status.state === "trialing") &&
+    !status.cancelAtPeriodEnd &&
+    status.byokPriceCents &&
+    status.byokAnnualPriceCents
+      ? yearlySavingsPercent(status.byokPriceCents, status.byokAnnualPriceCents)
+      : null;
   return (
     <div data-testid="model-credits" className="space-y-5">
       {ownKeyPlan ? (
@@ -397,6 +413,17 @@ export function ModelCreditsSettings({
           <p className="mt-2 text-3xl font-medium tabular-nums">{ownKeyPlan.price}</p>
           {ownKeyPlan.date ? (
             <p className="mt-2 text-sm text-muted-foreground">{ownKeyPlan.date}</p>
+          ) : null}
+          {yearlySavings !== null ? (
+            <Button
+              className="mt-5"
+              variant="secondary"
+              disabled={pending}
+              onClick={() => setYearlyOpen(true)}
+            >
+              <Trans>Switch to yearly</Trans>
+              {yearlySavings > 0 ? <span className="text-success">−{yearlySavings}%</span> : null}
+            </Button>
           ) : null}
         </div>
       ) : null}
@@ -514,6 +541,41 @@ export function ModelCreditsSettings({
               }
             >
               <Trans>Start plan</Trans>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={yearlyOpen} onOpenChange={setYearlyOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              <Trans>Switch to yearly?</Trans>
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {status.state === "trialing" ? (
+                <Trans>Your plan becomes {annualPrice} / year when your trial ends.</Trans>
+              ) : (
+                <Trans>
+                  Your card is charged {annualPrice} today, less the unused part of this month.
+                </Trans>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              <Trans>Cancel</Trans>
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={pending}
+              onClick={() =>
+                void action(async () => {
+                  setYearlyOpen(false);
+                  await rpc.billing.switchToYearly();
+                  await refresh();
+                })
+              }
+            >
+              <Trans>Switch</Trans>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
