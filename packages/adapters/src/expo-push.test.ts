@@ -127,10 +127,11 @@ describe("expo push", () => {
     };
     expect(body.to).toBe("ExponentPushToken[test]");
     expect(body.title).toBe("Need you");
-    expect(body.collapseId).toBe("th-1");
-    expect(body.tag).toBe("th-1");
+    expect(body.collapseId).toBe("user-1:th-1");
+    expect(body.tag).toBe("user-1:th-1");
     expect(body.data).toEqual({
       kind: "takeover",
+      userId: "user-1",
       botId: "bot-1",
       threadId: "th-1",
       spaceId: "w",
@@ -230,7 +231,7 @@ describe("expo push", () => {
     await expect(loadPushToken(tokens, "user-1")).resolves.toBeUndefined();
   });
 
-  it("does not send a token another account claimed while the session was looked up", async () => {
+  it("does not send a login removed while its session was looked up", async () => {
     const tokens = new MemoryPushTokenStore();
     const token = "ExponentPushToken[device]";
     await tokens.save("user-1", token, "session-1");
@@ -254,6 +255,7 @@ describe("expo push", () => {
       notifyContext,
     );
     await vi.waitFor(() => expect(waiting).toBe(true));
+    await tokens.endSession("user-1", "session-1");
     await tokens.save("user-2", token, "session-2");
     release();
 

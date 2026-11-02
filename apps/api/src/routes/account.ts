@@ -262,7 +262,8 @@ export function accountRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
       unregisterPush: authed.notifications.unregisterPush.handler(async ({ context }) => {
-        await deps.pushTokens.remove(context.actor.userId);
+        if (!context.sessionId) throw new ORPCError("UNAUTHORIZED");
+        await deps.pushTokens.endSession(context.actor.userId, context.sessionId);
         return { ok: true as const };
       }),
     },

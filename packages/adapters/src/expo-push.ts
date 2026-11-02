@@ -30,12 +30,20 @@ const RESPONSE_TOO_LARGE = "Expo push response is too large.";
 /** Data a notification tap uses to open the bot or group thread in its space.
  * `deliveryId` distinguishes this send from another push for the same thread:
  * the Expo request identifier stays the thread id. */
-export function expoPushData(message: NotificationMessage, spaceId: string, deliveryId: string) {
+export function expoPushData(
+  message: NotificationMessage,
+  spaceId: string,
+  deliveryId: string,
+  userId?: string,
+  accountLabel?: string,
+) {
   return {
     kind: message.kind,
     botId: message.botId,
     threadId: message.threadId,
     deliveryId,
+    ...(userId ? { userId } : {}),
+    ...(accountLabel ? { accountLabel } : {}),
     ...(spaceId ? { spaceId } : {}),
     ...(message.groupId ? { groupId: message.groupId } : {}),
   };
@@ -126,6 +134,8 @@ export type ExpoPushOptions = {
   /** Sent as a bearer token when the Expo project enforces enhanced push security. */
   accessToken?: string;
   retryDelaysMs?: readonly number[];
+  accountLabel?: (userId: string) => Promise<string>;
+  badgeForToken?: (token: string) => Promise<number>;
 };
 
 export class ExpoPushProvider implements NotificationProvider {
@@ -136,7 +146,7 @@ export class ExpoPushProvider implements NotificationProvider {
 
   constructor(
     private readonly tokens: PushTokenStore,
-    options: ExpoPushOptions = {},
+    private readonly options: ExpoPushOptions = {},
   ) {
     this.sessionExpiresAt = options.sessionExpiresAt;
     this.jobs = options.jobs;
@@ -154,7 +164,7 @@ export class ExpoPushProvider implements NotificationProvider {
   }
 
   async hasPushRecipient(userId: string): Promise<boolean> {
-    return Boolean(await this.deliverableToken(userId));
+    return (await this.deliverableTokens(userId)).length > 0;
   }
 
   async send(message: NotificationMessage, context: AdapterContext): Promise<void> {
@@ -167,34 +177,50 @@ export class ExpoPushProvider implements NotificationProvider {
    * Neither is an Expo acceptance, so callers must not record a reminder.
    */
   async deliver(message: NotificationMessage, context: AdapterContext): Promise<ExpoPushDelivery> {
-    const token = await this.deliverableToken(context.userId);
-    if (!token) return "undeliverable";
-    const payload = {
-      to: token,
-      title: capped(message.title, MAX_PUSH_TITLE_CHARS),
-      body: capped(message.body, MAX_PUSH_BODY_CHARS),
-      collapseId: message.threadId,
-      tag: message.threadId,
-      ...(message.badge === undefined ? {} : { badge: message.badge }),
-      data: expoPushData(message, context.spaceId, randomUUID()),
-    };
-    const { status, body } = await this.postWithBackoff(EXPO_PUSH_URL, payload, context.signal);
-    const [ticket] = expoPushTickets(body);
-    if (status < 300 && body === undefined) {
-      throw new Error("Expo push returned an invalid response.");
-    }
-    if (ticket?.details?.error === "DeviceNotRegistered") {
-      await this.tokens.remove(context.userId, credentialDigest(token));
-      return "undeliverable";
-    }
-    const failure =
-      expoUnauthorizedError(body, status, this.accessToken) ?? expoPushErrorMessage(body, status);
-    if (failure) {
-      getLogger().error(failure);
-      throw new Error(failure);
-    }
-    if (ticket?.id) await this.scheduleReceiptCheck(context.userId, token, ticket.id);
-    return "delivered";
+    const tokens = await this.deliverableTokens(context.userId);
+    if (!tokens.length) return "undeliverable";
+    const label = await this.options.accountLabel?.(context.userId);
+    const results = await Promise.allSettled(
+      tokens.map(async (token) => {
+        const badge = this.options.badgeForToken
+          ? await this.options.badgeForToken(token).catch(() => undefined)
+          : message.badge;
+        const payload = {
+          to: token,
+          title: capped(
+            label ? `${label} · ${message.title}` : message.title,
+            MAX_PUSH_TITLE_CHARS,
+          ),
+          body: capped(message.body, MAX_PUSH_BODY_CHARS),
+          collapseId: `${context.userId}:${message.threadId}`,
+          tag: `${context.userId}:${message.threadId}`,
+          ...(badge === undefined ? {} : { badge }),
+          data: expoPushData(message, context.spaceId, randomUUID(), context.userId, label),
+        };
+        const { status, body } = await this.postWithBackoff(EXPO_PUSH_URL, payload, context.signal);
+        const [ticket] = expoPushTickets(body);
+        if (status < 300 && body === undefined)
+          throw new Error("Expo push returned an invalid response.");
+        if (ticket?.details?.error === "DeviceNotRegistered") {
+          await this.tokens.remove(context.userId, credentialDigest(token));
+          return "undeliverable" as const;
+        }
+        const failure =
+          expoUnauthorizedError(body, status, this.accessToken) ??
+          expoPushErrorMessage(body, status);
+        if (failure) {
+          getLogger().error(failure);
+          throw new Error(failure);
+        }
+        if (ticket?.id) await this.scheduleReceiptCheck(context.userId, token, ticket.id);
+        return "delivered" as const;
+      }),
+    );
+    if (results.some((result) => result.status === "fulfilled" && result.value === "delivered"))
+      return "delivered";
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed?.status === "rejected") throw failed.reason;
+    return "undeliverable";
   }
 
   /** Drops the token when the receipt says the device is no longer registered. */
@@ -252,26 +278,35 @@ export class ExpoPushProvider implements NotificationProvider {
    * row is removed. The token is read again after the lookup so a handover
    * during that wait is not sent.
    */
-  private async deliverableToken(userId: string): Promise<string | undefined> {
-    const saved = await this.tokens.load(userId);
-    if (!saved?.token) return undefined;
-    if (!saved.sessionId) return saved.token;
-    if (!this.sessionExpiresAt) return undefined;
-    let expiresAt: Date | null;
-    try {
-      expiresAt = await this.sessionExpiresAt(saved.sessionId);
-    } catch (error) {
-      getLogger().error("push session lookup failed", error);
-      return undefined;
-    }
-    if (!expiresAt) return undefined;
-    if (expiresAt.getTime() <= Date.now()) {
-      await this.tokens.endSession(userId, saved.sessionId);
-      return undefined;
-    }
-    const current = await this.tokens.load(userId);
-    if (current?.token !== saved.token || current.sessionId !== saved.sessionId) return undefined;
-    return current.token;
+  private async deliverableTokens(userId: string): Promise<string[]> {
+    const saved = await this.tokens.list(userId);
+    const valid = await Promise.all(
+      saved.map(async (record) => {
+        if (!record.token) return undefined;
+        if (!record.sessionId) return record.token;
+        if (!this.sessionExpiresAt) return undefined;
+        let expiresAt: Date | null;
+        try {
+          expiresAt = await this.sessionExpiresAt(record.sessionId);
+        } catch (error) {
+          getLogger().error("push session lookup failed", error);
+          return undefined;
+        }
+        if (!expiresAt) return undefined;
+        if (expiresAt.getTime() <= Date.now()) {
+          await this.tokens.endSession(userId, record.sessionId);
+          return undefined;
+        }
+        // Recheck after the network/database wait: logout or rotation can run meanwhile.
+        const current = await this.tokens.list(userId);
+        return current.some(
+          (row) => row.token === record.token && row.sessionId === record.sessionId,
+        )
+          ? record.token
+          : undefined;
+      }),
+    );
+    return [...new Set(valid.filter((token): token is string => Boolean(token)))];
   }
 }
 

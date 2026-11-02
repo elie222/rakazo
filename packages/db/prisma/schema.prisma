@@ -63,6 +63,7 @@ model User {
   createdTickets              Ticket[]                     @relation("TicketCreatorUser")
   ticketComments              TicketComment[]              @relation("TicketCommentAuthorUser")
   pushToken                   PushToken?
+  pushRegistrations           PushRegistration[]
   trustedLinkSites            TrustedLinkSite[]
   feedbackReports             FeedbackReport[]
   emailSends                  EmailSend[]
@@ -106,7 +107,7 @@ model Session {
   @@map("session")
 }
 
-/// One current device registration per account, matching the notification API contract.
+/// Legacy registration retained for API releases running during deployment overlap.
 /// No session FK: password changes delete a session before the replacement is created.
 model PushToken {
   userId String @id
@@ -117,6 +118,21 @@ model PushToken {
   updatedAt DateTime @updatedAt
 
   @@map("push_tokens")
+}
+
+/// One device token per login. The same device can hold several account logins.
+/// Session deletion/replacement is managed by auth hooks; delivery also validates expiry.
+model PushRegistration {
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId String
+  ciphertext String
+  tokenDigest String
+  updatedAt DateTime @updatedAt
+
+  @@id([userId, sessionId])
+  @@index([tokenDigest])
+  @@map("push_registrations")
 }
 
 model EmailSend {
