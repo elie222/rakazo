@@ -66,7 +66,8 @@ class FakeAgentBrowser:
     def __init__(self, tree=PAGE, state=None, sources=None, requests=None, fail=None):
         self.tree = tree
         self.state = {"url": "https://portal.example.test/", "title": "Portal", "ready": "complete",
-                      "text": "Portal\nWelcome back", "masked": [], "payToken": None, **(state or {})}
+                      "text": "Portal\nWelcome back", "masked": [], "payToken": None,
+                      "frames": ["https://portal.example.test/help", "https://js.stripe.com/v3/card"], **(state or {})}
         self.sources = sources if sources is not None else {"e9": "/help", "e11": "https://js.stripe.com/v3/card"}
         self.requests = requests or [{"resourceType": "Document", "url": "https://portal.example.test/",
                                       "status": 200, "timestamp": 0}]
@@ -123,7 +124,7 @@ class FakeAgentBrowser:
                 return {"result": self.state}
             if script == helper.PAGE_LOAD:
                 return {"result": {"href": self.state["url"], "ready": self.state["ready"],
-                                   "done": self.state.get("done", [])}}
+                                   "began": self.state.get("began", 0), "done": self.state.get("done", [])}}
             if "location.assign(" in script:
                 return {"result": {"timeOrigin": 1, "href": "https://portal.example.test/"}}
             if script.startswith("({ timeOrigin"):
@@ -154,10 +155,24 @@ def page(browser):
     return helper.PageBrowser(9222, "tab-1", browser)
 
 
+class FakePageLoad:
+    """Chromium's record of the page's load: idle once the page's own requests are done."""
+
+    def __init__(self, idle):
+        self.answers = iter(idle)
+        self.closed = False
+
+    def idle(self):
+        return next(self.answers)
+
+    def close(self):
+        self.closed = True
+
+
 class SnapshotTest(unittest.TestCase):
-    def snapshot(self, browser=None):
+    def snapshot(self, browser=None, hints=(True, None)):
         browser = browser or FakeAgentBrowser()
-        with patch.object(helper.time, "sleep"):
+        with patch.object(helper.time, "sleep"), patch.object(secrets, "payment_frame_hints", return_value=hints):
             return page(browser).snapshot(0.0), browser
 
     def test_reads_quoted_names_attributes_and_values(self):
@@ -215,6 +230,24 @@ class SnapshotTest(unittest.TestCase):
         self.assertNotIn("e12", [el["ref"] for el in result["elements"]])
         self.assertTrue(result["tree"].endswith(helper.PAYMENT_FRAME_HINT))
 
+    def test_points_to_fill_card_when_agent_browser_cannot_see_inside_the_payment_frame(self):
+        # A session that attached after the frame loaded lists the frame, or nothing, but none of its fields.
+        tree = '- heading "Pay" [level=1, ref=e1]\n'
+        with patch.object(helper.time, "sleep"), \
+                patch.object(secrets, "payment_frame_hints", return_value=(True, None)) as hints:
+            result = page(FakeAgentBrowser(tree=tree, state={"frames": ["https://js.stripe.com/v3/card"]})).snapshot(0.0)
+        hints.assert_called_once_with(9222, "tab-1")
+        self.assertIn("(no interactive elements)", result["tree"])
+        self.assertTrue(result["tree"].endswith(helper.PAYMENT_FRAME_HINT))
+
+    def test_no_card_hint_without_a_card_field_and_no_frame_lookup_without_a_payment_frame(self):
+        result, _ = self.snapshot(hints=(False, None))
+        self.assertNotIn(helper.PAYMENT_FRAME_HINT, result["tree"])
+        with patch.object(helper.time, "sleep"), patch.object(secrets, "payment_frame_hints") as hints:
+            result = page(FakeAgentBrowser(state={"frames": ["https://ads.example.test/card"]})).snapshot(0.0)
+        hints.assert_not_called()
+        self.assertNotIn(helper.PAYMENT_FRAME_HINT, result["tree"])
+
     def test_names_each_frame_s_site_and_lists_its_text_without_letting_it_fake_a_header(self):
         result, _ = self.snapshot()
         self.assertIn("- Iframe [ref=e9] https://portal.example.test\n", result["tree"])
@@ -223,11 +256,9 @@ class SnapshotTest(unittest.TestCase):
         self.assertIn('  - button "Frame button" [ref=e10]', result["tree"])
 
     def test_names_the_merchant_account_of_a_pay_token_checkout(self):
-        result, _ = self.snapshot(FakeAgentBrowser(state={"payToken": "acct_main1"}, sources={}))
+        result, _ = self.snapshot(FakeAgentBrowser(state={"payToken": "acct_main1", "frames": []}, sources={}))
         self.assertTrue(result["tree"].endswith('merchantAccountId "acct_main1".'))
-        with patch.object(secrets, "stripe_pay_token_account", return_value="acct_fake123") as frame:
-            result, _ = self.snapshot()
-        frame.assert_called_once_with(9222, "tab-1")
+        result, _ = self.snapshot(hints=(False, "acct_fake123"))
         self.assertTrue(result["tree"].endswith('merchantAccountId "acct_fake123".'))
 
     def test_keeps_the_controls_and_page_text_in_one_piece_under_the_budget(self):
@@ -253,6 +284,59 @@ class SnapshotTest(unittest.TestCase):
             result = page(browser).snapshot(0.0)
         self.assertTrue(result["loading"])
 
+    def test_a_page_that_began_loading_before_the_session_attached_waits_for_chromium_s_network_idle(self):
+        # The log never saw the document, so a sign-in check the page began before is not in it either.
+        began = time.time() * 1000 - 300
+        unseen = {"requests": [{"resourceType": "Fetch", "url": "https://portal.example.test/x", "status": 200,
+                                "timestamp": began - 5000}], "state": {"began": began}}
+        load = FakePageLoad([False, False, True])
+        with patch.object(helper.time, "sleep"), patch.object(helper, "PageLoad", return_value=load) as made:
+            self.assertTrue(page(FakeAgentBrowser(**unseen)).settle(3.0))
+        made.assert_called_once_with(9222, "tab-1")
+        self.assertTrue(load.closed)
+        # Still waiting when the time is up: the snapshot says the page is loading.
+        with patch.object(helper.time, "sleep"), patch.object(secrets, "payment_frame_hints", return_value=(False, None)), \
+                patch.object(helper, "PageLoad", return_value=FakePageLoad(iter(lambda: False, True))):
+            self.assertTrue(page(FakeAgentBrowser(**unseen)).snapshot(0.0)["loading"])
+        # A log that saw the document has every request the page made: Chromium is not asked.
+        with patch.object(helper.time, "sleep"), patch.object(helper, "PageLoad") as made:
+            self.assertTrue(page(FakeAgentBrowser(state={"began": began})).settle(3.0))
+        made.assert_not_called()
+
+    def test_only_a_young_page_whose_document_the_log_never_saw_may_have_unseen_requests(self):
+        now = time.time() * 1000
+        current = {"resourceType": "Document", "url": "https://portal.example.test/", "status": 200, "timestamp": now}
+        other = {**current, "url": "https://old.example.test/"}
+        for requests, began, unseen in (([other], now - 1000, True), ([current], now - 1000, False),
+                                        ([other], now - 11000, False)):
+            browser = FakeAgentBrowser(requests=requests, state={"began": began})
+            self.assertEqual(page(browser).pending_requests()[2], unseen)
+
+    def test_network_idle_is_read_for_the_page_s_current_document(self):
+        client = helper.CdpClient("ws://127.0.0.1:9222/test")
+        calls = []
+
+        def call(method, params=None, *, session_id=None, timeout_s=10.0):
+            calls.append(method)
+            if method == "Target.attachToTarget":
+                return {"sessionId": "page"}
+            if method == "Page.getFrameTree":
+                return {"frameTree": {"frame": {"id": "main", "loaderId": "now"}}}
+            return {}
+
+        client.call = call
+        with patch.object(helper, "CdpClient", return_value=client), patch.object(client, "connect"), \
+                patch.object(helper, "discover_ws_url", return_value="ws://test"):
+            load = helper.PageLoad(9222, "tab-1")
+        self.assertEqual(calls, ["Target.attachToTarget", "Page.enable", "Page.setLifecycleEventsEnabled"])
+        for loader, name in (("before", "load"), ("before", "networkIdle"), ("now", "load")):
+            client._handle_event({"method": "Page.lifecycleEvent",
+                                  "params": {"frameId": "main", "loaderId": loader, "name": name}})
+        self.assertFalse(load.idle())
+        client._handle_event({"method": "Page.lifecycleEvent",
+                              "params": {"frameId": "main", "loaderId": "now", "name": "networkIdle"}})
+        self.assertTrue(load.idle())
+
     def test_ignores_old_documents_streams_failed_and_third_party_requests_and_ones_long_unanswered(self):
         now = time.time() * 1000
         log = [{"resourceType": "Fetch", "url": "https://old.example.test/api", "status": None, "timestamp": now - 3000},
@@ -266,10 +350,10 @@ class SnapshotTest(unittest.TestCase):
                 "timestamp": now - 1000},
                {"resourceType": "XHR", "url": "https://status.widget-vendor.test/status.json", "status": None,
                 "timestamp": now - 1000}]
-        busy, _ = page(FakeAgentBrowser(requests=log, state={"done": ["https://beacon.example.test/event"]})
-                       ).pending_requests()
+        busy, *_ = page(FakeAgentBrowser(requests=log, state={"done": ["https://beacon.example.test/event"]})
+                        ).pending_requests()
         self.assertFalse(busy)
-        busy, _ = page(FakeAgentBrowser(state={"ready": "loading"})).pending_requests()
+        busy, *_ = page(FakeAgentBrowser(state={"ready": "loading"})).pending_requests()
         self.assertTrue(busy)
 
 
@@ -731,6 +815,8 @@ class CardBrowser:
             return urlsplit_origin(self.frame_url) if in_frame else self.top_origin
         if "findCard(" in expression:
             return self.frame_found if in_frame else self.main_found
+        if "hasCardField()" in expression:
+            return bool(self.frame_found if in_frame else self.main_found)
         if "focusCard()" in expression:
             self.focused = True
             if self.on_focus:
@@ -895,6 +981,15 @@ class CardTest(unittest.TestCase):
         browser = CardBrowser()
         self.card_fill(browser)
         self.assertIn("cardTyped(16)", "".join(browser.evaluated))
+
+
+class FrameHintsTest(unittest.TestCase):
+    def test_reports_a_card_field_and_a_pay_token_account_only_from_payment_frames_the_page_shows(self):
+        self.assertEqual(secrets.frame_hints(PayTokenBrowser().client, "page"), (True, "acct_fake123"))
+        self.assertEqual(secrets.frame_hints(PayTokenBrowser(frame_found=0).client, "page"), (False, "acct_fake123"))
+        for browser in (CardBrowser(shown=False), CardBrowser(owned=False),
+                        CardBrowser(frame_url="https://ads.example.test/card")):
+            self.assertEqual(secrets.frame_hints(browser.client, "page"), (False, None))
 
 
 class PayTokenTest(unittest.TestCase):

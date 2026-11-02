@@ -223,10 +223,8 @@ test("live page helper waits for a site's sign-in check, or says the page is sti
     };
     const page = context.pages()[0]!;
 
-    // The session sees a page's requests and frames only from when it attaches, so start it
-    // before the page loads, as a bot's browser_navigate does.
-    await snapshot();
-    // The check answers within the wait: the snapshot shows the signed-in page.
+    // The check answers within the wait: the snapshot shows the signed-in page. The helper first
+    // reads it after it began loading, as when the person opened it.
     await page.goto(`http://127.0.0.1:${address.port}/?check=500`);
     const settled = await snapshot();
     expect(settled).toMatchObject({ ok: true, title: "Example" });
@@ -779,9 +777,7 @@ test("live page helper types a purchase's card into a payment provider's frame o
         actions: [{ kind: "fill", text, origin: merchant, field: "card", cardField }],
       });
     const page = context.pages()[0]!;
-    // The session sees a page's frames only from when it attaches, so start it before the page
-    // loads, as a bot's browser_navigate does.
-    await command("snapshot");
+    // The helper first reads the checkout after its card frame loaded, as when the person opened it.
     await page.goto(`${merchant}/checkout`);
     const card = page.frameLocator("iframe").locator("body");
     await expect(card.locator("#number")).toBeVisible();

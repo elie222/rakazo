@@ -263,8 +263,8 @@ NAVIGATE = r"""(() => {
   return { timeOrigin, href: location.href };
 })()"""
 
-# Whether the page has loaded, and the requests it has finished, failed ones included.
-PAGE_LOAD = r"""({ href: location.href, ready: document.readyState,
+# Whether the page has loaded, when its document began, and the requests it has finished, failed ones included.
+PAGE_LOAD = r"""({ href: location.href, ready: document.readyState, began: performance.timeOrigin,
   done: performance.getEntriesByType("resource").slice(-500).map((entry) => entry.name) })"""
 
 # The page's address, title and text, the values a snapshot must not show (password fields, fields
@@ -286,6 +286,7 @@ PAGE_STATE = r"""(() => {
     text: (document.body?.innerText || "").slice(0, 200000),
     masked,
     payToken: /^acct_[A-Za-z0-9]{1,64}$/.test(account) ? account : null,
+    frames: [...document.querySelectorAll("iframe")].slice(0, 50).map((frame) => frame.src),
   };
 })()"""
 
@@ -454,8 +455,13 @@ class PageBrowser:
 
     # -- reading the page -------------------------------------------------------------------------
 
-    def pending_requests(self) -> tuple[bool, float]:
-        """Whether the page is waiting on a request of its current document, and when its latest began."""
+    def pending_requests(self) -> tuple[bool, float, bool]:
+        """Whether the page is waiting on a request of its current document, when its latest began, and
+        whether the page may be waiting on requests the log never saw.
+
+        agent-browser logs requests only from when its session attached, which can be after the page
+        began loading: the person opened it, or the session started or moved to this tab since.
+        """
         state, log = self.ab.batch([["eval", PAGE_LOAD], ["network", "requests"]])
         page = state.get("result") or {}
         # agent-browser logs a response but never a failure; the page lists failed requests as done.
@@ -472,7 +478,9 @@ class PageBrowser:
                    and r.get("resourceType") not in ("EventSource", "WebSocket")
                    and now - float(r.get("timestamp") or 0) < REQUEST_PATIENCE_SECONDS * 1000]
         latest = max((float(r.get("timestamp") or 0) for r in recent), default=0.0)
-        return bool(waiting) or page.get("ready") != "complete", latest / 1000
+        unseen = (not any(r.get("url") == page.get("href") for r in documents)
+                  and now - float(page.get("began") or 0) < REQUEST_PATIENCE_SECONDS * 1000)
+        return bool(waiting) or page.get("ready") != "complete", latest / 1000, unseen
 
     def settle(self, seconds: float, quiet_from: float = 0.0) -> bool:
         """Wait until the page has loaded and its requests are answered, then QUIET_SECONDS more.
@@ -481,15 +489,23 @@ class PageBrowser:
         so a page captured earlier can show "Sign in" to an account that is signed in.
         """
         deadline = time.monotonic() + seconds
-        while True:
-            busy, latest = self.pending_requests()
-            if not busy and time.time() - max(latest, quiet_from) >= QUIET_SECONDS:
-                # agent-browser keeps every request it sees; once none is waiting, the log can start over.
-                self.ab.batch([["network", "requests", "--clear"]])
-                return True
-            if time.monotonic() >= deadline:
-                return not busy
-            time.sleep(min(0.15, max(0.0, deadline - time.monotonic())))
+        load: PageLoad | None = None
+        try:
+            while True:
+                busy, latest, unseen = self.pending_requests()
+                if not busy and unseen:
+                    load = load or PageLoad(self.port, self.target)
+                    busy = not load.idle()
+                if not busy and time.time() - max(latest, quiet_from) >= QUIET_SECONDS:
+                    # agent-browser keeps every request it sees; once none is waiting, the log can start over.
+                    self.ab.batch([["network", "requests", "--clear"]])
+                    return True
+                if time.monotonic() >= deadline:
+                    return not busy
+                time.sleep(min(0.15, max(0.0, deadline - time.monotonic())))
+        finally:
+            if load:
+                load.close()
 
     def snapshot(self, settle: float | None = None) -> dict[str, Any]:
         settled = self.settle(SETTLE_SECONDS if settle is None else settle)
@@ -501,6 +517,12 @@ class PageBrowser:
         sites = {id(node): frame_site(urljoin(str(state.get("url") or ""), str((found or {}).get("value") or "")))
                  for node, found in zip(frames, sources)}
         masked = {str(value) for value in state.get("masked") or [] if value}
+        # Found in the page, not in agent-browser's tree: a session that attached after a frame loaded never sees inside it.
+        payment = any(payment_frame_origin(frame_site(src)) for src in state.get("frames") or [])
+        try:
+            card_shown, account = page_secrets.payment_frame_hints(self.port, self.target) if payment else (False, None)
+        except Exception:  # noqa: BLE001
+            card_shown, account = False, None
         hints: list[str] = []
         frame_text: list[str] = []
         controls: list[tuple[str, dict[str, Any]]] = []
@@ -511,8 +533,6 @@ class PageBrowser:
                     site = sites.get(id(node), "")
                     if payment_frame_origin(site):
                         # Card details reach a payment provider's frame only through fill_card.
-                        if PAYMENT_FRAME_HINT not in hints and any(n.role == "textbox" for n in walk(node.children)):
-                            hints.append(PAYMENT_FRAME_HINT)
                         continue
                     text = " ".join(n.name for n in walk(node.children) if n.role == "StaticText").strip()
                     if text:
@@ -552,15 +572,9 @@ class PageBrowser:
                 render(node.children, depth + 1, "select" if options else inside)
 
         render(roots, 0, None)
-        if state.get("payToken"):
-            account = state["payToken"]
-        elif any(sites.get(id(node)) == page_secrets.PAY_TOKEN_FRAME_ORIGIN for node in frames):
-            try:
-                account = page_secrets.stripe_pay_token_account(self.port, self.target)
-            except Exception:  # noqa: BLE001
-                account = None
-        else:
-            account = None
+        if card_shown:
+            hints.append(PAYMENT_FRAME_HINT)
+        account = state.get("payToken") or account
         if account:
             hints.append(f'This checkout accepts a pay token: merchantAccountId "{account}".')
         shown: list[tuple[str, dict[str, Any]]] = []
@@ -977,10 +991,12 @@ def key_command(char: str) -> list[str]:
 
 
 class CdpClient(page_secrets.CdpClient):
-    """The shared CDP transport with events for this call's downloads."""
+    """The shared CDP transport with events for this call's downloads and its page's load."""
 
     def __init__(self, ws_url: str) -> None:
         super().__init__(ws_url)
+        # The load milestones each document has reached, by frame and document.
+        self.lifecycle: dict[tuple[Any, Any], set[str]] = {}
         # Downloads Chromium began since download events were turned on, by guid, in the order they began.
         self.downloads: dict[str, dict[str, Any]] = {}
         # The MIME type each document response was sent with, by URL, for the type of a download.
@@ -1005,6 +1021,8 @@ class CdpClient(page_secrets.CdpClient):
             if isinstance(guid, str):
                 self.downloads.setdefault(guid, {"name": params.get("suggestedFilename"), "url": params.get("url"),
                                                  "state": "inProgress", "received": 0, "total": 0})
+        elif method == "Page.lifecycleEvent":
+            self.lifecycle.setdefault((params.get("frameId"), params.get("loaderId")), set()).add(str(params.get("name")))
         elif method == "Browser.downloadProgress":
             download = self.downloads.get(params.get("guid"))
             if download is not None:
@@ -1052,6 +1070,41 @@ class CdpClient(page_secrets.CdpClient):
             message = json.loads(frame.decode("utf-8"))
             if isinstance(message, dict) and message.get("method"):
                 self._handle_event(message)
+
+
+class PageLoad:
+    """Chromium's own record of the page's load, which covers requests made before agent-browser attached."""
+
+    def __init__(self, port: int, target: str) -> None:
+        self.client: CdpClient | None = None
+        self.session: str | None = None
+        try:
+            self.client = CdpClient(discover_ws_url(port))
+            self.client.connect()
+            self.session = self.client.call("Target.attachToTarget", {"targetId": target, "flatten": True},
+                                            timeout_s=2.0)["sessionId"]
+            self.client.call("Page.enable", session_id=self.session, timeout_s=2.0)
+            # Enabling lifecycle events replays the ones the current document has already reached.
+            self.client.call("Page.setLifecycleEventsEnabled", {"enabled": True}, session_id=self.session, timeout_s=2.0)
+        except Exception:  # noqa: BLE001
+            self.session = None
+
+    def idle(self) -> bool:
+        """Whether the page has loaded and Chromium has seen no request for 500 ms (its networkIdle).
+
+        A browser that cannot say leaves the wait to agent-browser's log.
+        """
+        if self.client is None or self.session is None:
+            return True
+        try:
+            frame = self.client.call("Page.getFrameTree", session_id=self.session, timeout_s=2.0)["frameTree"]["frame"]
+        except Exception:  # noqa: BLE001
+            return True
+        return {"load", "networkIdle"} <= self.client.lifecycle.get((frame.get("id"), frame.get("loaderId")), set())
+
+    def close(self) -> None:
+        if self.client:
+            self.client.close()
 
 
 def max_file_bytes() -> int:
