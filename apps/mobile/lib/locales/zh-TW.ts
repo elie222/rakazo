@@ -49,7 +49,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Ex: Project Falcon": "例如：獵鷹計畫",
   "Search bots": "搜尋機器人",
   "About {label}": "關於 {label}",
-  "Manage the bots it creates": "管理它建立的機器人",
+  "Manage other bots": "管理其他機器人",
   "Allow cross-space bot communication": "允許跨空間機器人通訊",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "整理側邊欄並編輯機器人。更改群組、指令、模型和例行任務需要你的核准。",
@@ -455,6 +455,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Failed to send message": "傳送訊息失敗",
   "Failed to stop work": "停止工作失敗",
   File: "檔案",
+  "Did you mean {email}?": "你是指 {email} 嗎？",
   "Forgot password?": "忘記密碼？",
   "Find models": "查詢模型",
   "Finding…": "正在查詢…",
@@ -976,6 +977,19 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   Credits: "額度",
   "Available credits": "可用額度",
   "Computer hours left": "剩餘電腦時數",
+  "Trials get fewer hours to prevent abuse.": "為防止濫用，試用期的時數較少。",
+  "Start plan now": "立即開始方案",
+  "Start your plan now?": "立即開始你的方案？",
+  "Your trial ends and your card is charged {price} today.":
+    "試用將結束，今天將從你的卡片扣款 {price}。",
+  "Your trial ends and your card is charged today.": "試用將結束，今天將從你的卡片扣款。",
+  "Start plan": "開始方案",
+  "Switch to yearly": "切換為按年",
+  "Switch to yearly?": "切換為按年付費？",
+  "Your card is charged {price} today, less the unused part of this month.":
+    "今天將從你的卡中扣款 {price}，並抵扣本月未使用的部分。",
+  "Your plan becomes {price} / year when your trial ends.":
+    "試用結束後，你的方案將變為每年 {price}。",
   "Monthly credits": "每月額度",
   "Upgrade now": "立即升級",
   "Downgrade at renewal": "下次續訂時降級",
@@ -989,6 +1003,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Use Rakazo credits": "使用 Rakazo 額度",
   "Choose a plan": "選擇方案",
   "Change plan": "變更方案",
+  "Current plan": "目前方案",
   Plan: "方案",
   None: "無",
   "Free trial": "免費試用",
@@ -1013,6 +1028,13 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Full access, nothing to pay": "完整功能，無需付費",
   "Day {days}": "第 {days} 天",
   "{price} / month begins": "開始按每月 {price} 計費",
+  "Billing period": "帳單週期",
+  "Yearly −{percent}%": "按年 −{percent}%",
+  "{days} days free, then {price} / year. Cancel anytime.":
+    "免費 {days} 天，之後每年 {price}。可隨時取消。",
+  "{price} / year": "每年 {price}",
+  "{price} / year begins": "開始按每年 {price} 計費",
+  "{price} / year. Cancel anytime.": "每年 {price}。可隨時取消。",
   "Only the owner of this account can choose a plan.": "只有此帳號的擁有者可以選擇方案。",
   Terms: "條款",
   Privacy: "隱私權",
@@ -1236,6 +1258,19 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Won't do": "不處理",
   "Could not move the ticket": "無法移動工單",
   "No tickets yet.": "還沒有工單。",
+  "Bot models": "機器人模型",
+  "1 bot has its own model:": "1 個機器人使用自己的模型：",
+  "{count} bots have their own model:": "{count} 個機器人使用自己的模型：",
+  "Use space default": "使用空間預設模型",
+  "Switching…": "正在切換…",
+  "Switch 1 bot to the space default?": "將 1 個機器人切換為空間預設模型？",
+  "Switch {count} bots to the space default?": "將 {count} 個機器人切換為空間預設模型？",
+  "Their own model is cleared. You can pick one again in each bot.":
+    "將清除機器人的個別模型設定。你可以隨時為各機器人重新選擇模型。",
+  Switch: "切換",
+  "1 bot now uses the space default.": "1 個機器人已改用空間預設模型。",
+  "{count} bots now use the space default.": "{count} 個機器人已改用空間預設模型。",
+  "Could not switch {failedNames}. Try again.": "無法切換 {failedNames}，請再試一次。",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "與{peer}的 {count} 則訊息" };

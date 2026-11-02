@@ -1,6 +1,6 @@
 import type { AdapterContext, MemorySnapshot, MemoryStore } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
-import { loadAgentMemoryContext } from "./memory-context.js";
+import { buildAgentMemoryPrompt, loadAgentMemoryContext } from "./memory-context.js";
 
 const context: AdapterContext = {
   operationId: "run-1",
@@ -115,3 +115,51 @@ function storeWith(read: MemoryStore["read"]): MemoryStore {
     importMarkdown: vi.fn<MemoryStore["importMarkdown"]>(),
   };
 }
+
+describe("memory prompt budget", () => {
+  const doc = (path: string, content: string, revision: number, updatedAt: string) => ({
+    scope: "bot" as const,
+    path,
+    revision,
+    updatedAt,
+    content,
+  });
+
+  it("reports every document when they all fit", () => {
+    const { plan } = buildAgentMemoryPrompt([
+      doc("MEMORY.md", "recent", 2, "2026-08-15T12:00:00.000Z"),
+      doc("old.md", "older", 1, "2026-08-14T12:00:00.000Z"),
+    ]);
+
+    expect(plan.omitted).toEqual([]);
+    expect(plan.documents.map((entry) => entry.path)).toEqual(["MEMORY.md", "old.md"]);
+    expect(plan.documents.every((entry) => !entry.truncated)).toBe(true);
+    expect(plan.usedBytes).toBeLessThan(plan.limitBytes);
+  });
+
+  it("names what did not fit instead of dropping it silently", () => {
+    const long = "🙂".repeat(200);
+    const { text, plan } = buildAgentMemoryPrompt(
+      [
+        doc("MEMORY.md", long, 2, "2026-08-15T12:00:00.000Z"),
+        doc("older.md", long, 1, "2026-08-14T12:00:00.000Z"),
+      ],
+      600,
+    );
+
+    expect(text).toBeDefined();
+    expect(plan.documents[0]?.truncated).toBe(true);
+    expect(plan.omitted.map((entry) => entry.path)).toEqual(["older.md"]);
+    expect(plan.omitted[0]?.includedBytes).toBe(0);
+    expect(plan.omitted[0]?.totalBytes).toBeGreaterThan(0);
+    expect(plan.usedBytes).toBeLessThanOrEqual(600);
+  });
+
+  it("reports nothing for an empty memory", () => {
+    expect(buildAgentMemoryPrompt([]).plan).toMatchObject({
+      usedBytes: 0,
+      documents: [],
+      omitted: [],
+    });
+  });
+});

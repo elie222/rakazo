@@ -12,7 +12,11 @@ import type {
 } from "@rakazo/adapter-kit";
 import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
-import { isToolPauseResult } from "./approval-effect.js";
+import {
+  isInternalTermination,
+  isTerminatingReplyResult,
+  isToolPauseResult,
+} from "./approval-effect.js";
 import {
   connectionIdArgument,
   credentialArgument,
@@ -95,6 +99,7 @@ function useToolAgentTool(
           name: USE_TOOL,
           args: params as Record<string, unknown>,
           executionId: JSON.stringify(["pi-tool", host.agentNamespace ?? "main", toolCallId]),
+          response: host.modelResponses,
         });
         throw new Error(`${name} is not available. Use a name find_tool lists.`);
       }
@@ -322,7 +327,7 @@ function toAgentTool(
       if (tool.name === "remember") {
         return {
           content: String(raw.content ?? ""),
-          path: String(raw.path ?? "MEMORY.md"),
+          ...(typeof raw.old_text === "string" && raw.old_text ? { old_text: raw.old_text } : {}),
         };
       }
       if (tool.name === "request_takeover") {
@@ -437,6 +442,7 @@ function toAgentTool(
             name: tool.name,
             args,
             executionId,
+            response: host.modelResponses,
             ...(viaUseTool ? { viaUseTool } : {}),
           });
           const startedAt = Date.now();
@@ -579,8 +585,9 @@ function toAgentTool(
             throw error;
           } finally {
             // Pi only terminates a parallel batch when every result terminates.
-            // A single paused call must stop the turn before another model request.
-            if (host.pausePending) host.abortTurn?.();
+            // A single paused or turn-ending call must stop the turn before another
+            // model request, or the next assistant message replaces its final reply.
+            if (host.pausePending || isTerminatingReplyResult(result)) host.abortTurn?.();
             const details = (
               result as AgentToolResult<{ error?: unknown; isError?: unknown }> | undefined
             )?.details;
@@ -616,6 +623,8 @@ function isAgentToolExecutionResult(result: unknown): result is AgentToolExecuti
     !result ||
     typeof result !== "object" ||
     (result as { kind?: unknown }).kind !== "agent_tool_result" ||
+    (((result as { terminate?: unknown }).terminate === true || isToolPauseResult(result)) &&
+      !isInternalTermination(result)) ||
     !("content" in result)
   ) {
     return false;
@@ -714,6 +723,8 @@ export interface ToolHost {
   captureCheckpoint?: (toolCallId: string, executionId: string) => Promise<void>;
   /** Shell commands that returned output and are still running. */
   pendingShells: Array<Promise<FinishedShellCommand>>;
+  /** Model responses started by the main agent. Helpers reset it, so each of their calls counts. */
+  modelResponses?: number;
 }
 
 export function toolCallBudgetExceededMessage(limit: number) {

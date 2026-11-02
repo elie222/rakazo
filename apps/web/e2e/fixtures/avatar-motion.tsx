@@ -47,6 +47,16 @@ createRoot(document.getElementById("root")!).render(
       />
       <span>Idle</span>
     </div>
+    <div className="avatar-example">
+      <BotAvatar
+        color="#8B5CF6::shape_2"
+        identity="idle-shape"
+        size={120}
+        status="idle"
+        className="avatar-shape-idle"
+      />
+      <span>Idle shape</span>
+    </div>
     <OrganicExample />
   </>,
 );

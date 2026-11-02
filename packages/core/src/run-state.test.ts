@@ -10,6 +10,7 @@ import {
   isRunWaitingOnUser,
   isRunWorking,
   messageBypassesTakeoverWait,
+  messageSteersRun,
   QUEUE_HOLDING_RUN_STATUSES,
   WAITING_ON_USER_RUN_STATUSES,
   WORKING_RUN_STATUSES,
@@ -28,6 +29,18 @@ describe("run state machine", () => {
     expect(bypasses({ status: "waiting_takeover", trigger: "routine" })).toBe(true);
     expect(bypasses({ status: "waiting_takeover", trigger: "bot_message" })).toBe(true);
     expect(bypasses({ status: "running", trigger: "routine" })).toBe(false);
+  });
+
+  it("isolates messaging steering by chat while preserving other triggers", () => {
+    expect(messageSteersRun("messaging", "messaging")).toBe(true);
+    expect(messageSteersRun("messaging", "messaging", "group-1", "group-1")).toBe(true);
+    expect(messageSteersRun("messaging", "messaging", "group-1")).toBe(false);
+    expect(messageSteersRun("messaging", "messaging", undefined, "group-1")).toBe(false);
+    expect(messageSteersRun("messaging", "messaging", "group-1", "group-2")).toBe(false);
+    expect(messageSteersRun("messaging", "user")).toBe(false);
+    expect(messageSteersRun("user", "messaging", undefined, "group-1")).toBe(true);
+    expect(messageSteersRun("webhook", "messaging")).toBe(false);
+    expect(messageSteersRun("user", "routine")).toBe(false);
   });
 
   it("splits active runs into working and waiting on the user", () => {

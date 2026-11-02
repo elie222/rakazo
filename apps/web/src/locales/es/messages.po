@@ -420,6 +420,10 @@ msgstr "{toolCount, plural, one {# herramienta} other {# herramientas}}"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/ModelCredits.tsx
+msgid "/ month"
+msgstr "/ mes"
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr "1 espacio"
@@ -442,6 +446,10 @@ msgstr "Se abrió una pestaña de inicio de sesión en <0>{0}</0>. Introduce est
 msgid "A subscription credential is stored securely."
 msgstr "Hay una credencial de suscripción guardada de forma segura."
 
+#: src/pages/KnowledgeSection.tsx
+msgid "About {kb} KB of memory no longer reaches the bot."
+msgstr ""
+
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
 msgstr "Acerca de {label}"
@@ -450,6 +458,7 @@ msgstr "Acerca de {label}"
 msgid "Access token (optional)"
 msgstr "Token de acceso (opcional)"
 
+#: src/components/AccountMenu.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Account"
 msgstr "Cuenta"
@@ -844,6 +853,10 @@ msgstr "Aprobaciones"
 msgid "Approve"
 msgstr "Aprobar"
 
+#: src/lib/call-session.ts
+msgid "Approve or deny it on screen."
+msgstr "Apruébalo o deniégalo en pantalla."
+
 #: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
 msgstr "Aprueba este servidor para que tu agente use sus herramientas."
@@ -1014,6 +1027,10 @@ msgstr "Token Bearer"
 msgid "Billing"
 msgstr "Facturación"
 
+#: src/components/ModelCredits.tsx
+msgid "Billing period"
+msgstr "Periodo de facturación"
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "Bloquear"
@@ -1143,6 +1160,7 @@ msgstr "No puede leer imágenes"
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/VaultSettings.tsx
@@ -2483,6 +2501,7 @@ msgid "Delete {0}?"
 msgstr "¿Eliminar {0}?"
 
 #: src/components/AccountAccess.tsx
+#: src/components/AccountMenu.tsx
 msgid "Delete account"
 msgstr "Eliminar cuenta"
 
@@ -2566,6 +2585,10 @@ msgstr "Falló el dictado: {code}"
 #: src/lib/dictation.ts
 msgid "Dictation failed."
 msgstr "Falló el dictado."
+
+#: src/pages/Auth.tsx
+msgid "Did you mean <0>{emailSuggestion}</0>?"
+msgstr "¿Quisiste decir <0>{emailSuggestion}</0>?"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
@@ -2746,13 +2769,17 @@ msgstr "Se requiere verificar el correo"
 msgid "Enable {0}"
 msgstr "Activar {0}"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr "Termina el {day}"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Engage when... Ignore..."
 msgstr "Participa cuando... Ignora..."
+
+#: src/components/GitHubStarPrompt.tsx
+msgid "Enjoying Rakazo?"
+msgstr ""
 
 #: src/lib/user-error.ts
 msgid "Enter a password"
@@ -3540,9 +3567,8 @@ msgstr "El acceso local permite que los bots ejecuten comandos sin preguntar. Ev
 msgid "Local computer access requires the latest desktop app."
 msgstr "El acceso a la computadora local requiere la versión más reciente de la app de escritorio."
 
-#: src/components/ModelCredits.tsx
+#: src/components/AccountMenu.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/Paywall.tsx
 msgid "Log out"
 msgstr "Cerrar sesión"
 
@@ -3591,8 +3617,8 @@ msgid "Manage MCP servers"
 msgstr "Gestionar servidores MCP"
 
 #: src/pages/shell/bot-panel.tsx
-msgid "Manage the bots it creates"
-msgstr "Gestionar los bots que crea"
+msgid "Manage other bots"
+msgstr "Gestionar otros bots"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
@@ -3856,6 +3882,7 @@ msgstr "lunes"
 msgid "month"
 msgstr "mes"
 
+#: src/components/ModelCredits.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "Mensual"
@@ -4167,6 +4194,7 @@ msgstr "No está en el catálogo de Rakazo"
 msgid "Not in the plugin catalog"
 msgstr "No está en el catálogo de plugins"
 
+#: src/components/GitHubStarPrompt.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Not now"
 msgstr "Ahora no"
@@ -4872,7 +4900,7 @@ msgstr "Cambiar nombre"
 msgid "Rename section"
 msgstr "Renombrar sección"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Renews {day}"
 msgstr "Se renueva el {day}"
 
@@ -5607,6 +5635,10 @@ msgstr ""
 msgid "SSO is temporarily unavailable. Try again."
 msgstr "SSO no está disponible temporalmente. Inténtalo de nuevo."
 
+#: src/components/GitHubStarPrompt.tsx
+msgid "Star on GitHub"
+msgstr ""
+
 #: src/pages/shell/computer-overlay.tsx
 msgid "Start"
 msgstr "Iniciar"
@@ -5616,9 +5648,21 @@ msgstr "Iniciar"
 msgid "Start {trialDays}-day free trial"
 msgstr "Empezar prueba gratuita de {trialDays} días"
 
+#: src/components/ModelCredits.tsx
+msgid "Start plan"
+msgstr "Iniciar plan"
+
+#: src/components/ModelCredits.tsx
+msgid "Start plan now"
+msgstr "Iniciar el plan ahora"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"
 msgstr "Iniciar grabación"
+
+#: src/components/ModelCredits.tsx
+msgid "Start your plan now?"
+msgstr "¿Iniciar tu plan ahora?"
 
 #: src/pages/ActivityList.tsx
 msgid "Starting"
@@ -5695,6 +5739,10 @@ msgid "Subscribe"
 msgstr "Suscribirse"
 
 #: src/components/ModelCredits.tsx
+msgid "Subscribe for {annualPrice} / year"
+msgstr "Suscribirse por {annualPrice} / año"
+
+#: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
 msgstr "Suscribirse por {price} / mes"
 
@@ -5724,9 +5772,18 @@ msgstr "Admite imágenes"
 msgid "Supports thinking"
 msgstr "Admite razonamiento"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
 msgstr "Cambiar"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly"
+msgstr "Cambiar a anual"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly?"
+msgstr "¿Cambiar a anual?"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
@@ -6104,9 +6161,13 @@ msgstr "Token de Treg"
 msgid "Trial"
 msgstr "Prueba"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Trial ends {day}"
 msgstr "La prueba termina el {day}"
+
+#: src/components/ModelCredits.tsx
+msgid "Trials get fewer hours to prevent abuse."
+msgstr "Las pruebas tienen menos horas para evitar abusos."
 
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
@@ -6114,6 +6175,7 @@ msgstr "Sitios de confianza"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "Intentarlo de nuevo"
 
@@ -6520,6 +6582,10 @@ msgstr "Espacio de trabajo"
 msgid "year"
 msgstr "año"
 
+#: src/components/ModelCredits.tsx
+msgid "Yearly"
+msgstr "Anual"
+
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Yesterday"
@@ -6554,6 +6620,10 @@ msgstr "Tienes el control"
 msgid "Your Anthropic"
 msgstr "Tu Anthropic"
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged {annualPrice} today, less the unused part of this month."
+msgstr "Hoy se cobrará {annualPrice} a tu tarjeta, menos la parte no usada de este mes."
+
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr ""
@@ -6585,6 +6655,10 @@ msgstr "Tu OpenAI"
 msgid "Your OpenRouter"
 msgstr "Tu OpenRouter"
 
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {annualPrice} / year when your trial ends."
+msgstr "Cuando termine tu prueba, tu plan pasará a {annualPrice} / año."
+
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"
 msgstr "Tus habilidades"
@@ -6596,6 +6670,14 @@ msgstr "Tu suscripción o clave de API"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Tu equipo de agentes siempre activos<0/>a los que puedes dar trabajo real."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged {price} today."
+msgstr "Tu prueba termina y se cobrará {price} a tu tarjeta hoy."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged today."
+msgstr "Tu prueba termina y se cobrará a tu tarjeta hoy."
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

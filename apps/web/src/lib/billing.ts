@@ -43,3 +43,29 @@ export function formatBillingDate(iso: string, locale: string): string {
     day: "numeric",
   });
 }
+
+/** The next date the subscription changes: its trial ends, it ends, or it renews. */
+export function billingDate(
+  status: BillingStatus,
+): { kind: "trial" | "ends" | "renews"; at: string } | null {
+  if (status.state === "trialing" && status.trialEndsAt) {
+    return { kind: "trial", at: status.trialEndsAt };
+  }
+  // Unpaid and paused subscriptions do not renew until the owner resumes them.
+  if (!status.currentPeriodEndsAt || status.state === "unpaid" || status.state === "paused") {
+    return null;
+  }
+  if (status.cancelAtPeriodEnd || status.state === "canceled") {
+    return { kind: "ends", at: status.currentPeriodEndsAt };
+  }
+  return { kind: "renews", at: status.currentPeriodEndsAt };
+}
+
+/** "Renews Dec 2, 2026", or when the trial or subscription ends. */
+export function billingDateLabel(status: BillingStatus, locale: string): string | null {
+  const date = billingDate(status);
+  if (!date) return null;
+  const day = formatBillingDate(date.at, locale);
+  if (date.kind === "trial") return t`Trial ends ${day}`;
+  return date.kind === "ends" ? t`Ends ${day}` : t`Renews ${day}`;
+}

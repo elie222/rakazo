@@ -420,6 +420,10 @@ msgstr "{toolCount, plural, one {# 个工具} other {# 个工具}}"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/ModelCredits.tsx
+msgid "/ month"
+msgstr "/ 月"
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr "1 个工作区"
@@ -442,6 +446,10 @@ msgstr "已在 <0>{0}</0> 打开登录页。请在那里输入验证码，这个
 msgid "A subscription credential is stored securely."
 msgstr "订阅凭据已安全存储。"
 
+#: src/pages/KnowledgeSection.tsx
+msgid "About {kb} KB of memory no longer reaches the bot."
+msgstr ""
+
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
 msgstr "关于{label}"
@@ -450,6 +458,7 @@ msgstr "关于{label}"
 msgid "Access token (optional)"
 msgstr "访问令牌（可选）"
 
+#: src/components/AccountMenu.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Account"
 msgstr "账户"
@@ -844,6 +853,10 @@ msgstr "审批"
 msgid "Approve"
 msgstr "批准"
 
+#: src/lib/call-session.ts
+msgid "Approve or deny it on screen."
+msgstr "请在屏幕上批准或拒绝。"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
 msgstr "批准此服务器后，Agent 才能使用它的工具。"
@@ -1014,6 +1027,10 @@ msgstr "Bearer token"
 msgid "Billing"
 msgstr "账单"
 
+#: src/components/ModelCredits.tsx
+msgid "Billing period"
+msgstr "账单周期"
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "阻止"
@@ -1143,6 +1160,7 @@ msgstr "无法读取图像"
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/VaultSettings.tsx
@@ -2483,6 +2501,7 @@ msgid "Delete {0}?"
 msgstr "删除 {0}？"
 
 #: src/components/AccountAccess.tsx
+#: src/components/AccountMenu.tsx
 msgid "Delete account"
 msgstr "删除账户"
 
@@ -2566,6 +2585,10 @@ msgstr ""
 #: src/lib/dictation.ts
 msgid "Dictation failed."
 msgstr ""
+
+#: src/pages/Auth.tsx
+msgid "Did you mean <0>{emailSuggestion}</0>?"
+msgstr "你是不是想输入 <0>{emailSuggestion}</0>？"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
@@ -2746,13 +2769,17 @@ msgstr "需要验证邮箱"
 msgid "Enable {0}"
 msgstr "启用 {0}"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr "将于 {day} 结束"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Engage when... Ignore..."
 msgstr "在…时参与，忽略…"
+
+#: src/components/GitHubStarPrompt.tsx
+msgid "Enjoying Rakazo?"
+msgstr ""
 
 #: src/lib/user-error.ts
 msgid "Enter a password"
@@ -3540,9 +3567,8 @@ msgstr "本地访问权限允许 Bot 无需询问就执行命令。请勿在共�
 msgid "Local computer access requires the latest desktop app."
 msgstr "访问本机电脑需要最新版桌面应用。"
 
-#: src/components/ModelCredits.tsx
+#: src/components/AccountMenu.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/Paywall.tsx
 msgid "Log out"
 msgstr "退出登录"
 
@@ -3591,8 +3617,8 @@ msgid "Manage MCP servers"
 msgstr "管理 MCP 服务器"
 
 #: src/pages/shell/bot-panel.tsx
-msgid "Manage the bots it creates"
-msgstr "管理它创建的机器人"
+msgid "Manage other bots"
+msgstr "管理其他机器人"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
@@ -3856,6 +3882,7 @@ msgstr "周一"
 msgid "month"
 msgstr "月"
 
+#: src/components/ModelCredits.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "每月"
@@ -4167,6 +4194,7 @@ msgstr "不在 Rakazo 目录中"
 msgid "Not in the plugin catalog"
 msgstr "不在插件目录中"
 
+#: src/components/GitHubStarPrompt.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Not now"
 msgstr "暂不"
@@ -4872,7 +4900,7 @@ msgstr "重命名"
 msgid "Rename section"
 msgstr "重命名分组"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Renews {day}"
 msgstr "将于 {day} 续订"
 
@@ -5607,6 +5635,10 @@ msgstr ""
 msgid "SSO is temporarily unavailable. Try again."
 msgstr "SSO 暂时不可用，请重试。"
 
+#: src/components/GitHubStarPrompt.tsx
+msgid "Star on GitHub"
+msgstr ""
+
 #: src/pages/shell/computer-overlay.tsx
 msgid "Start"
 msgstr "启动"
@@ -5616,9 +5648,21 @@ msgstr "启动"
 msgid "Start {trialDays}-day free trial"
 msgstr "开始 {trialDays} 天免费试用"
 
+#: src/components/ModelCredits.tsx
+msgid "Start plan"
+msgstr "开始套餐"
+
+#: src/components/ModelCredits.tsx
+msgid "Start plan now"
+msgstr "立即开始套餐"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"
 msgstr "开始录制"
+
+#: src/components/ModelCredits.tsx
+msgid "Start your plan now?"
+msgstr "立即开始你的套餐？"
 
 #: src/pages/ActivityList.tsx
 msgid "Starting"
@@ -5695,6 +5739,10 @@ msgid "Subscribe"
 msgstr "订阅"
 
 #: src/components/ModelCredits.tsx
+msgid "Subscribe for {annualPrice} / year"
+msgstr "以每年 {annualPrice} 订阅"
+
+#: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
 msgstr "以每月 {price} 订阅"
 
@@ -5724,9 +5772,18 @@ msgstr "支持图片"
 msgid "Supports thinking"
 msgstr "支持思考"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
 msgstr "切换"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly"
+msgstr "切换为按年"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly?"
+msgstr "切换为按年付费？"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
@@ -6104,9 +6161,13 @@ msgstr "Treg token"
 msgid "Trial"
 msgstr "试用"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Trial ends {day}"
 msgstr "试用将于 {day} 结束"
+
+#: src/components/ModelCredits.tsx
+msgid "Trials get fewer hours to prevent abuse."
+msgstr "为防止滥用，试用期的时长较少。"
 
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
@@ -6114,6 +6175,7 @@ msgstr "受信任的网站"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "重试"
 
@@ -6520,6 +6582,10 @@ msgstr "工作区"
 msgid "year"
 msgstr "年"
 
+#: src/components/ModelCredits.tsx
+msgid "Yearly"
+msgstr "按年"
+
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Yesterday"
@@ -6554,6 +6620,10 @@ msgstr "你已接管"
 msgid "Your Anthropic"
 msgstr "你的 Anthropic"
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged {annualPrice} today, less the unused part of this month."
+msgstr "今天将从你的卡中扣款 {annualPrice}，并抵扣本月未使用的部分。"
+
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr ""
@@ -6585,6 +6655,10 @@ msgstr "你的 OpenAI"
 msgid "Your OpenRouter"
 msgstr "你的 OpenRouter"
 
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {annualPrice} / year when your trial ends."
+msgstr "试用结束后，你的套餐将变为每年 {annualPrice}。"
+
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"
 msgstr "你的技能"
@@ -6596,6 +6670,14 @@ msgstr "你的订阅或 API 密钥"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "你的一支随时在线的 Agent 团队<0/>可以交给它们真正的工作。"
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged {price} today."
+msgstr "试用将结束，今天将从你的卡中扣款 {price}。"
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged today."
+msgstr "试用将结束，今天将从你的卡中扣款。"
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

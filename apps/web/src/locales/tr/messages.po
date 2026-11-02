@@ -420,6 +420,10 @@ msgstr "{toolCount, plural, one {# araç} other {# araç}}"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/ModelCredits.tsx
+msgid "/ month"
+msgstr "/ ay"
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr ""
@@ -442,6 +446,10 @@ msgstr ""
 msgid "A subscription credential is stored securely."
 msgstr "Bir abonelik kimlik bilgisi güvenli şekilde saklanıyor."
 
+#: src/pages/KnowledgeSection.tsx
+msgid "About {kb} KB of memory no longer reaches the bot."
+msgstr ""
+
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
 msgstr "{label} hakkında"
@@ -450,6 +458,7 @@ msgstr "{label} hakkında"
 msgid "Access token (optional)"
 msgstr "Erişim token'ı (isteğe bağlı)"
 
+#: src/components/AccountMenu.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Account"
 msgstr "Hesap"
@@ -844,6 +853,10 @@ msgstr "Onaylar"
 msgid "Approve"
 msgstr "Onayla"
 
+#: src/lib/call-session.ts
+msgid "Approve or deny it on screen."
+msgstr "Ekranda onayla veya reddet."
+
 #: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
 msgstr "Agent'ının bu sunucunun araçlarını kullanabilmesi için sunucuyu onayla."
@@ -1014,6 +1027,10 @@ msgstr "Bearer token"
 msgid "Billing"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Billing period"
+msgstr "Fatura dönemi"
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "Engelle"
@@ -1143,6 +1160,7 @@ msgstr "Görselleri okuyamaz"
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/VaultSettings.tsx
@@ -2483,6 +2501,7 @@ msgid "Delete {0}?"
 msgstr "{0} silinsin mi?"
 
 #: src/components/AccountAccess.tsx
+#: src/components/AccountMenu.tsx
 msgid "Delete account"
 msgstr "Hesabı sil"
 
@@ -2566,6 +2585,10 @@ msgstr ""
 #: src/lib/dictation.ts
 msgid "Dictation failed."
 msgstr ""
+
+#: src/pages/Auth.tsx
+msgid "Did you mean <0>{emailSuggestion}</0>?"
+msgstr "<0>{emailSuggestion}</0> mi demek istediniz?"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
@@ -2746,12 +2769,16 @@ msgstr "E-posta doğrulaması gerekiyor"
 msgid "Enable {0}"
 msgstr "{0} etkinleştir"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Engage when... Ignore..."
+msgstr ""
+
+#: src/components/GitHubStarPrompt.tsx
+msgid "Enjoying Rakazo?"
 msgstr ""
 
 #: src/lib/user-error.ts
@@ -3100,11 +3127,11 @@ msgstr "Aramayı sonlandır"
 
 #: src/lib/call-session.ts
 msgid "Hang up first, then enter the code on screen."
-msgstr ""
+msgstr "Önce aramayı sonlandır, sonra kodu ekrana gir."
 
 #: src/lib/call-session.ts
 msgid "Hang up, then enter the code on screen."
-msgstr ""
+msgstr "Aramayı sonlandır, sonra kodu ekrana gir."
 
 #: src/pages/RoutineEditor.tsx
 msgid "header"
@@ -3540,9 +3567,8 @@ msgstr "Yerel erişim, botların sormadan komut çalıştırmasına izin verir. 
 msgid "Local computer access requires the latest desktop app."
 msgstr ""
 
-#: src/components/ModelCredits.tsx
+#: src/components/AccountMenu.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/Paywall.tsx
 msgid "Log out"
 msgstr "Çıkış yap"
 
@@ -3591,8 +3617,8 @@ msgid "Manage MCP servers"
 msgstr "MCP sunucularını yönet"
 
 #: src/pages/shell/bot-panel.tsx
-msgid "Manage the bots it creates"
-msgstr "Oluşturduğu botları yönet"
+msgid "Manage other bots"
+msgstr "Diğer botları yönet"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
@@ -3856,6 +3882,7 @@ msgstr "Pazartesi"
 msgid "month"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "Aylık"
@@ -4167,6 +4194,7 @@ msgstr "Rakazo kataloğunda yok"
 msgid "Not in the plugin catalog"
 msgstr ""
 
+#: src/components/GitHubStarPrompt.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Not now"
 msgstr "Şimdi değil"
@@ -4872,7 +4900,7 @@ msgstr "Yeniden adlandır"
 msgid "Rename section"
 msgstr "Bölümü yeniden adlandır"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Renews {day}"
 msgstr ""
 
@@ -5607,6 +5635,10 @@ msgstr ""
 msgid "SSO is temporarily unavailable. Try again."
 msgstr "SSO geçici olarak kullanılamıyor. Yeniden deneyin."
 
+#: src/components/GitHubStarPrompt.tsx
+msgid "Star on GitHub"
+msgstr ""
+
 #: src/pages/shell/computer-overlay.tsx
 msgid "Start"
 msgstr ""
@@ -5616,9 +5648,21 @@ msgstr ""
 msgid "Start {trialDays}-day free trial"
 msgstr "{trialDays} günlük ücretsiz denemeyi başlat"
 
+#: src/components/ModelCredits.tsx
+msgid "Start plan"
+msgstr "Planı başlat"
+
+#: src/components/ModelCredits.tsx
+msgid "Start plan now"
+msgstr "Planı şimdi başlat"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"
 msgstr "Kaydı başlat"
+
+#: src/components/ModelCredits.tsx
+msgid "Start your plan now?"
+msgstr "Planınız şimdi başlatılsın mı?"
 
 #: src/pages/ActivityList.tsx
 msgid "Starting"
@@ -5695,6 +5739,10 @@ msgid "Subscribe"
 msgstr "Abone ol"
 
 #: src/components/ModelCredits.tsx
+msgid "Subscribe for {annualPrice} / year"
+msgstr "Yıllık {annualPrice} ile abone ol"
+
+#: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
 msgstr "Aylık {price} ile abone ol"
 
@@ -5724,9 +5772,18 @@ msgstr "Görüntüleri destekler"
 msgid "Supports thinking"
 msgstr "Düşünmeyi destekler"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
-msgstr ""
+msgstr "Geç"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly"
+msgstr "Yıllığa geç"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly?"
+msgstr "Yıllığa geçilsin mi?"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
@@ -6104,9 +6161,13 @@ msgstr "Treg token'ı"
 msgid "Trial"
 msgstr ""
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Trial ends {day}"
 msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "Trials get fewer hours to prevent abuse."
+msgstr "Kötüye kullanımı önlemek için denemelerde daha az saat verilir."
 
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
@@ -6114,6 +6175,7 @@ msgstr "Güvenilen siteler"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "Tekrar dene"
 
@@ -6520,6 +6582,10 @@ msgstr ""
 msgid "year"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Yearly"
+msgstr "Yıllık"
+
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Yesterday"
@@ -6554,6 +6620,10 @@ msgstr "Kontrol sende"
 msgid "Your Anthropic"
 msgstr "Anthropic sağlayıcınız"
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged {annualPrice} today, less the unused part of this month."
+msgstr "Bugün kartından {annualPrice} tahsil edilir, bu ayın kullanılmayan kısmı düşülür."
+
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr ""
@@ -6585,6 +6655,10 @@ msgstr "OpenAI sağlayıcınız"
 msgid "Your OpenRouter"
 msgstr "OpenRouter sağlayıcınız"
 
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {annualPrice} / year when your trial ends."
+msgstr "Deneme süren bitince planın yıllık {annualPrice} olur."
+
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"
 msgstr ""
@@ -6596,6 +6670,14 @@ msgstr ""
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Gerçek işler verebileceğin,<0/>her zaman açık agent takımın."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged {price} today."
+msgstr "Denemeniz biter ve kartınızdan bugün {price} çekilir."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged today."
+msgstr "Denemeniz biter ve kartınızdan bugün ödeme alınır."
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

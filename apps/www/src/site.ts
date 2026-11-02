@@ -5,6 +5,7 @@ export const SITE_DESCRIPTION =
 
 export const APP_URL = "https://app.rakazo.com";
 export const PLUGIN_SUBMISSIONS_URL = `${APP_URL}/api/v1/plugin-submissions`;
+export const INTEGRATION_CLAIMS_URL = `${APP_URL}/api/v1/integration-claims`;
 export const CATALOG_URL =
   "https://rakazo-public.fsn1.your-objectstorage.com/integrations/catalog.json";
 export const GITHUB_URL = "https://github.com/elie222/rakazo";
@@ -18,6 +19,7 @@ export const SELF_HOST_RESTRICTED_URL =
   "https://github.com/elie222/rakazo/blob/main/docs/self-host-restricted-network.md";
 export const SETUP_PROMPT_URL = "https://github.com/elie222/rakazo/blob/main/SETUP_PROMPT.md";
 export const SELF_HOST_GUIDE_PATH = "/self-hosted-ai-agent/";
+export const PLUGIN_SUBMIT_PATH = "/plugins/submit/";
 export const OPENCLAW_ALTERNATIVE_PATH = "/openclaw-alternative/";
 export const CHANGELOG_URL = "https://github.com/elie222/rakazo/releases";
 export const LATEST_RELEASE_URL = `${CHANGELOG_URL}/latest`;

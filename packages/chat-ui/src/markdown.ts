@@ -539,3 +539,11 @@ export function closeUnterminatedFence(markdown: string): string {
 
   return openFence ? `${markdown}\n${openFence.marker.repeat(openFence.length)}` : markdown;
 }
+
+/**
+ * A fence explicitly marked as plain text, such as a draft email: it wraps in the body font. Every
+ * other fence, including one with no language, keeps the monospaced font and sideways scrolling.
+ */
+export function isProseFence(language: string): boolean {
+  return ["text", "txt", "plaintext"].includes(language.toLowerCase());
+}

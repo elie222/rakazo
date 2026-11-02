@@ -285,6 +285,9 @@ export function browserCloseProgram() {
   return CLOSE_BROWSER;
 }
 
+/** Exit status of a browser stop that found a browser open on the profile again. */
+export const BROWSER_STILL_RUNNING_EXIT = 76;
+
 export function stopBrowserCommand(screenId: string, env = DEFAULT_DESKTOP_ENV) {
   return stopBrowserProfileCommand(
     browserProfilePathForScreen(screenId, env),
@@ -304,7 +307,7 @@ export function stopBrowserProfileCommand(profile: string, pidFile: string) {
     `fi`,
     // A supervisor may have replaced the selected PID while it was closing.
     // Rediscover once before removing lock state rather than on every close poll.
-    `if browser_running; then echo 'browser still running' >&2; exit 1; fi`,
+    `if browser_running; then echo 'browser still running' >&2; exit ${BROWSER_STILL_RUNNING_EXIT}; fi`,
     `rm -f ${pidFile}`,
     `rm -f ${shellQuote(profile)}/SingletonLock ${shellQuote(profile)}/SingletonCookie ${shellQuote(profile)}/SingletonSocket`,
   ].join("\n");
@@ -318,6 +321,7 @@ function stopProfileDirectoriesCommand(profileList: string) {
   return [
     "set -eu",
     "failed=0",
+    "running=0",
     "mkdir -p /tmp/rakazo",
     `for profile in ${profileList}; do`,
     '  [ -d "$profile" ] || continue',
@@ -327,9 +331,10 @@ function stopProfileDirectoriesCommand(profileList: string) {
     '    *) hash=$(basename -- "$profile") ;;',
     "  esac",
     '  pid_file="/tmp/rakazo/browser-pid-$hash"',
-    `  bash -eu -c ${shellQuote(`profile=$1; pid_file=$2;\n${stop}`)} desktop "$profile" "$pid_file" || failed=1`,
+    `  bash -eu -c ${shellQuote(`profile=$1; pid_file=$2;\n${stop}`)} desktop "$profile" "$pid_file" || { [ "$?" -eq ${BROWSER_STILL_RUNNING_EXIT} ] && running=1 || failed=1; }`,
     "done",
     '[ "$failed" -eq 0 ] || exit 1',
+    `[ "$running" -eq 0 ] || exit ${BROWSER_STILL_RUNNING_EXIT}`,
   ].join("\n");
 }
 
@@ -602,12 +607,29 @@ function renderEnsureScreenCommand(
     `mkdir -p /tmp/rakazo ${shellQuote(path.posix.dirname(profile))}`,
     ...browserRunningFunction(profile, pidFile),
     `printf %s ${shellQuote(profile)} >/tmp/rakazo/browser-profile-${layout.displayNumber}`,
-    "if ! browser_running; then",
-    prepareBrowserProfileCommand(screenId, env),
+    "launch_browser() {",
+    `  ${prepareBrowserProfileCommand(screenId, env)}`,
     `  rm -f ${shellQuote(profile)}/SingletonLock ${shellQuote(profile)}/SingletonCookie ${shellQuote(profile)}/SingletonSocket`,
-    `  nohup ${browserLauncherPath(layout.displayNumber)} 8>&- 9>&- </dev/null >${log}-browser.log 2>&1 & printf %s "$!" >${pidFile}`,
-    "fi",
-    `for i in $(seq 1 80); do browser_running && (echo >/dev/tcp/127.0.0.1/${layout.debugPort}) >/dev/null 2>&1 && break; sleep 0.25; done`,
+    `  nohup ${browserLauncherPath(layout.displayNumber)} 8>&- 9>&- </dev/null >${log}-browser.log 2>&1 & launched=$!`,
+    `  printf %s "$launched" >${pidFile}`,
+    "}",
+    "launched=",
+    "relaunched=0",
+    "browser_running || launch_browser",
+    "waited=0",
+    'while [ "$waited" -lt 80 ]; do',
+    "  if browser_running; then",
+    `    (echo >/dev/tcp/127.0.0.1/${layout.debugPort}) >/dev/null 2>&1 && break`,
+    // The browser found running can be closed, by its window or a home save, before its port
+    // answers. Start it again once rather than wait out a browser that is gone.
+    '  elif [ "$relaunched" -eq 0 ] && ! { [ -n "$launched" ] && kill -0 "$launched" 2>/dev/null; }; then',
+    "    relaunched=1",
+    "    waited=0",
+    "    launch_browser",
+    "  fi",
+    "  sleep 0.25",
+    "  waited=$((waited + 1))",
+    "done",
     `if ! browser_running || ! (echo >/dev/tcp/127.0.0.1/${layout.debugPort}) >/dev/null 2>&1; then`,
     `  echo "computer browser CDP not ready on ${layout.debugPort} (running=$(browser_running && echo yes || echo no))" >&2`,
     `  tail -c 4000 ${log}-browser.log >&2 || true`,
