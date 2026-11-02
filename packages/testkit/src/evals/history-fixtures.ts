@@ -4,6 +4,8 @@ export const HISTORY_FIXTURE_VERSION = "history-v1-seed-73";
 export type HistoryMessage = {
   seq: number;
   role: "user" | "bot";
+  /** A group member bot that wrote this bot message; absent means the bot under test did. */
+  author?: string;
   text: string;
   subagentResult?: string;
   createdAt: Date;

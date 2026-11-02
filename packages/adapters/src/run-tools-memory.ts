@@ -1,10 +1,14 @@
 import { MEMORY_REVISION_CONFLICT_ERROR } from "@rakazo/adapter-kit";
-import { HistoryReadInputSchema, HistorySearchInputSchema } from "@rakazo/contracts";
+import {
+  HistoryReadInputSchema,
+  HistorySearchInputSchema,
+  MEMORY_INDEX_PATH,
+} from "@rakazo/contracts";
 import { readHistory, searchHistory } from "@rakazo/db";
 import { sharedMemorySaveError } from "./builtin-tools.js";
 import { redactConnectorPayload } from "./connector-safety.js";
 import { MAX_RECALLED_MEMORIES } from "./history-compaction.js";
-import { appendMemoryFact } from "./memory-tools.js";
+import { editMemory } from "./memory-tools.js";
 import type { RunContext } from "./run-context.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 
@@ -63,13 +67,19 @@ export const memoryTools: ToolHandlers = {
   async remember(ctx, call) {
     const { deps, runId, bot, thread, context } = ctx;
     const { args } = call;
-    const path = String(args.path ?? "").trim() || "MEMORY.md";
-    // A fact is added to the document, never replaces it. A concurrent save
-    // changes the revision, so re-read and append again.
+    // One document per bot keeps the size cap meaningful.
+    const path = MEMORY_INDEX_PATH;
+    // A concurrent save changes the revision, so re-read and apply the edit again.
     for (let attempt = 1; ; attempt += 1) {
       const snapshot = await deps.memory.read({ scope: "bot", botId: bot.id, path }, context);
       const existing = snapshot.documents[0];
-      const content = appendMemoryFact(existing?.content ?? "", String(args.content ?? ""));
+      const edit = editMemory(
+        existing?.content ?? "",
+        String(args.content ?? ""),
+        String(args.old_text ?? ""),
+      );
+      if ("error" in edit) return call.finish(edit);
+      const { content } = edit;
       if (content === (existing?.content ?? "")) return call.finish({ ok: true });
       try {
         await deps.memory.commit(

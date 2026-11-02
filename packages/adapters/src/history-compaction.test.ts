@@ -145,6 +145,27 @@ describe("selectCompactedHistory", () => {
     expect(selected.history.map((message) => message.seq)).toEqual([0, 1, 2, 4]);
   });
 
+  it("keeps the summary past a message waiting for its own run, and leaves that message out", () => {
+    const loaded = messages(0, 3).map((message) => ({ ...message, waiting: message.seq === 2 }));
+    const selected = selectCompactedHistory({
+      messages: loaded,
+      summary: "facts through 0",
+      historyCompactedUpToSeq: 0,
+    });
+
+    expect(selected.usedLocalSummary).toBe(true);
+    expect(selected.summary).toBe("facts through 0");
+    expect(selected.history.map((message) => message.seq)).toEqual([1, 3]);
+    // Without a summary it is still left out.
+    expect(
+      selectCompactedHistory({
+        messages: loaded,
+        summary: null,
+        historyCompactedUpToSeq: null,
+      }).history.map((message) => message.seq),
+    ).toEqual([0, 1, 3]);
+  });
+
   it("does not use a cursor without its durable summary", () => {
     const selected = selectCompactedHistory({
       messages: messages(0, 10),
@@ -226,6 +247,7 @@ describe("formatRecalledMemory", () => {
 type HarnessMessage = {
   seq: number;
   role: string;
+  botId?: string;
   blocks: MessageBlock[];
 };
 
@@ -235,6 +257,8 @@ function compactionHarness(
     deploymentModelConfigured?: boolean;
     settings?: { defaultModelProvider: string | null; defaultModelId: string | null } | null;
     messages?: HarnessMessage[];
+    /** Bots the space knows, archived or not; a message from any other bot id has no record. */
+    bots?: Array<{ id: string; name: string }>;
     nextMessageSeq?: number;
     historyCompactedUpToSeq?: number | null;
     historyCompactionSummary?: string | null;
@@ -340,6 +364,13 @@ function compactionHarness(
           if (args.orderBy?.seq === "desc") ordered.reverse();
           return ordered.slice(0, args.take ?? ordered.length);
         },
+      ),
+    },
+    bot: {
+      findMany: vi.fn(async (args: { where: { id: { in: string[] } } }) =>
+        (options.bots ?? [{ id: "bot-1", name: "Anya" }]).filter((bot) =>
+          args.where.id.in.includes(bot.id),
+        ),
       ),
     },
     deploymentSettings: {
@@ -995,6 +1026,87 @@ describe("compactHistory", () => {
     expect(request.prompt).toContain("marker-0");
     expect(request.prompt).not.toContain("marker-49 ");
     expect(harness.thread.historyCompactedUpToSeq).toBeLessThan(49);
+  });
+
+  it("names the speakers in the transcript, and never the person", async () => {
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      bots: [
+        { id: "bot-1", name: "Anya" },
+        { id: "bot-2", name: "Boris" },
+      ],
+      messages: [
+        { seq: 0, role: "user", blocks: [{ kind: "text", text: "Pick a code name." }] },
+        { seq: 1, role: "bot", botId: "bot-1", blocks: [{ kind: "text", text: "Bluebird." }] },
+        { seq: 2, role: "bot", botId: "bot-2", blocks: [{ kind: "text", text: "Agreed." }] },
+        { seq: 3, role: "bot", botId: "gone", blocks: [{ kind: "text", text: "Hello." }] },
+        { seq: 4, role: "bot", blocks: [{ kind: "text", text: "Own reply." }] },
+        { seq: 5, role: "system", blocks: [{ kind: "text", text: "Note." }] },
+        {
+          seq: 6,
+          role: "user",
+          blocks: [
+            {
+              kind: "bot_message_received",
+              fromBotId: "bot-2",
+              fromBotName: "Boris",
+              text: "Ready.",
+            } as MessageBlock,
+          ],
+        },
+      ],
+    });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    const [request] = harness.runtime.run.mock.calls[0]!;
+    expect(request.prompt).toBe(
+      [
+        "User: Pick a code name.",
+        "Anya: Bluebird.",
+        "Boris: Agreed.",
+        "another bot: Hello.",
+        "Anya: Own reply.",
+        "system: Note.",
+        "Boris: [from Boris] Ready.",
+      ].join("\n\n"),
+    );
+    expect(request.instructions).toContain("who said or decided each");
+  });
+
+  it("keeps a bot named like the person apart from the person in the transcript", async () => {
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      bots: [{ id: "bot-1", name: " user " }],
+      messages: [
+        { seq: 0, role: "user", blocks: [{ kind: "text", text: "Hi" }] },
+        { seq: 1, role: "bot", botId: "bot-1", blocks: [{ kind: "text", text: "Hello" }] },
+      ],
+    });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    const [request] = harness.runtime.run.mock.calls[0]!;
+    expect(request.prompt).toBe("User: Hi\n\nUser (bot): Hello");
+  });
+
+  it("hands the previous summary to the summarizer unchanged next to the labelled messages", async () => {
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      historyCompactedUpToSeq: 0,
+      historyCompactionSummary: "Anya proposed Bluebird.",
+      messages: [
+        { seq: 0, role: "user", blocks: [{ kind: "text", text: "old" }] },
+        { seq: 1, role: "user", blocks: [{ kind: "text", text: "Thanks." }] },
+        { seq: 2, role: "bot", botId: "bot-1", blocks: [{ kind: "text", text: "Welcome." }] },
+      ],
+    });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    const [request] = harness.runtime.run.mock.calls[0]!;
+    expect(request.prompt).toContain("Anya proposed Bluebird.");
+    expect(request.prompt).toMatch(/User: Thanks\.\n\nAnya: Welcome\.$/);
   });
 
   async function compactAfterTurns(harness: ReturnType<typeof compactionHarness>, turns: number) {

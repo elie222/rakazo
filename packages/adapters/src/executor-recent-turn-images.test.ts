@@ -38,6 +38,13 @@ type RunHooks = {
   trigger?: string;
   /** A reply bound to this run as steering, claimed before any tool runs. */
   steeringBlocks?: MessageBlock[];
+  /** Run in a group thread with this stored history (newest first) and these bot records. */
+  group?: {
+    messages: ReturnType<typeof historyMessages>;
+    bots: Array<{ id: string; name: string }>;
+  };
+  /** The newest user message points at this run, sends a picture and may wait for its own run. */
+  pictureMessage?: { waiting: boolean };
 };
 
 function deferred<T>(): Deferred<T> {
@@ -48,7 +55,7 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve };
 }
 
-function historyMessages(): Array<{
+function historyMessages(pictureMessage?: { waiting: boolean }): Array<{
   id: string;
   threadId: string;
   seq: number;
@@ -58,6 +65,7 @@ function historyMessages(): Array<{
   replyToMessageId: null;
   replyQuote: null;
   replyTo: null;
+  steeringMessages: Array<{ id: string }>;
 }> {
   return [
     {
@@ -66,10 +74,23 @@ function historyMessages(): Array<{
       seq: 2,
       role: "user",
       runId: "run-1",
-      blocks: [{ kind: "text", text: "what was in the screenshot?" }],
+      blocks: [
+        { kind: "text", text: "what was in the screenshot?" },
+        ...(pictureMessage
+          ? [
+              {
+                kind: "image" as const,
+                artifactId: "art-2",
+                mimeType: "image/png",
+                name: "reply.png",
+              },
+            ]
+          : []),
+      ],
       replyToMessageId: null,
       replyQuote: null,
       replyTo: null,
+      steeringMessages: pictureMessage?.waiting ? [{ id: "held-steering" }] : [],
     },
     {
       id: "earlier",
@@ -81,6 +102,7 @@ function historyMessages(): Array<{
       replyToMessageId: null,
       replyQuote: null,
       replyTo: null,
+      steeringMessages: [],
     },
   ];
 }
@@ -152,7 +174,13 @@ async function runWithModel(
         return { count: 1 };
       }),
     },
-    chatGroup: { findMany: vi.fn(async () => []) },
+    chatGroup: {
+      findMany: vi.fn(async () => []),
+      findUnique: vi.fn(async () => ({
+        name: "Planning",
+        members: [{ bot: { id: run.botId, name: "Boris", description: "" } }],
+      })),
+    },
     bot: {
       findUniqueOrThrow: vi.fn(async () => ({
         id: run.botId,
@@ -167,7 +195,9 @@ async function runWithModel(
         memoryScope: null,
         computer: { id: "computer-1", scope: "dedicated" },
       })),
-      findMany: vi.fn(async () => []),
+      findMany: vi.fn(async (args?: { where?: { id?: { in?: string[] } } }) =>
+        (hooks?.group?.bots ?? []).filter((bot) => args?.where?.id?.in?.includes(bot.id)),
+      ),
     },
     attempt: {
       create: vi.fn(async () => ({ id: "attempt-1" })),
@@ -177,7 +207,7 @@ async function runWithModel(
     thread: {
       findUniqueOrThrow: vi.fn(async () => ({
         id: run.threadId,
-        groupId: null,
+        groupId: hooks?.group ? "group-1" : null,
         historyCompactionSummary: null,
         historyCompactedUpToSeq: null,
         nextMessageSeq: 3,
@@ -185,7 +215,9 @@ async function runWithModel(
     },
     message: {
       findMany: vi.fn(async (args: { where?: { threadId?: string } }) =>
-        args.where?.threadId ? historyMessages() : [],
+        args.where?.threadId
+          ? (hooks?.group?.messages ?? historyMessages(hooks?.pictureMessage))
+          : [],
       ),
       findUnique: vi.fn(async () => null),
       // A claimed steering reply looks up the message it quotes; this one quotes nothing.
@@ -382,6 +414,21 @@ describe("recent turn images follow model vision", () => {
     expect(get).toHaveBeenCalledWith("shot.png", expect.anything());
   });
 
+  it("does not take a chat message waiting for its own run as a sourceless app run's turn", async () => {
+    // An app run with no source message, like the one queued after an MCP server connects.
+    const held = await runWithModel(VISION_MODEL, undefined, false, false, true, {
+      pictureMessage: { waiting: true },
+    });
+    expect(held.request.currentTurnImages).toBeUndefined();
+
+    const bound = await runWithModel(VISION_MODEL, undefined, false, false, true, {
+      pictureMessage: { waiting: false },
+    });
+    expect(bound.request.currentTurnImages).toEqual([
+      { name: "reply.png", mimeType: "image/png", data: new Uint8Array([1, 2, 3, 4]) },
+    ]);
+  });
+
   it("continues with no backups when the indexed lookup fails", async () => {
     const { prisma, request } = await runWithModel(TEXT_ONLY_MODEL, undefined, true);
     expect(request.fallbackModels).toEqual([]);
@@ -568,5 +615,93 @@ describe("screen lifecycle after run completion", () => {
       if (completed) await completed.execution;
       vi.useRealTimers();
     }
+  });
+});
+
+describe("group history speakers", () => {
+  const row = (
+    seq: number,
+    role: string,
+    text: string,
+    botId?: string,
+    extra: Record<string, unknown> = {},
+  ) => ({
+    id: `m${seq}`,
+    threadId: "thread-1",
+    seq,
+    role,
+    botId,
+    runId: "run-0",
+    blocks: [{ kind: "text" as const, text }] as MessageBlock[],
+    replyToMessageId: null,
+    replyQuote: null,
+    replyTo: null,
+    steeringMessages: [],
+    ...extra,
+  });
+  // Newest first, as the history query returns them. The run's own bot is "bot-1".
+  const stored = [
+    row(5, "user", "@Boris who named it?"),
+    row(4, "bot", "Bluebird."),
+    row(3, "bot", "Half an ans", "bot-2", { clientNonce: "partial-reply:run-9" }),
+    row(2, "bot", "Mystery.", "bot-gone"),
+    row(1, "bot", "Bluebird.", "bot-3"),
+    row(0, "user", "Name our project."),
+  ];
+  const bots = [
+    { id: "bot-2", name: "Anya" },
+    // Archived bots are still found: the lookup does not filter on archivedAt.
+    { id: "bot-3", name: "Renamed Anya" },
+  ];
+
+  it("labels the user and the other bots, and leaves this bot's own replies plain", async () => {
+    const { request, prisma } = await runWithModel(VISION_MODEL, undefined, false, false, true, {
+      group: { messages: stored, bots },
+    });
+    expect(
+      request.history.map(({ role, speaker, content }) => ({ role, speaker, content })),
+    ).toEqual([
+      { role: "user", speaker: "User", content: "Name our project." },
+      { role: "assistant", speaker: "Renamed Anya", content: "Bluebird." },
+      { role: "assistant", speaker: "another bot", content: "Mystery." },
+      {
+        role: "assistant",
+        speaker: "Anya",
+        content: expect.stringMatching(/^Half an ans\n\n.+/s),
+      },
+      { role: "assistant", speaker: undefined, content: "Bluebird." },
+      { role: "user", speaker: "User", content: "@Boris who named it?" },
+    ]);
+    // One lookup for every other bot; the receiving bot's own id is not asked for.
+    const lookups = prisma.bot.findMany.mock.calls.filter(
+      ([args]) => (args as { where?: { id?: { in?: unknown } } } | undefined)?.where?.id?.in,
+    );
+    expect(lookups).toHaveLength(1);
+    expect((lookups[0]![0] as { where: { id: { in: string[] } } }).where.id.in.sort()).toEqual([
+      "bot-2",
+      "bot-3",
+      "bot-gone",
+    ]);
+    expect(request.promptSpeaker).toBe("User");
+    expect(request.instructions).toContain('messages from other members start with "[Name]:"');
+  });
+
+  it("adds no speakers or prompt label in a direct chat", async () => {
+    const { request, prisma } = await runWithModel(VISION_MODEL);
+    expect(request.history.some((entry) => "speaker" in entry)).toBe(false);
+    expect(request.promptSpeaker).toBeUndefined();
+    expect(
+      prisma.bot.findMany.mock.calls.some(
+        ([args]) => (args as { where?: { id?: { in?: unknown } } } | undefined)?.where?.id?.in,
+      ),
+    ).toBe(false);
+  });
+
+  it("labels the prompt only for runs the user started", async () => {
+    const { request } = await runWithModel(VISION_MODEL, undefined, false, false, true, {
+      group: { messages: stored, bots },
+      trigger: "bot_message",
+    });
+    expect(request.promptSpeaker).toBeUndefined();
   });
 });

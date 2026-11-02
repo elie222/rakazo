@@ -1,6 +1,6 @@
 import { BillingEmulator } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
-import { BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
+import { BYOK_ANNUAL_PRICE_CENTS, BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, billingAccountForOrganization, createDb, spaceHasModelAccess } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -146,5 +146,29 @@ dbTests("own-key plan", () => {
         (subscription) => subscription.byokPlan && subscription.status === "active",
       ),
     ).toMatchObject({ cancelAtPeriodEnd: true });
+  });
+
+  it("bills the yearly plan at the yearly price and shows it as yearly", async () => {
+    const customer = (await billingAccountForOrganization(prisma, organizationId))!.customerId;
+    for (const subscription of provider.subscriptions) subscription.status = "canceled";
+    await service.sync(customer);
+    await expect(service.status(actor)).resolves.toMatchObject({
+      byokPriceCents: BYOK_MONTHLY_PRICE_CENTS,
+      byokInterval: "month",
+      byokAnnualPriceCents: BYOK_ANNUAL_PRICE_CENTS,
+    });
+    await service.selectFunding(actor, "byok", undefined, "year");
+    expect(provider.byokCheckouts.get(customer)).toMatchObject({
+      amountCents: BYOK_ANNUAL_PRICE_CENTS,
+      interval: "year",
+    });
+    provider.completeByokCheckout(customer);
+    await service.sync(customer);
+    await expect(service.status(actor)).resolves.toMatchObject({
+      access: true,
+      funding: "byok",
+      byokPriceCents: BYOK_ANNUAL_PRICE_CENTS,
+      byokInterval: "year",
+    });
   });
 });

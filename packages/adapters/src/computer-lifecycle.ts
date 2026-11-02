@@ -249,7 +249,7 @@ export async function provisionComputer(
     }
   }
 
-  // A computer that bills starts only while its organization has allowance left this month.
+  // A computer that bills starts only while its organization has allowance left this period.
   const startKind = (await deps.sandbox.provisionKind?.(existing.homeKey)) ?? existing.kind;
   if (await sandboxAllowanceUsedUp(deps, { spaceId: existing.spaceId, kind: startKind }))
     throw new SandboxAllowanceUsedError();

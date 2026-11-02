@@ -447,6 +447,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["billing/setMonthlyCredits"],
       ["billing/checkout"],
       ["billing/portal"],
+      ["billing/endTrial"],
       ["billing/claimReferral"],
       ["accessGrants/list"],
       ["accessGrants/create"],

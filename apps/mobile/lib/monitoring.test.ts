@@ -7,6 +7,8 @@ const sdk = vi.hoisted(() => ({
   close: vi.fn(async () => {}),
   setUser: vi.fn(),
   setTag: vi.fn(),
+  addBreadcrumb: vi.fn(),
+  breadcrumbsIntegration: vi.fn((options: object) => ({ name: "Breadcrumbs", options })),
 }));
 const updates = vi.hoisted(() => ({
   channel: "production",
@@ -461,6 +463,11 @@ describe("mobile monitoring", () => {
     expect(sdk.setTag).toHaveBeenCalledWith("screen", "chat");
     monitor.setMobileMonitoringScreen("computer");
     expect(sdk.setTag).toHaveBeenLastCalledWith("screen", "computer");
+    expect(sdk.addBreadcrumb).toHaveBeenLastCalledWith({
+      type: "navigation",
+      category: "navigation",
+      data: { to: "computer" },
+    });
     monitor.setMobileMonitoringScreen(undefined);
     expect(sdk.setTag).toHaveBeenLastCalledWith("screen", "other");
   });
@@ -490,7 +497,9 @@ describe("mobile monitoring", () => {
     expect(options.integrations([release, handlers, { name: "DeviceContext" }])).toEqual([
       release,
       handlers,
+      { name: "Breadcrumbs", options: { console: false, sentry: false } },
     ]);
+    expect(options.beforeBreadcrumb({ category: "console", message: "private" })).toBeNull();
     expect(sdk.setTag).toHaveBeenCalledWith("mobile.platform", "ios");
     expect(
       options.beforeSend({ extra: { secret: "private" }, user: { email: "private" } }),

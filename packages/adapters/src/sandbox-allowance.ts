@@ -1,11 +1,6 @@
 import type { ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import {
-  MICROS_PER_DOLLAR,
-  sandboxAllowanceCents,
-  sandboxAllowancePeriodStart,
-  sandboxRunHours,
-} from "@rakazo/db";
+import { MICROS_PER_DOLLAR, sandboxAllowancePlan, sandboxRunHours } from "@rakazo/db";
 
 /**
  * What an hour of a billed computer counts against the allowance, $0.20: above a small cloud
@@ -24,20 +19,15 @@ export function sandboxHourlyCostMicros(
   return sandbox.billsWhileRunning?.(computer) ? DEFAULT_SANDBOX_HOURLY_COST_MICROS : 0;
 }
 
-/** This month's computer allowance and spend, in micro-dollars; null when it has no limit. */
+/** This period's computer allowance and spend, in micro-dollars; null when it has no limit. */
 export async function sandboxAllowance(
   deps: AllowanceDeps,
   organizationId: string,
   now = new Date(),
 ): Promise<{ limitMicros: number; usedMicros: number } | null> {
-  const limitCents = await sandboxAllowanceCents(deps.prisma, organizationId);
-  if (limitCents === null) return null;
-  const runs = await sandboxRunHours(
-    deps.prisma,
-    organizationId,
-    sandboxAllowancePeriodStart(now),
-    now,
-  );
+  const plan = await sandboxAllowancePlan(deps.prisma, organizationId, now);
+  if (plan === null) return null;
+  const runs = await sandboxRunHours(deps.prisma, organizationId, plan.since, now);
   const usedMicros = runs.reduce(
     (sum, run) =>
       sum +
@@ -45,7 +35,7 @@ export async function sandboxAllowance(
     0,
   );
   return {
-    limitMicros: (limitCents * MICROS_PER_DOLLAR) / 100,
+    limitMicros: (plan.limitCents * MICROS_PER_DOLLAR) / 100,
     usedMicros: Math.round(usedMicros),
   };
 }
@@ -57,7 +47,7 @@ export function sandboxHoursLeft(allowance: { limitMicros: number; usedMicros: n
   return hours >= 1 ? Math.floor(hours) : Math.floor(hours * 10) / 10;
 }
 
-/** Whether a computer of this kind bills and its organization spent this month's allowance. */
+/** Whether a computer of this kind bills and its organization spent this period's allowance. */
 export async function sandboxAllowanceUsedUp(
   deps: AllowanceDeps,
   computer: { spaceId: string; kind: string },

@@ -420,6 +420,10 @@ msgstr "{toolCount, plural, one {#個のツール} other {#個のツール}}"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/ModelCredits.tsx
+msgid "/ month"
+msgstr ""
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr ""
@@ -1023,6 +1027,10 @@ msgstr "Bearerトークン"
 msgid "Billing"
 msgstr "請求"
 
+#: src/components/ModelCredits.tsx
+msgid "Billing period"
+msgstr ""
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "ブロック"
@@ -1152,6 +1160,7 @@ msgstr "画像を読み取れません"
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/VaultSettings.tsx
@@ -3882,6 +3891,7 @@ msgstr "月曜日"
 msgid "month"
 msgstr "月"
 
+#: src/components/ModelCredits.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "毎月"
@@ -5657,9 +5667,21 @@ msgstr ""
 msgid "Start {trialDays}-day free trial"
 msgstr "{trialDays}日間の無料トライアルを開始"
 
+#: src/components/ModelCredits.tsx
+msgid "Start plan"
+msgstr "プランを開始"
+
+#: src/components/ModelCredits.tsx
+msgid "Start plan now"
+msgstr "今すぐプランを開始"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"
 msgstr "録画を開始"
+
+#: src/components/ModelCredits.tsx
+msgid "Start your plan now?"
+msgstr "今すぐプランを開始しますか？"
 
 #: src/pages/ActivityList.tsx
 msgid "Starting"
@@ -5734,6 +5756,10 @@ msgstr ""
 #: src/pages/Paywall.tsx
 msgid "Subscribe"
 msgstr "申し込む"
+
+#: src/components/ModelCredits.tsx
+msgid "Subscribe for {annualPrice} / year"
+msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
@@ -6149,12 +6175,17 @@ msgstr "トライアル"
 msgid "Trial ends {day}"
 msgstr "トライアル終了: {day}"
 
+#: src/components/ModelCredits.tsx
+msgid "Trials get fewer hours to prevent abuse."
+msgstr "不正利用を防ぐため、トライアルでは時間が少なくなっています。"
+
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "信頼済みサイト"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "再試行"
 
@@ -6561,6 +6592,10 @@ msgstr "ワークスペース"
 msgid "year"
 msgstr "年"
 
+#: src/components/ModelCredits.tsx
+msgid "Yearly"
+msgstr ""
+
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Yesterday"
@@ -6637,6 +6672,14 @@ msgstr "自分のサブスクリプションまたはAPIキー"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "実際の仕事を任せられる、<0/>常時稼働のエージェントチーム。"
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged {price} today."
+msgstr "トライアルが終了し、本日カードに{price}が請求されます。"
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged today."
+msgstr "トライアルが終了し、本日カードに請求されます。"
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

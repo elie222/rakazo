@@ -420,6 +420,10 @@ msgstr "{toolCount, plural, one {# 个工具} other {# 个工具}}"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/ModelCredits.tsx
+msgid "/ month"
+msgstr ""
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr "1 个工作区"
@@ -1023,6 +1027,10 @@ msgstr "Bearer token"
 msgid "Billing"
 msgstr "账单"
 
+#: src/components/ModelCredits.tsx
+msgid "Billing period"
+msgstr ""
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "阻止"
@@ -1152,6 +1160,7 @@ msgstr "无法读取图像"
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/VaultSettings.tsx
@@ -3882,6 +3891,7 @@ msgstr "周一"
 msgid "month"
 msgstr "月"
 
+#: src/components/ModelCredits.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "每月"
@@ -5657,9 +5667,21 @@ msgstr "启动"
 msgid "Start {trialDays}-day free trial"
 msgstr "开始 {trialDays} 天免费试用"
 
+#: src/components/ModelCredits.tsx
+msgid "Start plan"
+msgstr "开始套餐"
+
+#: src/components/ModelCredits.tsx
+msgid "Start plan now"
+msgstr "立即开始套餐"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"
 msgstr "开始录制"
+
+#: src/components/ModelCredits.tsx
+msgid "Start your plan now?"
+msgstr "立即开始你的套餐？"
 
 #: src/pages/ActivityList.tsx
 msgid "Starting"
@@ -5734,6 +5756,10 @@ msgstr "提交插件"
 #: src/pages/Paywall.tsx
 msgid "Subscribe"
 msgstr "订阅"
+
+#: src/components/ModelCredits.tsx
+msgid "Subscribe for {annualPrice} / year"
+msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
@@ -6149,12 +6175,17 @@ msgstr "试用"
 msgid "Trial ends {day}"
 msgstr "试用将于 {day} 结束"
 
+#: src/components/ModelCredits.tsx
+msgid "Trials get fewer hours to prevent abuse."
+msgstr "为防止滥用，试用期的时长较少。"
+
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "受信任的网站"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "重试"
 
@@ -6561,6 +6592,10 @@ msgstr "工作区"
 msgid "year"
 msgstr "年"
 
+#: src/components/ModelCredits.tsx
+msgid "Yearly"
+msgstr ""
+
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Yesterday"
@@ -6637,6 +6672,14 @@ msgstr "你的订阅或 API 密钥"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "你的一支随时在线的 Agent 团队<0/>可以交给它们真正的工作。"
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged {price} today."
+msgstr "试用将结束，今天将从你的卡中扣款 {price}。"
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged today."
+msgstr "试用将结束，今天将从你的卡中扣款。"
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

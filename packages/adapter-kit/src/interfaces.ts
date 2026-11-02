@@ -479,6 +479,8 @@ export interface BillingProvider {
   setMonthlyCredits?(customerId: string, amountCents: number): Promise<void>;
   /** Flat monthly own-key plan: access without credits. */
   createByokCheckout?(input: BillingByokCheckoutRequest): Promise<{ url: string }>;
+  /** Ends the customer's running trial now and bills the first period; a no-op without one. */
+  endTrial?(customerId: string): Promise<void>;
   /** Ends every live own-key plan at its period end. */
   endByokPlans?(customerId: string): Promise<void>;
   /**
