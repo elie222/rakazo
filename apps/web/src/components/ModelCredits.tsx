@@ -297,6 +297,7 @@ export function ModelCreditsSettings({
     : null;
   // A live subscription without monthly credits is the own-key plan, at the price it was bought at.
   const ownKeyPlan =
+    status.funding === "byok" &&
     status.byokPriceCents &&
     !status.monthlyAmountCents &&
     LIVE_STATES.includes(status.state) &&
