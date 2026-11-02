@@ -107,7 +107,6 @@ export function useThreadHeader({
         onBotActions: showBotActions,
         onComputer: openBotComputer,
         menuActions: botActions,
-        computerLabel: t("Open computer"),
       }),
       ...(readOnly
         ? trailingHeaderOptions(t("Restore"), () => void restoreConversation(), restoring)
@@ -167,7 +166,6 @@ export function useThreadHeader({
   }
 
   const botActions = [
-    ...(!readOnly && botId ? [{ text: t("Open computer"), onPress: openBotComputer }] : []),
     {
       text: t("Profile"),
       onPress: () =>

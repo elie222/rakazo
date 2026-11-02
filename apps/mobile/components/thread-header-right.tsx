@@ -23,7 +23,6 @@ export function threadHeaderRight({
   onBotActions,
   onComputer,
   menuActions,
-  computerLabel,
 }: {
   inGroup: boolean;
   readOnly: boolean;
@@ -35,8 +34,6 @@ export function threadHeaderRight({
   onBotActions: () => void;
   onComputer?: () => void;
   menuActions: readonly ThreadHeaderAction[];
-  /** The menu action that gets the computer icon. */
-  computerLabel?: string;
 }): NativeStackNavigationOptions {
   return {
     ...(Platform.OS === "ios" && !readOnly && (!inGroup || iosAtLeast(26))
@@ -73,9 +70,6 @@ export function threadHeaderRight({
                       type: "action" as const,
                       label: action.text,
                       destructive: action.destructive,
-                      ...(action.text === computerLabel
-                        ? { icon: { type: "sfSymbol" as const, name: "desktopcomputer" } }
-                        : {}),
                       onPress: action.onPress,
                     })),
                   },
