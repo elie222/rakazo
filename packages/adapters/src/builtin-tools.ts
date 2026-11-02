@@ -4,6 +4,8 @@ import {
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BotSecretName,
   botSecretDestinationSchema,
+  FEEDBACK_DESCRIPTION_MAX_LENGTH,
+  FEEDBACK_KINDS,
   FLEET_TOOL_NAMES,
   GenerateSecretInput,
   HISTORY_QUERIES_MAX_BYTES,
@@ -1684,6 +1686,24 @@ export const builtinAgentTools: ConnectorTool[] = [
           description: "false unsubscribes from Rakazo's product emails; true resubscribes.",
         },
       },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "feedback",
+    description:
+      "Send a bug report or product feedback about Rakazo to the people who run this server. Only when the user asks you to report something. Describe what happened and what was expected in general terms; leave out names, contact details, message text, credentials and other personal details. The report already identifies this chat, bot and run.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        kind: { type: "string", enum: [...FEEDBACK_KINDS] },
+        description: {
+          type: "string",
+          maxLength: FEEDBACK_DESCRIPTION_MAX_LENGTH,
+          description: "What went wrong or what the user suggests, without personal details.",
+        },
+      },
+      required: ["kind", "description"],
       additionalProperties: false,
     },
   },

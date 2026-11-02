@@ -96,6 +96,12 @@ jobs:
         # Skip --with-deps: GitHub ubuntu-latest already has Chromium's OS libraries,
         # and apt-get against azure.archive.ubuntu.com can stall until the job timeout.
         run: pnpm --filter @rakazo/web exec playwright install chromium
+      - name: Install agent-browser
+        timeout-minutes: 2
+        # The page-browser tests run the computer image's helper, which drives Chromium through it.
+        run: |
+          infra/sandboxes/computer/install-agent-browser.sh "$RUNNER_TEMP/agent-browser"
+          echo "RAKAZO_AGENT_BROWSER=$RUNNER_TEMP/agent-browser/agent-browser" >> "$GITHUB_ENV"
       - name: Validate E2B credentials
         if: inputs.sandbox_provider == 'e2b'
         env:

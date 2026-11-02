@@ -33,7 +33,7 @@ export function isEditableTarget(target: EventTarget | null) {
  * Safari claims Cmd-Shift-] and Cmd-Shift-[ for its own tabs, and not while typing, where they select.
  */
 export function shellShortcut(event: KeyboardEvent, host: ShortcutHost): ShellShortcut | null {
-  if (event.repeat) return null;
+  if (event.repeat || !event.key) return null;
   const key = event.key.toLowerCase();
   if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey) {
     if (key === "k") return { type: "command-menu" };
@@ -77,7 +77,7 @@ export function shellShortcut(event: KeyboardEvent, host: ShortcutHost): ShellSh
 /** A printable key pressed outside any text field, which belongs in the composer. */
 export function startsTyping(event: KeyboardEvent) {
   return (
-    event.key.length === 1 &&
+    event.key?.length === 1 &&
     event.key !== " " &&
     !event.metaKey &&
     !event.ctrlKey &&

@@ -49,6 +49,7 @@ import {
   callRemoteMcpTool,
   createSafeRemoteFetch,
   listRemoteMcpTools,
+  RemoteMcpSessionCache,
 } from "./remote-mcp.js";
 
 const ModelHeaderName = HeaderName.refine(
@@ -103,6 +104,9 @@ export type RemoteConnectorDependencies = RemoteTransportDependencies;
 type RemoteRequestPolicy = RemoteConnectorDependencies & RemoteUrlPolicy;
 
 export class InstalledConnectorProvider implements ConnectorProvider {
+  /** Run-scoped MCP sessions, so a stateful server sees one session per run. */
+  private readonly mcpSessions = new RemoteMcpSessionCache();
+
   constructor(
     private readonly prisma: PrismaClient,
     private readonly secrets: SecretStore,
@@ -118,6 +122,36 @@ export class InstalledConnectorProvider implements ConnectorProvider {
       ...this.remote,
       allowPrivateEndpoint: this.allowPrivateEndpoint,
     };
+  }
+
+  /** Session reuse only inside one run, lasting the run rather than one
+   * attempt; discovery and calls outside a run (settings, verification) keep
+   * one session per call. */
+  private mcpSessionOptions(
+    context: AdapterContext,
+    install: Pick<InstalledRow, "id">,
+  ): {
+    sessionScope?: string;
+    sessionPool?: RemoteMcpSessionCache;
+    sessionRunId?: string;
+  } {
+    if (!context.runId) return {};
+    return {
+      sessionScope: `${context.spaceId} ${context.userId} ${context.runId} ${install.id}`,
+      sessionPool: this.mcpSessions,
+      sessionRunId: context.runId,
+    };
+  }
+
+  /** Close the run-scoped MCP sessions of a run that ended on this worker;
+   * see `RemoteMcpSessionCache.endRun`. */
+  endRun(runId: string): void {
+    this.mcpSessions.endRun(runId);
+  }
+
+  /** Close every run-scoped MCP session; for shutdown. */
+  async close(): Promise<void> {
+    await this.mcpSessions.close();
   }
 
   describe() {
@@ -183,6 +217,7 @@ export class InstalledConnectorProvider implements ConnectorProvider {
           endpoint: install.source,
           headers: connectorHeaders(config, credential),
           signal: context.signal,
+          ...this.mcpSessionOptions(context, install),
         });
         return tools.map((tool) => ({
           ...tool,
@@ -278,6 +313,7 @@ export class InstalledConnectorProvider implements ConnectorProvider {
             endpoint: install.source,
             headers: connectorHeaders(config, credential),
             signal: context.signal,
+            ...this.mcpSessionOptions(context, install),
           },
           call.route?.toolName ?? call.tool,
           call.args,

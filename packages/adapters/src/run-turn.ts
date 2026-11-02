@@ -214,12 +214,13 @@ async function runLeaseLost(ctx: RunContext) {
     where: { id: runId },
     select: { status: true, leaseOwner: true, leaseFence: true, checkpoint: true },
   });
-  if (
-    !still ||
-    still.status === "cancelled" ||
-    still.leaseOwner !== workerId ||
-    still.leaseFence !== fence
-  ) {
+  if (!still || still.status === "cancelled" || still.leaseOwner !== workerId) {
+    lease.valid = false;
+    return true;
+  }
+  if (still.leaseFence !== fence) {
+    // A newer attempt of this run recovered it in this process (same worker, new
+    // fence): only this attempt's writes must stop, the run's state stays.
     lease.valid = false;
     return true;
   }
