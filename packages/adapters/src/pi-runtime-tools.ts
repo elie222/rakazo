@@ -319,8 +319,11 @@ function toAgentTool(
     // Pi runs a turn's tool calls concurrently by default, so a batch that
     // creates a routine and lists routines can read the list before the row
     // exists. Pi runs the whole batch in order when any call in it is
-    // sequential. Remember also needs this to avoid competing revision writes.
-    ...(SCHEDULE_TOOL_NAMES.has(tool.name) || tool.name === "remember"
+    // sequential. Remember also needs this to avoid competing revision writes, and request_secret
+    // so a sibling request cannot start after one pauses for its card and share its answer.
+    ...(SCHEDULE_TOOL_NAMES.has(tool.name) ||
+    tool.name === "remember" ||
+    tool.name === "request_secret"
       ? { executionMode: "sequential" as const }
       : {}),
     parameters: parametersFor(tool),
