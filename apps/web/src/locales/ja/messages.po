@@ -2754,7 +2754,7 @@ msgstr "メールアドレスの確認が必要です"
 msgid "Enable {0}"
 msgstr "{0}を有効にする"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr "{day}に終了"
 
@@ -4885,7 +4885,7 @@ msgstr "名前を変更"
 msgid "Rename section"
 msgstr "セクション名を変更"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Renews {day}"
 msgstr "{day}に更新"
 
@@ -6121,7 +6121,7 @@ msgstr "Tregトークン"
 msgid "Trial"
 msgstr "トライアル"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Trial ends {day}"
 msgstr "トライアル終了: {day}"
 

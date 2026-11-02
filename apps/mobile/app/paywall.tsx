@@ -38,6 +38,7 @@ import {
   planEndsAt,
   purchaseCompleted,
   setPaywallShown,
+  subscribedPlan,
 } from "../lib/billing";
 import { translucentColor } from "../lib/color";
 import { dateLocaleForUi, useI18n } from "../lib/i18n";
@@ -245,6 +246,8 @@ export default function Paywall() {
   }
 
   const offer = ownKeyOffer(status);
+  // From Billing, the plan already paid for is marked and cannot be bought again.
+  const subscribed = dismissible ? subscribedPlan(status) : null;
   const ownKeyPrice = status.byokPriceCents ? `$${status.byokPriceCents / 100}` : null;
   const creditPrice = `$${amount / 100}`;
   const features: { label: string; ios: string; android: SymbolName; color: string }[] = [
@@ -343,7 +346,11 @@ export default function Paywall() {
             price={ownKeyPrice ? t("{price} / month", { price: ownKeyPrice }) : t("Free")}
             detail={t("Works with your ChatGPT or Claude plan.")}
             badge={
-              offer === "trial" ? t("{days} days free", { days: status.trialDays }) : undefined
+              subscribed === "byok"
+                ? t("Current plan")
+                : offer === "trial"
+                  ? t("{days} days free", { days: status.trialDays })
+                  : undefined
             }
           />
           {status.creditPurchasesEnabled === false ? null : (
@@ -351,6 +358,7 @@ export default function Paywall() {
               selected={plan === "credits"}
               onPress={() => setPlan("credits")}
               title={t("Rakazo credits")}
+              badge={subscribed === "credits" ? t("Current plan") : undefined}
               price={
                 <MenuView
                   actions={MODEL_CREDIT_AMOUNTS.map((value) => ({
@@ -412,8 +420,13 @@ export default function Paywall() {
         <View style={styles.footer}>
           {status.canManage ? (
             <>
-              <NativeActionButton label={cta} busy={pending} onPress={() => void choose()} />
-              {terms ? (
+              <NativeActionButton
+                label={cta}
+                busy={pending}
+                disabled={plan === subscribed}
+                onPress={() => void choose()}
+              />
+              {terms && plan !== subscribed ? (
                 <Text style={[styles.terms, { color: tokens.mutedForeground }]}>{terms}</Text>
               ) : null}
             </>

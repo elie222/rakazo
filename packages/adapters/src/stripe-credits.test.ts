@@ -94,6 +94,28 @@ describe("Stripe prepaid model credits", () => {
     });
     expect(requests.at(-1)!.params.get("subscription_data[trial_period_days]")).toBe("7");
   });
+  it("reports the price an own-key subscription was bought at", async () => {
+    const { provider } = fixture({
+      "/v1/subscriptions": {
+        data: [
+          {
+            id: "sub_byok",
+            status: "active",
+            metadata: { rakazo_plan: "byok" },
+            created: 1,
+            items: {
+              data: [{ id: "si_byok", quantity: 1, price: { id: "price_old", unit_amount: 1000 } }],
+            },
+          },
+        ],
+        has_more: false,
+      },
+    });
+    await expect(provider.getCustomerSubscription("cus_fixture")).resolves.toMatchObject({
+      byokPlan: true,
+      byokPriceCents: 1000,
+    });
+  });
   it("rejects invalid purchase amounts without contacting Stripe", async () => {
     const { provider, requests } = fixture();
     await expect(

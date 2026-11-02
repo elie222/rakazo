@@ -2754,7 +2754,7 @@ msgstr "ईमेल सत्यापन आवश्यक है"
 msgid "Enable {0}"
 msgstr "{0} सक्षम करें"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr ""
 
@@ -4885,7 +4885,7 @@ msgstr "नाम बदलें"
 msgid "Rename section"
 msgstr "अनुभाग का नाम बदलें"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Renews {day}"
 msgstr ""
 
@@ -6121,7 +6121,7 @@ msgstr "Treg टोकन"
 msgid "Trial"
 msgstr ""
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Trial ends {day}"
 msgstr ""
 

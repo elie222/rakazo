@@ -2754,7 +2754,7 @@ msgstr "Требуется подтверждение электронной п�
 msgid "Enable {0}"
 msgstr "Включить {0}"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr ""
 
@@ -4885,7 +4885,7 @@ msgstr "Переименовать"
 msgid "Rename section"
 msgstr "Переименовать раздел"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Renews {day}"
 msgstr ""
 
@@ -6121,7 +6121,7 @@ msgstr "Токен Treg"
 msgid "Trial"
 msgstr ""
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Trial ends {day}"
 msgstr ""
 

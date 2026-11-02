@@ -998,6 +998,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Use Rakazo credits": "Rakazo-tegoed gebruiken",
   "Choose a plan": "Kies een abonnement",
   "Change plan": "Abonnement wijzigen",
+  "Current plan": "Huidig abonnement",
   Plan: "Abonnement",
   None: "Geen",
   "Free trial": "Gratis proefperiode",

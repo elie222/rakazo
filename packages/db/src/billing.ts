@@ -108,6 +108,7 @@ export async function replaceBillingCustomer(
     data: {
       customerId: input.customerId,
       creditAmountCents: null,
+      byokPriceCents: null,
       subscriptionId: null,
       subscriptionItemId: null,
       priceId: null,
@@ -181,6 +182,7 @@ export async function syncBillingSnapshot(
     where: { customerId, OR: [{ syncedAt: null }, { syncedAt: { lt: startedAt } }] },
     data: {
       creditAmountCents: snapshot?.creditAmountCents ?? null,
+      byokPriceCents: snapshot?.byokPriceCents ?? null,
       subscriptionId: snapshot?.subscriptionId ?? null,
       subscriptionItemId: snapshot?.subscriptionItemId ?? null,
       priceId: snapshot?.priceId ?? null,

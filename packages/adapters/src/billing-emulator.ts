@@ -139,6 +139,7 @@ export class BillingEmulator implements BillingProvider {
       subscriptionItemId: `si_byok_${n}`,
       priceId: BYOK_PRICE_ID,
       byokPlan: true,
+      byokPriceCents: checkout.amountCents,
       cardFingerprint,
       status: trialEndsAt ? "trialing" : "active",
       seats: 1,

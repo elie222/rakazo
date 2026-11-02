@@ -2754,7 +2754,7 @@ msgstr "נדרש אימות אימייל"
 msgid "Enable {0}"
 msgstr "הפעלת {0}"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr "מסתיים ב-{day}"
 
@@ -4885,7 +4885,7 @@ msgstr "שינוי שם"
 msgid "Rename section"
 msgstr "שינוי שם המקטע"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Renews {day}"
 msgstr "מתחדש ב-{day}"
 
@@ -6121,7 +6121,7 @@ msgstr "טוקן Treg"
 msgid "Trial"
 msgstr "תקופת ניסיון"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Trial ends {day}"
 msgstr "תקופת הניסיון מסתיימת {day}"
 

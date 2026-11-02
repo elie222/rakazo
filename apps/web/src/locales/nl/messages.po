@@ -2754,7 +2754,7 @@ msgstr "E-mailverificatie vereist"
 msgid "Enable {0}"
 msgstr "{0} inschakelen"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr "Eindigt op {day}"
 
@@ -4885,7 +4885,7 @@ msgstr "Naam wijzigen"
 msgid "Rename section"
 msgstr "Sectie hernoemen"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Renews {day}"
 msgstr "Wordt verlengd op {day}"
 
@@ -6121,7 +6121,7 @@ msgstr "Treg-token"
 msgid "Trial"
 msgstr "Proefperiode"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Trial ends {day}"
 msgstr "Proefperiode eindigt op {day}"
 

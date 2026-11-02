@@ -1006,6 +1006,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Use Rakazo credits": "Rakazo-Guthaben verwenden",
   "Choose a plan": "Tarif wählen",
   "Change plan": "Tarif ändern",
+  "Current plan": "Aktueller Tarif",
   Plan: "Tarif",
   None: "Keiner",
   "Free trial": "Kostenlose Testphase",
