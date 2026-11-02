@@ -13,7 +13,7 @@ const avatar = (name: string) => `/brand/job-bots/${name}.webp`;
 <div class:list={["feature-illustration", `feature-illustration--${kind}`]} aria-hidden="true">
   <div class="fi-card">
     {kind === "model" ? (
-      [["coding-agent", "Claude Sonnet"], ["account-manager", "GPT"]].map(([bot, model]) => (
+      [["coding-agent", "Claude Sonnet 5.5"], ["account-manager", "GPT-6.1 Sol"]].map(([bot, model]) => (
         <div class="fi-row">
           <img class="fi-avatar" src={avatar(bot)} alt="" width="28" height="28" loading="lazy" />
           <span class="fi-select">
@@ -124,7 +124,8 @@ const avatar = (name: string) => `/brand/job-bots/${name}.webp`;
   @container (max-width: 300px) {
     .fi-card { --gutter: 16px; padding: 12px; font-size: 13px; }
     .fi-row { gap: 8px; }
-    .fi-select { gap: 6px; padding: 0 8px 0 10px; }
+    .fi-select { padding: 0 10px; }
+    .fi-select svg { display: none; }
     .fi-clock { display: none; }
     .fi-when { white-space: normal; }
     .fi-button { min-width: 0; padding: 0 10px; font-size: 12.5px; }
