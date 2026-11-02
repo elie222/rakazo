@@ -14,7 +14,7 @@ import {
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Platform, View } from "react-native";
+import { I18nManager, Platform, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { readableGutters } from "../../lib/adaptive-layout";
@@ -31,7 +31,11 @@ import { useInboxBot } from "../../lib/search-inbox";
 import { useSplitView } from "../../lib/split-view";
 import { useIncomingShareImport, useThreadAttachments } from "../../lib/thread-attachments";
 import { useThreadBots } from "../../lib/thread-bots";
-import { threadHeaderClearance, threadHeaderFloats } from "../../lib/thread-edges";
+import {
+  threadColumnPadding,
+  threadHeaderClearance,
+  threadHeaderFloats,
+} from "../../lib/thread-edges";
 import { useThreadFeedback } from "../../lib/thread-feedback";
 import { useThreadFocus } from "../../lib/thread-focus";
 import { useThreadSnapshot } from "../../lib/thread-history";
@@ -94,6 +98,10 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     right: insets.right,
   });
   const columnWidth = windowWidth - columnInsets.left - columnInsets.right;
+  const columnPadding = useMemo(
+    () => threadColumnPadding(columnInsets, I18nManager.isRTL),
+    [columnInsets.left, columnInsets.right],
+  );
   const {
     botId,
     groupId,
@@ -550,8 +558,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         style={{
           flex: 1,
           backgroundColor: tokens.background,
-          paddingLeft: 20 + columnInsets.left,
-          paddingRight: 20 + columnInsets.right,
         }}
       >
         {/* The keyboard's padding shrinks this, so the floating composer rides above it. */}
@@ -562,6 +568,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
             threadKey={threadKey}
             headerClearance={headerClearance}
             bottomInset={bottomInset}
+            columnPadding={columnPadding}
             visibleMessages={visibleMessages}
             liveItems={liveItems}
             renderItem={renderItem}
@@ -576,6 +583,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
           {/* Shrinks (the suggestion lists scroll) so the input and Send stay above the keyboard. */}
           <ThreadComposerDock
             hidden={readOnly}
+            columnPadding={columnPadding}
             notice={<ThreadFetchErrorNotice error={error} showingSaved={showingSaved} />}
             onHeight={setDockHeight}
             replyTarget={replyTarget}
