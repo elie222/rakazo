@@ -220,6 +220,7 @@ x-app-environment: &app-environment
   # Tools and integrations
   WEB_PROVIDER:
   KEENABLE_API_KEY:
+  OUTCRAWL_API_KEY:
   COMPOSIO_API_KEY:
   PIPEDREAM_CLIENT_ID:
   PIPEDREAM_CLIENT_SECRET:

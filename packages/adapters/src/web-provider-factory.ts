@@ -2,6 +2,7 @@ import type { WebProvider } from "@rakazo/adapter-kit";
 import { FakeWebProvider } from "./fake-web.js";
 import { KeenableWebProvider } from "./keenable-web.js";
 import { KeylessHttpWebProvider } from "./keyless-http-web.js";
+import { OutcrawlWebProvider } from "./outcrawl-web.js";
 import { ParallelWebProvider } from "./parallel-web.js";
 
 /**
@@ -25,6 +26,8 @@ export function createWebProvider(
       return new ParallelWebProvider(options);
     case "keenable":
       return new KeenableWebProvider(options);
+    case "outcrawl":
+      return new OutcrawlWebProvider(options);
     case "fake":
       return new FakeWebProvider();
     case "keyless-http":

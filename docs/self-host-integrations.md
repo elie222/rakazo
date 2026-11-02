@@ -27,6 +27,14 @@ servers. Anonymous access is rate limited per IP address; set `KEENABLE_API_KEY`
 worker to send a key and lift those limits. Errors, per-bot disabled tools and the way back to
 the default work as described for Parallel.
 
+To choose [Outcrawl](https://outcrawl.ai/docs) instead, set `WEB_PROVIDER=outcrawl` and
+`OUTCRAWL_API_KEY` on the API and worker, then restart both. The same bot tools then return
+search snippets and page markdown from Outcrawl's HTTPS API at `https://api.outcrawl.ai/v1`,
+which renders pages in a browser on its servers. This option sends search queries and requested
+page URLs to Outcrawl; private and local page URLs are refused before they are sent. An API key is
+required (there is a free tier of 1,000 credits a month). Errors, per-bot disabled tools and the
+way back to the default work as described for Parallel.
+
 ## Self-hosted memory
 
 Supermemory and Honcho can run on your own network. In **Settings → Memory**, choose **Local**

@@ -1,9 +1,10 @@
 import type { AdapterContext, WebProvider } from "@rakazo/adapter-kit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FakeWebProvider } from "./fake-web.js";
 import { KeenableWebProvider } from "./keenable-web.js";
 import { keenableMcpFixture } from "./keenable-web.test-support.js";
 import { KeylessHttpWebProvider, parseDuckDuckGoResults } from "./keyless-http-web.js";
+import { OutcrawlWebProvider } from "./outcrawl-web.js";
 import { ParallelWebProvider } from "./parallel-web.js";
 import { parallelMcpFixture } from "./parallel-web.test-support.js";
 
@@ -43,6 +44,22 @@ describe("web provider conformance", () => {
   });
   it("holds for Keenable through the real MCP transport (offline)", async () => {
     await assertWebConformance(new KeenableWebProvider(keenableMcpFixture().network));
+  });
+  it("holds for Outcrawl with an injected fetch (offline)", async () => {
+    vi.stubEnv("OUTCRAWL_API_KEY", "synthetic-key");
+    const fetchMock: typeof fetch = async (input) => {
+      const body = String(input).endsWith("/v1/search")
+        ? { hits: [{ url: "https://example.test/page", title: "Hit", snippet: "Snippet" }] }
+        : { statusCode: 200, markdown: "Readable body text.", metadata: { title: "Page" } };
+      return new Response(JSON.stringify(body), { status: 200 });
+    };
+    try {
+      await assertWebConformance(
+        new OutcrawlWebProvider({ fetch: fetchMock, resolveHostname: publicResolver }),
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
   it("holds for fake (offline)", async () => {
     const fake = new FakeWebProvider();
