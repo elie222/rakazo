@@ -1,6 +1,5 @@
 import type { ModelUsageSort, ModelUsageSortInverted } from "@rakazo/core";
 import {
-  LEGACY_MODEL_USAGE_SORT_DIRECTION_KEY,
   MODEL_USAGE_SORT_INVERTED_KEY,
   MODEL_USAGE_SORT_KEY,
   normalizeModelUsageSort,
@@ -32,11 +31,8 @@ export function getModelUsageSort(): ModelUsageSort {
 export function getModelUsageSortInverted(): ModelUsageSortInverted {
   if (invertedPreference !== null) return invertedPreference;
   try {
-    const storedInverted = storage()?.getItem(MODEL_USAGE_SORT_INVERTED_KEY);
-    const legacyDirection = storage()?.getItem(LEGACY_MODEL_USAGE_SORT_DIRECTION_KEY);
-    const legacyOrder = storage()?.getItem(MODEL_USAGE_SORT_KEY);
     invertedPreference = normalizeModelUsageSortInverted(
-      storedInverted ?? legacyDirection ?? legacyOrder,
+      storage()?.getItem(MODEL_USAGE_SORT_INVERTED_KEY),
     );
   } catch {
     invertedPreference = false;

@@ -7,7 +7,6 @@ import type {
 
 export const MODEL_USAGE_SORT_KEY = "rakazo.modelUsageSort";
 export const MODEL_USAGE_SORT_INVERTED_KEY = "rakazo.modelUsageSortInverted";
-export const LEGACY_MODEL_USAGE_SORT_DIRECTION_KEY = "rakazo.modelUsageSortDirection";
 
 export const MODEL_USAGE_SORT_OPTIONS = [
   "main-model",
@@ -20,11 +19,10 @@ export type ModelUsageSort = (typeof MODEL_USAGE_SORT_OPTIONS)[number];
 export type ModelUsageSortInverted = boolean;
 
 export function normalizeModelUsageSortInverted(value: unknown): ModelUsageSortInverted {
-  return value === true || value === "true" || value === "reversed" || value === "least-remaining";
+  return value === true || value === "true";
 }
 
 export function normalizeModelUsageSort(value: unknown): ModelUsageSort {
-  if (value === "most-remaining" || value === "least-remaining") return "quota";
   return MODEL_USAGE_SORT_OPTIONS.includes(value as ModelUsageSort)
     ? (value as ModelUsageSort)
     : "quota";

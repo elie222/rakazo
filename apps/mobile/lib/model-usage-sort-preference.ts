@@ -1,6 +1,5 @@
 import type { ModelUsageSort, ModelUsageSortInverted } from "@rakazo/core";
 import {
-  LEGACY_MODEL_USAGE_SORT_DIRECTION_KEY,
   MODEL_USAGE_SORT_INVERTED_KEY,
   MODEL_USAGE_SORT_KEY,
   normalizeModelUsageSort,
@@ -18,10 +17,9 @@ export async function loadModelUsageSort(): Promise<ModelUsageSort> {
 
 export async function loadModelUsageSortInverted(): Promise<ModelUsageSortInverted> {
   try {
-    const storedInverted = await SecureStore.getItemAsync(MODEL_USAGE_SORT_INVERTED_KEY);
-    const legacyDirection = await SecureStore.getItemAsync(LEGACY_MODEL_USAGE_SORT_DIRECTION_KEY);
-    const legacyOrder = await SecureStore.getItemAsync(MODEL_USAGE_SORT_KEY);
-    return normalizeModelUsageSortInverted(storedInverted ?? legacyDirection ?? legacyOrder);
+    return normalizeModelUsageSortInverted(
+      await SecureStore.getItemAsync(MODEL_USAGE_SORT_INVERTED_KEY),
+    );
   } catch {
     return false;
   }
