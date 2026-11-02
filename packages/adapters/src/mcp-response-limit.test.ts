@@ -60,6 +60,12 @@ describe("limitMcpResponseBody", () => {
     await expect(limited.text()).rejects.toThrow(McpResponseTooLargeError);
   });
 
+  it("counts both bytes of each CRLF toward the event limit", async () => {
+    const lines = "data:0\r\n".repeat(Math.ceil(MAX / 8) + 1);
+    const limited = limitMcpResponseBody(streamed([`${lines}\r\n`], sse), MAX);
+    await expect(limited.text()).rejects.toThrow(McpResponseTooLargeError);
+  });
+
   it("ignores a stream's declared length", async () => {
     const response = streamed(["data: ok\n\n"], { ...sse, "content-length": String(MAX + 1) });
     await expect(limitMcpResponseBody(response, MAX).text()).resolves.toBe("data: ok\n\n");

@@ -39,6 +39,7 @@ export function limitMcpResponseBody(
     for (const byte of chunk) {
       if (byte === LF && previous === CR) {
         previous = byte;
+        if (++size > maxBytes) return true;
         continue;
       }
       if (byte === CR || byte === LF) {
