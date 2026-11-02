@@ -757,13 +757,13 @@ describe("web markdown prose fences", () => {
     return holder;
   }
 
-  it.each(["text", "txt", "plaintext", ""])("wraps a fence marked %j as prose", (language) => {
+  it.each(["text", "txt", "plaintext", "Text"])("wraps a fence marked %j as prose", (language) => {
     const html = renderMarkdown(`\`\`\`${language}\n${draft}\n\`\`\``);
     expect(html.querySelector("pre")?.className).toBe("rk-chat-markdown-pre-prose");
   });
 
-  it("keeps a fence with a programming language as code", () => {
-    const html = renderMarkdown("```ts\nconst a = 1;\n```");
+  it.each(["ts", ""])("keeps a fence marked %j as code", (language) => {
+    const html = renderMarkdown(`\`\`\`${language}\nconst a = 1;\n\`\`\``);
     expect(html.querySelector("pre")?.className).toBe("");
   });
 

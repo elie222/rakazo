@@ -928,8 +928,8 @@ function FenceHeader({ language, styleMap }: { language: string; styleMap: Markd
 }
 
 /**
- * A fence an author writes prose in (text, txt, plaintext, no language). Its lines wrap in the
- * body font instead of keeping their shape and scrolling sideways.
+ * A fence marked as plain text. Its lines wrap in the body font instead of keeping their shape
+ * and scrolling sideways.
  */
 function ProseFence({
   code,

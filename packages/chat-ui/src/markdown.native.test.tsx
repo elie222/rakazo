@@ -527,7 +527,7 @@ describe("native markdown code blocks", () => {
     "preserves blank fence lines without adding a trailing row: %j",
     (code) => {
       const html = renderToStaticMarkup(
-        <ChatMarkdown colorScheme="light">{`\`\`\`ts\n${code}`}</ChatMarkdown>,
+        <ChatMarkdown colorScheme="light">{`\`\`\`\n${code}`}</ChatMarkdown>,
       );
       const document = new DOMParser().parseFromString(html, "text/html");
       const rows = document.querySelectorAll("rn-scroll-view rn-view[data-flex-direction='row']");
@@ -559,7 +559,7 @@ describe("native markdown code blocks", () => {
       900,
       true,
     ],
-    ["keeps a fence that fits still", "```ts\nok\n```", 40, false],
+    ["keeps a fence that fits still", "```\nok\n```", 40, false],
     [
       "scrolls an indented code block with a line wider than the bubble",
       `    ${LONG_LINE}`,
@@ -613,7 +613,7 @@ describe("native markdown prose fences", () => {
     return createElement("copy-probe", { "data-code": code });
   }
 
-  it.each(["text", "txt", "plaintext", ""])(
+  it.each(["text", "txt", "plaintext", "Text"])(
     "wraps a fence marked %j as prose in the body font",
     (language) => {
       const html = renderToStaticMarkup(
@@ -636,16 +636,19 @@ describe("native markdown prose fences", () => {
     },
   );
 
-  it("keeps a fence with a programming language monospaced in a sideways scroll view", () => {
-    const html = renderToStaticMarkup(
-      <ChatMarkdown colorScheme="light">{"```ts\nconst a = 1;\n```"}</ChatMarkdown>,
-    );
-    const document = new DOMParser().parseFromString(html, "text/html");
-    expect(document.querySelector("rn-scroll-view")).not.toBeNull();
-    expect(document.querySelector("rn-scroll-view rn-text")?.getAttribute("data-font-family")).toBe(
-      "ui-monospace",
-    );
-  });
+  it.each(["ts", ""])(
+    "keeps a fence marked %j monospaced in a sideways scroll view",
+    (language) => {
+      const html = renderToStaticMarkup(
+        <ChatMarkdown colorScheme="light">{`\`\`\`${language}\nconst a = 1;\n\`\`\``}</ChatMarkdown>,
+      );
+      const document = new DOMParser().parseFromString(html, "text/html");
+      expect(document.querySelector("rn-scroll-view")).not.toBeNull();
+      expect(
+        document.querySelector("rn-scroll-view rn-text")?.getAttribute("data-font-family"),
+      ).toBe("ui-monospace");
+    },
+  );
 
   it("preserves a prose fence's lines and blank lines", () => {
     const html = renderToStaticMarkup(
@@ -818,17 +821,16 @@ describe("native markdown code colours", () => {
   ] as const)("draws plain code in the %s theme's text colour", (scheme, palette, theme) => {
     const html = renderToStaticMarkup(
       <ChatMarkdown palette={palette} colorScheme={scheme}>
-        {"```bash\necho hi\n```\n\n```bash\nplain text\n```"}
+        {"```bash\necho hi\n```\n\n```\nplain text\n```"}
       </ChatMarkdown>,
     );
     const code = [...new DOMParser().parseFromString(html, "text/html").querySelectorAll("rn-text")]
-      .filter((text) => /echo|hi|plain/.test(text.textContent ?? ""))
+      .filter((text) => /echo|hi|plain text/.test(text.textContent ?? ""))
       .filter((text) => text.children.length === 0);
     expect(code.length).toBeGreaterThan(0);
     for (const text of code) expect(text.getAttribute("data-color")).toBeTruthy();
-    const plain = code.filter((text) => /^plain/.test(text.textContent ?? ""));
-    expect(plain.length).toBeGreaterThan(0);
-    for (const text of plain) expect(text.getAttribute("data-color")).toBe(theme.plain.color);
+    const plain = code.find((text) => text.textContent === "plain text");
+    expect(plain?.getAttribute("data-color")).toBe(theme.plain.color);
   });
 });
 
@@ -1082,7 +1084,7 @@ describe("native markdown type", () => {
   });
 
   it("sets code blocks in the system monospaced font at 14pt with the font's own line spacing, in a rounded box", () => {
-    const html = renderToStaticMarkup(<ChatMarkdown>{"```ts\nconst a = 1;\n```"}</ChatMarkdown>);
+    const html = renderToStaticMarkup(<ChatMarkdown>{"```\nconst a = 1;\n```"}</ChatMarkdown>);
     const document = new DOMParser().parseFromString(html, "text/html");
     const token = [...document.querySelectorAll("rn-text")].find((text) =>
       text.textContent?.includes("const"),

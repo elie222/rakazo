@@ -541,10 +541,9 @@ export function closeUnterminatedFence(markdown: string): string {
 }
 
 /**
- * A fence an author writes prose in, such as a draft email: its lines wrap and it reads in the
- * body font, not as code. Every other fence keeps the monospaced font and sideways scrolling.
+ * A fence explicitly marked as plain text, such as a draft email: it wraps in the body font. Every
+ * other fence, including one with no language, keeps the monospaced font and sideways scrolling.
  */
-export function isProseFence(language: string | undefined | null): boolean {
-  const name = (language ?? "").trim().split(/\s+/)[0]?.toLowerCase() ?? "";
-  return name === "" || name === "text" || name === "txt" || name === "plaintext";
+export function isProseFence(language: string): boolean {
+  return ["text", "txt", "plaintext"].includes(language.toLowerCase());
 }
