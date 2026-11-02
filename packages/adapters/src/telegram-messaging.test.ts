@@ -408,7 +408,7 @@ describe("Telegram groups", () => {
     expect(inbound[1]?.type === "message" && inbound[1].mentionsBot).toBeUndefined();
   });
 
-  it("delivers /stop from a private chat as a message, keeps dropping it in groups, and retries a failure", async () => {
+  it("delivers /stop from a private chat as a message, keeps dropping it in groups, and processes Telegram's retry of a failure", async () => {
     const { surface, inbound } = createGroupSurface();
     const command = (text: string) => [
       { type: "bot_command", offset: 0, length: text.split(" ")[0]!.length },
@@ -454,6 +454,11 @@ describe("Telegram groups", () => {
       throw new Error("database unavailable");
     });
     expect((await privateStop("/stop", 24, 204))?.status).toBe(500);
+    surface.onInbound(async (event) => {
+      inbound.push(event);
+    });
+    expect((await privateStop("/stop", 24, 204))?.status).toBe(200);
+    expect(inbound.slice(4)).toMatchObject([{ isDirect: true, from: "777", content: "/stop" }]);
   });
 
   it("keeps a plain reply on the group's own thread", async () => {
