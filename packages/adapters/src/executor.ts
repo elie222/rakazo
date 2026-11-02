@@ -152,11 +152,11 @@ import {
 } from "./run-lifecycle.js";
 import { withRunLease } from "./run-messages.js";
 import {
-  cloudflareRunFields,
   isTerminalModelSetupError,
   modelCreditBillingEnabled,
   resolveConnectedModelKey,
   resolveConnectedRunModel,
+  resolvedModelRunFields,
   resolveModelKey,
   resolveRunModel,
   runtimeFallbackModel,
@@ -1644,28 +1644,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 provider: runModelProvider,
                 id: runModelId,
                 ...(credential ? { connectionId: credential.id } : {}),
-                apiKey: resolved.oauth ? undefined : resolved.apiKey,
-                callObserver: resolved.callObserver,
-                ...cloudflareRunFields(resolved),
-                baseUrl: resolved.baseUrl,
-                apiProtocol: resolved.apiProtocol,
-                headers: resolved.headers,
-                allowPrivateEndpoint: resolved.allowPrivateEndpoint,
-                cacheCapabilities: resolved.cacheCapabilities,
-                contextWindow: resolved.contextWindow,
-
-                reasoning: resolved.reasoning,
-                maxTokens: resolved.maxTokens,
-                acceptsImages: resolved.acceptsImages,
-                maxImagesPerPrompt: resolved.maxImagesPerPrompt,
+                ...resolvedModelRunFields(resolved),
                 thinkingLevel: thinkingLevel ?? resolved.thinkingLevel ?? null,
-                oauth: resolved.oauth
-                  ? {
-                      credential: resolved.oauth,
-                      persist: resolved.persistOAuth,
-                      retire: resolved.retireOAuth,
-                    }
-                  : undefined,
               },
               fallbackModels: fallbackModels.map(({ provider, modelId, credentialId }) => ({
                 provider,
