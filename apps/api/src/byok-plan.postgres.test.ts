@@ -180,6 +180,11 @@ dbTests("own-key plan", () => {
     provider.completeByokCheckout(customer);
     await service.sync(customer);
     await expect(service.status(actor)).resolves.toMatchObject({ byokInterval: "month" });
+    // A subscriber on an older, cheaper monthly price would pay more by switching.
+    const plan = provider.subscriptions.at(-1)!;
+    plan.byokPriceCents = 1000;
+    await expect(service.switchToYearly(actor)).rejects.toMatchObject({ code: "CONFLICT" });
+    plan.byokPriceCents = BYOK_MONTHLY_PRICE_CENTS!;
     await service.switchToYearly(actor);
     await expect(service.status(actor)).resolves.toMatchObject({
       access: true,

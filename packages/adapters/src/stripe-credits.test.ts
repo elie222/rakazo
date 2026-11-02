@@ -107,6 +107,58 @@ describe("Stripe prepaid model credits", () => {
     expect(created?.params.get("recurring[interval]")).toBe("year");
     expect(created?.params.get("lookup_key")).toBe("rakazo_byok_yearly_14400");
   });
+  it("leaves a plan alone when it is not the live monthly plan, or credits have started", async () => {
+    const plan = (
+      id: string,
+      status: string,
+      metadata: Record<string, string>,
+      interval = "month",
+    ) => ({
+      id,
+      status,
+      metadata,
+      created: 1,
+      items: {
+        data: [
+          {
+            id: `si_${id}`,
+            quantity: 1,
+            price: { id: `price_${id}`, unit_amount: 1500, recurring: { interval } },
+          },
+        ],
+      },
+    });
+    const { provider, requests } = fixture({
+      "GET /v1/subscriptions": {
+        data: [
+          plan("sub_active", "active", { rakazo_plan: "byok" }),
+          plan("sub_unpaid", "canceled", { rakazo_plan: "byok" }),
+          plan("sub_yearly", "active", { rakazo_plan: "byok" }, "year"),
+        ],
+        has_more: false,
+      },
+    });
+    await expect(provider.switchByokToYearly("cus_fixture", "sub_unpaid", 14400)).resolves.toBe(
+      false,
+    );
+    await expect(provider.switchByokToYearly("cus_fixture", "sub_yearly", 14400)).resolves.toBe(
+      false,
+    );
+    const withCredits = fixture({
+      "GET /v1/subscriptions": {
+        data: [
+          plan("sub_active", "active", { rakazo_plan: "byok" }),
+          plan("sub_credits", "active", { rakazo_credit_cents: "3000" }),
+        ],
+        has_more: false,
+      },
+    });
+    await expect(
+      withCredits.provider.switchByokToYearly("cus_fixture", "sub_active", 14400),
+    ).resolves.toBe(false);
+    for (const { path } of [...requests, ...withCredits.requests])
+      expect(path).not.toMatch(/^\/v1\/subscriptions\/sub_/);
+  });
   it("moves a monthly own-key plan to the yearly price, charging the difference now", async () => {
     const { provider, requests } = fixture({
       "GET /v1/subscriptions": {
@@ -131,7 +183,7 @@ describe("Stripe prepaid model credits", () => {
       },
       "POST /v1/subscriptions/sub_byok": { id: "sub_byok" },
     });
-    await provider.switchByokToYearly("cus_fixture", 14400);
+    await expect(provider.switchByokToYearly("cus_fixture", "sub_byok", 14400)).resolves.toBe(true);
     const update = requests.find((r) => r.path === "/v1/subscriptions/sub_byok")!.params;
     expect(update.get("items[0][id]")).toBe("si_byok");
     expect(update.get("items[0][price]")).toBe("price_credits");

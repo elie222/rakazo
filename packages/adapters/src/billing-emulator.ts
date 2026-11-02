@@ -118,16 +118,23 @@ export class BillingEmulator implements BillingProvider {
     chosen.currentPeriodEndsAt = new Date(this.now() + 30 * 86400000);
   }
 
-  async switchByokToYearly(customerId: string, amountCents: number) {
-    const plan = this.forCustomer(customerId).find(
-      (s) => s.priceId === BYOK_PRICE_ID && holdsBillingSubscription(s.status),
-    );
-    if (!plan) throw new Error("No live own-key plan");
+  async switchByokToYearly(customerId: string, subscriptionId: string, amountCents: number) {
+    const subscriptions = this.forCustomer(customerId);
+    const plan = subscriptions.find((s) => s.subscriptionId === subscriptionId);
+    if (
+      !plan ||
+      plan.priceId !== BYOK_PRICE_ID ||
+      !holdsBillingSubscription(plan.status) ||
+      plan.byokInterval === "year" ||
+      subscriptions.some((s) => s.creditAmountCents && holdsBillingSubscription(s.status))
+    )
+      return false;
     plan.byokPriceCents = amountCents;
     plan.byokInterval = "year";
-    if (plan.status === "trialing") return;
+    if (plan.status === "trialing") return true;
     plan.currentPeriodStartsAt = new Date(this.now());
     plan.currentPeriodEndsAt = new Date(this.now() + 365 * 86400000);
+    return true;
   }
 
   async endByokPlans(customerId: string) {

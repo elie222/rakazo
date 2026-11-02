@@ -298,19 +298,29 @@ export class StripeBillingProvider implements BillingProvider {
     return { url: session.url };
   }
 
-  async switchByokToYearly(customerId: string, amountCents: number) {
-    const subscription = (await this.listSubscriptions(customerId)).find(
-      (s) => isByokPlan(s) && holdsBillingSubscription(mapStripeSubscriptionStatus(s.status)),
-    );
+  async switchByokToYearly(customerId: string, subscriptionId: string, amountCents: number) {
+    // Re-read just before charging: a credit checkout may have completed since the caller checked.
+    const subscriptions = await this.listSubscriptions(customerId);
+    const live = (s: StripeSubscription) =>
+      holdsBillingSubscription(mapStripeSubscriptionStatus(s.status));
+    const subscription = subscriptions.find((s) => s.id === subscriptionId);
     const item = subscription?.items.data[0];
-    if (!subscription || !item) throw new Error("No live own-key plan");
-    if (item.price.recurring?.interval === "year") return;
+    if (
+      !subscription ||
+      !item ||
+      !isByokPlan(subscription) ||
+      !live(subscription) ||
+      item.price.recurring?.interval !== "month" ||
+      subscriptions.some((s) => live(s) && creditAmount(s.metadata?.rakazo_credit_cents))
+    )
+      return false;
     // A new interval restarts the billing cycle today; the unused month is credited against it.
     await this.request("POST", `/v1/subscriptions/${encodeURIComponent(subscription.id)}`, {
       items: [{ id: item.id, price: await this.byokPrice(amountCents, "year"), quantity: 1 }],
       proration_behavior: "always_invoice",
       payment_behavior: "error_if_incomplete",
     });
+    return true;
   }
 
   private byokPrice(amountCents: number, interval: "month" | "year") {

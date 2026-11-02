@@ -2,6 +2,8 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { BillingStatus, ByokInterval } from "@rakazo/contracts";
 import {
   ByokIntervalSchema,
+  byokYearlySavingsPercent,
+  byokYearlySwitchSavings,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
@@ -64,10 +66,6 @@ function formatMonthlyUsd(cents: number, locale: string): string {
   );
 }
 
-function yearlySavingsPercent(monthlyCents: number, annualCents: number): number {
-  return Math.round((1 - annualCents / (monthlyCents * 12)) * 100);
-}
-
 /** Monthly or yearly own-key plan, with what the yearly plan saves. */
 function ByokIntervalToggle({
   monthlyCents,
@@ -81,7 +79,7 @@ function ByokIntervalToggle({
   onChange: (interval: ByokInterval) => void;
 }) {
   const { t } = useLingui();
-  const savings = yearlySavingsPercent(monthlyCents, annualCents);
+  const savings = byokYearlySavingsPercent(monthlyCents, annualCents);
   const segment = "h-7 px-3 text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm";
   return (
     <ToggleGroup
@@ -392,17 +390,7 @@ export function ModelCreditsSettings({
           date: billingDateLabel(status, i18n.locale || "en"),
         }
       : null;
-  // A paid monthly plan can move to yearly; the server re-checks this against the provider.
-  const yearlySavings =
-    ownKeyPlan &&
-    status.canManage &&
-    status.byokInterval !== "year" &&
-    (status.state === "active" || status.state === "trialing") &&
-    !status.cancelAtPeriodEnd &&
-    status.byokPriceCents &&
-    status.byokAnnualPriceCents
-      ? yearlySavingsPercent(status.byokPriceCents, status.byokAnnualPriceCents)
-      : null;
+  const yearlySavings = byokYearlySwitchSavings(status);
   return (
     <div data-testid="model-credits" className="space-y-5">
       {ownKeyPlan ? (
@@ -422,7 +410,7 @@ export function ModelCreditsSettings({
               onClick={() => setYearlyOpen(true)}
             >
               <Trans>Switch to yearly</Trans>
-              {yearlySavings > 0 ? <span className="text-success">−{yearlySavings}%</span> : null}
+              <span className="text-success">−{yearlySavings}%</span>
             </Button>
           ) : null}
         </div>

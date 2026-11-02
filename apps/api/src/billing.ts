@@ -546,16 +546,26 @@ export function createBillingService(deps: {
       // Decide from the provider, not a snapshot a missed webhook may have left stale.
       await sync(stored.customerId);
       const account = await billingAccountForOrganization(prisma, organizationId);
+      const conflict = () =>
+        new ORPCError("CONFLICT", { message: "No monthly own-key plan to switch" });
       if (
-        !account?.byokPriceCents ||
+        !account?.subscriptionId ||
+        !account.byokPriceCents ||
         account.byokInterval === "year" ||
         account.creditAmountCents ||
         account.cancelAtPeriodEnd ||
-        !hasBillingAccess(account.status)
+        !hasBillingAccess(account.status) ||
+        // A subscriber on an older, cheaper price would pay more.
+        account.byokPriceCents * 12 <= amountCents
       )
-        throw new ORPCError("CONFLICT", { message: "No monthly own-key plan to switch" });
-      await provider.switchByokToYearly(account.customerId, amountCents);
+        throw conflict();
+      const switched = await provider.switchByokToYearly(
+        account.customerId,
+        account.subscriptionId,
+        amountCents,
+      );
       await sync(account.customerId);
+      if (!switched) throw conflict();
     },
 
     sync,

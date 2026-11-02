@@ -1,6 +1,7 @@
 import { MenuView } from "@expo/ui/community/menu";
 import type { BillingStatus } from "@rakazo/contracts";
 import {
+  byokYearlySwitchSavings,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
@@ -89,15 +90,8 @@ export default function BillingScreen() {
   const credits = status.funding === "credits" || (status.balanceUsd ?? 0) > 0 || status.canManage;
   const referral = status.referral;
   const endTrial = status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd;
-  // A paid monthly plan can move to yearly; the server re-checks this against the provider.
-  const annualCents =
-    ownKeyCents &&
-    status.canManage &&
-    status.byokInterval !== "year" &&
-    (status.state === "active" || status.state === "trialing") &&
-    !status.cancelAtPeriodEnd
-      ? status.byokAnnualPriceCents
-      : null;
+  const yearlySavings = byokYearlySwitchSavings(status);
+  const annualCents = status.byokAnnualPriceCents;
   return (
     <ScrollView
       style={sideInsets}
@@ -132,10 +126,10 @@ export default function BillingScreen() {
         ) : status.access && status.currentPeriodEndsAt ? (
           <SettingsRow title={t("Renews")} value={formatDate(status.currentPeriodEndsAt)} />
         ) : null}
-        {ownKeyCents && annualCents ? (
+        {yearlySavings !== null && annualCents ? (
           <SettingsRow
             title={t("Switch to yearly")}
-            value={`−${Math.round((1 - annualCents / (ownKeyCents * 12)) * 100)}%`}
+            value={`−${yearlySavings}%`}
             disabled={pending}
             onPress={() =>
               Alert.alert(
