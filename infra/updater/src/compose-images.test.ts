@@ -116,6 +116,10 @@ describe("the images compose file", () => {
       expect(env.http_proxy).toBe("${http_proxy:-${HTTP_PROXY:-}}");
       expect(env.https_proxy).toBe("${https_proxy:-${HTTPS_PROXY:-}}");
       expect(env.no_proxy).toBe("${no_proxy:-${NO_PROXY:-}}");
+      expect(env.NODE_USE_ENV_PROXY).toBe("${NODE_USE_ENV_PROXY:-0}");
+      expect(env.RAKAZO_PROXY_CONNECT_BY_HOSTNAME).toBe(
+        "${RAKAZO_PROXY_CONNECT_BY_HOSTNAME:-false}",
+      );
     }
   });
 

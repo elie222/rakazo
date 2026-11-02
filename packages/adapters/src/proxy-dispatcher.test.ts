@@ -1,7 +1,7 @@
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import type { AddressInfo, Socket } from "node:net";
-import { connect } from "node:net";
+import { connect, isIP } from "node:net";
 import { getCACertificates, setDefaultCACertificates } from "node:tls";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ResolveHostname } from "./network-address.js";
@@ -19,6 +19,7 @@ describe.each(["web", "remote"] as const)("%s proxy transport", (kind) => {
   let tunnels: { path: string; host: string }[];
   let requests: { host: string; authorization: string | undefined }[];
   let servernames: string[];
+  let hostnameOnly: boolean;
   let url: string;
 
   beforeAll(() => {
@@ -32,6 +33,7 @@ describe.each(["web", "remote"] as const)("%s proxy transport", (kind) => {
     tunnels = [];
     requests = [];
     servernames = [];
+    hostnameOnly = false;
     target = createHttpsServer({ key: TEST_TLS_KEY, cert: TEST_TLS_CERT }, (request, response) => {
       requests.push({
         host: request.headers.host ?? "",
@@ -48,6 +50,11 @@ describe.each(["web", "remote"] as const)("%s proxy transport", (kind) => {
     proxy.on("connect", (request, client, head) => {
       const path = request.url ?? "";
       tunnels.push({ path, host: request.headers.host ?? "" });
+      const hostname = path.slice(0, path.lastIndexOf(":")).replace(/^\[|\]$/g, "");
+      if (hostnameOnly && isIP(hostname)) {
+        client.end("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n");
+        return;
+      }
       // The proxy terminates every tunnel at our offline fixture, never at a real public IP.
       const upstream = connect((target.address() as AddressInfo).port, "127.0.0.1", () => {
         client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
@@ -72,6 +79,7 @@ describe.each(["web", "remote"] as const)("%s proxy transport", (kind) => {
     }
     vi.stubEnv("NO_PROXY", "");
     vi.stubEnv("no_proxy", "");
+    vi.stubEnv("RAKAZO_PROXY_CONNECT_BY_HOSTNAME", "false");
   });
 
   afterEach(async () => {
@@ -109,8 +117,29 @@ describe.each(["web", "remote"] as const)("%s proxy transport", (kind) => {
     ]);
   });
 
+  it("supports a hostname-only proxy with the explicit opt-in", async () => {
+    hostnameOnly = true;
+    vi.stubEnv("RAKAZO_PROXY_CONNECT_BY_HOSTNAME", "true");
+    expect(await request()).toBe("ok");
+    expect(tunnels).toEqual([{ path: new URL(url).host, host: new URL(url).host }]);
+    expect(servernames).toEqual(["proxy.example.test"]);
+    expect(requests[0]?.authorization).toBe("Bearer fake-proxy-test-credential");
+  });
+
+  it("still rechecks DNS before hostname CONNECT", async () => {
+    vi.stubEnv("RAKAZO_PROXY_CONNECT_BY_HOSTNAME", "true");
+    let calls = 0;
+    const resolve: ResolveHostname = async () => [
+      { address: calls++ === 0 ? "203.0.113.10" : "127.0.0.1", family: 4 },
+    ];
+    await expect(request(url, resolve)).rejects.toThrow();
+    expect(tunnels).toEqual([]);
+    expect(requests).toEqual([]);
+  });
+
   it("keeps the checked lookup when NO_PROXY bypasses the proxy", async () => {
     vi.stubEnv("no_proxy", "proxy.example.test");
+    vi.stubEnv("RAKAZO_PROXY_CONNECT_BY_HOSTNAME", "true");
     let calls = 0;
     await expect(
       request(url, async () => [

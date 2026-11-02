@@ -6,13 +6,15 @@ import { createAddressCheckedLookup, egressRefused } from "./network-address.js"
 
 /**
  * Direct routes (including NO_PROXY) use the checked lookup. Proxy routes re-check the
- * destination before CONNECT and pin it to that address.
+ * destination before CONNECT and pin it to that address unless the deployment explicitly
+ * trusts its proxy to resolve and enforce destination policy itself.
  */
 export function createCheckedProxyDispatcher(
   resolve: ResolveHostname,
   validate: (addresses: ResolvedAddress[], hostname: string) => void,
 ): Dispatcher {
   const { env } = process;
+  const connectByHostname = env.RAKAZO_PROXY_CONNECT_BY_HOSTNAME === "true";
   for (const proxy of [env.http_proxy ?? env.HTTP_PROXY, env.https_proxy ?? env.HTTPS_PROXY]) {
     if (proxy && !/^https?:\/\//i.test(proxy)) throw new Error("Only HTTP proxies are supported");
   }
@@ -35,6 +37,8 @@ export function createCheckedProxyDispatcher(
           } catch (error) {
             throw egressRefused(hostname, error);
           }
+          // Even hostname mode checks locally; only the final DNS pin is delegated to the proxy.
+          if (connectByHostname) return connect(options);
           const address = addresses[0]!.address;
           const host = ipVersion(address) === 6 ? `[${address}]` : address;
           const authority = `${host}${options.path.slice(separator)}`;
