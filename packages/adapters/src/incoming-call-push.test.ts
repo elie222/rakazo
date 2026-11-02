@@ -55,6 +55,7 @@ describe("incoming call delivery", () => {
       const { provider, voip, fetch, tokens } = fixture();
       voip.send.mockResolvedValue(result);
       await provider.incomingCall("user-1", call);
+      expect(tokens.devices).toHaveBeenCalledTimes(2);
       const body = JSON.parse(fetch.mock.calls[0]![1]!.body as string);
       expect(body).toMatchObject({
         priority: "high",
@@ -94,6 +95,36 @@ describe("incoming call delivery", () => {
     await provider.incomingCall("user-1", call);
     expect(voip.send).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
+  });
+  it("removes both invalid transports against the same registration revision", async () => {
+    const { provider, voip, fetch, tokens } = fixture();
+    voip.send.mockResolvedValue("invalid");
+    fetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: { status: "error", details: { error: "DeviceNotRegistered" } },
+        }),
+        { status: 200 },
+      ),
+    );
+    await provider.incomingCall("user-1", call);
+    expect(tokens.devices).toHaveBeenCalledTimes(2);
+    expect(tokens.removeDevice).toHaveBeenCalledExactlyOnceWith(
+      "user-1",
+      "installation-1",
+      "encrypted",
+      undefined,
+    );
+  });
+  it("uses the same visible payload for legacy registrations without a native channel override", async () => {
+    const { provider, tokens, fetch } = fixture();
+    vi.mocked(tokens.devices!).mockResolvedValue([]);
+    vi.mocked(tokens.load).mockResolvedValue({ token: "ExponentPushToken[legacy]" });
+    await provider.incomingCall("user-1", call);
+    const body = JSON.parse(fetch.mock.calls[0]![1]!.body as string);
+    expect(body).toMatchObject({ title: call.botName, data: { kind: "incoming_call", ...call } });
+    expect(body.channelId).toBeUndefined();
+    expect(body.ttl).toBeGreaterThan(0);
   });
   it("removes only the invalid Expo transport", async () => {
     const { provider, device, fetch, tokens } = fixture();

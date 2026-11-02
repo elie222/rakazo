@@ -1,4 +1,5 @@
 import type { IncomingBotCall, SpaceBot, SpaceNavigation } from "@rakazo/contracts";
+import type { ringingCall } from "@rakazo/core";
 import {
   abortableDelay,
   callIsRinging,
@@ -6,7 +7,6 @@ import {
   nextIncomingCall,
   respondToIncomingCall,
   retryDelayMs,
-  type ringingCall,
 } from "@rakazo/core";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import * as Notifications from "expo-notifications";
@@ -92,14 +92,18 @@ function update(
   if (call && callIsRinging(call) && !handled.has(call.callId)) {
     calls.push({ ...bot, incomingCall: call });
     if (Platform.OS === "ios" || AppState.currentState !== "active")
-      void native?.reportIncomingCall({
-        callId: call.callId,
-        botId: bot.id,
-        botName: bot.name,
-        expiresAt: call.expiresAt,
-      });
+      reportNativeCall({ ...bot, incomingCall: call });
   }
   emit();
+}
+
+function reportNativeCall(call: IncomingBotCall) {
+  void native?.reportIncomingCall({
+    callId: call.incomingCall.callId,
+    botId: call.id,
+    botName: call.name,
+    expiresAt: call.incomingCall.expiresAt,
+  });
 }
 
 /** Uses the existing thread event stream, including replay after a lost connection. */
@@ -327,13 +331,7 @@ export function startIncomingCalls() {
   });
   const app = AppState.addEventListener("change", (state) => {
     if (state === "active") refresh();
-    else if (snapshot)
-      void native?.reportIncomingCall({
-        callId: snapshot.incomingCall.callId,
-        botId: snapshot.id,
-        botName: snapshot.name,
-        expiresAt: snapshot.incomingCall.expiresAt,
-      });
+    else if (snapshot) reportNativeCall(snapshot);
   });
   const events = native?.addListener("onIncomingCallChanged", () => {
     void drainNative().catch(() => undefined);

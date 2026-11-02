@@ -177,7 +177,7 @@ final class IncomingCalls: NSObject, PKPushRegistryDelegate, CXProviderDelegate,
     return ["token": token ?? "", "actions": actions, "ringing": calls.filter { $0.key != active }.map { $0.value }]
   }
 
-  private func hasSession() -> Bool {
+  private func savedSession() -> (base: String, headers: [String: String])? {
     let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: "rakazo.calls", kSecAttrAccount as String: Self.credentialKey,
       kSecMatchLimit as String: kSecMatchLimitOne, kSecReturnData as String: true]
@@ -185,25 +185,21 @@ final class IncomingCalls: NSObject, PKPushRegistryDelegate, CXProviderDelegate,
     guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
       let data = result as? Data,
       let saved = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-      let headers = saved["headers"] as? [String: String]
-    else { return false }
-    return headers["authorization"]?.isEmpty == false
+      let base = saved["base"] as? String, let headers = saved["headers"] as? [String: String]
+    else { return nil }
+    return (base, headers)
+  }
+  private func hasSession() -> Bool {
+    savedSession()?.headers["authorization"]?.isEmpty == false
   }
   private func decline(_ call: [String: String]) {
-    let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-      kSecAttrService as String: "rakazo.calls", kSecAttrAccount as String: Self.credentialKey,
-      kSecMatchLimit as String: kSecMatchLimitOne, kSecReturnData as String: true]
-    var result: AnyObject?
-    guard expiry(call) > Date(), SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-      let data = result as? Data,
-      let saved = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-      let base = saved["base"] as? String, let headers = saved["headers"] as? [String: String],
-      let url = URL(string: base.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/rpc/notifications/declineIncomingCall")
+    guard expiry(call) > Date(), let saved = savedSession(),
+      let url = URL(string: saved.base.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/rpc/notifications/declineIncomingCall")
     else { return }
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.timeoutInterval = 8
-    for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+    for (name, value) in saved.headers { request.setValue(value, forHTTPHeaderField: name) }
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue("rakazo://", forHTTPHeaderField: "Origin")
     request.httpBody = try? JSONSerialization.data(withJSONObject: ["json": ["callId": call["callId"] ?? ""]])

@@ -42,6 +42,34 @@ export function expoPushData(message: NotificationMessage, spaceId: string, deli
   };
 }
 
+/** Android devices with native call support render data-only pushes themselves. */
+function incomingCallPayload(token: string, call: IncomingCallPush, dataOnly = false) {
+  const expiration = Math.floor(Date.parse(call.expiresAt) / 1000);
+  const botName = call.botName.slice(0, MAX_PUSH_TITLE_CHARS);
+  return {
+    to: token,
+    priority: "high",
+    ttl: Math.floor((Date.parse(call.expiresAt) - Date.now()) / 1000),
+    expiration,
+    data: {
+      kind: "incoming_call",
+      callId: call.callId,
+      botId: call.botId,
+      botName,
+      expiresAt: call.expiresAt,
+    },
+    ...(dataOnly
+      ? {}
+      : {
+          title: botName,
+          body: "",
+          sound: "default",
+          interruptionLevel: "time-sensitive",
+          categoryId: "incoming-call",
+        }),
+  };
+}
+
 /** Expiry stored for a registration's session; null while a replacement is pending. */
 export type PushSessionExpiresAt = (sessionId: string) => Promise<Date | null>;
 
@@ -176,86 +204,52 @@ export class ExpoPushProvider implements NotificationProvider {
         const current = await this.tokens.devices?.(userId);
         if (
           !current?.some(
-            (row) => row.deviceId === device.deviceId && row.revision === device.revision,
+            (row) =>
+              row.deviceId === device.deviceId &&
+              row.revision === device.revision &&
+              row.sessionId === device.sessionId,
           )
         )
           return;
-        if (device.platform === "ios" && device.voipToken && this.voip) {
-          const result = await this.voip.send(device.voipToken, call);
-          if (result === "sent") return;
-          if (result === "invalid") {
-            await this.tokens.removeDevice?.(userId, device.deviceId, device.revision, "voip");
+        let invalidVoip = false;
+        let invalidExpo = false;
+        try {
+          if (device.platform === "ios" && device.voipToken && this.voip) {
+            const result = await this.voip.send(device.voipToken, call);
+            if (result === "sent") return;
+            invalidVoip = result === "invalid";
           }
+          if (!device.expoToken) return;
+          const payload = incomingCallPayload(
+            device.expoToken,
+            call,
+            device.platform === "android",
+          );
+          if (payload.ttl <= 0) return;
+          const { status, body } = await postToExpo(EXPO_PUSH_URL, payload, this.accessToken);
+          const ticket = expoPushTickets(body)[0];
+          invalidExpo = ticket?.details?.error === "DeviceNotRegistered";
+          if (!invalidExpo && status < 300 && ticket?.id)
+            await this.scheduleReceiptCheck(userId, device.expoToken, ticket.id);
+        } finally {
+          // Invalidate once, against the authorized revision, after both transports finish.
+          if (invalidVoip || invalidExpo)
+            await this.tokens.removeDevice?.(
+              userId,
+              device.deviceId,
+              device.revision,
+              invalidVoip && invalidExpo ? undefined : invalidVoip ? "voip" : "expo",
+            );
         }
-        if (!device.expoToken) return;
-        const registered = (await this.tokens.devices?.(userId))?.find(
-          (row) =>
-            row.deviceId === device.deviceId &&
-            row.expoToken === device.expoToken &&
-            row.sessionId === device.sessionId,
-        );
-        if (!registered) return;
-        const ttl = Math.floor((Date.parse(call.expiresAt) - Date.now()) / 1000);
-        if (ttl <= 0) return;
-        const { status, body } = await postToExpo(
-          EXPO_PUSH_URL,
-          {
-            to: device.expoToken,
-            priority: "high",
-            ttl,
-            expiration: Math.floor(Date.parse(call.expiresAt) / 1000),
-            data: {
-              kind: "incoming_call",
-              callId: call.callId,
-              botId: call.botId,
-              botName: call.botName.slice(0, 100),
-              expiresAt: call.expiresAt,
-            },
-            ...(device.platform === "android"
-              ? {}
-              : {
-                  title: call.botName.slice(0, 100),
-                  body: "",
-                  sound: "default",
-                  interruptionLevel: "time-sensitive",
-                  categoryId: "incoming-call",
-                }),
-          },
-          this.accessToken,
-        );
-        const ticket = expoPushTickets(body)[0];
-        if (ticket?.details?.error === "DeviceNotRegistered")
-          await this.tokens.removeDevice?.(userId, device.deviceId, registered.revision, "expo");
-        else if (status < 300 && ticket?.id)
-          await this.scheduleReceiptCheck(userId, device.expoToken, ticket.id);
       }),
     );
     // Old native builds registered only the account's Expo token.
     if (devices.length === 0) {
       const token = await this.deliverableToken(userId);
-      const ttl = Math.floor((Date.parse(call.expiresAt) - Date.now()) / 1000);
-      if (!token || ttl <= 0) return;
-      const result = await postToExpo(
-        EXPO_PUSH_URL,
-        {
-          to: token,
-          priority: "high",
-          ttl,
-          title: call.botName.slice(0, 100),
-          sound: "default",
-          channelId: "incoming-call",
-          interruptionLevel: "time-sensitive",
-          categoryId: "incoming-call",
-          data: {
-            kind: "incoming_call",
-            callId: call.callId,
-            botId: call.botId,
-            botName: call.botName.slice(0, 100),
-            expiresAt: call.expiresAt,
-          },
-        },
-        this.accessToken,
-      );
+      if (!token) return;
+      const payload = incomingCallPayload(token, call);
+      if (payload.ttl <= 0) return;
+      const result = await postToExpo(EXPO_PUSH_URL, payload, this.accessToken);
       const ticket = expoPushTickets(result.body)[0];
       if (ticket?.details?.error === "DeviceNotRegistered")
         await this.tokens.remove(userId, credentialDigest(token));
