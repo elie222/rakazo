@@ -22,6 +22,7 @@ import { ApprovalModeRow, ApprovalRulesRow } from "../../components/approval-set
 import { NameDialog } from "../../components/name-dialog";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSegmentedControl } from "../../components/native-segmented-control";
+import { Checkmark } from "../../components/row-accessories";
 import {
   SettingsGroup,
   SettingsLabel,
@@ -34,7 +35,6 @@ import type { AccountSummary } from "../../lib/account-sessions";
 import {
   refreshAccountSummaries,
   rememberCurrentAccount,
-  selectNextSavedAccount,
   selectSavedAccount,
   signOutAllAccounts,
 } from "../../lib/account-sessions";
@@ -91,7 +91,6 @@ import {
   subscribeResponseStreaming,
 } from "../../lib/response-streaming";
 import { promptSectionName } from "../../lib/section-name-prompt";
-import { currentSessionGeneration } from "../../lib/session";
 import {
   closeSettingsSheet,
   isSettingsLink,
@@ -360,7 +359,7 @@ export default function Account() {
         onPress: () => {
           setSigningOut(true);
           void signOutAllAccounts()
-            .catch((error) => Alert.alert(t("Could not sign out"), errorText(error)))
+            .catch((error) => Alert.alert(errorText(error, t("Could not sign out"))))
             .finally(() => replaceWithSignIn());
         },
       },
@@ -370,37 +369,10 @@ export default function Account() {
   async function handleSignOut() {
     setSigningOut(true);
     setSignOutError(null);
-    const server = currentApiBase();
-    let recoveryGeneration: number | undefined;
     try {
       await signOut();
-      const generation = currentSessionGeneration();
-      const token = await loadSessionToken();
-      if (server !== currentApiBase() || token || generation !== currentSessionGeneration()) {
-        setSigningOut(false);
-        return;
-      }
-      recoveryGeneration = generation;
-      const next = await selectNextSavedAccount();
-      if (next === "selected") {
-        closeSettingsSheet();
-        router.dismissTo("/");
-      } else if (next === "unavailable") replaceWithSignIn();
-      else setSigningOut(false);
+      replaceWithSignIn();
     } catch (err) {
-      if (recoveryGeneration !== undefined) {
-        const token = await loadSessionToken().catch(() => "unavailable");
-        if (
-          server === currentApiBase() &&
-          recoveryGeneration === currentSessionGeneration() &&
-          !token
-        ) {
-          // Local sign-out succeeded. The sign-in screen keeps saved identities
-          // available for another attempt when verification can reach the server.
-          replaceWithSignIn("/sign-in");
-          return;
-        }
-      }
       setSignOutError(errorText(err, t("Could not sign out")));
       setSigningOut(false);
     }
@@ -527,12 +499,8 @@ export default function Account() {
                 <SettingsRow
                   key={saved.userId}
                   title={saved.email}
-                  value={[
-                    saved.userId === me?.userId ? "✓" : "",
-                    saved.unread ? String(saved.unread) : "",
-                  ]
-                    .filter(Boolean)
-                    .join("  ")}
+                  value={saved.unread ? String(saved.unread) : undefined}
+                  trailing={saved.userId === me?.userId ? <Checkmark /> : null}
                   accessibilityRole="button"
                   accessibilityState={{ selected: saved.userId === me?.userId }}
                   disabled={pending || saved.userId === me?.userId}
@@ -544,6 +512,7 @@ export default function Account() {
             title={t("Add account")}
             accessibilityRole="button"
             disabled={pending}
+            dimmed={pending}
             onPress={() => void addAccount()}
           />
           {savedAccounts.length > 1 ? (
@@ -552,6 +521,7 @@ export default function Account() {
               accessibilityRole="button"
               destructive
               disabled={pending}
+              dimmed={pending}
               onPress={confirmSignOutAll}
             />
           ) : null}

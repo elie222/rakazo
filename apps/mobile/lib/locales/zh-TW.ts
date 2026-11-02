@@ -4,8 +4,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Sign in to open this notification": "登入以開啟此通知",
   "Sign out all": "全部登出",
   "Sign out all accounts?": "登出所有帳戶？",
-  "Signed out on this device. Some server sessions could not be revoked.":
-    "已在此裝置上登出。部分伺服器工作階段無法撤銷。",
+  "Could not sign out of every account": "無法登出所有帳號",
   "How other bots see it": "其他機器人如何瞭解它",
   "Share to": "分享到",
   "{count} files": "{count} 個檔案",

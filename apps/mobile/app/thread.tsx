@@ -11,6 +11,8 @@ import { t, useI18n } from "../lib/i18n";
 import { integrationsCacheScope } from "../lib/integrations-cache";
 import { useMobileTokens, useThemedStyles } from "../lib/native";
 import {
+  notificationOpenTarget,
+  notificationTargetLink,
   threadRouteSpaceOnFocus,
   threadSpaceRequest,
   threadSpaceSwitchResult,
@@ -67,11 +69,12 @@ export default function ThreadRoute() {
   const { t } = useI18n();
   const router = useRouter();
   const focused = useIsFocused();
-  const { spaceId, userId, apiBase } = useLocalSearchParams<{
+  const params = useLocalSearchParams<{
     spaceId?: string | string[];
     userId?: string | string[];
     apiBase?: string | string[];
   }>();
+  const { spaceId, userId, apiBase } = params;
   const requestedServer = typeof apiBase === "string" ? normalizeApiBase(apiBase) : null;
   const wrongServer =
     apiBase !== undefined && (!requestedServer?.ok || requestedServer.url !== currentApiBase());
@@ -128,11 +131,20 @@ export default function ThreadRoute() {
   if (wrongAccount)
     return (
       <View style={styles.screen}>
-        <Text style={styles.message}>{t("Sign in to open this notification")}</Text>
+        <Text style={styles.feedbackMessage}>{t("Sign in to open this notification")}</Text>
         <NativeActionButton
-          label={t("Return to inbox")}
-          prominence="secondary"
-          onPress={() => router.replace("/")}
+          label={t("Sign in")}
+          onPress={() => {
+            const route = notificationOpenTarget(params);
+            router.replace(
+              route
+                ? {
+                    pathname: "/notification-open",
+                    params: { target: notificationTargetLink(route) },
+                  }
+                : "/",
+            );
+          }}
         />
       </View>
     );
@@ -169,9 +181,9 @@ function createStyles() {
       alignItems: "center",
       justifyContent: "center",
       backgroundColor: tokens.background,
+      gap: 12,
     },
     thread: { flex: 1 },
-    message: { color: tokens.foreground },
     feedback: { alignItems: "center", gap: 12 },
     feedbackMessage: { color: tokens.foreground, fontSize: 16 },
   });

@@ -278,7 +278,8 @@ class RakazoNotificationService : Service() {
     if (!run.notificationsEnabled || isOpenThread(run)) return
     val notification = builder(copy.channel)
       .setSmallIcon(R.drawable.ic_rakazo_notification)
-      .setContentTitle(accountTitle(copy.title))
+      .setContentTitle(copy.title)
+      .setSubText(accountLabel())
       .setContentText(copy.body)
       .setStyle(Notification.BigTextStyle().bigText(copy.body))
       .setContentIntent(openApp(run))
@@ -309,7 +310,8 @@ class RakazoNotificationService : Service() {
       .setSmallIcon(
         liveStatusIcon(primary, avatarStyle),
       )
-      .setContentTitle(accountTitle(title))
+      .setContentTitle(title)
+      .setSubText(accountLabel())
       .setContentText(body)
       .setStyle(Notification.BigTextStyle().bigText(body))
       .setContentIntent(openApp(primary))
@@ -397,10 +399,8 @@ class RakazoNotificationService : Service() {
   private fun accountNotificationId(threadId: String): Int =
     "${NotificationStorage(this).endpoint}:${NotificationStorage(this).userId}:$threadId".hashCode()
 
-  private fun accountTitle(title: String): String {
-    val label = NotificationStorage(this).accountLabel
-    return if (label.isBlank()) title else "$title · $label"
-  }
+  /** Set only while several logins share this device. */
+  private fun accountLabel(): String? = NotificationStorage(this).accountLabel.ifBlank { null }
 
   private fun localizedContext(tag: String): Context {
     if (tag.isBlank()) return this

@@ -1,20 +1,15 @@
-import * as SecureStore from "expo-secure-store";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
   loadAccountSummaries,
   refreshAccountSummaries,
-  selectNextSavedAccount,
+  refreshAppBadge,
   selectNotificationAccount,
   selectSavedAccount,
   signOutAllAccounts,
 } from "./account-sessions";
+import { forgetAppBadge } from "./app-badge";
 import { pendingSessionTokens } from "./pending-session-revocations";
-import {
-  forgetSavedToken,
-  loadSavedAccounts,
-  rememberSavedAccount,
-  savedAccountRevocationSnapshot,
-} from "./saved-accounts";
+import { loadSavedAccounts, rememberSavedAccount } from "./saved-accounts";
 
 const state = vi.hoisted(() => ({
   token: "family-token",
@@ -23,6 +18,7 @@ const state = vi.hoisted(() => ({
   disk: new Map<string, string>(),
   save: vi.fn(),
   signOut: vi.fn(),
+  badge: vi.fn(),
 }));
 vi.mock("expo-secure-store", () => ({
   deleteItemAsync: vi.fn(async (key: string) => {
@@ -33,6 +29,7 @@ vi.mock("expo-secure-store", () => ({
     state.disk.set(key, value);
   }),
 }));
+vi.mock("expo-notifications", () => ({ setBadgeCountAsync: state.badge }));
 vi.mock("./api", () => ({
   currentApiBase: () => state.apiBase,
   loadSessionToken: async () => state.token,
@@ -41,6 +38,7 @@ vi.mock("./api", () => ({
 }));
 vi.mock("./session", () => ({
   currentSessionGeneration: () => state.generation,
+  loadSessionToken: async () => state.token,
   saveSessionToken: state.save,
 }));
 vi.mock("./live-notifications", () => ({ stopLiveNotifications: vi.fn(async () => undefined) }));
@@ -52,16 +50,18 @@ const apiBase = "https://app.example.test";
 const account = (userId: string, token: string) => ({
   userId,
   token,
-  name: userId,
   email: `${userId}@example.test`,
-  image: null,
-  unread: 0,
 });
+const bearer = (init?: RequestInit) => new Headers(init?.headers).get("authorization");
+const userFor = (init?: RequestInit) =>
+  bearer(init) === "Bearer family-token" ? "family" : "work";
+
 beforeEach(async () => {
   state.disk.clear();
   state.token = "family-token";
   state.generation = 0;
   state.apiBase = apiBase;
+  state.badge.mockReset().mockResolvedValue(true);
   state.signOut.mockReset().mockImplementation(async () => {
     state.token = "";
     state.generation++;
@@ -72,57 +72,63 @@ beforeEach(async () => {
   });
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (_url: unknown, init: RequestInit) => {
-      const token = (init.headers as Record<string, string>).authorization;
-      const id = token === "Bearer family-token" ? "family" : "work";
-      return Response.json({ user: { id, name: id, email: `${id}@example.test`, image: null } });
+    vi.fn(async (url: unknown, init?: RequestInit) => {
+      const id = userFor(init);
+      if (String(url).endsWith("/api/accounts"))
+        return Response.json({
+          serverOrigin: apiBase,
+          accounts: [{ userId: id, unread: id === "family" ? 2 : 3 }],
+        });
+      return Response.json({ user: { id, email: `${id}@example.test` } });
     }),
   );
   await rememberSavedAccount(apiBase, account("family", "family-token"));
   await rememberSavedAccount(apiBase, account("work", "work-token"));
 });
-it("returns local recovery identities without credentials or notification settings", async () => {
+
+it("returns local recovery identities without credentials", async () => {
   const summaries = await loadAccountSummaries();
-  expect(summaries.map((row) => row.userId)).toEqual(["family", "work"]);
-  expect(summaries).toEqual(
-    expect.arrayContaining([expect.objectContaining({ email: "work@example.test" })]),
-  );
-  for (const summary of summaries) {
-    expect(summary).not.toHaveProperty("token");
-    expect(summary).not.toHaveProperty("notifications");
-  }
+  expect(summaries).toEqual([
+    { userId: "family", email: "family@example.test", unread: 0 },
+    { userId: "work", email: "work@example.test", unread: 0 },
+  ]);
   expect(fetch).not.toHaveBeenCalled();
 });
+
 it("validates and selects the notification owner while preserving the other login", async () => {
-  expect(await selectNotificationAccount("work")).toBe(true);
+  expect(await selectNotificationAccount("work", apiBase)).toBe("selected");
   expect(state.token).toBe("work-token");
   expect(await loadSavedAccounts(apiBase)).toHaveLength(2);
   expect(fetch).toHaveBeenCalledWith(
-    expect.stringContaining("/api/auth/get-session"),
+    `${apiBase}/api/auth/get-session`,
     expect.objectContaining({
       headers: expect.objectContaining({ authorization: "Bearer work-token" }),
     }),
     apiBase,
   );
 });
+
+it("opens the active login's notification without a network round trip", async () => {
+  expect(await selectNotificationAccount("family", `${apiBase}/`)).toBe("selected");
+  expect(fetch).not.toHaveBeenCalled();
+  expect(state.save).not.toHaveBeenCalled();
+});
+
 it("does not open legacy identity-less notifications with multiple saved accounts", async () => {
-  expect(await selectNotificationAccount()).toBe(false);
+  expect(await selectNotificationAccount()).toBe("signed-out");
   expect(state.save).not.toHaveBeenCalled();
 });
-it("refuses revoked or removed accounts without selecting the displayed identity", async () => {
-  vi.mocked(fetch).mockResolvedValue(Response.json(null));
-  expect(await selectSavedAccount("work")).toBe(false);
-  expect(state.save).not.toHaveBeenCalled();
-  expect((await loadSavedAccounts(apiBase)).map((row) => row.userId)).toEqual(["family"]);
-  expect(await selectNotificationAccount("missing")).toBe(false);
-});
-it("refuses a bearer that authenticates a different user", async () => {
+
+it("forgets a revoked login or one that authenticates a different user", async () => {
   vi.mocked(fetch).mockResolvedValue(
     Response.json({ user: { id: "family", email: "family@example.test" } }),
   );
   expect(await selectSavedAccount("work")).toBe(false);
   expect(state.save).not.toHaveBeenCalled();
+  expect((await loadSavedAccounts(apiBase)).map((row) => row.userId)).toEqual(["family"]);
+  expect(await selectNotificationAccount("work")).toBe("signed-out");
 });
+
 it("a sign-out during validation cannot resurrect the selected bearer", async () => {
   vi.mocked(fetch).mockImplementation(async () => {
     state.generation++;
@@ -132,51 +138,57 @@ it("a sign-out during validation cannot resurrect the selected bearer", async ()
   expect(state.save).not.toHaveBeenCalled();
 });
 
-it("late unread refresh cannot restore an account removed while the request was waiting", async () => {
+it("opens a notification named by the origin the server reports for itself", async () => {
+  vi.mocked(fetch).mockImplementation(async (url, init) => {
+    expect(String(url).startsWith(apiBase)).toBe(true);
+    return String(url).endsWith("/api/accounts")
+      ? Response.json({ serverOrigin: "https://web.example.test", accounts: [] })
+      : Response.json({ user: { id: userFor(init), email: "work@example.test" } });
+  });
+  expect(await selectNotificationAccount("work", "https://web.example.test")).toBe("selected");
+  expect(state.token).toBe("work-token");
+});
+
+it("does not offer sign-in for another server's notification", async () => {
+  expect(await selectNotificationAccount("work", "https://other.example.test")).toBe(
+    "other-server",
+  );
+  expect(state.save).not.toHaveBeenCalled();
+});
+
+it("refreshes every login's unread count and the icon badge", async () => {
+  await refreshAppBadge();
+  expect(state.badge).toHaveBeenLastCalledWith(5);
+  expect(await loadAccountSummaries()).toEqual([
+    { userId: "family", email: "family@example.test", unread: 2 },
+    { userId: "work", email: "work@example.test", unread: 3 },
+  ]);
+});
+
+it("does not overwrite the icon with counts fetched before the app returned to the foreground", async () => {
   let release!: () => void;
   const waiting = new Promise<void>((resolve) => {
     release = resolve;
   });
-  vi.mocked(fetch).mockImplementation(async (_url, init) => {
-    const isWork = new Headers(init?.headers).get("authorization") === "Bearer work-token";
-    if (isWork) await waiting;
-    return Response.json({ accounts: [{ userId: isWork ? "work" : "family", unread: 3 }] });
+  vi.mocked(fetch).mockImplementation(async () => {
+    await waiting;
+    return Response.json({ accounts: [] });
   });
-  const refreshing = refreshAccountSummaries();
+  const refreshing = refreshAppBadge();
   await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
-  await forgetSavedToken(apiBase, "work-token");
+  forgetAppBadge();
   release();
   await refreshing;
-  expect((await loadSavedAccounts(apiBase)).map((row) => row.userId)).toEqual(["family"]);
+  expect(state.badge).not.toHaveBeenCalled();
 });
 
-it("refreshes one selected account's aggregate without polling other saved accounts", async () => {
-  await rememberSavedAccount(apiBase, { ...account("work", "work-token"), unread: 5 });
-  vi.mocked(fetch).mockImplementation(async () =>
-    Response.json({ accounts: [{ userId: "family", unread: 6 }] }),
-  );
-  expect(await refreshAccountSummaries("family")).toMatchObject([{ userId: "family", unread: 6 }]);
-  expect(fetch).toHaveBeenCalledTimes(1);
-  expect(fetch).toHaveBeenCalledWith(
-    `${apiBase}/api/accounts`,
-    expect.objectContaining({
-      headers: expect.objectContaining({ authorization: "Bearer family-token" }),
-    }),
-    apiBase,
-  );
-  expect((await loadSavedAccounts(apiBase)).map((row) => [row.userId, row.unread])).toEqual([
-    ["family", 6],
-    ["work", 5],
-  ]);
-});
 it("a late revoked response cannot delete a replacement bearer for the same account", async () => {
   let release!: () => void;
   const waiting = new Promise<void>((resolve) => {
     release = resolve;
   });
   vi.mocked(fetch).mockImplementation(async (_url, init) => {
-    const isWork = new Headers(init?.headers).get("authorization") === "Bearer work-token";
-    if (isWork) {
+    if (bearer(init) === "Bearer work-token") {
       await waiting;
       return Response.json({}, { status: 401 });
     }
@@ -192,288 +204,28 @@ it("a late revoked response cannot delete a replacement bearer for the same acco
   );
 });
 
-it("refuses another server's notification even if its user ID is cloned", async () => {
-  expect(await selectNotificationAccount("work", "https://other.example.test")).toBe(false);
-  expect(fetch).toHaveBeenCalledWith(
-    `${apiBase}/api/accounts`,
-    expect.objectContaining({
-      headers: expect.objectContaining({ authorization: "Bearer work-token" }),
-    }),
-    apiBase,
-  );
-  expect(state.save).not.toHaveBeenCalled();
-  await rememberSavedAccount("https://other.example.test", account("work", "other-work-token"));
-  expect(await selectNotificationAccount("work")).toBe(false);
-  expect(state.save).not.toHaveBeenCalled();
-});
-
-it("accepts a canonical web origin only when the current server attests to it for the saved bearer", async () => {
-  const canonical = "https://web.example.test";
-  vi.mocked(fetch).mockImplementation(async (url, init) => {
-    expect(String(url).startsWith(apiBase)).toBe(true);
-    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer work-token");
-    return String(url).endsWith("/api/accounts")
-      ? Response.json({
-          serverOrigin: canonical,
-          activeUserId: "work",
-          accounts: [{ userId: "work" }],
-        })
-      : Response.json({ user: { id: "work", email: "work@example.test" } });
-  });
-  expect(await selectNotificationAccount("work", canonical)).toBe(true);
-  expect(state.token).toBe("work-token");
-  expect(fetch).toHaveBeenCalledTimes(2);
-});
-
-it.each([
-  {
-    serverOrigin: "https://different.example.test",
-    activeUserId: "work",
-    accounts: [{ userId: "work" }],
-  },
-  {
-    serverOrigin: "https://web.example.test",
-    activeUserId: "family",
-    accounts: [{ userId: "work" }],
-  },
-  {
-    serverOrigin: "https://web.example.test",
-    activeUserId: "work",
-    accounts: [{ userId: "family" }],
-  },
-  { activeUserId: "work", accounts: [{ userId: "work" }] },
-])("rejects an unproven canonical origin without selecting an account (%j)", async (body) => {
-  vi.mocked(fetch).mockResolvedValue(Response.json(body));
-  expect(await selectNotificationAccount("work", "https://web.example.test")).toBe(false);
-  expect(fetch).toHaveBeenCalledTimes(1);
-  expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toBe(`${apiBase}/api/accounts`);
-  expect(state.save).not.toHaveBeenCalled();
-});
-
-it("drops a delayed canonical attestation when a newer account selection supersedes it", async () => {
-  let release!: () => void;
-  const waiting = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  vi.mocked(fetch).mockImplementation(async (url) => {
-    if (String(url).endsWith("/api/accounts")) {
-      await waiting;
-      return Response.json({
-        serverOrigin: "https://web.example.test",
-        activeUserId: "work",
-        accounts: [{ userId: "work" }],
-      });
-    }
-    return Response.json({ user: { id: "family", email: "family@example.test" } });
-  });
-  const selecting = selectNotificationAccount("work", "https://web.example.test");
-  await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
-  expect(await selectSavedAccount("family")).toBe(true);
-  release();
-  expect(await selecting).toBe(false);
-  expect(state.token).toBe("family-token");
-});
-
-it("sign-out-all revokes each saved bearer and removes all local logins", async () => {
+it("sign-out-all revokes each other saved bearer and signs the active one out", async () => {
   vi.mocked(fetch).mockImplementation(async () => Response.json({ success: true }));
   await signOutAllAccounts();
-  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(fetch).toHaveBeenCalledOnce();
   expect(fetch).toHaveBeenCalledWith(
-    expect.stringContaining("/api/auth/sign-out"),
+    `${apiBase}/api/auth/sign-out`,
     expect.objectContaining({
       method: "POST",
       credentials: "omit",
-      headers: expect.objectContaining({ authorization: "Bearer family-token" }),
-    }),
-    apiBase,
-  );
-  expect(fetch).toHaveBeenCalledWith(
-    expect.stringContaining("/api/auth/sign-out"),
-    expect.objectContaining({
       headers: expect.objectContaining({ authorization: "Bearer work-token" }),
     }),
     apiBase,
   );
-  expect(await loadSavedAccounts(apiBase)).toEqual([]);
-  expect(state.signOut).toHaveBeenCalledOnce();
+  expect(state.signOut).toHaveBeenCalledWith(["family-token"], apiBase);
+  expect((await loadSavedAccounts(apiBase)).map((row) => row.userId)).toEqual(["family"]);
+  expect(await pendingSessionTokens(apiBase)).toEqual(new Set());
 });
+
 it("sign-out-all clears local logins even when remote revocation is offline", async () => {
   vi.mocked(fetch).mockRejectedValue(new Error("offline"));
-  await expect(signOutAllAccounts()).rejects.toThrow("Some server sessions could not be revoked");
-  expect(await loadSavedAccounts(apiBase)).toEqual([]);
+  await expect(signOutAllAccounts()).rejects.toThrow("Could not sign out of every account");
+  expect((await loadSavedAccounts(apiBase)).map((row) => row.userId)).toEqual(["family"]);
+  expect(await pendingSessionTokens(apiBase)).toEqual(new Set(["work-token"]));
   expect(state.signOut).toHaveBeenCalledOnce();
 });
-
-it("blocks saved-account selection during sign-out-all and clears an already selected revoked bearer", async () => {
-  let release!: () => void;
-  const waiting = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  vi.mocked(fetch).mockImplementation(async () => {
-    await waiting;
-    return Response.json({ success: true });
-  });
-  const signingOut = signOutAllAccounts();
-  const duplicate = signOutAllAccounts();
-  await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
-  await duplicate;
-  expect(await selectSavedAccount("work")).toBe(false);
-  // A selection already in progress can have installed a snapshotted token before the fence.
-  state.token = "work-token";
-  state.generation++;
-  release();
-  await signingOut;
-  expect(state.signOut).toHaveBeenCalledOnce();
-  expect(state.token).toBe("");
-});
-
-it("keeps an unrelated new login installed during remote sign-out-all", async () => {
-  let release!: () => void;
-  const waiting = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  vi.mocked(fetch).mockImplementation(async () => {
-    await waiting;
-    return Response.json({ success: true });
-  });
-  const signingOut = signOutAllAccounts();
-  await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
-  state.token = "new-login-token";
-  state.generation++;
-  release();
-  await signingOut;
-  expect(state.signOut).not.toHaveBeenCalled();
-  expect(state.token).toBe("new-login-token");
-});
-
-it("sign-out-all revokes and removes every server's saved login at its own origin", async () => {
-  const other = "https://other.example.test";
-  await rememberSavedAccount(other, account("family", "other-family-token"));
-  await rememberSavedAccount(other, account("work", "other-work-token"));
-  vi.mocked(fetch).mockImplementation(async (url, init) => {
-    const bearer = new Headers(init?.headers).get("authorization");
-    const expectedServer = bearer?.includes("other-") ? other : apiBase;
-    expect(url).toBe(`${expectedServer}/api/auth/sign-out`);
-    expect(init).toMatchObject({ credentials: "omit", redirect: "error" });
-    return Response.json({ success: true });
-  });
-  await signOutAllAccounts();
-  expect(fetch).toHaveBeenCalledTimes(4);
-  expect(await loadSavedAccounts(apiBase)).toEqual([]);
-  expect(await loadSavedAccounts(other)).toEqual([]);
-  expect(await pendingSessionTokens(other)).toEqual(new Set());
-  expect(state.signOut).toHaveBeenCalledWith(
-    expect.arrayContaining(["family-token", "work-token"]),
-    apiBase,
-  );
-});
-
-it("removes an offline other-server login and keeps only its revocation tombstone", async () => {
-  const other = "https://other.example.test";
-  await rememberSavedAccount(other, account("work", "other-work-token"));
-  vi.mocked(fetch).mockImplementation(async (url) => {
-    if (String(url).startsWith(other)) throw new Error("offline");
-    return Response.json({ success: true });
-  });
-  await expect(signOutAllAccounts()).rejects.toThrow("Some server sessions could not be revoked");
-  expect(await loadSavedAccounts(apiBase)).toEqual([]);
-  expect(await loadSavedAccounts(other)).toEqual([]);
-  expect(await pendingSessionTokens(other)).toEqual(new Set(["other-work-token"]));
-});
-
-it("does not clear a new other-server login whose token matches an old server's token", async () => {
-  const other = "https://other.example.test";
-  await rememberSavedAccount(other, account("work", "other-work-token"));
-  let release!: () => void;
-  const waiting = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  vi.mocked(fetch).mockImplementation(async () => {
-    await waiting;
-    return Response.json({ success: true });
-  });
-  const signingOut = signOutAllAccounts();
-  await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
-  state.apiBase = other;
-  state.token = "family-token";
-  state.generation++;
-  await rememberSavedAccount(other, account("work", "family-token"));
-  release();
-  await signingOut;
-  expect(state.signOut).not.toHaveBeenCalled();
-  expect((await loadSavedAccounts(other)).map((row) => row.token)).toEqual(["family-token"]);
-});
-
-it("skips a revoked fallback and selects the next valid saved account", async () => {
-  state.token = "";
-  vi.mocked(fetch).mockImplementation(async (_url, init) =>
-    new Headers(init?.headers).get("authorization") === "Bearer family-token"
-      ? Response.json(null, { status: 401 })
-      : Response.json({ user: { id: "work", email: "work@example.test" } }),
-  );
-  expect(await selectNextSavedAccount()).toBe("selected");
-  expect(state.token).toBe("work-token");
-  expect((await loadSavedAccounts(apiBase)).map((row) => row.userId)).toEqual(["work"]);
-});
-
-it("revokes and removes every saved credential even when the pending store is malformed", async () => {
-  state.disk.set("rakazo.pending_session_revocations", "malformed-json");
-  vi.mocked(fetch).mockImplementation(async () => Response.json({ success: true }));
-  await signOutAllAccounts();
-  expect(fetch).toHaveBeenCalledTimes(2);
-  expect(await savedAccountRevocationSnapshot()).toEqual([]);
-  expect(state.token).toBe("");
-  expect(state.signOut).toHaveBeenCalledOnce();
-  await expect(loadSavedAccounts(apiBase)).rejects.toThrow();
-});
-
-it("does not let revocation-queue write failure skip remote or local sign-out-all", async () => {
-  const original = vi.mocked(SecureStore.setItemAsync).getMockImplementation()!;
-  vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
-    if (key.startsWith("rakazo.pending_session_revocations")) throw new Error("Storage locked");
-    return original(key, value);
-  });
-  try {
-    vi.mocked(fetch).mockImplementation(async () => Response.json({ success: true }));
-    await signOutAllAccounts();
-    expect(fetch).toHaveBeenCalledTimes(2);
-    expect(await loadSavedAccounts(apiBase)).toEqual([]);
-    expect(state.token).toBe("");
-  } finally {
-    vi.mocked(SecureStore.setItemAsync).mockImplementation(original);
-  }
-});
-
-it("reports remote failure after local sign-out-all when no retry credential can be saved", async () => {
-  state.disk.set("rakazo.pending_session_revocations", "malformed-json");
-  vi.mocked(fetch).mockRejectedValue(new Error("offline"));
-  await expect(signOutAllAccounts()).rejects.toThrow("Some server sessions could not be revoked");
-  expect(await savedAccountRevocationSnapshot()).toEqual([]);
-  expect(state.token).toBe("");
-  expect(state.signOut).toHaveBeenCalledOnce();
-});
-
-it("reports no fallback only after every saved account is revoked", async () => {
-  state.token = "";
-  vi.mocked(fetch).mockImplementation(async () => Response.json(null, { status: 401 }));
-  expect(await selectNextSavedAccount()).toBe("unavailable");
-  expect(fetch).toHaveBeenCalledTimes(2);
-  expect(state.save).not.toHaveBeenCalled();
-});
-
-it.each(["session", "server"])(
-  "stops fallback selection when another %s operation wins",
-  async (change) => {
-    state.token = "";
-    vi.mocked(fetch).mockImplementation(async () => {
-      if (change === "session") {
-        state.token = "new-session";
-        state.generation++;
-      } else state.apiBase = "https://other.example.test";
-      return Response.json(null, { status: 401 });
-    });
-    expect(await selectNextSavedAccount()).toBe("changed");
-    expect(fetch).toHaveBeenCalledTimes(1);
-    expect(state.save).not.toHaveBeenCalled();
-  },
-);

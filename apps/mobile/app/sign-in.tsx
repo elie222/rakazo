@@ -4,7 +4,7 @@ import {
   PASSWORD_RULES,
   suggestEmailCorrection,
 } from "@rakazo/core";
-import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { Redirect, Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   AccessibilityInfo,
@@ -21,6 +21,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../components/native-action-button";
+import { SettingsGroup, SettingsRow } from "../components/settings-group";
+import { cancelHeaderOptions } from "../components/sheet-header";
 import type { AccountSummary } from "../lib/account-sessions";
 import { loadAccountSummaries, selectSavedAccount } from "../lib/account-sessions";
 import { FORM_COLUMN_WIDTH } from "../lib/adaptive-layout";
@@ -295,6 +297,18 @@ export default function SignIn() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: tokens.background }}>
+      <Stack.Screen
+        options={
+          addAccount === "1" && hasSession
+            ? {
+                headerShown: true,
+                headerTransparent: true,
+                title: "",
+                ...cancelHeaderOptions(t("Cancel"), () => router.replace("/")),
+              }
+            : { headerShown: false }
+        }
+      />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -314,13 +328,6 @@ export default function SignIn() {
               keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
               keyboardShouldPersistTaps="handled"
             >
-              {addAccount === "1" && hasSession ? (
-                <NativeActionButton
-                  label={t("Cancel")}
-                  prominence="secondary"
-                  onPress={() => router.replace("/")}
-                />
-              ) : null}
               <Text
                 accessibilityRole="header"
                 style={{
@@ -338,17 +345,22 @@ export default function SignIn() {
                       ? t("Sign up for Rakazo")
                       : t("Reset your password")}
               </Text>
-              {!resetSent && !codeStep && mode !== "forgot"
-                ? savedAccounts.map((account) => (
-                    <NativeActionButton
-                      key={account.userId}
-                      label={account.email}
-                      prominence="secondary"
-                      disabled={pending}
-                      onPress={() => void openSavedAccount(account)}
-                    />
-                  ))
-                : null}
+              {!resetSent && !codeStep && mode !== "forgot" && savedAccounts.length ? (
+                <View style={{ marginTop: 28 }}>
+                  <SettingsGroup>
+                    {savedAccounts.map((account) => (
+                      <SettingsRow
+                        key={account.userId}
+                        title={account.email}
+                        chevron="right"
+                        accessibilityRole="button"
+                        disabled={pending}
+                        onPress={() => void openSavedAccount(account)}
+                      />
+                    ))}
+                  </SettingsGroup>
+                </View>
+              ) : null}
               {resetSent ? (
                 <View style={{ alignItems: "center", marginTop: 28 }}>
                   <Pressable

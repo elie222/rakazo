@@ -4,8 +4,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Sign in to open this notification": "Melde dich an, um diese Benachrichtigung zu öffnen",
   "Sign out all": "Alle abmelden",
   "Sign out all accounts?": "Von allen Konten abmelden?",
-  "Signed out on this device. Some server sessions could not be revoked.":
-    "Auf diesem Gerät abgemeldet. Einige Serversitzungen konnten nicht widerrufen werden.",
+  "Could not sign out of every account": "Abmeldung von allen Konten fehlgeschlagen",
   "How other bots see it": "So sehen andere Bots ihn",
   "Share to": "Teilen mit",
   "{count} files": "{count} Dateien",

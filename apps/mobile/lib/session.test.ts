@@ -1,7 +1,5 @@
-import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { clearAppBadge, syncAppBadge } from "./app-badge";
 import { artifactCacheSession } from "./artifact-cache-session";
 import { stopLiveNotifications } from "./live-notifications.js";
 import { clearNetworkCache } from "./network-cache.js";
@@ -19,8 +17,6 @@ import {
   tokenFromAuthResponse,
 } from "./session.js";
 import { clearFailedSends } from "./thread-feedback.js";
-
-vi.mock("expo-notifications", () => ({ setBadgeCountAsync: vi.fn(async () => true) }));
 
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(),
@@ -78,17 +74,6 @@ describe("mobile session storage", () => {
     expect(clear).toHaveBeenCalledTimes(2);
     await restoreSessionToken("fake-b");
     expect(clear.mock.calls.length).toBeGreaterThan(2);
-  });
-
-  it("clears the icon badge on sign-out and server-session restoration", async () => {
-    registerSessionDiskCache(() => void clearAppBadge());
-    await syncAppBadge(3);
-    vi.mocked(Notifications.setBadgeCountAsync).mockClear();
-    await clearSessionToken();
-    expect(Notifications.setBadgeCountAsync).toHaveBeenLastCalledWith(0);
-    await syncAppBadge(2);
-    await restoreSessionToken("fake-other-server");
-    expect(Notifications.setBadgeCountAsync).toHaveBeenLastCalledWith(0);
   });
 
   it("clears delivered notifications only when the session ends", async () => {

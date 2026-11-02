@@ -1,36 +1,55 @@
 import { readBoundedJsonResponse } from "@rakazo/core";
-import { readChunkedSecureValue, writeChunkedSecureValue } from "./chunked-secure-store";
+import * as SecureStore from "expo-secure-store";
 import { fetchServer } from "./server-headers";
 
-const KEY = "rakazo.pending_session_revocations";
-type Revocation = { apiBase: string; token: string };
+const INDEX_KEY = "rakazo.revocations";
+type Entry = { id: string; apiBase: string };
+type Revocation = Entry & { token: string };
 let writes: Promise<unknown> = Promise.resolve();
 
+const revocationKey = (id: string) => `rakazo.revocation.${id}`;
+
 async function read(): Promise<Revocation[]> {
-  const raw = await readChunkedSecureValue(KEY);
-  if (!raw) return [];
-  const rows: unknown = JSON.parse(raw);
-  if (!Array.isArray(rows)) throw new Error("Could not read pending sign-outs");
-  return rows.filter((row): row is Revocation =>
-    Boolean(
-      row &&
-        typeof row.apiBase === "string" &&
-        row.apiBase &&
-        typeof row.token === "string" &&
-        row.token,
-    ),
+  const raw = await SecureStore.getItemAsync(INDEX_KEY);
+  let entries: unknown = null;
+  try {
+    entries = raw ? JSON.parse(raw) : [];
+  } catch {
+    entries = null;
+  }
+  if (
+    !Array.isArray(entries) ||
+    !entries.every(
+      (entry) =>
+        typeof entry?.id === "string" &&
+        /^[a-z0-9-]+$/.test(entry.id) &&
+        typeof entry.apiBase === "string",
+    )
+  ) {
+    // An unreadable queue cannot be repaired; its sign-outs simply are not retried.
+    await SecureStore.deleteItemAsync(INDEX_KEY).catch(() => undefined);
+    return [];
+  }
+  const rows = await Promise.all(
+    (entries as Entry[]).map(async (entry) => ({
+      ...entry,
+      token: (await SecureStore.getItemAsync(revocationKey(entry.id))) ?? "",
+    })),
+  );
+  const valid = rows.filter((row) => row.token);
+  if (valid.length !== rows.length) await writeIndex(valid);
+  return valid;
+}
+
+async function writeIndex(rows: Revocation[]): Promise<void> {
+  await SecureStore.setItemAsync(
+    INDEX_KEY,
+    JSON.stringify(rows.map(({ id, apiBase }) => ({ id, apiBase }))),
   );
 }
 
-function update(change: (rows: Revocation[]) => Revocation[]): Promise<void> {
-  const next = writes
-    .catch(() => undefined)
-    .then(async () => {
-      const rows = await read();
-      const previous = JSON.stringify(rows);
-      const next = JSON.stringify(change(rows));
-      if (next !== previous) await writeChunkedSecureValue(KEY, next);
-    });
+function serialized(task: () => Promise<void>): Promise<void> {
+  const next = writes.catch(() => undefined).then(task);
   writes = next;
   return next;
 }
@@ -38,15 +57,25 @@ function update(change: (rows: Revocation[]) => Revocation[]): Promise<void> {
 /** Revocation-only credentials never belong in account menus or content requests. */
 export function queueSessionRevocation(apiBase: string, token: string): Promise<void> {
   if (!token) return Promise.resolve();
-  return update((rows) =>
-    rows.some((row) => row.apiBase === apiBase && row.token === token)
-      ? rows
-      : [...rows, { apiBase, token }],
-  );
+  return serialized(async () => {
+    const rows = await read();
+    if (rows.some((row) => row.apiBase === apiBase && row.token === token)) return;
+    const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    await SecureStore.setItemAsync(revocationKey(id), token);
+    await writeIndex([...rows, { id, apiBase, token }]);
+  });
 }
 
 export function completeSessionRevocation(apiBase: string, token: string): Promise<void> {
-  return update((rows) => rows.filter((row) => row.apiBase !== apiBase || row.token !== token));
+  return serialized(async () => {
+    const rows = await read();
+    const done = rows.filter((row) => row.apiBase === apiBase && row.token === token);
+    if (!done.length) return;
+    await writeIndex(rows.filter((row) => !done.includes(row)));
+    await Promise.all(done.map((row) => SecureStore.deleteItemAsync(revocationKey(row.id)))).catch(
+      () => undefined,
+    );
+  });
 }
 
 export async function pendingSessionTokens(apiBase: string): Promise<Set<string>> {

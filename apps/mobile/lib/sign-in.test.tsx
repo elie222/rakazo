@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
+import { Alert } from "react-native";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import NotificationOpen from "../app/notification-open";
 import SignIn from "../app/sign-in";
@@ -22,6 +23,7 @@ import {
   signUp,
 } from "./api";
 import type { NativeActionButtonProps } from "./native-controls";
+import { promptNotificationSignIn } from "./open-notification";
 import { passkeysAvailable, signInWithPasskey } from "./passkey";
 import { continueWithSso } from "./sso";
 
@@ -37,11 +39,23 @@ const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 const server = vi.hoisted(() => ({ base: "https://example.invalid", refocus: () => {} }));
 
 vi.mock("./account-sessions", () => ({
-  selectNotificationAccount: vi.fn(async () => true),
+  selectNotificationAccount: vi.fn(async () => "selected"),
   loadAccountSummaries: vi.fn(async () => []),
   selectSavedAccount: vi.fn(async () => true),
 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 0 }));
+vi.mock("./open-notification", () => ({ promptNotificationSignIn: vi.fn() }));
+vi.mock("../components/settings-group", () => ({
+  SettingsGroup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  SettingsRow: ({ title, onPress }: { title: string; onPress?: () => void }) => (
+    <button type="button" onClick={onPress}>
+      {title}
+    </button>
+  ),
+}));
+vi.mock("../components/sheet-header", () => ({
+  cancelHeaderOptions: (label: string, onPress: () => void) => ({ cancel: { label, onPress } }),
+}));
 
 vi.mock("expo-router", () => ({
   Redirect: ({ href }: { href: string }) => {
@@ -53,11 +67,20 @@ vi.mock("expo-router", () => ({
   useFocusEffect: (effect: () => void) => {
     server.refocus = effect;
   },
+  Stack: {
+    Screen: ({ options }: { options: { cancel?: { label: string; onPress: () => void } } }) =>
+      options.cancel ? (
+        <button type="button" onClick={options.cancel.onPress}>
+          {options.cancel.label}
+        </button>
+      ) : null,
+  },
 }));
 vi.mock("react-native", () => {
   const Container = ({ children }: { children: ReactNode }) => <div>{children}</div>;
   return {
     Platform: { OS: "ios" },
+    Alert: { alert: vi.fn() },
     StyleSheet: { create: (styles: unknown) => styles },
     Keyboard: { dismiss: vi.fn() },
     AccessibilityInfo: { announceForAccessibility: vi.fn() },
@@ -185,7 +208,7 @@ beforeEach(() => {
   vi.mocked(passwordResetCapabilities).mockResolvedValue(capabilities);
   vi.mocked(passkeysAvailable).mockReset().mockResolvedValue(false);
   vi.mocked(signInWithPasskey).mockReset();
-  vi.mocked(selectNotificationAccount).mockReset().mockResolvedValue(true);
+  vi.mocked(selectNotificationAccount).mockReset().mockResolvedValue("selected");
   vi.mocked(loadAccountSummaries).mockReset().mockResolvedValue([]);
   vi.mocked(selectSavedAccount).mockReset().mockResolvedValue(true);
   host = document.createElement("div");
@@ -561,7 +584,7 @@ it("shows the existing sign-in form when adding an account without signing out t
 
 it("opens another saved account without credentials after the primary session is gone", async () => {
   vi.mocked(loadAccountSummaries).mockResolvedValue([
-    { userId: "work", email: "work@example.test", name: "Work", image: null, unread: 0 },
+    { userId: "work", email: "work@example.test", unread: 0 },
   ]);
   await render();
   await press("work@example.test");
@@ -573,7 +596,7 @@ it("opens another saved account without credentials after the primary session is
 
 it("keeps credential recovery when a saved account has expired", async () => {
   vi.mocked(loadAccountSummaries).mockResolvedValue([
-    { userId: "family", email: "family@example.test", name: "Family", image: null, unread: 0 },
+    { userId: "family", email: "family@example.test", unread: 0 },
   ]);
   vi.mocked(selectSavedAccount).mockResolvedValue(false);
   await render();
@@ -590,7 +613,7 @@ it.each(["add", "notification"])(
     if (flow === "add") route.addAccount = "1";
     else route.notificationTarget = "rakazo://thread?userId=work&botId=work-bot";
     vi.mocked(loadAccountSummaries).mockResolvedValue([
-      { userId: "family", email: "family@example.test", name: "Family", image: null, unread: 0 },
+      { userId: "family", email: "family@example.test", unread: 0 },
     ]);
     await render();
     expect(loadAccountSummaries).not.toHaveBeenCalled();
@@ -623,7 +646,7 @@ it("never opens a notification chat after signing into another account", async (
   route.notificationTarget = "rakazo://thread?userId=work&botId=work-bot";
   vi.mocked(rpc).mockResolvedValue({ userId: "family" } as never);
   vi.mocked(signIn).mockResolvedValue({ verificationRequired: false });
-  vi.mocked(selectNotificationAccount).mockResolvedValue(false);
+  vi.mocked(selectNotificationAccount).mockResolvedValue("signed-out");
   await render();
   await type(input("Email")!, "family@example.test");
   await type(input("Password")!, "fixture-password");
@@ -635,8 +658,8 @@ it("never opens a notification chat after signing into another account", async (
   router.replace.mockClear();
   route.target = route.notificationTarget;
   await act(async () => root.render(<NotificationOpen />));
-  expect(router.replace).not.toHaveBeenCalled();
-  expect(host.textContent).toContain("Sign in to open this notification");
+  expect(router.replace).toHaveBeenCalledExactlyOnceWith("/");
+  expect(promptNotificationSignIn).toHaveBeenCalledWith(route.notificationTarget);
 });
 
 it("retries a transient notification lookup without authenticating again", async () => {
@@ -646,7 +669,7 @@ it("retries a transient notification lookup without authenticating again", async
   vi.mocked(signIn).mockResolvedValue({ verificationRequired: false });
   vi.mocked(selectNotificationAccount)
     .mockRejectedValueOnce(new Error("Offline"))
-    .mockResolvedValueOnce(true);
+    .mockResolvedValueOnce("selected");
   await render();
   await type(input("Email")!, "work@example.test");
   await type(input("Password")!, "fixture-password");
@@ -660,10 +683,11 @@ it("retries a transient notification lookup without authenticating again", async
   router.replace.mockClear();
   route.target = route.notificationTarget;
   await act(async () => root.render(<NotificationOpen />));
-  expect(host.textContent).toContain("Could not continue");
-  expect(button("Sign in")).toBeUndefined();
+  expect(Alert.alert).toHaveBeenCalledWith("Could not continue", undefined, expect.any(Array));
   expect(router.replace).not.toHaveBeenCalled();
-  await press("Try again");
+  const retry = vi.mocked(Alert.alert).mock.calls[0]?.[2]?.[1];
+  expect(retry?.text).toBe("Try again");
+  await act(async () => retry?.onPress?.());
   expect(selectNotificationAccount).toHaveBeenCalledTimes(2);
   expect(selectNotificationAccount).toHaveBeenLastCalledWith("work", undefined);
   expect(signIn).toHaveBeenCalledOnce();

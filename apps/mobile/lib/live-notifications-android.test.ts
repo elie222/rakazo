@@ -25,6 +25,7 @@ vi.mock("expo-notifications", () => ({
   requestPermissionsAsync: vi.fn(async () => ({ granted: true })),
 }));
 vi.mock("react-native", () => ({ Platform: { OS: "android" } }));
+vi.mock("./session", () => ({ loadSessionToken: async () => "" }));
 vi.mock("./i18n", () => ({ getActiveUiLocale: () => "de", t: (text: string) => text }));
 const store = vi.hoisted(() => new Map<string, string>());
 vi.mock("expo-secure-store", () => ({
@@ -41,12 +42,7 @@ import {
   setLiveNotificationSettings,
   stopLiveNotifications,
 } from "./live-notifications";
-import {
-  forgetSavedToken,
-  loadSavedAccounts,
-  rememberSavedAccount,
-  setSelectedSavedAccount,
-} from "./saved-accounts";
+import { loadSavedAccounts, rememberSavedAccount } from "./saved-accounts";
 import { saveServerHeaders } from "./server-headers";
 
 beforeEach(() => {
@@ -61,17 +57,13 @@ beforeEach(() => {
     scheduledTasks: true,
     needsAttention: true,
   });
-  setSelectedSavedAccount(null);
 });
 
 const endpoint = "https://app.example.test";
 const account = (userId: string) => ({
   userId,
   token: `${userId}-token`,
-  name: userId,
   email: `${userId}@example.test`,
-  image: null,
-  unread: 0,
 });
 
 describe("Android live notification resume", () => {
@@ -112,26 +104,33 @@ describe("Android live notification resume", () => {
 });
 
 describe("Android account ownership", () => {
-  it("adopts genuine legacy preferences once and preserves them when switching back", async () => {
+  beforeEach(() => {
     native.setAccount = vi.fn(async () => undefined);
-    const legacy = {
-      liveConnection: false,
-      messages: false,
-      scheduledTasks: false,
-      needsAttention: false,
-    };
-    native.getSettings.mockResolvedValue(legacy);
-    await rememberSavedAccount(endpoint, account("family"));
-    setSelectedSavedAccount({ apiBase: endpoint, userId: "family" });
-    await resumeLiveNotifications(endpoint, "family-token", "shared-space");
-    expect((await loadSavedAccounts(endpoint))[0]?.notifications).toEqual(legacy);
+  });
 
+  it("labels the poller's alerts with the account only when several are saved", async () => {
+    await rememberSavedAccount(endpoint, account("family"));
+    await resumeLiveNotifications(endpoint, "family-token", "space-1");
+    expect(native.setAccount).toHaveBeenLastCalledWith("family", "");
+    expect(native.resume).toHaveBeenCalledWith(endpoint, "family-token", "space-1", "de", "");
+
+    await rememberSavedAccount(endpoint, account("work"));
+    await resumeLiveNotifications(endpoint, "family-token", "space-1");
+    expect(native.setAccount).toHaveBeenLastCalledWith("family", "family@example.test");
+  });
+
+  it("restores each account's own preferences in a shared Space", async () => {
+    const family = { ...DEFAULT_LIVE_NOTIFICATION_SETTINGS, liveConnection: true, messages: false };
+    await rememberSavedAccount(endpoint, account("family"));
     await rememberSavedAccount(endpoint, {
       ...account("work"),
       notifications: DEFAULT_LIVE_NOTIFICATION_SETTINGS,
     });
-    setSelectedSavedAccount({ apiBase: endpoint, userId: "work" });
+    await setLiveNotificationSettings(family, endpoint, "family-token", "shared-space");
+    expect((await loadSavedAccounts(endpoint))[0]?.notifications).toEqual(family);
+
     await resumeLiveNotifications(endpoint, "work-token", "shared-space");
+    expect(native.setAccount).toHaveBeenLastCalledWith("work", "work@example.test");
     expect(native.setSettings).toHaveBeenLastCalledWith(
       DEFAULT_LIVE_NOTIFICATION_SETTINGS,
       endpoint,
@@ -140,94 +139,7 @@ describe("Android account ownership", () => {
       "de",
       "",
     );
-    setSelectedSavedAccount({ apiBase: endpoint, userId: "family" });
     await resumeLiveNotifications(endpoint, "family-token", "shared-space");
-    expect(native.setSettings).toHaveBeenLastCalledWith(
-      legacy,
-      endpoint,
-      "family-token",
-      "shared-space",
-      "de",
-      "",
-    );
-  });
-
-  it.each([false, true])(
-    "uses a new account's defaults after another account signs out (new native: %s)",
-    async (modern) => {
-      if (modern) native.setAccount = vi.fn(async () => undefined);
-      const old = {
-        liveConnection: false,
-        messages: false,
-        scheduledTasks: false,
-        needsAttention: false,
-      };
-      native.getSettings.mockResolvedValue(old);
-      await rememberSavedAccount(endpoint, { ...account("family"), notifications: old });
-      setSelectedSavedAccount({ apiBase: endpoint, userId: "family" });
-      await stopLiveNotifications(true);
-      await forgetSavedToken(endpoint, "family-token");
-      await rememberSavedAccount(endpoint, {
-        ...account("work"),
-        notifications: DEFAULT_LIVE_NOTIFICATION_SETTINGS,
-      });
-      setSelectedSavedAccount({ apiBase: endpoint, userId: "work" });
-      await resumeLiveNotifications(endpoint, "work-token", "space-1");
-      expect(native.setSettings).toHaveBeenLastCalledWith(
-        DEFAULT_LIVE_NOTIFICATION_SETTINGS,
-        endpoint,
-        "work-token",
-        "space-1",
-        "de",
-        "",
-      );
-      expect(native.getSettings).not.toHaveBeenCalled();
-      expect(native.resume).not.toHaveBeenCalled();
-    },
-  );
-  it("pauses a new native build until the bearer has a verified saved account", async () => {
-    native.setAccount = vi.fn(async () => undefined);
-    await resumeLiveNotifications(endpoint, "work-token", "space-1");
-    expect(native.stop).toHaveBeenCalledWith(false);
-    expect(native.resume).not.toHaveBeenCalled();
-    expect(native.setAccount).not.toHaveBeenCalled();
-    expect(native.setSettings).not.toHaveBeenCalled();
-
-    await rememberSavedAccount(endpoint, account("work"));
-    await resumeLiveNotifications(endpoint, "work-token", "space-1");
-    expect(native.setAccount).toHaveBeenCalledWith("work", "work@example.test");
-    expect(native.setSettings).toHaveBeenCalledWith(
-      DEFAULT_LIVE_NOTIFICATION_SETTINGS,
-      endpoint,
-      "work-token",
-      "space-1",
-      "de",
-      "",
-    );
-    expect(native.resume).not.toHaveBeenCalled();
-  });
-
-  it.each([false, true])(
-    "pauses when account ownership cannot be read (new native: %s)",
-    async (modern) => {
-      if (modern) native.setAccount = vi.fn(async () => undefined);
-      vi.mocked(SecureStore.getItemAsync).mockRejectedValueOnce(new Error("locked"));
-      await resumeLiveNotifications(endpoint, "work-token", "space-1");
-      expect(native.stop).toHaveBeenCalledWith(false);
-      expect(native.resume).not.toHaveBeenCalled();
-      expect(native.setSettings).not.toHaveBeenCalled();
-    },
-  );
-
-  it("restores each account's own label and notification preferences in a shared Space", async () => {
-    native.setAccount = vi.fn(async () => undefined);
-    const family = { ...DEFAULT_LIVE_NOTIFICATION_SETTINGS, liveConnection: true, messages: false };
-    const work = { ...DEFAULT_LIVE_NOTIFICATION_SETTINGS, needsAttention: false };
-    await rememberSavedAccount(endpoint, { ...account("family"), notifications: family });
-    await rememberSavedAccount(endpoint, { ...account("work"), notifications: work });
-    setSelectedSavedAccount({ apiBase: endpoint, userId: "family" });
-    await resumeLiveNotifications(endpoint, "family-token", "shared-space");
-    expect(native.setAccount).toHaveBeenLastCalledWith("family", "family@example.test");
     expect(native.setSettings).toHaveBeenLastCalledWith(
       family,
       endpoint,
@@ -236,39 +148,37 @@ describe("Android account ownership", () => {
       "de",
       "",
     );
-    setSelectedSavedAccount({ apiBase: endpoint, userId: "work" });
-    await resumeLiveNotifications(endpoint, "work-token", "shared-space");
-    expect(native.setAccount).toHaveBeenLastCalledWith("work", "work@example.test");
-    expect(native.setSettings).toHaveBeenLastCalledWith(
-      work,
-      endpoint,
-      "work-token",
-      "shared-space",
-      "de",
-      "",
-    );
     expect(native.resume).not.toHaveBeenCalled();
   });
 
-  it("does not pause a replacement account when an older ownership read fails", async () => {
-    native.setAccount = vi.fn(async () => undefined);
-    let reject!: (error: Error) => void;
-    vi.mocked(SecureStore.getItemAsync).mockImplementationOnce(
-      () =>
-        new Promise((_resolve, fail) => {
-          reject = fail;
-        }),
-    );
-    const resuming = resumeLiveNotifications(endpoint, "family-token", "space-1");
-    await vi.waitFor(() => expect(reject).toBeTypeOf("function"));
-    setSelectedSavedAccount({ apiBase: endpoint, userId: "work" });
-    reject(new Error("locked"));
-    await resuming;
-    expect(native.stop).not.toHaveBeenCalled();
+  it("keeps a legacy login polling before its account is saved", async () => {
+    await resumeLiveNotifications(endpoint, "family-token", "space-1");
+    expect(native.setAccount).toHaveBeenCalledWith("", "");
+    expect(native.resume).toHaveBeenCalled();
+  });
+
+  it("pauses for a bearer that is not one of the saved accounts", async () => {
+    await rememberSavedAccount(endpoint, account("family"));
+    await resumeLiveNotifications(endpoint, "unknown-token", "space-1");
+    expect(native.stop).toHaveBeenCalledWith(false);
+    expect(native.setAccount).not.toHaveBeenCalled();
     expect(native.resume).not.toHaveBeenCalled();
   });
+
+  it.each([false, true])(
+    "pauses when account ownership cannot be read (new native: %s)",
+    async (modern) => {
+      if (!modern) native.setAccount = undefined;
+      vi.mocked(SecureStore.getItemAsync).mockRejectedValueOnce(new Error("locked"));
+      await resumeLiveNotifications(endpoint, "work-token", "space-1");
+      expect(native.stop).toHaveBeenCalledWith(false);
+      expect(native.resume).not.toHaveBeenCalled();
+      expect(native.setSettings).not.toHaveBeenCalled();
+    },
+  );
 
   it("keeps an older binary working with one saved account and pauses it with several", async () => {
+    native.setAccount = undefined;
     await rememberSavedAccount(endpoint, account("family"));
     await resumeLiveNotifications(endpoint, "family-token", "space-1");
     expect(native.resume).toHaveBeenCalledWith(endpoint, "family-token", "space-1", "de", "");
@@ -279,17 +189,13 @@ describe("Android account ownership", () => {
     expect(native.resume).not.toHaveBeenCalled();
   });
 
-  it("does not apply settings under an unverified native identity", async () => {
-    native.setAccount = vi.fn(async () => undefined);
-    await setLiveNotificationSettings(
-      DEFAULT_LIVE_NOTIFICATION_SETTINGS,
-      endpoint,
-      "unknown-token",
-      "space-1",
-    );
-    expect(native.stop).toHaveBeenCalledWith(false);
-    expect(native.setAccount).not.toHaveBeenCalled();
-    expect(native.setSettings).not.toHaveBeenCalled();
+  it("keeps other logins' alerts when an older binary signs one out", async () => {
+    native.setAccount = undefined;
+    await stopLiveNotifications(true);
+    expect(native.stop).toHaveBeenLastCalledWith(true);
+    await rememberSavedAccount(endpoint, account("work"));
+    await stopLiveNotifications(true);
+    expect(native.stop).toHaveBeenLastCalledWith(false);
   });
 });
 

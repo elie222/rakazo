@@ -80,11 +80,10 @@ import {
   retryPendingSessionRevocations,
 } from "./pending-session-revocations";
 import {
-  cachedSavedAccounts,
+  clearSavedAccounts,
   forgetSavedToken,
   rememberSavedAccount,
   replaceSavedToken,
-  setSelectedSavedAccount,
 } from "./saved-accounts";
 import { API_BASE_STORAGE_KEY as ENDPOINT_KEY } from "./server-config";
 import { fetchServer, loadServerHeaders, saveServerHeaders, serverHeaders } from "./server-headers";
@@ -500,6 +499,7 @@ export async function saveApiBase(
     return { ok: false, error: t("Could not save the server URL") };
   }
   setCachedApiBase(parsed.url);
+  if (cleared) await clearSavedAccounts().catch(() => undefined);
   await clearStoredValue(SPACE_ROLLBACK_KEY);
   return parsed;
 }
@@ -532,6 +532,7 @@ export async function resetApiBase(): Promise<EndpointResult> {
     return { ok: false, error: t("Could not clear the custom server URL") };
   }
   setCachedApiBase(url);
+  if (cleared) await clearSavedAccounts().catch(() => undefined);
   await clearStoredValue(SPACE_ROLLBACK_KEY);
   return { ok: true, url };
 }
@@ -637,20 +638,14 @@ export async function rememberAuthenticatedAccount(
   body: unknown,
   generation: number,
 ): Promise<void> {
-  const user = (
-    body as { user?: { id?: unknown; email?: unknown; name?: unknown; image?: unknown } } | null
-  )?.user;
+  const user = (body as { user?: { id?: unknown; email?: unknown } } | null)?.user;
   if (typeof user?.id !== "string" || typeof user.email !== "string") return;
   await rememberSavedAccount(
     apiBase,
     {
       userId: user.id,
       token,
-      name: typeof user.name === "string" ? user.name : "",
       email: user.email,
-      image: typeof user.image === "string" ? user.image : null,
-      unread:
-        cachedSavedAccounts(apiBase).find((account) => account.userId === user.id)?.unread ?? 0,
       notifications: DEFAULT_LIVE_NOTIFICATION_SETTINGS,
     },
     () => apiBase === currentApiBase() && generation === currentSessionGeneration(),
@@ -849,15 +844,11 @@ export async function signOut(expectedTokens?: readonly string[], expectedApiBas
   const accountToken = (headers.authorization ?? "").replace(/^Bearer /, "");
   if (expectedApiBase !== undefined && apiBase !== expectedApiBase) return;
   if (expectedTokens && !expectedTokens.includes(accountToken)) return;
-  let queued = true;
-  await queueSessionRevocation(apiBase, accountToken).catch(() => {
-    queued = false;
-  });
+  await queueSessionRevocation(apiBase, accountToken).catch(() => undefined);
   // Cleanup remains bound to this login even if a notification selects another account.
   await rpc("notifications/unregisterPush", undefined, {
     requestContext: { apiBase, headers },
   }).catch(() => undefined);
-  let revoked = false;
   try {
     const { response, body } = await fetchMobileJson<{ success?: unknown }>(
       `${apiBase}/api/auth/sign-out`,
@@ -869,10 +860,8 @@ export async function signOut(expectedTokens?: readonly string[], expectedApiBas
       {},
       apiBase,
     );
-    if (response.ok && body?.success === true) {
-      revoked = true;
+    if (response.ok && body?.success === true)
       await completeSessionRevocation(apiBase, accountToken).catch(() => undefined);
-    }
   } catch {
     // Local sign-out still works offline.
   }
@@ -888,8 +877,6 @@ export async function signOut(expectedTokens?: readonly string[], expectedApiBas
     }
   }
   if (localFailed) throw new Error(t("Could not clear the local session"));
-  if (!queued && !revoked)
-    throw new Error(t("Signed out on this device. Some server sessions could not be revoked."));
 }
 
 export async function deleteAccount(password?: string, token?: string) {
@@ -1160,33 +1147,6 @@ async function request(
       typeof verifiedUser?.userId === "string" &&
       typeof verifiedUser.spaceId === "string"
     ) {
-      const identity = parsed.json as { userId: string; name?: string; email?: string };
-      if (
-        requestSessionGeneration === currentSessionGeneration() &&
-        requestApiBase === currentApiBase() &&
-        typeof identity.email === "string"
-      ) {
-        const token = (requestHeaders.authorization ?? "").replace(/^Bearer /, "");
-        if (token) {
-          setSelectedSavedAccount({ apiBase: requestApiBase, userId: identity.userId });
-          await rememberSavedAccount(
-            requestApiBase,
-            {
-              userId: identity.userId,
-              token,
-              name: identity.name ?? "",
-              email: identity.email,
-              image: null,
-              unread:
-                cachedSavedAccounts(requestApiBase).find((row) => row.userId === identity.userId)
-                  ?.unread ?? 0,
-            },
-            () =>
-              requestSessionGeneration === currentSessionGeneration() &&
-              requestApiBase === currentApiBase(),
-          ).catch(() => undefined);
-        }
-      }
       await saveVerifiedIntegrationsScope(requestSessionGeneration, {
         apiBase: requestApiBase,
         userId: verifiedUser.userId,

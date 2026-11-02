@@ -4,7 +4,6 @@ import {
   queueSessionRevocation,
   retryPendingSessionRevocations,
 } from "./pending-session-revocations";
-import { loadSavedAccounts, rememberSavedAccount } from "./saved-accounts";
 
 const disk = vi.hoisted(() => new Map<string, string>());
 vi.mock("expo-secure-store", () => ({
@@ -51,17 +50,19 @@ it("retains failed remote sign-outs for a later bounded bearer-only retry", asyn
   );
 });
 
-it("never exposes queued credentials as saved selectable accounts", async () => {
-  await rememberSavedAccount(apiBase, {
-    userId: "family",
-    token: "family-token",
-    email: "family@example.test",
-    name: "Family",
-    image: null,
-    unread: 0,
-  });
+it("keeps each queued sign-out under its own key and drops an unreadable queue", async () => {
   await queueSessionRevocation(apiBase, "family-token");
-  expect(await loadSavedAccounts(apiBase)).toEqual([]);
+  await queueSessionRevocation(apiBase, "work-token");
+  await queueSessionRevocation(apiBase, "work-token");
+  expect([...disk.keys()].filter((key) => key.startsWith("rakazo.revocation."))).toHaveLength(2);
+  expect(await pendingSessionTokens(apiBase)).toEqual(new Set(["family-token", "work-token"]));
+  const workKey = [...disk.keys()].find((key) => disk.get(key) === "work-token")!;
+  disk.delete(workKey);
+  expect(await pendingSessionTokens(apiBase)).toEqual(new Set(["family-token"]));
+  disk.set("rakazo.revocations", "{not json");
+  expect(await pendingSessionTokens(apiBase)).toEqual(new Set());
+  await queueSessionRevocation(apiBase, "family-token");
+  expect(await pendingSessionTokens(apiBase)).toEqual(new Set(["family-token"]));
 });
 
 it("retries only the configured server and keeps HTTP failures queued", async () => {

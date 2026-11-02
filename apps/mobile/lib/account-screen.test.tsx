@@ -7,11 +7,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Account from "../app/(settings)/account";
-import {
-  refreshAccountSummaries,
-  selectNextSavedAccount,
-  selectSavedAccount,
-} from "./account-sessions";
+import { refreshAccountSummaries, selectSavedAccount } from "./account-sessions";
 import {
   deleteAccount,
   fetchAccountSecurity,
@@ -46,8 +42,6 @@ const { element, account } = vi.hoisted(() => ({
     >,
     push: vi.fn(),
     dismissTo: vi.fn(),
-    apiBase: "http://127.0.0.1:3100",
-    generation: 0,
     approvals: { mode: "ask", enabled: false, skipApprovals: false, checkerAvailable: true },
     rules: [] as { id: string }[],
   },
@@ -57,13 +51,9 @@ vi.mock("./account-sessions", () => ({
   refreshAccountSummaries: vi.fn(async () => []),
   rememberCurrentAccount: vi.fn(async () => undefined),
   selectSavedAccount: vi.fn(async () => false),
-  selectNextSavedAccount: vi.fn<() => Promise<"selected" | "unavailable" | "changed">>(
-    async () => "unavailable",
-  ),
   signOutAllAccounts: vi.fn(async () => undefined),
 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => account.generation }));
 vi.mock("expo-notifications", () => ({
   getPermissionsAsync: vi.fn(async () => ({ status: "granted" })),
 }));
@@ -162,6 +152,7 @@ vi.mock("../components/settings-group", () => ({
     title,
     value,
     accessibilityRole,
+    accessibilityState,
     chevron,
     disabled,
     onPress,
@@ -169,6 +160,7 @@ vi.mock("../components/settings-group", () => ({
     title: string;
     value?: string;
     accessibilityRole?: string;
+    accessibilityState?: { selected?: boolean };
     chevron?: string;
     disabled?: boolean;
     onPress?: () => void;
@@ -180,6 +172,7 @@ vi.mock("../components/settings-group", () => ({
         role: accessibilityRole,
         "data-chevron": chevron,
         "data-value": value,
+        "aria-selected": accessibilityState?.selected,
         "data-row": "",
         disabled,
         onClick: onPress,
@@ -191,7 +184,7 @@ vi.mock("../components/settings-group", () => ({
   useStackedSettings: () => false,
 }));
 vi.mock("./api", () => ({
-  currentApiBase: () => account.apiBase,
+  currentApiBase: () => "http://127.0.0.1:3100",
   deleteAccount: vi.fn(),
   fetchAccountSecurity: vi.fn(async () => ({ hasPassword: true })),
   loadSessionToken: vi.fn(async () => "token"),
@@ -295,12 +288,9 @@ let container: HTMLDivElement | undefined;
 beforeEach(() => {
   vi.clearAllMocks();
   account.me = { userId: "user-1", name: "Tester", email: "tester@example.test" };
-  account.apiBase = "http://127.0.0.1:3100";
-  account.generation = 0;
   account.rules = [];
   vi.mocked(fetchAccountSecurity).mockResolvedValue(security());
   vi.mocked(refreshAccountSummaries).mockResolvedValue([]);
-  vi.mocked(selectNextSavedAccount).mockResolvedValue("unavailable");
   vi.mocked(loadSessionToken).mockResolvedValue("token");
   vi.mocked(signOut).mockReset();
 });
@@ -563,10 +553,10 @@ it("shows the approval mode as the Approvals row's value, with Rules only once t
   expect(account.push).toHaveBeenCalledWith("/approvals");
 });
 
-it("shows each saved account's unread count and makes the selected identity explicit", async () => {
+it("shows each saved account's unread count and marks the active one", async () => {
   vi.mocked(refreshAccountSummaries).mockResolvedValue([
-    { userId: "user-1", name: "Family", email: "family@example.test", image: null, unread: 2 },
-    { userId: "user-2", name: "Work", email: "work@example.test", image: null, unread: 3 },
+    { userId: "user-1", email: "family@example.test", unread: 2 },
+    { userId: "user-2", email: "work@example.test", unread: 3 },
   ]);
   vi.mocked(selectSavedAccount).mockResolvedValue(false);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -577,72 +567,18 @@ it("shows each saved account's unread count and makes the selected identity expl
   const rows = [...container.querySelectorAll<HTMLButtonElement>("button")];
   const selected = rows.find((row) => row.textContent === "family@example.test")!;
   const work = rows.find((row) => row.textContent === "work@example.test")!;
-  expect(selected.dataset.value).toBe("✓  2");
+  expect(selected.dataset.value).toBe("2");
+  expect(selected.getAttribute("aria-selected")).toBe("true");
   expect(selected.disabled).toBe(true);
   expect(work.dataset.value).toBe("3");
   await act(async () => work.click());
   expect(selectSavedAccount).toHaveBeenCalledWith("user-2");
 });
 
-it.each(["selected", "unavailable", "changed"] as const)(
-  "routes single-account sign-out according to the validated fallback result: %s",
-  async (result) => {
-    vi.mocked(selectNextSavedAccount).mockResolvedValue(result);
-    vi.mocked(loadSessionToken).mockResolvedValue("");
-    const view = await renderAccount();
-    await view.press("Sign out");
-    expect(signOut).toHaveBeenCalledOnce();
-    expect(selectNextSavedAccount).toHaveBeenCalledOnce();
-    expect(account.dismissTo).toHaveBeenCalledTimes(result === "selected" ? 1 : 0);
-    expect(replaceWithSignIn).toHaveBeenCalledTimes(result === "unavailable" ? 1 : 0);
-  },
-);
-
-it.each(["session", "server"])(
-  "keeps a concurrent %s change after single-account sign-out",
-  async (change) => {
-    vi.mocked(loadSessionToken).mockResolvedValue("");
-    vi.mocked(signOut).mockImplementation(async () => {
-      if (change === "session") vi.mocked(loadSessionToken).mockResolvedValue("new-session");
-      else account.apiBase = "https://other.example.test";
-    });
-    const view = await renderAccount();
-    await view.press("Sign out");
-    expect(selectNextSavedAccount).not.toHaveBeenCalled();
-    expect(replaceWithSignIn).not.toHaveBeenCalled();
-    expect(account.dismissTo).not.toHaveBeenCalled();
-    expect(view.button("Sign out")?.disabled).toBe(false);
-  },
-);
-
-it("opens saved-account recovery when fallback verification fails after local sign-out", async () => {
-  vi.mocked(loadSessionToken).mockResolvedValue("");
-  vi.mocked(selectNextSavedAccount).mockRejectedValueOnce(new Error("offline"));
+it("sends single-account sign-out to sign-in, which lists the other saved logins", async () => {
   const view = await renderAccount();
   await view.press("Sign out");
   expect(signOut).toHaveBeenCalledOnce();
-  expect(selectNextSavedAccount).toHaveBeenCalledOnce();
-  expect(replaceWithSignIn).toHaveBeenCalledWith("/sign-in");
+  expect(replaceWithSignIn).toHaveBeenCalledOnce();
   expect(account.dismissTo).not.toHaveBeenCalled();
-  expect(view.alert()).toBeNull();
 });
-
-it.each(["session", "server"])(
-  "does not navigate over a concurrent %s change when fallback verification fails",
-  async (change) => {
-    vi.mocked(loadSessionToken).mockResolvedValue("");
-    vi.mocked(selectNextSavedAccount).mockImplementationOnce(async () => {
-      if (change === "session") {
-        account.generation++;
-        vi.mocked(loadSessionToken).mockResolvedValue("replacement-token");
-      } else account.apiBase = "https://other.example.test";
-      throw new Error("offline");
-    });
-    const view = await renderAccount();
-    await view.press("Sign out");
-    expect(selectNextSavedAccount).toHaveBeenCalledOnce();
-    expect(replaceWithSignIn).not.toHaveBeenCalled();
-    expect(account.dismissTo).not.toHaveBeenCalled();
-    expect(view.button("Sign out")?.disabled).toBe(false);
-  },
-);

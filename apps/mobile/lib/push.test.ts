@@ -147,29 +147,12 @@ describe("push registration on Android", () => {
 });
 
 it("registers one device token independently for every saved signed-in account", async () => {
-  native.store.set(
-    "rakazo.saved_accounts",
-    JSON.stringify({
-      [currentApiBase()]: [
-        {
-          userId: "family",
-          token: "family-token",
-          name: "Family",
-          email: "family@example.test",
-          image: null,
-          unread: 1,
-        },
-        {
-          userId: "work",
-          token: "work-token",
-          name: "Work",
-          email: "work@example.test",
-          image: null,
-          unread: 2,
-        },
-      ],
-    }),
-  );
+  for (const userId of ["family", "work"])
+    await rememberSavedAccount(currentApiBase(), {
+      userId,
+      token: `${userId}-token`,
+      email: `${userId}@example.test`,
+    });
   await restoreSessionToken("family-token");
   permission.resolve({ granted: true });
   await registerPushToken();
@@ -202,10 +185,7 @@ it.each([false, true])(
       await rememberSavedAccount(apiBase, {
         userId,
         token: `${userId}-token`,
-        name: userId,
         email: `${userId}@example.test`,
-        image: null,
-        unread: 0,
       });
     }
     await restoreSessionToken("family-token");

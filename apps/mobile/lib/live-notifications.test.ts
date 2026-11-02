@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const secureStorage = vi.hoisted(() => new Map<string, string>());
+const session = vi.hoisted(() => ({ token: "" }));
 vi.mock("expo-modules-core", () => ({ requireNativeModule: vi.fn() }));
 vi.mock("expo-notifications", () => ({
   setNotificationHandler: vi.fn(),
@@ -18,6 +19,7 @@ vi.mock("expo-secure-store", () => ({
     secureStorage.set(key, value);
   }),
 }));
+vi.mock("./session", () => ({ loadSessionToken: async () => session.token }));
 
 import * as Notifications from "expo-notifications";
 import {
@@ -28,14 +30,24 @@ import {
   setOpenNotificationThread,
   stopLiveNotifications,
 } from "./live-notifications";
-import { loadSavedAccounts, rememberSavedAccount, setSelectedSavedAccount } from "./saved-accounts";
+import { rememberSavedAccount, rememberServerOrigin } from "./saved-accounts";
 
-beforeEach(async () => {
+const apiBase = "https://app.example.test";
+beforeEach(() => {
   vi.clearAllMocks();
   secureStorage.clear();
-  setSelectedSavedAccount(null);
-  await loadSavedAccounts("https://app.example.test");
+  session.token = "";
 });
+
+async function signInAs(active: string, ...others: string[]) {
+  for (const userId of [active, ...others])
+    await rememberSavedAccount(apiBase, {
+      userId,
+      token: `${userId}-token`,
+      email: `${userId}@example.test`,
+    });
+  session.token = `${active}-token`;
+}
 
 // The handler is installed once per module; keep it across cleared mocks.
 let foreground: Parameters<typeof Notifications.setNotificationHandler>[0] | undefined;
@@ -162,135 +174,102 @@ describe("after a chat's notifications change", () => {
 });
 
 describe("when the session ends", () => {
-  it("keeps deliveries when no account owns the cleanup", async () => {
+  it("clears every delivered notification once no login remains", async () => {
+    vi.mocked(Notifications.getPresentedNotificationsAsync).mockResolvedValue([
+      { request: { identifier: "family", content: { data: { userId: "family" } } } },
+      { request: { identifier: "legacy", content: { data: {} } } },
+    ] as never);
     await stopLiveNotifications();
-    expect(Notifications.dismissAllNotificationsAsync).not.toHaveBeenCalled();
+    expect(Notifications.dismissNotificationAsync).not.toHaveBeenCalled();
 
     await stopLiveNotifications(true);
-    expect(Notifications.dismissAllNotificationsAsync).not.toHaveBeenCalled();
+    expect(vi.mocked(Notifications.dismissNotificationAsync).mock.calls).toEqual([
+      ["family"],
+      ["legacy"],
+    ]);
+  });
+
+  it("keeps the delivered notifications of logins still on this device", async () => {
+    await signInAs("work");
+    vi.mocked(Notifications.getPresentedNotificationsAsync).mockResolvedValue([
+      { request: { identifier: "family", content: { data: { userId: "family" } } } },
+      { request: { identifier: "work", content: { data: { "rakazo.userId": "work" } } } },
+      { request: { identifier: "legacy", content: { data: {} } } },
+    ] as never);
+    await stopLiveNotifications(true);
+    expect(vi.mocked(Notifications.dismissNotificationAsync).mock.calls).toEqual([["family"]]);
   });
 });
 
-it("keeps inactive-account completions visible and never dismisses their matching thread ID", async () => {
-  setSelectedSavedAccount({ apiBase: "https://app.example.test", userId: "family" });
-  await setOpenNotificationThread({ botId: "bot-1", threadId: "thread-1" });
-  await expect(
-    foregroundHandler()?.handleNotification({
-      request: { content: { data: { userId: "work", kind: "completion", threadId: "thread-1" } } },
-    } as never),
-  ).resolves.toMatchObject({ shouldShowBanner: true });
-  expect(
-    notificationTargetsThread({ userId: "work", threadId: "thread-1" }, { threadId: "thread-1" }),
-  ).toBe(false);
-  setSelectedSavedAccount(null);
-});
+describe("with several logins", () => {
+  it("alerts for another login's work, even for the open thread's ID", async () => {
+    await signInAs("family", "work");
+    await setOpenNotificationThread({ botId: "bot-1", threadId: "thread-1" });
+    await expect(
+      foregroundHandler()?.handleNotification({
+        request: {
+          content: { data: { userId: "work", kind: "completion", threadId: "thread-1" } },
+        },
+      } as never),
+    ).resolves.toMatchObject({ shouldShowBanner: true });
+    await expect(
+      foregroundHandler()?.handleNotification({
+        request: {
+          content: {
+            data: { userId: "family", apiBase, kind: "completion", threadId: "thread-1" },
+          },
+        },
+      } as never),
+    ).resolves.toMatchObject({ shouldShowBanner: false });
+  });
 
-it.each(["completion", "help"])(
-  "keeps untagged %s visible when several accounts are saved",
-  async (kind) => {
-    const apiBase = "https://app.example.test";
-    for (const userId of ["family", "work"]) {
-      await rememberSavedAccount(apiBase, {
-        userId,
-        token: `${userId}-token`,
-        email: `${userId}@example.test`,
-        name: userId,
-        image: null,
-        unread: 0,
-      });
-    }
-    setSelectedSavedAccount({ apiBase, userId: "family" });
+  it("alerts for an untagged delivery whose login is ambiguous", async () => {
+    await signInAs("family", "work");
     await setOpenNotificationThread({ threadId: "thread-1" });
     await expect(
       foregroundHandler()?.handleNotification({
-        request: { content: { data: { kind, threadId: "thread-1" } } },
+        request: { content: { data: { kind: "completion", threadId: "thread-1" } } },
       } as never),
     ).resolves.toMatchObject({ shouldShowBanner: true, shouldShowList: true });
-    expect(notificationTargetsThread({ threadId: "thread-1" }, { threadId: "thread-1" })).toBe(
-      false,
-    );
+  });
+
+  it("recognizes the server by the same names a notification tap accepts", async () => {
+    await signInAs("family", "work");
+    await rememberServerOrigin(apiBase, "https://web.example.test");
+    await setOpenNotificationThread({ threadId: "thread-1" });
+    for (const name of [`${apiBase}/`, "https://web.example.test"])
+      await expect(
+        foregroundHandler()?.handleNotification({
+          request: {
+            content: {
+              data: { userId: "family", apiBase: name, kind: "completion", threadId: "thread-1" },
+            },
+          },
+        } as never),
+      ).resolves.toMatchObject({ shouldShowBanner: false });
     await expect(
       foregroundHandler()?.handleNotification({
-        request: { content: { data: { kind, threadId: "thread-1", userId: "family", apiBase } } },
+        request: {
+          content: {
+            data: {
+              userId: "family",
+              apiBase: "https://other.example.test",
+              kind: "completion",
+              threadId: "thread-1",
+            },
+          },
+        },
       } as never),
-    ).resolves.toMatchObject({ shouldShowBanner: false, shouldShowList: false });
-  },
-);
+    ).resolves.toMatchObject({ shouldShowBanner: true });
+  });
 
-it("keeps an untagged completion visible before saved account selection initializes", async () => {
-  const apiBase = "https://app.example.test";
-  secureStorage.set(
-    "rakazo.saved_accounts",
-    JSON.stringify({
-      [apiBase]: ["family", "work"].map((userId) => ({
-        userId,
-        token: `${userId}-token`,
-        email: `${userId}@example.test`,
-        name: userId,
-        image: null,
-        unread: 0,
-      })),
-    }),
-  );
-  await expect(
-    foregroundHandler()?.handleNotification({
-      request: { content: { data: { kind: "completion", threadId: "thread-1" } } },
-    } as never),
-  ).resolves.toMatchObject({ shouldShowBanner: true, shouldShowList: true });
-});
-
-it("keeps a notification visible when its server is ambiguous", async () => {
-  for (const apiBase of ["https://app.example.test", "https://other.example.test"]) {
-    await rememberSavedAccount(apiBase, {
-      userId: "family",
-      token: "token",
-      email: "family@example.test",
-      name: "Family",
-      image: null,
-      unread: 0,
-    });
-  }
-  setSelectedSavedAccount({ apiBase: "https://app.example.test", userId: "family" });
-  await setOpenNotificationThread({ threadId: "thread-1" });
-  await expect(
-    foregroundHandler()?.handleNotification({
-      request: {
-        content: { data: { kind: "completion", threadId: "thread-1", userId: "family" } },
-      },
-    } as never),
-  ).resolves.toMatchObject({ shouldShowBanner: true });
-});
-
-it("signing out dismisses only the selected account's delivered notifications", async () => {
-  setSelectedSavedAccount({ apiBase: "https://app.example.test", userId: "family" });
-  vi.mocked(Notifications.getPresentedNotificationsAsync).mockResolvedValueOnce([
-    { request: { identifier: "family-notice", content: { data: { userId: "family" } } } },
-    { request: { identifier: "work-notice", content: { data: { userId: "work" } } } },
-  ] as never);
-  await stopLiveNotifications(true);
-  expect(Notifications.dismissNotificationAsync).toHaveBeenCalledWith("family-notice");
-  expect(Notifications.dismissNotificationAsync).not.toHaveBeenCalledWith("work-notice");
-  setSelectedSavedAccount(null);
-});
-
-it("keeps another server's notification when cloned account and thread IDs match", async () => {
-  setSelectedSavedAccount({ apiBase: "https://app.example.test", userId: "family" });
-  await setOpenNotificationThread({ threadId: "thread-1" });
-  expect(
-    notificationTargetsThread(
-      { userId: "family", apiBase: "https://other.example.test", threadId: "thread-1" },
-      { threadId: "thread-1" },
-    ),
-  ).toBe(false);
-  vi.mocked(Notifications.getPresentedNotificationsAsync).mockResolvedValueOnce([
-    {
-      request: {
-        identifier: "other-server",
-        content: { data: { userId: "family", apiBase: "https://other.example.test" } },
-      },
-    },
-  ] as never);
-  await stopLiveNotifications(true);
-  expect(Notifications.dismissNotificationAsync).not.toHaveBeenCalledWith("other-server");
-  setSelectedSavedAccount(null);
+  it("dismisses a read thread's notifications only for the active login", async () => {
+    await signInAs("family", "work");
+    vi.mocked(Notifications.getPresentedNotificationsAsync).mockResolvedValueOnce([
+      { request: { identifier: "family", content: { data: { userId: "family", threadId: "t" } } } },
+      { request: { identifier: "work", content: { data: { userId: "work", threadId: "t" } } } },
+    ] as never);
+    await dismissThreadNotifications({ threadId: "t" });
+    expect(vi.mocked(Notifications.dismissNotificationAsync).mock.calls).toEqual([["family"]]);
+  });
 });

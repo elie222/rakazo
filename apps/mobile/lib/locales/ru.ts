@@ -4,8 +4,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Sign in to open this notification": "Войдите, чтобы открыть это уведомление",
   "Sign out all": "Выйти из всех",
   "Sign out all accounts?": "Выйти из всех аккаунтов?",
-  "Signed out on this device. Some server sessions could not be revoked.":
-    "Вы вышли на этом устройстве. Некоторые сеансы на сервере не удалось отозвать.",
+  "Could not sign out of every account": "Не удалось выйти из всех аккаунтов",
   "How other bots see it": "Как его видят другие боты",
   "Share to": "Отправить в",
   "{count} files": "Файлов: {count}",

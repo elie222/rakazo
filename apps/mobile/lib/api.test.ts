@@ -2,11 +2,10 @@ import { getArtifactById } from "./artifacts";
 
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
 vi.mock("./saved-accounts", () => ({
-  cachedSavedAccounts: vi.fn(() => []),
+  clearSavedAccounts: vi.fn(async () => undefined),
   forgetSavedToken: vi.fn(async () => undefined),
   rememberSavedAccount: vi.fn(async () => undefined),
   replaceSavedToken: vi.fn(async () => undefined),
-  setSelectedSavedAccount: vi.fn(),
 }));
 vi.mock("./pending-session-revocations", () => ({
   queueSessionRevocation: vi.fn(async () => undefined),
@@ -1085,7 +1084,7 @@ describe("mobile API authentication", () => {
     expect(await snapshotSessionToken()).toEqual({ ok: true, value: "" });
   });
 
-  it("reports incomplete revocation after clearing locally when both queue and server fail", async () => {
+  it("signs out locally even when both the revocation queue and the server fail", async () => {
     const store = new Map([["rakazo.session_token", "family-token"]]);
     mockSecureStore(store);
     await saveSessionToken("family-token");
@@ -1096,7 +1095,7 @@ describe("mobile API authentication", () => {
         throw new Error("offline");
       }),
     );
-    await expect(signOut()).rejects.toThrow("Some server sessions could not be revoked");
+    await signOut();
     expect(store.has("rakazo.session_token")).toBe(false);
     expect(await snapshotSessionToken()).toEqual({ ok: true, value: "" });
   });

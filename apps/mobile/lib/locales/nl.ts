@@ -4,8 +4,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Sign in to open this notification": "Meld je aan om deze melding te openen",
   "Sign out all": "Alle accounts afmelden",
   "Sign out all accounts?": "Bij alle accounts afmelden?",
-  "Signed out on this device. Some server sessions could not be revoked.":
-    "Afgemeld op dit apparaat. Sommige serversessies konden niet worden ingetrokken.",
+  "Could not sign out of every account": "Uitloggen bij alle accounts mislukt",
   "How other bots see it": "Hoe andere bots deze zien",
   "Share to": "Delen met",
   "{count} files": "{count} bestanden",

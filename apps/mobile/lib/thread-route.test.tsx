@@ -12,7 +12,7 @@ const state = vi.hoisted(() => ({
   replace: vi.fn(),
   verifyOwner: vi.fn(),
   generation: 1,
-  params: {} as { spaceId?: string; userId?: string },
+  params: {} as { botId?: string; spaceId?: string; userId?: string },
 }));
 
 const { element } = vi.hoisted(() => ({
@@ -120,11 +120,16 @@ it("shows the thread without switching when no space is requested", async () => 
 });
 
 it("never mounts a thread when its notification belongs to another account", async () => {
-  state.params = { userId: "other-user", spaceId: "other-space" };
+  state.params = { botId: "bot-1", userId: "other-user", spaceId: "other-space" };
   await render();
   expect(container.textContent).toContain("Sign in to open this notification");
   expect(container.textContent).not.toContain("thread:");
   expect(state.selectSpace).not.toHaveBeenCalled();
+  act(() => container.querySelector("button")?.click());
+  expect(state.replace).toHaveBeenCalledWith({
+    pathname: "/notification-open",
+    params: { target: "rakazo://thread?botId=bot-1&userId=other-user&spaceId=other-space" },
+  });
 });
 
 it("waits for notification ownership before switching spaces or showing recovery", async () => {

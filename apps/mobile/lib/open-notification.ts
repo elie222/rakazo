@@ -1,8 +1,10 @@
 import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import { useEffect } from "react";
+import { Alert } from "react-native";
 import { selectNotificationAccount } from "./account-sessions";
 import { currentApiBase } from "./api";
+import { t } from "./i18n";
 import {
   notificationResponseRoute,
   notificationTargetLink,
@@ -34,6 +36,23 @@ function clearNotificationResponseIfCurrent(response: Notifications.Notification
   if (last && key && key === occurrenceKey(last)) Notifications.clearLastNotificationResponse();
 }
 
+/** The notification's login is not on this device; signing in to it opens the notification. */
+export function promptNotificationSignIn(target: string): void {
+  Alert.alert(t("Sign in to open this notification"), undefined, [
+    { text: t("Cancel"), style: "cancel" },
+    {
+      text: t("Sign in"),
+      onPress: () => {
+        closeSettingsSheet();
+        router.replace({
+          pathname: "/sign-in",
+          params: { mode: "in", addAccount: "1", notificationTarget: target },
+        });
+      },
+    },
+  ]);
+}
+
 export async function openNotificationResponse(
   response: Notifications.NotificationResponse | null | undefined,
 ): Promise<boolean> {
@@ -47,22 +66,18 @@ export async function openNotificationResponse(
   openedResponses.add(key);
   const attempt = ++openAttempt;
   try {
-    const selected = await selectNotificationAccount(target.params.userId, target.params.apiBase);
+    const account = await selectNotificationAccount(target.params.userId, target.params.apiBase);
     if (attempt !== openAttempt) {
       openedResponses.delete(key);
       return false;
     }
-    if (!selected) {
+    if (account !== "selected") {
       // Expo keeps this tap as the last response. Leaving it there would open
       // the thread on a later cold start, after sign-in, with no new tap.
       // A newer delivery can become last while this session read is in flight.
       clearNotificationResponseIfCurrent(response);
       openedResponses.delete(key);
-      closeSettingsSheet();
-      router.replace({
-        pathname: "/notification-open",
-        params: { target: notificationTargetLink(target) },
-      });
+      if (account === "signed-out") promptNotificationSignIn(notificationTargetLink(target));
       return false;
     }
     closeSettingsSheet();

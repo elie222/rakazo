@@ -35,7 +35,7 @@ import { MessageMenuHost } from "../components/message-action-menu";
 import { MessageActionSheetHost } from "../components/message-action-sheet-host";
 import { NativeSymbol } from "../components/native-symbol";
 import { VoicePlayerBar } from "../components/voice-player-bar";
-import { refreshAccountSummaries, selectNextSavedAccount } from "../lib/account-sessions";
+import { refreshAppBadge } from "../lib/account-sessions";
 import {
   currentApiBase,
   loadApiBase,
@@ -45,7 +45,7 @@ import {
   subscribeApiBase,
   subscribeSessionRejected,
 } from "../lib/api";
-import { appBadgeGeneration, forgetAppBadge, syncAppBadge } from "../lib/app-badge";
+import { forgetAppBadge } from "../lib/app-badge";
 import { loadAppearancePreference, mobileTokens } from "../lib/appearance";
 import { replaceWithSignIn } from "../lib/auth-routing";
 import { AvatarScreenFocus } from "../lib/avatar-life";
@@ -69,7 +69,6 @@ import { loadResponseStreamingPreference } from "../lib/response-streaming";
 import { clearSavedChats } from "../lib/saved-chats";
 import {
   currentReadySessionGeneration,
-  currentSessionGeneration,
   registerSessionDiskCache,
   subscribeSessionGeneration,
 } from "../lib/session";
@@ -273,31 +272,19 @@ function LayoutContent() {
   );
   useEffect(() => {
     if (!ready) return;
-    let active = true;
-    const refresh = () => {
-      const badgeGeneration = appBadgeGeneration();
-      void refreshAccountSummaries()
-        .then((accounts) => {
-          if (active && badgeGeneration === appBadgeGeneration())
-            return syncAppBadge(accounts.reduce((sum, row) => sum + row.unread, 0));
-        })
-        .catch(() => undefined);
-    };
+    // Every saved login's unread count, for the icon and the account list.
+    const refresh = () => void refreshAppBadge().catch(() => undefined);
     refresh();
     const timer = setInterval(refresh, 30_000);
     const foreground = AppState.addEventListener("change", (state) => {
       if (state === "active") refresh();
     });
     return () => {
-      active = false;
       clearInterval(timer);
       foreground.remove();
     };
   }, [ready, accountGeneration]);
-  const pathname = usePathname();
-  const recoveryParams = useGlobalSearchParams();
-  const screen = analyticsScreen(pathname);
-  const router = useRouter();
+  const screen = analyticsScreen(usePathname());
   useEffect(() => setMobileMonitoringScreen(screen), [screen]);
   useEffect(() => {
     const surface = Platform.OS;
@@ -347,39 +334,9 @@ function LayoutContent() {
   useEffect(() => {
     if (!ready) return;
     // A session revoked or expired on the server ends here, from whichever screen noticed it.
-    let active = true;
-    const unsubscribe = subscribeSessionRejected(() => {
-      // Notification and add-account screens own their intended destination.
-      if (
-        pathname === "/notification-open" ||
-        recoveryParams.notificationTarget ||
-        recoveryParams.addAccount === "1"
-      )
-        return;
-      const apiBase = currentApiBase();
-      const generation = currentSessionGeneration();
-      void selectNextSavedAccount()
-        .then((result) => {
-          if (!active || apiBase !== currentApiBase()) return;
-          if (result === "selected" && generation + 1 === currentSessionGeneration()) {
-            router.dismissTo("/");
-            router.replace("/");
-          } else if (result === "unavailable" && generation === currentSessionGeneration()) {
-            replaceWithSignIn();
-          }
-        })
-        .catch((error) => {
-          if (!active || apiBase !== currentApiBase() || generation !== currentSessionGeneration())
-            return;
-          Alert.alert(errorText(error, t("Could not continue")));
-          replaceWithSignIn();
-        });
-    });
-    return () => {
-      active = false;
-      unsubscribe();
-    };
-  }, [ready, pathname, recoveryParams.notificationTarget, recoveryParams.addAccount, router, t]);
+    // Sign-in lists the other saved logins.
+    return subscribeSessionRejected(() => replaceWithSignIn());
+  }, [ready]);
 
   useEffect(() => {
     if (!ready) return;

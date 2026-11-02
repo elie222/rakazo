@@ -32,6 +32,7 @@ import { InboxListFooter, SWIPE_ROWS, useInboxRenderItem } from "../components/i
 import { CompactRowsContext, SelectedChatContext } from "../components/inbox-rows";
 import { PickChatPane } from "../components/pick-chat-pane";
 import { useUnreadJumpPills } from "../components/unread-jump-overlay";
+import { refreshAppBadge } from "../lib/account-sessions";
 import { fetchSpaceActivity } from "../lib/activity";
 import { loadActivityMode, saveActivityMode } from "../lib/activity-mode";
 import { readableGutters } from "../lib/adaptive-layout";
@@ -45,12 +46,7 @@ import {
   selectSpace,
   signOut,
 } from "../lib/api";
-import {
-  appBadgeGeneration,
-  forgetAppBadge,
-  syncInboxAppBadge,
-  unreadChatCount,
-} from "../lib/app-badge";
+import { forgetAppBadge, unreadChatCount } from "../lib/app-badge";
 import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
 import { AvatarViewportScope, createAvatarViewport } from "../lib/avatar-life";
 import { isPaywallShown } from "../lib/billing";
@@ -213,7 +209,6 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     });
   }, []);
 
-  const [badgeLoad, setBadgeLoad] = useState<{ generation: number } | null>(null);
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") forgetAppBadge();
@@ -222,7 +217,6 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   }, []);
 
   const loadBots = useCallback(async () => {
-    const badgeGeneration = appBadgeGeneration();
     if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
     const requestId = ++inboxRequestId.current;
     const apiBase = currentApiBase();
@@ -278,7 +272,6 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         }
       }
       inboxLoaded.current = true;
-      setBadgeLoad({ generation: badgeGeneration });
       setLoadFailure(null);
       saveInbox(
         {
@@ -481,9 +474,9 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   ]);
   const badgeCount = me ? unreadChatCount(inboxSpaces) : null;
   useEffect(() => {
-    if (badgeCount === null || badgeLoad === null) return;
-    void syncInboxAppBadge(badgeCount, badgeLoad.generation);
-  }, [badgeCount, badgeLoad]);
+    // Reading a chat here changes the count the icon shows.
+    if (badgeCount !== null) void refreshAppBadge().catch(() => undefined);
+  }, [badgeCount]);
   const initials = accountDisplay(me ?? {}, t("You")).initial ?? "?";
   const organizeSpace = organizeTarget
     ? organizeTarget.spaceId === me?.spaceId
