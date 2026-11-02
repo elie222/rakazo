@@ -630,6 +630,8 @@ describe("outbound proxy", () => {
     const proxyUrl = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
     vi.stubEnv("HTTP_PROXY", proxyUrl);
     vi.stubEnv("http_proxy", proxyUrl);
+    vi.stubEnv("NO_PROXY", "");
+    vi.stubEnv("no_proxy", "");
     try {
       await run({ proxied, hosts, connectHosts });
     } finally {
