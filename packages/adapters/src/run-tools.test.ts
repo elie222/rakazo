@@ -45,7 +45,12 @@ function dispatchContext(tainted: boolean) {
     run: { userId: "user-1" },
     source: { ownerStartedRun: true },
     runId: "run-1",
-    state: { tainted, handedOff: false, ownerSettingsRefused: false },
+    state: {
+      tainted,
+      handedOff: false,
+      ownerSettingsRefused: false,
+      reply: { computerTaskSteps: new Set() },
+    },
     trust: {
       loadAutoReviewPreference: async () => ({ enabled: true, skipApprovals: false }),
       receivedOutsideMessage: async () => false,

@@ -1,6 +1,6 @@
 import type { AgentToolExecutionObserver } from "@rakazo/adapter-kit";
 import { toolResultTaintsRun } from "@rakazo/core";
-import { isTerminatingReplyResult } from "./approval-effect.js";
+import { isTerminatingReplyResult, isToolPauseResult } from "./approval-effect.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS, MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.js";
 import type { RunContext } from "./run-context.js";
 import { noteComputerTaskStep } from "./run-progress.js";
@@ -98,16 +98,15 @@ async function dispatchTool(
   if ("error" in request) return request;
   const refused = await prepareToolRequest(ctx, request);
   if (refused) return refused;
-  // Before the gate and the tool, so a step waiting for approval counts and a message_user
-  // running alongside it already sees the step. One that ends in an error is taken back.
-  noteComputerTaskStep(ctx.state.reply, request.name);
+  // A browser or desktop step is noted once it starts or waits for approval; one that ends in
+  // an error is taken back.
   let failed = true;
   try {
     const result = await gateAndRunTool(ctx, request, observer);
     failed = isToolError(result);
     return result;
   } finally {
-    if (failed) noteComputerTaskStep(ctx.state.reply, request.name, -1);
+    if (failed) ctx.state.reply.computerTaskSteps.delete(request.executionId);
   }
 }
 
@@ -117,7 +116,10 @@ async function gateAndRunTool(
   observer: AgentToolExecutionObserver | undefined,
 ) {
   const gate = await gateToolCall(ctx, request, observer);
-  if ("result" in gate) return gate.result;
+  if ("result" in gate) {
+    if (isToolPauseResult(gate.result)) noteComputerTaskStep(ctx.state.reply, request);
+    return gate.result;
+  }
   if (!gate.call.applied) return toolHandler(gate.call.name)(ctx, gate.call);
   let outcome: "success" | "failure" = "failure";
   try {

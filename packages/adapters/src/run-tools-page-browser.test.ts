@@ -38,7 +38,10 @@ async function runPageTool(name: string, args: Record<string, unknown> = {}) {
     tools: { disabled: new Set<string>() },
     providers: { browser },
     secrets: new Set([secret]),
-    state: { screen: { unchangedVisualStreak: { count: 0 } } },
+    state: {
+      screen: { unchangedVisualStreak: { count: 0 } },
+      reply: { computerTaskSteps: new Set() },
+    },
   };
   const call = { name, args, finish: async (result: unknown) => result };
   const result = (await pageBrowserTool(ctx as never, call as never)) as {
@@ -104,7 +107,10 @@ describe("page tools save a page's file downloads in the calling bot's own folde
       tools: { disabled: new Set<string>() },
       providers: { browser },
       secrets: new Set([nameSecret]),
-      state: { screen: { unchangedVisualStreak: { count: 0 } } },
+      state: {
+        screen: { unchangedVisualStreak: { count: 0 } },
+        reply: { computerTaskSteps: new Set() },
+      },
     };
     const args =
       name === "browser_navigate"
@@ -178,6 +184,7 @@ describe("screen tools keep off the screen while a takeover holds it or teaching
         get,
       },
       secrets: new Set<string>(),
+      state: { reply: { computerTaskSteps: new Set() } },
     };
     const call = {
       name,

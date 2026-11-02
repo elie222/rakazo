@@ -16,8 +16,8 @@ import type { ReplyState, RunContext } from "./run-context.js";
 import { publishMessage } from "./run-messages.js";
 import { runAllowsSilentEmpty, runPromotesMidTurnNarration } from "./run-replies.js";
 import { PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
-import { USER_COMPUTER_SCREEN_TOOLS } from "./run-tools-user-computer.js";
 import { isExactNoResponse } from "./silent-reply.js";
+import { USER_COMPUTER_SCREEN_TOOLS } from "./user-computer-tools.js";
 import {
   clampUserProgressMessage,
   extractNarrationText,
@@ -49,7 +49,7 @@ export async function createReplyState(
     turnStartedAtMs: run.startedAt?.getTime() ?? Date.now(),
     progressBudgetStart: 0,
     steeringReplyPending: false,
-    computerTaskSteps: 0,
+    computerTaskSteps: new Set(),
     steeringResets: 0,
     lastSteeringResetAt: Number.NEGATIVE_INFINITY,
     workingNotes: [],
@@ -102,8 +102,12 @@ const BROWSER_AND_DESKTOP_TOOLS = new Set([
   ...USER_COMPUTER_SCREEN_TOOLS,
 ]);
 
-export function noteComputerTaskStep(reply: ReplyState, tool: string, change: 1 | -1 = 1) {
-  if (BROWSER_AND_DESKTOP_TOOLS.has(tool)) reply.computerTaskSteps += change;
+/** Call once the step is about to run or is waiting for approval, never before it is refused. */
+export function noteComputerTaskStep(
+  reply: ReplyState,
+  call: { readonly name: string; readonly executionId: string },
+) {
+  if (BROWSER_AND_DESKTOP_TOOLS.has(call.name)) reply.computerTaskSteps.add(call.executionId);
 }
 
 /**
@@ -113,7 +117,7 @@ export function noteComputerTaskStep(reply: ReplyState, tool: string, change: 1 
 export function canPostLongTaskHeadsUp(ctx: RunContext) {
   const { reply } = ctx.state;
   return (
-    reply.computerTaskSteps > 0 &&
+    reply.computerTaskSteps.size > 0 &&
     reply.midTurnProgressCount === 0 &&
     isConversationalRun(ctx.run.trigger) &&
     !runAllowsSilentEmpty(ctx.run.trigger)

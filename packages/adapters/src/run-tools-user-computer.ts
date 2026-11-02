@@ -11,6 +11,7 @@ import type {
 import { HOST_SCREEN_MAX_ACTIONS, hostScreenAction } from "./host-screen.js";
 import { nativeShellCommandArgv } from "./native-shell.js";
 import type { RunContext } from "./run-context.js";
+import { noteComputerTaskStep } from "./run-progress.js";
 import type { ToolCall } from "./run-tool-gate.js";
 import {
   isRunningShellCommand,
@@ -231,6 +232,7 @@ async function userComputerScreen(ctx: RunContext, call: ToolCall, request: Scre
   if (!request.app) return call.finish({ error: "app must name an app on the user's computer." });
   const connected = await connectedUserComputer(ctx);
   if (!connected) return call.finish({ error: USER_COMPUTER_UNAVAILABLE });
+  noteComputerTaskStep(ctx.state.reply, call);
   const { owner, devices, deviceId } = connected;
   const { signal } = ctx.context;
   try {

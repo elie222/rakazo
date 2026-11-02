@@ -96,8 +96,8 @@ export interface ReplyState {
   progressBudgetStart: number;
   /** The first interim message after one may answer the person at once. */
   steeringReplyPending: boolean;
-  /** Browser or desktop steps taken or awaiting approval; any lets the bot say at once it will take a while. */
-  computerTaskSteps: number;
+  /** Calls of browser or desktop steps that ran or await approval; any lets the bot say at once it will take a while. */
+  computerTaskSteps: Set<string>;
   steeringResets: number;
   lastSteeringResetAt: number;
   /**

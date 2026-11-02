@@ -80,6 +80,8 @@ async function runTurn(
     deniedCall?: string;
     /** The owner is teaching the bot a skill on its computer. */
     teaching?: boolean;
+    /** Holds the teaching and earlier-denial checks open until it settles. */
+    refusalHeld?: Promise<void>;
     /** The page browser fails the step after reaching the page. */
     browserFails?: boolean;
   } = {},
@@ -270,21 +272,26 @@ async function runTurn(
     },
     taughtSkill: {
       findMany: vi.fn(async () => []),
-      findFirst: vi.fn(async () => (options.teaching ? { id: "skill-1" } : null)),
+      findFirst: vi.fn(async () => {
+        await options.refusalHeld;
+        return options.teaching ? { id: "skill-1" } : null;
+      }),
     },
     vaultCredential: { findMany: vi.fn(async () => []) },
     agentSkill: { findMany: vi.fn(async () => []) },
     scratchpadItem: { findMany: vi.fn(async () => []) },
     externalEffect: {
-      findMany: vi.fn(async (query?: { where?: { status?: unknown; kind?: unknown } }) =>
-        query?.where?.status === "denied"
+      findMany: vi.fn(async (query?: { where?: { status?: unknown; kind?: unknown } }) => {
+        if (query?.where?.status === "denied" && query.where.kind === options.deniedTool)
+          await options.refusalHeld;
+        return query?.where?.status === "denied"
           ? query.where.kind === options.deniedTool
             ? [{ request: {}, result: null }]
             : []
           : options.allowedApp && typeof query?.where?.kind === "object"
             ? [{ id: "effect-allowed", request: { app: options.allowedApp } }]
-            : [],
-      ),
+            : [];
+      }),
       findFirst: vi.fn(async () => null),
       findUnique: vi.fn(async (query?: { where?: { idempotencyKey?: string } }) =>
         options.deniedCall && query?.where?.idempotencyKey?.includes(`:${options.deniedCall}:`)
@@ -909,6 +916,46 @@ describe("notes that can't be posted as messages", () => {
     ).toEqual([]);
     for (const trigger of ["routine", "webhook", "reaction", "bot_message"])
       expect(await sent(trigger, "browser_snapshot")).toEqual([]);
+  });
+
+  it("posts no heads-up alongside a step that is refused while message_user runs", async () => {
+    const sent = async (
+      step: string,
+      refusal: {
+        teaching?: boolean;
+        deniedTool?: string;
+        ownDesktop?: boolean;
+        allowedApp?: string;
+      },
+    ) => {
+      let release!: () => void;
+      const refusalHeld = new Promise<void>((resolve) => (release = resolve));
+      const { messages } = await runTurn("", false, undefined, [], "fyi", {
+        trigger: "user",
+        graphical: true,
+        ...refusal,
+        refusalHeld,
+        // The step is refused only after message_user has finished.
+        runtime: async function* (request) {
+          const running = request.executeTool!(step, { app: "Notes" }, "call-0");
+          await request.executeTool!(
+            "message_user",
+            { message: "This will take a few minutes." },
+            "call-1",
+          );
+          release();
+          await running.catch(() => undefined);
+          yield { type: "text", text: "Done." };
+          yield { type: "done", text: "" };
+        },
+      });
+      return sentTexts(messages);
+    };
+    for (const step of ["computer_observe", "browser_snapshot"])
+      expect(await sent(step, { teaching: true })).toEqual([]);
+    const denied = "user_computer_observe";
+    const notes = { ownDesktop: true, allowedApp: "Notes" };
+    expect(await sent(denied, { ...notes, deniedTool: denied })).toEqual([]);
   });
 });
 

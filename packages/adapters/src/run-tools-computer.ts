@@ -41,6 +41,7 @@ import type { RunContext } from "./run-context.js";
 import { addRunSecrets } from "./run-context.js";
 import { builtinOffered } from "./run-instructions.js";
 import { computerScreenToolResult } from "./run-lifecycle.js";
+import { noteComputerTaskStep } from "./run-progress.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import {
   isRunningShellCommand,
@@ -125,18 +126,19 @@ function formatObservation(
   return result;
 }
 
-async function screenBlocked(ctx: RunContext): Promise<string | undefined> {
+async function screenBlocked(ctx: RunContext, call: ToolCall): Promise<string | undefined> {
   if (ctx.computer.heldForTakeover) return DESKTOP_HELD_FOR_TAKEOVER_MESSAGE;
   if (await getActiveTeachingSession(ctx.deps.prisma, ctx.run.spaceId, ctx.run.botId)) {
     return "Teaching is in progress. Stop teaching before using the computer.";
   }
+  noteComputerTaskStep(ctx.state.reply, call);
   return undefined;
 }
 
 export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
   const { deps, run, bot, context } = ctx;
   const { name, args } = call;
-  const blocked = await screenBlocked(ctx);
+  const blocked = await screenBlocked(ctx, call);
   if (blocked) return call.finish({ error: blocked });
   if (name !== "browser_snapshot") ctx.computer.checkpoint.markDirty();
   // Pages can echo a filled login (e.g. a username field), so scrub every page result.
@@ -239,7 +241,7 @@ export const computerTools: ToolHandlers = {
   async computer_observe(ctx, call) {
     const { deps, context } = ctx;
     const { name } = call;
-    const blocked = await screenBlocked(ctx);
+    const blocked = await screenBlocked(ctx, call);
     if (blocked) return { error: blocked };
     return computerScreenToolResult(async () =>
       formatObservation(
@@ -251,7 +253,7 @@ export const computerTools: ToolHandlers = {
   async computer_act(ctx, call) {
     const { deps, context } = ctx;
     const { name, args } = call;
-    const blocked = await screenBlocked(ctx);
+    const blocked = await screenBlocked(ctx, call);
     if (blocked) return { error: blocked };
     const actions = parseComputerActions(args.actions);
     const visualActionKey = computerVisualActionKey(actions);
@@ -434,7 +436,7 @@ export const computerTools: ToolHandlers = {
   async open_path(ctx, call) {
     const { deps, bot, context } = ctx;
     const { name, args } = call;
-    const blocked = await screenBlocked(ctx);
+    const blocked = await screenBlocked(ctx, call);
     if (blocked) return call.finish({ error: blocked });
     const requestedPath = String(args.path ?? "");
     ctx.computer.checkpoint.markDirty();
@@ -471,7 +473,7 @@ export const computerTools: ToolHandlers = {
   async launch_app(ctx, call) {
     const { deps, context } = ctx;
     const { name, args } = call;
-    const blocked = await screenBlocked(ctx);
+    const blocked = await screenBlocked(ctx, call);
     if (blocked) return call.finish({ error: blocked });
     const application = String(args.application ?? "");
     ctx.computer.checkpoint.markDirty();
