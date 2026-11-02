@@ -42,13 +42,17 @@ export function modelUsageRoleRank(
   credentials: readonly ModelCredential[] = [],
 ): number | null {
   if (!role) return null;
-  const choices = [role.primary, ...role.backups].filter((choice) => choice !== null);
+  // Without a chosen primary, the deployment default is the model that runs.
+  const choices = [role.primary ?? role.deploymentPrimary ?? null, ...role.backups].filter(
+    (choice) => choice !== null,
+  );
   const rank = choices.findIndex(
     (choice) => resolveRoleChoiceCredentialId(choice, credentials) === credentialId,
   );
   return rank < 0 ? null : rank;
 }
 
+/** Mirrors the server's findConnectedModelCredential, which runs use. */
 function resolveRoleChoiceCredentialId(
   choice: ModelRoleChoice,
   credentials: readonly ModelCredential[],
@@ -93,7 +97,7 @@ export function sortModelUsageEntries<T extends ModelUsageSortEntry>(
           return inverted ? b - a : a - b;
         }
         return (
-          (inverted ? -1 : 1) * collator.compare(left.entry.label, right.entry.label) ||
+          collator.compare(left.entry.label, right.entry.label) ||
           left.entry.id.localeCompare(right.entry.id) ||
           left.index - right.index
         );

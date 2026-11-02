@@ -48,6 +48,21 @@ describe("provider usage sorting", () => {
     ]);
   });
 
+  it("keeps connections of equal rank in name order when backups come first", () => {
+    const unassigned = [
+      { id: "beta", label: "Beta", mainRank: null },
+      { id: "main", label: "Main", mainRank: 0 },
+      { id: "alpha", label: "Alpha", mainRank: null },
+      { id: "backup", label: "Backup", mainRank: 1 },
+    ];
+    expect(sortModelUsageEntries(unassigned, "main-model", true).map((entry) => entry.id)).toEqual([
+      "backup",
+      "main",
+      "alpha",
+      "beta",
+    ]);
+  });
+
   it("sorts alphabetically with numeric names and resolves role rank by credential", () => {
     expect(sortModelUsageEntries(entries, "alphabetical").map((entry) => entry.id)).toEqual([
       "two",
@@ -98,6 +113,49 @@ describe("provider usage sorting", () => {
     };
     expect(modelUsageRoleRank(role, "main-codex", credentials)).toBe(0);
     expect(modelUsageRoleRank(role, "unused-codex", credentials)).toBeNull();
+  });
+
+  it("ranks the deployment default when no primary model is chosen", () => {
+    const role = {
+      primary: null,
+      deploymentPrimary: { provider: "compatible", modelId: "main", credentialId: "default" },
+      backups: [{ provider: "compatible", modelId: "backup", credentialId: "backup" }],
+    };
+    expect(modelUsageRoleRank(role, "default", [])).toBe(0);
+    expect(modelUsageRoleRank(role, "backup", [])).toBe(1);
+    expect(
+      modelUsageRoleRank(
+        { ...role, primary: { ...role.backups[0]!, credentialId: "chosen" } },
+        "default",
+        [],
+      ),
+    ).toBeNull();
+  });
+
+  it("resolves an unpinned model no connection owns to the provider's first preference, as the server does", () => {
+    const credentials: ModelCredential[] = [
+      {
+        id: "second",
+        provider: "anthropic",
+        label: "Second",
+        hasKey: true,
+        isDefault: true,
+        modelId: "model-b",
+        preferenceRank: 1,
+      },
+      {
+        id: "first",
+        provider: "anthropic",
+        label: "First",
+        hasKey: true,
+        isDefault: false,
+        modelId: "model-a",
+        preferenceRank: 0,
+      },
+    ];
+    const role = { primary: { provider: "anthropic", modelId: "model-c" }, backups: [] };
+    expect(modelUsageRoleRank(role, "first", credentials)).toBe(0);
+    expect(modelUsageRoleRank(role, "second", credentials)).toBeNull();
   });
 
   it("resolves unpinned compatible roles to the connection that enables the model", () => {
