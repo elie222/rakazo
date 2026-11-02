@@ -103,7 +103,10 @@ describe("withAppIntents prebuild", () => {
       "Rakazo/VoiceMessageRecorder.swift",
       "Rakazo/VoiceMessageActivity.swift",
     ]);
-    expect(widgetSettings).toMatchObject({ CURRENT_PROJECT_VERSION: "7", MARKETING_VERSION: "2.0.0" });
+    expect(widgetSettings).toMatchObject({
+      CURRENT_PROJECT_VERSION: "7",
+      MARKETING_VERSION: "2.0.0",
+    });
   });
 });
 
