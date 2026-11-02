@@ -13,7 +13,7 @@ const avatar = (name: string) => `/brand/job-bots/${name}.webp`;
 <div class:list={["feature-illustration", `feature-illustration--${kind}`]} aria-hidden="true">
   <div class="fi-card">
     {kind === "model" ? (
-      [["coding-agent", "Claude Sonnet"], ["chief-of-staff", "GPT"]].map(([bot, model]) => (
+      [["coding-agent", "Claude Sonnet"], ["account-manager", "GPT"]].map(([bot, model]) => (
         <div class="fi-row">
           <img class="fi-avatar" src={avatar(bot)} alt="" width="28" height="28" loading="lazy" />
           <span class="fi-select">
