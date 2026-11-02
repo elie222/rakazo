@@ -238,7 +238,7 @@ export function modelSize(result: PageBrowserResult): Pick<StepRecord, "modelCha
     view && typeof view === "object" && "kind" in view
       ? TOOL_RESULT_TEXT_LIMIT
       : serializeToolResult(view, undefined, "browser_snapshot", {}).length;
-  return { modelChars: sent, clipped: true };
+  return { modelChars: Math.min(sent, TOOL_RESULT_TEXT_LIMIT), clipped: true };
 }
 
 export type StepRecord = {
