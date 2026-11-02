@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   BROWSER_STILL_RUNNING_EXIT,
   browserCloseProgram,
+  browserProfilePathForScreen,
   DEFAULT_DESKTOP_ENV,
   desktopControlCommand,
   desktopTerminalCommand,
@@ -711,6 +712,92 @@ describe("shared Linux desktop lifecycle", () => {
         } catch {
           // The close command may fail before starting a replacement.
         }
+      }
+    },
+  );
+
+  it.skipIf(process.platform !== "linux")(
+    "starts the screen browser again when the one it found exits before its port answers",
+    () => {
+      const root = mkdtempSync(path.join(tmpdir(), "desktop-ensure-"));
+      roots.push(root);
+      const bin = path.join(root, "bin");
+      const launches = path.join(root, "launches");
+      const ready = path.join(root, "ready");
+      mkdirSync(bin);
+      const screenEnv = {
+        ...env,
+        browserProfilesDir: path.join(root, "profiles"),
+        displayStart: 31_000,
+        preservePrimaryDisplay: true,
+      };
+      const { debugPort } = screenPorts(0, screenEnv);
+      writeFileSync(
+        path.join(bin, "rakazo-browser"),
+        [
+          "#!/usr/bin/env python3",
+          "import os, socket, sys, time",
+          `open(${JSON.stringify(launches)}, "a").write("launch\\n")`,
+          "server = socket.socket()",
+          "server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)",
+          `server.bind(("127.0.0.1", ${debugPort}))`,
+          "server.listen()",
+          "time.sleep(60)",
+          "",
+        ].join("\n"),
+      );
+      chmodSync(path.join(bin, "rakazo-browser"), 0o755);
+      const command = ensureScreenCommand(0, "bot", "token", screenEnv)
+        .replaceAll("/tmp/rakazo", path.join(root, "runtime"))
+        .replaceAll("/usr/share/novnc", root);
+      const cdpChecked = command.indexOf("\nfi\n", command.indexOf("CDP not ready")) + 4;
+      const profile = browserProfilePathForScreen("bot", screenEnv);
+      mkdirSync(profile, { recursive: true });
+      const closing = spawn(
+        "python3",
+        [
+          "-c",
+          'import os, time; open(os.environ["READY"], "w").write("ready"); time.sleep(1.5)',
+          `--user-data-dir=${profile}`,
+          `--remote-debugging-port=${debugPort}`,
+        ],
+        { stdio: "ignore", detached: true, env: { ...process.env, READY: ready } },
+      );
+      try {
+        waitForReady(ready);
+        const result = spawnSync(
+          "bash",
+          [
+            "-eu",
+            "-c",
+            [
+              "xdpyinfo() { return 0; }",
+              "command() { return 0; }",
+              command.slice(0, cdpChecked),
+              "echo cdp-ready",
+            ].join("\n"),
+          ],
+          {
+            encoding: "utf8",
+            timeout: 20_000,
+            env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}` },
+          },
+        );
+        expect(result.stdout, result.stderr).toContain("cdp-ready");
+        expect(readFileSync(launches, "utf8")).toBe("launch\n");
+      } finally {
+        closing.kill("SIGKILL");
+        const browser = Number(
+          readFileSync(
+            path.join(
+              root,
+              "runtime",
+              `browser-pid-${createHash("sha256").update("bot").digest("hex").slice(0, 32)}`,
+            ),
+            "utf8",
+          ),
+        );
+        if (Number.isSafeInteger(browser) && browser > 0) process.kill(browser, "SIGKILL");
       }
     },
   );
