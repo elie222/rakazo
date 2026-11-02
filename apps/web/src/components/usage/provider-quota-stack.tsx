@@ -29,7 +29,7 @@ import { useSpaceQueries } from "../../lib/query";
 import { ConnectionQuota } from "./connection-quota";
 
 export function ProviderQuotaStack({ compact = false }: { compact?: boolean }) {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const queries = useSpaceQueries();
   const credentials = useQuery({ ...queries.models.credentials.queryOptions({}), retry: false });
   const catalog = useQuery({ ...queries.models.list.queryOptions({}), retry: false });
@@ -93,6 +93,7 @@ export function ProviderQuotaStack({ compact = false }: { compact?: boolean }) {
     entries.map(({ sortLabel, ...entry }) => ({ ...entry, label: sortLabel })),
     order,
     inverted,
+    i18n.locale,
   ).flatMap(({ id }) => {
     const entry = entriesById.get(id);
     return entry ? [entry] : [];
