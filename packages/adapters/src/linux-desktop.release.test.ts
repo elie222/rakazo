@@ -1,6 +1,7 @@
 import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
+import { BROWSER_STILL_RUNNING_EXIT } from "@rakazo/core/node/desktop-runtime";
 import { describe, expect, it } from "vitest";
-import { BrowserStoppedReleaseError } from "./computer-screens.js";
+import { BrowserStillRunningError, BrowserStoppedReleaseError } from "./computer-screens.js";
 import { LinuxDesktop } from "./linux-desktop.js";
 
 const context = {
@@ -113,5 +114,17 @@ describe("LinuxDesktop.connectScreen", () => {
 
     expect(error.message).toBe("computer desktop operation failed");
     expect(error.cause.message).toBe("exit 137");
+  });
+});
+
+describe("LinuxDesktop.stopBrowsers", () => {
+  it("names a browser that is open again so the save can wait for it", async () => {
+    const desktop = new LinuxDesktop(
+      host({ code: BROWSER_STILL_RUNNING_EXIT, stdout: "", stderr: "browser still running\n" }),
+    );
+
+    await expect(desktop.stopBrowsers(computer, context)).rejects.toBeInstanceOf(
+      BrowserStillRunningError,
+    );
   });
 });

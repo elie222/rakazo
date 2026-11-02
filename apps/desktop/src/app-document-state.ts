@@ -1,3 +1,5 @@
+import { t, withDetail } from "./i18n.js";
+
 /**
  * Empty `#root` shells and session-pending skeletons count as loaded HTML but are
  * not a usable app. After session resolves, wait for a bootstrapped shell
@@ -65,8 +67,18 @@ export async function waitForMountedAppDocument(
 ): Promise<AppDocumentState> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (contents.isDestroyed()) throw new Error("The window closed before the app loaded.");
-    if (contents.isCrashed()) throw new Error("Renderer stopped after load.");
+    if (contents.isDestroyed()) {
+      throw withDetail(
+        new Error("The window closed before the app loaded."),
+        t("The window closed before the app loaded."),
+      );
+    }
+    if (contents.isCrashed()) {
+      throw withDetail(
+        new Error("Renderer stopped after load."),
+        t("Renderer stopped after load."),
+      );
+    }
     let state: AppDocumentState;
     try {
       state = (await contents.executeJavaScript(APP_DOCUMENT_STATE_SCRIPT)) as AppDocumentState;

@@ -169,6 +169,26 @@
   margin: 0.65em 0;
 }
 
+/* A text fence reads as prose: the body font and wrapped lines on the code card, each line taking
+   its direction from its own text like the mobile fence. */
+.rk-chat-markdown .rk-chat-markdown-pre-prose,
+.rk-chat-markdown .rk-chat-markdown-pre-prose code {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  direction: inherit;
+}
+
+.rk-chat-markdown .rk-chat-markdown-pre-prose {
+  unicode-bidi: plaintext;
+  text-align: start;
+}
+
+.rk-chat-markdown .rk-chat-markdown-pre-prose code {
+  white-space: pre-wrap;
+  unicode-bidi: normal;
+}
+
 .rk-chat-markdown .rk-chat-markdown-pre-wrap pre {
   margin: 0;
 }

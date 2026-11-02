@@ -3,7 +3,7 @@ import type { BillingStatus } from "@rakazo/contracts";
 import { Button, Skeleton } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { ModelCreditsSettings } from "../components/ModelCredits";
-import { formatBillingDate, formatBillingPrice } from "../lib/billing";
+import { billingDateLabel, formatBillingPrice } from "../lib/billing";
 import { rpc } from "../lib/rpc";
 
 export function BillingSettingsPanel() {
@@ -55,15 +55,7 @@ export function BillingSettingsPanel() {
             : t`Inactive`
     : null;
 
-  const date = status ? billingDate(status) : null;
-  const day = date ? formatBillingDate(date.at, locale) : "";
-  const dateLabel = date
-    ? date.kind === "trial"
-      ? t`Trial ends ${day}`
-      : date.kind === "ends"
-        ? t`Ends ${day}`
-        : t`Renews ${day}`
-    : null;
+  const dateLabel = status ? billingDateLabel(status, locale) : null;
 
   const price = status?.price ? formatBillingPrice(status.price, locale) : null;
   const seats = status?.seats ?? 0;
@@ -117,20 +109,4 @@ export function BillingSettingsPanel() {
       ) : null}
     </div>
   );
-}
-
-function billingDate(
-  status: BillingStatus,
-): { kind: "trial" | "ends" | "renews"; at: string } | null {
-  if (status.state === "trialing" && status.trialEndsAt) {
-    return { kind: "trial", at: status.trialEndsAt };
-  }
-  // Unpaid and paused subscriptions do not renew until the owner resumes them.
-  if (!status.currentPeriodEndsAt || status.state === "unpaid" || status.state === "paused") {
-    return null;
-  }
-  if (status.cancelAtPeriodEnd || status.state === "canceled") {
-    return { kind: "ends", at: status.currentPeriodEndsAt };
-  }
-  return { kind: "renews", at: status.currentPeriodEndsAt };
 }

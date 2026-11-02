@@ -1055,6 +1055,55 @@ describe("MCP connector session cache", () => {
       }
     });
 
+    it("warns when the run was cancelled before it listed a live session's tools", async () => {
+      vi.stubGlobal("fetch", mcpFetch({ failNext: false, initializations: 0 }));
+      const connector = connectorWith(SERVER);
+      const run = new AbortController();
+      const error = vi.spyOn(getLogger(), "error");
+      const warn = vi.spyOn(getLogger(), "warn");
+      try {
+        await connector.discoverTools(context);
+        run.abort();
+        expect(
+          await connector.discoverTools({ ...(context as object), signal: run.signal } as never),
+        ).toEqual(unavailableOnly());
+        expect(error).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith("mcp discovery failed for server demo", {
+          reason: expect.stringContaining("aborted"),
+        });
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
+
+    it("warns when the server does not list its tools in time", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(() => new Promise<Response>(() => undefined)),
+      );
+      const connector = new McpConnector(
+        {
+          botMcpServer: { findMany: vi.fn(async () => [ASSIGNMENT]) },
+          mcpServer: { ...NO_SHARED_SERVERS, updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        } as never,
+        {} as never,
+        { network: TEST_NETWORK, discoveryTimeoutMs: 50 },
+      );
+      const error = vi.spyOn(getLogger(), "error");
+      const warn = vi.spyOn(getLogger(), "warn");
+      try {
+        expect(await connector.discoverTools(context)).toEqual(unavailableOnly());
+        expect(error).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith("mcp discovery failed for server demo", {
+          reason: expect.stringContaining("did not list its tools"),
+        });
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
+
     it("still reports an unexpected failure as an error", async () => {
       vi.stubGlobal(
         "fetch",

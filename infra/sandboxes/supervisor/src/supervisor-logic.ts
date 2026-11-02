@@ -27,6 +27,7 @@ import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { pathToFileURL } from "node:url";
 import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core";
+import type Docker from "dockerode";
 import { z } from "zod";
 import type { SandboxInput } from "./computer-spec.js";
 import { xdotoolCommand } from "./computer-spec.js";
@@ -770,4 +771,48 @@ export function computerCommandEnv(layout: { display: string }) {
     "NPM_CONFIG_PREFIX=/home/rakazo/.local",
     "PIP_USER=1",
   ];
+}
+
+/** Resolve the inspected ID before removing, so a changed name cannot target another container. */
+export async function removeOwnedComputer(
+  named: Pick<Docker.Container, "inspect">,
+  remove: (id: string) => Promise<unknown>,
+  owns: (info: Docker.ContainerInspectInfo) => boolean,
+  removed: (id: string) => void,
+): Promise<boolean> {
+  try {
+    const info = await named.inspect();
+    if (!info.Id || !owns(info)) return false;
+    await remove(info.Id);
+    removed(info.Id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Only create's 409 can reclaim an owned name holder; never retry start failures. */
+export async function createComputerWithNameRetry<T>(
+  create: () => Promise<T>,
+  removeNamed: () => Promise<boolean>,
+): Promise<T> {
+  try {
+    return await create();
+  } catch (error) {
+    if ((error as { statusCode?: number })?.statusCode !== 409 || !(await removeNamed())) {
+      throw error;
+    }
+    return await create();
+  }
+}
+
+export function isManagedComputer(
+  info: Docker.ContainerInspectInfo,
+  botId: string,
+  spaceId: string,
+  image: string,
+) {
+  const labels = info.Config.Labels ?? {};
+  const managed = labels["rakazo.managed"] === "true" || info.Config.Image === image;
+  return managed && hasComputerIdentity(labels, botId, spaceId);
 }

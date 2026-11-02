@@ -71,6 +71,8 @@ function normalizePath(pathname: string): string {
 export function isIndexedPath(pathname: string): boolean {
   const normalized = normalizePath(pathname);
   if (normalized.endsWith(".xml")) return false;
+  // Claim forms are for an app's owner, not for search.
+  if (/^\/integrations\/[^/]+\/claim$/.test(normalized)) return false;
   const category = BLOG_CATEGORIES.find(
     (candidate) => normalizePath(categoryPath(candidate)) === normalized,
   );

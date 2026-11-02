@@ -2,7 +2,7 @@
 reviews:
   # No "review skipped" comment on the PRs CodeRabbit sits out.
   review_status: false
-  # Greptile is the default reviewer; CodeRabbit only reviews PRs labeled
+  # Qodo is the default reviewer; CodeRabbit only reviews PRs labeled
   # review:cr (see .github/workflows/review-bot.yml).
   auto_review:
     enabled: false

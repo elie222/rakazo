@@ -630,13 +630,40 @@ async function readTool(
 
 /**
  * What a tool returned, as text a bot can read: an MCP result's text parts
- * rather than its `{content:[{type:"text",text}]}` envelope.
+ * beside its structured copy, rather than its `{content:[{type:"text",text}]}`
+ * envelope. A text block that only repeated the structured data is dropped on
+ * the way in, so any text left is supplemental — the note needs both to keep
+ * the details that triggered the routine. An error result keeps its text on the
+ * way in; when the structured copy only repeats that text, the text alone is the
+ * message, and any other diagnostic keeps the structured copy.
  */
 export function toolResultText(data: unknown): string {
   if (typeof data === "string") return data;
   const texts = toolResultTextParts(data);
-  if (texts.length) return texts.join("\n");
+  const { structuredContent: structured, isError } =
+    (data as { structuredContent?: unknown; isError?: unknown } | null) ?? {};
+  const text = texts.join("\n");
+  if (isError === true && text.trim() && repeatsErrorText(structured, text)) return text;
+  if (structured && typeof structured === "object" && !Array.isArray(structured)) {
+    const json = stableStringify(structured);
+    return texts.length ? `${text}\n${json}` : json;
+  }
+  if (texts.length) return text;
   return stableStringify(data ?? null);
+}
+
+/**
+ * Whether a structured error only repeats the error text: an object whose sole fields are
+ * `error` or `message` strings the text already contains. Any other field is a diagnostic the
+ * note keeps, with its key.
+ */
+function repeatsErrorText(data: unknown, text: string): boolean {
+  if (data === null || data === undefined) return true;
+  if (typeof data !== "object" || Array.isArray(data)) return false;
+  return Object.entries(data).every(
+    ([key, value]) =>
+      (key === "error" || key === "message") && typeof value === "string" && text.includes(value),
+  );
 }
 
 function toolResultTextParts(data: unknown): string[] {

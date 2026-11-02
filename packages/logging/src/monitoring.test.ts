@@ -4,6 +4,7 @@ import {
   createClientErrorReporter,
   responseCorrelation,
   sanitizedError,
+  sanitizeMonitoringBreadcrumb,
   sanitizeMonitoringEvent,
   scrubMonitoringText,
 } from "./monitoring.js";
@@ -149,5 +150,58 @@ describe("client monitoring contract", () => {
     expect(
       responseCorrelation(new Headers({ traceparent: "secret", "x-request-id": "Bearer secret" })),
     ).toEqual({});
+  });
+
+  it("keeps only the shape of breadcrumbs, never their content", () => {
+    const crumb = sanitizeMonitoringBreadcrumb;
+    expect(
+      crumb({
+        type: "http",
+        category: "xhr",
+        level: "info",
+        timestamp: 1_700_000_000,
+        message: "private",
+        data: {
+          method: "POST",
+          status_code: 502,
+          url: "https://app.example.com/rpc/threads.send/clx9abc123def?token=secret#frag",
+          request_body_size: 10,
+          body: "private",
+          headers: { authorization: "Bearer secret" },
+        },
+      }),
+    ).toEqual({
+      type: "http",
+      category: "xhr",
+      level: "info",
+      timestamp: 1_700_000_000,
+      data: { method: "POST", status_code: 502, url: "/rpc/threads.send/:id" },
+    });
+    expect(
+      crumb({ category: "http", data: { url: "/api/v1/bots/1f3e9a7b/webhook" } })?.data,
+    ).toEqual({ url: "/api/v1/bots/:id/webhook" });
+    expect(
+      crumb({ category: "http", data: { url: "https://images.example.com/private-photo.png" } })
+        ?.data,
+    ).toEqual({ url: "[external]" });
+    expect(
+      crumb({
+        category: "device.event",
+        level: "warning",
+        message: "Low memory",
+        data: { action: "LOW_MEMORY", note: "private" },
+      }),
+    ).toEqual({ category: "device.event", level: "warning", data: { action: "LOW_MEMORY" } });
+    expect(crumb({ category: "system", timestamp: "2026-01-01T00:00:00.000Z" })).toEqual({
+      category: "system",
+      timestamp: 1_767_225_600,
+    });
+    expect(
+      crumb({ category: "navigation", data: { to: "chat", from: "Private chat title" } }),
+    ).toEqual({ category: "navigation", data: { to: "chat" } });
+    for (const category of ["console", "touch", "ui.click", "ui.input", "sentry.event", "query"])
+      expect(crumb({ category, message: "private", data: { text: "private" } })).toBeNull();
+    expect(crumb({ message: "private" })).toBeNull();
+    expect(crumb("private")).toBeNull();
   });
 });

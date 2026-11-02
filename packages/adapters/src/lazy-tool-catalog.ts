@@ -359,12 +359,90 @@ export function parseConnectorToolArgs(
       "Tool schema is unsupported: patternProperties with additionalProperties false",
     );
   }
-  const schema = z.fromJSONSchema(inputSchema as never);
+  const schema = z.fromJSONSchema(hoistPointerRefs(inputSchema) as never);
   const parsed = schema.safeParse(args);
   if (!parsed.success) {
     throw new Error(`Tool arguments are invalid: ${z.prettifyError(parsed.error)}`);
   }
   return parsed.data as Record<string, unknown>;
+}
+
+// Values under these keywords are data, so a `$ref` key inside them is not a reference.
+const LITERAL_KEYWORDS = new Set(["const", "enum", "default", "examples"]);
+// Keys of these maps are names, so a property called `default` is still a schema.
+const SCHEMA_MAP_KEYWORDS = new Set([
+  "properties",
+  "patternProperties",
+  "$defs",
+  "definitions",
+  "dependentSchemas",
+  "dependencies",
+]);
+
+/** Zod resolves only `#` and `#/$defs/<name>` refs, but a valid schema may point anywhere in
+ * itself (`#/properties/values/anyOf/0`). Copy each such target into the definitions map and
+ * point the ref there; targets are registered before they are walked so cycles stay refs. */
+function hoistPointerRefs(root: Record<string, unknown>): Record<string, unknown> {
+  // Mirrors Zod's draft detection, which decides the prefix its resolver accepts.
+  const legacyDraft =
+    root.$schema === "http://json-schema.org/draft-07/schema#" ||
+    root.$schema === "http://json-schema.org/draft-04/schema#";
+  const defsKey = legacyDraft ? "definitions" : "$defs";
+  // Zod looks every name up in `$defs ?? definitions`, whichever prefix the ref used.
+  const container =
+    root.$defs != null ? "$defs" : root.definitions != null ? "definitions" : defsKey;
+  const existing = (root[container] ?? {}) as Record<string, unknown>;
+  const hoistedNames = new Map<unknown, string>();
+  const hoisted: Record<string, unknown> = {};
+
+  const resolve = (pointer: string): unknown => {
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(pointer.slice(2));
+    } catch {
+      return;
+    }
+    let node: unknown = root;
+    for (const raw of decoded.split("/")) {
+      const segment = raw.replace(/~1/g, "/").replace(/~0/g, "~");
+      if (node == null || typeof node !== "object" || !Object.hasOwn(node, segment)) return;
+      node = (node as Record<string, unknown>)[segment];
+    }
+    return node;
+  };
+
+  const mapEntries = (node: object, map: (key: string, value: unknown) => unknown) =>
+    Object.fromEntries(Object.entries(node).map(([key, value]) => [key, map(key, value)]));
+
+  const walk = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(walk);
+    if (node == null || typeof node !== "object") return node;
+    const result = mapEntries(node, (key, value) =>
+      LITERAL_KEYWORDS.has(key)
+        ? value
+        : SCHEMA_MAP_KEYWORDS.has(key) && value != null && typeof value === "object"
+          ? mapEntries(value, (_name, schema) => walk(schema))
+          : walk(value),
+    );
+    const ref = result.$ref;
+    if (typeof ref !== "string" || !ref.startsWith("#/")) return result;
+    const segments = ref.slice(2).split("/");
+    if (segments.length === 2 && segments[0] === defsKey) return result;
+    const target = resolve(ref);
+    if (target === undefined) return result;
+    let name = hoistedNames.get(target);
+    if (!name) {
+      name = `ref${hoistedNames.size}`;
+      while (Object.hasOwn(existing, name)) name = `_${name}`;
+      hoistedNames.set(target, name);
+      hoisted[name] = walk(target);
+    }
+    return { ...result, $ref: `#/${defsKey}/${name}` };
+  };
+
+  const walked = walk(root) as Record<string, unknown>;
+  if (hoistedNames.size === 0) return root;
+  return { ...walked, [container]: { ...(walked[container] as object), ...hoisted } };
 }
 
 export function assertConnectorToolArgs(

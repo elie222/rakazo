@@ -701,7 +701,7 @@ describe("bot settings device voice menu", () => {
       "Computer",
       "Read replies aloud",
       "Device voice",
-      "Manage the bots it creates",
+      "Manage other bots",
       "Instructions",
     ]) {
       expect(container.textContent).not.toContain(label);
@@ -729,7 +729,7 @@ describe("bot settings device voice menu", () => {
       readAloud: "Read replies aloud",
       voice: "Device voice",
       crossSpaceCommunication: "Allow cross-space bot communication",
-      fleetManagement: "Manage the bots it creates",
+      fleetManagement: "Manage other bots",
     };
     const actual = [...container.querySelectorAll("span")].flatMap((span) =>
       Object.entries(labels)
@@ -968,9 +968,7 @@ describe("bot settings device voice menu", () => {
   it("persists bot management toggles immediately without adding them to unrelated saves", async () => {
     mocks.rpc.mockResolvedValue(undefined);
     await render();
-    const toggle = container.querySelector<HTMLButtonElement>(
-      '[aria-label="Manage the bots it creates"]',
-    );
+    const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Manage other bots"]');
     if (!toggle) throw new Error("Missing bot management switch");
     await act(async () => {
       toggle.click();
@@ -999,9 +997,7 @@ describe("bot settings device voice menu", () => {
     const last = deferredSave();
     mocks.rpc.mockReturnValueOnce(first.promise).mockReturnValueOnce(last.promise);
     await render();
-    const toggle = container.querySelector<HTMLButtonElement>(
-      '[aria-label="Manage the bots it creates"]',
-    )!;
+    const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Manage other bots"]')!;
     const save = [...container.querySelectorAll("button")].find(
       (button) => button.textContent === "Save",
     )!;
@@ -1041,7 +1037,7 @@ describe("bot settings device voice menu", () => {
       );
       await render();
       const toggle = container.querySelector<HTMLButtonElement>(
-        '[aria-label="Manage the bots it creates"]',
+        '[aria-label="Manage other bots"]',
       )!;
       await act(async () =>
         container.querySelector<HTMLButtonElement>('[aria-label="Read replies aloud"]')!.click(),
@@ -1076,9 +1072,7 @@ describe("bot settings device voice menu", () => {
     mocks.rpc.mockRejectedValueOnce(new Error("offline"));
     await render();
     await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[aria-label="Manage the bots it creates"]')!
-        .click(),
+      container.querySelector<HTMLButtonElement>('[aria-label="Manage other bots"]')!.click(),
     );
     expect(
       [...container.querySelectorAll("button")].some((button) => button.textContent === "Save"),
@@ -1098,9 +1092,7 @@ describe("bot settings device voice menu", () => {
     });
     await render();
     expect(container.querySelector('[data-menu="Instruction history"]')).toBeNull();
-    const toggle = container.querySelector<HTMLButtonElement>(
-      '[aria-label="Manage the bots it creates"]',
-    )!;
+    const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Manage other bots"]')!;
     await act(async () => toggle.click());
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Read replies aloud"]')!.click(),
@@ -1128,9 +1120,7 @@ describe("bot settings device voice menu", () => {
     const first = deferredSave();
     mocks.rpc.mockReturnValueOnce(first.promise);
     await render();
-    const toggle = container.querySelector<HTMLButtonElement>(
-      '[aria-label="Manage the bots it creates"]',
-    )!;
+    const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Manage other bots"]')!;
     await act(async () => toggle.click());
     await act(async () => toggle.click());
     await act(async () => toggle.click());
@@ -1142,9 +1132,7 @@ describe("bot settings device voice menu", () => {
   it("restores the bot management toggle when saving fails", async () => {
     mocks.rpc.mockRejectedValueOnce(new Error("offline"));
     await render();
-    const toggle = container.querySelector<HTMLButtonElement>(
-      '[aria-label="Manage the bots it creates"]',
-    );
+    const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Manage other bots"]');
     if (!toggle) throw new Error("Missing bot management switch");
     await act(async () => {
       toggle.click();

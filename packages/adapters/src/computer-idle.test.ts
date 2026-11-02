@@ -31,6 +31,7 @@ import {
   TAKEOVER_IDLE_GRACE_MS,
   touchRunningComputer,
 } from "./computer-idle.js";
+import { BrowserStillRunningError } from "./computer-screens.js";
 import { e2bCreateOptions } from "./e2b-sandbox.js";
 import { HomeSaveConflictError } from "./home-object-store.js";
 
@@ -603,10 +604,17 @@ describe("sandbox idle", () => {
     );
   });
 
-  it("backs off without failing the job while the provider rate limits the checkpoint", async () => {
+  it.each([
+    ["the provider rate limits the checkpoint", new SandboxRateLimitError(), "rate_limited"],
+    [
+      "a browser opens again during the checkpoint",
+      new BrowserStillRunningError(),
+      "browser_running",
+    ],
+  ])("backs off without failing the job while %s", async (_, exportError, reason) => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "test", sinks: [sink] }));
-    const harness = idleHarness({ exportError: new SandboxRateLimitError() });
+    const harness = idleHarness({ exportError });
 
     await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
 
@@ -619,7 +627,7 @@ describe("sandbox idle", () => {
       expect.objectContaining({
         level: "warn",
         message: "computer.sleep_deferred",
-        reason: "rate_limited",
+        reason,
       }),
     );
   });
@@ -1296,7 +1304,7 @@ describe("monthly computer allowance", () => {
           blocks: [
             {
               kind: "meta",
-              text: "This month's computer allowance is used up. The computer was saved and stopped.",
+              text: "No computer hours left. The computer was saved and stopped.",
             },
           ],
         }),
