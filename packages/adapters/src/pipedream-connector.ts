@@ -172,7 +172,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     const groups = await Promise.all(
       [...new Set(apps)].map(async (app) => {
         try {
-          const accounts = approvedAccounts(context, app);
+          const accounts = await this.approvedAccounts(context, app);
           if (!accounts[0]) throw new Error("no approved account can be identified");
           const tools = await listRemoteMcpTools({
             endpoint: MCP_ENDPOINT,
@@ -244,7 +244,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     }
     let token: string | undefined;
     try {
-      const accounts = approvedAccounts(context, app);
+      const accounts = await this.approvedAccounts(context, app);
       const { [ACCOUNT_ARGUMENT]: chosen, ...args } = call.args;
       const account =
         accounts.length === 1 ? accounts[0] : accounts.find(({ id }) => id === chosen);
@@ -405,6 +405,29 @@ export class PipedreamConnector implements ManagedConnectorProvider {
         ),
       ),
     );
+  }
+
+  /**
+   * Connections made before account pinning store only the app slug. Such a row can still stand
+   * for the user's one remote account for that app; with several it stays unusable until reconnected.
+   */
+  private async approvedAccounts(context: AdapterContext, app: string): Promise<ApprovedAccount[]> {
+    const approved = approvedAccounts(context, app);
+    if (approved.length > 0) return approved;
+    const legacy = context.connectedConnections?.find(
+      (connection) =>
+        connection.connectorId === "pipedream" &&
+        connection.externalId === app &&
+        connection.providerRef?.trim() === app,
+    );
+    if (!legacy) return [];
+    const remote = (await this.accounts(context, app)).filter(
+      (account) =>
+        account.app?.name_slug === app && account.healthy !== false && account.dead !== true,
+    );
+    return remote.length === 1 && remote[0]
+      ? [{ id: remote[0].id, label: legacy.displayName }]
+      : [];
   }
 
   /** Pipedream keys connected accounts by this stateless ID; changing it orphans them. */

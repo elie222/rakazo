@@ -206,6 +206,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Custom server {host}": "Eigen server {host}",
   "Don’t have an account?": "Heb je geen account?",
   Email: "E-mail",
+  "Did you mean {email}?": "Bedoelde je {email}?",
   "Forgot password?": "Wachtwoord vergeten?",
   "Loading…": "Bezig met laden…",
   Password: "Wachtwoord",
@@ -994,6 +995,12 @@ export const NL_MESSAGES: Record<string, string> = {
   "Your trial ends and your card is charged today.":
     "Je proefperiode eindigt en je kaart wordt vandaag belast.",
   "Start plan": "Abonnement starten",
+  "Switch to yearly": "Overstappen op jaarlijks",
+  "Switch to yearly?": "Overstappen op jaarlijks?",
+  "Your card is charged {price} today, less the unused part of this month.":
+    "Je kaart wordt vandaag belast met {price}, min het ongebruikte deel van deze maand.",
+  "Your plan becomes {price} / year when your trial ends.":
+    "Na je proefperiode kost je plan {price} per jaar.",
   "Monthly credits": "Maandelijks tegoed",
   "Upgrade now": "Nu upgraden",
   "Downgrade at renewal": "Downgraden bij verlenging",

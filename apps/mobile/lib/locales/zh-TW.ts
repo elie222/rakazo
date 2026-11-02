@@ -455,6 +455,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Failed to send message": "傳送訊息失敗",
   "Failed to stop work": "停止工作失敗",
   File: "檔案",
+  "Did you mean {email}?": "你是指 {email} 嗎？",
   "Forgot password?": "忘記密碼？",
   "Find models": "查詢模型",
   "Finding…": "正在查詢…",
@@ -983,6 +984,12 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
     "試用將結束，今天將從你的卡片扣款 {price}。",
   "Your trial ends and your card is charged today.": "試用將結束，今天將從你的卡片扣款。",
   "Start plan": "開始方案",
+  "Switch to yearly": "切換為按年",
+  "Switch to yearly?": "切換為按年付費？",
+  "Your card is charged {price} today, less the unused part of this month.":
+    "今天將從你的卡中扣款 {price}，並抵扣本月未使用的部分。",
+  "Your plan becomes {price} / year when your trial ends.":
+    "試用結束後，你的方案將變為每年 {price}。",
   "Monthly credits": "每月額度",
   "Upgrade now": "立即升級",
   "Downgrade at renewal": "下次續訂時降級",

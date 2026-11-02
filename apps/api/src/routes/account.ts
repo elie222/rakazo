@@ -114,6 +114,11 @@ export function accountRoutes(ctx: RouterContext) {
         await billing.endTrial(context.actor);
         return billing.status(context.actor);
       }),
+      switchToYearly: authed.billing.switchToYearly.handler(async ({ context }) => {
+        const billing = requireBilling(deps);
+        await billing.switchToYearly(context.actor);
+        return billing.status(context.actor);
+      }),
       claimReferral: authed.billing.claimReferral.handler(async ({ context, input }) => {
         await requireBilling(deps).claimReferral(context.actor, input.code);
         return { ok: true as const };

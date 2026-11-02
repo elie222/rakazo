@@ -30,11 +30,24 @@ const TEST_NETWORK = { resolveHostname: async () => [{ address: "203.0.113.10", 
 function pipedreamMcpFetch(
   toolsByApp: Record<string, string[]>,
   calls: Array<{ app: string | null; name: string; args: unknown }> = [],
+  remoteAccountIds: string[] = [],
 ) {
   return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const request = input instanceof Request ? input : new Request(input, init);
-    if (new URL(request.url).pathname === "/v1/oauth/token") {
+    const url = new URL(request.url);
+    if (url.pathname === "/v1/oauth/token") {
       return Response.json({ access_token: "fake-access-token", expires_in: 3_600 });
+    }
+    if (url.pathname.endsWith("/accounts")) {
+      const slug = url.searchParams.get("app") ?? "";
+      return Response.json({
+        data: remoteAccountIds.map((id) => ({
+          id,
+          healthy: true,
+          app: { id: `app-${slug}`, name_slug: slug, name: slug },
+        })),
+        page_info: {},
+      });
     }
     const app = request.headers.get("x-pd-app-slug");
     const message = JSON.parse(await request.text()) as {
@@ -693,6 +706,35 @@ describe("PipedreamConnector", () => {
     const calls: Array<{ app: string | null; name: string; args: unknown }> = [];
     const { tools, events, accounts } = await runGmail(
       pipedreamMcpFetch({ gmail: ["send_email"] }, calls),
+      gmailContext("gmail"),
+      { text: "hello" },
+    );
+
+    expect(tools).toEqual([]);
+    expect(events).toEqual([expect.objectContaining({ type: "error" })]);
+    expect(calls).toEqual([]);
+    expect(accounts).toEqual([]);
+  });
+
+  it("runs a connection that stores only the app on its one remote account", async () => {
+    const calls: Array<{ app: string | null; name: string; args: unknown }> = [];
+    const { tools, events, accounts } = await runGmail(
+      pipedreamMcpFetch({ gmail: ["send_email"] }, calls, ["apn_legacy"]),
+      gmailContext("gmail"),
+      { text: "hello" },
+    );
+
+    expect(tools).toHaveLength(1);
+    expect(tools[0]?.inputSchema).not.toHaveProperty("properties.connected_account");
+    expect(events).toEqual([expect.objectContaining({ type: "result" })]);
+    expect(calls).toHaveLength(1);
+    expect(new Set(accounts)).toEqual(new Set(["apn_legacy"]));
+  });
+
+  it("refuses a connection that stores only the app when several remote accounts exist", async () => {
+    const calls: Array<{ app: string | null; name: string; args: unknown }> = [];
+    const { tools, events, accounts } = await runGmail(
+      pipedreamMcpFetch({ gmail: ["send_email"] }, calls, ["apn_work", "apn_home"]),
       gmailContext("gmail"),
       { text: "hello" },
     );
