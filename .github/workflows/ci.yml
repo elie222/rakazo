@@ -579,8 +579,8 @@ jobs:
     needs: [checks, test-integration, publish-server-image]
     runs-on: ubuntu-latest
     # Matches infra/compose/deploy-main.sh's own limits, including a fallback build, rollback, and
-    # waiting for the replaced worker to finish its jobs.
-    timeout-minutes: 90
+    # waiting twice for a replaced worker to finish its jobs.
+    timeout-minutes: 140
     concurrency:
       group: production
       cancel-in-progress: false

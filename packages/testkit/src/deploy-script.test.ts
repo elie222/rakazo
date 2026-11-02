@@ -9,8 +9,7 @@ const COMPOSE = "docker compose --env-file .env -f infra/compose/docker-compose.
 const APP_IMAGE = "ghcr.example.test/rakazo/app:local";
 // Each rolled service gains a new container, which must pass its health check before the old
 // one stops; the rest of the stack is reconciled afterwards.
-const WORKERS =
-  "docker inspect --format {{.Id}} {{.HostConfig.RestartPolicy.Name}} {{.State.Status}}";
+const WORKERS = "docker inspect --format {{.Id}} {{.HostConfig.RestartPolicy.Name}}";
 const startBeside = (service: string) => [
   `${COMPOSE} up -d --no-deps --no-recreate --scale ${service}=2 ${service}`,
   `${COMPOSE} ps --all --quiet ${service}`,
@@ -40,7 +39,6 @@ const rolloutSteps = (revision: string) => [
   `${WORKERS} worker-old`,
   `${COMPOSE} ps --all --quiet worker`,
   `${WORKERS} worker-old`,
-  `${COMPOSE} ps --all --quiet worker`,
   ...startBeside("worker"),
   "docker update --restart no worker-old",
   "docker kill --signal SIGTERM worker-old",
@@ -493,13 +491,17 @@ describe("production deploy script", () => {
       "docker stop --time 30 api-old",
       "docker stop --time 30 api-new",
     ]);
-    // Both replaced workers finish their jobs, the rollback's beside the deploy's.
-    expect(commands).toContain(`${COMPOSE} up -d --no-deps --no-recreate --scale worker=3 worker`);
+    // The rollback lets the deploy's replaced worker finish before it replaces the failed
+    // release's, which then finishes in turn.
+    const rollbackDrain = commands.indexOf("docker stop worker-old");
+    expect(rollbackDrain).toBeGreaterThan(
+      commands.indexOf("docker kill --signal SIGTERM worker-old"),
+    );
+    expect(commands.slice(rollbackDrain)).toContain(
+      `${COMPOSE} up -d --no-deps --no-recreate --scale worker=2 worker`,
+    );
     expect(commands).toContain("docker kill --signal SIGTERM worker-new");
-    expect(commands.slice(-2)).toEqual([
-      "docker stop worker-old worker-new",
-      "docker rm worker-old worker-new",
-    ]);
+    expect(commands.slice(-2)).toEqual(["docker stop worker-new", "docker rm worker-new"]);
   });
 
   it("waits for a worker an earlier deploy left draining before migrating", () => {
@@ -516,7 +518,7 @@ describe("production deploy script", () => {
     ]);
   });
 
-  it("removes a worker that finished draining so the rollback cannot start it again", () => {
+  it("removes a worker that finished draining before a rollback scales the worker up", () => {
     const deploy = fixture();
     commit(deploy.upstream, "unhealthy");
     expect(deploy.run({ FAIL_HEALTH: "1", DRAIN_EXITS: "1" }).status).toBe(1);

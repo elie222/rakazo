@@ -17,9 +17,9 @@ fi
 APP_DIR="${RAKAZO_DEPLOY_DIR:-/srv/rakazo}"
 [[ "${APP_DIR}" == /* ]] || { echo "RAKAZO_DEPLOY_DIR must be an absolute path" >&2; exit 1; }
 COMPOSE_FILE="infra/compose/docker-compose.prod.yml"
-# CI allows 90 minutes: 5m pull + 15m fallback build + 5m start + ~1m of health retries + 8m
+# CI allows 140 minutes: 5m pull + 15m fallback build + 5m start + ~1m of health retries + 8m
 # rollback, which only pulls or builds when the previous image is gone, + up to 50m (the worker's
-# stop_grace_period) while the replaced worker finishes its jobs.
+# stop_grace_period) twice: for a worker an earlier deploy left draining, then for this one's.
 PULL_TIMEOUT="${RAKAZO_DEPLOY_PULL_TIMEOUT:-5m}"
 BUILD_TIMEOUT="${RAKAZO_DEPLOY_BUILD_TIMEOUT:-15m}"
 UP_TIMEOUT="${RAKAZO_DEPLOY_UP_TIMEOUT:-5m}"
@@ -119,51 +119,45 @@ start_beside() {
 # is running, which can take as long as the slowest job (JOB_DRAIN_TIMEOUT_MS), while the new
 # worker takes new ones; killing it would leave each job locked for hours. A restart policy of
 # "no" keeps Docker from starting it again and marks it as draining for later runs. Prints the
-# worker containers in the given states: live, draining (still finishing) or drained (exited).
+# worker containers that are live, or draining (still finishing, or exited and not yet removed).
 worker_containers() {
   local ids
   ids="$(compose 1m ps --all --quiet worker)"
   [[ -n "${ids}" ]] || return 0
   # shellcheck disable=SC2086 # one container ID per word
-  sudo docker inspect --format '{{.Id}} {{.HostConfig.RestartPolicy.Name}} {{.State.Status}}' ${ids} |
-    awk -v wanted=" $* " '{
-      state = $2 != "no" ? "live" : $3 == "running" ? "draining" : "drained"
-      if (index(wanted, " " state " ")) print $1
-    }'
-}
-
-replace_worker() {
-  local drained live running
-  drained="$(worker_containers drained)"
-  # The scale-up below would start a drained worker again.
-  # shellcheck disable=SC2086
-  [[ -z "${drained}" ]] || sudo docker rm ${drained} >/dev/null
-  live="$(worker_containers live)"
-  running="$(compose 1m ps --all --quiet worker)"
-  if [[ -z "${running}" ]]; then
-    compose "${UP_TIMEOUT}" up -d --wait worker
-    return
-  fi
-  start_beside worker "${running}"
-  [[ -n "${live}" ]] || return 0
-  # shellcheck disable=SC2086
-  sudo docker update --restart no ${live} >/dev/null
-  # One that is not running has nothing to finish; finish_draining removes it.
-  # shellcheck disable=SC2086
-  sudo docker kill --signal SIGTERM ${live} >/dev/null 2>&1 || true
+  sudo docker inspect --format '{{.Id}} {{.HostConfig.RestartPolicy.Name}}' ${ids} |
+    awk -v wanted="$1" '($2 == "no" ? "draining" : "live") == wanted { print $1 }'
 }
 
 # Waits for draining workers to exit and removes them. docker stop gives each the rest of the
 # worker's stop_grace_period before it kills one.
 finish_draining() {
   local workers
-  workers="$(worker_containers draining drained)"
+  workers="$(worker_containers draining)"
   [[ -n "${workers}" ]] || return 0
   echo "Waiting for the previous worker to finish its running jobs."
   # shellcheck disable=SC2086
   sudo docker stop ${workers} >/dev/null
   # shellcheck disable=SC2086
   sudo docker rm ${workers} >/dev/null
+}
+
+replace_worker() {
+  local live
+  # A scale-up starts every stopped container of the service, including a drained worker, so none
+  # may be left. A rollback can get here while the worker it replaced moments ago still drains.
+  finish_draining
+  live="$(worker_containers live)"
+  if [[ -z "${live}" ]]; then
+    compose "${UP_TIMEOUT}" up -d --wait worker
+    return
+  fi
+  start_beside worker "${live}"
+  # shellcheck disable=SC2086
+  sudo docker update --restart no ${live} >/dev/null
+  # One that is not running has nothing to finish; finish_draining removes it.
+  # shellcheck disable=SC2086
+  sudo docker kill --signal SIGTERM ${live} >/dev/null 2>&1 || true
 }
 
 # Replaces the API, web and worker without a gap: one new container starts beside the running

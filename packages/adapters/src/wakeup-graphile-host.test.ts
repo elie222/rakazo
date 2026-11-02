@@ -409,6 +409,24 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     vi.useRealTimers();
   });
 
+  it("stops waiting for a handed-off run that outlives the drain deadline", async () => {
+    run.mockResolvedValueOnce(mockRunner().runner);
+    const host = new GraphileJobWorkerHost({} as Pool, { concurrency: 1, drainTimeoutMs: 20 });
+    const hung = deferred();
+    const target = handlers();
+    target["run.continue"] = async (_payload, execution) => {
+      execution!.onRunStarted();
+      await hung.promise;
+    };
+    try {
+      await host.start(target);
+      await run.mock.calls[0]![0].taskList["run.continue"]({ runId: "hung-run" });
+      await host.stop();
+    } finally {
+      hung.resolve();
+    }
+  });
+
   it("releases dispatch slots after durable handoff and drains executions at shutdown", async () => {
     run.mockResolvedValueOnce(mockRunner().runner);
     const host = new GraphileJobWorkerHost({} as Pool, { concurrency: 4 });

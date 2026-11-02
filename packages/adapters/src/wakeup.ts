@@ -241,50 +241,46 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
     this.superviseTask = this.supervise();
   }
 
+  /**
+   * Graphile stops claiming jobs and waits for the running ones to finish. Killing the process
+   * instead would leave each one locked for Graphile's four hours before anything retries it.
+   * Past the deadline a job is hung: it fails, which unlocks it with the usual backoff, so another
+   * worker retries it within seconds. A handed-off run that outlives it is left to the
+   * reconciler, as after a crash.
+   */
   async stop(): Promise<void> {
     this.stopping = true;
     this.wakeSleep?.();
     const draining = this.executions.stop();
-    try {
-      await this.drain();
-    } finally {
-      // The queue has stopped accepting deliveries. Handed-off runs still own
-      // leases and must finish before their database and providers are closed.
-      await draining;
-      await this.superviseTask?.catch(() => undefined);
-      this.runner = undefined;
-      this.superviseTask = undefined;
-      this.handlers = undefined;
-    }
-  }
-
-  /**
-   * Graphile stops claiming jobs and waits for the running ones to finish. Killing the process
-   * instead would leave each one locked for Graphile's four hours before anything retries it.
-   * A job still running at the deadline is hung: it fails, which unlocks it with the usual
-   * backoff, so another worker retries it within seconds.
-   */
-  private async drain(): Promise<void> {
-    const runner = this.runner;
-    if (!runner) return;
     const started = Date.now();
-    const draining = this.running.size > 0;
-    if (draining) getLogger().info("jobs.draining", this.runningBindings());
+    const busy = this.running.size > 0 || this.executions.activeCount > 0;
+    if (busy) getLogger().info("jobs.draining", this.runningBindings());
     const deadline = setTimeout(() => {
       getLogger().warn("jobs.drain_timed_out", this.runningBindings());
       this.abandoned.abandon();
     }, this.options.drainTimeoutMs ?? JOB_DRAIN_TIMEOUT_MS);
     try {
-      await runner.stop();
+      await this.runner?.stop();
     } finally {
+      // The queue has stopped accepting deliveries. Handed-off runs still own
+      // leases and must finish before their database and providers are closed.
+      await Promise.race([draining, this.abandoned.promise.catch(() => undefined)]);
       clearTimeout(deadline);
+      await this.superviseTask?.catch(() => undefined);
+      this.runner = undefined;
+      this.superviseTask = undefined;
+      this.handlers = undefined;
     }
-    if (draining) getLogger().info("jobs.drained", { "jobs.drain_ms": Date.now() - started });
+    if (busy) getLogger().info("jobs.drained", { "jobs.drain_ms": Date.now() - started });
   }
 
   private runningBindings() {
     const names = [...this.running].map((job) => job.name);
-    return { "jobs.running": names.length, "jobs.types": [...new Set(names)].sort().join(",") };
+    return {
+      "jobs.running": names.length,
+      "jobs.types": [...new Set(names)].sort().join(","),
+      "runs.active": this.executions.activeCount,
+    };
   }
 
   private async launchRunner(): Promise<void> {

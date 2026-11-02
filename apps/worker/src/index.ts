@@ -403,7 +403,17 @@ async function main() {
       }
     })());
   // Exit rather than wait on a hung job that was handed back, which another worker now retries.
-  stopOnShutdownSignals(() => stop().finally(() => process.exit()));
+  // process.exitCode keeps a crash that arrives while draining from exiting as a clean stop.
+  stopOnShutdownSignals(() =>
+    stop().then(
+      () => process.exit(),
+      async (error) => {
+        logger.error("worker shutdown failed", error);
+        await logger.flush({ timeoutMs: 2_000 });
+        process.exit(1);
+      },
+    ),
+  );
   // graphile-worker fires completeJob()/failJobs() without awaiting them. When
   // pool.connect() then hits Postgres 53300 or a saturated pool's checkout timeout,
   // that rejection is unhandled. Exiting on 53300 is a crash loop: Docker restarts
@@ -413,11 +423,13 @@ async function main() {
   // process in an undefined state).
   process.on("uncaughtException", (error) => {
     logger.error("uncaughtException", error);
+    process.exitCode = 1;
     void stop().finally(() => process.exit(1));
   });
   process.on("unhandledRejection", (reason) => {
     logger.error("unhandledRejection", reason);
     if (isTooManyDatabaseConnections(reason) || isPoolCheckoutTimeout(reason)) return;
+    process.exitCode = 1;
     void stop().finally(() => process.exit(1));
   });
 
