@@ -2709,6 +2709,37 @@ describe("answerRunInput", () => {
     expect(tx.run.updateMany).not.toHaveBeenCalled();
   });
 
+  it("loads the space's content keys before opening the transaction", async () => {
+    const order: string[] = [];
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      run: { findFirst: vi.fn().mockResolvedValue(null) },
+    };
+    const all = vi.fn(async () => {
+      order.push("keys");
+      return [];
+    });
+    const prisma = {
+      $contentEncryption: () => ({ ring: { all } }),
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => {
+        order.push("transaction");
+        return callback(tx);
+      }),
+    } as unknown as PrismaClient;
+
+    await answerRunInput(prisma, {
+      spaceId: "workspace-1",
+      threadId: "thread-1",
+      runId: "run-1",
+      messageId: "message-1",
+      answeredByUserId: "user-1",
+      answer: "yes",
+    });
+
+    expect(all).toHaveBeenCalledWith("workspace-1");
+    expect(order).toEqual(["keys", "transaction"]);
+  });
+
   it("rejects input when the run is no longer waiting", async () => {
     const tx = {
       $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
