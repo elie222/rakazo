@@ -413,6 +413,7 @@ export default function BotSettingsScreen() {
         setBot((prev) => (prev ? { ...prev, ...saved, ...updated } : prev));
       }
       await Promise.all([
+        dailyCheckInsSave.flush(),
         crossSpaceSave.flush(),
         fleetSave.flush(),
         notifySave.flush(),

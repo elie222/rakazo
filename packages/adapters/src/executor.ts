@@ -1631,7 +1631,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 taughtSkillsLine,
                 replyGuidance: runReplyGuidance(run.trigger),
                 disabledBuiltinTools,
-                offeredFleetTools: offeredFleetTools(builtins),
+                offeredFleetTools: offeredFleetTools(strategicBuiltins),
                 userComputer,
               })
                 .filter((instruction): instruction is string => Boolean(instruction))
