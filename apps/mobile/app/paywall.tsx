@@ -23,6 +23,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAccountDeletion } from "../components/account-deletion";
 import { BotAvatar } from "../components/bot-avatar";
 import { GlassIconButton } from "../components/glass-icon-button";
 import { NativeActionButton } from "../components/native-action-button";
@@ -72,6 +73,10 @@ export default function Paywall() {
   const [plan, setPlan] = useState<Plan>("byok");
   const [amount, setAmount] = useState<Amount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
   const [pending, setPending] = useState(false);
+  const deletion = useAccountDeletion();
+  useEffect(() => {
+    if (deletion.error) Alert.alert(deletion.error);
+  }, [deletion.error]);
   const [started, setStarted] = useState<Plan | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const planPicked = useRef(false);
@@ -170,15 +175,33 @@ export default function Paywall() {
           onPress={() => router.back()}
         />
       ) : (
-        <Pressable
-          accessibilityRole="button"
-          disabled={pending}
-          hitSlop={12}
-          onPress={() => void leave()}
+        <MenuView
+          actions={[
+            { id: "sign-out", title: t("Sign out") },
+            { id: "delete", title: t("Delete account") },
+          ]}
+          onPressAction={({ nativeEvent }) => {
+            if (pending || deletion.pending) return;
+            if (nativeEvent.event === "delete") void deletion.request();
+            else void leave();
+          }}
         >
-          <Text style={[styles.signOut, { color: tokens.mutedForeground }]}>{t("Sign out")}</Text>
-        </Pressable>
+          <View
+            accessible
+            accessibilityLabel={t("Account")}
+            accessibilityRole="button"
+            style={styles.account}
+          >
+            <NativeSymbol
+              ios="person.crop.circle"
+              android="person-circle-outline"
+              size={24}
+              color={tokens.mutedForeground}
+            />
+          </View>
+        </MenuView>
       )}
+      {deletion.dialog}
     </View>
   );
 
@@ -549,7 +572,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 20,
   },
-  signOut: { ...typeScale.body, paddingVertical: 8 },
+  account: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
   content: {
     width: "100%",
     maxWidth: FORM_COLUMN_WIDTH,
