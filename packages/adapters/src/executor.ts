@@ -195,7 +195,10 @@ import {
 import { loadAgentScratchpadContext } from "./scratchpad-context.js";
 import { inferScript } from "./scripted-runtime.js";
 import { listAgentSkillRecords } from "./skill-tools.js";
-import { filterStrategicInitiativeTools } from "./strategic-initiative.js";
+import {
+  filterStrategicInitiativeTools,
+  isStrategicInitiativeRun,
+} from "./strategic-initiative.js";
 import {
   continueRunClaimFence,
   refreshTakeoverContinuePlan,
@@ -1665,7 +1668,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 agentSkillsLine,
                 taughtSkillsLine,
                 replyGuidance: runReplyGuidance(run.trigger),
-                disabledBuiltinTools,
+                disabledBuiltinTools: isStrategicInitiativeRun(run)
+                  ? new Set(
+                      builtinAgentTools
+                        .map((tool) => tool.name)
+                        .filter((name) => !strategicBuiltins.some((tool) => tool.name === name)),
+                    )
+                  : disabledBuiltinTools,
                 offeredFleetTools: offeredFleetTools(strategicBuiltins),
                 userComputer,
               })

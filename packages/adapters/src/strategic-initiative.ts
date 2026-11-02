@@ -63,7 +63,6 @@ export function createStrategicInitiativeReconciler(deps: {
   return async () => {
     const now = deps.now?.() ?? new Date();
     if (lastRun !== undefined && now.getTime() - lastRun < 60 * 60 * 1000) return;
-    lastRun = now.getTime();
     await reconcileStrategicInitiatives({
       prisma: deps.prisma,
       jobs: deps.jobs,
@@ -71,6 +70,7 @@ export function createStrategicInitiativeReconciler(deps: {
       now,
       pageSize: 100,
     });
+    lastRun = now.getTime();
   };
 }
 

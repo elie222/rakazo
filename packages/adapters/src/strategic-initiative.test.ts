@@ -384,6 +384,16 @@ it.each(["owner", "billing"])("throttles bots skipped for %s for an hour", async
   vi.mocked(spaceHasModelAccess).mockReset().mockResolvedValue(true);
 });
 
+it("retries a failed sweep on the next pass", async () => {
+  const { prisma } = strategicPrisma({ bots: [] });
+  vi.mocked(prisma.bot.findMany).mockRejectedValueOnce(new Error("connection reset"));
+  const { jobs } = publisher();
+  const reconcile = createStrategicInitiativeReconciler({ prisma, jobs, billingEnabled: false });
+  await expect(reconcile()).rejects.toThrow("connection reset");
+  await reconcile();
+  expect(prisma.bot.findMany).toHaveBeenCalledTimes(2);
+});
+
 it("reads the worker model-credit billing flag from deployment settings", async () => {
   const { prisma } = strategicPrisma({ bots: [candidate] });
   Object.assign(prisma, {
