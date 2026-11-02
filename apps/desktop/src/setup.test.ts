@@ -11,11 +11,13 @@ import type {
   RakazoSetup,
 } from "@rakazo/contracts";
 import { afterEach, describe, expect, it } from "vitest";
+import { ES_MESSAGES } from "./locales/es.js";
 
 type DesktopSetupResult = Awaited<ReturnType<RakazoSetup["save"]>>;
 
 const DEFAULT_LOCAL_URL = "http://127.0.0.1:6130";
 const CLOUD_URL = "https://cloud.rakazo.example";
+const ENGLISH: RakazoSetup["locale"] = { lang: "en", messages: {} };
 
 // The jsdom environment replaces the global URL, so resolve the sibling files via Node's.
 const srcDir = path.dirname(fileURLToPath(import.meta.url));
@@ -87,7 +89,7 @@ interface Harness {
   resolveSave: (result: DesktopSetupResult) => void;
 }
 
-function mount(saved: DesktopSetup | null): Harness {
+function mount(saved: DesktopSetup | null, locale = ENGLISH): Harness {
   document.body.innerHTML = setupBody ?? "";
   const checkCalls: Array<Deferred<DesktopReachability>> = [];
   const startResult = deferred<DesktopLocalStackState>();
@@ -99,6 +101,7 @@ function mount(saved: DesktopSetup | null): Harness {
 
   const bridge: RakazoSetup = {
     platform: "linux",
+    locale,
     state: () => {
       const call = deferred<DesktopSetupState>();
       stateCalls.push(call);
@@ -157,8 +160,8 @@ function mount(saved: DesktopSetup | null): Harness {
 }
 
 /** Loads the page and lets init settle on an idle stack. */
-async function boot(saved: DesktopSetup | null): Promise<Harness> {
-  const ui = mount(saved);
+async function boot(saved: DesktopSetup | null, locale = ENGLISH): Promise<Harness> {
+  const ui = mount(saved, locale);
   await flush(); // init reaches its stack.state call only after its state await resumes
   ui.resolveStackState(stackState("idle"));
   await flush();
@@ -399,5 +402,39 @@ describe("setup", () => {
     expect(element("stack-phase").getAttribute("data-tone")).toBe("ok");
     expect(ui.saves).toEqual([{ mode: "new", serverUrl: DEFAULT_LOCAL_URL }]);
     expect(element<HTMLButtonElement>("continue").disabled).toBe(false);
+  });
+
+  it("renders the page and its messages in the app's language", async () => {
+    const ui = await boot(null, { lang: "es", messages: ES_MESSAGES });
+    expect(document.documentElement.lang).toBe("es");
+    expect(document.querySelector("h1")?.textContent).toBe("Te damos la bienvenida a Rakazo");
+    expect(document.querySelector('label[for="mode-new"]')?.textContent?.trim()).toBe(
+      "Esta computadora",
+    );
+    expect(document.querySelector('label[for="mode-cloud"]')?.textContent?.trim()).toBe(
+      "Rakazo Cloud",
+    );
+    expect(element("quit").textContent).toBe("Salir");
+    expect(element("quit").title).toBe("Salir de Rakazo");
+    expect(element("stack-details").getAttribute("aria-label")).toBe("Detalles técnicos");
+    expect(element<HTMLTextAreaElement>("server-headers").placeholder).toBe("Nombre: valor");
+    expect(element("continue").textContent).toBe("Continuar");
+
+    selectMode("existing");
+    await flush();
+    element<HTMLInputElement>("server-url").value = "one.example";
+    element<HTMLButtonElement>("check").click();
+    await flush();
+    expect(element("status").textContent).toBe("Comprobando…");
+    ui.resolveCheck({ ok: true, url: "https://one.example" });
+    await flush();
+    expect(element("status").textContent).toBe("Rakazo respondió en https://one.example.");
+
+    selectMode("new");
+    submitForm();
+    ui.startResult.resolve({ ...stackState("pulling"), layerBytes: { layer: 2.5e6 } });
+    await flush();
+    expect(element("stack-phase").textContent).toBe("Descargando Rakazo…");
+    expect(element("stack-detail").textContent).toBe("3 MB descargados");
   });
 });

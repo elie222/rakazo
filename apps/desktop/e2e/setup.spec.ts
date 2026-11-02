@@ -73,6 +73,8 @@ test.afterAll(async () => {
 
 test.beforeEach(async () => {
   userData = await mkdtemp(path.join(tmpdir(), "rakazo-desktop-e2e-"));
+  // Setup otherwise follows the machine's language; these specs read its English text.
+  await writeFile(path.join(userData, "ui-locale.txt"), "en\n");
 });
 
 test.afterEach(async () => {
@@ -157,6 +159,21 @@ test("first run offers Rakazo Cloud first, with local and existing instances", a
       path.join(import.meta.dirname, "screenshots", "08-setup-macos-native-controls.png"),
     ]);
   }
+});
+
+test("setup opens in the language the app last used", async () => {
+  await writeFile(path.join(userData, "ui-locale.txt"), "es\n");
+  app = await launch();
+  const setup = await app.firstWindow();
+
+  await expect(setup.locator("html")).toHaveAttribute("lang", "es");
+  await expect(
+    setup.getByRole("heading", { name: "Te damos la bienvenida a Rakazo" }),
+  ).toBeVisible();
+  await expect(setup.getByRole("button", { name: "Continuar" })).toBeEnabled();
+  await setup.screenshot({
+    path: path.join(import.meta.dirname, "screenshots", "10-setup-spanish.png"),
+  });
 });
 
 test("Rakazo Cloud saves the hosted address and is reselected when saved", async () => {

@@ -124,6 +124,9 @@ importers:
       '@rakazo/adapters':
         specifier: workspace:*
         version: link:../../packages/adapters
+      '@rakazo/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@rakazo/ui-tokens':
         specifier: workspace:*
         version: link:../../packages/ui-tokens
