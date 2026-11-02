@@ -209,8 +209,9 @@ class Tabs:
         """Close a flood of tabs opened since the last call, before the call picks its tab."""
         tabs = page_tabs(self.port)
         if self.known is not None:
-            # The tab in front of those the last call left, which stays.
-            keep = next((tab.get("id") for tab in tabs if tab.get("id") in self.known), None)
+            # The tab in front of those the last call left, or else the tab in front, which stays.
+            keep = next((tab.get("id") for tab in tabs if tab.get("id") in self.known),
+                        tabs[0].get("id") if tabs else None)
             tabs = self.close_flood(tabs, self.known, keep)
         self.start = {tab.get("id") for tab in tabs}
 
@@ -1862,12 +1863,12 @@ def run(argv: list[str]) -> int:
                 if tabs.closed > closed and any(key in result for key in ("url", "tree")):
                     # What the bot read may have been one of the closed tabs: its own tab is read again, and
                     # nothing read from a closed tab, a dialog's text included, is ever returned.
+                    for key in ("url", "title", "tree", "elements", "loading", "note", "dialog"):
+                        result.pop(key, None)
                     try:
                         browser.use_tab(target)
                         result.update(page.snapshot(0.0))
                     except Exception:  # noqa: BLE001
-                        for key in ("url", "title", "tree", "elements", "loading", "note", "dialog"):
-                            result.pop(key, None)
                         result.update(ok=False, error=REREAD_FAILED,
                                       **({"uncertain": False} if command == "act" else {}))
             finally:

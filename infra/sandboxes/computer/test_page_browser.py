@@ -947,6 +947,13 @@ class NewTabTest(unittest.TestCase):
         self.assertEqual(chromium.activated, ["site"])
         self.assertEqual(note, "The page opened 60 tabs at once, more than 3, so they were closed.")
 
+    def test_a_flood_with_none_of_the_last_call_s_tabs_left_keeps_the_tab_in_front(self):
+        chromium = FakeTabs("a")
+        self.call(chromium, "a")
+        chromium.ids = [f"x{index}" for index in range(5)]
+        self.call(chromium, "x0")
+        self.assertEqual(chromium.ids, ["x0"])
+
     def test_a_front_tab_that_cannot_be_brought_back_still_leaves_the_note_and_the_tabs_kept(self):
         chromium = FakeTabs("own")
         self.call(chromium, "own")
@@ -1019,10 +1026,11 @@ class NewTabTest(unittest.TestCase):
                 self.deadlines.append(browser.deadline - time.monotonic())
             if reads and reread:
                 raise reread
-            chromium.ids[:0] = opens if not reads else []
+            first = not reads
+            chromium.ids[:0] = opens if first else []
             reads.append(chromium.ids[0])
             return {**result, "url": f"https://portal.example.test/{chromium.ids[0]}",
-                    **({"note": note} if note else {})}
+                    **({"note": note} if note and first else {})}
 
         with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "9222"}), \
                 patch.object(helper, "wait_for_cdp", return_value={"webSocketDebuggerUrl": "ws://b/1"}), \
@@ -1052,7 +1060,8 @@ class NewTabTest(unittest.TestCase):
         reports = {"ok": True, "title": "Report", "tree": "", "elements": []}
         chromium = FakeTabs("own")
         self.run_call(chromium, reports)
-        result, reads, use_tab = self.run_call(chromium, reports, opens=[f"p{index}" for index in range(60)])
+        result, reads, use_tab = self.run_call(chromium, reports, opens=[f"p{index}" for index in range(60)],
+                                               note='The page showed an alert, now closed: "Claim your prize".')
         self.assertEqual(chromium.ids, ["own"])
         self.assertEqual(reads, ["p0", "own"])
         use_tab.assert_called_with("own")
