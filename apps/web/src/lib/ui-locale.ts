@@ -1,21 +1,7 @@
+import { AppLocaleSchema } from "@rakazo/contracts";
 import { matchUiLocale } from "@rakazo/core";
 
-export const UI_LOCALES = [
-  "en",
-  "de",
-  "ko",
-  "tr",
-  "hi",
-  "pt-BR",
-  "zh-CN",
-  "zh-TW",
-  "es",
-  "ru",
-  "fr",
-  "he",
-  "nl",
-  "ja",
-] as const;
+export const UI_LOCALES = AppLocaleSchema.options;
 
 export type UiLocale = (typeof UI_LOCALES)[number];
 

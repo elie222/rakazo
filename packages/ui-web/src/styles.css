@@ -153,6 +153,11 @@
   opacity: 1;
 }
 
+/* Hidden idle rings would otherwise keep the compositor drawing every frame. */
+.rakazo-bot-avatar[data-working="false"] .rakazo-bot-avatar-ring {
+  animation-play-state: paused;
+}
+
 @keyframes rakazo-avatar-breathe {
   0%,
   100% {

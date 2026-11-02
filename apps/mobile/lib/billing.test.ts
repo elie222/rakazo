@@ -1,6 +1,13 @@
 import type { BillingStatus } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
-import { currentPlan, ownKeyOffer, planEndsAt, purchaseCompleted } from "./billing";
+import {
+  currentPlan,
+  ownKeyOffer,
+  ownKeySubscriptionCents,
+  planEndsAt,
+  purchaseCompleted,
+  subscribedPlan,
+} from "./billing";
 
 vi.mock("./api", () => ({ rpc: vi.fn() }));
 vi.mock("react-native", () => ({ Linking: { openURL: vi.fn() } }));
@@ -89,5 +96,29 @@ describe("purchase completed", () => {
         status({ access: true, funding: "credits", state: "active", monthlyAmountCents: 2000 }),
       ),
     ).toBe(true);
+  });
+});
+
+describe("subscribed plan", () => {
+  it("marks a live own-key plan and shows the price it was bought at", () => {
+    const own = status({ access: true, funding: "byok", state: "active", byokPriceCents: 1000 });
+    expect(subscribedPlan(own)).toBe("byok");
+    expect(ownKeySubscriptionCents(own)).toBe(1000);
+  });
+
+  it("does not treat a lapsed monthly credit plan with a balance left as current", () => {
+    const lapsed = status({
+      access: true,
+      funding: "credits",
+      state: "canceled",
+      monthlyAmountCents: 2000,
+      balanceUsd: 5,
+    });
+    expect(subscribedPlan(lapsed)).toBeNull();
+    expect(subscribedPlan({ ...lapsed, state: "active" })).toBe("credits");
+  });
+
+  it("shows no own-key price for a subscription that is not on the own-key plan", () => {
+    expect(ownKeySubscriptionCents(status({ access: true, state: "active" }))).toBeNull();
   });
 });

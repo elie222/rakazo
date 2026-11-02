@@ -176,6 +176,20 @@ describe("formatGithubEventPrompt", () => {
     expect(prompt).not.toContain("Ignore prior instructions");
     expect(prompt).not.toContain("dangerous command");
   });
+
+  it("drops unknown actions, negative ids, and malformed shas", () => {
+    const prompt = formatGithubEventPrompt("pull_request", {
+      action: "ignore_prior_instructions",
+      number: -1,
+      repository: { id: -101 },
+      pull_request: { id: 303, head: { sha: "not-a-sha" }, base: { sha: "b".repeat(6) } },
+    });
+    expect(prompt).toContain('"pullRequestId": 303');
+    expect(prompt).not.toContain('"action"');
+    expect(prompt).not.toContain('"number"');
+    expect(prompt).not.toContain('"repositoryId"');
+    expect(prompt).not.toContain("Sha");
+  });
 });
 
 describe("GitHub webhook signatures", () => {
@@ -643,7 +657,7 @@ describe("GitHub event HTTP route", () => {
     expect(JSON.parse(fenced![1]!)).toEqual(metadata);
   });
 
-  it("reuses the same clientNonce for duplicate GitHub deliveries", async () => {
+  it("runs a signed GitHub body once even when replayed with a new delivery id", async () => {
     const deps = createDeps({
       routines: [{ id: "routine-1", name: "Review pushes", prompt: "Inspect the change" }],
     });
@@ -652,21 +666,33 @@ describe("GitHub event HTTP route", () => {
       after: "c".repeat(40),
       repository: { id: 9 },
     });
+    const seen = new Set<string>();
+    deps.sendUserMessage.mockImplementation(async (input: { clientNonce?: string }) => {
+      const duplicate = seen.has(input.clientNonce ?? "");
+      seen.add(input.clientNonce ?? "");
+      return { messageId: "msg-1", runId: duplicate ? null : "run-1", seq: 3 };
+    });
     const first = await app.request(
       "/api/v1/bots/bot-1/github",
       await githubRequest(raw, SECRET, "delivery-dup-1"),
     );
-    const second = await app.request(
+    const replay = await app.request(
       "/api/v1/bots/bot-1/github",
-      await githubRequest(raw, SECRET, "delivery-dup-1"),
+      await githubRequest(raw, SECRET, "delivery-dup-2"),
     );
     expect(first.status).toBe(200);
-    expect(second.status).toBe(200);
-    expect(deps.sendUserMessage).toHaveBeenCalledTimes(2);
+    expect(replay.status).toBe(200);
     const firstNonce = deps.sendUserMessage.mock.calls[0]![0].clientNonce;
-    const secondNonce = deps.sendUserMessage.mock.calls[1]![0].clientNonce;
-    expect(firstNonce).toBe(secondNonce);
     expect(firstNonce).toMatch(/^github:bot-1:/);
+    expect(deps.sendUserMessage.mock.calls[1]![0].clientNonce).toBe(firstNonce);
+    expect(deps.enqueue).toHaveBeenCalledTimes(1);
+
+    await app.request(
+      "/api/v1/bots/bot-1/github",
+      await githubRequest(JSON.stringify({ after: "d".repeat(40) }), SECRET, "delivery-dup-1"),
+    );
+    expect(deps.sendUserMessage.mock.calls[2]![0].clientNonce).not.toBe(firstNonce);
+    expect(deps.enqueue).toHaveBeenCalledTimes(2);
   });
 
   it("rejects a signature made with the wrong secret", async () => {
@@ -687,21 +713,6 @@ describe("GitHub event HTTP route", () => {
       await githubRequest(raw, SECRET, "delivery-1", "push", "missing"),
     );
     expect(unknown.status).toBe(401);
-  });
-
-  it("rejects a signed delivery that omits X-GitHub-Delivery", async () => {
-    const deps = createDeps({
-      routines: [{ id: "routine-1", name: "Review pushes", prompt: "Inspect the change" }],
-    });
-    const app = mount(deps);
-    const raw = JSON.stringify({ ref: "refs/heads/main" });
-    const request = await githubRequest(raw);
-    const headers = { ...request.headers };
-    delete headers["x-github-delivery"];
-    const res = await app.request("/api/v1/bots/bot-1/github", { ...request, headers });
-    expect(res.status).toBe(401);
-    expect(await res.json()).toEqual({ error: "Unauthorized" });
-    expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
 
   it("acknowledges signed deliveries when no active GitHub routine matches", async () => {
@@ -733,7 +744,7 @@ describe("GitHub event HTTP route", () => {
       await githubRequest(raw, SECRET, "delivery-abc"),
     );
     expect(res.status).toBe(200);
-    const digest = createHash("sha256").update("delivery-abc").digest("base64url");
+    const digest = createHash("sha256").update(raw).digest("base64url");
     expect(deps.sendUserMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         botId: "bot-1",
@@ -1125,5 +1136,138 @@ describe("encrypted webhook cache expiry", () => {
       await store.close();
       vi.useRealTimers();
     }
+  });
+});
+
+describe("webhook secret cache", () => {
+  function cacheDeps(load: (ciphertext: string, secretId: string) => string) {
+    const bots = new Map<string, string>();
+    const secrets = new Map<string, string>();
+    let listener: (ref: string) => void = () => undefined;
+    const loadSecret = vi.fn(async (ciphertext: string, secretId: string) =>
+      load(ciphertext, secretId),
+    );
+    const deps = {
+      prisma: {
+        bot: {
+          findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
+            const webhookSecretId = bots.get(where.id);
+            return webhookSecretId
+              ? {
+                  id: where.id,
+                  spaceId: "ws-1",
+                  userId: "user-1",
+                  webhookSecretId,
+                  thread: { id: "thread-1" },
+                }
+              : null;
+          }),
+        },
+        secret: {
+          findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
+            const ciphertext = secrets.get(where.id);
+            return ciphertext === undefined
+              ? null
+              : {
+                  id: where.id,
+                  ciphertext,
+                  kind: WEBHOOK_SECRET_KIND,
+                  userId: "user-1",
+                  spaceId: "ws-1",
+                };
+          }),
+        },
+      } as unknown as WebhookDeps["prisma"],
+      secrets: {
+        load: loadSecret,
+        onChange: (next: (ref: string) => void) => {
+          listener = next;
+        },
+      } as unknown as WebhookDeps["secrets"],
+    };
+    return {
+      deps,
+      bots,
+      secrets,
+      load: loadSecret,
+      changed: (ref: string) => listener(ref),
+    };
+  }
+
+  it("re-decrypts only the secret whose ref changed", async () => {
+    const values = new Map([
+      ["cipher-a", "a"],
+      ["cipher-b", "b"],
+    ]);
+    const { deps, bots, secrets, load, changed } = cacheDeps(
+      (ciphertext) => values.get(ciphertext)!,
+    );
+    bots.set("bot-a", "secret-a").set("bot-b", "secret-b");
+    secrets.set("secret-a", "cipher-a").set("secret-b", "cipher-b");
+    const cache = new Map();
+
+    expect((await loadWebhookTarget(deps, cache, "bot-a"))?.expected).toBe("a");
+    expect((await loadWebhookTarget(deps, cache, "bot-b"))?.expected).toBe("b");
+    values.set("cipher-a", "a2");
+    changed("cipher-a");
+    expect((await loadWebhookTarget(deps, cache, "bot-a"))?.expected).toBe("a2");
+    expect((await loadWebhookTarget(deps, cache, "bot-b"))?.expected).toBe("b");
+    expect(load).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not reuse a cached plaintext for the same ciphertext under another secret id", async () => {
+    const { deps, bots, secrets } = cacheDeps((_, secretId) => {
+      if (secretId !== "secret-1")
+        throw new Error("Unsupported state or unable to authenticate data");
+      return SECRET;
+    });
+    bots.set("bot-1", "secret-1");
+    secrets.set("secret-1", "cipher").set("secret-2", "cipher");
+    const cache = new Map();
+
+    expect((await loadWebhookTarget(deps, cache, "bot-1"))?.expected).toBe(SECRET);
+    bots.set("bot-1", "secret-2");
+    expect(await loadWebhookTarget(deps, cache, "bot-1")).toBeNull();
+  });
+
+  it("keeps the newer secret when a decrypt for the revoked one finishes late", async () => {
+    let finishStale: (value: string) => void = () => undefined;
+    const { deps, bots, secrets, load } = cacheDeps(() => SECRET);
+    load.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finishStale = resolve;
+        }),
+    );
+    bots.set("bot-1", "secret-1");
+    secrets.set("secret-1", "cipher-1").set("secret-2", "cipher-2");
+    const cache = new Map();
+
+    const stale = loadWebhookTarget(deps, cache, "bot-1");
+    await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    bots.set("bot-1", "secret-2");
+    expect((await loadWebhookTarget(deps, cache, "bot-1"))?.expected).toBe(SECRET);
+    finishStale(SECRET);
+    expect(await stale).toBeNull();
+    expect((await loadWebhookTarget(deps, cache, "bot-1"))?.expected).toBe(SECRET);
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it("evicts the least recently delivered bot past 1,000 cached secrets", async () => {
+    const { deps, bots, secrets, load } = cacheDeps(() => SECRET);
+    for (let i = 0; i <= 1_000; i++) {
+      bots.set(`bot-${i}`, `secret-${i}`);
+      secrets.set(`secret-${i}`, `cipher-${i}`);
+    }
+    const cache = new Map();
+    for (let i = 0; i < 1_000; i++) await loadWebhookTarget(deps, cache, `bot-${i}`);
+    await loadWebhookTarget(deps, cache, "bot-0");
+    expect(load).toHaveBeenCalledTimes(1_000);
+
+    await loadWebhookTarget(deps, cache, "bot-1000");
+    await loadWebhookTarget(deps, cache, "bot-0");
+    expect(load).toHaveBeenCalledTimes(1_001);
+    await loadWebhookTarget(deps, cache, "bot-1");
+    expect(load).toHaveBeenCalledTimes(1_002);
   });
 });

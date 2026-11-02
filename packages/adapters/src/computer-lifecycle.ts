@@ -57,7 +57,7 @@ type ComputerUpdateProgress = (
   stage: Exclude<ComputerUpdate["stage"], "preparing">,
 ) => Promise<void>;
 
-const EXECUTION_LEASE_MS = 5 * 60_000;
+export const EXECUTION_LEASE_MS = 5 * 60_000;
 const BOOT_WAIT_ATTEMPTS = 40;
 const BOOT_WAIT_MS = 250;
 const RUNNING_CHECK_RETRY_MS = [250, 750];
@@ -249,7 +249,7 @@ export async function provisionComputer(
     }
   }
 
-  // A computer that bills starts only while its organization has allowance left this month.
+  // A computer that bills starts only while its organization has allowance left this period.
   const startKind = (await deps.sandbox.provisionKind?.()) ?? existing.kind;
   if (await sandboxAllowanceUsedUp(deps, { spaceId: existing.spaceId, kind: startKind }))
     throw new SandboxAllowanceUsedError();
@@ -1113,15 +1113,23 @@ export async function replaceComputer(
       where: { id: computerId, state: "suspending", updatedAt: claimStamp },
       data: { state: previousState, ...previousControl },
     });
-  // Re-check after the claim in case a run started between the pre-check and CAS.
-  const activeRun = await deps.prisma.run.findFirst({
-    where: {
-      status: { in: [...ACTIVE_RUN_STATUSES] },
-      bot: { computerId },
-    },
-    select: { id: true },
-  });
-  if (activeRun) {
+  // Re-check after the claim in case a run started between the pre-check and CAS. Under this
+  // operation's maintenance reservation, runs that arrived later wait for it without touching
+  // the computer, so only a live lease means one is still using it.
+  const inUse =
+    existing.maintenanceId === context.operationId
+      ? await deps.prisma.computerExecutionLease.findFirst({
+          where: { computerId, expiresAt: { gt: new Date() } },
+          select: { id: true },
+        })
+      : await deps.prisma.run.findFirst({
+          where: {
+            status: { in: [...ACTIVE_RUN_STATUSES] },
+            bot: { computerId },
+          },
+          select: { id: true },
+        });
+  if (inUse) {
     await releaseClaim();
     throw new ComputerBusyError();
   }

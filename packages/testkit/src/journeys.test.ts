@@ -16,7 +16,8 @@ import {
 } from "@rakazo/adapters";
 import type { createApp } from "@rakazo/api/app";
 import type { MessageBlock } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, ONCE_ROUTINE_CRON } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, ONCE_ROUTINE_CRON, resolveScreenProxySecret } from "@rakazo/core";
+import { openScreenCapability } from "@rakazo/core/node/screen-capability";
 import {
   appendEvent,
   createThreadEvents,
@@ -782,9 +783,16 @@ describeJourneys("required product journeys", () => {
     const researcherScreen = await rpc<{ url: string | null }>(app, cookie, "computer/screenUrl", {
       botId: researcher.id,
     });
-    expect(writerScreen.url).toContain(writer.id);
-    expect(researcherScreen.url).toContain(researcher.id);
-    expect(writerScreen.url).not.toBe(researcherScreen.url);
+    const screenOf = (url: string | null) => {
+      const sealed = new URL(url ?? "");
+      const target = openScreenCapability(
+        `${sealed.pathname}${sealed.search}`,
+        resolveScreenProxySecret(),
+      )?.target;
+      return new URL(target?.path ?? "/", "http://screen.invalid").searchParams.get("screen");
+    };
+    expect(screenOf(writerScreen.url)).toBe(writer.id);
+    expect(screenOf(researcherScreen.url)).toBe(researcher.id);
   });
 
   it("3: disconnect and reconnect from a cursor reconstructs the thread", async () => {
@@ -893,6 +901,52 @@ describeJourneys("required product journeys", () => {
       runId: waiting.run?.id,
       payload: { reason: "skipped" },
     });
+  });
+
+  it("4e: deleting a group with a run waiting on takeover frees its bot's computer", async () => {
+    const cookie = await signup(app, `takeover-group-delete-${stamp}@rakazo.test`, "Group Delete");
+    const createBot = (name: string) =>
+      rpc<Bot>(app, cookie, "bots/create", {
+        name,
+        title: "",
+        description: "",
+        instructions: "",
+        notifyOnFinish: true,
+      });
+    const chief = await createBot("Chief");
+    const mate = await createBot("Mate");
+    const group = await rpc<{ id: string; threadId: string }>(app, cookie, "groups/create", {
+      name: "Launch room",
+      botIds: [chief.id, mate.id],
+    });
+    await rpc(app, cookie, "threads/send", {
+      groupId: group.id,
+      text: "@Chief install the gsc cli and sign in",
+    });
+    let waitingRunId: string | undefined;
+    await waitForDatabase(async () => {
+      const run = await prisma.run.findFirst({
+        where: { threadId: group.threadId, botId: chief.id, status: "waiting_takeover" },
+        select: { id: true },
+      });
+      waitingRunId = run?.id;
+      return Boolean(run);
+    });
+    // The takeover holds Chief's computer for a day.
+    const held = await prisma.computerExecutionLease.findFirstOrThrow({
+      where: { botId: chief.id, runId: waitingRunId },
+    });
+    expect(held.expiresAt.getTime()).toBeGreaterThan(Date.now() + 60 * 60_000);
+
+    await rpc(app, cookie, "groups/remove", { groupId: group.id });
+
+    expect(await prisma.run.findUnique({ where: { id: waitingRunId } })).toBeNull();
+    // Chief's next run, in its own chat, takes the computer instead of waiting a day for it.
+    const direct = await sendAndWait(app, cookie, chief.id, "hello again");
+    expect(direct.run.status).toBe("completed");
+    expect(
+      await prisma.computerExecutionLease.findUniqueOrThrow({ where: { id: held.id } }),
+    ).toMatchObject({ runId: direct.run.id, fence: held.fence + 1 });
   });
 
   it("4b: an expired takeover denies input and reconciles API and database state", async () => {

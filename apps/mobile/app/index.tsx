@@ -1,5 +1,5 @@
 import type { RunActivityRow, SpaceBot, SpaceGroup } from "@rakazo/contracts";
-import { accountDisplay, isRetryableError } from "@rakazo/core";
+import { accountDisplay, isRetryableError, reportUiLocale } from "@rakazo/core";
 import type { Href } from "expo-router";
 import {
   Redirect,
@@ -58,7 +58,7 @@ import type { CreateAction } from "../lib/create-chooser";
 import { createInboxBot } from "../lib/create-inbox-bot";
 import { useHeaderHeightIfAny } from "../lib/floating-header";
 import { useForegroundPoll } from "../lib/foreground-poll";
-import { t, useI18n } from "../lib/i18n";
+import { getActiveUiLocale, t, useI18n } from "../lib/i18n";
 import { retainInboxValue } from "../lib/inbox-retention";
 import type { InboxItem, InboxSpace, PinnedChat } from "../lib/inbox-spaces";
 import {
@@ -110,6 +110,9 @@ async function openMobileSpace(spaceId: string | undefined, open: () => void) {
   }
   open();
 }
+
+/** The account this launch has saved its language to (see the inbox load). */
+let localeReportedFor: string | null = null;
 
 export default function HomeRoute() {
   const { split } = useSplitView();
@@ -263,6 +266,17 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
       setGroups((current) => retainInboxValue(current, navigation.current.groups));
       setSpaces((current) => retainInboxValue(current, navigation.spaces));
       setMe((current) => retainInboxValue(current, nextMe));
+      // Emails follow the app's language, so the account keeps the one this app runs in. Once
+      // per account and launch: polls must not undo a language picked on another device since.
+      // A server that predates it leaves `locale` out.
+      if (localeReportedFor !== nextMe.userId && nextMe.locale !== undefined) {
+        localeReportedFor = nextMe.userId;
+        if (nextMe.locale !== getActiveUiLocale()) {
+          void reportUiLocale(getActiveUiLocale, (locale) =>
+            rpc("preferences/update", { locale }),
+          ).catch(() => undefined);
+        }
+      }
       inboxLoaded.current = true;
       setBadgeLoad({ generation: badgeGeneration });
       setLoadFailure(null);

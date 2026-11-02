@@ -14,6 +14,7 @@ function submission(overrides: Partial<PluginSubmission>): PluginSubmission {
     source: "https://github.com/example/planning-notes",
     description: "Plans your day from your calendar and notes.",
     testing: "Connect the plugin, then ask a bot to plan tomorrow.\nIt should list three blocks.",
+    claim: null,
     status: "pending",
     reason: null,
     createdAt: "2026-10-01T09:00:00.000Z",
@@ -37,6 +38,17 @@ test("an admin reviews plugin submissions from the emailed admin link", async ({
       website: null,
       source: "https://github.com/example/task-board",
       description: "Tracks tasks across projects.",
+    }),
+    submission({
+      id: "submission-claim",
+      name: "Acme Tickets",
+      email: "owner@acme.example.test",
+      website: "https://acme.example.test",
+      logo: null,
+      source: null,
+      testing: null,
+      claim: "acme-tickets",
+      description: "",
     }),
   ];
   const reviews: unknown[] = [];
@@ -74,8 +86,11 @@ test("an admin reviews plugin submissions from the emailed admin link", async ({
   await page.goto("/admin/plugins");
   const panel = page.getByTestId("plugin-submissions");
   const rows = panel.getByTestId("plugin-submission");
-  await expect(rows).toHaveCount(2);
+  await expect(rows).toHaveCount(3);
   await expect(rows.first()).toContainText("github.com/example/planning-notes");
+  const claim = panel.getByRole("listitem", { name: "Acme Tickets" });
+  await expect(claim).toContainText("rakazo.com/integrations/acme-tickets");
+  await expect(claim.getByRole("button", { name: "Testing" })).toHaveCount(0);
   await expect(rows.first()).toContainText("maker@example.test");
   await rows.first().getByRole("button", { name: "Testing" }).click();
   await expect(rows.first()).toContainText("It should list three blocks.");
@@ -90,13 +105,16 @@ test("an admin reviews plugin submissions from the emailed admin link", async ({
   await captureScreenshot(page, testInfo, "admin-plugin-submission-reject");
   await reject.click();
   await expect(dialog).toHaveCount(0);
-  await expect(rows).toHaveCount(1);
+  await expect(rows).toHaveCount(2);
 
   await rows.first().getByRole("button", { name: "Approve", exact: true }).click();
+  await expect(rows).toHaveCount(1);
+  await claim.getByRole("button", { name: "Approve", exact: true }).click();
   await expect(panel.getByText("No submissions", { exact: true })).toBeVisible();
   expect(reviews).toEqual([
     { id: "submission-tasks", decision: "reject", reason: "The repository has no manifest." },
     { id: "submission-notes", decision: "approve" },
+    { id: "submission-claim", decision: "approve" },
   ]);
 
   await panel.getByRole("tab", { name: "Rejected" }).click();

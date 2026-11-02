@@ -84,6 +84,9 @@
       "./plugins/with-agent-notifications",
       "./plugins/with-app-intents"
     ],
+    "locales": {
+      "es": "./locales/es.json"
+    },
     "ios": {
       "bundleIdentifier": "com.rakazo.app",
       "buildNumber": "1",

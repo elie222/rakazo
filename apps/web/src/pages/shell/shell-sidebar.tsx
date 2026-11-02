@@ -26,6 +26,15 @@ import type { SettingsSection } from "../shell-overlay";
 import { SidebarHeader } from "./sidebar-header";
 import type { SidebarSearch } from "./use-sidebar-search";
 
+/** Focuses the search box once it renders, its text selected so typing replaces it. */
+export function focusSidebarSearch() {
+  requestAnimationFrame(() => {
+    const input = document.querySelector<HTMLInputElement>('input[name="sidebar-search"]');
+    input?.focus();
+    input?.select();
+  });
+}
+
 type User = { name?: string | null; email?: string; image?: string | null };
 
 /** The bots sidebar: a drawer on phones, collapsible to icons elsewhere. */
@@ -90,6 +99,8 @@ export function ShellSidebar({
     setSearchOpen,
     searchHits,
     searchLoading,
+    searchError,
+    retrySearch,
     showSpaceSearch,
     jumpToSearchHit,
     activityMode,
@@ -150,11 +161,7 @@ export function ShellSidebar({
                   }
                   if (mini) setCollapsedPref(false);
                   setSearchOpen(true);
-                  requestAnimationFrame(() =>
-                    document
-                      .querySelector<HTMLInputElement>('input[name="sidebar-search"]')
-                      ?.focus(),
-                  );
+                  focusSidebarSearch();
                 }
           }
           setBotsSidebarCollapsedPref={setCollapsedPref}
@@ -226,6 +233,8 @@ export function ShellSidebar({
             <SpaceSearchResults
               hits={searchHits}
               loading={searchLoading}
+              error={searchError}
+              onRetry={retrySearch}
               onSelect={(hit) => jumpToSearchHit(hit)}
             />
           ) : (

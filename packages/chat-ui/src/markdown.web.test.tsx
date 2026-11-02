@@ -5,6 +5,7 @@ import { act, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { closeUnterminatedFence } from "./markdown";
 import type { LinkFavicons } from "./markdown.web";
 import {
   ChatMarkdown,
@@ -746,6 +747,50 @@ describe("web markdown code copy", () => {
   });
 });
 
+describe("web markdown prose fences", () => {
+  const draft =
+    "Dear team, this line of prose is far wider than a bubble, so it wraps instead of scrolling.";
+
+  function renderMarkdown(markdown: string) {
+    const holder = document.createElement("div");
+    holder.innerHTML = renderToStaticMarkup(<ChatMarkdown>{markdown}</ChatMarkdown>);
+    return holder;
+  }
+
+  it.each(["text", "txt", "plaintext", "Text"])("wraps a fence marked %j as prose", (language) => {
+    const html = renderMarkdown(`\`\`\`${language}\n${draft}\n\`\`\``);
+    expect(html.querySelector("pre")?.className).toBe("rk-chat-markdown-pre-prose");
+  });
+
+  it.each(["ts", ""])("keeps a fence marked %j as code", (language) => {
+    const html = renderMarkdown(`\`\`\`${language}\nconst a = 1;\n\`\`\``);
+    expect(html.querySelector("pre")?.className).toBe("");
+  });
+
+  it("copies a text fence's code exactly as written", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown>{"```text\nDear team,\n\n  see you Monday.\n```"}</ChatMarkdown>);
+    });
+    const button = container.querySelector("button");
+    expect(button?.getAttribute("aria-label")).toBe("Copy code");
+    await act(async () => {
+      button?.click();
+    });
+    expect(writeText).toHaveBeenCalledWith("Dear team,\n\n  see you Monday.");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    Reflect.deleteProperty(navigator, "clipboard");
+  });
+});
+
 describe("web markdown mentions", () => {
   it("draws a mention the app renders and keeps an unknown one as its name", () => {
     const html = renderToStaticMarkup(
@@ -758,6 +803,81 @@ describe("web markdown mentions", () => {
     expect(html).toContain('<b data-id="bot-1">Planner</b>');
     expect(html).toContain("<span>Other</span>");
     expect(html).not.toContain("<a");
+  });
+});
+
+describe("web markdown streaming", () => {
+  it("draws every streamed prefix as the whole text would be drawn", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const reply = [
+      "1. one",
+      "",
+      "3. three",
+      "",
+      "| Step | Rows |",
+      "| --- | ---: |",
+      "| Import | 12 |",
+      "",
+      "```sql",
+      "SELECT 1;",
+      "",
+      "SELECT 2;",
+      "```",
+      "",
+      "- a",
+      "",
+      "  continued",
+      "Done",
+      "===",
+      "",
+      "[foo",
+      "bar]: https://example.com/",
+      "",
+      "See [foo bar].",
+      "",
+      "End.",
+      "",
+      "Really.",
+    ].join("\n");
+    const shape = (node: Node): string =>
+      [...node.childNodes]
+        .map((child) =>
+          child instanceof Element ? `<${child.tagName}>${shape(child)}</>` : child.textContent,
+        )
+        .join("");
+    const streamed = document.createElement("div");
+    const whole = document.createElement("div");
+    const streamedRoot = createRoot(streamed);
+    const wholeRoot = createRoot(whole);
+    for (let end = 1; end <= reply.length; end += 1) {
+      const text = reply.slice(0, end);
+      await act(async () => {
+        streamedRoot.render(<ChatMarkdown streaming>{text}</ChatMarkdown>);
+        wholeRoot.render(<ChatMarkdown key={end}>{closeUnterminatedFence(text)}</ChatMarkdown>);
+      });
+      expect(shape(streamed.firstChild!), JSON.stringify(text)).toBe(
+        `${shape(whole.firstChild!)}<SPAN></>`,
+      );
+    }
+    await act(async () => {
+      streamedRoot.render(<ChatMarkdown>{reply}</ChatMarkdown>);
+    });
+    expect(shape(streamed)).toBe(shape(whole));
+    await act(async () => {
+      streamedRoot.unmount();
+      wholeRoot.unmount();
+    });
+  });
+});
+
+describe("web markdown streamed definitions", () => {
+  it("resolves a reference whose definition label spans lines and escapes a bracket", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown streaming>
+        {"[foo\nb\\]ar]: https://example.test/ref\n\nSee [foo b\\]ar]."}
+      </ChatMarkdown>,
+    );
+    expect(html).toContain('href="https://example.test/ref"');
   });
 });
 
