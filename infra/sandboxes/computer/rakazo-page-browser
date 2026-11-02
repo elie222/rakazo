@@ -1667,11 +1667,8 @@ def run(argv: list[str]) -> int:
                 raise RuntimeError("actions must be an array")
             result = page.act(actions)
         if downloads:
-            try:
-                client.listen(0.01)
-                saved = downloads.finish()
-            except Exception:  # noqa: BLE001
-                saved = [{"error": DOWNLOAD_FAILED}]
+            client.listen(0.01)
+            saved = downloads.finish()
             downloads = None
         print(json.dumps({**result, **({"downloads": saved} if saved else {})}))
         return 0  # Structured failures preserve partial action progress.
