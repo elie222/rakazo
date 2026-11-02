@@ -451,11 +451,22 @@ class SnapshotTest(unittest.TestCase):
                 "timestamp": now - 1000},
                {"resourceType": "XHR", "url": "https://status.widget-vendor.test/status.json", "status": None,
                 "timestamp": now - 1000}]
-        busy, *_ = page(FakeAgentBrowser(requests=log, state={"done": ["https://beacon.example.test/event"]})
+        busy, *_ = page(FakeAgentBrowser(requests=log, state={"done": [["https://beacon.example.test/event", now - 900]]})
                         ).pending_requests()
         self.assertFalse(busy)
         busy, *_ = page(FakeAgentBrowser(state={"ready": "loading"})).pending_requests()
         self.assertTrue(busy)
+
+    def test_the_page_is_quiet_only_once_its_last_answer_has_arrived_too(self):
+        now = time.time() * 1000
+        log = [{"resourceType": "Document", "url": "https://portal.example.test/", "status": 200,
+                "timestamp": now - 2000},
+               {"resourceType": "Fetch", "url": "https://portal.example.test/api/me", "status": 200,
+                "timestamp": now - 1500}]
+        done = [["https://portal.example.test/api/me", now - 20], ["https://cdn.widget-vendor.test/w.js", now - 5]]
+        busy, latest, _ = page(FakeAgentBrowser(requests=log, state={"done": done})).pending_requests()
+        self.assertFalse(busy)
+        self.assertEqual(latest, (now - 20) / 1000)
 
 
 class ActTest(unittest.TestCase):
@@ -470,6 +481,18 @@ class ActTest(unittest.TestCase):
         self.assertEqual(result["completed"], 3)
         self.assertTrue(result["ok"])
         self.assertEqual(browser.actions(), [["click", "@e8"], ["fill", "@e2", "Grace"], ["select", "@e4", "Choose"]])
+
+    def test_an_act_that_ends_by_typing_waits_for_a_debounced_request_to_begin(self):
+        for actions, pause in (([{"kind": "fill", "ref": "e2", "text": "Can"}], helper.TYPING_PAUSE_SECONDS),
+                               ([{"kind": "fill", "ref": "e2", "text": "Can"}, {"kind": "click", "ref": "e8"}], 0.0),
+                               ([{"kind": "fill", "ref": "e4", "text": "Choose"}], 0.0)):
+            current = page(FakeAgentBrowser())
+            with patch.object(current, "settle", return_value=True) as settle, \
+                    patch.object(current, "snapshot", return_value={"ok": True}):
+                before = time.time()
+                current.act(actions)
+            waited = settle.call_args_list[0].kwargs["quiet_from"] - before
+            self.assertTrue(pause <= waited < pause + 0.1, (actions, waited))
 
     def test_a_frame_below_the_fold_is_brought_into_view_before_a_click_inside_it(self):
         _, browser = self.act([{"kind": "click", "ref": "e10"}])
