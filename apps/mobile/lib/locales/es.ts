@@ -57,6 +57,8 @@ export const ES_MESSAGES: Record<string, string> = {
     "El límite de solicitud de esta conexión es demasiado bajo. Elige otro modelo.",
   "This model's context window is too small. Choose another model.":
     "La ventana de contexto de este modelo es demasiado pequeña. Elige otro modelo.",
+  "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.":
+    "El resultado de la herramienta de este servidor no cabe en el modelo. Desactiva Conservar los resultados de las herramientas completos para ese servidor, o elige otro modelo.",
   "{provider} denied access to this model.": "{provider} denegó el acceso a este modelo.",
   "{summary} Backup models failed or were unavailable for this request.":
     "{summary} Los modelos de respaldo fallaron o no estaban disponibles para esta solicitud.",
@@ -89,7 +91,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Ex: Project Falcon": "Ej.: Proyecto Halcón",
   "Search bots": "Buscar bots",
   "About {label}": "Acerca de {label}",
-  "Manage the bots it creates": "Gestionar los bots que crea",
+  "Manage other bots": "Gestionar otros bots",
   "Allow cross-space bot communication":
     "Permitir la comunicación entre bots de distintos espacios",
   Headers: "Encabezados",
@@ -522,6 +524,10 @@ export const ES_MESSAGES: Record<string, string> = {
   "Replace API key": "Reemplazar clave de API",
   "Saved.": "Guardado.",
   "Server URL": "URL del servidor",
+  Protocol: "Protocolo",
+  "Chat Completions": "Chat Completions",
+  Responses: "Responses",
+  "Anthropic Messages": "Anthropic Messages",
   "Server found. Enter a model name.": "Servidor encontrado. Introduce un nombre de modelo.",
   "Setup help": "Ayuda de configuración",
   "Sign in": "Iniciar sesión",
@@ -948,6 +954,14 @@ export const ES_MESSAGES: Record<string, string> = {
   Credits: "Créditos",
   "Available credits": "Créditos disponibles",
   "Computer hours left": "Horas de computadora restantes",
+  "Trials get fewer hours to prevent abuse.": "Las pruebas tienen menos horas para evitar abusos.",
+  "Start plan now": "Iniciar el plan ahora",
+  "Start your plan now?": "¿Iniciar tu plan ahora?",
+  "Your trial ends and your card is charged {price} today.":
+    "Tu prueba termina y se cobrará {price} a tu tarjeta hoy.",
+  "Your trial ends and your card is charged today.":
+    "Tu prueba termina y se cobrará a tu tarjeta hoy.",
+  "Start plan": "Iniciar plan",
   "Monthly credits": "Créditos mensuales",
   "Upgrade now": "Mejorar plan ahora",
   "Downgrade at renewal": "Bajar de plan al renovar",
@@ -960,6 +974,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Use Rakazo credits": "Usar créditos de Rakazo",
   "Choose a plan": "Elige un plan",
   "Change plan": "Cambiar de plan",
+  "Current plan": "Plan actual",
   Plan: "Plan",
   None: "Ninguno",
   "Free trial": "Prueba gratuita",
@@ -984,6 +999,13 @@ export const ES_MESSAGES: Record<string, string> = {
   "Full access, nothing to pay": "Acceso completo, sin pagar nada",
   "Day {days}": "Día {days}",
   "{price} / month begins": "Empieza el cobro de {price} / mes",
+  "Billing period": "Periodo de facturación",
+  "Yearly −{percent}%": "Anual −{percent} %",
+  "{days} days free, then {price} / year. Cancel anytime.":
+    "{days} días gratis y luego {price} / año. Cancela cuando quieras.",
+  "{price} / year": "{price} / año",
+  "{price} / year begins": "Empieza el cobro de {price} / año",
+  "{price} / year. Cancel anytime.": "{price} / año. Cancela cuando quieras.",
   "Only the owner of this account can choose a plan.":
     "Solo el titular de esta cuenta puede elegir un plan.",
   Terms: "Términos",
@@ -1083,6 +1105,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Always open {site}": "Abrir siempre {site}",
   "Trusted sites": "Sitios de confianza",
   "Run history": "Historial de ejecuciones",
+  "No reply": "Sin respuesta",
   "No runs yet": "Aún no hay ejecuciones",
   "Load older runs": "Cargar ejecuciones anteriores",
   "Could not load run history": "No se pudo cargar el historial de ejecuciones",
@@ -1107,15 +1130,6 @@ export const ES_MESSAGES: Record<string, string> = {
   "Add field": "Agregar campo",
   Label: "Etiqueta",
   "Could not show the credential": "No se pudo mostrar la credencial",
-  "Allow rule": "Regla de permiso",
-  "Ask rule": "Regla de aprobación",
-  "Block rule": "Regla de bloqueo",
-  "Candidate rule": "Regla propuesta",
-  "Could not preview rule": "No se pudo previsualizar la regla",
-  Current: "Actual",
-  "No matching rule": "Ninguna regla coincide",
-  "Test rule": "Probar regla",
-  "Tool name": "Nombre de la herramienta",
   Wallet: "Billetera",
   "Connect {name}": "Conectar {name}",
   "Could not load wallet": "No se pudo cargar la billetera",
@@ -1187,6 +1201,30 @@ export const ES_MESSAGES: Record<string, string> = {
   "Use email code": "Usar código por correo",
   "Use password": "Usar contraseña",
   "{count} messages with {peer}": "{count} mensajes con {peer}",
+  Board: "Tablero",
+  "To do": "Por hacer",
+  "In progress": "En curso",
+  "In review": "En revisión",
+  Blocked: "Bloqueado",
+  "Won't do": "No se hará",
+  "Could not move the ticket": "No se pudo mover el ticket",
+  "No tickets yet.": "Aún no hay tickets.",
+  "Bot models": "Modelos de los bots",
+  "1 bot has its own model:": "1 bot tiene su propio modelo:",
+  "{count} bots have their own model:": "{count} bots tienen su propio modelo:",
+  "Use space default": "Usar el predeterminado del espacio",
+  "Switching…": "Cambiando…",
+  "Switch 1 bot to the space default?": "¿Cambiar 1 bot al modelo predeterminado del espacio?",
+  "Switch {count} bots to the space default?":
+    "¿Cambiar {count} bots al modelo predeterminado del espacio?",
+  "Their own model is cleared. You can pick one again in each bot.":
+    "Se quitará su modelo propio. Puedes volver a elegir uno en cada bot.",
+  Switch: "Cambiar",
+  "1 bot now uses the space default.": "1 bot ahora usa el modelo predeterminado del espacio.",
+  "{count} bots now use the space default.":
+    "{count} bots ahora usan el modelo predeterminado del espacio.",
+  "Could not switch {failedNames}. Try again.":
+    "No se pudo cambiar {failedNames}. Vuelve a intentarlo.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

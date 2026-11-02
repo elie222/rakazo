@@ -6,11 +6,7 @@ import {
   PushSessionEndedError,
 } from "@rakazo/adapters";
 import type { ActionApprovalRule, Actor, Me, SettingsScope } from "@rakazo/contracts";
-import {
-  approvalModeFromPreference,
-  approvalPreferenceFromMode,
-  previewActionApprovalRule,
-} from "@rakazo/core";
+import { approvalModeFromPreference, approvalPreferenceFromMode } from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
 import {
   auditLogOrganization,
@@ -31,6 +27,8 @@ import {
   selectVoicePreference,
   voicePreferenceTarget,
 } from "@rakazo/db";
+import { createAccessGrant, listAccessGrants, revokeAccessGrant } from "../access-grants.js";
+import { requireAdmin } from "../admins.js";
 import { aiConsentStatus, allowAiConsent } from "../ai-consent.js";
 import type { BillingService } from "../billing.js";
 import { firstModelConnectAnalytics } from "../model-connect-analytics.js";
@@ -89,7 +87,7 @@ export function accountRoutes(ctx: RouterContext) {
           const record = await firstModelConnectAnalytics(deps, context.actor, "credits");
           record(undefined, { name: "model_connect_started" });
         }
-        return billing.selectFunding(context.actor, input.funding, input.client);
+        return billing.selectFunding(context.actor, input.funding, input.client, input.interval);
       }),
       purchaseCredits: authed.billing.purchaseCredits.handler(async ({ context, input }) =>
         requireBilling(deps).purchaseCredits(context.actor, input),
@@ -106,14 +104,33 @@ export function accountRoutes(ctx: RouterContext) {
         return billing.status(context.actor);
       }),
       checkout: authed.billing.checkout.handler(async ({ context, input }) =>
-        requireBilling(deps).checkout(context.actor, input?.client),
+        requireBilling(deps).checkout(context.actor, input?.client, input?.interval),
       ),
       portal: authed.billing.portal.handler(async ({ context, input }) =>
         requireBilling(deps).portal(context.actor, input?.client),
       ),
+      endTrial: authed.billing.endTrial.handler(async ({ context }) => {
+        const billing = requireBilling(deps);
+        await billing.endTrial(context.actor);
+        return billing.status(context.actor);
+      }),
       claimReferral: authed.billing.claimReferral.handler(async ({ context, input }) => {
         await requireBilling(deps).claimReferral(context.actor, input.code);
         return { ok: true as const };
+      }),
+    },
+    accessGrants: {
+      list: authed.accessGrants.list.handler(async ({ context }) => {
+        await requireGrantAdmin(deps, context.actor);
+        return listAccessGrants(deps.prisma);
+      }),
+      create: authed.accessGrants.create.handler(async ({ context, input }) => {
+        await requireGrantAdmin(deps, context.actor);
+        return createAccessGrant(deps.prisma, context.actor.userId, input);
+      }),
+      revoke: authed.accessGrants.revoke.handler(async ({ context, input }) => {
+        await requireGrantAdmin(deps, context.actor);
+        return revokeAccessGrant(deps.prisma, input.id);
       }),
     },
     preferences: {
@@ -121,7 +138,10 @@ export function accountRoutes(ctx: RouterContext) {
         await deps.prisma.user.update({
           where: { id: context.actor.userId },
           // An avatar style from an older app is accepted and ignored: there is only one.
-          data: input.timezone === undefined ? {} : { timezone: input.timezone },
+          data: {
+            ...(input.timezone === undefined ? {} : { timezone: input.timezone }),
+            ...(input.locale === undefined ? {} : { locale: input.locale }),
+          },
         });
         return meDto(deps, context.actor);
       }),
@@ -171,19 +191,6 @@ export function accountRoutes(ctx: RouterContext) {
       }),
     },
     approvalRules: {
-      preview: authed.approvalRules.preview.handler(async ({ context, input }) => {
-        const rules = (await listApprovalRules(deps.prisma, context.actor, input.scope)).map(
-          approvalRuleDto,
-        );
-        const rule = rules.find((entry) => entry.id === input.id);
-        if (!rule) throw new ORPCError("NOT_FOUND");
-        if (rule.matchKind === "category" && input.effect !== "remove")
-          throw new ORPCError("BAD_REQUEST");
-        return previewActionApprovalRule(rules, rule, input.effect, {
-          ...input.sample,
-          site: input.sample.site?.toLowerCase(),
-        });
-      }),
       list: authed.approvalRules.list.handler(async ({ context, input }) => {
         const rows = await listApprovalRules(deps.prisma, context.actor, input?.scope);
         return rows.map(approvalRuleDto);
@@ -343,7 +350,7 @@ export function accountRoutes(ctx: RouterContext) {
           ? await loadVoiceCredential(deps, context.actor, input.provider, input.scope)
           : await loadDefaultVoiceCredential(deps, context.actor, input.scope);
         if (!row) return [];
-        return (await voiceProviderFor(deps, context.actor, row.cred.provider)).listVoices(
+        return (await voiceProviderFor(deps, row.cred.provider)).listVoices(
           row.apiKey,
           voiceContext(context.actor, context.signal),
         );
@@ -431,4 +438,10 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor, scope?: Se
 function requireBilling(deps: RouterDeps): BillingService {
   if (!deps.billing) throw new ORPCError("NOT_FOUND", { message: "Billing is not enabled" });
   return deps.billing;
+}
+
+async function requireGrantAdmin(deps: RouterDeps, actor: Actor) {
+  await requireAdmin(deps, actor.userId);
+  if (!deps.billing?.modelCreditsEnabled)
+    throw new ORPCError("NOT_FOUND", { message: "Model credits are not enabled" });
 }

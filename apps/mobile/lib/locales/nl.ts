@@ -59,7 +59,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Search bots": "Bots zoeken",
   "{count} messages with {peer}": "{count} berichten met {peer}",
   "About {label}": "Over {label}",
-  "Manage the bots it creates": "De bots beheren die deze bot maakt",
+  "Manage other bots": "Andere bots beheren",
   "Allow cross-space bot communication":
     "Communicatie tussen bots in verschillende ruimtes toestaan",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
@@ -122,6 +122,8 @@ export const NL_MESSAGES: Record<string, string> = {
     "De aanvraaglimiet van deze verbinding is te laag. Kies een ander model.",
   "This model's context window is too small. Choose another model.":
     "Het contextvenster van dit model is te klein. Kies een ander model.",
+  "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.":
+    "Het toolresultaat van deze server past niet in het model. Zet Toolresultaten heel houden uit voor die server, of kies een ander model.",
   "{provider} took too long to respond. Try again.":
     "{provider} deed er te lang over om te antwoorden. Probeer het opnieuw.",
   "{provider} is overloaded right now. Try again in a moment.":
@@ -521,6 +523,10 @@ export const NL_MESSAGES: Record<string, string> = {
   "Saved.": "Opgeslagen.",
   "Search models": "Modellen zoeken",
   "Server URL": "Server-URL",
+  Protocol: "Protocol",
+  "Chat Completions": "Chat Completions",
+  Responses: "Responses",
+  "Anthropic Messages": "Anthropic Messages",
   "Server found. Enter a model name.": "Server gevonden. Voer een modelnaam in.",
   "Setup help": "Installatiehulp",
   "Show less": "Minder tonen",
@@ -979,6 +985,15 @@ export const NL_MESSAGES: Record<string, string> = {
   Credits: "Tegoed",
   "Available credits": "Beschikbaar tegoed",
   "Computer hours left": "Resterende computeruren",
+  "Trials get fewer hours to prevent abuse.":
+    "Proefperiodes krijgen minder uren om misbruik te voorkomen.",
+  "Start plan now": "Abonnement nu starten",
+  "Start your plan now?": "Je abonnement nu starten?",
+  "Your trial ends and your card is charged {price} today.":
+    "Je proefperiode eindigt en je kaart wordt vandaag met {price} belast.",
+  "Your trial ends and your card is charged today.":
+    "Je proefperiode eindigt en je kaart wordt vandaag belast.",
+  "Start plan": "Abonnement starten",
   "Monthly credits": "Maandelijks tegoed",
   "Upgrade now": "Nu upgraden",
   "Downgrade at renewal": "Downgraden bij verlenging",
@@ -992,6 +1007,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Use Rakazo credits": "Rakazo-tegoed gebruiken",
   "Choose a plan": "Kies een abonnement",
   "Change plan": "Abonnement wijzigen",
+  "Current plan": "Huidig abonnement",
   Plan: "Abonnement",
   None: "Geen",
   "Free trial": "Gratis proefperiode",
@@ -1016,6 +1032,13 @@ export const NL_MESSAGES: Record<string, string> = {
   "Full access, nothing to pay": "Volledige toegang, niets te betalen",
   "Day {days}": "Dag {days}",
   "{price} / month begins": "Vanaf dan {price} per maand",
+  "Billing period": "Factuurperiode",
+  "Yearly −{percent}%": "Jaarlijks −{percent}%",
+  "{days} days free, then {price} / year. Cancel anytime.":
+    "{days} dagen gratis, daarna {price} per jaar. Altijd opzegbaar.",
+  "{price} / year": "{price} per jaar",
+  "{price} / year begins": "Vanaf dan {price} per jaar",
+  "{price} / year. Cancel anytime.": "{price} per jaar. Altijd opzegbaar.",
   "Only the owner of this account can choose a plan.":
     "Alleen de eigenaar van dit account kan een abonnement kiezen.",
   Terms: "Voorwaarden",
@@ -1114,6 +1137,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Always open {site}": "{site} altijd openen",
   "Trusted sites": "Vertrouwde sites",
   "Run history": "Rungeschiedenis",
+  "No reply": "Geen antwoord",
   "No runs yet": "Nog geen runs",
   "Load older runs": "Oudere runs laden",
   "Could not load run history": "Rungeschiedenis laden mislukt",
@@ -1140,15 +1164,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "Add field": "Veld toevoegen",
   Label: "Label",
   "Could not show the credential": "De gegevens tonen mislukt",
-  "Allow rule": "Toestaanregel",
-  "Ask rule": "Goedkeuringsregel",
-  "Block rule": "Blokkeerregel",
-  "Candidate rule": "Voorgestelde regel",
-  "Could not preview rule": "Regelvoorbeeld kon niet worden geladen",
-  Current: "Huidig",
-  "No matching rule": "Geen overeenkomende regel",
-  "Test rule": "Regel testen",
-  "Tool name": "Toolnaam",
   Wallet: "Wallet",
   "Connect {name}": "{name} verbinden",
   "Could not load wallet": "Kan wallet niet laden",
@@ -1239,6 +1254,28 @@ export const NL_MESSAGES: Record<string, string> = {
   "1 free month earned": "1 gratis maand verdiend",
   "{count} free months earned": "{count} gratis maanden verdiend",
   "Submit a plugin": "Plugin indienen",
+  Board: "Bord",
+  "To do": "Te doen",
+  "In progress": "Bezig",
+  "In review": "In beoordeling",
+  Blocked: "Geblokkeerd",
+  "Won't do": "Wordt niet gedaan",
+  "Could not move the ticket": "Kon ticket niet verplaatsen",
+  "No tickets yet.": "Nog geen tickets.",
+  "Bot models": "Botmodellen",
+  "1 bot has its own model:": "1 bot heeft een eigen model:",
+  "{count} bots have their own model:": "{count} bots hebben een eigen model:",
+  "Use space default": "Spacestandaard gebruiken",
+  "Switching…": "Bezig met wisselen…",
+  "Switch 1 bot to the space default?": "1 bot naar de spacestandaard overzetten?",
+  "Switch {count} bots to the space default?": "{count} bots naar de spacestandaard overzetten?",
+  "Their own model is cleared. You can pick one again in each bot.":
+    "Hun eigen model wordt gewist. Je kunt in elke bot opnieuw een model kiezen.",
+  Switch: "Overzetten",
+  "1 bot now uses the space default.": "1 bot gebruikt nu de spacestandaard.",
+  "{count} bots now use the space default.": "{count} bots gebruiken nu de spacestandaard.",
+  "Could not switch {failedNames}. Try again.":
+    "Kon {failedNames} niet overzetten. Probeer het opnieuw.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

@@ -8,6 +8,7 @@ import type { MobileBot } from "./api";
 import { startCall } from "./call-session";
 import { clearSessionToken, currentSessionGeneration, saveSessionToken } from "./session";
 import { useThreadVoiceCall } from "./thread-voice";
+import { takeShortcutVoiceChat } from "./voice-chat-intent";
 
 vi.mock("expo-router", () => ({
   useNavigation: () => ({ isFocused: () => true }),
@@ -40,6 +41,10 @@ vi.mock("./device-voice", () => ({ loadDeviceVoiceEnabled: async () => true }));
 vi.mock("./dictation", () => ({ available: async () => true }));
 vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("./voice", () => ({ speakQueue: vi.fn(), speakText: vi.fn() }));
+vi.mock("./voice-chat-intent", () => ({
+  onShortcutVoiceChat: () => () => undefined,
+  takeShortcutVoiceChat: vi.fn(() => false),
+}));
 
 const riley = { id: "riley", name: "Riley" } as MobileBot;
 const max = { id: "max", name: "Max" } as MobileBot;
@@ -73,6 +78,7 @@ describe("useThreadVoiceCall hand-over", () => {
   beforeEach(async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.mocked(startCall).mockClear();
+    vi.mocked(takeShortcutVoiceChat).mockReset().mockReturnValue(false);
     await saveSessionToken("fake-token-a");
     root = createRoot(document.createElement("div"));
   });
@@ -91,6 +97,16 @@ describe("useThreadVoiceCall hand-over", () => {
 
     expect(startCall).toHaveBeenCalledOnce();
     expect(startCall).toHaveBeenCalledWith(expect.objectContaining({ botId: "max", session }));
+  });
+
+  it("starts a shortcut call with a fresh greeting", async () => {
+    vi.mocked(takeShortcutVoiceChat).mockReturnValueOnce(true);
+    render("riley");
+    await flush();
+    expect(startCall).toHaveBeenCalledOnce();
+    expect(startCall).toHaveBeenCalledWith(
+      expect.objectContaining({ botId: "riley", greeting: "Hello, {bot} here." }),
+    );
   });
 
   it("drops a hand-over queued before a sign-out", async () => {

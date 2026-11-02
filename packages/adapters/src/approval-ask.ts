@@ -11,7 +11,7 @@ import {
   toolRequiresExplicitApproval,
 } from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
-import { USER_COMPUTER_SCREEN_TOOLS, userComputerAppName } from "./run-tools-user-computer.js";
+import { USER_COMPUTER_SCREEN_TOOLS, userComputerAppName } from "./user-computer-tools.js";
 
 export const MAX_APPROVAL_SUMMARY_LENGTH = 500;
 export const MAX_APPROVAL_DETAIL_LENGTH = 4_000;
@@ -88,7 +88,7 @@ export function buildApprovalAskBlock(
       ],
     };
   }
-  // Only an instruction change held for the owner carries the text it replaces.
+  // Only an instruction change held for approval carries the text it replaces.
   if (toolName === "update_bot" && typeof args.previousInstructions === "string") {
     const before = redactSecrets(String(args.previousInstructions ?? ""), secrets);
     const after = redactSecrets(String(args.instructions ?? ""), secrets);
@@ -97,7 +97,7 @@ export function buildApprovalAskBlock(
       kind: "ask",
       approvalEffectId: effectId,
       text: "Update instructions?",
-      detail: instructionUpdateDiff(before, after, reason),
+      detail: instructionUpdateDiff(before, after),
       instructionUpdate: {
         botId: String(args.botId ?? ""),
         before,

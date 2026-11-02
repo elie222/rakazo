@@ -246,6 +246,13 @@ it("keeps protocol selection scoped to the request connection", () => {
   expect(responses.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, "fixture-model")?.api).toBe(
     "openai-responses",
   );
+  const anthropic = modelsForRequest(
+    { model: { ...request.model, apiProtocol: "anthropic-messages" } },
+    OPENAI_COMPATIBLE_PROVIDER_ID,
+  );
+  expect(anthropic.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, "fixture-model")?.api).toBe(
+    "anthropic-messages",
+  );
   const legacy = modelsForRequest(request, OPENAI_COMPATIBLE_PROVIDER_ID);
   expect(legacy.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, "fixture-model")?.api).toBe(
     "openai-completions",

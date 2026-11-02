@@ -16,6 +16,7 @@ import {
   findBotSecret,
   findCommandVariableConflict,
   findRunLogin,
+  findSiteLogin,
   forgetBotSecret,
   generateBotSecret,
   listBotSecrets,
@@ -148,6 +149,12 @@ export const secretTools: ToolHandlers = {
         return call.finish(known ?? { error: "The saved credential is no longer available." });
       }
       if (known && args.replace !== true) return call.finish(known);
+      // A login saved for this exact site under another name is the one to fill.
+      const siteLogin =
+        !known && destination.auth.type === "login" && args.replace !== true
+          ? await findSiteLogin(deps.prisma, run, destination.origin)
+          : null;
+      if (siteLogin) return call.finish({ saved: true, ...botSecretToolView(siteLogin) });
       // Action approval authorizes showing the card; it is not a credential submission.
       // Return the claim to intended so the answer transaction can approve the saved value.
       if (call.claimedEffect) {

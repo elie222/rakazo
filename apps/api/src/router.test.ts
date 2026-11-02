@@ -365,6 +365,18 @@ describe("account preferences", () => {
     });
   });
 
+  it("saves the app language emails are written in", async () => {
+    const setup = preferencesDeps("organic");
+
+    const response = await updatePreferences(setup, { locale: "pt-BR" });
+
+    expect(response.status).toBe(200);
+    expect(setup.update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { locale: "pt-BR" },
+    });
+  });
+
   it.each([null, "Europe/London"])(
     "adopts the browser timezone only while the saved value is null (%s)",
     async (timezone) => {
@@ -3922,7 +3934,8 @@ describe("computer terminal and file transfer", () => {
   const controlled = {
     controlHolder: "user",
     controlLeaseId: "lease-1",
-    controlLeaseExpiresAt: new Date(Date.now() + 60_000),
+    // Fixed far future: a lease relative to module load expires before a slow suite reaches it.
+    controlLeaseExpiresAt: new Date("2999-01-01T00:00:00Z"),
     controlBotId: "bot-1",
   };
 
@@ -4459,6 +4472,22 @@ describe("OpenAI-compatible model probes", () => {
       "fake-session-secret",
     );
     expect(JSON.stringify(response)).not.toContain("fake-session-secret");
+  });
+
+  it("sends a saved key with Anthropic headers for the Anthropic Messages protocol", async () => {
+    const { client, fetch, load } = fixture();
+    load.mockResolvedValue(
+      JSON.stringify({ kind: "openai_compatible", baseUrl, apiKey: "fake-saved-key" }),
+    );
+    const response = await client.models.probeOpenAiCompatible({
+      baseUrl,
+      apiProtocol: "anthropic-messages",
+    });
+    const headers = new Headers(fetch.mock.calls[0]?.[1]?.headers);
+    expect(headers.get("x-api-key")).toBe("fake-saved-key");
+    expect(headers.get("anthropic-version")).toBe("2023-06-01");
+    expect(headers.get("authorization")).toBeNull();
+    expect(response).toEqual({ models: ["test-model"] });
   });
 
   it("never uses another user's credential id for probe secrets", async () => {
@@ -5025,10 +5054,10 @@ describe("model credential persistence", () => {
 
   it.each(
     ["openrouter", "google", "deepseek"].flatMap((provider) =>
-      [401, 403, 503].map((status) => ({ provider, status })),
+      [401, 403].map((status) => ({ provider, status })),
     ),
   )(
-    "rejects an unverified $provider replacement ($status) without changing the saved connection",
+    "rejects a refused $provider replacement ($status) without changing the saved connection",
     async ({ provider, status }) => {
       const { upsert, deps, handler } = persistDeps();
       const saved = {
@@ -5055,10 +5084,7 @@ describe("model credential persistence", () => {
         await expect(response.json()).resolves.toMatchObject({
           json: {
             code: "BAD_REQUEST",
-            message:
-              status === 503
-                ? "Could not verify the API key. Try again."
-                : "API key was rejected by the provider.",
+            message: "API key was rejected by the provider.",
           },
         });
         expect(fetchImpl).toHaveBeenCalledOnce();

@@ -6,11 +6,13 @@ import { describe, expect, it, vi } from "vitest";
 import {
   assertSafeRemoteUrl,
   ConnectorRedirectError,
+  callRemoteMcpTool,
   createPrivateNetworkFetch,
   createSafeLookup,
   createSafeRemoteFetch,
   limitRemoteMcpPayload,
 } from "./remote-mcp.js";
+import { toolCompletionAuditPayload } from "./tool-completion-audit.js";
 
 const publicResolver = async () => [{ address: "203.0.113.10", family: 4 as const }];
 
@@ -583,6 +585,196 @@ describe("remote MCP URL policy", () => {
     } finally {
       await safeFetch.close();
     }
+  });
+});
+
+describe("remote MCP tool result", () => {
+  const initialize = (id: unknown) =>
+    Response.json({
+      jsonrpc: "2.0",
+      id,
+      result: {
+        protocolVersion: "2025-11-25",
+        capabilities: { tools: {} },
+        serverInfo: { name: "test", version: "1" },
+      },
+    });
+
+  /** Streamable HTTP peer answering one fixed tool result over an injected
+   * fetch. A raw body string (with `$ID` for the request id) can carry JSON
+   * number digits a JavaScript value cannot hold exactly. */
+  function toolResultFetch(result: Record<string, unknown> | string) {
+    return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const request = new Request(input, init);
+      if (request.method !== "POST") return new Response(null, { status: 405 });
+      const message = (await request.json()) as { id?: number; method?: string };
+      if (message.method === "initialize") return initialize(message.id);
+      if (message.method === "tools/call") {
+        if (typeof result === "string")
+          return new Response(result.replace("$ID", String(message.id)), {
+            headers: { "content-type": "application/json" },
+          });
+        return Response.json({ jsonrpc: "2.0", id: message.id, result });
+      }
+      return new Response(null, { status: 202 });
+    });
+  }
+
+  function callTool(fetch: ReturnType<typeof toolResultFetch>) {
+    return callRemoteMcpTool(
+      {
+        endpoint: "https://mcp.example.test/mcp",
+        fetch: fetch as unknown as typeof globalThis.fetch,
+        resolveHostname: publicResolver,
+      },
+      "recall",
+      {},
+    );
+  }
+
+  const memory = { results: [{ text: "first memory" }, { text: "second memory" }] };
+
+  it("keeps one copy when a text block repeats structuredContent", async () => {
+    const fetch = toolResultFetch({
+      content: [{ type: "text", text: JSON.stringify(memory) }],
+      structuredContent: memory,
+    });
+    await expect(callTool(fetch)).resolves.toEqual({
+      content: [],
+      structuredContent: memory,
+      isError: false,
+    });
+  });
+
+  it("drops a duplicate text block however the server formatted the JSON", async () => {
+    const fetch = toolResultFetch({
+      content: [{ type: "text", text: JSON.stringify(memory, null, 2) }],
+      structuredContent: memory,
+    });
+    await expect(callTool(fetch)).resolves.toEqual({
+      content: [],
+      structuredContent: memory,
+      isError: false,
+    });
+  });
+
+  it("keeps both copies when the text is different data", async () => {
+    const other = { results: [{ text: "different" }] };
+    const fetch = toolResultFetch({
+      content: [{ type: "text", text: JSON.stringify(other) }],
+      structuredContent: memory,
+    });
+    await expect(callTool(fetch)).resolves.toEqual({
+      content: [{ type: "text", text: JSON.stringify(other) }],
+      structuredContent: memory,
+      isError: false,
+    });
+  });
+
+  it("keeps a text-only result unchanged", async () => {
+    const fetch = toolResultFetch({ content: [{ type: "text", text: "plain answer" }] });
+    await expect(callTool(fetch)).resolves.toEqual({
+      content: [{ type: "text", text: "plain answer" }],
+      isError: false,
+    });
+  });
+
+  it("keeps a structured-only result unchanged", async () => {
+    const fetch = toolResultFetch({ content: [], structuredContent: memory });
+    await expect(callTool(fetch)).resolves.toEqual({
+      content: [],
+      structuredContent: memory,
+      isError: false,
+    });
+  });
+
+  it("keeps images and other text blocks, dropping only the duplicate text", async () => {
+    const image = { type: "image", data: "aGk=", mimeType: "image/png" };
+    const fetch = toolResultFetch({
+      content: [
+        image,
+        { type: "text", text: JSON.stringify(memory) },
+        { type: "text", text: "a note beside the data" },
+      ],
+      structuredContent: memory,
+    });
+    await expect(callTool(fetch)).resolves.toEqual({
+      content: [image, { type: "text", text: "a note beside the data" }],
+      structuredContent: memory,
+      isError: false,
+    });
+  });
+
+  it("keeps both copies when the shared JSON holds an integer beyond the safe range", async () => {
+    // Parsing rounds both copies of 9007199254740993 to 9007199254740992, so
+    // they would compare deep-equal; only the text still carries the exact id.
+    const exact = '{"id":9007199254740993}';
+    const fetch = toolResultFetch(
+      `{"jsonrpc":"2.0","id":$ID,"result":{"content":[{"type":"text","text":${JSON.stringify(
+        exact,
+      )}}],"structuredContent":{"id":9007199254740993}}}`,
+    );
+    await expect(callTool(fetch)).resolves.toEqual({
+      content: [{ type: "text", text: exact }],
+      structuredContent: { id: 9007199254740992 },
+      isError: false,
+    });
+  });
+
+  it.each([
+    ["9.007199254740993e15", 9007199254740992],
+    ["1.0000000000000001", 1],
+  ])(
+    "keeps both copies when the decimal %s cannot survive a JavaScript number",
+    async (token, rounded) => {
+      const exact = `{"id":${token}}`;
+      const fetch = toolResultFetch(
+        `{"jsonrpc":"2.0","id":$ID,"result":{"content":[{"type":"text","text":${JSON.stringify(
+          exact,
+        )}}],"structuredContent":{"id":${token}}}}`,
+      );
+      await expect(callTool(fetch)).resolves.toEqual({
+        content: [{ type: "text", text: exact }],
+        structuredContent: { id: rounded },
+        isError: false,
+      });
+    },
+  );
+
+  it("still drops the duplicate when big digits appear only inside strings", async () => {
+    const data = { note: "id 9007199254740993 in prose", count: 3 };
+    const fetch = toolResultFetch({
+      content: [{ type: "text", text: JSON.stringify(data) }],
+      structuredContent: data,
+    });
+    await expect(callTool(fetch)).resolves.toEqual({
+      content: [],
+      structuredContent: data,
+      isError: false,
+    });
+  });
+
+  it("keeps an error result's text, so audits report the specific failure", async () => {
+    const failure = { error: { message: "Missing permission: updates" } };
+    const fetch = toolResultFetch({
+      content: [{ type: "text", text: JSON.stringify(failure) }],
+      structuredContent: failure,
+      isError: true,
+    });
+    const envelope = await callTool(fetch);
+    expect(envelope).toEqual({
+      content: [{ type: "text", text: JSON.stringify(failure) }],
+      structuredContent: failure,
+      isError: true,
+    });
+    const audit = toolCompletionAuditPayload({
+      name: "recall",
+      executionId: "exec-1",
+      durationMs: 3,
+      result: envelope,
+    });
+    expect(audit.outcome).toBe("error");
+    expect(audit.error).toContain("Missing permission: updates");
   });
 });
 

@@ -1,4 +1,9 @@
-import type { ModelHeaderRow, ModelOAuthBegin, ThinkingLevel } from "@rakazo/contracts";
+import type {
+  ModelApiProtocol,
+  ModelHeaderRow,
+  ModelOAuthBegin,
+  ThinkingLevel,
+} from "@rakazo/contracts";
 import {
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
   cloudflareModelRouting,
@@ -18,10 +23,10 @@ import {
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
-  COMPATIBLE_THINKING_LEVELS,
   clampCatalogThinkingLevel,
   compatibleConnectionReady,
   compatibleModelRows,
+  compatibleThinkingLevels,
   connectionFormFields,
   connectionFormModelId,
   connectionMaxTokensField,
@@ -62,7 +67,10 @@ import {
   finishModelOAuthAttempt,
   waitForModelOAuth,
 } from "../../lib/model-auth";
-import { modelConnectionRequest } from "../../lib/model-connection-request";
+import {
+  MODEL_CONNECT_TIMEOUT_MS,
+  modelConnectionRequest,
+} from "../../lib/model-connection-request";
 import { native, useThemedStyles } from "../../lib/native";
 import { ACCOUNT_SETTINGS, settingsRpc } from "../../lib/settings-target";
 import { thinkingLevelLabel } from "../../lib/thinking-level";
@@ -102,6 +110,7 @@ export default function ModelConnection() {
   const [accountId, setAccountId] = useState("");
   const [gatewayId, setGatewayId] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  const [apiProtocol, setApiProtocol] = useState<ModelApiProtocol>("chat-completions");
   const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
   const [reasoning, setReasoning] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
@@ -219,6 +228,7 @@ export default function ModelConnection() {
       setHeaderRows(null);
       setEnabledModelIds(fields.enabledModelIds);
       setBaseUrl(fields.baseUrl);
+      setApiProtocol(fields.apiProtocol);
       setReasoning(fields.reasoning);
       setThinkingLevel(fields.thinkingLevel);
       setMaxTokens(fields.maxTokens);
@@ -282,12 +292,35 @@ export default function ModelConnection() {
     accountId.trim() !== (credential?.accountId ?? "") ||
     gatewayId.trim() !== (credential?.gatewayId ?? "");
   const gatewayOnlySave = isCloudflare && Boolean(credential) && !apiKey.trim();
+  const protocolChoices: { key: ModelApiProtocol; label: string }[] = [
+    { key: "chat-completions", label: t("Chat Completions") },
+    { key: "responses", label: t("Responses") },
+    { key: "anthropic-messages", label: t("Anthropic Messages") },
+  ];
+  const apiProtocolLabel = protocolChoices.find((choice) => choice.key === apiProtocol)?.label;
 
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
     setHeaderRows(null);
-    // A new endpoint starts with no ticks; the saved endpoint gets its saved list back.
+    // A new endpoint starts with no model or ticks; the saved endpoint gets its saved ones back.
     setEnabledModelIds(savedCompatibleModelIds(credential, nextBaseUrl));
+    stageCompatibleModelId(
+      savedCompatibleEndpointMatches(nextBaseUrl, credential?.baseUrl)
+        ? (credential?.modelId ?? "")
+        : "",
+    );
+    resetOpenAiCompatibleProbe();
+    clearFeedback();
+  }
+
+  function updateApiProtocol(nextProtocol: ModelApiProtocol) {
+    setApiProtocol(nextProtocol);
+    setThinkingLevel(
+      clampCatalogThinkingLevel(
+        thinkingLevel,
+        reasoning ? compatibleThinkingLevels(nextProtocol) : [],
+      ) as ThinkingLevel | null,
+    );
     resetOpenAiCompatibleProbe();
     clearFeedback();
   }
@@ -306,11 +339,16 @@ export default function ModelConnection() {
       baseUrl,
       apiKey,
       request: (input) =>
-        rpc("models/probeOpenAiCompatible", {
-          ...input,
-          headers: modelHeadersInput(headerRows),
-          credentialId: credential?.id,
-        }),
+        rpc(
+          "models/probeOpenAiCompatible",
+          {
+            ...input,
+            apiProtocol,
+            headers: modelHeadersInput(headerRows),
+            credentialId: credential?.id,
+          },
+          { timeoutMs: MODEL_CONNECT_TIMEOUT_MS },
+        ),
       onSuccess: (models) => {
         const next = modelId.trim() || models[0] || "";
         if (next !== modelId) stageCompatibleModelId(next);
@@ -356,7 +394,7 @@ export default function ModelConnection() {
     setThinkingLevel(
       clampCatalogThinkingLevel(
         credential?.modelId === nextModelId ? credential.thinkingLevel : null,
-        reasoning ? COMPATIBLE_THINKING_LEVELS : [],
+        reasoning ? compatibleThinkingLevels(apiProtocol) : [],
       ) as ThinkingLevel | null,
     );
   }
@@ -370,6 +408,7 @@ export default function ModelConnection() {
         modelId,
         enabledModelIds,
         baseUrl,
+        apiProtocol,
         headerRows,
         reasoning,
         thinkingLevel,
@@ -409,7 +448,9 @@ export default function ModelConnection() {
     const { savingLimitOnly, activeModelId } = connect;
     setPending("connect");
     try {
-      const saved = await rpc("models/connect", connect.input);
+      const saved = await rpc("models/connect", connect.input, {
+        timeoutMs: MODEL_CONNECT_TIMEOUT_MS,
+      });
       credentialIdRef.current = saved.id;
       setCredentialId(saved.id);
       if (!limitsOnly) setApiKey("");
@@ -632,6 +673,28 @@ export default function ModelConnection() {
           ) : null}
         </>
       ) : null}
+      <MenuPickerMenu
+        label={t("Protocol")}
+        choices={protocolChoices}
+        value={apiProtocol}
+        disabled={busy}
+        onChange={(value) => {
+          updateApiProtocol(value as ModelApiProtocol);
+        }}
+      >
+        <View>
+          <SettingsRow
+            title={t("Protocol")}
+            value={apiProtocolLabel}
+            chevron="down"
+            accessibilityRole="button"
+            accessible
+            accessibilityLabel={t("Protocol")}
+            accessibilityState={{ disabled: busy }}
+            accessibilityValue={{ text: apiProtocolLabel }}
+          />
+        </View>
+      </MenuPickerMenu>
       {feedbackAnchor === "probe" ? feedback : null}
       <Text style={[styles.sectionTitle, { marginTop: 12 }]}>{t("Model")}</Text>
       {/* The switches stay visible while the default is "Other model…" or a typed id. */}
@@ -727,7 +790,7 @@ export default function ModelConnection() {
                 label={t("Reasoning effort")}
                 choices={[
                   { key: "", label: t("Default") },
-                  ...COMPATIBLE_THINKING_LEVELS.map((level) => ({
+                  ...compatibleThinkingLevels(apiProtocol).map((level) => ({
                     key: level,
                     label: thinkingLevelLabel(level, t),
                   })),

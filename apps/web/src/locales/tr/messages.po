@@ -37,6 +37,11 @@ msgstr ""
 msgid "{0, plural, one {# free month earned} other {# free months earned}}"
 msgstr "{0, plural, one {# ücretsiz ay kazanıldı} other {# ücretsiz ay kazanıldı}}"
 
+#. placeholder {0}: item.freeMonths
+#: src/pages/AdminAccessPage.tsx
+msgid "{0, plural, one {# free month} other {# free months}}"
+msgstr ""
+
 #. placeholder {0}: skills.length - shownSkills.length
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "{0, plural, one {# more} other {# more}}"
@@ -51,6 +56,11 @@ msgstr ""
 #. placeholder {0}: chosen.length
 #: src/components/integrations/space-availability.tsx
 msgid "{0, plural, one {# space} other {# spaces}}"
+msgstr ""
+
+#. placeholder {0}: server.health.toolCount
+#: src/pages/McpServersOverlay.tsx
+msgid "{0, plural, one {# tool} other {# tools}}"
 msgstr ""
 
 #. placeholder {0}: pinned.length
@@ -404,7 +414,6 @@ msgstr "{title}, {label}"
 msgid "{title}, saved as {savedAs}"
 msgstr "{title}, {savedAs} olarak kaydedilir"
 
-#: src/components/McpServerHealthLine.tsx
 #: src/components/ToolActivityDisclosure.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
@@ -414,6 +423,10 @@ msgstr "{toolCount, plural, one {# araç} other {# araç}}"
 #: src/pages/shell/composer.tsx
 msgid "@{0}"
 msgstr "@{0}"
+
+#: src/components/ModelCredits.tsx
+msgid "/ month"
+msgstr ""
 
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
@@ -441,6 +454,10 @@ msgstr "Bir abonelik kimlik bilgisi güvenli şekilde saklanıyor."
 msgid "A–Z"
 msgstr "A–Z"
 
+#: src/pages/KnowledgeSection.tsx
+msgid "About {kb} KB of memory no longer reaches the bot."
+msgstr ""
+
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
 msgstr "{label} hakkında"
@@ -449,6 +466,7 @@ msgstr "{label} hakkında"
 msgid "Access token (optional)"
 msgstr "Erişim token'ı (isteğe bağlı)"
 
+#: src/components/AccountMenu.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Account"
 msgstr "Hesap"
@@ -474,6 +492,7 @@ msgstr "{name} için hesap menüsü"
 #. placeholder {0}: group.spaceName
 #. placeholder {0}: section.name
 #: src/pages/BotContextMenu.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Actions for {0}"
 msgstr "{0} için işlemler"
@@ -628,7 +647,6 @@ msgstr ""
 msgid "Adding…"
 msgstr "Ekleniyor…"
 
-#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -643,9 +661,9 @@ msgstr "Gelişmiş"
 msgid "Advanced..."
 msgstr ""
 
-#: src/pages/McpServersOverlay.tsx
-msgid "Agents:"
-msgstr "Agent'lar:"
+#: src/components/AccountDataSettings.tsx
+msgid "Agent from another app"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
@@ -655,6 +673,7 @@ msgstr ""
 msgid "All {credit} goes to model usage."
 msgstr "{credit} tutarın tamamı model kullanımına gider."
 
+#: src/components/integrations/agent-access.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "All bots"
@@ -672,7 +691,6 @@ msgstr ""
 msgid "All time"
 msgstr ""
 
-#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Allow"
 msgstr "İzin ver"
@@ -692,10 +710,6 @@ msgstr "Bir kez izin ver"
 #: src/lib/dictation.ts
 msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
 msgstr ""
-
-#: src/components/ApprovalRulePreview.tsx
-msgid "Allow rule"
-msgstr "İzin kuralı"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -794,6 +808,10 @@ msgstr "Yanıtlandı: {answer}"
 msgid "Anthropic API"
 msgstr ""
 
+#: src/pages/model-settings/compatible-model-fields.tsx
+msgid "Anthropic Messages"
+msgstr ""
+
 #: src/pages/Paywall.tsx
 msgid "Any model, with your own key"
 msgstr ""
@@ -852,6 +870,10 @@ msgstr "Onaylar"
 msgid "Approve"
 msgstr "Onayla"
 
+#: src/lib/call-session.ts
+msgid "Approve or deny it on screen."
+msgstr "Ekranda onayla veya reddet."
+
 #: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
 msgstr "Agent'ının bu sunucunun araçlarını kullanabilmesi için sunucuyu onayla."
@@ -894,9 +916,9 @@ msgstr ""
 msgid "Ask"
 msgstr "Sor"
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "Ask rule"
-msgstr "Onay kuralı"
+#: src/pages/shell/computer-panel.tsx
+msgid "Asleep"
+msgstr "Uykuda"
 
 #. placeholder {0}: preset.time
 #: src/lib/cron.ts
@@ -983,9 +1005,11 @@ msgstr "Avatar Stüdyosu"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/AdminPluginsPage.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/NavLinkPage.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -1024,14 +1048,13 @@ msgstr "Bearer token"
 msgid "Billing"
 msgstr ""
 
-#: src/components/ApprovalRulePreview.tsx
+#: src/components/ModelCredits.tsx
+msgid "Billing period"
+msgstr ""
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "Engelle"
-
-#: src/components/ApprovalRulePreview.tsx
-msgid "Block rule"
-msgstr "Engelleme kuralı"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
@@ -1158,6 +1181,7 @@ msgstr "Görselleri okuyamaz"
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/VaultSettings.tsx
@@ -1202,10 +1226,6 @@ msgstr "iptal edildi"
 msgid "Cancelled"
 msgstr "İptal edildi"
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "Candidate rule"
-msgstr "Önerilen kural"
-
 #: src/pages/Artifacts.tsx
 msgid "Card view"
 msgstr ""
@@ -1233,6 +1253,14 @@ msgstr "Değiştiriliyor…"
 #: src/pages/shell/message-cards.tsx
 msgid "Chart failed to render: {error}"
 msgstr "Grafik çizilemedi: {error}"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Chat"
+msgstr ""
+
+#: src/pages/model-settings/compatible-model-fields.tsx
+msgid "Chat Completions"
+msgstr ""
 
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
@@ -1287,10 +1315,6 @@ msgstr "Bunu kendin kontrol et"
 #: src/pages/Auth.tsx
 msgid "Check your email"
 msgstr "E-postanızı kontrol edin"
-
-#: src/components/McpServerHealthLine.tsx
-msgid "Checked {checked}"
-msgstr "Kontrol edildi {checked}"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Checking computer setup…"
@@ -1562,12 +1586,7 @@ msgstr "Bilgisayarlar kapalı. SANDBOX_PROVIDER=docker ve SANDBOX_SUPERVISOR_TOK
 msgid "Configure a plugin catalog on the server to connect apps."
 msgstr ""
 
-#: src/pages/McpServersOverlay.tsx
-msgid "Configured servers"
-msgstr "Yapılandırılmış sunucular"
-
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/McpServersOverlay.tsx
 msgid "Confirm delete"
 msgstr "Silmeyi onayla"
 
@@ -1962,6 +1981,10 @@ msgstr "{name} indirilemedi. Tekrar dene."
 msgid "Could not enable tools"
 msgstr ""
 
+#: src/pages/AdminAccessPage.tsx
+msgid "Could not grant access"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "Bağlayıcı kurulamadı"
@@ -2067,10 +2090,6 @@ msgstr "Deneme sesi çalınamadı"
 msgid "Could not preview plugin"
 msgstr ""
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "Could not preview rule"
-msgstr "Kural önizlenemedi"
-
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "Model sunucusuna ulaşılamadı."
@@ -2144,6 +2163,10 @@ msgstr "Parola sıfırlanamadı"
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not revoke connection"
 msgstr "Bağlantı iptal edilemedi"
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Could not revoke grant"
+msgstr ""
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Could not run routine"
@@ -2260,12 +2283,12 @@ msgstr ""
 msgid "Could not update"
 msgstr "Güncellenemedi"
 
-#: src/pages/McpServersOverlay.tsx
-msgid "Could not update agent access"
-msgstr "Agent erişimi güncellenemedi"
-
 #: src/components/ModelCredits.tsx
 msgid "Could not update billing"
+msgstr ""
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Could not update bot access"
 msgstr ""
 
 #: src/components/ComputerMaintenanceActions.tsx
@@ -2286,6 +2309,10 @@ msgstr "Varsayılan hafıza kapsamı güncellenemedi"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
+msgstr ""
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Couldn't load grants"
 msgstr ""
 
 #: src/pages/MessagingSettingsPanel.tsx
@@ -2360,7 +2387,6 @@ msgstr "Oluşturuluyor…"
 msgid "Credential"
 msgstr "Kimlik bilgisi"
 
-#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Credential saved"
 msgstr "Kimlik bilgisi kaydedildi"
@@ -2377,6 +2403,10 @@ msgstr "Kimlik bilgileri: {names}"
 msgid "Credit amount"
 msgstr ""
 
+#: src/pages/AdminAccessPage.tsx
+msgid "Credits ($)"
+msgstr ""
+
 #: src/lib/cron.ts
 msgid "Cron"
 msgstr "Cron"
@@ -2384,10 +2414,6 @@ msgstr "Cron"
 #: src/pages/RoutineSchedule.tsx
 msgid "Cron expression"
 msgstr "Cron ifadesi"
-
-#: src/components/ApprovalRulePreview.tsx
-msgid "Current"
-msgstr "Mevcut"
 
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -2419,6 +2445,7 @@ msgstr "Bot avatarını özelleştir"
 msgid "Dark"
 msgstr "Koyu"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Data"
 msgstr ""
@@ -2467,6 +2494,7 @@ msgstr "OpenClaw varsayılanı"
 msgid "Default scope"
 msgstr "Varsayılan kapsam"
 
+#: src/components/AccountAccess.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/BotContextMenu.tsx
@@ -2495,12 +2523,15 @@ msgid "Delete {0}"
 msgstr "{0} sil"
 
 #. placeholder {0}: bot.name
+#. placeholder {0}: deleting.name
 #. placeholder {0}: item.name
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Delete {0}?"
 msgstr "{0} silinsin mi?"
 
 #: src/components/AccountAccess.tsx
+#: src/components/AccountMenu.tsx
 msgid "Delete account"
 msgstr "Hesabı sil"
 
@@ -2742,6 +2773,7 @@ msgstr "Adı düzenle"
 msgid "Edit Profile"
 msgstr "Profili Düzenle"
 
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
 msgid "Email"
 msgstr "E-posta"
@@ -2763,12 +2795,16 @@ msgstr "E-posta doğrulaması gerekiyor"
 msgid "Enable {0}"
 msgstr "{0} etkinleştir"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Engage when... Ignore..."
+msgstr ""
+
+#: src/components/GitHubStarPrompt.tsx
+msgid "Enjoying Rakazo?"
 msgstr ""
 
 #: src/lib/user-error.ts
@@ -2810,10 +2846,6 @@ msgstr "Ortam değişkenleri: {names}"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Error"
 msgstr ""
-
-#: src/components/McpServerHealthLine.tsx
-msgid "Error details"
-msgstr "Hata ayrıntıları"
 
 #: src/lib/cron.ts
 #: src/pages/ExternalConversationSettings.tsx
@@ -2895,6 +2927,7 @@ msgstr "Tabloyu genişlet"
 msgid "expired"
 msgstr "süresi doldu"
 
+#: src/components/AccountDataSettings.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "Dışa aktar"
@@ -3026,6 +3059,14 @@ msgstr "Parolanızı mı unuttunuz?"
 msgid "Free"
 msgstr ""
 
+#: src/pages/AdminAccessPage.tsx
+msgid "Free access"
+msgstr ""
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Free months"
+msgstr ""
+
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Free plan ends {day}"
 msgstr "Ücretsiz plan {day} tarihinde bitiyor"
@@ -3082,6 +3123,14 @@ msgstr ""
 msgid "Go home"
 msgstr "Ana sayfaya git"
 
+#: src/pages/AdminAccessPage.tsx
+msgid "Grant"
+msgstr ""
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Granting…"
+msgstr ""
+
 #: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/chat-header.tsx
@@ -3104,11 +3153,11 @@ msgstr "Aramayı sonlandır"
 
 #: src/lib/call-session.ts
 msgid "Hang up first, then enter the code on screen."
-msgstr ""
+msgstr "Önce aramayı sonlandır, sonra kodu ekrana gir."
 
 #: src/lib/call-session.ts
 msgid "Hang up, then enter the code on screen."
-msgstr ""
+msgstr "Aramayı sonlandır, sonra kodu ekrana gir."
 
 #: src/pages/RoutineEditor.tsx
 msgid "header"
@@ -3238,6 +3287,10 @@ msgstr "Bu model için görüntü girişi yapılandırılmamış."
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "Görüntü yükleme alanı"
+
+#: src/components/AccountDataSettings.tsx
+msgid "Import"
+msgstr ""
 
 #: src/components/AccountDataSettings.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3394,6 +3447,10 @@ msgstr "az önce"
 msgid "Keep memories"
 msgstr "Hafızayı koru"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Keep tool results whole"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr ""
@@ -3531,6 +3588,7 @@ msgstr "Ses sağlayıcıları yükleniyor…"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -3548,9 +3606,8 @@ msgstr "Yerel erişim, botların sormadan komut çalıştırmasına izin verir. 
 msgid "Local computer access requires the latest desktop app."
 msgstr ""
 
-#: src/components/ModelCredits.tsx
+#: src/components/AccountMenu.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/Paywall.tsx
 msgid "Log out"
 msgstr "Çıkış yap"
 
@@ -3600,8 +3657,8 @@ msgid "Manage MCP servers"
 msgstr "MCP sunucularını yönet"
 
 #: src/pages/shell/bot-panel.tsx
-msgid "Manage the bots it creates"
-msgstr "Oluşturduğu botları yönet"
+msgid "Manage other bots"
+msgstr "Diğer botları yönet"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
@@ -3865,6 +3922,7 @@ msgstr "Pazartesi"
 msgid "month"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
 #: src/components/usage/connection-quota.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
@@ -4061,6 +4119,10 @@ msgstr "Kimlik doğrulamasız"
 msgid "No authentication"
 msgstr "Kimlik doğrulaması yok"
 
+#: src/components/integrations/agent-access.tsx
+msgid "No bots"
+msgstr ""
+
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "No bots match"
@@ -4089,14 +4151,6 @@ msgstr ""
 msgid "No matching models"
 msgstr ""
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "No matching rule"
-msgstr "Eşleşen kural yok"
-
-#: src/pages/McpServersOverlay.tsx
-msgid "No MCP servers yet."
-msgstr "Henüz MCP sunucusu yok."
-
 #: src/pages/GroupPanel.tsx
 msgid "No members yet"
 msgstr ""
@@ -4120,6 +4174,10 @@ msgstr "OpenClaw, Hermes veya agent belgesi bulunamadı."
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "No remote MCP servers found"
 msgstr ""
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "No reply"
+msgstr "Yanıt yok"
 
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -4185,6 +4243,7 @@ msgstr "Rakazo kataloğunda yok"
 msgid "Not in the plugin catalog"
 msgstr ""
 
+#: src/components/GitHubStarPrompt.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Not now"
 msgstr "Şimdi değil"
@@ -4226,7 +4285,6 @@ msgstr "OAuth istemci kimliği (isteğe bağlı)"
 msgid "OAuth client secret (optional)"
 msgstr "OAuth istemci gizli anahtarı (isteğe bağlı)"
 
-#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "OAuth connected"
 msgstr "OAuth bağlandı"
@@ -4235,7 +4293,6 @@ msgstr "OAuth bağlandı"
 msgid "OAuth connection failed"
 msgstr "OAuth bağlantısı başarısız"
 
-#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "OAuth expired"
 msgstr "OAuth süresi doldu"
@@ -4467,6 +4524,7 @@ msgstr "API anahtarını yapıştır, sonra yeniden test et."
 msgid "Paused"
 msgstr ""
 
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 msgid "Pending"
@@ -4554,8 +4612,6 @@ msgstr ""
 msgid "Preferences"
 msgstr "Tercihler"
 
-#: src/components/ApprovalRulePreview.tsx
-#: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Preview"
@@ -4604,6 +4660,10 @@ msgstr "Program: {name}"
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Protected input"
+msgstr ""
+
+#: src/pages/model-settings/compatible-model-fields.tsx
+msgid "Protocol"
 msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
@@ -4676,6 +4736,10 @@ msgstr ""
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall only"
+msgstr ""
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Received"
 msgstr ""
 
 #: src/pages/ActivityList.tsx
@@ -4816,7 +4880,6 @@ msgstr "Yeniden yükle"
 msgid "Remaining quota"
 msgstr "Kalan kota"
 
-#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/LoginFields.tsx
@@ -4908,7 +4971,7 @@ msgstr "Yeniden adlandır"
 msgid "Rename section"
 msgstr "Bölümü yeniden adlandır"
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Renews {day}"
 msgstr ""
 
@@ -4996,6 +5059,10 @@ msgstr ""
 msgid "Resize panel"
 msgstr "Paneli yeniden boyutlandır"
 
+#: src/pages/model-settings/compatible-model-fields.tsx
+msgid "Responses"
+msgstr ""
+
 #: src/components/DesktopUpdates.tsx
 msgid "Restart to update"
 msgstr ""
@@ -5025,6 +5092,7 @@ msgstr ""
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PasskeySettings.tsx
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5056,9 +5124,14 @@ msgstr "Rakazo'ya dön"
 msgid "Review provider settings and test again."
 msgstr "Sağlayıcı ayarlarını gözden geçir ve yeniden test et."
 
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Revoke"
 msgstr "İptal et"
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Revoked"
+msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Room guidance"
@@ -5088,6 +5161,10 @@ msgstr ""
 msgid "Row"
 msgstr "Satır"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Rules"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
 msgstr ""
@@ -5104,7 +5181,6 @@ msgstr ""
 msgid "running"
 msgstr "çalışıyor"
 
-#: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
 #: src/pages/RoutineEditor.tsx
@@ -5634,9 +5710,17 @@ msgstr ""
 msgid "Speech model"
 msgstr "Konuşma modeli"
 
+#: src/components/AccountAccess.tsx
+msgid "SSO"
+msgstr ""
+
 #: src/lib/user-error.ts
 msgid "SSO is temporarily unavailable. Try again."
 msgstr "SSO geçici olarak kullanılamıyor. Yeniden deneyin."
+
+#: src/components/GitHubStarPrompt.tsx
+msgid "Star on GitHub"
+msgstr ""
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Start"
@@ -5647,9 +5731,21 @@ msgstr ""
 msgid "Start {trialDays}-day free trial"
 msgstr "{trialDays} günlük ücretsiz denemeyi başlat"
 
+#: src/components/ModelCredits.tsx
+msgid "Start plan"
+msgstr "Planı başlat"
+
+#: src/components/ModelCredits.tsx
+msgid "Start plan now"
+msgstr "Planı şimdi başlat"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"
 msgstr "Kaydı başlat"
+
+#: src/components/ModelCredits.tsx
+msgid "Start your plan now?"
+msgstr "Planınız şimdi başlatılsın mı?"
 
 #: src/pages/ActivityList.tsx
 msgid "Starting"
@@ -5724,6 +5820,10 @@ msgstr ""
 #: src/pages/Paywall.tsx
 msgid "Subscribe"
 msgstr "Abone ol"
+
+#: src/components/ModelCredits.tsx
+msgid "Subscribe for {annualPrice} / year"
+msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
@@ -5813,10 +5913,6 @@ msgstr "API anahtarını test et"
 msgid "Test connection"
 msgstr "Bağlantıyı test et"
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "Test rule"
-msgstr "Kuralı dene"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Test run"
 msgstr ""
@@ -5826,7 +5922,6 @@ msgid "Testing"
 msgstr ""
 
 #: src/components/ModelConnectionPreflightNotice.tsx
-#: src/pages/McpServersOverlay.tsx
 msgid "Testing…"
 msgstr "Test ediliyor…"
 
@@ -6028,6 +6123,11 @@ msgstr "Bu sunucu tarayıcı yetkilendirmesi istemedi."
 msgid "This server is already connected. Disconnect it first to authorize again."
 msgstr "Bu sunucu zaten bağlı. Yeniden yetkilendirmek için önce bağlantısını kes."
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model."
+msgstr ""
+
 #: src/pages/model-settings/connection-controls.tsx
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
 msgstr "Bu abonelik girişi Rakazo'da henüz kullanılamıyor. Bir dağıtım kimlik bilgisi kullan veya başka bir sağlayıcı seç."
@@ -6094,7 +6194,6 @@ msgstr "Araç bağımsız değişkenleri bir JSON nesnesi olmalıdır"
 msgid "Tool arguments must be JSON"
 msgstr "Araç bağımsız değişkenleri JSON olmalıdır"
 
-#: src/components/ApprovalRulePreview.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "Araç adı"
@@ -6136,9 +6235,13 @@ msgstr "Treg token'ı"
 msgid "Trial"
 msgstr ""
 
-#: src/pages/BillingSettingsPanel.tsx
+#: src/lib/billing.ts
 msgid "Trial ends {day}"
 msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "Trials get fewer hours to prevent abuse."
+msgstr "Kötüye kullanımı önlemek için denemelerde daha az saat verilir."
 
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
@@ -6146,6 +6249,7 @@ msgstr "Güvenilen siteler"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "Tekrar dene"
 
@@ -6423,6 +6527,10 @@ msgstr "Sırada bekleniyor…"
 msgid "Waiting…"
 msgstr "Bekleniyor…"
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Wake"
+msgstr "Uyandır"
+
 #: src/pages/settings-nav.ts
 msgid "Wallet"
 msgstr ""
@@ -6560,6 +6668,10 @@ msgstr ""
 msgid "year"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Yearly"
+msgstr ""
+
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Yesterday"
@@ -6593,6 +6705,10 @@ msgstr "Kontrol sende"
 #: src/lib/run-error.ts
 msgid "Your Anthropic"
 msgstr "Anthropic sağlayıcınız"
+
+#: src/components/AccountDataSettings.tsx
+msgid "Your data"
+msgstr ""
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Your defaults"
@@ -6632,6 +6748,14 @@ msgstr ""
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Gerçek işler verebileceğin,<0/>her zaman açık agent takımın."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged {price} today."
+msgstr "Denemeniz biter ve kartınızdan bugün {price} çekilir."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged today."
+msgstr "Denemeniz biter ve kartınızdan bugün ödeme alınır."
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

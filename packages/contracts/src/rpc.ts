@@ -44,6 +44,8 @@ import {
   VaultRevealInput,
 } from "./bot-secrets.js";
 import {
+  AccessGrantInputSchema,
+  AccessGrantSchema,
   AccountItemSchema,
   ActionApprovalRuleSchema,
   ActionAutoReviewSettingsSchema,
@@ -52,8 +54,8 @@ import {
   AgentSkillCatalogEntrySchema,
   AgentSkillSchema,
   AppBootstrapSchema,
+  AppLocaleSchema,
   ApprovalModeSchema,
-  ApprovalRulePreviewSchema,
   ArtifactSchema,
   ArtifactVersionSchema,
   ArtifactWithContentSchema,
@@ -65,6 +67,7 @@ import {
   BotSchema,
   BotSectionName,
   BotSectionSchema,
+  ByokIntervalSchema,
   CapabilityInstallSchema,
   CONNECTION_LABEL_MAX_LENGTH,
   ComputerModeSchema,
@@ -87,6 +90,7 @@ import {
   McpServerConfigInput,
   McpServerSchema,
   MemoryDocumentSchema,
+  MemoryPromptBudgetSchema,
   MemoryScopeSchema,
   MeSchema,
   MessagingAgentConnectionSchema,
@@ -94,6 +98,7 @@ import {
   MessagingInstallationsStatusSchema,
   MessagingLinkedIdentitySchema,
   MessagingStatusSchema,
+  ModelApiProtocolSchema,
   ModelBackupChoiceSchema,
   ModelBackupListSchema,
   ModelCatalogEntrySchema,
@@ -263,7 +268,14 @@ export const appContract = {
     /** Re-reads the subscription from the provider, e.g. right after a mobile checkout. */
     refresh: oc.output(BillingStatusSchema),
     selectFunding: oc
-      .input(z.object({ funding: z.enum(["byok", "credits"]), client: BillingClientSchema }))
+      .input(
+        z.object({
+          funding: z.enum(["byok", "credits"]),
+          client: BillingClientSchema,
+          /** Billing period of the own-key plan's checkout; monthly when omitted. */
+          interval: ByokIntervalSchema.optional(),
+        }),
+      )
       /** `url` is the checkout to pay for the own-key plan before it has access. */
       .output(z.object({ ok: z.literal(true), url: z.string().url().optional() })),
     purchaseCredits: oc
@@ -279,15 +291,27 @@ export const appContract = {
       .input(z.object({ amountCents: ModelCreditAmountSchema }))
       .output(z.object({ ok: z.literal(true) })),
     checkout: oc
-      .input(z.object({ client: BillingClientSchema }).optional())
+      .input(
+        z
+          .object({ client: BillingClientSchema, interval: ByokIntervalSchema.optional() })
+          .optional(),
+      )
       .output(z.object({ url: z.string().url() })),
     portal: oc
       .input(z.object({ client: BillingClientSchema }).optional())
       .output(z.object({ url: z.string().url() })),
+    /** Owners only: ends the running trial and bills the first period now. */
+    endTrial: oc.output(BillingStatusSchema),
     /** Records who invited this organization; ignored once it has subscribed. */
     claimReferral: oc
       .input(z.object({ code: z.string().min(1).max(64) }))
       .output(z.object({ ok: z.literal(true) })),
+  },
+  /** Admins only, on deployments that sell model credits. */
+  accessGrants: {
+    list: oc.output(z.array(AccessGrantSchema)),
+    create: oc.input(AccessGrantInputSchema).output(AccessGrantSchema),
+    revoke: oc.input(z.object({ id: Id })).output(AccessGrantSchema),
   },
   preferences: {
     update: oc
@@ -296,10 +320,16 @@ export const appContract = {
           .object({
             avatarStyle: AvatarStyleSchema.optional(),
             timezone: TimeZoneSchema.nullable().optional(),
+            /** The language the app runs in, so emails can be written in it. */
+            locale: AppLocaleSchema.optional(),
           })
-          .refine((input) => input.avatarStyle !== undefined || input.timezone !== undefined, {
-            message: "Nothing to update",
-          }),
+          .refine(
+            (input) =>
+              input.avatarStyle !== undefined ||
+              input.timezone !== undefined ||
+              input.locale !== undefined,
+            { message: "Nothing to update" },
+          ),
       )
       .output(MeSchema),
     /** Saves a detected timezone only while none is saved, so it never replaces a choice. */
@@ -383,6 +413,7 @@ export const appContract = {
           credentialId: z.string().optional(),
           headers: ModelHeadersSchema.optional(),
           apiKey: z.string().optional(),
+          apiProtocol: ModelApiProtocolSchema.optional(),
         }),
       )
       .output(z.object({ models: z.array(z.string()) })),
@@ -707,6 +738,7 @@ export const appContract = {
     list: oc
       .input(z.object({ botId: Id.optional(), scope: z.enum(["bot", "user"]).optional() }))
       .output(z.array(MemoryDocumentSchema)),
+    budget: oc.input(z.object({ botId: Id })).output(MemoryPromptBudgetSchema),
     update: oc
       .input(
         z.object({
@@ -980,6 +1012,10 @@ export const appContract = {
       remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
       /** Launch the server once (installing a stdio package if needed), list its tools, close it. */
       test: oc.input(z.object({ id: Id })).output(McpServerSchema),
+      /** Which agents can use the server: all of them, or only `botIds`. */
+      agents: oc
+        .input(z.object({ id: Id, allBots: z.boolean(), botIds: z.array(Id).max(500).default([]) }))
+        .output(z.object({ server: McpServerSchema, assignments: z.array(BotMcpServerSchema) })),
     },
     assignments: {
       list: oc.input(botId).output(z.array(BotMcpServerSchema)),
@@ -1134,33 +1170,6 @@ export const appContract = {
   },
   approvalRules: {
     list: oc.input(settingsScopeInput.optional()).output(z.array(ActionApprovalRuleSchema)),
-    preview: oc
-      .input(
-        settingsScopeInput.extend({
-          id: Id,
-          effect: z.enum(["always_allow", "deny", "remove"]),
-          sample: z.object({
-            tools: z
-              .array(
-                z.object({
-                  name: z.string().trim().min(1).max(200),
-                  connectorKind: z.string().trim().min(1).max(200).optional(),
-                  readOnly: z.boolean().optional(),
-                }),
-              )
-              .min(1)
-              .max(20),
-            wrapper: z
-              .object({
-                name: z.string().trim().min(1).max(200),
-                connectorKind: z.string().trim().min(1).max(200).optional(),
-              })
-              .optional(),
-            site: z.string().trim().min(1).max(253).optional(),
-          }),
-        }),
-      )
-      .output(ApprovalRulePreviewSchema),
     set: oc
       .input(
         settingsScopeInput.extend({

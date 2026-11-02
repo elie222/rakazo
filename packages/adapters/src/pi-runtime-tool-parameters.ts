@@ -75,7 +75,7 @@ function builtinParameters(tool: ConnectorTool) {
     });
   }
   if (tool.name === "remember") {
-    return Type.Object({ content: Type.String(), path: Type.String() });
+    return Type.Object({ content: Type.String(), old_text: Type.Optional(Type.String()) });
   }
   if (tool.name === "shell" || tool.name === "user_computer_shell") {
     return Type.Object({
@@ -246,9 +246,17 @@ export function jsonSchemaParameters(
   // Preserve closed objects (e.g. request_secret destination oneOf branches).
   // Type.Object defaults to open, which would let connectionId+replace match both
   // anyOf variants after conversion.
-  return schema.additionalProperties === false
-    ? Type.Object(fields, { ...objectOptions, additionalProperties: false })
-    : Type.Object(fields, objectOptions);
+  if (schema.additionalProperties === false) {
+    return Type.Object(fields, { ...objectOptions, additionalProperties: false });
+  }
+  // Several providers' constrained decoders read `{type: "object", properties: {}}` without
+  // `additionalProperties` as closed and can only emit `{}`, so declared open maps (Composio's
+  // COMPOSIO_MULTI_EXECUTE_TOOL `tools[].arguments`) must stay open on the wire. Typed values
+  // are sent as `true`: jsonField cannot express every value schema (`$ref`, patternProperties).
+  if (schema.additionalProperties != null) {
+    return Type.Object(fields, { ...objectOptions, additionalProperties: true });
+  }
+  return Type.Object(fields, objectOptions);
 }
 
 type FieldOptions = { description?: string };

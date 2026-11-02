@@ -100,7 +100,7 @@ export function AvailabilityControl({
   };
 
   return (
-    <div data-testid="availability" className="flex flex-wrap items-center gap-1 text-[13px]">
+    <div data-testid="availability" className="flex flex-wrap items-center gap-1 text-xs">
       <span className="text-muted-foreground">
         <Trans>Available in</Trans>
       </span>
@@ -111,7 +111,7 @@ export function AvailabilityControl({
               variant="ghost"
               size="sm"
               disabled={saving}
-              className="h-7 gap-1 px-1.5 text-[13px] font-normal text-foreground"
+              className="h-6 gap-1 px-1.5 text-xs font-normal text-foreground"
             />
           }
         >

@@ -263,6 +263,57 @@ describe("jsonSchemaParameters", () => {
     });
   });
 
+  it("keeps a declared open object open on the model wire", () => {
+    // Composio's COMPOSIO_MULTI_EXECUTE_TOOL shape: each item's `arguments` is a free-form map.
+    // Without `additionalProperties: true`, constrained decoders on several providers treat
+    // `{type: "object", properties: {}}` as closed and emit `arguments: {}`.
+    const wire = JSON.parse(
+      JSON.stringify(
+        parametersFor({
+          name: "COMPOSIO_MULTI_EXECUTE_TOOL",
+          description: "Run tools",
+          inputSchema: {
+            type: "object",
+            properties: {
+              tools: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    tool_slug: { type: "string" },
+                    arguments: { type: "object", additionalProperties: true },
+                  },
+                  required: ["tool_slug", "arguments"],
+                },
+              },
+            },
+            required: ["tools"],
+          },
+        }),
+      ),
+    );
+    expect(wire.properties.tools.items.properties.arguments).toEqual({
+      type: "object",
+      properties: {},
+      additionalProperties: true,
+    });
+  });
+
+  it("sends a map with a value schema as an open object", () => {
+    const schema = jsonSchemaParameters({
+      type: "object",
+      properties: {
+        empty: { type: "object", additionalProperties: {} },
+        ref: { type: "object", additionalProperties: { $ref: "#/$defs/Value" } },
+      },
+      $defs: { Value: { type: "number" } },
+    });
+    const wire = JSON.parse(JSON.stringify(schema)).properties;
+    for (const field of [wire.empty, wire.ref]) {
+      expect(field).toEqual({ type: "object", properties: {}, additionalProperties: true });
+    }
+  });
+
   it("keeps a string enum's allowed values, in order, as a plain enum", () => {
     // A literal union serialises as anyOf/const, which some gateways flatten to {} so the
     // model never sees the allowed values; {type: "string", enum} survives them.

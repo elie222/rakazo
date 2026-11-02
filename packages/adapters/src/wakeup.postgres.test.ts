@@ -189,7 +189,7 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
     }
   });
 
-  it("delivers outgoing messages one drain at a time", async () => {
+  it("runs outgoing message drains in parallel", async () => {
     const publisher = new GraphileJobPublisher(testPool());
     const host = createReservedGraphileJobWorkerHost(testPool(), { pollInterval: 25 });
     const release = deferred();
@@ -205,11 +205,12 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
       );
       await publisher.enqueue(messagingDeliverJob("run-first"));
       await waitFor(() => expect(draining).toEqual(["run-first"]));
+      // The second drain starts while the first is still sending: one slow
+      // conversation must not hold back the rest of the outbox. Order inside a
+      // conversation is kept by the drain's claim, not by a shared queue.
       await publisher.enqueue(messagingDeliverJob("run-second"));
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      expect(draining).toEqual(["run-first"]);
-      release.resolve();
       await waitFor(() => expect(draining).toEqual(["run-first", "run-second"]));
+      release.resolve();
     } finally {
       release.resolve();
       await host.stop();

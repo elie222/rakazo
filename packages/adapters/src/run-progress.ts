@@ -87,11 +87,12 @@ export function recordExplicitNoResponse(reply: ReplyState, text: string) {
 export function canPublishDurableProgress(reply: ReplyState) {
   return (
     reply.steeringReplyPending ||
-    midTurnProgressBudgetAllows(
-      reply.midTurnProgressCount - reply.progressBudgetStart,
-      Date.now() - reply.turnStartedAtMs,
-    )
+    midTurnProgressBudgetAllows(progressSinceBudgetStart(reply), Date.now() - reply.turnStartedAtMs)
   );
+}
+
+export function progressSinceBudgetStart(reply: ReplyState) {
+  return reply.midTurnProgressCount - reply.progressBudgetStart;
 }
 
 /** The next interim message's nonce; it uses up the allowance for answering the person. */

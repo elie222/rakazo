@@ -16,7 +16,8 @@ import {
 } from "@rakazo/adapters";
 import type { createApp } from "@rakazo/api/app";
 import type { MessageBlock } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, ONCE_ROUTINE_CRON } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, ONCE_ROUTINE_CRON, resolveScreenProxySecret } from "@rakazo/core";
+import { openScreenCapability } from "@rakazo/core/node/screen-capability";
 import {
   appendEvent,
   createThreadEvents,
@@ -782,9 +783,16 @@ describeJourneys("required product journeys", () => {
     const researcherScreen = await rpc<{ url: string | null }>(app, cookie, "computer/screenUrl", {
       botId: researcher.id,
     });
-    expect(writerScreen.url).toContain(writer.id);
-    expect(researcherScreen.url).toContain(researcher.id);
-    expect(writerScreen.url).not.toBe(researcherScreen.url);
+    const screenOf = (url: string | null) => {
+      const sealed = new URL(url ?? "");
+      const target = openScreenCapability(
+        `${sealed.pathname}${sealed.search}`,
+        resolveScreenProxySecret(),
+      )?.target;
+      return new URL(target?.path ?? "/", "http://screen.invalid").searchParams.get("screen");
+    };
+    expect(screenOf(writerScreen.url)).toBe(writer.id);
+    expect(screenOf(researcherScreen.url)).toBe(researcher.id);
   });
 
   it("3: disconnect and reconnect from a cursor reconstructs the thread", async () => {

@@ -100,6 +100,8 @@ async function runTool(
     secrets?: Array<Record<string, unknown>>;
     /** A login already saved in the vault under the requested name. */
     saved?: Record<string, unknown>;
+    /** Every credential saved in the vault, when there is more than the requested one. */
+    vault?: Array<Record<string, unknown>>;
     /** What the shell prints. */
     printed?: string;
   } = {},
@@ -134,6 +136,9 @@ async function runTool(
         ? String(row[key]).startsWith(String(value.startsWith))
         : row[key] === value,
     );
+  const vault = options.vault ?? (options.saved ? [options.saved] : []);
+  const inVault = (row: Record<string, unknown>, where: Record<string, unknown>) =>
+    (["name", "origin"] as const).every((key) => !(key in where) || row[key] === where[key]);
   const prisma = recordingPrisma(
     {
       run: {
@@ -178,7 +183,12 @@ async function runTool(
       message: { create: async ({ data }: { data: object }) => ({ id: "message-1", ...data }) },
       event: { create: async ({ data }: { data: object }) => ({ seq: 1, ...data }) },
       task: { findUniqueOrThrow: async () => ({ id: run.taskId, prompt: "Sign in to the site" }) },
-      vaultCredential: { findFirst: async () => options.saved ?? null },
+      vaultCredential: {
+        findFirst: async ({ where }: { where: Record<string, unknown> }) =>
+          vault.find((row) => inVault(row, where)) ?? null,
+        findMany: async ({ where }: { where: Record<string, unknown> }) =>
+          vault.filter((row) => inVault(row, where)),
+      },
       secret: {
         findFirst: async ({ where }: { where: Record<string, unknown> }) =>
           secrets.find((row) => matches(row, where)) ?? null,
@@ -317,6 +327,69 @@ describe("request_secret for a website login", () => {
       secrets: [await runLogin("run-0")],
     });
     expect(toolResults).toMatchObject([{ details: { secret: "paused" } }]);
+  });
+
+  describe("saved for the same site under another name", () => {
+    const savedLogin = { name: "brand_login", origin: ORIGIN, auth: { type: "login" } };
+    const paused = [{ details: { secret: "paused" } }];
+
+    it("returns that login's name instead of asking again", async () => {
+      const { toolResults, calls } = await runTool(requestLogin(), { vault: [savedLogin] });
+      expect(toolResults).toEqual([{ saved: true, ...savedLogin }]);
+      // Settled without a card, as for a login saved under the requested name.
+      expect(JSON.stringify(calls)).toContain(
+        '"data":{"status":"completed","result":{"saved":true,"name":"brand_login"',
+      );
+    });
+
+    it("asks when two logins are saved for the site", async () => {
+      const { toolResults } = await runTool(requestLogin(), {
+        vault: [savedLogin, { ...savedLogin, name: "brand_login_2" }],
+      });
+      expect(toolResults).toMatchObject(paused);
+    });
+
+    it.each([
+      ["another site", "https://other.example.test"],
+      ["the same host with www.", "https://www.login.example.test"],
+      ["the same host on another port", "https://login.example.test:8443"],
+    ])("asks when the login is saved for %s", async (_case, origin) => {
+      const { toolResults } = await runTool(requestLogin(), {
+        vault: [{ ...savedLogin, origin }],
+      });
+      expect(toolResults).toMatchObject(paused);
+    });
+
+    it("passes over a saved row that no longer reads as a credential", async () => {
+      const unreadable = { ...savedLogin, name: "Old Login!" };
+      const reused = await runTool(requestLogin(), { vault: [unreadable, savedLogin] });
+      expect(reused.toolResults).toEqual([{ saved: true, ...savedLogin }]);
+      const asked = await runTool(requestLogin(), { vault: [unreadable] });
+      expect(asked.toolResults).toMatchObject(paused);
+    });
+
+    it("asks when the bot asks to replace it", async () => {
+      const { toolResults } = await runTool(requestLogin({ replace: true }), {
+        vault: [savedLogin],
+      });
+      expect(toolResults).toMatchObject(paused);
+    });
+
+    it("leaves other credentials of the site to their own names", async () => {
+      const { toolResults } = await runTool(
+        requestLogin({ credential: { ...DESTINATION, auth: { type: "bearer" } } }),
+        { vault: [savedLogin, { name: "brand_key", origin: ORIGIN, auth: { type: "bearer" } }] },
+      );
+      expect(toolResults).toMatchObject(paused);
+    });
+
+    it("is not used for a command variable", async () => {
+      const { toolResults } = await runTool(
+        requestLogin({ credential: { name: "deploy_key", auth: { type: "command" } } }),
+        { vault: [savedLogin, { name: "brand_token", origin: "", auth: { type: "command" } }] },
+      );
+      expect(toolResults).toMatchObject(paused);
+    });
   });
 
   it("can't be told by the bot whether to save the login", async () => {

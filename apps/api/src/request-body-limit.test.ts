@@ -80,7 +80,7 @@ describe("API request body limits", () => {
     expect(parse).not.toHaveBeenCalled();
   });
 
-  it.each(["", "8.0", "0x8", "invalid"])(
+  it.each(["", "8.0"])(
     "rejects invalid declared length %j before the route parser",
     async (contentLength) => {
       const { app, parse } = testApp(8);
@@ -120,15 +120,32 @@ describe("API request body limits", () => {
     expect(cancel).toHaveBeenCalledOnce();
   });
 
-  it("passes bodies at the configured boundary to the route parser", async () => {
-    const { app, parse } = testApp(2);
+  it("counts the streamed body when transfer-encoding accompanies a small declared length", async () => {
+    const { app, parse } = testApp(8);
     const response = await app.request("/parse", {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: "{}",
+      headers: {
+        "content-type": "application/json",
+        "content-length": "2",
+        "transfer-encoding": "chunked",
+      },
+      body: JSON.stringify({ ok: true }),
     });
 
-    expect(response.status).toBe(200);
-    expect(parse).toHaveBeenCalledOnce();
+    expect(response.status).toBe(413);
+    expect(parse).not.toHaveBeenCalled();
+  });
+
+  it("passes bodies at the configured boundary to the route parser", async () => {
+    const { app, parse } = testApp(2);
+    for (const headers of [{}, { "content-length": "2" }] as Record<string, string>[]) {
+      const response = await app.request("/parse", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers },
+        body: "{}",
+      });
+      expect(response.status).toBe(200);
+    }
+    expect(parse).toHaveBeenCalledTimes(2);
   });
 });

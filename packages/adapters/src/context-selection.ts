@@ -5,7 +5,10 @@ import {
   shortenedTextLength,
   textBoundary,
   truncatePlainText,
+  VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR,
 } from "@rakazo/core";
+import type { VerbatimMcpServers } from "./verbatim-mcp-result.js";
+import { isVerbatimMcpResult, toolCallIdentity } from "./verbatim-mcp-result.js";
 
 export type ContextStrategy = AgentContextStrategy;
 export interface ContextMessage {
@@ -36,6 +39,8 @@ export interface ContextSelectionOptions {
   cacheWarmth?: "likely-warm" | "likely-cold" | "unknown";
   /** Keep tool protocol intact while shortening oversized result bodies. */
   truncateToolResults?: boolean;
+  /** Servers that asked to keep tool results whole. Those results are never cut. */
+  verbatimMcpServers?: VerbatimMcpServers;
 }
 export class ContextBudgetError extends Error {
   constructor(
@@ -43,11 +48,13 @@ export class ContextBudgetError extends Error {
     public readonly availableTokens: number,
     /** Instructions and tools alone fill the window, so no conversation can fit. */
     modelTooSmall = false,
+    message?: string,
   ) {
     super(
-      modelTooSmall
-        ? MODEL_CONTEXT_TOO_SMALL_ERROR
-        : "Required context exceeds the model context budget",
+      message ??
+        (modelTooSmall
+          ? MODEL_CONTEXT_TOO_SMALL_ERROR
+          : "Required context exceeds the model context budget"),
     );
     this.name = "ContextBudgetError";
   }
@@ -281,19 +288,20 @@ function shortenStructuredResult(
   else visit(payload);
   if (payload && typeof payload === "object" && !Array.isArray(payload))
     (payload as Record<string, unknown>).contextTruncated = true;
-  let encoded = JSON.stringify(holder.payload);
-  while (encoded.length > size) {
-    const largest = leaves.reduce<(typeof leaves)[number] | undefined>((best, leaf) => {
-      const value = (leaf.parent as Record<string, unknown>)[leaf.key];
-      const prior = best ? (best.parent as Record<string, unknown>)[best.key] : undefined;
-      return typeof value === "string" &&
-        value.length > 128 &&
-        (!best || typeof prior !== "string" || value.length > prior.length)
-        ? leaf
-        : best;
-    }, undefined);
-    if (!largest) break; // Required metadata alone may still need explicit budget failure.
-    const value = (largest.parent as Record<string, unknown>)[largest.key] as string;
+  // Re-encoding the whole payload and rescanning every leaf per cut blocked the event loop for
+  // tens of seconds on large connector results, so track the length and the longest leaf instead.
+  let encodedLength = JSON.stringify(holder.payload).length;
+  const leafText = (index: number) =>
+    (leaves[index]!.parent as Record<string, unknown>)[leaves[index]!.key] as string;
+  const longest = new LongestFirst(
+    leaves.flatMap((_, index) =>
+      leafText(index).length > 128 ? [[index, leafText(index).length] as const] : [],
+    ),
+  );
+  while (encodedLength > size) {
+    const index = longest.peek();
+    if (index === undefined) break; // Required metadata alone may still need explicit budget failure.
+    const value = leafText(index);
     // Keep a quarter at each end when that still shrinks the field. Otherwise size the ends net
     // of the marker, so each pass on a medium-length field halves what is left to cut.
     const preferredKeep = Math.max(8, Math.floor(value.length / 4));
@@ -304,10 +312,57 @@ function shortenStructuredResult(
     if (keep < 1) break;
     const shortened = `${value.slice(0, keep)}\n${marker}\n${value.slice(-keep)}`;
     if (shortened.length >= value.length) break;
-    (largest.parent as Record<string, unknown>)[largest.key] = shortened;
-    encoded = JSON.stringify(holder.payload);
+    (leaves[index]!.parent as Record<string, unknown>)[leaves[index]!.key] = shortened;
+    encodedLength += JSON.stringify(shortened).length - JSON.stringify(value).length;
+    longest.pop();
+    if (shortened.length > 128) longest.push(index, shortened.length);
   }
-  return encoded;
+  return JSON.stringify(holder.payload);
+}
+
+/** Max-heap of leaf indexes by string length; ties go to the earlier leaf. */
+class LongestFirst {
+  private readonly heap: Array<readonly [index: number, length: number]> = [];
+
+  constructor(entries: ReadonlyArray<readonly [index: number, length: number]>) {
+    for (const [index, length] of entries) this.push(index, length);
+  }
+
+  peek(): number | undefined {
+    return this.heap[0]?.[0];
+  }
+
+  push(index: number, length: number) {
+    const heap = this.heap;
+    heap.push([index, length]);
+    for (let child = heap.length - 1; child > 0; ) {
+      const parent = (child - 1) >> 1;
+      if (!this.before(child, parent)) break;
+      [heap[child], heap[parent]] = [heap[parent]!, heap[child]!];
+      child = parent;
+    }
+  }
+
+  pop() {
+    const heap = this.heap;
+    const last = heap.pop();
+    if (!last || heap.length === 0) return;
+    heap[0] = last;
+    for (let parent = 0; ; ) {
+      let first = parent;
+      for (const child of [2 * parent + 1, 2 * parent + 2])
+        if (child < heap.length && this.before(child, first)) first = child;
+      if (first === parent) return;
+      [heap[first], heap[parent]] = [heap[parent]!, heap[first]!];
+      parent = first;
+    }
+  }
+
+  private before(a: number, b: number) {
+    const [indexA, lengthA] = this.heap[a]!;
+    const [indexB, lengthB] = this.heap[b]!;
+    return lengthA > lengthB || (lengthA === lengthB && indexA < indexB);
+  }
 }
 
 /**
@@ -575,6 +630,7 @@ export function selectContext<T extends ContextMessage>(
   if (used > available) {
     if (options.truncateToolResults !== false) {
       let shortenedCount = 0;
+      let keptVerbatimWhole = false;
       const shortened = messages.map((message, index) => {
         if (!protectedGroupIndexes.has(index) || message.role !== "toolResult") return message;
         const parts = Array.isArray(message.content) ? message.content : undefined;
@@ -592,10 +648,6 @@ export function selectContext<T extends ContextMessage>(
             ? message.content
             : JSON.stringify(message.content);
         if (!serialized || serialized.length <= 256) return message;
-        const size = Math.max(
-          128,
-          Math.min(Math.floor(serialized.length / 2), Math.floor(available / 4)),
-        );
         const group = groups.find((group) => group.indexes.includes(index));
         const assistant = group ? messages[group.indexes[0]!] : undefined;
         const nativeCall = Array.isArray(assistant?.content)
@@ -603,6 +655,15 @@ export function selectContext<T extends ContextMessage>(
               (part) => part?.type === "toolCall" && part.id === message.toolCallId,
             )
           : undefined;
+        const call = toolCallIdentity(nativeCall, message.toolName);
+        if (isVerbatimMcpResult(call.name, call.arguments, options.verbatimMcpServers)) {
+          keptVerbatimWhole = true;
+          return message;
+        }
+        const size = Math.max(
+          128,
+          Math.min(Math.floor(serialized.length / 2), Math.floor(available / 4)),
+        );
         const text = shortenToolResultText(
           serialized,
           size,
@@ -619,6 +680,16 @@ export function selectContext<T extends ContextMessage>(
           ...retry,
           truncatedToolResults: Math.max(retry.truncatedToolResults, shortenedCount),
         };
+      }
+      if (keptVerbatimWhole) {
+        // Throws the generic error when shortening the kept results would not make it fit either.
+        selectContext(messages, { ...options, verbatimMcpServers: undefined });
+        throw new ContextBudgetError(
+          used + fixed,
+          options.budget.contextWindow - options.budget.outputReserve,
+          false,
+          VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR,
+        );
       }
     }
     throw new ContextBudgetError(

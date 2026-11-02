@@ -267,7 +267,7 @@ pnpm test:e2e
 - [デスクトップのリリース](./docs/desktop-release.md)
 - [モバイルのリリース](./docs/mobile-release.md)
 - [パフォーマンステスト](./docs/performance.md)
-- [作成したボットの管理](./docs/fleet-management.md)
+- [ボットを管理するボット](./docs/fleet-management.md)
 
 ## Rakazo と他製品の比較
 

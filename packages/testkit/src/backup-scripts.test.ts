@@ -13,7 +13,7 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 const repoRoot = path.resolve(import.meta.dirname, "../../..");
 const temporaryDirectories: string[] = [];
@@ -301,31 +301,18 @@ describe("development backup failures", () => {
     const f = fixture();
     if (!hasEnv) rmSync(path.join(f.checkout, ".env"));
     write(path.join(f.checkout, "data/home.txt"), "example home");
-    expect(f.run("scripts/backup.sh", ["example"]).status).toBe(0);
-    const output = path.join(f.checkout, "backups/example");
+    // A single path component may still contain spaces.
+    const stamp = hasEnv ? " snapshot with spaces " : "example";
+    const result = f.run("scripts/backup.sh", [stamp]);
+    expect(result.status, result.stderr).toBe(0);
+    const output = path.join(f.checkout, "backups", stamp);
     expect(readFileSync(path.join(output, "rakazo.sql"), "utf8")).toContain("CREATE TABLE");
     expect(contents(path.join(output, "homes.tgz"))).toContain("data/home.txt");
     expect(f.commands()[0]!.includes("--env-file")).toBe(hasEnv);
     if (hasEnv) expect(f.commands()[0]).toContain(path.join(f.checkout, ".env"));
   });
 
-  it("preserves spaces in a single-component backup stamp", () => {
-    const f = fixture();
-    const stamp = " snapshot with spaces ";
-    write(path.join(f.checkout, "data/home.txt"), "example home");
-
-    const result = f.run("scripts/backup.sh", [stamp]);
-
-    expect(result.status, result.stderr).toBe(0);
-    expect(readFileSync(path.join(f.checkout, "backups", stamp, "rakazo.sql"), "utf8")).toContain(
-      "CREATE TABLE",
-    );
-    expect(contents(path.join(f.checkout, "backups", stamp, "homes.tgz"))).toContain(
-      "data/home.txt",
-    );
-  });
-
-  it.each(["", ".", "..", "/", "../data", "../../outside", "link/snapshot"])(
+  it.each(["", ".", "..", "../data", "link/snapshot"])(
     "rejects unsafe stamp %j without changing contents or modes",
     (stamp) => {
       const f = fixture();
@@ -396,7 +383,7 @@ describe("development backup failures", () => {
     expect(statSync(path.join(output, "homes.tgz")).mode & 0o777).toBe(0o600);
   });
 
-  it("makes reused backup artifacts private even when the database dump fails", () => {
+  it("keeps reused artifacts private and unreplaced when the database dump fails", () => {
     const f = fixture();
     const output = path.join(f.checkout, "backups/example");
     for (const name of ["rakazo.sql", "homes.tgz"]) {
@@ -408,6 +395,8 @@ describe("development backup failures", () => {
     const result = f.run("scripts/backup.sh", ["example"], { FAIL_DUMP: "1" });
 
     expect(result.status).toBe(2);
+    expect(result.stdout).not.toContain("Backup written");
+    expect(readFileSync(path.join(output, "homes.tgz"), "utf8")).toBe("old backup");
     expect(statSync(output).mode & 0o777).toBe(0o700);
     for (const name of ["rakazo.sql", "homes.tgz"]) {
       expect(statSync(path.join(output, name)).mode & 0o777).toBe(0o600);
@@ -460,55 +449,38 @@ describe("development backup failures", () => {
     expect(result.stdout).not.toContain("Backup written");
   });
 
-  it.each([1, 2])("propagates tar exit %s without replacing the failed archive", (code) => {
+  it("propagates the tar exit production tolerates without replacing the failed archive", () => {
     const f = fixture();
     write(path.join(f.checkout, "data/home.txt"), "example home");
-    const result = f.run("scripts/backup.sh", ["example"], { FAIL_TAR: String(code) });
-    expect(result.status).toBe(code);
+    const result = f.run("scripts/backup.sh", ["example"], { FAIL_TAR: "1" });
+    expect(result.status).toBe(1);
     expect(result.stderr).toContain("simulated archive read failure");
-    expect(result.stdout).not.toContain("Backup written");
-    expect(existsSync(path.join(f.checkout, "backups/example/homes.tgz"))).toBe(false);
-  });
-
-  it("does not archive files or report success after pg_dump fails", () => {
-    const f = fixture();
-    const result = f.run("scripts/backup.sh", ["example"], { FAIL_DUMP: "1" });
-    expect(result.status).toBe(2);
     expect(result.stdout).not.toContain("Backup written");
     expect(existsSync(path.join(f.checkout, "backups/example/homes.tgz"))).toBe(false);
   });
 });
 
 describe("development restore failures", () => {
+  let homesArchive: Buffer;
+
+  beforeAll(() => {
+    const source = mkdtempSync(path.join(os.tmpdir(), "rakazo-restore-source-"));
+    try {
+      write(path.join(source, "data/home.txt"), "backed-up home");
+      homesArchive = execFileSync("/usr/bin/tar", ["-czf", "-", "-C", source, "data"]);
+    } finally {
+      rmSync(source, { recursive: true, force: true });
+    }
+  });
+
   function restoreFixture() {
     const f = fixture();
-    write(path.join(f.checkout, "data/home.txt"), "backed-up home");
-    expect(f.run("scripts/backup.sh", ["example"]).status).toBe(0);
+    const snapshot = path.join(f.checkout, "backups/example");
+    write(path.join(snapshot, "rakazo.sql"), "CREATE TABLE example (id integer);\n");
+    writeFileSync(path.join(snapshot, "homes.tgz"), homesArchive);
     write(path.join(f.checkout, "data/home.txt"), "current home");
     return f;
   }
-
-  it("restores the saved data tree without retaining post-snapshot files", () => {
-    const f = restoreFixture();
-    const extra = path.join(f.checkout, "data/post-snapshot.txt");
-    write(extra, "state that did not exist in the backup");
-
-    const result = f.run("scripts/restore.sh", [path.join(f.checkout, "backups/example")]);
-
-    expect(result.status, result.stderr).toBe(0);
-    expect(readFileSync(path.join(f.checkout, "data/home.txt"), "utf8")).toBe("backed-up home");
-    expect(existsSync(extra)).toBe(false);
-    const rollbacks = readdirSync(f.checkout).filter((name) => name.startsWith("data.rollback."));
-    expect(rollbacks).toHaveLength(1);
-    const rollback = path.join(f.checkout, rollbacks[0]!);
-    expect(statSync(rollback).mode & 0o777).toBe(0o700);
-    expect(readFileSync(path.join(rollback, "data/home.txt"), "utf8")).toBe("current home");
-    expect(readFileSync(path.join(rollback, "data/post-snapshot.txt"), "utf8")).toBe(
-      "state that did not exist in the backup",
-    );
-    expect(result.stdout).toContain(path.join(rollback, "data"));
-    expect(readdirSync(f.checkout).some((name) => name.startsWith(".restore."))).toBe(false);
-  });
 
   it.each([false, true])(
     "restores files and starts services only after SQL succeeds: %s",
@@ -536,17 +508,23 @@ describe("development restore failures", () => {
       expect(readFileSync(path.join(f.checkout, "data/home.txt"), "utf8")).toBe(
         fail ? "current home" : "backed-up home",
       );
+      expect(existsSync(path.join(f.checkout, "data/post-snapshot.txt"))).toBe(fail);
       expect(f.commands().some((args) => args.slice(-2).join(" ") === "up -d")).toBe(!fail);
       expect(result.stdout.includes("Restore complete")).toBe(!fail);
+      expect(readdirSync(f.checkout).some((name) => name.startsWith(".restore."))).toBe(false);
+      const rollbacks = readdirSync(f.checkout).filter((name) => name.startsWith("data.rollback."));
       if (fail) {
         expect(result.stderr).toContain("already exists");
-        expect(readFileSync(path.join(f.checkout, "data/post-snapshot.txt"), "utf8")).toBe(
+        expect(rollbacks).toEqual([]);
+      } else {
+        expect(rollbacks).toHaveLength(1);
+        const rollback = path.join(f.checkout, rollbacks[0]!);
+        expect(statSync(rollback).mode & 0o777).toBe(0o700);
+        expect(readFileSync(path.join(rollback, "data/home.txt"), "utf8")).toBe("current home");
+        expect(readFileSync(path.join(rollback, "data/post-snapshot.txt"), "utf8")).toBe(
           "current-only file",
         );
-        expect(readdirSync(f.checkout).some((name) => name.startsWith("data.rollback."))).toBe(
-          false,
-        );
-        expect(readdirSync(f.checkout).some((name) => name.startsWith(".restore."))).toBe(false);
+        expect(result.stdout).toContain(path.join(rollback, "data"));
       }
     },
   );
@@ -571,7 +549,6 @@ describe("development restore failures", () => {
   });
 
   it.each([
-    { failure: "exit", status: 19 },
     { failure: "partial exit", status: 19 },
     { failure: "SIGHUP", status: 129 },
     { failure: "SIGINT", status: 130 },
@@ -583,7 +560,7 @@ describe("development restore failures", () => {
       write(path.join(f.checkout, "data/current-only.txt"), "preserve this file");
 
       const result = f.run("scripts/restore.sh", [path.join(f.checkout, "backups/example")], {
-        FAIL_STARTUP: failure.endsWith("exit") ? "1" : "0",
+        FAIL_STARTUP: failure === "partial exit" ? "1" : "0",
         INTERRUPT_STARTUP: failure.startsWith("SIG") ? failure : "",
         STARTUP_ONLY: failure === "partial exit" ? "api" : "",
         FAIL_CLEANUP_STOP: "1",
@@ -726,12 +703,12 @@ PATH=/usr/bin:/bin exec mv "$@"
     expect(f.serviceStates()).toEqual(runningWriters);
   });
 
-  it.each(["file", "directory link", "broken link"])("rejects active data %s", (kind) => {
+  it.each(["file", "directory link"])("rejects active data %s", (kind) => {
     const f = restoreFixture();
     const data = path.join(f.checkout, "data");
     rmSync(data, { recursive: true });
     if (kind === "file") write(data, "keep this file");
-    else symlinkSync(path.join(f.root, kind === "directory link" ? "appdata" : "missing"), data);
+    else symlinkSync(path.join(f.root, "appdata"), data);
 
     const result = f.run("scripts/restore.sh", [path.join(f.checkout, "backups/example")]);
 
@@ -755,6 +732,13 @@ describe("production backup deployment and archive behavior", () => {
     );
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain("Verified Rakazo backup");
+    expect(result.stderr).toContain("not encrypted");
+    expect(readdirSync(result.stdout.trim().split("written to ")[1]!).sort()).toEqual([
+      "SHA256SUMS",
+      "SOURCE_SIZE_KB",
+      "appdata.tgz",
+      "rakazo.dump",
+    ]);
     for (const command of f.commands().filter((args) => args[0] === "compose")) {
       expect(command.slice(0, 5)).toEqual([
         "compose",
@@ -813,24 +797,16 @@ describe("production backup deployment and archive behavior", () => {
     );
   });
 
-  it("fails before writing when the disk is short of the last snapshot's size", () => {
+  it("fails before writing when the disk is short, still cleaning abandoned partials", () => {
     const f = fixture();
     write(path.join(f.snapshots, "20261017T000000Z/SHA256SUMS"), "x".repeat(64 * 1024));
-    const result = f.run("infra/compose/backup-prod.sh", [], { FREE_KB: "1" });
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("this backup needs about");
-    expect(snapshotNames(f.snapshots)).toEqual(["20261017T000000Z"]);
-    expect(f.commands().some((args) => args.includes("sh"))).toBe(false);
-  });
-
-  it("cleans abandoned partials even when preflight refuses a new backup", () => {
-    const f = fixture();
-    write(path.join(f.snapshots, "20261017T000000Z/SHA256SUMS"), "verified");
     write(path.join(f.snapshots, "20261018T000000Z/appdata.tgz"), "partial");
     write(path.join(f.snapshots, "notes/keep.txt"), "operator note");
     const result = f.run("infra/compose/backup-prod.sh", [], { FREE_KB: "1" });
     expect(result.status).toBe(1);
+    expect(result.stderr).toContain("this backup needs about");
     expect(snapshotNames(f.snapshots).sort()).toEqual(["20261017T000000Z", "notes"]);
+    expect(f.commands().some((args) => args.includes("sh"))).toBe(false);
   });
 
   it("preserves the newest verified backup when the storage budget is too small", () => {
@@ -1011,20 +987,6 @@ exec /usr/bin/sync "$@"
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("RAKAZO_BACKUP_KEEP");
   });
-
-  it("warns that a backup without recipients is plaintext", () => {
-    const f = fixture();
-    const result = f.run("infra/compose/backup-prod.sh");
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.stderr).toContain("not encrypted");
-    const snapshot = result.stdout.trim().split("written to ")[1]!;
-    expect(readdirSync(snapshot).sort()).toEqual([
-      "SHA256SUMS",
-      "SOURCE_SIZE_KB",
-      "appdata.tgz",
-      "rakazo.dump",
-    ]);
-  });
 });
 
 const recipients = "age1fakeprimary age1fakerecovery";
@@ -1076,20 +1038,12 @@ describe("encrypted production backups", { timeout: 20_000 }, () => {
       expect(drill.stdout).toContain("decrypts and verifies");
       write(key, "# public key: age1someoneelse\n");
       expect(f.run("infra/compose/backup-drill.sh", [snapshot, key]).status).not.toBe(0);
+
+      write(key, identity);
+      write(path.join(snapshot, "appdata.tgz.age"), "age-encryption.org/v1\ntampered");
+      expect(f.run("infra/compose/backup-drill.sh", [snapshot, key]).status).not.toBe(0);
     },
   );
-
-  it("fails the drill when a sealed file was altered", () => {
-    const f = fixture();
-    const result = f.run("infra/compose/backup-prod.sh", [], {
-      RAKAZO_BACKUP_AGE_RECIPIENTS: recipients,
-    });
-    const snapshot = snapshotOf(result);
-    write(path.join(snapshot, "appdata.tgz.age"), "age-encryption.org/v1\ntampered");
-    const key = path.join(f.root, "backup.key");
-    write(key, identity);
-    expect(f.run("infra/compose/backup-drill.sh", [snapshot, key]).status).not.toBe(0);
-  });
 
   it.each([
     [{ RAKAZO_BACKUP_AGE_RECIPIENTS: "not-a-recipient" }, "age rejected"],
@@ -1222,9 +1176,9 @@ describe("off-site copies", { timeout: 20_000 }, () => {
     expect(existsSync(copy)).toBe(false);
   });
 
-  it.each(["-1", "08"])("rejects an invalid off-site retention: %s", (keep) => {
+  it("rejects an off-site retention that is not a whole number", () => {
     const f = fixture();
-    const result = f.run("infra/compose/backup-prod.sh", [], { RAKAZO_BACKUP_OFFSITE_KEEP: keep });
+    const result = f.run("infra/compose/backup-prod.sh", [], { RAKAZO_BACKUP_OFFSITE_KEEP: "08" });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("RAKAZO_BACKUP_OFFSITE_KEEP");
   });

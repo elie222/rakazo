@@ -62,6 +62,7 @@ function fixture(
     seq: 2,
     createdAt: new Date(),
     blocks: replyBlocks,
+    steeringMessages: [],
   };
   const steering: Array<{ id: string; messageId: string; runId: string | null }> = reply
     ? [{ id: "reply-steering", messageId: replyMessage.id, runId: reply.steeringRunId }]

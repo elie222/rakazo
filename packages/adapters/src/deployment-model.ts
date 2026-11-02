@@ -1,6 +1,7 @@
 import { getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import type { ModelUsageLookup } from "@rakazo/adapter-kit";
 import { OpenRouterUsageLookup } from "./openrouter-usage.js";
+import { LOCAL_PROVIDER_ID, localModelIds } from "./pi-local-provider-id.js";
 
 export const DEFAULT_OPENROUTER_MODEL_ID = "openai/gpt-6-luna";
 
@@ -26,8 +27,9 @@ export function hostCredentialSource(provider: string): string {
  * credential applies, and the key for that provider.
  *
  * Keyless host authentication requires explicit opt-in and a model id. Bedrock resolves
- * its credential chain (including instance roles) at request time; other providers must
- * report host credentials in the process environment. Host credentials never become `key`.
+ * its credential chain (including instance roles) at request time; local models must be
+ * declared by the operator; other providers must report host credentials in the process
+ * environment. Host credentials never become `key`.
  *
  * Vendor env names and model ids live here, in the adapter layer, not in core.
  */
@@ -49,7 +51,9 @@ export function resolveDeploymentModel(env: NodeJS.ProcessEnv = process.env) {
     Boolean(explicitModel) &&
     env.PI_DEFAULT_CREDENTIALS?.trim() === "host" &&
     // Bedrock also resolves EC2 instance roles through IMDS at request time.
-    (provider === "amazon-bedrock" || getEnvApiKey(provider) === HOST_CREDENTIALS);
+    (provider === LOCAL_PROVIDER_ID
+      ? localModelIds(env).includes(explicitModel!)
+      : provider === "amazon-bedrock" || getEnvApiKey(provider) === HOST_CREDENTIALS);
   return {
     provider,
     model: explicitModel || models[provider] || models.openrouter!,
