@@ -78,6 +78,8 @@ export type EvalCase = {
   routine?: { prompt: string };
   /** A second bot of the same user that fromPeer steps speak as. */
   peer?: { name: string; description: string; instructions: string };
+  /** Run the case in a group thread with these other member bots, named as history authors. */
+  group?: { members: string[] };
   grade: (evidence: Evidence) => Criterion[];
   judge?: (evidence: Evidence) => JudgeInput;
 };
