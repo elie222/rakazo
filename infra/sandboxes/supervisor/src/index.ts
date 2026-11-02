@@ -76,14 +76,15 @@ import {
   computerControlTimeoutMs,
   containerActionSteps,
   controlHandlesActions,
+  createComputerWithNameRetry,
   createDockerStreamDemuxer,
   currentComputerScreens,
   demuxDockerStream,
   ensureScreenCommand,
-  hasComputerIdentity,
   hasValidBearerToken,
   interactiveScreenCommand,
   isComputerControlUnavailable,
+  isManagedComputer,
   nextScreenIndex,
   normalizeWorkspaceRelative,
   oldestIdleScreen,
@@ -92,6 +93,7 @@ import {
   preferComputerControl,
   quiesceBrowserProfilesCommand,
   releaseAssignedScreen,
+  removeOwnedComputer,
   resetManagedScreensCommand,
   sandboxCommandTimedOut,
   sandboxTimeoutCommand,
@@ -349,70 +351,53 @@ app.post("/computers", async (c) => {
           screenNetworkMode === "internal"
             ? undefined
             : await ensureBotNetwork(body.botId, networkOwner);
+        const options = containerCreateOptions({
+          name,
+          image: COMPUTER_IMAGE,
+          botId: body.botId,
+          spaceId: body.spaceId,
+          ...storage,
+          user: computerUser,
+          networkMode,
+          controlToken: randomUUID(),
+          publishControlPort: controlViaLoopback,
+          dns: computerDns,
+          mounts: computerMounts,
+        });
         let container: Docker.Container | undefined;
+        const removeNamedComputer = () =>
+          removeOwnedComputer(
+            docker.getContainer(name),
+            (id) => docker.getContainer(id).remove({ force: true }),
+            (info) => isRakazoContainer(info, body.botId, body.spaceId),
+            (id) => clearComputerScreenRegistry(computerScreens, computerScreenBoots, id),
+          );
         try {
-          const removeBlockingComputer = async () => {
-            await existing?.remove({ force: true }).catch(async () => {
-              // Removal by id can fail transiently (endpoint still attached,
-              // device-busy mount). Without a name-based fallback the create
-              // below collides with 409 "already in use" on every boot.
-              await docker.getContainer(name).remove({ force: true });
-            });
-          };
           if (existing) {
             await withComputerScreenLock(existing.id, async () => {
-              await removeBlockingComputer();
+              try {
+                await existing.remove({ force: true });
+              } catch (error) {
+                if (!(await removeNamedComputer())) {
+                  throw new Error("Failed to remove existing computer; name fallback failed", {
+                    cause: error,
+                  });
+                }
+              }
               clearComputerScreenRegistry(computerScreens, computerScreenBoots, existing.id);
             });
           }
-          container = await docker.createContainer(
-            containerCreateOptions({
-              name,
-              image: COMPUTER_IMAGE,
-              botId: body.botId,
-              spaceId: body.spaceId,
-              ...storage,
-              user: computerUser,
-              networkMode,
-              controlToken: randomUUID(),
-              publishControlPort: controlViaLoopback,
-              dns: computerDns,
-              mounts: computerMounts,
-            }),
+          container = await createComputerWithNameRetry(
+            () => docker.createContainer(options),
+            removeNamedComputer,
           );
           await container.start();
         } catch (error) {
-          const nameConflict =
-            (error as { statusCode?: number })?.statusCode === 409 ||
-            /already in use/i.test(String(error));
-          if (!nameConflict) {
-            // Never force removal: a lost start response may hide a running computer.
-            // Docker also refuses network removal while any endpoint is attached.
-            await container?.remove().catch(() => undefined);
-            await createdNetwork?.remove().catch(() => undefined);
-            throw error;
-          }
-          // A leftover container holds the generated name (a removal that failed
-          // silently before, or one the label lookup could not match). Remove it
-          // and retry the create once instead of failing every boot with 500.
+          // Never force removal: a lost start response may hide a running computer.
+          // Docker also refuses network removal while any endpoint is attached.
           await container?.remove().catch(() => undefined);
-          await docker.getContainer(name).remove({ force: true }).catch(() => undefined);
-          container = await docker.createContainer(
-            containerCreateOptions({
-              name,
-              image: COMPUTER_IMAGE,
-              botId: body.botId,
-              spaceId: body.spaceId,
-              ...storage,
-              user: computerUser,
-              networkMode,
-              controlToken: randomUUID(),
-              publishControlPort: controlViaLoopback,
-              dns: computerDns,
-              mounts: computerMounts,
-            }),
-          );
-          await container.start();
+          await createdNetwork?.remove().catch(() => undefined);
+          throw error;
         }
         return c.json({
           id: container.id,
@@ -1541,9 +1526,7 @@ async function ensureManagedScreenAttempt(
 }
 
 function isRakazoContainer(info: Docker.ContainerInspectInfo, botId: string, spaceId: string) {
-  const labels = info.Config.Labels ?? {};
-  const managed = labels["rakazo.managed"] === "true" || info.Config.Image === COMPUTER_IMAGE;
-  return managed && hasComputerIdentity(labels, botId, spaceId);
+  return isManagedComputer(info, botId, spaceId, COMPUTER_IMAGE);
 }
 
 function assertBotHomePath(homePath: string, botId: string) {
