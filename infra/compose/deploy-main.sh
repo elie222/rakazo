@@ -142,22 +142,31 @@ finish_draining() {
   sudo docker rm ${workers} >/dev/null
 }
 
+drain_workers() {
+  # shellcheck disable=SC2086 # one container ID per word
+  sudo docker update --restart no $1 >/dev/null
+  # One that is not running has nothing to finish; finish_draining removes it.
+  # shellcheck disable=SC2086
+  sudo docker kill --signal SIGTERM $1 >/dev/null 2>&1 || true
+}
+
 replace_worker() {
   local live
-  # A scale-up starts every stopped container of the service, including a drained worker, so none
-  # may be left. A rollback can get here while the worker it replaced moments ago still drains.
-  finish_draining
   live="$(worker_containers live)"
+  if [[ -n "$(worker_containers draining)" ]]; then
+    # Only a rollback finds a worker still draining: the one its deploy replaced. The failed
+    # release's worker stops claiming jobs too, and the restored one starts once both exit,
+    # because a scale-up would also start a drained worker that exited in the meantime.
+    [[ -z "${live}" ]] || drain_workers "${live}"
+    finish_draining
+    live=""
+  fi
   if [[ -z "${live}" ]]; then
     compose "${UP_TIMEOUT}" up -d --wait worker
     return
   fi
   start_beside worker "${live}"
-  # shellcheck disable=SC2086
-  sudo docker update --restart no ${live} >/dev/null
-  # One that is not running has nothing to finish; finish_draining removes it.
-  # shellcheck disable=SC2086
-  sudo docker kill --signal SIGTERM ${live} >/dev/null 2>&1 || true
+  drain_workers "${live}"
 }
 
 # Replaces the API, web and worker without a gap: one new container starts beside the running

@@ -55,9 +55,10 @@ const STEP_TIMEOUT_MS: Record<string, number> = {
   checkout: 60_000,
   merge: 60_000,
   pull: 600_000,
-  // Recreating the worker waits up to its 50-minute stop_grace_period for running jobs.
-  recreate: 3_600_000,
-  recover: 3_600_000,
+  // A recreate can build, wait up to the worker's 50-minute stop_grace_period for its running
+  // jobs, and then wait for the new services to become healthy.
+  recreate: 5_400_000,
+  recover: 5_400_000,
 };
 const DEFAULT_TIMEOUT_MS = 120_000;
 

@@ -491,17 +491,17 @@ describe("production deploy script", () => {
       "docker stop --time 30 api-old",
       "docker stop --time 30 api-new",
     ]);
-    // The rollback lets the deploy's replaced worker finish before it replaces the failed
-    // release's, which then finishes in turn.
-    const rollbackDrain = commands.indexOf("docker stop worker-old");
-    expect(rollbackDrain).toBeGreaterThan(
-      commands.indexOf("docker kill --signal SIGTERM worker-old"),
-    );
-    expect(commands.slice(rollbackDrain)).toContain(
-      `${COMPOSE} up -d --no-deps --no-recreate --scale worker=2 worker`,
-    );
-    expect(commands).toContain("docker kill --signal SIGTERM worker-new");
-    expect(commands.slice(-2)).toEqual(["docker stop worker-new", "docker rm worker-new"]);
+    // The failed release's worker stops claiming jobs, and the restored one starts once it and
+    // the worker the deploy replaced have both exited.
+    const failed = commands.indexOf("docker kill --signal SIGTERM worker-new");
+    expect(failed).toBeGreaterThan(commands.indexOf("docker kill --signal SIGTERM worker-old"));
+    expect(
+      commands.slice(failed).filter((line) => /^docker (stop|rm) |up -d --wait worker$/.test(line)),
+    ).toEqual([
+      "docker stop worker-old worker-new",
+      "docker rm worker-old worker-new",
+      `${COMPOSE} up -d --wait worker`,
+    ]);
   });
 
   it("waits for a worker an earlier deploy left draining before migrating", () => {
@@ -518,16 +518,16 @@ describe("production deploy script", () => {
     ]);
   });
 
-  it("removes a worker that finished draining before a rollback scales the worker up", () => {
+  it("never scales up beside a worker that may have exited while a rollback drains it", () => {
     const deploy = fixture();
     commit(deploy.upstream, "unhealthy");
     expect(deploy.run({ FAIL_HEALTH: "1", DRAIN_EXITS: "1" }).status).toBe(1);
     const commands = rollout(deploy.commands());
-    const removed = commands.indexOf("docker rm worker-old");
-    expect(removed).toBeGreaterThan(commands.indexOf("docker kill --signal SIGTERM worker-old"));
-    expect(commands.slice(removed).filter((line) => line.includes("--scale worker"))).toEqual([
-      `${COMPOSE} up -d --no-deps --no-recreate --scale worker=2 worker`,
-    ]);
+    const replaced = commands.indexOf("docker kill --signal SIGTERM worker-old");
+    const removed = commands.indexOf("docker rm worker-old worker-new");
+    expect(removed).toBeGreaterThan(replaced);
+    expect(commands.slice(replaced).some((line) => line.includes("--scale worker"))).toBe(false);
+    expect(commands.slice(removed)).toContain(`${COMPOSE} up -d --wait worker`);
   });
 
   it("keeps the old container serving when the new one fails its health check", () => {
