@@ -315,6 +315,8 @@ export class StripeBillingProvider implements BillingProvider {
       subscription.cancel_at_period_end ||
       subscription.cancel_at != null ||
       item.price.recurring?.interval !== "month" ||
+      // Twelve months at the current price must still cost more than the year.
+      (item.price.unit_amount ?? 0) * (item.quantity ?? 1) * 12 <= amountCents ||
       subscriptions.some((s) => live(s) && creditAmount(s.metadata?.rakazo_credit_cents))
     )
       return false;

@@ -15,10 +15,12 @@ subscriptions; existing subscribers keep the price they signed up at. `null` mak
 free and ends paid own-key subscriptions at their period end. `BYOK_ANNUAL_PRICE_CENTS` offers the
 same plan billed yearly, shown as its monthly equivalent; `null` offers it monthly only. Monthly
 subscribers can switch to yearly from Billing, which charges the yearly price less the unused part
-of the month. To also allow it in the Stripe billing portal, add the own-key plan's monthly and
-yearly prices to the portal's plan switching in your Stripe settings. The yearly price is created
-by the first yearly checkout or switch, and Billing reads the new period on the next sync. Runs check access on the server, so a
-lapsed organization's bots and routines stop until it subscribes.
+of the month. It is offered only to a paid-up plan that is not cancelling, has no monthly credits,
+and saves money. Billing reads a plan's period from its price on every sync, so a switch made in the
+Stripe billing portal also shows correctly. Portal plan switching skips those checks and allows
+both directions, including yearly back to monthly with its own proration, so enable it only if
+that is acceptable; the yearly price exists after the first yearly checkout or switch. Runs check
+access on the server, so a lapsed organization's bots and routines stop until it subscribes.
 
 ## Model credits
 
