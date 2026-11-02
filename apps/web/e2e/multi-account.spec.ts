@@ -78,6 +78,7 @@ test("saved accounts switch, receive hidden-account notifications, and sign out 
       "aria-label",
       "Account menu for Family",
     );
+    await page.bringToFront();
     // A reply is produced by the real emulated API while its account is not displayed.
     await page.waitForResponse(
       (response) => response.url().endsWith("/api/accounts") && response.ok(),

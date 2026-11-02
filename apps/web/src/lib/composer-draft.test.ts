@@ -27,7 +27,11 @@ function memoryStorage(initial: Record<string, string> = {}) {
 
 describe("composer drafts", () => {
   it("keeps drafts separate by account and signs out only one account's saved text", () => {
-    const map = new Map<string, string>([["rakazo.composerDraft.bot:1", "unowned legacy"]]);
+    const map = new Map<string, string>([
+      ["rakazo.composerDraft.bot:1", "unowned legacy"],
+      ["rakazo.composerBindings.bot:1", "unowned mentions"],
+      ["unrelated", "keep"],
+    ]);
     const storage = {
       ...memoryStorage(),
       getItem: (key: string) => map.get(key) ?? null,
@@ -53,6 +57,9 @@ describe("composer drafts", () => {
       writeComposerDraft("bot:1", "work draft", storage);
       clearComposerDrafts("family");
       expect(readComposerDraft("bot:1", storage)).toBe("work draft");
+      expect(map.has("rakazo.composerDraft.bot:1")).toBe(false);
+      expect(map.has("rakazo.composerBindings.bot:1")).toBe(false);
+      expect(map.get("unrelated")).toBe("keep");
       setAccountIdentity(null);
       setAccountIdentity("family");
       expect(readComposerDraft("bot:1", storage)).toBe("");

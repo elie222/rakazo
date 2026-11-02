@@ -583,6 +583,35 @@ const pushMessage = {
 } as const;
 
 describe("expo push delivery outcomes", () => {
+  it("logs a failed device without hiding another device's successful delivery", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const tokens = new MemoryPushTokenStore();
+    const failedToken = "ExponentPushToken[unreachable-device]";
+    await tokens.save("user-1", failedToken, "first-session");
+    await tokens.save("user-1", "ExponentPushToken[reachable-device]", "second-session");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: unknown, init?: RequestInit) => {
+        const request = JSON.parse(String(init?.body));
+        if (request.to === failedToken) throw new Error("network failure");
+        return jsonResponse({ data: { status: "ok", id: "ticket" } });
+      }),
+    );
+    const push = new ExpoPushProvider(tokens, {
+      retryDelaysMs: [],
+      sessionExpiresAt: async () => new Date(Date.now() + 60_000),
+    });
+
+    await expect(push.deliver(pushMessage, notifyContext)).resolves.toBe("delivered");
+    expect(sink.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ level: "error", deviceDigest: credentialDigest(failedToken) }),
+      ]),
+    );
+    expect(JSON.stringify(sink.events)).not.toContain(failedToken);
+  });
+
   it.each<{
     name: string;
     outcomes: ExpoOutcome[];

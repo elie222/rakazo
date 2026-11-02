@@ -74,6 +74,12 @@ import {
 } from "./logo-avatar-activity";
 import { reportMobileError } from "./monitoring";
 import {
+  completeSessionRevocation,
+  pendingSessionTokens,
+  queueSessionRevocation,
+  retryPendingSessionRevocations,
+} from "./pending-session-revocations";
+import {
   cachedSavedAccounts,
   forgetSavedToken,
   rememberSavedAccount,
@@ -184,6 +190,23 @@ export async function loadApiBase() {
   }
   await loadServerHeaders(apiBase);
   setCachedApiBase(apiBase);
+  // A process may have stopped after recording sign-out but before clearing its primary token.
+  const pending = await pendingSessionTokens(apiBase);
+  if (pending.size) {
+    const generation = currentSessionGeneration();
+    const token = await loadSessionToken();
+    if (
+      token &&
+      pending.has(token) &&
+      generation === currentSessionGeneration() &&
+      apiBase === currentApiBase()
+    ) {
+      await clearSessionToken();
+      if (generation + 1 === currentSessionGeneration() && apiBase === currentApiBase())
+        await clearSpace();
+    }
+  }
+  void retryPendingSessionRevocations(apiBase).catch(() => undefined);
   try {
     const storedSpace = (await SecureStore.getItemAsync(SPACE_KEY)) ?? "";
     cachedSpaceId = storedSpace;
@@ -777,15 +800,17 @@ export async function fetchMobileJson<T>(
   }
 }
 
-export async function signOut() {
+export async function signOut(expectedTokens?: readonly string[]) {
   const { apiBase, headers, sessionGeneration } = await captureApiRequestContext(null);
   const accountToken = (headers.authorization ?? "").replace(/^Bearer /, "");
+  if (expectedTokens && !expectedTokens.includes(accountToken)) return;
+  await queueSessionRevocation(apiBase, accountToken);
   // Cleanup remains bound to this login even if a notification selects another account.
   await rpc("notifications/unregisterPush", undefined, {
     requestContext: { apiBase, headers },
   }).catch(() => undefined);
   try {
-    await fetchMobileJson<unknown>(
+    const { response, body } = await fetchMobileJson<{ success?: unknown }>(
       `${apiBase}/api/auth/sign-out`,
       {
         method: "POST",
@@ -795,6 +820,8 @@ export async function signOut() {
       {},
       apiBase,
     );
+    if (response.ok && body?.success === true)
+      await completeSessionRevocation(apiBase, accountToken);
   } catch {
     // Local sign-out still works offline.
   }

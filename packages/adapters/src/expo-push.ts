@@ -243,6 +243,12 @@ export class ExpoPushProvider implements NotificationProvider {
         return "delivered" as const;
       }),
     );
+    for (const [index, result] of results.entries()) {
+      if (result.status === "rejected")
+        getLogger().error("expo push device delivery failed", {
+          deviceDigest: credentialDigest(tokens[index]!),
+        });
+    }
     if (results.some((result) => result.status === "fulfilled" && result.value === "delivered"))
       return "delivered";
     const failed = results.find((result) => result.status === "rejected");

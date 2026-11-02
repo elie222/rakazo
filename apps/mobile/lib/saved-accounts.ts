@@ -1,5 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 import type { LiveNotificationSettings } from "./live-notifications";
+import { pendingSessionTokens } from "./pending-session-revocations";
 
 const ACCOUNTS_KEY = "rakazo.saved_accounts";
 export type SavedAccount = {
@@ -56,7 +57,8 @@ async function read(): Promise<AccountStore> {
 
 export async function loadSavedAccounts(apiBase: string): Promise<SavedAccount[]> {
   await writes.catch(() => undefined);
-  const rows = (await read())[apiBase] ?? [];
+  const pending = await pendingSessionTokens(apiBase);
+  const rows = ((await read())[apiBase] ?? []).filter((row) => !pending.has(row.token));
   cache.set(apiBase, rows);
   return rows;
 }

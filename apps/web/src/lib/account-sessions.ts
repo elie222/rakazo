@@ -164,7 +164,8 @@ export function useAccountNotifications(userId: string | null): void {
       } catch {
         // A failed feed read is not a sign-out; retry without replaying its history.
       } finally {
-        if (!controller.signal.aborted) timer = setTimeout(poll, 5_000);
+        if (!controller.signal.aborted)
+          timer = setTimeout(poll, document.visibilityState === "hidden" ? 30_000 : 5_000);
       }
     }
     void poll();

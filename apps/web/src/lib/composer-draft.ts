@@ -82,7 +82,8 @@ export function clearComposerDrafts(userId = accountIdentity(), all = false): vo
           all
             ? key.startsWith(prefix)
             : userId
-              ? key.startsWith(`${prefix}user:${encodeURIComponent(userId)}.`)
+              ? key.startsWith(`${prefix}user:${encodeURIComponent(userId)}.`) ||
+                (key.startsWith(prefix) && !key.startsWith(`${prefix}user:`))
               : key.startsWith(prefix) && !key.startsWith(`${prefix}user:`),
         )
       )

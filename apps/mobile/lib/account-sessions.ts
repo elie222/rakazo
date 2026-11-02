@@ -3,6 +3,11 @@ import { clearSpace, currentApiBase, loadSessionToken, signOut } from "./api";
 import { normalizeApiBase } from "./endpoint";
 import { t } from "./i18n";
 import { stopLiveNotifications } from "./live-notifications";
+import {
+  completeSessionRevocation,
+  pendingSessionTokens,
+  queueSessionRevocation,
+} from "./pending-session-revocations";
 import type { SavedAccount } from "./saved-accounts";
 import {
   forgetSavedToken,
@@ -17,6 +22,7 @@ import { currentSessionGeneration, saveSessionToken } from "./session";
 
 export type AccountSummary = Omit<SavedAccount, "token" | "notifications">;
 let selectionRequest = 0;
+let signingOutAll = false;
 
 async function accountJson(apiBase: string, token: string, path: string, method = "GET") {
   const controller = new AbortController();
@@ -66,10 +72,12 @@ async function verifiedAccount(apiBase: string, token: string): Promise<SavedAcc
 
 /** Adopt a legacy single bearer only after the server proves which user owns it. */
 export async function rememberCurrentAccount(): Promise<void> {
+  if (signingOutAll) return;
   const generation = currentSessionGeneration();
   const apiBase = currentApiBase();
   const token = await loadSessionToken();
   if (!token) return;
+  if ((await pendingSessionTokens(apiBase)).has(token)) return;
   const rows = await loadSavedAccounts(apiBase);
   const existing = rows.find((row) => row.token === token);
   if (existing) {
@@ -133,6 +141,7 @@ export async function refreshAccountSummaries(): Promise<AccountSummary[]> {
 
 /** Validate ownership before changing the active bearer or any private screen. */
 export async function selectSavedAccount(userId: string): Promise<boolean> {
+  if (signingOutAll) return false;
   const request = ++selectionRequest;
   const generation = currentSessionGeneration();
   const apiBase = currentApiBase();
@@ -199,29 +208,45 @@ export async function selectNotificationAccount(
 
 /** Revokes each locally saved credential; remote failures are reported after local removal. */
 export async function signOutAllAccounts(): Promise<void> {
+  if (signingOutAll) return;
   const apiBase = currentApiBase();
   const generation = currentSessionGeneration();
-  await rememberCurrentAccount();
+  await rememberCurrentAccount().catch(() => undefined);
   const accounts = await loadSavedAccounts(apiBase);
+  if (signingOutAll) return;
+  signingOutAll = true;
+  selectionRequest++;
   let failed = false;
-  await Promise.all(
-    accounts.map(async (account) => {
-      try {
-        const { response } = await accountJson(
-          apiBase,
-          account.token,
-          "/api/auth/sign-out",
-          "POST",
-        );
-        if (!response.ok) failed = true;
-      } catch {
-        failed = true;
-      }
-      await forgetSavedToken(apiBase, account.token);
-    }),
-  );
-  if (generation !== currentSessionGeneration() || apiBase !== currentApiBase()) return;
-  await signOut();
-  if (failed)
-    throw new Error(t("Signed out on this device. Some server sessions could not be revoked."));
+  try {
+    await Promise.all(accounts.map((account) => queueSessionRevocation(apiBase, account.token)));
+    await Promise.all(
+      accounts.map(async (account) => {
+        try {
+          const { response, body } = await accountJson(
+            apiBase,
+            account.token,
+            "/api/auth/sign-out",
+            "POST",
+          );
+          if (response.ok && (body as { success?: unknown } | null)?.success === true)
+            await completeSessionRevocation(apiBase, account.token);
+          else failed = true;
+        } catch {
+          failed = true;
+        }
+        await forgetSavedToken(apiBase, account.token);
+      }),
+    );
+    const token = await loadSessionToken();
+    if (
+      apiBase === currentApiBase() &&
+      (generation === currentSessionGeneration() ||
+        accounts.some((account) => account.token === token))
+    )
+      await signOut([...accounts.map((account) => account.token), token]);
+    if (failed)
+      throw new Error(t("Signed out on this device. Some server sessions could not be revoked."));
+  } finally {
+    signingOutAll = false;
+  }
 }

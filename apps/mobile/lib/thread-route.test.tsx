@@ -10,6 +10,8 @@ const state = vi.hoisted(() => ({
   selected: "space-1" as string | null,
   selectSpace: vi.fn(),
   replace: vi.fn(),
+  verifyOwner: vi.fn(),
+  generation: 1,
   params: {} as { spaceId?: string; userId?: string },
 }));
 
@@ -47,13 +49,10 @@ vi.mock("./i18n", () => {
 vi.mock("./integrations-cache", () => ({ integrationsCacheScope: () => null }));
 vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
 vi.mock("./session", () => ({
-  currentReadySessionGeneration: () => 1,
-  currentSessionGeneration: () => 1,
+  currentReadySessionGeneration: () => state.generation,
+  currentSessionGeneration: () => state.generation,
   subscribeSessionGeneration: () => () => undefined,
-  loadVerifiedIntegrationsScope: async () => ({
-    apiBase: "https://app.example.test",
-    userId: "user-1",
-  }),
+  loadVerifiedIntegrationsScope: state.verifyOwner,
 }));
 vi.mock("./user-error", () => ({ errorText: () => "error" }));
 
@@ -66,6 +65,11 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.selected = "space-1";
   state.params = {};
+  state.generation = 1;
+  state.verifyOwner.mockReset().mockResolvedValue({
+    apiBase: "https://app.example.test",
+    userId: "user-1",
+  });
   state.selectSpace.mockReset();
   state.replace.mockReset();
   container = document.createElement("div");
@@ -110,6 +114,50 @@ it("shows the thread without switching when no space is requested", async () => 
 it("never mounts a thread when its notification belongs to another account", async () => {
   state.params = { userId: "other-user", spaceId: "other-space" };
   await render();
+  expect(container.textContent).toContain("Sign in to open this notification");
+  expect(container.textContent).not.toContain("thread:");
+  expect(state.selectSpace).not.toHaveBeenCalled();
+});
+
+it("waits for notification ownership before switching spaces or showing recovery", async () => {
+  state.params = { userId: "user-1", spaceId: "space-2" };
+  let verify!: (value: { apiBase: string; userId: string }) => void;
+  state.verifyOwner.mockReturnValue(
+    new Promise((resolve) => {
+      verify = resolve;
+    }),
+  );
+  state.selectSpace.mockImplementation(async (spaceId: string) => {
+    state.selected = spaceId;
+    return true;
+  });
+  await render();
+  expect(container.querySelector("progress")).not.toBeNull();
+  expect(container.textContent).not.toContain("Sign in");
+  expect(container.textContent).not.toContain("thread:");
+  expect(state.selectSpace).not.toHaveBeenCalled();
+  await act(async () => verify({ apiBase: "https://app.example.test", userId: "user-1" }));
+  expect(container.textContent).toBe("thread:user-1");
+  expect(state.selectSpace).toHaveBeenCalledWith("space-2");
+});
+
+it("does not use the previous session's owner while a new session is being verified", async () => {
+  await render();
+  expect(container.textContent).toBe("thread:user-1");
+  state.generation++;
+  state.params = { userId: "user-2", spaceId: "space-2" };
+  let verify!: (value: { apiBase: string; userId: string }) => void;
+  state.verifyOwner.mockReturnValue(
+    new Promise((resolve) => {
+      verify = resolve;
+    }),
+  );
+  await render();
+  expect(container.querySelector("progress")).not.toBeNull();
+  expect(container.textContent).not.toContain("Sign in");
+  expect(container.textContent).not.toContain("thread:");
+  expect(state.selectSpace).not.toHaveBeenCalled();
+  await act(async () => verify({ apiBase: "https://app.example.test", userId: "other-user" }));
   expect(container.textContent).toContain("Sign in to open this notification");
   expect(container.textContent).not.toContain("thread:");
   expect(state.selectSpace).not.toHaveBeenCalled();

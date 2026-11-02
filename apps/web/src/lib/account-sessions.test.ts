@@ -6,7 +6,9 @@ const calls = vi.hoisted(() => ({
   changed: vi.fn(() => false),
   clear: vi.fn(),
   space: vi.fn(() => true),
+  effect: vi.fn<(effect: () => undefined | (() => void), dependencies: unknown[]) => void>(),
 }));
+vi.mock("react", () => ({ useEffect: calls.effect, useSyncExternalStore: vi.fn() }));
 vi.mock("./call-session", () => ({
   endCallBeforeSignOut: calls.end,
   sessionChangedUnderPage: calls.changed,
@@ -95,4 +97,37 @@ it("does not select an account when another tab changed identity during hang-up"
   await switchSavedAccount("work", notification);
   expect(fetch).not.toHaveBeenCalled();
   expect(location.reload).toHaveBeenCalledOnce();
+});
+
+it("keeps polling hidden tabs at a lower rate and cancels the feed on cleanup", async () => {
+  vi.useFakeTimers();
+  const document = { visibilityState: "hidden" };
+  vi.stubGlobal("document", document);
+  let signal: AbortSignal | undefined;
+  const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    signal = init?.signal ?? undefined;
+    return Response.json({ activeUserId: "family", accounts: [] });
+  });
+  vi.stubGlobal("fetch", fetch);
+  const { useAccountNotifications } = await import("./account-sessions");
+  useAccountNotifications("family");
+  const cleanup = calls.effect.mock.calls[0]![0]();
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    document.visibilityState = "visible";
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    if (typeof cleanup === "function") cleanup();
+    expect(signal?.aborted).toBe(true);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(fetch).toHaveBeenCalledTimes(3);
+  } finally {
+    if (typeof cleanup === "function") cleanup();
+    vi.useRealTimers();
+  }
 });

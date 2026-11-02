@@ -841,12 +841,22 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       exposeHeaders: [SERVER_BUILD_HEADER],
     }),
   );
+  // Share authentication within one request; never cache a session across requests.
+  const loadRequestSession = (request: Request) =>
+    runAsSystem("authenticate request", () => auth.api.getSession({ headers: request.headers }));
+  const requestSessions = new WeakMap<Request, ReturnType<typeof loadRequestSession>>();
+  const authenticatedSession = (request: Request) => {
+    let session = requestSessions.get(request);
+    if (!session) {
+      session = loadRequestSession(request);
+      requestSessions.set(request, session);
+    }
+    return session;
+  };
   // Session and account replies must never be stored by a client or an HTTP cache.
-  mountAccountIdentityGuard(app, (request) =>
-    runAsSystem(
-      "validate request account identity",
-      async () => (await auth.api.getSession({ headers: request.headers }))?.user.id ?? null,
-    ),
+  mountAccountIdentityGuard(
+    app,
+    async (request) => (await authenticatedSession(request))?.user.id ?? null,
   );
   for (const path of ["/api/auth/*", "/rpc/*"]) {
     app.use(path, async (c, next) => {
@@ -885,7 +895,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     monitoringRoutes(
       env.browserMonitoring,
       fetch,
-      async (request) => (await auth.api.getSession({ headers: request.headers }))?.user.id,
+      async (request) => (await authenticatedSession(request))?.user.id,
     ),
   );
   app.route("/", cspReportRoutes(requestClientIp));
@@ -937,7 +947,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   });
   const requestSession = async (request: Request) => {
     // The bearer plugin turns a signed `Authorization: Bearer` into the session cookie.
-    const session = await auth.api.getSession({ headers: request.headers });
+    const session = await authenticatedSession(request);
     if (!session?.user) return null;
     const actor = await actorFromMembership(
       requireMembership(prisma, session.user.id, request.headers.get("x-rakazo-space-id")),
@@ -951,8 +961,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       hub: userDeviceHub,
       devices: userDevices,
       forwardSecret: userDeviceSecret,
-      sessionUserId: async (request) =>
-        (await auth.api.getSession({ headers: request.headers }))?.user.id ?? null,
+      sessionUserId: async (request) => (await authenticatedSession(request))?.user.id ?? null,
       trustedOrigin: (origin) => isTrustedOrigin(origin, env),
     });
   }

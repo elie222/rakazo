@@ -45,6 +45,7 @@ vi.mock("expo-notifications", () => ({
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { currentApiBase, rpc, selectInitialSpace } from "./api";
+import { queueSessionRevocation } from "./pending-session-revocations";
 import { registerPushToken } from "./push";
 import { restoreSessionToken } from "./session";
 
@@ -177,4 +178,13 @@ it("registers one device token independently for every saved signed-in account",
       .map((headers) => (headers as Record<string, string>).authorization)
       .sort(),
   ).toEqual(["Bearer family-token", "Bearer work-token"]);
+});
+
+it("does not register a locally signed-out credential while its revocation retry is failing", async () => {
+  await queueSessionRevocation(currentApiBase(), "fake-session");
+  // The fixture's generic successful HTTP reply is not an acknowledged auth sign-out.
+  permission.resolve({ granted: true });
+  await registerPushToken();
+  expect(fetch.mock.calls.some(([url]) => url.endsWith("/api/auth/sign-out"))).toBe(true);
+  expect(fetch.mock.calls.some(([url]) => url.endsWith("/notifications/registerPush"))).toBe(false);
 });

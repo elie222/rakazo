@@ -2,6 +2,10 @@ import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { currentApiBase, loadSessionToken, rpc } from "./api";
+import {
+  pendingSessionTokens,
+  retryPendingSessionRevocations,
+} from "./pending-session-revocations";
 import { loadSavedAccounts } from "./saved-accounts";
 
 async function notificationsAllowed() {
@@ -15,6 +19,8 @@ async function notificationsAllowed() {
 
 export async function registerPushToken() {
   const apiBase = currentApiBase();
+  // Revocation retries also run when permission is denied; they need no new push token.
+  await retryPendingSessionRevocations(apiBase).catch(() => undefined);
   if (!(await notificationsAllowed())) return;
   try {
     const projectId = Constants.easConfig?.projectId ?? Constants.expoConfig?.extra?.eas?.projectId;
@@ -22,10 +28,12 @@ export async function registerPushToken() {
     const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     if (!token) return;
     const accounts = await loadSavedAccounts(apiBase);
+    const pending = await pendingSessionTokens(apiBase);
+    const selectedToken = apiBase === currentApiBase() ? await loadSessionToken() : "";
+    const activeToken = pending.has(selectedToken) ? "" : selectedToken;
     if (accounts.length === 0) {
-      if (apiBase === currentApiBase()) await rpc("notifications/registerPush", { token });
+      if (activeToken) await rpc("notifications/registerPush", { token });
     } else {
-      const activeToken = apiBase === currentApiBase() ? await loadSessionToken() : "";
       const registering = accounts.map((account) =>
         rpc(
           "notifications/registerPush",

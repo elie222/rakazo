@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const secureStorage = vi.hoisted(() => new Map<string, string>());
 vi.mock("expo-modules-core", () => ({ requireNativeModule: vi.fn() }));
 vi.mock("expo-notifications", () => ({
   setNotificationHandler: vi.fn(),
@@ -8,7 +9,12 @@ vi.mock("expo-notifications", () => ({
   dismissAllNotificationsAsync: vi.fn(async () => undefined),
 }));
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
-vi.mock("expo-secure-store", () => ({}));
+vi.mock("expo-secure-store", () => ({
+  getItemAsync: vi.fn(async (key: string) => secureStorage.get(key) ?? null),
+  setItemAsync: vi.fn(async (key: string, value: string) => {
+    secureStorage.set(key, value);
+  }),
+}));
 
 import * as Notifications from "expo-notifications";
 import {
@@ -19,9 +25,14 @@ import {
   setOpenNotificationThread,
   stopLiveNotifications,
 } from "./live-notifications";
-import { setSelectedSavedAccount } from "./saved-accounts";
+import { loadSavedAccounts, rememberSavedAccount, setSelectedSavedAccount } from "./saved-accounts";
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(async () => {
+  vi.clearAllMocks();
+  secureStorage.clear();
+  setSelectedSavedAccount(null);
+  await loadSavedAccounts("https://app.example.test");
+});
 
 // The handler is installed once per module; keep it across cleared mocks.
 let foreground: Parameters<typeof Notifications.setNotificationHandler>[0] | undefined;
@@ -169,6 +180,82 @@ it("keeps inactive-account completions visible and never dismisses their matchin
     notificationTargetsThread({ userId: "work", threadId: "thread-1" }, { threadId: "thread-1" }),
   ).toBe(false);
   setSelectedSavedAccount(null);
+});
+
+it.each(["completion", "help"])(
+  "keeps untagged %s visible when several accounts are saved",
+  async (kind) => {
+    const apiBase = "https://app.example.test";
+    for (const userId of ["family", "work"]) {
+      await rememberSavedAccount(apiBase, {
+        userId,
+        token: `${userId}-token`,
+        email: `${userId}@example.test`,
+        name: userId,
+        image: null,
+        unread: 0,
+      });
+    }
+    setSelectedSavedAccount({ apiBase, userId: "family" });
+    await setOpenNotificationThread({ threadId: "thread-1" });
+    await expect(
+      foregroundHandler()?.handleNotification({
+        request: { content: { data: { kind, threadId: "thread-1" } } },
+      } as never),
+    ).resolves.toMatchObject({ shouldShowBanner: true, shouldShowList: true });
+    expect(notificationTargetsThread({ threadId: "thread-1" }, { threadId: "thread-1" })).toBe(
+      false,
+    );
+    await expect(
+      foregroundHandler()?.handleNotification({
+        request: { content: { data: { kind, threadId: "thread-1", userId: "family", apiBase } } },
+      } as never),
+    ).resolves.toMatchObject({ shouldShowBanner: false, shouldShowList: false });
+  },
+);
+
+it("keeps an untagged completion visible before saved account selection initializes", async () => {
+  const apiBase = "https://app.example.test";
+  secureStorage.set(
+    "rakazo.saved_accounts",
+    JSON.stringify({
+      [apiBase]: ["family", "work"].map((userId) => ({
+        userId,
+        token: `${userId}-token`,
+        email: `${userId}@example.test`,
+        name: userId,
+        image: null,
+        unread: 0,
+      })),
+    }),
+  );
+  await expect(
+    foregroundHandler()?.handleNotification({
+      request: { content: { data: { kind: "completion", threadId: "thread-1" } } },
+    } as never),
+  ).resolves.toMatchObject({ shouldShowBanner: true, shouldShowList: true });
+});
+
+it("keeps a notification visible when its server is ambiguous", async () => {
+  for (const apiBase of ["https://app.example.test", "https://other.example.test"]) {
+    await rememberSavedAccount(apiBase, {
+      userId: "family",
+      token: "token",
+      email: "family@example.test",
+      name: "Family",
+      image: null,
+      unread: 0,
+    });
+  }
+  setSelectedSavedAccount({ apiBase: "https://app.example.test", userId: "family" });
+  await setOpenNotificationThread({ threadId: "thread-1" });
+  await expect(
+    foregroundHandler()?.handleNotification({
+      request: {
+        content: { data: { kind: "completion", threadId: "thread-1", userId: "family" } },
+      },
+    } as never),
+  ).resolves.toMatchObject({ shouldShowBanner: true });
 });
 
 it("signing out dismisses only the selected account's delivered notifications", async () => {

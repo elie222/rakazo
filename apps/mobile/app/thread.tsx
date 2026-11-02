@@ -72,9 +72,11 @@ export default function ThreadRoute() {
   const requestedServer = typeof apiBase === "string" ? normalizeApiBase(apiBase) : null;
   const wrongServer =
     apiBase !== undefined && (!requestedServer?.ok || requestedServer.url !== currentApiBase());
+  const currentOwner = owner?.generation === generation && generation === ready ? owner : null;
   const wrongAccount =
     wrongServer ||
-    (userId !== undefined && (typeof userId !== "string" || owner?.userId !== userId));
+    (userId !== undefined &&
+      (typeof userId !== "string" || (currentOwner !== null && currentOwner.userId !== userId)));
   const [activeSpaceId, setActiveSpaceId] = useState<string | null>(() => selectedSpaceId());
   const [switchFailed, setSwitchFailed] = useState(false);
   const [appliedFocus, setAppliedFocus] = useState(focused);
@@ -93,7 +95,7 @@ export default function ThreadRoute() {
   const request = threadSpaceRequest(spaceId, focusSync.activeSpaceId);
 
   useEffect(() => {
-    if (!focused || wrongAccount) return;
+    if (!focused || wrongAccount || !currentOwner) return;
     const next = threadSpaceRequest(spaceId, activeSpaceId);
     if (next.action === "show") {
       setSwitchFailed(false);
@@ -118,7 +120,7 @@ export default function ThreadRoute() {
     return () => {
       cancelled = true;
     };
-  }, [activeSpaceId, focused, spaceId, wrongAccount]);
+  }, [activeSpaceId, focused, spaceId, wrongAccount, currentOwner]);
 
   if (wrongAccount)
     return (
@@ -136,16 +138,12 @@ export default function ThreadRoute() {
         </Pressable>
       </View>
     );
+  if (!currentOwner) return <ActivityIndicator color={tokens.foreground} />;
   if (request.action === "show" && !focusSync.switchFailed)
     return (
-      <>
-        {owner?.generation !== generation ? <ActivityIndicator color={tokens.foreground} /> : null}
-        {owner?.generation === generation && generation === ready ? (
-          <View style={{ flex: 1 }}>
-            <Thread key={owner.key} sessionEpoch={ready} userId={owner.userId} />
-          </View>
-        ) : null}
-      </>
+      <View style={{ flex: 1 }}>
+        <Thread key={currentOwner.key} sessionEpoch={ready} userId={currentOwner.userId} />
+      </View>
     );
   return (
     <View

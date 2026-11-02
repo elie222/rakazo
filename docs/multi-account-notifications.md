@@ -1,7 +1,8 @@
 # Multi-account implementation handoff
 
 The implementation follows the approved behavior in the [plan](plans/2026-11-02-1929-feat-multi-account-notifications-plan.md).
-It was prepared on branch `feat/multi-account-notifications` and is submitted separately from the
+It was prepared on branch `feat/multi-account-notifications` and published as
+[the feature PR](https://github.com/elie222/rakazo/pull/3123), separately from the
 [review-only dogfooding evidence](https://github.com/christso/rakazo/pull/1). No merge or deployment
 was performed. No live accounts, production data or infrastructure configuration were used.
 
@@ -42,19 +43,23 @@ series. Commits use a generic fictional contributor identity because no Git auth
   Cleanup removes only the relevant login, including legacy registrations. Logout/deletion
   requests stay pinned to the original bearer even if another notification changes selection.
   Delayed summaries cannot restore removed credentials; an older tap cannot override a newer tap.
+  Failed remote sign-outs retain SecureStore records used only for revocation retries at startup
+  and push registration. These credentials cannot appear in saved-account lists or register push.
 
 ## Verification
 
 | Check | Actual result |
 | --- | --- |
-| Final focused Vitest run | 793 passed across 32 suites, covering auth, requests/caches/drafts, native saved sessions, routing, revocation, sign-out races and push delivery |
+| Implementation focused Vitest run | 793 passed across 32 suites, covering auth, requests/caches/drafts, native saved sessions, routing, revocation, sign-out races and push delivery |
 | Postgres push store suite | 12 passed, including concurrency, RLS, encryption, multi-device/account persistence, badge aggregation, legacy projection and late registration |
 | Postgres account-session suite | 5 passed, including real cookie/bearer ownership, preferences, revocation/expiry, stale requests and suppressed internal background failures |
-| Browser journey | Passed with real authentication and emulated API; adds/switches accounts, checks unread counts, opens a hidden account's notification, follows another tab, rejects stale requests, signs out one/all |
+| Browser journeys after PR review | 9 passed, including real authentication, hidden-account notifications, unread counts, tab refresh/stale rejection, independent/all sign-out, logout failure/recovery and existing shell flows |
+| Authorization journey after PR review | 33 passed, including bearer/cookie precedence, stale identity guard, multi-account device persistence and revocation |
+| Focused review regressions | 195 auth, 309 mobile account/API/push, 36 native route/notification, 45 Expo provider and 12 web account/draft tests passed |
 | `pnpm check` | All 22 package tasks passed |
 | `pnpm lint` | Passed with existing warnings/informational diagnostics |
 | Web production build | Passed; existing bundle-size warning remains |
-| Full unit run | 19,847 passed and 709 skipped; five failures initially, two feature assertions subsequently fixed and passing, three unchanged shell/backup failures remain |
+| Full unit run | 19,879 passed and 711 skipped after review; three unchanged shell/backup failures remain. The final startup-notification regression separately passed its 19-test suite |
 
 The three remaining full-suite failures also reproduce from pristine starting-revision source:
 the shell environment test's failed-reader fixture still runs its command, and the two backup
@@ -72,6 +77,11 @@ Two advisory coverage suggestions remain: exercise account-specific settings and
 module fallback through the Android mock, and add a feed test that removes Space membership after
 events already exist. Review found no remaining reproduced source defect.
 
+The initial upstream CI run found obsolete push-token/logout test assumptions and bearer sign-out
+revoking another account's multi-session cookie. These were reproduced, fixed and retested locally.
+The updated fork revision requires maintainer approval before upstream CI runs; no approval or
+deployment was attempted. The CI screenshot in the PR is labeled as the initial revision.
+
 ## Native and product limits
 
 No physical iOS/Android push delivery, permission flow, APNs/FCM receipt, native Kotlin build or
@@ -87,9 +97,15 @@ while Expo push continues. Native settings remain independent per account.
 Accounts are selected within the configured server. Notifications from another server or an
 unmatched canonical origin fail closed; select the intended server first. Legacy notifications
 without account identity fail closed when multiple accounts are saved. Browser delivery requires
-a running page and notification permission; browser suspension/closure is not Web Push delivery.
+a running page and notification permission; visible tabs poll every five seconds and hidden tabs
+every thirty seconds. Browser suspension/closure is not Web Push delivery.
 Offline sign-out cannot guarantee remote revocation; sign-out-all reports incomplete server
-revocation after removing local logins.
+revocation after removing local logins. Revocation-only records remain secure until the server
+acknowledges sign-out; an unreachable server can still deliver pushes until it receives the retry.
+
+Legacy browser drafts have no account ownership proof and are not automatically adopted. They
+remain inaccessible under scoped draft keys and are removed on explicit sign-out. Other accounts
+retain their scoped drafts.
 
 ## Deployment and rollback considerations
 

@@ -938,7 +938,12 @@ describeWithDatabase("API authorization and resource isolation", () => {
   it("uses the bearer session over another account's session cookie", async () => {
     const a = await phoneSession(app, `phone-cookie-a-${stamp}@rakazo.test`);
     const b = await phoneSession(app, `phone-cookie-b-${stamp}@rakazo.test`);
-    const both = { ...b.headers, cookie: a.cookie, "content-type": "application/json" };
+    const both = {
+      ...b.headers,
+      cookie: a.cookie,
+      "x-rakazo-user-id": b.userId,
+      "content-type": "application/json",
+    };
     const me = () =>
       app.request("/rpc/me", { method: "POST", headers: both, body: JSON.stringify({ json: {} }) });
 

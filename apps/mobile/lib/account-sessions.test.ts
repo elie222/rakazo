@@ -184,3 +184,45 @@ it("sign-out-all clears local logins even when remote revocation is offline", as
   expect(await loadSavedAccounts(apiBase)).toEqual([]);
   expect(state.signOut).toHaveBeenCalledOnce();
 });
+
+it("blocks saved-account selection during sign-out-all and clears an already selected revoked bearer", async () => {
+  let release!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  vi.mocked(fetch).mockImplementation(async () => {
+    await waiting;
+    return Response.json({ success: true });
+  });
+  const signingOut = signOutAllAccounts();
+  const duplicate = signOutAllAccounts();
+  await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+  await duplicate;
+  expect(await selectSavedAccount("work")).toBe(false);
+  // A selection already in progress can have installed a snapshotted token before the fence.
+  state.token = "work-token";
+  state.generation++;
+  release();
+  await signingOut;
+  expect(state.signOut).toHaveBeenCalledOnce();
+  expect(state.token).toBe("");
+});
+
+it("keeps an unrelated new login installed during remote sign-out-all", async () => {
+  let release!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  vi.mocked(fetch).mockImplementation(async () => {
+    await waiting;
+    return Response.json({ success: true });
+  });
+  const signingOut = signOutAllAccounts();
+  await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+  state.token = "new-login-token";
+  state.generation++;
+  release();
+  await signingOut;
+  expect(state.signOut).not.toHaveBeenCalled();
+  expect(state.token).toBe("new-login-token");
+});

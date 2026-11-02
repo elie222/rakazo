@@ -7,6 +7,12 @@ vi.mock("./saved-accounts", () => ({
   replaceSavedToken: vi.fn(async () => undefined),
   setSelectedSavedAccount: vi.fn(),
 }));
+vi.mock("./pending-session-revocations", () => ({
+  queueSessionRevocation: vi.fn(async () => undefined),
+  completeSessionRevocation: vi.fn(async () => undefined),
+  pendingSessionTokens: vi.fn(async () => new Set<string>()),
+  retryPendingSessionRevocations: vi.fn(async () => undefined),
+}));
 
 import type { RpcInput } from "@rakazo/contracts";
 import {
@@ -1015,6 +1021,22 @@ describe("mobile API authentication", () => {
 
     await expect(signOut()).resolves.toBeUndefined();
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.session_token");
+  });
+
+  it("does not sign out an unrelated replacement while clearing a revoked account set", async () => {
+    let stored = "unrelated-new-session";
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) =>
+      key === "rakazo.session_token" ? stored : null,
+    );
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.session_token") stored = value;
+    });
+    await saveSessionToken("unrelated-new-session");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await signOut(["family-session", "work-session"]);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await snapshotSessionToken()).toEqual({ ok: true, value: "unrelated-new-session" });
   });
 
   it("unregisters push delivery before invalidating the session", async () => {

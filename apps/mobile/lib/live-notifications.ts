@@ -79,7 +79,10 @@ export function notificationTargetsThread(
 ): boolean {
   if (!data || !target) return false;
   const userId = data.userId ?? data["rakazo.userId"];
-  const targetUserId = target.userId ?? selectedSavedAccount()?.userId;
+  const selected = selectedSavedAccount();
+  if (typeof userId !== "string" && selected && cachedSavedAccounts(selected.apiBase).length > 1)
+    return false;
+  const targetUserId = target.userId ?? selected?.userId;
   if (typeof userId === "string" && userId !== targetUserId) return false;
   const apiBase = data.apiBase ?? data["rakazo.apiBase"];
   if (
@@ -108,10 +111,25 @@ export function configureForegroundNotifications(): void {
       const data = request.content.data;
       const userId = data?.userId ?? data?.["rakazo.userId"];
       const apiBase = data?.apiBase ?? data?.["rakazo.apiBase"];
+      const servers = await savedAccountServers().catch(() => ["unavailable", "unavailable"]);
+      const startupAccountCount =
+        !selectedSavedAccount() && servers.length === 1
+          ? await loadSavedAccounts(servers[0]!)
+              .then((accounts) => accounts.length)
+              .catch(() => 2)
+          : 0;
+      const selected = selectedSavedAccount();
+      const accountCount = selected
+        ? cachedSavedAccounts(selected.apiBase).length
+        : startupAccountCount;
+      const ambiguousOwner =
+        (typeof userId !== "string" && (accountCount > 1 || servers.length > 1)) ||
+        (typeof apiBase !== "string" && servers.length > 1);
       const anotherAccount =
-        (typeof userId === "string" && userId !== selectedSavedAccount()?.userId) ||
-        (typeof apiBase === "string" && apiBase !== selectedSavedAccount()?.apiBase);
+        (typeof userId === "string" && userId !== selected?.userId) ||
+        (typeof apiBase === "string" && apiBase !== selected?.apiBase);
       const show =
+        ambiguousOwner ||
         anotherAccount ||
         (data?.kind !== "completion" && !notificationTargetsThread(data, openThread));
       return {
