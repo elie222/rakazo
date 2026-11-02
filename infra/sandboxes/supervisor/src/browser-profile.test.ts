@@ -27,9 +27,18 @@ function fixture() {
     // GNU cp's reflink optimization has no macOS equivalent; all copy semantics remain intact.
     const portable =
       process.platform === "darwin" ? script.replaceAll(" --reflink=auto", "") : script;
+    // No browser runs here. Stopping one scans every process the host user owns, which
+    // outlasts the timeout on a busy host; desktop-runtime tests cover that discovery.
     return spawnSync(
       "bash",
-      ["-eu", "-c", portable.replaceAll("/tmp/rakazo", runtime).replaceAll("/home/rakazo", home)],
+      [
+        "-eu",
+        "-c",
+        portable
+          .replaceAll("/tmp/rakazo", runtime)
+          .replaceAll("/home/rakazo", home)
+          .replaceAll("/proc", path.join(root, "no-proc")),
+      ],
       {
         encoding: "utf8",
         timeout: 10_000,

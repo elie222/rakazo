@@ -1,5 +1,5 @@
 import type { AddressInfo } from "node:net";
-import { createServer } from "node:net";
+import { createServer, Socket } from "node:net";
 import {
   SCREEN_UNCONFIRMED_MAX_MS,
   sealScreenCapability,
@@ -519,17 +519,66 @@ describe("the status-only probe", () => {
 
   it("tells whether the computer's screen takes connections, without sending it anything", async () => {
     let received = 0;
+    let ownData: ReturnType<typeof trackDataTo> | undefined;
+    const sockets = new Set<Socket>();
     const server = createServer((socket) => {
+      sockets.add(socket);
+      socket.on("close", () => sockets.delete(socket));
       socket.on("data", () => {
-        received += 1;
+        // A local tool can probe any listening loopback port; only data this process sends counts.
+        if (ownData?.fromOwnClient(socket)) received += 1;
+        else socket.destroy();
       });
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const port = (server.address() as AddressInfo).port;
     const at = (screenPort: number) => ({ ...opened, hostname: "127.0.0.1", port: screenPort });
-    expect(await screenUpstreamReachable(at(port))).toBe(true);
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-    expect(await screenUpstreamReachable(at(port))).toBe(false);
-    expect(received).toBe(0);
+    ownData = trackDataTo(port);
+    try {
+      expect(await screenUpstreamReachable(at(port))).toBe(true);
+      // A probe that connects and stays silent would otherwise hold the close open.
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      expect(await screenUpstreamReachable(at(port))).toBe(false);
+      expect(received).toBe(0);
+    } finally {
+      ownData.restore();
+    }
   });
 });
+
+/**
+ * Tells data this process sends to `port` from anything else, by watching every socket the
+ * process itself connects: a local tool probing the port runs in another process, so its
+ * bytes never count, while anything the reachability probe itself sends still does.
+ */
+function trackDataTo(port: number) {
+  const clientPorts = new Set<number>();
+  const realConnect = Socket.prototype.connect as (...args: unknown[]) => unknown;
+  const watchSocket = function (this: Socket, ...args: unknown[]) {
+    if (connectTargetPort(args) === port) {
+      this.on("connect", () => {
+        clientPorts.add(this.localPort ?? 0);
+      });
+    }
+    return realConnect.apply(this, args);
+  };
+  const spy = vi.spyOn(Socket.prototype, "connect").mockImplementation(watchSocket as never);
+  return {
+    fromOwnClient: (socket: Socket) => clientPorts.has(socket.remotePort ?? 0),
+    restore: () => spy.mockRestore(),
+  };
+}
+
+/** The destination port of a `Socket.prototype.connect` call, in either argument shape. */
+function connectTargetPort(args: unknown[]): number | undefined {
+  let [first] = args;
+  if (Array.isArray(first)) [first] = first; // node's normalized [options, listener] pair
+  if (typeof first === "number") return first;
+  if (first && typeof first === "object" && "port" in first) {
+    const { port } = first as { port?: number | string };
+    if (typeof port === "number") return port;
+    if (typeof port === "string") return Number.parseInt(port, 10);
+  }
+  return undefined;
+}

@@ -6,13 +6,14 @@ import { describe, expect, it, vi } from "vitest";
 
 function runPreload(
   file: string,
-  ipc: { invoke?: unknown; on?: unknown; off?: unknown } = {},
+  ipc: { invoke?: unknown; on?: unknown; off?: unknown; sendSync?: unknown } = {},
   platform = "linux",
 ) {
   const invoke =
     (ipc.invoke as ReturnType<typeof vi.fn>) ?? vi.fn(async (channel: string) => ({ channel }));
   const on = (ipc.on as ReturnType<typeof vi.fn>) ?? vi.fn();
   const off = (ipc.off as ReturnType<typeof vi.fn>) ?? vi.fn();
+  const sendSync = (ipc.sendSync as ReturnType<typeof vi.fn>) ?? vi.fn(() => null);
   const exposeInMainWorld = vi.fn();
   const source = readFileSync(path.join(import.meta.dirname, file), "utf8");
 
@@ -20,11 +21,11 @@ function runPreload(
     process: { platform },
     require(moduleName: string) {
       if (moduleName !== "electron") throw new Error(`Unexpected preload import: ${moduleName}`);
-      return { contextBridge: { exposeInMainWorld }, ipcRenderer: { invoke, on, off } };
+      return { contextBridge: { exposeInMainWorld }, ipcRenderer: { invoke, on, off, sendSync } };
     },
   });
 
-  return { invoke, on, off, exposeInMainWorld };
+  return { invoke, on, off, sendSync, exposeInMainWorld };
 }
 
 describe("desktop preload bridge", () => {
@@ -48,10 +49,14 @@ describe("desktop preload bridge", () => {
       "badge",
       "computer",
       "device",
+      "locale",
+      "menu",
+      "monitoring",
       "nativeWindowFrame",
       "oauth",
       "passkeys",
       "platform",
+      "settings",
       "update",
       "window",
     ]);
@@ -70,8 +75,11 @@ describe("desktop preload bridge", () => {
     await bridge.device?.state();
     await bridge.device?.setAllowed(true);
     expect(invoke).toHaveBeenCalledWith("desktop.device.setAllowed", true);
+    await bridge.locale?.set("es-CL");
+    expect(invoke).toHaveBeenCalledWith("desktop.locale.set", "es-CL");
     await bridge.oauth.open?.("https://provider.example.com/authorize");
     await bridge.oauth.cancel?.("https://provider.example.com/authorize");
+    await bridge.monitoring?.enabled();
     await bridge.passkeys?.rpIds();
     await bridge.window.close();
     await bridge.window.minimize();
@@ -85,8 +93,10 @@ describe("desktop preload bridge", () => {
       "desktop.badge.set",
       "desktop.device.state",
       "desktop.device.setAllowed",
+      "desktop.locale.set",
       "desktop.oauth.open",
       "desktop.oauth.cancel",
+      "desktop.monitoring.enabled",
       "desktop.passkeys.rpIds",
       "desktop.window.close",
       "desktop.window.minimize",
@@ -117,6 +127,46 @@ describe("desktop preload bridge", () => {
 
     unsubscribe();
     expect(off).toHaveBeenCalledWith("desktop.oauth.callback", expect.any(Function));
+  });
+
+  it("opens settings from the menu signal without leaking the IPC event", () => {
+    const listeners: Array<() => void> = [];
+    const on = vi.fn((_channel: string, handler: () => void) => {
+      listeners.push(handler);
+    });
+    const off = vi.fn();
+    const { exposeInMainWorld } = runPreload("preload.cjs", { on, off });
+    const [, bridge] = exposeInMainWorld.mock.calls[0] as [string, RakazoDesktop];
+
+    const opened: string[] = [];
+    const unsubscribe = bridge.settings!.onOpen(() => opened.push("settings"));
+
+    expect(on).toHaveBeenCalledWith("desktop.settings.open", expect.any(Function));
+    listeners[0]?.();
+    expect(opened).toEqual(["settings"]);
+
+    unsubscribe();
+    expect(off).toHaveBeenCalledWith("desktop.settings.open", expect.any(Function));
+  });
+
+  it("forwards menu commands without leaking the IPC event", () => {
+    const listeners: Array<(event: unknown, command: unknown) => void> = [];
+    const on = vi.fn((_channel: string, handler: (event: unknown, command: unknown) => void) => {
+      listeners.push(handler);
+    });
+    const off = vi.fn();
+    const { exposeInMainWorld } = runPreload("preload.cjs", { on, off });
+    const [, bridge] = exposeInMainWorld.mock.calls[0] as [string, RakazoDesktop];
+
+    const received: unknown[] = [];
+    const unsubscribe = bridge.menu!.onCommand((command) => received.push(command));
+
+    expect(on).toHaveBeenCalledWith("desktop.menu.command", expect.any(Function));
+    listeners[0]?.({ sender: "ipc" }, "search");
+    expect(received).toEqual(["search"]);
+
+    unsubscribe();
+    expect(off).toHaveBeenCalledWith("desktop.menu.command", expect.any(Function));
   });
 
   it.each(["win32", "linux"])("offers system speech only on macOS (%s)", (platform) => {
@@ -163,6 +213,7 @@ describe("setup preload bridge", () => {
     expect(globalName).toBe("rakazoSetup");
     expect(bridge.platform).toBe("linux");
     expect(Object.keys(bridge).sort()).toEqual([
+      "locale",
       "openLink",
       "platform",
       "quit",
@@ -197,5 +248,20 @@ describe("setup preload bridge", () => {
     expect(channel).toBe("desktop.setup.stack.changed");
     handler({}, { phase: "pulling" });
     expect(listener).toHaveBeenCalledWith({ phase: "pulling" });
+  });
+
+  it("hands the page its language before the page runs, English when main refuses", () => {
+    const locale = { lang: "es", dir: "ltr", messages: { Continue: "Continuar" } };
+    const sendSync = vi.fn(() => locale);
+    const [, bridge] = runPreload("setup-preload.cjs", { sendSync }).exposeInMainWorld.mock
+      .calls[0] as [string, RakazoSetup];
+    expect(sendSync).toHaveBeenCalledWith("desktop.setup.locale");
+    expect(bridge.locale).toEqual(locale);
+
+    const [, refused] = runPreload("setup-preload.cjs").exposeInMainWorld.mock.calls[0] as [
+      string,
+      RakazoSetup,
+    ];
+    expect(refused.locale).toEqual({ lang: "en", dir: "ltr", messages: {} });
   });
 });

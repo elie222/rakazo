@@ -128,6 +128,26 @@ describe("serenity SSRF fetch path", () => {
     if (!result.ok) expect(result.error).toMatch(/plain-fetch-reached/);
   });
 
+  it("releases the body of a refused loopback redirect", async () => {
+    let cancels = 0;
+    const body = new ReadableStream({
+      cancel() {
+        cancels += 1;
+      },
+    });
+    const fetchMock = vi.fn(
+      async () => new Response(body, { status: 302, headers: { location: "http://10.9.9.9/" } }),
+    );
+    const result = await probeSerenity(
+      { endpoint: "http://127.0.0.1:8787/mcp", token: TOKEN },
+      undefined,
+      { fetch: fetchMock },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/redirects are not permitted/);
+    expect(cancels).toBe(1);
+  });
+
   it("rejects public-looking HTTPS when DNS is private unless prepare marked trust", async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
     const result = await probeSerenity(
@@ -299,7 +319,13 @@ describe("serenity SSRF fetch path", () => {
     // response proves the package fetch accepted the Agent.
     expect(undiciFetch).not.toBe(globalThis.fetch);
     let hits = 0;
-    const server = createServer((_request, response) => {
+    const server = createServer((request, response) => {
+      // A local tool can probe any listening loopback port; only Serenity calls are counted.
+      if (request.method !== "GET" || request.url !== "/mcp") {
+        request.resume();
+        response.writeHead(404).end();
+        return;
+      }
       hits += 1;
       response.writeHead(204);
       response.end();
@@ -328,6 +354,43 @@ describe("serenity SSRF fetch path", () => {
       }
       expect(hits).toBe(3);
     } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
+
+  it("refuses a private-hostname redirect without waiting on its body", async () => {
+    // Larger than undici buffers, so an unread body holds the per-request Agent open.
+    const server = createServer((_request, response) => {
+      response.writeHead(302, { location: "http://serenity.example.test/elsewhere" });
+      response.end("x".repeat(1_000_000));
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+    const address = server.address();
+    if (address == null || typeof address === "string") {
+      throw new Error("Missing test server address");
+    }
+    const safeFetch = createSerenityPrivateLanFetch(undefined, async () => [
+      { address: "127.0.0.1", family: 4 as const },
+    ]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const outcome = await Promise.race([
+        safeFetch(`http://serenity.example.test:${address.port}/mcp`).then(
+          () => "returned",
+          (error: unknown) => String(error),
+        ),
+        new Promise<string>((resolve) => {
+          timer = setTimeout(() => resolve("still waiting"), 2_000);
+        }),
+      ]);
+      expect(outcome).toMatch(/redirects are not permitted/);
+    } finally {
+      clearTimeout(timer);
       server.closeAllConnections();
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));

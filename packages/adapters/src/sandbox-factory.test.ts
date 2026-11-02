@@ -1,3 +1,4 @@
+import { SandboxKind } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { NO_SANDBOX_MESSAGE } from "./none-sandbox.js";
 import { createSandboxProvider } from "./sandbox-factory.js";
@@ -111,6 +112,16 @@ describe("createSandboxProvider", () => {
   it("throws on unknown provider", async () => {
     await expect(createSandboxProvider("bogus", {})).rejects.toThrow(
       'Unknown SANDBOX_PROVIDER "bogus". Use none | docker | e2b | novita | daytona | createos | boat | boxd | railway | kubernetes | wuying | desktop | fake.',
+    );
+  });
+
+  it("accepts only sandbox kinds, including none", async () => {
+    expect(SandboxKind.options).toContain("none");
+    for (const kind of SandboxKind.options) {
+      await expect(createSandboxProvider(kind, {})).resolves.toBeDefined();
+    }
+    await expect(createSandboxProvider("not-a-provider", {})).rejects.toThrow(
+      /Unknown SANDBOX_PROVIDER/,
     );
   });
 });

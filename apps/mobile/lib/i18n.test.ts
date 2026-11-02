@@ -180,6 +180,7 @@ describe("mobile i18n", () => {
       "The model returned an unusable response. Try again.",
       "The model hit its output limit before finishing its reply.",
       "This model's context window is too small. Choose another model.",
+      "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.",
       "This connection's request limit is too small. Choose another model.",
       "{provider} took too long to respond. Try again.",
       "{provider} is overloaded right now. Try again in a moment.",

@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BotAvatar } from "../components/bot-avatar";
 import { GlassIconButton } from "../components/glass-icon-button";
 import { GroupAvatar } from "../components/group-avatar";
+import { NativeActionButton } from "../components/native-action-button";
 import { NativeSymbol } from "../components/native-symbol";
 import { readableGutters } from "../lib/adaptive-layout";
 import { currentApiBase, selectedSpaceId, selectSpace, spaceSelectionSeq } from "../lib/api";
@@ -52,7 +53,7 @@ export default function SearchSheet() {
   const focused = useRef(false);
   const [query, setQuery] = useState("");
   const spaces = useSyncExternalStore(subscribeSearchInbox, getSearchInbox);
-  const { hits, loading } = useSearch(query);
+  const { hits, loading, error, retry } = useSearch(query);
   const rows = useMemo(() => searchSheetRows(spaces, query, hits), [spaces, query, hits, locale]);
 
   const cancelOpen = useCallback(() => {
@@ -216,7 +217,24 @@ export default function SearchSheet() {
           paddingBottom: insets.bottom + 16,
         }}
         ListEmptyComponent={
-          <Text style={styles.empty}>{loading ? t("Searching…") : t("No results")}</Text>
+          error ? null : (
+            <Text style={styles.empty}>{loading ? t("Searching…") : t("No results")}</Text>
+          )
+        }
+        ListFooterComponent={
+          error ? (
+            <View style={styles.failure}>
+              <Text accessibilityRole="alert" style={styles.error}>
+                {error}
+              </Text>
+              <NativeActionButton
+                label={t("Try again")}
+                prominence="secondary"
+                size="compact"
+                onPress={retry}
+              />
+            </View>
+          ) : null
         }
         renderItem={({ item }) => (
           <Pressable
@@ -312,5 +330,7 @@ function createStyles() {
       writingDirection: "auto",
     },
     empty: { color: native.secondaryLabel, fontSize: 16, paddingHorizontal: 20, paddingTop: 28 },
+    failure: { alignItems: "flex-start", gap: 12, paddingHorizontal: 20, paddingTop: 28 },
+    error: { color: tokens.destructive, fontSize: 14 },
   });
 }

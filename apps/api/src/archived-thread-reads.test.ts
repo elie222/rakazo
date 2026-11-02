@@ -72,6 +72,7 @@ function fixture() {
       }),
       { prefix: "/rpc", context: { actor: requestActor } },
     );
+    if (!response) throw new Error("no response");
     return { status: response.status, body: await response.json() };
   }
   return { actor, call, findBot, findMessages };

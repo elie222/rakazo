@@ -2,11 +2,8 @@ import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import { expect, it } from "vitest";
 import { namedAgentTools } from "./pi-runtime-tools.js";
-import {
-  nextMutatingEffectOccurrence,
-  type RunContext,
-  restoreTurnCheckpointEffects,
-} from "./run-context.js";
+import type { RunContext } from "./run-context.js";
+import { nextMutatingEffectOccurrence, restoreTurnCheckpointEffects } from "./run-context.js";
 
 function fixture(tools: ConnectorTool[] = []) {
   return {

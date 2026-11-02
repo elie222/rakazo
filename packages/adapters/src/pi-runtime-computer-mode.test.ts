@@ -3,6 +3,7 @@ import { getCurrentTools } from "@earendil-works/pi-ai";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { beforeEach, expect, it, vi } from "vitest";
+import { approvalPausedToolResult } from "./approval-effect.js";
 import { builtinAgentTools } from "./builtin-tools.js";
 
 const fake = vi.hoisted(() => ({ models: new Map<string, unknown>(), stream: vi.fn() }));
@@ -430,12 +431,7 @@ it.each([false, true])(
     };
     input.executeTool = vi.fn(async () => {
       checkpoint = capture!();
-      return {
-        kind: "agent_tool_result",
-        content: [{ type: "text", text: "Approval" }],
-        details: { approval: "paused" },
-        terminate: true,
-      };
+      return approvalPausedToolResult();
     });
     script([
       ["enter_computer_mode", { goal: "Click" }],
@@ -485,12 +481,7 @@ it("keeps the computer model's thinking when resuming an approval in computer mo
   };
   input.executeTool = vi.fn(async () => {
     checkpoint = capture!();
-    return {
-      kind: "agent_tool_result",
-      content: [{ type: "text", text: "Approval" }],
-      details: { approval: "paused" },
-      terminate: true,
-    };
+    return approvalPausedToolResult();
   });
   const steps: Array<[string, Record<string, unknown>]> = [
     ["enter_computer_mode", { goal: "Click" }],

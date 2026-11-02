@@ -71,6 +71,20 @@ export async function writePrivateFile(destination: string, contents: string): P
   }
 }
 
+/** The language the app window last reported, so the next launch starts in it before any page loads. */
+const UI_LOCALE_FILE_NAME = "ui-locale.txt";
+
+/** Null before the app window ever reported one; callers validate the tag. */
+export async function readUiLocale(userDataDir: string): Promise<string | null> {
+  const raw = await readPrivateFile(path.join(userDataDir, UI_LOCALE_FILE_NAME), 64);
+  return raw?.trim() || null;
+}
+
+export async function writeUiLocale(userDataDir: string, locale: string): Promise<void> {
+  await mkdir(userDataDir, { recursive: true });
+  await writePrivateFile(path.join(userDataDir, UI_LOCALE_FILE_NAME), `${locale}\n`);
+}
+
 /** Removes saved setup so the next launch runs first-run again. */
 export async function clearSetup(userDataDir: string): Promise<void> {
   await rm(setupFilePath(userDataDir), { force: true });

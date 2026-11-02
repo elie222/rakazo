@@ -459,6 +459,33 @@ it.each(["button", "Escape"])("cancels a name edit with %s without saving", asyn
   }
 });
 
+it.each([{ isComposing: true }, { keyCode: 229 }])(
+  "keeps a name edit open on the Escape that ends an IME composition (%o)",
+  async (composition) => {
+    const editor = await renderNameEditor();
+    try {
+      await editor.change("Sam Rivera");
+      const pressEscape = (init: KeyboardEventInit) =>
+        act(async () => {
+          editor.input.dispatchEvent(
+            new KeyboardEvent("keydown", { key: "Escape", bubbles: true, ...init }),
+          );
+        });
+      const onWindowKey = vi.fn();
+      window.addEventListener("keydown", onWindowKey);
+      await pressEscape(composition);
+      window.removeEventListener("keydown", onWindowKey);
+      expect(editor.card.querySelector("input")?.value).toBe("Sam Rivera");
+      // The form keeps Escape from chat listeners behind Settings, as a plain Escape does.
+      expect(onWindowKey).not.toHaveBeenCalled();
+      await pressEscape({});
+      expect(editor.card.querySelector("input")).toBeNull();
+    } finally {
+      await editor.cleanup();
+    }
+  },
+);
+
 it.each(["__AbCdEfGh__", "demo", "demo@example.com"])(
   "starts hidden name %s empty and rejects invalid submissions",
   async (name) => {

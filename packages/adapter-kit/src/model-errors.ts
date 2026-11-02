@@ -1,3 +1,5 @@
+import { providerQuotaResetAt } from "@rakazo/contracts";
+
 /** A model call failed for a reason that should clear on its own, such as an overloaded provider. */
 export class TransientModelError extends Error {
   constructor(message: string) {
@@ -97,7 +99,7 @@ function isAccountExhaustion(text: string, statuses: ReadonlySet<number>): boole
 export function isModelCredentialRejected(error: unknown): boolean {
   const { text, statuses } = errorFacts(error);
   if (statuses.has(401)) return true;
-  return /authentication_error|invalid_api_key|invalid_grant|invalid (?:api[ -]key|credential|x-api-key)|incorrect api key|(?:expired|revoked) (?:api )?(?:key|credential|token)|(?:api )?(?:key|credential|token) (?:expired|revoked)|token (?:has been |was |is )?(?:revoked|expired|invalidated)|authentication (?:failed|failure|expired|invalid)/.test(
+  return /authentication_error|invalid_api_key|invalid_grant|invalid (?:api[ -]key|credential|x-api-key)|incorrect api key|(?:expired|revoked) (?:api )?(?:key|credential|token)|(?:api )?(?:key|credential|token) (?:expired|revoked)|token (?:has been |was |is )?(?:revoked|expired|invalidated)|authentication (?:failed|failure|expired|invalid)|api key is not scoped to a workspace/.test(
     text,
   );
 }
@@ -107,6 +109,13 @@ export function isRetryableProviderUnavailable(error: unknown): boolean {
   const { text, statuses } = errorFacts(error);
   if (statuses.has(401)) return false;
   if (isAccountExhaustion(text, statuses)) return true;
+  // The provider timed out fetching a file the request links to; another attempt fetches it again.
+  if (
+    /\b(?:download\w*\b[^.]{0,40}\b(?:file|image|media|url)|(?:file|image|media|url)\w*\s+download\w*)\b[^.]{0,20}\btimed? ?out\b/.test(
+      text,
+    )
+  )
+    return true;
   if (statuses.has(400)) return false;
   // The ChatGPT subscription (Codex) runtime reports an exhausted usage window without a status.
   if (/you have hit your chatgpt usage limit/.test(text)) return true;
@@ -153,7 +162,7 @@ export function isRetryableProviderUnavailable(error: unknown): boolean {
   )
     return true;
   if ([...statuses].some((status) => status >= 400 && status < 600)) return false;
-  return /rate.?limit|too many requests|resource.?exhausted|request limit reached|quota|overload|capacity|temporarily unavailable|service unavailable|retry[- ](?:after|delay)|server error|upstream error|an error occurred while processing your request|gateway timeout|timed? out|timeout|connection (?:error|reset|refused)|network[ _]error|max retries exceeded|stream ended without finish_reason|incomplete json segment at the end|\bterminated\b|fetch failed|socket hang up|econnreset|econnrefused|etimedout|websocket closed/.test(
+  return /rate.?limit|too many requests|resource.?exhausted|request limit reached|quota|overload|capacity|temporarily unavailable|service unavailable|retry[- ](?:after|delay)|server[ _]error|upstream error|an error occurred while processing your request|could not complete this request\. please retry|gateway timeout|timed? out|timeout|connection (?:error|reset|refused)|network[ _]error|max retries exceeded|stream ended without finish_reason|incomplete json segment at the end|\bterminated\b|fetch failed|socket hang up|econnreset|econnrefused|etimedout|websocket closed/.test(
     text,
   );
 }
@@ -169,6 +178,8 @@ export function isTransientModelError(error: unknown): boolean {
   if (statuses.has(402)) return false;
   // An exhausted account stays exhausted; retrying the same model cannot help.
   if (isAccountExhaustion(text, statuses)) return false;
+  // A limit the provider says resets hours from now will not clear during a retry.
+  if (providerQuotaResetAt(text) !== undefined) return false;
   // Short rate windows can reset during a retry; subscription and billing limits cannot.
   const shortWindow =
     /\bper[- ](?:second|minute)\b|\b(?:rpm|tpm)\b|retry[- ]after[: ]+\d+(?:\.\d+)?\s*(?:seconds?|secs?|s)\b/.test(

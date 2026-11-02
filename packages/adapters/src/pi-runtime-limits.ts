@@ -1,4 +1,6 @@
+import type { Api, Model } from "@earendil-works/pi-ai";
 import { DEFAULT_MODEL_MAX_TOKENS } from "@rakazo/contracts";
+import { LOCAL_PROVIDER_ID } from "./pi-local-provider-id.js";
 
 /** Per-attempt wait for response headers; this does not cap active streaming duration. */
 export const MODEL_STREAM_TIMEOUT_MS = 120_000;
@@ -97,11 +99,25 @@ export function effectiveOutputReserve(contextWindow: number, maxTokens: number)
 }
 
 /**
+ * The output cap the operator chose for a model that has no per-connection field: the local
+ * model server's own limit, when RAKAZO_LOCAL_MAX_TOKENS is set. Unset, and for other providers,
+ * the defaults apply.
+ */
+export function operatorMaxTokens(
+  model: Pick<Model<Api>, "provider" | "maxTokens">,
+): number | undefined {
+  return model.provider === LOCAL_PROVIDER_ID && process.env.RAKAZO_LOCAL_MAX_TOKENS?.trim()
+    ? model.maxTokens
+    : undefined;
+}
+
+/**
  * Completions default to a modest output cap so OpenRouter-style providers do not
  * hold credit for a model card's 128k ceiling. A configured maxTokens overrides this
  * default, still bounded to a quarter of the context window when it is supplied.
  * Reasoning models get the wider default because their thinking is billed against
  * the same ceiling: at 4k a hard question can leave no room for the reply at all.
+ * An operator-set limit (operatorMaxTokens) replaces both defaults.
  */
 export function resolveCompletionMaxTokens(
   modelMaxTokens?: number,
@@ -109,13 +125,16 @@ export function resolveCompletionMaxTokens(
   optionsMaxTokens?: number,
   reasoning?: boolean,
   contextWindow?: number,
+  operatorDefault?: number,
 ): number {
   const userCap =
     typeof configuredMaxTokens === "number" && configuredMaxTokens >= 1
       ? configuredMaxTokens
-      : reasoning
-        ? REASONING_MODEL_MAX_TOKENS
-        : DEFAULT_MODEL_MAX_TOKENS;
+      : operatorDefault !== undefined && operatorDefault >= 1
+        ? operatorDefault
+        : reasoning
+          ? REASONING_MODEL_MAX_TOKENS
+          : DEFAULT_MODEL_MAX_TOKENS;
   const optionCap =
     typeof optionsMaxTokens === "number" && optionsMaxTokens >= 1
       ? Math.min(optionsMaxTokens, userCap)

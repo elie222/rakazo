@@ -26,6 +26,7 @@ import {
 } from "../../lib/roster-status";
 import type { RosterDropAction, RosterDropTarget } from "./roster-drop";
 import type { sidebarGroupsForSpaces } from "./space-sidebar";
+import { useRedrawAtMidnight } from "./use-redraw-at-midnight";
 
 export function SidebarRoster({
   sidebarGroups,
@@ -90,6 +91,7 @@ export function SidebarRoster({
   botMenuContent: ReactNode;
   mini?: boolean;
 }) {
+  useRedrawAtMidnight();
   const { t } = useLingui();
   return (
     <>

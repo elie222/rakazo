@@ -7,6 +7,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, ListToolsResult } from "@modelcontextprotocol/sdk/types.js";
 import { isLocalhostOrLoopbackIp } from "@rakazo/contracts";
+import { cancelResponseBody } from "@rakazo/core";
 import { combineSignals } from "./connector-safety.js";
 
 import type { InstalledMcpBin } from "./mcp-package-installer.js";
@@ -219,6 +220,7 @@ export function secureFetch(
       ? await (network.fetch ?? globalThis.fetch)(url, requestInit)
       : await safeRemoteFetch(url, requestInit);
     if (response.status >= 300 && response.status < 400) {
+      cancelResponseBody(response);
       throw new Error("MCP redirects are not permitted; configure the final HTTPS URL explicitly");
     }
     return response;

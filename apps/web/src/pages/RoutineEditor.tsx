@@ -239,28 +239,48 @@ export function routineTriggerSummary(
   return parts.length > 0 ? parts.join(", ") : t`No trigger`;
 }
 
-export function RoutineListHeader({ onCreate }: { onCreate: () => void }) {
+export function RoutineList({
+  routines,
+  runningRoutineId,
+  onCreate,
+  onEdit,
+  onStop,
+}: {
+  routines: Routine[];
+  runningRoutineId?: string;
+  onCreate: () => void;
+  onEdit: (routine: Routine) => void;
+  onStop: () => void;
+}) {
   const { t } = useLingui();
   return (
-    <div className="mt-[30px] mb-3 flex items-center justify-between gap-3">
-      <div className="text-sm text-muted-foreground">
-        <Trans>Routines</Trans>
+    <div>
+      <div className="mb-2 flex justify-end">
+        <Button
+          variant="secondary"
+          size="icon-sm"
+          data-testid="routine-create-button"
+          aria-label={t`Create Routine`}
+          title={t`Create Routine`}
+          onClick={onCreate}
+        >
+          <Plus strokeWidth={1.9} />
+        </Button>
       </div>
-      <Button
-        variant="secondary"
-        size="icon-sm"
-        data-testid="routine-create-button"
-        aria-label={t`Create Routine`}
-        title={t`Create Routine`}
-        onClick={onCreate}
-      >
-        <Plus strokeWidth={1.9} />
-      </Button>
+      {routines.map((routine) => (
+        <RoutineListRow
+          key={routine.id}
+          routine={routine}
+          running={runningRoutineId === routine.id}
+          onOpen={() => onEdit(routine)}
+          onStop={onStop}
+        />
+      ))}
     </div>
   );
 }
 
-export function RoutineListRow({
+function RoutineListRow({
   routine,
   running,
   onOpen,
@@ -698,8 +718,7 @@ export function RoutineEditor({
                 <DropdownMenuItem disabled>
                   <span
                     aria-hidden
-                    className="inline-block size-3.5 rounded-[4px]"
-                    style={{ background: comingSoonColor(item.id), opacity: 0.55 }}
+                    className="inline-block size-3.5 rounded-[4px] bg-muted-foreground/50"
                   />
                   {item.label()}
                 </DropdownMenuItem>
@@ -1036,18 +1055,5 @@ function schedulePresetLabel(freq: CronFreq): string {
       return t`Advanced...`;
     default:
       return freq;
-  }
-}
-
-function comingSoonColor(id: string): string {
-  switch (id) {
-    case "teams":
-      return "#6264A7";
-    case "linear":
-      return "#5E6AD2";
-    case "sentry":
-      return "#A467FD";
-    default:
-      return "#06AC38";
   }
 }

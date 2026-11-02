@@ -43,6 +43,12 @@ describe("computer control HTTP boundary", () => {
       [];
     const result = { completed: 1, ...(observe ? { observation } : {}) };
     const origin = await listen(async (req, res) => {
+      // Local tools probe new loopback ports with `GET /`, which no control call sends.
+      if (req.method === "GET" && req.url === "/") {
+        req.resume();
+        res.writeHead(404).end();
+        return;
+      }
       const chunks: Buffer[] = [];
       for await (const chunk of req) chunks.push(Buffer.from(chunk));
       requests.push({
@@ -83,6 +89,12 @@ describe("computer control HTTP boundary", () => {
   it("sends token-authenticated actions to the inspected host mapping without a container IP", async () => {
     const authorizations: Array<string | undefined> = [];
     const origin = await listen((req, res) => {
+      // Local tools probe new loopback ports with `GET /`, which no control call sends.
+      if (req.method === "GET" && req.url === "/") {
+        req.resume();
+        res.writeHead(404).end();
+        return;
+      }
       req.resume();
       authorizations.push(req.headers.authorization);
       if (req.headers.authorization !== `Bearer ${token}`) {
@@ -150,6 +162,13 @@ describe("computer control HTTP boundary", () => {
       async (destination) => {
         const targetRequests: Array<{ method?: string; authorization?: string }> = [];
         const target: http.RequestListener = (req, res) => {
+          // Local tools probe new loopback ports with `GET /`, which no control call or
+          // redirect sends, so it is not recorded.
+          if (req.method === "GET" && req.url === "/") {
+            req.resume();
+            res.writeHead(404).end();
+            return;
+          }
           targetRequests.push({ method: req.method, authorization: req.headers.authorization });
           // Even a response matching the control contract must never be accepted
           // from another endpoint. These servers are loopback-only fake services.

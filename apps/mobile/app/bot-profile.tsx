@@ -1,9 +1,12 @@
+import type { ComputerStatus } from "@rakazo/contracts";
 import { displayName } from "@rakazo/core";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { Alert, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { glassHeaderOptions } from "../components/glass-title";
+import { NativeActionButton } from "../components/native-action-button";
+import { NativeSymbol } from "../components/native-symbol";
 import {
   SettingsGroup,
   SettingsRow,
@@ -14,7 +17,7 @@ import type { MobileBot } from "../lib/api";
 import { currentApiBase, loadSessionToken, rpc, selectedSpaceId } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { afterChatNotifyChange } from "../lib/live-notifications";
-import { native, useThemedStyles } from "../lib/native";
+import { native, useMobileTokens, useThemedStyles } from "../lib/native";
 import { createQueuedSave } from "../lib/queued-save";
 import { useBotRoutines } from "../lib/routine-store";
 import { useSideInsets } from "../lib/side-insets";
@@ -25,9 +28,11 @@ export default function BotProfile() {
   const { t } = useI18n();
   const router = useRouter();
   const styles = useThemedStyles(createStyles);
+  const tokens = useMobileTokens();
   const stacked = useStackedSettings();
   const { botId = "", name: nameParam } = useLocalSearchParams<{ botId?: string; name?: string }>();
   const [bot, setBot] = useState<MobileBot | null>(null);
+  const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const name = displayName(bot?.name ?? nameParam, t("Bot"));
   const { routines } = useBotRoutines(botId);
   // Counts switch saves as they start and end, so a reload can tell it overlapped one.
@@ -51,6 +56,14 @@ export default function BotProfile() {
           );
         })
         .catch(() => undefined);
+      void rpc("computer/status", { botId })
+        .then((next) => {
+          if (current) setComputer(next);
+        })
+        // A stale Running or Asleep is worse than no state.
+        .catch(() => {
+          if (current) setComputer(null);
+        });
       return () => {
         current = false;
       };
@@ -115,20 +128,22 @@ export default function BotProfile() {
         <Text accessibilityRole="header" style={styles.name}>
           {name}
         </Text>
-      </View>
-      <SettingsGroup>
-        <SettingsRow
-          key="settings"
-          accessibilityRole="button"
-          chevron="right"
-          title={t("Chat settings")}
+        <NativeActionButton
+          label={t("Edit")}
+          prominence="secondary"
+          style={styles.edit}
           onPress={() => router.push({ pathname: "/bot-settings", params: { botId } })}
         />
+      </View>
+      <SettingsGroup>
         <SettingsRow
           key="routines"
           accessibilityRole="button"
           chevron="right"
           title={t("Routines")}
+          leading={
+            <NativeSymbol ios="clock" android="time-outline" color={tokens.mutedForeground} />
+          }
           // Counts the routines that are switched on; nothing until the first read lands.
           value={
             routines
@@ -142,6 +157,9 @@ export default function BotProfile() {
           accessibilityRole="button"
           chevron="right"
           title={t("Artifacts")}
+          leading={
+            <NativeSymbol ios="folder" android="folder-outline" color={tokens.mutedForeground} />
+          }
           onPress={() => router.push({ pathname: "/artifacts", params: { botId } })}
         />
         <SettingsRow
@@ -149,6 +167,20 @@ export default function BotProfile() {
           accessibilityRole="button"
           chevron="right"
           title={t("Computer")}
+          leading={
+            <NativeSymbol
+              ios="desktopcomputer"
+              android="desktop-outline"
+              color={tokens.mutedForeground}
+            />
+          }
+          value={
+            computer?.state === "running"
+              ? t("Running")
+              : computer?.state === "suspended"
+                ? t("Asleep")
+                : undefined
+          }
           onPress={() => router.push({ pathname: "/computer", params: { botId, name } })}
         />
       </SettingsGroup>
@@ -172,6 +204,7 @@ function createStyles() {
     content: { flexGrow: 1, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 32, gap: 28 },
     compactContent: { paddingHorizontal: 8 },
     identity: { alignItems: "center", gap: 8 },
+    edit: { alignSelf: "center", marginTop: 4 },
     avatarSpace: { width: 96, height: 96 },
     name: { color: native.label, fontSize: 22, fontWeight: "600", textAlign: "center" },
   });

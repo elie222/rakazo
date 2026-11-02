@@ -1,5 +1,10 @@
 import type { NotificationMessage } from "@rakazo/adapter-kit";
-import { ModelAccountError, SandboxRateLimitError, TransientModelError } from "@rakazo/adapter-kit";
+import {
+  ModelAccountError,
+  SandboxAllowanceUsedError,
+  SandboxRateLimitError,
+  TransientModelError,
+} from "@rakazo/adapter-kit";
 import type * as DbModule from "@rakazo/db";
 import { countUnreadInboxChats } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
@@ -355,6 +360,30 @@ describe("backing off a routine after its model connection refuses it", () => {
     });
 
     expect(prisma.$transaction).toHaveBeenCalledOnce();
+  });
+
+  it("counts a daily quota that resets hours from now, without a quick retry", async () => {
+    const message = `429 ${JSON.stringify({
+      error: {
+        message: "Rate limit exceeded: free-models-per-day",
+        code: 429,
+        metadata: { headers: { "X-RateLimit-Reset": String(NOW.getTime() + 10 * 60 * MINUTE) } },
+      },
+    })}`;
+    const { prisma, retries } = await failRun({
+      error: new ModelAccountError(message),
+      personalKey: true,
+    });
+
+    expect(prisma.$transaction).toHaveBeenCalledOnce();
+    expect(retries).toEqual([]);
+  });
+
+  it("counts a spent computer allowance, without a quick retry", async () => {
+    const { prisma, retries } = await failRun({ error: new SandboxAllowanceUsedError() });
+
+    expect(prisma.$transaction).toHaveBeenCalledOnce();
+    expect(retries).toEqual([]);
   });
 
   it.each([

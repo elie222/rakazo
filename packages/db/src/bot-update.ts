@@ -1,7 +1,7 @@
 import { displayName } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { writeBotInstructions } from "./bot-instructions.js";
-import type { Prisma, PrismaClient } from "./client.js";
+import type { Bot, Prisma, PrismaClient } from "./client.js";
 import { appendEventInTransaction } from "./events.js";
 
 type AppendEvent = typeof appendEventInTransaction;
@@ -21,11 +21,10 @@ export async function commitBotUpdate(
     data: Omit<Prisma.BotUncheckedUpdateInput, "instructions"> & { instructions?: string };
     emitBotUpdated: boolean;
     expectedInstructions?: string;
-    expectedModel?: {
-      modelProvider: string | null;
-      modelId: string | null;
-      thinkingLevel: string | null;
-    };
+    /** Write only while these settings hold; otherwise Prisma throws P2025. */
+    expectedSettings?: Partial<
+      Pick<Bot, "modelProvider" | "modelId" | "thinkingLevel" | "autoSpeak" | "voiceId">
+    >;
     instructionRestore?: { versionId: string; undo?: boolean };
     reason?: string;
   },
@@ -43,7 +42,7 @@ export async function commitBotUpdate(
     !options.instructionRestore
   ) {
     return options.prisma.bot.update({
-      where: { id: options.botId, ...options.expectedModel },
+      where: { id: options.botId, ...options.expectedSettings },
       data: options.data,
       select: { id: true, name: true, description: true },
     });
@@ -63,7 +62,7 @@ export async function commitBotUpdate(
       });
     }
     const updated = await tx.bot.update({
-      where: { id: options.botId, ...options.expectedModel },
+      where: { id: options.botId, ...options.expectedSettings },
       data,
       select: { id: true, name: true, description: true },
     });

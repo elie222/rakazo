@@ -496,6 +496,7 @@ it("uses the full column for wide asks and reserves only the visible avatar gutt
         status: "pending",
       },
     ],
+    mcpApproval: [{ kind: "mcp_approval", serverId: "server-1", name: "Example" }],
   };
   const measure = (kind: keyof typeof blocks, avatar: boolean, inGroup: boolean) =>
     messageRowLayout(blocks[kind] as MobileMessage["blocks"], {
@@ -518,11 +519,13 @@ it("uses the full column for wide asks and reserves only the visible avatar gutt
     expect(regular.menuMaxWidth).toBe(avatar ? 360 - gutter : 324);
   }
   // Connect cards take the full bubble width rather than shrinking to their button.
-  const card = measure("appConnect", false, false);
-  expect(card.width).toBe("90%");
-  expect(card.maxWidth).toBe("90%");
-  expect(card.menuMaxWidth).toBe(324);
-  expect(card.menuFullWidth).toBe(true);
+  for (const kind of ["appConnect", "mcpApproval"] as const) {
+    const card = measure(kind, false, false);
+    expect(card.width).toBe("90%");
+    expect(card.maxWidth).toBe("90%");
+    expect(card.menuMaxWidth).toBe(324);
+    expect(card.menuFullWidth).toBe(true);
+  }
 });
 
 it.each([

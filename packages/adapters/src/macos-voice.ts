@@ -20,7 +20,7 @@ const SAY_BIN = "/usr/bin/say";
 
 export const MACOS_VOICE_CATALOG_ENTRY = {
   id: MACOS_VOICE_PROVIDER_ID,
-  name: "macOS",
+  name: "Server (Mac)",
   description: "Voices installed on the Mac running the server.",
   transcribe: false,
   keyless: true,

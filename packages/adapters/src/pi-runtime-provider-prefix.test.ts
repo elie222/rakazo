@@ -27,6 +27,11 @@ describe("Pi outgoing provider prefixes", () => {
       let requestCount = 0;
       let imageSent = false;
       const server = createServer((request, response) => {
+        // Local tools can probe any listening loopback port; only model calls are counted.
+        if (request.method !== "POST" || request.url !== "/v1/chat/completions") {
+          response.writeHead(404).end();
+          return;
+        }
         void (async () => {
           const chunks: Buffer[] = [];
           for await (const chunk of request) chunks.push(Buffer.from(chunk));
@@ -151,6 +156,11 @@ describe("Pi outgoing provider prefixes", () => {
     const requests: Array<{ max_completion_tokens?: number; messages?: unknown[] }> = [];
     const authorizationHeaders: Array<string | undefined> = [];
     const server = createServer((request, response) => {
+      // Local tools can probe any listening loopback port; only model calls are recorded.
+      if (request.method !== "POST" || request.url !== "/v1/chat/completions") {
+        response.writeHead(404).end();
+        return;
+      }
       void (async () => {
         authorizationHeaders.push(request.headers.authorization);
         const chunks: Buffer[] = [];

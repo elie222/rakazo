@@ -604,6 +604,105 @@ describe("native markdown code blocks", () => {
   });
 });
 
+describe("native markdown prose fences", () => {
+  const draft =
+    "Dear team, this line of prose is far wider than a bubble, so it wraps instead of scrolling.";
+
+  // Stands in for the app's copy button, as the code copy tests do.
+  function CopyProbe({ code }: { code: string }) {
+    return createElement("copy-probe", { "data-code": code });
+  }
+
+  it.each(["text", "txt", "plaintext", "Text"])(
+    "wraps a fence marked %j as prose in the body font",
+    (language) => {
+      const html = renderToStaticMarkup(
+        <ChatMarkdown palette={lightTokens} colorScheme="light">
+          {`\`\`\`${language}\n${draft}\n\`\`\``}
+        </ChatMarkdown>,
+      );
+      const document = new DOMParser().parseFromString(html, "text/html");
+      // No sideways scroll view: the line wraps inside the fence's card.
+      expect(document.querySelector("rn-scroll-view")).toBeNull();
+      expect(
+        document.querySelector(`[data-background-color="${lightTokens.secondary}"]`),
+      ).not.toBeNull();
+      expect(textStyle(html, draft)).toMatchObject({
+        "data-color": lightTokens.foreground,
+        "data-font-size": "17",
+        "data-line-height": "22",
+      });
+      expect(textStyle(html, draft)["data-font-family"]).toBeUndefined();
+    },
+  );
+
+  it.each(["ts", ""])(
+    "keeps a fence marked %j monospaced in a sideways scroll view",
+    (language) => {
+      const html = renderToStaticMarkup(
+        <ChatMarkdown colorScheme="light">{`\`\`\`${language}\nconst a = 1;\n\`\`\``}</ChatMarkdown>,
+      );
+      const document = new DOMParser().parseFromString(html, "text/html");
+      expect(document.querySelector("rn-scroll-view")).not.toBeNull();
+      expect(
+        document.querySelector("rn-scroll-view rn-text")?.getAttribute("data-font-family"),
+      ).toBe("ui-monospace");
+    },
+  );
+
+  it("preserves a prose fence's lines and blank lines", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown colorScheme="light">
+        {"```text\nDear team,\n\n  see you Monday.\n```"}
+      </ChatMarkdown>,
+    );
+    const document = new DOMParser().parseFromString(html, "text/html");
+    const lines = [...document.querySelectorAll("rn-text")]
+      .filter((text) => !text.querySelector("rn-view"))
+      .map((text) => text.textContent);
+    expect(lines).toEqual(["text", "Dear team,", " ", "  see you Monday."]);
+  });
+
+  it("gives a prose fence a copy button for its exact code, outside any scroll view", () => {
+    const code = "Dear team,\n\n  see you Monday.";
+    const html = renderToStaticMarkup(
+      <CodeCopyButtonContext.Provider value={CopyProbe}>
+        <ChatMarkdown
+          palette={lightTokens}
+          colorScheme="light"
+        >{`\`\`\`text\n${code}\n\`\`\``}</ChatMarkdown>
+      </CodeCopyButtonContext.Provider>,
+    );
+    const document = new DOMParser().parseFromString(html, "text/html");
+    const probes = document.querySelectorAll("copy-probe");
+    expect(probes).toHaveLength(1);
+    expect(probes[0]?.getAttribute("data-code")).toBe(code);
+    expect(probes[0]?.closest("rn-scroll-view")).toBeNull();
+    // The button sits inside the fence's frame, beside the prose.
+    const frame = probes[0]?.parentElement?.parentElement;
+    expect(frame?.getAttribute("data-border-width")).toBeTruthy();
+    expect(frame?.getAttribute("data-background-color")).toBe(lightTokens.secondary);
+  });
+
+  it("aligns each prose line by its own direction, like a paragraph", () => {
+    const align = (markdown: string, line: string) =>
+      textStyle(
+        renderToStaticMarkup(<ChatMarkdown colorScheme="light">{markdown}</ChatMarkdown>),
+        line,
+      )["data-text-align"];
+    expect(align("```text\nשלום רב.\nDear team,\n```", "שלום רב.")).toBe("right");
+    expect(align("```text\nשלום רב.\nDear team,\n```", "Dear team,")).toBeUndefined();
+    i18n.isRTL = true;
+    try {
+      // React Native mirrors `right` in a right-to-left layout, so it lands on the left.
+      expect(align("```text\nDear team,\n```", "Dear team,")).toBe("right");
+      expect(align("```text\nשלום רב.\n```", "שלום רב.")).toBeUndefined();
+    } finally {
+      i18n.isRTL = false;
+    }
+  });
+});
+
 describe("native markdown code copy", () => {
   // Stands in for the app's copy button, recording the code it would copy.
   function ProbeCopyButton({ code }: { code: string }) {

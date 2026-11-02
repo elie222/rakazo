@@ -12,6 +12,7 @@ import { endTakeoverWaits, isTooManyDatabaseConnections, runAsSystem } from "@ra
 import { getLogger, runCorrelatedJob } from "@rakazo/logging";
 import type { Pool } from "pg";
 import { RunExecutionHost } from "./run-execution.js";
+import { findRunRecoveryBlockers } from "./run-recovery.js";
 
 const RUN_READY_TOPIC = "runs:ready";
 const INTERACTIVE_QUEUE_WARNING_MS = 30_000;
@@ -251,7 +252,9 @@ export class RunWorkerHost implements JobWorkerHost {
   }
 
   /**
-   * Runs waiting for their own bot's earlier run on its computer are expected to wait.
+   * Runs waiting for their own bot's earlier run on its computer are expected to wait, including
+   * in the handoff after that run releases the computer (release expires the lease and touches
+   * `updatedAt`) until the next one takes it.
    * Any other run still unstarted thirty seconds after it was due means starting failed,
    * which is an error reported with this process's database pool and event-loop health.
    */
@@ -278,7 +281,8 @@ export class RunWorkerHost implements JobWorkerHost {
           AND NOT EXISTS (
             SELECT 1 FROM computer_execution_leases lease
             WHERE lease."botId" = runs."botId" AND lease."computerId" = bot."computerId"
-              AND lease."runId" <> runs.id AND lease."expiresAt" > ${new Date(now)}
+              AND lease."runId" <> runs.id
+              AND (lease."expiresAt" > ${new Date(now)} OR lease."updatedAt" > ${cutoff})
           )
       `;
       if (this.stopping) return;
@@ -379,30 +383,16 @@ export class RunWorkerHost implements JobWorkerHost {
         bot: { select: { computerId: true } },
       },
     });
-    // Leave resource waits queued. Reclaiming them on every scan changes their
-    // age, hides stuck-work reminders, and produces false execution starts.
     // The executor still acquires the lease atomically to handle races here.
-    const leases = rows.length
-      ? await this.prisma.computerExecutionLease.findMany({
-          where: { botId: { in: rows.map((row) => row.botId) }, expiresAt: { gt: now } },
-          select: { computerId: true, botId: true, runId: true },
-        })
-      : [];
-    const blockingLease = (row: (typeof rows)[number]) =>
-      leases.find(
-        (lease) =>
-          lease.botId === row.botId &&
-          lease.computerId === row.bot.computerId &&
-          lease.runId !== row.id,
-      );
-    const runnable = rows.filter((row) => !blockingLease(row));
+    const blockers = await findRunRecoveryBlockers(this.prisma, rows, now);
+    const runnable = rows.filter((row) => !blockers.has(row.id));
     // A takeover request holds its bot's computer. Chat work must not wait behind one the user
     // has not acted on, so end it; the freed rows start on the next scan.
     if (lane === "interactive") {
       const holders = new Set(
         rows.flatMap((row) => {
-          const lease = row.status === "queued" ? blockingLease(row) : undefined;
-          return lease ? [lease.runId] : [];
+          const holder = row.status === "queued" ? blockers.get(row.id) : undefined;
+          return holder ? [holder] : [];
         }),
       );
       if (holders.size) {

@@ -288,6 +288,10 @@ describe("screen frame reports", () => {
 });
 
 describe("probeScreen", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   const url = "http://127.0.0.1:5173/novnc/session/view/1.t/vnc.html";
   const response = (status: number, body = "", type = "basic") =>
     ({ ok: status >= 200 && status < 300, status, type, text: async () => body }) as Response;
@@ -351,9 +355,79 @@ describe("probeScreen", () => {
       probeScreen(url, "fallback", async () => response(0, "", "opaqueredirect")),
     ).resolves.toBe("fallback");
   });
+
+  it("sends the session cookie only for a same-origin http(s) screen", async () => {
+    vi.stubGlobal("window", { location: { href: "http://127.0.0.1:5173/chat" } });
+    const sameOrigin = vi.fn(async () => response(200, "<html>"));
+    await expect(probeScreen(url, "fallback", sameOrigin)).resolves.toBeNull();
+    expect(sameOrigin).toHaveBeenCalledWith(url, {
+      credentials: "same-origin",
+      cache: "no-store",
+      redirect: "manual",
+    });
+
+    const relative = vi.fn(async () => response(200, "<html>"));
+    await probeScreen("/novnc/session/view/1.t/vnc.html", "fallback", relative);
+    expect(relative).toHaveBeenCalledWith(
+      "/novnc/session/view/1.t/vnc.html",
+      expect.objectContaining({ credentials: "same-origin" }),
+    );
+
+    const crossOrigin = vi.fn(async () => response(200, "<html>"));
+    await probeScreen("https://screen.example/vnc.html", "fallback", crossOrigin);
+    expect(crossOrigin).toHaveBeenCalledWith(
+      "https://screen.example/vnc.html",
+      expect.objectContaining({ credentials: "omit" }),
+    );
+
+    const otherPort = vi.fn(async () => response(200, "<html>"));
+    await probeScreen("http://127.0.0.1:6080/novnc/vnc.html", "fallback", otherPort);
+    expect(otherPort).toHaveBeenCalledWith(
+      "http://127.0.0.1:6080/novnc/vnc.html",
+      expect.objectContaining({ credentials: "omit" }),
+    );
+  });
+
+  it("keeps cookies off non-http screen schemes, including a Wuying login URL", async () => {
+    vi.stubGlobal("window", { location: { href: "https://app.example/chat" } });
+    const wuying = vi.fn(async () => response(200));
+    await probeScreen("wuying://desktop?desktop_id=ecd-1&auth_code=once", "fallback", wuying);
+    expect(wuying).toHaveBeenCalledWith(
+      "wuying://desktop?desktop_id=ecd-1&auth_code=once",
+      expect.objectContaining({ credentials: "omit" }),
+    );
+    const otherScheme = vi.fn(async () => response(200));
+    await probeScreen("crypto:screen", "fallback", otherScheme);
+    expect(otherScheme).toHaveBeenCalledWith(
+      "crypto:screen",
+      expect.objectContaining({ credentials: "omit" }),
+    );
+
+    const page = vi.fn(async () => response(200, "<html>"));
+    const screenPage = "https://app.example/wuying/screen.html#desktop_id=ecd-1&auth_code=once";
+    await expect(probeScreen(screenPage, "fallback", page)).resolves.toBeNull();
+    expect(page).toHaveBeenCalledWith(
+      screenPage,
+      expect.objectContaining({ credentials: "same-origin" }),
+    );
+  });
+
+  it("still treats an opaque redirect as leaving the app when the cookie was sent", async () => {
+    vi.stubGlobal("window", { location: { href: "http://127.0.0.1:5173/chat" } });
+    const fetchImpl = vi.fn(async () => response(0, "", "opaqueredirect"));
+    await expect(probeScreen(url, "fallback", fetchImpl)).resolves.toBe("fallback");
+    expect(fetchImpl).toHaveBeenCalledWith(
+      url,
+      expect.objectContaining({ credentials: "same-origin", redirect: "manual" }),
+    );
+  });
 });
 
 describe("probeScreenStatus", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   const url = "http://127.0.0.1:5173/novnc/session/control/1.t/vnc.html";
 
   it("returns only the status and drops the body unread", async () => {
@@ -388,6 +462,30 @@ describe("probeScreenStatus", () => {
     await expect(
       probeScreenStatus(url, async () => ({ status: 0, type: "opaqueredirect" }) as Response),
     ).resolves.toBe(0);
+  });
+
+  it("includes the session cookie for a same-origin probe and withholds it elsewhere", async () => {
+    vi.stubGlobal("window", { location: { href: "http://127.0.0.1:5173/chat" } });
+    const sameOrigin = vi.fn(async () => ({ status: 204, type: "basic" }) as Response);
+    await expect(probeScreenStatus(url, sameOrigin)).resolves.toBe(204);
+    expect(sameOrigin).toHaveBeenCalledWith(url, {
+      credentials: "same-origin",
+      cache: "no-store",
+      redirect: "manual",
+      signal: undefined,
+    });
+    const crossOrigin = vi.fn(async () => ({ status: 204, type: "basic" }) as Response);
+    await probeScreenStatus("https://screen.example/novnc/x", crossOrigin);
+    expect(crossOrigin).toHaveBeenCalledWith(
+      "https://screen.example/novnc/x",
+      expect.objectContaining({ credentials: "omit" }),
+    );
+    const wuying = vi.fn(async () => ({ status: 204, type: "basic" }) as Response);
+    await probeScreenStatus("wuying://desktop?auth_code=once", wuying);
+    expect(wuying).toHaveBeenCalledWith(
+      "wuying://desktop?auth_code=once",
+      expect.objectContaining({ credentials: "omit" }),
+    );
   });
 });
 

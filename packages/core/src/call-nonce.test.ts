@@ -24,6 +24,7 @@ describe("call client nonce", () => {
   it("reads the id up to the unique suffix, not the first colon", () => {
     expect(callIdFromClientNonce("call:call:1:abc")).toBe("call:1");
     expect(callIdFromClientNonce("call:call-1")).toBeUndefined();
+    expect(callIdFromClientNonce("call::abc")).toBeUndefined();
   });
 
   it("rejects plain nonces and other prefixed nonces", () => {

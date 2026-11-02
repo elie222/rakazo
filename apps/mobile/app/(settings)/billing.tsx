@@ -10,7 +10,12 @@ import { useCallback, useState } from "react";
 import { Alert, AppState, ScrollView, Share, StyleSheet } from "react-native";
 import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
 import { rpc } from "../../lib/api";
-import { currentPlan, openBillingPage, planEndsAt } from "../../lib/billing";
+import {
+  currentPlan,
+  openBillingPage,
+  ownKeySubscriptionCents,
+  planEndsAt,
+} from "../../lib/billing";
 import { dateLocaleForUi, useI18n } from "../../lib/i18n";
 import { openFromSettingsSheet } from "../../lib/settings-sheet";
 import { useSideInsets } from "../../lib/side-insets";
@@ -76,12 +81,14 @@ export default function BillingScreen() {
 
   const plan = currentPlan(status);
   const endsAt = planEndsAt(status);
+  const ownKeyCents = ownKeySubscriptionCents(status);
   const recurring = Boolean(
     status.monthlyAmountCents && !["none", "canceled", "incomplete"].includes(status.state),
   );
   // Owners can always top up, as on web; a top-up is how an own-key plan starts on credits.
   const credits = status.funding === "credits" || (status.balanceUsd ?? 0) > 0 || status.canManage;
   const referral = status.referral;
+  const endTrial = status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd;
   return (
     <ScrollView
       style={sideInsets}
@@ -91,6 +98,13 @@ export default function BillingScreen() {
       <SettingsGroup>
         <SettingsRow
           title={t("Plan")}
+          detail={
+            ownKeyCents
+              ? status.byokInterval === "year"
+                ? t("{price} / year", { price: `$${ownKeyCents / 100}` })
+                : t("{price} / month", { price: `$${ownKeyCents / 100}` })
+              : undefined
+          }
           value={
             status.state === "trialing" || status.byokFreeUntil
               ? t("Free trial")
@@ -117,6 +131,39 @@ export default function BillingScreen() {
           />
         ) : null}
       </SettingsGroup>
+      {status.computerHoursLeft != null ? (
+        <SettingsGroup
+          footer={endTrial ? t("Trials get fewer hours to prevent abuse.") : undefined}
+        >
+          <SettingsRow title={t("Computer hours left")} value={String(status.computerHoursLeft)} />
+          {endTrial ? (
+            <SettingsRow
+              title={t("Start plan now")}
+              disabled={pending}
+              onPress={() =>
+                Alert.alert(
+                  t("Start your plan now?"),
+                  ownKeyCents
+                    ? t("Your trial ends and your card is charged {price} today.", {
+                        price: `$${ownKeyCents / 100}`,
+                      })
+                    : t("Your trial ends and your card is charged today."),
+                  [
+                    { text: t("Cancel"), style: "cancel" },
+                    {
+                      text: t("Start plan"),
+                      onPress: () =>
+                        void action(async () => {
+                          show(await rpc("billing/endTrial"));
+                        }),
+                    },
+                  ],
+                )
+              }
+            />
+          ) : null}
+        </SettingsGroup>
+      ) : null}
       {referral ? (
         <SettingsGroup footer={t("Get a free month for each friend who starts a trial.")}>
           <SettingsRow

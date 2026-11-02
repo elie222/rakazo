@@ -81,7 +81,7 @@ describePostgres("user devices (PostgreSQL)", () => {
       hub,
     });
     await expect(gateway.connected(userId)).resolves.toMatchObject({ deviceId: device.id });
-    await expect(gateway.hasDevice(userId)).resolves.toBe(true);
+    await expect(gateway.pairedSince(userId)).resolves.toEqual(device.createdAt);
     await expect(gateway.list(userId)).resolves.toEqual([
       { deviceId: device.id, name: "Laptop", connected: true },
     ]);
@@ -107,7 +107,7 @@ describePostgres("user devices (PostgreSQL)", () => {
 
     await prisma.userDevice.update({ where: { id: device.id }, data: { revokedAt: new Date() } });
     await expect(gateway.connected(userId)).resolves.toBeNull();
-    await expect(gateway.hasDevice(userId)).resolves.toBe(false);
+    await expect(gateway.pairedSince(userId)).resolves.toBeNull();
     await expect(hub.authenticate(`Bearer ${token}`)).resolves.toBeNull();
   });
 

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ThinkingLevelSchema } from "./domain.js";
+import { ThinkingLevelSchema } from "./ids.js";
 import { SettingsScopeSchema } from "./settings-scope.js";
 
 export const ComputerModelChoiceSchema = z.object({

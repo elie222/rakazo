@@ -39,45 +39,38 @@ test("a routine that already ran is not put back when the thread refresh fails",
   const chip = page.getByTestId("mention-chip");
   await expect(chip).toHaveText("@daily-digest");
 
-  const testRun = page.waitForResponse(
-    (response) => response.url().includes("/rpc/routines/testRun") && response.ok(),
+  const ran = page.waitForResponse(
+    (response) => response.url().includes("/rpc/threads/sendWithRoutines") && response.ok(),
   );
   await page.route("**/rpc/threads/get", (route) => route.abort("internetdisconnected"));
   await composer.press("Enter");
-  await testRun;
+  await ran;
 
   await expect(page.getByTestId("composer-error")).toBeVisible();
   await expect(chip).toHaveCount(0);
   await expect(composer).toHaveValue("");
 });
 
-test("a message is not put back when one of its routines already ran", { tag: "@nightly" }, async ({
-  page,
-}) => {
+test("a failed send with routines gives back the message and its routines", {
+  tag: "@nightly",
+}, async ({ page }) => {
   const composer = await openComposer(page, "send-failure-routines");
   await createRoutine(page, "daily-digest");
-  const failing = await createRoutine(page, "weekly-review");
+  await createRoutine(page, "weekly-review");
   await page.reload();
   await mentionRoutine(page, composer, "daily-digest");
   await mentionRoutine(page, composer, "weekly-review");
-  await expect(page.getByTestId("mention-chip")).toHaveCount(2);
-
-  await page.route("**/rpc/routines/testRun", (route) => {
-    const input = route.request().postDataJSON() as { json: { routineId: string } };
-    return input.json.routineId === failing.id
-      ? route.abort("internetdisconnected")
-      : route.continue();
-  });
-  const accepted = page.waitForResponse(
-    (response) => response.url().includes("/rpc/routines/testRun") && response.ok(),
-  );
   await composer.pressSequentially("and the notes");
+  const draft = await composer.inputValue();
+
+  await page.route("**/rpc/threads/sendWithRoutines", (route) =>
+    route.abort("internetdisconnected"),
+  );
   await composer.press("Enter");
-  await accepted;
 
   await expect(page.getByTestId("composer-error")).toBeVisible();
-  await expect(page.getByTestId("mention-chip")).toHaveCount(0);
-  await expect(composer).toHaveValue("");
+  await expect(page.getByTestId("mention-chip")).toHaveCount(2);
+  await expect(composer).toHaveValue(draft);
 });
 
 test("an unchanged routine retry after a lost response reuses the run", {
@@ -89,11 +82,11 @@ test("an unchanged routine retry after a lost response reuses the run", {
   await mentionRoutine(page, composer, "daily-digest");
   const nonces: string[] = [];
   const runIds: string[] = [];
-  await page.route("**/rpc/routines/testRun", async (route) => {
+  await page.route("**/rpc/threads/sendWithRoutines", async (route) => {
     nonces.push(route.request().postDataJSON().json.clientNonce);
     const response = await route.fetch();
     expect(response.ok()).toBe(true);
-    runIds.push((await response.json()).json.runId);
+    runIds.push(...(await response.json()).json.routineRunIds);
     if (nonces.length === 1) await route.abort("internetdisconnected");
     else await route.fulfill({ response });
   });
@@ -101,7 +94,7 @@ test("an unchanged routine retry after a lost response reuses the run", {
   await expect(page.getByTestId("composer-error")).toBeVisible();
   await expect(page.getByTestId("mention-chip")).toHaveText("@daily-digest");
   const retryResponse = page.waitForResponse(
-    (response) => response.url().includes("/rpc/routines/testRun") && response.ok(),
+    (response) => response.url().includes("/rpc/threads/sendWithRoutines") && response.ok(),
   );
   await composer.press("Enter");
   await retryResponse;

@@ -24,6 +24,11 @@ describe("sandbox command timeout", () => {
     expect(boundedSandboxCommandTimeoutMs(25, 100)).toBe(25);
     expect(boundedSandboxCommandTimeoutMs(0, 100)).toBe(100);
     expect(boundedSandboxCommandTimeoutMs(Number.NaN, 100)).toBe(100);
+    expect(boundedSandboxCommandTimeoutMs(1.5, 100)).toBe(100);
+    expect(boundedSandboxCommandTimeoutMs(MAX_SANDBOX_COMMAND_TIMEOUT_MS, 100)).toBe(
+      MAX_SANDBOX_COMMAND_TIMEOUT_MS,
+    );
+    expect(boundedSandboxCommandTimeoutMs(MAX_SANDBOX_COMMAND_TIMEOUT_MS + 1, 100)).toBe(100);
     expect(boundedSandboxCommandTimeoutMs(undefined, Number.POSITIVE_INFINITY)).toBe(
       DEFAULT_SANDBOX_COMMAND_TIMEOUT_MS,
     );

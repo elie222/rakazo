@@ -102,11 +102,17 @@ it("renders a deleted target as static unavailable text", () => {
   expect(container.querySelector("button")).toBeNull();
 });
 
-it("dismisses a composer reply with Escape", () => {
+it("dismisses a composer reply with Escape, but not the Escape that ends an IME composition", () => {
   const onDismiss = vi.fn();
   act(() =>
     root.render(<ComposerReplyPreview author="Helper" text="Quote" onDismiss={onDismiss} />),
   );
+  for (const composition of [{ isComposing: true }, { keyCode: 229 }]) {
+    const event = new KeyboardEvent("keydown", { key: "Escape", cancelable: true, ...composition });
+    act(() => window.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(false);
+  }
+  expect(onDismiss).not.toHaveBeenCalled();
   act(() =>
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", cancelable: true })),
   );

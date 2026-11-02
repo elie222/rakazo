@@ -3,6 +3,7 @@ import type { PrismaClient } from "./client.js";
 import {
   assertComputerQuotaForRestore,
   ComputerLimitError,
+  clearEndedExecutionRunBinding,
   computerHomeKey,
   computerScopeKey,
   ensureComputerRecord,
@@ -250,6 +251,52 @@ afterEach(() => {
   if (savedEnv === undefined) delete process.env.SANDBOX_MAX_COMPUTERS_PER_USER;
   else process.env.SANDBOX_MAX_COMPUTERS_PER_USER = savedEnv;
   vi.restoreAllMocks();
+});
+
+describe("clearEndedExecutionRunBinding", () => {
+  function bindingPrisma(run: { status: string } | null) {
+    return {
+      computer: {
+        findUnique: vi.fn(async () => ({ executionRunId: "run-1" })),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      run: { findUnique: vi.fn(async () => run) },
+    } as unknown as PrismaClient;
+  }
+
+  it("clears a binding whose run ended", async () => {
+    const prisma = bindingPrisma({ status: "cancelled" });
+    await clearEndedExecutionRunBinding(prisma, "computer-1");
+    expect(prisma.computer.updateMany).toHaveBeenCalledWith({
+      where: { id: "computer-1", executionRunId: "run-1" },
+      data: { executionRunId: null, executionBotId: null, executionLeaseExpiresAt: null },
+    });
+  });
+
+  it("clears a binding whose run no longer exists", async () => {
+    const prisma = bindingPrisma(null);
+    await clearEndedExecutionRunBinding(prisma, "computer-1");
+    expect(prisma.computer.updateMany).toHaveBeenCalled();
+  });
+
+  it("leaves a binding whose run may still execute", async () => {
+    const prisma = bindingPrisma({ status: "running" });
+    await clearEndedExecutionRunBinding(prisma, "computer-1");
+    expect(prisma.computer.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when no binding is set", async () => {
+    const prisma = {
+      computer: {
+        findUnique: vi.fn(async () => ({ executionRunId: null })),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      run: { findUnique: vi.fn(async () => ({ status: "cancelled" })) },
+    } as unknown as PrismaClient;
+    await clearEndedExecutionRunBinding(prisma, "computer-1");
+    expect(prisma.run.findUnique).not.toHaveBeenCalled();
+    expect(prisma.computer.updateMany).not.toHaveBeenCalled();
+  });
 });
 
 describe("team computer keys", () => {

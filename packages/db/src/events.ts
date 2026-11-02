@@ -25,6 +25,7 @@ import {
   isSecretAskBlock,
   messageBypassesTakeoverWait,
   messageReaction,
+  messageSteersRun,
   messagingChannelId,
   normalizeRunError,
   QUEUE_HOLDING_RUN_STATUSES,
@@ -40,6 +41,7 @@ import { saveApprovalRule, storedBatchActions } from "./approval-settings.js";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
+import { contentEncryptionOf } from "./content-encryption.js";
 import {
   CrossSpaceCommunicationBlockedError,
   crossSpaceCommunicationAllowed,
@@ -387,18 +389,9 @@ export async function clearThread(
       select: { id: true, taskId: true, userId: true, spaceId: true },
     });
     const now = new Date();
-    const runIds = activeRuns.map((run) => run.id);
-    await cancelRunsInTransaction(tx, activeRuns, now);
+    const runIds = (await cancelRunsInTransaction(tx, activeRuns, now)).map((run) => run.id);
     // Expire as tombstones so a still-open provider screen claim cannot reset fencing to 1.
     await expireComputerExecutionLeases(tx, { runId: { in: runIds } });
-    await tx.computer.updateMany({
-      where: { executionRunId: { in: runIds } },
-      data: {
-        executionRunId: null,
-        executionBotId: null,
-        executionLeaseExpiresAt: null,
-      },
-    });
     await tx.message.deleteMany({ where: { threadId: input.threadId } });
     await tx.event.deleteMany({ where: { threadId: input.threadId } });
     if (thread.nextMessageSeq > 0) {
@@ -442,6 +435,27 @@ export async function clearThread(
     };
   });
   await notifyRealtime(realtime, committed.event.threadId, committed.event.seq);
+  // Legacy execution bindings point at runs of pre-lease releases, which kept writing
+  // Computer.executionRunId. Clearing them inside the transaction reaches for the
+  // computer row while holding the thread row — the inverted half of a cycle with a
+  // concurrent finalizeComputerControlRelease, which locks the computer first and the
+  // thread second. This statement holds no other row, so it can wait out any holder.
+  // The clear is already committed: a failed sweep leaves a stale binding for the idle pass
+  // to clear, and must not report the clear itself as failed.
+  if (committed.cancelledRunIds.length > 0) {
+    await withTransactionRetry(() =>
+      prisma.computer.updateMany({
+        where: { executionRunId: { in: committed.cancelledRunIds } },
+        data: {
+          executionRunId: null,
+          executionBotId: null,
+          executionLeaseExpiresAt: null,
+        },
+      }),
+    ).catch((error: unknown) => {
+      getLogger().error("legacy computer binding sweep after thread clear", error);
+    });
+  }
   return {
     event: mapProductEvent(committed.event),
     cancelledRunIds: committed.cancelledRunIds,
@@ -516,15 +530,34 @@ export async function sendUserMessage(
                   in: [...QUEUE_HOLDING_RUN_STATUSES],
                 },
               },
-              select: { id: true, taskId: true, trigger: true, status: true },
+              select: {
+                id: true,
+                taskId: true,
+                trigger: true,
+                status: true,
+                sourceMessage: { select: { blocks: true } },
+              },
             })
           : [];
+      // A group text never ends the owner's paused app task: it waits for it like any other turn.
+      const fromGroup = hasChannelMessage(input.blocks);
+      const channelId = messagingChannelId(input.blocks);
+      const steersRun = (run: (typeof activeRuns)[number]) =>
+        messageSteersRun(
+          input.trigger,
+          run.trigger,
+          channelId,
+          messagingChannelId(run.sourceMessage?.blocks as MessageBlock[] | undefined),
+        );
       const holdingRuns = activeRuns.filter(
-        (run) => !messageBypassesTakeoverWait(run, input.trigger !== "webhook"),
+        (run) => !messageBypassesTakeoverWait(run, fromGroup || steersRun(run)),
       );
-      // Steer a conversational run when there is one; a routine, webhook, or intro turn only holds the queue.
+      // Prefer a run that can take this message, then preserve the conversational queue fallback.
       const busy =
-        holdingRuns.find((run) => isConversationalRun(run.trigger)) ?? holdingRuns[0] ?? null;
+        holdingRuns.find(steersRun) ??
+        holdingRuns.find((run) => isConversationalRun(run.trigger)) ??
+        holdingRuns[0] ??
+        null;
       let task = null;
       let run = null;
       if (createRun && !busy) {
@@ -563,7 +596,7 @@ export async function sendUserMessage(
           await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });
         }
       } else if (createRun && busy) {
-        const held = input.trigger === "webhook" || !isConversationalRun(busy.trigger);
+        const held = !steersRun(busy);
         await tx.steeringMessage.create({
           data: {
             messageId: message.id,
@@ -626,6 +659,14 @@ export async function sendUserMessage(
 }
 
 export async function claimSteering(
+  prisma: PrismaClient,
+  input: ClaimSteeringInput,
+): Promise<ClaimedSteeringMessage[]> {
+  // Runs claim before every model turn, so a briefly saturated pool must not fail the run.
+  return withTransactionRetry(() => claimSteeringOnce(prisma, input));
+}
+
+async function claimSteeringOnce(
   prisma: PrismaClient,
   input: ClaimSteeringInput,
 ): Promise<ClaimedSteeringMessage[]> {
@@ -880,7 +921,7 @@ async function commitAnswerRunInput(
     if (!approvalEffect) return null;
     if (pendingAsk.instructionUpdate) {
       if (
-        approvalEffect.kind !== "propose_instructions_update" ||
+        approvalEffect.kind !== "update_bot" ||
         pendingAsk.instructionUpdate.botId !== run.botId ||
         (approvalAnswer !== "allow" && approvalAnswer !== "deny") ||
         run.userId !== input.answeredByUserId
@@ -956,11 +997,6 @@ async function commitAnswerRunInput(
           },
         });
       }
-      if (approvalAnswer === "deny")
-        await tx.bot.updateMany({
-          where: { id: run.botId, pendingInstructionsRunId: input.runId },
-          data: { pendingInstructionsRunId: null },
-        });
     }
     const allowed = approvalAnswer === "allow" || approvalAnswer === "always";
     await tx.externalEffect.update({
@@ -1047,7 +1083,6 @@ async function commitAnswerRunInput(
                 detail: instructionUpdateDiff(
                   pendingAsk.instructionUpdate.before,
                   editedInstructions,
-                  pendingAsk.instructionUpdate.reason,
                 ),
               }
             : {}),
@@ -1082,6 +1117,8 @@ export async function answerRunInput(
     prisma.$transaction(async (tx: Prisma.TransactionClient) =>
       commitAnswerRunInput(tx, input, writer),
     );
+  // Unwrapping space keys can wait on the key manager; keep that wait outside the transaction.
+  await contentEncryptionOf(prisma)?.ring.all(input.spaceId);
   // A dismissal has no secret to prepare.
   const committed =
     runSecretWriter?.withPrepared && !input.dismiss

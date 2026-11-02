@@ -31,6 +31,34 @@ describe("native error collector privacy boundary", () => {
     });
   });
 
+  it("keeps which desktop child process stopped", () => {
+    const tags = { "process.name": "Audio Service", "process.exit_code": "-1" };
+    expect(sanitizeNativeEvent({ tags }, "desktop").tags).toEqual({ surface: "desktop", ...tags });
+    expect(sanitizeNativeEvent({ tags }, "mobile").tags).toEqual({ surface: "mobile" });
+    expect(
+      sanitizeNativeEvent(
+        { tags: { "process.name": "/Users/someone/app", "process.exit_code": "private text" } },
+        "desktop",
+      ).tags,
+    ).toEqual({ surface: "desktop" });
+  });
+
+  it("keeps a sanitized mobile breadcrumb trail, including native ones", () => {
+    const breadcrumbs = [
+      { category: "app.lifecycle", type: "navigation", data: { state: "background" } },
+      { category: "ui.lifecycle", data: { screen: "RNSScreen", title: "Private chat" } },
+      { category: "console", message: "private output" },
+      { category: "touch", message: "Send private", data: { view: "Private" } },
+    ];
+    expect(
+      sanitizeNativeEvent({ breadcrumbs: { values: breadcrumbs } }, "mobile").breadcrumbs,
+    ).toEqual([
+      { category: "app.lifecycle", type: "navigation", data: { state: "background" } },
+      { category: "ui.lifecycle", data: { screen: "RNSScreen" } },
+    ]);
+    expect(sanitizeNativeEvent({ breadcrumbs }, "desktop").breadcrumbs).toBeUndefined();
+  });
+
   it("keeps replayed startup failures anonymous", () => {
     const event = sanitizeNativeEvent(
       {

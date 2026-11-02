@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ExecutorDeps } from "./executor-deps.js";
 import {
   addMcpServerFromTool,
@@ -17,31 +17,6 @@ describe("deriveMcpSlug", () => {
 });
 
 describe("parseMcpServerToolArgs", () => {
-  it("cannot set an issuer through unsupported OAuth tool arguments", () => {
-    const parsed = parseMcpServerToolArgs({
-      name: "Local",
-      transport: "stdio",
-      command: "demo",
-      oauthClient: { clientId: "id", authorizationServer: "https://127.0.0.1" },
-    });
-    expect(parsed).toBeDefined();
-    expect(buildMcpCredentialBlob(parsed ?? {})).toBeNull();
-  });
-
-  it.each(["{{oauth.access_token}}", "{{oauth.unknown}}"])(
-    "rejects templates without a configurable OAuth client: %s",
-    (value) => {
-      expect(
-        parseMcpServerToolArgs({
-          name: "Local",
-          transport: "stdio",
-          command: "demo",
-          env: { TOKEN: value },
-        }),
-      ).toBeUndefined();
-    },
-  );
-
   it("parses a minimal remote server", () => {
     const parsed = parseMcpServerToolArgs({
       name: "Brex",
@@ -80,45 +55,48 @@ describe("parseMcpServerToolArgs", () => {
         endpoint: "https://user:password@x.test/mcp#fragment",
       }),
     ).toBeUndefined();
-    expect(parseMcpServerToolArgs({ name: "x", transport: "stdio" })).toBeUndefined();
+    expect(
+      parseMcpServerToolArgs({ name: "x", transport: "stdio", command: "node" }),
+    ).toBeUndefined();
   });
 
-  it("normalizes stdio commands and string args", () => {
-    const parsed = parseMcpServerToolArgs({
-      name: "Local",
-      transport: "stdio",
-      command: " /opt/mcp ",
-      args: "--verbose --port 9",
-    });
-    expect(parsed).toMatchObject({
-      transport: "stdio",
-      command: "/opt/mcp",
-      args: ["--verbose", "--port", "9"],
-    });
-  });
-
-  it("keeps only string-valued env/headers entries and caps their size", () => {
+  it("keeps only string-valued headers and caps their count", () => {
     const parsed = parseMcpServerToolArgs({
       name: "H",
       transport: "sse",
       endpoint: "https://h.example.test",
       headers: { Authorization: "Bearer t", Broken: 42 as unknown as string },
-      env: { A: "b", BAD: null as unknown as string },
     });
     expect(parsed?.headers).toEqual({ Authorization: "Bearer t" });
-    expect(parsed?.env).toEqual({ A: "b" });
 
     const tooMany = parseMcpServerToolArgs({
       name: "H",
-      transport: "stdio",
-      command: "c",
-      env: Object.fromEntries(Array.from({ length: 33 }, (_, i) => [`K${i}`, "v"])),
+      transport: "sse",
+      endpoint: "https://h.example.test",
+      headers: Object.fromEntries(Array.from({ length: 33 }, (_, i) => [`K${i}`, "v"])),
     });
     expect(tooMany).toBeUndefined();
   });
 });
 
 describe("addMcpServerFromTool", () => {
+  it("never adds a local (stdio) server", async () => {
+    const create = vi.fn();
+    const result = await addMcpServerFromTool(
+      {
+        prisma: { mcpServer: { create }, $transaction: create },
+      } as unknown as ExecutorDeps,
+      { id: "run-1", spaceId: "space-1", userId: "user-1", threadId: "t-1", botId: "b-1" },
+      "b-1",
+      { name: "Local", transport: "stdio", command: "node", args: ["-e", "1"] },
+      "exec-1",
+    );
+    expect(result).toEqual({
+      error: "Bots can't add local (stdio) MCP servers. Ask an admin to add it in Settings.",
+    });
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it("refuses a credential in the endpoint query, which would be stored in plaintext", async () => {
     const run = {
       id: "run-1",

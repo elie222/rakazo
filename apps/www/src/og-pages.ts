@@ -40,7 +40,7 @@ export function ogPages(): OgPage[] {
       kicker: "Comparison",
       title: page.h1,
     })),
-    { id: "grok-bot-alternative", kicker: "Comparison", title: GROK_ALTERNATIVE_H1 },
+    { id: "grok-bot-alternative", kicker: "Alternatives", title: GROK_ALTERNATIVE_H1 },
     { id: "openclaw-alternative", kicker: "Comparison", title: OPENCLAW_H1 },
     {
       id: "self-hosted-ai-agent",

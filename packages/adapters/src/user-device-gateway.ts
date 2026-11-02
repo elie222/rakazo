@@ -448,14 +448,15 @@ export class UserDevices implements UserDeviceGateway {
     }));
   }
 
-  async hasDevice(userId: string): Promise<boolean> {
+  async pairedSince(userId: string): Promise<Date | null> {
     const device = await runAsSystem("find a user's paired device", () =>
       this.deps.prisma.userDevice.findFirst({
         where: { userId, revokedAt: null },
-        select: { id: true },
+        orderBy: { createdAt: "asc" },
+        select: { createdAt: true },
       }),
     );
-    return Boolean(device);
+    return device?.createdAt ?? null;
   }
 
   async *request<T>(

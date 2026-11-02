@@ -287,7 +287,7 @@ export default function VoiceSettings() {
     setError(null);
     if (status) setLoadError(null);
     try {
-      if (wasDeviceVoice && !(await saveDeviceVoice(false))) return;
+      if (deviceSettings && !(await saveDeviceVoice(false))) return;
       setProvider(nextProvider);
       const cred = credentials.find((entry) => entry.provider === nextProvider);
       if (cred?.voiceId && status?.provider !== nextProvider) {
@@ -452,7 +452,7 @@ export default function VoiceSettings() {
         contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="automatic"
       >
-        {loading ? <ActivityIndicator color={native.secondaryLabel} /> : null}
+        {loading || !deviceVoiceReady ? <ActivityIndicator color={native.secondaryLabel} /> : null}
         {failure && !status ? (
           <LoadFailure
             message={failure}
@@ -480,11 +480,6 @@ export default function VoiceSettings() {
             >
               <View style={styles.rowCopy}>
                 <Text style={styles.cardTitle}>{t("This device")}</Text>
-                <Text style={styles.cardMeta}>
-                  {deviceVoice
-                    ? t("Free, works offline")
-                    : t("Your phone's built-in voice. Free, no account needed")}
-                </Text>
               </View>
               {deviceVoice ? <Checkmark /> : null}
             </Pressable>
@@ -493,12 +488,12 @@ export default function VoiceSettings() {
         {catalog.length ? (
           <View style={styles.group}>
             {catalog.map((entry, index) => {
-              const connected = credentials.some((cred) => cred.provider === entry.id);
+              const chosen = deviceVoiceReady && !deviceVoice && provider === entry.id;
               return (
                 <Pressable
                   key={entry.id}
                   accessibilityRole="button"
-                  accessibilityState={{ selected: !deviceVoice && provider === entry.id }}
+                  accessibilityState={{ selected: chosen }}
                   disabled={pending !== null || !deviceVoiceReady}
                   onPress={() => void chooseProvider(entry.id)}
                   style={({ pressed }) => [
@@ -510,15 +505,8 @@ export default function VoiceSettings() {
                 >
                   <View style={styles.rowCopy}>
                     <Text style={styles.cardTitle}>{entry.name}</Text>
-                    <Text style={styles.cardMeta}>
-                      {connected
-                        ? t("Connected")
-                        : entry.transcribe
-                          ? t("Speak + transcribe")
-                          : t("Speak only")}
-                    </Text>
                   </View>
-                  {!deviceVoice && provider === entry.id ? <Checkmark /> : null}
+                  {chosen ? <Checkmark /> : null}
                 </Pressable>
               );
             })}
@@ -533,7 +521,7 @@ export default function VoiceSettings() {
             onPress={() => void disconnect(OPENAI_COMPATIBLE_PROVIDER_ID)}
           />
         ) : null}
-        {selected && !deviceVoice ? (
+        {selected && deviceVoiceReady && !deviceVoice ? (
           <>
             {selfHosted ? (
               <TextInput
@@ -721,7 +709,6 @@ function createVoiceStyles() {
     },
     rowCopy: { flex: 1 },
     cardTitle: { color: native.label, fontSize: 16 },
-    cardMeta: { color: native.tertiaryLabel, marginTop: 4, fontSize: 12 },
     fieldLabel: { color: native.label, marginTop: 16 },
     input: {
       marginTop: 8,

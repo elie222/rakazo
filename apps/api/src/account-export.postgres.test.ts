@@ -126,7 +126,7 @@ describePostgres("account export (PostgreSQL)", () => {
       });
       await createThreadMessage(prisma, {
         threadId: thread.id,
-        role: "assistant",
+        role: "bot",
         botId: `mine-${suffix}`,
         blocks: [{ kind: "text", text: "Noted" }],
       });

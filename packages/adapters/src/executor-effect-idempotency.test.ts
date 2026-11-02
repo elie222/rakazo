@@ -475,8 +475,8 @@ describe("mutating tool effect idempotency keys", () => {
     expect(f.results[0]).toEqual({ ok: true });
   });
 
-  it.each(["", "   ", "  MEMORY.md  "])(
-    "normalizes remember path %j before reading and committing",
+  it.each(["", "  MEMORY.md  ", "other.md", "bot"])(
+    "writes MEMORY.md whatever path %j the model passes",
     async (path) => {
       const f = fixture("run-path");
       f.memoryDocuments.push(
@@ -830,7 +830,7 @@ describe("mutating tool effect idempotency keys", () => {
 });
 
 describe("add_mcp_server", () => {
-  it("refuses a stdio server this deployment can't run", async () => {
+  it("never adds a local (stdio) server", async () => {
     const f = fixture();
     f.setCalls([
       {
@@ -842,6 +842,8 @@ describe("add_mcp_server", () => {
 
     await f.run();
 
-    expect(f.results[0]).toEqual({ error: "Stdio MCP servers aren't available here" });
+    expect(f.results[0]).toEqual({
+      error: "Bots can't add local (stdio) MCP servers. Ask an admin to add it in Settings.",
+    });
   });
 });

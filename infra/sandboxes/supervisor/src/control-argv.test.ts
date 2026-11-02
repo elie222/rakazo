@@ -4,11 +4,27 @@ import { browserProfilePathForScreen } from "@rakazo/core/node/desktop-runtime";
 import { describe, expect, it } from "vitest";
 import { containerActionStep } from "./supervisor-logic.js";
 
+type ContainerAction = Parameters<typeof containerActionStep>[0];
+
 const profile = browserProfilePathForScreen("test-bot");
 const display = ":7";
 const controlPath = path.resolve(import.meta.dirname, "../../computer/control.py");
 
-function check(argv: string[]) {
+type Verdict = { allowed: boolean; longLived: boolean };
+const pending = new Map<string, string[]>();
+let verdicts: Map<string, Verdict> | undefined;
+
+// One python3 process judges every argv in the file; spawning per case dominated the suite.
+function check(argv: string[]): Verdict {
+  const key = JSON.stringify(argv);
+  verdicts ??= probeAll();
+  const verdict = verdicts.get(key);
+  if (!verdict) throw new Error(`argv was not registered before the probe ran: ${key}`);
+  return verdict;
+}
+
+function probeAll(): Map<string, Verdict> {
+  const argvs = [...pending.values()];
   const probe = spawnSync(
     "python3",
     [
@@ -19,77 +35,94 @@ function check(argv: string[]) {
         "spec = importlib.util.spec_from_file_location('control_probe', sys.argv[1])",
         "module = importlib.util.module_from_spec(spec)",
         "spec.loader.exec_module(module)",
-        "argv = json.loads(sys.argv[2])",
-        "allowed = module.allowed_control_argv(argv, sys.argv[3])",
-        "long_lived = module.is_long_lived_control(argv) if allowed else False",
-        "if long_lived:",
-        "  with patch.object(module.subprocess, 'Popen') as popen:",
-        "    popen.return_value.wait.return_value = 0",
-        "    module.run_control_argv(argv, sys.argv[3])",
-        "    assert popen.call_args.args[0] == argv, 'profile must survive execution'",
-        "    assert popen.call_args.kwargs['env']['DISPLAY'] == sys.argv[3]",
-        "print(json.dumps({'allowed': allowed, 'longLived': long_lived}))",
+        "results = []",
+        "for argv in json.loads(sys.stdin.read()):",
+        "  allowed = module.allowed_control_argv(argv, sys.argv[2])",
+        "  long_lived = module.is_long_lived_control(argv) if allowed else False",
+        "  if long_lived:",
+        "    with patch.object(module.subprocess, 'Popen') as popen:",
+        "      popen.return_value.wait.return_value = 0",
+        "      module.run_control_argv(argv, sys.argv[2])",
+        "      assert popen.call_args.args[0] == argv, 'profile must survive execution'",
+        "      assert popen.call_args.kwargs['env']['DISPLAY'] == sys.argv[2]",
+        "  results.append({'allowed': allowed, 'longLived': long_lived})",
+        "print(json.dumps(results))",
       ].join("\n"),
       controlPath,
-      JSON.stringify(argv),
       display,
     ],
-    { encoding: "utf8" },
+    { encoding: "utf8", input: JSON.stringify(argvs) },
   );
   expect(probe.status, probe.stderr).toBe(0);
-  return JSON.parse(probe.stdout);
+  const results: Verdict[] = JSON.parse(probe.stdout);
+  return new Map(results.map((verdict, index) => [JSON.stringify(argvs[index]), verdict]));
 }
+
+function register<T extends string[]>(argv: T): T {
+  pending.set(JSON.stringify(argv), argv);
+  return argv;
+}
+
+function generated(action: ContainerAction, browserProfile: string | undefined) {
+  const step = containerActionStep(action, display, browserProfile);
+  if (!("argv" in step)) throw new Error("expected command");
+  return register(step.argv);
+}
+
+const appActions: ContainerAction[] = [
+  { kind: "open", path: "https://example.com" },
+  { kind: "open", path: "screenshots/image #1.png" },
+  { kind: "launch", application: "chromium", uri: "https://example.com" },
+  { kind: "launch", application: "chromium" },
+  { kind: "launch", application: "xterm" },
+  { kind: "focus", application: "chromium", uri: "https://example.com" },
+  { kind: "focus", application: "chromium" },
+  { kind: "focus", application: "xterm" },
+];
+const inputActions: ContainerAction[] = [
+  { kind: "scroll", direction: "down", amount: 4 },
+  { kind: "scroll", direction: "up", amount: 4, x: 600, y: 420 },
+  { kind: "scroll", direction: "left", amount: 2 },
+  { kind: "scroll", direction: "right", amount: 2, x: 40, y: 300 },
+  { kind: "key", key: "Enter" },
+];
 
 describe.each([undefined, profile])(
   "supervisor/controller argv contract (profile=%s)",
   (browserProfile) => {
-    it.each([
-      { kind: "open" as const, path: "https://example.com" },
-      { kind: "open" as const, path: "screenshots/image #1.png" },
-      { kind: "launch" as const, application: "chromium", uri: "https://example.com" },
-      { kind: "launch" as const, application: "chromium" },
-      { kind: "launch" as const, application: "xterm" },
-      { kind: "focus" as const, application: "chromium", uri: "https://example.com" },
-      { kind: "focus" as const, application: "chromium" },
-      { kind: "focus" as const, application: "xterm" },
-    ])("accepts generated $kind argv and does not treat focus as a long-lived app", (action) => {
-      const step = containerActionStep(action, display, browserProfile);
-      if (!("argv" in step)) throw new Error("expected command");
-      if (
-        browserProfile &&
-        (action.kind === "open" ||
-          ((action.kind === "launch" || action.kind === "focus") &&
-            action.application === "chromium"))
-      ) {
-        expect(step.argv[2]).toBe(`RAKAZO_BROWSER_PROFILE=${browserProfile}`);
+    const apps = appActions.map((action) => ({ action, argv: generated(action, browserProfile) }));
+    const inputs = inputActions.map((action) => ({
+      action,
+      argv: generated(action, browserProfile),
+    }));
+
+    it("accepts generated app argv and does not treat focus as a long-lived app", () => {
+      for (const { action, argv } of apps) {
+        if (
+          browserProfile &&
+          (action.kind === "open" ||
+            ((action.kind === "launch" || action.kind === "focus") &&
+              action.application === "chromium"))
+        ) {
+          expect(argv[2]).toBe(`RAKAZO_BROWSER_PROFILE=${browserProfile}`);
+        }
+        expect(check(argv), JSON.stringify(action)).toEqual({
+          allowed: true,
+          longLived: action.kind !== "focus",
+        });
       }
-      expect(check(step.argv)).toEqual({
-        allowed: true,
-        longLived: action.kind !== "focus",
-      });
     });
 
-    it.each([
-      { kind: "scroll" as const, direction: "down" as const, amount: 4 },
-      { kind: "scroll" as const, direction: "up" as const, amount: 4, x: 600, y: 420 },
-      { kind: "scroll" as const, direction: "left" as const, amount: 2 },
-      { kind: "scroll" as const, direction: "right" as const, amount: 2, x: 40, y: 300 },
-    ])("accepts a generated scroll, with or without a point", (action) => {
-      const step = containerActionStep(action, display, browserProfile);
-      if (!("argv" in step)) throw new Error("expected command");
-      expect(check(step.argv)).toEqual({ allowed: true, longLived: false });
-    });
-
-    it("accepts generated keyboard input without treating it as a long-lived process", () => {
-      const step = containerActionStep({ kind: "key", key: "Enter" }, display, browserProfile);
-      if (!("argv" in step)) throw new Error("expected command");
-      expect(check(step.argv)).toEqual({ allowed: true, longLived: false });
+    it("accepts generated scroll and key input without treating it as long-lived", () => {
+      for (const { action, argv } of inputs) {
+        expect(check(argv), JSON.stringify(action)).toEqual({ allowed: true, longLived: false });
+      }
     });
   },
 );
 
 describe("controller argv restrictions", () => {
-  it.each([
+  const unauthorized = [
     ["env", `DISPLAY=${display}`, `RAKAZO_BROWSER_PROFILE=${profile}`],
     ["env", `DISPLAY=${display}`, "RAKAZO_BROWSER_PROFILE=", "rakazo-browser"],
     ["env", `DISPLAY=${display}`, `RAKAZO_BROWSER_PROFILE=${profile}a`, "rakazo-browser"],
@@ -143,18 +176,19 @@ describe("controller argv restrictions", () => {
       `RAKAZO_BROWSER_PROFILE=${profile}`,
       "rakazo-browser",
     ],
-  ])("rejects malformed or unauthorized argv %j", (...argv) => {
-    expect(check(argv).allowed).toBe(false);
+  ].map(register);
+
+  it("rejects malformed or unauthorized argv", () => {
+    for (const argv of unauthorized) expect(check(argv).allowed, JSON.stringify(argv)).toBe(false);
   });
 
-  const scroll = (...tail: string[]) => ["env", `DISPLAY=${display}`, "xdotool", ...tail];
+  const scroll = (...tail: string[]) => register(["env", `DISPLAY=${display}`, "xdotool", ...tail]);
+  const aimedScroll = scroll("mousemove", "--", "600", "420", "click", "--repeat", "4", "5");
   it("accepts a scroll aimed at a point: the pointer moves there, then the wheel turns", () => {
-    expect(
-      check(scroll("mousemove", "--", "600", "420", "click", "--repeat", "4", "5")).allowed,
-    ).toBe(true);
+    expect(check(aimedScroll).allowed).toBe(true);
   });
 
-  it.each([
+  const malformedScrolls = [
     // A repeated left or right click is not a scroll.
     scroll("mousemove", "--", "600", "420", "click", "--repeat", "3", "1"),
     scroll("mousemove", "--", "600", "420", "click", "--repeat", "3", "3"),
@@ -171,7 +205,10 @@ describe("controller argv restrictions", () => {
     scroll("click", "--repeat", "²", "5"),
     scroll("click", "--repeat", "٣", "5"),
     scroll("mousemove", "--", "٦00", "420", "click", "--repeat", "3", "5"),
-  ])("rejects a scroll that isn't the generated shape %j", (...argv) => {
-    expect(check(argv).allowed).toBe(false);
+  ];
+  it("rejects a scroll that isn't the generated shape", () => {
+    for (const argv of malformedScrolls) {
+      expect(check(argv).allowed, JSON.stringify(argv)).toBe(false);
+    }
   });
 });

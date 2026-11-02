@@ -48,6 +48,11 @@ describe("transient model errors", () => {
     ["closed websocket", "WebSocket closed 1006"],
     ["idle stream", "Codex stream idle timeout"],
     [
+      "provider timed out downloading a linked file",
+      '400 data: {"error":{"code":"invalid_parameter_error","message":"Download multimodal file timed out","type":"invalid_request_error"}}',
+    ],
+    ["provider timed out on a file download", '400: {"message":"File download timed out"}'],
+    [
       "server-side processing failure",
       "Codex error: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID 00000000-0000-0000-0000-000000000000 in your message.",
     ],
@@ -124,6 +129,23 @@ describe("transient model errors", () => {
     "You've reached your usage limit for this billing cycle.",
   ])("treats the exhausted usage window as permanent: %s", (message) => {
     expect(isTransientModelError({ status: 403, type: "permission_error", message })).toBe(false);
+  });
+
+  it("moves to a backup without retrying a quota that resets hours from now", () => {
+    const daily = (reset: number) =>
+      `429 ${JSON.stringify({
+        error: {
+          message: "Rate limit exceeded: free-models-per-day",
+          code: 429,
+          metadata: {
+            headers: { "X-RateLimit-Remaining": "0", "X-RateLimit-Reset": String(reset) },
+          },
+        },
+      })}`;
+    const exhausted = { errorMessage: daily(Date.now() + 10 * 60 * 60_000) };
+    expect(isTransientModelError(exhausted)).toBe(false);
+    expect(isRetryableProviderUnavailable(exhausted)).toBe(true);
+    expect(isTransientModelError({ errorMessage: daily(Date.now() + 30_000) })).toBe(true);
   });
 });
 
@@ -416,6 +438,7 @@ describe("rejected model credentials", () => {
     "401 Incorrect API key provided",
     "invalid_api_key",
     "Your authentication token has been invalidated.",
+    '400 {"type":"error","error":{"type":"invalid_request_error","message":"This API key is not scoped to a workspace."}}',
   ])("rejects %s without a retry", (message) => {
     expect(isModelCredentialRejected(new Error(message))).toBe(true);
     expect(isTransientModelError(new Error(message))).toBe(false);

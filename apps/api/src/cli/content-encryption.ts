@@ -6,6 +6,7 @@ import {
   createSecretStore,
   EncryptedSecretStore,
   LocalArtifactStore,
+  unwrapEnvFromKeyManager,
   upgradeLegacySecrets,
   withSecretPersistence,
 } from "@rakazo/adapters";
@@ -25,6 +26,7 @@ import { moveMcpArgsIntoSecrets } from "../mcp-args-migration.js";
 import { createSecretMigrationRepository } from "../secret-migration.js";
 
 loadRootEnv();
+await unwrapEnvFromKeyManager();
 
 const USAGE = `Usage: content-encryption <command> [--dry-run]
   status               Rows and artifacts still in plaintext, keys per master key
@@ -178,8 +180,9 @@ async function moveMcpArgs() {
       signal: controller.signal,
     });
     write(
-      `mcp server arguments: ${counts.moved} encrypted, ${counts.planned} planned, ${counts.concurrent} changed concurrently`,
+      `mcp server arguments: ${counts.moved} encrypted, ${counts.planned} planned, ${counts.concurrent} changed concurrently, ${counts.failed} failed`,
     );
+    if (counts.failed) process.exitCode = 1;
   } finally {
     await secrets.close();
   }

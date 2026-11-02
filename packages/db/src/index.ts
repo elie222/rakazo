@@ -1,6 +1,7 @@
 export * from "./account-export.js";
 export * from "./approval-settings.js";
 export * from "./artifact-versions.js";
+export * from "./audit-events.js";
 export * from "./availability.js";
 export * from "./billing.js";
 export * from "./board.js";
@@ -38,6 +39,7 @@ export * from "./row-security.js";
 export * from "./run-secrets.js";
 export * from "./run-timing.js";
 export * from "./run-turn-checkpoint.js";
+export * from "./sandbox-allowance.js";
 export * from "./scope.js";
 export * from "./security-events.js";
 export * from "./sessions.js";

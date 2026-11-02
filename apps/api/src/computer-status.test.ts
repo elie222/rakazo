@@ -1,3 +1,4 @@
+import { ComputerStatusSchema } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { executionBlocksUserTakeover, toComputerStatus } from "./computer-status.js";
 
@@ -40,6 +41,37 @@ describe("toComputerStatus", () => {
     };
     expect(toComputerStatus("bot-1", computer).busyBotName).toBeNull();
     expect(toComputerStatus("bot-1", computer, "Writer").busyBotName).toBe("Writer");
+  });
+
+  it("sandbox-none-computer-status", () => {
+    const stopped = toComputerStatus("bot-1", {
+      kind: "none",
+      state: "stopped",
+      scope: "team",
+      controlHolder: "none",
+      homeRevision: "empty",
+    });
+    expect(ComputerStatusSchema.parse(stopped)).toMatchObject({
+      kind: "none",
+      state: "stopped",
+      canUpdate: false,
+      terminalAvailable: false,
+      screenAvailable: false,
+    });
+
+    const running = toComputerStatus("bot-1", {
+      kind: "none",
+      state: "running",
+      scope: "team",
+      controlHolder: "none",
+      homeRevision: "empty",
+    });
+    expect(ComputerStatusSchema.parse(running)).toMatchObject({
+      state: "stopped",
+      canUpdate: false,
+      terminalAvailable: false,
+      screenAvailable: false,
+    });
   });
 
   it("hides update on desktop computers", () => {

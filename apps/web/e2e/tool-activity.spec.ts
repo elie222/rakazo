@@ -28,7 +28,6 @@ async function setToggle(page: Page, on: boolean) {
   await page.goto(`${fixture}?view=settings`);
   const settings = page.getByTestId("user-settings");
   await expect(settings).toBeVisible();
-  await settings.getByTestId("advanced-settings").locator("button[aria-expanded]").click();
   const toggle = settings.getByTestId("tool-activity-toggle");
   await expect(toggle).toBeVisible();
   if (on) await expect(toggle).not.toBeChecked();
@@ -104,7 +103,6 @@ test("the settings toggle hides and restores tool activity", async ({ page }, te
   await page.goto(`${fixture}?view=settings`);
   const settings = page.getByTestId("user-settings");
   await expect(settings).toBeVisible();
-  await settings.getByTestId("advanced-settings").locator("button[aria-expanded]").click();
   const initialToggle = settings.getByTestId("tool-activity-toggle");
   await expect(initialToggle).toBeVisible();
   await expect(initialToggle).not.toBeChecked();

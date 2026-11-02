@@ -28,8 +28,8 @@ export interface UserDevice {
 /** How runs reach the requesting user's connected device, from any API or worker process. */
 export interface UserDeviceGateway {
   connected(userId: string): Promise<UserDevice | null>;
-  /** Paired and not revoked, connected or not. */
-  hasDevice(userId: string): Promise<boolean>;
+  /** When the oldest device still paired was paired, connected or not; null when none is. */
+  pairedSince(userId: string): Promise<Date | null>;
   /**
    * Streams HostComputerFrame values for one request. Throws when the device is offline,
    * revoked, or disconnects mid-request; a command is never retried after a lost response.

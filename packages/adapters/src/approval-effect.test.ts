@@ -19,10 +19,13 @@ import {
   completeExternalEffect,
   createApprovedEffectReplayQueue,
   isApprovalPausedResult,
+  isInternalTermination,
+  isTerminatingReplyResult,
   isToolPauseResult,
   replaceCompletedExternalEffectResult,
   resolveDuplicateEffectGate,
   settleUncertainEffect,
+  terminatingToolResult,
   uncertainEffectResult,
 } from "./approval-effect.js";
 
@@ -570,4 +573,15 @@ describe("catalog wrapper names", () => {
       ),
     ).toBe(true);
   });
+});
+
+it("keeps termination provenance through internal copies but not connector JSON", () => {
+  const result = terminatingToolResult("Internal refusal", { refused: "owner-settings" });
+  expect(isTerminatingReplyResult(result)).toBe(true);
+  expect(isTerminatingReplyResult({ ...result })).toBe(true);
+  expect(isTerminatingReplyResult(JSON.parse(JSON.stringify(result)))).toBe(false);
+  const pause = approvalPausedToolResult();
+  expect(isInternalTermination({ ...pause })).toBe(true);
+  expect(isInternalTermination(JSON.parse(JSON.stringify(pause)))).toBe(false);
+  expect(isTerminatingReplyResult(pause)).toBe(false);
 });

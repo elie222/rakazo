@@ -354,6 +354,53 @@ describe("runtime context policy", () => {
       expect(body(id)).toBe(shellOutput);
     }
   });
+  it("does not cut the middle of an older MCP result that must stay whole", () => {
+    const { request, context } = fixture(2);
+    const link = "https://sessions.example.test/join/abc";
+    const mail = `${"header ".repeat(400)}${link}${" footer".repeat(400)}`;
+    const call = (id: string, name: string, args: Record<string, unknown> = {}) =>
+      ({
+        role: "assistant",
+        content: [{ type: "toolCall", id, name, arguments: args }],
+        timestamp: 101,
+      }) as unknown as Message;
+    const result = (id: string, name: string, body: string) =>
+      ({
+        role: "toolResult",
+        toolCallId: id,
+        toolName: name,
+        content: [{ type: "text", text: body }],
+        isError: false,
+        timestamp: 102,
+      }) as Message;
+    const shellOutput = "synthetic shell output ".repeat(3000);
+    context.messages.push(
+      call("mail", "mcp__mail__get_message"),
+      result("mail", "mcp__mail__get_message", mail),
+      call("shell-1", "shell"),
+      result("shell-1", "shell", shellOutput),
+      call("shell-2", "shell"),
+      result("shell-2", "shell", shellOutput),
+      call("shell-3", "shell"),
+      result("shell-3", "shell", shellOutput),
+      call("shell-4", "shell"),
+      result("shell-4", "shell", shellOutput),
+    );
+    const policy = createRuntimeContextPolicy({
+      ...request,
+      contextStrategy: DEFAULT_CONTEXT_STRATEGY,
+      verbatimMcpServers: { ids: ["srv_mail"], slugs: ["mail"] },
+    });
+    const prepared = policy.prepareContext(context, { ...model, contextWindow: 100_000 });
+    const text = (id: string) => {
+      const message = prepared.messages.find(
+        (message) => message.role === "toolResult" && message.toolCallId === id,
+      ) as Extract<Message, { role: "toolResult" }>;
+      return message.content.map((part) => (part.type === "text" ? part.text : "")).join("");
+    };
+    expect(text("mail")).toBe(mail);
+    expect(text("shell-1")).toContain("[Earlier result shortened after you read it");
+  });
   it.each([65_536, 10_000])(
     "retains individual parallel results within a %i budget",
     (contextWindow) => {
@@ -563,6 +610,45 @@ describe("runtime context policy", () => {
     expect(first).toContain("read_history");
     expect(prepared.messages.at(-1)).toEqual(context.messages.at(-1));
     expect(policy.getDecision()!.estimatedInputTokens).toBeLessThan(32768);
+  });
+  it("shows who spoke in navigation snapshots of a group thread", () => {
+    const { request, context } = fixture();
+    // Replayed as the new history shapes: another bot as a labelled user turn, own reply as assistant.
+    request.history[10] = { ...request.history[10]!, role: "assistant", speaker: "Anya" };
+    request.history[11] = { ...request.history[11]!, role: "assistant" };
+    Object.assign(context.messages[10]!, {
+      content: `[Anya]: ${request.history[10]!.content}`,
+    });
+    context.messages[11] = {
+      role: "assistant",
+      content: [{ type: "text", text: request.history[11]!.content }],
+      rakazoHistory: true,
+      rakazoMessageId: "message-11",
+    } as unknown as Message;
+    const prepared = createRuntimeContextPolicy({
+      ...request,
+      contextStrategy: "snapshots",
+    }).prepareContext(context, model);
+    const catalog = String(prepared.messages[0]!.content);
+    expect(catalog).toContain("message message-10 at 2026-01-01T00:00:00Z; Anya]");
+    expect(catalog).toContain("message message-11 at 2026-01-01T00:00:00Z; assistant]");
+    expect(catalog).toContain("message message-12 at 2026-01-01T00:00:00Z; user]");
+  });
+  it("still matches a legacy checkpoint's replayed own reply to its stored message", () => {
+    const { request, context } = fixture(12);
+    request.history[3] = { ...request.history[3]!, role: "assistant" };
+    context.messages[3] = {
+      role: "user",
+      content: `Assistant: ${request.history[3]!.content}`,
+      timestamp: 0,
+      rakazoHistory: true,
+    } as Message;
+    const prepared = createRuntimeContextPolicy({
+      ...request,
+      contextStrategy: "snapshots",
+    }).prepareContext(context, { ...model, contextWindow: 8000 });
+    expect(String(prepared.messages[0]!.content)).toContain("message message-3 at");
+    expect(String(prepared.messages[0]!.content)).toContain("; assistant]");
   });
   it("uses fake-clock warmth from matching model requests, expiry only selects existing snapshots", () => {
     let now = 0;

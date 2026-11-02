@@ -18,7 +18,9 @@ export function messageRowLayout(
   const wideAsk = blocks.some(isSecretAskBlock);
   const full = wideAsk || isCenteredAgentEvent(blocks);
   // Connect cards fill the bubble width instead of shrinking to their button.
-  const appConnect = blocks.some((block) => block.kind === "app_connect");
+  const appConnect = blocks.some(
+    (block) => block.kind === "app_connect" || block.kind === "mcp_approval",
+  );
   const gutter = activityBotId ? (inGroup ? 28 : 36) : 0;
   return {
     width: full ? "100%" : appConnect && !activityBotId ? "90%" : undefined,

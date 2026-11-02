@@ -105,7 +105,12 @@ function fixture() {
         return { count: 1 };
       }),
     },
-    secret: { findFirst: vi.fn(async () => ({ id: "secret", ciphertext: "encrypted" })) },
+    secret: {
+      findFirst: vi.fn(async (_args: { where: { id: string } }) => ({
+        id: "secret",
+        ciphertext: "encrypted",
+      })),
+    },
     $queryRaw: vi.fn(async () => [{ locked: 1 }]),
     $transaction: vi.fn(),
   };

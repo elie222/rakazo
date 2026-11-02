@@ -94,6 +94,48 @@ describe("Stripe prepaid model credits", () => {
     });
     expect(requests.at(-1)!.params.get("subscription_data[trial_period_days]")).toBe("7");
   });
+  it("bills a yearly own-key plan on its own yearly price", async () => {
+    const { provider, requests } = fixture();
+    await provider.createByokCheckout({
+      customerId: "cus_fixture",
+      amountCents: 14400,
+      interval: "year",
+      successUrl: "https://example.test/return",
+      cancelUrl: "https://example.test/app",
+    });
+    const created = requests.find((r) => r.path === "/v1/prices" && r.params.has("unit_amount"));
+    expect(created?.params.get("recurring[interval]")).toBe("year");
+    expect(created?.params.get("lookup_key")).toBe("rakazo_byok_yearly_14400");
+  });
+  it("reports the price an own-key subscription was bought at", async () => {
+    const { provider } = fixture({
+      "/v1/subscriptions": {
+        data: [
+          {
+            id: "sub_byok",
+            status: "active",
+            metadata: { rakazo_plan: "byok" },
+            created: 1,
+            items: {
+              data: [
+                {
+                  id: "si_byok",
+                  quantity: 1,
+                  price: { id: "price_old", unit_amount: 12000, recurring: { interval: "year" } },
+                },
+              ],
+            },
+          },
+        ],
+        has_more: false,
+      },
+    });
+    await expect(provider.getCustomerSubscription("cus_fixture")).resolves.toMatchObject({
+      byokPlan: true,
+      byokPriceCents: 12000,
+      byokInterval: "year",
+    });
+  });
   it("rejects invalid purchase amounts without contacting Stripe", async () => {
     const { provider, requests } = fixture();
     await expect(

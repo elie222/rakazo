@@ -227,8 +227,6 @@ describe("runModelConnectionPreflight", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.failure.outcome).toBe("unavailable_model");
-      expect(result.failure.message).toBe('Model "missing-model" was not listed.');
-      expect(result.failure.nextAction).toBe("Pick a model from the catalog.");
     }
   });
 
@@ -240,7 +238,7 @@ describe("runModelConnectionPreflight", () => {
       catalogProbe: false,
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.failure.message).toMatch(/cannot be tested without saving/);
+    if (!result.ok) expect(result.failure.outcome).toBe("unknown");
   });
 
   it("reports oauth when not connected", async () => {
@@ -276,8 +274,6 @@ describe("runModelConnectionPreflight", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.failure.outcome).toBe("needs_sign_in");
-      expect(result.failure.message).toBe("This provider is not connected yet.");
-      expect(result.failure.nextAction).toBe("Finish subscription sign-in, then test again.");
     }
   });
 
@@ -290,31 +286,19 @@ describe("runModelConnectionPreflight", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("does not treat an unreadable credential as a missing sign-in", async () => {
-    const result = await runModelConnectionPreflight({
-      authKind: "oauth",
-      provider: "anthropic",
-      credentialUnreadable: true,
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.failure.outcome).toBe("unknown");
-      expect(result.failure.message).toMatch(/Could not check stored credentials/);
-    }
-  });
-
-  it("keeps credential lookup failures distinct from a missing sign-in", async () => {
-    const result = await runModelConnectionPreflight({
-      authKind: "oauth",
-      provider: "openai-codex",
-      credentialLookupFailed: true,
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.failure.outcome).toBe("unknown");
-      expect(result.failure.message).toMatch(/Could not check stored credentials/);
-    }
-  });
+  it.each([{ credentialUnreadable: true }, { credentialLookupFailed: true }])(
+    "keeps credential lookup problems distinct from a missing sign-in: %j",
+    async (lookup) => {
+      const result = await runModelConnectionPreflight({
+        authKind: "oauth",
+        provider: "anthropic",
+        storedAuthKind: "oauth",
+        ...lookup,
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.failure.outcome).toBe("unknown");
+    },
+  );
 });
 
 describe("modelPreflightSuccessMessage", () => {

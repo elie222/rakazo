@@ -53,12 +53,18 @@ const OnboardingPage = lazyComponent(() =>
 const WelcomePage = lazyComponent(() =>
   import("./pages/Welcome").then((module) => module.WelcomePage),
 );
+const NotFoundPage = lazyComponent(() =>
+  import("./pages/NotFound").then((module) => module.NotFoundPage),
+);
 const ArtifactsPage = lazyComponent(() =>
   import("./pages/Artifacts").then((module) => module.ArtifactsPage),
 );
 const BoardPage = lazyComponent(() => import("./pages/Board").then((module) => module.BoardPage));
 const AdminPluginsPage = lazyComponent(() =>
   import("./pages/AdminPluginsPage").then((module) => module.AdminPluginsPage),
+);
+const AdminAccessPage = lazyComponent(() =>
+  import("./pages/AdminAccessPage").then((module) => module.AdminAccessPage),
 );
 const NavLinkPage = lazyComponent(() =>
   import("./pages/NavLinkPage").then((module) => module.NavLinkPage),
@@ -109,6 +115,7 @@ function SessionApp() {
   const signInDestination =
     next === "/integrations/setup" ||
     next === "/admin/plugins" ||
+    next === "/admin/access" ||
     next.startsWith(`${MCP_OAUTH_CALLBACK_PATH}?`) ||
     next.startsWith(`${SLACK_INSTALL_CALLBACK_PATH}?`)
       ? next
@@ -249,6 +256,12 @@ function SessionApp() {
                 }
               />
               <Route
+                path="/admin/access"
+                element={
+                  user ? <AdminAccessPage /> : <Navigate to="/sign-in?next=/admin/access" replace />
+                }
+              />
+              <Route
                 element={
                   user ? (
                     <SubscriptionGate fallback={<PageLoading />}>
@@ -268,6 +281,7 @@ function SessionApp() {
                 <Route path="/app/x/:linkId" element={<NavLinkPage />} />
                 <Route path="/app/:botId" element={<ShellPage />} />
               </Route>
+              <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </Suspense>
         </div>

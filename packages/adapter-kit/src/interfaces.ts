@@ -96,7 +96,7 @@ import type {
 
 export interface SandboxProvider {
   /** True when every running minute is billed, so the active-lifetime cap applies. */
-  billsWhileRunning?(computer: ComputerRef): boolean;
+  billsWhileRunning?(computer: Pick<ComputerRef, "kind">): boolean;
   describe(): AdapterDescriptor<SandboxCapabilities>;
   /** Workspace directory operations for hosts without the standard Unix command tools. */
   workspaceDirectories?(
@@ -246,6 +246,9 @@ export interface ConnectorProvider {
     context: AdapterContext,
   ): Promise<{ call: ConnectorCall; tool: ConnectorTool } | undefined>;
   execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent>;
+  /** Release run-scoped state (open sessions) of a run that ended for good on
+   * this worker. A run that ended elsewhere is bounded by the provider itself. */
+  endRun?(runId: string): void;
 }
 
 export interface ConnectionAuthProvider {
@@ -473,6 +476,8 @@ export interface BillingProvider {
   setMonthlyCredits?(customerId: string, amountCents: number): Promise<void>;
   /** Flat monthly own-key plan: access without credits. */
   createByokCheckout?(input: BillingByokCheckoutRequest): Promise<{ url: string }>;
+  /** Ends the customer's running trial now and bills the first period; a no-op without one. */
+  endTrial?(customerId: string): Promise<void>;
   /** Ends every live own-key plan at its period end. */
   endByokPlans?(customerId: string): Promise<void>;
   /**

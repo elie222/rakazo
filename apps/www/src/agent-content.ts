@@ -1,4 +1,5 @@
 import { ALTERNATIVES, alternativeMarkdown } from "./alternatives";
+import { BRAND_COLORS, BRAND_LOGOS } from "./brand";
 import { GROK_ALTERNATIVE_MARKDOWN } from "./grok-alternative";
 import { OPENCLAW_MARKDOWN, SELF_HOST_MARKDOWN } from "./guide";
 import {
@@ -80,8 +81,9 @@ ${home.cta.copy}
 - [Docs](https://rakazo.com/docs/)
 - [Integrations](https://rakazo.com/integrations/)
 - [Blog](https://rakazo.com/blog/)
-- [Open source Grok Bot alternative](https://rakazo.com/grok-bot-alternative/)
+- [Grok Bot alternatives](https://rakazo.com/grok-bot-alternative/)
 - [About](https://rakazo.com/about/)
+- [Brand](https://rakazo.com/brand/)
 - [Support](https://rakazo.com/support/)
 - [Privacy](https://rakazo.com/privacy/)
 - [Terms](https://rakazo.com/terms/)
@@ -170,8 +172,9 @@ Rakazo Cloud at https://app.rakazo.com is in beta. Self-hosting is also availabl
 - [Website](https://rakazo.com/): product overview, supported models, and common questions.
 - [Website Markdown](https://rakazo.com/index.md): the English product overview as Markdown.
 - [Alternatives](https://rakazo.com/alternatives/)
-- [Open source Grok Bot alternative](https://rakazo.com/grok-bot-alternative/)
+- [Grok Bot alternatives](https://rakazo.com/grok-bot-alternative/)
 - [About](https://rakazo.com/about/)
+- [Brand](https://rakazo.com/brand/)
 - [Source](https://github.com/elie222/rakazo)
 - [Self-hosting guide](https://rakazo.com/self-hosted-ai-agent/): requirements, Docker install, source setup, and desktop and mobile connections.
 - [Self-hosting Markdown](https://rakazo.com/self-hosted-ai-agent.md): the setup guide with language-tagged code examples.
@@ -186,6 +189,25 @@ Rakazo Cloud at https://app.rakazo.com is in beta. Self-hosting is also availabl
 - [Privacy](https://rakazo.com/privacy/)
 - [Terms](https://rakazo.com/terms/)
 - [Sitemap](https://rakazo.com/sitemap-index.xml)
+`;
+
+export const BRAND_MARKDOWN = `# Rakazo brand
+
+Logos and colors for writing about Rakazo.
+
+## Logos
+
+${BRAND_LOGOS.map((logo) => `- [${logo.name}](https://rakazo.com${logo.file}): ${logo.format}`).join("\n")}
+
+## Colors
+
+${BRAND_COLORS.map((color) => `- ${color.name}: \`${color.hex}\``).join("\n")}
+
+## Usage
+
+Write Rakazo with a capital R in text. The wordmark is lowercase. Do not alter the mascot or imply an endorsement.
+
+For press, email hello@rakazo.com.
 `;
 
 export const PLUGIN_SUBMIT_MARKDOWN = `# Submit a plugin to Rakazo
@@ -233,6 +255,7 @@ The requested Rakazo page does not exist.
 const MARKDOWN_DOCUMENTS = new Map<string, string>([
   ["/", HOME_MARKDOWN],
   ["/about", ABOUT_MARKDOWN],
+  ["/brand", BRAND_MARKDOWN],
   ["/openclaw-alternative", OPENCLAW_MARKDOWN],
   ["/grok-bot-alternative", GROK_ALTERNATIVE_MARKDOWN],
   ["/privacy", PRIVACY_MARKDOWN],

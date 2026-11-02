@@ -63,8 +63,10 @@ Stdio MCP servers can use OAuth too. They do not authorize themselves (the MCP s
 read credentials from the environment), so Rakazo runs the flow for them. They are off unless
 the API and worker have `MCP_STDIO_ENABLED=true` and the command is listed in
 `MCP_STDIO_ALLOWED_COMMANDS`. A stdio server runs inside the API and worker with their access,
-so enable stdio only where everyone who can add a server is trusted, never on a shared
-multi-user deployment. When adding the server, enter the OAuth client, its
+so only admins (verified accounts listed in `RAKAZO_ADMIN_EMAILS`) can add or edit one, in
+**Settings** or through an agent import; with no admins listed, nobody can. Bots never add stdio servers. Everyone can still add remote servers, and a
+stdio server an admin added keeps working for everyone it is available to. When adding the
+server, enter the OAuth client, its
 **Authorization server** (the issuer, for example `https://accounts.google.com`) and the
 **Scopes**, then click **Connect OAuth** as for a remote server. Some providers issue a refresh
 token only when asked through extra parameters: for Google, set **Authorization parameters** to
@@ -124,7 +126,7 @@ base URL; Rakazo appends `api/search`.
 
 ## Messaging apps
 
-Optional messaging platforms (iMessage, Slack, WhatsApp, Telegram, Feishu/Lark) mount when their env credentials are set — see `.env.example`. The Lark adapter and official SDK load only when configured. Point a Feishu/Lark bot event subscription at `/api/v1/messaging/webhook/lark` (webhook/HTTP inbound only; do not enable long connection). Personal group linking stays iMessage-only; Slack channels use workspace installations below. Telegram can run several bots side by side (`TELEGRAM_BOT_TOKEN_<NAME>` plus `TELEGRAM_WEBHOOK_SECRET_TOKEN_<NAME>`), for example one per space, so the same person can chat with a different Rakazo bot through each.
+Optional messaging platforms (iMessage through Sendblue or Photon, Slack, WhatsApp, Telegram, Feishu/Lark) mount when their env credentials are set — see `.env.example`. The Lark adapter and official SDK load only when configured. Point a Feishu/Lark bot event subscription at `/api/v1/messaging/webhook/lark` (webhook/HTTP inbound only; do not enable long connection). Personal group linking works on iMessage and Telegram (see the Telegram privacy note below); WhatsApp and Feishu/Lark are direct-only, and Slack channels use workspace installations below. Telegram can run several bots side by side (`TELEGRAM_BOT_TOKEN_<NAME>` plus `TELEGRAM_WEBHOOK_SECRET_TOKEN_<NAME>`), for example one per space, so the same person can chat with a different Rakazo bot through each. Photon works the same way: each extra project (`PHOTON_PROJECT_ID_<NAME>` plus `PHOTON_PROJECT_SECRET_<NAME>`, and `PHOTON_WEBHOOK_SECRET_<NAME>` for webhooks) gives the person a different number, mounted as provider `photon-<name>`. Photon receives iMessage over an outbound stream from the API, so it works on a server with no public URL; on Photon's shared lines the person texts first, and group chats are not available.
 
 Each platform turns on when its full set of credentials is present on the API and worker.
 Webhooks arrive at `/api/v1/messaging/webhook/<provider>`.
@@ -134,14 +136,19 @@ Webhooks arrive at `/api/v1/messaging/webhook/<provider>`.
 | iMessage and SMS (Sendblue) | `SENDBLUE_API_KEY_ID`, `SENDBLUE_API_SECRET`, `SENDBLUE_SIGNING_SECRET`, `SENDBLUE_PHONE_NUMBER` |
 | WhatsApp Business Cloud | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` |
 | Telegram | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET_TOKEN` |
+| iMessage (Photon) | `PHOTON_PROJECT_ID`, `PHOTON_PROJECT_SECRET`; `PHOTON_WEBHOOK_SECRET` to receive by webhook instead of the stream; more projects as `PHOTON_PROJECT_ID_<NAME>` plus `PHOTON_PROJECT_SECRET_<NAME>` |
 | Feishu/Lark | `LARK_APP_ID`, `LARK_APP_SECRET`, `LARK_VERIFICATION_TOKEN`; `LARK_ENCRYPT_KEY` when event encryption is on; `LARK_DOMAIN` (`feishu`, the default, or `lark`) |
 | Slack | See below |
 
 Telegram is webhook-only: Telegram sends the secret in `X-Telegram-Bot-Api-Secret-Token`, and the
 worker never long-polls. An extra bot named `<NAME>` (letters and digits) uses the provider
 `telegram-<name>` and the webhook `/api/v1/messaging/webhook/telegram-<name>`; see
-[settings with names you choose](./self-host-configuration.md#settings-with-names-you-choose). For
-Lark, create a custom app with the Bot capability and subscribe it to `im.message.receive_v1`.
+[settings with names you choose](./self-host-configuration.md#settings-with-names-you-choose).
+Telegram groups use personal group linking, like iMessage: each linked member approves their own
+bot, and the per-room listening settings belong to Slack team conversations only. In BotFather
+run `/setprivacy` on the bot and choose **Disable** (or make it a group admin), or the bot only
+receives group messages that mention it. Broadcast channel posts never start runs. For Lark,
+create a custom app with the Bot capability and subscribe it to `im.message.receive_v1`.
 
 People link a chat app to their account from **Messaging** settings. `MESSAGING_OPEN_SIGNUP=true`
 instead gives unknown senders their own chat-only accounts, whose runs use the deployment model.
