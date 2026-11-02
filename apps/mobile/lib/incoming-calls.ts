@@ -106,7 +106,7 @@ function reportNativeCall(call: IncomingBotCall) {
   });
 }
 
-/** Uses the existing thread event stream, including replay after a lost connection. */
+/** Follows the account call stream; every frame is a full snapshot, so reconnects need no replay. */
 async function follow(controller: AbortController) {
   const generation = currentSessionGeneration();
   let retry = 250;
