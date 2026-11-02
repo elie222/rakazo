@@ -98,10 +98,13 @@ async function dispatchTool(
   const refused = await prepareToolRequest(ctx, request);
   if (refused) return refused;
   // Before the gate and the tool, so a step waiting for approval counts and a message_user
-  // running alongside it already sees the step.
+  // running alongside it already sees the step. A step the gate refuses is taken back.
   noteComputerTaskStep(ctx.state.reply, request.name);
   const gate = await gateToolCall(ctx, request, observer);
-  if ("result" in gate) return gate.result;
+  if ("result" in gate) {
+    if (gate.refused) noteComputerTaskStep(ctx.state.reply, request.name, -1);
+    return gate.result;
+  }
   if (!gate.call.applied) return toolHandler(gate.call.name)(ctx, gate.call);
   let outcome: "success" | "failure" = "failure";
   try {

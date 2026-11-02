@@ -49,7 +49,7 @@ export async function createReplyState(
     turnStartedAtMs: run.startedAt?.getTime() ?? Date.now(),
     progressBudgetStart: 0,
     steeringReplyPending: false,
-    computerTaskStarted: false,
+    computerTaskSteps: 0,
     steeringResets: 0,
     lastSteeringResetAt: Number.NEGATIVE_INFINITY,
     workingNotes: [],
@@ -102,8 +102,8 @@ const BROWSER_AND_DESKTOP_TOOLS = new Set([
   ...USER_COMPUTER_SCREEN_TOOLS,
 ]);
 
-export function noteComputerTaskStep(reply: ReplyState, tool: string) {
-  if (BROWSER_AND_DESKTOP_TOOLS.has(tool)) reply.computerTaskStarted = true;
+export function noteComputerTaskStep(reply: ReplyState, tool: string, change: 1 | -1 = 1) {
+  if (BROWSER_AND_DESKTOP_TOOLS.has(tool)) reply.computerTaskSteps += change;
 }
 
 /**
@@ -113,7 +113,7 @@ export function noteComputerTaskStep(reply: ReplyState, tool: string) {
 export function canPostLongTaskHeadsUp(ctx: RunContext) {
   const { reply } = ctx.state;
   return (
-    reply.computerTaskStarted &&
+    reply.computerTaskSteps > 0 &&
     reply.midTurnProgressCount === 0 &&
     isConversationalRun(ctx.run.trigger) &&
     !runAllowsSilentEmpty(ctx.run.trigger)

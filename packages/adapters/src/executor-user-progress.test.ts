@@ -71,6 +71,11 @@ async function runTurn(
     graphical?: boolean;
     /** The bot's owner sent the message and has a Mac connected. */
     ownDesktop?: boolean;
+    /** The owner's saved approval rules. */
+    approvalRules?: Array<{ effect: string; matchKind: string; matchValue: string }>;
+    /** A tool the person already denied in this run, with other arguments or the same ones. */
+    deniedTool?: string;
+    deniedCall?: string;
   } = {},
 ) {
   vi.mocked(loadBotMessageContext).mockResolvedValue({
@@ -262,16 +267,24 @@ async function runTurn(
     agentSkill: { findMany: vi.fn(async () => []) },
     scratchpadItem: { findMany: vi.fn(async () => []) },
     externalEffect: {
-      findMany: vi.fn(async () => []),
+      findMany: vi.fn(async (query?: { where?: { status?: unknown; kind?: unknown } }) =>
+        query?.where?.status === "denied" && query.where.kind === options.deniedTool
+          ? [{ request: {}, result: null }]
+          : [],
+      ),
       findFirst: vi.fn(async () => null),
-      findUnique: vi.fn(async () => null),
+      findUnique: vi.fn(async (query?: { where?: { idempotencyKey?: string } }) =>
+        options.deniedCall && query?.where?.idempotencyKey?.includes(`:${options.deniedCall}:`)
+          ? { id: "effect-denied", runId: "run-1", spaceId: "space-1", status: "denied" }
+          : null,
+      ),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
         id: `effect-${data.idempotencyKey}`,
         ...data,
       })),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
-    userActionApprovalRule: { findMany: vi.fn(async () => []) },
+    userActionApprovalRule: { findMany: vi.fn(async () => options.approvalRules ?? []) },
     userActionAutoReviewPreference: { findUnique: vi.fn(async () => null) },
     computerExecutionLease: {
       updateManyAndReturn: vi.fn(async () => [{ fence: 1 }]),
@@ -786,12 +799,21 @@ describe("notes that can't be posted as messages", () => {
     const sent = async (
       trigger: string,
       step: string,
-      { graphical = true, ownDesktop = false, stepId = "call-0" } = {},
+      {
+        graphical = true,
+        ownDesktop = false,
+        blocked = false,
+        denied = "",
+        stepId = "call-0",
+      } = {},
     ) => {
       const { messages } = await runTurn("", false, undefined, [], "fyi", {
         trigger,
         graphical,
         ownDesktop,
+        approvalRules: blocked ? [{ effect: "deny", matchKind: "tool", matchValue: step }] : [],
+        deniedTool: denied === "other" ? step : undefined,
+        deniedCall: denied === "same" ? step : undefined,
         // The step runs before its tool event is handled, as a real runtime may run it.
         runtime: async function* (request) {
           await request.executeTool!(step, {}, stepId).catch(() => undefined);
@@ -817,6 +839,10 @@ describe("notes that can't be posted as messages", () => {
     expect(await sent("user", "shell")).toEqual([]);
     expect(await sent("user", "browser_snapshot", { graphical: false })).toEqual([]);
     expect(await sent("user", "user_computer_observe")).toEqual([]);
+    // A step a saved rule blocks, or one the person already denied, never runs.
+    expect(await sent("user", "browser_snapshot", { blocked: true })).toEqual([]);
+    for (const denied of ["other", "same"])
+      expect(await sent("user", "user_computer_observe", { ownDesktop: true, denied })).toEqual([]);
     const helperStep = JSON.stringify(["pi-tool", "helper-1", "call-0"]);
     expect(
       await sent("user", "user_computer_observe", { ownDesktop: true, stepId: helperStep }),
