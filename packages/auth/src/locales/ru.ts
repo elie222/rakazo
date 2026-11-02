@@ -58,13 +58,13 @@ export const RU_MESSAGES: Record<string, string> = {
     "{name} теперь доступен в маркетплейсе плагинов Rakazo.",
   "We couldn't list {name} in the Rakazo plugin marketplace.":
     "Нам не удалось добавить {name} в маркетплейс плагинов Rakazo.",
-  "Confirm your Rakazo page claim": "Подтвердите заявку на страницу в Rakazo",
+  "Confirm your Rakazo page claim": "Подтвердите заявку на права на страницу в Rakazo",
   "Confirm claim": "Подтвердить заявку",
   "We review every claim once it's confirmed and will email you when it's done.":
     "Мы проверяем каждую заявку после подтверждения и напишем вам, когда закончим.",
   "This link expires in one day. If you did not claim a page, ignore this email.":
-    "Срок действия этой ссылки истекает через один день. Если вы не подавали заявку на страницу, проигнорируйте это письмо.",
-  "Your Rakazo page claim: {name}": "Ваша заявка на страницу в Rakazo: {name}",
+    "Срок действия этой ссылки истекает через один день. Если вы не заявляли права на страницу, проигнорируйте это письмо.",
+  "Your Rakazo page claim: {name}": "Ваша заявка на права на страницу в Rakazo: {name}",
   "Your changes to the {name} page are approved.": "Ваши изменения на странице {name} одобрены.",
   "We couldn't approve your changes to the {name} page.":
     "Нам не удалось одобрить ваши изменения на странице {name}.",
