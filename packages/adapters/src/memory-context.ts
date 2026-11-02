@@ -1,6 +1,6 @@
 import type { AdapterContext, MemoryStore } from "@rakazo/adapter-kit";
 import type { MemoryPromptBudget, MemoryPromptDocumentUse } from "@rakazo/contracts";
-import { BOT_MEMORY_MAX_BYTES } from "@rakazo/contracts";
+import { BOT_MEMORY_MAX_BYTES, MEMORY_INDEX_PATH } from "@rakazo/contracts";
 import { byteLength, truncateUtf8 } from "./utf8.js";
 
 /** How much durable memory a prompt carries before the rest is left out. */
@@ -60,7 +60,7 @@ export function buildAgentMemoryPrompt(
     }
     // The bot sees how full its memory is, so it tidies before a save is refused.
     const usage =
-      document.scope === "bot"
+      document.scope === "bot" && document.path === MEMORY_INDEX_PATH
         ? `, ${byteLength(document.content)} of ${BOT_MEMORY_MAX_BYTES} bytes`
         : "";
     const heading = `${sections.length === 0 ? "" : "\n\n"}## ${document.scope}: ${document.path} (revision ${document.revision}${usage})\n`;

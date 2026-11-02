@@ -179,7 +179,7 @@ describe.skipIf(!databaseAvailable)("memory eval through the product", () => {
         expect(result.status).toBe(pass ? "passed" : "failed");
         expect(result.cleanupFailed).toBe(false);
         if (id === "memory-moved-city") {
-          expect(result.criteria).toContainEqual({ id: "stale-entry-replaced", pass });
+          expect(result.criteria).toContainEqual({ id: "first-entry-rewritten", pass });
           expect(evidence?.memory.includes("Lives in London.")).toBe(!pass);
         } else {
           expect(result.criteria).toContainEqual({ id: "new-fact-saved", pass });

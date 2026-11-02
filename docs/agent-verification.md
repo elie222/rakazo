@@ -384,7 +384,7 @@ through the memory API before the first step; no model authors it.
 
 Deterministic checks read the stored memory and the model's `remember` calls:
 each earlier fact must have been saved before it can count as updated or
-forgotten, the London entry saved first must be rewritten or removed, entries
+forgotten, the home saved in the first conversation must be rewritten or removed, entries
 stay under 200 characters, and the bot's memory stays within the limit. The
 `memory-meaning-v1` judge then grades meaning: no stale current home, no
 recoverable forgotten code, no duplicate preference, every shared fact captured,

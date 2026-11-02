@@ -160,16 +160,16 @@ export const MEMORY_EVAL_CASES: EvalCase[] = [
       { ask: "Where do I live?" },
     ],
     grade: (e) => {
-      const london = saves(e, 1)
+      // The first session only asks to remember London, so whatever it saved is the old home.
+      const first = saves(e, 1)
         .flatMap((c) => String(c.args.content ?? "").split("\n"))
         .map((line) => line.trim())
-        .filter((line) => /london/i.test(line));
+        .filter(Boolean);
       const current = new Set(entries(e.memory));
       return [
-        check("london-saved-first", london.length > 0),
-        check("berlin-saved", /berlin/i.test(e.memory)),
-        // The first session's London entry must be rewritten or removed, not left beside Berlin.
-        check("stale-entry-replaced", london.length > 0 && london.every((l) => !current.has(l))),
+        check("home-saved-first", first.length > 0),
+        // That entry must be rewritten or removed, not left beside the new home; the judge reads the meaning.
+        check("first-entry-rewritten", first.length > 0 && first.every((l) => !current.has(l))),
         withinCap(e),
         entriesShort(e),
       ];
