@@ -599,48 +599,68 @@ function connectTargetPort(args: unknown[]): number | undefined {
 }
 
 describe("outbound proxy", () => {
-  it("uses the environment proxy when one is configured", async () => {
-    const dispatchers: unknown[] = [];
-    const fetchMock = (async (_input: RequestInfo | URL, init?: RequestInit) => {
-      dispatchers.push((init as { dispatcher?: unknown } | undefined)?.dispatcher);
-      return new Response("ok", { status: 200, headers: { "content-type": "text/plain" } });
-    }) as typeof fetch;
-
-    await fetchSafeWebText("https://example.test/page", {
-      fetch: fetchMock,
-      resolveHostname: publicResolver,
-      env: { HTTPS_PROXY: "http://proxy.example.test:9480" } as NodeJS.ProcessEnv,
+  async function withConnectProxy(
+    run: (proxy: { proxied: string[]; hosts: string[] }) => Promise<void>,
+  ): Promise<void> {
+    const proxied: string[] = [];
+    const hosts: string[] = [];
+    const target = createServer((request, response) => {
+      hosts.push(request.headers.host ?? "");
+      response.end("ok");
     });
-
-    expect(dispatchers[0]?.constructor?.name).toBe("EnvHttpProxyAgent");
-  });
-
-  it("keeps the pinned direct agent when no proxy is configured", async () => {
-    const dispatchers: unknown[] = [];
-    const fetchMock = (async (_input: RequestInfo | URL, init?: RequestInit) => {
-      dispatchers.push((init as { dispatcher?: unknown } | undefined)?.dispatcher);
-      return new Response("ok", { status: 200, headers: { "content-type": "text/plain" } });
-    }) as typeof fetch;
-
-    await fetchSafeWebText("https://example.test/page", {
-      fetch: fetchMock,
-      resolveHostname: publicResolver,
-      env: {} as NodeJS.ProcessEnv,
+    const proxy = createServer((request, response) => {
+      proxied.push(request.url ?? "");
+      response.writeHead(405).end();
     });
+    proxy.on("connect", (request, client) => {
+      proxied.push(request.url ?? "");
+      const upstream = new Socket();
+      upstream.connect((target.address() as AddressInfo).port, "127.0.0.1", () => {
+        client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+        upstream.pipe(client).pipe(upstream);
+      });
+    });
+    await Promise.all(
+      [target, proxy].map(
+        (server) => new Promise<void>((done) => server.listen(0, "127.0.0.1", done)),
+      ),
+    );
+    const proxyUrl = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
+    vi.stubEnv("HTTP_PROXY", proxyUrl);
+    vi.stubEnv("http_proxy", proxyUrl);
+    try {
+      await run({ proxied, hosts });
+    } finally {
+      vi.unstubAllEnvs();
+      proxy.closeAllConnections();
+      target.closeAllConnections();
+      await Promise.all([target, proxy].map((server) => new Promise((done) => server.close(done))));
+    }
+  }
 
-    expect(dispatchers[0]?.constructor?.name).toBe("Agent");
-  });
-
-  it("still refuses a blocked address before the proxy is asked", async () => {
-    const fetchMock = vi.fn() as unknown as typeof fetch;
-
-    await expect(
-      fetchSafeWebText("http://169.254.169.254/latest/meta-data", {
-        fetch: fetchMock,
+  it("tunnels to the checked address and keeps the original host", async () => {
+    await withConnectProxy(async ({ proxied, hosts }) => {
+      const response = await fetchSafeWebText("http://example.test/page", {
         resolveHostname: publicResolver,
-        env: { HTTPS_PROXY: "http://proxy.example.test:9480" } as NodeJS.ProcessEnv,
-      }),
-    ).rejects.toThrow();
-    expect(fetchMock).not.toHaveBeenCalled();
+      });
+
+      expect(response.body).toBe("ok");
+      expect(proxied).toEqual(["203.0.113.10:80"]);
+      expect(hosts).toEqual(["example.test"]);
+    });
+  });
+
+  it("refuses a host that rebinds to a private address before the proxy is asked", async () => {
+    await withConnectProxy(async ({ proxied }) => {
+      let calls = 0;
+      const rebinding = async () => [
+        { address: calls++ === 0 ? "203.0.113.10" : "127.0.0.1", family: 4 as const },
+      ];
+
+      await expect(
+        fetchSafeWebText("http://rebind.example.test/page", { resolveHostname: rebinding }),
+      ).rejects.toThrow();
+      expect(proxied).toEqual([]);
+    });
   });
 });

@@ -7,7 +7,8 @@ import {
   normalizeHost,
 } from "@rakazo/contracts";
 import { readBoundedResponseBytes } from "@rakazo/core";
-import { Agent, type Dispatcher, EnvHttpProxyAgent } from "undici";
+import type { Dispatcher } from "undici";
+import { EnvHttpProxyAgent, Pool } from "undici";
 import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
 import { createAddressCheckedLookup, egressRefused } from "./network-address.js";
 import { fetchPairedWithDispatcher } from "./undici-fetch.js";
@@ -33,21 +34,14 @@ export interface SafeWebFetchOptions {
   /** Refuse any hop, redirects included, whose port is not listed. */
   allowedPorts?: readonly number[];
   /**
-   * Where proxy settings are read from. Defaults to `process.env`.
-   * HTTP_PROXY / HTTPS_PROXY / NO_PROXY route these fetches the way the
-   * self-hosting docs describe; the target URL is still resolved and checked
-   * before every hop, so the proxy is never asked to reach a blocked address.
-   */
-  env?: NodeJS.ProcessEnv;
-  /**
-   * Test seam for dispatcher teardown. Defaults to `Agent.close()`.
+   * Test seam for dispatcher teardown. Defaults to `dispatcher.close()`.
    * Always raced against the shared operation deadline.
    */
   cleanup?: () => Promise<void>;
   /**
-   * Test seam for force-teardown after cleanup. Defaults to `Agent.destroy()`.
+   * Test seam for force-teardown after cleanup. Defaults to `dispatcher.destroy()`.
    * Invoked without awaiting so a hanging destroy cannot extend the deadline.
-   * May return a Promise (`Agent.destroy()` does); rejections are swallowed.
+   * May return a Promise (`dispatcher.destroy()` does); rejections are swallowed.
    */
   destroy?: () => void | Promise<void>;
 }
@@ -77,7 +71,16 @@ export async function assertSafeWebUrl(
   if (allowedPorts && !allowedPorts.includes(port)) {
     throw new Error("URL port is not allowed");
   }
-  const hostname = url.hostname.replace(/^\[|\]$/g, "");
+  await resolvePublicHost(url.hostname, resolve, signal);
+  return url;
+}
+
+async function resolvePublicHost(
+  host: string,
+  resolve: ResolveHostname,
+  signal?: AbortSignal,
+): Promise<ResolvedAddress[]> {
+  const hostname = host.replace(/^\[|\]$/g, "");
   if (isBlockedHostname(hostname)) {
     throw egressRefused(hostname, new Error("URL targets a private or internal host"));
   }
@@ -87,7 +90,7 @@ export async function assertSafeWebUrl(
   } catch (error) {
     throw egressRefused(hostname, error);
   }
-  return url;
+  return addresses;
 }
 
 export function isBlockedHostname(hostname: string): boolean {
@@ -170,26 +173,32 @@ export async function fetchSafeHttpRequest(
 }
 
 /**
- * The dispatcher for outbound fetches: a proxy when one is configured, a
- * DNS-pinned direct agent otherwise.
- *
- * A proxy resolves the target itself, so the pinned lookup cannot apply on that
- * path. `assertSafeWebUrl` still resolves and checks every hop before the
- * request is sent, which is what keeps a blocked address out of the proxy.
+ * Honors HTTP(S)_PROXY / NO_PROXY. Every proxied request is tunneled with CONNECT to the checked
+ * IP, so the proxy never resolves the hostname itself and DNS rebinding cannot reach past it.
  */
-function safeWebDispatcher(resolve: ResolveHostname, env: NodeJS.ProcessEnv): Dispatcher {
-  const httpProxy = env.HTTP_PROXY ?? env.http_proxy;
-  const httpsProxy = env.HTTPS_PROXY ?? env.https_proxy;
-  if (!httpProxy && !httpsProxy) {
-    return new Agent({
-      connect: { lookup: createAddressCheckedLookup(resolve, assertPublicAddresses) },
-    });
-  }
+function safeWebDispatcher(resolve: ResolveHostname): Dispatcher {
   return new EnvHttpProxyAgent({
-    ...(httpProxy ? { httpProxy } : {}),
-    ...(httpsProxy ? { httpsProxy } : {}),
-    noProxy: env.NO_PROXY ?? env.no_proxy ?? "",
+    connect: { lookup: createAddressCheckedLookup(resolve, assertPublicAddresses) },
+    proxyTunnel: true,
+    clientFactory: (origin, options) => {
+      const pool = new Pool(origin, options);
+      const connect = pool.connect.bind(pool) as (
+        options: Dispatcher.ConnectOptions,
+      ) => Promise<Dispatcher.ConnectData>;
+      return Object.assign(pool, {
+        connect: async (options: Dispatcher.ConnectOptions) =>
+          connect({ ...options, path: await checkedAuthority(options.path, resolve) }),
+      });
+    },
   });
+}
+
+async function checkedAuthority(authority: string, resolve: ResolveHostname): Promise<string> {
+  const separator = authority.lastIndexOf(":");
+  const [first] = await resolvePublicHost(authority.slice(0, separator), resolve);
+  const address = first?.address ?? "";
+  const host = ipVersion(address) === 6 ? `[${address}]` : address;
+  return `${host}${authority.slice(separator)}`;
 }
 
 async function withSafeEgress<T>(
@@ -204,7 +213,7 @@ async function withSafeEgress<T>(
   const resolve = options.resolveHostname ?? defaultResolveHostname;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const baseFetch = fetchPairedWithDispatcher(options.fetch);
-  const dispatcher = safeWebDispatcher(resolve, options.env ?? process.env);
+  const dispatcher = safeWebDispatcher(resolve);
   // One deadline for the whole redirect chain + body read + cleanup, not per hop.
   const signal = combineSignals(options.signal, AbortSignal.timeout(timeoutMs));
   const cleanup =
