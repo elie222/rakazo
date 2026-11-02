@@ -33,6 +33,7 @@ import {
 } from "../lib/billing";
 import { rpc } from "../lib/rpc";
 import { useSignOut } from "../lib/sign-out";
+import { AccountMenu } from "./AccountMenu";
 
 type CreditAmount = (typeof MODEL_CREDIT_AMOUNTS)[number];
 
@@ -152,14 +153,7 @@ export function CreditChoice({
       className="mx-auto flex min-h-dvh max-w-3xl flex-col justify-center gap-8 px-6 py-12"
     >
       {dismissible ? null : (
-        <Button
-          className="fixed top-4 right-6"
-          variant="text"
-          disabled={pending || signingOut}
-          onClick={() => void logOut()}
-        >
-          <Trans>Log out</Trans>
-        </Button>
+        <AccountMenu disabled={pending} signingOut={signingOut} onLogOut={() => void logOut()} />
       )}
       <h1 className="text-heading1 font-medium">
         <Trans>Choose how to use Rakazo</Trans>

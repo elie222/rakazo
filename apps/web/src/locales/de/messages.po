@@ -454,6 +454,7 @@ msgstr "Über {label}"
 msgid "Access token (optional)"
 msgstr "Zugriffstoken (optional)"
 
+#: src/components/AccountMenu.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Account"
 msgstr "Konto"
@@ -2491,6 +2492,7 @@ msgid "Delete {0}?"
 msgstr "{0} löschen?"
 
 #: src/components/AccountAccess.tsx
+#: src/components/AccountMenu.tsx
 msgid "Delete account"
 msgstr "Konto löschen"
 
@@ -3552,9 +3554,8 @@ msgstr "Mit lokalem Zugriff können Bots ohne Rückfrage Befehle ausführen. Ver
 msgid "Local computer access requires the latest desktop app."
 msgstr ""
 
-#: src/components/ModelCredits.tsx
+#: src/components/AccountMenu.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/Paywall.tsx
 msgid "Log out"
 msgstr "Abmelden"
 
