@@ -129,6 +129,7 @@ export function ActivityList({
   const attentionBots = showRoster
     ? bots.filter(
         (bot) =>
+          (!bot.activeRunThreadId || bot.activeRunThreadId === bot.threadId) &&
           notificationAttention(bot.status, bot.unread, Boolean(bot.runErrorId)) ===
             "needs_attention" &&
           !attentionRuns.some((run) => !run.groupId && run.botId === bot.id) &&

@@ -50,10 +50,15 @@ export function ActivitySection({
     (group) =>
       group.unread && ![...attentionRuns, ...workingRuns].some((run) => run.groupId === group.id),
   );
+  const unreadBots = bots.filter(
+    (bot) => notificationAttention(bot.status, bot.unread, Boolean(bot.runErrorId)) === "unread",
+  );
   const attentionBots = bots.filter(
     (bot) =>
+      (!bot.activeRunThreadId || bot.activeRunThreadId === bot.threadId) &&
       notificationAttention(bot.status, bot.unread, Boolean(bot.runErrorId)) ===
-        "needs_attention" && !attentionRuns.some((run) => !run.groupId && run.botId === bot.id),
+        "needs_attention" &&
+      !attentionRuns.some((run) => !run.groupId && run.botId === bot.id),
   );
   const botRow = (bot: MobileBot, state: string) => (
     <ConversationRow
@@ -71,7 +76,11 @@ export function ActivitySection({
     />
   );
   const readRecent = activity.recent.filter(
-    (run) => !attentionRuns.includes(run) && !runUnread(run),
+    (run) =>
+      !attentionRuns.includes(run) &&
+      !(run.groupId
+        ? unreadGroups.some((group) => group.id === run.groupId)
+        : [...unreadBots, ...attentionBots].some((bot) => bot.id === run.botId)),
   );
   return (
     <View style={styles.activitySection}>
@@ -94,11 +103,7 @@ export function ActivitySection({
           </View>
         ) : null,
       )}
-      {unreadGroups.length > 0 ||
-      bots.some(
-        (bot) =>
-          notificationAttention(bot.status, bot.unread, Boolean(bot.runErrorId)) === "unread",
-      ) ? (
+      {unreadGroups.length > 0 || unreadBots.length > 0 ? (
         <View>
           <Text style={styles.sectionHeading}>{t("Unread")}</Text>
           {unreadGroups.map((group) => (
@@ -117,12 +122,7 @@ export function ActivitySection({
               avatar={<GroupAvatar members={group.members} />}
             />
           ))}
-          {bots
-            .filter(
-              (bot) =>
-                notificationAttention(bot.status, bot.unread, Boolean(bot.runErrorId)) === "unread",
-            )
-            .map((bot) => botRow(bot, t("Unread")))}
+          {unreadBots.map((bot) => botRow(bot, t("Unread")))}
         </View>
       ) : null}
       {readRecent.length > 0 ? (

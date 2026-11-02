@@ -85,3 +85,68 @@ it("keeps roster-only failures and unread groups visible without run history", (
   expect(markup).toContain("Failed agent");
   expect(markup).toContain("Unread team");
 });
+
+it("shows group approval once without a private-chat fallback", () => {
+  const markup = renderToStaticMarkup(
+    createElement(ActivitySection, {
+      activity: {
+        active: [
+          {
+            runId: "ask",
+            botId: "marketing",
+            botName: "Marketing",
+            groupId: "launch",
+            groupName: "Launch team",
+            status: "waiting_input",
+          },
+        ] as never,
+        recent: [],
+      },
+      bots: [
+        {
+          id: "marketing",
+          name: "Marketing",
+          threadId: "private",
+          activeRunThreadId: "group-thread",
+          status: "waiting_input",
+          unread: false,
+        },
+      ] as never,
+    }),
+  );
+  expect(markup).toContain("Marketing, Launch team");
+  expect(markup.match(/Marketing/g)).toHaveLength(1);
+});
+it.each([false, true])(
+  "keeps an unread completed reply in Recent while its agent or group is working: %s",
+  (grouped) => {
+    const markup = renderToStaticMarkup(
+      createElement(ActivitySection, {
+        activity: {
+          active: [
+            {
+              runId: "work",
+              botId: "worker",
+              botName: "Busy agent",
+              status: "running",
+              groupId: grouped ? "team" : undefined,
+            },
+          ] as never,
+          recent: [
+            {
+              runId: "done",
+              botId: "worker",
+              botName: "Finished reply",
+              status: "completed",
+              groupId: grouped ? "team" : undefined,
+            },
+          ] as never,
+        },
+        bots: [{ id: "worker", name: "Worker", status: "running", unread: true }] as never,
+        groups: grouped ? ([{ id: "team", name: "Team", unread: true, members: [] }] as never) : [],
+      }),
+    );
+    expect(markup).toContain("Recent");
+    expect(markup).toContain("Finished reply");
+  },
+);

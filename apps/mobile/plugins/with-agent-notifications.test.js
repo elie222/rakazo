@@ -40,11 +40,15 @@ it("generates and embeds one notification extension, with signing metadata that 
     for (const entry of config.buildConfigurations) {
       expect(project.pbxXCBuildConfigurationSection()[entry.value].buildSettings).toMatchObject({
         APPLICATION_EXTENSION_API_ONLY: "YES",
+        INFOPLIST_FILE: '"AgentNotifications/AgentNotifications-Info.plist"',
         MARKETING_VERSION: "1.1",
         CURRENT_PROJECT_VERSION: "3",
         CODE_SIGN_ENTITLEMENTS: '"AgentNotifications/AgentNotifications.entitlements"',
       });
     }
+    expect(
+      readFileSync(join(directory, "AgentNotifications/AgentNotifications-Info.plist"), "utf8"),
+    ).toContain("$(PRODUCT_MODULE_NAME).NotificationService");
     const host = project.getFirstTarget().firstTarget;
     expect(host.dependencies.length).toBeGreaterThan(0);
     expect(project.writeSync()).toContain("AgentNotifications.appex in Copy Files");

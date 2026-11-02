@@ -1107,7 +1107,9 @@ export type MobileBot = Pick<
   | "fleetManagement"
   | "crossSpaceCommunication"
 > &
-  Partial<Pick<Bot, "parentBotId" | "spaceId" | "instructions" | "runErrorId">>;
+  Partial<
+    Pick<Bot, "parentBotId" | "spaceId" | "instructions" | "runErrorId" | "activeRunThreadId">
+  >;
 
 export type MobileBotSection = BotSection;
 

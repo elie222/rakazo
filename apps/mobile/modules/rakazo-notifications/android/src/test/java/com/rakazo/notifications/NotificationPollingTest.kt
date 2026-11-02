@@ -9,6 +9,20 @@ import org.junit.Test
 
 class NotificationPollingTest {
   @Test
+  fun `portrait failures retry and successful portraits refresh without restarting the service`() {
+    val cache = PollPortraitCache<String>()
+    var calls = 0
+    fun load(): String? { calls++; return if (calls == 1) null else "portrait-$calls" }
+    assertNull(cache.get("bot", 0, ::load))
+    assertNull(cache.get("bot", 9_999, ::load))
+    assertEquals(1, calls)
+    assertEquals("portrait-2", cache.get("bot", 10_000, ::load))
+    assertEquals("portrait-2", cache.get("bot", 309_999, ::load))
+    assertEquals("portrait-3", cache.get("bot", 310_000, ::load))
+    assertEquals("portrait-4", PollPortraitCache<String>().get("bot", 310_001, ::load))
+  }
+
+  @Test
   fun `restart retains a reply missing from the next full recent page and posts it once`() {
     val seen = mutableSetOf<String>()
     val completions = PollCompletions(seen)

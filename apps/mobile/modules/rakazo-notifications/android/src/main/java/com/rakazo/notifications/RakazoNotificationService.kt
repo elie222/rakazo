@@ -101,7 +101,7 @@ class RakazoNotificationService : Service() {
 
   private suspend fun poll(generation: Long) {
     var selectedAvatarStyle: String? = null
-    val portraits = mutableMapOf<String, Bitmap?>()
+    val portraits = PollPortraitCache<Bitmap>()
     val startedAt = SystemClock.elapsedRealtime()
     val cadence = PollCadence()
     while (scope.isActive) {
@@ -136,18 +136,18 @@ class RakazoNotificationService : Service() {
         val working = active.filter(::isWorking).filter { it.notificationsEnabled }
         if (generation != sessionGeneration.get()) return
         val recent = runs(storage.endpoint, token, storage.spaceId, storage.headers, "recent")
-        fun portrait(run: RunRecord): Bitmap? {
-          if (portraits.containsKey(run.botId)) return portraits[run.botId]
-          return runCatching {
+        val preparedPortraits = mutableMapOf<String, Bitmap?>()
+        fun portrait(run: RunRecord): Bitmap? = portraits.get(run.botId, SystemClock.elapsedRealtime()) {
+          runCatching {
             val identity = rpc(storage.endpoint, token, storage.spaceId, storage.headers, "notifications/identity",
               JSONObject().put("botId", run.botId), timeoutMs = 2_000)
             senderPortrait(identity)
-          }.getOrNull().also { portraits[run.botId] = it }
+          }.getOrNull()
         }
         val workingPortrait = working.firstOrNull { !isOpenThread(it) }?.let { portrait(it) }
         (active + recent).filter {
           it.status == "waiting_input" || it.status == "waiting_takeover" || it.status == "failed"
-        }.forEach { portrait(it) }
+        }.forEach { preparedPortraits[it.botId] = portrait(it) }
         var replyLookups = emptyList<RunRecord>()
         val immediate = mutableListOf<Pair<RunRecord, NotificationCopy>>()
         if (!runIfCurrent(generation) {
@@ -167,7 +167,7 @@ class RakazoNotificationService : Service() {
                 .forEach { immediate += it to attentionCopy(copyContext, it) }
             }
             alertedAttention.retainAll(active.map { "${it.runId}:${it.status}" }.toSet())
-            immediate.forEach { (run, copy) -> post(run, copy, portraits[run.botId]) }
+            immediate.forEach { (run, copy) -> post(run, copy, preparedPortraits[run.botId]) }
           }
         ) {
           return

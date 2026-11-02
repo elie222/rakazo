@@ -96,6 +96,8 @@ it("separates attention, working and unread and keeps the agent beside every run
             {
               ...run,
               runId: "ask",
+              groupId: "launch",
+              groupName: "Launch team",
               botId: "marketing",
               botName: "Marketing",
               status: "waiting_input",
@@ -114,6 +116,15 @@ it("separates attention, working and unread and keeps the agent beside every run
         <QueryClientProvider client={client}>
           <ActivityList
             bots={[
+              {
+                id: "marketing",
+                name: "Marketing",
+                status: "waiting_input",
+                threadId: "private",
+                activeRunThreadId: "group-thread",
+                unread: false,
+              } as never,
+
               {
                 id: "writer",
                 name: "Writer",
@@ -140,6 +151,9 @@ it("separates attention, working and unread and keeps the agent beside every run
     expect(container.querySelector('section[aria-label="Working"]')!.textContent).toContain(
       "Research",
     );
+    expect(
+      container.querySelector('section[aria-label="Needs attention"]')!.querySelectorAll("button"),
+    ).toHaveLength(1);
     const unread = container.querySelector('section[aria-label="Unread"]')!;
     expect(unread.textContent).toContain("Writer");
     expect(container.querySelectorAll('[data-testid="agent-avatar"]')).toHaveLength(3);
