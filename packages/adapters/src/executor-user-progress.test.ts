@@ -69,21 +69,6 @@ async function runTurn(
     appendGate?: (event: AppendEventInput) => Promise<void> | undefined;
     /** The computer has a screen and a page browser, and the model can see. */
     graphical?: boolean;
-    /** The bot's owner sent the message and has a Mac paired, connected unless "offline". */
-    ownDesktop?: boolean | "offline";
-    /** An app the owner already allowed the bot to use on their Mac. */
-    allowedApp?: string;
-    /** The owner's saved approval rules. */
-    approvalRules?: Array<{ effect: string; matchKind: string; matchValue: string }>;
-    /** A tool the person already denied in this run, with other arguments or the same ones. */
-    deniedTool?: string;
-    deniedCall?: string;
-    /** The owner is teaching the bot a skill on its computer. */
-    teaching?: boolean;
-    /** Holds the teaching and earlier-denial checks open until it settles. */
-    refusalHeld?: Promise<void>;
-    /** The page browser fails the step after reaching the page. */
-    browserFails?: boolean;
   } = {},
 ) {
   vi.mocked(loadBotMessageContext).mockResolvedValue({
@@ -171,7 +156,6 @@ async function runTurn(
         computerSwitching: false,
         memoryScope: null,
         computer: { id: "computer-1", scope: "dedicated" },
-        ...(options.ownDesktop ? { userId: run.userId } : {}),
       })),
       findMany: vi.fn(async () => []),
     },
@@ -241,9 +225,7 @@ async function runTurn(
       findUnique: vi.fn(async () =>
         run.trigger === "messaging"
           ? { blocks: [{ kind: "channel_message", channelId: "channel-1" }] }
-          : options.ownDesktop
-            ? { role: "user", blocks: [{ kind: "text", text: "Look again" }] }
-            : null,
+          : null,
       ),
       findFirst: vi.fn(async () => null),
     },
@@ -270,41 +252,21 @@ async function runTurn(
         defaultModelId: "fixture-model",
       })),
     },
-    taughtSkill: {
-      findMany: vi.fn(async () => []),
-      findFirst: vi.fn(async () => {
-        await options.refusalHeld;
-        return options.teaching ? { id: "skill-1" } : null;
-      }),
-    },
+    taughtSkill: { findMany: vi.fn(async () => []) },
     vaultCredential: { findMany: vi.fn(async () => []) },
     agentSkill: { findMany: vi.fn(async () => []) },
     scratchpadItem: { findMany: vi.fn(async () => []) },
     externalEffect: {
-      findMany: vi.fn(async (query?: { where?: { status?: unknown; kind?: unknown } }) => {
-        if (query?.where?.status === "denied" && query.where.kind === options.deniedTool)
-          await options.refusalHeld;
-        return query?.where?.status === "denied"
-          ? query.where.kind === options.deniedTool
-            ? [{ request: {}, result: null }]
-            : []
-          : options.allowedApp && typeof query?.where?.kind === "object"
-            ? [{ id: "effect-allowed", request: { app: options.allowedApp } }]
-            : [];
-      }),
+      findMany: vi.fn(async () => []),
       findFirst: vi.fn(async () => null),
-      findUnique: vi.fn(async (query?: { where?: { idempotencyKey?: string } }) =>
-        options.deniedCall && query?.where?.idempotencyKey?.includes(`:${options.deniedCall}:`)
-          ? { id: "effect-denied", runId: "run-1", spaceId: "space-1", status: "denied" }
-          : null,
-      ),
+      findUnique: vi.fn(async () => null),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
         id: `effect-${data.idempotencyKey}`,
         ...data,
       })),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
-    userActionApprovalRule: { findMany: vi.fn(async () => options.approvalRules ?? []) },
+    userActionApprovalRule: { findMany: vi.fn(async () => []) },
     userActionAutoReviewPreference: { findUnique: vi.fn(async () => null) },
     computerExecutionLease: {
       updateManyAndReturn: vi.fn(async () => [{ fence: 1 }]),
@@ -362,22 +324,12 @@ async function runTurn(
       ? {
           browser: {
             describe: () => ({ capabilities: { page: true } }),
-            snapshot: async () => {
-              if (options.browserFails) throw new Error("The page crashed.");
-              return { url: "https://example.test/", title: "Example", tree: "", elements: [] };
-            },
-          },
-        }
-      : {}),
-    ...(options.ownDesktop
-      ? {
-          userDevices: {
-            connected: async () =>
-              options.ownDesktop === "offline" ? null : { platform: "darwin" },
-            pairedSince: async () => (options.allowedApp ? new Date(0) : null),
-            async *request() {
-              yield { app: options.allowedApp, tree: "- [0] AXWindow" };
-            },
+            snapshot: async () => ({
+              url: "https://example.test/",
+              title: "Example",
+              tree: "",
+              elements: [],
+            }),
           },
         }
       : {}),
@@ -833,43 +785,18 @@ describe("notes that can't be posted as messages", () => {
     ).toEqual({ result: notYet, sent: [...earlier, "Yes, still on it."] });
   });
 
-  it("posts one heads-up at once once a fresh turn starts a browser or desktop step", async () => {
-    const sent = async (
-      trigger: string,
-      step: string,
-      {
-        args = {},
-        graphical = true,
-        ownDesktop = false as boolean | "offline",
-        allowedApp = undefined as string | undefined,
-        blocked = false,
-        denied = "",
-        teaching = false,
-        browserFails = false,
-        earlierStep = "",
-        stepId = "call-0",
-      } = {},
-    ) => {
+  it("posts one heads-up at once once a fresh turn calls a browser or desktop tool", async () => {
+    const sent = async (trigger: string, step: string, graphical = true) => {
       const { messages } = await runTurn("", false, undefined, [], "fyi", {
         trigger,
         graphical,
-        ownDesktop,
-        allowedApp,
-        approvalRules: blocked ? [{ effect: "deny", matchKind: "tool", matchValue: step }] : [],
-        deniedTool: denied === "other" ? step : undefined,
-        deniedCall: denied === "same" ? step : undefined,
-        teaching,
-        browserFails,
-        // The step runs before its tool event is handled, as a real runtime may run it.
         runtime: async function* (request) {
-          if (earlierStep) await request.executeTool!(earlierStep, {}, "call-earlier");
-          await request.executeTool!(step, args, stepId).catch(() => undefined);
+          await request.executeTool!(step, {}, "call-0").catch(() => undefined);
           for (const [index, message] of [
             "This will take a few minutes.",
             "Still going.",
-          ].entries()) {
+          ].entries())
             await request.executeTool!("message_user", { message }, `call-${index + 1}`);
-          }
           yield { type: "text", text: "Done." };
           yield { type: "done", text: "" };
         },
@@ -879,83 +806,12 @@ describe("notes that can't be posted as messages", () => {
     const headsUp = ["This will take a few minutes."];
     expect(await sent("user", "computer_observe")).toEqual(headsUp);
     expect(await sent("messaging", "browser_snapshot")).toEqual(headsUp);
-    // The owner's own Mac asks before it is used; the heads-up may still come first.
-    expect(await sent("user", "user_computer_observe", { ownDesktop: true })).toEqual(headsUp);
-    const notes = { ownDesktop: true, allowedApp: "Notes", args: { app: "Notes" } };
-    expect(await sent("user", "user_computer_observe", notes)).toEqual(headsUp);
-    // Other steps, steps this run can't take, and runs nobody is waiting on keep the
+    // Other steps, tools this computer lacks, and runs nobody is waiting on keep the
     // fresh-turn rule.
     expect(await sent("user", "shell")).toEqual([]);
-    expect(await sent("user", "browser_snapshot", { graphical: false })).toEqual([]);
-    expect(await sent("user", "user_computer_observe")).toEqual([]);
-    // So does a step that ends in an error: blocked by a saved rule, already denied, refused
-    // while the owner teaches, sent malformed actions, met an offline Mac, or failed on the page.
-    expect(await sent("user", "browser_snapshot", { blocked: true })).toEqual([]);
-    for (const denied of ["other", "same"])
-      expect(await sent("user", "user_computer_observe", { ownDesktop: true, denied })).toEqual([]);
-    for (const step of ["computer_observe", "browser_snapshot"])
-      expect(await sent("user", step, { teaching: true })).toEqual([]);
-    expect(await sent("user", "computer_act")).toEqual([]);
-    expect(
-      await sent("user", "user_computer_act", { ...notes, args: { app: "Notes", actions: [] } }),
-    ).toEqual([]);
-    expect(
-      await sent("user", "user_computer_observe", { ...notes, ownDesktop: "offline" }),
-    ).toEqual([]);
-    expect(await sent("user", "browser_snapshot", { browserFails: true })).toEqual([]);
-    // A failed step doesn't take away an earlier one that worked.
-    expect(
-      await sent("user", "browser_snapshot", {
-        browserFails: true,
-        earlierStep: "computer_observe",
-      }),
-    ).toEqual(headsUp);
-    const helperStep = JSON.stringify(["pi-tool", "helper-1", "call-0"]);
-    expect(
-      await sent("user", "user_computer_observe", { ownDesktop: true, stepId: helperStep }),
-    ).toEqual([]);
+    expect(await sent("user", "browser_snapshot", false)).toEqual([]);
     for (const trigger of ["routine", "webhook", "reaction", "bot_message"])
       expect(await sent(trigger, "browser_snapshot")).toEqual([]);
-  });
-
-  it("posts no heads-up alongside a step that is refused while message_user runs", async () => {
-    const sent = async (
-      step: string,
-      refusal: {
-        teaching?: boolean;
-        deniedTool?: string;
-        ownDesktop?: boolean;
-        allowedApp?: string;
-      },
-    ) => {
-      let release!: () => void;
-      const refusalHeld = new Promise<void>((resolve) => (release = resolve));
-      const { messages } = await runTurn("", false, undefined, [], "fyi", {
-        trigger: "user",
-        graphical: true,
-        ...refusal,
-        refusalHeld,
-        // The step is refused only after message_user has finished.
-        runtime: async function* (request) {
-          const running = request.executeTool!(step, { app: "Notes" }, "call-0");
-          await request.executeTool!(
-            "message_user",
-            { message: "This will take a few minutes." },
-            "call-1",
-          );
-          release();
-          await running.catch(() => undefined);
-          yield { type: "text", text: "Done." };
-          yield { type: "done", text: "" };
-        },
-      });
-      return sentTexts(messages);
-    };
-    for (const step of ["computer_observe", "browser_snapshot"])
-      expect(await sent(step, { teaching: true })).toEqual([]);
-    const denied = "user_computer_observe";
-    const notes = { ownDesktop: true, allowedApp: "Notes" };
-    expect(await sent(denied, { ...notes, deniedTool: denied })).toEqual([]);
   });
 });
 

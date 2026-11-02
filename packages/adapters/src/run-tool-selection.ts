@@ -8,8 +8,8 @@ import { builtinAgentTools } from "./builtin-tools.js";
 import { selectCloudAgentTools } from "./cloud-agent-tools-select.js";
 import { selectMemoryTools } from "./memory-tools.js";
 import { filterImageReturningComputerTools } from "./model-vision.js";
+import { USER_COMPUTER_SCREEN_TOOLS } from "./run-tools-user-computer.js";
 import { filterBuiltinToolsForRun, filterBuiltinToolsForThread } from "./schedule-tools.js";
-import { USER_COMPUTER_SCREEN_TOOLS } from "./user-computer-tools.js";
 
 export const READ_ONLY_AGENT_TOOLS = new Set([
   "computer_observe",

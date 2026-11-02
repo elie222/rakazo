@@ -1,12 +1,11 @@
 import type { AgentToolExecutionObserver } from "@rakazo/adapter-kit";
 import { toolResultTaintsRun } from "@rakazo/core";
-import { isTerminatingReplyResult, isToolPauseResult } from "./approval-effect.js";
+import { isTerminatingReplyResult } from "./approval-effect.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS, MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.js";
 import type { RunContext } from "./run-context.js";
 import { noteComputerTaskStep } from "./run-progress.js";
 import type { ToolHandler } from "./run-tool-gate.js";
 import { auditToolCall, gateToolCall } from "./run-tool-gate.js";
-import type { ToolRequest } from "./run-tool-request.js";
 import { prepareToolRequest, resolveToolRequest } from "./run-tool-request.js";
 import { PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
 import { computerTools, pageBrowserTool } from "./run-tools-computer.js";
@@ -98,28 +97,9 @@ async function dispatchTool(
   if ("error" in request) return request;
   const refused = await prepareToolRequest(ctx, request);
   if (refused) return refused;
-  // A browser or desktop step is noted once it starts or waits for approval; one that ends in
-  // an error is taken back.
-  let failed = true;
-  try {
-    const result = await gateAndRunTool(ctx, request, observer);
-    failed = isToolError(result);
-    return result;
-  } finally {
-    if (failed) ctx.state.reply.computerTaskSteps.delete(request.executionId);
-  }
-}
-
-async function gateAndRunTool(
-  ctx: RunContext,
-  request: ToolRequest,
-  observer: AgentToolExecutionObserver | undefined,
-) {
+  noteComputerTaskStep(ctx.state.reply, request.name);
   const gate = await gateToolCall(ctx, request, observer);
-  if ("result" in gate) {
-    if (isToolPauseResult(gate.result)) noteComputerTaskStep(ctx.state.reply, request);
-    return gate.result;
-  }
+  if ("result" in gate) return gate.result;
   if (!gate.call.applied) return toolHandler(gate.call.name)(ctx, gate.call);
   let outcome: "success" | "failure" = "failure";
   try {
