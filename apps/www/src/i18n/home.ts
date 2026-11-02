@@ -31,6 +31,8 @@ export type HomeCopy = {
     blog: string;
     github: string;
     getStarted: string;
+    copyLogo: string;
+    brandKit: string;
   };
   hero: {
     eyebrow: string;
@@ -114,6 +116,7 @@ export type HomeCopy = {
       alternatives: string;
       all: string;
       about: string;
+      brand: string;
       support: string;
       privacy: string;
       terms: string;
@@ -888,6 +891,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "Blog",
       github: "GitHub",
       getStarted: "Get started",
+      copyLogo: "Copy logo as SVG",
+      brandKit: "Brand kit",
     },
     hero: {
       eyebrow: "Open source",
@@ -1010,6 +1015,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         alternatives: "Alternatives",
         all: "All",
         about: "About",
+        brand: "Brand",
         support: "Support",
         privacy: "Privacy",
         terms: "Terms",
@@ -1037,6 +1043,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "Blog",
       github: "GitHub",
       getStarted: "Loslegen",
+      copyLogo: "Logo als SVG kopieren",
+      brandKit: "Markenkit",
     },
     hero: {
       eyebrow: "Open Source",
@@ -1163,6 +1171,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         alternatives: "Alternativen",
         all: "Alle",
         about: "Über uns",
+        brand: "Marke",
         support: "Support",
         privacy: "Datenschutz",
         terms: "AGB",
@@ -1189,6 +1198,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "블로그",
       github: "GitHub",
       getStarted: "시작하기",
+      copyLogo: "로고를 SVG로 복사",
+      brandKit: "브랜드 키트",
     },
     hero: {
       eyebrow: "오픈 소스",
@@ -1315,6 +1326,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         alternatives: "대안",
         all: "전체",
         about: "소개",
+        brand: "브랜드",
         support: "지원",
         privacy: "개인정보 처리방침",
         terms: "이용약관",
@@ -1341,6 +1353,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "博客",
       github: "GitHub",
       getStarted: "开始使用",
+      copyLogo: "复制 SVG 格式徽标",
+      brandKit: "品牌资源",
     },
     hero: {
       eyebrow: "开源",
@@ -1467,6 +1481,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         alternatives: "替代方案",
         all: "全部",
         about: "关于",
+        brand: "品牌",
         support: "支持",
         privacy: "隐私",
         terms: "条款",
@@ -1494,6 +1509,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "ブログ",
       github: "GitHub",
       getStarted: "はじめる",
+      copyLogo: "ロゴをSVGでコピー",
+      brandKit: "ブランドキット",
     },
     hero: {
       eyebrow: "オープンソース",
@@ -1620,6 +1637,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         alternatives: "代替ツール",
         all: "すべて",
         about: "概要",
+        brand: "ブランド",
         support: "サポート",
         privacy: "プライバシー",
         terms: "利用規約",
@@ -1647,6 +1665,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "Blog",
       github: "GitHub",
       getStarted: "Empezar",
+      copyLogo: "Copiar logotipo como SVG",
+      brandKit: "Kit de marca",
     },
     hero: {
       eyebrow: "Código abierto",
@@ -1773,6 +1793,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         alternatives: "Alternativas",
         all: "Todas",
         about: "Acerca de",
+        brand: "Marca",
         support: "Soporte",
         privacy: "Privacidad",
         terms: "Términos",
@@ -1800,6 +1821,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "Blog",
       github: "GitHub",
       getStarted: "Commencer",
+      copyLogo: "Copier le logo en SVG",
+      brandKit: "Kit de marque",
     },
     hero: {
       eyebrow: "Open source",
@@ -1926,6 +1949,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         alternatives: "Alternatives",
         all: "Toutes",
         about: "À propos",
+        brand: "Marque",
         support: "Support",
         privacy: "Confidentialité",
         terms: "Conditions",
@@ -1953,6 +1977,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "Blog",
       github: "GitHub",
       getStarted: "Começar",
+      copyLogo: "Copiar logo como SVG",
+      brandKit: "Kit de marca",
     },
     hero: {
       eyebrow: "Código aberto",
@@ -2079,6 +2105,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         alternatives: "Alternativas",
         all: "Todas",
         about: "Sobre",
+        brand: "Marca",
         support: "Suporte",
         privacy: "Privacidade",
         terms: "Termos",
@@ -2106,6 +2133,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "Blog",
       github: "GitHub",
       getStarted: "Aan de slag",
+      copyLogo: "Logo kopiëren als SVG",
+      brandKit: "Merkkit",
     },
     hero: {
       eyebrow: "Open source",
@@ -2232,6 +2261,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         alternatives: "Alternatieven",
         all: "Alle",
         about: "Over ons",
+        brand: "Merk",
         support: "Support",
         privacy: "Privacy",
         terms: "Voorwaarden",
@@ -2259,6 +2289,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "Блог",
       github: "GitHub",
       getStarted: "Начать",
+      copyLogo: "Копировать логотип в SVG",
+      brandKit: "Брендбук",
     },
     hero: {
       eyebrow: "Открытый исходный код",
@@ -2385,6 +2417,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         alternatives: "Альтернативы",
         all: "Все",
         about: "О нас",
+        brand: "Бренд",
         support: "Поддержка",
         privacy: "Конфиденциальность",
         terms: "Условия",
@@ -2412,6 +2445,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "Blog",
       github: "GitHub",
       getStarted: "Başlayın",
+      copyLogo: "Logoyu SVG olarak kopyala",
+      brandKit: "Marka kiti",
     },
     hero: {
       eyebrow: "Açık kaynak",
@@ -2538,6 +2573,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         alternatives: "Alternatifler",
         all: "Tümü",
         about: "Hakkımızda",
+        brand: "Marka",
         support: "Destek",
         privacy: "Gizlilik",
         terms: "Koşullar",
@@ -2565,6 +2601,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "בלוג",
       github: "GitHub",
       getStarted: "להתחיל",
+      copyLogo: "העתקת הלוגו כ-SVG",
+      brandKit: "ערכת מותג",
     },
     hero: {
       eyebrow: "קוד פתוח",
@@ -2691,6 +2729,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         alternatives: "חלופות",
         all: "הכול",
         about: "אודות",
+        brand: "מותג",
         support: "תמיכה",
         privacy: "פרטיות",
         terms: "תנאים",
@@ -2718,6 +2757,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "ब्लॉग",
       github: "GitHub",
       getStarted: "शुरू करें",
+      copyLogo: "लोगो को SVG के रूप में कॉपी करें",
+      brandKit: "ब्रांड किट",
     },
     hero: {
       eyebrow: "ओपन सोर्स",
@@ -2844,6 +2885,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         alternatives: "विकल्प",
         all: "सभी",
         about: "हमारे बारे में",
+        brand: "ब्रांड",
         support: "सहायता",
         privacy: "गोपनीयता",
         terms: "शर्तें",
@@ -2870,6 +2912,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "部落格",
       github: "GitHub",
       getStarted: "開始使用",
+      copyLogo: "複製 SVG 標誌",
+      brandKit: "品牌資源",
     },
     hero: {
       eyebrow: "開源",
@@ -2996,6 +3040,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         alternatives: "替代方案",
         all: "全部",
         about: "關於我們",
+        brand: "品牌",
         support: "支援",
         privacy: "隱私權",
         terms: "條款",
