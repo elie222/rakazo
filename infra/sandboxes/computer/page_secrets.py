@@ -202,7 +202,7 @@ class CdpClient:
                 offset += 4
             if length > MAX_FRAME_BYTES:
                 # A page's own events can be huge (a request for a multi-megabyte data: URL): skip them.
-                head_size = min(length, 32)
+                head_size = min(length, 256)
                 self._need(offset + head_size)
                 head = bytes(self._buf[offset:offset + head_size])
                 if masked:
@@ -210,6 +210,8 @@ class CdpClient:
                 reply = re.match(rb'\{"id":\s*(\d+)\s*[,}]', head)
                 if reply and opcode in (0x0, 0x1, 0x2):
                     self._discarded_reply = int(reply.group(1))
+                elif opcode in (0x0, 0x1, 0x2):
+                    self._skipped_event(head)
                 del self._buf[:offset]
                 self._discard = length
                 continue
@@ -225,6 +227,9 @@ class CdpClient:
                 continue
             if opcode in (0x0, 0x1, 0x2):
                 return payload
+
+    def _skipped_event(self, head: bytes) -> None:
+        """The first bytes of an event too large to read."""
 
     def _handle_event(self, message: dict[str, Any]) -> None:
         method = message.get("method")

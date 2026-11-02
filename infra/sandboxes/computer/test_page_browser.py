@@ -1326,6 +1326,15 @@ class CdpFrameTest(unittest.TestCase):
                         patch.object(client, "_send"), self.assertRaisesRegex(RuntimeError, "Runtime.evaluate failed.*too large"):
                     client.call("Runtime.evaluate", timeout_s=5)
 
+    def test_an_oversized_download_still_begins(self):
+        begin = json.dumps({"method": "Browser.downloadWillBegin", "params": {
+            "frameId": "F1", "guid": "0a1b-2c3d", "url": "data:text/csv;base64," + "A" * self.BIG,
+            "suggestedFilename": "export.csv"}}, separators=(",", ":")).encode()
+        client = helper.CdpClient("ws://browser.example.test:9222/test")
+        client._sock = FrameSocket(ws_frame(begin) + ws_frame(b"{}"))
+        self.assertEqual(client._read_frame(), b"{}")
+        self.assertEqual(list(client.downloads), ["0a1b-2c3d"])
+
     def test_a_frame_just_under_the_limit_is_still_read(self):
         payload = self.event(secrets.MAX_FRAME_BYTES - 200)
         self.assertEqual(self.client(ws_frame(payload))._read_frame(), payload)

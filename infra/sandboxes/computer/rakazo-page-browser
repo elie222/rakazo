@@ -1160,6 +1160,12 @@ class CdpClient(page_secrets.CdpClient):
         # browser makes their requests, so the page has no document for them.
         self.download_links: list[float] = []
 
+    def _skipped_event(self, head: bytes) -> None:
+        # A download of a huge data: URL still begins: Chromium sends its guid before the url.
+        begun = re.match(rb'\{"method":"Browser.downloadWillBegin","params":\{"frameId":"[^"]*","guid":"([0-9A-Fa-f-]+)"', head)
+        if begun:
+            self._handle_event({"method": "Browser.downloadWillBegin", "params": {"guid": begun.group(1).decode()}})
+
     def _handle_event(self, message: dict[str, Any]) -> None:
         super()._handle_event(message)
         method = message.get("method")
