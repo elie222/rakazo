@@ -1065,6 +1065,10 @@ export interface BrowserNavigateResult {
   /** When set, the page tool could not operate; use computer_act instead. */
   fallback?: "computer_act";
   error?: string;
+  /** What the page did that the bot should know, such as an alert that was closed. */
+  note?: string;
+  /** A JavaScript dialog the page has open on the screen, which page tools cannot answer. */
+  dialog?: string;
 }
 
 export interface BrowserSnapshotRequest {
@@ -1094,6 +1098,10 @@ export interface BrowserSnapshotResult {
   loading?: boolean;
   fallback?: "computer_act";
   error?: string;
+  /** What the page did that the bot should know, such as an alert that was closed. */
+  note?: string;
+  /** A JavaScript dialog the page has open on the screen, which page tools cannot answer. */
+  dialog?: string;
 }
 
 export type BrowserActKind = "click" | "fill" | "type" | "upload";
@@ -1155,6 +1163,10 @@ export interface BrowserActResult {
   downloads?: BrowserDownload[];
   fallback?: "computer_act";
   error?: string;
+  /** What the page did that the bot should know, such as an alert that was closed. */
+  note?: string;
+  /** A JavaScript dialog the page has open on the screen, which page tools cannot answer. */
+  dialog?: string;
 }
 
 /** A sandbox must route these commands through its owned screen, never generic host execution. */

@@ -75,12 +75,22 @@ class FakeAgentBrowser:
         self.typing = {"result": {"multiline": False}}
         self.stuck = False
         self.checks = []
+        # A JavaScript dialog the next click opens, then the one open on the page.
+        self.opens = None
+        self.dialog = None
 
     def batch(self, commands, *, timeout=20.0, bail=True):
         results = []
         for index, command in enumerate(commands):
             self.sent.append(command)
             key = command[0]
+            if self.dialog and key in ("eval", "snapshot", "network", "get"):
+                # As agent-browser does once a read has timed out on a page a dialog blocks.
+                failure = "tab is not responding and did not recover after activation"
+                if bail:
+                    raise helper.AbError(failure, index)
+                results.append(None)
+                continue
             if key in self.fail:
                 failure = self.fail[key]
                 if callable(failure):
@@ -95,6 +105,14 @@ class FakeAgentBrowser:
 
     def answer(self, command):
         name = command[0]
+        if name in ("click", "fill") and self.opens:
+            self.dialog, self.opens = self.opens, None
+            return {"clicked": command[1], "dialogOpened": True}
+        if command[:2] == ["dialog", "status"]:
+            return {"hasDialog": True, "defaultPrompt": "", **self.dialog} if self.dialog else {"hasDialog": False}
+        if command[:2] == ["dialog", "dismiss"]:
+            self.dialog = None
+            return {}
         if name == "snapshot":
             return interactive(self.tree) if "-i" in command else {"snapshot": self.tree}
         if name == "eval":
@@ -307,6 +325,66 @@ class ActTest(unittest.TestCase):
         self.assertEqual(result["fallback"], "computer_act")
         self.assertEqual(result["uncertain"], True)
 
+    def test_an_alert_a_click_opened_is_closed_and_its_message_reported(self):
+        browser = FakeAgentBrowser()
+        browser.opens = {"type": "alert", "message": "Saved"}
+        result, _ = self.act([{"kind": "click", "ref": "e8"}], browser)
+        self.assertEqual((result["ok"], result["completed"]), (True, 1))
+        self.assertEqual(result["note"], 'The page showed an alert, now closed: "Saved".')
+        self.assertIn("Welcome back", result["tree"])
+        self.assertIn(["dialog", "dismiss"], browser.sent)
+        self.assertNotIn(["dialog", "accept"], browser.sent)
+
+    def test_an_alert_stops_the_steps_after_the_click_that_opened_it(self):
+        browser = FakeAgentBrowser()
+        browser.opens = {"type": "alert", "message": "Name is required"}
+        result, _ = self.act([{"kind": "click", "ref": "e8"}, {"kind": "fill", "ref": "e2", "text": "Grace"}], browser)
+        self.assertEqual((result["ok"], result["completed"], result["uncertain"]), (False, 1, False))
+        self.assertEqual(result["error"],
+                         'The page showed an alert, now closed: "Name is required". The remaining steps did not run.')
+        self.assertNotIn("fallback", result)
+        self.assertIn("tree", result)
+        self.assertEqual(browser.actions(), [["click", "@e8"], ["dialog", "status"], ["dialog", "dismiss"]])
+
+    def test_an_alert_that_blocks_the_read_after_a_fill_leaves_the_fill_in_doubt(self):
+        browser = FakeAgentBrowser()
+        browser.opens = {"type": "alert", "message": "Too long"}
+        result, _ = self.act([{"kind": "fill", "ref": "e2", "text": "Grace"}], browser)
+        self.assertEqual((result["ok"], result["completed"], result["uncertain"]), (False, 0, True))
+        self.assertEqual(result["error"], 'The page showed an alert, now closed: "Too long". '
+                                          "Check whether the last step took effect.")
+        self.assertIn("tree", result)
+
+    def test_a_dialog_that_asks_something_is_left_open_for_the_desktop(self):
+        for dialog, error in (
+                ({"type": "confirm", "message": "Delete this?"}, 'A confirm dialog is open on the screen: "Delete this?"'),
+                ({"type": "prompt", "message": "Your name?", "defaultPrompt": "Ada"},
+                 'A prompt dialog is open on the screen: "Your name?"'),
+                ({"type": "beforeunload", "message": ""}, 'A "Leave site?" dialog is open on the screen')):
+            with self.subTest(dialog=dialog["type"]):
+                browser = FakeAgentBrowser()
+                browser.opens = dialog
+                result, _ = self.act([{"kind": "click", "ref": "e8"}, {"kind": "click", "ref": "e8"}], browser)
+                self.assertEqual(result, {"ok": False, "completed": 1, "uncertain": False, "error": error,
+                                          "dialog": dialog["type"], "fallback": "computer_act"})
+                # Never answered, and the page it blocks is not read.
+                self.assertEqual(browser.sent[-2:], [["click", "@e8"], ["dialog", "status"]])
+                self.assertIsNotNone(browser.dialog)
+
+    def test_a_dialog_open_when_the_page_is_read_is_reported_in_place_of_the_failure(self):
+        browser = FakeAgentBrowser()
+        browser.dialog = {"type": "confirm", "message": "Delete this?"}
+        with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), patch.object(helper, "wait_for_cdp"), \
+                patch.object(helper, "http_get_json", return_value=[{"type": "page", "id": "tab-1",
+                                                                      "url": "https://portal.example.test/"}]), \
+                patch.object(helper, "AgentBrowser", return_value=browser), \
+                patch.object(browser, "use_tab", create=True), \
+                patch.object(helper.time, "sleep"), patch("builtins.print") as printed:
+            helper.run(["rakazo-page-browser", "snapshot"])
+        self.assertEqual(json.loads(printed.call_args.args[0]), {
+            "ok": False, "error": 'A confirm dialog is open on the screen: "Delete this?"', "dialog": "confirm",
+            "fallback": "computer_act"})
+
     def test_uploads_only_files_inside_the_trusted_roots(self):
         with tempfile.TemporaryDirectory() as home:
             Path(home, "report.pdf").write_text("fake")
@@ -445,6 +523,33 @@ class AgentBrowserTest(unittest.TestCase):
         with patch.object(helper, "http_get_json", return_value=listing[:1]):
             with self.assertRaisesRegex(RuntimeError, "No browser tab"):
                 helper.front_tab(9222)
+
+    def test_reads_the_tab_the_session_is_on(self):
+        browser = helper.AgentBrowser(9222)
+        listing = json.dumps({"data": {"tabs": [
+            {"type": "page", "targetId": "back", "active": False},
+            {"type": "page", "targetId": "front", "active": True}]}})
+        for stdout in (listing, "not json", "null", json.dumps([]),
+                       json.dumps({"data": {}}), json.dumps({"data": ["unexpected"]})):
+            with patch.object(helper.subprocess, "run",
+                              return_value=subprocess.CompletedProcess([], 0, stdout, "")) as run:
+                self.assertEqual(browser.session_tab(), "front" if stdout == listing else None)
+            self.assertEqual(run.call_args.args[0],
+                             [helper.AGENT_BROWSER, "tab", "list", "--json"])
+            self.assertEqual(run.call_args.kwargs["timeout"], 1.0)
+
+    def test_points_the_session_at_the_tab_on_screen_when_it_moved(self):
+        # agent-browser follows a newly opened tab on its own, so where it was last pointed at is
+        # not enough: it moves only when it really reads another tab.
+        browser = helper.AgentBrowser(9222)
+        answer = subprocess.CompletedProcess([], 0, json.dumps([{"success": True, "result": {}}]), "")
+        with patch.object(helper.subprocess, "run", return_value=answer) as run, \
+                patch.object(browser, "session_tab", side_effect=[None, "other", "front"]):
+            browser.use_tab("front")
+            browser.use_tab("front")
+            browser.use_tab("front")
+        self.assertEqual([call.kwargs["input"] for call in run.call_args_list],
+                         [json.dumps([["tab", "front"]])] * 2)
 
 
 class RunTest(unittest.TestCase):

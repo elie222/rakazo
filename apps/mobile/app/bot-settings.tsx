@@ -18,22 +18,12 @@ import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-rou
 import type { Voice } from "expo-speech";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ColorValue } from "react-native";
-import {
-  Alert,
-  Modal,
-  Pressable,
-  ScrollView,
-  Share,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Alert, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { BotContextCards } from "../components/bot-context-cards";
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import { glassHeaderOptions } from "../components/glass-title";
+import { GrowingTextInput } from "../components/growing-text-input";
 import type { MenuPickerChoice } from "../components/menu-picker";
 import { MenuPicker, MenuPickerMenu } from "../components/menu-picker";
 import { NativeActionButton } from "../components/native-action-button";
@@ -965,13 +955,6 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     flexShrink: 1,
   },
-  multilineField: {
-    minHeight: 98,
-    fontSize: 14,
-    lineHeight: 22,
-    padding: 16,
-    textAlignVertical: "top",
-  },
   row: {
     minHeight: 44,
     flexDirection: "row",
@@ -996,61 +979,6 @@ function SettingsGroup({ label, children }: { label: string; children: ReactNode
       <View style={{ padding: 16, gap: 12, borderRadius: 12, backgroundColor: native.fill }}>
         {children}
       </View>
-    </View>
-  );
-}
-
-/** A noninteractive text copy gives loaded and edited content its full intrinsic height. */
-function GrowingTextInput({
-  label,
-  value,
-  onChangeText,
-  maxLength,
-  placeholder,
-  backgroundColor,
-  inset = 16,
-}: {
-  label: string;
-  value: string;
-  onChangeText: (value: string) => void;
-  maxLength: number;
-  placeholder?: string;
-  backgroundColor?: ColorValue;
-  inset?: number;
-}) {
-  const tokens = useMobileTokens();
-  return (
-    <View style={{ borderRadius: 11, backgroundColor }}>
-      <Text
-        accessible={false}
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-        style={[styles.multilineField, { padding: inset, opacity: 0 }]}
-      >
-        {`${value || placeholder || ""}\u200b`}
-      </Text>
-      <TextInput
-        accessibilityLabel={label}
-        value={value}
-        onChangeText={onChangeText}
-        maxLength={maxLength}
-        placeholder={placeholder}
-        placeholderTextColor={tokens.mutedForeground}
-        multiline
-        scrollEnabled={false}
-        style={[
-          styles.multilineField,
-          {
-            color: tokens.foreground,
-            padding: inset,
-            position: "absolute",
-            top: 0,
-            bottom: 0,
-            left: 0,
-            right: 0,
-          },
-        ]}
-      />
     </View>
   );
 }

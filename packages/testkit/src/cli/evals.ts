@@ -10,6 +10,12 @@ import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import type { StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import type { EvalCase } from "../evals/cases.js";
 import { EVAL_CASES, HISTORY_EVAL_CASES } from "../evals/cases.js";
+import {
+  DELIBERATION_EVAL_CASES,
+  DELIBERATION_FIXTURE_VERSION,
+  DELIBERATION_JUDGE_CALIBRATION,
+  DELIBERATION_JUDGE_VERSION,
+} from "../evals/deliberation.js";
 import { HISTORY_FIXTURE_VERSION } from "../evals/history-fixtures.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "../evals/history-observer.js";
 import { observeSyntheticHistory } from "../evals/history-observer.js";
@@ -96,13 +102,19 @@ async function main() {
       fixtureVersion: MEMORY_FIXTURE_VERSION,
       judge: { version: MEMORY_JUDGE_VERSION, calibration: MEMORY_JUDGE_CALIBRATION },
     },
+    deliberation: {
+      cases: DELIBERATION_EVAL_CASES,
+      fixtureVersion: DELIBERATION_FIXTURE_VERSION,
+      judge: { version: DELIBERATION_JUDGE_VERSION, calibration: DELIBERATION_JUDGE_CALIBRATION },
+    },
     "tool-choice": { cases: TOOL_CHOICE_CASES, fixtureVersion: TOOL_CHOICE_FIXTURE_VERSION },
   };
   if (!Object.hasOwn(suites, values.suite!))
     throw new Error(
-      "Unknown suite; use product, history, silence, memory, tool-choice, or approval",
+      "Unknown suite; use product, history, silence, deliberation, memory, tool-choice, or approval",
     );
   const suite = suites[values.suite!]!;
+  const suiteJudge = suite.judge;
   const extraCases = values["cases-file"] ? loadToolChoiceCases(values["cases-file"]) : [];
   const cases = [...suite.cases, ...extraCases];
   const fixtureVersion = extraCases.length
@@ -286,8 +298,7 @@ async function main() {
   };
   let judge: EvalJudge | undefined;
   if (selected.some((c) => c.judge) && !values["cache-probe"]) {
-    if (!suite.judge) throw new Error("Judged cases need a suite rubric and calibration");
-    const suiteJudge = suite.judge;
+    if (!suiteJudge) return notRun("This suite has no judge rubric; no inference was scheduled");
     if (!values["judge-connection"] || !values["judge-pricing"])
       return notRun(
         "Semantic cases require --judge-connection and --judge-pricing; no inference was scheduled",

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 
 const mobile = join(import.meta.dirname, "..");
@@ -37,5 +38,55 @@ describe("RakazoIntents", () => {
   it("falls back to the app's own default server", () => {
     const local = constant("lib/server-config.ts", "LOCAL_API");
     expect(read("plugins/with-app-intents.js")).toContain(`"${local}"`);
+  });
+});
+
+describe("withAppIntents prebuild", () => {
+  it("refreshes the source without duplicating its build reference", () => {
+    const files = new Set();
+    const copied = [];
+    const added = [];
+    const config = {
+      modRequest: { projectRoot: "/project", platformProjectRoot: "/project/ios" },
+      modResults: { hasFile: (file) => files.has(file) },
+    };
+    const plist = { modResults: {} };
+    const module = { exports: {} };
+    runInNewContext(read("plugins/with-app-intents.js"), {
+      module,
+      __dirname: join(mobile, "plugins"),
+      process: { env: { EXPO_PUBLIC_API_URL: "https://api.example.test" } },
+      require: (name) => {
+        if (name === "node:fs") return { copyFileSync: (...args) => copied.push(args) };
+        if (name === "node:path") return { join, basename: () => "RakazoIntents.swift" };
+        if (name === "expo/config-plugins")
+          return {
+            withInfoPlist: (value, mod) => {
+              mod(plist);
+              return value;
+            },
+            withXcodeProject: (value, mod) => mod(value),
+            IOSConfig: {
+              XcodeUtils: {
+                getProjectName: () => "Rakazo",
+                addBuildSourceFileToGroup: (input) => {
+                  added.push(input);
+                  files.add(input.filepath);
+                },
+              },
+            },
+          };
+        throw new Error(`Unexpected module: ${name}`);
+      },
+    });
+    module.exports(config);
+    module.exports(config);
+    expect(plist.modResults.RakazoDefaultApiBase).toBe("https://api.example.test");
+    expect(copied).toEqual([
+      [join(mobile, "ios-intents/RakazoIntents.swift"), "/project/ios/Rakazo/RakazoIntents.swift"],
+      [join(mobile, "ios-intents/RakazoIntents.swift"), "/project/ios/Rakazo/RakazoIntents.swift"],
+    ]);
+    expect(added).toHaveLength(1);
+    expect(added[0]).toMatchObject({ filepath: "Rakazo/RakazoIntents.swift", groupName: "Rakazo" });
   });
 });
