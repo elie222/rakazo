@@ -24,12 +24,17 @@ const peer = {
 
 // Seeded rather than asked live: a live setup turn tends to log the fact in the CRM, and that write
 // stops at the owner's approval before Sales ever speaks.
-// Timestamped just before the trial, so "this morning" never reads as stale.
+// Timestamped when each trial seeds it, so "this morning" never reads as stale in a long run.
+const seeded = (seq: number, role: "user" | "bot", text: string, minutesAgo: number) => ({
+  seq,
+  role,
+  text,
+  get createdAt() {
+    return new Date(Date.now() - minutesAgo * 60_000);
+  },
+});
 const told = (fact: string): HistoryFixture => ({
-  messages: [
-    { seq: 0, role: "user", text: fact, createdAt: new Date(Date.now() - 120_000) },
-    { seq: 1, role: "bot", text: "Noted.", createdAt: new Date(Date.now() - 60_000) },
-  ],
+  messages: [seeded(0, "user", fact, 2), seeded(1, "bot", "Noted.", 1)],
   ask: "",
   required: [],
   forbidden: [],
