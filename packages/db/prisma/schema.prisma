@@ -721,6 +721,7 @@ model Bot {
   teamChatAmbientEnabled Boolean @default(false)
   teamChatRules          String  @default("")
   crossSpaceCommunication Boolean @default(true)
+  dailyCheckIns Boolean @default(true)
   fleetManagement        Boolean @default(true)
   routines          Routine[]
   scratchpadItems   ScratchpadItem[]
@@ -972,6 +973,7 @@ model Run {
   @@index([trigger, status, teamChatMirroredAt, updatedAt])
   @@index([spaceId, botId])
   @@index([botId])
+  @@index([botId, createdAt])
   @@index([taskId])
   @@index([sourceMessageId])
   @@index([threadId, status, createdAt])
@@ -1189,6 +1191,7 @@ model ScratchpadItem {
 
   @@index([spaceId, botId, status])
   @@index([spaceId, botId, updatedAt])
+  @@index([botId, status, updatedAt, id])
   @@map("scratchpad_items")
 }
 

@@ -2401,6 +2401,10 @@ msgstr "Personalizar {label}"
 msgid "Customize bot avatar"
 msgstr "Personalizar avatar del bot"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Daily check-ins on unfinished work"
+msgstr "Seguimiento diario del trabajo pendiente"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Dark"
@@ -4260,6 +4264,10 @@ msgstr "el día {day} a las {time}"
 #: src/lib/cron.ts
 msgid "on the 1st at {0}"
 msgstr "el día 1 a las {0}"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Once a day, check in about scratchpad items untouched for 12 hours."
+msgstr "Una vez al día, revisa los elementos del bloc sin cambios durante 12 horas."
 
 #: src/lib/cron.ts
 msgid "One-time"

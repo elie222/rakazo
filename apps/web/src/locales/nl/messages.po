@@ -2401,6 +2401,10 @@ msgstr "{label} aanpassen"
 msgid "Customize bot avatar"
 msgstr "Botavatar aanpassen"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Daily check-ins on unfinished work"
+msgstr "Dagelijks navragen over onafgemaakt werk"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Dark"
@@ -4260,6 +4264,10 @@ msgstr "op dag {day} om {time}"
 #: src/lib/cron.ts
 msgid "on the 1st at {0}"
 msgstr "op de 1e om {0}"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Once a day, check in about scratchpad items untouched for 12 hours."
+msgstr "Vraag eenmaal per dag naar kladblokitems die 12 uur niet zijn bijgewerkt."
 
 #: src/lib/cron.ts
 msgid "One-time"

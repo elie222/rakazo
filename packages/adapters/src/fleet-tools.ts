@@ -800,6 +800,7 @@ export async function updateChildBot(
     return { error: "Change another bot's instructions with set_child_instructions." };
   }
   const profile = {
+    dailyCheckIns: args.dailyCheckIns,
     name: argumentGiven(args.name) ? args.name : undefined,
     description: argumentGiven(args.description) ? args.description : undefined,
     notifyOnFinish: argumentGiven(args.notifyOnFinish)
@@ -1339,6 +1340,7 @@ export async function updateOwnBotFromTool(
       description: true,
       color: true,
       notifyOnFinish: true,
+      dailyCheckIns: true,
     },
   });
   try {
@@ -1364,5 +1366,6 @@ export async function updateOwnBotFromTool(
     description: updated.description,
     avatar: updated.color.startsWith("data:image/") ? "image" : updated.color,
     notifyOnFinish: updated.notifyOnFinish,
+    dailyCheckIns: updated.dailyCheckIns,
   };
 }

@@ -1,4 +1,7 @@
 export const NL_MESSAGES: Record<string, string> = {
+  "Daily check-ins on unfinished work": "Dagelijks navragen over onafgemaakt werk",
+  "Once a day, check in about scratchpad items untouched for 12 hours.":
+    "Vraag eenmaal per dag naar kladblokitems die 12 uur niet zijn bijgewerkt.",
   "How other bots see it": "Hoe andere bots deze zien",
   "Share to": "Delen met",
   "{count} files": "{count} bestanden",

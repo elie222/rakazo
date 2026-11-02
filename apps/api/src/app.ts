@@ -708,6 +708,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs }),
         reconcileStrategicInitiatives: () =>
           reconcileStrategicInitiatives({
+            billingEnabled: modelCreditsEnabled,
             prisma,
             jobs,
             now: new Date(),

@@ -158,3 +158,26 @@ describe("isToolError", () => {
     expect(isToolError({ terminate: true, details: { refused: "owner-settings" } })).toBe(false);
   });
 });
+
+describe("daily check-in dispatch restriction", () => {
+  it.each([
+    "computer_shell",
+    "browser_act",
+    "load_skill",
+    "run_subagent",
+    "cloud_agent_start",
+    "catalog_execute",
+    "update_bot",
+    "update_preferences",
+    "gmail_send",
+  ])("rejects %s before resolving, approving or executing it", async (name) => {
+    const ctx = {
+      ...dispatchContext(false),
+      run: { trigger: "routine", clientNonce: "strategic-initiative:bot-1:1" },
+    };
+    expect(await applyTool(ctx as never, name, {}, "call-1")).toEqual({
+      error: "Daily check-ins can only ask or message the user.",
+    });
+    expect(audited).toEqual([]);
+  });
+});

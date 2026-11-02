@@ -1361,7 +1361,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           },
           tools: {
             offered: tools,
-            builtins,
+            builtins: strategicBuiltins,
             connector: connectorTools,
             disabled: disabledBuiltinTools,
             connectedPlugins,

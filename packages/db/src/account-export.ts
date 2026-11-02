@@ -165,6 +165,7 @@ async function* spaceRecords(
       teamChatAmbientEnabled: bot.teamChatAmbientEnabled,
       teamChatRules: bot.teamChatRules,
       crossSpaceCommunication: bot.crossSpaceCommunication,
+      dailyCheckIns: bot.dailyCheckIns,
       fleetManagement: bot.fleetManagement,
       createdAt: iso(bot.createdAt),
     };

@@ -74,6 +74,7 @@ import {
   stripNoResponseReply,
   stripStrayNoResponse,
 } from "./silent-reply.js";
+import { isStrategicInitiativeRun } from "./strategic-initiative.js";
 import { takeoverCheckpointOf } from "./takeover-resume.js";
 import { appendToolCompletionAudit, toolCompletionFromResult } from "./tool-completion-audit.js";
 import {
@@ -134,6 +135,12 @@ export async function consumeRunEvents(
       if (!ctx.state.lease.valid) return true;
       if (await runLeaseLost(ctx)) return true;
 
+      if (
+        isStrategicInitiativeRun(run) &&
+        (event.type === "takeover" || event.type === "subagent")
+      ) {
+        throw new Error("Daily check-ins cannot start a computer or helper.");
+      }
       if (event.type === "thinking") {
         await publishThinking(event.active);
         continue;
@@ -675,7 +682,7 @@ export async function completeRun(ctx: RunContext) {
   reply.pendingProgress += reply.redactor.finish();
   await flushProgress(ctx);
 
-  for (const turn of ctx.script ?? []) {
+  for (const turn of isStrategicInitiativeRun(run) ? [] : (ctx.script ?? [])) {
     for (const file of turn.files ?? []) {
       ctx.computer.checkpoint.markDirty();
       await deps.sandbox.writeFile(

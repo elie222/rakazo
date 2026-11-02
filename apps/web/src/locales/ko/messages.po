@@ -2401,6 +2401,10 @@ msgstr "{label} 맞춤설정"
 msgid "Customize bot avatar"
 msgstr "봇 아바타 맞춤설정"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Daily check-ins on unfinished work"
+msgstr "미완료 작업 매일 확인"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Dark"
@@ -4260,6 +4264,10 @@ msgstr "{day}일 {time}"
 #: src/lib/cron.ts
 msgid "on the 1st at {0}"
 msgstr "1일 {0}에"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Once a day, check in about scratchpad items untouched for 12 hours."
+msgstr "12시간 동안 변경되지 않은 메모 항목을 하루에 한 번 확인합니다."
 
 #: src/lib/cron.ts
 msgid "One-time"

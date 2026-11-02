@@ -366,6 +366,7 @@ const OWN_FIELDS = new Set([
   "artifact_id",
   "use_attached_image",
   "notifyOnFinish",
+  "dailyCheckIns",
   "notify_on_finish",
   "bot_id",
 ]);
