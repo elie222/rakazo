@@ -19,7 +19,7 @@ const starsLabel = await githubStarsLabel();
         {
           BRAND_LOGOS.map((logo) => (
             <li>
-              <a class="brand-kit__logo" href={logo.file} download>
+              <a class="brand-kit__logo" href={logo.file} download tabindex="-1" aria-hidden="true">
                 <img src={logo.preview} alt="" loading="lazy" />
               </a>
               <a href={logo.file} download>{logo.name}</a>

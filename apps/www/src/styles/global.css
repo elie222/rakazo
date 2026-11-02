@@ -2686,6 +2686,11 @@ button.product-demo__dock-icon {
   background: var(--surface-soft);
 }
 
+.logo-menu > *:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
 .logo-menu svg {
   width: 16px;
   height: 16px;

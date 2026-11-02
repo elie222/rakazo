@@ -31,7 +31,8 @@ export type HomeCopy = {
     blog: string;
     github: string;
     getStarted: string;
-    copyLogo: string;
+    openInNewTab: string;
+    copyWordmark: string;
     brandKit: string;
   };
   hero: {
@@ -891,7 +892,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "Blog",
       github: "GitHub",
       getStarted: "Get started",
-      copyLogo: "Copy logo as SVG",
+      openInNewTab: "Open in new tab",
+      copyWordmark: "Copy wordmark as SVG",
       brandKit: "Brand kit",
     },
     hero: {
@@ -1043,7 +1045,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "Blog",
       github: "GitHub",
       getStarted: "Loslegen",
-      copyLogo: "Logo als SVG kopieren",
+      openInNewTab: "In neuem Tab öffnen",
+      copyWordmark: "Schriftzug als SVG kopieren",
       brandKit: "Markenkit",
     },
     hero: {
@@ -1198,7 +1201,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "블로그",
       github: "GitHub",
       getStarted: "시작하기",
-      copyLogo: "로고를 SVG로 복사",
+      openInNewTab: "새 탭에서 열기",
+      copyWordmark: "워드마크를 SVG로 복사",
       brandKit: "브랜드 키트",
     },
     hero: {
@@ -1353,7 +1357,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "博客",
       github: "GitHub",
       getStarted: "开始使用",
-      copyLogo: "复制 SVG 格式徽标",
+      openInNewTab: "在新标签页中打开",
+      copyWordmark: "复制 SVG 格式文字标识",
       brandKit: "品牌资源",
     },
     hero: {
@@ -1509,7 +1514,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "ブログ",
       github: "GitHub",
       getStarted: "はじめる",
-      copyLogo: "ロゴをSVGでコピー",
+      openInNewTab: "新しいタブで開く",
+      copyWordmark: "ワードマークをSVGでコピー",
       brandKit: "ブランドキット",
     },
     hero: {
@@ -1665,7 +1671,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "Blog",
       github: "GitHub",
       getStarted: "Empezar",
-      copyLogo: "Copiar logotipo como SVG",
+      openInNewTab: "Abrir en una pestaña nueva",
+      copyWordmark: "Copiar logotipo de texto como SVG",
       brandKit: "Kit de marca",
     },
     hero: {
@@ -1821,7 +1828,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "Blog",
       github: "GitHub",
       getStarted: "Commencer",
-      copyLogo: "Copier le logo en SVG",
+      openInNewTab: "Ouvrir dans un nouvel onglet",
+      copyWordmark: "Copier le logotype en SVG",
       brandKit: "Kit de marque",
     },
     hero: {
@@ -1977,7 +1985,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "Blog",
       github: "GitHub",
       getStarted: "Começar",
-      copyLogo: "Copiar logo como SVG",
+      openInNewTab: "Abrir em nova aba",
+      copyWordmark: "Copiar logotipo em texto como SVG",
       brandKit: "Kit de marca",
     },
     hero: {
@@ -2133,7 +2142,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "Blog",
       github: "GitHub",
       getStarted: "Aan de slag",
-      copyLogo: "Logo kopiëren als SVG",
+      openInNewTab: "Openen in nieuw tabblad",
+      copyWordmark: "Woordmerk kopiëren als SVG",
       brandKit: "Merkkit",
     },
     hero: {
@@ -2289,7 +2299,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "Блог",
       github: "GitHub",
       getStarted: "Начать",
-      copyLogo: "Копировать логотип в SVG",
+      openInNewTab: "Открыть в новой вкладке",
+      copyWordmark: "Копировать надпись логотипа в SVG",
       brandKit: "Брендбук",
     },
     hero: {
@@ -2445,7 +2456,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "Blog",
       github: "GitHub",
       getStarted: "Başlayın",
-      copyLogo: "Logoyu SVG olarak kopyala",
+      openInNewTab: "Yeni sekmede aç",
+      copyWordmark: "Yazı logosunu SVG olarak kopyala",
       brandKit: "Marka kiti",
     },
     hero: {
@@ -2601,7 +2613,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "בלוג",
       github: "GitHub",
       getStarted: "להתחיל",
-      copyLogo: "העתקת הלוגו כ-SVG",
+      openInNewTab: "פתיחה בכרטיסייה חדשה",
+      copyWordmark: "העתקת הלוגו הטקסטואלי כ-SVG",
       brandKit: "ערכת מותג",
     },
     hero: {
@@ -2757,7 +2770,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "ब्लॉग",
       github: "GitHub",
       getStarted: "शुरू करें",
-      copyLogo: "लोगो को SVG के रूप में कॉपी करें",
+      openInNewTab: "नए टैब में खोलें",
+      copyWordmark: "वर्डमार्क को SVG के रूप में कॉपी करें",
       brandKit: "ब्रांड किट",
     },
     hero: {
@@ -2912,7 +2926,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       blog: "部落格",
       github: "GitHub",
       getStarted: "開始使用",
-      copyLogo: "複製 SVG 標誌",
+      openInNewTab: "在新分頁中開啟",
+      copyWordmark: "複製 SVG 格式文字標誌",
       brandKit: "品牌資源",
     },
     hero: {

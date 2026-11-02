@@ -38,9 +38,13 @@ function isCurrent(href: string): boolean {
   <div class="site-header__left">
     <Logo href={homeHref} label={copy.home} />
     <div class="logo-menu" role="menu" aria-label={copy.home} data-logo-menu data-wordmark={WORDMARK_SVG_PATH} hidden>
+      <a role="menuitem" tabindex="-1" href={homeHref} target="_blank" data-attr="logo-menu-new-tab">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9" /></svg>
+        {copy.openInNewTab}
+      </a>
       <button type="button" role="menuitem" tabindex="-1" data-logo-menu-copy data-attr="logo-menu-copy">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="13" height="13" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></svg>
-        {copy.copyLogo}
+        {copy.copyWordmark}
       </button>
       <a role="menuitem" tabindex="-1" href={BRAND_KIT_PATH} data-attr="logo-menu-brand">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22a10 10 0 1 1 10-10c0 2.8-2.2 4-4 4h-2.5a1.5 1.5 0 0 0-1.1 2.5A2 2 0 0 1 12 22Z" /><circle cx="7.5" cy="10.5" r="1" /><circle cx="10.5" cy="6.5" r="1" /><circle cx="15.5" cy="7.5" r="1" /></svg>
@@ -145,11 +149,20 @@ function isCurrent(href: string): boolean {
     });
 
     logoMenu.querySelector("[data-logo-menu-copy]")?.addEventListener("click", () => {
-      const svg = fetch(logoMenu.dataset.wordmark ?? "")
-        .then((response) => response.text())
-        .then((text) => new Blob([text], { type: "text/plain" }));
-      void navigator.clipboard.write([new ClipboardItem({ "text/plain": svg })]).catch(() => {});
+      const url = logoMenu.dataset.wordmark ?? "";
+      const svg = fetch(url).then(async (response) => {
+        if (!response.ok) throw new Error(`Wordmark request failed: ${response.status}`);
+        return new Blob([await response.text()], { type: "text/plain" });
+      });
       close(true);
+      // If copying fails, open the file so it can still be saved.
+      navigator.clipboard.write([new ClipboardItem({ "text/plain": svg })]).catch(() => {
+        window.location.assign(url);
+      });
+    });
+
+    logoMenu.addEventListener("click", (event) => {
+      if ((event.target as HTMLElement).closest("a")) close();
     });
 
     logoMenu.addEventListener("keydown", (event) => {
