@@ -494,6 +494,38 @@ describe("identity trust through auth endpoints", () => {
     expect((await f.signin()).status).toBe(200);
   });
 
+  it.each(["live verification policy", "messaging identity"])(
+    "applies %s to saved browser accounts",
+    async (reason) => {
+      const f = fixture();
+      const { id, token } = await f.legacyAccount(
+        reason === "messaging identity" ? "msg-fixture@messaging.invalid" : "family@example.test",
+      );
+      const cookieName = (await f.auth.$context).authCookies.sessionToken.name;
+      const request = (path: string, body?: unknown) =>
+        f.auth.handler(
+          new Request(`http://auth.example.test/api/auth${path}`, {
+            method: body ? "POST" : "GET",
+            headers: {
+              origin: "http://web.example.test",
+              "content-type": "application/json",
+              cookie: `${cookieName}=${encodeURIComponent(token)}`,
+            },
+            body: body ? JSON.stringify(body) : undefined,
+          }),
+        );
+      if (reason === "live verification policy") {
+        expect(await (await request("/accounts/list")).json()).toEqual([
+          expect.objectContaining({ userId: id }),
+        ]);
+        f.policy.signupAllowlist = "@example.test";
+      }
+      expect(await f.sessionFor(token)).toBeNull();
+      expect(await (await request("/accounts/list")).json()).toEqual([]);
+      expect((await request("/accounts/select", { userId: id })).status).toBe(401);
+    },
+  );
+
   it("does not leak request-local verification settings when signup policy changes", async () => {
     const f = fixture({ delivery: false });
     expect(await (await f.signup()).json()).toMatchObject({ token: expect.any(String) });

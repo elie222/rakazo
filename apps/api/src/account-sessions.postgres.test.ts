@@ -19,6 +19,7 @@ suite("saved account sessions and notifications (PostgreSQL)", () => {
   let auth: ReturnType<typeof createAuth>;
   let app: Hono;
   let cookieName: string;
+  let signupAllowlist = "";
   const tokens = { family: `family-token-${stamp}`, work: `work-token-${stamp}` };
   const sign = (token: string) =>
     `${token}.${createHmac("sha256", secret).update(token).digest("base64")}`;
@@ -110,7 +111,9 @@ suite("saved account sessions and notifications (PostgreSQL)", () => {
       baseURL: base,
       webOrigin: origin,
       signupsEnabled: "true",
-      signupAllowlist: "",
+      get signupAllowlist() {
+        return signupAllowlist;
+      },
       afterDeleteSession: async (session) => {
         revoked(session);
       },
@@ -202,6 +205,39 @@ suite("saved account sessions and notifications (PostgreSQL)", () => {
     const notifications = body.accounts.find((account) => account.userId === userId)!.notifications;
     expect(notifications.some((item) => item.id === `event-${userId}-0`)).toBe(true);
     expect(notifications.some((item) => item.id === `background-${stamp}`)).toBe(false);
+  });
+
+  it("excludes a saved account's private notifications when live sign-in policy rejects its session", async () => {
+    await runAsSystem("require verification for the fixture account", () =>
+      db.prisma.user.update({ where: { id: ids.family }, data: { emailVerified: false } }),
+    );
+    signupAllowlist = "@example.test";
+    try {
+      expect(
+        await (
+          await request("/api/auth/get-session", { headers: { cookie: cookie("family") } })
+        ).json(),
+      ).toBeNull();
+      const response = await request("/api/accounts", { headers: { cookie: cookie() } });
+      const body = (await response.json()) as AccountSessions;
+      expect(body.activeUserId).toBe(ids.work);
+      expect(body.accounts.map((account) => account.userId)).toEqual([ids.work]);
+      expect(JSON.stringify(body)).not.toContain("Private family reply");
+      expect(
+        (
+          await request("/api/auth/accounts/select", {
+            method: "POST",
+            headers: { cookie: cookie(), origin, "content-type": "application/json" },
+            body: JSON.stringify({ userId: ids.family }),
+          })
+        ).status,
+      ).toBe(401);
+    } finally {
+      signupAllowlist = "";
+      await runAsSystem("restore verification for the fixture account", () =>
+        db.prisma.user.update({ where: { id: ids.family }, data: { emailVerified: true } }),
+      );
+    }
   });
 
   it("returns only the native bearer identity even when the HTTP host also sends cookies", async () => {

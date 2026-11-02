@@ -21,10 +21,14 @@ async function savedSessions(ctx: SessionContext) {
     (token): token is string => typeof token === "string" && Boolean(token),
   );
   if (!verified.length) return [];
-  const sessions = await ctx.context.internalAdapter.findSessions([...new Set(verified)], {
-    onlyActiveSessions: true,
-  });
-  return sessions.filter((item) => item.session.expiresAt.getTime() > Date.now());
+  // The singular lookup applies Rakazo's current sign-in policy as well as session validity.
+  const sessions = await Promise.all(
+    [...new Set(verified)].map((token) => ctx.context.internalAdapter.findSession(token)),
+  );
+  return sessions.filter(
+    (item): item is NonNullable<typeof item> =>
+      item !== null && item.session.expiresAt.getTime() > Date.now(),
+  );
 }
 
 /** Keep the plugin's cookie bound explicit, and adopt a login made before multi-session. */
