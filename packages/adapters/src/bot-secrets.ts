@@ -940,17 +940,23 @@ export async function readRunCode(
 }
 
 /**
- * Every form of a code the model could be handed: as is, without dashes, URL-encoded, and as a
- * page draws it per character or in two groups (input-otp widgets put each digit in its own
- * element, which a snapshot reads as one digit per line).
+ * Every form of a code the model could be handed: as is, without dashes, URL-encoded, in either
+ * case, and as a page draws it per character or in two groups (input-otp widgets put each digit in
+ * its own element, which a snapshot reads as one digit per line).
  */
 export function oneTimeCodeRedactions(code: string): string[] {
-  const forms = new Set([code, code.replaceAll("-", ""), encodeURIComponent(code)]);
+  const forms = new Set<string>();
   const joins = ["\n", "\r\n", " ", "\t", "-", " - "];
-  for (const base of [code, code.replaceAll("-", "")]) {
-    for (const join of joins) forms.add([...base].join(join));
-    const half = Math.ceil(base.length / 2);
-    for (const join of joins) forms.add(`${base.slice(0, half)}${join}${base.slice(half)}`);
+  const digits = code.replaceAll("-", "");
+  // A bare short number such as 2026 would blank years and prices for the rest of the run.
+  const bare = digits.length >= 6 || /[A-Za-z]/.test(digits);
+  for (const written of new Set([code, code.toUpperCase(), code.toLowerCase()])) {
+    for (const base of new Set([written, written.replaceAll("-", "")])) {
+      if (bare) forms.add(base).add(encodeURIComponent(base));
+      for (const join of joins) forms.add([...base].join(join));
+      const half = Math.ceil(base.length / 2);
+      for (const join of joins) forms.add(`${base.slice(0, half)}${join}${base.slice(half)}`);
+    }
   }
   // A short form would blank ordinary text in every later result.
   return [...forms].filter((form) => form.length >= ONE_TIME_CODE_MIN_LENGTH);

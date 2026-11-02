@@ -1272,6 +1272,17 @@ describe("a code's redactions", () => {
     }
   });
 
+  it("hide a code with letters that the page shows in another case", () => {
+    expect(hidden("Code AB12CD", "ab12cd")).toBe("Code [redacted]");
+    expect(hidden("a b 1 2 c d", "AB12CD")).toBe("[redacted]");
+  });
+
+  it("leave a short number alone when it stands bare, but hide it drawn per digit", () => {
+    expect(hidden("Paid 1000 in 2026", "2026")).toBe("Paid 1000 in 2026");
+    expect(hidden("2\n0\n2\n6", "2026")).toBe("[redacted]");
+    expect(hidden("Code ab12", "ab12")).toBe("Code [redacted]");
+  });
+
   it("leave unrelated digits alone", () => {
     expect(hidden("Order 98765 shipped on 12/34")).toBe("Order 98765 shipped on 12/34");
   });
