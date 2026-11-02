@@ -160,6 +160,7 @@ describe("pr-digest", () => {
       [34, "reviewer", "User", "<!-- greptile_summary -->"],
       [35, "coderabbitai[bot]", "Bot", "<!-- coderabbit-ai-generated:v1 -->\nPlease fix this"],
       [36, "reviewer", "User", "Fix \x1b]0;title\x07 this"],
+      [37, "reviewer", "User", "/agentic_review"],
     ];
     const result = runDigest({
       conversation: [
@@ -205,10 +206,29 @@ describe("pr-digest", () => {
           kind: "Bot",
           body: "<!-- coderabbit-ai-generated:v1 -->\n\n<!-- This is an auto-generated comment: summarize by coderabbit.ai -->\n",
         }),
+        comment({
+          id: 45,
+          user: "qodo-code-review[bot]",
+          kind: "Bot",
+          body: "<h3>PR Summary by Qodo</h3>\n\nFixes the thing",
+        }),
+        comment({
+          id: 46,
+          user: "qodo-code-review[bot]",
+          kind: "Bot",
+          body: "\n<h3>Code Review by Qodo</h3>\n\n<br/>\n",
+        }),
+        comment({
+          id: 47,
+          user: "qodo-code-review[bot]",
+          kind: "Bot",
+          body: "<!-- qodo:billing-blocked -->\n\nQodo reviews are paused.",
+        }),
+        comment({ id: 48, user: "github-actions[bot]", kind: "Bot", body: "/agentic_review" }),
       ],
     });
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("(4 noise)");
+    expect(result.stdout).toContain("(8 noise)");
   });
 
   it("only blocks effective change requests", () => {

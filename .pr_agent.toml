@@ -1,0 +1,5 @@
+# Qodo reviews only when .github/workflows/review-bot.yml posts /agentic_review,
+# so it stays off the PRs CodeRabbit owns.
+[github_app]
+pr_commands = []
+handle_push_trigger = false
