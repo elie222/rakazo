@@ -1,4 +1,3 @@
-import type { StyleProp, ViewStyle } from "react-native";
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
@@ -88,16 +87,14 @@ export function ThreadErrorNotice({
 export function ThreadFetchErrorNotice({
   error,
   showingSaved,
-  style,
 }: {
   error: string | null;
   showingSaved: boolean;
-  style?: StyleProp<ViewStyle>;
 }) {
   const { t } = useI18n();
   if (!error) return null;
   return (
-    <View style={[{ paddingBottom: 24 }, style]}>
+    <View style={{ paddingBottom: 24 }}>
       <ThreadErrorNotice
         error={showingSaved ? t("Couldn't refresh — showing the last loaded messages.") : error}
         summary={null}

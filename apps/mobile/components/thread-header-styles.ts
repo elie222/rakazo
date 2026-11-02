@@ -50,13 +50,5 @@ export function createThreadHeaderStyles() {
       right: 0,
       experimental_backgroundImage: `linear-gradient(to bottom, ${tokens.background} 0%, ${tokens.background} 60%, ${transparentBackground} 100%)`,
     },
-    composerFade: {
-      position: "absolute",
-      bottom: "100%",
-      left: 0,
-      right: 0,
-      height: 24,
-      experimental_backgroundImage: `linear-gradient(to top, ${tokens.background} 0%, ${transparentBackground} 100%)`,
-    },
   });
 }
