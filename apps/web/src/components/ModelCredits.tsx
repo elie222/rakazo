@@ -7,6 +7,14 @@ import {
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Button,
   Card,
   CardContent,
@@ -327,6 +335,7 @@ export function ModelCreditsSettings({
   const [topupAmount, setTopupAmount] = useState<CreditAmount>(1000);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [interval, setByokInterval] = useState<ByokInterval>("month");
+  const [endTrialOpen, setEndTrialOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
   const balance = new Intl.NumberFormat(i18n.locale, {
@@ -459,8 +468,56 @@ export function ModelCreditsSettings({
             <Trans>Computer hours left</Trans>
           </h3>
           <p className="mt-2 text-3xl font-medium tabular-nums">{status.computerHoursLeft}</p>
+          {status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd ? (
+            <>
+              <p className="mt-2 text-sm text-muted-foreground">
+                <Trans>Trials get fewer hours to prevent abuse.</Trans>
+              </p>
+              <Button
+                className="mt-5"
+                variant="secondary"
+                disabled={pending}
+                onClick={() => setEndTrialOpen(true)}
+              >
+                <Trans>Start plan now</Trans>
+              </Button>
+            </>
+          ) : null}
         </div>
       ) : null}
+      <AlertDialog open={endTrialOpen} onOpenChange={setEndTrialOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              <Trans>Start your plan now?</Trans>
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {price ? (
+                <Trans>Your trial ends and your card is charged {price} today.</Trans>
+              ) : (
+                <Trans>Your trial ends and your card is charged today.</Trans>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              <Trans>Cancel</Trans>
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={pending}
+              onClick={() =>
+                void action(async () => {
+                  setEndTrialOpen(false);
+                  await rpc.billing.endTrial();
+                  await refresh();
+                })
+              }
+            >
+              <Trans>Start plan</Trans>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {status.canManage ? (
         <div className="rounded-xl border border-border p-5">
           <h3 className="font-medium">

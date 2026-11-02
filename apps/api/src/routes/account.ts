@@ -109,6 +109,11 @@ export function accountRoutes(ctx: RouterContext) {
       portal: authed.billing.portal.handler(async ({ context, input }) =>
         requireBilling(deps).portal(context.actor, input?.client),
       ),
+      endTrial: authed.billing.endTrial.handler(async ({ context }) => {
+        const billing = requireBilling(deps);
+        await billing.endTrial(context.actor);
+        return billing.status(context.actor);
+      }),
       claimReferral: authed.billing.claimReferral.handler(async ({ context, input }) => {
         await requireBilling(deps).claimReferral(context.actor, input.code);
         return { ok: true as const };

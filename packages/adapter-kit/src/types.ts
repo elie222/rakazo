@@ -1,4 +1,5 @@
 import type {
+  BillingCancellationReason,
   CacheCapabilities as ConnectionCacheCapabilities,
   ConnectionCatalogItem,
   ModelApiProtocol,
@@ -1316,6 +1317,8 @@ export interface BillingSubscriptionSnapshot {
   status: BillingSubscriptionStatus;
   seats: number;
   trialEndsAt: Date | null;
+  /** Start of the period being billed, or of the trial while one runs. */
+  currentPeriodStartsAt: Date | null;
   currentPeriodEndsAt: Date | null;
   cancelAtPeriodEnd: boolean;
   endedAt: Date | null;
@@ -1327,6 +1330,8 @@ export interface BillingSubscriptionSnapshot {
   byokInterval?: "month" | "year";
   /** Stable identity of the subscription's card across customers, when the provider has one. */
   cardFingerprint?: string;
+  cancellationReason?: BillingCancellationReason;
+  cancellationComment?: string;
 }
 
 export interface BillingCheckoutRequest {

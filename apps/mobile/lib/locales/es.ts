@@ -932,6 +932,14 @@ export const ES_MESSAGES: Record<string, string> = {
   Credits: "Créditos",
   "Available credits": "Créditos disponibles",
   "Computer hours left": "Horas de computadora restantes",
+  "Trials get fewer hours to prevent abuse.": "Las pruebas tienen menos horas para evitar abusos.",
+  "Start plan now": "Iniciar el plan ahora",
+  "Start your plan now?": "¿Iniciar tu plan ahora?",
+  "Your trial ends and your card is charged {price} today.":
+    "Tu prueba termina y se cobrará {price} a tu tarjeta hoy.",
+  "Your trial ends and your card is charged today.":
+    "Tu prueba termina y se cobrará a tu tarjeta hoy.",
+  "Start plan": "Iniciar plan",
   "Monthly credits": "Créditos mensuales",
   "Upgrade now": "Mejorar plan ahora",
   "Downgrade at renewal": "Bajar de plan al renovar",

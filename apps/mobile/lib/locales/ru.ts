@@ -1024,6 +1024,15 @@ export const RU_MESSAGES: Record<string, string> = {
   Credits: "Кредиты",
   "Available credits": "Доступные кредиты",
   "Computer hours left": "Осталось часов компьютера",
+  "Trials get fewer hours to prevent abuse.":
+    "В пробном периоде меньше часов, чтобы предотвратить злоупотребления.",
+  "Start plan now": "Начать тариф сейчас",
+  "Start your plan now?": "Начать тариф сейчас?",
+  "Your trial ends and your card is charged {price} today.":
+    "Пробный период закончится, и сегодня с вашей карты спишется {price}.",
+  "Your trial ends and your card is charged today.":
+    "Пробный период закончится, и сегодня с вашей карты будет списана оплата.",
+  "Start plan": "Начать тариф",
   "Monthly credits": "Ежемесячные кредиты",
   "Upgrade now": "Повысить тариф сейчас",
   "Downgrade at renewal": "Понизить тариф при продлении",

@@ -88,6 +88,7 @@ export default function BillingScreen() {
   // Owners can always top up, as on web; a top-up is how an own-key plan starts on credits.
   const credits = status.funding === "credits" || (status.balanceUsd ?? 0) > 0 || status.canManage;
   const referral = status.referral;
+  const endTrial = status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd;
   return (
     <ScrollView
       style={sideInsets}
@@ -131,8 +132,36 @@ export default function BillingScreen() {
         ) : null}
       </SettingsGroup>
       {status.computerHoursLeft != null ? (
-        <SettingsGroup>
+        <SettingsGroup
+          footer={endTrial ? t("Trials get fewer hours to prevent abuse.") : undefined}
+        >
           <SettingsRow title={t("Computer hours left")} value={String(status.computerHoursLeft)} />
+          {endTrial ? (
+            <SettingsRow
+              title={t("Start plan now")}
+              disabled={pending}
+              onPress={() =>
+                Alert.alert(
+                  t("Start your plan now?"),
+                  ownKeyCents
+                    ? t("Your trial ends and your card is charged {price} today.", {
+                        price: `$${ownKeyCents / 100}`,
+                      })
+                    : t("Your trial ends and your card is charged today."),
+                  [
+                    { text: t("Cancel"), style: "cancel" },
+                    {
+                      text: t("Start plan"),
+                      onPress: () =>
+                        void action(async () => {
+                          show(await rpc("billing/endTrial"));
+                        }),
+                    },
+                  ],
+                )
+              }
+            />
+          ) : null}
         </SettingsGroup>
       ) : null}
       {referral ? (

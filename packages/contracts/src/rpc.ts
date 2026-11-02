@@ -299,6 +299,8 @@ export const appContract = {
     portal: oc
       .input(z.object({ client: BillingClientSchema }).optional())
       .output(z.object({ url: z.string().url() })),
+    /** Owners only: ends the running trial and bills the first period now. */
+    endTrial: oc.output(BillingStatusSchema),
     /** Records who invited this organization; ignored once it has subscribed. */
     claimReferral: oc
       .input(z.object({ code: z.string().min(1).max(64) }))

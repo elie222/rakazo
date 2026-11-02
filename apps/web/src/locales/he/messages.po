@@ -1160,6 +1160,7 @@ msgstr "לא ניתן לקרוא תמונות"
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/VaultSettings.tsx
@@ -5643,9 +5644,21 @@ msgstr ""
 msgid "Start {trialDays}-day free trial"
 msgstr "התחלת תקופת ניסיון חינם של {trialDays} ימים"
 
+#: src/components/ModelCredits.tsx
+msgid "Start plan"
+msgstr "להתחיל תוכנית"
+
+#: src/components/ModelCredits.tsx
+msgid "Start plan now"
+msgstr "להתחיל את התוכנית עכשיו"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"
 msgstr "התחלת הקלטה"
+
+#: src/components/ModelCredits.tsx
+msgid "Start your plan now?"
+msgstr "להתחיל את התוכנית עכשיו?"
 
 #: src/pages/ActivityList.tsx
 msgid "Starting"
@@ -6139,6 +6152,10 @@ msgstr "תקופת ניסיון"
 msgid "Trial ends {day}"
 msgstr "תקופת הניסיון מסתיימת {day}"
 
+#: src/components/ModelCredits.tsx
+msgid "Trials get fewer hours to prevent abuse."
+msgstr "בתקופת ניסיון יש פחות שעות כדי למנוע ניצול לרעה."
+
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "אתרים מהימנים"
@@ -6631,6 +6648,14 @@ msgstr ""
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "צוות של סוכנים שזמינים תמיד<0/>שאפשר להטיל עליהם עבודה אמיתית."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged {price} today."
+msgstr "תקופת הניסיון תסתיים והכרטיס שלך יחויב היום ב-{price}."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged today."
+msgstr "תקופת הניסיון תסתיים והכרטיס שלך יחויב היום."
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

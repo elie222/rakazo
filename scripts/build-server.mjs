@@ -8,14 +8,14 @@
 // rewritten to the relative path of the file it resolves to from its importer.
 import { builtinModules } from "node:module";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 
 const builtins = new Set(builtinModules);
-const entries = process.argv.slice(2);
 
-for (const entry of entries) {
-  const outfile = path.resolve("dist", path.relative("src", entry).replace(/\.ts$/, ".js"));
-  await build({
+/** esbuild options for bundling `entry` into `outfile`, shared with the lazy-vendor check. */
+export function serverBuildOptions(entry, outfile) {
+  return {
     entryPoints: [entry],
     outfile,
     bundle: true,
@@ -50,5 +50,12 @@ for (const entry of entries) {
         },
       },
     ],
-  });
+  };
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  for (const entry of process.argv.slice(2)) {
+    const outfile = path.resolve("dist", path.relative("src", entry).replace(/\.ts$/, ".js"));
+    await build(serverBuildOptions(entry, outfile));
+  }
 }

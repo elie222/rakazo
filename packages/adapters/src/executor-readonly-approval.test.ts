@@ -20,7 +20,8 @@ import { FakeWebProvider } from "./fake-web.js";
 import type * as FleetToolsModule from "./fleet-tools.js";
 import type { HostComputerRequest } from "./host-computer-protocol.js";
 import { catalogEntries, resolveCatalogCall } from "./lazy-tool-catalog.js";
-import { serializeTurnCheckpoint, type TurnCheckpoint } from "./turn-checkpoint.js";
+import type { TurnCheckpoint } from "./turn-checkpoint.js";
+import { serializeTurnCheckpoint } from "./turn-checkpoint.js";
 import type { UserDeviceGateway } from "./user-device-protocol.js";
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({

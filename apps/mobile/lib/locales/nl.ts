@@ -985,6 +985,15 @@ export const NL_MESSAGES: Record<string, string> = {
   Credits: "Tegoed",
   "Available credits": "Beschikbaar tegoed",
   "Computer hours left": "Resterende computeruren",
+  "Trials get fewer hours to prevent abuse.":
+    "Proefperiodes krijgen minder uren om misbruik te voorkomen.",
+  "Start plan now": "Abonnement nu starten",
+  "Start your plan now?": "Je abonnement nu starten?",
+  "Your trial ends and your card is charged {price} today.":
+    "Je proefperiode eindigt en je kaart wordt vandaag met {price} belast.",
+  "Your trial ends and your card is charged today.":
+    "Je proefperiode eindigt en je kaart wordt vandaag belast.",
+  "Start plan": "Abonnement starten",
   "Monthly credits": "Maandelijks tegoed",
   "Upgrade now": "Nu upgraden",
   "Downgrade at renewal": "Downgraden bij verlenging",

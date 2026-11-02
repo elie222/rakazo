@@ -1160,6 +1160,7 @@ msgstr "तस्वीरें नहीं पढ़ सकता"
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/VaultSettings.tsx
@@ -5643,9 +5644,21 @@ msgstr ""
 msgid "Start {trialDays}-day free trial"
 msgstr "{trialDays} दिन का मुफ़्त ट्रायल शुरू करें"
 
+#: src/components/ModelCredits.tsx
+msgid "Start plan"
+msgstr "प्लान शुरू करें"
+
+#: src/components/ModelCredits.tsx
+msgid "Start plan now"
+msgstr "प्लान अभी शुरू करें"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"
 msgstr "रिकॉर्डिंग शुरू करें"
+
+#: src/components/ModelCredits.tsx
+msgid "Start your plan now?"
+msgstr "अपना प्लान अभी शुरू करें?"
 
 #: src/pages/ActivityList.tsx
 msgid "Starting"
@@ -6139,6 +6152,10 @@ msgstr ""
 msgid "Trial ends {day}"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Trials get fewer hours to prevent abuse."
+msgstr "दुरुपयोग रोकने के लिए ट्रायल में कम घंटे मिलते हैं।"
+
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "विश्वसनीय साइटें"
@@ -6631,6 +6648,14 @@ msgstr ""
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "हमेशा चालू रहने वाले एजेंटों की आपकी टीम<0/>जिन्हें आप असली काम सौंप सकते हैं।"
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged {price} today."
+msgstr "आपका ट्रायल खत्म होगा और आज आपके कार्ड से {price} लिया जाएगा।"
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged today."
+msgstr "आपका ट्रायल खत्म होगा और आज आपके कार्ड से भुगतान लिया जाएगा।"
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

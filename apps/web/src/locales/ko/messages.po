@@ -1160,6 +1160,7 @@ msgstr "이미지를 읽을 수 없음"
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/VaultSettings.tsx
@@ -5643,9 +5644,21 @@ msgstr ""
 msgid "Start {trialDays}-day free trial"
 msgstr "{trialDays}일 무료 체험 시작"
 
+#: src/components/ModelCredits.tsx
+msgid "Start plan"
+msgstr "요금제 시작"
+
+#: src/components/ModelCredits.tsx
+msgid "Start plan now"
+msgstr "지금 요금제 시작"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"
 msgstr "작업 녹화 시작"
+
+#: src/components/ModelCredits.tsx
+msgid "Start your plan now?"
+msgstr "지금 요금제를 시작할까요?"
 
 #: src/pages/ActivityList.tsx
 msgid "Starting"
@@ -6139,6 +6152,10 @@ msgstr ""
 msgid "Trial ends {day}"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Trials get fewer hours to prevent abuse."
+msgstr "악용을 막기 위해 체험 기간에는 시간이 더 적게 제공됩니다."
+
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "신뢰할 수 있는 사이트"
@@ -6631,6 +6648,14 @@ msgstr ""
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "언제든 실제 작업을 맡길 수 있는<0/>나만의 Agent 팀"
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged {price} today."
+msgstr "체험이 종료되고 오늘 카드로 {price}이(가) 결제됩니다."
+
+#: src/components/ModelCredits.tsx
+msgid "Your trial ends and your card is charged today."
+msgstr "체험이 종료되고 오늘 카드로 결제됩니다."
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

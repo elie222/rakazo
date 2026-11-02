@@ -265,3 +265,48 @@ test("start the own-key plan billed yearly", async ({ page }, testInfo) => {
   await expect(page.getByRole("heading", { name: "Choose how to use Rakazo" })).toBeVisible();
   expect(selected).toEqual({ funding: "byok", interval: "year" });
 });
+
+test("end an own-key trial early to get full computer hours", async ({ page }, testInfo) => {
+  await signup(page, `trial-end-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
+  await completeOnboarding(page);
+  await page.route("**/api/auth/capabilities", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), billing: true } });
+  });
+  await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
+  await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
+  const trial = billingStatus({
+    access: true,
+    trialAvailable: false,
+    creditPurchasesEnabled: true,
+    byokPriceCents: 1000,
+    funding: "byok",
+    balanceUsd: 0,
+    monthlyAmountCents: null,
+    state: "trialing",
+    trialEndsAt: "2030-01-15T12:00:00.000Z",
+    currentPeriodEndsAt: "2030-01-15T12:00:00.000Z",
+    hasCustomer: true,
+    computerHoursLeft: 4,
+  });
+  await page.route("**/rpc/billing/status", (route) => route.fulfill({ json: { json: trial } }));
+  let ended = false;
+  await page.route("**/rpc/billing/endTrial", async (route) => {
+    ended = true;
+    await route.fulfill({
+      json: { json: { ...trial, state: "active", trialEndsAt: null, computerHoursLeft: 25 } },
+    });
+  });
+  await page.reload();
+  const settings = await openUserSettings(page, "billing");
+  await expect(
+    settings.getByText("Trials get fewer hours to prevent abuse.", { exact: true }),
+  ).toBeVisible();
+  await captureScreenshot(page, testInfo, "billing-trial-computer-hours");
+  await settings.getByRole("button", { name: "Start plan now", exact: true }).click();
+  const confirm = page.getByRole("alertdialog", { name: "Start your plan now?" });
+  await expect(confirm.getByText(/charged \$10(\.00)? today/)).toBeVisible();
+  await captureScreenshot(page, testInfo, "billing-end-trial-confirm");
+  await confirm.getByRole("button", { name: "Start plan", exact: true }).click();
+  await expect.poll(() => ended).toBe(true);
+});

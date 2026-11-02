@@ -37,6 +37,7 @@ AGENT_BROWSER = os.environ.get("RAKAZO_AGENT_BROWSER") or "/usr/local/bin/agent-
 NO_ANSWER = "The page did not answer in time."
 STALE_REF = "Stale element ref: the page has changed since that snapshot. Use a ref from the page below."
 NOT_KEPT = "The page did not keep every character typed. Check the field in this snapshot before trying again."
+DISABLED = "That control is disabled, so nothing happened. Pick another control from this snapshot."
 PAYMENT_FRAME_HINT = "Card fields are in a payment frame: use fill_card without ref."
 
 # The snapshot goes to the model whole, in one piece of at most 12,000 characters, or the tool result
@@ -584,16 +585,23 @@ class PageBrowser:
                 "title": str(state.get("title") or ""), "tree": tree, "elements": [entry for _, entry in shown],
                 **({} if settled else {"loading": True})}
 
-    def control(self, ref: str) -> Node:
+    def control(self, ref: str, *, check_disabled: bool = False) -> Node:
         """The element a ref names in the page as it is now; a ref that names nothing now is stale.
 
         agent-browser keeps a ref while its element lives, but would hand an action a replacement
         with the same role and name, even on another page. Checking right before the step stops that.
         """
-        (snap,) = self.ab.batch([["snapshot", "-i"]])
+        commands = [["snapshot", "-i"]]
+        if check_disabled:
+            # `is enabled` includes disabled fieldsets (and their first-legend exception),
+            # but agent-browser does not include aria-disabled in that check.
+            commands += [["is", "enabled", f"@{ref}"], ["get", "attr", f"@{ref}", "aria-disabled"]]
+        snap, *state = self.step(commands)
         node = find_ref(parse_tree(snap.get("snapshot") or ""), ref)
         if node is None or ref not in (snap.get("refs") or {}):
             raise Settled(STALE_REF)
+        if check_disabled and (state[0].get("enabled") is False or str(state[1].get("value")).lower() == "true"):
+            raise Settled(DISABLED)
         return node
 
     # -- commands ---------------------------------------------------------------------------------
@@ -689,6 +697,8 @@ class PageBrowser:
         try:
             results = self.ab.batch(commands)
         except AbError as error:
+            if re.search(r"Element\b.*\bis disabled", str(error)):
+                raise Settled(DISABLED) from None
             if any(marker in str(error) for marker in SETTLED_ERRORS):
                 raise Settled(str(error)) from None
             raise
@@ -750,7 +760,7 @@ class PageBrowser:
         try:
             for step in actions:
                 kind, ref = step["kind"], step.get("ref")
-                node = self.control(ref) if ref is not None else None
+                node = self.control(ref, check_disabled=kind in ("fill", "type")) if ref is not None else None
                 uncertain = True
                 if kind == "pay_token" or step.get("origin"):
                     if ref is not None:
@@ -820,27 +830,69 @@ class PageBrowser:
 # A code is typed into its boxes: like-named one- or two-character inputs around the field, up to
 # where their numbering starts again, so a second code or a middle-initial field next to it is left alone.
 CODE_BOXES = r"""
-  const box = (input) => input instanceof HTMLInputElement && input.maxLength > 0 && input.maxLength <= 2;
+  // Boxes cap their own length at one or two characters. Number boxes ignore a cap, and some pages
+  // set none: those must be narrow and say they take one digit, so card or date fields never count.
+  const box = (input) => {
+    if (!(input instanceof HTMLInputElement)) return false;
+    if (input.maxLength > 0) return input.maxLength <= 2;
+    const width = input.getBoundingClientRect().width;
+    return ["text", "tel", "number", "password"].includes(input.type) && width > 0 && width <= 72
+      && (input.autocomplete === "one-time-code"
+        || (input.type === "number" && input.max !== "" && Number(input.max) <= 9));
+  };
   const naming = (field) => [field.getAttribute("aria-label"), field.name, field.id,
     ...Array.from(field.labels || [], (label) => label.textContent)].join("|").replace(/[\d\s]+/g, "").toLowerCase();
+  // Pages often label only the first box, with the prompt, and leave the rest unnamed. Unnamed boxes
+  // straight after a named one, with no other field between, are its code, if the whole run is a code's size.
+  const unnamed = (field) => /^\|*$/.test(naming(field));
+  const cache = new WeakMap();
+  const led = new WeakMap();
+  const named = (field, container) => {
+    let names = cache.get(container);
+    if (!names) {
+      names = new Map();
+      const members = new Set();
+      led.set(container, members);
+      const inputs = [...container.querySelectorAll("input")].filter((input) => input.type !== "hidden");
+      const bare = (input) => input && box(input) && unnamed(input);
+      inputs.forEach((input, at) => {
+        if (names.has(input)) return;
+        names.set(input, naming(input));
+        if (!bare(input)) return;
+        let from = at;
+        let to = at;
+        while (bare(inputs[from - 1])) from--;
+        while (bare(inputs[to + 1])) to++;
+        const lead = inputs[from - 1];
+        const name = lead && box(lead) && to - from >= 2 && to - from <= 6 ? naming(lead) : naming(input);
+        if (name === naming(input)) return;
+        for (let i = from - 1; i <= to; i++) members.add(inputs[i]);
+        for (let i = from; i <= to; i++) names.set(inputs[i], name);
+      });
+      cache.set(container, names);
+    }
+    return names.get(field) ?? naming(field);
+  };
+  // Boxes with no length cap only count as a code when a named box leads them.
+  const joined = (input, container) => input.maxLength > 0 || (named(input, container), led.get(container).has(input));
   const numberOf = (field) => {
     const found = /\d+/.exec(field.getAttribute("aria-label")
       || Array.from(field.labels || [], (label) => label.textContent).join(" ") || field.name || "");
     return found ? Number(found[0]) : null;
   };
   const like = (container, name) => [...container.querySelectorAll("input")].filter((input) => box(input)
-    && naming(input) === name);
+    && joined(input, container) && named(input, container) === name);
   function codeOf(el) {
     if (!box(el)) return null;
     for (let node = el.parentElement, up = 0; node && up < 3; node = node.parentElement, up++) {
-      if ([...node.querySelectorAll("input")].filter(box).length < 4) continue;
-      const boxes = like(node, naming(el));
+      if ([...node.querySelectorAll("input")].filter(box).length < 4 || !joined(el, node)) continue;
+      const boxes = like(node, named(el, node));
       const restarts = (a, b) => numberOf(a) !== null && numberOf(b) !== null && numberOf(b) <= numberOf(a);
       let from = boxes.indexOf(el);
       let to = from;
       while (from > 0 && !restarts(boxes[from - 1], boxes[from])) from--;
       while (to < boxes.length - 1 && !restarts(boxes[to], boxes[to + 1])) to++;
-      return { container: node, name: naming(el), from, size: to - from + 1, at: boxes.indexOf(el) };
+      return { container: node, name: named(el, node), from, size: to - from + 1, at: boxes.indexOf(el) };
     }
     return null;
   }
@@ -864,7 +916,10 @@ TYPE_START = "(() => {" + CODE_BOXES + r"""
   if (code && code.size > 1 && WHOLE) {
     // A whole code replaces the code: every box is emptied and typing starts at the first. Widgets
     // that draw their boxes again on each input are found again in the same place each time.
-    const boxes = () => like(code.container, code.name).slice(code.from, code.from + code.size);
+    const boxes = () => {
+      cache.delete(code.container);
+      return like(code.container, code.name).slice(code.from, code.from + code.size);
+    };
     for (let i = 0; i < 24; i++) {
       const filled = boxes().find((field) => field.value);
       if (!filled) break;
@@ -891,7 +946,7 @@ TYPE_CHECK = "(() => {" + CODE_BOXES + r"""
   const active = focused();
   const { el, code } = typing;
   const holds = active === el || el.contains(active) || (code !== null && code.container.isConnected
-    && code.container.contains(active) && box(active) && naming(active) === code.name);
+    && code.container.contains(active) && box(active) && named(active, code.container) === code.name);
   if (!holds) throw new Error("Typing stopped: focus");
   return true;
 })()"""
