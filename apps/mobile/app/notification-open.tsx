@@ -15,40 +15,49 @@ export default function NotificationOpen() {
   const { t } = useI18n();
   const tokens = useMobileTokens();
   const styles = useThemedStyles(createStyles);
-  const [failed, setFailed] = useState(false);
+  const [result, setResult] = useState<"pending" | "sign-in" | "retry">("pending");
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let active = true;
+    setResult("pending");
     const route = target ? notificationOpenTargetFromLink(target) : null;
     if (!route) {
-      setFailed(true);
+      setResult("sign-in");
       return;
     }
     void selectNotificationAccount(route.params.userId, route.params.apiBase)
       .then((selected) => {
         if (!active) return;
         if (selected) router.replace(route);
-        else setFailed(true);
+        else setResult("sign-in");
       })
       .catch(() => {
-        if (active) setFailed(true);
+        if (active) setResult("retry");
       });
     return () => {
       active = false;
     };
-  }, [router, target]);
+  }, [router, target, attempt]);
   return (
     <View style={styles.screen}>
-      {failed ? (
+      {result !== "pending" ? (
         <>
-          <Text style={styles.message}>{t("Sign in to open this notification")}</Text>
+          <Text style={styles.message}>
+            {result === "retry" ? t("Could not continue") : t("Sign in to open this notification")}
+          </Text>
           <NativeActionButton
-            label={t("Sign in")}
-            onPress={() =>
+            label={result === "retry" ? t("Try again") : t("Sign in")}
+            onPress={() => {
+              if (result === "retry") {
+                setResult("pending");
+                setAttempt((previous) => previous + 1);
+                return;
+              }
               router.replace({
                 pathname: "/sign-in",
                 params: { mode: "in", addAccount: "1", notificationTarget: target },
-              })
-            }
+              });
+            }}
           />
           <NativeActionButton
             label={t("Back")}

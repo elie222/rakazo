@@ -16,7 +16,6 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../components/native-action-button";
-import { selectNotificationAccount } from "../lib/account-sessions";
 import { FORM_COLUMN_WIDTH } from "../lib/adaptive-layout";
 import type { PasswordResetCapabilities } from "../lib/api";
 import {
@@ -37,7 +36,6 @@ import { initialAuthMode } from "../lib/auth-routing";
 import { useI18n } from "../lib/i18n";
 import { hasIncomingShare } from "../lib/incoming-share";
 import { useMobileTokens } from "../lib/native";
-import { notificationOpenTargetFromLink } from "../lib/notification-open";
 import { passkeysAvailable, signInWithPasskey } from "../lib/passkey";
 import { continueWithSso } from "../lib/sso";
 import { credentialIssueText, errorText } from "../lib/user-error";
@@ -212,18 +210,11 @@ export default function SignIn() {
   // Any sign-in can create the account (a code, SSO), so ask the server rather than the form.
   async function openApp() {
     if (hasIncomingShare()) return router.replace("/share");
-    const me = await rpc("me").catch(() => null);
     if (notificationTarget) {
-      const target = notificationOpenTargetFromLink(notificationTarget);
-      if (
-        !target?.params.userId ||
-        me?.userId !== target.params.userId ||
-        !(await selectNotificationAccount(target.params.userId, target.params.apiBase))
-      )
-        throw new Error(t("Sign in to the account for this notification"));
-      router.replace(target);
+      router.replace({ pathname: "/notification-open", params: { target: notificationTarget } });
       return;
     }
+    const me = await rpc("me").catch(() => null);
     router.replace(me?.needsSignupSurvey ? "/signup-survey" : "/");
   }
 

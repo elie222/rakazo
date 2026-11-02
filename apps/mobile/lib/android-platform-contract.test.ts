@@ -73,7 +73,7 @@ describe("Android mobile platform contract", () => {
       "if (openThreadId != null) openThreadId == run.threadId else openBotId == run.botId",
     );
     expect(service).toContain("manager.notify(accountNotificationId(run.threadId), notification)");
-    expect(service).toContain("THREAD_NOTIFICATION_IDS");
+    expect(service).toContain("ACCOUNT_NOTIFICATION_IDS");
     expect(service).toContain(
       'cancel("${NotificationStorage(context).endpoint}:${NotificationStorage(context).userId}:$threadId".hashCode())',
     );

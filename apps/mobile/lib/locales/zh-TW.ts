@@ -2,7 +2,6 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Add account": "新增帳戶",
   "Sign in to open this account": "登入以開啟此帳戶",
   "Sign in to open this notification": "登入以開啟此通知",
-  "Sign in to the account for this notification": "請登入此通知所屬的帳戶",
   "Sign out all": "全部登出",
   "Sign out all accounts?": "登出所有帳戶？",
   "Signed out on this device. Some server sessions could not be revoked.":

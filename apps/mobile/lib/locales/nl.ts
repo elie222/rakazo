@@ -2,7 +2,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "Add account": "Account toevoegen",
   "Sign in to open this account": "Meld je aan om dit account te openen",
   "Sign in to open this notification": "Meld je aan om deze melding te openen",
-  "Sign in to the account for this notification": "Meld je aan bij het account van deze melding",
   "Sign out all": "Alle accounts afmelden",
   "Sign out all accounts?": "Bij alle accounts afmelden?",
   "Signed out on this device. Some server sessions could not be revoked.":

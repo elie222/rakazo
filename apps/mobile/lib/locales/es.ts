@@ -2,7 +2,6 @@ export const ES_MESSAGES: Record<string, string> = {
   "Add account": "Añadir cuenta",
   "Sign in to open this account": "Inicia sesión para abrir esta cuenta",
   "Sign in to open this notification": "Inicia sesión para abrir esta notificación",
-  "Sign in to the account for this notification": "Inicia sesión en la cuenta de esta notificación",
   "Sign out all": "Cerrar todas las sesiones",
   "Sign out all accounts?": "¿Cerrar sesión en todas las cuentas?",
   "Signed out on this device. Some server sessions could not be revoked.":

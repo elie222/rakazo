@@ -73,8 +73,14 @@ class RakazoNotificationService : Service() {
     super.onCreate()
     manager = getSystemService(NotificationManager::class.java)
     val state = getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE)
-    if (!state.getBoolean(THREAD_NOTIFICATION_IDS, false)) {
-      state.edit().putBoolean(THREAD_NOTIFICATION_IDS, true).apply()
+    if (!state.getBoolean(ACCOUNT_NOTIFICATION_IDS, false)) {
+      // Older native builds keyed thread alerts without server/account ownership.
+      manager.activeNotifications.filter {
+        it.tag == null && it.id != LIVE_NOTIFICATION_ID &&
+          it.notification.extras.containsKey("rakazo.threadId") &&
+          it.notification.extras.getString("rakazo.userId").isNullOrBlank()
+      }.forEach { manager.cancel(it.tag, it.id) }
+      state.edit().putBoolean(ACCOUNT_NOTIFICATION_IDS, true).apply()
     }
     createChannels(localizedContext(NotificationStorage(this).locale))
   }
@@ -446,7 +452,7 @@ class RakazoNotificationService : Service() {
     private const val SEEN_RUNS = "seen_runs"
     private const val SEEN_RUNS_SEEDED = "seen_runs_seeded"
     private const val SEEN_RUNS_SPACE_ID = "seen_runs_space_id"
-    private const val THREAD_NOTIFICATION_IDS = "thread_notification_ids"
+    private const val ACCOUNT_NOTIFICATION_IDS = "account_notification_ids"
     private val sessionLock = Any()
     private val sessionGeneration = AtomicLong()
     private var openBotId: String? = null

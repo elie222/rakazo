@@ -49,6 +49,10 @@ series. Commits use a generic fictional contributor identity because no Git auth
   Sign-out-all also removes saved logins on previously configured servers and attempts each
   revocation at its own origin. After signing out one account, fallback selection skips revoked
   logins and tries the next valid saved account without overriding concurrent selection.
+  Notification recovery separates transient lookup errors from invalid credentials and retries
+  using saved credentials. Desktop account totals hand the badge to the existing roster fallback
+  when the feed is unavailable; leaving both writers clears it. Android binary upgrades remove
+  only old unscoped native thread alerts before using account-scoped notification IDs.
   Failed remote sign-outs retain SecureStore records used only for revocation retries at startup
   and push registration. These credentials cannot appear in saved-account lists or register push.
 
@@ -61,7 +65,8 @@ series. Commits use a generic fictional contributor identity because no Git auth
 | Postgres account-session suite | 5 passed, including real cookie/bearer ownership, preferences, revocation/expiry, stale requests and suppressed internal background failures |
 | Browser journeys after PR review | 9 passed, including real authentication, hidden-account notifications, unread counts, tab refresh/stale rejection, independent/all sign-out, logout failure/recovery and existing shell flows |
 | Authorization journey after PR review | 33 passed, including bearer/cookie precedence, stale identity guard, multi-account device persistence and revocation |
-| Final mobile review verification | 2,895 tests passed across all 243 mobile suites; final workspace type check passed all 22 tasks |
+| Mobile review regression run | 2,895 tests passed across all 243 mobile suites; final workspace type check passed all 22 tasks |
+| Latest notification/badge follow-up | 106 tests passed across seven suites; all 22 workspace type checks passed again. Android migration was source-reviewed only; no native compilation or device run |
 | Focused review regressions | 195 auth, 309 mobile account/API/push, 36 native route/notification, 45 Expo provider and 12 web account/draft tests passed |
 | `pnpm check` | All 22 package tasks passed |
 | `pnpm lint` | Passed with existing warnings/informational diagnostics |
@@ -146,8 +151,10 @@ changes between the deployed revision and this branch separately from this featu
 The added controls are “Add account”, “Log out all accounts” on web and “Sign out all” on mobile.
 “Log out all accounts?” and “Sign out all accounts?” appear only when invoked. The discard confirmation appears
 only when a switch would lose transient work. “Sign in to open this notification” appears only
-when the owning saved login is unavailable. “Sign in to open this account” and “Sign in to the
-account for this notification” appear only during account recovery; “Signed out on this device. Some server sessions
+when the owning saved login is unavailable. Temporary verification failures use the existing
+“Could not continue” and “Try again” labels, and reuse the saved credentials on retry.
+“Sign in to open this account” appears only during account recovery; “Signed out on this device.
+Some server sessions
 could not be revoked.” reports an actual partial sign-out. “Sign out of an account before adding
 another” appears only at the browser limit. These labels and contextual recovery messages are
 needed to distinguish the actions and prevent private content from opening under another login.
