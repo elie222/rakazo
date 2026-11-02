@@ -21,20 +21,28 @@ export function isSyntheticBaseUrl(baseUrl: string | undefined): boolean {
   }
 }
 
+function normalizedBaseUrl(baseUrl: string | undefined): string | undefined {
+  try {
+    return normalizeOpenAiCompatibleBaseUrl(baseUrl ?? "");
+  } catch {
+    return undefined;
+  }
+}
+
+/** Typed URLs normalize before comparison, so a key is never skipped for an equivalent address. */
 export function compatibleApiKeyRequired(baseUrl: string | undefined): boolean {
+  const normalized = normalizedBaseUrl(baseUrl);
   return (
-    isOllamaCloudBaseUrl(baseUrl) || isCommandCodeBaseUrl(baseUrl) || isOpenCodeGoBaseUrl(baseUrl)
+    normalized === OLLAMA_CLOUD_BASE_URL ||
+    normalized === COMMANDCODE_BASE_URL ||
+    normalized === OPENCODE_GO_BASE_URL
   );
 }
 
 export const OLLAMA_CLOUD_BASE_URL = "https://ollama.com/v1";
 
 export function isOllamaCloudBaseUrl(baseUrl: string | undefined): boolean {
-  try {
-    return normalizeOpenAiCompatibleBaseUrl(baseUrl ?? "") === OLLAMA_CLOUD_BASE_URL;
-  } catch {
-    return false;
-  }
+  return normalizedBaseUrl(baseUrl) === OLLAMA_CLOUD_BASE_URL;
 }
 
 export function compatibleConnectionName(baseUrl: string | undefined, fallback: string): string {

@@ -118,6 +118,12 @@ it("recognizes manual CommandCode endpoints and requires the same key as its pre
   expect(openAiCompatibleConnectReady(input)).toBe(false);
   expect(openAiCompatibleConnectReady({ ...input, apiKey: "fake-key" })).toBe(true);
   expect(isCommandCodeBaseUrl(`${COMMANDCODE_BASE_URL}/`)).toBe(true);
+  expect(
+    openAiCompatibleConnectReady({
+      baseUrl: "https://api.commandcode.ai/provider",
+      modelId: "example-model",
+    }),
+  ).toBe(false);
   for (const url of [
     undefined,
     "https://api.commandcode.ai.evil.test/provider/v1",

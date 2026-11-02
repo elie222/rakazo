@@ -4636,7 +4636,7 @@ msgstr ""
 
 #: src/components/usage/provider-quota-stack.tsx
 msgid "Primary first"
-msgstr "ראשית"
+msgstr "ראשי תחילה"
 
 #: src/pages/Board.tsx
 msgid "Priority"

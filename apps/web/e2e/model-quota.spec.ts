@@ -62,7 +62,7 @@ test("connected account quota shows remaining windows and refreshes", async ({
   await captureScreenshot(page, testInfo, "model-quota-connected-account");
   usedPercent = 100;
   await quota.getByRole("button", { name: "Refresh", exact: true }).click();
-  await expect(quota).toContainText("0% remaining");
+  await expect(quota).toContainText(/(^|\D)0% remaining/);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(quota).toBeVisible();
   await expect(page.getByTestId("usage-sort-controls")).toHaveJSProperty(

@@ -4878,7 +4878,7 @@ msgstr "Recharger"
 
 #: src/components/usage/provider-quota-stack.tsx
 msgid "Remaining quota"
-msgstr "Quota restante"
+msgstr "Quota restant"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx

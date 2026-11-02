@@ -96,7 +96,9 @@ export default function Usage() {
             setMainRole(main);
             setApprovalRole(approval);
             const ids = connectionUsageGroups(connections).map(({ credential }) => credential.id);
-            setQuotas({});
+            setQuotas((current) =>
+              Object.fromEntries(ids.flatMap((id) => (current[id] ? [[id, current[id]]] : []))),
+            );
             setQuotaLoading(Object.fromEntries(ids.map((id) => [id, true])));
             void Promise.all(ids.map((id) => loadQuota(id, () => active)));
           }

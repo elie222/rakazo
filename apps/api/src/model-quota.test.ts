@@ -83,6 +83,19 @@ describe("connection quota authorization", () => {
       fresh: false,
     });
   });
+  it("reports an API-key connection as having no quota without reading", async () => {
+    const f = fixture();
+    f.deps.prisma.userModelCredential.findFirst.mockResolvedValue({
+      id: "connection-a",
+      userId: actor.userId,
+      provider: "anthropic",
+      secretId: "secret-a",
+    });
+    f.load.mockResolvedValue(JSON.stringify({ kind: "api_key", key: "test-key" }));
+    const result = await readConnectionQuota(f.ctx, f.reader, actor, "connection-a");
+    expect(result.view.status).toBe("unsupported");
+    expect(f.read).not.toHaveBeenCalled();
+  });
   it("never passes corrupt secret diagnostics to the reader", async () => {
     const f = fixture();
     f.load.mockRejectedValue(new Error("private secret diagnostic"));

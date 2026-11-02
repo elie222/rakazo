@@ -24,6 +24,18 @@ export async function readConnectionQuota(
   if (secret) {
     try {
       const stored = parseModelSecret(await ctx.deps.secrets.load(secret.ciphertext, secret.id));
+      // Only subscription sign-ins carry a quota; a plain API key has none to read.
+      if (row.provider === "anthropic" && stored.kind !== "oauth") {
+        return {
+          view: {
+            credentialId,
+            status: "unsupported" as const,
+            observedAt: null,
+            checkedAt: new Date().toISOString(),
+            windows: [],
+          },
+        };
+      }
       if (row.provider === "opencode-go" && stored.kind === "api_key") {
         accessToken = stored.key;
       } else if (row.provider === "openai-compatible" && stored.kind === "openai_compatible") {

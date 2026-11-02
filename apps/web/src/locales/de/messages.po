@@ -3483,7 +3483,7 @@ msgstr ""
 
 #: src/components/usage/provider-quota-stack.tsx
 msgid "Least remaining"
-msgstr "Wenigstes Restguthaben"
+msgstr "Niedrigstes Restkontingent"
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Leave"
@@ -3951,7 +3951,7 @@ msgstr ""
 
 #: src/components/usage/provider-quota-stack.tsx
 msgid "Most remaining"
-msgstr "Meistes Restguthaben"
+msgstr "Höchstes Restkontingent"
 
 #: src/pages/ModelRoleSettings.tsx
 msgid "Move down"
