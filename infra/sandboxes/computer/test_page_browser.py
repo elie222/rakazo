@@ -2360,6 +2360,71 @@ class DownloadTest(unittest.TestCase):
                                   "size": 4, "type": "application/pdf"}])
         self.assertLess(self.now[0], 4.7)
 
+    def test_only_main_frame_documents_delay_download_finish(self):
+        downloads = self.downloads()
+        for index, kind in enumerate(("Fetch", "XHR", "Script", "Image", "EventSource")):
+            self.client._handle_event({"method": "Network.requestWillBeSent", "sessionId": "session",
+                                       "params": {"requestId": str(index), "type": kind, "frameId": "top"}})
+        self.assertEqual(self.client._documents, {})
+        self.assertEqual(downloads.finish(), [])
+        self.assertEqual(self.now[0], 1.0)
+
+    def test_completed_files_are_checked_on_disk_before_placement(self):
+        os.makedirs(self.folder)
+        staged = os.path.join(self.folder, "g1")
+        canary = Path(self.home, "canary")
+        canary.write_bytes(b"safe")
+        Path(staged).symlink_to(canary)
+        with self.assertRaisesRegex(RuntimeError, helper.DOWNLOAD_FAILED):
+            helper.place_download(staged, self.folder, "file.pdf", set())
+        os.unlink(staged)
+        Path(staged).write_bytes(b"too large")
+        with patch.object(helper, "MAX_UPLOAD_BYTES", 2), self.assertRaisesRegex(RuntimeError, helper.DOWNLOAD_FAILED):
+            helper.place_download(staged, self.folder, "file.pdf", set())
+        self.assertEqual(canary.read_bytes(), b"safe")
+        self.assertFalse(Path(self.folder, "file.pdf").exists())
+
+    def test_finish_command_reports_placement_failure(self):
+        with patch.object(helper, "finish_later", side_effect=RuntimeError(helper.DOWNLOAD_FAILED)), \
+                patch("builtins.print") as output:
+            self.assertEqual(helper.run(["rakazo-page-browser", "finish", '{"downloads": []}']), 1)
+        self.assertEqual(json.loads(output.call_args.args[0]),
+                         {"downloads": [{"error": helper.DOWNLOAD_FAILED}]})
+
+    def test_finisher_retries_placement_and_reports_terminal_failure(self):
+        os.makedirs(self.folder)
+        staged = os.path.join(self.folder, "g1")
+        item = {"guid": "g1", "staged": staged, "folder": self.folder, "name": "file.pdf"}
+        original = helper.place_download
+        for terminal in (False, True):
+            with self.subTest(terminal=terminal):
+                Path(staged).write_bytes(b"data")
+                pending = [item.copy()]
+                attempts = []
+
+                def place(*args):
+                    self.assertEqual(len(pending), 1)
+                    self.assertTrue(Path(staged).exists())
+                    attempts.append(1)
+                    if terminal or len(attempts) == 1:
+                        raise PermissionError("busy")
+                    return original(*args)
+
+                def sleep(seconds):
+                    self.now[0] += seconds
+
+                with patch.object(helper.time, "sleep", side_effect=sleep), \
+                        patch.object(helper, "place_download", side_effect=place):
+                    if terminal:
+                        with self.assertRaisesRegex(RuntimeError, helper.DOWNLOAD_FAILED):
+                            helper.finish_later(pending, seconds=1)
+                    else:
+                        helper.finish_later(pending, seconds=2)
+                        self.assertEqual(pending, [])
+                        Path(self.folder, "file.pdf").unlink()
+                self.assertEqual(len(attempts), 2)
+                self.assertFalse(Path(staged).exists())
+
     def test_a_page_that_loaded_or_a_click_without_a_download_is_not_waited_for(self):
         downloads = self.downloads()
         self.client._handle_event({"method": "Network.requestWillBeSent", "sessionId": "session",

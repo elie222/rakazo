@@ -414,7 +414,8 @@ class CdpClient:
             # An event stream stays open for as long as the page likes; it is not a request to wait for.
             if isinstance(request_id, str) and params.get("type") != "EventSource":
                 self._requests.setdefault((session_id, request_id), [time.monotonic(), None])
-            if self.download_frame and params.get("frameId") == self.download_frame and isinstance(request_id, str):
+            if (self.download_frame and params.get("frameId") == self.download_frame
+                    and params.get("type") == "Document" and isinstance(request_id, str)):
                 self._documents.setdefault(request_id, [time.monotonic(), None])
         elif method in ("Network.loadingFinished", "Network.loadingFailed"):
             request = self._requests.get((session_id, params.get("requestId")))
@@ -1565,6 +1566,9 @@ def free_name(folder: str, name: str, taken: set[str]) -> str:
 
 def place_download(staged: str, folder: str, name: str, taken: set[str]) -> str:
     """Give a finished download its name. A link never replaces an existing entry or writes through a symlink."""
+    info = os.lstat(staged)
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > max_file_bytes():
+        raise RuntimeError(DOWNLOAD_FAILED)
     while True:
         chosen = free_name(folder, name, taken)
         try:
@@ -1690,6 +1694,7 @@ def finish_later(pending: list[dict[str, str]], seconds: float = FINISH_LATER_SE
     until = time.monotonic() + seconds
     max_bytes = max_file_bytes()
     begun: set[str] = set()
+    placement_failed: set[str] = set()
     while pending and time.monotonic() < until:
         time.sleep(0.5)
         for item in list(pending):
@@ -1698,9 +1703,13 @@ def finish_later(pending: list[dict[str, str]], seconds: float = FINISH_LATER_SE
                 size = os.path.getsize(staged + ".crdownload")
             except OSError:
                 if os.path.exists(staged):
-                    pending.remove(item)
-                    with contextlib.suppress(OSError, RuntimeError):
+                    try:
                         place_download(staged, item["folder"], item["name"], set())
+                    except (OSError, RuntimeError):
+                        placement_failed.add(staged)
+                    else:
+                        pending.remove(item)
+                        placement_failed.discard(staged)
                 elif staged in begun:
                     # Cancelled or failed: Chromium removed what it wrote.
                     pending.remove(item)
@@ -1716,6 +1725,13 @@ def finish_later(pending: list[dict[str, str]], seconds: float = FINISH_LATER_SE
                     finally:
                         client.close()
                 remove_partial(staged)
+
+    if any(item["staged"] in placement_failed for item in pending):
+        # Keep completed files available for retries until the deadline, then fail like entry().
+        for item in pending:
+            if item["staged"] in placement_failed:
+                remove_partial(item["staged"])
+        raise RuntimeError(DOWNLOAD_FAILED)
 
 
 def upload(client: CdpClient, session_id: str, ref: str, files: list[str]) -> None:
@@ -2924,7 +2940,11 @@ def run(argv: list[str]) -> int:
     if raw_args.strip():
         args = json.loads(raw_args)
     if command == "finish":
-        finish_later(args.get("downloads") or [])
+        try:
+            finish_later(args.get("downloads") or [])
+        except (OSError, RuntimeError):
+            print(json.dumps({"downloads": [{"error": DOWNLOAD_FAILED}]}))
+            return 1
         return 0
     port = cdp_port()
     # Set once the browser answers: before that, no action can have reached the page.
