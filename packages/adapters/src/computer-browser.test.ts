@@ -1,4 +1,4 @@
-import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
+import type { AdapterContext, ComputerRef, PageBrowserCommand } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBrowserProvider, resolveBrowserProviderKind } from "./browser-provider-factory.js";
 import { ComputerBrowserProvider } from "./computer-browser.js";
@@ -115,6 +115,33 @@ describe("computer browser provider", () => {
       command: "navigate",
       url: "https://example.test/live",
     });
+  });
+
+  it("passes on the page a live navigation reached, when the helper read it", async () => {
+    const tree = '- link "Sign in" [e1]';
+    const elements = [{ ref: "e1", role: "link", name: "Sign in" }];
+    const computer: ComputerRef = { id: "c", botId: "b", kind: "docker", providerRef: "c" };
+    const context = { ...baseContext, botId: "bot-a" };
+    const navigate = (live: Record<string, unknown>) =>
+      new ComputerBrowserProvider({
+        pages,
+        liveDriver: async () => ({
+          ok: true,
+          url: "https://example.test/",
+          title: "Example",
+          ...live,
+        }),
+      }).navigate(computer, { url: "https://example.test/" }, context);
+    const bare = { url: "https://example.test/", title: "Example" };
+    expect(await navigate({ tree, elements })).toEqual({ ...bare, tree, elements });
+    expect(await navigate({ tree, elements, loading: true })).toMatchObject({
+      tree,
+      loading: true,
+    });
+    // A page that is not whole is not passed on, nor is a loading flag without a page.
+    expect(await navigate({ tree, elements: "none" })).toEqual(bare);
+    expect(await navigate({ tree: 7, elements })).toEqual(bare);
+    expect(await navigate({ loading: true })).toEqual(bare);
   });
 
   it("passes on that the live page was still loading", async () => {
@@ -295,6 +322,46 @@ describe("page browser safety", () => {
       elements,
     });
     expect(result.tree).toContain("Digit 1");
+  });
+
+  it.each([
+    { ok: true, completed: 2 },
+    {
+      ok: false,
+      completed: 1,
+      uncertain: false,
+      error: "Stale element ref. Take a fresh snapshot.",
+    },
+    { ok: false, completed: 1, uncertain: true, error: "lost", fallback: "computer_act" as const },
+  ])("keeps the files a call saved, also when a later step failed: %j", async (outcome) => {
+    const downloads = [
+      { name: "statement.pdf", path: "bots/b1/Downloads/statement.pdf", size: 4 },
+      {
+        name: "slow.pdf",
+        path: "bots/b1/Downloads/slow.pdf",
+        state: "downloading" as const,
+        size: 1,
+      },
+    ];
+    const liveDriver = vi.fn(async (_computer: ComputerRef, _request: PageBrowserCommand) => ({
+      url: "https://bank.example/",
+      title: "Bank",
+      ...outcome,
+      downloads,
+    }));
+    const result = await new ComputerBrowserProvider({ liveDriver }).act(
+      computer,
+      {
+        actions: [
+          { kind: "click", ref: "e1" },
+          { kind: "click", ref: "e2" },
+        ],
+        downloads: "bots/b1/Downloads",
+      },
+      baseContext,
+    );
+    expect(liveDriver.mock.calls[0]?.[1]).toMatchObject({ downloads: "bots/b1/Downloads" });
+    expect(result).toMatchObject({ ok: outcome.ok, downloads });
   });
 
   it("reports a refused saved-login fill as settled, without desktop tools", async () => {

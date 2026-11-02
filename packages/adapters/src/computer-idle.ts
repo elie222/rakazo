@@ -18,6 +18,7 @@ import { QUEUE_HOLDING_RUN_STATUSES, withAbort } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
+  clearEndedExecutionRunBinding,
   createGroupRepos,
   createThreadMessageInTransaction,
   recordComputerRunEnd,
@@ -27,6 +28,7 @@ import { getLogger } from "@rakazo/logging";
 import { activeCodingAgent } from "./coding-agent-activity.js";
 import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
 import { screenLeaseIdForRun, toComputerRef } from "./computer-lifecycle.js";
+import { BrowserStillRunningError } from "./computer-screens.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
 import { HomeSaveConflictError } from "./home-object-store.js";
 import { sandboxAllowanceUsedUp } from "./sandbox-allowance.js";
@@ -423,7 +425,21 @@ export async function sleepComputerIfIdle(
   if (computer.kind === "desktop") return;
 
   if (computer.controlBotId && computer.controlLeaseId && !hasActiveComputerControl(computer)) {
-    await expireComputerControl(deps, computer.id, computer.controlLeaseId);
+    try {
+      await expireComputerControl(deps, computer.id, computer.controlLeaseId);
+    } catch (error) {
+      scheduleComputerSleep(deps.jobs, computer.id, undefined, rateLimitEnds(error));
+      if (deferSleep(error, computer)) return;
+      throw error;
+    }
+    computer = await loadComputer(deps.prisma, computerId);
+    if (!computer?.providerRef || !mayNeedSleep(computer)) return;
+  }
+  if (computer.executionRunId) {
+    // A legacy binding a pre-lease release left behind. Both suspension claims below
+    // require it null, and a stranded one names a run nothing will clean up, so the
+    // computer could never sleep. Runs that may still execute are left to their owner.
+    await clearEndedExecutionRunBinding(deps.prisma, computer.id);
     computer = await loadComputer(deps.prisma, computerId);
     if (!computer?.providerRef || !mayNeedSleep(computer)) return;
   }
@@ -886,7 +902,9 @@ export function sleepDeferReason(error: unknown): string | undefined {
             : "too_many_files"
           : error instanceof HomeSaveConflictError
             ? "saved_elsewhere"
-            : undefined;
+            : error instanceof BrowserStillRunningError
+              ? "browser_running"
+              : undefined;
 }
 
 /**
@@ -944,6 +962,7 @@ function loadComputer(prisma: PrismaClient, computerId: string) {
       controlLeaseId: true,
       controlLeaseExpiresAt: true,
       controlBotId: true,
+      executionRunId: true,
       runningSince: true,
       homeRevisionAt: true,
       updatedAt: true,

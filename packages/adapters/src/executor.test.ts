@@ -1492,7 +1492,7 @@ describe("userTurnInstructions", () => {
     const clause = clauseFor("user", true);
     expect(clause).toContain("list_fleet before changing anything");
     expect(clause).toContain(
-      "create_group, update_group, set_child_instructions, set_child_bot_model and create_child_routine need the owner's approval",
+      "set_child_instructions and set_child_bot_model need the owner's approval",
     );
     expect(clause).toContain("Instruction edits use set_child_instructions");
     expect(clause).toContain("expected_version");
@@ -1501,9 +1501,7 @@ describe("userTurnInstructions", () => {
     expect(clause).not.toContain("Instructions edits");
     expect(clause).toContain("any bot in your current space");
     const narrowed = clauseFor("user", true, false, ["set_child_instructions", "create_group"]);
-    expect(narrowed).toContain(
-      "update_group, set_child_bot_model and create_child_routine need the owner's approval",
-    );
+    expect(narrowed).toContain("set_child_bot_model needs the owner's approval");
     expect(narrowed).not.toContain("set_child_instructions");
     expect(clauseFor("user", false)).toBeUndefined();
     expect(clauseFor("bot_message", true)).toBeUndefined();

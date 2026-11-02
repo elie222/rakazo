@@ -4,15 +4,12 @@ import {
   getDefaultEnvironment,
   StdioClientTransport,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
-import type {
-  HostScreen,
-  HostScreenAction,
-  HostScreenActResult,
-  HostScreenObservation,
-} from "./host-screen.js";
+import type { HostScreen, HostScreenAction, HostScreenObservation } from "./host-screen.js";
 import {
+  actThenObserve,
+  boundedHostScreenTree,
   HOST_SCREEN_MAX_ELEMENTS,
-  HOST_SCREEN_MAX_TREE_CHARS,
+  HOST_SCREEN_MAX_IMAGE_DIMENSION,
   HostScreenError,
 } from "./host-screen.js";
 
@@ -63,8 +60,6 @@ interface Target {
 }
 
 const LAUNCH_WAIT_MS = 4_000;
-// Long screenshot edge. Larger images cost model tokens without making text easier to read.
-const MAX_IMAGE_DIMENSION = 1_568;
 
 /** Starts the driver as this app's child, so the OS credits its permissions to this app. */
 export function cuaDriverConnector(options: {
@@ -234,7 +229,7 @@ export function createCuaHostScreen(options: CuaHostScreenOptions): HostScreen {
         pid: found.pid,
         window_id: found.windowId,
         max_elements: HOST_SCREEN_MAX_ELEMENTS,
-        max_image_dimension: MAX_IMAGE_DIMENSION,
+        max_image_dimension: HOST_SCREEN_MAX_IMAGE_DIMENSION,
         ...(query ? { query } : {}),
       },
       signal,
@@ -243,12 +238,10 @@ export function createCuaHostScreen(options: CuaHostScreenOptions): HostScreen {
     const snapshot = typeof structured.snapshot_id === "string" ? structured.snapshot_id : "";
     if (snapshot) snapshots.set(found.windowId, snapshot);
     else snapshots.delete(found.windowId);
-    let tree =
-      typeof structured.tree_markdown === "string" ? structured.tree_markdown : text(result);
-    if (tree.length > HOST_SCREEN_MAX_TREE_CHARS)
-      tree = `${tree.slice(0, HOST_SCREEN_MAX_TREE_CHARS)}\n…`;
-    if (structured.truncated === true || tree.endsWith("…"))
-      tree += "\nSome rows were cut off. Observe again with a query to find the rest.";
+    const tree = boundedHostScreenTree(
+      typeof structured.tree_markdown === "string" ? structured.tree_markdown : text(result),
+      structured.truncated === true,
+    );
     const title =
       typeof structured.window_title === "string" && structured.window_title
         ? structured.window_title
@@ -355,31 +348,15 @@ export function createCuaHostScreen(options: CuaHostScreenOptions): HostScreen {
     async observe(scope, app, observeOptions) {
       return observeTarget(await target(app, scope.signal), scope.signal, observeOptions?.query);
     },
-    async act(scope, app, actions): Promise<HostScreenActResult> {
-      let completed = 0;
-      let error: string | undefined;
-      for (const action of actions) {
-        try {
-          // Find the front window again each time: the last action may have closed the one it
-          // acted on or opened another, like File > New replacing an Open panel.
-          await perform(await target(app, scope.signal), action, scope.signal);
-        } catch (caught) {
-          if (!(caught instanceof HostScreenError)) throw caught;
-          error = caught.message;
-          break;
-        }
-        completed += 1;
-      }
-      // Let the app redraw before the look that shows the result. Actions that ran stay
-      // counted even when that look fails, so the bot never repeats them blindly.
-      await sleep(300, undefined, { signal: scope.signal });
-      try {
-        const observation = await observeTarget(await target(app, scope.signal), scope.signal);
-        return { completed, ...(error ? { error } : {}), observation };
-      } catch (caught) {
-        if (!(caught instanceof HostScreenError)) throw caught;
-        return { completed, error: error ?? caught.message };
-      }
+    act(scope, app, actions) {
+      // Find the front window again each time: the last action may have closed the one it
+      // acted on or opened another, like File > New replacing an Open panel.
+      return actThenObserve(
+        scope.signal,
+        actions,
+        async (action) => perform(await target(app, scope.signal), action, scope.signal),
+        async () => observeTarget(await target(app, scope.signal), scope.signal),
+      );
     },
     async close() {
       clearTimeout(idle);

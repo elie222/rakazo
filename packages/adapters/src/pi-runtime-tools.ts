@@ -12,7 +12,11 @@ import type {
 } from "@rakazo/adapter-kit";
 import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
-import { isToolPauseResult } from "./approval-effect.js";
+import {
+  isInternalTermination,
+  isTerminatingReplyResult,
+  isToolPauseResult,
+} from "./approval-effect.js";
 import {
   connectionIdArgument,
   credentialArgument,
@@ -31,6 +35,7 @@ import { VERBATIM_TOOL_RESULTS } from "./runtime-context.js";
 import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import type { FinishedShellCommand } from "./shell-command-stream.js";
 import { textContentArg } from "./tool-text.js";
+import { isVerbatimMcpResult } from "./verbatim-mcp-result.js";
 
 export interface ToolCallBudget {
   count: number;
@@ -94,6 +99,7 @@ function useToolAgentTool(
           name: USE_TOOL,
           args: params as Record<string, unknown>,
           executionId: JSON.stringify(["pi-tool", host.agentNamespace ?? "main", toolCallId]),
+          response: host.modelResponses,
         });
         throw new Error(`${name} is not available. Use a name find_tool lists.`);
       }
@@ -410,6 +416,9 @@ function toAgentTool(
         async (span) => {
           host.signal.throwIfAborted();
           const args = (params ?? {}) as Record<string, unknown>;
+          const keepToolResultWhole = (name: string, callArgs: Record<string, unknown>) =>
+            VERBATIM_TOOL_RESULTS.has(name) ||
+            isVerbatimMcpResult(name, callArgs, host.request.verbatimMcpServers);
           recordPiTelemetryContent(span, "pi.agent.tool.arguments", args);
           const rawCallId =
             toolCallId || `${host.request.runId}:${tool.name}:${host.toolCallSeq.value++}`;
@@ -433,6 +442,7 @@ function toAgentTool(
             name: tool.name,
             args,
             executionId,
+            response: host.modelResponses,
             ...(viaUseTool ? { viaUseTool } : {}),
           });
           const startedAt = Date.now();
@@ -538,7 +548,9 @@ function toAgentTool(
                 );
                 if (isAgentToolExecutionResult(result)) {
                   if (isToolPauseResult(result)) host.pausePending = true;
-                  return boundAgentToolResult(result);
+                  return keepToolResultWhole(tool.name, args)
+                    ? result
+                    : boundAgentToolResult(result);
                 }
                 return {
                   content: [
@@ -549,6 +561,7 @@ function toAgentTool(
                         host.request.contextStrategy,
                         tool.name,
                         args,
+                        host.request.verbatimMcpServers,
                       ),
                     },
                   ],
@@ -565,15 +578,16 @@ function toAgentTool(
                 details: { error: "no executor" },
               };
             })();
-            if (VERBATIM_TOOL_RESULTS.has(tool.name)) return result as AgentToolResult<unknown>;
+            if (keepToolResultWhole(tool.name, args)) return result as AgentToolResult<unknown>;
             return boundAgentToolResult(result as AgentToolResult<unknown>);
           } catch (error) {
             failure = error;
             throw error;
           } finally {
             // Pi only terminates a parallel batch when every result terminates.
-            // A single paused call must stop the turn before another model request.
-            if (host.pausePending) host.abortTurn?.();
+            // A single paused or turn-ending call must stop the turn before another
+            // model request, or the next assistant message replaces its final reply.
+            if (host.pausePending || isTerminatingReplyResult(result)) host.abortTurn?.();
             const details = (
               result as AgentToolResult<{ error?: unknown; isError?: unknown }> | undefined
             )?.details;
@@ -609,6 +623,8 @@ function isAgentToolExecutionResult(result: unknown): result is AgentToolExecuti
     !result ||
     typeof result !== "object" ||
     (result as { kind?: unknown }).kind !== "agent_tool_result" ||
+    (((result as { terminate?: unknown }).terminate === true || isToolPauseResult(result)) &&
+      !isInternalTermination(result)) ||
     !("content" in result)
   ) {
     return false;
@@ -631,12 +647,18 @@ export function serializeToolResult(
   strategy: AgentRunRequest["contextStrategy"],
   name: string,
   args: Record<string, unknown>,
+  verbatimMcpServers?: AgentRunRequest["verbatimMcpServers"],
 ) {
   try {
     const text = JSON.stringify(result);
     if (!text) return "ok";
     // skill-tools.ts already bounds skill content; the context budget selector may still shorten it.
-    if (text.length <= 12_000 || VERBATIM_TOOL_RESULTS.has(name)) return text;
+    if (
+      text.length <= 12_000 ||
+      VERBATIM_TOOL_RESULTS.has(name) ||
+      isVerbatimMcpResult(name, args, verbatimMcpServers)
+    )
+      return text;
     return (strategy ?? DEFAULT_CONTEXT_STRATEGY) === "current"
       ? clipToolResultText(text)
       : shortenToolResultText(text, 12_000, { name, arguments: args });
@@ -701,6 +723,8 @@ export interface ToolHost {
   captureCheckpoint?: (toolCallId: string, executionId: string) => Promise<void>;
   /** Shell commands that returned output and are still running. */
   pendingShells: Array<Promise<FinishedShellCommand>>;
+  /** Model responses started by the main agent. Helpers reset it, so each of their calls counts. */
+  modelResponses?: number;
 }
 
 export function toolCallBudgetExceededMessage(limit: number) {

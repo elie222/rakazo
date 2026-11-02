@@ -90,7 +90,7 @@ function RunRow({
   error: string | null;
   onPress: (() => void) | undefined;
 }) {
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
   const failure = useRunError(error);
   const title = formatRoutineRunAt(run, dateLocaleForUi(locale));
   return (
@@ -98,7 +98,13 @@ function RunRow({
       accessibilityRole={onPress ? "button" : undefined}
       title={title}
       detail={failure?.summary}
-      value={run.status === "completed" ? undefined : activityStatusLabel(run.status)}
+      value={
+        run.status !== "completed"
+          ? activityStatusLabel(run.status)
+          : run.messageId
+            ? undefined
+            : t("No reply")
+      }
       chevron={onPress ? "right" : undefined}
       onPress={onPress}
     />

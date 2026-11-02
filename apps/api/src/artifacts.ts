@@ -49,6 +49,11 @@ export async function createOwnedArtifact(
   return storeOwnedArtifact(deps, actor, { ...input, mimeType, bytes });
 }
 
+/** A stored inbound attachment plus its downloaded content when it was fresh. */
+export type StoredInboundAttachment = ReturnType<typeof createdArtifact> & {
+  bytes?: Uint8Array;
+};
+
 export async function storeInboundAttachment(
   deps: {
     prisma: PrismaClient;
@@ -62,7 +67,7 @@ export async function storeInboundAttachment(
     clientNonce: string;
     downloadDeadline?: number;
   },
-) {
+): Promise<StoredInboundAttachment> {
   const replayed = await findReplayedArtifact(deps.prisma, owner, input);
   if (replayed) return createdArtifact(replayed);
   const { attachment } = input;
@@ -89,13 +94,15 @@ export async function storeInboundAttachment(
   ]).finally(() => clearTimeout(timer));
   if (bytes.byteLength === 0) throw new AttachmentValidationError("Attachment content is empty");
   if (bytes.byteLength > maxBytes) throw tooLarge;
-  return storeOwnedArtifact(deps, owner, {
+  const stored = await storeOwnedArtifact(deps, owner, {
     botId: input.botId,
     name,
     mimeType,
     bytes,
     clientNonce: input.clientNonce,
   });
+  // The replay return above carries no bytes; callers treat them as optional.
+  return { ...stored, bytes };
 }
 
 type ArtifactOwner = Pick<Actor, "spaceId" | "userId">;

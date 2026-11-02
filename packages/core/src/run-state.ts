@@ -80,8 +80,8 @@ export function isRunWaitingOnUser(status: string | null | undefined): boolean {
   return WAITING_ON_USER_RUN_STATUSES.some((waiting) => waiting === status);
 }
 
-export function isTerminal(status: RunStatus): boolean {
-  return TERMINAL.includes(status);
+export function isTerminal(status: string): boolean {
+  return TERMINAL.includes(status as RunStatus);
 }
 
 /** Prompt of a run created to answer messages that waited behind another turn. */

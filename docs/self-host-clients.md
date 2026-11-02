@@ -7,9 +7,25 @@ web app may load.
 
 The iOS and Android app can also point at a self-hosted origin at runtime. On the sign-in screen, tap **Use a custom server** and enter the same HTTPS origin as `WEB_ORIGIN` (for example `https://app.example.com`). Store builds still default to `EXPO_PUBLIC_API_URL`; the in-app setting is an override for people running their own API. Changing the server signs the device out of any previous session.
 
-Plain `http://` is accepted only for a private IP, `localhost`, or a `.local` name. A hostname reached over a VPN such as WireGuard or Tailscale needs HTTPS with a certificate the phone trusts, for example a real domain with a Let's Encrypt certificate issued through a DNS challenge.
+The app accepts plain `http://` only for a private IP, `localhost`, or a `.local` name, but Docker Compose publishes the web port on loopback by default. For LAN access, follow [Connecting a phone on the same network](#connecting-a-phone-on-the-same-network). A hostname reached over a VPN such as WireGuard or Tailscale needs HTTPS with a certificate the phone trusts, for example a real domain with a Let's Encrypt certificate issued through a DNS challenge.
 
 Native apps need a setting on the server before they can use its [passkeys](./self-host-accounts.md#passkeys).
+
+## Connecting a phone on the same network
+
+In the Compose stack's `.env`, set `RAKAZO_WEB_BIND=0.0.0.0` (or the host's LAN IP),
+and set `WEB_ORIGIN`, `BETTER_AUTH_URL` and `API_URL` to `http://<LAN-IP>:5173`.
+Replace `<LAN-IP>` with the server's LAN IP. This publishes only the web port; the API
+and other ports stay on loopback. For published images, if you changed `RAKAZO_WEB_PORT`,
+use that port instead of `5173` in the origins, firewall rule and app address below.
+The source-build stack uses port `5173`.
+
+Recreate the services with `docker compose up -d`, using the same Compose file and env-file
+options as your install. Allow TCP port 5173 only from your LAN subnet in the host firewall,
+then enter `http://<LAN-IP>:5173` in the app's **Use a custom server** field.
+
+This exposes plain-HTTP sign-in to everyone on the local network. Tailscale or an HTTPS
+reverse proxy is the safer option.
 
 ## Mobile push notifications
 

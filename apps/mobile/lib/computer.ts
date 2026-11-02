@@ -56,6 +56,15 @@ export function embeddableScreenUrl(url: string | null, apiBase: string): string
     const parsed = new URL(url);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
     const api = new URL(apiBase);
+    // A deployment behind one HTTPS origin proxies /novnc/ there, like the web client relies on,
+    // even when WEB_ORIGIN still names an address this device cannot reach.
+    if (
+      api.protocol === "https:" &&
+      isProxiedScreenPage(url) &&
+      (parsed.protocol === "http:" || isPrivateNetworkHost(parsed.hostname))
+    ) {
+      return `${api.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
     if (isLocalhostOrLoopbackIp(parsed.hostname) && !isLocalhostOrLoopbackIp(api.hostname)) {
       parsed.hostname = api.hostname;
     }

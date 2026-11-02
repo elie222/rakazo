@@ -3241,10 +3241,8 @@ describe("sendThreadMessage", () => {
     });
   });
 
+  // Markdown rendering cases live in packages/core message-quote tests; these reach the send path.
   it.each([
-    ["table cells", "| Name | Value |\n|:-----|------:|\n| Alice | 5 |", "Alice 5", "Alice 5"],
-    ["indented code", "    2. restart()", "2. restart()", "2. restart()"],
-    ["fenced code", "```text\n2. restart()\n```", "2. restart()", "2. restart()"],
     [
       "lists after code fences",
       "```text\n1. code\n```\n1. First\n2. Second",
@@ -3253,24 +3251,6 @@ describe("sendThreadMessage", () => {
     ],
     ["tab-indented code", "\t2. restart()", "2. restart()", "2. restart()"],
     ["three-space lists", "   1. First\n   2. Second", "First\nSecond", "First\nSecond"],
-    [
-      "ordered list items",
-      "1. Review the diff\n2. Run the tests",
-      "Review the diff Run the tests",
-      "Review the diff\nRun the tests",
-    ],
-    [
-      "parenthesized list items",
-      "1) Review the diff\n2) Run the tests",
-      "Review the diff\nRun the tests",
-      "Review the diff\nRun the tests",
-    ],
-    [
-      "quoted list items",
-      "> 1. Review the diff\n> 2. Run the tests",
-      "Review the diff\nRun the tests",
-      "Review the diff\nRun the tests",
-    ],
   ])(
     "derives a quote excerpt spanning rendered %s",
     async (_name, parentText, requestedQuote, expectedQuote) => {

@@ -40,11 +40,15 @@ To stop one bot from ever using a tool, open the bot's settings, expand **Advanc
 
 ## What always asks
 
-- Changing a bot's instructions, creating a space, and the actions in
-  [Bots that manage bots](./fleet-management.md) always show a card. **Auto** and **Always allow**
-  don't skip it.
+In **Auto** and **Ask**, these always show a card, and **Always allow** doesn't skip it:
+
+- Changing a bot's instructions or model, and creating a space.
 - Actions that text you didn't write could be steering, such as changes in a run started by a
-  webhook, ask in **Auto** and **Ask**, and are refused in **Never ask**.
+  webhook.
+- A routine that watches a command, or that names a site the run found in outside content.
+
+**Never ask** runs all of them. The one exception is accepting another owner's bot connection, which
+it refuses when someone else started the run or outside content entered it.
 
 ## Per space
 

@@ -465,7 +465,8 @@ function sealedRecordId(purchaseId: string, column: "cardCiphertext" | "tokenCip
 function cardRedactionForms(number: string): string[] {
   const digits = number.replace(/\D/g, "");
   const grouped = digits.replace(/(\d{4})(?=\d)/g, "$1 ");
-  return [...new Set([number, digits, grouped].filter(Boolean))];
+  const hyphenated = digits.replace(/(\d{4})(?=\d)/g, "$1-");
+  return [...new Set([number, digits, grouped, hyphenated].filter(Boolean))];
 }
 
 /** Single-use cards and tokens stop working well within this, and with them the reason to hide one. */

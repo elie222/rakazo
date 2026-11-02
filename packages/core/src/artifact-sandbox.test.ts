@@ -20,9 +20,15 @@ describe("withSandboxedArtifactCsp", () => {
     expect(wrapped.endsWith("<p>content</p>")).toBe(true);
   });
 
+  it("puts the CSP ahead of content that precedes a doctype", () => {
+    const html = "<script>evil()</script><!doctype html>";
+    expect(withSandboxedArtifactCsp(html).startsWith("<!DOCTYPE html><meta")).toBe(true);
+  });
+
   it("allows no network loads, only inline and data content", () => {
     expect(SANDBOXED_ARTIFACT_CSP).toContain("img-src data:;");
     expect(SANDBOXED_ARTIFACT_CSP).toContain("font-src data:;");
+    expect(SANDBOXED_ARTIFACT_CSP).toContain("form-action 'none'");
     expect(SANDBOXED_ARTIFACT_CSP).not.toContain("https:");
   });
 

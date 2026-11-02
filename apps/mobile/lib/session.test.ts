@@ -3,6 +3,7 @@ import * as SecureStore from "expo-secure-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { clearAppBadge, syncAppBadge } from "./app-badge";
 import { artifactCacheSession } from "./artifact-cache-session";
+import { stopLiveNotifications } from "./live-notifications.js";
 import { clearNetworkCache } from "./network-cache.js";
 import {
   clearSessionToken,
@@ -88,6 +89,15 @@ describe("mobile session storage", () => {
     await syncAppBadge(2);
     await restoreSessionToken("fake-other-server");
     expect(Notifications.setBadgeCountAsync).toHaveBeenLastCalledWith(0);
+  });
+
+  it("clears delivered notifications only when the session ends", async () => {
+    vi.mocked(stopLiveNotifications).mockClear();
+    await saveSessionToken("fake-a");
+    await restoreSessionToken("fake-b");
+    expect(stopLiveNotifications).not.toHaveBeenCalled();
+    await clearSessionToken();
+    expect(stopLiveNotifications).toHaveBeenCalledWith(true);
   });
 
   it("still signs out and runs every other wipe when one disk cache throws", async () => {

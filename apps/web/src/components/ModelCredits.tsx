@@ -25,11 +25,26 @@ import {
 } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { formatBillingAmount, formatBillingDate, formatBillingPrice } from "../lib/billing";
+import {
+  billingDateLabel,
+  formatBillingAmount,
+  formatBillingDate,
+  formatBillingPrice,
+} from "../lib/billing";
 import { rpc } from "../lib/rpc";
 import { useSignOut } from "../lib/sign-out";
+import { AccountMenu } from "./AccountMenu";
 
 type CreditAmount = (typeof MODEL_CREDIT_AMOUNTS)[number];
+
+/** Subscription states that still bill: access now, or resumed from the billing portal. */
+const LIVE_STATES: BillingStatus["state"][] = [
+  "trialing",
+  "active",
+  "past_due",
+  "unpaid",
+  "paused",
+];
 
 function formatMonthlyUsd(cents: number, locale: string): string {
   return formatBillingPrice(
@@ -138,14 +153,7 @@ export function CreditChoice({
       className="mx-auto flex min-h-dvh max-w-3xl flex-col justify-center gap-8 px-6 py-12"
     >
       {dismissible ? null : (
-        <Button
-          className="fixed top-4 right-6"
-          variant="text"
-          disabled={pending || signingOut}
-          onClick={() => void logOut()}
-        >
-          <Trans>Log out</Trans>
-        </Button>
+        <AccountMenu disabled={pending} signingOut={signingOut} onLogOut={() => void logOut()} />
       )}
       <h1 className="text-heading1 font-medium">
         <Trans>Choose how to use Rakazo</Trans>
@@ -281,8 +289,31 @@ export function ModelCreditsSettings({
   const price = status.byokPriceCents
     ? formatBillingAmount(status.byokPriceCents, "usd", i18n.locale)
     : null;
+  // A live subscription without monthly credits is the own-key plan, at the price it was bought at.
+  const ownKeyPlan =
+    status.funding === "byok" &&
+    status.byokPriceCents &&
+    !status.monthlyAmountCents &&
+    LIVE_STATES.includes(status.state) &&
+    !status.byokFreeUntil
+      ? {
+          price: formatMonthlyUsd(status.byokPriceCents, i18n.locale),
+          date: billingDateLabel(status, i18n.locale || "en"),
+        }
+      : null;
   return (
     <div data-testid="model-credits" className="space-y-5">
+      {ownKeyPlan ? (
+        <div data-testid="own-key-plan" className="rounded-xl border border-border p-5">
+          <h3 className="text-sm text-muted-foreground">
+            <Trans>Your subscription or API key</Trans>
+          </h3>
+          <p className="mt-2 text-3xl font-medium tabular-nums">{ownKeyPlan.price}</p>
+          {ownKeyPlan.date ? (
+            <p className="mt-2 text-sm text-muted-foreground">{ownKeyPlan.date}</p>
+          ) : null}
+        </div>
+      ) : null}
       <div className="rounded-xl border border-border p-5">
         <div className="flex items-center justify-between">
           <h3 className="text-sm text-muted-foreground">
@@ -421,7 +452,7 @@ export function ModelCreditsSettings({
           onClick={() =>
             void action(async () => {
               const { url } = await rpc.billing.selectFunding({ funding: "byok" });
-              window.location.assign(url ?? "/onboarding");
+              window.location.assign(url ?? "/app?settings=models");
             })
           }
         >

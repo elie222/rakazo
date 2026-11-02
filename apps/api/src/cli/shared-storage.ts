@@ -6,12 +6,14 @@ import {
   migrateLocalArtifacts,
   migrateLocalPushTokens,
   PrismaPushTokenStore,
+  unwrapEnvFromKeyManager,
 } from "@rakazo/adapters";
 import { resolveEncryptionKey } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { createDb } from "@rakazo/db";
 
 loadRootEnv();
+await unwrapEnvFromKeyManager();
 const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: { "dry-run": { type: "boolean" } },

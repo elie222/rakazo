@@ -35,6 +35,7 @@ import {
   syncBillingSnapshot,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { applyAccessGrants } from "./access-grants.js";
 import { createReferrals } from "./referrals.js";
 
 export const TRIAL_DAYS = 7;
@@ -83,6 +84,12 @@ function byokTrialAvailable(
   credits: { byokFreeUntil: Date | null },
 ) {
   return !account?.subscribedAt && !credits.byokFreeUntil;
+}
+
+/** A subscriber keeps the own-key price they signed up at until the subscription ends. */
+function subscribedByokPrice(account: BillingAccount | null) {
+  const status = account?.status ?? null;
+  return hasBillingAccess(status) || needsBillingPortal(status) ? account?.byokPriceCents : null;
 }
 
 export function createBillingService(deps: {
@@ -351,6 +358,10 @@ export function createBillingService(deps: {
     async status(actor) {
       if (modelCredits) {
         const { organizationId, isOwner } = await organization(actor);
+        if (isOwner)
+          await applyAccessGrants(prisma, { ...actor, organizationId }).catch((error) =>
+            getLogger().error("access grant failed", error),
+          );
         await expireModelCredits(prisma, organizationId);
         const [credits, account, computerAllowance] = await Promise.all([
           creditAccount(prisma, organizationId),
@@ -374,7 +385,8 @@ export function createBillingService(deps: {
           balanceUsd: Number(credits.balanceMicros) / MICROS_PER_DOLLAR,
           monthlyAmountCents: account?.creditAmountCents ?? null,
           creditPurchasesEnabled: deps.managedModelsAvailable ?? true,
-          byokPriceCents: BYOK_MONTHLY_PRICE_CENTS,
+          byokPriceCents:
+            BYOK_MONTHLY_PRICE_CENTS && (subscribedByokPrice(account) ?? BYOK_MONTHLY_PRICE_CENTS),
           byokFreeUntil: freeUntil?.toISOString() ?? null,
           canManage: isOwner,
           trialAvailable: BYOK_MONTHLY_PRICE_CENTS !== null && byokTrialAvailable(account, credits),

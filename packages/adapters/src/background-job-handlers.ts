@@ -10,15 +10,20 @@ import type {
   SandboxProvider,
   SecretStore,
 } from "@rakazo/adapter-kit";
-import { messagingDeliverJob } from "@rakazo/adapter-kit";
+import {
+  messagingDeliverJob,
+  SandboxRateLimitError,
+  SandboxUnavailableError,
+  SandboxUnresponsiveError,
+} from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { settleCallRequest } from "./call-request.js";
 import type { CloudAgentConnection } from "./cloud-agent-factory.js";
 import { pollCloudAgent } from "./cloud-agent-poll.js";
-import { expireComputerControl } from "./computer-control.js";
-import { scheduleComputerSleep, sleepComputerIfIdle } from "./computer-idle.js";
+import { expireComputerControl, scheduleComputerControlExpiry } from "./computer-control.js";
+import { rateLimitEnds, scheduleComputerSleep, sleepComputerIfIdle } from "./computer-idle.js";
 import { performComputerUpdate } from "./computer-update.js";
 import type { createRunExecutor } from "./executor.js";
 import type { ExpoPushProvider } from "./expo-push.js";
@@ -49,6 +54,7 @@ function asOwner<Key, P extends Key>(
 }
 
 const OWNER = { spaceId: true, userId: true } as const;
+const CONTROL_EXPIRE_RETRY_MS = 30_000;
 
 export function createBackgroundJobHandlers(deps: {
   executor: ReturnType<typeof createRunExecutor>;
@@ -163,9 +169,26 @@ export function createBackgroundJobHandlers(deps: {
     "computer.sleep": asOwner(computer, async (payload) => {
       await sleepComputerIfIdle(deps, payload.computerId);
     }),
-    "computer.control-expire": asOwner(computer, async (payload) => {
-      if (await expireComputerControl(deps, payload.computerId, payload.leaseId)) {
-        scheduleComputerSleep(deps.jobs, payload.computerId);
+    "computer.control-expire": asOwner(computer, async ({ computerId, leaseId }) => {
+      try {
+        if (await expireComputerControl(deps, computerId, leaseId)) {
+          scheduleComputerSleep(deps.jobs, computerId);
+        }
+      } catch (error) {
+        // Input is already denied and the lease kept, so a provider outage only delays the release.
+        if (
+          !(error instanceof SandboxUnresponsiveError) &&
+          !(error instanceof SandboxUnavailableError) &&
+          !(error instanceof SandboxRateLimitError)
+        )
+          throw error;
+        getLogger().warn("computer.control_expire_deferred", { "computer.id": computerId, error });
+        await scheduleComputerControlExpiry(
+          deps.jobs,
+          computerId,
+          leaseId,
+          rateLimitEnds(error) ?? new Date(Date.now() + CONTROL_EXPIRE_RETRY_MS),
+        );
       }
     }),
     "skill.teaching-expire": asOwner(skill, async (payload) => {

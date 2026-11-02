@@ -12,6 +12,16 @@ const helper = path.resolve(
   "../../../infra/sandboxes/computer/rakazo-page-browser",
 );
 
+// The helper drives Chromium through agent-browser; CI installs the pinned binary and sets this.
+test.skip(
+  !process.env.CI && !process.env.RAKAZO_AGENT_BROWSER,
+  "set RAKAZO_AGENT_BROWSER (infra/sandboxes/computer/install-agent-browser.sh)",
+);
+
+// The helper reads the tab the person sees through Chromium's target list, which only the full
+// browser orders by the front tab; the headless shell Playwright picks for headless: true does not.
+const BROWSER: { channel: "chromium"; headless: true } = { channel: "chromium", headless: true };
+
 test("live page helper preserves identity, masks passwords, and reports partial actions", async () => {
   const profile = await mkdtemp(path.join(os.tmpdir(), "page-browser-test-"));
   const server = http.createServer((_req, res) => {
@@ -28,7 +38,7 @@ test("live page helper preserves identity, masks passwords, and reports partial 
   let context: Awaited<ReturnType<typeof chromium.launchPersistentContext>> | undefined;
   try {
     context = await chromium.launchPersistentContext(profile, {
-      headless: true,
+      ...BROWSER,
       args: ["--remote-debugging-port=0"],
     });
     let port = "";
@@ -56,7 +66,7 @@ test("live page helper preserves identity, masks passwords, and reports partial 
       actions: [
         { kind: "fill", ref: ref(snapshot, "Name"), text: "Example" },
         { kind: "click", ref: ref(snapshot, "Save") },
-        { kind: "click", ref: "missing-ref" },
+        { kind: "click", ref: "e999999999" },
       ],
     });
     expect(result).toMatchObject({ ok: false, completed: 2, uncertain: false });
@@ -154,12 +164,8 @@ test("live page helper preserves identity, masks passwords, and reports partial 
     const other = await context.newPage();
     await other.setContent("<title>Other tab</title><button>Other action</button>");
     await page.bringToFront();
-    // Headless Chromium marks both pages visible/focused. Ambiguity must fail safely.
-    expect(await command("snapshot")).toMatchObject({
-      ok: false,
-      fallback: "computer_act",
-      error: expect.stringContaining("unambiguous"),
-    });
+    // The page tools read the tab last brought to the front, which is the one on screen.
+    expect(await command("snapshot")).toMatchObject({ ok: true, title: "Fixture" });
     await expect(page).toHaveTitle("Fixture");
     await expect(other).toHaveTitle("Other tab");
     // Reading an existing page neither creates nor switches tabs.
@@ -200,7 +206,7 @@ test("live page helper waits for a site's sign-in check, or says the page is sti
   let context: Awaited<ReturnType<typeof chromium.launchPersistentContext>> | undefined;
   try {
     context = await chromium.launchPersistentContext(profile, {
-      headless: true,
+      ...BROWSER,
       args: ["--remote-debugging-port=0"],
     });
     let port = "";
@@ -217,6 +223,9 @@ test("live page helper waits for a site's sign-in check, or says the page is sti
     };
     const page = context.pages()[0]!;
 
+    // The session sees a page's requests and frames only from when it attaches, so start it
+    // before the page loads, as a bot's browser_navigate does.
+    await snapshot();
     // The check answers within the wait: the snapshot shows the signed-in page.
     await page.goto(`http://127.0.0.1:${address.port}/?check=500`);
     const settled = await snapshot();
@@ -378,13 +387,57 @@ const TWO_CODES = `<!doctype html><title>Two codes</title><style>input { width: 
     for (const box of boxes.slice(0, 6)) box.value = "1";
   </script>`;
 
+// Code pages that name only the first box, with the prompt, and leave the other boxes unnamed; some
+// set no length limit and size their boxes narrow instead. Focus moves on by itself after each digit.
+// "stray" moves focus to an unrelated field instead, "long" has more unnamed boxes than any code.
+const FIRST_LABEL_ONLY = `<!doctype html><title>First label</title><style>input { width: 36px }</style>
+  <section id="text"><label for="text-1">Code from Larkspur by text</label></section>
+  <section id="app"></section><section id="call"></section><section id="stray"></section>
+  <section id="long"></section>
+  <section id="card">${["Card 1", "Card 2", "Card 3", "Card 4", "Expiry", "CVC"]
+    .map(
+      (hint) => `<input type="tel" inputmode="numeric" placeholder="${hint}" style="width:60px">`,
+    )
+    .join("")}</section>
+  <section id="grid">${Array.from(
+    { length: 8 },
+    (_, i) =>
+      `<input type="number" min="0" max="9" value="7" placeholder="Cell ${i + 1}" style="width:40px">`,
+  ).join("")}</section>
+  <script>
+    const add = (id, attributes, label, count, next) => {
+      const section = document.getElementById(id);
+      const boxes = Array.from({ length: count }, (_, i) => {
+        const box = document.createElement("input");
+        for (const [name, value] of Object.entries(attributes)) box.setAttribute(name, value);
+        if (i === 0 && label) box.setAttribute(label[0], label[1]);
+        if (i === 0 && id === "text") box.id = "text-1";
+        box.addEventListener("input", () => {
+          box.value = box.value.replace(/[^0-9]/g, "").slice(-1);
+          if (box.value) next(boxes, i)?.focus();
+        });
+        section.append(box);
+        return box;
+      });
+    };
+    const following = (boxes, i) => boxes[i + 1];
+    add("text", { maxlength: "1" }, null, 6, following);
+    add("app", { type: "tel", inputmode: "numeric", autocomplete: "one-time-code" },
+      ["aria-label", "Code from Larkspur by app"], 6, following);
+    add("call", { type: "number", min: "0", max: "9" }, ["aria-label", "Code from Larkspur by call"], 6, following);
+    add("stray", { maxlength: "1" }, ["aria-label", "Stray code"], 4, (boxes, i) =>
+      boxes[i + 1] ?? document.getElementById("phone"));
+    document.getElementById("stray").insertAdjacentHTML("beforeend", '<input id="phone" aria-label="Phone" style="width:200px">');
+    add("long", { maxlength: "1" }, ["aria-label", "Long code"], 10, following);
+  </script>`;
+
 test("live page helper types codes as real key presses into one-box-per-digit fields", async () => {
   test.setTimeout(240_000);
   const profile = await mkdtemp(path.join(os.tmpdir(), "page-browser-test-"));
   let context: Awaited<ReturnType<typeof chromium.launchPersistentContext>> | undefined;
   try {
     context = await chromium.launchPersistentContext(profile, {
-      headless: true,
+      ...BROWSER,
       args: ["--remote-debugging-port=0"],
     });
     let port = "";
@@ -419,9 +472,11 @@ test("live page helper types codes as real key presses into one-box-per-digit fi
           ? "<title>Signed in</title>"
           : route.request().url().endsWith("/two")
             ? TWO_CODES
-            : route.request().url().endsWith("/next")
-              ? '<title>Next</title><input aria-label="Next" autofocus>'
-              : CODE_FIELDS,
+            : route.request().url().endsWith("/first")
+              ? FIRST_LABEL_ONLY
+              : route.request().url().endsWith("/next")
+                ? '<title>Next</title><input aria-label="Next" autofocus>'
+                : CODE_FIELDS,
       }),
     );
     const open = async () => {
@@ -614,6 +669,40 @@ test("live page helper types codes as real key presses into one-box-per-digit fi
       .evaluateAll((boxes) => boxes.map((box) => (box as HTMLInputElement).value).join(""));
     expect(digits).toBe("111111482913");
 
+    // Pages that name only the first box still get the whole code, with or without a length limit.
+    await page.goto("https://code.example.test/first");
+    await refresh();
+    for (const [section, name] of [
+      ["text", "Code from Larkspur by text"],
+      ["app", "Code from Larkspur by app"],
+      ["call", "Code from Larkspur by call"],
+    ] as const) {
+      expect(await type(name, "482913"), section).toMatchObject({ ok: true, completed: 1 });
+      expect(await code(section), section).toBe("482913");
+    }
+    // Keys never go to an unrelated field: focus moving on to a phone field after the last box
+    // stops the typing there, and a run of unnamed boxes longer than a code is not one code.
+    for (const [section, name, typed] of [
+      ["stray", "Stray code", "4829"],
+      ["long", "Long code", "4"],
+    ] as const) {
+      await page.goto("https://code.example.test/first");
+      await refresh();
+      const stopped = await type(name, "482913");
+      expect(stopped, section).toMatchObject({ ok: false, completed: 0 });
+      expect(stopped.error, section).toContain(`after ${typed.length} of 6 characters`);
+      expect(await code(section), section).toBe(typed);
+    }
+    await expect(page.getByLabel("Phone")).toHaveValue("");
+    // Narrow number or card fields that no named box leads are not a code: the text stays in the
+    // field it was typed into and the others keep what they had.
+    await page.goto("https://code.example.test/first");
+    await refresh();
+    expect(await type("CVC", "123")).toMatchObject({ ok: true });
+    expect(await code("card")).toBe("123");
+    expect(await type("Cell 4", "12")).toMatchObject({ ok: true });
+    expect(await code("grid")).toBe("777127777");
+
     // A widget that submits on its last digit: the step is done and the result is the next page.
     await open();
     expect(await type("submit 1", "482913")).toMatchObject({
@@ -655,7 +744,7 @@ test("live page helper types a purchase's card into a payment provider's frame o
   let context: Awaited<ReturnType<typeof chromium.launchPersistentContext>> | undefined;
   try {
     context = await chromium.launchPersistentContext(profile, {
-      headless: true,
+      ...BROWSER,
       // Payment frames run in their own renderer, as on any real checkout.
       args: ["--remote-debugging-port=0", "--site-per-process"],
     });
@@ -690,6 +779,9 @@ test("live page helper types a purchase's card into a payment provider's frame o
         actions: [{ kind: "fill", text, origin: merchant, field: "card", cardField }],
       });
     const page = context.pages()[0]!;
+    // The session sees a page's frames only from when it attaches, so start it before the page
+    // loads, as a bot's browser_navigate does.
+    await command("snapshot");
     await page.goto(`${merchant}/checkout`);
     const card = page.frameLocator("iframe").locator("body");
     await expect(card.locator("#number")).toBeVisible();
@@ -732,7 +824,10 @@ test("live page helper types a purchase's card into a payment provider's frame o
     await expect(card.locator("#number")).toHaveValue("");
     await page.goto(`${merchant}/ads`);
     await expect(card.locator("#number")).toBeVisible();
-    expect((await command("snapshot")).tree).toContain("Embedded frames require desktop tools.");
+    // A frame from another site is read like any other, but never takes the card.
+    const ads = (await command("snapshot")).tree;
+    expect(ads).toContain("https://ads.example.test");
+    expect(ads).not.toContain("Embedded frames require desktop tools.");
     expect(await fill("number", number)).toMatchObject({
       ok: false,
       completed: 0,

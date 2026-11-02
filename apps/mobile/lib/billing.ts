@@ -24,6 +24,33 @@ export function currentPlan(status: BillingStatus): Plan | null {
   return status.funding === "byok" ? "byok" : status.funding === "credits" ? "credits" : null;
 }
 
+/** Subscription states that still bill: access now, or resumed from the billing portal. */
+const LIVE_STATES: BillingStatus["state"][] = [
+  "trialing",
+  "active",
+  "past_due",
+  "unpaid",
+  "paused",
+];
+
+/** The plan the organization is on, as shown when changing plans; a free period is no plan yet. */
+export function subscribedPlan(status: BillingStatus): Plan | null {
+  if (status.byokFreeUntil) return null;
+  const plan = currentPlan(status);
+  // Credits bought once, or left from a lapsed monthly plan, are a balance, not a plan to keep.
+  if (plan === "credits")
+    return status.monthlyAmountCents && LIVE_STATES.includes(status.state) ? plan : null;
+  return plan;
+}
+
+/** What an own-key subscriber pays each month, which stays at the price they subscribed at. */
+export function ownKeySubscriptionCents(status: BillingStatus): number | null {
+  if (status.funding !== "byok" || !status.byokPriceCents || status.byokFreeUntil) return null;
+  return !status.monthlyAmountCents && LIVE_STATES.includes(status.state)
+    ? status.byokPriceCents
+    : null;
+}
+
 /**
  * Whether a checkout changed the plan. A canceled checkout returns to the same status, and
  * an organization that already had access (a free period, or changing plans) still has it.

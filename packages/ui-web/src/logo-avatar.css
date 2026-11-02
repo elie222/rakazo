@@ -42,18 +42,9 @@
   animation-iteration-count: infinite;
 }
 .rakazo-logo-avatar[data-motion="true"]
-  .logo-avatar-layer:where([data-activity="idle"])
-  .logo-avatar-body,
-.rakazo-logo-avatar[data-motion="true"]
   .logo-avatar-layer:where([data-activity="working"])
   .logo-avatar-body {
   animation-name: logo-avatar-breathe;
-}
-
-.rakazo-logo-avatar[data-motion="true"]
-  .logo-avatar-layer:where([data-activity="idle"])
-  .logo-avatar-scan {
-  animation-name: logo-avatar-idle;
 }
 
 .logo-avatar-layer:where([data-activity="reading"]) .logo-avatar-gaze {
@@ -109,6 +100,8 @@
   .logo-avatar-scan {
   animation-name: logo-avatar-computer;
 }
+/* Idle avatars hold still: SVG motion repaints on the main thread. */
+.rakazo-logo-avatar .logo-avatar-layer:where([data-activity="idle"]) .logo-avatar-eye,
 .rakazo-logo-avatar .logo-avatar-layer:where([data-activity="error"]) .logo-avatar-eye,
 .rakazo-logo-avatar .logo-avatar-layer:where([data-activity="waiting"]) .logo-avatar-eye {
   animation: none;
@@ -230,20 +223,6 @@
   }
   50% {
     transform: scale(1.005);
-  }
-}
-@keyframes logo-avatar-idle {
-  0%,
-  66%,
-  100% {
-    transform: translate(0, 0);
-  }
-  70%,
-  78% {
-    transform: translate(calc(4px * var(--logo-side)), -2px);
-  }
-  82% {
-    transform: translate(0, 0);
   }
 }
 @keyframes logo-avatar-read {

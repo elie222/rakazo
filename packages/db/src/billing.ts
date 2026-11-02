@@ -31,6 +31,20 @@ export function byokFreeUntil(credits: { byokFreeUntil: Date | null }, now = new
   return credits.byokFreeUntil && credits.byokFreeUntil > now ? credits.byokFreeUntil : null;
 }
 
+export const FREE_MONTH_DAYS = 30;
+
+/** One statement, so concurrent grants each add their days. */
+export function extendByokFreePeriod(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+  days: number,
+) {
+  return tx.$executeRaw`
+    UPDATE model_credit_accounts
+    SET "byokFreeUntil" = GREATEST(COALESCE("byokFreeUntil", now()), now()) + make_interval(days => ${days}::int)
+    WHERE "organizationId" = ${organizationId}`;
+}
+
 export async function spaceHasModelAccess(prisma: PrismaClient, spaceId: string) {
   const space = await prisma.space.findUnique({
     where: { id: spaceId },
@@ -94,6 +108,7 @@ export async function replaceBillingCustomer(
     data: {
       customerId: input.customerId,
       creditAmountCents: null,
+      byokPriceCents: null,
       subscriptionId: null,
       subscriptionItemId: null,
       priceId: null,
@@ -167,6 +182,7 @@ export async function syncBillingSnapshot(
     where: { customerId, OR: [{ syncedAt: null }, { syncedAt: { lt: startedAt } }] },
     data: {
       creditAmountCents: snapshot?.creditAmountCents ?? null,
+      byokPriceCents: snapshot?.byokPriceCents ?? null,
       subscriptionId: snapshot?.subscriptionId ?? null,
       subscriptionItemId: snapshot?.subscriptionItemId ?? null,
       priceId: snapshot?.priceId ?? null,
