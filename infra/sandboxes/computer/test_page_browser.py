@@ -977,6 +977,9 @@ class NewTabTest(unittest.TestCase):
         one.trimmed = 1
         self.assertEqual(one.note([], [], ""), "Closed the oldest tab a page had opened, to keep at most 8.")
         self.assertTrue(notes[3].startswith("Closed the 3 oldest tabs pages had opened, to keep at most 8. "))
+        # The tab in front, listed again after the trim, is named once.
+        self.assertIn("page tools now read the one in front", notes[3])
+        self.assertEqual(notes[3].count('"Report d30"'), 1)
 
     def test_says_which_tab_page_tools_now_read_and_that_the_one_before_is_still_open(self):
         a, b, c = FakeTabs("a", "b", "c").list()
@@ -1010,7 +1013,7 @@ class NewTabTest(unittest.TestCase):
 
         self.deadlines = []
 
-        def snapshot(current, settle=None):
+        def snapshot(current, settle=None, query=None):
             # The page tools read the tab in front: during the call, a tab the page just opened.
             if reads:
                 self.deadlines.append(browser.deadline - time.monotonic())

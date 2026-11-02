@@ -233,7 +233,9 @@ class Tabs:
                 urllib.request.urlopen(f"http://127.0.0.1:{self.port}/json/activate/{own}",
                                        timeout=left(self.deadline, 5.0)).close()
                 tabs = page_tabs(self.port)
-        opened = [tab for tab in opened if tab in tabs]
+        # By id, as the tabs listed again: tab_note tells the one in front by identity.
+        current = {tab.get("id"): tab for tab in tabs}
+        opened = [current[tab.get("id")] for tab in opened if tab.get("id") in current]
         # Written whole, then moved into place: a reader never sees half of it.
         temporary = f"{self.path}.{os.getpid()}"
         with open(temporary, "w", encoding="utf-8") as file:
