@@ -12,6 +12,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import socket
 import struct
 import time
@@ -20,6 +21,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 WORLD_NAME = "rakazo-page-browser"
+# The largest CDP message read whole; a larger one (a page event) is skipped.
+MAX_FRAME_BYTES = 2 * 1024 * 1024
 
 # A frame asked for, began or committed a load of another document. Same-document changes, such as
 # a new URL fragment, leave the page and its fields in place and are not counted.
@@ -101,6 +104,9 @@ class CdpClient:
         # Navigations to another document started or committed in each frame, per CDP session.
         self._navigations: dict[tuple[Any, str], int] = {}
         self._frame_sessions: dict[str, Any] = {}
+        # What is left of an oversized frame being skipped, and the request it answers, if any.
+        self._discard = 0
+        self._discarded_reply: int | None = None
 
     def connect(self) -> None:
         parts = urlsplit(self._ws_url)
@@ -158,8 +164,26 @@ class CdpClient:
                 raise RuntimeError("CDP websocket closed")
             self._buf.extend(chunk)
 
+    def _drain(self) -> None:
+        """Drop the rest of an oversized frame, a chunk at a time, so that it is never held in memory."""
+        assert self._sock is not None
+        while self._discard:
+            if not self._buf:
+                chunk = self._sock.recv(65536)
+                if not chunk:
+                    raise RuntimeError("CDP websocket closed")
+                self._buf.extend(chunk)
+            taken = min(self._discard, len(self._buf))
+            del self._buf[:taken]
+            self._discard -= taken
+
     def _read_frame(self) -> bytes:
         while True:
+            self._drain()
+            if self._discarded_reply is not None:
+                # Our own replies are small: an oversized one is failed alone, not mistaken for an event.
+                msg_id, self._discarded_reply = self._discarded_reply, None
+                return json.dumps({"id": msg_id, "error": {"message": "CDP reply too large"}}).encode("utf-8")
             self._need(2)
             b1, b2 = self._buf[0], self._buf[1]
             opcode, masked, length, offset = b1 & 0x0F, bool(b2 & 0x80), b2 & 0x7F, 2
@@ -169,9 +193,6 @@ class CdpClient:
             elif length == 127:
                 self._need(10)
                 length, offset = struct.unpack("!Q", self._buf[2:10])[0], 10
-            # Bounded before the payload is read: these steps never ask for anything large.
-            if length > 2 * 1024 * 1024:
-                raise RuntimeError("CDP frame too large")
             if not (b1 & 0x80):
                 raise RuntimeError("Fragmented CDP message unsupported")
             mask = b""
@@ -179,6 +200,19 @@ class CdpClient:
                 self._need(offset + 4)
                 mask = bytes(self._buf[offset:offset + 4])
                 offset += 4
+            if length > MAX_FRAME_BYTES:
+                # A page's own events can be huge (a request for a multi-megabyte data: URL): skip them.
+                head_size = min(length, 32)
+                self._need(offset + head_size)
+                head = bytes(self._buf[offset:offset + head_size])
+                if masked:
+                    head = bytes(b ^ mask[i % 4] for i, b in enumerate(head))
+                reply = re.match(rb'\{"id":\s*(\d+)\s*[,}]', head)
+                if reply and opcode in (0x0, 0x1, 0x2):
+                    self._discarded_reply = int(reply.group(1))
+                del self._buf[:offset]
+                self._discard = length
+                continue
             self._need(offset + length)
             payload = bytes(self._buf[offset:offset + length])
             del self._buf[:offset + length]

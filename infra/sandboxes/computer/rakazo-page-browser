@@ -769,6 +769,16 @@ class PageBrowser:
 
     # -- commands ---------------------------------------------------------------------------------
 
+    def listen_downloads(self) -> bool:
+        """Read the page's events for its downloads. A failure only stops the tracking, not the call."""
+        assert self.downloads
+        try:
+            self.downloads.client.listen(0.01)
+            return True
+        except Exception:  # noqa: BLE001
+            self.downloads = None
+            return False
+
     def navigate(self, url: str, opened: bool = False) -> dict[str, Any]:
         """Go to url, or, when `opened`, read the tab that was just opened on it."""
         check_url(url)
@@ -785,10 +795,8 @@ class PageBrowser:
             # awaited in the request log first. A new fragment of the same page loads no document.
             same_document = str(before.get("href") or "").split("#")[0] == url.split("#")[0] and "#" in url
         while not same_document:
-            if self.downloads:
-                self.downloads.client.listen(0.01)
-                if self.downloads.client.downloads:
-                    return {"ok": True, **self.snapshot(0.0)}
+            if self.downloads and self.listen_downloads() and self.downloads.client.downloads:
+                return {"ok": True, **self.snapshot(0.0)}
             (log,) = self.ab.batch([["network", "requests"]])
             if any(r.get("resourceType") == "Document" and r.get("status") is not None
                    for r in log.get("requests") or [] if isinstance(r, dict)):
@@ -800,10 +808,8 @@ class PageBrowser:
             (now,) = self.ab.batch([["eval", "({ timeOrigin: performance.timeOrigin, href: location.href, "
                                               "ready: document.readyState })"]])
             now = now.get("result") or {}
-            if self.downloads:
-                self.downloads.client.listen(0.01)
-                if self.downloads.client.downloads:
-                    return {"ok": True, **self.snapshot(0.0)}
+            if self.downloads and self.listen_downloads() and self.downloads.client.downloads:
+                return {"ok": True, **self.snapshot(0.0)}
             moved = opened or now.get("timeOrigin") != before.get("timeOrigin") or (same_document and now.get("href") == url)
             if moved and now.get("ready") in ("interactive", "complete"):
                 break
@@ -1661,8 +1667,11 @@ def run(argv: list[str]) -> int:
                 raise RuntimeError("actions must be an array")
             result = page.act(actions)
         if downloads:
-            client.listen(0.01)
-            saved = downloads.finish()
+            try:
+                client.listen(0.01)
+                saved = downloads.finish()
+            except Exception:  # noqa: BLE001
+                saved = [{"error": DOWNLOAD_FAILED}]
             downloads = None
         print(json.dumps({**result, **({"downloads": saved} if saved else {})}))
         return 0  # Structured failures preserve partial action progress.

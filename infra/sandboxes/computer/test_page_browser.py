@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import socket
 import subprocess
 import sys
 import tempfile
@@ -894,6 +895,17 @@ class RunTest(unittest.TestCase):
         self.assertEqual(browser.sent[0], ["tab", "new", "https://portal.example.test/"])
         self.assertFalse(any("location.assign(" in " ".join(command) for command in browser.sent))
 
+    def test_a_failing_download_listener_does_not_fail_the_navigation(self):
+        browser = FakeAgentBrowser()
+        subject = page(browser)
+        subject.downloads = Mock()
+        subject.downloads.client.listen.side_effect = RuntimeError("CDP frame too large")
+        with patch.object(helper.time, "sleep"):
+            result = subject.navigate("https://next.example.test/a")
+        self.assertEqual(result["ok"], True)
+        self.assertIn("Welcome back", result["tree"])
+        self.assertIsNone(subject.downloads)
+
     def test_a_navigation_that_never_reaches_a_new_page_is_left_to_the_desktop(self):
         browser = FakeAgentBrowser()
         browser.stuck = True
@@ -1228,6 +1240,106 @@ class SavedLoginTest(unittest.TestCase):
             browser = LoginFrameBrowser(focus_in_frame=True, frame_check=check)
             with self.subTest(check=check), self.assertRaisesRegex(secrets.Refused, error):
                 secrets.fill_focused(browser.client, "page", dict(self.STEP))
+
+
+class FrameSocket:
+    """A socket that hands out its bytes a few at a time, as a network would."""
+
+    def __init__(self, data, step=1000):
+        self.data, self.step = bytearray(data), step
+
+    def recv(self, size):
+        taken = bytes(self.data[:min(size, self.step)])
+        del self.data[:len(taken)]
+        return taken
+
+    def settimeout(self, _):
+        pass
+
+
+def ws_frame(payload, mask=None):
+    n = len(payload)
+    header = bytearray([0x81])
+    mask_bit = 0x80 if mask else 0
+    if n < 126:
+        header.append(mask_bit | n)
+    elif n < 65536:
+        header += bytes([mask_bit | 126]) + n.to_bytes(2, "big")
+    else:
+        header += bytes([mask_bit | 127]) + n.to_bytes(8, "big")
+    if mask:
+        return bytes(header) + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+    return bytes(header) + payload
+
+
+class CdpFrameTest(unittest.TestCase):
+    BIG = 3 * 1024 * 1024
+
+    def client(self, *frames):
+        client = secrets.CdpClient("ws://browser.example.test:9222/test")
+        client._sock = FrameSocket(b"".join(frames))
+        return client
+
+    def event(self, size):
+        return json.dumps({"method": "Network.requestWillBeSent", "params": {"url": "data:image/png;base64," + "A" * size}}).encode()
+
+    def test_an_oversized_event_is_skipped_and_the_next_message_is_read(self):
+        small = json.dumps({"method": "Page.loadEventFired", "params": {}}).encode()
+        for mask in (None, b"\x01\x02\x03\x04"):
+            with self.subTest(masked=bool(mask)):
+                client = self.client(ws_frame(self.event(self.BIG), mask), ws_frame(small, mask))
+                self.assertEqual(client._read_frame(), small)
+                self.assertEqual(len(client._buf), 0)
+
+    def test_a_skipped_frame_is_not_held_in_memory(self):
+        client = self.client(ws_frame(self.event(self.BIG)))
+        client._sock.data.extend(ws_frame(b"{}"))
+        peak = 0
+        original = client._drain
+
+        def drain():
+            nonlocal peak
+            original()
+            peak = max(peak, len(client._buf))
+        client._drain = drain
+        self.assertEqual(client._read_frame(), b"{}")
+        self.assertLess(peak, 128 * 1024)
+
+    def test_skipping_resumes_after_a_read_times_out(self):
+        small = b'{"method": "A"}'
+        client = self.client(ws_frame(self.event(self.BIG)), ws_frame(small))
+        real = client._sock
+        calls = [0]
+
+        class Flaky(FrameSocket):
+            def recv(self, size):
+                calls[0] += 1
+                if calls[0] % 7 == 0:
+                    raise socket.timeout()
+                return real.recv(size)
+        client._sock = Flaky(b"")
+        for _ in range(10000):
+            try:
+                self.assertEqual(client._read_frame(), small)
+                break
+            except socket.timeout:
+                continue
+        else:
+            self.fail("never finished")
+
+    def test_an_oversized_reply_fails_only_its_own_request(self):
+        for mask in (None, b"\x09\x08\x07\x06"):
+            with self.subTest(masked=bool(mask)):
+                reply = json.dumps({"id": 7, "result": {"data": "A" * self.BIG}}).encode()
+                client = self.client(ws_frame(reply, mask))
+                client._next_id = 7
+                with patch.object(secrets.os, "urandom", return_value=b"1234"), \
+                        patch.object(client, "_send"), self.assertRaisesRegex(RuntimeError, "Runtime.evaluate failed.*too large"):
+                    client.call("Runtime.evaluate", timeout_s=5)
+
+    def test_a_frame_just_under_the_limit_is_still_read(self):
+        payload = self.event(secrets.MAX_FRAME_BYTES - 200)
+        self.assertEqual(self.client(ws_frame(payload))._read_frame(), payload)
 
 
 class DownloadTest(unittest.TestCase):
