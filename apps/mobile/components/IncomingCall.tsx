@@ -83,12 +83,14 @@ export function IncomingCall() {
         <View style={{ flexDirection: "row", gap: 32 }}>
           <NativeActionButton
             label={t("Decline")}
+            fill={false}
             prominence="destructive"
             disabled={busy}
             onPress={() => void respond("decline")}
           />
           <NativeActionButton
             label={t("Answer")}
+            fill={false}
             disabled={busy}
             onPress={() => void respond("answer")}
           />
