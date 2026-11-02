@@ -388,10 +388,13 @@ describe("integration page claims", () => {
     expect(rows[0]!.website).toBe("https://acme.test");
   });
 
-  it("accepts a bare domain as the website", async () => {
+  it.each([
+    ["acme.test", "https://acme.test"],
+    ["acme.test:8443", "https://acme.test:8443"],
+  ])("accepts the bare domain %s as the website", async (website, stored) => {
     const { rows, prisma } = fakePrisma();
-    expect((await routes(prisma).submit({ ...claim, website: "acme.test" })).status).toBe(201);
-    expect(rows[0]!.website).toBe("https://acme.test");
+    expect((await routes(prisma).submit({ ...claim, website })).status).toBe(201);
+    expect(rows[0]!.website).toBe(stored);
   });
 
   it("needs a website to link to", async () => {
