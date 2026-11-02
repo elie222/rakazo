@@ -524,6 +524,33 @@ class AgentBrowserTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "No browser tab"):
                 helper.front_tab(9222)
 
+    def test_reads_the_tab_the_session_is_on(self):
+        browser = helper.AgentBrowser(9222)
+        listing = json.dumps({"data": {"tabs": [
+            {"type": "page", "targetId": "back", "active": False},
+            {"type": "page", "targetId": "front", "active": True}]}})
+        for stdout in (listing, "not json", "null", json.dumps([]),
+                       json.dumps({"data": {}}), json.dumps({"data": ["unexpected"]})):
+            with patch.object(helper.subprocess, "run",
+                              return_value=subprocess.CompletedProcess([], 0, stdout, "")) as run:
+                self.assertEqual(browser.session_tab(), "front" if stdout == listing else None)
+            self.assertEqual(run.call_args.args[0],
+                             [helper.AGENT_BROWSER, "tab", "list", "--json"])
+            self.assertEqual(run.call_args.kwargs["timeout"], 1.0)
+
+    def test_points_the_session_at_the_tab_on_screen_when_it_moved(self):
+        # agent-browser follows a newly opened tab on its own, so where it was last pointed at is
+        # not enough: it moves only when it really reads another tab.
+        browser = helper.AgentBrowser(9222)
+        answer = subprocess.CompletedProcess([], 0, json.dumps([{"success": True, "result": {}}]), "")
+        with patch.object(helper.subprocess, "run", return_value=answer) as run, \
+                patch.object(browser, "session_tab", side_effect=[None, "other", "front"]):
+            browser.use_tab("front")
+            browser.use_tab("front")
+            browser.use_tab("front")
+        self.assertEqual([call.kwargs["input"] for call in run.call_args_list],
+                         [json.dumps([["tab", "front"]])] * 2)
+
 
 class RunTest(unittest.TestCase):
     def test_without_a_browser_falls_back_to_the_desktop_without_doubt(self):

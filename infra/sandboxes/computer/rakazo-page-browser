@@ -222,18 +222,32 @@ class AgentBrowser:
             raise AbError("agent-browser stopped early", len(results))
         return results
 
-    def use_tab(self, target_id: str) -> None:
-        """Point the session at the tab on screen when the person has switched tabs since the last call."""
-        bound = os.path.join(self.home, f"{self.session}.rakazo-tab")
+    def session_tab(self) -> str | None:
+        """The tab the session reads now; it also follows tabs opened while it was attached."""
+        # One answer or none: a probe that hangs must leave the call's short budget to the work after it.
         try:
-            with open(bound, encoding="utf-8") as file:
-                if file.read() == target_id:
-                    return
-        except OSError:
-            pass
+            proc = subprocess.run(
+                [AGENT_BROWSER, "tab", "list", "--json"], capture_output=True, text=True,
+                env=self.env, cwd=self.home, timeout=1.0)
+            envelope = json.loads(proc.stdout)
+            data = envelope.get("data") if isinstance(envelope, dict) else None
+            tabs = data.get("tabs") if isinstance(data, dict) else None
+        except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
+            return None
+        for tab in tabs if isinstance(tabs, list) else []:
+            if isinstance(tab, dict) and tab.get("active") and tab.get("type") == "page":
+                return str(tab.get("targetId"))
+        return None
+
+    def use_tab(self, target_id: str) -> None:
+        """Point the session at the tab on screen when the person has switched tabs since the last call.
+
+        agent-browser follows a newly opened tab on its own, so the tab it was last pointed at is
+        not enough: ask where the session is and move it only when it reads another tab.
+        """
+        if self.session_tab() == target_id:
+            return
         self.batch([["tab", target_id]])
-        with open(bound, "w", encoding="utf-8") as file:
-            file.write(target_id)
 
 
 # A navigation as from the address bar: no referrer leaves for the next site.
