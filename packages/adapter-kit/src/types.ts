@@ -1073,6 +1073,8 @@ export interface BrowserNavigateResult {
 }
 
 export interface BrowserSnapshotRequest {
+  /** Words to find controls by anywhere on the page, such as "newsletter signup". */
+  query?: string;
   signal?: AbortSignal;
 }
 
@@ -1173,7 +1175,7 @@ export interface BrowserActResult {
 /** A sandbox must route these commands through its owned screen, never generic host execution. */
 export type PageBrowserCommand =
   | { command: "navigate"; url: string; downloads?: string }
-  | { command: "snapshot" }
+  | { command: "snapshot"; query?: string }
   | { command: "act"; actions: BrowserActStep[]; downloads?: string };
 
 export type PageBrowserResult = Partial<BrowserSnapshotResult & BrowserActResult> & { ok: boolean };
