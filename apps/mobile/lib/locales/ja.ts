@@ -1,5 +1,6 @@
 export const JA_MESSAGES: Record<string, string> = {
   "Add account": "アカウントを追加",
+  "Switch accounts": "アカウントを切り替え",
   "Sign in to open this account": "このアカウントを開くにはログインしてください",
   "Sign in to open this notification": "この通知を開くにはログインしてください",
   "Sign out all": "すべてログアウト",

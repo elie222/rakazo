@@ -2,7 +2,7 @@
 import type { DesktopUpdateState } from "@rakazo/contracts";
 import { Toaster } from "@rakazo/ui-web";
 import type { ComponentProps, ReactNode } from "react";
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DesktopUpdatesProvider } from "./DesktopUpdates";
@@ -28,6 +28,19 @@ afterEach(async () => {
   delete window.rakazoDesktop;
   vi.restoreAllMocks();
 });
+function ControlledFooter(props: ComponentProps<typeof SidebarFooter>) {
+  const [open, setOpen] = useState(props.open);
+  return (
+    <SidebarFooter
+      {...props}
+      open={open}
+      onOpenChange={(value) => {
+        setOpen(value);
+        props.onOpenChange(value);
+      }}
+    />
+  );
+}
 async function render(
   name = "Demo User",
   image?: string,
@@ -35,12 +48,14 @@ async function render(
   onBoard?: () => void,
   logos?: Array<{ name: string; logo?: string }>,
   accountProps?: Partial<ComponentProps<typeof SidebarFooter>>,
+  controlled = false,
 ) {
   const email = "account@rakazo.test";
+  const Footer = controlled ? ControlledFooter : SidebarFooter;
   await act(async () =>
     root.render(
       <DesktopUpdatesProvider>
-        <SidebarFooter
+        <Footer
           logos={logos}
           name={name}
           initials={name
@@ -69,31 +84,85 @@ async function render(
     ),
   );
 }
-it("lists the other saved accounts with their unread counts and deliberate all-account sign-out", async () => {
+it.each([false, true])("reveals saved identities only in the picker (mini=%s)", async (mini) => {
   const switchAccount = vi.fn();
+  const add = vi.fn();
   const all = vi.fn();
-  const shared = { sessionId: "session", name: "Account", image: null, notifications: [] };
-  await render("Family", undefined, undefined, undefined, undefined, {
-    accounts: [
-      { ...shared, userId: "family", email: "family@example.test", unread: 2 },
-      { ...shared, userId: "work", email: "work@example.test", unread: 4 },
-    ],
-    activeUserId: "family",
-    onSwitchAccount: switchAccount,
-    onLogOutAll: all,
-    onAddAccount: vi.fn(),
-  });
-  const rows = [...document.querySelectorAll("button")].filter((button) =>
-    button.textContent?.includes("@example.test"),
+  const shared = { sessionId: "session", image: null, notifications: [] };
+  await render(
+    "Family",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      mini,
+      email: "family@example.test",
+      accounts: [
+        {
+          ...shared,
+          name: "Family account",
+          userId: "family",
+          email: "family@example.test",
+          unread: 2,
+        },
+        { ...shared, name: "Work account", userId: "work", email: "work@example.test", unread: 4 },
+      ],
+      activeUserId: "family",
+      onSwitchAccount: switchAccount,
+      onLogOutAll: all,
+      onAddAccount: add,
+    },
+    true,
   );
-  expect(rows.map((row) => row.textContent)).toEqual(["AAccountwork@example.test4"]);
-  const work = rows[0]!;
-  await act(async () => work.click());
+  const button = (text: string) =>
+    [...document.querySelectorAll("button")].find((item) => item.textContent === text)!;
+  const menu = () => document.querySelector('[data-slot="popover-content"]');
+  expect(menu()?.textContent).toContain("Familyfamily@example.test");
+  expect(menu()?.textContent).not.toContain("work@example.test");
+  expect(button("Add account")).toBeUndefined();
+  const openPicker = async () => {
+    await act(async () => button("Switch accounts").click());
+    await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull());
+  };
+  await openPicker();
+  expect(menu()).toBeNull();
+  const dialog = () => document.querySelector('[role="dialog"]')!;
+  const rows = () =>
+    [...dialog().querySelectorAll("button")].filter((item) =>
+      item.textContent?.includes("@example.test"),
+    );
+  expect(rows().map((row) => row.textContent)).toEqual([
+    "FFamily accountfamily@example.test2",
+    "WWork accountwork@example.test4",
+  ]);
+  expect(rows()[0]!.disabled).toBe(true);
+  expect(rows()[0]!.getAttribute("aria-current")).toBe("true");
+  await act(async () => rows()[0]!.click());
+  expect(switchAccount).not.toHaveBeenCalled();
+  await act(async () =>
+    dialog().querySelector<HTMLButtonElement>('[data-slot="dialog-close"]')!.click(),
+  );
+  await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  expect(document.activeElement).toBe(host.querySelector('[data-testid="user-menu-trigger"]'));
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="user-menu-trigger"]')!.click(),
+  );
+  await openPicker();
+  await act(async () => rows()[1]!.click());
   expect(switchAccount).toHaveBeenCalledWith("work");
-  const logOutAll = [...document.querySelectorAll("button")].find(
-    (button) => button.textContent === "Log out all accounts",
-  )!;
-  await act(async () => logOutAll.click());
+  await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="user-menu-trigger"]')!.click(),
+  );
+  await openPicker();
+  await act(async () => button("Add account").click());
+  expect(add).toHaveBeenCalledOnce();
+  await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="user-menu-trigger"]')!.click(),
+  );
+  await act(async () => button("Log out all accounts").click());
   expect(all).toHaveBeenCalledOnce();
 });
 function bridge(phase: DesktopUpdateState["phase"]) {

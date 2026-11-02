@@ -5775,6 +5775,10 @@ msgstr "Unterstützt Denkmodus"
 msgid "Switch"
 msgstr "Wechseln"
 
+#: src/components/SidebarFooter.tsx
+msgid "Switch accounts"
+msgstr "Konten wechseln"
+
 #: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
 msgstr "Zu jährlich wechseln"

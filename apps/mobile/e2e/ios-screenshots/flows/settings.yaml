@@ -136,6 +136,7 @@ name: Settings
 - takeScreenshot: 18-artifacts
 # Both disposable catalog identities stay signed in; switching back needs no credentials.
 - openLink: "rakazo:///account"
+- tapOn: "Switch accounts"
 - tapOn: "Add account"
 - extendedWaitUntil:
     visible: "Sign in to Rakazo"
@@ -153,6 +154,7 @@ name: Settings
 - extendedWaitUntil:
     visible: "Sign out all"
     timeout: 15000
+- tapOn: "Switch accounts"
 - takeScreenshot: 19-account-switcher
 - tapOn: ${RAKAZO_SCREENSHOT_EMAIL}
 - extendedWaitUntil:

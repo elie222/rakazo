@@ -5775,6 +5775,10 @@ msgstr "Supports thinking"
 msgid "Switch"
 msgstr "Switch"
 
+#: src/components/SidebarFooter.tsx
+msgid "Switch accounts"
+msgstr "Switch accounts"
+
 #: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
 msgstr "Switch to yearly"

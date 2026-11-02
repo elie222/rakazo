@@ -5775,6 +5775,10 @@ msgstr "Ondersteunt denken"
 msgid "Switch"
 msgstr "Overstappen"
 
+#: src/components/SidebarFooter.tsx
+msgid "Switch accounts"
+msgstr "Van account wisselen"
+
 #: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
 msgstr "Overstappen op jaarlijks"

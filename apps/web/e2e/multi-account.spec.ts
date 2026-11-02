@@ -51,6 +51,7 @@ test("saved accounts switch, receive hidden-account notifications, and sign out 
     await workPage.goto("about:blank");
 
     await page.getByTestId("user-menu-trigger").click();
+    await page.getByRole("button", { name: "Switch accounts", exact: true }).click();
     await page.getByRole("button", { name: "Add account", exact: true }).click();
     await expect(page).toHaveURL(/\/sign-in\?add=1$/);
     await page.getByLabel("Email", { exact: true }).fill(workEmail);
@@ -59,26 +60,41 @@ test("saved accounts switch, receive hidden-account notifications, and sign out 
     await expect(page).toHaveURL(new RegExp(`/app/${workBot}$`));
     await page.getByTestId("user-menu-trigger").click();
     const escaped = (email: string) => new RegExp(email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-    const familyRow = page.getByRole("button", { name: escaped(familyEmail) });
-    const workRow = page.getByRole("button", { name: escaped(workEmail) });
+    const picker = page.getByRole("dialog", { name: "Switch accounts", exact: true });
+    const familyRow = picker.getByRole("button", { name: escaped(familyEmail) });
+    const workRow = picker.getByRole("button", { name: escaped(workEmail) });
     const header = page.getByTestId("account-menu-header");
     await expect(header).toContainText(workEmail);
+    await expect(page.getByRole("button", { name: escaped(familyEmail) })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Add account", exact: true })).toHaveCount(0);
+    await captureScreenshot(page, testInfo, "multi-account-profile-menu");
+    await page.getByRole("button", { name: "Switch accounts", exact: true }).click();
+    await expect(header).toBeHidden();
     await expect(familyRow).toBeVisible();
-    await expect(workRow).toHaveCount(0);
+    await expect(workRow).toBeDisabled();
+    await expect(workRow).toHaveAttribute("aria-current", "true");
     await captureScreenshot(page, testInfo, "multi-account-switcher");
-    await page.setViewportSize({ width: 390, height: 844 });
     await page.keyboard.press("Escape");
+    await expect(picker).toBeHidden();
+    await expect(page.getByTestId("user-menu-trigger")).toBeFocused();
+    await page.setViewportSize({ width: 390, height: 844 });
     const sidebar = page.getByTestId("user-menu-trigger");
     const navigation = page.getByRole("button", { name: "Open navigation", exact: true });
     if (await navigation.isVisible()) await navigation.click();
     await expect(sidebar).toBeInViewport();
     await sidebar.click();
     await expect(header).toContainText(workEmail);
+    await page.getByRole("button", { name: "Switch accounts", exact: true }).click();
+    await expect(picker).toBeInViewport();
+    await expect(familyRow).toBeVisible();
+    await expect(workRow).toBeDisabled();
     await expect(page.locator("body")).toHaveJSProperty("scrollWidth", 390);
     await captureScreenshot(page, testInfo, "multi-account-switcher-phone");
-    await page.setViewportSize({ width: 1280, height: 900 });
     await page.keyboard.press("Escape");
+    await expect(picker).toBeHidden();
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.getByTestId("user-menu-trigger").click();
+    await page.getByRole("button", { name: "Switch accounts", exact: true }).click();
     await familyRow.click();
     await expect(page).toHaveURL(new RegExp(`/app/${familyBot}$`));
     const otherTab = await page.context().newPage();
@@ -100,8 +116,13 @@ test("saved accounts switch, receive hidden-account notifications, and sign out 
       })
       .toBeGreaterThan(0);
     await page.getByTestId("user-menu-trigger").click();
+    await expect(header).toContainText(familyEmail);
+    await expect(page.getByRole("button", { name: escaped(workEmail) })).toHaveCount(0);
+    await page.getByRole("button", { name: "Switch accounts", exact: true }).click();
     await expect(workRow).toContainText(/1$/);
     await captureScreenshot(page, testInfo, "multi-account-unread");
+    await page.keyboard.press("Escape");
+    await expect(picker).toBeHidden();
     await expect
       .poll(() =>
         page.evaluate((email) => {
@@ -114,6 +135,7 @@ test("saved accounts switch, receive hidden-account notifications, and sign out 
       "aria-label",
       "Account menu for Family",
     );
+    await expect(page).toHaveURL(new RegExp(`/app/${familyBot}$`));
     await page.evaluate((email) => {
       const state = window as unknown as {
         accountNotifications: Array<{ body?: string; onclick?: () => void }>;
@@ -140,6 +162,7 @@ test("saved accounts switch, receive hidden-account notifications, and sign out 
     const remaining = (await (await page.request.get("/api/accounts")).json()) as AccountSessions;
     expect(remaining.accounts.map((account) => account.email)).toEqual([familyEmail]);
     await page.getByTestId("user-menu-trigger").click();
+    await page.getByRole("button", { name: "Switch accounts", exact: true }).click();
     await page.getByRole("button", { name: "Add account", exact: true }).click();
     await page.getByLabel("Email", { exact: true }).fill(workEmail);
     await page.getByLabel("Password", { exact: true }).fill(password);

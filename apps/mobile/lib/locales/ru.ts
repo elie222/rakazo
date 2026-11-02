@@ -1,5 +1,6 @@
 export const RU_MESSAGES: Record<string, string> = {
   "Add account": "Добавить аккаунт",
+  "Switch accounts": "Сменить аккаунт",
   "Sign in to open this account": "Войдите, чтобы открыть этот аккаунт",
   "Sign in to open this notification": "Войдите, чтобы открыть это уведомление",
   "Sign out all": "Выйти из всех",

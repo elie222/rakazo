@@ -5775,6 +5775,10 @@ msgstr "Düşünmeyi destekler"
 msgid "Switch"
 msgstr "Geç"
 
+#: src/components/SidebarFooter.tsx
+msgid "Switch accounts"
+msgstr "Hesap değiştir"
+
 #: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
 msgstr "Yıllığa geç"

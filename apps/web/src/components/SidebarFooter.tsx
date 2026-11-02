@@ -7,12 +7,18 @@ import {
   Badge,
   Button,
   buttonVariants,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@rakazo/ui-web";
 import {
   BookOpen,
+  Check,
   Download,
   FolderOpen,
   Gauge,
@@ -24,6 +30,8 @@ import {
   Smartphone,
   SquareKanban,
   UserPlus,
+  UsersRound,
+  X,
 } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { AccountAvatar } from "./AccountAvatar";
@@ -93,6 +101,8 @@ export function SidebarFooter({
   const { t } = useLingui();
   const update = useSidebarUpdate();
   const otherAccounts = accounts.filter((account) => account.userId !== activeUserId);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const pillRef = useRef<HTMLButtonElement>(null);
   const labelRef = useRef<HTMLSpanElement>(null);
   const [markCount, setMarkCount] = useState(3);
@@ -123,6 +133,7 @@ export function SidebarFooter({
     >
       <Popover open={open} onOpenChange={onOpenChange}>
         <PopoverTrigger
+          ref={menuTriggerRef}
           data-testid="user-menu-trigger"
           aria-label={t`Account menu for ${name}`}
           className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full border border-border bg-sidebar-accent text-sm outline-none hover:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring"
@@ -142,46 +153,19 @@ export function SidebarFooter({
                 <p className="truncate text-xs text-muted-foreground">{email}</p>
               ) : null}
             </div>
-            {otherAccounts.map((account) => {
-              const display = accountDisplay(account, account.email);
-              return (
-                <Button
-                  key={account.userId}
-                  variant="ghost"
-                  className="h-auto w-full justify-start gap-2.5 py-1.5 font-normal"
-                  disabled={signingOut}
-                  onClick={() => onSwitchAccount?.(account.userId)}
-                >
-                  <AccountAvatar
-                    image={display.image}
-                    initials={display.initial}
-                    className="size-6 text-[11px]"
-                  />
-                  <span className="min-w-0 flex-1 text-start">
-                    <span className="block truncate">{display.label}</span>
-                    {display.label !== account.email ? (
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {account.email}
-                      </span>
-                    ) : null}
-                  </span>
-                  {account.unread > 0 ? (
-                    <Badge variant="secondary" className="tabular-nums">
-                      {account.unread}
-                    </Badge>
-                  ) : null}
-                </Button>
-              );
-            })}
-            {onAddAccount ? (
+            {onAddAccount || otherAccounts.length > 0 ? (
               <Button
                 variant="ghost"
                 className="h-9 w-full justify-start gap-2.5 font-normal"
                 disabled={signingOut}
-                onClick={onAddAccount}
+                aria-haspopup="dialog"
+                onClick={() => {
+                  onOpenChange(false);
+                  setSwitcherOpen(true);
+                }}
               >
-                <UserPlus className="text-muted-foreground" strokeWidth={1.75} />
-                <Trans>Add account</Trans>
+                <UsersRound className="text-muted-foreground" strokeWidth={1.75} />
+                <Trans>Switch accounts</Trans>
               </Button>
             ) : null}
             <div className="my-1 border-t border-border" />
@@ -307,6 +291,82 @@ export function SidebarFooter({
           </PopoverContent>
         ) : null}
       </Popover>
+      <Dialog open={switcherOpen} onOpenChange={setSwitcherOpen}>
+        <DialogContent
+          finalFocus={menuTriggerRef}
+          showCloseButton={false}
+          className="max-h-[calc(100dvh-2rem)] overflow-y-auto"
+        >
+          <DialogHeader>
+            <DialogTitle>
+              <Trans>Switch accounts</Trans>
+            </DialogTitle>
+          </DialogHeader>
+          <DialogClose
+            aria-label={t`Close`}
+            render={
+              <Button variant="ghost" className="absolute top-4.5 right-4.5" size="icon-sm" />
+            }
+          >
+            <X aria-hidden="true" />
+          </DialogClose>
+          <div className="min-w-0">
+            {accounts.map((account) => {
+              const display = accountDisplay(account, account.email);
+              const selected = account.userId === activeUserId;
+              return (
+                <Button
+                  key={account.userId}
+                  variant="ghost"
+                  className="h-auto w-full justify-start gap-2.5 py-2 font-normal disabled:opacity-100"
+                  aria-current={selected ? "true" : undefined}
+                  disabled={signingOut || selected}
+                  onClick={() => {
+                    setSwitcherOpen(false);
+                    onSwitchAccount?.(account.userId);
+                  }}
+                >
+                  <AccountAvatar
+                    image={display.image}
+                    initials={display.initial}
+                    className="size-6 text-[11px]"
+                  />
+                  <span className="min-w-0 flex-1 text-start">
+                    <span className="block truncate">{display.label}</span>
+                    {display.label !== account.email ? (
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {account.email}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="grid size-4 shrink-0 place-items-center">
+                    {selected ? <Check aria-hidden="true" size={16} /> : null}
+                  </span>
+                  {account.unread > 0 ? (
+                    <Badge variant="secondary" className="tabular-nums">
+                      {account.unread}
+                    </Badge>
+                  ) : null}
+                </Button>
+              );
+            })}
+            {onAddAccount ? (
+              <Button
+                variant="ghost"
+                className="h-9 w-full justify-start gap-2.5 font-normal"
+                disabled={signingOut}
+                onClick={() => {
+                  setSwitcherOpen(false);
+                  onAddAccount();
+                }}
+              >
+                <UserPlus className="text-muted-foreground" strokeWidth={1.75} />
+                <Trans>Add account</Trans>
+              </Button>
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
       {!mini ? (
         <Button
           variant="outline"

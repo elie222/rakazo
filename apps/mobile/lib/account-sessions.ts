@@ -133,7 +133,6 @@ export async function selectSavedAccount(userId: string): Promise<boolean> {
   const apiBase = currentApiBase();
   const account = (await loadSavedAccounts(apiBase)).find((row) => row.userId === userId);
   if (!account) return false;
-  if ((await loadSessionToken()) === account.token) return true;
   const verified = await verifiedAccount(apiBase, account.token);
   if (verified?.userId !== userId) {
     await forgetSavedToken(apiBase, account.token);
@@ -141,6 +140,7 @@ export async function selectSavedAccount(userId: string): Promise<boolean> {
   }
   const current = () => generation === currentSessionGeneration() && apiBase === currentApiBase();
   if (!current()) return false;
+  if ((await loadSessionToken()) === account.token) return current();
   if (!(await clearSpace())) throw new Error(t("Could not clear the local session"));
   if (!current()) return false;
   await stopLiveNotifications(false).catch(() => undefined);

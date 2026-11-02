@@ -5775,6 +5775,10 @@ msgstr "Поддерживает рассуждения"
 msgid "Switch"
 msgstr "Перейти"
 
+#: src/components/SidebarFooter.tsx
+msgid "Switch accounts"
+msgstr "Сменить аккаунт"
+
 #: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
 msgstr "Перейти на годовой план"

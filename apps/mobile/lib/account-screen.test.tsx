@@ -2,7 +2,7 @@
 
 import type { AccountSecurity } from "@rakazo/contracts";
 import type { ReactNode } from "react";
-import { act, createElement, useEffect } from "react";
+import { act, createElement, useEffect, useState } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -92,32 +92,47 @@ vi.mock("react-native", () => ({
   View: element("div"),
 }));
 vi.mock("@expo/ui/community/menu", () => ({
-  MenuView: ({
+  MenuView: function MenuView({
     children,
     actions,
     onPressAction,
   }: {
     children?: ReactNode;
-    actions: Array<{ id: string; title: string }>;
+    actions: Array<{
+      id: string;
+      title: string;
+      state?: string;
+      attributes?: { disabled?: boolean };
+    }>;
     onPressAction: (event: { nativeEvent: { event: string } }) => void;
-  }) =>
-    createElement(
+  }) {
+    const [open, setOpen] = useState(false);
+    return createElement(
       "div",
-      null,
+      { onClick: () => setOpen(true) },
       children,
-      actions.map((action) =>
-        createElement(
-          "button",
-          {
-            key: action.id,
-            type: "button",
-            "data-menu-action": action.id,
-            onClick: () => onPressAction({ nativeEvent: { event: action.id } }),
-          },
-          action.title,
-        ),
-      ),
-    ),
+      open
+        ? actions.map((action) =>
+            createElement(
+              "button",
+              {
+                key: action.id,
+                type: "button",
+                "data-menu-action": action.id,
+                "aria-pressed": action.state === "on",
+                disabled: action.attributes?.disabled,
+                onClick: (event: { stopPropagation: () => void }) => {
+                  event.stopPropagation();
+                  setOpen(false);
+                  onPressAction({ nativeEvent: { event: action.id } });
+                },
+              },
+              action.title,
+            ),
+          )
+        : null,
+    );
+  },
 }));
 vi.mock("expo-router", () => {
   const router = { push: account.push, back: () => undefined, dismissTo: account.dismissTo };
@@ -521,6 +536,11 @@ it("lists trusted link sites only when there is one, each with a remove action",
   const group = container.querySelector('[aria-label="Trusted sites"]');
   expect(group?.textContent).toContain("alice.github.io");
   expect(group?.textContent).toContain("example.com");
+  await act(async () => {
+    for (const row of group?.querySelectorAll<HTMLButtonElement>("[data-row]") ?? []) {
+      row.click();
+    }
+  });
   const removes = group?.querySelectorAll<HTMLButtonElement>('[data-menu-action="remove"]');
   expect(removes).toHaveLength(2);
   await act(async () => removes?.[1]?.click());
@@ -553,26 +573,60 @@ it("shows the approval mode as the Approvals row's value, with Rules only once t
   expect(account.push).toHaveBeenCalledWith("/approvals");
 });
 
-it("shows each saved account's unread count and marks the active one", async () => {
+it("reveals saved accounts with unread counts and the selected identity only in the picker", async () => {
   vi.mocked(refreshAccountSummaries).mockResolvedValue([
     { userId: "user-1", email: "family@example.test", unread: 2 },
     { userId: "user-2", email: "work@example.test", unread: 3 },
   ]);
   vi.mocked(selectSavedAccount).mockResolvedValue(false);
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () => root?.render(<Account />));
-  const rows = [...container.querySelectorAll<HTMLButtonElement>("button")];
-  const selected = rows.find((row) => row.textContent === "family@example.test")!;
-  const work = rows.find((row) => row.textContent === "work@example.test")!;
-  expect(selected.dataset.value).toBe("2");
-  expect(selected.getAttribute("aria-selected")).toBe("true");
+  const view = await renderAccount();
+  expect(view.screen.textContent).not.toContain("work@example.test");
+  expect(view.button("Add account")).toBeUndefined();
+
+  await view.press("Switch accounts");
+  const selected = view.button("family@example.test  ·  2")!;
+  const work = view.button("work@example.test  ·  3")!;
+  expect(selected.getAttribute("aria-pressed")).toBe("true");
   expect(selected.disabled).toBe(true);
-  expect(work.dataset.value).toBe("3");
+  expect(work.getAttribute("aria-pressed")).toBe("false");
+  expect(view.button("Add account")?.disabled).toBe(false);
+  await act(async () => selected.click());
+  expect(selectSavedAccount).not.toHaveBeenCalled();
   await act(async () => work.click());
   expect(selectSavedAccount).toHaveBeenCalledWith("user-2");
+});
+
+it("offers Add account inside the picker with only one saved login", async () => {
+  vi.mocked(refreshAccountSummaries).mockResolvedValue([
+    { userId: "user-1", email: "family@example.test", unread: 0 },
+  ]);
+  const view = await renderAccount();
+  expect(view.button("Add account")).toBeUndefined();
+  await view.press("Switch accounts");
+  expect(view.button("family@example.test")?.disabled).toBe(true);
+  await view.press("Add account");
+  expect(account.push).toHaveBeenCalledWith({
+    pathname: "/sign-in",
+    params: { mode: "in", addAccount: "1" },
+  });
+});
+
+it("disables account picker actions while sign-out is pending", async () => {
+  vi.mocked(refreshAccountSummaries).mockResolvedValue([
+    { userId: "user-1", email: "family@example.test", unread: 2 },
+    { userId: "user-2", email: "work@example.test", unread: 3 },
+  ]);
+  vi.mocked(signOut).mockReturnValueOnce(new Promise(() => undefined));
+  const view = await renderAccount();
+  await view.press("Switch accounts");
+  await view.press("Sign out");
+  expect(view.button("Switch accounts")?.disabled).toBe(true);
+  expect(view.button("work@example.test  ·  3")?.disabled).toBe(true);
+  expect(view.button("Add account")?.disabled).toBe(true);
+  await view.press("work@example.test  ·  3");
+  await view.press("Add account");
+  expect(selectSavedAccount).not.toHaveBeenCalled();
+  expect(account.push).not.toHaveBeenCalled();
 });
 
 it("sends single-account sign-out to sign-in, which lists the other saved logins", async () => {

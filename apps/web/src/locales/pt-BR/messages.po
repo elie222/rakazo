@@ -5775,6 +5775,10 @@ msgstr "Suporta raciocínio"
 msgid "Switch"
 msgstr "Mudar"
 
+#: src/components/SidebarFooter.tsx
+msgid "Switch accounts"
+msgstr "Alternar contas"
+
 #: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
 msgstr "Mudar para anual"

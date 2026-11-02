@@ -5775,6 +5775,10 @@ msgstr "Prend en charge la réflexion"
 msgid "Switch"
 msgstr "Changer"
 
+#: src/components/SidebarFooter.tsx
+msgid "Switch accounts"
+msgstr "Changer de compte"
+
 #: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
 msgstr "Passer à l'annuel"

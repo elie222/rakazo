@@ -5775,6 +5775,10 @@ msgstr "सोचने की क्षमता का समर्थन क�
 msgid "Switch"
 msgstr "बदलें"
 
+#: src/components/SidebarFooter.tsx
+msgid "Switch accounts"
+msgstr "खाते बदलें"
+
 #: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
 msgstr "वार्षिक पर जाएं"

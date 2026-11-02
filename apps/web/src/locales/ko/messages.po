@@ -5775,6 +5775,10 @@ msgstr "사고 모드 지원"
 msgid "Switch"
 msgstr "전환"
 
+#: src/components/SidebarFooter.tsx
+msgid "Switch accounts"
+msgstr "계정 전환"
+
 #: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
 msgstr "연간 결제로 전환"

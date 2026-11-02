@@ -5775,6 +5775,10 @@ msgstr "תומך בחשיבה"
 msgid "Switch"
 msgstr "החלפה"
 
+#: src/components/SidebarFooter.tsx
+msgid "Switch accounts"
+msgstr "החלפת חשבונות"
+
 #: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
 msgstr "מעבר לתשלום שנתי"

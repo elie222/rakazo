@@ -5775,6 +5775,10 @@ msgstr "支持思考"
 msgid "Switch"
 msgstr "切换"
 
+#: src/components/SidebarFooter.tsx
+msgid "Switch accounts"
+msgstr "切换账号"
+
 #: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
 msgstr "切换为按年"

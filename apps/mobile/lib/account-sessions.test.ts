@@ -108,11 +108,27 @@ it("validates and selects the notification owner while preserving the other logi
   );
 });
 
-it("opens the active login's notification without a network round trip", async () => {
+it("verifies the active login before opening its notification without replacing the bearer", async () => {
   expect(await selectNotificationAccount("family", `${apiBase}/`)).toBe("selected");
-  expect(fetch).not.toHaveBeenCalled();
+  expect(fetch).toHaveBeenCalledWith(
+    `${apiBase}/api/auth/get-session`,
+    expect.objectContaining({
+      headers: expect.objectContaining({ authorization: "Bearer family-token" }),
+    }),
+    apiBase,
+  );
   expect(state.save).not.toHaveBeenCalled();
 });
+
+it.each([200, 401])(
+  "requires sign-in when the active notification account has expired or been revoked (%s)",
+  async (status) => {
+    vi.mocked(fetch).mockResolvedValue(Response.json(null, { status }));
+    expect(await selectNotificationAccount("family", apiBase)).toBe("signed-out");
+    expect(state.save).not.toHaveBeenCalled();
+    expect((await loadSavedAccounts(apiBase)).map((row) => row.userId)).toEqual(["work"]);
+  },
+);
 
 it("does not open legacy identity-less notifications with multiple saved accounts", async () => {
   expect(await selectNotificationAccount()).toBe("signed-out");

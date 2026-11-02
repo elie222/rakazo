@@ -1,5 +1,6 @@
 export const DE_MESSAGES: Record<string, string> = {
   "Add account": "Konto hinzufügen",
+  "Switch accounts": "Konten wechseln",
   "Sign in to open this account": "Melde dich an, um dieses Konto zu öffnen",
   "Sign in to open this notification": "Melde dich an, um diese Benachrichtigung zu öffnen",
   "Sign out all": "Alle abmelden",

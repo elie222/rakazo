@@ -5775,6 +5775,10 @@ msgstr "思考に対応"
 msgid "Switch"
 msgstr "切り替え"
 
+#: src/components/SidebarFooter.tsx
+msgid "Switch accounts"
+msgstr "アカウントを切り替える"
+
 #: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
 msgstr "年払いに切り替え"
