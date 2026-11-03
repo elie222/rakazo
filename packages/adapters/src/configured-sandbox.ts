@@ -215,9 +215,11 @@ export class ConfiguredSandbox implements SandboxProvider {
   }
   async refresh() {
     const selection = await this.load();
-    this.selected = selection.settings
-      ? await this.providerFor(selection.settings, "deployment")
-      : undefined;
+    // A connection kept after going back to the default is built only when a computer needs it.
+    this.selected =
+      selection.settings && selection.provider !== "default"
+        ? await this.providerFor(selection.settings, "deployment")
+        : undefined;
     if (!selection.settings) this.forgetOwner("deployment");
     this.selection = selection;
     this.selectionLoadedAt = Date.now();
@@ -305,7 +307,10 @@ export class ConfiguredSandbox implements SandboxProvider {
   private async target(homeKey?: string) {
     const own = homeKey ? await this.ownSettings(homeKey, true) : null;
     if (own) return this.providerFor(own, homeKey!);
-    await this.refresh();
+    // An unreadable store must not stop every computer from starting: use the last settings read.
+    await this.refresh().catch((error) => {
+      if (!this.selectionLoadedAt) throw error;
+    });
     return this.selection.provider !== "default" && this.selected ? this.selected : this.primary;
   }
   describe() {

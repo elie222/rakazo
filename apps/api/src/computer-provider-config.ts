@@ -283,25 +283,30 @@ export async function updateAccountComputerSettings(
     );
     saved = await checkedSettings(deps, actor, input, previous, true);
     const stored = await encrypt(deps, actor, saved);
-    replaced = await withSerializableRetry(() =>
-      runAsSystem("an account saves computer settings", () =>
-        deps.prisma.$transaction(
-          async (tx) => {
-            // Account-level, so it outlives any one space and only its owner can read it.
-            const secret = await tx.secret.create({
-              data: { ...mine, id: stored.id, ciphertext: stored.ciphertext },
-            });
-            const rows = await tx.secret.findMany({
-              where: { ...mine, id: { not: secret.id } },
-              select: { id: true, ciphertext: true },
-            });
-            await tx.secret.deleteMany({ where: { id: { in: rows.map((row) => row.id) } } });
-            return rows;
-          },
-          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    try {
+      replaced = await withSerializableRetry(() =>
+        runAsSystem("an account saves computer settings", () =>
+          deps.prisma.$transaction(
+            async (tx) => {
+              // Account-level, so it outlives any one space and only its owner can read it.
+              const secret = await tx.secret.create({
+                data: { ...mine, id: stored.id, ciphertext: stored.ciphertext },
+              });
+              const rows = await tx.secret.findMany({
+                where: { ...mine, id: { not: secret.id } },
+                select: { id: true, ciphertext: true },
+              });
+              await tx.secret.deleteMany({ where: { id: { in: rows.map((row) => row.id) } } });
+              return rows;
+            },
+            { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+          ),
         ),
-      ),
-    );
+      );
+    } catch (error) {
+      await deps.secrets.delete(stored.ciphertext, stored.id).catch(() => undefined);
+      throw error;
+    }
   }
   // A remote secret store keeps every saved value until it is deleted there too.
   await Promise.all(

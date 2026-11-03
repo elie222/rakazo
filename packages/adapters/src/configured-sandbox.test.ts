@@ -369,3 +369,15 @@ it("bills a kind only the primary runs the way the primary does", async () => {
   } as unknown as ComputerRef;
   expect(sandbox.billsWhileRunning(local)).toBe(false);
 });
+
+it("keeps starting computers on the last settings read while the store is unreadable", async () => {
+  let fail = false;
+  const sandbox = new ConfiguredSandbox(new FakeSandboxProvider(), async () => {
+    if (fail) throw new Error("secret store unavailable");
+    return { provider: "default", settings: null };
+  });
+  await sandbox.refresh();
+  fail = true;
+  expect(await sandbox.provisionKind("a")).toBe("fake");
+  expect((await sandbox.provision({ botId: "a", homePath: "/h" }, ctx)).kind).toBe("fake");
+});

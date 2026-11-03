@@ -54,7 +54,6 @@ import {
   setComposerEnterToSend,
   subscribeComposerEnterToSend,
 } from "../lib/composer-enter-to-send-pref";
-import { canChooseOwnComputer } from "../lib/computer-sandbox";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
 import { localTimezone, sameTimeZone, timezoneOptions } from "../lib/local-timezone";
 import { usePasskeysSupported } from "../lib/passkeys";
@@ -588,7 +587,8 @@ export function ComputerSettingsPanel({
           onRecoveryDismissed={onRecoveryDismissed}
         />
       ) : null}
-      {canConfigureComputers || canChooseOwnComputer(sandboxProvider) ? (
+      {/* The server decides what an account may change, including removing keys it saved. */}
+      {canConfigureComputers || sandboxProvider ? (
         <ComputerProviderSettings
           scope={canConfigureComputers ? "deployment" : "account"}
           onProviderChange={onSandboxProviderChange}

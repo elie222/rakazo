@@ -341,6 +341,18 @@ describe("an account's own computer", () => {
     expect(await getAccountComputerSettings(none.deps, actor)).toMatchObject({ providers: [] });
   });
 
+  it("removes the new keys when saving an account's desktop fails", async () => {
+    const { deps, rows } = makeAccountDeps();
+    (
+      deps.prisma as unknown as { secret: { create: ReturnType<typeof vi.fn> } }
+    ).secret.create.mockRejectedValueOnce(new Error("database unavailable"));
+    await expect(
+      updateAccountComputerSettings(deps, actor, { provider: "desktop", values: testDesktop }),
+    ).rejects.toThrow("database unavailable");
+    expect(rows).toEqual([]);
+    expect(deps.secrets.delete).toHaveBeenCalledWith("secret-1", "secret-1");
+  });
+
   it("lets an account remove its saved desktop after the deployment stops offering one", async () => {
     const { deps, rows } = makeAccountDeps();
     await updateAccountComputerSettings(deps, actor, { provider: "desktop", values: testDesktop });
