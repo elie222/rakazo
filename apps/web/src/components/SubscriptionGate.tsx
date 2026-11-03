@@ -73,8 +73,11 @@ export function SubscriptionGate({
 
   useEffect(() => {
     let active = true;
+    // Only the newest billing read may show, so a slow first read cannot undo the longer trial.
+    let newest = 0;
+    let shown = 0;
     fetchAuthCapabilities()
-      .then(async (capabilities): Promise<GateState> => {
+      .then(async (capabilities): Promise<GateState | null> => {
         if (!capabilities.billing) return { kind: "open" };
         const me = await loadMe();
         if (!me.billingEnabled) return { kind: "open" };
@@ -90,15 +93,20 @@ export function SubscriptionGate({
         ]);
         // A slow claim that lands later refreshes billing, so the longer trial still shows.
         if (!claimed) {
-          void claim.then(() =>
-            rpc.billing
+          void claim.then(() => {
+            const read = ++newest;
+            return rpc.billing
               .status()
               .then((later) => {
-                if (active) setState(gateFor(later));
+                if (active && read === newest) {
+                  shown = read;
+                  setState(gateFor(later));
+                }
               })
-              .catch(() => undefined),
-          );
+              .catch(() => undefined);
+          });
         }
+        const read = ++newest;
         const status = await rpc.billing.status();
         if (active && capabilities.crispWebsiteId) {
           setSupportChat({
@@ -107,11 +115,12 @@ export function SubscriptionGate({
             name: me.name,
           });
         }
-        return gateFor(status);
+        // A later read already showed; keep it.
+        return shown > read ? null : gateFor(status);
       })
       .catch((): GateState => ({ kind: "open" }))
       .then((next) => {
-        if (active) setState(next);
+        if (active && next) setState(next);
       });
     return () => {
       active = false;
