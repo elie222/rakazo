@@ -48,6 +48,20 @@ describeMessaging("messaging surface journeys", () => {
       where: { provider_address: { provider: "sendblue", address } },
     });
 
+  /** Text answers apply only to a request the person has received. */
+  const waitForInviteSent = async (address: string) => {
+    const identity = await waitForDatabase(async () => findIdentity(address));
+    await waitForDatabase(async () =>
+      prisma.messagingOutbound.findFirst({
+        where: {
+          identityId: identity.id,
+          idempotencyKey: { startsWith: "invite:" },
+          status: "sent",
+        },
+      }),
+    );
+  };
+
   /** A DM to the bot, returned once its reply has gone out, as a person would see it. */
   const dmAndWaitForReply = async (address: string, content: string, handle: string) => {
     const res = await app.request(
@@ -302,6 +316,7 @@ describeMessaging("messaging surface journeys", () => {
     const runsBefore = await prisma.run.count({ where: { botId: identity.botId } });
 
     // 2. The owner approves by text command.
+    await waitForInviteSent(sender);
     const yes = await app.request(
       emulator.buildInboundRequest({
         fromNumber: sender,
@@ -385,6 +400,7 @@ describeMessaging("messaging surface journeys", () => {
       prisma.messagingChannel.findUnique({ where: { threadId: groupThreadId(groupId) } }),
     );
 
+    await waitForInviteSent(owner);
     const no = await app.request(
       emulator.buildInboundRequest({
         fromNumber: owner,
@@ -435,6 +451,7 @@ describeMessaging("messaging surface journeys", () => {
       prisma.messagingChannel.findUnique({ where: { threadId: groupThreadId(groupId) } }),
     );
 
+    await waitForInviteSent(owner);
     const yes = await app.request(
       emulator.buildInboundRequest({
         fromNumber: owner,
@@ -508,6 +525,7 @@ describeMessaging("messaging surface journeys", () => {
         })
       )?.status;
     await waitForDatabase(async () => (await memberStatus()) === "invited");
+    await waitForInviteSent(owner);
 
     // A YES sent as a text message could come from anyone using this number.
     const sms = await app.request(

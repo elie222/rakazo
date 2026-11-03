@@ -533,12 +533,12 @@ const SPOOFABLE_TRANSPORT = "SMS";
 
 /**
  * The one request a bare YES or NO answers: the request whose prompt is the newest message this
- * line sent the person, sent within the answer window and still pending. Anything said since,
+ * line delivered to the person, sent within the answer window and still pending. Anything said since,
  * by the bot or the product, makes the reply an ordinary message.
  */
 async function answeredRequest(deps: MessagingInboundDeps, identity: IdentityRow) {
   const latest = await deps.prisma.messagingOutbound.findFirst({
-    where: { identityId: identity.id, kind: "dm" },
+    where: { identityId: identity.id, kind: "dm", status: "sent" },
     orderBy: { createdAt: "desc" },
     select: { idempotencyKey: true, createdAt: true },
   });

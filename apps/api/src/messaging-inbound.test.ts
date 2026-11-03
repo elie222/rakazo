@@ -245,9 +245,14 @@ function createDeps(
           ).length,
       ),
       findFirst: vi.fn(
-        async ({ where }: { where: { identityId: string; kind: string } }) =>
+        async ({ where }: { where: { identityId: string; kind: string; status: string } }) =>
           outboundRows
-            .filter((row) => row.identityId === where.identityId && row.kind === where.kind)
+            .filter(
+              (row) =>
+                row.identityId === where.identityId &&
+                row.kind === where.kind &&
+                (row.status ?? "pending") === where.status,
+            )
             .toSorted(
               (a, b) => (b.createdAt as Date).getTime() - (a.createdAt as Date).getTime(),
             )[0] ?? null,
@@ -1276,12 +1281,14 @@ function sentPrompt(
   deps: { outboundRows: Array<Record<string, unknown>> },
   idempotencyKey: string,
   ageMs = 60_000,
+  status = "sent",
 ) {
   deps.outboundRows.push({
     idempotencyKey,
     kind: "dm",
     identityId: "mi-1",
     body: "Reply YES to allow, NO to decline.",
+    status,
     createdAt: new Date(Date.now() - ageMs),
   });
 }
@@ -1436,6 +1443,19 @@ describe("createMessagingInboundHandler owner commands", () => {
     );
   });
 
+  it("answers the delivered question, not a request still waiting to go out", async () => {
+    const deps = createDeps({
+      invitedMember: { id: "cm-1", channelId: "ch-1", status: "invited", identityId: "mi-1" },
+    });
+    sentPrompt(deps, "reply:msg-7:0", 120_000);
+    sentPrompt(deps, "invite:ch-1:mi-1", 60_000, "pending");
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "YES" });
+
+    expect(deps.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
+    expect(deps.sendUserMessage).toHaveBeenCalled();
+  });
+
   it("answers only the request whose prompt was sent last", async () => {
     const deps = createDeps({
       invitedMember: { id: "cm-1", channelId: "ch-1", status: "invited", identityId: "mi-1" },
@@ -1472,7 +1492,8 @@ describe("createMessagingInboundHandler owner commands", () => {
       }),
     );
 
-    // The note is now the newest message, so a second YES is an ordinary message.
+    // Once the note is delivered it is the newest message, so a second YES is an ordinary one.
+    deps.outboundRows.at(-1)!.status = "sent";
     await handle({ ...dmEvent, handle: "h-2", content: "YES", transport: "SMS" });
     expect(deps.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
     expect(deps.sendUserMessage).toHaveBeenCalledTimes(1);

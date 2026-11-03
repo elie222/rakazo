@@ -284,6 +284,48 @@ describe("approval card arguments", () => {
     expect(detail.length).toBeLessThanOrEqual(4_001);
   });
 
+  it("puts long recipient lists above long text", () => {
+    const recipients = Array.from({ length: 40 }, (_, index) => ({
+      email: `r${index}@example.test`,
+    }));
+    const detail = detailOf("SEND_CAMPAIGN", { body: "b".repeat(5_000), recipients });
+    expect(detail.startsWith("recipients: [")).toBe(true);
+  });
+
+  it("shows a later batched action's destination above an earlier action's long text", () => {
+    const block = buildApprovalAskBlock(
+      "effect-1",
+      "MULTI_EXECUTE",
+      {
+        tools: [
+          { tool_slug: "DRAFT_POST", arguments: { body: "b".repeat(5_000) } },
+          { tool_slug: "GMAIL_SEND_EMAIL", arguments: { to_email: "g@example.test" } },
+        ],
+      },
+      [],
+      { batch: { items: "tools", action: "tool_slug", arguments: "arguments" } },
+    );
+    if (block.kind !== "ask") throw new Error("expected ask block");
+    expect(block.detail?.split("\n").slice(0, 3)).toEqual([
+      "DRAFT_POST",
+      "GMAIL_SEND_EMAIL",
+      "to_email: g@example.test",
+    ]);
+  });
+
+  it("redacts a secret inside a nested argument even when encoding escapes it", () => {
+    const secret = 'p"ss\\word';
+    const block = buildApprovalAskBlock(
+      "effect-1",
+      "CALL_API",
+      { headers: { authorization: secret }, to: "h@example.test" },
+      [secret],
+    );
+    if (block.kind !== "ask") throw new Error("expected ask block");
+    expect(block.detail).not.toContain("ss");
+    expect(block.detail).toContain("to: h@example.test");
+  });
+
   it("shows each batched action's destinations", () => {
     const block = buildApprovalAskBlock(
       "effect-1",
