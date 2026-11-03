@@ -21,6 +21,7 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 }));
 
 import { PiAgentRuntime } from "./pi-runtime.js";
+import { PiJsonlSessionRecorder } from "./pi-session.js";
 
 function response(target: Model<"openai-completions">, name?: string, args = {}, id = name) {
   const message: AssistantMessage = {
@@ -528,4 +529,43 @@ it("keeps the computer model's thinking when resuming an approval in computer mo
         ),
     ),
   ).toBe(true);
+});
+it("labels a session resumed in computer mode with the computer model", async () => {
+  const input = request();
+  let checkpoint = "";
+  let capture: (() => string) | undefined;
+  input.onCheckpoint = async (fn) => {
+    capture = fn;
+  };
+  input.executeTool = vi.fn(async () => {
+    checkpoint = capture!();
+    return approvalPausedToolResult();
+  });
+  script([
+    ["enter_computer_mode", { goal: "Click" }],
+    ["browser_act", { actions: [{ kind: "click", ref: "button-1" }] }],
+  ]);
+  await run(input);
+  fake.stream.mockReset();
+  script([["leave_computer_mode", { summary: "Clicked" }], [undefined]]);
+  const start = vi
+    .spyOn(PiJsonlSessionRecorder.prototype, "start")
+    .mockResolvedValue({ appendMessage: vi.fn(async () => undefined) });
+  const resumed = {
+    ...input,
+    computerModel: undefined,
+    turnCheckpoint: checkpoint,
+    resolveModel: async (provider: string, id: string) => ({
+      provider,
+      id,
+      apiKey: "fake-test-key",
+    }),
+    executeTool: vi.fn(async () => ({ ok: true })),
+  };
+  const runtime = new PiAgentRuntime({ sessionRoot: "fixture-sessions" });
+  for await (const _event of runtime.run(resumed, { userId: "user" } as never));
+  expect(start).toHaveBeenCalledWith(
+    expect.objectContaining({ provider: "test", model: "computer" }),
+  );
+  start.mockRestore();
 });

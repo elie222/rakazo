@@ -3,10 +3,12 @@ import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-s
 import { beforeEach, expect, it, vi } from "vitest";
 import type * as AutoReviewModule from "./auto-review.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
+import { PINNED_COMPUTER_MODEL_LOST_RUN_ERROR } from "./computer-model-settings.js";
 import { createRunExecutor } from "./executor.js";
 import type * as ModelRolesModule from "./model-roles.js";
 import type * as ModelSelectionModule from "./model-selection.js";
 import { findConnectedModelCredential } from "./model-selection.js";
+import { COMPUTER_MODEL_UNAVAILABLE_MESSAGE } from "./run-instructions.js";
 import type * as RunModelModule from "./run-model.js";
 
 vi.mock("./model-selection.js", async (importOriginal) => ({
@@ -524,11 +526,28 @@ it.each([
     apiKey: "fixture-key",
     ...override,
   });
-  await expect(f.run()).rejects.toMatchObject({
-    cause: { message: "Pinned computer mode model is unavailable" },
-  });
+  // A pinned identity that cannot come back fails the run once instead of retrying setup.
+  await f.run();
+  expect(f.finalizeRun).toHaveBeenCalledWith(
+    expect.objectContaining({ outcome: "failed", error: PINNED_COMPUTER_MODEL_LOST_RUN_ERROR }),
+  );
   expect(resolveModelKey).not.toHaveBeenCalled();
   expect(fake.stream).not.toHaveBeenCalled();
+  expect(f.browserAct).not.toHaveBeenCalled();
+});
+it("keeps screen tools off, rather than handing them to main, when the saved computer model is unavailable", async () => {
+  const f = fixture();
+  fake.unavailable.add("computer-c");
+  fake.stream.mockImplementation((target: Model<"openai-completions">) => respond(target));
+  await f.run();
+  const request = f.runtimeRun.mock.calls.at(-1)?.[0];
+  expect(request?.computerModel).toBeUndefined();
+  expect(request?.model).toMatchObject({ id: "main-a" });
+  const offered = request?.tools.map((tool: { name: string }) => tool.name) ?? [];
+  for (const name of ["computer_observe", "computer_act", "browser_act", "enter_computer_mode"])
+    expect(offered).not.toContain(name);
+  expect(request?.instructions).toContain(COMPUTER_MODEL_UNAVAILABLE_MESSAGE);
+  expect(fake.stream.mock.calls.map((call) => call[0].id)).toEqual(["main-a"]);
   expect(f.browserAct).not.toHaveBeenCalled();
 });
 it.each(["main-a", "computer-c"])(

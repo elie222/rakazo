@@ -7,6 +7,7 @@ import {
   liveCatalogEntry,
   ProviderCatalogCache,
   providerLiveCatalogsForSpace,
+  savedCatalogSelections,
 } from "./pi-live-catalog.js";
 import { isChatModelId } from "./pi-live-model.js";
 import { listPiCatalog } from "./pi-models.js";
@@ -300,5 +301,32 @@ describe("provider catalog cache", () => {
     expect(
       (cache as unknown as { cache: { entries: Map<string, unknown> } }).cache.entries.size,
     ).toBe(2);
+  });
+});
+
+describe("saved catalog selections", () => {
+  it("keeps a Space's own computer default among saved selections", async () => {
+    const prisma = {
+      userModelPreference: { findMany: vi.fn(async () => []) },
+      spaceModelPreference: {
+        findMany: vi.fn(async () => [
+          {
+            computerProvider: "anthropic",
+            computerModelId: "claude-space-computer",
+            credential: { provider: "openai" },
+          },
+        ]),
+      },
+      bot: { findMany: vi.fn(async () => []) },
+      routine: { findMany: vi.fn(async () => []) },
+      userModelRoleChoice: { findMany: vi.fn(async () => []) },
+      spaceModelRoleChoice: { findMany: vi.fn(async () => []) },
+      deploymentSettings: { findFirst: vi.fn(async () => null) },
+    };
+    const saved = await savedCatalogSelections(prisma as never, "user");
+    expect(saved.has("anthropic:claude-space-computer")).toBe(true);
+    expect(prisma.spaceModelPreference.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: "user", computerModelId: { not: null } } }),
+    );
   });
 });

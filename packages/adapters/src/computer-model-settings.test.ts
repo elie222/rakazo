@@ -30,7 +30,7 @@ describe("computer model settings resolution", () => {
     expect(await resolveComputerRunModel(deps, scope, main, { mode: "main" })).toBeUndefined();
     expect(deps.resolve).not.toHaveBeenCalled();
   });
-  it("leaves a hosted main model without a computer model, since a pause could not resume it", async () => {
+  it("never pins a computer model beside a hosted main model, since a pause could not resume it", async () => {
     const deps = setup();
     const hosted = { ...main, connectionId: undefined };
     const choice = {
@@ -39,8 +39,28 @@ describe("computer model settings resolution", () => {
       modelId: "claude-sonnet-4-5",
       credentialId: "claude",
     };
-    expect(await resolveComputerRunModel(deps, scope, hosted, choice)).toBeUndefined();
+    // No saved choice: nothing to apply. An explicit bot choice is reported, not dropped silently.
+    expect(await resolveComputerRunModel(deps, scope, hosted, null)).toBeUndefined();
+    await expect(resolveComputerRunModel(deps, scope, hosted, choice)).rejects.toThrow(
+      /connected account/,
+    );
     expect(deps.resolve).not.toHaveBeenCalled();
+  });
+  it("reports a target the runtime would reject, such as a keyless one, as unavailable", async () => {
+    const deps = setup();
+    deps.resolve.mockImplementationOnce(
+      async (provider: string, id: string, connectionId: string) =>
+        ({ ...main, provider, id, connectionId, apiKey: undefined }) as AgentRunModel,
+    );
+    const choice = {
+      mode: "model",
+      provider: "anthropic",
+      modelId: "claude-sonnet-4-5",
+      credentialId: "claude",
+    };
+    await expect(resolveComputerRunModel(deps, scope, main, choice)).rejects.toThrow(
+      /explicitly authenticated/,
+    );
   });
   it("uses only the active connection's provider preference and medium effort", async () => {
     const deps = setup({ computerModelId: "gpt-4o-mini", computerThinkingLevel: null });

@@ -46,13 +46,22 @@ function fileAndShellClause(disabled: ReadonlySet<string> | undefined): string |
   return undefined;
 }
 
+export const COMPUTER_MODEL_UNAVAILABLE_MESSAGE =
+  "The computer model chosen for this bot is unavailable, so the screen and browser tools are off for this run. If the user asks for desktop or browser work, tell them to reconnect that account or choose another computer model in model settings.";
+
 export function persistentComputerInstruction(options: {
   heldForTakeover: boolean;
+  /** A saved computer model could not be resolved; its tools must not move to the main model. */
+  computerModelUnavailable?: boolean;
   graphicalToolsAllowed: boolean;
   graphical: boolean;
   disabled?: ReadonlySet<string>;
 }): string {
   if (options.heldForTakeover) return DESKTOP_HELD_FOR_TAKEOVER_MESSAGE;
+  if (options.computerModelUnavailable && options.graphical) {
+    const useTools = fileAndShellClause(options.disabled);
+    return `You have a persistent computer. ${COMPUTER_MODEL_UNAVAILABLE_MESSAGE}${useTools ? ` ${useTools}` : ""}`;
+  }
   const disabled = options.disabled;
   if (options.graphicalToolsAllowed) {
     const desktopTools = [

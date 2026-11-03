@@ -1380,6 +1380,7 @@ describe("live-only catalog validation", () => {
       spaceModelRoleChoice: { findMany: async () => [] },
       deploymentSettings: { findFirst: async () => null },
       userModelPreference: { findFirst: async () => null, findMany: async () => [] },
+      spaceModelPreference: { findMany: async () => [] },
       userModelCredential: { findMany: async () => [selected], findFirst: async () => selected },
       secret: {
         findFirst: vi.fn(async () => ({ id: selected.secretId, ciphertext: "fake-ciphertext" })),

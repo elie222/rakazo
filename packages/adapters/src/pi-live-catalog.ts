@@ -287,40 +287,50 @@ export async function savedCatalogSelections(
   prisma: PrismaClient,
   userId: string,
 ): Promise<Set<string>> {
-  const [preferences, bots, routines, accountRoles, spaceRoles, settings] = await Promise.all([
-    prisma.userModelPreference.findMany({
-      where: { userId },
-      select: {
-        modelId: true,
-        computerProvider: true,
-        computerModelId: true,
-        credential: { select: { provider: true } },
-      },
-    }),
-    prisma.bot.findMany({
-      where: { userId },
-      select: { modelProvider: true, modelId: true, computerModel: true },
-    }),
-    prisma.routine.findMany({
-      where: { userId },
-      select: { modelProvider: true, modelId: true },
-    }),
-    prisma.userModelRoleChoice.findMany({
-      where: { userId },
-      select: { provider: true, modelId: true },
-    }),
-    // A Space's own models count only while it overrides the account's.
-    prisma.spaceModelRoleChoice.findMany({
-      where: { userId, spaceMember: { settingOverrides: { some: { setting: "models" } } } },
-      select: { provider: true, modelId: true },
-    }),
-    prisma.deploymentSettings.findFirst({
-      select: { defaultModelProvider: true, defaultModelId: true },
-    }),
-  ]);
+  const [preferences, spaceComputerDefaults, bots, routines, accountRoles, spaceRoles, settings] =
+    await Promise.all([
+      prisma.userModelPreference.findMany({
+        where: { userId },
+        select: {
+          modelId: true,
+          computerProvider: true,
+          computerModelId: true,
+          credential: { select: { provider: true } },
+        },
+      }),
+      // Space copies of computer defaults are saved choices too.
+      prisma.spaceModelPreference.findMany({
+        where: { userId, computerModelId: { not: null } },
+        select: {
+          computerProvider: true,
+          computerModelId: true,
+          credential: { select: { provider: true } },
+        },
+      }),
+      prisma.bot.findMany({
+        where: { userId },
+        select: { modelProvider: true, modelId: true, computerModel: true },
+      }),
+      prisma.routine.findMany({
+        where: { userId },
+        select: { modelProvider: true, modelId: true },
+      }),
+      prisma.userModelRoleChoice.findMany({
+        where: { userId },
+        select: { provider: true, modelId: true },
+      }),
+      // A Space's own models count only while it overrides the account's.
+      prisma.spaceModelRoleChoice.findMany({
+        where: { userId, spaceMember: { settingOverrides: { some: { setting: "models" } } } },
+        select: { provider: true, modelId: true },
+      }),
+      prisma.deploymentSettings.findFirst({
+        select: { defaultModelProvider: true, defaultModelId: true },
+      }),
+    ]);
   const computerChoices = [
     // Computer-use choices are saved models too, so their entries must not drop out either.
-    ...preferences.flatMap((p) =>
+    ...[...preferences, ...spaceComputerDefaults].flatMap((p) =>
       p.computerModelId
         ? [
             `${canonicalPiProviderId(p.computerProvider ?? p.credential.provider)}:${p.computerModelId}`,

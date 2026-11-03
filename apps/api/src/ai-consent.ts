@@ -27,6 +27,7 @@ import {
   listModelRoleChoices,
   listVoicePreferences,
   modelRoleTarget,
+  settingsTarget,
   voicePreferenceTarget,
 } from "@rakazo/db";
 import type { RouterDeps } from "./router.js";
@@ -148,7 +149,9 @@ export async function aiConsentStatus(
       }),
     );
     // Connected models remain reachable by helpers during a targeted bot run.
-    for (const preference of preferences)
+    for (const preference of preferences) {
+      // A computer-only row has no main model; its computer target is added below.
+      if (preference.hasMainPreference === false) continue;
       selected.push({
         provider: preference.credential.provider,
         id: preference.modelId ?? "",
@@ -159,6 +162,7 @@ export async function aiConsentStatus(
         },
         thinkingLevel: null,
       });
+    }
     // Every purpose's models, fallbacks included, can receive a run's content.
     const roleModels = await Promise.all(
       roleChoices.map(async (choice) => {
@@ -172,10 +176,14 @@ export async function aiConsentStatus(
     );
     selected.push(...roleModels.filter((model) => model !== null));
     // A computer-use model receives screenshots and the conversation while the bot works.
-    const spaceComputerDefaults = await deps.prisma.spaceModelPreference.findMany({
-      where: { userId: actor.userId, spaceId: actor.spaceId, computerModelId: { not: null } },
-      include: { credential: true },
-    });
+    // A Space's own defaults apply only where the checked settings are that Space's.
+    const spaceComputerDefaults =
+      (await settingsTarget(deps.prisma, actor, "models", query.settingsScope)) === "space"
+        ? await deps.prisma.spaceModelPreference.findMany({
+            where: { userId: actor.userId, spaceId: actor.spaceId, computerModelId: { not: null } },
+            include: { credential: true },
+          })
+        : [];
     const computerTargets = [
       ...[...preferences, ...spaceComputerDefaults].flatMap((preference) =>
         preference.computerModelId

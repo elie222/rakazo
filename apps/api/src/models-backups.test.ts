@@ -102,6 +102,7 @@ function setup(
     // Saved choices that keep a model listed after new users stop being offered it.
     bot: { findMany: vi.fn(async () => []) },
     routine: { findMany: vi.fn(async () => []) },
+    spaceModelPreference: { findMany: vi.fn(async () => []) },
     space: {
       findFirst: vi.fn(async () => ({ organization: { modelCredits: { mode: "credits" } } })),
     },

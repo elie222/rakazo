@@ -9600,6 +9600,7 @@ describe("API-key live model catalog", () => {
       const prisma = {
         userModelCredential: { findMany: vi.fn(async () => [credential]) },
         userModelPreference: { findMany: vi.fn(async () => []) },
+        spaceModelPreference: { findMany: vi.fn(async () => []) },
         secret: {
           findMany: vi.fn(async () => [{ id: "secret-test", ciphertext: "fake-ciphertext" }]),
         },

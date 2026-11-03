@@ -178,6 +178,19 @@ describe("computer settings persistence and authorization", () => {
     ]);
     expect(secrets.load).toHaveBeenCalledTimes(1);
   });
+  it("lets selectors that open together share one listing of every connection", async () => {
+    const { api, secrets, catalog } = fixture();
+    const views = await Promise.all([api.load(actor, target), api.load(actor, target)]);
+    expect(views.map((view) => view.options)).toEqual([
+      [expect.objectContaining({ modelId: "vision" })],
+      [expect.objectContaining({ modelId: "vision" })],
+    ]);
+    expect(secrets.load).toHaveBeenCalledTimes(1);
+    expect(catalog).toHaveBeenCalledTimes(1);
+    // Nothing is kept once the listing settles: a later load checks connections again.
+    await api.load(actor, target);
+    expect(secrets.load).toHaveBeenCalledTimes(2);
+  });
   it.each(["account", "space", "bot"] as const)(
     "selects another owned provider and reads back/clears %s",
     async (scope) => {

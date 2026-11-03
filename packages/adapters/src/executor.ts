@@ -77,7 +77,11 @@ import {
   renewComputerExecutionLease,
   screenLeaseIdForRun,
 } from "./computer-lifecycle.js";
-import { computerCheckpointResolver, resolveComputerRunModel } from "./computer-model-settings.js";
+import {
+  computerCheckpointResolver,
+  PINNED_COMPUTER_MODEL_LOST_RUN_ERROR,
+  resolveComputerRunModel,
+} from "./computer-model-settings.js";
 import { teamBotWorkspaceDirectory } from "./computer-support.js";
 import { checkpointRunComputerWorkspace } from "./computer-workspace.js";
 import {
@@ -244,6 +248,20 @@ async function verbatimMcpServersForRun(
   });
   if (!servers?.length) return undefined;
   return { ids: servers.map((server) => server.id), slugs: servers.map((server) => server.slug) };
+}
+
+const PERMANENT_PINNED_COMPUTER_MODEL_ERRORS = new Set([
+  "Pinned computer mode model is unavailable",
+  "Computer model checkpoint requires its pinned connection",
+  "Unsupported computer mode checkpoint",
+]);
+
+/** A pinned identity that cannot come back, unlike a network or secret-store outage. */
+function isPermanentPinnedComputerModelError(error: unknown): boolean {
+  return (
+    isTerminalModelSetupError(error) ||
+    (error instanceof Error && PERMANENT_PINNED_COMPUTER_MODEL_ERRORS.has(error.message))
+  );
 }
 
 export function createRunExecutor(executorDeps: ExecutorDeps) {
@@ -557,11 +575,18 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const savedComputerMode = checkpointModelResolver
           ? restoreTurnCheckpoint(computerCheckpoint!, checkpointIdentity).computerMode
           : undefined;
+        // A pinned identity that is gone for good fails the run once instead of being retried
+        // as a setup failure; outages (network, secret store) still retry.
+        let lostPinnedComputerModel = false;
         const pinnedComputerModels = savedComputerMode
           ? await restoreComputerModels(
               { resolveFallbackModel: checkpointModelResolver },
               savedComputerMode,
-            )
+            ).catch((error: unknown) => {
+              if (!isPermanentPinnedComputerModelError(error)) throw error;
+              lostPinnedComputerModel = true;
+              return undefined;
+            })
           : undefined;
         const messagingSource =
           run.trigger === "messaging" && run.sourceMessageId
@@ -612,7 +637,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               status: true,
             },
           }),
-          pinnedComputerModels ? Promise.resolve(null) : resolveMemberMainModel(deps, run),
+          pinnedComputerModels || lostPinnedComputerModel
+            ? Promise.resolve(null)
+            : resolveMemberMainModel(deps, run),
           deps.prisma.deploymentSettings.findUnique({
             where: { id: "default" },
           }),
@@ -630,6 +657,16 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           loadRunLoginRedactions(deps.prisma, deps.secretStore, run, run.id),
           loadRunCodeRedactions(deps.prisma, deps.secretStore, run, run.id),
         ]);
+        if (lostPinnedComputerModel) {
+          await failRunBeforeTurn(
+            deps,
+            run,
+            bot.name,
+            { attemptId: attempt.id, workerId, fence },
+            PINNED_COMPUTER_MODEL_LOST_RUN_ERROR,
+          );
+          return;
+        }
         // Team chat reaches people besides the owner, so their runs get a group channel's limits.
         const teamChatConversationId =
           run.trigger === "messaging" ? thread.externalConversationId : null;
@@ -1238,7 +1275,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         };
         // Saved identities win on resume, including when the bot/default was cleared meanwhile.
         // Only runs that can drive a screen need it, and a target that has since gone away must
-        // not fail runs that never reach computer mode; settings show it as unavailable.
+        // not fail runs that never reach computer mode; settings show it as unavailable. A saved
+        // target that cannot run fails closed: screen tools stay off rather than moving to main.
+        let computerModelUnavailable = false;
         const computerModel =
           pinnedComputerModels?.computer ??
           (scripted || checkpointModelResolver || !graphical
@@ -1253,6 +1292,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   "run.id": run.id,
                   "error.message": error instanceof Error ? error.message : String(error),
                 });
+                computerModelUnavailable = true;
                 return undefined;
               }));
         const sourceMessage =
@@ -1274,9 +1314,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           deps.runtime.describe().capabilities.scripted ||
           modelSeesImages ||
           Boolean(computerModel || checkpointModelResolver);
-        const graphicalToolsAllowed = graphical && acceptsImages && !heldForTakeover;
+        const graphicalToolsAllowed =
+          graphical && acceptsImages && !heldForTakeover && !computerModelUnavailable;
         const pageBrowserAllowed =
-          graphical && browser.describe().capabilities.page && !heldForTakeover;
+          graphical &&
+          browser.describe().capabilities.page &&
+          !heldForTakeover &&
+          !computerModelUnavailable;
         const disabledBuiltinTools = disabledBuiltinToolSet(bot.disabledBuiltinTools);
         const userComputerOwnerId = userComputerOwner({
           trigger: run.trigger,
@@ -1376,6 +1420,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const approvedEffectReplays = createApprovedEffectReplayQueue(approvedEffects);
         const baseComputerInstruction = persistentComputerInstruction({
           heldForTakeover,
+          computerModelUnavailable,
           graphicalToolsAllowed,
           graphical,
           disabled: disabledBuiltinTools,

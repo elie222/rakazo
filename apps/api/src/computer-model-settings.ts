@@ -166,7 +166,18 @@ export function computerModelSettings(
     );
     return checked.filter((option) => option !== null);
   }
-  async function allOptions(actor: Actor): Promise<ComputerModelView["options"]> {
+  // The settings page opens one selector per connection, all at once. They share one listing
+  // while it is in flight instead of each re-checking every connection; nothing is cached after.
+  const pendingOptions = new Map<string, Promise<ComputerModelView["options"]>>();
+  function allOptions(actor: Actor): Promise<ComputerModelView["options"]> {
+    const key = JSON.stringify([actor.userId, actor.spaceId]);
+    const pending = pendingOptions.get(key);
+    if (pending) return pending;
+    const listing = listAllOptions(actor).finally(() => pendingOptions.delete(key));
+    pendingOptions.set(key, listing);
+    return listing;
+  }
+  async function listAllOptions(actor: Actor): Promise<ComputerModelView["options"]> {
     const [rows, entries] = await Promise.all([
       deps.prisma.userModelCredential.findMany({
         where: { userId: actor.userId },

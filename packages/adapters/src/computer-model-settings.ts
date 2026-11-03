@@ -1,6 +1,6 @@
 import type { AgentRunModel } from "@rakazo/adapter-kit";
 import type { ComputerModelSelection } from "@rakazo/contracts";
-import { ComputerModelSelectionSchema } from "@rakazo/contracts";
+import { ComputerModelSelectionSchema, OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { settingsTarget } from "@rakazo/db";
 import { modelAcceptsImageInput } from "./model-vision.js";
@@ -21,8 +21,14 @@ export async function resolveComputerRunModel(
   override: unknown,
 ): Promise<AgentRunModel | undefined> {
   const selection = ComputerModelSelectionSchema.parse(override ?? null);
+  if (selection?.mode === "main") return undefined;
   // A paused turn pins both identities by connection, so a hosted main model cannot switch.
-  if (selection?.mode === "main" || !main.connectionId) return undefined;
+  // An explicit bot choice must not be dropped silently: report it so screen tools stay off.
+  if (!main.connectionId) {
+    if (selection?.mode === "model")
+      throw new Error("Computer model needs a main model on a connected account");
+    return undefined;
+  }
   let choice: ComputerModelSelection = selection;
   if (!choice) {
     const target = await settingsTarget(deps.prisma, scope, "models");
@@ -65,8 +71,15 @@ export async function resolveComputerRunModel(
     model.acceptsImages === false
   )
     throw new Error("Computer model must support image input");
+  // Same rule as the runtime's computerTarget, so a shape it would reject (such as a keyless
+  // target) is reported as unavailable instead of failing the run at startup.
+  if (!model.oauth && !model.apiKey && model.provider !== OPENAI_COMPATIBLE_PROVIDER_ID)
+    throw new Error("Computer model requires an explicitly authenticated configuration");
   return model;
 }
+
+export const PINNED_COMPUTER_MODEL_LOST_RUN_ERROR =
+  "A model this paused task was using is no longer connected, so it cannot continue. Reconnect the account or start the task again.";
 
 /** A stored checkpoint is authority for its two identities, not for arbitrary connections. */
 export function computerCheckpointResolver(

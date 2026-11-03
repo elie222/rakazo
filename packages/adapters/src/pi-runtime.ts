@@ -358,6 +358,8 @@ export class PiAgentRuntime implements AgentRuntime {
         // Never write an unscoped transcript. Production requests carry userId;
         // callers without an authenticated context simply skip optional recording.
         if (this.sessionRecorder && context?.userId) {
+          // A turn resumed in computer mode starts on the computer model; label it as such.
+          const startTarget = mode === "computer" && computer ? computer : undefined;
           try {
             piSession = await this.sessionRecorder.start({
               runId: request.runId,
@@ -365,9 +367,11 @@ export class PiAgentRuntime implements AgentRuntime {
               botId: request.botId,
               userId: context.userId,
               traceId: context?.traceId,
-              provider: model.provider,
-              model: model.id,
-              thinkingLevel,
+              provider: startTarget?.model.provider ?? model.provider,
+              model: startTarget?.model.id ?? model.id,
+              thinkingLevel: startTarget
+                ? thinkingLevelFor(startTarget.model, startTarget.config.thinkingLevel)
+                : thinkingLevel,
               systemPrompt,
               initialMessages: history,
             });
