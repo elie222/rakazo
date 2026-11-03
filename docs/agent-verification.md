@@ -438,9 +438,10 @@ pnpm test:evals --suite verbosity --list
 pnpm test:evals --live --suite verbosity --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/verbosity.json
 ```
 
-Six ordinary chat requests that need tools: a one-fact CRM lookup, an inbox
+Seven ordinary chat requests that need tools: a one-fact CRM lookup, an inbox
 check, a note whose save errors after it succeeded, a GitHub outage, work across
-two apps, and an owner whose bot instructions ask for one or two sentences.
+two apps, a fact found mid-task that the person must be told before the last
+step, and an owner whose bot instructions ask for one or two sentences.
 Each case checks the effect (the right reads, exactly one note, no other writes),
 then two structural limits on everything the person saw for the turn: a word
 budget, and no narration such as "That failed, retrying…" while it worked:
@@ -448,11 +449,12 @@ no text in an earlier message of the turn, and none between the first and last
 tool call of the final one. One opening sentence before the first tool call is
 allowed.
 
-The `verbosity-meaning-v4` judge then grades meaning: the reply gives the
+The `verbosity-meaning-v5` judge then grades meaning: the reply gives the
 requested outcome without contradicting the case facts, leads with it, does not
 narrate its process or correct itself, and has no recap, unrequested advice, or
 closing offer after a successful answer. One short sentence about a recovered
-error, and one short next step after a failure, are allowed. It runs only
+error, and one short next step after a failure, are allowed. A fact the person
+must learn has to reach them even though they did not ask for it. It runs only
 after the deterministic checks pass and is calibrated against reviewed examples of direct answers, narrated work,
 self-correction, closing offers, invented causes, and short-but-wrong replies.
 Owner-trusted writes are pre-approved through approval rules; the outage case
