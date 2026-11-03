@@ -9,7 +9,7 @@ export function appConnectPresentation(block: AppConnectBlock, busy = false) {
     title: block.name,
     description: block.description,
     showAuthorize: !connected,
-    actionLabel: connected ? t("Connected") : busy ? t("Waiting…") : t("Authorize"),
+    actionLabel: connected ? t("Connected") : busy ? t("Waiting…") : t("Connect"),
     connected,
   };
 }

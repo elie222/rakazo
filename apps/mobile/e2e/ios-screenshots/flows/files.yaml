@@ -40,3 +40,10 @@ name: Files
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 05-image
+- openLink: "rakazo:///artifact?artifactId=${RAKAZO_SCREENSHOT_VIDEO_ID}"
+- extendedWaitUntil:
+    visible: ".*launch-demo.mp4.*"
+    timeout: 20000
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: 06-video

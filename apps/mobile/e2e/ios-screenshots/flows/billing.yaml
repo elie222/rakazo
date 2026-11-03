@@ -14,7 +14,7 @@ name: Billing
 - takeScreenshot: 01-billing
 - openLink: "rakazo:///wallet"
 - extendedWaitUntil:
-    visible: ".*Connect.*"
+    visible: "Disconnect"
     timeout: 15000
 - waitForAnimationToEnd:
     timeout: 3000

@@ -1475,7 +1475,7 @@ describe("createMessagingInboundHandler owner commands", () => {
     expect(deps.sendUserMessage).toHaveBeenCalled();
   });
 
-  it("sends a text-message YES to the app instead of approving", async () => {
+  it("accepts a YES sent as a plain text message", async () => {
     const deps = createDeps({
       invitedMember: { id: "cm-1", channelId: "ch-1", status: "invited", identityId: "mi-1" },
     });
@@ -1483,20 +1483,10 @@ describe("createMessagingInboundHandler owner commands", () => {
     const handle = createMessagingInboundHandler(deps);
     await handle({ ...dmEvent, content: "YES", transport: "SMS" });
 
-    expect(deps.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
-    expect(deps.sendUserMessage).not.toHaveBeenCalled();
-    expect(deps.outboundRows.at(-1)).toEqual(
-      expect.objectContaining({
-        identityId: "mi-1",
-        body: "Answer this request in the Rakazo app.",
-      }),
+    expect(deps.prisma.messagingChannelMember.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "approved" }) }),
     );
-
-    // Once the note is delivered it is the newest message, so a second YES is an ordinary one.
-    deps.outboundRows.at(-1)!.status = "sent";
-    await handle({ ...dmEvent, handle: "h-2", content: "YES", transport: "SMS" });
-    expect(deps.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
-    expect(deps.sendUserMessage).toHaveBeenCalledTimes(1);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
 
   it("treats YES without a pending invite as a normal message", async () => {

@@ -1085,7 +1085,8 @@ export class TeamChatBridge {
       const conversation = messages[0]?.externalConversation;
       if (!conversation) continue;
       const ambientEnabled = conversation.teamChatAmbientEnabled ?? policy.teamChatAmbientEnabled;
-      const rules = conversation.teamChatRules ?? policy.teamChatRules;
+      // Blank room instructions follow the bot, as the settings screens show them.
+      const rules = conversation.teamChatRules || policy.teamChatRules;
       const parsedPolicies = AutomatedSenderPoliciesSchema.safeParse(
         conversation.automatedSenderPolicies,
       );

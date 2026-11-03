@@ -30,6 +30,12 @@
     "screens": ["thread"]
   },
   {
+    "id": "cards",
+    "title": "Request cards",
+    "flow": "flows/cards.yaml",
+    "screens": ["thread"]
+  },
+  {
     "id": "search",
     "title": "Search",
     "flow": "flows/search.yaml",

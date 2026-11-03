@@ -30,7 +30,7 @@ export function RoutineRunHistory({
           <SettingsRow key="failed" title={t("Could not load run history")} dimmed />
         </SettingsGroup>
         <NativeActionButton
-          label={t("Try Again")}
+          label={t("Try again")}
           variant="text"
           prominence="secondary"
           onPress={history.retry}

@@ -3,10 +3,16 @@ import {
   effectiveModelRole,
   hasHostedModelCredits,
   isAutoReviewCheckerConfigured,
+  loadUserIncomingCalls,
   PushSessionEndedError,
+  settleCallRequest,
 } from "@rakazo/adapters";
 import type { ActionApprovalRule, Actor, Me, SettingsScope } from "@rakazo/contracts";
-import { approvalModeFromPreference, approvalPreferenceFromMode } from "@rakazo/core";
+import {
+  approvalModeFromPreference,
+  approvalPreferenceFromMode,
+  callRequestClientNonce,
+} from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
 import {
   auditLogOrganization,
@@ -49,7 +55,7 @@ import {
   voiceProviderFor,
 } from "../voice.js";
 import type { RouterContext } from "./context.js";
-import { meDto } from "./shared.js";
+import { HEARTBEAT_MS, meDto, SESSION_RECHECK_MS } from "./shared.js";
 
 export function accountRoutes(ctx: RouterContext) {
   const { deps, os, authed } = ctx;
@@ -260,6 +266,90 @@ export function accountRoutes(ctx: RouterContext) {
       }),
     },
     notifications: {
+      subscribeCalls: authed.notifications.subscribeCalls.handler(async function* ({ context }) {
+        if (!deps.env?.phoneCallsEnabled || !deps.events.followIncomingCalls)
+          throw new ORPCError("NOT_FOUND");
+        const controller = new AbortController();
+        const signal = context.signal
+          ? AbortSignal.any([context.signal, controller.signal])
+          : controller.signal;
+        const signals = deps.events.followIncomingCalls(context.actor.userId, signal);
+        let pending: Promise<IteratorResult<void>> | undefined;
+        let authorizedAt = Date.now();
+        try {
+          while (!context.signal?.aborted) {
+            pending ??= signals.next();
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const next = await Promise.race([
+              pending,
+              new Promise<"heartbeat">((resolve) => {
+                timer = setTimeout(() => resolve("heartbeat"), HEARTBEAT_MS);
+              }),
+            ]).finally(() => clearTimeout(timer));
+            if (context.stillAuthorized && Date.now() - authorizedAt >= SESSION_RECHECK_MS) {
+              if (!(await context.stillAuthorized())) throw new ORPCError("UNAUTHORIZED");
+              authorizedAt = Date.now();
+            }
+            if (next === "heartbeat") {
+              yield { type: "heartbeat" as const };
+              continue;
+            }
+            pending = undefined;
+            if (next.done) return;
+            yield {
+              type: "incoming.calls" as const,
+              payload: { calls: await loadUserIncomingCalls(deps.prisma, context.actor.userId) },
+            };
+          }
+        } finally {
+          controller.abort();
+          await signals.return(undefined);
+        }
+      }),
+      declineIncomingCall: authed.notifications.declineIncomingCall.handler(
+        async ({ context, input }) => {
+          if (!deps.env?.phoneCallsEnabled) throw new ORPCError("NOT_FOUND");
+          // A locked device has only the call id, and may be viewing a different Space.
+          const settled = await runAsSystem(
+            "decline the signed-in call owner's incoming call",
+            async () => {
+              const message = await deps.prisma.message.findFirst({
+                where: {
+                  clientNonce: callRequestClientNonce(input.callId),
+                  role: "bot",
+                  thread: {
+                    userId: context.actor.userId,
+                    groupId: null,
+                    bot: { userId: context.actor.userId },
+                  },
+                },
+                select: { threadId: true },
+              });
+              if (!message) throw new ORPCError("NOT_FOUND");
+              return settleCallRequest(deps, {
+                threadId: message.threadId,
+                callId: input.callId,
+                from: ["ringing"],
+                status: "declined",
+              });
+            },
+          );
+          if (settled?.status !== "declined") throw new ORPCError("CONFLICT");
+          return { ok: true as const };
+        },
+      ),
+      registerCallPush: authed.notifications.registerCallPush.handler(
+        async ({ context, input }) => {
+          if (!context.sessionId) throw new ORPCError("UNAUTHORIZED");
+          try {
+            await deps.pushTokens.saveDevice?.(context.actor.userId, input, context.sessionId);
+          } catch (error) {
+            if (error instanceof PushSessionEndedError) throw new ORPCError("UNAUTHORIZED");
+            throw error;
+          }
+          return { ok: true as const };
+        },
+      ),
       registerPush: authed.notifications.registerPush.handler(async ({ context, input }) => {
         const sessionId = context.sessionId;
         if (!sessionId) throw new ORPCError("UNAUTHORIZED");
@@ -272,6 +362,8 @@ export function accountRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
       unregisterPush: authed.notifications.unregisterPush.handler(async ({ context }) => {
+        if (context.sessionId)
+          await deps.pushTokens.endSession(context.actor.userId, context.sessionId);
         await deps.pushTokens.remove(context.actor.userId);
         return { ok: true as const };
       }),

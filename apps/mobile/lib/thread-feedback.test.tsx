@@ -486,7 +486,7 @@ describe("scoped mobile outbox", () => {
         const [options, choose] = vi
           .mocked(ActionSheetIOS.showActionSheetWithOptions)
           .mock.calls.at(-1)!;
-        expect(options.options).toEqual(["Send as file", "Try Again", "Cancel"]);
+        expect(options.options).toEqual(["Send as file", "Try again", "Cancel"]);
         expect(options.message).toBe(
           `Image input is not configured for this model.\n\n${fileNote}`,
         );
@@ -494,7 +494,7 @@ describe("scoped mobile outbox", () => {
       } else {
         const [, message, buttons] = vi.mocked(Alert.alert).mock.calls.at(-1)!;
         expect(message).toBe(`Image input is not configured for this model.\n\n${fileNote}`);
-        expect(buttons!.map(({ text }) => text)).toEqual(["Send as file", "Try Again", "Cancel"]);
+        expect(buttons!.map(({ text }) => text)).toEqual(["Send as file", "Try again", "Cancel"]);
         act(() => buttons![1]!.onPress?.());
       }
       expect(retry).toHaveBeenCalledOnce();
@@ -538,7 +538,7 @@ describe("scoped mobile outbox", () => {
     expect(disk.clear).toHaveBeenCalled();
   });
   it.each(["ios", "android"])(
-    "offers Add Model instead of Try Again for missing-model failures on %s",
+    "offers Add model instead of Try again for missing-model failures on %s",
     async (os) => {
       Platform.OS = os as typeof Platform.OS;
       const attempt = feedback.sendAttempt(payload());
@@ -562,7 +562,7 @@ describe("scoped mobile outbox", () => {
         const [options, choose] = vi
           .mocked(ActionSheetIOS.showActionSheetWithOptions)
           .mock.calls.at(-1)!;
-        expect(options.options).toEqual(["Add Model", "Delete", "Cancel"]);
+        expect(options.options).toEqual(["Add model", "Delete", "Cancel"]);
         expect(options.message).toBeUndefined();
         expect(options.cancelButtonIndex).toBe(2);
         expect(options.destructiveButtonIndex).toBe(1);
@@ -571,7 +571,7 @@ describe("scoped mobile outbox", () => {
       } else {
         const buttons = vi.mocked(Alert.alert).mock.calls.at(-1)![2]!;
         expect(vi.mocked(Alert.alert).mock.calls.at(-1)![1]).toBeUndefined();
-        expect(buttons.map(({ text }) => text)).toEqual(["Add Model", "Delete", "Cancel"]);
+        expect(buttons.map(({ text }) => text)).toEqual(["Add model", "Delete", "Cancel"]);
         expect(buttons[2]!.style).toBe("cancel");
         act(() => buttons[0]!.onPress?.());
         expect(router.push).toHaveBeenCalledWith("/(settings)/models");
@@ -594,7 +594,7 @@ describe("scoped mobile outbox", () => {
       Platform.OS = "ios";
     },
   );
-  it.each(["ios", "android"])("keeps Try Again for other send failures on %s", async (os) => {
+  it.each(["ios", "android"])("keeps Try again for other send failures on %s", async (os) => {
     Platform.OS = os as typeof Platform.OS;
     const attempt = feedback.sendAttempt(payload());
     request
@@ -613,13 +613,13 @@ describe("scoped mobile outbox", () => {
       const [options, choose] = vi
         .mocked(ActionSheetIOS.showActionSheetWithOptions)
         .mock.calls.at(-1)!;
-      expect(options.options).toEqual(["Try Again", "Delete", "Cancel"]);
+      expect(options.options).toEqual(["Try again", "Delete", "Cancel"]);
       expect(options.cancelButtonIndex).toBe(2);
       expect(options.destructiveButtonIndex).toBe(1);
       act(() => choose(0));
     } else {
       const buttons = vi.mocked(Alert.alert).mock.calls.at(-1)![2]!;
-      expect(buttons.map(({ text }) => text)).toEqual(["Try Again", "Delete", "Cancel"]);
+      expect(buttons.map(({ text }) => text)).toEqual(["Try again", "Delete", "Cancel"]);
       act(() => buttons[0]!.onPress?.());
     }
     expect(retry).toHaveBeenCalledOnce();
@@ -650,7 +650,7 @@ describe("scoped mobile outbox", () => {
     const [options, choose] = vi
       .mocked(ActionSheetIOS.showActionSheetWithOptions)
       .mock.calls.at(-1)!;
-    expect(options.options).toEqual(["Try Again", "Delete", "Cancel"]);
+    expect(options.options).toEqual(["Try again", "Delete", "Cancel"]);
     expect(options.message).toBeUndefined();
     act(() => choose(0));
     expect(retry).toHaveBeenCalledOnce();

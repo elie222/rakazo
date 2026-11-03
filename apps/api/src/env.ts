@@ -1,5 +1,10 @@
-import type { PhotonProjectCredentials, TelegramBotCredentials } from "@rakazo/adapters";
+import type {
+  ApnsVoipConfig,
+  PhotonProjectCredentials,
+  TelegramBotCredentials,
+} from "@rakazo/adapters";
 import {
+  apnsVoipConfig,
   boatApiKeyFromEnv,
   boatApiUrlFromEnv,
   mcpStdioOptionsFromEnv,
@@ -111,6 +116,7 @@ export interface AppEnv {
   sendblueSigningSecret: string | undefined;
   sendbluePhoneNumber: string | undefined;
   expoAccessToken: string | undefined;
+  apnsVoip?: ApnsVoipConfig;
   smtpUrl: string | undefined;
   emailProvider?: string;
   welcomeEmailEnabled?: boolean;
@@ -291,6 +297,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     sendblueSigningSecret: optional(source.SENDBLUE_SIGNING_SECRET),
     sendbluePhoneNumber: optional(source.SENDBLUE_PHONE_NUMBER),
     expoAccessToken: optional(source.EXPO_ACCESS_TOKEN),
+    apnsVoip: apnsVoipConfig(source),
     smtpUrl: optional(source.SMTP_URL),
     emailProvider: optional(source.EMAIL_PROVIDER),
     emailApiKey: optional(source.EMAIL_API_KEY),

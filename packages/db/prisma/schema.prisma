@@ -64,6 +64,7 @@ model User {
   createdTickets              Ticket[]                     @relation("TicketCreatorUser")
   ticketComments              TicketComment[]              @relation("TicketCommentAuthorUser")
   pushToken                   PushToken?
+  callPushDevices             CallPushDevice[]
   trustedLinkSites            TrustedLinkSite[]
   feedbackReports             FeedbackReport[]
   emailSends                  EmailSend[]
@@ -118,6 +119,21 @@ model PushToken {
   updatedAt DateTime @updatedAt
 
   @@map("push_tokens")
+}
+
+/// Encrypted call registrations per installation. Legacy message push remains compatible.
+model CallPushDevice {
+  id String @id
+  expoTokenDigest String? @unique
+  voipTokenDigest String? @unique
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId String
+  ciphertext String
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, sessionId])
+  @@map("call_push_devices")
 }
 
 model EmailSend {

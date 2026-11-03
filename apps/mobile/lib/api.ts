@@ -5,6 +5,7 @@ import type {
   BotSection,
   ComputerStatus,
   Group,
+  IncomingBotCall,
   Me,
   MessageBlock,
   ModelCatalogEntry,
@@ -23,6 +24,7 @@ import {
   accountSecuritySchema,
   authCapabilitiesSchema,
   CLIENT_UPDATE_REQUIRED_STATUS,
+  IncomingBotCallSchema,
   legacyAccountSecurity,
   legacyAuthCapabilitiesSchema,
 } from "@rakazo/contracts";
@@ -1367,15 +1369,68 @@ export async function subscribeThread(
   cursor: number,
   onEvent: (event: ThreadEvent) => void,
   signal: AbortSignal,
+  requestContext?: ApiRequestContext,
 ) {
-  const context = await captureApiRequestContext();
+  const context = requestContext ?? (await captureApiRequestContext());
   syncMobileAvatarSession(currentApiBase(), currentSessionGeneration());
   const activityFeed = beginMobileAvatarFeed(target, cursor);
+  return subscribeRpcEvents(
+    "threads/subscribe",
+    { ...target, cursor },
+    (event) => {
+      const threadId = event.threadId ?? activityFeed.threadId;
+      if (threadId && typeof event.seq === "number" && event.seq > cursor)
+        mobileLogoAvatarActivity.apply(activityFeed.source, {
+          threadId,
+          seq: event.seq,
+          botId: event.botId,
+          runId: event.runId,
+          type: event.type,
+          payload: event.payload ?? {},
+        });
+      onEvent(displayIdentityEvent(event, identityLabels()));
+    },
+    signal,
+    context,
+    () => mobileLogoAvatarActivity.resetSource(activityFeed.source),
+  );
+}
+
+export async function subscribeIncomingCallEvents(
+  onCalls: (calls: IncomingBotCall[]) => void,
+  signal: AbortSignal,
+) {
+  const context = await captureApiRequestContext(null);
+  return subscribeRpcEvents(
+    "notifications/subscribeCalls",
+    {},
+    (event) => {
+      if (event.type !== "incoming.calls") return;
+      const calls = IncomingBotCallSchema.array().safeParse(event.payload?.calls);
+      if (calls.success) onCalls(calls.data);
+    },
+    signal,
+    context,
+  );
+}
+
+async function subscribeRpcEvents(
+  procedure: string,
+  input: Record<string, unknown>,
+  onEvent: (event: ThreadEvent) => void,
+  signal: AbortSignal,
+  context: ApiRequestContext,
+  onClose: () => void = () => {},
+) {
   const current = () =>
     context.apiBase === currentApiBase() &&
     context.sessionGeneration === currentSessionGeneration();
+  if (!current()) {
+    onClose();
+    return;
+  }
   const res = await fetchServer(
-    `${context.apiBase}/rpc/threads/subscribe`,
+    `${context.apiBase}/rpc/${procedure}`,
     {
       method: "POST",
       headers: {
@@ -1384,20 +1439,20 @@ export async function subscribeThread(
         origin: "rakazo://",
         ...context.headers,
       },
-      body: JSON.stringify({ json: { ...target, cursor } }),
+      body: JSON.stringify({ json: input }),
       signal,
     },
     context.apiBase,
   ).catch((error: unknown) => {
-    mobileLogoAvatarActivity.resetSource(activityFeed.source);
+    onClose();
     if (current() && !signal.aborted && isServerUnreachable(error)) noteServerReachable(false);
     throw error;
   });
   if (current()) noteServerReachable(!isUnreachableStatus(res.status));
   if (!res.ok || !res.body) {
-    mobileLogoAvatarActivity.resetSource(activityFeed.source);
+    onClose();
     cancelResponseBody(res);
-    throw httpError(`rpc threads/subscribe failed (${res.status})`, res);
+    throw httpError(`rpc ${procedure} failed (${res.status})`, res);
   }
   const reader = res.body.getReader();
   let finished = false;
@@ -1433,21 +1488,11 @@ export async function subscribeThread(
         // Heartbeats prove liveness only; forwarding one would advance the caller's cursor.
         if (parsed.json?.type && parsed.json.type !== "heartbeat") {
           if (!current()) {
-            mobileLogoAvatarActivity.resetSource(activityFeed.source);
+            onClose();
             return;
           }
           const event = parsed.json;
-          const threadId = event.threadId ?? activityFeed.threadId;
-          if (threadId && typeof event.seq === "number" && event.seq > cursor)
-            mobileLogoAvatarActivity.apply(activityFeed.source, {
-              threadId,
-              seq: event.seq,
-              botId: event.botId,
-              runId: event.runId,
-              type: event.type,
-              payload: event.payload ?? {},
-            });
-          onEvent(displayIdentityEvent(event, identityLabels()));
+          onEvent(event);
         }
       } catch {
         // Malformed frames and callback errors do not interrupt the subscription.
@@ -1502,7 +1547,7 @@ export async function subscribeThread(
       if (start < value.byteLength) appendFrameBytes(value.subarray(start));
     }
   } finally {
-    mobileLogoAvatarActivity.resetSource(activityFeed.source);
+    onClose();
     if (!finished) {
       try {
         void Promise.resolve(reader.cancel()).catch(() => undefined);

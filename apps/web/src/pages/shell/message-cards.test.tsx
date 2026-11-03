@@ -127,7 +127,7 @@ it("authorizes a card in a normal chat and marks its thread connected", async ()
         />,
       ),
     );
-    expect(host.querySelector("button")?.textContent).toBe("Authorize");
+    expect(host.querySelector("button")?.textContent).toBe("Connect");
     await act(async () => host.querySelector("button")?.click());
     expect(calls.mark).toHaveBeenCalledWith({
       botId: "bot",

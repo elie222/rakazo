@@ -101,11 +101,6 @@ msgstr "{0} {unitLabel}"
 msgid "{0} connection"
 msgstr "Соединение {0}"
 
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} default"
-msgstr "{0} по умолчанию"
-
 #. placeholder {0}: parts.amount
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} GB"
@@ -150,11 +145,6 @@ msgstr "{0} ч. сводки"
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} TB"
 msgstr "{0} ТБ"
-
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} will still respond to direct mentions."
-msgstr "{0} по-прежнему будет отвечать на прямые упоминания."
 
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
@@ -967,10 +957,6 @@ msgstr "Авто"
 msgid "Automated senders"
 msgstr "Автоматические отправители"
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Automated senders will appear after they post here."
-msgstr "Автоматические отправители появятся после публикации здесь."
-
 #: src/pages/RoutineEditor.tsx
 msgid "Available after the routine is saved"
 msgstr "Доступно после сохранения задачи"
@@ -1606,6 +1592,7 @@ msgstr "Убедитесь, что URL доступен из этого сеан
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
+#: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connect"
 msgstr "Подключить"
@@ -2835,10 +2822,6 @@ msgstr "Включить {0}"
 msgid "Ends {day}"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Engage when... Ignore..."
-msgstr "Включайтесь, когда... Игнорируйте..."
-
 #: src/components/GitHubStarPrompt.tsx
 msgid "Enjoying Rakazo?"
 msgstr ""
@@ -2927,6 +2910,10 @@ msgstr "Каждый час"
 #: src/lib/cron.ts
 msgid "Every hour at :{0}"
 msgstr "Каждый час на {0}-й минуте"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Every message"
+msgstr "Все сообщения"
 
 #: src/lib/cron.ts
 msgid "Every Monday"
@@ -3415,6 +3402,10 @@ msgstr "Инструкции {position}"
 msgid "Instructions are too long. Untick some files."
 msgstr "Инструкции слишком длинные. Снимите отметку с некоторых файлов."
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Instructions for this room"
+msgstr "Инструкции для этой комнаты"
+
 #: src/components/AskCard.tsx
 msgid "Instructions updated"
 msgstr "Инструкции обновлены"
@@ -3562,12 +3553,7 @@ msgstr "Привязать SSO"
 msgid "List view"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Listen"
-msgstr "Слушать"
-
 #: src/components/call/CallCard.tsx
-#: src/pages/ExternalConversationSettings.tsx
 msgid "Listening"
 msgstr "Прослушивание"
 
@@ -5073,6 +5059,10 @@ msgstr "Заменить ключ"
 msgid "Replace value"
 msgstr ""
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Replies to"
+msgstr "Отвечает на"
+
 #: src/pages/shell/message-hover-actions.tsx
 #: src/pages/shell/quote-selection-button.tsx
 msgid "Reply"
@@ -5100,6 +5090,7 @@ msgid "Research & writing"
 msgstr ""
 
 #: src/components/ComputerMaintenanceActions.tsx
+#: src/pages/ExternalConversationSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Reset"
 msgstr "Сбросить"
@@ -5210,10 +5201,6 @@ msgstr "Отозвать"
 msgid "Revoked"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Room guidance"
-msgstr "Инструкции для комнаты"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Rotate key"
 msgstr "Сменить ключ"
@@ -5279,6 +5266,10 @@ msgstr "Запускается, когда этот бот получает пр
 #: src/pages/PluginsOverlay.tsx
 msgid "Sales & CRM"
 msgstr ""
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Same as {botName}"
+msgstr "Как у {botName}"
 
 #: src/lib/cron.ts
 msgid "Saturday"
@@ -6130,6 +6121,7 @@ msgid "This browser has no on-device dictation. Connect a voice provider with tr
 msgstr ""
 
 #: src/components/call/IncomingCall.tsx
+#: src/lib/user-error.ts
 msgid "This call is no longer ringing."
 msgstr "Этот звонок уже не активен."
 
@@ -6527,10 +6519,6 @@ msgstr "Использовать найденную модель"
 #: src/lib/model-connection-preflight.ts
 msgid "Use Connect to verify the key."
 msgstr "Используйте «Подключить», чтобы проверить ключ."
-
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Use default guidance"
-msgstr "Использовать рекомендации по умолчанию"
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Use defaults"
