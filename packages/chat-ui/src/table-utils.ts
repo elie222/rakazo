@@ -2,11 +2,6 @@ import { droppedTableHtmlText } from "@rakazo/contracts";
 import type { MarkdownCopy } from "./markdown-copy";
 import { defaultMarkdownCopy } from "./markdown-copy";
 
-/**
- * Pure helpers behind the markdown table card: hast extraction, type
- * inference, sorting, and copy/export serialization.
- */
-
 /** Structural hast subset — avoids a direct @types/hast dependency. */
 export interface HastNode {
   type?: string;

@@ -17,10 +17,15 @@ const settingsScreens = new Set([
   "messaging",
   "language",
   "models",
+  "plugin",
   "signup-survey",
+  "skill",
+  "skills",
   "space",
   "team-conversation",
+  "vault",
   "voice",
+  "wallet",
 ]);
 
 /** Registers the open settings sheet's close action; the returned function unregisters it. */
@@ -47,7 +52,6 @@ export function settingsSheetCloser(sheet: SheetNavigation): () => void {
   };
 }
 
-/** Closes the settings sheet if one is open. */
 export function closeSettingsSheet() {
   closeSheet?.();
 }
@@ -58,11 +62,17 @@ export function openFromSettingsSheet(router: { push(href: Href): void }, href: 
   router.push(href);
 }
 
-/** Whether a link (`rakazo:///models`, `rakazo://models` or `/models`) opens a settings page. */
+/** The screen a link (`rakazo:///models`, `rakazo://models` or `/models`) opens. */
+export function linkScreen(link: string): string {
+  return (
+    link
+      .replace(/^[a-z][a-z\d+.-]*:\/\//i, "")
+      .replace(/^\/+/, "")
+      .split(/[/?#]/, 1)[0] ?? ""
+  );
+}
+
+/** Whether a link opens a settings page. */
 export function isSettingsLink(link: string): boolean {
-  const screen = link
-    .replace(/^[a-z][a-z\d+.-]*:\/\//i, "")
-    .replace(/^\/+/, "")
-    .split(/[/?#]/, 1)[0];
-  return settingsScreens.has(screen ?? "");
+  return settingsScreens.has(linkScreen(link));
 }

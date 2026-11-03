@@ -1,8 +1,21 @@
 import type { McpServerHealth } from "@rakazo/contracts";
+import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
 const HEALTH_MESSAGE_MAX = 2000;
+
+/** What the MCP SDK throws when an authorization server offers no dynamic client
+ * registration; only a client registered with it out of band can sign in. */
+export const MCP_DYNAMIC_REGISTRATION_UNSUPPORTED =
+  "Incompatible auth server: does not support dynamic client registration";
+
+/** Whether connecting failed because the server needs a pre-registered OAuth client. */
+export function needsMcpOAuthClient(error: unknown, depth = 0): boolean {
+  if (depth > 5 || !(error instanceof Error)) return false;
+  if (error.message.includes(MCP_DYNAMIC_REGISTRATION_UNSUPPORTED)) return true;
+  return needsMcpOAuthClient(error.cause, depth + 1);
+}
 
 /** A health observation to persist on an MCP server row. `checkedAt` defaults to now. */
 export type McpServerHealthUpdate = {
@@ -19,13 +32,16 @@ export async function recordMcpServerHealth(
   prisma: PrismaClient,
   serverId: string,
   update: McpServerHealthUpdate,
+  /** Only record it while the server still has this revision, so a result about old
+   * settings never replaces one about the current settings. */
+  revision?: number,
 ): Promise<void> {
   try {
     // updateMany so a server deleted mid-probe is a silent no-op. Only health columns are
     // written: `revision` stays put (a bump evicts live sessions). `updatedAt` is touched by
     // Prisma's @updatedAt, but nothing orders or version-checks on it (it is display-only).
     await prisma.mcpServer.updateMany({
-      where: { id: serverId },
+      where: { id: serverId, ...(revision === undefined ? {} : { revision }) },
       data: {
         healthStatus: update.status,
         healthMessage:
@@ -41,7 +57,6 @@ export async function recordMcpServerHealth(
   }
 }
 
-/** Map persisted health columns onto the API DTO. */
 export function mcpServerHealthDto(row: {
   healthStatus: string;
   healthMessage: string | null;
@@ -54,6 +69,10 @@ export function mcpServerHealthDto(row: {
   return {
     status: status ?? "unknown",
     message: row.healthMessage ?? null,
+    code:
+      status === "error" && row.healthMessage?.includes(MCP_DYNAMIC_REGISTRATION_UNSUPPORTED)
+        ? MCP_OAUTH_CLIENT_REQUIRED
+        : null,
     toolCount: row.healthToolCount ?? null,
     checkedAt: row.healthCheckedAt?.toISOString() ?? null,
   };

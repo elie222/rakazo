@@ -194,11 +194,8 @@ async function materializeThreadFiles(
   input: Parameters<typeof materializeCurrentTurnFiles>[2],
   preserveExisting: boolean,
 ): Promise<MaterializedThreadFile[]> {
-  // "image" attachments (e.g. a photo pasted or uploaded in chat) are backed
-  // by a real artifact exactly like "file" ones — the model seeing them
-  // inline for vision (loadCurrentTurnImages) doesn't put them on disk, so
-  // they must be included here too or a bot can describe a photo it can't
-  // actually attach, forward, or hand to a tool that needs the file.
+  // Images seen inline for vision are not on disk, so they are copied too; otherwise a bot can
+  // describe a photo it cannot attach, forward, or hand to a tool.
   const fileBlocks = attachmentBlocks(blocks);
   if (!fileBlocks.length) return [];
   const byId = await attachedArtifacts(deps.prisma, fileBlocks, input.context);

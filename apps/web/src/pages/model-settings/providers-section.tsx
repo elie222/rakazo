@@ -65,6 +65,11 @@ export function ProvidersSection({
                 <span className="min-w-0 flex-1 truncate text-[15px] text-foreground">
                   {nameOf(credential)}
                 </span>
+                {credential.reconnectRequired ? (
+                  <span className="shrink-0 text-[13px] text-warning">
+                    <Trans>Sign in again</Trans>
+                  </span>
+                ) : null}
                 <ChevronRight
                   className={`size-4 shrink-0 text-muted-foreground transition-transform ${panelAt === credential.id ? "rotate-90" : ""}`}
                   aria-hidden

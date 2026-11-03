@@ -27,20 +27,31 @@ function readComposerLayout(
 function measureTextareaHeight(textarea: HTMLTextAreaElement, width?: number) {
   const { style } = textarea;
   style.overflowY = "hidden";
-  if (width !== undefined) {
-    style.flex = "none";
-    style.width = `${width}px`;
-  }
+  if (width !== undefined) style.width = `${width}px`;
   style.height = "0px";
   const height = textarea.scrollHeight;
   style.overflowY = "";
-  style.flex = "";
   style.width = "";
   return height;
 }
 
+export function spaceBetween(
+  first: Pick<DOMRect, "left" | "right">,
+  second: Pick<DOMRect, "left" | "right">,
+) {
+  return Math.max(first.left, second.left) - Math.min(first.right, second.right);
+}
+
+function syncMirror(textarea: HTMLTextAreaElement, mirror: HTMLElement | null) {
+  if (!mirror) return;
+  mirror.style.direction = getComputedStyle(textarea).direction;
+  mirror.style.scrollbarGutter = textarea.scrollHeight > textarea.clientHeight ? "stable" : "";
+  mirror.scrollTop = textarea.scrollTop;
+}
+
 export function useComposerLayout(draft: string, hasChips: boolean) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const mirrorRef = useRef<HTMLDivElement>(null);
   const [composerExpanded, setComposerExpanded] = useState(false);
   const attachButtonRef = useRef<HTMLButtonElement>(null);
   const composerActionsRef = useRef<HTMLDivElement>(null);
@@ -66,6 +77,7 @@ export function useComposerLayout(draft: string, hasChips: boolean) {
       }
       const contentHeight = measureTextareaHeight(textarea);
       textarea.style.height = `${contentHeight}px`;
+      syncMirror(textarea, mirrorRef.current);
       if (draft.length === 0) {
         setComposerExpanded(false);
         return;
@@ -78,17 +90,19 @@ export function useComposerLayout(draft: string, hasChips: boolean) {
       const actions = composerActionsRef.current;
       if (!attach || !actions) return;
       const besideControls =
-        actions.getBoundingClientRect().left -
-        attach.getBoundingClientRect().right -
+        spaceBetween(attach.getBoundingClientRect(), actions.getBoundingClientRect()) -
         2 * COMPOSER_ONE_LINE_GAP_PX;
       const heightBeside = measureTextareaHeight(
         textarea,
         besideControls - COMPOSER_COLLAPSE_SLACK_PX,
       );
       textarea.style.height = `${contentHeight}px`;
+      syncMirror(textarea, mirrorRef.current);
       if (heightBeside <= COMPOSER_SINGLE_LINE_MAX_PX) setComposerExpanded(false);
     }
 
+    const scrolled = () => syncMirror(el, mirrorRef.current);
+    el.addEventListener("scroll", scrolled);
     syncHeight();
     let lastWidth = el.getBoundingClientRect().width;
     const observer = new ResizeObserver(() => {
@@ -100,7 +114,10 @@ export function useComposerLayout(draft: string, hasChips: boolean) {
       syncHeight();
     });
     observer.observe(el);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      el.removeEventListener("scroll", scrolled);
+    };
   }, [draft]);
 
   useLayoutEffect(() => {
@@ -112,6 +129,7 @@ export function useComposerLayout(draft: string, hasChips: boolean) {
     const start = composerLayoutRef.current;
     if (!bar || !field || !textarea) return;
     textarea.style.height = `${measureTextareaHeight(textarea)}px`;
+    syncMirror(textarea, mirrorRef.current);
     const resting = readComposerLayout(bar, field);
     // A send or a cleared draft snaps back; nothing is left to follow.
     if (
@@ -157,6 +175,7 @@ export function useComposerLayout(draft: string, hasChips: boolean) {
   }, [expanded]);
   return {
     textareaRef,
+    mirrorRef,
     attachButtonRef,
     composerActionsRef,
     composerBarRef,

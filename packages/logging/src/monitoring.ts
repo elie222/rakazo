@@ -28,10 +28,7 @@ export function isMonitoringUserId(value: unknown): value is string {
 }
 
 export function scrubMonitoringText(value: string): string {
-  // Leave later drive prefixes available for independent redaction.
-  return redactSensitiveText(value)
-    .replace(/[A-Z]:[\\/]Users[\\/](?:(?![A-Z]:[\\/])[^\\/\r\n])+/gi, "[user]")
-    .replace(/(?:\/Users\/|\/home\/)[^/\s]+/g, "/[user]");
+  return redactSensitiveText(value);
 }
 
 export function stripMonitoringUrl(value: string): string {

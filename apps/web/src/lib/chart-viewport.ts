@@ -1,6 +1,4 @@
-/** Size for the expanded chart modal: 88% of the viewport width capped at
- * 1240px, and 66% of the viewport height. Pure so it can be unit-tested;
- * callers recompute it when the window resizes. */
+/** Expanded chart modal size: 88% of the viewport width capped at 1240px, and 66% of its height. */
 export function chartViewport(
   windowWidth: number,
   windowHeight: number,

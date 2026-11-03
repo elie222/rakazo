@@ -3,6 +3,7 @@ import { displayName } from "@rakazo/core";
 import type { SignupPolicyEnv } from "./bootstrap-user.js";
 import { bootstrapUserSpace } from "./bootstrap-user.js";
 import type { PrismaClient } from "./client.js";
+import { Prisma } from "./client.js";
 import { createRepos } from "./repos.js";
 
 export interface MessagingIdentityRequest {
@@ -113,7 +114,6 @@ export async function provisionMessagingIdentity(
       },
       {
         name: "Assistant",
-        title: "",
         description: `Personal agent for ${address} (${provider}), auto-created on first message.`,
         instructions:
           "You are the owner's personal agent. The owner reaches you over chat; " +
@@ -140,8 +140,7 @@ export async function provisionMessagingIdentity(
       },
     });
   } catch {
-    // A concurrent first-inbound won the (provider, address) race; report its
-    // result.
+    // A concurrent first-inbound won the (provider, address) race; report its result.
     const winner = await prisma.messagingIdentity.findUnique({ where });
     if (!winner) {
       throw new Error(`messaging identity for ${provider}:${address} vanished after create failed`);
@@ -204,9 +203,12 @@ export async function issueMessagingLinkCode(
   }
   const expiresAt = new Date(Date.now() + MESSAGING_LINK_CODE_TTL_MS);
   // One active code per user: a fresh request supersedes the previous one.
-  await prisma.messagingLinkCode.deleteMany({ where: { userId: request.userId } });
-  await prisma.messagingLinkCode.create({
-    data: { code, ...request, expiresAt },
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw(Prisma.sql`
+      SELECT pg_advisory_xact_lock(hashtextextended(${`messaging-link-code:${request.userId}`}, 0))::text AS "lock"
+    `);
+    await tx.messagingLinkCode.deleteMany({ where: { userId: request.userId } });
+    await tx.messagingLinkCode.create({ data: { code, ...request, expiresAt } });
   });
   return { code, expiresAt };
 }

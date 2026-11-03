@@ -27,10 +27,10 @@ export function sandboxKindForBot(envKind: string, computerHost: string | null |
   return envKind;
 }
 
-export function createRunSandbox(
+export async function createRunSandbox(
   kind: string,
   opts: SandboxProviderOptions & { prisma?: PrismaClient },
-): SandboxProvider {
+): Promise<SandboxProvider> {
   if (kind === "desktop") {
     assertHostCommandsAllowed();
     return new DesktopSandboxProvider({
@@ -38,7 +38,29 @@ export function createRunSandbox(
       hostRoots: [homedir()],
     });
   }
-  const primary = createSandboxProvider(kind, opts);
+  const primary = await createSandboxProvider(kind, {
+    ...opts,
+    onUnsafeStop: opts.prisma
+      ? async (providerRef) => {
+          const quarantined = await opts.prisma!.computer.updateMany({
+            where: { kind, providerRef },
+            data: {
+              state: "quarantined",
+              screenUrl: null,
+              screenGeneration: { increment: 1 },
+              controlFence: { increment: 1 },
+              controlHolder: "none",
+              controlLeaseId: null,
+              controlLeaseExpiresAt: null,
+              controlBotId: null,
+              controlRunId: null,
+            },
+          });
+          if (quarantined.count === 0)
+            throw new Error("Computer recovery requirement could not be recorded");
+        }
+      : opts.onUnsafeStop,
+  });
   if (kind !== "docker" || !opts.prisma) return primary;
   return new HostAwareSandbox(
     primary,
@@ -79,7 +101,7 @@ export class HostAwareSandbox implements SandboxProvider {
     return this.isolated.describe();
   }
 
-  private route(computer: ComputerRef) {
+  private route(computer: Pick<ComputerRef, "kind">) {
     return computer.kind === "desktop" ? this.host : this.isolated;
   }
 
@@ -211,7 +233,7 @@ export class HostAwareSandbox implements SandboxProvider {
     return this.route(computer).snapshot(computer, context);
   }
 
-  billsWhileRunning(computer: ComputerRef): boolean {
+  billsWhileRunning(computer: Pick<ComputerRef, "kind">): boolean {
     return this.route(computer).billsWhileRunning?.(computer) ?? false;
   }
 

@@ -7,6 +7,7 @@ import { useSearchParams } from "react-router-dom";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import { peekInitialBootstrap } from "../lib/bootstrap";
 import { lazyComponent } from "../lib/preload-recovery";
+import { claimStoredReferral } from "../lib/referral";
 import { rpc } from "../lib/rpc";
 import type { SupportChat } from "../lib/support-chat";
 import { useSupportChat } from "../lib/support-chat";
@@ -75,6 +76,7 @@ export function SubscriptionGate({
         if (!capabilities.billing) return { kind: "open" };
         const me = await loadMe();
         if (!me.billingEnabled) return { kind: "open" };
+        void claimStoredReferral();
         const status = await rpc.billing.status();
         if (active && capabilities.crispWebsiteId) {
           setSupportChat({

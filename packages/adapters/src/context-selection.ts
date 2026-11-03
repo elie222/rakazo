@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import type { AgentContextStrategy, CacheCapabilities } from "@rakazo/adapter-kit";
-import { MODEL_CONTEXT_TOO_SMALL_ERROR } from "@rakazo/core";
+import {
+  MODEL_CONTEXT_TOO_SMALL_ERROR,
+  shortenedTextLength,
+  textBoundary,
+  truncatePlainText,
+} from "@rakazo/core";
 
 export type ContextStrategy = AgentContextStrategy;
 export interface ContextMessage {
@@ -201,17 +206,21 @@ function shortenHistoryResult(
   // Snapshot text is only navigation; original reference offsets retain exact evidence.
   for (const snapshot of Array.isArray(payload.snapshots) ? payload.snapshots : []) {
     if (!snapshot || typeof snapshot !== "object") continue;
-    if (typeof snapshot.topic === "string") snapshot.topic = snapshot.topic.slice(0, 80);
-    if (typeof snapshot.outcome === "string") snapshot.outcome = snapshot.outcome.slice(0, 80);
+    if (typeof snapshot.topic === "string") snapshot.topic = truncatePlainText(snapshot.topic, 80);
+    if (typeof snapshot.outcome === "string")
+      snapshot.outcome = truncatePlainText(snapshot.outcome, 80);
   }
   payload.contextTruncated = true;
   let encoded = JSON.stringify(payload);
   while (encoded.length > size) {
     const longest = refs.reduce<HistoryTextReference | undefined>(
-      (best, ref) => (!best || ref.text.length > best.text.length ? ref : best),
+      (best, ref) =>
+        shortenedTextLength(ref.text) > 0 && (!best || ref.text.length > best.text.length)
+          ? ref
+          : best,
       undefined,
     );
-    if (!longest || longest.text.length < 2) {
+    if (!longest) {
       return JSON.stringify({
         untrusted: true,
         contextTruncated: true,
@@ -224,7 +233,7 @@ function shortenHistoryResult(
         },
       });
     }
-    longest.text = longest.text.slice(0, Math.floor(longest.text.length / 2));
+    longest.text = longest.text.slice(0, shortenedTextLength(longest.text));
     longest.nextTextOffset = longest.textOffset + longest.text.length;
     longest.truncated = true;
     encoded = JSON.stringify(payload);
@@ -424,8 +433,19 @@ export function shortenToolResultText(
     shortenHistoryResult(source, size, tool) ??
     shortenMcpEnvelope(source, size, marker) ??
     shortenStructuredResult(source, size, marker) ??
-    `${source.slice(0, Math.floor(size / 2))}\n${afterUse ? OMITTED_AFTER_USE : OMITTED_TEXT_BEFORE_USE}\n${source.slice(-Math.floor(size / 2))}`
+    shortenPlainText(source, size, afterUse ? OMITTED_AFTER_USE : OMITTED_TEXT_BEFORE_USE)
   );
+}
+
+/** Keep the head and tail halves of plain text around an omission marker. */
+export function shortenPlainText(
+  source: string,
+  size: number,
+  marker = OMITTED_TEXT_BEFORE_USE,
+): string {
+  const half = Math.floor(size / 2);
+  const tail = textBoundary(source, source.length - half);
+  return `${truncatePlainText(source, half)}\n${marker}\n${source.slice(tail)}`;
 }
 interface Group {
   indexes: number[];

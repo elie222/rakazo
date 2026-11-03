@@ -63,8 +63,14 @@ describe("listSpaceGroupsForSpaces", () => {
         pinned: true,
         sectionId: null,
         members: [
-          { botId: "bot-1", name: "Triage", color: "#111", status: "idle" },
-          { botId: "bot-2", name: "Responder", color: "#222", status: "running" },
+          { botId: "bot-1", name: "Triage", color: "#111", avatarSet: "organic", status: "idle" },
+          {
+            botId: "bot-2",
+            name: "Responder",
+            color: "#222",
+            avatarSet: "organic",
+            status: "running",
+          },
         ],
         preview: "Escalation pending",
         unread: true,
@@ -155,7 +161,9 @@ describe("archiveGroup", () => {
     findManyComputers = vi.fn(async ({ where }: { where: ComputerWhere }) =>
       computerRows.filter((row) => matches(row, where)),
     );
-    runUpdateMany = vi.fn();
+    runUpdateMany = vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
+      where.id.in.map((id) => ({ id })),
+    );
     attemptUpdateMany = vi.fn();
     taskUpdateMany = vi.fn();
     // computer-1 is a Team computer: bot-2's lease there belongs to a run outside this group.
@@ -224,7 +232,7 @@ describe("archiveGroup", () => {
       message: { findMany: vi.fn(async () => []) },
       $queryRaw: queryRaw,
       chatGroup: { findFirst, update: groupUpdate },
-      run: { findMany: findManyRuns, updateMany: runUpdateMany },
+      run: { findMany: findManyRuns, updateManyAndReturn: runUpdateMany },
       attempt: { updateMany: attemptUpdateMany },
       task: { updateMany: taskUpdateMany },
       secret: { deleteMany: vi.fn() },

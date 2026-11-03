@@ -14,14 +14,9 @@ import { getLogger } from "@rakazo/logging";
 import type { SpaceDeletionDeps } from "./space-deletion.js";
 
 /**
- * Delete what an account leaves on bot computers before its rows go.
- *
- * Spaces nobody else uses go entirely. In spaces others still use, the account's bots go with
- * their folders and browser profiles (on the account's own Team Computer and on the space's Team
- * Computer from before each person got their own), and so do the account's computers: since
- * then a Team Computer only ever runs one person's bots. Each sandbox is destroyed at its
- * provider before its row goes, so a failure keeps the handle and deleting again resumes from
- * what is left.
+ * In shared spaces, the account's bot folders also live on the space's Team Computer from before
+ * each person got their own. Each sandbox is destroyed at its provider before its row goes, so a
+ * failure keeps the handle and deleting again resumes from what is left.
  */
 export async function deleteAccountContent(deps: SpaceDeletionDeps, userId: string): Promise<void> {
   const context = (spaceId: string, botId?: string): AdapterContext => ({

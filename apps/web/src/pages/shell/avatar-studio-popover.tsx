@@ -1,5 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import type { BotAvatarSet } from "@rakazo/contracts";
+import { resolveBotAvatarSet } from "@rakazo/contracts";
 import { SHIPPED_BOT_AVATAR_SHAPE_KEYS } from "@rakazo/core";
 import {
   BOT_AVATAR_COLORS,
@@ -33,11 +35,15 @@ export function BotLookPicker({
   value,
   identity,
   organicIdentities,
+  avatarSet = "organic",
+  onAvatarSetChange,
   onChange,
 }: {
   value: string;
   identity?: string;
   organicIdentities?: readonly string[];
+  avatarSet?: BotAvatarSet;
+  onAvatarSetChange?: (set: BotAvatarSet, value: string) => void;
   onChange: (value: string, identity?: string) => void;
 }) {
   const parsed = parseBotAvatar(value);
@@ -50,56 +56,73 @@ export function BotLookPicker({
 
   return (
     <div className="space-y-4">
-      <div>
-        {organicIdentities ? null : (
-          <div className="mb-2 flex items-center justify-between">
-            <div className="text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
-              <Trans>Shape</Trans>
+      <Tabs
+        value={avatarSet}
+        onValueChange={(next) =>
+          onAvatarSetChange?.(resolveBotAvatarSet(next), defaultBotAvatarValue(value))
+        }
+      >
+        <TabsList className="w-full" aria-label={t`Icon set`}>
+          <TabsTrigger value="organic" className="flex-1">
+            <Trans>Original</Trans>
+          </TabsTrigger>
+          <TabsTrigger value="rakazo" className="flex-1">
+            <Trans>Rakazo</Trans>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+      {avatarSet === "organic" ? (
+        <div>
+          {organicIdentities ? null : (
+            <div className="mb-2 flex items-center justify-between">
+              <div className="text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
+                <Trans>Shape</Trans>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                data-testid="avatar-studio-default"
+                aria-pressed={isDefaultLook}
+                onClick={() => {
+                  const next = defaultBotAvatarValue(value);
+                  if (next !== value) onChange(next);
+                }}
+                className={`px-3 py-1 text-xs font-medium transition-colors ${
+                  isDefaultLook
+                    ? "bg-secondary text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Trans>Default</Trans>
+              </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              data-testid="avatar-studio-default"
-              aria-pressed={isDefaultLook}
-              onClick={() => {
-                const next = defaultBotAvatarValue(value);
-                if (next !== value) onChange(next);
-              }}
-              className={`px-3 py-1 text-xs font-medium transition-colors ${
-                isDefaultLook
-                  ? "bg-secondary text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Trans>Default</Trans>
-            </Button>
+          )}
+          <div
+            className={`grid place-items-center gap-2 ${organicIdentities ? "grid-cols-4 sm:grid-cols-8 sm:gap-1" : "grid-cols-4"}`}
+          >
+            {organicIdentities?.map((organicIdentity, index) => (
+              <BotShapePreview
+                key={organicIdentity}
+                identity={organicIdentity}
+                label={t`Shape ${index + 1}`}
+                color={currentColor}
+                selected={isDefaultLook && identity === organicIdentity}
+                onClick={() => onChange(currentColor, organicIdentity)}
+              />
+            ))}
+            {SHIPPED_BOT_AVATAR_SHAPE_KEYS.map((key, shapeIndex) => (
+              <BotShapePreview
+                key={key}
+                shapeIndex={shapeIndex}
+                color={currentColor}
+                selected={!parsed.isImage && parsed.shapeIndex === shapeIndex}
+                onClick={() => onChange(`${currentColor}::shape_${shapeIndex}`)}
+              />
+            ))}
           </div>
-        )}
-        <div
-          className={`grid place-items-center gap-2 ${organicIdentities ? "grid-cols-4 sm:grid-cols-8 sm:gap-1" : "grid-cols-4"}`}
-        >
-          {organicIdentities?.map((organicIdentity, index) => (
-            <BotShapePreview
-              key={organicIdentity}
-              identity={organicIdentity}
-              label={t`Shape ${index + 1}`}
-              color={currentColor}
-              selected={isDefaultLook && identity === organicIdentity}
-              onClick={() => onChange(currentColor, organicIdentity)}
-            />
-          ))}
-          {SHIPPED_BOT_AVATAR_SHAPE_KEYS.map((key, shapeIndex) => (
-            <BotShapePreview
-              key={key}
-              shapeIndex={shapeIndex}
-              color={currentColor}
-              selected={!parsed.isImage && parsed.shapeIndex === shapeIndex}
-              onClick={() => onChange(`${currentColor}::shape_${shapeIndex}`)}
-            />
-          ))}
         </div>
-      </div>
+      ) : null}
 
       <div className="border-t border-border pt-2">
         {organicIdentities ? null : (
@@ -136,8 +159,9 @@ export interface AvatarStudioPopoverProps {
   value: string;
   identity?: string;
   status?: string;
+  avatarSet?: BotAvatarSet;
   size?: number;
-  onChange: (value: string) => void;
+  onChange: (value: string, avatarSet?: BotAvatarSet) => void;
   disabled?: boolean;
 }
 
@@ -145,6 +169,7 @@ export function AvatarStudioPopover({
   value,
   identity,
   status,
+  avatarSet = "organic",
   size = 72,
   onChange,
   disabled = false,
@@ -222,7 +247,13 @@ export function AvatarStudioPopover({
         aria-label={t`Customize bot avatar`}
         data-testid="avatar-studio-trigger"
       >
-        <BotAvatar color={value} identity={identity} size={size} status={status} />
+        <BotAvatar
+          color={value}
+          identity={identity}
+          size={size}
+          status={status}
+          avatarSet={avatarSet}
+        />
         <div className="absolute -right-1 -bottom-1 flex size-6 items-center justify-center rounded-full border-2 border-background bg-secondary text-foreground shadow-md transition-transform group-hover:scale-110">
           <Pencil size={12} strokeWidth={2.2} />
         </div>
@@ -254,7 +285,13 @@ export function AvatarStudioPopover({
           </DialogHeader>
 
           <div className="flex flex-col items-center justify-center py-2">
-            <BotAvatar color={value} identity={identity} size={78} status={status} />
+            <BotAvatar
+              color={value}
+              identity={identity}
+              size={78}
+              status={status}
+              avatarSet={avatarSet}
+            />
           </div>
 
           <Tabs
@@ -284,7 +321,13 @@ export function AvatarStudioPopover({
             </div>
 
             <TabsContent value="bot" className="pt-1" data-testid="avatar-studio-bot-tab">
-              <BotLookPicker value={value} onChange={onChange} />
+              <BotLookPicker
+                value={value}
+                identity={identity}
+                avatarSet={avatarSet}
+                onChange={(next) => onChange(next)}
+                onAvatarSetChange={(set, next) => onChange(next, set)}
+              />
             </TabsContent>
             <TabsContent value="upload">
               <button

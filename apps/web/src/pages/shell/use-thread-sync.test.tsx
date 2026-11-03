@@ -12,7 +12,11 @@ vi.mock("@rakazo/core", async (original) => ({
   runThreadSubscription: vi.fn(async () => {}),
 }));
 vi.mock("../../lib/query", () => ({
-  queryClient: { getQueryData: () => undefined, setQueryData: vi.fn() },
+  queryClient: {
+    getQueryData: () => undefined,
+    setQueryData: vi.fn(),
+    invalidateQueries: vi.fn(async () => {}),
+  },
 }));
 vi.mock("@rakazo/core/query", () => ({ fetchFresh: vi.fn(async () => []) }));
 
@@ -50,7 +54,7 @@ it.each([false, true])(
       rpc: { threads: { get } },
       queries: {
         threads: { get: { queryKey: vi.fn(() => ["thread"]) } },
-        routines: { list: { queryOptions: vi.fn() } },
+        routines: { list: { queryOptions: vi.fn() }, history: { key: vi.fn(() => ["history"]) } },
         skills: { list: { queryOptions: vi.fn() } },
       },
       thread: {

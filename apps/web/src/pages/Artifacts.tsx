@@ -616,7 +616,13 @@ function BotFilterChip({
       style={{ backgroundColor: active ? `${hex}26` : undefined, borderColor: `${hex}66` }}
       className={active ? "text-foreground" : "text-muted-foreground"}
     >
-      <BotAvatar color={bot.color} identity={bot.id} size={16} status={bot.status} />
+      <BotAvatar
+        avatarSet={bot.avatarSet}
+        color={bot.color}
+        identity={bot.id}
+        size={16}
+        status={bot.status}
+      />
       <span className="max-w-[120px] truncate">{bot.name}</span>
     </Button>
   );
@@ -664,7 +670,13 @@ function ArtifactCard({
         <div className="mt-auto flex items-center gap-2 text-[12px] text-muted-foreground">
           {bot ? (
             <>
-              <BotAvatar color={bot.color} identity={bot.id} size={20} status={bot.status} />
+              <BotAvatar
+                avatarSet={bot.avatarSet}
+                color={bot.color}
+                identity={bot.id}
+                size={20}
+                status={bot.status}
+              />
               <span className="min-w-0 flex-1 truncate">{bot.name}</span>
             </>
           ) : (
@@ -726,7 +738,13 @@ function ArtifactRow({
         <div className="flex items-center gap-1.5 ps-8 text-[11.5px] text-muted-foreground">
           {bot ? (
             <>
-              <BotAvatar color={bot.color} identity={bot.id} size={14} status={bot.status} />
+              <BotAvatar
+                avatarSet={bot.avatarSet}
+                color={bot.color}
+                identity={bot.id}
+                size={14}
+                status={bot.status}
+              />
               <span className="me-1 max-w-[140px] truncate">{bot.name}</span>
             </>
           ) : null}

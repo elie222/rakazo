@@ -15,6 +15,7 @@ import {
   filterCatalog,
   isComposioEnabled,
   isNoAuthToolkitError,
+  isNoManagedAuthError,
   mergeConnectedPlugins,
   needsLivePluginSync,
   pickReusableConnection,
@@ -26,7 +27,11 @@ import { DestinationEmulator } from "./destination-emulator.js";
 const composioSdkState = vi.hoisted(() => ({
   created: [] as Array<{ userId: string; config: Record<string, unknown> }>,
   directoryFails: false,
-  executions: [] as Array<{ tool: string; args: Record<string, unknown> }>,
+  executions: [] as Array<{
+    tool: string;
+    args: Record<string, unknown>;
+    options?: { account?: string };
+  }>,
   executeResult: null as null | { data: Record<string, unknown>; error: string | null },
   failTools: null as null | string[],
   logIds: null as null | string[],
@@ -48,6 +53,7 @@ const composioSdkState = vi.hoisted(() => ({
       execute?: (
         tool: string,
         args: Record<string, unknown>,
+        options?: { account?: string },
       ) => Promise<{
         data: Record<string, unknown>;
         error: string | null;
@@ -118,8 +124,12 @@ vi.mock("@composio/core", () => ({
                 },
               ]
             : [],
-        execute: async (tool: string, args: Record<string, unknown>) => {
-          composioSdkState.executions.push({ tool, args });
+        execute: async (
+          tool: string,
+          args: Record<string, unknown>,
+          options?: { account?: string },
+        ) => {
+          composioSdkState.executions.push(options ? { tool, args, options } : { tool, args });
           const failed = composioSdkState.failTools?.includes(tool) ?? false;
           return {
             ...(failed
@@ -157,6 +167,19 @@ describe("composio tool mapping", () => {
       "HACKERNEWS_GET_USER",
     ]);
     expect(tools[1]?.inputSchema).toMatchObject({ properties: { username: { type: "string" } } });
+  });
+
+  it("marks the multi-execute tool as a batch of the actions it names", () => {
+    const tools = asConnectorTools([
+      { slug: "COMPOSIO_MULTI_EXECUTE_TOOL" },
+      { type: "function", function: { name: "COMPOSIO_MULTI_EXECUTE_TOOL" } },
+      { slug: "COMPOSIO_SEARCH_TOOLS" },
+    ]);
+    expect(tools.map((tool) => tool.batch)).toEqual([
+      { items: "tools", action: "tool_slug", arguments: "arguments" },
+      { items: "tools", action: "tool_slug", arguments: "arguments" },
+      undefined,
+    ]);
   });
 
   it("retains provider route metadata independently of the tool name", async () => {
@@ -314,6 +337,15 @@ describe("composio tool mapping", () => {
       ),
     ).toBe(true);
     expect(isNoAuthToolkitError(new Error("redirect required"))).toBe(false);
+  });
+
+  it("recognizes toolkits Composio has no managed auth for", () => {
+    const noManagedAuth = new Error(
+      '400 {"error":{"message":"Composio does not manage auth for toolkit twitter and no auth config without required fields is available.","code":4308,"slug":"ToolRouterV2_NoManagedAuth","status":400}}',
+    );
+    expect(isNoManagedAuthError(noManagedAuth)).toBe(true);
+    expect(isNoAuthToolkitError(noManagedAuth)).toBe(false);
+    expect(isNoManagedAuthError(new Error("redirect required"))).toBe(false);
   });
 
   it("collects nested Composio log ids", () => {
@@ -662,6 +694,70 @@ describe("composio tool mapping", () => {
       ]);
     },
   );
+
+  it.each([
+    { label: "an unpinned account", account: "ca-other", executed: [] },
+    {
+      label: "a pinned account",
+      account: "ca-work",
+      executed: [
+        {
+          tool: "DROPBOX_LIST_FILES_IN_FOLDER",
+          args: { path: "/Invoices" },
+          options: { account: "ca-work" },
+        },
+      ],
+    },
+  ])("runs a nested Dropbox listing only on $label", async ({ account, executed }) => {
+    composioSdkState.created.length = 0;
+    composioSdkState.executions.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+    const restore = stubActiveAccounts(["ca-work"]);
+
+    const events: ConnectorEvent[] = [];
+    try {
+      const connector = new ComposioConnector();
+      for await (const event of connector.execute(
+        {
+          tool: "COMPOSIO_MULTI_EXECUTE_TOOL",
+          args: {
+            tools: [
+              {
+                tool_slug: "DROPBOX_LIST_FILES_IN_FOLDER",
+                arguments: { path: "/Invoices" },
+                account,
+              },
+            ],
+          },
+          executionId: "composio-dropbox-account",
+        },
+        {
+          operationId: "composio-dropbox-account",
+          traceId: "composio-dropbox-account",
+          spaceId: "workspace",
+          userId: "user-1",
+          signal: new AbortController().signal,
+          connectedConnections: [
+            {
+              id: "connection-dropbox",
+              connectorId: "composio",
+              externalId: "dropbox",
+              displayName: "Dropbox",
+              providerRef: "ca-work",
+            },
+          ],
+        },
+      )) {
+        events.push(event);
+      }
+    } finally {
+      restore();
+    }
+
+    expect(composioSdkState.executions).toEqual(executed);
+    expect(events.at(-1)?.type).toBe(executed.length > 0 ? "result" : "error");
+  });
 
   it("keeps mixed multi-execute calls in their original order", () => {
     const createFolder = { tool_slug: "DROPBOX_CREATE_FOLDER", arguments: { path: "/Invoices" } };

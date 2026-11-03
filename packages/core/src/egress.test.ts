@@ -32,6 +32,21 @@ describe("urlSite", () => {
     expect(registrableDomain("c2VjcmV0.github.io")).toBe("github.io");
     expect(registrableDomain("c2VjcmV0.leak.example.co.uk")).toBe("example.co.uk");
   });
+
+  it.each(["leak123-.attacker.com", "-leak.attacker.com", "le~ak.attacker.com"])(
+    "reduces the hostname %s, which URLs accept, to its registrable domain",
+    (hostname) => {
+      expect(registrableDomain(hostname)).toBe("attacker.com");
+      expect(hostSite(hostname)).toBe("attacker.com");
+    },
+  );
+
+  it("has no registrable domain for a hostname without one", () => {
+    expect(registrableDomain("localhost")).toBeUndefined();
+    expect(registrableDomain("co.uk")).toBeUndefined();
+    expect(registrableDomain("203.0.113.7")).toBe("203.0.113.7");
+    expect(registrableDomain("[2001:db8::1]")).toBe("[2001:db8::1]");
+  });
 });
 
 describe("normalizedHttpUrl", () => {
@@ -99,6 +114,15 @@ describe("sitesInText", () => {
       "example.com",
       "example.org",
     ]);
+  });
+
+  it("reads internationalized domain names whole, as their ASCII form", () => {
+    expect([...sitesInText("Visit münchen.de and bücher.de, then example.com")]).toEqual([
+      "xn--mnchen-3ya.de",
+      "xn--bcher-kva.de",
+      "example.com",
+    ]);
+    expect([...sitesInText("See https://münchen.de/")]).toEqual(["xn--mnchen-3ya.de"]);
   });
 
   it("extracts explicit URL hosts before excluding email addresses", () => {

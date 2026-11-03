@@ -7,10 +7,15 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, ListToolsResult } from "@modelcontextprotocol/sdk/types.js";
 import { isLocalhostOrLoopbackIp } from "@rakazo/contracts";
+import { cancelResponseBody } from "@rakazo/core";
 import { combineSignals } from "./connector-safety.js";
 
 import type { InstalledMcpBin } from "./mcp-package-installer.js";
-import { isInstalledMcpBin } from "./mcp-package-installer.js";
+import {
+  isInstalledMcpBin,
+  isNpxCommand,
+  isPackageRunnerCommand,
+} from "./mcp-package-installer.js";
 
 import type { RemoteTransportDependencies, SafeRemoteFetch } from "./remote-mcp.js";
 import { createSafeRemoteFetch, listMcpTools } from "./remote-mcp.js";
@@ -18,7 +23,6 @@ import { createSafeRemoteFetch, listMcpTools } from "./remote-mcp.js";
 export type McpRemoteTransport = "streamable-http" | "sse";
 
 export interface McpUrlPolicy {
-  /** Maximum URL length accepted before any network request. */
   maxUrlLength?: number;
   /** Permit plain HTTP only on the configured loopback resource's exact origin.
    * Requests only honour it together with `allowPrivateEndpoint`: loopback is private. */
@@ -216,6 +220,7 @@ export function secureFetch(
       ? await (network.fetch ?? globalThis.fetch)(url, requestInit)
       : await safeRemoteFetch(url, requestInit);
     if (response.status >= 300 && response.status < 400) {
+      cancelResponseBody(response);
       throw new Error("MCP redirects are not permitted; configure the final HTTPS URL explicitly");
     }
     return response;
@@ -275,16 +280,18 @@ export function isAllowedStdioCommand(command: string, allowed: readonly string[
 /** The deployment's stdio settings, as MCP_STDIO_ENABLED and MCP_STDIO_ALLOWED_COMMANDS set them. */
 export type McpStdioPolicy = { stdioEnabled?: boolean; allowedCommands?: readonly string[] };
 
-/** Whether this deployment can run any stdio MCP server. */
 export function mcpStdioAvailable(policy: McpStdioPolicy): boolean {
   return policy.stdioEnabled === true && (policy.allowedCommands?.length ?? 0) > 0;
 }
+
+const PACKAGE_RUNNER_REFUSAL = "Only npx can launch packages here";
 
 /** Why this deployment can't run a stdio server with `command`, or undefined when it can. */
 export function mcpStdioRefusal(command: string, policy: McpStdioPolicy): string | undefined {
   if (!mcpStdioAvailable(policy)) return "Stdio MCP servers aren't available here";
   if (!isAllowedStdioCommand(command, policy.allowedCommands ?? []))
     return "This stdio command isn't allowed here";
+  if (isPackageRunnerCommand(command)) return PACKAGE_RUNNER_REFUSAL;
   return undefined;
 }
 
@@ -292,8 +299,12 @@ function stdioParams(options: McpStdioOptions): StdioServerParameters {
   if (!isAllowedStdioCommand(options.command, options.allowedCommands)) {
     throw new Error("MCP stdio command is not in the configured allowlist");
   }
+  if (isPackageRunnerCommand(options.command)) throw new Error(PACKAGE_RUNNER_REFUSAL);
   if (options.installedBin !== undefined && !isInstalledMcpBin(options.installedBin)) {
     throw new Error("MCP stdio bin was not installed by Rakazo");
+  }
+  if (options.installedBin === undefined && isNpxCommand(options.command)) {
+    throw new Error("npx only launches a package bin Rakazo installed");
   }
   const command = options.installedBin?.binPath ?? options.command.trim();
   const env: Record<string, string> = {};

@@ -412,8 +412,3 @@ export function resolveAgentImportNames(
     }),
   };
 }
-
-/** Adds the result to `used` (lowercase), so several imported documents never share a path. */
-export function freeAgentImportMemoryPath(path: string, used: Set<string>): string {
-  return freeName(path, used, ".md");
-}

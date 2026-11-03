@@ -41,7 +41,16 @@ fi
       writeFileSync(path.join(bin, name), script);
       chmodSync(path.join(bin, name), 0o755);
     }
-    const result = spawnSync("/bin/sh", ["-c", PREPARE_LINUX_DESKTOP], {
+    // The emoji-font check reads an absolute host path, so the call count depends on
+    // whether this machine has the font. Point it at a file that always exists so the
+    // assertions describe the script, not the host.
+    const fontPath = path.join(bin, "NotoColorEmoji.ttf");
+    writeFileSync(fontPath, "");
+    const prepare = PREPARE_LINUX_DESKTOP.replaceAll(
+      "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+      fontPath,
+    );
+    const result = spawnSync("/bin/sh", ["-c", prepare], {
       env: { PATH: bin },
       encoding: "utf8",
     });

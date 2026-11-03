@@ -204,7 +204,7 @@ export function useLife(
 export type AvatarLife = ReturnType<typeof useLife>;
 
 /** Plays the next tap reaction on a moving avatar. */
-export function usePoke(life: AvatarLife, enabled: boolean) {
+export function usePoke(life: Pick<AvatarLife, "poke" | "pokeProgress">, enabled: boolean) {
   const next = useRef(0);
   return () => {
     if (!enabled) return;

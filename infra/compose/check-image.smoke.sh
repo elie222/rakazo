@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check-image.sh against a fake Docker CLI that exports a prepared filesystem; no daemon.
+# check-image.sh against prepared filesystems, as tars and through a fake Docker CLI; no daemon.
 set -euo pipefail
 root="$(cd "$(dirname "$0")" && pwd)"
 scratch=$(mktemp -d)
@@ -71,6 +71,15 @@ output="$(check "$clean" "$list" linux/s390x)" && fail "a platform missing from 
 grep -q "has no linux/s390x image" <<<"$output" || fail "unexpected output: $output"
 unset INDEX
 
+# A filesystem tar from the build, with no Docker involved.
+check_tar() {
+  tar -c -f "$1.tar" -C "$1" app  # no ./ prefix, like BuildKit's tar exporter
+  PATH="$scratch/bin:$PATH" CREATED="$scratch/created" bash "$root/check-image.sh" "$1.tar" 2>&1
+}
+rm -f "$scratch/created"
+check_tar "$clean" >/dev/null || fail "a clean tar was rejected: $(check_tar "$clean")"
+[[ ! -e "$scratch/created" ]] || fail "a tar check pulled an image"
+
 for case in env git key-file key-body; do
   dir="$(image "$case")"
   case "$case" in
@@ -79,10 +88,12 @@ for case in env git key-file key-body; do
     key-file) touch "$dir/app/deploy.pem" ;;
     key-body) printf -- '-----BEGIN OPENSSH PRIVATE KEY-----\n%s\n' "$key_body" >"$dir/app/notes.txt" ;;
   esac
-  if output="$(check "$dir")"; then
-    fail "$case: an image with a secret passed"
-  fi
-  grep -q "must not ship" <<<"$output" || fail "$case: unexpected output: $output"
+  for checker in check check_tar; do
+    if output="$($checker "$dir")"; then
+      fail "$case: $checker passed an image with a secret"
+    fi
+    grep -q "must not ship" <<<"$output" || fail "$case: unexpected $checker output: $output"
+  done
 done
 
 echo "check-image smoke passed"

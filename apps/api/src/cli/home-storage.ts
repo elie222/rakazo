@@ -12,7 +12,7 @@ loadRootEnv();
 const USAGE = `Usage: home-storage migrate [--dry-run]
   migrate   Upload homes that exist only under DATA_DIR/homes to object storage and verify
             each upload. Homes already stored are skipped, so it can be rerun. Local copies
-            are kept; see docs/self-host.md#bot-homes-in-object-storage to remove them.`;
+            are kept; see docs/self-host-storage.md#bot-homes-in-object-storage to remove them.`;
 
 function parseCommand() {
   try {

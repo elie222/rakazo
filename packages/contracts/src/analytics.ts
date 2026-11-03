@@ -24,6 +24,23 @@ export const AnalyticsScreenInput = z
     surface: AnalyticsSurface,
   })
   .strict();
+export const AnalyticsBotSetting = z.enum([
+  "name",
+  "description",
+  "instructions",
+  "avatar",
+  "notifications",
+  "memory",
+  "voice",
+  "auto_speak",
+  "model",
+  "thinking",
+  "computer",
+  "team_chat",
+  "cross_space",
+  "fleet_management",
+  "tools",
+]);
 export const AnalyticsTrigger = RunTriggerSchema;
 /** A coarse failure class; "other" covers everything without a known kind. Never the error text. */
 export const AnalyticsErrorKind = z.enum([...RUN_ERROR_KINDS, "other"]);
@@ -59,6 +76,8 @@ export const AnalyticsEvent = z.discriminatedUnion("name", [
       errorKind: AnalyticsErrorKind,
     })
     .strict(),
+  // A manual edit in bot settings; which setting only, never its value.
+  z.object({ name: z.literal("bot_setting_changed"), setting: AnalyticsBotSetting }).strict(),
   // Only the fixed choices; free-text answers stay in the database.
   z
     .object({
@@ -73,4 +92,5 @@ export type AnalyticsEvent = z.infer<typeof AnalyticsEvent>;
 
 export type AnalyticsScreen = z.infer<typeof AnalyticsScreen>;
 export type AnalyticsErrorKind = z.infer<typeof AnalyticsErrorKind>;
+export type AnalyticsBotSetting = z.infer<typeof AnalyticsBotSetting>;
 export type AnalyticsModelConnectMethod = z.infer<typeof AnalyticsModelConnectMethod>;

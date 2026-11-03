@@ -254,11 +254,7 @@ export async function wakeMessageRoutines(
   target: Pick<ProvisionedMessagingIdentity, "spaceId" | "userId" | "botId" | "threadId">,
   event: MessagingInboundMessage,
   options?: {
-    /**
-     * Provider prefix for the wake clientNonce. TeamChat recovery looks up
-     * nonces with TeamChatBridge.providerId (often "slack"); pass that here when
-     * the inbound event.provider differs (e.g. teamchat-emulator).
-     */
+    /** Wake clientNonce prefix; must match TeamChatBridge.providerId when event.provider differs. */
     deliveryProvider?: string;
     artifacts?: Array<{ id: string; name: string; mimeType: string; size: number }>;
     unavailable?: string[];
@@ -546,8 +542,7 @@ async function applyOwnerCommand(
   return true;
 }
 
-/** Delete-then-insert inside the caller's claim transaction: the prior
- * cycle's row must not suppress the new confirmation. */
+/** Delete-then-insert so the prior cycle's row cannot suppress the new confirmation. */
 async function writeConfirmation(
   tx: Pick<Prisma.TransactionClient, "messagingOutbound">,
   identity: { id: string },

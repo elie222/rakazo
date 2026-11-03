@@ -362,6 +362,25 @@ describe("screen page redirects and origin", () => {
     expect(fromScreenPage("not a url", screen)).toBe(false);
   });
 
+  it("accepts an opaque Android origin only for the exact loaded proxy page", () => {
+    const screen = "https://app.example.test/novnc/session/view/1.t/vnc.html";
+    expect(fromScreenPage("null", screen, screen)).toBe(true);
+    expect(fromScreenPage("null", screen)).toBe(false);
+    expect(fromScreenPage("null", screen, "https://elsewhere.example.test/")).toBe(false);
+    expect(
+      fromScreenPage("null", screen, "https://app.example.test/novnc/session/view/2.t/vnc.html"),
+    ).toBe(false);
+    expect(
+      fromScreenPage(
+        "null",
+        "https://screen.example.test/embed",
+        "https://screen.example.test/embed",
+      ),
+    ).toBe(false);
+    expect(fromScreenPage(undefined, screen, screen)).toBe(false);
+    expect(fromScreenPage("not a url", screen, screen)).toBe(false);
+  });
+
   it("keeps one stream key across a renewed link for the same screen", () => {
     expect(screenStreamKey("https://app.example.test/novnc/session/control/1.aaa/websockify")).toBe(
       screenStreamKey("https://app.example.test/novnc/session/control/2.bbb/websockify"),

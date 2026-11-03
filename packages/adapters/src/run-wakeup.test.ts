@@ -6,7 +6,7 @@ import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InMemoryRealtimeFanout } from "./realtime.js";
 import { RunExecutionHost } from "./run-execution.js";
-import { RunJobPublisher, RunWorkerHost, withRunWorker } from "./run-wakeup.js";
+import { RunJobPublisher, RunStarter, RunWorkerHost, withRunWorker } from "./run-wakeup.js";
 
 afterEach(() => vi.useRealTimers());
 
@@ -33,7 +33,9 @@ function fixture() {
         .map(([id]) => ({ id, botId: id, bot: { computerId: "computer" } })),
   );
   const leases = vi.fn(async () => [] as { computerId: string; botId: string; runId: string }[]);
-  const queueHealth = vi.fn(async () => [{ delayedRuns: 0, oldestDueAt: null as Date | null }]);
+  const queueHealth = vi.fn(async () => [
+    { delayedRuns: 0, oldestDueAt: null as Date | null, oldestRunId: null as string | null },
+  ]);
   const prisma = {
     run: { updateMany, findMany },
     $queryRaw: queueHealth,
@@ -45,13 +47,15 @@ function fixture() {
     cancel: vi.fn(),
     close: vi.fn(),
   } as unknown as JobPublisher;
-  const publisher = new RunJobPublisher(prisma, realtime, background);
-  const host = new RunWorkerHost(prisma, realtime, { intervalMs: 100 });
+  const starter = new RunStarter(realtime);
+  const publisher = new RunJobPublisher(prisma, background, starter);
+  const host = new RunWorkerHost(prisma, realtime, starter, { intervalMs: 100 });
   return {
     rows,
     prisma,
     realtime,
     background,
+    starter,
     publisher,
     host,
     findMany,
@@ -142,7 +146,7 @@ describe("durable direct run wakeups", () => {
           ? [{ id: "chat", botId: "chat", bot: { computerId: "computer" } }]
           : [];
       });
-      const host = new RunWorkerHost(f.prisma, f.realtime, { batchSize: 1 });
+      const host = new RunWorkerHost(f.prisma, f.realtime, f.starter, { batchSize: 1 });
       const entered: string[] = [];
       try {
         await host.start({
@@ -154,7 +158,8 @@ describe("durable direct run wakeups", () => {
         await vi.advanceTimersByTimeAsync(1);
         expect(notified).toBe(true);
         chatReady = true;
-        await f.publisher.enqueue(runContinueJob("chat"));
+        // A previous release announces work without naming the run.
+        await f.realtime.publish("runs:ready", "");
         release();
         await vi.advanceTimersByTimeAsync(1);
         expect(entered).toEqual(["timer", "chat"]);
@@ -210,7 +215,7 @@ describe("durable direct run wakeups", () => {
           },
         ];
       });
-      const host = new RunWorkerHost(f.prisma, f.realtime, { batchSize: 1 });
+      const host = new RunWorkerHost(f.prisma, f.realtime, f.starter, { batchSize: 1 });
       const entered: string[] = [];
       try {
         await host.start({
@@ -221,7 +226,7 @@ describe("durable direct run wakeups", () => {
         await vi.advanceTimersByTimeAsync(1);
         expect(interactivePage).toBe(2);
         backgroundReady = true;
-        await f.publisher.enqueue(runContinueJob(trigger));
+        await f.realtime.publish("runs:ready", "");
         release();
         await vi.advanceTimersByTimeAsync(1);
         expect(entered).toEqual(["chat-0", "chat-1", "chat-2", trigger]);
@@ -247,21 +252,29 @@ describe("durable direct run wakeups", () => {
     },
   );
 
-  it("reports aged interactive queues and recovery without blocking dispatch", async () => {
+  it("reports unstarted runs as an error with process health, and their recovery", async () => {
     vi.useFakeTimers();
     const f = fixture();
     const sink = createTestSink();
     installLogger(createLogger({ service: "test", sinks: [sink] }));
     f.queueHealth.mockResolvedValue([
-      { delayedRuns: 2, oldestDueAt: new Date(Date.now() - 60_000) },
+      { delayedRuns: 2, oldestDueAt: new Date(Date.now() - 60_000), oldestRunId: "stuck" },
     ]);
     try {
       await f.host.start({} as BackgroundJobHandlers);
       await vi.advanceTimersByTimeAsync(1);
-      expect(sink.events.filter((event) => event.message === "run.queue_delayed")).toHaveLength(1);
+      const delayed = sink.events.filter((event) => event.message === "run.queue_delayed");
+      expect(delayed).toHaveLength(1);
+      expect(delayed[0]).toMatchObject({
+        level: "error",
+        "queue.delayed_runs": 2,
+        "queue.oldest_run_id": "stuck",
+        "worker.active_runs": 0,
+      });
+      expect(delayed[0]!["event_loop.delay_max_ms"]).toEqual(expect.any(Number));
       await vi.advanceTimersByTimeAsync(29_000);
       expect(f.queueHealth).toHaveBeenCalledTimes(1);
-      f.queueHealth.mockResolvedValue([{ delayedRuns: 0, oldestDueAt: null }]);
+      f.queueHealth.mockResolvedValue([{ delayedRuns: 0, oldestDueAt: null, oldestRunId: null }]);
       await vi.advanceTimersByTimeAsync(1_000);
       expect(sink.events.filter((event) => event.message === "run.queue_recovered")).toHaveLength(
         1,
@@ -479,5 +492,135 @@ describe("durable direct run wakeups", () => {
     await stopping;
     expect(stopped).toBe(true);
     expect(background.stop).toHaveBeenCalledTimes(2);
+  });
+
+  it("starts a run in the process that makes it due, with no scan or notification", async () => {
+    const f = fixture();
+    f.rows.set("chat", { status: "queued", wakeAt: null });
+    const publish = vi.spyOn(f.realtime, "publish");
+    const handler = vi.fn(async ({ runId }) => {
+      f.rows.get(runId)!.status = "completed";
+    });
+    try {
+      f.starter.attach({ "run.continue": handler } as unknown as BackgroundJobHandlers);
+      await f.publisher.enqueue(runContinueJob("chat"));
+      await vi.waitFor(() => expect(handler).toHaveBeenCalledOnce());
+      expect(f.findMany).not.toHaveBeenCalled();
+      expect(publish).not.toHaveBeenCalled();
+      expect(f.background.enqueue).not.toHaveBeenCalled();
+    } finally {
+      await f.starter.stop();
+    }
+  });
+
+  it("never holds one run's start behind another run, however slow", async () => {
+    const f = fixture();
+    let release!: () => void;
+    const stuck = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const entered: string[] = [];
+    try {
+      f.starter.attach({
+        "run.continue": async ({ runId }: { runId: string }) => {
+          entered.push(runId);
+          if (runId === "stuck") await stuck;
+        },
+      } as unknown as BackgroundJobHandlers);
+      await f.publisher.enqueue(runContinueJob("stuck"));
+      for (let index = 0; index < 20; index += 1) {
+        await f.publisher.enqueue(runContinueJob(`chat-${index}`));
+      }
+      await vi.waitFor(() => expect(entered).toHaveLength(21));
+    } finally {
+      release();
+      await f.starter.stop();
+    }
+  });
+
+  it("starts a delayed run on time without a scan", async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    f.rows.set("retry", { status: "queued", wakeAt: null });
+    const handler = vi.fn();
+    try {
+      f.starter.attach({ "run.continue": handler } as unknown as BackgroundJobHandlers);
+      await f.publisher.enqueue({
+        ...runContinueJob("retry"),
+        availableAt: new Date(Date.now() + 1_000),
+      });
+      await vi.advanceTimersByTimeAsync(900);
+      expect(handler).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(200);
+      expect(handler).toHaveBeenCalledOnce();
+      expect(f.findMany).not.toHaveBeenCalled();
+    } finally {
+      await f.starter.stop();
+    }
+  });
+
+  it("hands a run to a running worker when its own process is stopping", async () => {
+    const f = fixture();
+    f.rows.set("handed", { status: "queued", wakeAt: null });
+    const stopping = new AbortController();
+    stopping.abort();
+    const leaving = new RunStarter(f.realtime, { signal: stopping.signal });
+    const leavingHandler = vi.fn();
+    leaving.attach({ "run.continue": leavingHandler } as unknown as BackgroundJobHandlers);
+    const handler = vi.fn(async ({ runId }) => {
+      f.rows.get(runId)!.status = "completed";
+    });
+    try {
+      await f.host.start({ "run.continue": handler } as unknown as BackgroundJobHandlers);
+      await new RunJobPublisher(f.prisma, f.background, leaving).enqueue(runContinueJob("handed"));
+      await vi.waitFor(() =>
+        expect(handler).toHaveBeenCalledWith({ runId: "handed" }, expect.anything()),
+      );
+      expect(leavingHandler).not.toHaveBeenCalled();
+    } finally {
+      await leaving.stop();
+      await f.host.stop();
+    }
+  });
+
+  it("does not hand a taken run back and forth when this process cannot run it", async () => {
+    const f = fixture();
+    const publish = vi.spyOn(f.realtime, "publish");
+    const admission = vi.spyOn(RunExecutionHost.prototype, "execute").mockResolvedValue(false);
+    try {
+      await f.host.start({ "run.continue": vi.fn() } as unknown as BackgroundJobHandlers);
+      await f.publisher.enqueue(runContinueJob("full"));
+      await vi.waitFor(() => expect(publish).toHaveBeenCalledOnce());
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(publish).toHaveBeenCalledOnce();
+    } finally {
+      admission.mockRestore();
+      await f.host.stop();
+    }
+  });
+
+  it("starts a run again when it is made due while this process is still finishing it", async () => {
+    const f = fixture();
+    let release!: () => void;
+    const finishing = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const handler = vi.fn(async () => {
+      if (handler.mock.calls.length === 1) await finishing;
+    });
+    try {
+      f.starter.attach({ "run.continue": handler } as unknown as BackgroundJobHandlers);
+      await f.publisher.enqueue(runContinueJob("answered"));
+      await vi.waitFor(() => expect(handler).toHaveBeenCalledOnce());
+      await f.publisher.enqueue(runContinueJob("answered"));
+      await f.publisher.enqueue(runContinueJob("answered"));
+      release();
+      await vi.waitFor(() => expect(handler).toHaveBeenCalledTimes(2));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(handler).toHaveBeenCalledTimes(2);
+    } finally {
+      release();
+      await f.starter.stop();
+    }
   });
 });

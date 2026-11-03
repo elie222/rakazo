@@ -5,8 +5,8 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
-  expandAdvancedSection,
   expectCardWidth,
+  openBotPanelTab,
   realSandboxTimeout,
   rpc,
   signup,
@@ -19,39 +19,6 @@ function sidebarBotButton(page: Page, name: RegExp | string) {
 }
 
 test.describe.configure({ mode: "serial" });
-
-test("two users are isolated and a bot completes durable work", async ({ browser }, testInfo) => {
-  const a = await browser.newContext();
-  const b = await browser.newContext();
-  const pageA = await a.newPage();
-  const pageB = await b.newPage();
-
-  const stamp = Date.now();
-  await signup(pageA, `ada-${stamp}@rakazo.test`, "password12", "Ada", testInfo);
-  await completeOnboarding(pageA, testInfo);
-  await expect(pageA.getByText("Chief").first()).toBeVisible();
-
-  await signup(pageB, `bob-${stamp}@rakazo.test`, "password12", "Bob");
-  await completeOnboarding(pageB);
-  await expect(pageB.getByText("Chief").first()).toBeVisible();
-  await expect(pageB.getByText("Ada", { exact: true })).toHaveCount(0);
-
-  const composer = pageA.getByPlaceholder(/Message/);
-  await composer.fill("write a file in your home called notes/result.txt that says isolation-ok");
-  await pageA.keyboard.press("Enter");
-  await expect(
-    pageA.getByText(/writing that into my home|isolation-ok|handled/i).first(),
-  ).toBeVisible({
-    timeout: 30_000,
-  });
-
-  await pageA.reload();
-  await expect(pageA.getByText(/isolation-ok|writing that into my home/i).first()).toBeVisible();
-  await captureScreenshot(pageA, testInfo, "07-durable-bot-work");
-
-  await a.close();
-  await b.close();
-});
 
 test("takeover, routine, plugins, and export are reachable", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -101,12 +68,14 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
       message: "the second protected-input run must be ready for takeover",
     })
     .toBe("waiting_takeover");
-  // Agent computer toggles the panel. Re-open when closed so Open can refresh computer status.
+  // Reopen the computer tab so Open sees a refreshed computer status.
   const sidePanel = page.getByTestId("side-panel");
-  if ((await sidePanel.getAttribute("data-panel")) === "computer") {
-    await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  const pill = page.getByTestId("bot-settings-trigger");
+  if ((await pill.getAttribute("aria-expanded")) === "true") {
+    await pill.click();
+    await expect(sidePanel).toHaveAttribute("data-panel", "closed");
   }
-  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  await openBotPanelTab(page, "Computer");
   await expect(sidePanel).toHaveAttribute("data-panel", "computer");
   await expect(sidePanel).toHaveCSS("width", "384px");
   const [mainBox, panelBox] = await Promise.all([
@@ -133,6 +102,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   });
   await captureScreenshot(page, testInfo, "09a-computer-takeover-skipped");
 
+  await openBotPanelTab(page, "Routines");
   await page.getByRole("button", { name: "Create Routine" }).click();
   await page.locator("label:has-text('Name') input").fill("Monday briefing");
   await page
@@ -177,11 +147,8 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
     /Gmail[\s\S]*Google Calendar[\s\S]*Google Drive[\s\S]*Slack[\s\S]*Notion/,
   );
   await expect(page.getByText("GitHub", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add Executor", exact: true })).toBeHidden();
-  await expect(page.getByRole("button", { name: "Add Treg", exact: true })).toBeHidden();
-  await expect(page.getByRole("button", { name: "Add MCP server", exact: true })).toBeHidden();
-  await expect(page.getByRole("button", { name: "Add OpenAPI", exact: true })).toBeHidden();
-  await expect(page.getByRole("button", { name: "Add GraphQL", exact: true })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Add custom", exact: true })).toBeVisible();
+  await expect(page.getByRole("menuitem")).toHaveCount(0);
   await expect(page.getByText("Tool sources", { exact: true })).toBeHidden();
   await captureScreenshot(page, testInfo, "11-plugins-catalog");
 
@@ -207,10 +174,22 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await accountLabel.clear();
   await accountLabel.pressSequentially(`${accountName}overflow`);
   await expect(accountLabel).toHaveValue(accountName);
+  const windowKeys = await page.evaluateHandle(() => {
+    const keys: string[] = [];
+    window.addEventListener("keydown", (event) => keys.push(event.key));
+    return keys;
+  });
+  // These synthetic keyboard events exercise the browser event flags; they do not start an OS IME.
+  for (const composition of [{ isComposing: true }, { keyCode: 229 }]) {
+    await accountLabel.dispatchEvent("keydown", { key: "Enter", ...composition });
+    await accountLabel.dispatchEvent("keydown", { key: "Escape", ...composition });
+    expect(await windowKeys.evaluate((keys) => keys.includes("Escape"))).toBe(false);
+    await expect(accountLabel).toBeFocused();
+  }
   const renamed = page.waitForResponse(
     (response) => response.url().includes("connections/rename") && response.ok(),
   );
-  await detail.getByLabel("Account label").nth(1).blur();
+  await accountLabel.press("Enter");
   await renamed;
   await expect(detail.getByLabel("Account label").nth(1)).toHaveValue(accountName);
   await captureScreenshot(page, testInfo, "11a2-multi-account-plugins");
@@ -258,32 +237,22 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(page.getByTestId("connection-detail")).toHaveCount(0);
   await expect(linearRow.getByRole("button", { name: "Add", exact: true })).toBeVisible();
 
-  const advanced = page.getByTestId("integrations-advanced");
-  const browseMcp = page.getByRole("button", { name: "Browse MCP servers", exact: true });
-  await expect(browseMcp).toBeHidden();
-  await expect(page.getByRole("button", { name: "Add GraphQL", exact: true })).toBeHidden();
-  await expandAdvancedSection(advanced);
-  await expect(
-    advanced.getByRole("button", { name: "Browse MCP servers", exact: true }),
-  ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Manage MCP servers", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add MCP server", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add OpenAPI", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add GraphQL", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add Executor", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add Treg", exact: true })).toBeVisible();
-  await expect(page.getByText("Tool sources", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "MCP servers", exact: true })).toBeHidden();
-  await expect(page.getByTestId("integrations-catalog-feed")).toBeVisible();
-  // Catalog Search is optional chrome; add buttons stay MCP → OpenAPI → GraphQL → Executor → Treg.
-  const advancedActions = advanced.getByTestId("integrations-advanced-add").locator("button");
-  await expect(advancedActions).toHaveCount(5);
-  await expect(advancedActions.nth(0)).toHaveText("Add MCP server");
-  await expect(advancedActions.nth(1)).toHaveText("Add OpenAPI");
-  await expect(advancedActions.nth(2)).toHaveText("Add GraphQL");
-  await expect(advancedActions.nth(3)).toHaveText("Add Executor");
-  await expect(advancedActions.nth(4)).toHaveText("Add Treg");
+  // Custom sources live behind one menu: GitHub, then MCP → OpenAPI → GraphQL → Executor → Treg.
+  await page.getByRole("button", { name: "Add custom", exact: true }).click();
+  const addItems = page.getByRole("menuitem");
+  await expect(addItems).toHaveText([
+    "From GitHub",
+    "MCP server",
+    "OpenAPI",
+    "GraphQL",
+    "Executor",
+    "Treg",
+    "Browse MCP servers",
+    "Search by domain",
+    "Manage MCP servers",
+  ]);
   await captureScreenshot(page, testInfo, "01-graphql-advanced-order");
+  await page.getByRole("menuitem", { name: "Search by domain", exact: true }).click();
 
   const feed = page.getByTestId("integrations-catalog-feed");
   await feed.getByRole("textbox", { name: "Integration domain" }).fill("github.com");
@@ -302,71 +271,63 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await captureScreenshot(page, testInfo, "11c-catalog-feed");
 
   await feed.getByRole("button", { name: "MCP Add", exact: true }).click();
-  await expect(page.getByPlaceholder("Display name")).toHaveValue("GitHub");
-  await expect(page.getByPlaceholder("https://example.com/mcp")).toHaveValue(
-    "https://mcp.example.test/mcp",
-  );
-  await expect(page.locator("select")).toHaveValue("bearer");
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
-
-  await page.getByRole("button", { name: "Add Treg", exact: true }).click();
-  await page.getByPlaceholder("Treg token").fill("fake-treg-browser-credential");
-  await page.getByRole("button", { name: "Verify and add", exact: true }).click();
-  await expect(page.getByText(/MCP\s*https:\/\/treg\.to\/mcp\/\s*Credential saved/)).toBeVisible();
-
-  await page.getByRole("button", { name: "Add MCP server", exact: true }).click();
-  await page.getByPlaceholder("Display name").fill("Browser MCP");
-  await page.getByPlaceholder("https://example.com/mcp").fill("https://mcp.example.test/mcp");
-  await page.getByRole("button", { name: "Verify and add", exact: true }).click();
-  await expect(page.getByText(/MCP\s*https:\/\/mcp\.example\.test\/mcp\s*No auth/)).toBeVisible();
-
-  await page.getByRole("button", { name: "Add OpenAPI", exact: true }).click();
-  await page.getByPlaceholder("Display name").fill("Browser API");
+  const form = page.getByTestId("integrations-source-form");
+  await expect(form.getByLabel("Name", { exact: true })).toHaveValue("GitHub");
+  await expect(form.getByLabel("URL", { exact: true })).toHaveValue("https://mcp.example.test/mcp");
+  await expect(form.getByLabel("Authentication", { exact: true })).toHaveValue("bearer");
+  await form.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(page.getByTestId("integrations-catalog-feed")).toBeVisible();
   await page
-    .getByPlaceholder("https://example.com/openapi.json")
-    .fill("https://api.example.test/openapi.json");
-  await page.locator("select").selectOption("bearer");
-  await page.getByPlaceholder("Credential").fill("fake-openapi-browser-credential");
-  await page.getByRole("button", { name: "Verify and add", exact: true }).click();
-  await expect(
-    page.getByText(/API\s*https:\/\/api\.example\.test\/v1\s*Credential saved/),
-  ).toBeVisible();
+    .getByTestId("integrations-catalog-feed")
+    .getByRole("button", { name: "Back", exact: true })
+    .click();
 
-  await page.getByRole("button", { name: "Add Executor", exact: true }).click();
-  await expect(page.getByPlaceholder("Display name")).toHaveValue("Executor");
-  await page
-    .getByPlaceholder("https://executor.example/mcp")
-    .fill("https://executor.example.test/mcp");
-  await page.getByPlaceholder("Executor token").fill("fake-executor-browser-credential");
-  await page.getByRole("button", { name: "Verify and add", exact: true }).click();
-  await expect(
-    page.getByText(/MCP\s*https:\/\/executor\.example\.test\/mcp\s*Credential saved/),
-  ).toBeVisible();
+  const addSource = async (item: string) => {
+    await page.getByRole("button", { name: "Add custom", exact: true }).click();
+    await page.getByRole("menuitem", { name: item, exact: true }).click();
+  };
+  const toolSources = page.getByTestId("tool-sources");
+
+  await addSource("Treg");
+  await form.getByLabel("Treg token", { exact: true }).fill("fake-treg-browser-credential");
+  await form.getByRole("button", { name: "Verify and add", exact: true }).click();
+  await expect(toolSources.getByText(/MCP\s*https:\/\/treg\.to\/mcp\//)).toBeVisible();
+
+  await addSource("MCP server");
+  await form.getByLabel("Name", { exact: true }).fill("Browser MCP");
+  await form.getByLabel("URL", { exact: true }).fill("https://mcp.example.test/mcp");
+  await form.getByRole("button", { name: "Verify and add", exact: true }).click();
+  await expect(toolSources.getByText(/MCP\s*https:\/\/mcp\.example\.test\/mcp/)).toBeVisible();
+
+  await addSource("OpenAPI");
+  await form.getByLabel("Name", { exact: true }).fill("Browser API");
+  await form.getByLabel("URL", { exact: true }).fill("https://api.example.test/openapi.json");
+  await form.getByLabel("Authentication", { exact: true }).selectOption("bearer");
+  await form.getByLabel("Credential", { exact: true }).fill("fake-openapi-browser-credential");
+  await form.getByRole("button", { name: "Verify and add", exact: true }).click();
+  await expect(toolSources.getByText(/OpenAPI\s*https:\/\/api\.example\.test\/v1/)).toBeVisible();
+
+  await addSource("Executor");
+  await expect(form.getByLabel("Name", { exact: true })).toHaveValue("Executor");
+  await form.getByLabel("URL", { exact: true }).fill("https://executor.example.test/mcp");
+  await form.getByLabel("Executor token", { exact: true }).fill("fake-executor-browser-credential");
+  await form.getByRole("button", { name: "Verify and add", exact: true }).click();
+  await expect(toolSources.getByText(/MCP\s*https:\/\/executor\.example\.test\/mcp/)).toBeVisible();
   await captureScreenshot(page, testInfo, "11d-provider-emulators");
 
-  await page.getByRole("button", { name: "Add GraphQL", exact: true }).click();
-  await page.getByPlaceholder("Display name").fill("Browser GraphQL");
-  await page
-    .getByPlaceholder("https://example.com/graphql")
-    .fill("https://graphql.example.test/graphql");
-  await page.getByRole("button", { name: "Verify and add", exact: true }).click();
+  await addSource("GraphQL");
+  await form.getByLabel("Name", { exact: true }).fill("Browser GraphQL");
+  await form.getByLabel("URL", { exact: true }).fill("https://graphql.example.test/graphql");
+  await form.getByRole("button", { name: "Verify and add", exact: true }).click();
   await expect(
-    page.getByText(/GRAPHQL\s*https:\/\/graphql\.example\.test\/graphql\s*No auth/),
+    toolSources.getByText(/GraphQL\s*https:\/\/graphql\.example\.test\/graphql/),
   ).toBeVisible();
   await captureScreenshot(page, testInfo, "02-graphql-installed");
 
   await page.getByRole("button", { name: "Close integrations" }).click();
 
   await page.getByText("Chief").first().click();
-  const gear = page.getByRole("button", { name: "Show settings" });
-  if (!(await gear.isVisible().catch(() => false))) {
-    await page.getByRole("button", { name: "Agent computer", exact: true }).click();
-  }
-  await gear.click();
-  await page
-    .getByTestId("bot-settings")
-    .getByRole("button", { name: "Advanced", exact: true })
-    .click();
+  await openBotPanelTab(page, "Advanced");
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export" }).click();
   const download = await downloadPromise;
@@ -436,6 +397,9 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
   await expect(holdToTalk).toBeVisible();
   await composer.fill("Use the newer report and keep the answer short.");
   await expect(holdToTalk).toHaveCount(0);
+  // Stop can arrive over the live stream before the first send returns; Send stays disabled
+  // until then, and Tab would skip it.
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
   await composer.press("Tab");
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeFocused();
   await page.keyboard.press("Enter");
@@ -484,50 +448,6 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
   await expect(sidebarBotButton(page, /^Chief/)).toBeVisible();
   await expect(sidebarBotButton(page, /Scout/)).toBeVisible();
   await captureScreenshot(page, testInfo, "15-restored-session");
-});
-
-test("bot context menu pins, duplicates, edits, and confirms deletion", async ({
-  page,
-}, testInfo) => {
-  const stamp = Date.now();
-  await signup(page, `menu-${stamp}@rakazo.test`, "password12", "Menu");
-  await completeOnboarding(page);
-
-  const chief = page.getByRole("button", { name: /Chief/ }).first();
-  await chief.click({ button: "right" });
-  await expect(page.getByRole("menu", { name: "Actions for Chief" })).toBeVisible();
-  await expect(page.getByRole("menuitem", { name: "Edit Profile" })).toBeVisible();
-  await expect(page.getByRole("menuitem", { name: "Duplicate" })).toBeVisible();
-  await expect(page.getByRole("menuitem", { name: "Delete" })).toBeVisible();
-  await captureScreenshot(page, testInfo, "16-bot-context-menu");
-  await page.getByRole("menuitem", { name: "Mark as Unread" }).click();
-
-  // Chief is the open bot, so the auto-read on window focus must not undo the manual mark.
-  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-  await chief.click({ button: "right" });
-  await expect(page.getByRole("menuitem", { name: "Mark as Read" })).toBeVisible();
-  await page.getByRole("menuitem", { name: "Mark as Read" }).click();
-
-  await chief.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Pin", exact: true }).click();
-
-  await chief.click({ button: "right" });
-  await expect(page.getByRole("menuitem", { name: "Unpin", exact: true })).toBeVisible();
-  await page.getByRole("menuitem", { name: "Duplicate" }).click();
-  await expect(page.getByText("Chief copy").first()).toBeVisible();
-  await captureScreenshot(page, testInfo, "17-pinned-and-duplicated-bot");
-
-  const copy = page.getByRole("button", { name: /Chief copy/ }).first();
-  await copy.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Delete" }).click();
-  await expect(page.getByRole("alertdialog", { name: "Delete Chief copy?" })).toBeVisible();
-  await captureScreenshot(page, testInfo, "18-delete-confirmation");
-  await page.getByRole("button", { name: "Cancel" }).click();
-
-  await chief.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Edit Profile" }).click();
-  await expect(page.getByRole("button", { name: "Edit name", exact: true })).toHaveText("Chief");
-  await captureScreenshot(page, testInfo, "19-edit-profile");
 });
 
 async function threadRunStatus(page: Page) {

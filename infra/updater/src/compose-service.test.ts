@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { RECREATED_SERVICES } from "@rakazo/core";
@@ -14,9 +15,11 @@ interface ComposeService {
   env_file?: unknown;
   command?: unknown;
   user?: string;
+  build?: unknown;
 }
 
-const composeFile = path.resolve(import.meta.dirname, "../../compose/docker-compose.prod.yml");
+const composeDir = path.resolve(import.meta.dirname, "../../compose");
+const composeFile = path.join(composeDir, "docker-compose.prod.yml");
 const compose = parse(readFileSync(composeFile, "utf8"), { merge: true }) as {
   services: Record<string, ComposeService>;
   networks: Record<string, unknown>;
@@ -166,5 +169,70 @@ describe("the updater compose service", () => {
     expect(updater.environment?.AXIOM_EDGE_URL).toBe("${AXIOM_EDGE_URL:-}");
     // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
     expect(updater.environment?.SENTRY_DSN).toBe("${SENTRY_DSN:-}");
+  });
+});
+
+/**
+ * Point-in-time recovery is opt-in, and the database it reads must stay without egress. These
+ * properties keep enabling it from exposing Postgres or restarting it for anyone else.
+ */
+describe("the point-in-time recovery sidecar", () => {
+  const pitr = compose.services.pitr as ComposeService;
+
+  it("only runs with its profile", () => {
+    expect(pitr.profiles).toEqual(["pitr"]);
+  });
+
+  it("leaves Postgres on the internal data network alone", () => {
+    expect(compose.services.postgres?.networks).toEqual(["data"]);
+    expect(compose.networks.data).toEqual({ internal: true });
+    expect(pitr.networks).toEqual(["data", "backup"]);
+    const onBackup = Object.entries(compose.services)
+      .filter(([, service]) => service.networks?.includes("backup"))
+      .map(([name]) => name);
+    expect(onBackup).toEqual(["pitr"]);
+  });
+
+  it("gets the replication login and storage settings, not the owner or app secrets", () => {
+    expect(Object.keys(pitr.environment ?? {}).sort()).toEqual([
+      "PGDATABASE",
+      "PGHOST",
+      "PGPASSWORD",
+      "PGUSER",
+      "PITR_ACCESS_KEY_ID",
+      "PITR_AGE_RECIPIENTS",
+      "PITR_BUCKET",
+      "PITR_ENDPOINT",
+      "PITR_MAX_WAL_GB",
+      "PITR_PATH_STYLE",
+      "PITR_PREFIX",
+      "PITR_REGION",
+      "PITR_RETAIN_DAYS",
+      "PITR_SECRET_ACCESS_KEY",
+      "TINI_KILL_PROCESS_GROUP",
+    ]);
+    expect(pitr.environment?.PGUSER).toBe("rakazo_pitr");
+    expect(pitr.environment?.PGPASSWORD).toBe(interpolated("PITR_DATABASE_PASSWORD"));
+    expect(pitr.env_file).toBeUndefined();
+    expect(pitr.ports).toBeUndefined();
+    expect(pitr.user).toBe("postgres");
+  });
+
+  it("is tagged with a hash of what it is built from, so a deploy rebuilds it only on change", () => {
+    const hash = createHash("sha256");
+    for (const file of ["Dockerfile.pitr", "pitr-agent.sh"]) {
+      hash.update(readFileSync(path.join(composeDir, file)));
+    }
+    expect(pitr.image).toBe(`rakazo-pitr:${hash.digest("hex").slice(0, 16)}`);
+  });
+
+  it("builds on the same pinned Postgres image as the database", () => {
+    const dockerfile = readFileSync(path.join(composeDir, "Dockerfile.pitr"), "utf8");
+    const pinned = compose.services.postgres?.image?.match(/postgres:18@sha256:[0-9a-f]{64}/)?.[0];
+    expect(pinned).toBeDefined();
+    expect(dockerfile).toContain(`ARG POSTGRES_IMAGE=${pinned}`);
+    expect(pitr.build).toMatchObject({
+      args: { POSTGRES_IMAGE: interpolated("POSTGRES_IMAGE", pinned) },
+    });
   });
 });

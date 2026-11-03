@@ -1,5 +1,6 @@
 import type { Bot, Group } from "@rakazo/contracts";
 import { useCallback, useEffect, useMemo, useRef } from "react";
+import type { NavigateFunction, NavigateOptions, To } from "react-router-dom";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { guardShellNavigate } from "../../lib/space-switch";
 import type { ShellOverlay } from "../shell-overlay";
@@ -22,7 +23,9 @@ export function useShellNavigation() {
       alive.current = false;
     };
   }, []);
-  const navigate = useMemo(
+  const navigationRevision = useRef(0);
+  const overlayRevision = useRef(0);
+  const guardedNavigate = useMemo(
     () =>
       guardShellNavigate(
         () => navigateRef.current,
@@ -30,28 +33,41 @@ export function useShellNavigation() {
       ),
     [],
   );
+  const navigate = useMemo<NavigateFunction>(
+    () => (to: To | number, options?: NavigateOptions) => {
+      navigationRevision.current += 1;
+      return typeof to === "number" ? guardedNavigate(to) : guardedNavigate(to, options);
+    },
+    [guardedNavigate],
+  );
   const [searchParams, setSearchParams] = useSearchParams();
   // Mirrors searchParams for effects that only need to read it once on run,
   // not re-run on every unrelated query-param change (e.g. the SSE subscribe
   // effect, which should only restart when the active bot changes).
   const searchParamsRef = useRef(searchParams);
   searchParamsRef.current = searchParams;
-  /** Picking the thread for a bare or stale route keeps an overlay the URL asked for. */
+  /** Automatic route repair preserves overlays without counting as newer user navigation. */
   const redirectKeepingOverlay = useCallback(
     (pathname: string) =>
-      navigate(
+      guardedNavigate(
         { pathname, search: shellOverlaySearch(searchParamsRef.current) },
         { replace: true },
       ),
-    [navigate],
+    [guardedNavigate],
   );
   const overlay = readShellOverlay(searchParams);
   // Overlays replace the URL rather than adding history, so opening and closing never race a navigation.
   function setOverlay(next: ShellOverlay) {
-    navigate({ search: searchString(withShellOverlay(searchParams, next)) }, { replace: true });
+    overlayRevision.current += 1;
+    guardedNavigate(
+      { search: searchString(withShellOverlay(searchParams, next)) },
+      { replace: true },
+    );
   }
   return {
     navigate,
+    navigationRevision,
+    overlayRevision,
     alive,
     searchParams,
     setSearchParams,

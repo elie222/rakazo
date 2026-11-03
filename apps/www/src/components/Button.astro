@@ -14,7 +14,7 @@ const { href, variant = "primary", size = "md", external = false, "data-attr": d
   class:list={["button", `button--${variant}`, size === "sm" && "button--small"]}
   href={href}
   data-attr={dataAttr}
-  {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
+  {...(external ? { target: "_blank", rel: "noopener" } : {})}
 >
   <slot />
 </a>

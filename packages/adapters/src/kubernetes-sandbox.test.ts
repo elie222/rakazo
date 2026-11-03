@@ -4,14 +4,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Exec, V1Pod } from "@kubernetes/client-node";
 import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
+import { shellQuote } from "@rakazo/core/node/desktop-runtime";
 import { describe, expect, it, vi } from "vitest";
 import type { KubernetesSandboxSdk } from "./kubernetes-sandbox.js";
 import { encodeTarEntry, KubernetesSandboxProvider, TarReader } from "./kubernetes-sandbox.js";
 import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
-
-vi.mock("./computer-workspace.js", () => ({
-  shouldSkipPortableWorkspaceFile: (file: string) => file.includes(".browser-profiles/Cache/"),
-}));
 
 const TAR_END = Buffer.alloc(1024);
 
@@ -107,8 +104,13 @@ describe("KubernetesSandboxProvider", () => {
           else if (command.includes("stat"))
             stdout?.write(String(files.get(command.at(-1)!)!.content.length));
           else if (command.includes("cat")) stdout?.write(files.get(command.at(-1)!)!.content);
-          else if (command.includes("find")) {
-            const directory = command[command.indexOf("find") + 1]!;
+          else if (
+            command.includes("find") ||
+            command.some((arg) => arg.includes("find . -regextype"))
+          ) {
+            const directory = command.includes("find")
+              ? command[command.indexOf("find") + 1]!
+              : "/home/rakazo";
             for (const [name, file] of files) {
               const relative = name.slice(directory.length + 1);
               if (!name.startsWith(`${directory}/`)) continue;
@@ -821,7 +823,10 @@ describe("KubernetesSandboxProvider", () => {
         args[6].on("end", () => args[8]?.({ status: "Success" }));
       } else
         queueMicrotask(() => {
-          if (command.includes("find")) {
+          if (
+            command.includes("find") ||
+            command.some((arg) => arg.includes("find . -regextype"))
+          ) {
             args[4]?.write(["a.txt", ".browser-profiles/Cache/blob", "run.sh", ""].join("\0"));
           } else if (command.includes("tar")) {
             expect(args[6]).toBeNull();
@@ -1097,9 +1102,16 @@ describe("KubernetesSandboxProvider", () => {
         await link(path.join(root, long), path.join(root, "linked.txt"));
         const exec = vi.fn(async (...args: Parameters<Exec["exec"]>) => {
           const argv = args[3] as string[];
+          const script = argv[argv.indexOf("bash") + 2];
           queueMicrotask(() => {
-            if (argv.includes("find")) args[4]?.write(`${long}\0linked.txt\0`);
-            else if (args[6]) {
+            if (script?.includes("&& find . ")) {
+              args[4]?.write(
+                execFileSync("bash", [
+                  "-c",
+                  script.replace(`cd ${shellQuote("/home/rakazo")}`, `cd ${shellQuote(root)}`),
+                ]),
+              );
+            } else if (args[6]) {
               args[6].resume();
             } else if (argv.includes("tar")) {
               const command = argv.slice(argv.indexOf("tar") + 1);

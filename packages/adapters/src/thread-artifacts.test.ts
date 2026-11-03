@@ -296,9 +296,7 @@ describe("current-turn thread files", () => {
   );
 
   it("also materializes image attachments, not just files", async () => {
-    // A photo attached in chat is only handed to the model as inline vision
-    // content otherwise (loadCurrentTurnImages) — a bot that needs the actual
-    // bytes (to forward, re-attach, or hand to a shell tool) needs this too.
+    // Inline vision alone would leave a bot unable to forward or hand the photo to a tool.
     const findMany = vi.fn().mockResolvedValue([
       {
         id: "image-1",

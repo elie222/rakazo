@@ -34,7 +34,7 @@ message it answers came from you in the app.
 - `update_group`: renames a group or adds and removes members.
 - `organize_bot`: sets a section (`section`), clears it (`clear_section: true`) or sets a pin on a bot
   or a group.
-- `update_bot` with `bot_id`: edits a child bot's name, title, description, color and
+- `update_bot` with `bot_id`: edits a child bot's name, description, color and
   notifications. It never changes instructions. Without `bot_id` it acts on the calling bot as
   before.
 - `set_child_instructions`: replaces a child bot's instructions. The bot passes the version it read

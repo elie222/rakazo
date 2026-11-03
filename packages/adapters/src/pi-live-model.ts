@@ -11,6 +11,25 @@ export function isChatModelId(id: string): boolean {
   );
 }
 
+/**
+ * The account catalog's image answer replaces whatever modalities were guessed.
+ * An absent answer leaves them alone, including the text-only cross-family fallback.
+ */
+export function withLiveImageInput(
+  model: Model<Api>,
+  supportsImages: boolean | undefined,
+): Model<Api> {
+  if (supportsImages === undefined) return model;
+  const input: Model<Api>["input"] = supportsImages ? ["text", "image"] : ["text"];
+  if (
+    model.input.length === input.length &&
+    input.every((modality, index) => model.input[index] === modality)
+  ) {
+    return model;
+  }
+  return { ...model, input };
+}
+
 /** A deterministic fallback shared by listing and execution; never changes provider or host. */
 export function liveModelSibling(
   models: Models,

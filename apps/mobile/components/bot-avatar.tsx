@@ -1,4 +1,5 @@
-import type { AvatarMotionMode } from "@rakazo/core";
+import type { BotAvatarSet } from "@rakazo/contracts";
+import type { AvatarMotionMode, LogoAvatarActivity } from "@rakazo/core";
 import {
   AVATAR_LID_CLOSE,
   AVATAR_MOTION_UNITS,
@@ -13,13 +14,15 @@ import {
   avatarSchedulePose,
   avatarThinkingDot,
   avatarWorkingDot,
+  botAvatarActivity,
   isRunWorking,
   organicAvatarPath,
   SHIPPED_BOT_AVATAR_CENTER,
   SHIPPED_BOT_AVATAR_VIEWBOX,
+  usesLogoAvatar,
 } from "@rakazo/core";
 import { botEyeColor } from "@rakazo/ui-tokens";
-import { memo } from "react";
+import { memo, useSyncExternalStore } from "react";
 import { Image, Pressable, View } from "react-native";
 import Animated, {
   useAnimatedProps,
@@ -31,7 +34,9 @@ import type { AvatarLife } from "../lib/avatar-life";
 import { useAvatarOnScreen, useLife, usePoke, useSettling } from "../lib/avatar-life";
 import { mobileBotAvatarPresentation } from "../lib/bot-avatar";
 import { useI18n } from "../lib/i18n";
+import { mobileLogoAvatarActivity } from "../lib/logo-avatar-activity";
 import { useMobileTokens } from "../lib/native";
+import { LogoAvatar } from "./logo-avatar";
 import { NativeSymbol } from "./native-symbol";
 
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
@@ -105,7 +110,134 @@ function eyeState(life: AvatarLife) {
   return { x: frame.eyeX, y: frame.eyeY, lid: frame.lid, hidden: grow >= 0.5 };
 }
 
-export const BotAvatar = memo(function BotAvatar({
+export interface BotAvatarProps {
+  color: string;
+  size?: number;
+  status?: string;
+  identity?: string;
+  avatarSet?: BotAvatarSet;
+  activity?: LogoAvatarActivity;
+  muted?: boolean;
+  motion?: AvatarMotionMode;
+  composing?: boolean;
+  pokeable?: boolean;
+}
+
+/** Missing set metadata deliberately preserves every existing avatar. */
+export const BotAvatar = memo(function BotAvatar(props: BotAvatarProps) {
+  if (usesLogoAvatar(props)) {
+    return <RakazoBotAvatar {...props} />;
+  }
+  return <LegacyBotAvatar {...props} />;
+});
+
+function RakazoBotAvatar({
+  color,
+  identity,
+  size = 54,
+  status,
+  activity,
+  composing = false,
+  muted = false,
+  motion = "static",
+  pokeable = false,
+}: BotAvatarProps) {
+  const liveActivity = useSyncExternalStore(
+    mobileLogoAvatarActivity.subscribe,
+    () => mobileLogoAvatarActivity.getActivity(identity ?? "", status),
+    (): LogoAvatarActivity => "idle",
+  );
+  const resolved = botAvatarActivity(
+    { color, avatarSet: "rakazo" },
+    activity ??
+      (composing && (liveActivity === "working" || liveActivity === "idle")
+        ? "writing"
+        : liveActivity),
+  );
+  const working = isRunWorking(status) && resolved !== "writing" && motion !== "running";
+  return (
+    <View style={{ width: size, height: size }}>
+      <LogoAvatar
+        color={color}
+        identity={identity}
+        size={size}
+        activity={resolved}
+        motion={motion}
+        pokeable={pokeable}
+      />
+      {working ? <WorkingDot size={size} muted={muted} /> : null}
+      {muted ? <MutedBadge size={size} /> : null}
+    </View>
+  );
+}
+
+function WorkingDot({ size, muted }: { size: number; muted: boolean }) {
+  const tokens = useMobileTokens();
+  const { t } = useI18n();
+  const dot = avatarWorkingDot(size);
+  return (
+    <View
+      accessibilityLabel={t("Working")}
+      style={{
+        position: "absolute",
+        right: muted ? undefined : dot.inset - dot.ring,
+        left: muted ? dot.inset - dot.ring : undefined,
+        bottom: dot.inset - dot.ring,
+        width: dot.diameter + dot.ring * 2,
+        height: dot.diameter + dot.ring * 2,
+        borderRadius: size,
+        borderWidth: dot.ring,
+        borderColor: tokens.background,
+        backgroundColor: tokens.workingDot,
+      }}
+    />
+  );
+}
+
+function MutedBadge({ size }: { size: number }) {
+  const tokens = useMobileTokens();
+  const { t } = useI18n();
+  return (
+    <View
+      accessible
+      accessibilityLabel={t("Notifications silenced")}
+      style={{
+        position: "absolute",
+        right: -2,
+        bottom: -2,
+        width: Math.max(14, Math.round(size * 0.34)),
+        height: Math.max(14, Math.round(size * 0.34)),
+        borderRadius: size,
+        borderWidth: 2,
+        borderColor: tokens.background,
+        // Opaque under the translucent fill, so the avatar does not show through the bell.
+        backgroundColor: tokens.background,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <View
+        style={{
+          position: "absolute",
+          top: 0,
+          right: 0,
+          bottom: 0,
+          left: 0,
+          borderRadius: size,
+          backgroundColor: tokens.secondary,
+        }}
+      />
+      <NativeSymbol
+        ios="bell.slash.fill"
+        android="notifications-off"
+        size={Math.max(8, Math.round(size * 0.17))}
+        color={tokens.foreground}
+      />
+    </View>
+  );
+}
+
+function LegacyBotAvatar({
   color,
   size = 54,
   status,
@@ -134,14 +266,11 @@ export const BotAvatar = memo(function BotAvatar({
   /** A tap plays a little reaction (the activity mark). */
   pokeable?: boolean;
 }) {
-  const { t } = useI18n();
   const tokens = useMobileTokens();
   const state = avatarLifeState(status, composing);
   // The working dot marks a bot at work, not one writing its reply; a running avatar is
   // itself that sign, so it carries none.
   const isWorking = isRunWorking(status) && !composing && motion !== "running";
-  // The ring sits outside the disc, so the disc keeps its place.
-  const dot = avatarWorkingDot(size);
   const parsed = mobileBotAvatarPresentation(color);
   const onScreen = useAvatarOnScreen();
   const reducedMotion = useReducedMotion();
@@ -197,49 +326,8 @@ export const BotAvatar = memo(function BotAvatar({
       {parsed.kind !== "image" && clock !== "still" ? (
         <ThinkingDots color={fillColor} size={size} life={life} />
       ) : null}
-      {isWorking ? (
-        <View
-          accessibilityLabel={t("Working")}
-          style={{
-            position: "absolute",
-            right: muted ? undefined : dot.inset - dot.ring,
-            left: muted ? dot.inset - dot.ring : undefined,
-            bottom: dot.inset - dot.ring,
-            width: dot.diameter + dot.ring * 2,
-            height: dot.diameter + dot.ring * 2,
-            borderRadius: size,
-            borderWidth: dot.ring,
-            borderColor: tokens.background,
-            backgroundColor: tokens.workingDot,
-          }}
-        />
-      ) : null}
-      {muted ? (
-        <View
-          accessible
-          accessibilityLabel={t("Notifications silenced")}
-          style={{
-            position: "absolute",
-            right: -2,
-            bottom: -2,
-            width: Math.max(14, Math.round(size * 0.34)),
-            height: Math.max(14, Math.round(size * 0.34)),
-            borderRadius: size,
-            borderWidth: 2,
-            borderColor: "#000",
-            backgroundColor: "#242428",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <NativeSymbol
-            ios="bell.slash.fill"
-            android="notifications-off"
-            size={Math.max(8, Math.round(size * 0.17))}
-            color="#ECECEE"
-          />
-        </View>
-      ) : null}
+      {isWorking ? <WorkingDot size={size} muted={muted} /> : null}
+      {muted ? <MutedBadge size={size} /> : null}
     </View>
   );
   // A tap is a little toy, not an action, so it stays out of the accessibility tree.
@@ -250,7 +338,7 @@ export const BotAvatar = memo(function BotAvatar({
   ) : (
     avatar
   );
-});
+}
 
 /** The three typing dots a writing bot's avatar turns into; the middle one is its body. */
 function ThinkingDots({ color, size, life }: { color: string; size: number; life: AvatarLife }) {

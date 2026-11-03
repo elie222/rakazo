@@ -1,7 +1,14 @@
 import { randomUUID } from "node:crypto";
 import type { AdapterContext, BackgroundJob, JobPublisher } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import { asSystem, clearThread, createDb, runAsSystem, runAsTenant } from "@rakazo/db";
+import {
+  asSystem,
+  clearThread,
+  createDb,
+  RunHistoryWriteError,
+  runAsSystem,
+  runAsTenant,
+} from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CursorCloudAgentEmulator } from "./cloud-agent-emulator.js";
 import type { CloudAgentConnection } from "./cloud-agent-factory.js";
@@ -244,6 +251,27 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     expect(h.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({ name: "run.continue", payload: { runId: wake!.id } }),
     );
+  });
+
+  it("does not launch from an attempt a newer claim superseded", async () => {
+    const h = await setup();
+    await asSystem(prisma).run.update({
+      where: { id: h.run.id },
+      data: { status: "running", leaseOwner: "worker-2", leaseFence: 2 },
+    });
+    await expect(
+      runAsSystem("agent run tool call", () =>
+        executeCloudAgentTool(
+          { ...h.deps, runLease: { runId: h.run.id, owner: "worker-1", fence: 1 } },
+          h.context,
+          h.run,
+          "cloud_agent_launch",
+          { prompt: "Add README" },
+        ),
+      ),
+    ).rejects.toBeInstanceOf(RunHistoryWriteError);
+    expect(await prisma.cloudAgent.count({ where: { userId: h.id } })).toBe(0);
+    expect(h.wire.requests).toHaveLength(0);
   });
 
   it("never dispatches a launch whose card transaction fails", async () => {

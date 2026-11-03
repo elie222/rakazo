@@ -3,11 +3,7 @@ import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import { MESSAGING_WEBHOOK_BASE_PATH, mountMessagingWebhookRoutes } from "./messaging-webhook.js";
 
-/**
- * The route is a thin pass-through: verification, parsing, and status
- * handling all live inside the surface's platform adapters (covered in
- * packages/adapters). These tests pin the routing contract only.
- */
+// Verification and parsing live in the platform adapters; these tests pin routing only.
 function mount(respond?: (provider: string, request: Request) => Response) {
   const handleWebhook = vi.fn((provider: string, request: Request) => {
     if (provider !== "sendblue" && provider !== "whatsapp") return null;

@@ -224,4 +224,16 @@ describe("voiceAccountIssue", () => {
       VoiceAccountError,
     );
   });
+
+  it("raises other refusals of the account without a code and keeps the provider message", () => {
+    const permission = "The API key you used is missing the permission text_to_speech.";
+    const error = voiceRequestError(401, "ElevenLabs", "speaking", {
+      detail: { status: "missing_permissions", message: permission },
+    });
+    expect(error).toBeInstanceOf(VoiceAccountError);
+    expect(error).toMatchObject({ code: undefined, message: permission });
+    expect(voiceRequestError(400, "ElevenLabs", "speaking", null)).not.toBeInstanceOf(
+      VoiceAccountError,
+    );
+  });
 });

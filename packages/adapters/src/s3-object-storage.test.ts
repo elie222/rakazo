@@ -16,6 +16,11 @@ function fakeS3() {
   const xml = (value: string) =>
     value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const server = createServer(async (req, res) => {
+    // Local tools can probe any listening loopback port; every S3 call names a bucket.
+    if (req.url === "/") {
+      res.writeHead(404).end();
+      return;
+    }
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(chunk as Buffer);
     const body = Buffer.concat(chunks);

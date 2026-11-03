@@ -33,12 +33,7 @@ export function BotMemberPicker({
   const [everPicked, setEverPicked] = useState<ReadonlySet<string>>(() => new Set(selected));
   const needle = expanded ? query.trim().toLowerCase() : "";
   const base = expanded ? bots : bots.filter((bot) => everPicked.has(bot.id));
-  const visible = needle
-    ? base.filter(
-        (bot) =>
-          bot.name.toLowerCase().includes(needle) || bot.title.toLowerCase().includes(needle),
-      )
-    : base;
+  const visible = needle ? base.filter((bot) => bot.name.toLowerCase().includes(needle)) : base;
 
   return (
     <View style={{ marginTop: 20 }}>
@@ -79,7 +74,13 @@ export function BotMemberPicker({
           const checked = selected.includes(bot.id);
           const identity = (
             <>
-              <BotAvatar color={bot.color} identity={bot.id} size={34} status={bot.status} />
+              <BotAvatar
+                color={bot.color}
+                avatarSet={bot.avatarSet}
+                identity={bot.id}
+                size={34}
+                status={bot.status}
+              />
               <Text style={[styles.name, { color: tokens.foreground }]}>{bot.name}</Text>
             </>
           );

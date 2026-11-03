@@ -37,6 +37,7 @@ vi.mock("./i18n", () => {
   const i18n = { t: home.t, locale: "en" };
   return { useI18n: () => i18n };
 });
+vi.mock("./material-icons", () => ({ materialIcons: {} }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({
   native: { page: "white", secondaryLabel: "gray" },

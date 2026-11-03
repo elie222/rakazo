@@ -109,6 +109,19 @@ describe("inferScript bot-message wakes", () => {
     expect(reply).toContain("done. i handled: peer-alpha");
     expect(reply).not.toContain(BOT_WAKE_TEXT);
   });
+
+  it("keys a peer request on the message, not the sender's id", () => {
+    // A generated id can contain a journey keyword by chance: both flaky web E2E runs
+    // sent Chief's id with "crm" in it, and the recipient claimed the connector branch.
+    const prompt = buildBotMessageWakePrompt({
+      from: { id: "cmvvkx7j64oicrm19aigl6zfz", name: "Chief" },
+      text: "peer-exchange-alpha",
+      intent: "request",
+    });
+    const script = inferScript(prompt);
+    expect(script[0]?.toolCalls).toBeUndefined();
+    expect(script[0]?.assistant).toContain("done. i handled: peer-exchange-alpha");
+  });
 });
 
 const BOT_WAKE_TEXT = "A message just arrived";
@@ -120,6 +133,34 @@ describe("inferScript shell", () => {
         assistant: "running it on my computer.",
         toolCalls: [{ name: "shell", args: { command: "echo sign in && ls -la" } }],
         complete: true,
+      },
+    ]);
+  });
+});
+
+describe("inferScript user computer", () => {
+  it("runs hostname on the user's computer", () => {
+    expect(inferScript("run hostname on my computer")[0]?.toolCalls).toEqual([
+      { name: "user_computer_shell", args: { command: "hostname" } },
+    ]);
+  });
+
+  it("looks at and types in an app on the user's computer", () => {
+    expect(inferScript("look at TextEdit on my computer")[0]?.toolCalls).toEqual([
+      { name: "user_computer_observe", args: { app: "TextEdit" } },
+    ]);
+    expect(
+      inferScript('type "Hello" in a new TextEdit document on my computer')[0]?.toolCalls,
+    ).toEqual([
+      {
+        name: "user_computer_act",
+        args: {
+          app: "TextEdit",
+          actions: [
+            { kind: "menu", path: ["File", "New"] },
+            { kind: "type", text: "Hello" },
+          ],
+        },
       },
     ]);
   });

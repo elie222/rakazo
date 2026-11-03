@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { getHeapStatistics } from "node:v8";
 import type { BackgroundJobExecution } from "@rakazo/adapter-kit";
 import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
@@ -7,7 +8,7 @@ function admissionMemory(activeRuns: number) {
   // One incoming run needs room for an attachment and its decoding/copying.
   // Resident allocations are already reflected in available physical memory.
   const reserve = ATTACHMENT_MAX_BYTES * 4;
-  const available = process.availableMemory();
+  const available = process.availableMemory() + reclaimableFileCache();
   const heap = getHeapStatistics();
   // V8 may hit its own heap ceiling while physical RAM remains available.
   // External buffers are already reflected in physical memory, not heap usage.
@@ -33,12 +34,33 @@ function admissionMemory(activeRuns: number) {
   };
 }
 
+/**
+ * In a memory-limited container, available memory is the limit minus usage, and usage includes
+ * the page cache left by file reads and writes. The kernel drops its inactive part under
+ * pressure, so counting it as used stalls runs while the worker has room. Only cgroup v2 is read.
+ */
+function reclaimableFileCache(): number {
+  if (!process.constrainedMemory()) return 0;
+  try {
+    const group = /^0::(\/.*)$/m.exec(readFileSync("/proc/self/cgroup", "utf8"))?.[1];
+    if (!group) return 0;
+    const stat = readFileSync(`/sys/fs/cgroup${group === "/" ? "" : group}/memory.stat`, "utf8");
+    return Number(/^inactive_file (\d+)$/m.exec(stat)?.[1] ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
 /** Tracks agent lifetimes separately from short wakeup deliveries. */
 export class RunExecutionHost {
   private stopping = false;
   private pressure: { since: number; reason: string } | undefined;
   private readonly activeRuns = new Set<Promise<void>>();
   private readonly capacityWaiters = new Set<() => void>();
+
+  get activeCount(): number {
+    return this.activeRuns.size;
+  }
 
   start(): void {
     this.stopping = false;

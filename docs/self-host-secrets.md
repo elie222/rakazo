@@ -117,6 +117,8 @@ later" item.
 ## Related
 
 - [Self-hosting](./self-host.md)
+- [Configuration](./self-host-configuration.md)
+- [Storage and encryption](./self-host-storage.md)
 
 ## Optional credential storage
 

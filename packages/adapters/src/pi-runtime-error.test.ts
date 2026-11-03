@@ -90,14 +90,20 @@ describe("Pi runtime errors", () => {
     "You have no credits remaining. Add credits to continue using the API.",
     'xai API error (400): 400 "Incorrect API key provided."',
     "Your authentication token has expired. Please try refreshing it.",
+    "Provided authentication token is expired.",
+    "Encountered invalidated oauth token for user, failing request",
     'Headers.append: "example key\nclient = Client(timeout=30, rate_limit=1)" is an invalid header value.',
     "Cannot convert argument to a ByteString because the character at index 0 has a value of 48120 which is greater than 255.",
     '403: {"type":"FreeTierError","message":"This free tier can only be used from within its own app."}',
     'opencode API error (410): {"type":"ModelDeprecated","message":"Model example-free has been deprecated."}',
     '404: {"message":"No endpoints found that support tool use.","code":404}',
     '400: {"message":"`tool calling` is not supported with this model","type":"invalid_request_error"}',
+    `400: {"message":"feature 'tool calls' is not currently supported"}`,
     '413: {"message":"Request too large for model `example/model` on tokens per minute (TPM)."}',
     MODEL_CONTEXT_TOO_SMALL_ERROR,
+    '400: {"code":"400","message":"Unsupported model example-model"}',
+    '400: {"message":"The model `example/model` requires terms acceptance.","type":"invalid_request_error","code":"model_terms_required"}',
+    'OAuth refresh failed for anthropic: Anthropic token refresh request failed. url=https://example.invalid/v1/oauth/token; details=Error: HTTP request failed. status=400; body={"error": "invalid_grant", "error_description": "Refresh token not found or invalid"}',
   ])("marks a provider account failure the user can fix: %s", async (message) => {
     provider.errorMessage = message;
     const failure = consume();
@@ -114,6 +120,7 @@ describe("Pi runtime errors", () => {
     "Failed to parse tool call arguments as JSON",
     "Tool call validation failed: attempted to call tool 'commentary' which was not in request.tools",
     MODEL_OUTPUT_LIMIT_ERROR,
+    "Upstream error from Example: HttpError: HTTP 400: Tool calls cutoff by max_tokens.",
   ])("marks unusable model output as the model's failure: %s", async (message) => {
     provider.errorMessage = message;
     const failure = consume();
@@ -159,6 +166,15 @@ describe("Pi runtime errors after every backup failed", () => {
     '403: {"type":"FreeTierError","message":"This free tier can only be used from within its own app."}';
   const unknown = "Cannot read properties of undefined (reading 'content')";
   const emptyReply = "Provider returned an empty response";
+  const dailyQuota = `429 ${JSON.stringify({
+    error: {
+      message: "Rate limit exceeded: free-models-per-day",
+      code: 429,
+      metadata: { headers: { "X-RateLimit-Reset": String(Date.now() + 10 * 60 * 60_000) } },
+    },
+  })}`;
+  const rateLimited =
+    '429 {"type":"error","error":{"type":"rate_limit_error","message":"Rate limited"}}';
 
   function exhausted(primaryError: string, reasons: string[], skipped: string[] = []) {
     return modelFallbackFailure(primaryError, [
@@ -188,6 +204,11 @@ describe("Pi runtime errors after every backup failed", () => {
     [
       "an account failure outranks timeouts",
       exhausted(timedOut, [timedOut, freeTier]),
+      ModelAccountError,
+    ],
+    [
+      "a quota that resets hours away outranks a rate-limited backup",
+      exhausted(dailyQuota, [rateLimited]),
       ModelAccountError,
     ],
     ["bad output outranks timeouts", exhausted(timedOut, [emptyReply]), ModelOutputError],

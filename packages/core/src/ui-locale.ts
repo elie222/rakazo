@@ -29,15 +29,6 @@ function uiLocaleCandidate(raw: string | null | undefined): string {
   ) {
     return "zh-TW";
   }
-  if (
-    normalized === "zh" ||
-    normalized === "zh-cn" ||
-    normalized === "zh-hans" ||
-    normalized === "zh-sg" ||
-    normalized.startsWith("zh-hans-") ||
-    normalized.startsWith("zh-cn-")
-  ) {
-    return "zh-CN";
-  }
+  if (language === "zh") return "zh-CN";
   return normalized.split("-")[0] ?? "";
 }

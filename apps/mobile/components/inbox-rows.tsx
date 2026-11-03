@@ -3,7 +3,7 @@ import { isRunWorking } from "@rakazo/core";
 import { botColors } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { createContext, memo, useContext, useEffect, useState } from "react";
-import { Platform, Pressable, Text, useWindowDimensions, View } from "react-native";
+import { Platform, Pressable, Text, View } from "react-native";
 import Animated, {
   Easing,
   ReduceMotion,
@@ -14,14 +14,13 @@ import Animated, {
 import type { MobileBot, MobileBotSection, MobileGroup } from "../lib/api";
 import { AvatarRow } from "../lib/avatar-life";
 import { useI18n } from "../lib/i18n";
-import { botTag, formatThreadTime } from "../lib/inbox";
+import { formatThreadTime } from "../lib/inbox";
 import type { PinnedChat } from "../lib/inbox-spaces";
 import type { InboxChatKind, InboxRowAction } from "../lib/inbox-swipe";
 import { INBOX_ROW_ACTIONS, inboxRowActionList } from "../lib/inbox-swipe";
 import { native, useThemedStyles } from "../lib/native";
 import { previewSnippet } from "../lib/preview";
 import { androidRipple } from "../lib/ripple";
-import { stacksAtTextScale } from "../lib/text-scale";
 import { BotAvatar } from "./bot-avatar";
 import type { BotOrganizationUpdate } from "./bot-organize-modal";
 import { GroupAvatar } from "./group-avatar";
@@ -40,7 +39,6 @@ export function ConversationRow({
   preview,
   time,
   avatar,
-  tag,
   unread,
   onPress,
   onLongPress,
@@ -54,7 +52,6 @@ export function ConversationRow({
   preview: string;
   time: string;
   avatar: ReactNode;
-  tag?: string | null;
   unread?: boolean;
   onPress: () => void;
   onLongPress?: () => void;
@@ -66,7 +63,6 @@ export function ConversationRow({
   const styles = useThemedStyles(createHomeStyles);
   const { t } = useI18n();
   const compact = useContext(CompactRowsContext);
-  const tagBelow = stacksAtTextScale(useWindowDimensions().fontScale);
   const openChatId = useContext(SelectedChatContext);
   const selected = chatId !== undefined && openChatId === chatId;
   const rowActions = actions.map((action) => ({
@@ -99,17 +95,10 @@ export function ConversationRow({
       {avatar}
       <View style={styles.rowBody}>
         <View style={styles.rowTop}>
-          <View style={[styles.titleRow, tagBelow && styles.titleRowWrapped]}>
+          <View style={styles.titleRow}>
             <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
               {title}
             </Text>
-            {tag && !compact ? (
-              <View style={styles.tag}>
-                <Text style={styles.tagLabel} numberOfLines={1}>
-                  {tag}
-                </Text>
-              </View>
-            ) : null}
           </View>
           <View style={styles.rowMeta}>
             {time ? <Text style={styles.time}>{time}</Text> : null}
@@ -239,6 +228,7 @@ export const PinnedTiles = memo(function PinnedTiles({
             {chat.kind === "bot" ? (
               <BotAvatar
                 color={chat.bot.color || FALLBACK_COLOR}
+                avatarSet={chat.bot.avatarSet}
                 identity={chat.bot.id}
                 size={avatarSize}
                 status={chat.bot.status}
@@ -289,14 +279,12 @@ export const BotRow = memo(function BotRow({
   onAction?: (action: InboxRowAction, bot: MobileBot | SpaceBot) => void;
 } & RowMenuProps) {
   const { t } = useI18n();
-  const preview = previewSnippet(bot.preview, 40) || bot.title || t("No messages yet");
+  const preview = previewSnippet(bot.preview, 40) || t("No messages yet");
   const time = bot.updatedAt ? formatThreadTime(bot.updatedAt, new Date(day)) : "";
-  const tag = botTag(bot.title, bot.name);
   const working = isRunWorking(bot.status);
   // Spelled out because an explicit label replaces the one built from the row's children.
   const label = [
     bot.name,
-    tag,
     working ? t("Working…") : null,
     bot.notifyOnFinish === false ? t("notifications silenced") : null,
     bot.unread ? t("unread") : null,
@@ -312,7 +300,6 @@ export const BotRow = memo(function BotRow({
       title={bot.name}
       preview={preview}
       time={time}
-      tag={tag}
       unread={bot.unread}
       accessibilityLabel={label}
       accessibilityHint={
@@ -326,6 +313,7 @@ export const BotRow = memo(function BotRow({
         <AvatarRow id={bot.id}>
           <BotAvatar
             color={bot.color || FALLBACK_COLOR}
+            avatarSet={bot.avatarSet}
             identity={bot.id}
             size={INBOX_ROW.avatarSize}
             status={bot.status}
@@ -347,7 +335,14 @@ export const BotRow = memo(function BotRow({
       preview={{
         title: bot.name,
         message: bot.preview,
-        avatar: <BotAvatar color={bot.color || FALLBACK_COLOR} identity={bot.id} size={32} />,
+        avatar: (
+          <BotAvatar
+            color={bot.color || FALLBACK_COLOR}
+            avatarSet={bot.avatarSet}
+            identity={bot.id}
+            size={32}
+          />
+        ),
       }}
       onAction={runAction}
       onOrganize={(update) => onOrganize("bot", bot, update)}

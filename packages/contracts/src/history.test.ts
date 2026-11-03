@@ -29,3 +29,38 @@ describe("history date boundaries", () => {
       );
   });
 });
+
+describe("history search arguments", () => {
+  it("requires exactly one query input and normalizes variants", () => {
+    expect(
+      HistorySearchInputSchema.parse({ queries: [" Aurora ", "aurora", "orbit"] }).queries,
+    ).toEqual(["Aurora", "orbit"]);
+    for (const input of [
+      {},
+      { query: "a", queries: ["b"] },
+      { queries: [] },
+      { queries: [" "] },
+      { queries: Array(6).fill("a") },
+      { query: "a", scope: "all" },
+      { query: "a", kinds: ["secret_prompt"] },
+      { query: "a", offset: -1 },
+    ])
+      expect(HistorySearchInputSchema.safeParse(input).success).toBe(false);
+  });
+});
+
+describe("history query byte budget", () => {
+  it("accepts 3000 serialized UTF-8 bytes and rejects one byte more", () => {
+    const queries = ["星".repeat(499), `${"界".repeat(498)}xx`];
+    expect(new TextEncoder().encode(JSON.stringify(queries)).length).toBe(3000);
+    expect(HistorySearchInputSchema.safeParse({ queries }).success).toBe(true);
+    expect(
+      HistorySearchInputSchema.safeParse({ queries: [`${queries[0]}x`, queries[1]] }).success,
+    ).toBe(false);
+    expect(
+      HistorySearchInputSchema.safeParse({
+        queries: Array.from({ length: 5 }, (_, i) => "星".repeat(499) + i),
+      }).success,
+    ).toBe(false);
+  });
+});

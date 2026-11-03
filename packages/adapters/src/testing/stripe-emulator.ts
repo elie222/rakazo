@@ -11,6 +11,14 @@ export class StripeEmulator {
   readonly customers = new Map<string, { id: string; email: string; deleted: boolean }>();
   readonly sessions: StripeCheckoutSession[] = [];
   readonly subscriptions: StripeSubscriptionRecord[] = [];
+  /** Customer balance in cents; negative is credit owed to the customer, as in Stripe. */
+  readonly balances = new Map<string, number>();
+  readonly balanceTransactions: Array<{
+    id: string;
+    customer: string;
+    amount: number;
+    metadata: Record<string, string>;
+  }> = [];
   /** Largest page the list endpoint returns; lower it to exercise pagination. */
   pageSize = 100;
   /** Upcoming responses fail with these Stripe errors, in order. */
@@ -68,7 +76,7 @@ export class StripeEmulator {
   };
 
   /** The customer finishes their open checkout. An expired session cannot be paid. */
-  completeCheckout(customerId: string, status?: string) {
+  completeCheckout(customerId: string, status?: string, cardFingerprint = "fp_fake_card") {
     const checkout = this.sessions.findLast(
       (session) => session.customer === customerId && session.status === "open",
     );
@@ -88,6 +96,8 @@ export class StripeEmulator {
       cancel_at_period_end: false,
       cancel_at: null,
       ended_at: null,
+      default_payment_method: `pm_fake_${n}`,
+      cardFingerprint,
       items: {
         object: "list",
         data: [
@@ -204,8 +214,62 @@ export class StripeEmulator {
         ? matching.findIndex((s) => s.id === form.starting_after) + 1
         : 0;
       const limit = Math.min(Number(form.limit ?? 10), this.pageSize);
-      const data = matching.slice(start, start + limit);
+      const expandCard = Object.entries(form).some(
+        ([key, value]) => key.startsWith("expand[") && value === "data.default_payment_method",
+      );
+      const data = matching
+        .slice(start, start + limit)
+        .map(({ cardFingerprint, ...subscription }) =>
+          expandCard && subscription.default_payment_method
+            ? {
+                ...subscription,
+                default_payment_method: {
+                  id: subscription.default_payment_method,
+                  object: "payment_method",
+                  card: { fingerprint: cardFingerprint },
+                },
+              }
+            : subscription,
+        );
       return Response.json({ object: "list", has_more: start + limit < matching.length, data });
+    }
+    const balance = /^\/v1\/customers\/([^/]+)\/balance_transactions$/.exec(path);
+    if (method === "GET" && balance) {
+      const id = decodeURIComponent(balance[1]!);
+      const data = this.balanceTransactions.filter((entry) => entry.customer === id);
+      return Response.json({ object: "list", has_more: false, data });
+    }
+    if (method === "POST" && balance) {
+      const id = decodeURIComponent(balance[1]!);
+      if (this.customers.get(id)?.deleted !== false)
+        return stripeError({
+          status: 404,
+          message: "No such customer",
+          code: "resource_missing",
+          param: "customer",
+        });
+      const next = (this.balances.get(id) ?? 0) + Number(form.amount);
+      this.balances.set(id, next);
+      const metadata = Object.fromEntries(
+        Object.entries(form).flatMap(([key, value]) => {
+          const name = /^metadata\[(.+)\]$/.exec(key)?.[1];
+          return name ? [[name, value]] : [];
+        }),
+      );
+      const transaction = {
+        id: `cbtxn_fake_${++this.sequence}`,
+        customer: id,
+        amount: Number(form.amount),
+        metadata,
+      };
+      this.balanceTransactions.push(transaction);
+      return Response.json({
+        ...transaction,
+        object: "customer_balance_transaction",
+        amount: Number(form.amount),
+        currency: form.currency,
+        ending_balance: next,
+      });
     }
     const item = /^\/v1\/subscription_items\/([^/]+)$/.exec(path);
     if (method === "POST" && item) {
@@ -254,6 +318,9 @@ export interface StripeSubscriptionRecord {
   cancel_at_period_end: boolean;
   cancel_at: number | null;
   ended_at: number | null;
+  default_payment_method?: string | null;
+  /** Emulator-only: the card's fingerprint, returned when the payment method is expanded. */
+  cardFingerprint?: string;
   items: {
     object: "list";
     data: Array<{

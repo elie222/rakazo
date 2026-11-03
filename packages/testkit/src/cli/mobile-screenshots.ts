@@ -84,7 +84,7 @@ async function main() {
     fetch: handles.app.fetch,
     hostname: "0.0.0.0",
     port: API_PORT,
-  });
+  }) as Server;
   const deviceControl = startDeviceControlServer();
 
   try {

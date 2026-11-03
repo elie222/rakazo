@@ -574,8 +574,7 @@ describe("ChatSdkMessagingSurface webhook waitUntil drain", () => {
       "mock",
       webhookRequest({ threadId: "mock:Duser:1", id: "m-slow", text: "hello" }),
     );
-    // If the surface returned before draining waitUntil, sinkDone would still be false
-    // when the promise settles... we assert after await that sink completed first.
+    // The response must wait for the waitUntil sink to finish.
     const response = await responsePromise;
     sawSinkPendingAtResponse = !sinkDone;
     expect(sawSinkPendingAtResponse).toBe(false);

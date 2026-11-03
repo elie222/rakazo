@@ -13,6 +13,11 @@ export type ThreadSpaceRequest =
   | { action: "switch"; spaceId: string }
   | { action: "unavailable" };
 
+export function threadRouteId(name: string, params: Record<string, unknown>): string | undefined {
+  const ownerId = params.groupId ?? params.botId;
+  return typeof ownerId === "string" && ownerId ? JSON.stringify([name, ownerId]) : undefined;
+}
+
 function singleRouteParam(value: string | string[] | undefined): string | undefined {
   if (typeof value === "string") {
     const trimmed = value.trim();

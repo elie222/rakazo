@@ -21,7 +21,6 @@ test("the chat header floats over the transcript", async ({ page }, testInfo) =>
   if (!header || !scroller) throw new Error("missing chat layout");
   // Messages scroll under the floating header rather than stopping below a bar.
   expect(scroller.y).toBeLessThan(header.y);
-  // The gaps beside the title reach the transcript under them.
   const gapHitsTranscript = await page.evaluate(
     ({ x, y }) => Boolean(document.elementFromPoint(x, y)?.closest('[data-testid="transcript"]')),
     { x: scroller.x + scroller.width / 4, y: header.y + header.height / 2 },
@@ -36,7 +35,6 @@ test("the chat header floats over the transcript", async ({ page }, testInfo) =>
     await captureScreenshot(page, testInfo, `chat-header-floating-${theme}`);
   }
 
-  // The oldest message still starts below the header.
   await transcript.evaluate((element) => {
     element.scrollTop = 0;
   });

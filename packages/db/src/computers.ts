@@ -127,12 +127,9 @@ async function lockUserForComputerQuota(
 }
 
 /**
- * Refuse a restore that would push a user past the cap.
- *
  * A restore re-links the bot to its Computer row, which reactivates the quota
  * if that row was only referenced by archived bots (the dedicated case; a team
- * row shared with live bots keeps counting). Throws ComputerLimitError when the
- * restore would exceed the configured SANDBOX_MAX_COMPUTERS_PER_USER.
+ * row shared with live bots keeps counting).
  */
 export async function assertComputerQuotaForRestore(
   prisma: ComputerDb,
@@ -244,14 +241,10 @@ async function ensureComputerRecordWithQuota(
     select: { id: true },
   });
   if (!existing) {
-    // The bot being linked to this new computer is part of this same
-    // transaction; its old or intermediate reference is leaving the live set
-    // when this link commits. Exclude this bot's current reference so a
-    // transaction that ends with exactly one active computer is not refused
-    // at cap 1 (createBot links the team computer first, then re-links the
-    // bot to the new dedicated one; setBotComputer switches the same way).
-    // References from other active bots still count: a team computer another
-    // live bot keeps using stays in-use after the re-link.
+    // This bot's current reference leaves the live set when this link commits
+    // (createBot links the team computer first, then re-links the bot to the new
+    // dedicated one; setBotComputer switches the same way), so exclude it or a
+    // transaction ending with exactly one active computer is refused at cap 1.
     const inUse = await countInUseComputersForUser(tx, input.userId, input.botId);
     // The new row itself will be referenced by this bot after the link, so
     // the post-transaction set is one more than the remaining live set.

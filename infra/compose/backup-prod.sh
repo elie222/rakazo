@@ -63,21 +63,12 @@ fi
 
 compose=(docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}")
 
-# Archive the appdata volume from the host, not through `compose exec api`.
+# Archive the appdata volume from the host, not through `compose exec api`: the cap-dropped
+# api user cannot read the root-owned mode-600 bot homes, so its archive would miss the bot
+# state a restore needs.
 #
-# The api image runs as `USER node` (uid 1000) with `cap_drop: ALL`, while the
-# supervisor creates each bot computer's home under /data as root with mode 600
-# (receipts, taught skills, connector tokens). Inside a cap-dropped container
-# uid 1000 cannot read those files, so `tar` exits 2 and the archive it leaves
-# behind is missing exactly the bot state a restore needs. Root on the host has
-# CAP_DAC_OVERRIDE and reads all of it.
-#
-# Ask the running container where /data actually is, rather than rebuilding the
-# volume name from a project name. `compose config` reports this file's `name:`
-# key and ignores an operator's `-p` or COMPOSE_PROJECT_NAME, so reconstructing
-# "<project>_appdata" would inspect the default project's volume on any stack
-# started under another name, and silently archive the wrong one. This uses the
-# same compose invocation as the pg_dump below, so both target one stack.
+# Ask the running container where /data is rather than rebuilding the volume name: `compose
+# config` ignores an operator's `-p`/COMPOSE_PROJECT_NAME and would archive the wrong volume.
 api="$("${compose[@]}" ps -q api)"
 [[ -n "${api}" ]] || { echo "the api service is not running; cannot locate /data" >&2; exit 1; }
 appdata="$(docker inspect "${api}" \

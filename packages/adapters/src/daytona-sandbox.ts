@@ -32,15 +32,14 @@ import { abortableDelay, boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { screenSessionKey } from "./computer-screens.js";
 import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
-import {
-  PORTABLE_TRANSFER_BATCH_BYTES,
-  shouldSkipPortableWorkspaceFile,
-} from "./computer-workspace.js";
-import { LinuxDesktop, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
+import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
+import { LinuxDesktop, onBotScreen, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 import { withAbort } from "./web-ssrf.js";
+import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 
+const DISPLAY_START = 20;
 const DAYTONA_SCREEN_TTL_SECONDS = 3_600;
 const DAYTONA_START_TIMEOUT_MS = 120_000;
 const DAYTONA_STOP_TIMEOUT_MS = 120_000;
@@ -50,7 +49,6 @@ const DAYTONA_POLL_MS = 1_000;
 /** How long a cached handle is trusted before Daytona is asked whether the sandbox still runs. */
 const DAYTONA_HANDLE_PROBE_MS = 60_000;
 
-/** The slice of a Daytona sandbox this adapter uses. */
 export type DaytonaSandbox = Pick<
   Sandbox,
   | "id"
@@ -106,7 +104,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
         homeDir: (await sandbox.getUserHomeDir()) ?? "/home/daytona",
         workspaceDir: await this.workspaceRoot(sandbox),
         browserProfilesDir: path.posix.join(await this.workspaceRoot(sandbox), ".browser-profiles"),
-        displayStart: 20,
+        displayStart: DISPLAY_START,
         portStart: 6100,
         // The provider port proxy reaches the isolated sandbox through its network interface.
         bindHost: "0.0.0.0",
@@ -223,15 +221,30 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     return this.ref(sandbox, request.botId, true, false);
   }
 
+  async isRunning(computer: ComputerRef, context: AdapterContext): Promise<boolean> {
+    if (computer.kind !== "daytona") return false;
+    try {
+      const sandbox = await withAbort(
+        this.client.get(computer.providerRef || computer.id),
+        context.signal,
+      );
+      return sandbox.state === SandboxState.STARTED;
+    } catch (error) {
+      if (isDaytonaSandboxMissing(error)) return false;
+      throw error;
+    }
+  }
+
   async prepare(computer: ComputerRef, context: AdapterContext): Promise<void> {
     await this.prepareWorkspace(await withAbort(this.box(computer), context.signal));
   }
 
   async *execute(
     computer: ComputerRef,
-    request: CommandRequest,
+    requested: CommandRequest,
     context: AdapterContext,
   ): AsyncIterable<ProcessEvent> {
+    const request = onBotScreen(requested, context, DISPLAY_START);
     if (context.signal.aborted) {
       yield { type: "stderr", data: "command aborted\n" };
       yield { type: "exit", code: 130 };
@@ -370,6 +383,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       batchBytes = 0;
     };
     for await (const file of files) {
+      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
       if (context.signal.aborted) throw context.signal.reason ?? new Error("import aborted");
       if (
         batch.length >= 8 ||
@@ -884,7 +898,7 @@ async function* walkDaytonaWorkspace(
   }
   for (const entry of directories) {
     const relative = normalizeWorkspacePath(directory ? `${directory}/${entry.name}` : entry.name);
-    if (!shouldSkipPortableWorkspaceFile(`${relative}/placeholder`)) {
+    if (!shouldSkipPortableWorkspaceFile(relative, true)) {
       yield* walkDaytonaWorkspace(sandbox, root, relative, context);
     }
   }

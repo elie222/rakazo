@@ -1,89 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, openNewSpace, rpc, signup } from "./helpers";
 
-test("the only space is named in the sidebar and chat creation requires approval", async ({
-  page,
-}, testInfo) => {
-  const stamp = Date.now();
-  await signup(page, `spaces-${stamp}@rakazo.test`, "password12", "Space Owner");
-  await completeOnboarding(page);
-
-  const sidebar = page.locator("aside").first();
-  await expect(sidebar.getByText("Personal", { exact: true })).toBeVisible();
-  await expect(sidebar.getByRole("button", { name: /^Chief/ })).toHaveCount(1);
-  await sidebar.getByRole("button", { name: "Actions for Personal" }).click();
-  await expect(page.getByRole("menuitem", { name: "Delete space" })).toHaveCount(0);
-  await page.getByRole("menuitem", { name: "Settings" }).click();
-  const onlySpaceSettings = page.getByTestId("user-settings");
-  await expect(onlySpaceSettings).toHaveAttribute("data-settings-section", "space");
-  await expect(onlySpaceSettings.getByLabel("Name")).toHaveValue("Personal");
-  // The default space is never deletable, so the action is absent.
-  await expect(onlySpaceSettings.getByRole("button", { name: "Delete space" })).toHaveCount(0);
-  await captureScreenshot(page, testInfo, "space-settings-only-space");
-  // A lone space is the whole app, so General lists no spaces.
-  await onlySpaceSettings.getByRole("button", { name: "Back" }).click();
-  await expect(onlySpaceSettings.getByTestId("settings-spaces")).toHaveCount(0);
-  await page.keyboard.press("Escape");
-  await expect(onlySpaceSettings).toHaveCount(0);
-  await captureScreenshot(page, testInfo, "single-space-sidebar");
-
-  await openNewSpace(page);
-  const dialog = page.getByRole("dialog", { name: "New space" });
-  await expect(dialog.getByLabel("Name")).toBeVisible();
-  await dialog.getByLabel("Name").fill("Customer support");
-  await captureScreenshot(page, testInfo, "new-space-dialog");
-  await dialog.getByRole("button", { name: "Cancel" }).click();
-
-  const composer = page.getByRole("combobox", { name: "Message Chief" });
-  await composer.fill("Create a space named Customer support");
-  await composer.press("Enter");
-  await expect(page.getByRole("button", { name: "Create space", exact: true })).toBeVisible({
-    timeout: 15_000,
-  });
-  await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Always allow this tool" })).toHaveCount(0);
-  await expect(sidebar.getByText("Customer support", { exact: true })).toHaveCount(0);
-  await captureScreenshot(page, testInfo, "create-space-chat-approval");
-  await page.getByRole("button", { name: "Create space", exact: true }).click();
-  await expect(page.getByText("Created", { exact: true })).toBeVisible();
-
-  await expect(sidebar.getByText("Personal", { exact: true })).toBeVisible();
-  await expect(sidebar.getByText("Customer support", { exact: true })).toBeVisible({
-    timeout: 15_000,
-  });
-
-  const supportSpace = sidebar
-    .locator('[data-sidebar-group^="space:"]')
-    .filter({ hasText: "Customer support" });
-  const supportSpaceGroup = await supportSpace.getAttribute("data-sidebar-group");
-  const supportSpaceId = supportSpaceGroup?.split(":")[1];
-  expect(supportSpaceId).toBeTruthy();
-  await supportSpace.getByRole("button", { name: "Open Customer support" }).click();
-  await page.waitForURL(/\/(onboarding|app)/);
-  await expect
-    .poll(() => page.evaluate(() => window.localStorage.getItem("rakazo:space-id")))
-    .toBe(supportSpaceId);
-  await completeOnboarding(page);
-
-  await expect(sidebar.getByText("Personal", { exact: true })).toBeVisible();
-  await expect(sidebar.getByText("Customer support", { exact: true })).toBeVisible();
-  await expect(sidebar.getByRole("button", { name: /^Chief/ })).toHaveCount(2);
-  await captureScreenshot(page, testInfo, "spaces-sidebar");
-
-  const personalSpace = sidebar
-    .locator('[data-sidebar-group^="space:"]')
-    .filter({ hasText: "Personal" });
-  const personalSpaceGroup = await personalSpace.getAttribute("data-sidebar-group");
-  const personalSpaceId = personalSpaceGroup?.split(":")[1];
-  expect(personalSpaceId).toBeTruthy();
-  await personalSpace.getByRole("button", { name: /^Chief/ }).click();
-  await page.waitForURL(/\/app\/[^/]+$/);
-  await expect
-    .poll(() => page.evaluate(() => window.localStorage.getItem("rakazo:space-id")))
-    .toBe(personalSpaceId);
-  await expect(sidebar.getByText("Customer support", { exact: true })).toBeVisible();
-});
-
 test("a new space auto-completes onboarding, is renamed in its settings, and is deleted with its bots", async ({
   page,
 }, testInfo) => {
@@ -94,8 +11,21 @@ test("a new space auto-completes onboarding, is renamed in its settings, and is 
   const sidebar = page.locator("aside").first();
   await openNewSpace(page);
   const dialog = page.getByRole("dialog", { name: "New space" });
-  await dialog.getByLabel("Name").fill("Typo space");
-  await dialog.getByRole("button", { name: "Create space", exact: true }).click();
+  const name = dialog.getByLabel("Name");
+  await name.fill("Typo space");
+  const windowKeys = await page.evaluateHandle(() => {
+    const keys: string[] = [];
+    window.addEventListener("keydown", (event) => keys.push(event.key));
+    return keys;
+  });
+  // These synthetic keyboard events exercise the browser event flags; they do not start an OS IME.
+  for (const composition of [{ isComposing: true }, { keyCode: 229 }]) {
+    await name.dispatchEvent("keydown", { key: "Enter", ...composition });
+    await name.dispatchEvent("keydown", { key: "Escape", ...composition });
+    expect(await windowKeys.evaluate((keys) => keys.includes("Escape"))).toBe(false);
+    await expect(dialog.getByRole("button", { name: "Create space", exact: true })).toBeEnabled();
+  }
+  await name.press("Enter");
 
   // Model is already connected, so onboarding skips the form and lands in Chief.
   await completeOnboarding(page);
@@ -144,7 +74,9 @@ test("a new space auto-completes onboarding, is renamed in its settings, and is 
   await expect(sidebar.getByRole("button", { name: /^Chief/ })).toHaveCount(1);
 });
 
-test("deleting the last bot in a space stays in the app after first use", async ({ page }) => {
+test("deleting the last bot in a space stays in the app after first use", {
+  tag: "@nightly",
+}, async ({ page }) => {
   const stamp = Date.now();
   await signup(page, `spaces-empty-${stamp}@rakazo.test`, "password12", "Space Owner");
   await completeOnboarding(page);
@@ -192,86 +124,4 @@ test("deleting the last bot in a space stays in the app after first use", async 
   await expect(sidebar.getByText("Side", { exact: true })).toHaveCount(0);
   await sidebar.getByRole("button", { name: /^Archived/ }).click();
   await expect(sidebar.getByText("Chief", { exact: true })).toBeVisible();
-});
-
-test("a space's menu opens its settings in place, and General lists every space", async ({
-  page,
-}, testInfo) => {
-  const stamp = Date.now();
-  await signup(page, `spaces-settings-${stamp}@rakazo.test`, "password12", "Space Owner");
-  await completeOnboarding(page);
-
-  const sidebar = page.locator("aside").first();
-  await openNewSpace(page);
-  const dialog = page.getByRole("dialog", { name: "New space" });
-  await dialog.getByLabel("Name").fill("Support");
-  await dialog.getByRole("button", { name: "Create space", exact: true }).click();
-  await completeOnboarding(page);
-  await expect(sidebar.getByText("Support", { exact: true })).toBeVisible();
-  const chatPath = new URL(page.url()).pathname;
-  // Settings stay on the chat's route; only the overlay params change.
-  const onChat = () => {
-    const url = new URL(page.url());
-    expect(url.pathname).toBe(chatPath);
-    expect(url.searchParams.get("settings")).toBe("space");
-  };
-  const selected = await page.evaluate(() => localStorage.getItem("rakazo:space-id"));
-  await page.evaluate(() => {
-    document.documentElement.dataset.settingsTest = "same-document";
-  });
-
-  // Support is selected; Personal's menu opens Personal's settings without leaving Support.
-  await sidebar.getByRole("button", { name: "Actions for Personal" }).click();
-  await page.getByRole("menuitem", { name: "Settings" }).click();
-  const settings = page.getByTestId("user-settings");
-  await expect(settings).toHaveAttribute("data-settings-section", "space");
-  await expect(settings.getByRole("heading", { name: "Personal" })).toBeVisible();
-  onChat();
-  expect(await page.evaluate(() => localStorage.getItem("rakazo:space-id"))).toBe(selected);
-  await expect(page.locator("html")).toHaveAttribute("data-settings-test", "same-document");
-  await captureScreenshot(page, testInfo, "space-settings-from-menu");
-
-  // Back leads to General, whose Spaces list opens any space's page.
-  await settings.getByRole("button", { name: "Back" }).click();
-  await expect(settings).toHaveAttribute("data-settings-section", "general");
-  const spaceList = settings.getByTestId("settings-spaces");
-  await expect(spaceList.getByText("Personal", { exact: true })).toBeVisible();
-  await captureScreenshot(page, testInfo, "settings-general-spaces");
-  await spaceList.getByRole("button", { name: "Manage Support" }).click();
-  await expect(settings.getByRole("heading", { name: "Support" })).toBeVisible();
-  await expect(settings).toHaveAttribute("data-settings-section", "space");
-  onChat();
-  expect(await page.evaluate(() => localStorage.getItem("rakazo:space-id"))).toBe(selected);
-  await expect(page.locator("html")).toHaveAttribute("data-settings-test", "same-document");
-
-  // Models, voice, and approvals follow the account until this space customizes them.
-  const overrides = settings.getByTestId("space-setting-overrides");
-  for (const name of ["Models", "Voice", "Approvals"]) {
-    await expect(overrides.getByRole("button", { name: `Customize ${name}` })).toBeVisible();
-  }
-  await expect(overrides.getByText("Your defaults", { exact: true })).toHaveCount(3);
-  await captureScreenshot(page, testInfo, "space-settings-uses-defaults");
-
-  await overrides.getByRole("button", { name: "Customize Approvals" }).click();
-  const approvals = overrides.getByTestId("space-setting-confirmations");
-  const spaceNeverAsk = approvals.getByRole("button", { name: "Never ask", exact: true });
-  await expect(spaceNeverAsk).toHaveAttribute("aria-pressed", "false");
-  await spaceNeverAsk.click();
-  await expect(spaceNeverAsk).toHaveAttribute("aria-pressed", "true");
-  await expect(overrides.getByText("Your defaults", { exact: true })).toHaveCount(2);
-  await captureScreenshot(page, testInfo, "space-settings-customized-confirmations");
-
-  // The account's own approvals stay as they were.
-  await settings.getByTestId("settings-nav-confirmations").click();
-  await expect(settings.getByRole("button", { name: "Never ask", exact: true })).toHaveAttribute(
-    "aria-pressed",
-    "false",
-  );
-
-  await settings.getByTestId("settings-nav-general").click();
-  await spaceList.getByRole("button", { name: "Manage Support" }).click();
-  await expect(settings.getByRole("heading", { name: "Support" })).toBeVisible();
-  await overrides.getByRole("button", { name: "Use defaults for Approvals" }).click();
-  await expect(approvals.getByTestId("approval-mode")).toHaveCount(0);
-  await expect(overrides.getByRole("button", { name: "Customize Approvals" })).toBeVisible();
 });

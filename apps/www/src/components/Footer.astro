@@ -2,6 +2,7 @@
 import {
   DEFAULT_LOCALE,
   LOCALE_HREFLANG,
+  LOCALE_HTML_LANG,
   LOCALE_LABELS,
   LOCALES,
   isLocale,
@@ -86,22 +87,33 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
   <div class="site-footer__brand">
     <Logo href={homeHref} label={homeLabel} />
     <nav class="site-footer__languages" aria-label={languagesLabel}>
-      {
-        LOCALES.map((locale) => (
-          <a
-            href={localeHomePath(locale)}
-            hreflang={LOCALE_HREFLANG[locale]}
-            aria-current={isCurrentPage(localeHomePath(locale)) ? "page" : undefined}
-          >
-            {LOCALE_LABELS[locale]}
-          </a>
-        ))
-      }
+      <details class="language-menu">
+        <summary>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg>
+          {LOCALE_LABELS[currentLocale]}
+          <svg class="language-menu__chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5" /></svg>
+        </summary>
+        <ul>
+          {
+            LOCALES.map((locale) => (
+              <li>
+                <a
+                  href={localeHomePath(locale)}
+                  hreflang={LOCALE_HREFLANG[locale]}
+                  lang={LOCALE_HTML_LANG[locale]}
+                  aria-current={locale === currentLocale ? "true" : undefined}
+                >
+                  {LOCALE_LABELS[locale]}
+                </a>
+              </li>
+            ))
+          }
+        </ul>
+      </details>
     </nav>
     <span class="site-footer__legal">
-      © 2026 ·
-      <a href={INBOX_ZERO_URL} target="_blank" rel="noreferrer">Inbox Zero Inc.</a>
-      · Apache-2.0
+      <span>© 2026 <a href={INBOX_ZERO_URL} target="_blank" rel="noopener">Inbox Zero Inc.</a></span>
+      <span>Apache-2.0</span>
     </span>
   </div>
   <nav class="site-footer__columns" aria-label={navLabel}>
@@ -115,7 +127,7 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
                 <a
                   href={link.href}
                   aria-current={!link.external && isCurrentPage(link.href) ? "page" : undefined}
-                  {...(link.external ? { target: "_blank", rel: "noreferrer" } : {})}
+                  {...(link.external ? { target: "_blank", rel: "noopener" } : {})}
                 >
                   {link.label}
                 </a>

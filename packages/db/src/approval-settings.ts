@@ -15,6 +15,14 @@ type ConfirmationsClient = Pick<
   | "userActionAutoReviewPreference"
 >;
 
+/** A stored effect's batch actions, or undefined when the effect is not a batch. */
+export function storedBatchActions(
+  value: Prisma.JsonValue | null | undefined,
+): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter((action): action is string => typeof action === "string");
+}
+
 export type ApprovalRuleInput = { effect: string; matchKind: string; matchValue: string };
 export type AutoReviewPreference = { enabled: boolean; skipApprovals: boolean };
 
@@ -109,7 +117,6 @@ export async function removeApprovalRule(
   }
 }
 
-/** The saved auto review choice, or null when the member never chose. */
 export async function findAutoReviewPreference(
   prisma: ConfirmationsClient,
   scope: Scope,

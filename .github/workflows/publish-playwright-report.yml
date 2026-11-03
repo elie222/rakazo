@@ -11,21 +11,49 @@ permissions:
   issues: write
   pull-requests: write
 
-concurrency:
-  group: playwright-publication
-  cancel-in-progress: false
-
 jobs:
-  publish:
+  result:
+    name: Read Playwright result
     if: >-
       (github.event.workflow_run.conclusion == 'success' ||
        github.event.workflow_run.conclusion == 'failure' ||
        github.event.workflow_run.conclusion == 'timed_out') &&
-      (github.event.workflow_run.event == 'pull_request' ||
-       (github.event.workflow_run.event == 'push' &&
-        github.event.workflow_run.head_branch == 'main'))
+      github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      job_result: ${{ steps.playwright.outputs.job_result }}
+      result: ${{ steps.playwright.outputs.result }}
+    steps:
+      - name: Read Playwright job result
+        id: playwright
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        shell: bash
+        run: |
+          result="$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/attempts/${RUN_ATTEMPT}/jobs?per_page=100" | \
+            jq -r '[.[].jobs[] | select(.name == "Web E2E / Web E2E") | .conclusion] | unique | if length == 1 then .[0] else error("expected exactly one Playwright job") end')"
+          case "$result" in
+            success|failure) ;;
+            timed_out) ;;
+            # Pull requests that cannot affect the browser skip E2E; there is nothing to publish.
+            skipped) ;;
+            *) echo "Unexpected Playwright job conclusion: $result" >&2; exit 1 ;;
+          esac
+          echo "job_result=$result" >> "$GITHUB_OUTPUT"
+          if [[ "$result" == "timed_out" ]]; then result="failure"; fi
+          echo "result=$result" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: result
+    if: needs.result.outputs.result != 'skipped'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    concurrency:
+      group: playwright-publication
+      cancel-in-progress: false
     steps:
       # workflow_run has repository secrets. Always use trusted default-branch code here;
       # never check out or execute the contributor's pull-request revision.
@@ -39,25 +67,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Read Playwright job result
-        id: playwright
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
-        shell: bash
-        run: |
-          result="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs?per_page=100" \
-            --jq '[.jobs[] | select(.name == "Web E2E / Web E2E") | .conclusion] | unique | if length == 1 then .[0] else error("expected exactly one Playwright job") end')"
-          case "$result" in
-            success|failure) ;;
-            timed_out) ;;
-            *) echo "Unexpected Playwright job conclusion: $result" >&2; exit 1 ;;
-          esac
-          echo "job_result=$result" >> "$GITHUB_OUTPUT"
-          if [[ "$result" == "timed_out" ]]; then result="failure"; fi
-          echo "result=$result" >> "$GITHUB_OUTPUT"
       - name: Resolve pull request
-        if: github.event.workflow_run.event == 'pull_request'
         id: pull_request
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -80,7 +90,7 @@ jobs:
         env:
           ARTIFACT_NAME: playwright-artifacts-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PLAYWRIGHT_JOB_RESULT: ${{ steps.playwright.outputs.job_result }}
+          PLAYWRIGHT_JOB_RESULT: ${{ needs.result.outputs.job_result }}
           RUN_ID: ${{ github.event.workflow_run.id }}
         shell: bash
         run: |
@@ -121,7 +131,7 @@ jobs:
           S3_BUCKET: ${{ vars.S3_BUCKET }}
           S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
           PLAYWRIGHT_PUBLIC_BASE_URL: ${{ vars.PLAYWRIGHT_PUBLIC_BASE_URL }}
-          PLAYWRIGHT_RESULT: ${{ steps.playwright.outputs.result }}
+          PLAYWRIGHT_RESULT: ${{ needs.result.outputs.result }}
           PLAYWRIGHT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
           PLAYWRIGHT_RUN_ID: ${{ github.event.workflow_run.id }}
           PLAYWRIGHT_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
@@ -131,13 +141,12 @@ jobs:
           PLAYWRIGHT_BRANCH: ${{ github.event.workflow_run.head_branch }}
           PLAYWRIGHT_PR_NUMBER: ${{ steps.pull_request.outputs.number }}
           PLAYWRIGHT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
-          PLAYWRIGHT_PUBLISH_REPORT: ${{ github.event.workflow_run.event == 'push' }}
+          PLAYWRIGHT_PUBLISH_REPORT: "false"
           PLAYWRIGHT_REPORT_DIR: ${{ runner.temp }}/playwright-artifacts/playwright-report
           PLAYWRIGHT_TEST_RESULTS_DIR: ${{ runner.temp }}/playwright-artifacts/apps/web/test-results
         run: bash scripts/publish-playwright-report.sh
       - name: Link screenshot gallery from pull request
         if: >-
-          github.event.workflow_run.event == 'pull_request' &&
           steps.pull_request.outputs.number != '' &&
           steps.publish.outputs.latest_pr_run == 'true'
         env:

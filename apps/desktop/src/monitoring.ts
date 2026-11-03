@@ -22,6 +22,14 @@ let configuring: Promise<void> = Promise.resolve();
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
 const owners = new Map<string, ReturnType<typeof ElectronSentry.makeElectronTransport>>();
 
+/** A local or agent build would otherwise file its errors as the production release's. */
+export function desktopReportsErrors(
+  packaged: boolean,
+  release = process.env.RAKAZO_DESKTOP_RELEASE,
+): boolean {
+  return packaged && release === "1";
+}
+
 export function reportDesktopError(
   error: unknown,
   operation: ClientOperation,
@@ -53,7 +61,7 @@ export function disableDesktopMonitoring(): void {
 /** SDK observers initialize once; only the connection's transport and attribution change. */
 export function configureDesktopMonitoring(
   fetchConfig: () => Promise<Response>,
-  options: { version: string; base: string },
+  options: { version: string; base: string; reportsErrors: boolean },
 ): Promise<void> {
   clearTimeout(retryTimer);
   retryTimer = undefined;
@@ -96,7 +104,7 @@ export function configureDesktopMonitoring(
       return;
     }
     if (current !== generation) return;
-    if (!config.dsn) {
+    if (!config.dsn || !options.reportsErrors) {
       errors.install(undefined);
       return;
     }

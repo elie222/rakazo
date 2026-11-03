@@ -6,7 +6,7 @@ import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { notifyArchivedChatsChanged } from "../../lib/archived-chats";
 import { confirmDeleteBot, restoreArchivedBot } from "../../lib/bot-lifecycle";
-import { chatSettingsRoute } from "../../lib/chat-settings-route";
+import { chatTitleRoute } from "../../lib/chat-settings-route";
 import { useI18n } from "../../lib/i18n";
 import { useResolvedAppearance } from "../../lib/native";
 import { removeFromSearchInbox } from "../../lib/search-inbox";
@@ -74,8 +74,8 @@ export function useThreadHeader({
         composing: titleComposing,
         name: titleName,
         members: groupMembers,
-        // The title opens the chat's own settings: the group's in a group, the bot's otherwise.
-        settings: chatSettingsRoute({ groupId, botId, readOnly }),
+        // The title opens the bot's profile in a one-to-one chat, the group's settings in a group.
+        opens: chatTitleRoute({ groupId, botId, name: titleName, readOnly }),
       }),
     [
       route.key,

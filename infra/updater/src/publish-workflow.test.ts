@@ -111,12 +111,14 @@ describe("server image publish workflow", () => {
   it("checks credentials before publishing Depot tags or making native digests available", () => {
     const nativeSteps = workflow.jobs.build.steps;
     const nativeScan = nativeSteps.findIndex((step) =>
-      step.run?.includes('check-image.sh "$IMAGE" "$PLATFORM"'),
+      step.run?.includes("check-image.sh /tmp/rootfs.tar"),
     );
     const upload = nativeSteps.findIndex((step) =>
       step.uses?.startsWith("actions/upload-artifact@"),
     );
     expect(nativeScan).toBeGreaterThanOrEqual(0);
+    const nativeBuild = nativeSteps.find((step) => step.id === "build");
+    expect(nativeBuild?.with?.outputs).toContain("type=tar,dest=/tmp/rootfs.tar");
     expect(upload).toBeGreaterThan(nativeScan);
     const depotSteps = workflow.jobs["build-depot"].steps;
     const depotScan = depotSteps.findIndex((step) => step.run?.includes("check-image.sh"));
@@ -133,13 +135,8 @@ describe("server image publish workflow", () => {
     expect(publish?.uses).toBe("./.github/workflows/publish-server-image.yml");
     expect(publish?.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/main'");
     expect(ci.jobs["deploy-production"]?.needs).toEqual([
-      "lint",
-      "check",
-      "build",
-      "test",
+      "checks",
       "test-integration",
-      "test-postgres-upgrade",
-      "test-e2e",
       "publish-server-image",
     ]);
   });
@@ -159,6 +156,23 @@ describe("server image publish workflow", () => {
     ]) {
       expect(job?.concurrency?.queue).toBe("max");
       expect(job?.concurrency?.["cancel-in-progress"]).toBe(false);
+    }
+  });
+
+  it("lets only the newest waiting main revision replace a queued one, never a running one", () => {
+    const locks = ["checks", "test-integration-shard", "publish-server-image"].map(
+      (name) => ci.jobs[name]?.concurrency,
+    );
+    expect(new Set(locks.map((lock) => lock?.group)).size).toBe(locks.length);
+    for (const lock of locks) {
+      expect(lock?.group).toMatch(/main/);
+      expect(lock?.queue).toBeUndefined();
+      expect(lock?.["cancel-in-progress"]).toBeUndefined();
+    }
+    // Release prerequisites start with their run, so they reach these locks in push order and an
+    // older revision cannot replace a newer one that is already waiting.
+    for (const name of ["checks", "test-integration-shard", "publish-server-image"]) {
+      expect(ci.jobs[name]?.needs, name).toBeUndefined();
     }
   });
 

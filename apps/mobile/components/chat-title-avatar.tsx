@@ -46,6 +46,7 @@ export function ChatTitleAvatar({
   return (
     <BotAvatar
       color={bot.color}
+      avatarSet={bot.avatarSet}
       identity={bot.id}
       size={CHAT_TITLE_AVATAR_SIZE}
       status={status}

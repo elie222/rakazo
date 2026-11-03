@@ -4,12 +4,13 @@ import subprocess
 import sys
 
 
-def service_failures(rows, expected=("api", "worker")):
+def service_failures(rows, expected=("api", "worker"), optional=("pitr",)):
     failures = []
-    for service in expected:
+    for service in (*expected, *optional):
         states = [row for row in rows if row["service"] == service]
         if not states:
-            failures.append(f"{service} container is missing")
+            if service in expected:
+                failures.append(f"{service} container is missing")
         elif not any(row["state"] == "running" and row["health"] in ("healthy", "") for row in states):
             # During rolling replacement one healthy replica is sufficient.
             failures.append(f"{service} has no healthy running container")

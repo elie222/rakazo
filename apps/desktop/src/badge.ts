@@ -1,7 +1,9 @@
 import type { IpcMainInvokeEvent, WebContents } from "electron";
+import type { AppTarget } from "./app-frame.js";
+import { fromAppFrame } from "./app-frame.js";
 
 export function createBadgeHandler(
-  getTarget: () => { webContents: WebContents; url: string } | null,
+  getTarget: () => AppTarget | null,
   setBadgeCount: (count: number) => boolean,
 ) {
   // The window that set the count. A destroyed window runs no React cleanup, so
@@ -9,17 +11,7 @@ export function createBadgeHandler(
   let owner: WebContents | null = null;
   return (event: Pick<IpcMainInvokeEvent, "sender" | "senderFrame">, count: unknown): boolean => {
     try {
-      const target = getTarget();
-      if (
-        !target ||
-        target.webContents.isDestroyed() ||
-        event.sender !== target.webContents ||
-        event.senderFrame !== event.sender.mainFrame ||
-        !event.senderFrame
-      )
-        return false;
-      const origin = new URL(target.url).origin;
-      if (origin === "null" || new URL(event.senderFrame.url).origin !== origin) return false;
+      if (!fromAppFrame(getTarget(), event)) return false;
       const valid = typeof count === "number" && Number.isInteger(count) && count >= 0;
       const sender = event.sender;
       if (owner !== sender) {

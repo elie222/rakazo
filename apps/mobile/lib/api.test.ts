@@ -1,7 +1,13 @@
+import { getArtifactById } from "./artifacts";
+
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
 
 import type { RpcInput } from "@rakazo/contracts";
-import { isServerUnreachable, withLiveStreamingProgress } from "@rakazo/core";
+import {
+  dismissableAskMessageIds,
+  isServerUnreachable,
+  withLiveStreamingProgress,
+} from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { promptAiConsent } from "./ai-consent";
@@ -812,6 +818,56 @@ describe("mobile API authentication", () => {
     await vi.advanceTimersByTimeAsync(0);
     external.abort(new Error("screen closed"));
     await rejection;
+  });
+
+  it("reads a slowly delivered Files detail body", async () => {
+    vi.useFakeTimers();
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
+    const artifact = { id: "artifact-1", contentBase64: "aGVsbG8=" };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        let timer: ReturnType<typeof setTimeout>;
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              timer = setTimeout(() => {
+                controller.enqueue(new TextEncoder().encode(JSON.stringify({ json: artifact })));
+                controller.close();
+              }, 20_000);
+            },
+            cancel() {
+              clearTimeout(timer);
+            },
+          }),
+        );
+      }),
+    );
+
+    const result = getArtifactById("artifact-1").then(
+      (value) => ({ value }),
+      (error: unknown) => ({ error }),
+    );
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(await result).toEqual({ value: artifact });
+  });
+
+  it("times out and cancels a stalled Files detail body after the download budget", async () => {
+    vi.useFakeTimers();
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
+    const cancel = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(new ReadableStream({ cancel }))),
+    );
+
+    const pending = getArtifactById("artifact-1");
+    const rejection = expect(pending).rejects.toThrow("Request timed out");
+    await vi.advanceTimersByTimeAsync(119_999);
+    expect(cancel).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await rejection;
+    expect(cancel).toHaveBeenCalledOnce();
   });
 
   it("lets a call opt into a longer timeout", async () => {
@@ -2221,6 +2277,111 @@ describe("mobile API authentication", () => {
     await expect(pendingA).resolves.toBe(true);
     expect(selectedSpaceId()).toBe("space-b");
     expect(storage.get("rakazo.space_id")).toBe("space-b");
+    expect(resumeLiveNotifications).toHaveBeenCalledTimes(1);
+    expect(resumeLiveNotifications).toHaveBeenLastCalledWith(
+      currentApiBase(),
+      expect.anything(),
+      "space-b",
+    );
+  });
+
+  it("does not restore the first selection after switching away and back", async () => {
+    const storage = new Map<string, string>([["rakazo.session_token", "fake-token"]]);
+    let releaseFirstA!: () => void;
+    let firstA = true;
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => storage.get(key) ?? null);
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      storage.delete(key);
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.space_id" && value === "space-a" && firstA) {
+        firstA = false;
+        await new Promise<void>((resolve) => {
+          releaseFirstA = resolve;
+        });
+      }
+      storage.set(key, value);
+    });
+    await loadApiBase();
+    const pendingA = selectSpace("space-a");
+    await vi.waitFor(() => expect(firstA).toBe(false));
+    await expect(selectSpace("space-b")).resolves.toBe(true);
+    await expect(selectSpace("space-a")).resolves.toBe(true);
+    releaseFirstA();
+    await expect(pendingA).resolves.toBe(true);
+    expect(selectedSpaceId()).toBe("space-a");
+    expect(storage.get("rakazo.space_id")).toBe("space-a");
+    expect(resumeLiveNotifications).toHaveBeenCalledTimes(2);
+    expect(resumeLiveNotifications).toHaveBeenLastCalledWith(
+      currentApiBase(),
+      "fake-token",
+      "space-a",
+    );
+  });
+
+  it("does not restore an obsolete selection after its token read finishes", async () => {
+    const storage = new Map<string, string>([["rakazo.session_token", "fake-token"]]);
+    let releaseToken!: () => void;
+    let tokenReadHeld = false;
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.session_token" && !tokenReadHeld) {
+        tokenReadHeld = true;
+        await new Promise<void>((resolve) => {
+          releaseToken = resolve;
+        });
+      }
+      return storage.get(key) ?? null;
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      storage.set(key, value);
+    });
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      storage.delete(key);
+    });
+    await loadApiBase();
+
+    const pendingA = selectSpace("space-a");
+    await vi.waitFor(() => expect(tokenReadHeld).toBe(true));
+    await expect(selectSpace("space-b")).resolves.toBe(true);
+    releaseToken();
+    await expect(pendingA).resolves.toBe(true);
+    expect(selectedSpaceId()).toBe("space-b");
+    expect(storage.get("rakazo.space_id")).toBe("space-b");
+    expect(resumeLiveNotifications).toHaveBeenCalledOnce();
+    expect(resumeLiveNotifications).toHaveBeenCalledWith(currentApiBase(), "fake-token", "space-b");
+  });
+
+  it("restores notifications for the previous selection when a newer persist fails", async () => {
+    const storage = new Map<string, string>([["rakazo.session_token", "fake-token"]]);
+    let releaseA!: () => void;
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => storage.get(key) ?? null);
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      storage.delete(key);
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.space_id" && value === "space-a") {
+        await new Promise<void>((resolve) => {
+          releaseA = resolve;
+        });
+      }
+      if (key === "rakazo.space_id" && value === "space-b") throw new Error("device locked");
+      storage.set(key, value);
+    });
+    await loadApiBase();
+    const pendingA = selectSpace("space-a");
+    await vi.waitFor(() => expect(selectedSpaceId()).toBe("space-a"));
+    // Let rollback's recovery write complete without waiting on the older write.
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.space_id" && value === "space-b") throw new Error("device locked");
+      storage.set(key, value);
+    });
+    await expect(selectSpace("space-b")).resolves.toBe(false);
+    releaseA();
+    await expect(pendingA).resolves.toBe(true);
+    expect(selectedSpaceId()).toBe("space-a");
+    expect(storage.get("rakazo.space_id")).toBe("space-a");
+    expect(resumeLiveNotifications).toHaveBeenCalledOnce();
+    expect(resumeLiveNotifications).toHaveBeenCalledWith(currentApiBase(), "fake-token", "space-a");
   });
 
   it("keeps a later A claim when an earlier A→B→A persist fails", async () => {
@@ -3171,6 +3332,115 @@ describe("mobile thread event reduction", () => {
     expect(next?.members?.map((member) => member.status)).toEqual(["waiting_input", "running"]);
   });
 
+  it("keeps group member status in sync with run lifecycle events, like web", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot(),
+      botId: undefined,
+      groupId: "group-1",
+      members: [
+        { botId: "bot-1", name: "Writer", color: "blue", status: "idle" },
+        { botId: "bot-2", name: "Researcher", color: "green", status: "idle" },
+      ],
+    };
+    const statuses = (state: MobileSnapshot | null) =>
+      state?.members?.map((member) => member.status);
+
+    const started = applyMobileThreadEvent(initial, {
+      type: "run.started",
+      seq: 4,
+      botId: "bot-1",
+      runId: "run-1",
+    });
+    expect(statuses(started)).toEqual(["running", "idle"]);
+    const waiting = applyMobileThreadEvent(started, {
+      type: "run.waiting_input",
+      seq: 5,
+      botId: "bot-1",
+      runId: "run-1",
+    });
+    expect(statuses(waiting)).toEqual(["waiting_input", "idle"]);
+    const resumed = applyMobileThreadEvent(waiting, {
+      type: "run.started",
+      seq: 6,
+      botId: "bot-1",
+      runId: "run-1",
+    });
+    const takeover = applyMobileThreadEvent(resumed, {
+      type: "computer.takeover.requested",
+      seq: 7,
+      botId: "bot-1",
+      runId: "run-1",
+    });
+    expect(statuses(takeover)).toEqual(["waiting_takeover", "idle"]);
+    const released = applyMobileThreadEvent(takeover, {
+      type: "computer.takeover.released",
+      seq: 8,
+      botId: "bot-1",
+      runId: "run-1",
+    });
+    expect(statuses(released)).toEqual(["queued", "idle"]);
+    const completed = applyMobileThreadEvent(released, {
+      type: "run.completed",
+      seq: 9,
+      botId: "bot-1",
+      runId: "run-1",
+    });
+    expect(statuses(completed)).toEqual(["idle", "idle"]);
+  });
+
+  it("marks a waiting peer that the snapshot omitted", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot(),
+      groupId: "group-1",
+      members: [{ botId: "bot-2", name: "Researcher", color: "green", status: "running" }],
+    };
+
+    const next = applyMobileThreadEvent(initial, {
+      type: "run.waiting_input",
+      seq: 9,
+      botId: "bot-2",
+      runId: "peer-run",
+    });
+
+    expect(next?.run).toEqual({ id: "peer-run", botId: "bot-2", status: "waiting_input" });
+    expect(next?.members?.[0]?.status).toBe("waiting_input");
+  });
+
+  it.each(["run.completed", "run.failed", "run.cancelled"])(
+    "settles a member on %s to its next active run, or idle",
+    (type) => {
+      const initial: MobileSnapshot = {
+        ...snapshot(),
+        groupId: "group-1",
+        run: { id: "run-1", botId: "bot-1", status: "running" },
+        activeRuns: [
+          { id: "run-1", botId: "bot-1", status: "running" },
+          { id: "run-2", botId: "bot-1", status: "waiting_input" },
+          { id: "run-3", botId: "bot-2", status: "running" },
+        ],
+        members: [
+          { botId: "bot-1", name: "Writer", color: "blue", status: "running" },
+          { botId: "bot-2", name: "Researcher", color: "green", status: "running" },
+        ],
+      };
+
+      const first = applyMobileThreadEvent(initial, {
+        type,
+        seq: 9,
+        botId: "bot-1",
+        runId: "run-1",
+      });
+      expect(first?.members?.map((member) => member.status)).toEqual(["waiting_input", "running"]);
+      const last = applyMobileThreadEvent(first, {
+        type,
+        seq: 10,
+        botId: "bot-2",
+        runId: "run-3",
+      });
+      expect(last?.members?.map((member) => member.status)).toEqual(["waiting_input", "idle"]);
+    },
+  );
+
   it("consumes background run starts without changing visible work or members", () => {
     const initial: MobileSnapshot = {
       ...snapshot(),
@@ -3676,6 +3946,144 @@ describe("mobile thread event reduction", () => {
     expect(repeated?.cursor).toBe(9);
     expect(repeated?.run).toBe(waiting?.run);
   });
+
+  it("applies the waiting-input owner only to its run", () => {
+    const type = "run.waiting_input";
+    const status = "waiting_input";
+    const initial: MobileSnapshot = {
+      ...snapshot(),
+      run: { id: "run-1", status: "running", userId: "old-owner" },
+      activeRuns: [
+        { id: "run-1", status: "running", userId: "old-owner" },
+        { id: "run-2", status: "running", userId: "other-owner" },
+      ],
+    };
+    const waiting = applyMobileThreadEvent(initial, {
+      type,
+      runId: "run-1",
+      payload: { userId: "owner-1" },
+    });
+
+    expect(waiting?.run).toEqual({ id: "run-1", status, userId: "owner-1" });
+    expect(waiting?.activeRuns).toEqual([
+      { id: "run-1", status, userId: "owner-1" },
+      { id: "run-2", status: "running", userId: "other-owner" },
+    ]);
+
+    const corrected = applyMobileThreadEvent(waiting, {
+      type,
+      runId: "run-1",
+      payload: { userId: "owner-2" },
+    });
+    expect(corrected?.run?.userId).toBe("owner-2");
+    expect(corrected?.activeRuns?.[0]?.userId).toBe("owner-2");
+
+    const repeated = applyMobileThreadEvent(corrected, {
+      type,
+      runId: "run-1",
+      payload: { userId: "owner-2" },
+    });
+    expect(repeated).toBe(corrected);
+
+    const legacy = applyMobileThreadEvent(corrected, { type, runId: "run-1" });
+    expect(legacy?.run?.userId).toBe("owner-2");
+    expect(legacy?.activeRuns?.[0]?.userId).toBe("owner-2");
+  });
+
+  it("records the owner of an inserted waiting group run without changing another run", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot(),
+      groupId: "group-1",
+      run: { id: "run-1", status: "waiting_input", userId: "owner-1" },
+      activeRuns: [{ id: "run-1", status: "waiting_input", userId: "owner-1" }],
+    };
+    const waiting = applyMobileThreadEvent(initial, {
+      type: "run.waiting_input",
+      runId: "run-2",
+      botId: "bot-2",
+      payload: { userId: "owner-2" },
+    });
+
+    expect(waiting?.run).toEqual(initial.run);
+    expect(waiting?.activeRuns).toEqual([
+      initial.run,
+      { id: "run-2", botId: "bot-2", status: "waiting_input", userId: "owner-2" },
+    ]);
+    const withoutRunId = applyMobileThreadEvent(waiting, {
+      type: "run.waiting_input",
+      payload: { userId: "unknown-owner" },
+    });
+    expect(withoutRunId?.run).toEqual(waiting?.run);
+    expect(withoutRunId?.activeRuns).toEqual(waiting?.activeRuns);
+  });
+
+  it("hydrates a late owner on an already-waiting group run", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot(),
+      groupId: "group-1",
+      run: { id: "run-newer", status: "running", userId: "other-owner" },
+      activeRuns: [
+        { id: "run-newer", status: "running", userId: "other-owner" },
+        { id: "run-waiting", status: "waiting_input" },
+      ],
+    };
+    const next = applyMobileThreadEvent(initial, {
+      type: "run.waiting_input",
+      runId: "run-waiting",
+      payload: { userId: "owner" },
+    });
+    expect(next?.run).toBe(initial.run);
+    expect(next?.activeRuns).toEqual([
+      initial.run,
+      { id: "run-waiting", status: "waiting_input", userId: "owner" },
+    ]);
+  });
+
+  it("does not infer an owner from a legacy waiting event or takeover payload", () => {
+    const legacy = applyMobileThreadEvent(snapshot(), {
+      type: "run.waiting_input",
+      runId: "run-1",
+    });
+    expect(legacy?.run).toEqual({ id: "run-1", status: "waiting_input" });
+    const takeover = applyMobileThreadEvent(snapshot(), {
+      type: "computer.takeover.requested",
+      runId: "run-2",
+      payload: { userId: "owner" },
+    });
+    expect(takeover?.run).toEqual({ id: "run-2", status: "waiting_takeover" });
+  });
+
+  it.each([undefined, "group-1"])(
+    "allows only the owner to dismiss a live secret ask in %s",
+    (groupId) => {
+      const ask = {
+        ...mobileMessage("ask-1", [
+          { kind: "ask", text: "Secret", input: "secret", status: "pending" },
+        ]),
+        runId: "run-1",
+      };
+      const initial: MobileSnapshot = {
+        ...snapshot([ask]),
+        groupId,
+        run: { id: "run-1", status: "running" },
+        activeRuns: [{ id: "run-1", status: "running" }],
+      };
+      const waiting = applyMobileThreadEvent(initial, {
+        type: "run.waiting_input",
+        runId: "run-1",
+        payload: { userId: "owner" },
+      });
+
+      expect(dismissableAskMessageIds(waiting, "owner")).toEqual(new Set(["ask-1"]));
+      expect(dismissableAskMessageIds(waiting, "other")).toEqual(new Set());
+      expect(
+        dismissableAskMessageIds(
+          applyMobileThreadEvent(initial, { type: "run.waiting_input", runId: "run-1" }),
+          "owner",
+        ),
+      ).toEqual(new Set());
+    },
+  );
 
   it("applies computer takeover requests as waiting_takeover", () => {
     const progress = mobileMessage("progress:run-1", [{ kind: "progress", text: "working…" }], 1);

@@ -12,7 +12,7 @@ directory, so a copied database dump, backup or disk does not reveal it.
 | Compacted history summaries | `threads.historyCompactionSummary` |
 | Memory documents and their revisions | `memory_documents.content`, `memory_revisions.content` |
 | Uploaded and generated files | `DATA_DIR/artifacts/<space>/<file>` |
-| Bot computer homes kept in [object storage](./self-host.md#bot-homes-in-object-storage) (always, whatever `CONTENT_ENCRYPTION` says) | `homes/<id>/<revision>` in the bucket |
+| Bot computer homes kept in [object storage](./self-host-storage.md#bot-homes-in-object-storage) (always, whatever `CONTENT_ENCRYPTION` says) | `homes/<id>/<revision>` in the bucket |
 | Credentials (unchanged scheme) | `secrets`, `bot_secrets`, `integration_provider_configs` |
 
 Not yet encrypted, planned next: external conversation messages, outbound
@@ -30,7 +30,7 @@ message rewritten while off drops its search tokens, so it matches its new
 text. `content-encryption decrypt` converts what is still encrypted, and
 `content-encryption migrate` encrypts everything after switching back on
 (`migrate`, `rotate` and `reencrypt` always encrypt, whatever the setting).
-Defaults and commands are in [self-hosting](./self-host.md#content-encryption).
+Defaults and commands are in [self-hosting](./self-host-storage.md#content-encryption).
 
 `content-encryption export [--space <id>] [--thread <id>] [--bot <id>] [--output <file>]`
 writes decrypted threads (with their summary), messages, memory documents and

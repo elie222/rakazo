@@ -7,6 +7,8 @@ export const EXAMPLE_SUPERVISOR_TOKEN_PLACEHOLDER =
 export const EXAMPLE_SCREEN_PROXY_SECRET_PLACEHOLDER =
   "replace-with-32-plus-character-screen-proxy-secret";
 
+const EXAMPLE_ENCRYPTION_KEY_PLACEHOLDER = "replace-with-64-random-hex-characters";
+
 const RUNTIME_SECRETS_ERROR =
   "Set BETTER_AUTH_SECRET and ENCRYPTION_KEY to long random strings before starting Rakazo outside local development or tests.";
 
@@ -62,6 +64,17 @@ export function resolveEncryptionKey(env: NodeJS.ProcessEnv = process.env): stri
     throw new Error(RUNTIME_SECRETS_ERROR);
   }
   return value;
+}
+
+/**
+ * Short or example keys stay accepted so existing installs keep decrypting their data,
+ * but production startup says so; changing the key strands stored ciphertext.
+ */
+export function encryptionKeyWarning(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  if (isDevSecretAllowed(env)) return undefined;
+  const value = env.ENCRYPTION_KEY?.trim() ?? "";
+  if (value.length >= 32 && value !== EXAMPLE_ENCRYPTION_KEY_PLACEHOLDER) return undefined;
+  return "ENCRYPTION_KEY is shorter than 32 characters or still the example value, so stored credentials are weakly protected. It is still used because changing it makes them unreadable; new installs should use `openssl rand -hex 32` (docs/self-host-secrets.md).";
 }
 
 function resolveDedicatedSecret(
@@ -151,13 +164,12 @@ export function timingSafeStringEqual(supplied: string | undefined, expected: st
  * Constant-time bearer comparison, shared by every privileged sidecar.
  *
  * Deliberately not `node:crypto`'s `timingSafeEqual`: this module is reachable from the web bundle
- * through `@rakazo/core`, and importing `node:crypto` here fails the production Vite build with
- * `"timingSafeEqual" is not exported by "__vite-browser-external"`, which takes the whole
- * application image down with it. The XOR accumulation below inspects every byte no matter where
- * the first difference falls, which is the property that mattered. Length is compared first, as it
- * was before — a length mismatch is already observable from the response.
+ * through `@rakazo/core`, and importing `node:crypto` here fails the production Vite build. The XOR
+ * accumulation inspects every byte no matter where the first difference falls. Length is compared
+ * first because a length mismatch is already observable from the response.
  */
 export function hasValidBearerToken(authorization: string | undefined, expectedToken: string) {
-  const supplied = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
+  const supplied =
+    authorization?.slice(0, 7).toLowerCase() === "bearer " ? authorization.slice(7) : "";
   return timingSafeStringEqual(supplied, expectedToken);
 }

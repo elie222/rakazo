@@ -40,12 +40,10 @@ test("links in a bot reply show the site icon the API resolved", async ({ page }
   await expect(post.locator("img")).toHaveAttribute("src", icons["https://x.example.test"]!);
   await expect(post.locator("[aria-hidden='true']")).toHaveCount(1);
 
-  // A bare URL reads as host and path.
   const guide = bubble.getByRole("link", { name: "docs.example.test/guide/start" });
   await expect(guide).toHaveAttribute("href", "https://www.docs.example.test/guide/start/");
   await expect(guide.locator("img")).toBeVisible();
 
-  // No icon: a neutral globe instead of an image.
   const plain = bubble.getByRole("link", { name: "plain", exact: true });
   await expect(plain.locator("svg")).toBeVisible();
   await expect(plain.locator("img")).toHaveCount(0);

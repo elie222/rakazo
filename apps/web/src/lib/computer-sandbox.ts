@@ -22,6 +22,11 @@ export function sandboxEnvGuidanceLines(): string[] {
     "# SANDBOX_PROVIDER=e2b",
     "# E2B_API_KEY=<your-key>",
     "",
+    "# Hosted sandbox: Novita",
+    "# SANDBOX_PROVIDER=novita",
+    "# NOVITA_API_KEY=<your-key>",
+    "# Build template: pnpm sandbox:novita-template",
+    "",
     "# Hosted sandbox: Daytona",
     "# SANDBOX_PROVIDER=daytona",
     "# DAYTONA_API_KEY=<your-key>",
@@ -43,7 +48,8 @@ export type SandboxProviderKind = "none" | "docker" | "hosted" | "other";
 export function classifySandboxProvider(provider: string | null | undefined): SandboxProviderKind {
   if (provider == null || provider === "" || computersAreUnavailable(provider)) return "none";
   if (provider === "docker" || provider === "desktop") return "docker";
-  if (provider === "e2b" || provider === "daytona" || provider === "boat") return "hosted";
+  if (provider === "e2b" || provider === "novita" || provider === "daytona" || provider === "boat")
+    return "hosted";
   return "other";
 }
 
@@ -51,6 +57,7 @@ export function sandboxProviderLabel(provider: string): string {
   if (provider === "docker") return "Docker";
   if (provider === "desktop") return "Desktop";
   if (provider === "e2b") return "E2B";
+  if (provider === "novita") return "Novita";
   if (provider === "daytona") return "Daytona";
   if (provider === "boat") return "Boat";
   if (provider === "fake") return "Fake";

@@ -1,6 +1,8 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { SecurityEvent, SecurityEventMetadata, SecurityEventType } from "@rakazo/contracts";
 import { SECURITY_EVENT_TYPES, SecurityEventTypeSchema } from "@rakazo/contracts";
 import { getLogContext, getLogger, redactBindings } from "@rakazo/logging";
+import { recordAuditEvent } from "./audit-events.js";
 import type { PrismaClient } from "./client.js";
 import { parsePositiveInteger } from "./client.js";
 import { runAsSystem } from "./row-security.js";
@@ -20,12 +22,18 @@ export interface SecurityEventInput {
   metadata?: Record<string, string | number | boolean | null | undefined>;
 }
 
-/** Log-context keys a request middleware sets so every event and log line carries the caller. */
-export function securityRequestBindings(request: { ip?: string; userAgent?: string }) {
-  return {
-    ...(request.ip ? { "client.ip": request.ip } : {}),
-    ...(request.userAgent ? { "user_agent.original": request.userAgent } : {}),
-  };
+const securityRequest = new AsyncLocalStorage<{ ip?: string; userAgent?: string }>();
+
+/** Keep caller details available only to security events within this request. */
+export function withSecurityRequest<T>(
+  caller: { ip?: string; userAgent?: string },
+  fn: () => T,
+): T {
+  return securityRequest.run(caller, fn);
+}
+
+export function securityRequestCaller(): { ip?: string; userAgent?: string } | undefined {
+  return securityRequest.getStore();
 }
 
 const FAILURE_TYPES = new Set<SecurityEventType>([
@@ -34,6 +42,8 @@ const FAILURE_TYPES = new Set<SecurityEventType>([
   "egress.refused",
   "rate_limit.hit",
 ]);
+/** Deployment-wide signals with no account or organization to attribute them to. */
+const NOT_AUDITED = new Set<SecurityEventType>([...FAILURE_TYPES, "deployment.settings.changed"]);
 const MAX_METADATA_KEYS = 16;
 const MAX_METADATA_STRING = 200;
 /** Keys that could carry what a user said or a secret. Never stored, whatever the value. */
@@ -49,16 +59,18 @@ export function installSecurityEventStore(db: SecurityEventDb | undefined): void
 
 /**
  * Record one security event: a structured `security.event` log line for the log sink, plus an
- * append-only row. Never throws; a failed write is logged and the caller carries on.
+ * append-only row. An account's own action is also appended to its organization's audit log.
+ * Never throws; a failed write is logged and the caller carries on.
  */
 export async function recordSecurityEvent(input: SecurityEventInput): Promise<void> {
   const context = getLogContext();
+  const caller = securityRequest.getStore();
   const event = {
     type: input.type,
     userId: bounded(input.userId ?? context["user.id"], 128),
     spaceId: bounded(input.spaceId ?? context["space.id"], 128),
-    ip: bounded(input.ip ?? context["client.ip"], 64),
-    userAgent: bounded(input.userAgent ?? context["user_agent.original"], 512),
+    ip: bounded(input.ip ?? caller?.ip, 64),
+    userAgent: bounded(input.userAgent ?? caller?.userAgent, 512),
     metadata: securityEventMetadata(input.metadata),
   };
   const level = FAILURE_TYPES.has(event.type) ? "warn" : "info";
@@ -70,14 +82,31 @@ export async function recordSecurityEvent(input: SecurityEventInput): Promise<vo
     "user_agent.original": event.userAgent ?? undefined,
     "security.event.metadata": event.metadata,
   });
-  if (!store) return;
-  try {
-    // An event may name another user or no Space at all, and must never be lost to
-    // the caller's tenant; the table is only ever read as system.
-    const db = store;
-    await runAsSystem("append a security event", () => db.securityEvent.create({ data: event }));
-  } catch (error) {
-    getLogger().error("security.event.write_failed", error);
+  if (store) {
+    try {
+      // An event may name another user or no Space at all, and must never be lost to
+      // the caller's tenant; the table is only ever read as system.
+      const db = store;
+      await runAsSystem("append a security event", () => db.securityEvent.create({ data: event }));
+    } catch (error) {
+      getLogger().error("security.event.write_failed", error);
+    }
+  }
+  if (event.userId && !NOT_AUDITED.has(event.type)) {
+    const { kind, runId } = event.metadata;
+    const userId = event.userId;
+    await withSecurityRequest(
+      { ip: event.ip ?? undefined, userAgent: event.userAgent ?? undefined },
+      () =>
+        recordAuditEvent({
+          action: event.type,
+          actor: { type: "user", id: userId },
+          spaceId: event.spaceId,
+          target: typeof kind === "string" ? { type: kind } : undefined,
+          runId: typeof runId === "string" ? runId : undefined,
+          metadata: event.metadata,
+        }),
+    );
   }
 }
 
@@ -110,7 +139,6 @@ export function securityEventRetentionDays(source: NodeJS.ProcessEnv = process.e
   );
 }
 
-/** Delete events older than the retention window. Returns how many were removed. */
 export async function pruneSecurityEvents(
   db: SecurityEventDb,
   retentionDays: number,
@@ -121,10 +149,22 @@ export async function pruneSecurityEvents(
   return count;
 }
 
-/** A pruner for a frequent reconciler tick that only touches the table about once an hour. */
 export function createSecurityEventPruner(
   db: SecurityEventDb,
   retentionDays: number,
+  options: { intervalMs?: number; now?: () => Date } = {},
+): () => Promise<void> {
+  return createRetentionPruner(
+    "security.event",
+    (at) => pruneSecurityEvents(db, retentionDays, at),
+    options,
+  );
+}
+
+/** A pruner for a frequent reconciler tick that only touches its table about once an hour. */
+export function createRetentionPruner(
+  event: string,
+  prune: (at: Date) => Promise<number>,
   options: { intervalMs?: number; now?: () => Date } = {},
 ): () => Promise<void> {
   const intervalMs = options.intervalMs ?? 60 * 60 * 1000;
@@ -134,9 +174,8 @@ export function createSecurityEventPruner(
     const at = now();
     if (lastRun !== undefined && at.getTime() - lastRun < intervalMs) return;
     lastRun = at.getTime();
-    const removed = await pruneSecurityEvents(db, retentionDays, at);
-    if (removed > 0)
-      getLogger().info("security.event.pruned", { "security.event.removed": removed });
+    const removed = await prune(at);
+    if (removed > 0) getLogger().info(`${event}.pruned`, { [`${event}.removed`]: removed });
   };
 }
 

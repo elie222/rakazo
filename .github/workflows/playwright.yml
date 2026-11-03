@@ -10,6 +10,7 @@ on:
         options:
           - fake
           - e2b
+          - novita
           - daytona
           - boat
         default: fake
@@ -30,6 +31,16 @@ on:
         required: false
         type: boolean
         default: false
+      skip:
+        description: Report the checks as skipped because the change cannot affect them
+        required: false
+        type: boolean
+        default: false
+      nightly:
+        description: Also run the visual and edge-case specs kept out of pull requests
+        required: false
+        type: boolean
+        default: false
     secrets:
       S3_ACCESS_KEY_ID:
         description: Access key used to publish visual reports
@@ -39,6 +50,9 @@ on:
         required: false
       E2B_API_KEY:
         description: E2B API key used only when the E2B sandbox is selected
+        required: false
+      NOVITA_API_KEY:
+        description: Novita API key used only when the Novita sandbox is selected
         required: false
       DAYTONA_API_KEY:
         description: Daytona API key used only when the Daytona sandbox is selected
@@ -50,15 +64,21 @@ on:
 permissions:
   contents: read
 
+# Testcontainers pulls Docker Hub images through Google's public mirror: anonymous Docker Hub pulls
+# from shared runner IPs fail intermittently with "authentication required" or rate limits.
+env:
+  TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: mirror.gcr.io/
+
 jobs:
   shard:
-    name: Web E2E (${{ matrix.shard }}/4)
+    name: Web E2E (${{ matrix.shard }}/${{ inputs.nightly && 4 || 2 }})
+    if: ${{ !inputs.skip }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: ${{ fromJSON(inputs.nightly && '[1, 2, 3, 4]' || '[1, 2]') }}
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -81,6 +101,11 @@ jobs:
         env:
           E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
         run: test -n "$E2B_API_KEY"
+      - name: Validate Novita credentials
+        if: inputs.sandbox_provider == 'novita'
+        env:
+          NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
+        run: test -n "$NOVITA_API_KEY"
       - name: Validate Daytona credentials
         if: inputs.sandbox_provider == 'daytona'
         env:
@@ -96,10 +121,12 @@ jobs:
         env:
           SANDBOX_TEST_PROVIDER: ${{ inputs.sandbox_provider }}
           E2B_API_KEY: ${{ inputs.sandbox_provider == 'e2b' && secrets.E2B_API_KEY || '' }}
+          NOVITA_API_KEY: ${{ inputs.sandbox_provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
           DAYTONA_API_KEY: ${{ inputs.sandbox_provider == 'daytona' && secrets.DAYTONA_API_KEY || '' }}
           BOAT_API_KEY: ${{ inputs.sandbox_provider == 'boat' && secrets.BOAT_API_KEY || '' }}
-          SHARD: ${{ matrix.shard }}
-        run: pnpm test:e2e -- --sandbox="$SANDBOX_TEST_PROVIDER" --shard="$SHARD/4"
+          SHARD: ${{ matrix.shard }}/${{ inputs.nightly && 4 || 2 }}
+          E2E_SKIP_NIGHTLY: ${{ !inputs.nightly && '1' || '' }}
+        run: pnpm test:e2e -- --sandbox="$SANDBOX_TEST_PROVIDER" --shard="$SHARD"
       # Homepage screenshots only: no copy or layout assertions.
       # Runs after product e2e so shared apps/web/test-results is not wiped by the product run.
       - name: Capture marketing homepage screenshots
@@ -122,7 +149,7 @@ jobs:
   playwright:
     name: Web E2E
     needs: shard
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && !inputs.skip }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:
@@ -144,12 +171,13 @@ jobs:
         shell: bash
         env:
           SHARDS: ${{ runner.temp }}/shards
+          SHARD_TOTAL: ${{ inputs.nightly && 4 || 2 }}
         run: |
           set -euo pipefail
           mkdir -p blob-report apps/web/test-results
           missing=0
           # A re-run of failed jobs uploads new attempts only for the shards it re-ran.
-          for shard in 1 2 3 4; do
+          for shard in $(seq 1 "$SHARD_TOTAL"); do
             latest=""
             for attempt in $(seq "$GITHUB_RUN_ATTEMPT" -1 1); do
               candidate="$SHARDS/playwright-shard-$shard-$GITHUB_RUN_ID-$attempt"

@@ -193,6 +193,7 @@ const callbacks = {
   organizeBot: action,
   organizeFromMenu: action,
   organizeGroup: action,
+  sharing: false,
   spaceBusy: false,
   spaceRecoveryId: null,
   toggleCollapsed: action,
@@ -260,7 +261,6 @@ function measure(retain: boolean) {
     name: `Helper ${index}`,
     spaceId: "space-1",
     preview: "",
-    title: "",
     color: "gray",
     status: "idle",
     notifyOnFinish: true,
@@ -350,12 +350,12 @@ it.each(["midnight", "focus", "foreground"])(
   },
 );
 
-it("renders saved bot rows without a title or notification setting", () => {
-  // Inboxes saved before titles and notification settings were kept have bots without them.
+it("renders saved bot rows without a notification setting", () => {
+  // Inboxes saved before notification settings were kept have bots without them.
   const bots = [
-    { id: "bot-a", name: "Alpha", title: "Research", preview: "", notifyOnFinish: true },
+    { id: "bot-a", name: "Alpha", preview: "", notifyOnFinish: true },
     { id: "bot-b", name: "Beta", preview: "" },
-    { id: "bot-c", name: "Gamma", title: "", preview: "", notifyOnFinish: false },
+    { id: "bot-c", name: "Gamma", preview: "", notifyOnFinish: false },
   ] as MobileBot[];
   render(
     bots.map((bot) => (
@@ -371,13 +371,12 @@ it("renders saved bot rows without a title or notification setting", () => {
     )),
   );
   expect(rowLabels()).toEqual([
-    "Alpha, Research, Research",
+    "Alpha, No messages yet",
     "Beta, No messages yet",
     "Gamma, notifications silenced, No messages yet",
   ]);
-  // The title shows as the tag and stands in for the missing preview.
   expect(Array.from(container.querySelectorAll("button"), (row) => row.textContent)).toEqual([
-    "AlphaResearchResearch",
+    "AlphaNo messages yet",
     "BetaNo messages yet",
     "GammaNo messages yet",
   ]);
@@ -631,6 +630,10 @@ it("adds a bot made from the inbox's Create menu to the inbox roster before open
     refreshBots: async () => undefined,
     openChat: (destination) => calls.push(`open ${JSON.stringify(destination)}`),
   });
+  expect(ui.rpc).toHaveBeenCalledWith(
+    "bots/create",
+    expect.objectContaining({ avatarSet: "organic" }),
+  );
   // The session is taken before the requests, so a bot that lands after a switch is dropped.
   expect(calls.slice(0, 5)).toEqual([
     "session",

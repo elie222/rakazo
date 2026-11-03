@@ -1,6 +1,7 @@
 import { createCipheriv, createHash } from "node:crypto";
 import type { HttpInstance } from "@larksuiteoapi/node-sdk";
 import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit";
+import { Message } from "chat";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
 import { LazyLarkAdapter } from "./lark/lazy-adapter.js";
@@ -372,6 +373,298 @@ describe("Lark messaging conformance", () => {
     await surface.handleWebhook("lark", webhook(payload));
     expect(events).toEqual([
       expect.objectContaining({ content: "Title\n\nSee guide (https://example.test/guide)" }),
+    ]);
+  });
+
+  it.each([
+    [
+      "text and code",
+      {
+        content: [
+          [{ tag: "text", text: "Before" }],
+          [{ tag: "code_block", language: "GO", text: "func main() {\n    return\n}" }],
+          [{ tag: "text", text: "After" }],
+        ],
+      },
+      "Before\nfunc main() {\n    return\n}\nAfter",
+    ],
+    [
+      "link and code",
+      {
+        content: [
+          [{ tag: "a", text: "guide", href: "https://example.test/guide" }],
+          [{ tag: "code_block", text: "if (ok) {\n    run();\n}" }],
+        ],
+      },
+      "guide (https://example.test/guide)\nif (ok) {\n    run();\n}",
+    ],
+    [
+      "Markdown inside code",
+      { content: [[{ tag: "code_block", text: "[label](https://example.test)\n  literal" }]] },
+      "[label](https://example.test)\n  literal",
+    ],
+    [
+      "code only",
+      {
+        post: {
+          en_us: {
+            content: [
+              [{ tag: "code_block", language: "GO", text: "func main() {\n    return\n}" }],
+            ],
+          },
+        },
+      },
+      "func main() {\n    return\n}",
+    ],
+  ])("delivers post %s with code intact", async (_name, content, expected) => {
+    const { surface, events } = createSurface();
+    const payload = message();
+    payload.event.message.message_type = "post";
+    payload.event.message.content = JSON.stringify(content);
+    expect((await surface.handleWebhook("lark", webhook(payload)))?.status).toBe(200);
+    expect(events).toEqual([expect.objectContaining({ content: expected })]);
+  });
+
+  it("preserves other formatting when a post includes code", async () => {
+    const { surface, events } = createSurface();
+    const payload = message();
+    payload.event.message.message_type = "post";
+    payload.event.message.content = JSON.stringify({
+      content: [
+        [
+          { tag: "text", text: "See **bold** " },
+          { tag: "a", text: "guide", href: "https://example.test/guide" },
+        ],
+        [{ tag: "code_block", text: "  code" }],
+      ],
+    });
+    await surface.handleWebhook("lark", webhook(payload));
+    expect(events).toEqual([
+      expect.objectContaining({ content: "See bold guide (https://example.test/guide)\n  code" }),
+    ]);
+  });
+
+  it("retains links in list formatting alongside code", async () => {
+    const { surface, events } = createSurface();
+    const payload = message();
+    payload.event.message.message_type = "post";
+    payload.event.message.content = JSON.stringify({
+      content: [
+        [{ tag: "text", text: "- [guide](https://example.test/guide)" }],
+        [{ tag: "code_block", text: "  code" }],
+        [{ tag: "a", text: "reference", href: "https://example.test/reference" }],
+      ],
+    });
+    await surface.handleWebhook("lark", webhook(payload));
+    expect(events).toEqual([
+      expect.objectContaining({
+        content: expect.stringContaining("guide (https://example.test/guide)"),
+      }),
+    ]);
+  });
+
+  it("does not interpret indented ordinary code as a link", async () => {
+    const { surface, events } = createSurface();
+    const payload = message();
+    payload.event.message.message_type = "post";
+    payload.event.message.content = JSON.stringify({
+      content: [
+        [{ tag: "text", text: "    [literal](https://example.test/literal)" }],
+        [{ tag: "code_block", text: "code" }],
+        [{ tag: "a", text: "guide", href: "https://example.test/guide" }],
+      ],
+    });
+    await surface.handleWebhook("lark", webhook(payload));
+    expect(events).toEqual([
+      expect.objectContaining({
+        content: expect.stringContaining("[literal](https://example.test/literal)"),
+      }),
+    ]);
+  });
+
+  it("keeps title formatting when a post includes code and links", async () => {
+    const { surface, events } = createSurface();
+    const payload = message();
+    payload.event.message.message_type = "post";
+    payload.event.message.content = JSON.stringify({
+      title: "Title",
+      content: [
+        [{ tag: "code_block", text: "code" }],
+        [{ tag: "a", text: "guide", href: "https://example.test/guide" }],
+      ],
+    });
+    await surface.handleWebhook("lark", webhook(payload));
+    expect(events).toEqual([
+      expect.objectContaining({ content: "Title\n\ncode\nguide (https://example.test/guide)" }),
+    ]);
+  });
+
+  it("does not add ordinary Markdown indentation to a link", async () => {
+    const { surface, events } = createSurface();
+    const payload = message();
+    payload.event.message.message_type = "post";
+    payload.event.message.content = JSON.stringify({
+      content: [
+        [{ tag: "text", text: "  [guide](https://example.test/guide)" }],
+        [{ tag: "code_block", text: "code" }],
+      ],
+    });
+    await surface.handleWebhook("lark", webhook(payload));
+    expect(events).toEqual([
+      expect.objectContaining({ content: "guide (https://example.test/guide)\ncode" }),
+    ]);
+  });
+
+  it("does not duplicate indentation parsed as ordinary Markdown code", async () => {
+    const { surface, events } = createSurface();
+    const payload = message();
+    payload.event.message.message_type = "post";
+    payload.event.message.content = JSON.stringify({
+      content: [
+        [{ tag: "text", text: "        code" }],
+        [{ tag: "code_block", text: "literal" }],
+        [{ tag: "a", text: "guide", href: "https://example.test/guide" }],
+      ],
+    });
+    await surface.handleWebhook("lark", webhook(payload));
+    expect(events).toEqual([
+      expect.objectContaining({ content: "    code\nliteral\nguide (https://example.test/guide)" }),
+    ]);
+  });
+
+  it("preserves heading separation with trailing title spaces", async () => {
+    const { surface, events } = createSurface();
+    const payload = message();
+    payload.event.message.message_type = "post";
+    payload.event.message.content = JSON.stringify({
+      title: "Title  ",
+      content: [
+        [{ tag: "code_block", text: "code" }],
+        [{ tag: "a", text: "guide", href: "https://example.test/guide" }],
+      ],
+    });
+    await surface.handleWebhook("lark", webhook(payload));
+    expect(events).toEqual([
+      expect.objectContaining({ content: "Title\n\ncode\nguide (https://example.test/guide)" }),
+    ]);
+  });
+
+  it("keeps code literal beside Markdown syntax and a link", async () => {
+    const { surface, events } = createSurface();
+    const payload = message();
+    payload.event.message.message_type = "post";
+    payload.event.message.content = JSON.stringify({
+      content: [
+        [
+          { tag: "text", text: "`" },
+          { tag: "code_block", text: "  x()\ny()" },
+          { tag: "text", text: "`" },
+        ],
+        [{ tag: "a", text: "guide", href: "https://example.test/guide" }],
+      ],
+    });
+    await surface.handleWebhook("lark", webhook(payload));
+    expect(events).toEqual([
+      expect.objectContaining({ content: expect.stringContaining("  x()\ny()") }),
+    ]);
+    expect(events).toEqual([
+      expect.objectContaining({
+        content: expect.stringContaining("guide (https://example.test/guide)"),
+      }),
+    ]);
+  });
+
+  it("does not replace mention keys inside code blocks", async () => {
+    const { surface, events } = createSurface();
+    const payload = message();
+    payload.event.message.message_type = "post";
+    payload.event.message.content = JSON.stringify({
+      content: [[{ tag: "text", text: "@_user_1" }], [{ tag: "code_block", text: "@_user_1" }]],
+    });
+    Object.assign(payload.event.message, {
+      mentions: [{ key: "@_user_1", name: "Test", id: { open_id: "ou-test" } }],
+    });
+    await surface.handleWebhook("lark", webhook(payload));
+    expect(events).toEqual([expect.objectContaining({ content: "@Test\n@_user_1" })]);
+  });
+
+  it("preserves multiple code blocks and their blank lines alongside links", async () => {
+    const { surface, events } = createSurface();
+    const payload = message();
+    const first = "\nfirst\n\n";
+    const second = "\n  second\n";
+    payload.event.message.message_type = "post";
+    payload.event.message.content = JSON.stringify({
+      content: [
+        [{ tag: "a", text: "guide", href: "https://example.test/guide" }],
+        [{ tag: "code_block", text: first }],
+        [{ tag: "code_block", text: second }],
+        [{ tag: "text", text: "After" }],
+      ],
+    });
+    await surface.handleWebhook("lark", webhook(payload));
+    expect(events).toEqual([
+      expect.objectContaining({
+        content: `guide (https://example.test/guide)\n${first}\n${second}\nAfter`,
+      }),
+    ]);
+  });
+
+  it("replaces mention keys split between ordinary items but preserves them in code", async () => {
+    const { surface, events } = createSurface();
+    const payload = message();
+    payload.event.message.message_type = "post";
+    payload.event.message.content = JSON.stringify({
+      content: [
+        [
+          { tag: "text", text: "@_user" },
+          { tag: "text", text: "_1" },
+        ],
+        [{ tag: "code_block", text: "@_user_1\n  @_user_1" }],
+      ],
+    });
+    Object.assign(payload.event.message, {
+      mentions: [{ key: "@_user_1", name: "Test", id: { open_id: "ou-test" } }],
+    });
+    await surface.handleWebhook("lark", webhook(payload));
+    expect(events).toEqual([expect.objectContaining({ content: "@Test\n@_user_1\n  @_user_1" })]);
+  });
+
+  it("preserves protected code parts through Message JSON serialization", async () => {
+    const { surface, adapter } = createSurface();
+    await surface.handleWebhook(
+      "lark",
+      webhook({ type: "url_verification", token, challenge: "test" }),
+    );
+    const payload = message();
+    payload.event.message.message_type = "post";
+    payload.event.message.content = JSON.stringify({
+      content: [[{ tag: "text", text: "Before" }], [{ tag: "code_block", text: "  code\n" }]],
+    });
+    const parsed = adapter.parseMessage(payload.event);
+    const restored = Message.fromJSON(JSON.parse(JSON.stringify(parsed)));
+    expect(restored.text).toBe("Before\n  code\n");
+    expect(restored.formatted.data).toMatchObject({
+      rakazoLarkParts: [
+        { text: "Before\n", literal: false },
+        { text: "  code\n", literal: true },
+      ],
+    });
+  });
+
+  it("preserves an empty-label link alongside code", async () => {
+    const { surface, events } = createSurface();
+    const payload = message();
+    payload.event.message.message_type = "post";
+    payload.event.message.content = JSON.stringify({
+      content: [
+        [{ tag: "a", text: "", href: "https://example.test/guide" }],
+        [{ tag: "code_block", text: "  code" }],
+      ],
+    });
+    await surface.handleWebhook("lark", webhook(payload));
+    expect(events).toEqual([
+      expect.objectContaining({ content: "https://example.test/guide\n  code" }),
     ]);
   });
 

@@ -1,9 +1,11 @@
 /**
  * Empty `#root` shells and session-pending skeletons count as loaded HTML but are
  * not a usable app. After session resolves, wait for a bootstrapped shell
- * (`data-ready` / shell-ready mark) or an auth/welcome/onboarding surface so a
- * bare Suspense fallback or pre-bootstrap ShellPage cannot pass. Plain e2e
- * fixtures omit the Rakazo app-state marker. Runs in the renderer.
+ * (`data-ready` / shell-ready mark) or a route surface the web app marks with
+ * `data-rakazo-surface` (welcome, onboarding) so a bare Suspense fallback or
+ * pre-bootstrap ShellPage cannot pass. Only a usable page may carry that marker,
+ * never a loading state. Plain e2e fixtures omit the Rakazo app-state marker.
+ * Runs in the renderer.
  */
 export const APP_DOCUMENT_STATE_SCRIPT = `(() => {
   const appState =
@@ -18,19 +20,20 @@ export const APP_DOCUMENT_STATE_SCRIPT = `(() => {
     (shell && shell.getAttribute("data-ready") === "true") ||
       performance.getEntriesByName("rk:renderer:shell-ready").length > 0,
   );
-  const authOrWelcomeSurface = Boolean(
-    document.querySelector('[data-rakazo-surface="welcome"]') ||
+  const routeSurface = Boolean(
+    document.querySelector("[data-rakazo-surface]") ||
       document.querySelector(
         'form input[type="email"], form input[name="email"], form input#email',
       ) ||
       Array.from(document.querySelectorAll("button")).some((button) =>
         /sign\\s*in/i.test((button.textContent || "").trim()),
       ) ||
+      // Older servers mark only the welcome page; their onboarding is found by its English labels.
       document.querySelector(
         '[aria-label="Model"], [aria-label="Model id"], [aria-label="Models from server"]',
       ),
   );
-  const surfaceReady = shellBootstrapped || authOrWelcomeSurface;
+  const surfaceReady = shellBootstrapped || routeSurface;
   const sessionReady =
     appState === "ready" ||
     performance.getEntriesByName("rk:renderer:session-committed").length > 0;
@@ -48,4 +51,31 @@ export const APP_DOCUMENT_STATE_SCRIPT = `(() => {
   return "pending";
 })()`;
 
-export type AppDocumentState = "ready" | "failed";
+/** `pending`: the page is still loading when the wait ends, for instance on a slow server. */
+export type AppDocumentState = "ready" | "failed" | "pending";
+
+type DocumentContents = Pick<
+  Electron.WebContents,
+  "executeJavaScript" | "isCrashed" | "isDestroyed"
+>;
+
+export async function waitForMountedAppDocument(
+  contents: DocumentContents,
+  timeoutMs = 20_000,
+): Promise<AppDocumentState> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (contents.isCrashed()) throw new Error("Renderer stopped after load.");
+    let state: AppDocumentState;
+    try {
+      state = (await contents.executeJavaScript(APP_DOCUMENT_STATE_SCRIPT)) as AppDocumentState;
+    } catch (error) {
+      // A reload or redirect during startup disposes the frame being asked; ask the next document.
+      if (contents.isDestroyed()) throw error;
+      state = "pending";
+    }
+    if (state !== "pending") return state;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return "pending";
+}

@@ -3,7 +3,7 @@
 import { buildComposerMentionOptions } from "@rakazo/core";
 import { MAX_FONT_SCALE } from "@rakazo/ui-tokens";
 import type { ComponentProps, ReactNode, Ref } from "react";
-import { act, createElement, createRef } from "react";
+import { act, Children, createElement, createRef, isValidElement, useMemo } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,6 +17,7 @@ const dimensions = vi.hoisted(() => ({ fontScale: 1 }));
 const input = vi.hoisted(() => ({
   change: (_value: string) => {},
   key: (_event: { nativeEvent: { key: string } }) => {},
+  select: (_event: { nativeEvent: { selection: { start: number; end: number } } }) => {},
 }));
 const mentionApi = vi.hoisted(() => ({ rpc: vi.fn(), capture: vi.fn(), generation: 1 }));
 vi.mock("./api", () => ({
@@ -25,10 +26,67 @@ vi.mock("./api", () => ({
   currentApiBase: () => "https://api.test",
   selectedSpaceId: () => "space-a",
 }));
+const files = vi.hoisted(() => new Map<string, string>());
+const disk = vi.hoisted(() => ({ writes: 0, full: false, moveFails: false }));
+const appState = vi.hoisted(() => ({ listeners: new Set<(state: string) => void>() }));
+vi.mock("expo-file-system", () => {
+  const path = (parts: unknown[]) => parts.map(String).join("/");
+  class Directory {
+    readonly uri: string;
+    constructor(...parts: unknown[]) {
+      this.uri = path(parts);
+    }
+    create() {}
+    toString() {
+      return this.uri;
+    }
+  }
+  class File {
+    readonly uri: string;
+    constructor(...parts: unknown[]) {
+      this.uri = path(parts);
+    }
+    get exists() {
+      return files.has(this.uri);
+    }
+    create() {
+      files.set(this.uri, "");
+    }
+    write(text: string) {
+      disk.writes += 1;
+      // A full disk leaves the file empty, as a failed native write would.
+      if (disk.full) throw new Error("No space left on device");
+      files.set(this.uri, text);
+    }
+    moveSync(destination: File) {
+      // Native replacement removes the destination first; a crash can stop it right there.
+      if (disk.moveFails) {
+        files.delete(destination.uri);
+        throw new Error("Move interrupted");
+      }
+      files.set(destination.uri, files.get(this.uri) ?? "");
+      files.delete(this.uri);
+    }
+    textSync() {
+      return files.get(this.uri) ?? "";
+    }
+    delete() {
+      files.delete(this.uri);
+    }
+  }
+  return { Directory, File, Paths: { cache: "cache" } };
+});
 vi.mock("./session", () => ({
   currentSessionGeneration: () => mentionApi.generation,
   subscribeSessionGeneration: () => () => {},
 }));
+function nativeText(node: ReactNode): string {
+  if (typeof node === "string") return node;
+  if (!isValidElement(node)) return "";
+  return Children.toArray((node.props as { children?: ReactNode }).children)
+    .map(nativeText)
+    .join("");
+}
 vi.mock("react-native", () => {
   const Surface = ({
     children,
@@ -41,6 +99,12 @@ vi.mock("react-native", () => {
   }) =>
     createElement("div", { "data-testid": testID, "data-style": JSON.stringify(style) }, children);
   return {
+    AppState: {
+      addEventListener: (_type: string, listener: (state: string) => void) => {
+        appState.listeners.add(listener);
+        return { remove: () => appState.listeners.delete(listener) };
+      },
+    },
     useWindowDimensions: () => dimensions,
     View: Surface,
     ScrollView: Surface,
@@ -74,27 +138,40 @@ vi.mock("react-native", () => {
       ),
     TextInput: ({
       ref,
-      value,
+      children,
       onChangeText,
       onKeyPress,
+      onSelectionChange,
+      selection,
       style,
       scrollEnabled,
     }: {
       ref?: Ref<HTMLInputElement>;
-      value: string;
+      children?: ReactNode;
       onChangeText: typeof input.change;
       onKeyPress: typeof input.key;
+      onSelectionChange?: typeof input.select;
+      selection?: { start: number; end: number };
       style: object;
       scrollEnabled?: boolean;
     }) => {
       input.change = onChangeText;
       input.key = onKeyPress;
+      input.select = onSelectionChange ?? (() => {});
+      const segments = Children.toArray(children).filter(isValidElement);
       return createElement("input", {
         ref,
-        value,
+        value: segments.map(nativeText).join(""),
+        "data-mentions": JSON.stringify(
+          segments.filter((segment) => (segment.props as { style?: object }).style).map(nativeText),
+        ),
+        "data-mention-colors": JSON.stringify(
+          segments.map((segment) => (segment.props as { style?: { color?: string } }).style?.color),
+        ),
         readOnly: true,
         "data-style": JSON.stringify(style),
         "data-scroll-enabled": scrollEnabled,
+        "data-selection": JSON.stringify(selection),
       });
     },
   };
@@ -150,12 +227,31 @@ describe("thread composer isolation", () => {
   let container: HTMLDivElement;
   let threadRenders: number;
   const composer = createRef<ThreadComposerHandle>();
+  type HarnessProps = Partial<typeof props> & {
+    threadKey?: string;
+    userId?: string;
+    apiBase?: string;
+  };
   function ThreadHarness({
     threadKey = "bot-1",
+    userId = "user-a",
+    apiBase = "https://api.test",
     ...changes
-  }: Partial<typeof props> & { threadKey?: string }) {
+  }: HarnessProps) {
     threadRenders += 1;
-    return <ThreadComposer key={threadKey} ref={composer} {...props} {...changes} />;
+    const draftScope = useMemo(
+      () => ({ apiBase, userId, threadKey: `bot:${threadKey}` }),
+      [apiBase, userId, threadKey],
+    );
+    return (
+      <ThreadComposer
+        key={`${apiBase} ${userId} ${threadKey}`}
+        ref={composer}
+        {...props}
+        draftScope={draftScope}
+        {...changes}
+      />
+    );
   }
   const catalogBots = [{ id: "bot-1", name: "Bot" }];
   function MentionThreadHarness({ owner = "thread-a" }: { owner?: string }) {
@@ -176,7 +272,7 @@ describe("thread composer isolation", () => {
       />
     );
   }
-  function render(changes: Partial<typeof props> & { threadKey?: string } = {}) {
+  function render(changes: HarnessProps = {}) {
     act(() => root.render(<ThreadHarness {...changes} />));
   }
   function type(value: string) {
@@ -192,6 +288,11 @@ describe("thread composer isolation", () => {
     vi.clearAllMocks();
     dimensions.fontScale = 1;
     threadRenders = 0;
+    files.clear();
+    disk.writes = 0;
+    disk.full = false;
+    disk.moveFails = false;
+    appState.listeners.clear();
     mentionApi.generation = 1;
     mentionApi.rpc.mockReset().mockResolvedValue([]);
     mentionApi.capture.mockReset().mockImplementation(async () => ({
@@ -208,6 +309,336 @@ describe("thread composer isolation", () => {
     act(() => root.unmount());
     container.remove();
     vi.unstubAllGlobals();
+  });
+
+  function select(start: number, end = start) {
+    act(() => input.select({ nativeEvent: { selection: { start, end } } }));
+  }
+
+  function field() {
+    return container.querySelector("input")!;
+  }
+
+  it("tints a completed mention inline instead of drawing a chip beside the input", () => {
+    type("ask @He");
+    press("@{name}");
+    type("ask @Helper now");
+    expect(field().value).toBe("ask @Helper now");
+    expect(JSON.parse(field().dataset.mentions!)).toEqual(["@Helper"]);
+    expect(container.querySelector('[data-testid="mention-chip"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Remove mention {name}"]')).toBeNull();
+  });
+
+  it("colors a bot mention with the bot's identity color", () => {
+    render({ composerMentionTargets: [{ ...bot, color: "#3366FF" }] });
+    type("ask @He");
+    press("@{name}");
+    type("ask @Helper now");
+    expect(JSON.parse(field().dataset.mentionColors!)).toEqual([null, "#3366FF", null]);
+  });
+
+  it("keeps inserted text when backspacing into a mention afterwards", () => {
+    type("ask @He");
+    press("@{name}");
+    act(() => composer.current!.insert("shared text"));
+    select(11);
+    type("ask @Helpe \nshared text");
+    expect(composer.current!.snapshot().promptText).toBe("ask  \nshared text");
+    expect(JSON.parse(field().dataset.selection!)).toEqual({ start: 4, end: 4 });
+    expect(composer.current!.snapshot().mentions).toEqual([]);
+  });
+
+  it("keeps a selected bot at its inline position and continues typing after it", () => {
+    type("i need u to message @He");
+    press("@{name}");
+    expect(container.querySelector("input")!.value).toBe("i need u to message @Helper ");
+    expect(JSON.parse(container.querySelector("input")!.dataset.selection!)).toEqual({
+      start: 28,
+      end: 28,
+    });
+    type("i need u to message @Helper and do this");
+    expect(composer.current!.snapshot().promptText).toBe("i need u to message @Helper and do this");
+    expect(composer.current!.snapshot().mentions).toEqual([bot]);
+  });
+
+  it("replaces only the active query in existing text and keeps suffix whitespace", () => {
+    type("i need u to message @He  and do this");
+    select("i need u to message @He".length);
+    press("@{name}");
+    expect(container.querySelector("input")!.value).toBe(
+      "i need u to message @Helper  and do this",
+    );
+    expect(JSON.parse(container.querySelector("input")!.dataset.selection!)).toEqual({
+      start: 28,
+      end: 28,
+    });
+    expect(composer.current!.snapshot().promptText).toBe(
+      "i need u to message @Helper  and do this",
+    );
+  });
+
+  it("replaces the full query when the caret is inside it and ignores a selected range", () => {
+    type("before @Hel after");
+    select(8, 11);
+    expect(container.querySelector('[data-testid="mention-picker"]')).toBeNull();
+    select(10);
+    press("@{name}");
+    expect(container.querySelector("input")!.value).toBe("before @Helper after");
+    expect(JSON.parse(container.querySelector("input")!.dataset.selection!)).toEqual({
+      start: 15,
+      end: 15,
+    });
+  });
+
+  it("replaces routing metadata when completing over an already selected token", () => {
+    const other = { kind: "bot", id: "bot-3", name: "HelperOther" } as const;
+    render({ composerMentionTargets: [bot, other] });
+    type("before @He");
+    press("@{name}");
+    expect(composer.current!.snapshot().mentions).toEqual([bot]);
+    select(10);
+    const options = container.querySelectorAll<HTMLButtonElement>('button[aria-label="@{name}"]');
+    expect(options).toHaveLength(2);
+    act(() => options[1]!.click());
+    expect(container.querySelector("input")!.value).toBe("before @HelperOther ");
+    expect(composer.current!.snapshot().mentions).toEqual([other]);
+  });
+
+  function pickMentionAt(index: number) {
+    const options = container.querySelectorAll<HTMLButtonElement>('button[aria-label="@{name}"]');
+    expect(options.length).toBeGreaterThan(index);
+    act(() => options[index]!.click());
+  }
+
+  it("replaces a selected group binding with a bot sharing its name at the same occurrence", () => {
+    const group = { kind: "group", id: "group-1", name: "Helper" } as const;
+    render({ composerMentionTargets: [group, bot] });
+    type("before @He");
+    pickMentionAt(0);
+    expect(composer.current!.snapshot().mentions).toMatchObject([group]);
+    select(10);
+    pickMentionAt(1);
+    expect(container.querySelector("input")!.value).toBe("before @Helper ");
+    expect(composer.current!.snapshot().mentions).toEqual([bot]);
+  });
+
+  const bobBot = { kind: "bot", id: "bob-bot", name: "Bob" } as const;
+  const bobGroup = { kind: "group", id: "bob-group", name: "Bob" } as const;
+
+  function selectBothBobs(separator = "and ") {
+    render({ composerMentionTargets: [bobBot, bobGroup] });
+    type("@Bo");
+    pickMentionAt(0);
+    type(`@Bob ${separator}@Bo`);
+    pickMentionAt(1);
+    expect(composer.current!.snapshot().mentions).toMatchObject([bobBot, bobGroup]);
+  }
+
+  it("removes only the deleted group binding when a bot has the same name", () => {
+    selectBothBobs();
+    select(9, 13);
+    type("@Bob and  ");
+    select(9);
+    expect(composer.current!.snapshot().mentions).toEqual([bobBot]);
+  });
+
+  it.each(["text-first", "selection-first"])(
+    "retains the second identity when deleting an identical first token with %s events",
+    (order) => {
+      selectBothBobs("");
+      select(0, 5);
+      if (order === "selection-first") select(0);
+      type("@Bob ");
+      if (order === "text-first") select(0);
+      expect(composer.current!.snapshot().mentions).toMatchObject([
+        { ...bobGroup, ranges: [{ start: 0, end: 4 }] },
+      ]);
+    },
+  );
+
+  it("uses the latest native caret after a previous selection when deleting identical tokens", () => {
+    selectBothBobs("");
+    select(0, 5);
+    select(10);
+    type("@Bob ");
+    select(5);
+    expect(composer.current!.snapshot().mentions).toEqual([bobBot]);
+  });
+
+  it.each(["text-first", "selection-first"])(
+    "backspacing into a same-name mention removes only that identity (%s events)",
+    (order) => {
+      for (const index of [0, 1]) {
+        selectBothBobs();
+        const end = index === 0 ? 4 : 13;
+        select(end);
+        if (order === "selection-first") select(end - 1);
+        type(index === 0 ? "@Bo and @Bob " : "@Bob and @Bo ");
+        expect(field().value).toBe(index === 0 ? " and @Bob " : "@Bob and  ");
+        expect(JSON.parse(field().dataset.selection!)).toEqual({
+          start: end - 4,
+          end: end - 4,
+        });
+        expect(composer.current!.snapshot().mentions).toMatchObject(
+          index === 0 ? [bobGroup] : [bobBot],
+        );
+      }
+    },
+  );
+
+  it("widens a selection that cuts into a mention and keeps the caret where it started", () => {
+    type("before @He");
+    press("@{name}");
+    type("before @Helper alpha omega");
+    select(3, 10);
+    type("beflper alpha omega");
+    expect(field().value).toBe("bef alpha omega");
+    expect(JSON.parse(field().dataset.selection!)).toEqual({ start: 3, end: 3 });
+    expect(composer.current!.snapshot().mentions).toEqual([]);
+  });
+
+  it.each(["bot", "group"] as const)(
+    "retires a shorter %s mention when replacing it with a multiword bot name",
+    (kind) => {
+      const shorter = { ...bot, kind };
+      const longer = { kind: "bot", id: "bot-3", name: "Helper Smith" } as const;
+      render({ composerMentionTargets: [shorter, longer] });
+      type("before @He");
+      pickMentionAt(0);
+      select(10);
+      pickMentionAt(1);
+      expect(container.querySelector("input")!.value).toBe("before @Helper Smith ");
+      expect(composer.current!.snapshot().mentions).toEqual([longer]);
+    },
+  );
+
+  it("keeps a separate shorter mention when replacing another occurrence with a longer name", () => {
+    const longer = { kind: "bot", id: "bot-3", name: "Helper Smith" } as const;
+    render({ composerMentionTargets: [bot, longer] });
+    type("@He");
+    pickMentionAt(0);
+    type("@Helper and @He");
+    pickMentionAt(0);
+    select("@Helper and @He".length);
+    pickMentionAt(1);
+    expect(container.querySelector("input")!.value).toBe("@Helper and @Helper Smith ");
+    expect(composer.current!.snapshot().mentions).toEqual([bot, longer]);
+    type("and @Helper Smith ");
+    expect(composer.current!.snapshot().mentions).toEqual([longer]);
+  });
+
+  it("replaces the entire recognized multiword name when the caret is inside its first word", () => {
+    const smith = { kind: "bot", id: "bot-3", name: "Helper Smith" } as const;
+    const jones = { kind: "bot", id: "bot-4", name: "Helper Jones" } as const;
+    render({ composerMentionTargets: [smith, jones] });
+    type("before @He");
+    pickMentionAt(0);
+    select(10);
+    pickMentionAt(1);
+    expect(container.querySelector("input")!.value).toBe("before @Helper Jones ");
+    expect(composer.current!.snapshot().mentions).toEqual([jones]);
+  });
+
+  it("backspacing into a shorter mention leaves a longer recognized name intact", () => {
+    const longer = { kind: "bot", id: "bot-3", name: "Helper Smith" } as const;
+    render({ composerMentionTargets: [bot, longer] });
+    type("@He");
+    pickMentionAt(0);
+    type("@Helper and @He");
+    pickMentionAt(1);
+    select(7);
+    type("@Helpe and @Helper Smith ");
+    expect(field().value).toBe(" and @Helper Smith ");
+    expect(composer.current!.snapshot().mentions).toEqual([longer]);
+  });
+
+  it.each(["text-first", "selection-first"])(
+    "finds the query when native editing events arrive %s",
+    (order) => {
+      type("before  after");
+      select(7);
+      if (order === "selection-first") select(10);
+      type("before @He after");
+      if (order === "text-first") select(10);
+      press("@{name}");
+      expect(container.querySelector("input")!.value).toBe("before @Helper after");
+      expect(composer.current!.snapshot().promptText).toBe("before @Helper after");
+    },
+  );
+
+  it("leaves the native caret in control while editing repeated characters", () => {
+    type("aaa");
+    select(1);
+    select(2);
+    type("aaaa");
+    expect(container.querySelector("input")!.dataset.selection).toBeUndefined();
+    expect(container.querySelector("input")!.value).toBe("aaaa");
+  });
+
+  it("keeps the picker dismissed after restoring the completed caret before punctuation", () => {
+    type("before @He, after");
+    select(10);
+    press("@{name}");
+    expect(container.querySelector("input")!.value).toBe("before @Helper, after");
+    select(14);
+    expect(container.querySelector('[data-testid="mention-picker"]')).toBeNull();
+    select(8);
+    expect(container.querySelector('[data-testid="mention-picker"]')).not.toBeNull();
+  });
+
+  it("keeps repeated mentions in text and prunes metadata only after the final token is deleted", () => {
+    type("first @He");
+    press("@{name}");
+    type("first @Helper then @He");
+    press("@{name}");
+    expect(container.querySelector("input")!.value).toBe("first @Helper then @Helper ");
+    expect(composer.current!.snapshot().promptText).toBe("first @Helper then @Helper");
+    expect(composer.current!.snapshot().mentions).toEqual([bot]);
+    type("first then @Helper ");
+    expect(composer.current!.snapshot().mentions).toEqual([bot]);
+    type("first then done");
+    expect(composer.current!.snapshot().mentions).toEqual([]);
+  });
+
+  it("removes one repeated mention token at a time without rewriting whitespace", () => {
+    type("first @He");
+    press("@{name}");
+    type("first @Helper  then @He");
+    press("@{name}");
+    select(27);
+    type("first @Helper  then @Helpe ");
+    expect(field().value).toBe("first @Helper  then  ");
+    expect(composer.current!.snapshot().mentions).toEqual([bot]);
+    select(13);
+    type("first @Helpe  then  ");
+    expect(field().value).toBe("first   then  ");
+    expect(composer.current!.snapshot().mentions).toEqual([]);
+  });
+
+  it("removes the mention when its own @ is deleted after a selection-first event", () => {
+    type("@ @He");
+    press("@{name}");
+    select(2);
+    type("@@Helper ");
+    select(2);
+    select(1);
+    type("@Helper ");
+    expect(field().value).toBe("@ ");
+    expect(JSON.parse(field().dataset.selection!)).toEqual({ start: 1, end: 1 });
+    expect(composer.current!.snapshot().mentions).toEqual([]);
+  });
+
+  it("deletes a stray character beside a mention without taking the mention", () => {
+    type("@ @He");
+    press("@{name}");
+    select(2);
+    type("@@Helper ");
+    expect(field().value).toBe("@@Helper ");
+    select(1);
+    type("@Helper ");
+    select(0);
+    expect(field().value).toBe("@Helper ");
+    expect(composer.current!.snapshot().mentions).toEqual([bot]);
   });
 
   it("types 20 characters without rendering the parent and sends the latest ref snapshot", () => {
@@ -248,7 +679,7 @@ describe("thread composer isolation", () => {
     expect(composer.current!.snapshot().mentions).toMatchObject([
       { kind: "routine", id: "routine-1", name: "Morning" },
     ]);
-    expect(container.querySelector("input")!.value).toBe("Hello ");
+    expect(container.querySelector("input")!.value).toBe("Hello @Morning ");
     await act(async () => input.change("Again @"));
     expect(mentionApi.rpc).toHaveBeenCalledTimes(3);
   });
@@ -279,23 +710,23 @@ describe("thread composer isolation", () => {
     await act(async () => root.render(<MentionThreadHarness />));
     await act(async () => input.change("@Mor"));
     press("@{name}");
-    await act(async () => input.change("Keep @Mor"));
+    await act(async () => input.change("@Morning Keep @Mor"));
     mentionApi.generation = 2;
     await act(async () => root.render(<MentionThreadHarness />));
 
-    expect(container.querySelector("input")!.value).toBe("Keep @Mor");
+    expect(container.querySelector("input")!.value).toBe("@Morning Keep @Mor");
     expect(composer.current!.snapshot().mentions).toMatchObject([{ id: "routine-1" }]);
     expect(container.querySelector('[data-testid="mention-picker"]')).toBeNull();
     expect(mentionApi.rpc).toHaveBeenCalledTimes(3);
 
-    await act(async () => input.change("Keep @Morn"));
+    await act(async () => input.change("@Morning Keep @Morn"));
     expect(mentionApi.rpc).toHaveBeenCalledTimes(6);
     press("@{name}");
     expect(composer.current!.snapshot().mentions).toMatchObject([
       { id: "routine-1" },
       { id: "routine-2" },
     ]);
-    expect(container.querySelector("input")!.value).toBe("Keep ");
+    expect(container.querySelector("input")!.value).toBe("@Morning Keep @Morning ");
   });
 
   it("requires another mention edit after switching the composer target", async () => {
@@ -310,7 +741,7 @@ describe("thread composer isolation", () => {
     expect(mentionApi.rpc).toHaveBeenCalledTimes(3);
   });
 
-  it("preserves draft across reply, attachment, and sending updates and resets on thread switch", () => {
+  it("preserves draft across reply, attachment, and sending updates and keeps it per conversation", () => {
     type("Draft");
     render({
       replyTargetId: "reply-1",
@@ -330,7 +761,167 @@ describe("thread composer isolation", () => {
       mentions: [],
       skill: null,
     });
-    expect(container.querySelector("input")!.value).toBe("");
+    expect(field().value).toBe("");
+    render();
+    expect(composer.current!.snapshot().promptText).toBe("Draft");
+    expect(field().value).toBe("Draft");
+  });
+
+  it("restores a conversation's draft and its mentions when the user returns", () => {
+    type("Hello @He");
+    press("@{name}");
+    render({ threadKey: "bot-2" });
+    render();
+    expect(field().value).toBe("Hello @Helper ");
+    expect(composer.current!.snapshot().mentions).toEqual([bot]);
+  });
+
+  it("restores a draft after the app restarts", () => {
+    type("Unsent");
+    act(() => root.unmount());
+    root = createRoot(container);
+    render();
+    expect(field().value).toBe("Unsent");
+  });
+
+  it("keeps drafts apart for other accounts and servers", () => {
+    type("Account A");
+    render({ userId: "user-b" });
+    expect(field().value).toBe("");
+    render({ apiBase: "https://other.test" });
+    expect(field().value).toBe("");
+    render();
+    expect(field().value).toBe("Account A");
+  });
+
+  it("forgets the saved draft once a send resets the composer", () => {
+    type("Sent");
+    render({ threadKey: "bot-2" });
+    render();
+    expect(field().value).toBe("Sent");
+    act(() => composer.current!.reset());
+    render({ threadKey: "bot-2" });
+    render();
+    expect(field().value).toBe("");
+  });
+
+  it("keeps the saved draft when a later save fails", () => {
+    type("Saved");
+    render({ threadKey: "bot-2" });
+    render();
+    disk.full = true;
+    type("Saved and more");
+    render({ threadKey: "bot-2" });
+    disk.full = false;
+    render();
+    expect(field().value).toBe("Saved");
+  });
+
+  it("keeps the new draft when replacing the saved one is interrupted", () => {
+    type("First");
+    render({ threadKey: "bot-2" });
+    render();
+    disk.moveFails = true;
+    type("First and second");
+    render({ threadKey: "bot-2" });
+    disk.moveFails = false;
+    render();
+    expect(field().value).toBe("First and second");
+  });
+
+  it("forgets an interrupted replacement once the draft is sent", () => {
+    type("Draft");
+    disk.moveFails = true;
+    render({ threadKey: "bot-2" });
+    disk.moveFails = false;
+    render();
+    act(() => composer.current!.reset());
+    render({ threadKey: "bot-2" });
+    render();
+    expect(field().value).toBe("");
+  });
+
+  it("keeps a recovered draft when the next save after a restart fails", () => {
+    type("First");
+    render({ threadKey: "bot-2" });
+    render();
+    disk.moveFails = true;
+    type("Second");
+    render({ threadKey: "bot-2" });
+    disk.moveFails = false;
+    act(() => root.unmount());
+    root = createRoot(container);
+    render();
+    expect(field().value).toBe("Second");
+    disk.full = true;
+    render({ threadKey: "bot-2" });
+    disk.full = false;
+    render();
+    expect(field().value).toBe("Second");
+  });
+
+  it("saves the draft once typing pauses, not on every keystroke", () => {
+    vi.useFakeTimers();
+    try {
+      disk.writes = 0;
+      for (const text of ["H", "He", "Hel", "Hell", "Hello"]) type(text);
+      expect(disk.writes).toBe(0);
+      act(() => vi.advanceTimersByTime(1000));
+      expect(disk.writes).toBe(1);
+      render({ threadKey: "bot-2" });
+      render();
+      expect(field().value).toBe("Hello");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("saves a pending draft when the app goes to the background", () => {
+    vi.useFakeTimers();
+    try {
+      type("Backgrounded");
+      act(() => {
+        for (const listener of appState.listeners) listener("background");
+      });
+      expect(disk.writes).toBe(1);
+      act(() => root.unmount());
+      root = createRoot(container);
+      render();
+      expect(field().value).toBe("Backgrounded");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("retries a failed pause save when leaving the conversation", () => {
+    vi.useFakeTimers();
+    try {
+      type("Base");
+      act(() => vi.advanceTimersByTime(1000));
+      type("Newest");
+      disk.full = true;
+      act(() => vi.advanceTimersByTime(1000));
+      disk.full = false;
+      render({ threadKey: "bot-2" });
+      render();
+      expect(field().value).toBe("Newest");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not bring back a sent draft from a save still waiting to run", () => {
+    vi.useFakeTimers();
+    try {
+      type("Sent");
+      act(() => composer.current!.reset());
+      act(() => vi.advanceTimersByTime(1000));
+      render({ threadKey: "bot-2" });
+      render();
+      expect(field().value).toBe("");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps edits during send and clears an unchanged composition, including popovers", () => {
@@ -347,18 +938,17 @@ describe("thread composer isolation", () => {
     expect(container.querySelector('[data-testid="mention-picker"]')).toBeNull();
   });
 
-  it("selects mention and skill popovers and removes chips with backspace", () => {
+  it("selects mention and skill popovers, clears replaced mentions, and removes skills with backspace", () => {
     type("Hello @He");
     press("@{name}");
     expect(composer.current!.snapshot().mentions).toEqual([bot]);
-    expect(container.querySelector("input")!.value).toBe("Hello ");
+    expect(container.querySelector("input")!.value).toBe("Hello @Helper ");
     expect(container.querySelector('[data-testid="mention-picker"]')).toBeNull();
     type("/Wri");
     press("Skill {name}");
     expect(composer.current!.snapshot().skill).toEqual(skill);
     expect(container.querySelector("input")!.value).toBe("");
     expect(container.querySelector('[data-testid="slash-picker"]')).toBeNull();
-    act(() => input.key({ nativeEvent: { key: "Backspace" } }));
     expect(composer.current!.snapshot().mentions).toEqual([]);
     expect(composer.current!.snapshot().skill).toEqual(skill);
     act(() => input.key({ nativeEvent: { key: "Backspace" } }));

@@ -87,7 +87,6 @@ describePostgres("bounded latest bot roster runs (PostgreSQL)", () => {
         await runAsTenant({ ...owner, spaceId }, async () => {
           const bot = await createRepos(prisma).createBot(actorFor(spaceId), {
             name: spec.name,
-            title: "",
             description: "",
             instructions: "",
             notifyOnFinish: true,

@@ -32,15 +32,23 @@ test("saves a website login from a username and password card without echoing ei
   }
   await expect(card).toBeVisible({ timeout: 15_000 });
   await expect(card.getByText("https://login.example.test", { exact: true })).toBeVisible();
-  const usernameField = card.getByLabel("Username");
+  const usernameField = card.getByLabel("Username", { exact: true });
   // Exact: the password reveal button is labelled "Show password".
   const passwordField = card.getByLabel("Password", { exact: true });
+  // The default card starts as logins always have: Username visible, Password hidden.
+  await expect(usernameField).toHaveAttribute("type", "text");
   await expect(passwordField).toHaveAttribute("type", "password");
+  const hiddenSwitch = (label: string) =>
+    card
+      .getByTestId("login-field-value")
+      .filter({ has: page.getByLabel(label, { exact: true }) })
+      .getByRole("switch", { name: "Hidden" });
+  await expect(hiddenSwitch("Username")).not.toBeChecked();
+  await expect(hiddenSwitch("Password")).toBeChecked();
   const save = card.getByRole("button", { name: "Save", exact: true });
 
   const username = `fake-user-${stamp}@example.test`;
   const password = `fake-password-${stamp}`;
-  // Both fields are required before the login can be saved.
   await passwordField.fill(password);
   await expect(save).toBeDisabled();
   await usernameField.fill(username);

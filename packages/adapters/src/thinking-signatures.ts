@@ -1,13 +1,10 @@
 import type { TranscriptContext } from "@earendil-works/pi-ai";
 
 /**
- * Claude 5.5 binds each signed thinking block to the conversation prefix it was written in.
- * Rakazo rewrites earlier history between requests (pruned screenshots and page state,
- * changed tools), so a replayed block can stop matching and the provider rejects the whole
- * request: "Invalid `signature` in `thinking` block. The block is bound to a different
- * conversation." Retrying the same history fails the same way, so the thread stays broken.
- * Anthropic can drop such blocks itself (thinking.block_binding), but proxies like OpenCode
- * reject that field, so the runtime retries without the earlier thinking instead.
+ * Claude 5.5 binds each signed thinking block to the conversation prefix it was written in, and
+ * Rakazo rewrites earlier history between requests, so a replayed block can make the provider
+ * reject the whole request. Anthropic can drop such blocks itself (thinking.block_binding), but
+ * proxies like OpenCode reject that field, so the runtime retries without the earlier thinking.
  */
 const MISMATCHED_SIGNATURE =
   /invalid `?signature`? in `?thinking`? block|bound to a different conversation/i;

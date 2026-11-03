@@ -1,11 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import { routineJobKey, routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
-import {
-  parseRoutineWatch,
-  routineRunModelPin,
-  stableStringify,
-  validateRoutineWatch,
-} from "@rakazo/adapters";
+import { parseRoutineWatch, stableStringify, validateRoutineWatch } from "@rakazo/adapters";
 import { canonicalPiProviderId } from "@rakazo/contracts";
 import {
   expandSkillReferencesInPrompt,
@@ -18,6 +13,7 @@ import { assertRoutineModel } from "../model-pins.js";
 import { listRoutineRuns } from "../routine-runs.js";
 import {
   assertRoutineSchedule,
+  createRoutineTestRun,
   firstWatchCheck,
   listRoutinesDto,
   mapRoutine,
@@ -25,6 +21,8 @@ import {
   routineDto,
   routineNextRunAt,
   routineRowData,
+  routineTestRunNonce,
+  routineTestTarget,
 } from "../routines.js";
 import type { RouterContext } from "./context.js";
 import { isRecordNotFound } from "./shared.js";
@@ -220,8 +218,10 @@ export function routinesRoutes(ctx: RouterContext) {
               : isOneShotRoutineCrons(crons)
                 ? (armedOneShotAt ?? existing.nextRunAt)
                 : (recalculatedNextRunAt ?? existing.nextRunAt);
+        const writesSchedule = nextRunAt?.getTime() !== existing.nextRunAt?.getTime();
         // Re-check the parent in the write itself so an archive that lands after the read wins.
-        // Model patches must also match the snapshot used to resolve omitted model fields.
+        // Model and schedule patches must also match the snapshot they were computed from, so a
+        // tick that fired after the read is not rewound onto an occurrence that already ran.
         const row = await deps.prisma.routine
           .update({
             where: {
@@ -234,6 +234,7 @@ export function routinesRoutes(ctx: RouterContext) {
                     thinkingLevel: existing.thinkingLevel,
                   }
                 : {}),
+              ...(writesSchedule ? { nextRunAt: existing.nextRunAt } : {}),
             },
             data: {
               name: input.name,
@@ -253,13 +254,13 @@ export function routinesRoutes(ctx: RouterContext) {
                     watch: (input.watch as Prisma.InputJsonValue | null) ?? Prisma.DbNull,
                     ...(watchChanged ? { watchState: Prisma.DbNull } : {}),
                   }),
-              nextRunAt,
+              ...(writesSchedule ? { nextRunAt } : {}),
             },
           })
           .catch(async (error: unknown) => {
             if (isRecordNotFound(error)) {
               if (
-                touchesModel &&
+                (touchesModel || writesSchedule) &&
                 (await deps.prisma.routine.findFirst({
                   where: {
                     id: existing.id,
@@ -270,7 +271,7 @@ export function routinesRoutes(ctx: RouterContext) {
                   select: { id: true },
                 }))
               ) {
-                throw new ORPCError("CONFLICT", { message: "Routine model changed; retry." });
+                throw new ORPCError("CONFLICT", { message: "Routine changed; retry." });
               }
               throw new ORPCError("NOT_FOUND");
             }
@@ -302,7 +303,11 @@ export function routinesRoutes(ctx: RouterContext) {
       }),
       remove: authed.routines.remove.handler(async ({ context, input }) => {
         const existing = await deps.prisma.routine.findFirst({
-          where: { id: input.routineId, spaceId: context.actor.spaceId },
+          where: {
+            id: input.routineId,
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+          },
         });
         if (!existing) throw new IsolationError();
         await deps.prisma.routine.delete({ where: { id: existing.id } });
@@ -310,77 +315,42 @@ export function routinesRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
       testRun: authed.routines.testRun.handler(async ({ context, input }) => {
-        const routine = await deps.prisma.routine.findFirst({
-          where: {
-            id: input.routineId,
-            spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
-          },
-        });
-        if (!routine) throw new IsolationError();
-        const bot = await repos.getBot(context.actor, routine.botId);
-        if (!bot.thread) throw new IsolationError();
-        const threadId = bot.thread.id;
-        const nonce = input.clientNonce ? `routine-test:${input.clientNonce}` : undefined;
-        if (nonce) {
-          const existing = await deps.prisma.run.findFirst({
-            where: { threadId, clientNonce: nonce },
-            select: { id: true },
-          });
-          if (existing) return { runId: existing.id };
-        }
+        const target = await routineTestTarget(deps.prisma, repos, context.actor, input.routineId);
+        const { threadId } = target;
+        // The previous release stored the key without the user id; a retry still replays it.
+        const keys = input.clientNonce
+          ? [
+              routineTestRunNonce(context.actor, input.clientNonce),
+              `routine-test:${input.clientNonce}`,
+            ]
+          : [];
+        const nonce = keys[0];
+        const findExisting = async () =>
+          keys.length
+            ? deps.prisma.run.findFirst({
+                where: { threadId, userId: context.actor.userId, clientNonce: { in: keys } },
+                select: { id: true },
+              })
+            : null;
+        const existing = await findExisting();
+        if (existing) return { runId: existing.id };
         const skillRecords = await agentSkills.listWithContent(context.actor);
-        const prompt = expandSkillReferencesInPrompt(routine.prompt, skillRecords);
+        const prompt = expandSkillReferencesInPrompt(target.routine.prompt, skillRecords);
         let run: { id: string };
         try {
           // Task + run must commit together so a nonce collision cannot leave an orphan queued Task.
           run = await deps.prisma.$transaction(async (tx) => {
-            if (nonce) {
-              const existing = await tx.run.findFirst({
-                where: { threadId, clientNonce: nonce },
-                select: { id: true },
-              });
-              if (existing) return existing;
-            }
-            const task = await tx.task.create({
-              data: {
-                spaceId: context.actor.spaceId,
-                botId: bot.id,
-                threadId,
-                userId: context.actor.userId,
-                prompt,
-                status: "queued",
-              },
-            });
-            const currentModel = await tx.routine.findUnique({
-              where: { id: routine.id },
-              select: { modelProvider: true, modelId: true, thinkingLevel: true },
-            });
-            if (!currentModel) throw new IsolationError();
-            return tx.run.create({
-              data: {
-                spaceId: context.actor.spaceId,
-                botId: bot.id,
-                threadId,
-                taskId: task.id,
-                userId: context.actor.userId,
-                status: "queued",
-                trigger: "routine",
-                routineId: routine.id,
-                ...routineRunModelPin(currentModel),
-                clientNonce: nonce,
-              },
-              select: { id: true },
-            });
+            const existing = nonce
+              ? await tx.run.findFirst({
+                  where: { threadId, clientNonce: nonce },
+                  select: { id: true },
+                })
+              : null;
+            return existing ?? createRoutineTestRun(tx, context.actor, target, prompt, nonce);
           });
         } catch (error) {
-          if (nonce) {
-            const existing = await deps.prisma.run.findFirst({
-              where: { threadId, clientNonce: nonce },
-              select: { id: true },
-            });
-            if (existing) return { runId: existing.id };
-          }
+          const existing = await findExisting();
+          if (existing) return { runId: existing.id };
           throw error;
         }
         // Keep enqueue outside the nonce-collision catch. The queued run is durable;

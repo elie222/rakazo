@@ -5,7 +5,7 @@ import type { Actor } from "@rakazo/contracts";
 import {
   ARTIFACT_NAME_MAX_LENGTH,
   ATTACHMENT_MAX_BYTES,
-  ATTACHMENT_MAX_COUNT,
+  attachmentMaxCount,
   attachmentSizeLabel,
   isAttachmentAudioMimeType,
 } from "@rakazo/contracts";
@@ -591,10 +591,10 @@ type SendAttachmentRow = {
   storageKey: string;
 };
 
-function normalizeAttachmentIds(artifactIds: string[] | undefined) {
+function normalizeAttachmentIds(artifactIds: string[] | undefined, maxCount: number) {
   const ids = [...new Set(artifactIds ?? [])];
-  if (ids.length > ATTACHMENT_MAX_COUNT) {
-    throw new AttachmentValidationError(`At most ${ATTACHMENT_MAX_COUNT} attachments per message`);
+  if (ids.length > maxCount) {
+    throw new AttachmentValidationError(`At most ${maxCount} attachments per message`);
   }
   return ids;
 }
@@ -615,12 +615,12 @@ function toAttachmentResolution<T extends SendAttachmentRow>(ids: string[], rows
 }
 
 export async function resolveSendAttachments(
-  deps: { prisma: Pick<PrismaClient, "artifact"> },
+  deps: { prisma: Pick<PrismaClient, "artifact">; maxAttachmentsPerMessage?: number },
   actor: Actor,
   botId: string,
   artifactIds: string[] | undefined,
 ) {
-  const ids = normalizeAttachmentIds(artifactIds);
+  const ids = normalizeAttachmentIds(artifactIds, attachmentMaxCount(deps));
   if (!ids.length) return toAttachmentResolution(ids, [] as SendAttachmentRow[]);
 
   const rows = await deps.prisma.artifact.findMany({
@@ -636,13 +636,13 @@ export async function resolveSendAttachments(
 }
 
 export async function resolveGroupSendAttachments(
-  deps: { prisma: Pick<PrismaClient, "artifact"> },
+  deps: { prisma: Pick<PrismaClient, "artifact">; maxAttachmentsPerMessage?: number },
   actor: Actor,
   groupId: string,
   memberBotIds: string[],
   artifactIds: string[] | undefined,
 ) {
-  const ids = normalizeAttachmentIds(artifactIds);
+  const ids = normalizeAttachmentIds(artifactIds, attachmentMaxCount(deps));
   if (!ids.length) return toAttachmentResolution(ids, [] as SendAttachmentRow[]);
 
   const rows = await deps.prisma.artifact.findMany({

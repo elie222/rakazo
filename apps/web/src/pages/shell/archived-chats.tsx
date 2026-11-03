@@ -45,7 +45,13 @@ export function ArchivedChats({
       <CollapsibleContent className="flex flex-col">
         {archivedBots.map((bot) => (
           <div key={bot.id} className="flex items-center gap-2 rounded-lg px-2.5 py-2">
-            <BotAvatar color={bot.color} identity={bot.id} size={28} status={bot.status} />
+            <BotAvatar
+              avatarSet={bot.avatarSet}
+              color={bot.color}
+              identity={bot.id}
+              size={28}
+              status={bot.status}
+            />
             <span className="min-w-0 flex-1 truncate text-[14px] text-foreground/75" dir="auto">
               {bot.name}
             </span>

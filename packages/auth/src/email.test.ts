@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
   accountDeletionEmail,
+  identityCodeEmail,
   passwordResetEmail,
   signInCodeEmail,
   verificationEmail,
 } from "./email.js";
+
+import {
+  pluginSubmissionAdminEmail,
+  pluginSubmissionReceivedEmail,
+  pluginSubmissionReviewedEmail,
+} from "./plugin-submission-email.js";
+import { referralEmail } from "./referral-email.js";
+import { welcomeEmail } from "./welcome-email.js";
 
 describe("account email templates", () => {
   const url = "https://app.example.test/verify?token=fake-token&callbackURL=%2Fsign-in";
@@ -32,4 +41,43 @@ describe("account email templates", () => {
       expect(message.html).not.toContain("<a ");
     },
   );
+});
+
+// Every template must retain the same layout and a text alternative.
+it("shares the layout across account, product and marketplace emails", async () => {
+  const user = { id: "user-1", name: "Alex", email: "alex@example.com" };
+  const url = "https://app.example.com";
+  const messages = await Promise.all([
+    verificationEmail(user.email, url),
+    signInCodeEmail(user.email, "123456"),
+    passwordResetEmail(user, url),
+    accountDeletionEmail(user.email, "123456"),
+    identityCodeEmail(user.email, "123456"),
+    welcomeEmail(user, url),
+    referralEmail(user, url, url),
+    pluginSubmissionReceivedEmail(user.email),
+    pluginSubmissionAdminEmail(
+      user.email,
+      { name: "Example plugin", source: "https://example.com/plugin", email: user.email },
+      url,
+    ),
+    pluginSubmissionReviewedEmail({
+      email: user.email,
+      name: "Example plugin",
+      status: "approved",
+      reason: null,
+    }),
+    pluginSubmissionReviewedEmail({
+      email: user.email,
+      name: "Example plugin",
+      status: "rejected",
+      reason: "Example reason",
+    }),
+  ]);
+  for (const message of messages) {
+    expect(message.html!.match(/class="email-card"/g)).toHaveLength(1);
+    expect(message.html).toContain('role="presentation"');
+    expect(message.text.length).toBeGreaterThan(0);
+    expect(message.text).not.toContain("<table");
+  }
 });

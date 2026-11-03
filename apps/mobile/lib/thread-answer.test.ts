@@ -1,3 +1,4 @@
+import type { LoginFieldInput } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import type { ThreadAnswerContext } from "./thread-answer";
 import { answerThreadMessage } from "./thread-answer";
@@ -18,27 +19,49 @@ function setup(refresh: () => Promise<void>, overrides: Partial<ThreadAnswerCont
     answerMessage: (
       message: { id: string; runId?: string },
       answer: string,
-      username?: string,
+      fields?: readonly LoginFieldInput[],
       dismiss?: boolean,
-    ) => answerThreadMessage(context, message, answer, username, dismiss),
+      remember?: false,
+    ) => answerThreadMessage(context, message, answer, fields, dismiss, remember),
   };
 }
 
 const message = { id: "message-1", runId: "run-1" };
 
 describe("mobile ask answers", () => {
-  it("sends the answer and username unchanged", async () => {
+  it("sends a login's fields unchanged with an empty answer and no username", async () => {
     const h = setup(async () => undefined);
-    await h.answerMessage(message, "example-password", "ada");
+    const fields = [
+      { label: "Username", value: " ada ", hidden: false },
+      { label: "Password", value: "example-password", hidden: true },
+    ];
+    await h.answerMessage(message, "", fields);
     expect(h.markRead).toHaveBeenCalledTimes(1);
     expect(h.rpc).toHaveBeenCalledWith("threads/answer", {
       botId: "bot-1",
       runId: "run-1",
       messageId: "message-1",
-      answer: "example-password",
-      username: "ada",
+      answer: "",
+      fields,
     });
+    expect(h.rpc.mock.lastCall![1]).not.toHaveProperty("username");
+    // Saved to the Vault unless the person turned that off.
+    expect(h.rpc.mock.lastCall![1]).not.toHaveProperty("remember");
     expect(h.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends remember false for a login used for this run only", async () => {
+    const h = setup(async () => undefined);
+    const fields = [{ label: "Password", value: "example-password", hidden: true }];
+    await h.answerMessage(message, "", fields, undefined, false);
+    expect(h.rpc).toHaveBeenCalledWith("threads/answer", {
+      botId: "bot-1",
+      runId: "run-1",
+      messageId: "message-1",
+      answer: "",
+      fields,
+      remember: false,
+    });
   });
 
   it("targets the group in a group thread", async () => {
@@ -81,7 +104,7 @@ describe("mobile ask answers", () => {
   it("still fails when the server doesn't accept the answer", async () => {
     const h = setup(async () => undefined);
     h.rpc.mockRejectedValueOnce(new Error("offline"));
-    await expect(h.answerMessage(message, "example-password", "ada")).rejects.toThrow("offline");
+    await expect(h.answerMessage(message, "example-password")).rejects.toThrow("offline");
     expect(h.refresh).not.toHaveBeenCalled();
   });
 

@@ -107,6 +107,8 @@ describe("authRateLimitOptions", () => {
       storage: "database",
       customRules: {
         "/request-account-deletion": { window: 600, max: 3 },
+        "/request-identity-code": { window: 600, max: 3 },
+        "/confirm-identity": { window: 15 * 60, max: 10 },
         "/sign-in/email": { window: 15 * 60, max: 10 },
         "/sign-up/email": { window: 15 * 60, max: 10 },
         "/request-password-reset": { window: 15 * 60, max: 10 },

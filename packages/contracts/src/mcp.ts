@@ -21,7 +21,8 @@ export const McpRemoteEndpointSchema = z
   }, "MCP remote endpoint must be an HTTP(S) URL without credentials or a fragment");
 
 export const McpHeadersSchema = z
-  .record(z.string().regex(/^[A-Za-z0-9-]+$/), z.string().max(4096))
+  // HTTP field names are tokens (RFC 9110 section 5.6.2), including underscores.
+  .record(z.string().regex(/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/), z.string().max(4096))
   .superRefine((value, ctx) => {
     if (Object.keys(value).length > 32) {
       ctx.addIssue({ code: "custom", message: "At most 32 headers are allowed" });

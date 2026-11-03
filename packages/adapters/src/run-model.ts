@@ -12,7 +12,6 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
 import { MISSING_MODEL_RUN_ERROR } from "@rakazo/core";
-import { retireModelCredential } from "@rakazo/db";
 import { cloudflareProviderEnv } from "./cloudflare-ai-gateway.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
@@ -33,17 +32,18 @@ import {
 } from "./model-selection.js";
 import { modelIdSupportsImages } from "./model-vision.js";
 import { assertAllowedOpenAiCompatibleUrl } from "./openai-compatible-url.js";
-import { codexLiveListsModel } from "./pi-codex-catalog.js";
+import { codexLiveModel } from "./pi-codex-catalog.js";
 import { toOAuthCredential } from "./pi-credentials.js";
 import { LOCAL_PROVIDER_ID } from "./pi-local-provider.js";
 import type { StoredModelSecret } from "./pi-oauth.js";
 import {
+  CHATGPT_OAUTH_PROVIDER,
   isRetiredModelCredentialError,
   kickModelCredentialRefresh,
-  matchesFailedOAuthSecret,
   parseModelSecret,
   persistStoredModelSecret,
   resolveModelAuth,
+  retireToReconnectMarker,
   secretValuesToRedact,
   serializeModelSecret,
   withModelCredentialLock,
@@ -64,13 +64,17 @@ export function isTerminalModelSetupError(error: unknown): boolean {
   );
 }
 
-export function fleetPrepareDeps(
+export async function fleetPrepareDeps(
   deps: ExecutorDeps,
   scope: { userId: string; spaceId: string },
-): FleetPrepareDeps {
+): Promise<FleetPrepareDeps> {
+  const hostedProvider = (await modelCreditBillingEnabled(deps))
+    ? resolveDeploymentModel().provider
+    : undefined;
   return {
     prisma: deps.prisma,
     modelChange: {
+      hostedProvider,
       secretStore: deps.secretStore,
       codexCatalog: deps.codexCatalog,
       refreshExpiredCredential: (credentialScope, secretId, provider) =>
@@ -90,9 +94,7 @@ export function fleetPrepareDeps(
           override: null,
           overrideCredential: null,
           main,
-          hostedProvider: (await modelCreditBillingEnabled(deps))
-            ? resolveDeploymentModel().provider
-            : undefined,
+          hostedProvider,
           defaults: {
             settings,
             deployment: deps.deploymentModelConfigured ? resolveDeploymentModel() : null,
@@ -201,6 +203,7 @@ async function resolveModelKeyMaterial(
   accountId?: string;
   gatewayId?: string;
   baseUrl?: string;
+  apiProtocol?: AgentRunRequest["model"]["apiProtocol"];
   headers?: Record<string, string>;
   allowPrivateEndpoint?: boolean;
   cacheCapabilities?: AgentRunRequest["model"]["cacheCapabilities"];
@@ -244,49 +247,42 @@ async function resolveModelKeyMaterial(
         { userId, spaceId },
         row.id,
       );
-      // Retire exactly this credential. Two fences keep a stale failure from
-      // deleting newer material: secretId guards a reconnect that swapped the
-      // secret row, and matchesFailedSecret guards a concurrent successful
-      // refresh that rewrote the same row's ciphertext in place.
-      const retire = (
-        _reason: ModelCredentialRetireReason,
-        _detail: string | undefined,
-        failed?: ModelCredentialFailedState,
-      ) =>
-        retireModelCredential(deps.prisma, {
-          userId,
-          credentialId: credential.id,
-          secretId: credential.secretId,
-          matchesFailedSecret: failed
-            ? matchesFailedOAuthSecret(
-                (ciphertext, secretId) => deps.secretStore.load(ciphertext, secretId),
-                failed,
-              )
-            : undefined,
-        });
+      const retire = retireToReconnectMarker(
+        deps.prisma,
+        deps.secretStore,
+        { userId, spaceId },
+        credential,
+        parseModelSecret(plaintext).maxTokens,
+      );
       const resolveAuth = () =>
         resolveModelAuth(plaintext, credential.provider, { persist, retire });
       let resolved: Awaited<ReturnType<typeof resolveAuth>> | undefined;
+      let liveCodex: Awaited<ReturnType<typeof codexLiveModel>> | undefined;
       const authError = validateModelAuthAvailability(provider, modelId, plaintext);
       if (authError) {
         // A statically excluded Codex model may still run when the backend's
         // per-account catalog lists it for this credential. The catalog path
         // never refreshes or writes credentials, so resolve inside this lock
         // first — rotating a stale token the way any run would — then ask.
-        let liveListed = false;
         if (deps.codexCatalog && parseModelSecret(plaintext).kind === "oauth") {
           resolved = await resolveAuth();
-          liveListed = await codexLiveListsModel(
-            deps.codexCatalog,
-            userId,
-            resolved.secret,
-            modelId,
-            { waitMs: CODEX_LIVE_RUN_WAIT_MS },
-          );
+          liveCodex = await codexLiveModel(deps.codexCatalog, userId, resolved.secret, modelId, {
+            waitMs: CODEX_LIVE_RUN_WAIT_MS,
+          });
         }
-        if (!liveListed) throw new UnavailableModelForAuthError(authError);
+        if (!liveCodex) throw new UnavailableModelForAuthError(authError);
       }
       resolved ??= await resolveAuth();
+      if (
+        !liveCodex &&
+        deps.codexCatalog &&
+        provider === CHATGPT_OAUTH_PROVIDER &&
+        resolved.secret.kind === "oauth"
+      ) {
+        liveCodex = await codexLiveModel(deps.codexCatalog, userId, resolved.secret, modelId, {
+          waitMs: CODEX_LIVE_RUN_WAIT_MS,
+        });
+      }
       assertCompatibleModelEnabled(credential, resolved.secret, modelId);
       const oauth = resolved.secret.kind === "oauth" ? resolved.secret.credential : undefined;
       const baseUrl =
@@ -306,13 +302,14 @@ async function resolveModelKeyMaterial(
       }
       const acceptsImages =
         credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID &&
-        resolved.secret.kind === "openai_compatible" &&
-        (modelIdSupportsImages(resolved.secret.visionModelIds, modelId) ||
-          // Legacy secrets have no per-model list, so keep their existing
-          // capability scoped to the model saved in the space preference.
-          (resolved.secret.visionModelIds === undefined &&
-            credential.supportsImages === true &&
-            credential.defaultModel?.trim() === modelId.trim()));
+        resolved.secret.kind === "openai_compatible"
+          ? modelIdSupportsImages(resolved.secret.visionModelIds, modelId) ||
+            // Legacy secrets have no per-model list, so keep their existing
+            // capability scoped to the model saved in the space preference.
+            (resolved.secret.visionModelIds === undefined &&
+              credential.supportsImages === true &&
+              credential.defaultModel?.trim() === modelId.trim())
+          : liveCodex?.supportsImages;
       const accountId = resolved.secret.kind === "api_key" ? resolved.secret.accountId : undefined;
       const gatewayId = resolved.secret.kind === "api_key" ? resolved.secret.gatewayId : undefined;
       cloudflareProviderEnv({ provider, accountId, gatewayId });
@@ -321,6 +318,8 @@ async function resolveModelKeyMaterial(
         accountId,
         gatewayId,
         baseUrl,
+        apiProtocol:
+          resolved.secret.kind === "openai_compatible" ? resolved.secret.apiProtocol : undefined,
         headers: resolved.secret.kind === "openai_compatible" ? resolved.secret.headers : undefined,
         allowPrivateEndpoint,
         cacheCapabilities:
@@ -347,7 +346,7 @@ async function resolveModelKeyMaterial(
                 const current = parseModelSecret(
                   await deps.secretStore.load(currentRow.ciphertext, currentRow.id),
                 );
-                if (current.kind === "oauth") {
+                if (current.kind === "oauth" && !current.reconnectRequired) {
                   const stored = current.credential;
                   if (stored.expires > next.expires) return;
                   if (
@@ -391,18 +390,19 @@ export function cloudflareRunFields(resolved: { accountId?: string; gatewayId?: 
   };
 }
 
-export async function resolveConnectedRunModel(
+/**
+ * A role row's model on its own connection, or on the deployment's for its funded provider.
+ * The connection is returned with the key so a run can record which one served it.
+ */
+export async function resolveConnectedModelKey(
   deps: ExecutorDeps,
   scope: { userId: string; spaceId: string },
   provider: string,
   modelId: string,
   registerSecrets?: (values: string[]) => void,
   requireStoredSecret = false,
-  /** A fallback's own effort from its role list. */
-  thinkingLevel?: string | null,
-  /** The connection a role row is pinned to. */
   credentialId?: string,
-): Promise<AgentRunRequest["model"]> {
+) {
   const hostedProvider = (await modelCreditBillingEnabled(deps))
     ? resolveDeploymentModel().provider
     : undefined;
@@ -423,11 +423,7 @@ export async function resolveConnectedRunModel(
     modelId,
     { credentialId },
   );
-  if (
-    !credential &&
-    !((await modelCreditBillingEnabled(deps)) && provider === resolveDeploymentModel().provider)
-  )
-    throw new Error(PINNED_PROVIDER_NOT_CONNECTED);
+  if (!credential && provider !== hostedProvider) throw new Error(PINNED_PROVIDER_NOT_CONNECTED);
   const resolved = await resolveModelKey(
     deps,
     scope.userId,
@@ -438,6 +434,30 @@ export async function resolveConnectedRunModel(
     registerSecrets,
     { requireStoredSecret },
   );
+  return { credential, resolved };
+}
+
+export async function resolveConnectedRunModel(
+  deps: ExecutorDeps,
+  scope: { userId: string; spaceId: string },
+  provider: string,
+  modelId: string,
+  registerSecrets?: (values: string[]) => void,
+  requireStoredSecret = false,
+  /** A fallback's own effort from its role list. */
+  thinkingLevel?: string | null,
+  /** The connection a role row is pinned to. */
+  credentialId?: string,
+): Promise<AgentRunRequest["model"]> {
+  const { credential, resolved } = await resolveConnectedModelKey(
+    deps,
+    scope,
+    provider,
+    modelId,
+    registerSecrets,
+    requireStoredSecret,
+    credentialId,
+  );
   return {
     provider,
     id: modelId,
@@ -446,6 +466,7 @@ export async function resolveConnectedRunModel(
     callObserver: resolved.callObserver,
     ...cloudflareRunFields(resolved),
     baseUrl: resolved.baseUrl,
+    apiProtocol: resolved.apiProtocol,
     headers: resolved.headers,
     allowPrivateEndpoint: resolved.allowPrivateEndpoint,
     cacheCapabilities: resolved.cacheCapabilities,
@@ -543,6 +564,7 @@ export async function resolveRunModel(
     callObserver: resolved.callObserver,
     ...cloudflareRunFields(resolved),
     baseUrl: resolved.baseUrl,
+    apiProtocol: resolved.apiProtocol,
     headers: resolved.headers,
     allowPrivateEndpoint: resolved.allowPrivateEndpoint,
     cacheCapabilities: resolved.cacheCapabilities,

@@ -21,8 +21,6 @@ import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
 import { errorText } from "../../lib/user-error";
 
-// MenuView choice keys; provider ids never contain a colon.
-
 export default function MessagingSettings() {
   const { t } = useI18n();
   const router = useRouter();

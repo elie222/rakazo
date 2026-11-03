@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 
-/** The one reading width every settings section shares. */
 export const SETTINGS_CONTENT_WIDTH = "max-w-2xl";
 
 /** A titled list of settings rows sharing one bordered surface. */

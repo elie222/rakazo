@@ -83,7 +83,10 @@ describe("bundled desktop renderer", () => {
   });
 
   it("forwards cookies for both app and cross-origin requests", () => {
-    const appOptions = forwardedRendererRequestInit(new Request(`${origin}/rpc/bots`), origin);
+    const appOptions = forwardedRendererRequestInit(
+      new Request(`${origin}/rpc/bots`, { method: "POST", referrer: `${origin}/app` }),
+      origin,
+    );
     const oauthOptions = forwardedRendererRequestInit(
       new Request("https://oauth.example.com/authorize"),
       origin,
@@ -96,5 +99,40 @@ describe("bundled desktop renderer", () => {
       credentials: "include",
     });
     expect(oauthOptions.headers).toBeUndefined();
+  });
+
+  it("vouches for the app origin only on requests from app pages", () => {
+    const fromApp = forwardedRendererRequestInit(
+      new Request(`${origin}/rpc/bots`, { method: "POST", headers: { origin } }),
+      origin,
+    );
+    const fromPopup = forwardedRendererRequestInit(
+      new Request(`${origin}/rpc/bots`, {
+        method: "POST",
+        headers: { origin: "https://oauth.example.com" },
+        referrer: `${origin}/app`,
+      }),
+      origin,
+    );
+    const fromSandbox = forwardedRendererRequestInit(
+      new Request(`${origin}/rpc/bots`, { method: "POST", headers: { origin: "null" } }),
+      origin,
+    );
+    const unattributed = forwardedRendererRequestInit(
+      new Request(`${origin}/rpc/bots`, { method: "POST" }),
+      origin,
+    );
+    const fromForeignPage = forwardedRendererRequestInit(
+      new Request(`${origin}/rpc/bots`, {
+        method: "POST",
+        referrer: "https://oauth.example.com/authorize",
+      }),
+      origin,
+    );
+
+    expect(new Headers(fromApp.headers).get("origin")).toBe(origin);
+    for (const options of [fromPopup, fromSandbox, unattributed, fromForeignPage]) {
+      expect(options.headers).toBeUndefined();
+    }
   });
 });

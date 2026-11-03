@@ -17,6 +17,7 @@ type CopyClient = Pick<
   | "userActionApprovalRule"
   | "actionAutoReviewPreference"
   | "userActionAutoReviewPreference"
+  | "vaultCredential"
 >;
 
 /** The settings this Space replaces with its own for the member. */
@@ -68,6 +69,8 @@ export async function lockSpaceSettings(
 /**
  * Starts or ends a Space's override. Starting copies the account's settings so the Space
  * begins where the member already is; ending drops the Space's copy so nothing stale stays.
+ * Credentials are the exception: a Space's own vault starts empty, so it holds only what was
+ * saved for it, and ending the override deletes those credentials.
  */
 export async function setSpaceSettingOverride(
   prisma: PrismaClient,
@@ -106,6 +109,8 @@ async function clearSpaceCopy(tx: CopyClient, scope: Scope, setting: SpaceSettin
     await tx.spaceModelRoleChoice.deleteMany({ where: member });
   } else if (setting === "voice") {
     await tx.spaceVoicePreference.deleteMany({ where: member });
+  } else if (setting === "credentials") {
+    await tx.vaultCredential.deleteMany({ where: member });
   } else {
     await tx.actionApprovalRule.deleteMany({
       where: { spaceId: scope.spaceId, createdByUserId: scope.userId },
@@ -115,6 +120,7 @@ async function clearSpaceCopy(tx: CopyClient, scope: Scope, setting: SpaceSettin
 }
 
 async function copyAccountIntoSpace(tx: CopyClient, scope: Scope, setting: SpaceSetting) {
+  if (setting === "credentials") return;
   const member = { spaceId: scope.spaceId, userId: scope.userId };
   if (setting === "models") {
     const rows = await tx.userModelRoleChoice.findMany({ where: { userId: scope.userId } });

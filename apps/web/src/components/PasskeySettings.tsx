@@ -145,6 +145,10 @@ function PasskeyList({ onRetry }: { onRetry: () => void }) {
                     autoFocus
                     onChange={(event) => setRenaming({ id: passkey.id, name: event.target.value })}
                     onKeyDown={(event) => {
+                      if (event.nativeEvent.isComposing || event.keyCode === 229) {
+                        if (event.key === "Escape") event.stopPropagation();
+                        return;
+                      }
                       if (event.key === "Escape") setRenaming(null);
                     }}
                     className="h-8 flex-1"

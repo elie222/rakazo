@@ -1,5 +1,4 @@
 import type { AdapterContext, JobPublisher } from "@rakazo/adapter-kit";
-import { runJobKey } from "@rakazo/adapter-kit";
 import type { Actor, Group, MessageBlock } from "@rakazo/contracts";
 import {
   BOT_INSTRUCTIONS_MAX_LENGTH,
@@ -35,7 +34,9 @@ import type { FleetCardSummary } from "./approval-ask.js";
 import { approvalDetailLength, MAX_APPROVAL_SUMMARY_LENGTH } from "./approval-ask.js";
 import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "./bot-avatar.js";
 import { createdByWhere, managedBotsWhere } from "./child-bots.js";
+import { stopCancelledGroupRuns } from "./computer-idle.js";
 import type { ExecutorDeps } from "./executor-deps.js";
+import { resolveModelChoice } from "./model-choice.js";
 import type { BotModelChangeDeps } from "./model-selection.js";
 import { validateBotModelChange } from "./model-selection.js";
 import { listPiCatalog, scriptedCatalogEntry } from "./pi-models.js";
@@ -68,7 +69,6 @@ export type FleetRun = {
   spaceId: string;
   userId: string;
   botId: string;
-  /** The group whose thread the run is in, if any. */
   groupId: string | null;
   /** The thread the run is in; fleet events for the caller land here. */
   threadId: string;
@@ -257,9 +257,9 @@ async function prepareChildModel(
   const thinkingLevel = text(args.thinking_level);
   const clear = args.clear === true;
   if (clear && (provider || model)) {
-    return refuse("Pass either clear: true or provider and model, not both.");
+    return refuse("Pass either clear: true or model, not both.");
   }
-  if (!clear && !(provider && model)) return refuse("Pass provider and model, or clear: true.");
+  if (!clear && !model) return refuse("Pass model, or clear: true.");
   // A model without catalog levels skips the shared check, so the level must be a real one first.
   if (thinkingLevel && !ThinkingLevelSchema.safeParse(thinkingLevel).success) {
     return refuse(`Thinking level must be one of: ${ThinkingLevelSchema.options.join(", ")}`);
@@ -272,13 +272,21 @@ async function prepareChildModel(
     model: child.modelId,
     thinkingLevel: child.thinkingLevel ?? null,
   };
+  const chosen = model
+    ? await resolveModelChoice({ prisma: deps.prisma, ...deps.modelChange }, run, {
+        model,
+        provider,
+        preferredProvider: child.modelProvider,
+      })
+    : undefined;
+  if (chosen && !chosen.ok) return refuse(chosen.error);
   const validated = await validateBotModelChange(
     { prisma: deps.prisma, ...deps.modelChange },
     {
       userId: run.userId,
       spaceId: run.spaceId,
-      provider: provider ?? null,
-      model: model ?? null,
+      provider: chosen?.provider ?? null,
+      model: chosen?.model ?? null,
       thinkingLevel: thinkingLevel ?? null,
       current: previous,
     },
@@ -447,7 +455,6 @@ const NOT_FOUND = "That bot or group is no longer available. Call list_fleet and
 type FleetBot = {
   id: string;
   name: string;
-  title: string;
   description: string;
   section: string | null;
   pinned: boolean;
@@ -504,7 +511,6 @@ export async function listFleet(
       select: {
         id: true,
         name: true,
-        title: true,
         description: true,
         pinned: true,
         section: { select: { name: true } },
@@ -535,7 +541,6 @@ export async function listFleet(
     bots: listedBots.map((bot) => ({
       id: bot.id,
       name: singleLine(bot.name),
-      title: singleLine(bot.title),
       description: bot.description,
       section: bot.section ? singleLine(bot.section.name) : null,
       pinned: bot.pinned,
@@ -750,7 +755,7 @@ export async function createFleetGroup(
 
 /** Apply the approved membership change against the members the card was built from. */
 export async function updateFleetGroup(
-  deps: FleetDeps,
+  deps: FleetDeps & Parameters<typeof stopCancelledGroupRuns>[0],
   run: FleetRun,
   canonical: Record<string, unknown>,
 ): Promise<
@@ -770,12 +775,11 @@ export async function updateFleetGroup(
   } catch (error) {
     return repoRefusal(error);
   }
-  await Promise.all(
-    updated.cancelledRunIds.map((runId) =>
-      deps.jobs.cancel(runJobKey(runId)).catch(() => undefined),
-    ),
-  );
   await appendGroupEvent(deps, run, "group.updated", updated.group);
+  // The change is committed: a failed cleanup must not leave the approved effect uncertain.
+  await stopCancelledGroupRuns(deps, run, updated).catch((error) =>
+    getLogger().error("group member teardown", error),
+  );
   const { group } = updated;
   return {
     ok: true,
@@ -800,9 +804,11 @@ export async function updateChildBot(
   if (argumentGiven(args.artifact_id) || args.use_attached_image === true) {
     return { error: "artifact_id and use_attached_image work only on yourself." };
   }
+  if (argumentGiven(args.instructions)) {
+    return { error: "Change another bot's instructions with set_child_instructions." };
+  }
   const profile = {
     name: argumentGiven(args.name) ? args.name : undefined,
-    title: argumentGiven(args.title) ? args.title : undefined,
     description: argumentGiven(args.description) ? args.description : undefined,
     notifyOnFinish: argumentGiven(args.notifyOnFinish)
       ? args.notifyOnFinish
@@ -811,7 +817,7 @@ export async function updateChildBot(
         : undefined,
   };
   const credential = credentialField(
-    { name: profile.name, title: profile.title, description: profile.description },
+    { name: profile.name, description: profile.description },
     deps.runSecrets,
   );
   if (credential) return { error: credential };
@@ -824,7 +830,7 @@ export async function updateChildBot(
 
   let patch: UpdateBotPatch = {};
   if (Object.values(profile).some((value) => value !== undefined)) {
-    const parsed = parseUpdateBotPatch(profile, child.name);
+    const parsed = parseUpdateBotPatch(profile);
     if ("error" in parsed) return parsed;
     patch = parsed.patch;
   }
@@ -839,7 +845,7 @@ export async function updateChildBot(
   }
   if (Object.keys(patch).length === 0) {
     return {
-      error: "Provide at least one of name, title, description, notify_on_finish, or color.",
+      error: "Provide at least one of name, description, notify_on_finish, or color.",
     };
   }
   await commitBotUpdate({
@@ -959,7 +965,7 @@ export async function setChildBotModel(
       threadId: child.thread.id,
       botId: child.id,
       emitBotUpdated: true,
-      expectedModel: {
+      expectedSettings: {
         modelProvider: child.modelProvider,
         modelId: child.modelId,
         thinkingLevel: child.thinkingLevel ?? null,
@@ -1253,7 +1259,7 @@ function memberNames(members: Member[]): string {
   return members.map((member) => singleLine(member.name)).join(", ");
 }
 
-function modelLabel(provider: string | null, model: string | null): string {
+export function modelLabel(provider: string | null, model: string | null): string {
   if (!provider || !model) return "Default model";
   const catalog = [...listPiCatalog(), scriptedCatalogEntry];
   const catalogProvider = canonicalPiProviderId(provider);
@@ -1289,7 +1295,7 @@ export async function updateOwnBotFromTool(
   args: Record<string, unknown>,
   context: AdapterContext,
 ) {
-  const parsed = parseUpdateBotPatch(args, bot.name);
+  const parsed = parseUpdateBotPatch(args);
   if ("error" in parsed) return parsed;
   const patch = parsed.patch;
   const wantsImage = args.artifact_id !== undefined || args.use_attached_image === true;
@@ -1329,7 +1335,7 @@ export async function updateOwnBotFromTool(
   if (Object.keys(patch).length === 0) {
     return {
       error:
-        "Provide at least one of name, title, description, notifyOnFinish, color, artifact_id, or use_attached_image.",
+        "Provide at least one of name, description, notifyOnFinish, color, artifact_id, or use_attached_image.",
     };
   }
   const updated = await deps.prisma.bot.update({
@@ -1338,7 +1344,6 @@ export async function updateOwnBotFromTool(
     select: {
       id: true,
       name: true,
-      title: true,
       description: true,
       color: true,
       notifyOnFinish: true,
@@ -1354,7 +1359,6 @@ export async function updateOwnBotFromTool(
       payload: {
         botId: updated.id,
         name: updated.name,
-        title: updated.title,
         description: updated.description,
       },
     });
@@ -1365,7 +1369,6 @@ export async function updateOwnBotFromTool(
     ok: true,
     botId: updated.id,
     name: updated.name,
-    title: updated.title,
     description: updated.description,
     avatar: updated.color.startsWith("data:image/") ? "image" : updated.color,
     notifyOnFinish: updated.notifyOnFinish,

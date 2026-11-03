@@ -3,7 +3,6 @@ export type GroupMemberRef = {
   name: string;
 };
 
-/** The roster name of a group member bot, when the roster knows it. */
 export function memberName(
   members: readonly { botId: string; name: string }[] | undefined,
   botId: string | undefined,

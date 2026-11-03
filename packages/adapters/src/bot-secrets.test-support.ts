@@ -2,12 +2,12 @@ import type { PrismaClient } from "@rakazo/db";
 import { vi } from "vitest";
 
 // No database is available offline, so these run against an in-memory stand-in for the
-// bot_secrets table. Encryption, validation, and redaction are the real implementations.
+// vault_credentials table. Encryption, validation, and redaction are the real implementations.
 type Row = {
   id: string;
   userId: string;
-  spaceId: string;
-  botId: string;
+  /** Null in the account vault. */
+  spaceId: string | null;
   name: string;
   origin: string;
   auth: unknown;
@@ -23,9 +23,14 @@ function matches(row: Row, where: Where) {
   });
 }
 
+/** A row in the member's account vault, which every Space without its own vault uses. */
+export const accountVault = { userId: "user-1", spaceId: null };
+
 export function fakeDatabase() {
   let rows: Row[] = [];
-  const botSecret = {
+  // Spaces that customized "credentials" and so use their own vault.
+  const ownVaults = new Set<string>();
+  const vaultCredential = {
     findFirst: vi.fn(
       async ({ where }: { where: Where }) => rows.find((r) => matches(r, where)) ?? null,
     ),
@@ -51,10 +56,19 @@ export function fakeDatabase() {
     }),
   };
   const client: Record<string, unknown> = {
-    botSecret,
-    secret: { count: vi.fn(async () => 0) },
+    vaultCredential,
+    spaceSettingOverride: {
+      findUnique: vi.fn(
+        async ({ where }: { where: { spaceId_userId_setting: { spaceId: string } } }) =>
+          ownVaults.has(where.spaceId_userId_setting.spaceId) ? { setting: "credentials" } : null,
+      ),
+    },
+    secret: { count: vi.fn(async () => 0), findFirst: vi.fn(async () => null) },
+    // The previous release's table, still counted before a stored value is deleted.
+    botSecret: { count: vi.fn(async () => 0) },
     integrationProviderConfig: { count: vi.fn(async () => 0) },
-    $queryRaw: vi.fn(async () => []),
+    // The member's settings lock always finds the membership row.
+    $queryRaw: vi.fn(async () => [{ locked: 1 }]),
   };
   // One transaction at a time, as the bot row lock serializes them in Postgres, and a failed
   // one leaves the rows as they were.
@@ -74,6 +88,7 @@ export function fakeDatabase() {
   };
   return {
     rows: () => rows,
+    useOwnVault: (spaceId: string) => ownVaults.add(spaceId),
     prisma: client as unknown as PrismaClient,
   };
 }

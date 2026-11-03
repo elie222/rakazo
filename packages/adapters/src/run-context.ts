@@ -18,6 +18,7 @@ import { getLogger } from "@rakazo/logging";
 import type { ApprovalPausedToolResult, ApprovedEffectReplayQueue } from "./approval-effect.js";
 import { approvalPausedToolResult, approvedEffectOccurrence } from "./approval-effect.js";
 import type { loadBotMessageContext } from "./bot-messages.js";
+import { partitionTools } from "./builtin-tool-bridge.js";
 import type { ComputerExecutionLease } from "./computer-lifecycle.js";
 import type { UnchangedVisualStreak } from "./computer-tools.js";
 import type { selectRunConnections } from "./connection-context.js";
@@ -39,7 +40,6 @@ export type ScreenRelease = { computer: ComputerRef; context: AdapterContext; ke
 
 export type EffectOccurrence = { executionId: string; fingerprint: string; occurrence: number };
 
-/** Lease and computer bookkeeping the attempt's heartbeat and cleanup read. */
 export interface RunLeaseState {
   valid: boolean;
   /** The run reached a final state; the heartbeat stops renewing. */
@@ -56,7 +56,6 @@ export interface RunComputerUseState {
   screenRelease: ScreenRelease | undefined;
 }
 
-/** The reply being streamed and what this attempt already showed in the thread. */
 export interface ReplyState {
   assembled: string;
   currentTextSegment: string;
@@ -84,6 +83,23 @@ export interface ReplyState {
   midTurnUserTexts: string[];
   midTurnProgressCount: number;
   turnStartedAtMs: number;
+  /** A message from the person mid-task starts a fresh budget from here (see "steered"). */
+  progressBudgetStart: number;
+  /** The first interim message after one may answer the person at once. */
+  steeringReplyPending: boolean;
+  steeringResets: number;
+  lastSteeringResetAt: number;
+  /**
+   * Notes on steps since the last interim message, in order; they come back as the reply when
+   * nothing follows the last step.
+   */
+  workingNotes: string[];
+  /** Text taken out before steps so far, joined as written, so a secret split across two is hidden. */
+  narrationSoFar: string;
+  /** What the bot wrote since its last step: empty means nothing follows the last step. */
+  textSinceLastStep: string;
+  /** The working line shows a note; tool status lines wait until the bot writes again. */
+  narrationStatusShowing: boolean;
   /**
    * Tool calls that land mid-sentence wait here until the narration catches up to a
    * sentence boundary, so the step chips never render in the middle of a clause.
@@ -106,8 +122,6 @@ export interface ApprovalState {
   pausePending: boolean;
   /** The first card of parallel calls that need approval; the others wait for it. */
   request: Promise<ApprovalPausedToolResult> | undefined;
-  /** Runtimes may dispatch parallel calls; a run can open only one proposal at a time. */
-  proposalInFlight: boolean;
 }
 
 /** Which occurrence of an identical effect each tool call claims, across pauses. */
@@ -152,7 +166,6 @@ export interface RunState {
   terminalCheckpointComplete: boolean;
 }
 
-/** The computer this run may use and how. */
 export interface RunComputerContext {
   stored: Computer;
   mode: ComputerMode;
@@ -169,16 +182,19 @@ export interface RunComputerContext {
   heldForTakeover: boolean;
 }
 
-/** Facts about who started the run and where it replies. */
 export interface RunSource {
   ownerStartedRun: boolean;
   messagingChannelRun: boolean;
   channelId: string | undefined;
   historySearchBeforeSeq: number;
+  /** See historyMyChatsAllowed; claimed outside steering still revokes it per call. */
+  myChatsAllowed: boolean;
   voiceCall: boolean;
   callEndRun: boolean;
   callClientNonce: string | null;
   peerMessage: Awaited<ReturnType<typeof loadBotMessageContext>>;
+  /** Whose own computer user_computer_shell may reach (see userComputerOwner). */
+  userComputerOwner: string | undefined;
 }
 
 export interface RunTools {
@@ -224,7 +240,6 @@ export interface RunContext {
   fleetRun: FleetRun;
   /** Every value redacted from what this run shows or stores. Grows during the run. */
   secrets: string[];
-  agentEnvironment: Record<string, string>;
   source: RunSource;
   computer: RunComputerContext;
   tools: RunTools;
@@ -356,7 +371,7 @@ export function restoreTurnCheckpointEffects(
   try {
     const saved = restoreTurnCheckpoint(turnCheckpoint, model);
     const unresolved = new Set(unresolvedTurnCheckpointCalls(saved.messages));
-    const namedTools = namedAgentTools(ctx.tools.offered);
+    const namedTools = namedAgentTools(partitionTools(ctx.tools.offered).listed);
     const available = new Set(namedTools.map((tool) => tool.name));
     if (
       saved.messages.some(

@@ -239,8 +239,22 @@ export function isProxiedScreenPage(url: string): boolean {
 }
 
 /** Whether a WebView message came from the screen's own page, not a page it navigated to. */
-export function fromScreenPage(pageUrl: string | undefined, screenUrl: string): boolean {
+export function fromScreenPage(
+  pageUrl: string | undefined,
+  screenUrl: string,
+  loadedPageUrl?: string | null,
+): boolean {
   try {
+    // Android WebMessageListener reports the sender's origin, which is "null" for the
+    // sandboxed screen. Accept its advisory state only while the native navigation
+    // event identifies the exact authorized screen page; other pages stay rejected.
+    if (pageUrl === "null") {
+      return (
+        isProxiedScreenPage(screenUrl) &&
+        Boolean(loadedPageUrl) &&
+        new URL(loadedPageUrl!).href === new URL(screenUrl).href
+      );
+    }
     return Boolean(pageUrl) && new URL(pageUrl!).origin === new URL(screenUrl).origin;
   } catch {
     return false;

@@ -80,6 +80,10 @@ export class FakeSandboxProvider implements SandboxProvider {
     return ref;
   }
 
+  async isRunning(computer: ComputerRef, _context: AdapterContext): Promise<boolean> {
+    return this.boxes.get(computer.id)?.running === true;
+  }
+
   async prepare(_computer: ComputerRef, _context: AdapterContext): Promise<void> {}
 
   async *execute(

@@ -1,15 +1,10 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import type { ActionApprovalRule } from "@rakazo/core";
-import {
-  composioBatchActions,
-  connectorKindFromToolName,
-  inboundRoutinePrompts,
-  siteAlwaysAllowed,
-} from "@rakazo/core";
+import { connectorKindFromToolName, inboundRoutinePrompts, siteAlwaysAllowed } from "@rakazo/core";
 import { sitesInText, urlSite } from "@rakazo/core/egress";
-import { findAutoReviewPreference, listApprovalRules } from "@rakazo/db";
+import { findAutoReviewPreference, listApprovalRules, storedBatchActions } from "@rakazo/db";
+import { SITE_SENDING_TOOLS } from "./approval-ask.js";
 import { boundDirectApprovalDetails, catalogApprovalDetails } from "./approval-effect.js";
-import { deploymentAutoReviewDefault } from "./auto-review.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type { EffectiveModelRole } from "./model-roles.js";
 import { effectiveModelRole } from "./model-roles.js";
@@ -31,26 +26,25 @@ function connectorTrustKey(
 }
 
 /**
- * Read trust for each app a Composio batch reaches, since every batch shares one tool: a Gmail
- * batch must not make a later Slack read trusted. An action outside every connected app keys by
- * its own name.
+ * Read trust for each app a batch reaches, since every batch shares one tool: a Gmail batch must
+ * not make a later Slack read trusted, nor one server's batch a batch on another server. An action
+ * outside every connected app keys by its own name.
  */
 export function connectorTrustKeys(
-  toolName: string,
-  args: unknown,
+  batchActions: readonly string[] | undefined,
   route: { connectorId?: string; resourceId?: string } | undefined,
   connectorKind: string,
   providers: string[],
 ): string[] {
-  const batch = composioBatchActions(toolName, args);
-  if (!batch?.slugs.length) return [connectorTrustKey(route, connectorKind)];
+  const connection = connectorTrustKey(route, connectorKind);
+  if (!batchActions?.length) return [connection];
   const apps = providers.map((provider) => provider.toLowerCase());
-  return batch.slugs.map((slug) => {
-    const action = slug.toLowerCase();
+  return batchActions.map((name) => {
+    const action = name.toLowerCase();
     const app = apps
       .filter((kind) => action === kind || action.startsWith(`${kind}_`))
       .sort((left, right) => right.length - left.length)[0];
-    return `kind:${connectorKind}:${app ?? action}`;
+    return `${connection}:${app ?? action}`;
   });
 }
 
@@ -102,7 +96,7 @@ export function createRunTrustLoaders(
       userId: run.userId,
       spaceId: run.spaceId,
     }).then((row) => ({
-      enabled: row?.enabled ?? deploymentAutoReviewDefault(),
+      enabled: row?.enabled ?? true,
       skipApprovals: row?.skipApprovals ?? false,
     }));
     return autoReviewPreferencePromise;
@@ -135,7 +129,11 @@ export function createRunTrustLoaders(
   const loadTrustedSites = () => {
     trustedSitesPromise ??= deps.prisma.externalEffect
       .findMany({
-        where: { runId, kind: "web_fetch", status: { in: PASSED_EFFECT_STATUSES } },
+        where: {
+          runId,
+          kind: { in: [...SITE_SENDING_TOOLS] },
+          status: { in: PASSED_EFFECT_STATUSES },
+        },
         select: { request: true },
       })
       .then(async (rows) => {
@@ -162,7 +160,7 @@ export function createRunTrustLoaders(
     trustedConnectorsPromise ??= deps.prisma.externalEffect
       .findMany({
         where: { runId, status: { in: PASSED_EFFECT_STATUSES } },
-        select: { kind: true, request: true },
+        select: { kind: true, request: true, batchActions: true },
       })
       .then(
         (rows) =>
@@ -171,8 +169,7 @@ export function createRunTrustLoaders(
               .filter((row) => !BUILTIN_AGENT_TOOL_NAMES.has(row.kind))
               .flatMap((row) =>
                 connectorTrustKeys(
-                  row.kind,
-                  row.request,
+                  storedBatchActions(row.batchActions),
                   boundDirectApprovalDetails(row.request, CATALOG_APPROVAL_TOOL)?.route ??
                     catalogApprovalDetails(row.request, CATALOG_APPROVAL_TOOL)?.route,
                   connectorKindFromToolName(row.kind, providers),

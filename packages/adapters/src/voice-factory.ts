@@ -1,7 +1,14 @@
 import type { VoiceProvider } from "@rakazo/adapter-kit";
+import type { VoiceCatalogEntry } from "@rakazo/contracts";
 import { CartesiaVoiceProvider } from "./cartesia-voice.js";
 import { ElevenLabsVoiceProvider } from "./elevenlabs-voice.js";
 import { FishAudioVoiceProvider } from "./fish-audio-voice.js";
+import {
+  MACOS_VOICE_CATALOG_ENTRY,
+  MACOS_VOICE_PROVIDER_ID,
+  MacOsVoiceProvider,
+  macOsSayAvailable,
+} from "./macos-voice.js";
 import { openAiCompatAllowPublicHosts } from "./openai-compatible-url.js";
 import {
   OPENAI_COMPATIBLE_VOICE_PROVIDER_ID,
@@ -46,33 +53,40 @@ export const VOICE_CATALOG = [
 export { SCRIPTED_VOICE_CATALOG_ENTRY };
 
 export type HostedVoiceProviderId = (typeof VOICE_CATALOG)[number]["id"];
-export type VoiceProviderId = HostedVoiceProviderId | "scripted";
+export type VoiceProviderId = HostedVoiceProviderId | "macos" | "scripted";
 
 export function scriptedVoiceEnabled() {
   return process.env.AGENT_RUNTIME === "scripted";
 }
 
-export function listVoiceCatalog(options: { allowPrivateEndpoint?: boolean } = {}) {
+export function listVoiceCatalog(
+  options: { allowPrivateEndpoint?: boolean } = {},
+): VoiceCatalogEntry[] {
   const catalog = VOICE_CATALOG.filter(
     (entry) =>
       entry.id !== OPENAI_COMPATIBLE_VOICE_PROVIDER_ID ||
       options.allowPrivateEndpoint === true ||
       openAiCompatAllowPublicHosts(),
   );
-  return scriptedVoiceEnabled() ? [...catalog, SCRIPTED_VOICE_CATALOG_ENTRY] : catalog;
+  return [
+    ...(macOsSayAvailable() ? [MACOS_VOICE_CATALOG_ENTRY] : []),
+    ...catalog,
+    ...(scriptedVoiceEnabled() ? [SCRIPTED_VOICE_CATALOG_ENTRY] : []),
+  ];
 }
 
-export function voiceCatalogEntry(id: string) {
+export function voiceCatalogEntry(id: string): VoiceCatalogEntry | undefined {
   if (id === SCRIPTED_VOICE_CATALOG_ENTRY.id) return SCRIPTED_VOICE_CATALOG_ENTRY;
+  if (id === MACOS_VOICE_PROVIDER_ID) return MACOS_VOICE_CATALOG_ENTRY;
   return VOICE_CATALOG.find((entry) => entry.id === id);
 }
 
 export function isVoiceProviderId(value: string): value is VoiceProviderId {
   if (value === "scripted") return scriptedVoiceEnabled();
+  if (value === MACOS_VOICE_PROVIDER_ID) return macOsSayAvailable();
   return VOICE_CATALOG.some((entry) => entry.id === value);
 }
 
-/** Construct the provider adapter selected by a persisted voice credential. */
 export function createVoiceProvider(
   kind: string,
   options: { allowPrivateEndpoint?: boolean } = {},
@@ -90,6 +104,9 @@ export function createVoiceProvider(
       return new OpenAiCompatibleVoiceProvider({
         allowPrivateEndpoint: options.allowPrivateEndpoint,
       });
+    case MACOS_VOICE_PROVIDER_ID:
+      if (!macOsSayAvailable()) break;
+      return new MacOsVoiceProvider();
     case "scripted":
       if (!scriptedVoiceEnabled()) break;
       return new ScriptedVoiceProvider();
@@ -115,5 +132,5 @@ export class NoVoiceConfigured extends Error {
   }
 }
 
-export const MAX_SPEAK_CHARS = 2000;
+export { MAX_SPEAK_CHARS } from "./voice-http.js";
 export const MAX_TRANSCRIBE_BYTES = 8 * 1024 * 1024;

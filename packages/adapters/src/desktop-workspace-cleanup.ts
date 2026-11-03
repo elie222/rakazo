@@ -20,6 +20,7 @@ function remove(name) {
   if (child.dev !== parent.dev) throw new Error('workspace mount boundary');
   process.chdir(name);
   check(child);
+  if (!(child.mode & 0o200n)) fs.chmodSync('.', Number(child.mode & 0o7777n) | 0o700);
   for (const entry of fs.readdirSync('.')) remove(entry);
   process.chdir('..');
   check(parent);

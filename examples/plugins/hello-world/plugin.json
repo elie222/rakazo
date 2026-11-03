@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.1.0/plugin.schema.json",
+  "name": "hello-world",
+  "version": "1.0.0",
+  "description": "A minimal example plugin with one skill.",
+  "author": { "name": "Rakazo" },
+  "license": "Apache-2.0",
+  "keywords": ["example"]
+}

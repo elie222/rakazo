@@ -2,7 +2,6 @@ import type { Actor, MessageBlock } from "@rakazo/contracts";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { appendEventInTransaction, IsolationError } from "@rakazo/db";
 
-/** Minimal dependency surface for helpers that update a bot's thread cards. */
 export type BotThreadDeps = {
   prisma: PrismaClient;
   events: ThreadEvents;

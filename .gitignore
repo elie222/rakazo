@@ -46,3 +46,7 @@ apps/web/src/locales/**/*.mjs
 apps/web/src/locales/**/*.js
 apps/web/scripts/msgids.json
 playwright-report-www
+
+# Wuying Web SDK vendor files; fetch with node scripts/wuying-web-sdk.mjs
+apps/web/public/wuying/WuyingWebSDK.js
+apps/web/public/wuying/sdk/

@@ -34,6 +34,11 @@ function fakeKms() {
   const aad = (context: Record<string, string> = {}) =>
     Buffer.from(JSON.stringify(Object.entries(context).sort(([a], [b]) => a.localeCompare(b))));
   const server = createServer(async (req, res) => {
+    // A local tool can probe any listening loopback port; only KMS calls are recorded.
+    if (req.method !== "POST" || typeof req.headers["x-amz-target"] !== "string") {
+      res.writeHead(404).end();
+      return;
+    }
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(chunk as Buffer);
     const input = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");

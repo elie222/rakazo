@@ -50,7 +50,6 @@ function findPreferenceWithCredential(
       });
 }
 
-/** Every voice choice in the copy, each with its connection. */
 export function listVoicePreferences(prisma: VoicePreferenceClient, target: VoiceTarget) {
   const include = { credential: true } as const;
   return target.scope === "account"
@@ -61,7 +60,6 @@ export function listVoicePreferences(prisma: VoicePreferenceClient, target: Voic
       });
 }
 
-/** The copy's choice for one connection. */
 export function findVoicePreference(
   prisma: VoicePreferenceClient,
   target: VoiceTarget,

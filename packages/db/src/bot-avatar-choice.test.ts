@@ -4,6 +4,7 @@ import {
   ORGANIC_AVATAR_HEART_FAMILY,
   organicAvatarFamily,
   organicAvatarLook,
+  seededLogoAvatarColor,
 } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import { BOT_ID_ATTEMPTS, chooseBotAvatar, pickLeastUsed } from "./bot-avatar-choice.js";
@@ -40,6 +41,49 @@ describe("pickLeastUsed", () => {
 });
 
 describe("chooseBotAvatar", () => {
+  it("derives a Rakazo colour from the chosen persistent id, independently of roster order", () => {
+    for (let seed = 1; seed <= 30; seed++) {
+      const chosen = chooseBotAvatar([], undefined, {
+        avatarSet: "rakazo",
+        random: seeded(seed),
+        now: 0,
+      });
+      expect(chosen.color).toBe(seededLogoAvatarColor(chosen.id));
+      expect(
+        chooseBotAvatar([], undefined, { avatarSet: "rakazo", random: seeded(seed), now: 0 }),
+      ).toEqual(chosen);
+    }
+  });
+
+  it("uses the supplied preview identity for both the final id and generated colour", () => {
+    const id = "c0123456789abcdef01234567";
+    expect(chooseBotAvatar([], undefined, { avatarSet: "rakazo", id })).toEqual({
+      id,
+      color: seededLogoAvatarColor(id),
+    });
+    expect(chooseBotAvatar([], "#123456", { avatarSet: "rakazo", id })).toEqual({
+      id,
+      color: "#123456",
+    });
+  });
+
+  it("keeps an explicit identity ahead of an automatic organic family choice", () => {
+    const id = "c0123456789abcdef01234567";
+    expect(chooseBotAvatar([], "#123456", { id, avatarSet: "organic", family: 9 })).toEqual({
+      id,
+      color: "#123456",
+    });
+  });
+
+  it.each(["#123456", "#abc", "#8B5CF6::shape_3", "data:image/png;base64,aGVsbG8="])(
+    "keeps explicit Rakazo appearance %s",
+    (color) => {
+      expect(
+        chooseBotAvatar([], color, { avatarSet: "rakazo", random: seeded(1), now: 0 }).color,
+      ).toBe(color);
+    },
+  );
+
   it("gives a new bot the organic family and colour the user's bots use least", () => {
     const existing = idsForFamilies([0, 1, 2, 3, 4, 5, 6, 7, 8]).map((id, index) => ({
       id,

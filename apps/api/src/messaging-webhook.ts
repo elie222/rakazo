@@ -4,11 +4,8 @@ import type { Hono } from "hono";
 export const MESSAGING_WEBHOOK_BASE_PATH = "/api/v1/messaging/webhook";
 
 /**
- * Per-provider inbound webhooks. Verification (Slack HMAC, WhatsApp
- * signatures + GET challenge, Telegram secret header, sendblue shared
- * secret) happens inside the surface's platform adapters; replay safety
- * comes from per-message client nonces downstream. Mounted only when the
- * messaging surface is enabled.
+ * Signature verification happens inside the surface's platform adapters; replay safety comes
+ * from per-message client nonces downstream.
  */
 export function mountMessagingWebhookRoutes(app: Hono, deps: { messaging: MessagingSurface }) {
   app.all(`${MESSAGING_WEBHOOK_BASE_PATH}/:provider`, async (c) => {

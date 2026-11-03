@@ -26,9 +26,13 @@ function savedSkill(name: string, source = "user") {
 }
 
 function setup(rows: ReturnType<typeof savedSkill>[] = []) {
-  type Where = { id?: string; spaceId: string; userId: string; source?: string };
-  const matches = (row: ReturnType<typeof savedSkill>, where: Where) =>
-    Object.entries(where).every(([key, value]) => row[key as keyof typeof row] === value);
+  type Where = { id?: string; spaceId?: string; userId: string; source?: string; OR?: object[] };
+  const matches = (row: ReturnType<typeof savedSkill>, where: object): boolean =>
+    Object.entries(where).every(([key, value]) =>
+      key === "OR"
+        ? (value as object[]).some((branch) => matches(row, branch))
+        : row[key as keyof typeof row] === value,
+    );
   const agentSkill = {
     findMany: vi.fn(async ({ where }: { where: Where }) =>
       rows.filter((row) => matches(row, where)),
@@ -49,21 +53,26 @@ function setup(rows: ReturnType<typeof savedSkill>[] = []) {
       return { count: 1 };
     }),
   };
+  const tx = { agentSkill, $executeRaw: vi.fn(async () => 0), $queryRaw: vi.fn(async () => []) };
+  const $transaction = vi.fn(async (run: (client: typeof tx) => unknown) => run(tx));
   return {
     agentSkill,
-    service: createAgentSkillsService({ agentSkill } as unknown as PrismaClient),
+    service: createAgentSkillsService({ agentSkill, $transaction } as unknown as PrismaClient),
   };
 }
+
+const interrogates = <T extends { name: string }>(skills: T[]) =>
+  skills.filter((skill) => skill.name.trim().toLowerCase() === "interrogate");
 
 describe("built-in skill precedence in the API", () => {
   it.each(["interrogate", " Interrogate "])(
     "keeps %j listed, readable and mutable",
     async (name) => {
       const { service } = setup([savedSkill(name)]);
-      await expect(service.list(actor)).resolves.toEqual([
+      expect(interrogates(await service.list(actor))).toEqual([
         expect.objectContaining({ id: "saved-1", name, readOnly: false }),
       ]);
-      await expect(service.listWithContent(actor)).resolves.toEqual([
+      expect(interrogates(await service.listWithContent(actor))).toEqual([
         expect.objectContaining({ id: "saved-1", content: expect.stringContaining("Saved steps") }),
       ]);
       await expect(service.get(actor, { name: " INTERROGATE " })).resolves.toMatchObject({
@@ -105,7 +114,7 @@ describe("built-in skill precedence in the API", () => {
         id: "builtin:Interrogate",
         readOnly: true,
       });
-      await expect(service.list(actor)).resolves.toEqual([
+      expect(interrogates(await service.list(actor))).toEqual([
         expect.objectContaining({ id: "builtin:Interrogate" }),
       ]);
       await expect(service.get(actor, { skillId: "saved-1" })).rejects.toThrow();

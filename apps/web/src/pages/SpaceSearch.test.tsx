@@ -56,4 +56,5 @@ it("renders every file sent in one message without duplicate-key errors", async 
   );
   expect(error).not.toHaveBeenCalled();
   expect(container.querySelectorAll("button")).toHaveLength(2);
+  expect(container.querySelector("button")?.textContent).toContain("File");
 });

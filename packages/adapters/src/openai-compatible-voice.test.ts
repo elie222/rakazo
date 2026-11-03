@@ -327,6 +327,40 @@ describe("OpenAiCompatibleVoiceProvider", () => {
     ).rejects.toThrow("speaking failed: Model not found");
   });
 
+  it.each(["speaking", "transcribing"])(
+    "surfaces and sanitizes a nested server error when %s fails",
+    async (operation) => {
+      const detail = `Model fake-tts was not found\nlocal-test-key ${"x".repeat(200)}`;
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ error: { message: detail } }), { status: 404 }),
+        );
+      const voice = provider(fetchMock);
+      const result =
+        operation === "speaking"
+          ? voice.synthesize({ text: "Hi", voiceId: "alloy", apiKey: keyed }, ctx)
+          : voice.transcribe(
+              { audio: new Uint8Array([1]), mimeType: "audio/webm", apiKey: keyed },
+              ctx,
+            );
+      const error = await result.catch((caught: Error) => caught);
+      expect((error as Error).message).toBe(
+        `${operation} failed: ${`Model fake-tts was not found [redacted] ${"x".repeat(200)}`.slice(0, 160)}`,
+      );
+    },
+  );
+
+  it.each(["not JSON", "null", '{"error":{"message":42}}'])(
+    "falls back to the status for an invalid error body: %s",
+    async (body) => {
+      const fetchMock = vi.fn().mockResolvedValue(new Response(body, { status: 404 }));
+      await expect(
+        provider(fetchMock).synthesize({ text: "Hi", voiceId: "alloy", apiKey: keyless }, ctx),
+      ).rejects.toThrow("speaking failed (404)");
+    },
+  );
+
   it("reads an insufficient_quota 429 as spent credit", async () => {
     const fetchMock = vi
       .fn()

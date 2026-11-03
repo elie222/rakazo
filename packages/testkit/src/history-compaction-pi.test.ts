@@ -1,3 +1,4 @@
+import type { JobPublisher } from "@rakazo/adapter-kit";
 import { PiAgentRuntime } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -46,7 +47,7 @@ describe("history compaction with real Pi", () => {
         return { count: 1 };
       },
     );
-    const createMany = vi.fn(async () => ({ count: 1 }));
+    const createMany = vi.fn(async (_args: unknown) => ({ count: 1 }));
     const create = vi.fn();
     const prisma = {
       thread: { findUniqueOrThrow: vi.fn(async () => thread), updateMany },
@@ -68,7 +69,7 @@ describe("history compaction with real Pi", () => {
     const deps = {
       prisma: prisma as unknown as PrismaClient,
       runtime: new PiAgentRuntime(),
-      jobs,
+      jobs: jobs as unknown as JobPublisher,
       memoryProviders,
       resolveModel: async () => server.model,
     };

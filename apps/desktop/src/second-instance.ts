@@ -9,7 +9,6 @@ export function secondInstanceWindow(
   return win !== null && !win.isDestroyed() ? win : null;
 }
 
-/** Raise the surviving window for the duplicate launch. */
 export function revealSecondInstanceWindow(win: BrowserWindow): void {
   if (win.isMinimized()) win.restore();
   win.show();

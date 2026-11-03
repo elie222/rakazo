@@ -1,4 +1,4 @@
-import type { RpcInput } from "@rakazo/contracts";
+import type { LoginFieldInput, RpcInput } from "@rakazo/contracts";
 import type { MobileMessage } from "./api";
 
 export type ThreadAnswerContext = {
@@ -16,8 +16,9 @@ export async function answerThreadMessage(
   { botId, groupId, readOnly, rpc, isCurrentTarget, refresh, markRead }: ThreadAnswerContext,
   message: Pick<MobileMessage, "id" | "runId">,
   answer: string,
-  username?: string,
+  fields?: readonly LoginFieldInput[],
   dismiss?: boolean,
+  remember?: false,
 ) {
   if (readOnly || (!botId && !groupId) || !message.runId) return;
   markRead();
@@ -26,7 +27,8 @@ export async function answerThreadMessage(
     runId: message.runId,
     messageId: message.id,
     answer,
-    ...(username ? { username } : {}),
+    ...(fields ? { fields: [...fields] } : {}),
+    ...(remember === false ? { remember } : {}),
     ...(dismiss ? { dismiss: true as const } : {}),
   });
   // The answer is saved once the server accepts it; a failed refresh only delays the card.

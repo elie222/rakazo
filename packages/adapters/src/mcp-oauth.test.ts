@@ -1,8 +1,10 @@
+import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OAuthMaterial } from "./mcp-oauth.js";
 import {
   McpOAuthBroker,
+  McpOAuthClientRequiredError,
   McpReauthorizationRequiredError,
   oauthMaterialSecrets,
   StoredMcpOAuthProvider,
@@ -85,7 +87,7 @@ function chunkedBody(totalBytes: number, chunkBytes: number): ReadableStream<Uin
 }
 
 async function rejectedOAuthBegin(
-  register: () => Response | Promise<Response>,
+  register: (() => Response | Promise<Response>) | null,
   secret?: string,
 ): Promise<Error> {
   vi.stubGlobal(
@@ -114,13 +116,13 @@ async function rejectedOAuthBegin(
           issuer: "https://auth.example.test",
           authorization_endpoint: "https://auth.example.test/authorize",
           token_endpoint: "https://auth.example.test/token",
-          registration_endpoint: "https://auth.example.test/register",
+          ...(register ? { registration_endpoint: "https://auth.example.test/register" } : {}),
           response_types_supported: ["code"],
           grant_types_supported: ["authorization_code", "refresh_token"],
           code_challenge_methods_supported: ["S256"],
         });
       }
-      if (url === "https://auth.example.test/register" && request.method === "POST") {
+      if (register && url === "https://auth.example.test/register" && request.method === "POST") {
         return register();
       }
       throw new Error(`Unexpected request: ${request.method} ${url}`);
@@ -1402,6 +1404,13 @@ describe("MCP OAuth", () => {
 
     expect(tracked.bytesRead()).toBe(0);
     expect(error.message).toBe("Could not start MCP OAuth");
+  });
+
+  it("asks for a pre-registered client when the server cannot register one", async () => {
+    const error = await rejectedOAuthBegin(null);
+
+    expect(error).toBeInstanceOf(McpOAuthClientRequiredError);
+    expect(error).toMatchObject({ code: MCP_OAUTH_CLIENT_REQUIRED });
   });
 
   describe("with a pre-registered client", () => {

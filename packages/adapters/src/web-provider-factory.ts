@@ -5,12 +5,8 @@ import { KeylessHttpWebProvider } from "./keyless-http-web.js";
 import { ParallelWebProvider } from "./parallel-web.js";
 
 /**
- * Resolve the deployment web provider.
- *
- * Pi 0.84 does not expose a provider-neutral callable native-search API we can
- * compose without vendor branches at the tool layer. Default is keyless HTTP so
- * core runs with no hosted search vendor. Inject a custom adapter (or set
- * WEB_PROVIDER=fake in tests) without changing builtin tool names.
+ * Pi 0.84 exposes no provider-neutral native-search API, so the default is keyless HTTP and core
+ * runs with no hosted search vendor.
  */
 export function resolveWebProviderKind(source: NodeJS.ProcessEnv = process.env): string {
   const raw = source.WEB_PROVIDER?.trim().toLowerCase();

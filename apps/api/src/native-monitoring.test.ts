@@ -31,6 +31,18 @@ describe("native error collector privacy boundary", () => {
     });
   });
 
+  it("keeps which desktop child process stopped", () => {
+    const tags = { "process.name": "Audio Service", "process.exit_code": "-1" };
+    expect(sanitizeNativeEvent({ tags }, "desktop").tags).toEqual({ surface: "desktop", ...tags });
+    expect(sanitizeNativeEvent({ tags }, "mobile").tags).toEqual({ surface: "mobile" });
+    expect(
+      sanitizeNativeEvent(
+        { tags: { "process.name": "/Users/someone/app", "process.exit_code": "private text" } },
+        "desktop",
+      ).tags,
+    ).toEqual({ surface: "desktop" });
+  });
+
   it("keeps replayed startup failures anonymous", () => {
     const event = sanitizeNativeEvent(
       {

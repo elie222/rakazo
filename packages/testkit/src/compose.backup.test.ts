@@ -19,7 +19,10 @@ function postgresUp() {
   }
 }
 
-const describeBackup = postgresUp() ? describe : describe.skip;
+// The suite dumps and restores the developer's running local stack database;
+// run it only with explicit opt-in (VERIFY_COMPOSE_BACKUP=1) and the stack up.
+const describeBackup =
+  process.env.VERIFY_COMPOSE_BACKUP === "1" && postgresUp() ? describe : describe.skip;
 
 describeBackup("compose backup and restore", () => {
   it("dumps postgres and restores into a side database", () => {

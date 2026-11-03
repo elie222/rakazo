@@ -3,6 +3,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type * as ApiModule from "./api";
 import type { MobileSnapshot } from "./api";
 import { applyMobileThreadEvent, rpc, subscribeThread } from "./api";
 import type { ThreadJumpAnchor } from "./thread-jump";
@@ -17,6 +18,10 @@ vi.mock("./api", () => ({
 const session = vi.hoisted(() => ({ generation: 1 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => session.generation }));
 vi.mock("./user-error", () => ({ errorText: String }));
+// The member status test runs the real reducer; keep its native imports out of jsdom.
+vi.mock("./ai-consent", () => ({}));
+vi.mock("./live-notifications", () => ({}));
+vi.mock("expo-secure-store", () => ({}));
 
 type LiveEvent = { type: string; seq: number; runId?: string };
 const ref = <T>(current: T) => ({ current });
@@ -92,6 +97,68 @@ describe("thread foreground subscription", () => {
     await act(async () => {});
     expect(refresh).toHaveBeenCalledTimes(2);
     expect(refreshMentionBots).not.toHaveBeenCalled();
+    act(() => root.unmount());
+  });
+
+  it("keeps group member status right in older history, where no refresh corrects it", async () => {
+    const actual = await vi.importActual<typeof ApiModule>("./api");
+    vi.mocked(applyMobileThreadEvent).mockImplementation(actual.applyMobileThreadEvent);
+    let deliver: (event: LiveEvent & { botId?: string }) => void = () => {};
+    vi.mocked(subscribeThread).mockImplementation(async (_target, _cursor, onEvent, signal) => {
+      deliver = onEvent as unknown as typeof deliver;
+      await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve()));
+    });
+    const snapRef = ref<MobileSnapshot | null>({
+      groupId: "group-1",
+      threadId: "thread-1",
+      cursor: 10,
+      messages: [],
+      olderCursor: 1,
+      run: null,
+      activeRuns: [],
+      members: [{ botId: "bot-1", name: "Writer", color: "blue", status: "idle" }],
+    } as unknown as MobileSnapshot);
+    const commitSnap = vi.fn((next: MobileSnapshot | null) => {
+      snapRef.current = next;
+    });
+    const refresh = vi.fn(async () => snapRef.current ?? undefined);
+    const root = createRoot(document.createElement("div"));
+    function Probe() {
+      useThreadLiveSubscription({
+        groupId: "group-1",
+        foreground: true,
+        readOnly: false,
+        sessionEpoch: 1,
+        historyEpoch: ref(0),
+        expandedHistoryThread: ref<string | null>("thread-1"),
+        pinnedAroundRef: ref(null),
+        jumpScrollTarget: ref(null),
+        jumpAnchor: ref({ release: vi.fn() } as unknown as ThreadJumpAnchor),
+        snapRef,
+        readVisibleTarget: ref(null),
+        showSavedThread: vi.fn(),
+        refresh,
+        commitSnap,
+        setError: vi.fn(),
+        refreshMentionBots: vi.fn(async () => {}),
+        markReadIfVisible: vi.fn(),
+      });
+      return null;
+    }
+    await act(async () => root.render(createElement(Probe)));
+    refresh.mockClear();
+    const status = () => snapRef.current?.members?.[0]?.status;
+
+    deliver({ type: "run.started", seq: 11, botId: "bot-1", runId: "run-1" });
+    expect(status()).toBe("running");
+    deliver({ type: "run.waiting_input", seq: 12, botId: "bot-1", runId: "run-1" });
+    await act(async () => {});
+    expect(status()).toBe("waiting_input");
+    deliver({ type: "run.started", seq: 13, botId: "bot-1", runId: "run-1" });
+    deliver({ type: "run.completed", seq: 14, botId: "bot-1", runId: "run-1" });
+    await act(async () => {});
+    expect(status()).toBe("idle");
+    expect(refresh).not.toHaveBeenCalled();
     act(() => root.unmount());
   });
 

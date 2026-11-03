@@ -2,7 +2,7 @@ import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import { useEffect } from "react";
 import { loadSessionToken } from "./api";
-import { notificationResponseRoute } from "./notification-open";
+import { notificationResponseRoute, threadRouteId } from "./notification-open";
 import { closeSettingsSheet } from "./settings-sheet";
 
 const openedResponses = new Set<string>();
@@ -49,7 +49,7 @@ export async function openNotificationResponse(
       return false;
     }
     closeSettingsSheet();
-    router.push(target);
+    router.push(target, { dangerouslySingular: threadRouteId });
     clearNotificationResponseIfCurrent(response);
     return true;
   } catch {

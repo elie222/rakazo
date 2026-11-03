@@ -1,3 +1,4 @@
+import { BillingNoMonthlyCreditsError } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { StripeBillingProvider } from "./stripe-billing.js";
 
@@ -289,6 +290,15 @@ describe("Stripe prepaid model credits", () => {
     expect(requests.find((r) => r.params.has("product_data[name]"))?.params.get("lookup_key")).toBe(
       "rakazo_monthly_credits_2000",
     );
+  });
+  it("names a change to an ended monthly plan as having no plan to change", async () => {
+    const ended = subscription(1000);
+    ended.data[0]!.status = "canceled";
+    const { provider, requests } = fixture({ "/v1/subscriptions": ended });
+    await expect(provider.setMonthlyCredits("cus_fixture", 2000)).rejects.toBeInstanceOf(
+      BillingNoMonthlyCreditsError,
+    );
+    expect(requests.some((r) => r.path === "/v1/subscriptions/sub_fixture")).toBe(false);
   });
   it("changes the renewal price without a charge or proration when downgrading", async () => {
     const { provider, requests } = fixture({ "/v1/subscriptions": subscription(2000) });

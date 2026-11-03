@@ -78,14 +78,29 @@ export function registryPackageName(spec: string): string | undefined {
   return name;
 }
 
+export function isNpxCommand(command: string): boolean {
+  return /^npx(?:\.cmd|\.exe)?$/i.test(basename(command.trim()));
+}
+
+// Package managers and runners that fetch and run packages Rakazo can't vet. Whole commands,
+// not subcommands: global flags (`pnpm -C dir dlx`) and auto-installs (`bun run`, `uv run
+// --with`) make subcommand checks easy to slip past.
+const PACKAGE_RUNNER =
+  /^(?:npm|pnpm|pnpx|yarn|yarnpkg|corepack|bun|bunx|deno|uv|uvx|pipx)(?:\.cmd|\.exe|\.ps1)?$/i;
+
+/** Whether `command` is a package runner other than npx, which stdio launches never use. */
+export function isPackageRunnerCommand(command: string): boolean {
+  return PACKAGE_RUNNER.test(basename(command.trim()));
+}
+
 /**
  * Recognise `npx [-y|--yes] <spec> [args...]` and `npx [-y] -p|--package <spec> <bin> [args...]`
  * (with optional `--` separators). Anything else, including unknown npx flags and specs that
- * are not plain registry packages (paths, git or tarball URLs, aliases), returns undefined so
- * the command launches unchanged.
+ * are not plain registry packages (paths, git or tarball URLs, aliases), returns undefined and
+ * must not be launched.
  */
 export function parseNpxLaunch(command: string, args: readonly string[]): NpxLaunch | undefined {
-  if (!/^npx(?:\.cmd)?$/.test(basename(command.trim()))) return undefined;
+  if (!isNpxCommand(command)) return undefined;
   let spec: string | undefined;
   let index = 0;
   for (; index < args.length; index += 1) {
@@ -137,7 +152,6 @@ export type EnsureMcpPackageOptions = {
   root?: string;
   /** Bin to launch (from `npx -p <spec> <bin>`). */
   binName?: string;
-  /** Upper bound for one `npm install`. */
   timeoutMs?: number;
   /** Stops this caller waiting. A started install keeps going, so the next launch finds it. */
   signal?: AbortSignal;
@@ -410,6 +424,7 @@ function installEnvironment(extra: Record<string, string>): Record<string, strin
 function runNpmInstall(plan: InstallPlan, prefix: string): Promise<void> {
   const args = [
     "install",
+    "--ignore-scripts",
     "--prefix",
     prefix,
     "--no-save",
@@ -429,7 +444,7 @@ function runNpmInstall(plan: InstallPlan, prefix: string): Promise<void> {
       child = spawn(plan.npmCommand, args, {
         env: installEnvironment(plan.env),
         stdio: ["ignore", "pipe", "pipe"],
-        // Own process group, so a timeout also stops install scripts npm started.
+        // Own process group, so a timeout also stops everything npm started.
         detached: process.platform !== "win32",
         windowsHide: true,
       });

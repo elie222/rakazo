@@ -160,4 +160,12 @@ dbTests("model credit billing service", () => {
       code: "FORBIDDEN",
     });
   });
+  it("answers a change to an ended monthly plan as a conflict and resyncs the plan", async () => {
+    const customer = (await billingAccountForOrganization(prisma, organizationId))!.customerId;
+    provider.setStatus(customer, "canceled");
+    await expect(service.setMonthlyCredits(actor, 5000)).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    await expect(service.status(actor)).resolves.toMatchObject({ state: "canceled" });
+  });
 });

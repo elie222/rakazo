@@ -46,6 +46,72 @@ describe("thread message pages", () => {
   });
 
   it.each(["thread.message.created", "thread.message.updated"])(
+    "forwards peer charts in %s while keeping background output hidden",
+    (type) => {
+      const chart = { kind: "chart", name: "Results", spec: {}, data: [] };
+      for (const blocks of [[chart], [{ kind: "text", text: "Results" }, chart]]) {
+        expect(shouldForwardPeerThreadEvent({ type, payload: { blocks } })).toBe(true);
+        expect(shouldForwardBackgroundThreadEvent({ type, payload: { blocks } })).toBe(false);
+      }
+      expect(
+        shouldForwardPeerThreadEvent({
+          type,
+          payload: { blocks: [{ kind: "steps", steps: [{ label: "Tool", count: 1 }] }] },
+        }),
+      ).toBe(false);
+      expect(
+        shouldForwardPeerThreadEvent({ type: "thread.progress", payload: { blocks: [chart] } }),
+      ).toBe(false);
+    },
+  );
+
+  it.each([undefined, { seq: 2 }])(
+    "keeps peer charts in normal history, including around pages (%s)",
+    async (around) => {
+      const chart = { kind: "chart", name: "Results", spec: {}, data: [] };
+      const rows = [
+        { id: "background-chart", runId: "run-background", blocks: [chart] },
+        { id: "peer-activity", runId: "run-peer", blocks: [{ kind: "steps", steps: [] }] },
+        {
+          id: "peer-mixed",
+          runId: "run-peer",
+          blocks: [{ kind: "text", text: "Results" }, chart],
+        },
+        { id: "peer-chart", runId: "run-peer", blocks: [chart] },
+      ].map((row, index) => ({
+        ...row,
+        threadId: "thread-1",
+        seq: 4 - index,
+        role: "bot",
+        botId: "bot-1",
+        replyToMessageId: null,
+        replyQuote: null,
+        createdAt: new Date("2026-08-16T00:00:00.000Z"),
+      }));
+      const prisma = {
+        message: {
+          findMany: vi.fn(async () => (around ? [...rows].reverse() : rows)),
+          count: vi.fn(async () => 0),
+        },
+        run: {
+          findMany: vi.fn(async () => [
+            { id: "run-peer", trigger: "bot_message" },
+            { id: "run-background", trigger: "tickets" },
+          ]),
+        },
+      } as unknown as PrismaClient;
+
+      const page = await loadMessagePage(prisma, "thread-1", undefined, 4, around);
+
+      expect(page.messages.map((message) => message.id)).toEqual(["peer-chart", "peer-mixed"]);
+      expect(page.messages.map((message) => message.blocks)).toEqual([
+        rows[3]?.blocks,
+        rows[2]?.blocks,
+      ]);
+    },
+  );
+
+  it.each(["thread.message.created", "thread.message.updated"])(
     "forwards peer attachments but rejects activity for %s",
     (type) => {
       for (const kind of ["file", "image"]) {

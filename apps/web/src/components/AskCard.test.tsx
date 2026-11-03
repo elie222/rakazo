@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type { LoginFieldInput } from "@rakazo/contracts";
 import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -15,7 +16,8 @@ vi.mock("@lingui/react/macro", () => ({
 vi.mock("@rakazo/chat-ui/web", () => ({
   ChatMarkdown: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
-vi.mock("../lib/rpc", () => ({ rpc: {} }));
+const rpc = vi.hoisted(() => ({ bots: { update: vi.fn(async () => ({})) } }));
+vi.mock("../lib/rpc", () => ({ rpc }));
 
 import { ChoiceCard } from "../pages/shell/message-cards";
 import type { AskBlock } from "./AskCard";
@@ -49,7 +51,11 @@ const secretCard: AskBlock = {
 async function render(
   block: AskBlock,
   onDismiss: () => Promise<void> = async () => undefined,
-  onAnswer: (text: string, username?: string) => Promise<void> = async () => undefined,
+  onAnswer: (
+    text: string,
+    fields?: LoginFieldInput[],
+    remember?: false,
+  ) => Promise<void> = async () => undefined,
 ) {
   await act(async () =>
     root.render(
@@ -196,6 +202,95 @@ it("keeps an accepted secret Save answered without a block update", async () => 
   expect(container.querySelector(".text-destructive")).toBeNull();
 });
 
+const loginCard: AskBlock = {
+  kind: "ask",
+  text: "Sign in to Example",
+  input: "secret",
+  credential: {
+    name: "example_login",
+    origin: "https://login.example.test",
+    auth: { type: "login" },
+  },
+  loginFields: ["ID number", "Phone number", "PIN"],
+  status: "pending",
+};
+
+function loginInput(label: string) {
+  return container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+}
+
+function hiddenSwitch(label: string) {
+  return [...container.querySelectorAll('[data-testid="login-field-value"]')]
+    .find((row) => row.querySelector(`input[aria-label="${label}"]`))!
+    .querySelector<HTMLElement>('[role="switch"]')!;
+}
+
+it("starts an ID and a phone visible and a PIN hidden, and the person can flip each", async () => {
+  const onAnswer = vi.fn(async () => undefined);
+  await render(loginCard, undefined, onAnswer);
+
+  for (const [label, hidden] of [
+    ["ID number", false],
+    ["Phone number", false],
+    ["PIN", true],
+  ] as const) {
+    expect(loginInput(label).type).toBe(hidden ? "password" : "text");
+    expect(hiddenSwitch(label).getAttribute("aria-checked")).toBe(String(hidden));
+    const description = hiddenSwitch(label).getAttribute("aria-describedby")!;
+    expect(document.getElementById(description)?.textContent).toBe(label);
+  }
+  await type("ID number", " fake-id-123 ");
+  await type("Phone number", "+1 555 0100");
+  expect(button("Save")!.disabled).toBe(true);
+  await type("PIN", "0000");
+  await act(async () => hiddenSwitch("Phone number").click());
+  expect(loginInput("Phone number").type).toBe("password");
+  await act(async () => hiddenSwitch("PIN").click());
+  expect(loginInput("PIN").type).toBe("text");
+
+  await act(async () => button("Save")!.click());
+
+  expect(onAnswer).toHaveBeenCalledWith("", [
+    { label: "ID number", value: " fake-id-123 ", hidden: false },
+    { label: "Phone number", value: "+1 555 0100", hidden: true },
+    { label: "PIN", value: "0000", hidden: false },
+  ]);
+  expect(container.textContent).toContain("Saved");
+  expect(container.textContent).not.toContain("fake-id-123");
+  expect(container.querySelector("input")).toBeNull();
+});
+
+it("starts every field hidden when no label names an identifier", async () => {
+  await render({ ...loginCard, loginFields: ["Memorable word", "Card number"] });
+
+  for (const label of ["Memorable word", "Card number"]) {
+    expect(loginInput(label).type).toBe("password");
+    expect(hiddenSwitch(label).getAttribute("aria-checked")).toBe("true");
+  }
+});
+
+it("asks for a visible username and a hidden password when the bot names no fields", async () => {
+  const onAnswer = vi.fn(async () => undefined);
+  const { loginFields: _, ...defaultLogin } = loginCard;
+  await render(defaultLogin, undefined, onAnswer);
+
+  expect(
+    [...container.querySelectorAll("input[aria-label]")].map((input) => input.ariaLabel),
+  ).toEqual(["Username", "Password"]);
+  expect(loginInput("Username").type).toBe("text");
+  expect(hiddenSwitch("Username").getAttribute("aria-checked")).toBe("false");
+  expect(loginInput("Password").type).toBe("password");
+  expect(hiddenSwitch("Password").getAttribute("aria-checked")).toBe("true");
+  await type("Username", "fake-user");
+  await type("Password", "fake-password");
+  await act(async () => button("Save")!.click());
+
+  expect(onAnswer).toHaveBeenCalledWith("", [
+    { label: "Username", value: "fake-user", hidden: false },
+    { label: "Password", value: "fake-password", hidden: true },
+  ]);
+});
+
 it("keeps an accepted question choice answered until the block updates", async () => {
   const block: AskBlock = {
     kind: "ask",
@@ -277,6 +372,29 @@ it("sizes approval buttons like the other card buttons", async () => {
   }
 });
 
+it("says a user's-computer approval allows the rest of the chat", async () => {
+  const block: AskBlock = {
+    kind: "ask",
+    approvalEffectId: "effect-1",
+    text: "Run on your computer?",
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Allow for this chat" },
+      { id: "deny", label: "Deny" },
+    ],
+  };
+  await render({ ...block, detail: "hostname", detailFormat: "code" });
+  const detail = container.querySelector('[data-testid="ask-detail"]');
+  expect(detail?.textContent).toBe("hostname");
+  // The card is muted, so the command sits on the page background to read as a snippet.
+  expect(detail?.classList.contains("bg-background")).toBe(true);
+  expect(detail?.classList.contains("bg-muted")).toBe(false);
+  expect(button("Allow for this chat")).toBeTruthy();
+  expect(button("Allow once")).toBeUndefined();
+  await render({ ...block, status: "answered", answer: "allow" });
+  expect(container.textContent).toContain("Allowed for this chat");
+});
+
 it("gives onboarding choices the same lettered rows as questions", async () => {
   await act(async () =>
     root.render(
@@ -348,46 +466,75 @@ it("keeps a connector code card open to others in the chat, without Dismiss", as
   expect(button("Dismiss")).toBeUndefined();
 });
 
-it("offers import on the unanswered first-run focus card only", async () => {
-  const focus = {
-    kind: "choice" as const,
-    question: "What do you want me on first?",
-    options: [{ id: "inbox", letter: "A", label: "Inbox & email" }],
-  };
-  const onImportAgent = vi.fn();
-  const link = () =>
-    [...container.querySelectorAll("button")].find(
-      (item) => item.textContent === "Import an agent",
-    );
-  await act(async () =>
-    root.render(
-      <ChoiceCard
-        botId="bot"
-        block={focus}
-        onBotChanged={async () => {}}
-        onImportAgent={onImportAgent}
-      />,
-    ),
+function saveToVault() {
+  return container.querySelector<HTMLElement>('[role="switch"]:not([aria-describedby])');
+}
+
+it("saves a login by default, with Save to Vault on and named by its label", async () => {
+  const onAnswer = vi.fn(async () => undefined);
+  await render(loginCard, undefined, onAnswer);
+  const toggle = saveToVault()!;
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  const label = toggle.getAttribute("aria-labelledby")!;
+  expect(container.querySelector(`[id="${label}"]`)?.textContent).toBe("Save to Vault");
+  await type("ID number", "fake-id-123");
+  await type("Phone number", "+1 555 0100");
+  await type("PIN", "1234");
+  await act(async () => button("Save")!.click());
+
+  // Nothing extra is sent, so the answer is saved as it always was.
+  expect(onAnswer).toHaveBeenCalledWith("", [
+    { label: "ID number", value: "fake-id-123", hidden: false },
+    { label: "Phone number", value: "+1 555 0100", hidden: false },
+    { label: "PIN", value: "1234", hidden: true },
+  ]);
+  expect(container.textContent).toContain("Saved");
+});
+
+it("sends a login for this run only when Save to Vault is off, and reads Sent", async () => {
+  const onAnswer = vi.fn(async () => undefined);
+  await render(loginCard, undefined, onAnswer);
+  await type("ID number", "fake-id-123");
+  await act(async () => saveToVault()!.click());
+  expect(saveToVault()!.getAttribute("aria-checked")).toBe("false");
+  // Turning it off keeps what was typed and says the login is only sent on.
+  expect(loginInput("ID number").value).toBe("fake-id-123");
+  expect(button("Save")).toBeUndefined();
+  await type("Phone number", "+1 555 0100");
+  await type("PIN", "1234");
+  await act(async () => button("Continue")!.click());
+
+  expect(onAnswer).toHaveBeenCalledWith(
+    "",
+    [
+      { label: "ID number", value: "fake-id-123", hidden: false },
+      { label: "Phone number", value: "+1 555 0100", hidden: false },
+      { label: "PIN", value: "1234", hidden: true },
+    ],
+    false,
   );
-  await act(async () => link()!.click());
-  expect(onImportAgent).toHaveBeenCalledTimes(1);
-  // Not once the question is answered, and never on another choice card.
-  for (const block of [
-    { ...focus, answerId: "inbox" },
-    { ...focus, question: "Which city?" },
-  ]) {
-    await act(async () =>
-      root.render(
-        <ChoiceCard
-          botId="bot"
-          block={block}
-          onBotChanged={async () => {}}
-          onImportAgent={onImportAgent}
-        />,
-      ),
-    );
-    expect(link()).toBeUndefined();
-  }
+  expect(container.textContent).toContain("Sent");
+  expect(container.textContent).not.toContain("Saved");
+});
+
+it("reads Sent on a login card answered without saving it, after a reload", async () => {
+  await render({ ...loginCard, status: "answered", answer: "", remembered: false });
+  expect(container.textContent).toContain("Sent");
+  await render({ ...loginCard, status: "answered", answer: "" });
+  expect(container.textContent).toContain("Saved");
+});
+
+it("offers Save to Vault only on login cards", async () => {
+  await render(secretCard);
+  expect(container.querySelector('[role="switch"]')).toBeNull();
+  await render({ kind: "ask", text: "Code", input: "secret", purpose: "otp", status: "pending" });
+  expect(container.querySelector('[role="switch"]')).toBeNull();
+  await render({
+    ...secretCard,
+    credential: { name: "deploy_key", origin: "", auth: { type: "command" } },
+  } as AskBlock);
+  expect(container.querySelector('[role="switch"]')).toBeNull();
+  expect(container.textContent).not.toContain("Save to Vault");
 });
 
 it("quotes an edited reply and marks a sent draft", async () => {
@@ -401,7 +548,7 @@ it("quotes an edited reply and marks a sent draft", async () => {
   expect(container.textContent).toContain("Sent");
 });
 
-it("quotes a typed answer under the options it did not match", async () => {
+it("dims the options a typed answer did not match", async () => {
   await render({
     kind: "ask",
     text: "Which city?",
@@ -412,7 +559,8 @@ it("quotes a typed answer under the options it did not match", async () => {
       { id: "seoul", label: "Seoul" },
     ],
   });
-  expect(container.querySelector('[data-testid="ask-answer"]')?.textContent).toBe("Paris");
+  expect(container.querySelector('[data-testid="ask-answer"]')).toBeNull();
+  expect(container.textContent).not.toContain("Paris");
   expect(container.querySelector("[aria-pressed]")).toBeNull();
 
   await render({
@@ -424,4 +572,31 @@ it("quotes a typed answer under the options it did not match", async () => {
   });
   expect(container.querySelector('[data-testid="ask-answer"]')).toBeNull();
   expect(button("ASeoul")!.getAttribute("aria-pressed")).toBe("true");
+});
+
+it("undoes a settings change from chat while it still holds", async () => {
+  await render({
+    kind: "ask",
+    text: "Settings updated",
+    status: "answered",
+    settingsUpdate: {
+      botId: "bot-1",
+      before: { modelProvider: null, modelId: null, thinkingLevel: null },
+      after: { modelProvider: "google", modelId: "gemini-3.8-flash", thinkingLevel: "high" },
+    },
+  });
+  expect(container.textContent).toContain("Settings updated");
+  await act(async () => button("Undo")?.click());
+  expect(rpc.bots.update).toHaveBeenCalledWith({
+    botId: "bot-1",
+    modelProvider: null,
+    modelId: null,
+    thinkingLevel: null,
+    expectedSettings: {
+      modelProvider: "google",
+      modelId: "gemini-3.8-flash",
+      thinkingLevel: "high",
+    },
+  });
+  expect(button("Restored")?.disabled).toBe(true);
 });

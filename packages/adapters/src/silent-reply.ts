@@ -103,6 +103,28 @@ export function stripStrayNoResponse(
   return withoutStraySentinelsAtEdges(assembled, blocks);
 }
 
+/** What a bot asked by another bot returns when it answers with only the sentinel. */
+export const PEER_NOTHING_NEW_REPLY = "Nothing new to add.";
+
+/**
+ * For a request or question from another bot: a sentinel-only reply would reach the
+ * asker as the literal token, so say it in words instead. Other replies are handled as above.
+ */
+export function peerReplyWithoutSentinel(
+  assembled: string,
+  blocks: MessageBlock[],
+): { assembled: string; blocks: MessageBlock[] } {
+  const visible = assembled.trim() || joinedText(blocks).trim();
+  if (!isExactNoResponse(visible)) return stripStrayNoResponse(assembled, blocks);
+  return {
+    assembled: PEER_NOTHING_NEW_REPLY,
+    blocks: [
+      ...blocks.filter((block) => block.kind !== "text"),
+      { kind: "text", text: PEER_NOTHING_NEW_REPLY },
+    ],
+  };
+}
+
 /** A reply with prose stays a reply; a sentinel misplaced at its edge is dropped from what the user sees. */
 function withoutStraySentinelsAtEdges(
   assembled: string,

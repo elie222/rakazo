@@ -7,12 +7,17 @@ if [[ $(id -u) == 0 ]]; then
   exec gosu node "$0"
 fi
 
-export RAILWAY_ENVIRONMENT_ID
-RAILWAY_ENVIRONMENT_ID=$(node infra/railway/sandbox-environment.mjs)
 # Set DATABASE_MIGRATION_URL to the owner and DATABASE_URL to a runtime login to
 # enforce row-level security; with one URL the app runs as the owner and warns.
-pnpm --filter @rakazo/api db:deploy
-unset DATABASE_MIGRATION_URL
+# Migrate, then start over without the owner login: unset alone would leave it in this
+# shell's original environment, which any process running as node can read from /proc.
+if [[ "${1:-}" != serve ]]; then
+  pnpm --filter @rakazo/api db:deploy
+  exec env -u DATABASE_MIGRATION_URL bash "$0" serve
+fi
+
+export RAILWAY_ENVIRONMENT_ID
+RAILWAY_ENVIRONMENT_ID=$(node infra/railway/sandbox-environment.mjs)
 pnpm --filter @rakazo/api exec node dist/cli/bootstrap-owner.js
 unset OWNER_PASSWORD
 # Personal template: registration is operator configuration, never an app-account permission.

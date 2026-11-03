@@ -33,6 +33,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-router-dom": "7.18.4",
+    "zod": "4.6.7",
     "@rakazo/logging": "workspace:*"
   },
   "devDependencies": {

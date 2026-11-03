@@ -10,6 +10,7 @@ import {
   Toggle,
 } from "@expo/ui/swift-ui";
 import {
+  contentShape,
   labelStyle,
   listRowBackground,
   listRowInsets,
@@ -17,6 +18,7 @@ import {
   listStyle,
   scrollContentBackground,
   scrollDisabled,
+  shapes,
   tint,
 } from "@expo/ui/swift-ui/modifiers";
 import { useState } from "react";
@@ -106,7 +108,7 @@ export function InboxSwipeRow({
               listRowBackground(native.page),
             ]}
           >
-            <ContextMenu>
+            <ContextMenu modifiers={[contentShape(shapes.rectangle())]}>
               <ContextMenu.Trigger>
                 <RNHostView matchContents>
                   <View

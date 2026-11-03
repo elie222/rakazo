@@ -46,6 +46,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { HeaderRowsEditor } from "../../components/header-rows-editor";
 import { MenuPickerMenu } from "../../components/menu-picker";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSwitch } from "../../components/native-switch";
@@ -757,66 +758,13 @@ export default function ModelConnection() {
               />
             </View>
           </View>
-          <Text style={styles.sectionTitle}>{t("Headers")}</Text>
-          {visibleHeaderRows.map((row, index) => (
-            <View key={index} style={styles.keySection}>
-              <TextInput
-                accessibilityLabel={t("Header name")}
-                placeholder={t("Header name")}
-                placeholderTextColor={native.tertiaryLabel}
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoComplete="off"
-                editable={!busy}
-                maxLength={256}
-                style={styles.keyInput}
-                value={row.name}
-                onChangeText={(name) =>
-                  changeHeaderRows(
-                    visibleHeaderRows.map((entry, i) => (i === index ? { ...entry, name } : entry)),
-                  )
-                }
-              />
-              <TextInput
-                accessibilityLabel={t("Header value")}
-                placeholder={
-                  savedHeaderEndpointMatches && credential?.headerNames?.includes(row.name)
-                    ? "••••••••"
-                    : t("Header value")
-                }
-                placeholderTextColor={native.tertiaryLabel}
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoComplete="off"
-                importantForAutofill="no"
-                textContentType="none"
-                secureTextEntry
-                editable={!busy}
-                maxLength={1024}
-                style={styles.keyInput}
-                value={row.value}
-                onChangeText={(value) =>
-                  changeHeaderRows(
-                    visibleHeaderRows.map((entry, i) =>
-                      i === index ? { ...entry, value } : entry,
-                    ),
-                  )
-                }
-              />
-              <NativeActionButton
-                accessibilityLabel={t("Remove header")}
-                icon={{ ios: "xmark", android: "close" }}
-                prominence="plain"
-                disabled={busy}
-                onPress={() => changeHeaderRows(visibleHeaderRows.filter((_, i) => i !== index))}
-              />
-            </View>
-          ))}
-          <NativeActionButton
-            label={t("Add header")}
-            prominence="secondary"
-            disabled={busy || visibleHeaderRows.length >= 8}
-            onPress={() => changeHeaderRows([...visibleHeaderRows, { name: "", value: "" }])}
+          <HeaderRowsEditor
+            rows={visibleHeaderRows}
+            onChange={changeHeaderRows}
+            disabled={busy}
+            savedValuePlaceholder={(row) =>
+              savedHeaderEndpointMatches && (credential?.headerNames?.includes(row.name) ?? false)
+            }
           />
           {limitField(t("Context limit"), contextWindow, setContextWindow, 7)}
           {limitField(

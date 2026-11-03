@@ -2,7 +2,8 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import * as hostComputerServer from "@rakazo/adapters/host-computer-server";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { prepareHostComputer } from "./host-computer.js";
 
 describe("desktop local computer consent", () => {
@@ -13,6 +14,7 @@ describe("desktop local computer consent", () => {
     computer = await prepareHostComputer(root);
   });
   afterEach(async () => {
+    vi.restoreAllMocks();
     await computer.close();
     await rm(root, { recursive: true, force: true });
   });
@@ -32,6 +34,49 @@ describe("desktop local computer consent", () => {
     } finally {
       await new Promise<void>((resolve) => occupied.close(() => resolve()));
     }
+  });
+
+  it("replaces a reserved saved port and revokes the old credential and consent", async () => {
+    await computer.grant();
+    const previous = computer.connection;
+    const port = Number(new URL(previous.url).port);
+    await computer.close();
+    const start = vi.spyOn(hostComputerServer, "startHostComputerServer");
+    start.mockRejectedValueOnce(Object.assign(new Error("Reserved port"), { code: "EACCES" }));
+    computer = await prepareHostComputer(root);
+    expect(start).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ port, token: previous.token }),
+    );
+    expect(start).toHaveBeenNthCalledWith(2, {
+      root: path.join(root, "computers"),
+      token: computer.connection.token,
+    });
+    expect(computer.connection.token).not.toBe(previous.token);
+    const saved = JSON.parse(await readFile(path.join(root, "host-computer.json"), "utf8"));
+    expect(saved).toEqual({
+      token: computer.connection.token,
+      port: Number(new URL(computer.connection.url).port),
+    });
+    computer.activate(true);
+    expect(computer.isEnabled()).toBe(false);
+  });
+
+  it.each([
+    Object.assign(new Error("Operation not permitted"), { code: "EPERM" }),
+    new Error("Unexpected listen failure"),
+  ])("preserves the saved connection and consent when startup fails with %s", async (error) => {
+    await computer.grant();
+    await computer.close();
+    const configFile = path.join(root, "host-computer.json");
+    const consentFile = path.join(root, "host-computer-consent");
+    const config = await readFile(configFile, "utf8");
+    const consent = await readFile(consentFile, "utf8");
+    const start = vi.spyOn(hostComputerServer, "startHostComputerServer").mockRejectedValue(error);
+    await expect(prepareHostComputer(root)).rejects.toBe(error);
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(await readFile(configFile, "utf8")).toBe(config);
+    expect(await readFile(consentFile, "utf8")).toBe(consent);
   });
 
   it("keeps a later revocation when an earlier grant is still being persisted", async () => {

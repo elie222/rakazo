@@ -257,7 +257,6 @@ export async function deleteHonchoConclusion(
   return result.ok ? { ok: true, value: undefined } : result;
 }
 
-/** Ask a peer's representation a question through Honcho's dialectic chat endpoint. */
 export async function honchoPeerChat(
   config: HonchoConnectionConfig,
   workspaceId: string,

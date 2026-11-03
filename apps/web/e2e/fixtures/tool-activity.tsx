@@ -30,9 +30,16 @@ const STEP_LABELS = [
   "Check conflicts",
 ];
 
+const NOTE_TEXT = "Anna is free all Tuesday afternoon.";
+
 const stepsBlock: MessageBlock = {
   kind: "steps",
-  steps: STEP_LABELS.map((label) => ({ label, count: 1 })),
+  steps: STEP_LABELS.map((label) => ({
+    label,
+    count: 1,
+    // A finished reply keeps what the bot wrote before a step on that step.
+    ...(!live && label === "Check conflicts" ? { note: NOTE_TEXT } : {}),
+  })),
   ...(live ? {} : { durationMs: 12_400 }),
 };
 

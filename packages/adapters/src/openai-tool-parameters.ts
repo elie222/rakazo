@@ -53,41 +53,100 @@ function flattenRootUnion(
       return flattenRootUnion({ allOf: [target, siblings] }, root, new Set([...references, ref]));
     }
   }
-  const key = rootUnionKey(schema);
-  if (!key) return schema;
+  if (!rootUnionKey(schema)) return schema;
   const { oneOf: _oneOf, anyOf: _anyOf, allOf: _allOf, ...rest } = schema;
-  const variants = (schema[key] as unknown[])
-    .filter(isRecord)
-    .map((variant) => flattenRootUnion(variant, root, references));
-
-  const specs = new Map<string, unknown[]>();
-  for (const source of [rest, ...variants]) {
-    if (!isRecord(source.properties)) continue;
-    for (const [name, spec] of Object.entries(source.properties)) {
-      const seen = specs.get(name) ?? [];
-      if (!seen.some((other) => JSON.stringify(other) === JSON.stringify(spec))) seen.push(spec);
-      specs.set(name, seen);
-    }
-  }
-  const combinator = key === "allOf" ? "allOf" : "anyOf";
-  const properties = Object.fromEntries(
-    [...specs].map(([name, seen]) => [name, seen.length === 1 ? seen[0] : { [combinator]: seen }]),
-  );
-
   const requiredOf = (source: Record<string, unknown>) =>
     Array.isArray(source.required) ? source.required.map(String) : [];
-  const variantRequired = variants.map(requiredOf);
-  const shared =
-    key === "allOf"
-      ? variantRequired.flat()
-      : (variantRequired[0] ?? []).filter((name) =>
-          variantRequired.every((required) => required.includes(name)),
-        );
-  const required = [...new Set([...requiredOf(rest), ...shared])];
+  const mergeProperties = (sources: Record<string, unknown>[], combinator: "allOf" | "anyOf") => {
+    const specs = new Map<string, unknown[]>();
+    for (const source of sources) {
+      if (!isRecord(source.properties)) continue;
+      for (const [name, spec] of Object.entries(source.properties)) {
+        const seen = specs.get(name) ?? [];
+        if (!seen.some((other) => JSON.stringify(other) === JSON.stringify(spec))) seen.push(spec);
+        specs.set(name, seen);
+      }
+    }
+    return Object.fromEntries(
+      [...specs].map(([name, seen]) => [
+        name,
+        seen.length === 1 ? seen[0] : { [combinator]: seen },
+      ]),
+    );
+  };
 
-  const closed =
-    rest.additionalProperties === false ||
-    (variants.length > 0 && variants.every((variant) => variant.additionalProperties === false));
+  const groups = (["allOf", "anyOf", "oneOf"] as const).flatMap((key) => {
+    if (!Array.isArray(schema[key])) return [];
+    const variants = schema[key]
+      .map((variant) => (variant === true ? {} : variant))
+      .filter(isRecord)
+      .map((variant) => flattenRootUnion(variant, root, references));
+    const variantRequired = variants.map(requiredOf);
+    const required =
+      key === "allOf"
+        ? variantRequired.flat()
+        : (variantRequired[0] ?? []).filter((name) =>
+            variantRequired.every((items) => items.includes(name)),
+          );
+    return [
+      {
+        key,
+        variants,
+        hasTrueAlternative: key !== "allOf" && schema[key].includes(true),
+        properties: mergeProperties(variants, key === "allOf" ? "allOf" : "anyOf"),
+        required,
+        ...(variants.length > 0 &&
+        variants.every(
+          (variant) => variant.additionalProperties === false && variant.patternProperties == null,
+        )
+          ? { additionalProperties: false }
+          : {}),
+      },
+    ];
+  });
+  const siblingProperties = [rest, ...groups].map((source) =>
+    isRecord(source.properties) ? new Set(Object.keys(source.properties)) : new Set<string>(),
+  );
+  for (const [index, group] of groups.entries()) {
+    if (group.key === "allOf") continue;
+    for (const name of Object.keys(group.properties)) {
+      const hasSibling = siblingProperties.some((names, i) => i !== index + 1 && names.has(name));
+      if (group.hasTrueAlternative) {
+        if (hasSibling) delete group.properties[name];
+        else group.properties[name] = {};
+        continue;
+      }
+      if (!hasSibling) {
+        continue;
+      }
+      const missing = group.variants.filter(
+        (variant) => !isRecord(variant.properties) || !Object.hasOwn(variant.properties, name),
+      );
+      for (const variant of missing) {
+        // A closed alternative without patterns cannot accept this property. An open
+        // alternative permits it, so don't intersect with constraints from other
+        // alternatives when a sibling already supplies the property's schema.
+        if (variant.patternProperties == null && variant.additionalProperties === false) continue;
+        if (variant.patternProperties == null && isRecord(variant.additionalProperties)) {
+          group.properties[name] = {
+            anyOf: [group.properties[name], variant.additionalProperties],
+          };
+        } else {
+          delete group.properties[name];
+          break;
+        }
+      }
+    }
+  }
+  const sources = [rest, ...groups];
+  const properties = mergeProperties(sources, "allOf");
+  for (const names of siblingProperties) {
+    for (const name of names) {
+      if (!Object.hasOwn(properties, name)) properties[name] = {};
+    }
+  }
+  const required = [...new Set(sources.flatMap(requiredOf))];
+  const closed = sources.some((source) => source.additionalProperties === false);
   return {
     ...rest,
     properties,

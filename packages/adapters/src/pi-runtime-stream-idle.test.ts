@@ -83,9 +83,7 @@ describe("Model stream idle watchdog", () => {
     const stream = watchdog.wrap(inner);
     const iterator = stream[Symbol.asyncIterator]();
 
-    // No idle budget burns before response headers land: the pre-headers
-    // window is bounded per attempt by timeoutMs, so this wait must never
-    // abort.
+    // No idle budget burns before response headers land.
     const pending = iterator.next();
     await vi.advanceTimersByTimeAsync(MODEL_STREAM_IDLE_TIMEOUT_MS * 2);
     expect(watchdog.signal.aborted).toBe(false);

@@ -8,7 +8,11 @@ import type {
   BillingSubscriptionSnapshot,
   BillingSubscriptionStatus,
 } from "@rakazo/adapter-kit";
-import { BillingCheckoutCompletedError, BillingCustomerNotFoundError } from "@rakazo/adapter-kit";
+import {
+  BillingCheckoutCompletedError,
+  BillingCustomerNotFoundError,
+  BillingNoMonthlyCreditsError,
+} from "@rakazo/adapter-kit";
 import {
   holdsBillingSubscription,
   parseStripeWebhook,
@@ -38,6 +42,8 @@ export class BillingEmulator implements BillingProvider {
   readonly customers = new Map<string, { email: string; organizationId: string }>();
   readonly checkouts = new Map<string, BillingCheckoutRequest>();
   readonly subscriptions: EmulatedSubscription[] = [];
+  /** Account credit granted per customer, in cents. */
+  readonly balanceCredits = new Map<string, number>();
   private readonly now: () => number;
   private sequence = 0;
   private customerSequence = 0;
@@ -108,8 +114,17 @@ export class BillingEmulator implements BillingProvider {
       if (subscription.priceId === BYOK_PRICE_ID) subscription.cancelAtPeriodEnd = true;
   }
 
+  private readonly balanceReferences = new Set<string>();
+
+  async grantBalanceCredit(customerId: string, amountCents: number, referenceId: string) {
+    this.requireCustomer(customerId);
+    if (this.balanceReferences.has(referenceId)) return;
+    this.balanceReferences.add(referenceId);
+    this.balanceCredits.set(customerId, (this.balanceCredits.get(customerId) ?? 0) + amountCents);
+  }
+
   /** Test helper: the customer pays for the own-key plan checkout they started. */
-  completeByokCheckout(customerId: string) {
+  completeByokCheckout(customerId: string, cardFingerprint = `card_${customerId}`) {
     const checkout = this.byokCheckouts.get(customerId);
     if (!checkout) throw new Error("No own-key checkout");
     this.byokCheckouts.delete(customerId);
@@ -124,6 +139,7 @@ export class BillingEmulator implements BillingProvider {
       subscriptionItemId: `si_byok_${n}`,
       priceId: BYOK_PRICE_ID,
       byokPlan: true,
+      cardFingerprint,
       status: trialEndsAt ? "trialing" : "active",
       seats: 1,
       trialEndsAt,
@@ -143,7 +159,8 @@ export class BillingEmulator implements BillingProvider {
   async setMonthlyCredits(customerId: string, amountCents: number) {
     this.renewCredits(customerId);
     const chosen = pickBillingSubscription(this.forCustomer(customerId));
-    if (!chosen?.creditAmountCents) throw new Error("No monthly credit subscription");
+    if (!chosen?.creditAmountCents || !holdsBillingSubscription(chosen.status))
+      throw new BillingNoMonthlyCreditsError();
     if (amountCents > chosen.creditAmountCents) {
       this.creditPurchases.set(customerId, [
         ...(this.creditPurchases.get(customerId) ?? []),
@@ -157,7 +174,7 @@ export class BillingEmulator implements BillingProvider {
     chosen.creditAmountCents = amountCents;
   }
 
-  completeCreditCheckout(customerId: string) {
+  completeCreditCheckout(customerId: string, cardFingerprint = `card_${customerId}`) {
     const checkout = this.creditCheckouts.get(customerId);
     if (!checkout) throw new Error("No credit checkout");
     this.creditCheckouts.delete(customerId);
@@ -179,6 +196,7 @@ export class BillingEmulator implements BillingProvider {
         subscriptionId: `sub_credit_${this.sequence}`,
         subscriptionItemId: `si_credit_${this.sequence}`,
         priceId: "price_credit_emulated",
+        cardFingerprint,
         status: "active",
         seats: 1,
         creditAmountCents: checkout.amountCents,
@@ -219,7 +237,11 @@ export class BillingEmulator implements BillingProvider {
   }
 
   /** Test helper: the customer finishes the last checkout they started. */
-  completeCheckout(customerId: string, status?: BillingSubscriptionStatus) {
+  completeCheckout(
+    customerId: string,
+    status?: BillingSubscriptionStatus,
+    cardFingerprint = `card_${customerId}`,
+  ) {
     const checkout = this.checkouts.get(customerId);
     if (!checkout) throw new Error(`No checkout for ${customerId}`);
     const n = ++this.sequence;
@@ -231,6 +253,7 @@ export class BillingEmulator implements BillingProvider {
       subscriptionId: `sub_emulated_${n}`,
       subscriptionItemId: `si_emulated_${n}`,
       priceId: "price_emulated",
+      cardFingerprint,
       status: status ?? (trialEnd ? "trialing" : "active"),
       seats: checkout.seats,
       trialEndsAt: trialEnd === null ? null : new Date(trialEnd * 1000),

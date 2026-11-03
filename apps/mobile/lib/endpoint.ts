@@ -62,6 +62,7 @@ export function apiBaseWarning(url: string): string | null {
 export async function probeApiBase(
   input: string,
   fetchImpl: typeof fetch = fetch,
+  headers: Record<string, string> = {},
 ): Promise<EndpointResult> {
   const parsed = normalizeApiBase(input);
   if (!parsed.ok) return parsed;
@@ -71,7 +72,8 @@ export async function probeApiBase(
     const res = await withAbort(
       fetchImpl(`${parsed.url}/rpc/health`, {
         method: "POST",
-        headers: { "content-type": "application/json", origin: "rakazo://" },
+        ...(Object.keys(headers).length ? { redirect: "error" as const } : {}),
+        headers: { ...headers, "content-type": "application/json", origin: "rakazo://" },
         body: JSON.stringify({ json: {} }),
         signal: controller.signal,
       }),

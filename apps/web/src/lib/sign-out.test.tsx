@@ -2,130 +2,122 @@
 
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { signOut, useSignOut } from "./sign-out";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type * as CallSessionModule from "./call-session";
+import { SIGNED_IN_USER_KEY } from "./call-session";
+import { selectedSpaceId, selectSpace } from "./rpc";
+import { LOG_OUT_FAILED_KEY, signOut, syncLogOutFailure, useSignOut } from "./sign-out";
 
-const { requestSignOut, getSession, refetch } = vi.hoisted(() => ({
+const { requestSignOut, endCallBeforeSignOut } = vi.hoisted(() => ({
   requestSignOut: vi.fn(),
-  getSession: vi.fn(),
-  refetch: vi.fn(),
+  endCallBeforeSignOut: vi.fn(async () => undefined),
 }));
 
-vi.mock("./auth", () => ({
-  authClient: {
-    signOut: requestSignOut,
-    getSession,
-    $store: { atoms: { session: { get: () => ({ refetch }) } } },
-  },
+vi.mock("@lingui/core/macro", () => ({ t: (parts: TemplateStringsArray) => parts.join("") }));
+vi.mock("./auth", () => ({ authClient: { signOut: requestSignOut } }));
+vi.mock("./call-session", async (importOriginal) => ({
+  ...(await importOriginal<typeof CallSessionModule>()),
+  endCallBeforeSignOut,
 }));
+
+const location = { assign: vi.fn(), reload: vi.fn() };
 
 beforeEach(() => {
-  vi.resetAllMocks();
+  vi.clearAllMocks();
+  vi.stubGlobal("location", location);
   requestSignOut.mockResolvedValue({ data: { success: true }, error: null });
-  getSession.mockResolvedValue({ data: null, error: null });
-  refetch.mockResolvedValue(undefined);
+  localStorage.setItem(SIGNED_IN_USER_KEY, "user-1");
+  selectSpace("space-1");
 });
 
-describe("signOut", () => {
-  it("handles an error result without checking the session", async () => {
-    requestSignOut.mockResolvedValue({ data: null, error: { status: 500 } });
-    expect(await signOut()).toBe(false);
-    expect(getSession).not.toHaveBeenCalled();
-    expect(refetch).not.toHaveBeenCalled();
-  });
-
-  it("handles a rejected sign-out request", async () => {
-    requestSignOut.mockRejectedValue(new Error("Network unavailable"));
-    expect(await signOut()).toBe(false);
-    expect(getSession).not.toHaveBeenCalled();
-  });
-
-  it("fails if the server still has the session", async () => {
-    getSession.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
-    expect(await signOut()).toBe(false);
-    expect(getSession).toHaveBeenCalledWith({ query: { disableCookieCache: true } });
-    expect(refetch).not.toHaveBeenCalled();
-  });
-
-  it("fails if the session check returns an error", async () => {
-    getSession.mockResolvedValue({ data: null, error: { status: 500 } });
-    expect(await signOut()).toBe(false);
-  });
-
-  it("handles a rejected session check", async () => {
-    getSession.mockRejectedValue(new Error("Network unavailable"));
-    expect(await signOut()).toBe(false);
-  });
-
-  it("still succeeds when the shared refresh is superseded or fails", async () => {
-    refetch.mockRejectedValue(new Error("aborted"));
-    expect(await signOut()).toBe(true);
-  });
-
-  it("refreshes the shared session before succeeding", async () => {
-    let finishRefresh = () => {};
-    refetch.mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          finishRefresh = resolve;
-        }),
-    );
-    const result = signOut();
-    await vi.waitFor(() => expect(refetch).toHaveBeenCalledOnce());
-    expect(refetch).toHaveBeenCalledWith({ query: { disableCookieCache: true } });
-    let settled = false;
-    void result.then(() => {
-      settled = true;
-    });
-    await Promise.resolve();
-    expect(settled).toBe(false);
-    finishRefresh();
-    expect(await result).toBe(true);
-    expect(requestSignOut).toHaveBeenCalledOnce();
-  });
+afterEach(() => {
+  vi.unstubAllGlobals();
+  localStorage.clear();
+  sessionStorage.clear();
 });
 
-it("blocks re-entry, reports failure, and allows a successful retry", async () => {
+function mountSignOut(destination: string, onError: (message: string) => void = () => undefined) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  const onSuccess = vi.fn();
-  const onError = vi.fn();
-  let controls: ReturnType<typeof useSignOut>;
+  const controls: { current?: ReturnType<typeof useSignOut> } = {};
   function Harness() {
-    controls = useSignOut(onSuccess, onError);
-    return (
-      <button type="button" disabled={controls.signingOut} onClick={() => void controls.logOut()} />
-    );
+    controls.current = useSignOut(destination, onError);
+    const { signingOut, logOut } = controls.current;
+    return <button type="button" disabled={signingOut} onClick={() => void logOut()} />;
   }
   const container = document.createElement("div");
   const root = createRoot(container);
-  let finishRequest = () => {};
-  requestSignOut.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finishRequest = () => resolve({ error: { status: 500 } });
-      }),
-  );
+  act(() => root.render(<Harness />));
+  return {
+    container,
+    logOut: () => controls.current!.logOut(),
+    unmount: () => act(() => root.unmount()),
+  };
+}
+
+describe("signOut", () => {
+  it("ends the call first, then leaves for the destination signed out", async () => {
+    await signOut("/sign-in");
+    expect(endCallBeforeSignOut.mock.invocationCallOrder[0]).toBeLessThan(
+      requestSignOut.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(location.assign).toHaveBeenCalledWith("/sign-in");
+    expect(location.reload).not.toHaveBeenCalled();
+    // Other tabs reload when the signed-in user is cleared.
+    expect(localStorage.getItem(SIGNED_IN_USER_KEY)).toBeNull();
+    expect(selectedSpaceId()).toBeNull();
+  });
+
+  it.each([
+    ["an error result", () => requestSignOut.mockResolvedValue({ error: { status: 500 } })],
+    ["a rejected request", () => requestSignOut.mockRejectedValue(new Error("Network"))],
+  ])("reloads the page after %s", async (_name, fail) => {
+    fail();
+    await signOut("/");
+    expect(location.reload).toHaveBeenCalledOnce();
+    expect(location.assign).not.toHaveBeenCalled();
+    expect(localStorage.getItem(SIGNED_IN_USER_KEY)).toBe("user-1");
+  });
+
+  it("says the sign-out failed when the reloaded page is still signed in", async () => {
+    requestSignOut.mockResolvedValue({ error: { status: 500 } });
+    await signOut("/sign-in");
+    expect(location.reload).toHaveBeenCalledOnce();
+    // The reloaded page resolves its session as still signed in.
+    syncLogOutFailure(true);
+    expect(sessionStorage.getItem(LOG_OUT_FAILED_KEY)).toBeNull();
+    const onError = vi.fn();
+    const view = mountSignOut("/sign-in", onError);
+    expect(onError).toHaveBeenCalledExactlyOnceWith("Could not log out. Try again.");
+    view.unmount();
+    // Reported once: a later sign-out control starts clean.
+    const later = vi.fn();
+    mountSignOut("/sign-in", later).unmount();
+    expect(later).not.toHaveBeenCalled();
+  });
+
+  it("says nothing when the reloaded page is signed out", async () => {
+    requestSignOut.mockRejectedValue(new Error("Network"));
+    await signOut("/sign-in");
+    syncLogOutFailure(false);
+    expect(sessionStorage.getItem(LOG_OUT_FAILED_KEY)).toBeNull();
+    // Signing in again later in this tab must not show a stale failure.
+    syncLogOutFailure(true);
+    const onError = vi.fn();
+    mountSignOut("/sign-in", onError).unmount();
+    expect(onError).not.toHaveBeenCalled();
+  });
+});
+
+it("blocks re-entry and stays busy until the page is left", async () => {
+  const view = mountSignOut("/sign-in");
   try {
-    act(() => root.render(<Harness />));
-    let pending: Promise<void>;
-    act(() => {
-      pending = controls.logOut();
-      void controls.logOut();
+    await act(async () => {
+      await Promise.all([view.logOut(), view.logOut()]);
     });
-    expect(container.querySelector("button")?.disabled).toBe(true);
     expect(requestSignOut).toHaveBeenCalledOnce();
-    await act(async () => {
-      finishRequest();
-      await pending;
-    });
-    expect(onError).toHaveBeenCalledWith("Could not log out. Try again.");
-    expect(onSuccess).not.toHaveBeenCalled();
-    expect(container.querySelector("button")?.disabled).toBe(false);
-    await act(async () => {
-      await controls.logOut();
-    });
-    expect(onSuccess).toHaveBeenCalledOnce();
+    expect(location.assign).toHaveBeenCalledWith("/sign-in");
+    expect(view.container.querySelector("button")?.disabled).toBe(true);
   } finally {
-    act(() => root.unmount());
+    view.unmount();
   }
 });

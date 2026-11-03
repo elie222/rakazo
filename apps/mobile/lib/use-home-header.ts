@@ -1,5 +1,7 @@
 import { useNavigation, useRouter } from "expo-router";
 import { useLayoutEffect } from "react";
+import type { CreateAction } from "./create-chooser";
+import { createMenuItems } from "./create-chooser";
 import { useI18n } from "./i18n";
 
 /** Liquid Glass home header: account on the left; activity, search and create on the right. */
@@ -18,7 +20,7 @@ export function useHomeHeader({
   initials: string;
   activityMode: boolean;
   toggleActivityMode: () => void;
-  runCreateAction: (action: "bot" | "group" | "space") => void;
+  runCreateAction: (action: CreateAction) => void;
 }) {
   const navigation = useNavigation();
   const router = useRouter();
@@ -63,26 +65,12 @@ export function useHomeHeader({
           accessibilityLabel: t("Create"),
           icon: { type: "sfSymbol" as const, name: "plus" },
           menu: {
-            items: [
-              {
-                type: "action" as const,
-                label: t("New bot"),
-                icon: { type: "sfSymbol" as const, name: "person.crop.circle.badge.plus" },
-                onPress: () => runCreateAction("bot"),
-              },
-              {
-                type: "action" as const,
-                label: t("New group chat"),
-                icon: { type: "sfSymbol" as const, name: "person.2" },
-                onPress: () => runCreateAction("group"),
-              },
-              {
-                type: "action" as const,
-                label: t("New private space"),
-                icon: { type: "sfSymbol" as const, name: "square.grid.2x2" },
-                onPress: () => runCreateAction("space"),
-              },
-            ],
+            items: createMenuItems.map(({ id, label, sfSymbol }) => ({
+              type: "action" as const,
+              label: t(label),
+              icon: { type: "sfSymbol" as const, name: sfSymbol },
+              onPress: () => runCreateAction(id),
+            })),
           },
         },
       ],

@@ -15,14 +15,14 @@ describe("cronLabels", () => {
   it("translates schedules on mobile surfaces", () => {
     resetI18nForTests("zh-CN");
     const labels = cronLabels();
-    expect(formatCron("0 8 * * 1-5", labels)).toBe("工作日 8:00 AM");
+    expect(formatCron("0 8 * * 1-5", labels)).toBe("工作日 8:00");
     expect(formatCron("*/5 * * * *", labels)).toBe("每5分钟");
   });
 
   it("translates schedules into Traditional Chinese", () => {
     resetI18nForTests("zh-TW");
     const labels = cronLabels();
-    expect(formatCron("0 8 * * 1-5", labels)).toBe("平日 8:00 AM");
+    expect(formatCron("0 8 * * 1-5", labels)).toBe("平日 上午8:00");
     expect(formatCron("*/5 * * * *", labels)).toBe("每 5 分鐘");
   });
 
@@ -36,11 +36,18 @@ describe("cronLabels", () => {
     expect(formatCron("43 */3 * * *", cronLabels())).toBe("Раз в 3 ч, на 43-й минуте");
   });
 
+  it("writes times the way the language does", () => {
+    resetI18nForTests("de");
+    const labels = cronLabels();
+    expect(formatCron("30 18 * * 2", labels)).toBe("Jeden Dienstag um 18:30");
+    expect(formatCron("0 21 1 * *", labels)).toBe("Monatlich am 1. um 21:00");
+  });
+
   it("uses Russian case forms for intervals", () => {
     resetI18nForTests("ru");
     const labels = cronLabels();
     expect(formatCron("*/1 * * * *", labels)).toBe("Каждую минуту");
     expect(formatCron("*/5 * * * *", labels)).toBe("Каждые 5 минут");
-    expect(formatCron("0 8 * * 1-5", labels)).toBe("По будням в 8:00 AM");
+    expect(formatCron("0 8 * * 1-5", labels)).toBe("По будням в 8:00");
   });
 });

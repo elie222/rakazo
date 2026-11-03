@@ -17,18 +17,30 @@ export async function fetchAccountSecurity() {
   }
 }
 
-export async function requestAccountDeletionCode() {
-  const response = await fetch("/api/auth/request-account-deletion", {
+async function postAuth(path: string, body?: Record<string, string>) {
+  const response = await fetch(`/api/auth${path}`, {
     method: "POST",
     signal: AbortSignal.timeout(8_000),
+    ...(body
+      ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }
+      : {}),
   });
   if (!response.ok) {
-    let body: unknown;
+    let error: unknown;
     try {
-      body = await readBoundedJsonResponse<unknown>(response, 64 * 1024);
+      error = await readBoundedJsonResponse<unknown>(response, 64 * 1024);
     } catch {
       // Gateways may return HTML or an empty body.
     }
-    throw new Error(authErrorText(body, t`Could not continue`));
+    throw new Error(authErrorText(error, t`Could not continue`));
   }
 }
+
+export const requestAccountDeletionCode = () => postAuth("/request-account-deletion");
+
+/** Emails a confirmation code to an account without a password. */
+export const requestIdentityCode = () => postAuth("/request-identity-code");
+
+/** Confirms this session's identity for the next few minutes. */
+export const confirmIdentity = (proof: { password: string } | { code: string }) =>
+  postAuth("/confirm-identity", proof);

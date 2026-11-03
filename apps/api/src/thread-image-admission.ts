@@ -1,6 +1,9 @@
 import { ORPCError } from "@orpc/server";
 import type { SecretStore } from "@rakazo/adapter-kit";
+import type { CodexLiveCatalog } from "@rakazo/adapters";
 import {
+  CHATGPT_OAUTH_PROVIDER,
+  codexLiveModel,
   findConnectedModelCredential,
   knownModelImageInput,
   modelAcceptsImageInput,
@@ -27,7 +30,7 @@ export type ImageAdmissionRun = ModelChoice & {
   trigger?: string | null;
 };
 
-/** Only local reads: never refresh credentials or probe a provider while admitting a send. */
+/** Never refresh credentials while admitting a send. A supplied Codex catalog may answer image input. */
 export async function assertThreadImageInput(
   prisma: PrismaClient,
   actor: Actor,
@@ -38,6 +41,7 @@ export async function assertThreadImageInput(
     secrets: Pick<SecretStore, "load">;
     deployment: { provider: string; model: string } | null;
     hostedProvider?: string;
+    codexCatalog?: CodexLiveCatalog;
   },
 ) {
   if (!blocks.some((block) => block.kind === "image")) return;
@@ -100,6 +104,25 @@ export async function assertThreadImageInput(
               legacy?.supportsImages === true) ||
             undefined;
         }
+      }
+    }
+  }
+  if (provider === CHATGPT_OAUTH_PROVIDER && configuration?.codexCatalog) {
+    const credential = running ? overrideCredential : selected.credential;
+    if (credential) {
+      try {
+        const row = await prisma.secret.findFirst({
+          where: { id: credential.secretId, userId: actor.userId, spaceId: null },
+        });
+        if (row) {
+          const secret = parseModelSecret(await configuration.secrets.load(row.ciphertext, row.id));
+          const live = await codexLiveModel(configuration.codexCatalog, actor.userId, secret, id, {
+            waitMs: 0,
+          });
+          if (live?.supportsImages !== undefined) supportsImages = live.supportsImages;
+        }
+      } catch {
+        // An unreadable secret keeps the bundled or unknown answer.
       }
     }
   }

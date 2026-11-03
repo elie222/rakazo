@@ -11,7 +11,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createBackgroundJobHandlers } from "./background-job-handlers.js";
 import type { createRunExecutor } from "./executor.js";
 import { InMemoryRealtimeFanout } from "./realtime.js";
-import { RunJobPublisher, RunWorkerHost } from "./run-wakeup.js";
+import { RunJobPublisher, RunStarter, RunWorkerHost } from "./run-wakeup.js";
 import { createReservedGraphileJobWorkerHost, GraphileJobPublisher } from "./wakeup.js";
 
 // Needs DATABASE_URL as the runtime login and DATABASE_MIGRATION_URL as the owner,
@@ -173,8 +173,9 @@ describePostgres("tenant-scoped background jobs (PostgreSQL)", () => {
     const { handlers, seen, continueRun } = careless(app.prisma, pending, true);
     const realtime = new InMemoryRealtimeFanout();
     const background = { enqueue: vi.fn(), cancel: vi.fn(), close: vi.fn() };
-    const publisher = new RunJobPublisher(app.prisma, realtime, background);
-    const host = new RunWorkerHost(app.prisma, realtime, { intervalMs: 25 });
+    const starter = new RunStarter(realtime);
+    const publisher = new RunJobPublisher(app.prisma, background, starter);
+    const host = new RunWorkerHost(app.prisma, realtime, starter, { intervalMs: 25 });
     try {
       await host.start(handlers);
       for (const tenant of tenants)

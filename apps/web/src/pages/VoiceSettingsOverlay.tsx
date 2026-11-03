@@ -176,11 +176,33 @@ export function VoiceSettingsOverlay({
     await showProvider(selected, nextCredentials, keepForm && selected === current);
   }
 
-  function chooseProvider(nextProvider: string) {
+  async function chooseProvider(nextProvider: string) {
     setApiKey("");
     setError(null);
     setNotice(null);
-    void showProvider(nextProvider, credentials).catch((err: unknown) =>
+    const cred = credentials.find((entry) => entry.provider === nextProvider);
+    if (
+      catalog.find((entry) => entry.id === nextProvider)?.keyless &&
+      cred?.voiceId &&
+      status?.provider !== nextProvider
+    ) {
+      markPending("voice");
+      try {
+        const saved = await rpc.voice.setVoice({
+          scope,
+          voiceId: cred.voiceId,
+          provider: nextProvider,
+        });
+        setStatus(saved);
+        queryClient.setQueryData(queries.voice.status.queryKey(scoped), saved);
+      } catch (err) {
+        setError(errorText(err, t`Could not save that voice`));
+        return;
+      } finally {
+        markPending(null);
+      }
+    }
+    await showProvider(nextProvider, credentials).catch((err: unknown) =>
       setError(errorText(err, t`Could not load voice settings`)),
     );
   }
@@ -204,7 +226,8 @@ export function VoiceSettingsOverlay({
   const selfHosted = selected?.id === OPENAI_COMPATIBLE_PROVIDER_ID;
   // Connections are managed from the account; a Space can still connect one it lacks.
   const managesConnection = scope === "account" || !credential;
-  const canConnect = selfHosted ? Boolean(baseUrl.trim()) : apiKey.trim().length >= 8;
+  const keyless = Boolean(selected?.keyless);
+  const canConnect = keyless || (selfHosted ? Boolean(baseUrl.trim()) : apiKey.trim().length >= 8);
 
   async function connectKey() {
     if (!selected || !canConnect) return;
@@ -261,7 +284,7 @@ export function VoiceSettingsOverlay({
     setError(null);
     try {
       await rpc.voice.setVoice({ scope, voiceId: nextVoiceId, provider: selected?.id });
-      await refresh(selected?.id);
+      await refresh(selected?.id, { keepForm: true });
     } catch (err) {
       setError(errorText(err, t`Could not save that voice`));
     } finally {
@@ -338,18 +361,14 @@ export function VoiceSettingsOverlay({
             className="w-full"
             value={provider}
             disabled={busy}
-            onChange={(event) => chooseProvider(event.target.value)}
+            onChange={(event) => void chooseProvider(event.target.value)}
           >
             {catalog.map((entry) => {
               const connected = credentials.some((cred) => cred.provider === entry.id);
-              const notes = [
-                ...(entry.transcribe ? [] : [t`Speak only`]),
-                ...(connected ? [t`Connected`] : []),
-              ];
               return (
                 <NativeSelectOption key={entry.id} value={entry.id}>
                   {entry.name}
-                  {notes.length ? ` (${notes.join(", ")})` : ""}
+                  {connected ? ` (${t`Connected`})` : ""}
                 </NativeSelectOption>
               );
             })}
@@ -388,25 +407,27 @@ export function VoiceSettingsOverlay({
                   />
                 </Field>
               ) : null}
-              <Field className="mt-5">
-                <FieldLabel htmlFor={apiKeyId}>
-                  <Trans>API key</Trans>
-                </FieldLabel>
-                <Input
-                  id={apiKeyId}
-                  type="password"
-                  autoComplete="new-password"
-                  value={apiKey}
-                  onChange={(event) => setApiKey(event.target.value)}
-                  placeholder={
-                    selfHosted
-                      ? t`Optional`
-                      : credential
-                        ? t`Paste a replacement key`
-                        : t`Paste your API key`
-                  }
-                />
-              </Field>
+              {keyless ? null : (
+                <Field className="mt-5">
+                  <FieldLabel htmlFor={apiKeyId}>
+                    <Trans>API key</Trans>
+                  </FieldLabel>
+                  <Input
+                    id={apiKeyId}
+                    type="password"
+                    autoComplete="new-password"
+                    value={apiKey}
+                    onChange={(event) => setApiKey(event.target.value)}
+                    placeholder={
+                      selfHosted
+                        ? t`Optional`
+                        : credential
+                          ? t`Paste a replacement key`
+                          : t`Paste your API key`
+                    }
+                  />
+                </Field>
+              )}
               {selfHosted ? (
                 <>
                   <Field className="mt-5">
@@ -445,22 +466,24 @@ export function VoiceSettingsOverlay({
                   </Field>
                 </>
               ) : null}
-              <Button
-                type="button"
-                className="mt-3"
-                disabled={busy || !canConnect}
-                onClick={() => void connectKey()}
-              >
-                {pending === "connect" ? (
-                  <Trans>Connecting…</Trans>
-                ) : credential && selfHosted ? (
-                  <Trans>Reconnect</Trans>
-                ) : credential ? (
-                  <Trans>Replace key</Trans>
-                ) : (
-                  <Trans>Connect</Trans>
-                )}
-              </Button>
+              {keyless && credential ? null : (
+                <Button
+                  type="button"
+                  className="mt-3"
+                  disabled={busy || !canConnect}
+                  onClick={() => void connectKey()}
+                >
+                  {pending === "connect" ? (
+                    <Trans>Connecting…</Trans>
+                  ) : credential && selfHosted ? (
+                    <Trans>Reconnect</Trans>
+                  ) : credential ? (
+                    <Trans>Replace key</Trans>
+                  ) : (
+                    <Trans>Connect</Trans>
+                  )}
+                </Button>
+              )}
               {credential ? (
                 <Button
                   type="button"
@@ -486,20 +509,53 @@ export function VoiceSettingsOverlay({
                 <FieldLabel htmlFor={voiceSelectId}>
                   <Trans>Voice</Trans>
                 </FieldLabel>
-                <NativeSelect
-                  id={voiceSelectId}
-                  className="w-full"
-                  value={voiceId}
-                  disabled={busy}
-                  onChange={(event) => void chooseVoice(event.target.value)}
-                >
-                  {voiceOptions.map((voice) => (
-                    <NativeSelectOption key={voice.id} value={voice.id}>
-                      {voice.label}
-                      {voice.description ? ` (${voice.description})` : ""}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
+                {selfHosted ? (
+                  <>
+                    <Input
+                      id={voiceSelectId}
+                      list={`${voiceSelectId}-list`}
+                      className="w-full"
+                      value={voiceId}
+                      disabled={busy}
+                      onChange={(event) => {
+                        edited.current.add("voiceId");
+                        setVoiceId(event.target.value);
+                      }}
+                      onBlur={() => {
+                        const next = voiceId.trim();
+                        if (next && next !== credential?.voiceId) void chooseVoice(next);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter") return;
+                        event.preventDefault();
+                        event.currentTarget.blur();
+                      }}
+                    />
+                    <datalist id={`${voiceSelectId}-list`}>
+                      {voiceOptions.map((voice) => (
+                        <option key={voice.id} value={voice.id}>
+                          {voice.label}
+                          {voice.description ? ` (${voice.description})` : ""}
+                        </option>
+                      ))}
+                    </datalist>
+                  </>
+                ) : (
+                  <NativeSelect
+                    id={voiceSelectId}
+                    className="w-full"
+                    value={voiceId}
+                    disabled={busy}
+                    onChange={(event) => void chooseVoice(event.target.value)}
+                  >
+                    {voiceOptions.map((voice) => (
+                      <NativeSelectOption key={voice.id} value={voice.id}>
+                        {voice.label}
+                        {voice.description ? ` (${voice.description})` : ""}
+                      </NativeSelectOption>
+                    ))}
+                  </NativeSelect>
+                )}
               </Field>
               {selected.id === "fish-audio" ? (
                 <Field className="mt-6">

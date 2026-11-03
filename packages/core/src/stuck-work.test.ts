@@ -5,10 +5,12 @@ import {
   STUCK_WORK_EXPIRE_AFTER_MS,
   STUCK_WORK_NOTIFY_AFTER_MS,
   stuckWorkAction,
+  stuckWorkDueAfterMs,
   stuckWorkReminder,
   stuckWorkStatusMessage,
   stuckWorkStatusMessages,
   stuckWorkStoppedNotification,
+  TAKEOVER_WAIT_EXPIRE_AFTER_MS,
 } from "./stuck-work.js";
 
 describe("stuck work age", () => {
@@ -16,19 +18,28 @@ describe("stuck work age", () => {
     expect(STUCK_WORK_EXPIRE_AFTER_MS).toBeGreaterThan(STUCK_WORK_NOTIFY_AFTER_MS);
   });
 
-  it("stays quiet until the reminder, then cancels at the longer limit", () => {
-    expect(stuckWorkAction({ ageMs: STUCK_WORK_NOTIFY_AFTER_MS - 1, alreadyNotified: false })).toBe(
-      "none",
-    );
-    expect(stuckWorkAction({ ageMs: STUCK_WORK_NOTIFY_AFTER_MS, alreadyNotified: false })).toBe(
-      "notify",
-    );
-    expect(stuckWorkAction({ ageMs: STUCK_WORK_NOTIFY_AFTER_MS, alreadyNotified: true })).toBe(
-      "none",
-    );
-    expect(stuckWorkAction({ ageMs: STUCK_WORK_EXPIRE_AFTER_MS, alreadyNotified: true })).toBe(
-      "expire",
-    );
+  it.each(["queued", "waiting_input"] as const)(
+    "stays quiet until the reminder, then cancels at the longer limit (%s)",
+    (status) => {
+      const action = (ageMs: number, alreadyNotified: boolean) =>
+        stuckWorkAction({ status, ageMs, alreadyNotified });
+      expect(stuckWorkDueAfterMs(status)).toBe(STUCK_WORK_NOTIFY_AFTER_MS);
+      expect(action(TAKEOVER_WAIT_EXPIRE_AFTER_MS, false)).toBe("none");
+      expect(action(STUCK_WORK_NOTIFY_AFTER_MS - 1, false)).toBe("none");
+      expect(action(STUCK_WORK_NOTIFY_AFTER_MS, false)).toBe("notify");
+      expect(action(STUCK_WORK_NOTIFY_AFTER_MS, true)).toBe("none");
+      expect(action(STUCK_WORK_EXPIRE_AFTER_MS - 1, true)).toBe("none");
+      expect(action(STUCK_WORK_EXPIRE_AFTER_MS, true)).toBe("expire");
+    },
+  );
+
+  it("cancels a takeover nobody acted on after half an hour", () => {
+    const action = (ageMs: number) =>
+      stuckWorkAction({ status: "waiting_takeover", ageMs, alreadyNotified: false });
+    expect(TAKEOVER_WAIT_EXPIRE_AFTER_MS).toBe(30 * 60 * 1000);
+    expect(stuckWorkDueAfterMs("waiting_takeover")).toBe(TAKEOVER_WAIT_EXPIRE_AFTER_MS);
+    expect(action(TAKEOVER_WAIT_EXPIRE_AFTER_MS - 1)).toBe("none");
+    expect(action(TAKEOVER_WAIT_EXPIRE_AFTER_MS)).toBe("expire");
   });
 
   it("treats only queued and human waits as stuck", () => {

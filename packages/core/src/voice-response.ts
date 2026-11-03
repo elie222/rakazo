@@ -9,7 +9,6 @@ const VOICE_TOO_LARGE = "Voice response is too large.";
 
 export type VoiceErrorBody = { error?: string; code?: string };
 
-/** The audio of a successful `/api/voice/speak` response. */
 export function readVoiceAudio(response: Response, signal: AbortSignal): Promise<Uint8Array> {
   return readResponseWithin(response, {
     maxBytes: MAX_VOICE_AUDIO_BYTES,

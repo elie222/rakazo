@@ -11,10 +11,7 @@ export function boardEventTopic(spaceId: string): string {
   return `board:${spaceId}`;
 }
 
-/**
- * Build the board notifier and the subscription stream. Without a realtime
- * fanout the notifier does nothing and the stream stays open and empty.
- */
+/** Without a realtime fanout the notifier does nothing and the stream stays open and empty. */
 export function createBoardEvents(realtime?: RealtimeFanout): BoardEvents {
   return {
     async notify(spaceId, change) {

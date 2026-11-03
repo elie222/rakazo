@@ -45,4 +45,4 @@ The template cannot generate a Railway API credential or a model account for you
 
 ### Deployment Dependencies
 
-The template supplies Node.js 22, PostgreSQL 16, the application image and two persistent volumes. Railway supplies HTTPS and sandbox computers. No local software installation is needed.
+The template supplies Node.js 24, PostgreSQL 16, the application image and two persistent volumes. Railway supplies HTTPS and sandbox computers. No local software installation is needed.

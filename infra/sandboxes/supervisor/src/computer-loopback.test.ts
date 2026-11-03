@@ -572,6 +572,18 @@ describe("restricted egress rekeying", () => {
     expect(existing.start).not.toHaveBeenCalled();
   });
 
+  it.each(["auto", "restricted"])("probes %s egress with configured computer DNS", async (mode) => {
+    vi.stubEnv("SANDBOX_COMPUTER_EGRESS", mode);
+    vi.stubEnv("SANDBOX_COMPUTER_DNS", "1.1.1.1, 9.9.9.9");
+    setupExisting(computerNetworkNameFor("bot"));
+    await provision();
+    expect(mocks.verifyRestrictedEgress).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      COMPUTER_IMAGE,
+      ["1.1.1.1", "9.9.9.9"],
+    );
+  });
+
   it("refuses restricted computers until the host ruleset is verified", async () => {
     vi.stubEnv("SANDBOX_COMPUTER_EGRESS", "restricted");
     const { existing } = setupExisting(computerNetworkNameFor("bot"));
@@ -1349,6 +1361,102 @@ describe("screen release status", () => {
     });
     expect(released.status).toBe(500);
     await expect(released.json()).resolves.toEqual({ error: "no such exec" });
+  });
+});
+
+describe("computer deletion", () => {
+  const headers = {
+    authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+    "content-type": "application/json",
+    "x-rakazo-bot-id": "bot",
+    "x-rakazo-space-id": "space",
+    "x-rakazo-screen-id": "writer",
+  };
+  const dockerError = (statusCode: number) =>
+    Object.assign(new Error(`docker ${statusCode}`), { statusCode });
+
+  function computer(botId = "bot") {
+    const commands: string[] = [];
+    const container = {
+      inspect: vi.fn(async () => ({
+        Config: {
+          Labels: { "rakazo.managed": "true", "rakazo.botId": botId, "rakazo.spaceId": "space" },
+        },
+        HostConfig: { NetworkMode: computerNetworkNameFor("bot") },
+        State: { Running: true },
+        NetworkSettings: {
+          Ports: { "6080/tcp": [{ HostIp: "127.0.0.1", HostPort: screenPort }] },
+        },
+      })),
+      exec: vi.fn(async ({ Cmd }: { Cmd: string[] }) => {
+        commands.push(Cmd.join(" "));
+        return { start: async () => Readable.from([]), inspect: async () => ({ ExitCode: 0 }) };
+      }),
+      remove: vi.fn(),
+    };
+    mocks.docker.getContainer.mockReturnValue(container);
+    mocks.docker.getNetwork.mockReturnValue({
+      inspect: vi.fn().mockRejectedValue(dockerError(404)),
+    });
+    const resets = () =>
+      commands.filter((command) => command.includes("for marker in /tmp/rakazo/browser-profile-*"))
+        .length;
+    return { container, resets };
+  }
+
+  it.each([
+    { fail: "inspect", error: dockerError(500), status: 500 },
+    { fail: "inspect", error: dockerError(404), status: 404 },
+    { fail: "remove", error: dockerError(500), status: 500 },
+    { fail: "remove", error: dockerError(404), status: 200 },
+  ])("answers $status when $fail fails with $error.message", async ({ fail, error, status }) => {
+    const { supervisorApp } = await import("./index.js");
+    const { container } = computer();
+    (fail === "inspect" ? container.inspect : container.remove).mockRejectedValue(error);
+    const response = await supervisorApp.request("/computers/computer", {
+      method: "DELETE",
+      headers,
+    });
+    expect(response.status).toBe(status);
+    if (status === 404)
+      await expect(response.json()).resolves.toEqual({ error: "computer not found" });
+    expect(container.remove).toHaveBeenCalledTimes(fail === "inspect" ? 0 : 1);
+  });
+
+  it("rejects another computer identity without removing its container", async () => {
+    const { supervisorApp } = await import("./index.js");
+    const { container } = computer("other");
+    const response = await supervisorApp.request("/computers/computer", {
+      method: "DELETE",
+      headers,
+    });
+    expect(response.status).toBe(403);
+    expect(container.remove).not.toHaveBeenCalled();
+  });
+
+  it("forgets the computer's screens only once it is removed", async () => {
+    const { supervisorApp } = await import("./index.js");
+    const { container, resets } = computer();
+    const view = () =>
+      supervisorApp.request("/computers/computer/screen-mode", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ interactive: false, revokeControl: false }),
+      });
+    const remove = () =>
+      supervisorApp.request("/computers/computer", { method: "DELETE", headers });
+    expect((await view()).status).toBe(200);
+    expect(resets()).toBe(1);
+
+    container.remove.mockRejectedValueOnce(dockerError(500));
+    expect((await remove()).status).toBe(500);
+    expect((await view()).status).toBe(200);
+    expect(resets()).toBe(1);
+
+    container.remove.mockResolvedValueOnce(undefined);
+    expect((await remove()).status).toBe(200);
+    expect((await view()).status).toBe(200);
+    expect(resets()).toBe(2);
   });
 });
 

@@ -1,8 +1,11 @@
 import dns from "node:dns";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { fetch as undiciFetch } from "undici";
 import { describe, expect, it, vi } from "vitest";
 import {
   assertSafeRemoteUrl,
+  ConnectorRedirectError,
   createPrivateNetworkFetch,
   createSafeLookup,
   createSafeRemoteFetch,
@@ -380,11 +383,8 @@ describe("remote MCP URL policy", () => {
   });
 
   it("drives the guarded dispatcher with a fetch from the same undici", async () => {
-    // A fetch from a different undici than the Agent fails at dispatch with
-    // "invalid onRequestStart method" before the lookup runs. Failing inside
-    // the lookup proves the request reached the guarded Agent. Node's fetch
-    // is a different major, so omit, builtin, and a captured builtin must
-    // all use the package fetch that matches the Agent.
+    // A fetch from a different undici than the Agent fails at dispatch before the lookup runs,
+    // so failing inside the lookup proves the request reached the guarded Agent.
     expect(undiciFetch).not.toBe(globalThis.fetch);
 
     const capturedNodeFetch = globalThis.fetch;
@@ -659,5 +659,39 @@ describe("createPrivateNetworkFetch", () => {
     await expect(fetch("http://192.168.2.10:8080/v1/items", { method: "GET" })).rejects.toThrow(
       "redirects are not allowed",
     );
+  });
+
+  it("releases a refused redirect body in both connector fetches so close() does not wait on it", async () => {
+    // Larger than undici buffers, so an unread body holds the connection open.
+    const server = createServer((_request, response) => {
+      response.writeHead(302, { location: "http://localhost/elsewhere" });
+      response.end("x".repeat(1_000_000));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    const loopbackResolver = async () => [{ address: "127.0.0.1", family: 4 as const }];
+    try {
+      for (const [fetch, refusal] of [
+        [
+          createSafeRemoteFetch(undefined, loopbackResolver, { allowPrivateEndpoint: true }),
+          ConnectorRedirectError,
+        ],
+        [createPrivateNetworkFetch(undefined, loopbackResolver), "redirects are not allowed"],
+      ] as const) {
+        await expect(fetch(`http://localhost:${port}/mcp`)).rejects.toThrow(refusal);
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const closed = await Promise.race([
+          fetch.close().then(() => true),
+          new Promise<boolean>((resolve) => {
+            timer = setTimeout(() => resolve(false), 2_000);
+          }),
+        ]);
+        clearTimeout(timer);
+        expect(closed).toBe(true);
+      }
+    } finally {
+      server.closeAllConnections();
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 });

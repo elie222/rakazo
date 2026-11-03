@@ -796,6 +796,7 @@ function ScreenWebView({
   const sourceUrl = useRef(url);
   sourceUrl.current = retainScreenSource(sourceUrl.current, url);
   const loadedSource = sourceUrl.current;
+  const loadedPageUrl = useRef<string | null>(null);
   const reportStarted = useRef(false);
   const reportCallback = useRef(onScreenState);
   reportCallback.current = onScreenState;
@@ -822,7 +823,11 @@ function ScreenWebView({
         nativeKeyboard && keyboardSession ? computerKeyboardReadyProbe(keyboardSession) : undefined
       }
       onMessage={(event) => {
-        const state = fromScreenPage(event.nativeEvent.url, sourceUrl.current)
+        const state = fromScreenPage(
+          event.nativeEvent.url,
+          sourceUrl.current,
+          loadedPageUrl.current,
+        )
           ? screenPageState(event.nativeEvent.data)
           : null;
         if (state) {
@@ -830,7 +835,10 @@ function ScreenWebView({
           onScreenState?.(state);
         } else if (nativeKeyboard) onKeyboardMessage?.(event.nativeEvent.data);
       }}
-      onLoadStart={onLoadStart}
+      onLoadStart={(event) => {
+        loadedPageUrl.current = event?.nativeEvent?.url ?? null;
+        onLoadStart?.();
+      }}
       style={{ flex: 1, backgroundColor: tokens.background }}
       pointerEvents={interactive ? "auto" : "none"}
       // A view-only screen is a picture: keep its page, including the hidden keyboard field,

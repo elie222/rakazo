@@ -7,12 +7,15 @@ import { getLogger } from "@rakazo/logging";
 import type { CloudAgentConnection } from "./cloud-agent-factory.js";
 import { cloudAgentsEnabled } from "./cloud-agent-factory.js";
 import { cloudAgentLaunchSchema, cloudAgentReplySchema } from "./cloud-agent-tools.js";
+import type { ExecutorDeps } from "./executor-deps.js";
+import { runLeaseFor } from "./run-messages.js";
 
 export interface CloudAgentDeps {
   prisma: PrismaClient;
   jobs: JobPublisher;
   events: Pick<ThreadEvents, "notify">;
   cloudAgent: CloudAgentConnection | null | undefined;
+  runLease?: ExecutorDeps["runLease"];
 }
 
 export function cloudAgentBlock(agent: CloudAgent) {
@@ -72,6 +75,7 @@ export async function executeCloudAgentTool(
         runId: run.id,
         role: "bot",
         blocks,
+        lease: runLeaseFor(deps, run.id),
       });
       const saved = await tx.cloudAgent.update({
         where: { id: created.id },
@@ -82,6 +86,7 @@ export async function executeCloudAgentTool(
         threadId: run.threadId,
         botId: context.botId,
         runId: run.id,
+        lease: runLeaseFor(deps, run.id),
         type: "thread.message.created",
         payload: { messageId: message.id, role: "bot", blocks },
       });

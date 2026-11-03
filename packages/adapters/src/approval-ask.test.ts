@@ -75,7 +75,7 @@ describe("buildApprovalAskBlock", () => {
 it("shows the full instruction replacement as a diff with Apply and Dismiss", () => {
   const block = buildApprovalAskBlock(
     "effect-1",
-    "propose_instructions_update",
+    "update_bot",
     {
       botId: "bot-1",
       previousInstructions: "Draft only",
@@ -102,7 +102,7 @@ it("shows the full instruction replacement as a diff with Apply and Dismiss", ()
 it("redacts known secrets in instruction approval details and editable metadata", () => {
   const block = buildApprovalAskBlock(
     "effect-1",
-    "propose_instructions_update",
+    "update_bot",
     {
       botId: "bot-1",
       previousInstructions: "old fake-token",

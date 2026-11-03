@@ -1,23 +1,30 @@
 import { randomBytes } from "node:crypto";
 import { ORPCError } from "@orpc/server";
-import { runContinueJob, runJobKey } from "@rakazo/adapter-kit";
+import { runContinueJob } from "@rakazo/adapter-kit";
 import type { getBotSecretMetadata } from "@rakazo/adapters";
 import {
   archiveBot,
-  cancelComputerRunWork,
   checkpointAndStopComputer,
   forgetBotSecret,
   hasActiveComputerControl,
   listBotSecretMetadata,
   normalizeSecretDestination,
   pageUrlOrigin,
-  screenLeaseIdForRun,
+  revealBotSecret,
+  SPACE_VAULT_NOT_IN_USE,
+  stopCancelledGroupRuns,
   storeBotSecret,
   toComputerRef,
   validateBotModelChange,
 } from "@rakazo/adapters";
-import type { Actor, Bot, BotSecretMetadata } from "@rakazo/contracts";
-import { BotSecretAuth } from "@rakazo/contracts";
+import type {
+  Actor,
+  Bot,
+  BotSecretMetadata,
+  SettingsScope,
+  VaultPutInput,
+} from "@rakazo/contracts";
+import { BotSecretAuth, resolveBotAvatarSet } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, displayName } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import {
@@ -25,26 +32,30 @@ import {
   botProfileLabelsChanged,
   ComputerLimitError,
   commitBotUpdate,
+  expireComputerExecutionLeases,
   InstructionConflictError,
   IsolationError,
   recordComputerRunEnd,
+  recordSecurityEvent,
   restoreBotUnderComputerQuota,
   SpaceDeletionInProgressError,
+  settingsTarget,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { AgentImportServices } from "../agent-import.js";
-import {
-  agentImportInfo,
-  agentImportSetupState,
-  createImportedBot,
-  previewAgentImport,
-  undoAgentImport,
-} from "../agent-import.js";
+import { agentImportSetupState, createImportedBot, previewAgentImport } from "../agent-import.js";
 import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "../agent-secrets.js";
+import { changedBotSettings } from "../bot-setting-analytics.js";
+import { requireIdentityConfirmation } from "../identity-confirmation.js";
 import type { RouterDeps } from "../router.js";
 import { loadMessagePage } from "../thread-message-pages.js";
 import type { RouterContext } from "./context.js";
-import { computerContext, modelSetup, THREAD_MESSAGE_PAGE_SIZE } from "./shared.js";
+import {
+  computerContext,
+  isRecordNotFound,
+  modelSetup,
+  THREAD_MESSAGE_PAGE_SIZE,
+} from "./shared.js";
 
 /** Surface a Space deletion race as a retryable conflict instead of a generic failure. */
 function mapSpaceLifecycleError(error: unknown): unknown {
@@ -63,6 +74,7 @@ const BOT_SECRET_INPUT_ERRORS = [
   "Credential cannot be used with this authentication method",
   "Remove the existing credential before changing its destination",
   "Credential limit reached",
+  SPACE_VAULT_NOT_IN_USE,
 ];
 
 /** A credential the user typed that cannot be stored, as a bad request. Never echoes the value. */
@@ -84,14 +96,38 @@ function mapBotSecretStoreError(error: unknown): unknown {
   // Login decoding failures: a JSON parse message can quote the submitted value, so never forward it.
   if (error instanceof SyntaxError || (error instanceof Error && error.name === "ZodError")) {
     return new ORPCError("BAD_REQUEST", {
-      message: "A website login needs a username and password",
+      message: "A website login needs a label and a value for every field",
     });
   }
   return error;
 }
 
-function botSecretScope(actor: Actor, botId: string) {
-  return { userId: actor.userId, spaceId: actor.spaceId, botId };
+function vaultScope(actor: Actor, vault?: SettingsScope) {
+  return { userId: actor.userId, spaceId: actor.spaceId, vault };
+}
+
+async function saveVaultCredential(
+  deps: RouterDeps,
+  scope: ReturnType<typeof vaultScope>,
+  input: Pick<VaultPutInput, "destination" | "value">,
+) {
+  // A pasted page URL is saved under its site. One with a username or password is left
+  // as typed, so the origin rule turns it down and the person can fix it.
+  const site = pageUrlOrigin(input.destination.origin, { allowUserinfo: false, maxLength: 2048 });
+  let row: Awaited<ReturnType<typeof getBotSecretMetadata>>;
+  try {
+    row = await storeBotSecret({
+      prisma: deps.prisma,
+      secretStore: deps.secrets,
+      scope,
+      destination: site ? { ...input.destination, origin: site } : input.destination,
+      plaintext: input.value,
+    });
+  } catch (error) {
+    throw mapBotSecretStoreError(error);
+  }
+  if (!row) throw new ORPCError("CONFLICT", { message: "Credential was not saved" });
+  return botSecretMetadataDto(row);
 }
 
 function botSecretMetadataDto(row: {
@@ -130,7 +166,7 @@ export function botIntroPrompt(input: {
   const canAsk = !input.disabledBuiltinTools.includes("ask_user");
   const canUpdate = !input.disabledBuiltinTools.includes("update_bot");
   const options =
-    "two to four short options that fit your name, anything your title, description or instructions already say, and what you know about them, never a stock list";
+    "two to four short options that fit your name, anything your description or instructions already say, and what you know about them, never a stock list";
   return [
     [
       "You were just created.",
@@ -146,7 +182,7 @@ export function botIntroPrompt(input: {
       : `Greet them by first name in a few words and ask in one sentence what they want you for, suggesting ${options}.`,
     "If your profile already makes that clear, say in one line what you will do instead of asking.",
     canUpdate
-      ? "Once you know what you are for, use update_bot to set your title to a short role and your description to one line. Leave them unset if the answer is too vague, and keep your name and look."
+      ? 'Once you know what you are for, use update_bot to set what is already clear: a one-line description of what you do, your instructions on how you do it, and a short name if yours is still a placeholder like "New Bot". Leave anything vague unset to fill in later as the work becomes clearer, and otherwise keep your name and look.'
       : undefined,
     "Then get started, asking one follow-up only if you cannot start without it.",
   ]
@@ -155,18 +191,15 @@ export function botIntroPrompt(input: {
 }
 
 /**
- * Creating a bot asks only for a name and a look, so the bot finds out what it
- * is for itself. Queue one hidden-prompt turn (like a routine or skill test
- * run) that greets the user and asks. The executor limits the "created"
- * trigger to that question and the bot's own profile (see executor.ts), and
- * answering resumes the run as the user's turn.
+ * Creating a bot asks only for a name and a look, so one hidden-prompt turn greets the user and
+ * asks what the bot is for. The executor limits the "created" trigger to that question and the
+ * bot's own profile, and answering resumes the run as the user's turn.
  */
 export async function enqueueBotIntroRun(deps: RouterDeps, actor: Actor, bot: Bot): Promise<void> {
   const threadId = bot.threadId;
   if (!threadId) return;
-  // Scripted is the deterministic test/eval runtime, not a real deployment: an
-  // extra automatic run there competes with whatever response a test or eval
-  // harness queued next, for a bot it doesn't otherwise get to opt out of.
+  // In the scripted test/eval runtime an automatic run would compete with the harness's next
+  // queued response.
   if (deps.env.agentRuntime === "scripted") return;
   if ((await modelSetup(deps, actor)).needsModel) return;
   const [user, space] = await Promise.all([
@@ -250,25 +283,19 @@ export function botsRoutes(ctx: RouterContext) {
         // An imported bot starts inert: no intro run, paused routines, unapproved servers.
         return bot;
       }),
-      importInfo: authed.bots.importInfo.handler(async ({ context, input }) =>
-        agentImportInfo(agentImportServices as AgentImportServices, context.actor, input.botId),
-      ),
       importSetupState: authed.bots.importSetupState.handler(async ({ context, input }) =>
         agentImportSetupState(agentImportServices as AgentImportServices, context.actor, input),
-      ),
-      importUndo: authed.bots.importUndo.handler(async ({ context, input }) =>
-        undoAgentImport(agentImportServices as AgentImportServices, context.actor, input),
       ),
       duplicate: authed.bots.duplicate.handler(async ({ context, input }) => {
         const source = await repos.getBot(context.actor, input.botId);
         const duplicate = await repos
           .createBot(context.actor, {
             name: duplicateBotName(source.name),
-            title: source.title,
             description: source.description,
             instructions: source.instructions,
             notifyOnFinish: source.notifyOnFinish,
             color: source.color,
+            avatarSet: resolveBotAvatarSet(source.avatarSet),
             computerMode: source.computer?.scope === "dedicated" ? "dedicated" : "team",
             modelProvider: source.modelProvider,
             modelId: source.modelId,
@@ -334,16 +361,16 @@ export function botsRoutes(ctx: RouterContext) {
           spaceId: context.actor.spaceId,
           threadId: existing.thread.id,
           botId: input.botId,
-          emitBotUpdated: botProfileLabelsChanged(input),
+          emitBotUpdated: botProfileLabelsChanged(input) || input.expectedSettings !== undefined,
           expectedInstructions: input.expectedInstructions,
+          expectedSettings: input.expectedSettings,
           data: {
             name: input.name,
-            title: input.title,
             description: input.description,
             instructions: input.instructions,
-            selfUpdateInstructions: input.selfUpdateInstructions,
             notifyOnFinish: input.notifyOnFinish,
             color: input.color,
+            avatarSet: input.avatarSet,
             pinned: input.pinned,
             memoryScope: input.memoryScope,
             sectionId: input.sectionId,
@@ -368,9 +395,16 @@ export function botsRoutes(ctx: RouterContext) {
               : {}),
           },
         }).catch((error) => {
+          if (input.expectedSettings && isRecordNotFound(error))
+            throw new ORPCError("CONFLICT", {
+              message: "Settings changed; review the current settings first.",
+            });
           if (!(error instanceof InstructionConflictError)) throw error;
           throw new ORPCError("CONFLICT", { message: error.message });
         });
+        for (const setting of changedBotSettings(existing, input)) {
+          deps.analytics?.capture(context.actor.userId, { name: "bot_setting_changed", setting });
+        }
         const bots = await repos.listBots(context.actor);
         const bot = bots.find((b) => b.id === input.botId);
         if (!bot) throw new IsolationError();
@@ -433,8 +467,9 @@ export function botsRoutes(ctx: RouterContext) {
             if (bot.computer.state === "running") {
               await checkpointAndStopComputer(deps, bot.computer, ref, ctx);
             }
-            await deps.prisma.computerExecutionLease.deleteMany({
-              where: { computerId: bot.computer.id, botId: bot.id },
+            await expireComputerExecutionLeases(deps.prisma, {
+              computerId: bot.computer.id,
+              botId: bot.id,
             });
             await deps.prisma.computer.update({
               where: { id: bot.computer.id },
@@ -452,7 +487,12 @@ export function botsRoutes(ctx: RouterContext) {
             });
             await recordComputerRunEnd(deps.prisma, bot.computer, "stopped");
           }
-          return await repos.setBotComputer(context.actor, bot.id, input.mode);
+          const updated = await repos.setBotComputer(context.actor, bot.id, input.mode);
+          deps.analytics?.capture(context.actor.userId, {
+            name: "bot_setting_changed",
+            setting: "computer",
+          });
+          return updated;
         } catch (error) {
           throw mapSpaceLifecycleError(error);
         } finally {
@@ -593,51 +633,12 @@ export function botsRoutes(ctx: RouterContext) {
           if (!section) throw new IsolationError();
         }
         const updated = await groupRepos.updateGroup(context.actor, input);
-        await Promise.all(
-          updated.cancelledRunIds.map((runId) =>
-            deps.jobs.cancel(runJobKey(runId)).catch(() => undefined),
-          ),
-        );
+        await stopCancelledGroupRuns(deps, context.actor, updated);
         return updated.group;
       }),
       archive: authed.groups.archive.handler(async ({ context, input }) => {
         const archived = await groupRepos.archiveGroup(context.actor, input.groupId);
-        await Promise.all(
-          archived.cancelledRunIds.map((runId) =>
-            deps.jobs.cancel(runJobKey(runId)).catch(() => undefined),
-          ),
-        );
-        await Promise.all(
-          archived.computers.map(async (computer) => {
-            if (!computer.providerRef) return;
-            const adapterContext = {
-              operationId: "stop",
-              traceId: "stop",
-              spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
-              botId: computer.botId,
-              runId: computer.runId,
-              screenLeaseId: screenLeaseIdForRun(
-                { runId: computer.runId, fence: computer.fence },
-                computer.runId,
-              ),
-              cancelRunWork: true,
-              signal: new AbortController().signal,
-            };
-            const ref = toComputerRef(computer);
-            await cancelComputerRunWork(
-              deps.sandbox,
-              ref,
-              computer.id,
-              computer.runId,
-              adapterContext,
-            );
-            await deps.sandbox.releaseScreen?.(ref, adapterContext).catch(() => undefined);
-          }),
-        );
-        // Expire the leases only after teardown: while they were live, no other run could claim
-        // these screens.
-        await groupRepos.releaseArchivedRunLeases(archived.cancelledRunIds);
+        await stopCancelledGroupRuns(deps, context.actor, archived);
         return { ok: true as const };
       }),
       restore: authed.groups.restore.handler(async ({ context, input }) => {
@@ -690,54 +691,66 @@ export function botsRoutes(ctx: RouterContext) {
       list: authed.agentSecrets.list.handler(async ({ context }) =>
         listAgentSecrets({ prisma: deps.prisma, secrets: deps.secrets }, context.actor),
       ),
-      put: authed.agentSecrets.put.handler(async ({ context, input, signal }) =>
-        putAgentSecret(
-          { prisma: deps.prisma, secrets: deps.secrets },
-          context.actor,
-          input,
-          signal,
-        ),
+      put: authed.agentSecrets.put.handler(async ({ context, input }) =>
+        putAgentSecret({ prisma: deps.prisma, secrets: deps.secrets }, context.actor, input),
       ),
       remove: authed.agentSecrets.remove.handler(async ({ context, input }) =>
         deleteAgentSecret({ prisma: deps.prisma, secrets: deps.secrets }, context.actor, input.id),
       ),
     },
-    botSecrets: {
-      list: authed.botSecrets.list.handler(async ({ context, input }) => {
-        const bot = await repos.getBot(context.actor, input.botId);
+    vault: {
+      list: authed.vault.list.handler(async ({ context, input }) => {
         const rows = await listBotSecretMetadata(
           deps.prisma,
-          botSecretScope(context.actor, bot.id),
+          vaultScope(context.actor, input?.scope),
         );
         return rows.map(botSecretMetadataDto);
       }),
-      put: authed.botSecrets.put.handler(async ({ context, input }) => {
-        const bot = await repos.getBot(context.actor, input.botId);
-        const scope = botSecretScope(context.actor, bot.id);
-        // A pasted page URL is saved under its site. One with a username or password is left
-        // as typed, so the origin rule turns it down and the person can fix it.
-        const site = pageUrlOrigin(input.destination.origin, {
-          allowUserinfo: false,
-          maxLength: 2048,
+      put: authed.vault.put.handler(({ context, input }) =>
+        saveVaultCredential(deps, vaultScope(context.actor, input.scope), input),
+      ),
+      reveal: authed.vault.reveal.handler(async ({ context, input }) => {
+        await requireIdentityConfirmation(deps.auth, context);
+        // Resolved here, so the event names the vault that was read even when scope is omitted.
+        const scope = await settingsTarget(deps.prisma, context.actor, "credentials", input.scope);
+        const revealed = await revealBotSecret({
+          prisma: deps.prisma,
+          secretStore: deps.secrets,
+          scope: vaultScope(context.actor, scope),
+          name: input.name,
         });
-        let row: Awaited<ReturnType<typeof getBotSecretMetadata>>;
-        try {
-          row = await storeBotSecret({
-            prisma: deps.prisma,
-            secretStore: deps.secrets,
+        if (!revealed) throw new ORPCError("NOT_FOUND", { message: "Credential not found" });
+        await recordSecurityEvent({
+          type: "credential.revealed",
+          userId: context.actor.userId,
+          spaceId: context.actor.spaceId,
+          metadata: {
+            procedure: "vault.reveal",
+            kind: "vault_credential",
             scope,
-            destination: site ? { ...input.destination, origin: site } : input.destination,
-            plaintext: input.value,
-          });
-        } catch (error) {
-          throw mapBotSecretStoreError(error);
-        }
-        if (!row) throw new ORPCError("CONFLICT", { message: "Credential was not saved" });
-        return botSecretMetadataDto(row);
+            name: input.name,
+          },
+        });
+        return revealed;
+      }),
+      remove: authed.vault.remove.handler(async ({ context, input }) => {
+        await forgetBotSecret(deps.prisma, vaultScope(context.actor, input.scope), input.name);
+        return { ok: true as const };
+      }),
+    },
+    botSecrets: {
+      list: authed.botSecrets.list.handler(async ({ context, input }) => {
+        await repos.getBot(context.actor, input.botId);
+        const rows = await listBotSecretMetadata(deps.prisma, vaultScope(context.actor));
+        return rows.map(botSecretMetadataDto);
+      }),
+      put: authed.botSecrets.put.handler(async ({ context, input }) => {
+        await repos.getBot(context.actor, input.botId);
+        return saveVaultCredential(deps, vaultScope(context.actor), input);
       }),
       remove: authed.botSecrets.remove.handler(async ({ context, input }) => {
-        const bot = await repos.getBot(context.actor, input.botId);
-        await forgetBotSecret(deps.prisma, botSecretScope(context.actor, bot.id), input.name);
+        await repos.getBot(context.actor, input.botId);
+        await forgetBotSecret(deps.prisma, vaultScope(context.actor), input.name);
         return { ok: true as const };
       }),
     },

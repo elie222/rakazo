@@ -1,7 +1,7 @@
 import { markdownCodeBlocks } from "@rakazo/chat-ui/native";
-import type { MessageReaction } from "@rakazo/contracts";
+import type { BotAvatarSet, LoginFieldInput, MessageReaction } from "@rakazo/contracts";
 import { canReactToThreadMessage, MESSAGE_REACTIONS } from "@rakazo/contracts";
-import type { ChildBotBlock } from "@rakazo/core";
+import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
 import { canMarkMessageUnread, isPeerReceiptBlocks, liveMessageComposing } from "@rakazo/core";
 import * as Clipboard from "expo-clipboard";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -47,8 +47,9 @@ export type MessageRowActions = {
   answer: (
     message: MobileMessage,
     answer: string,
-    username?: string,
+    fields?: readonly LoginFieldInput[],
     dismiss?: boolean,
+    remember?: false,
   ) => Promise<void>;
   openBot: (id: string, name: string) => void;
   openComputer: (id: string, name: string) => void;
@@ -56,7 +57,6 @@ export type MessageRowActions = {
   previewImage: (target: ImageArtifactPreviewTarget) => void;
   jump: (messageId: string) => void;
   dismissChoice: (messageId: string, question: string) => void;
-  togglePeerReplies: (markerId: string) => void;
   openPeerChat: (peer: { peerBotId: string; peerBotName: string }) => void;
   layout: (messageId: string, y: number, index: number) => void;
 };
@@ -85,10 +85,11 @@ type MessageRowProps = {
   waitingForUser: boolean;
   messageReactions?: ReadonlyMap<MessageReaction, number>;
   mentions?: readonly ChildBotBlock[];
-  /** Set on a received marker whose peer run has folded replies. */
-  peerReplies?: "collapsed" | "expanded";
+  /** The adjacent receipts represented by this peer line. */
+  peerExchange?: PeerExchange;
   activityBotId?: string;
   activityColor?: string;
+  activityAvatarSet?: BotAvatarSet;
   activityStatus?: MobileBot["status"];
   userBubble?: UserBubble;
   inGroup: boolean;
@@ -121,9 +122,10 @@ export const MessageRow = memo(function MessageRow({
   messageReactions,
   mentions,
   waitingForUser,
-  peerReplies,
+  peerExchange,
   activityBotId,
   activityColor,
+  activityAvatarSet,
   activityStatus,
   userBubble,
   inGroup,
@@ -388,6 +390,7 @@ export const MessageRow = memo(function MessageRow({
           <View style={{ paddingTop: 22 }}>
             <BotAvatar
               color={activityColor ?? tokens.mutedForeground}
+              avatarSet={activityAvatarSet}
               identity={activityBotId}
               size={inGroup ? 20 : 28}
               status={activityStatus}
@@ -443,8 +446,7 @@ export const MessageRow = memo(function MessageRow({
                 onChoiceDismissed={onChoiceDismissed}
                 onPreviewMarkdown={actions.previewMarkdown}
                 onPreviewImage={actions.previewImage}
-                peerReplies={peerReplies}
-                onTogglePeerReplies={actions.togglePeerReplies}
+                peerExchange={peerExchange}
                 onOpenPeerChat={actions.openPeerChat}
                 actionProps={actionProps}
                 doubleTapSurface={Boolean(likeMessage)}

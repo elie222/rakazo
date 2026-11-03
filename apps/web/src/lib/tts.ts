@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import type { SettingsScope } from "@rakazo/contracts";
 import {
   readVoiceAudio,
@@ -158,7 +159,7 @@ export class Speaker {
       { signal, context: { spaceId } },
     );
     if (!body.ready) {
-      throw new Error("Add a voice provider key and pick a voice in Voice settings.");
+      throw new Error(t`Add a voice provider key and pick a voice in Voice settings.`);
     }
     return body.utterances ?? [];
   }
@@ -169,7 +170,11 @@ export class Speaker {
     signal: AbortSignal,
     spaceId: string | null,
   ): Promise<Blob> {
-    const deadline = requestDeadline(VOICE_RESPONSE_TIMEOUT_MS, "Voice request timed out.", signal);
+    const deadline = requestDeadline(
+      VOICE_RESPONSE_TIMEOUT_MS,
+      t`Voice request timed out.`,
+      signal,
+    );
     try {
       const res = await withAbort(
         fetch("/api/voice/speak", {

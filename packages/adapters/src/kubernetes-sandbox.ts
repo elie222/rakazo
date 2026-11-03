@@ -20,11 +20,16 @@ import type {
   TerminalRequest,
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
-import { shouldSkipPortableWorkspaceFile } from "./computer-workspace.js";
-import { LinuxDesktop } from "./linux-desktop.js";
+import { LinuxDesktop, onBotScreen } from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
+import {
+  shouldSkipPortableWorkspaceFile,
+  workspaceSaveFindExpression,
+} from "./workspace-save-policy.js";
 
+const DISPLAY_START = 20;
 const DEFAULT_NAMESPACE = "rakazo-sandboxes";
 // Same default as the Compose stack. Pin a digest with KUBERNETES_SANDBOX_COMPUTER_IMAGE in
 // production so every pod runs the image the API was tested against.
@@ -103,7 +108,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
         homeDir: WORKSPACE,
         workspaceDir: WORKSPACE,
         browserProfilesDir: `${WORKSPACE}/.browser-profiles`,
-        displayStart: 20,
+        displayStart: DISPLAY_START,
         portStart: DESKTOP_PORT_START,
         // The relay must use the address family the web pod connects to.
         bindHost: pod?.status?.podIP?.includes(":") ? "::" : "0.0.0.0",
@@ -255,9 +260,10 @@ export class KubernetesSandboxProvider implements SandboxProvider {
 
   async *execute(
     computer: ComputerRef,
-    request: CommandRequest,
+    requested: CommandRequest,
     context: AdapterContext,
   ): AsyncIterable<ProcessEvent> {
+    const request = onBotScreen(requested, context, DISPLAY_START);
     if (context.signal.aborted) {
       yield { type: "stderr", data: "command aborted\n" };
       yield { type: "exit", code: 130 };
@@ -452,7 +458,11 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     // Kubernetes round trip each, which took minutes for a restored home.
     const listing = await this.run(
       computer,
-      ["find", WORKSPACE, "-type", "f", "-printf", "%P\\0"],
+      [
+        "bash",
+        "-c",
+        `cd ${shellQuote(WORKSPACE)} && find . ${workspaceSaveFindExpression()} -printf '%P\\0'`,
+      ],
       context,
     );
     if (listing.code !== 0) {
@@ -536,6 +546,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     const signal = context.signal;
     async function* archive(): AsyncIterable<Buffer> {
       for await (const file of files) {
+        if (shouldSkipPortableWorkspaceFile(file.path)) continue;
         signal.throwIfAborted();
         workspacePath(WORKSPACE, file.path);
         yield* encodeTarEntry(normalizeWorkspacePath(file.path), file.content, file.executable);
@@ -610,7 +621,10 @@ export class KubernetesSandboxProvider implements SandboxProvider {
           {
             name: CONTAINER_NAME,
             image: this.computerImage,
-            env: [{ name: "VNC_RESOLUTION", value: "1280x800" }],
+            env: [
+              ...Object.entries(COMPUTER_CACHE_ENV).map(([name, value]) => ({ name, value })),
+              { name: "VNC_RESOLUTION", value: "1280x800" },
+            ],
             ports: [{ name: "screen", containerPort: READY_PORT, protocol: "TCP" }],
             readinessProbe: {
               tcpSocket: { port: READY_PORT },
@@ -902,10 +916,13 @@ function loadKubernetes(): Promise<typeof KubernetesClient> {
 
 function commandRequestArgv(request: CommandRequest, timeoutMs: number): string[] {
   const cwd = kubernetesCwd(request.cwd);
-  const environment = Object.entries(request.env ?? {}).map(([name, value]) => {
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error(`invalid environment name ${name}`);
-    return `${name}=${value}`;
-  });
+  const environment = Object.entries({ ...COMPUTER_CACHE_ENV, ...request.env }).map(
+    ([name, value]) => {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name))
+        throw new Error(`invalid environment name ${name}`);
+      return `${name}=${value}`;
+    },
+  );
   return [
     "bash",
     "-c",

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import type { ReactNode } from "react";
+import { Component, useState } from "react";
 import { Image, StyleSheet, Text, View } from "react-native";
 import { SvgUri } from "react-native-svg";
 import { native, useThemedStyles } from "../lib/native";
@@ -30,14 +31,16 @@ export function ConnectorIcon({
     >
       {uri ? (
         svg ? (
-          <SvgUri
-            uri={uri}
-            width={art}
-            height={art}
-            onError={() => setFailure({ logo: uri, svgFailed: true })}
-            // SvgUri does not report XML parse errors, only renders this fallback.
-            fallback={initial}
-          />
+          <ArtworkBoundary key={uri} onError={() => setFailure({ logo: uri, svgFailed: true })}>
+            <SvgUri
+              uri={uri}
+              width={art}
+              height={art}
+              onError={() => setFailure({ logo: uri, svgFailed: true })}
+              // SvgUri does not report XML parse errors, only renders this fallback.
+              fallback={initial}
+            />
+          </ArtworkBoundary>
         ) : (
           <Image
             source={{ uri }}
@@ -51,6 +54,27 @@ export function ConnectorIcon({
       )}
     </View>
   );
+}
+
+/** Catalog SVGs are untrusted; one that react-native-svg cannot render, such as a
+ * root `transform` its parser rejects, throws during render instead of calling onError. */
+class ArtworkBoundary extends Component<
+  { children: ReactNode; onError: () => void },
+  { failed: boolean }
+> {
+  override state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  override componentDidCatch() {
+    this.props.onError();
+  }
+
+  override render() {
+    return this.state.failed ? null : this.props.children;
+  }
 }
 
 function createStyles() {

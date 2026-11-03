@@ -67,7 +67,7 @@ function fixture(status = "queued") {
 }
 describe("background computer maintenance", () => {
   it("persists stages and releases its reservation only after completion; redelivery is harmless", async () => {
-    const { row, computer, deps } = fixture();
+    const { row, computer, deps, jobs } = fixture();
     replacement.mockImplementationOnce(async (_deps, _id, _mode, _ctx, _holder, progress) => {
       for (const stage of ["saving", "recreating", "restoring", "reconnecting"] as const)
         await progress?.(stage);
@@ -79,6 +79,9 @@ describe("background computer maintenance", () => {
       where: { id: row.computerId, maintenanceId: row.id },
       data: { maintenanceId: null },
     });
+    expect(jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ replaceKey: `computer.sleep:${row.computerId}` }),
+    );
     await performComputerUpdate(deps, row.id);
     expect(replacement).toHaveBeenCalledOnce();
   });
@@ -90,6 +93,15 @@ describe("background computer maintenance", () => {
     expect(JSON.stringify(row)).not.toContain("provider-private-detail");
     await performComputerUpdate(deps, row.id);
     expect(replacement).toHaveBeenCalledOnce();
+  });
+  it("checks the computer for idle sleep again after a failed update", async () => {
+    const { row, deps, jobs } = fixture();
+    replacement.mockRejectedValueOnce(new Error("checkpoint upload failed"));
+    await performComputerUpdate(deps, row.id);
+    expect(row.status).toBe("failed");
+    expect(jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ replaceKey: `computer.sleep:${row.computerId}` }),
+    );
   });
   it("republishes queued intent after an enqueue failure", async () => {
     const { row, deps, jobs } = fixture();

@@ -223,6 +223,55 @@ describe("OpenClaw backup tar.gz", () => {
     expect(files.get(".openclaw/workspace/SOUL.md")).toBe("Calm.\n");
   });
 
+  it("accepts a standalone config asset alongside directory assets", async () => {
+    const external = `${root}/payload/posix/etc/openclaw/include.json`;
+    const withConfig = JSON.parse(manifest);
+    withConfig.assets.push({ kind: "config", archivePath: external });
+    const archive = tarGz([
+      { name: `${root}/manifest.json`, content: JSON.stringify(withConfig) },
+      { name: `${home}/openclaw.json`, content: "{}" },
+      { name: `${root}/payload/posix/home/example/work/SOUL.md`, content: "Calm.\n" },
+      { name: external, content: "{}" },
+    ]);
+    expect((await read(archive)).files.get(".openclaw/workspace/SOUL.md")).toBe("Calm.\n");
+    const directoryConfig = tarGz([
+      { name: `${root}/manifest.json`, content: JSON.stringify(withConfig) },
+      { name: `${home}/openclaw.json`, content: "{}" },
+      { name: `${root}/payload/posix/home/example/work/SOUL.md`, content: "Calm.\n" },
+      { name: `${external}/child.json`, content: "{}" },
+    ]);
+    expect((await read(directoryConfig)).files.get(".openclaw/openclaw.json")).toBe("{}");
+    await fails(() => read(archive, { ...AGENT_IMPORT_ARCHIVE_LIMITS, readBytes: 1 }), "too_large");
+  });
+
+  it("requires each declared asset and respects path boundaries and directory kinds", async () => {
+    const base = `${root}/payload/posix/etc/openclaw/include.json`;
+    const check = async (kind: string, declared: string, actual: string, type = "0") => {
+      const assets = JSON.parse(manifest);
+      assets.assets.push({ kind, archivePath: declared });
+      await fails(
+        () =>
+          read(
+            tarGz([
+              { name: `${root}/manifest.json`, content: JSON.stringify(assets) },
+              { name: `${home}/openclaw.json`, content: "{}" },
+              { name: `${root}/payload/posix/home/example/work/SOUL.md`, content: "Calm.\n" },
+              { name: actual, content: "{}", type },
+            ]),
+          ),
+        "unreadable",
+      );
+    };
+    await check("config", `${base}.missing`, base);
+    await check("config", base, `${base}.other`);
+    await check("config", base, base, "5");
+    await check("config", base, base, "2");
+    await check("config", `${root}/payload/../escape`, base);
+    await check("credentials", base, base);
+    await check("state", base, base);
+    await check("workspace", base, base);
+  });
+
   it("finds the home from openclaw.json when there is no manifest", async () => {
     const plain = tarGz([
       { name: "backup/home/.openclaw/openclaw.json", content: "{}" },

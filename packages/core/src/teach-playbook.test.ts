@@ -83,6 +83,51 @@ describe("buildPlaybookFromRecording", () => {
     expect(playbook.steps).toEqual(['Type "hi there".']);
   });
 
+  it.each(["    print(1)", "print(1)   ", "   "])(
+    "preserves ordinary typed input verbatim: %j",
+    (text) => {
+      const playbook = buildPlaybookFromRecording(
+        "Type text",
+        Array.from(text, (key) => ({
+          at: "2026-01-01T00:00:00.000Z",
+          kind: "key" as const,
+          key,
+        })),
+      );
+      expect(playbook.steps).toEqual([`Type ${JSON.stringify(text)}.`]);
+    },
+  );
+
+  it.each(["    print(1)", "print(1)   ", "   "])(
+    "preserves ordinary clipboard input verbatim: %j",
+    (text) => {
+      const playbook = buildPlaybookFromRecording("Paste text", [
+        { at: "2026-01-01T00:00:00.000Z", kind: "clipboard", text },
+      ]);
+      expect(playbook.steps).toEqual([`Paste or type: ${text}.`]);
+    },
+  );
+
+  it.each(["  PaSsWoRd  ", "  secret  ", "  token  ", "  api_key  ", "  api-key  ", "  apikey  "])(
+    "still redacts padded credential-like input: %j",
+    (text) => {
+      const typed = buildPlaybookFromRecording(
+        "Type text",
+        Array.from(text, (key) => ({
+          at: "2026-01-01T00:00:00.000Z",
+          kind: "key" as const,
+          key,
+        })),
+      );
+      expect(typed.steps).toEqual(['Type "[redacted input]".']);
+
+      const pasted = buildPlaybookFromRecording("Paste text", [
+        { at: "2026-01-01T00:00:00.000Z", kind: "clipboard", text },
+      ]);
+      expect(pasted.steps).toEqual(["Paste or type: [redacted input]."]);
+    },
+  );
+
   it("collapses a run of protected keystrokes into one redacted step", () => {
     const playbook = buildPlaybookFromRecording("Sign in", [
       { at: "2026-01-01T00:00:00.000Z", kind: "key", key: "u" },

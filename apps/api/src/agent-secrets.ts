@@ -1,19 +1,40 @@
 import { ORPCError } from "@orpc/server";
 import type { SecretStore } from "@rakazo/adapter-kit";
-import { persistPreparedSecret } from "@rakazo/adapters";
+import {
+  forgetBotSecret,
+  getBotSecretMetadata,
+  listBotSecretMetadata,
+  storeBotSecret,
+} from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import {
+  AGENT_SECRET_NAME_PATTERN,
+  BotSecretAuth,
+  BotSecretName,
+  commandVariableName,
+  commandVariableProblem,
+} from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { Prisma, withTransactionRetry } from "@rakazo/db";
+import { mapBotSecretInputError } from "./routes/bots.js";
 
 type AgentSecretDeps = {
   prisma: PrismaClient;
   secrets: SecretStore;
 };
 
-function agentSecretDto(row: { id: string; name: string; createdAt: Date; updatedAt: Date }) {
+/**
+ * Space environment variables now live in the vault as command variables, so these routes are
+ * kept for callers that predate it. A variable is addressed by its vault name, which is also its
+ * id here, and acts on the vault this Space uses.
+ */
+function vaultScope(actor: Actor) {
+  return { userId: actor.userId, spaceId: actor.spaceId };
+}
+
+function agentSecretDto(row: { name: string; createdAt: Date; updatedAt: Date }) {
   return {
-    id: row.id,
-    name: row.name,
+    id: row.name,
+    name: commandVariableName(row.name),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -30,69 +51,47 @@ async function requireSpaceOwner(prisma: PrismaClient, actor: Actor): Promise<vo
 
 export async function listAgentSecrets(deps: AgentSecretDeps, actor: Actor) {
   await requireSpaceOwner(deps.prisma, actor);
-  const rows = await deps.prisma.agentSecret.findMany({
-    where: { spaceId: actor.spaceId },
-    orderBy: [{ name: "asc" }],
-    select: { id: true, name: true, createdAt: true, updatedAt: true },
-  });
-  return rows.map(agentSecretDto);
+  const rows = await listBotSecretMetadata(deps.prisma, vaultScope(actor));
+  return rows
+    .filter((row) => BotSecretAuth.safeParse(row.auth).data?.type === "command")
+    .filter((row) => {
+      const variable = commandVariableName(row.name);
+      return !commandVariableProblem(variable) && AGENT_SECRET_NAME_PATTERN.test(variable);
+    })
+    .map(agentSecretDto);
 }
 
 export async function putAgentSecret(
   deps: AgentSecretDeps,
   actor: Actor,
   input: { name: string; value: string },
-  signal = new AbortController().signal,
 ) {
   await requireSpaceOwner(deps.prisma, actor);
-  const row = await withTransactionRetry(async () => {
-    const stored = await deps.secrets.put(input.value, {
-      operationId: `agent-secret:${input.name}`,
-      traceId: `agent-secret:${input.name}`,
-      spaceId: actor.spaceId,
-      userId: actor.userId,
-      signal,
+  // The vault name that exports this variable: an existing one (`netbird-setup-key` exports
+  // NETBIRD_SETUP_KEY), else the variable lower-cased. A vault name starts with a letter, so a
+  // variable that starts with an underscore has none.
+  const existing = (await listBotSecretMetadata(deps.prisma, vaultScope(actor))).find(
+    (row) =>
+      BotSecretAuth.safeParse(row.auth).data?.type === "command" &&
+      commandVariableName(row.name) === input.name,
+  );
+  const name = existing?.name ?? input.name.toLowerCase();
+  if (!BotSecretName.safeParse(name).success) {
+    throw new ORPCError("BAD_REQUEST", { message: "Variable names must start with a letter" });
+  }
+  let row: Awaited<ReturnType<typeof getBotSecretMetadata>>;
+  try {
+    row = await storeBotSecret({
+      prisma: deps.prisma,
+      secretStore: deps.secrets,
+      scope: vaultScope(actor),
+      destination: { name, origin: "", auth: { type: "command" } },
+      plaintext: input.value,
     });
-    return persistPreparedSecret(deps.prisma, deps.secrets, stored, () =>
-      deps.prisma.$transaction(
-        async (tx) => {
-          const existing = await tx.agentSecret.findUnique({
-            where: { spaceId_name: { spaceId: actor.spaceId, name: input.name } },
-            select: { secretId: true },
-          });
-          await tx.secret.create({
-            data: {
-              id: stored.id,
-              userId: actor.userId,
-              spaceId: actor.spaceId,
-              kind: "agent-environment",
-              ciphertext: stored.ciphertext,
-            },
-          });
-          const updated = await tx.agentSecret.upsert({
-            where: { spaceId_name: { spaceId: actor.spaceId, name: input.name } },
-            create: {
-              spaceId: actor.spaceId,
-              createdByUserId: actor.userId,
-              name: input.name,
-              secretId: stored.id,
-            },
-            update: {
-              createdByUserId: actor.userId,
-              secretId: stored.id,
-            },
-          });
-          if (existing && existing.secretId !== stored.id) {
-            await tx.secret.deleteMany({
-              where: { id: existing.secretId, spaceId: actor.spaceId },
-            });
-          }
-          return updated;
-        },
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-      ),
-    );
-  });
+  } catch (error) {
+    throw mapBotSecretInputError(error);
+  }
+  if (!row) throw new ORPCError("CONFLICT", { message: "Variable was not saved" });
   return agentSecretDto(row);
 }
 
@@ -102,21 +101,11 @@ export async function deleteAgentSecret(
   id: string,
 ): Promise<{ ok: true }> {
   await requireSpaceOwner(deps.prisma, actor);
-  await withTransactionRetry(() =>
-    deps.prisma.$transaction(
-      async (tx) => {
-        const existing = await tx.agentSecret.findFirst({
-          where: { id, spaceId: actor.spaceId },
-          select: { id: true, secretId: true },
-        });
-        if (!existing) throw new ORPCError("NOT_FOUND");
-        await tx.agentSecret.delete({ where: { id: existing.id } });
-        await tx.secret.deleteMany({
-          where: { id: existing.secretId, spaceId: actor.spaceId },
-        });
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-    ),
-  );
+  const scope = vaultScope(actor);
+  const row = await getBotSecretMetadata(deps.prisma, scope, id);
+  if (BotSecretAuth.safeParse(row?.auth).data?.type !== "command") {
+    throw new ORPCError("NOT_FOUND");
+  }
+  await forgetBotSecret(deps.prisma, scope, id);
   return { ok: true };
 }

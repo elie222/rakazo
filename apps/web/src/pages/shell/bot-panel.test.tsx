@@ -2,7 +2,7 @@
 
 import { i18n } from "@lingui/core";
 import { ORPCError } from "@orpc/client";
-import type { Bot } from "@rakazo/contracts";
+import type { Bot, BotAvatarSet } from "@rakazo/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -76,24 +76,48 @@ vi.mock("@rakazo/ui-web", () => ({
       {props.children}
     </button>
   ),
+  Tabs: ({
+    value: _value,
+    onValueChange: _onValueChange,
+    ...props
+  }: ComponentProps<"div"> & { value?: string; onValueChange?: (value: string) => void }) => (
+    <div {...props} />
+  ),
+  TabsList: (props: ComponentProps<"div">) => <div role="tablist" {...props} />,
+  TabsTrigger: ({ value: _value, ...props }: ComponentProps<"button"> & { value: string }) => (
+    <button type="button" role="tab" {...props} />
+  ),
+  TabsContent: ({ value: _value, ...props }: ComponentProps<"div"> & { value: string }) => (
+    <div {...props} />
+  ),
 }));
 vi.mock("./avatar-studio-popover", () => ({
   AvatarStudioPopover: ({
     value,
+    avatarSet,
     onChange,
   }: {
     value: string;
-    onChange: (value: string) => void;
+    avatarSet?: BotAvatarSet;
+    onChange: (value: string, avatarSet?: BotAvatarSet) => void;
   }) => (
-    <button
-      type="button"
-      aria-label="Avatar color"
-      data-color={value}
-      onClick={() => onChange(value === "blue" ? "ink" : "blue")}
-    />
+    <>
+      <button
+        type="button"
+        aria-label="Avatar color"
+        data-color={value}
+        onClick={() => onChange(value === "blue" ? "ink" : "blue")}
+      />
+      <button
+        type="button"
+        aria-label="Avatar set"
+        data-avatar-set={avatarSet}
+        data-color={value}
+        onClick={() => onChange("#F97316", avatarSet === "rakazo" ? "organic" : "rakazo")}
+      />
+    </>
   ),
 }));
-vi.mock("./bot-credentials", () => ({ BotCredentialsSection: () => null }));
 vi.mock("../ScratchpadSection", () => ({ ScratchpadSection: () => <h3>Open work</h3> }));
 vi.mock("../KnowledgeSection", () => ({
   KnowledgeSection: () => <h3>Memory and skills</h3>,
@@ -150,6 +174,7 @@ let queryClient: QueryClient;
 const onSave = vi.fn(
   async (_patch: Parameters<ComponentProps<typeof BotSettings>["onSave"]>[0]) => undefined,
 );
+const onExport = vi.fn(async () => undefined);
 
 async function render(
   description = "Billing",
@@ -166,21 +191,13 @@ async function render(
           bot={bot(description, overrides)}
           memoryProviderConfigured={memoryProviderConfigured}
           onSave={onSave}
-          onExport={async () => undefined}
+          onExport={onExport}
           onClear={() => undefined}
         />
       </QueryClientProvider>,
     );
   });
   await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
-}
-
-async function expandAdvanced() {
-  await act(async () =>
-    container
-      .querySelector<HTMLButtonElement>('[data-testid="bot-settings-advanced"] button')!
-      .click(),
-  );
 }
 
 function descriptionField(): HTMLTextAreaElement {
@@ -192,11 +209,6 @@ function descriptionField(): HTMLTextAreaElement {
 }
 
 async function setDescription(value: string) {
-  if (
-    container.querySelector('[data-testid="bot-settings"]') &&
-    !container.querySelector('[id$="-description"]')
-  )
-    await expandAdvanced();
   const textarea = descriptionField();
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
@@ -220,6 +232,7 @@ async function clickSave() {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   onSave.mockReset().mockResolvedValue(undefined);
+  onExport.mockReset().mockResolvedValue(undefined);
   vi.mocked(rpc.bots.update).mockReset();
   vi.mocked(rpc.bots.get).mockReset();
   container = document.createElement("div");
@@ -235,7 +248,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("shows the main sections and keeps only rare controls in Advanced", async () => {
+it("shows the profile and the Advanced tab's controls", async () => {
   vi.mocked(rpc.voice.voices).mockResolvedValueOnce([
     { id: "fixture-voice", label: "Fixture voice" },
   ]);
@@ -244,22 +257,16 @@ it("shows the main sections and keeps only rare controls in Advanced", async () 
     "Ada",
   );
   expect(container.querySelector('input[aria-label="Name"]')).toBeNull();
-  expect(container.querySelector('[id$="-description"]')).toBeNull();
-  expect(container.querySelector('[id$="-disabled-tools"]')).toBeNull();
+  expect([...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
+    "Computer",
+    "Routines",
+    "Advanced",
+  ]);
   expect(
     [...container.querySelectorAll("button")].some((button) => button.textContent === "Save"),
   ).toBe(false);
   const advanced = container.querySelector<HTMLElement>('[data-testid="bot-settings-advanced"]')!;
-  expect(advanced.querySelector("button[aria-expanded]")?.getAttribute("aria-expanded")).toBe(
-    "false",
-  );
-  expect(container.querySelector('[id$="-model"]')).toBeNull();
-  expect(container.querySelector('[id$="-thinking"]')).toBeNull();
-  expect(container.querySelector('[id$="-auto-speak"]')).toBeNull();
-  expect(container.querySelector('textarea[id$="-instructions"]')).not.toBeNull();
-  await act(async () =>
-    advanced.querySelector<HTMLButtonElement>("button[aria-expanded]")?.click(),
-  );
+  expect(advanced.querySelector('textarea[id$="-instructions"]')).not.toBeNull();
   expect(
     container
       .querySelector('[id$="-disabled-tools"]')
@@ -291,12 +298,6 @@ it("shows the main sections and keeps only rare controls in Advanced", async () 
     "readAloud",
     "fleetManagement",
   ]);
-  await act(async () =>
-    advanced.querySelector<HTMLButtonElement>("button[aria-expanded]")?.click(),
-  );
-  expect(advanced.querySelector("button[aria-expanded]")?.getAttribute("aria-expanded")).toBe(
-    "false",
-  );
 });
 
 describe("BotSettings model choices", () => {
@@ -408,7 +409,6 @@ describe("BotSettings bot management saves", () => {
 
   it("restores the toggle when the immediate save fails", async () => {
     await render();
-    await expandAdvanced();
     onSave.mockRejectedValueOnce(new Error("offline"));
     const toggle = container.querySelector<HTMLButtonElement>('button[id$="-fleet-management"]');
     if (!toggle) throw new Error("Missing switch");
@@ -418,9 +418,21 @@ describe("BotSettings bot management saves", () => {
     expect(toggle.getAttribute("aria-checked")).toBe("false");
   });
 
+  it("shows a failed export instead of leaving it unhandled", async () => {
+    await render();
+    onExport.mockRejectedValueOnce(Object.assign(new Error("Bad Gateway"), { status: 502 }));
+    const exportButton = [...container.querySelectorAll("button")].find(
+      (node) => node.textContent === "Export",
+    );
+    if (!exportButton) throw new Error("Missing export");
+    await act(async () => {
+      exportButton.click();
+    });
+    expect(container.textContent).toContain("Could not reach the server");
+  });
+
   it.each([false, true])("saves only the bot management toggle from %s", async (enabled) => {
     await render("Billing", { fleetManagement: enabled });
-    await expandAdvanced();
     const toggle = container.querySelector<HTMLButtonElement>('button[id$="-fleet-management"]');
     if (!toggle) throw new Error("Missing switch");
     await act(async () => {
@@ -607,9 +619,8 @@ describe("instruction settings refresh", () => {
   });
 });
 
-it("uses the empty label placeholder and cancels an inline name edit", async () => {
-  await render("", { title: "" });
-  expect(container.textContent).toContain("Add a label");
+it("cancels an inline name edit", async () => {
+  await render();
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Edit name"]')!.click(),
   );
@@ -622,36 +633,64 @@ it("uses the empty label placeholder and cancels an inline name edit", async () 
   expect(onSave).not.toHaveBeenCalled();
 });
 
-it("opens Advanced for a model deep link and focuses the model control", async () => {
+it("focuses the model control for a model deep link", async () => {
   await render("", {}, false, 1);
-  expect(container.querySelector("button[aria-expanded]")?.getAttribute("aria-expanded")).toBe(
-    "true",
-  );
   expect(document.activeElement?.id.endsWith("-model")).toBe(true);
 });
 
-it("saves inline edits on blur and clears a label on Enter", async () => {
+it("saves inline name edits on blur and on Enter", async () => {
   await render();
-  for (const [editLabel, label, value, key] of [
-    ["Edit name", "Name", "Atlas", "name"],
-    ["Edit label", "Title", "", "title"],
-  ]) {
+  for (const [value, event] of [
+    ["Atlas", new FocusEvent("focusout", { bubbles: true })],
+    ["Ada", new KeyboardEvent("keydown", { key: "Enter", bubbles: true })],
+  ] as const) {
     await act(async () =>
-      container.querySelector<HTMLButtonElement>(`[aria-label="${editLabel}"]`)!.click(),
+      container.querySelector<HTMLButtonElement>('[aria-label="Edit name"]')!.click(),
     );
-    const input = container.querySelector<HTMLInputElement>(`[aria-label="${label}"]`)!;
+    const input = container.querySelector<HTMLInputElement>('[aria-label="Name"]')!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    await act(async () => {
-      if (key === "name") input.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
-      else input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    });
-    expect(onSave.mock.lastCall?.[0]).toHaveProperty(key!, value);
+    await act(async () => input.dispatchEvent(event));
+    expect(onSave.mock.lastCall?.[0]).toHaveProperty("name", value);
   }
-  expect(container.textContent).toContain("Add a label");
 });
+
+it.each([{ isComposing: true }, { keyCode: 229 }])(
+  "keeps an inline name edit open on IME Enter and Escape (%o)",
+  async (composition) => {
+    await render();
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Edit name"]')!.click(),
+    );
+    const input = container.querySelector<HTMLInputElement>('[aria-label="Name"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "Atlas",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const windowKeys: string[] = [];
+    const onWindowKey = (event: KeyboardEvent) => windowKeys.push(event.key);
+    window.addEventListener("keydown", onWindowKey);
+    for (const key of ["Enter", "Escape"]) {
+      await act(async () =>
+        input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, ...composition })),
+      );
+    }
+    window.removeEventListener("keydown", onWindowKey);
+    expect(container.querySelector('[aria-label="Name"]')).toBe(input);
+    // A composing Escape must not reach page-level Escape listeners such as the reply chip.
+    expect(windowKeys).not.toContain("Escape");
+    expect(onSave).not.toHaveBeenCalled();
+    await act(async () =>
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+    );
+    expect(onSave.mock.lastCall?.[0]).toHaveProperty("name", "Atlas");
+  },
+);
 
 it.each(["color", "notifyOnFinish"])(
   "restores the last accepted %s after an automatic save fails",
@@ -682,6 +721,51 @@ it("saves a color change back to the initial value after a successful automatic 
   expect(onSave.mock.lastCall?.[0]).toHaveProperty("color", "ink");
 });
 
+describe("BotSettings avatar set persistence", () => {
+  it("interprets a legacy missing set as Original without saving a replacement", async () => {
+    await render();
+    expect(
+      container.querySelector('[aria-label="Avatar set"]')?.getAttribute("data-avatar-set"),
+    ).toBe("organic");
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("saves an explicit set switch atomically with its generated colour and retains it after reload", async () => {
+    await render("Billing", { color: "#10B981" });
+    const control = () => container.querySelector<HTMLButtonElement>('[aria-label="Avatar set"]')!;
+    await act(async () => control().click());
+    expect(onSave.mock.lastCall?.[0]).toMatchObject({ avatarSet: "rakazo", color: "#F97316" });
+    expect(control().getAttribute("data-avatar-set")).toBe("rakazo");
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render("Billing", { color: "#F97316", avatarSet: "rakazo" });
+    expect(control().getAttribute("data-avatar-set")).toBe("rakazo");
+  });
+
+  it("restores the accepted colour and set when switching fails", async () => {
+    await render("Billing", { color: "#10B981" });
+    onSave.mockRejectedValueOnce(new Error("offline"));
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Avatar set"]')!.click(),
+    );
+    const control = container.querySelector('[aria-label="Avatar set"]')!;
+    expect(control.getAttribute("data-avatar-set")).toBe("organic");
+    expect(control.getAttribute("data-color")).toBe("#10B981");
+    expect(container.textContent).toContain("offline");
+  });
+
+  it("keeps a colour edit in its existing set", async () => {
+    await render("Billing", { avatarSet: "rakazo" });
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Avatar color"]')!.click(),
+    );
+    expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("avatarSet");
+    expect(
+      container.querySelector('[aria-label="Avatar set"]')?.getAttribute("data-avatar-set"),
+    ).toBe("rakazo");
+  });
+});
+
 describe("BotSettings cached data", () => {
   it("shows cached voices at once and refreshes them in the background", async () => {
     queryClient.setQueryData(spaceQueries(null, null).voice.voices.queryKey({ input: {} }), [
@@ -691,7 +775,6 @@ describe("BotSettings cached data", () => {
       .mockClear()
       .mockReturnValueOnce(new Promise(() => undefined));
     await render();
-    await expandAdvanced();
     expect(container.querySelector('[id$="-voice"]')?.textContent).toContain("Cached voice");
     expect(rpc.voice.voices).toHaveBeenCalledTimes(1);
   });

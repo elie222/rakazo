@@ -11,7 +11,7 @@ describe("autoReadStillWanted", () => {
     expect(autoReadStillWanted(3, 3, page("visible", true))).toBe(true);
     expect(autoReadStillWanted(4, 3, page("visible", true))).toBe(false);
     expect(autoReadStillWanted(3, 3, page("hidden", true))).toBe(false);
-    // A queued group read used to skip only this check: the tab is shown but another window has focus.
+    // The tab is shown but another window has focus.
     expect(autoReadStillWanted(3, 3, page("visible", false))).toBe(false);
   });
 });

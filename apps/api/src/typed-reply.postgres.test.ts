@@ -103,7 +103,7 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
 
   const privateTarget = () =>
     ({ kind: "bot", botId, threadId, bot: { computer: null } }) as ThreadTarget;
-  function send(target: ThreadTarget, text = "Paris", clientNonce = randomUUID()) {
+  function send(target: ThreadTarget, text = "Paris", clientNonce: string = randomUUID()) {
     return runAsTenant(actor, () =>
       sendThreadMessage(
         { prisma, events: { notify } as never, jobs: { enqueue } as never },

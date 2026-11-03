@@ -1,10 +1,10 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot, Group, ThreadSnapshot } from "@rakazo/contracts";
 import { BotAvatar, Button, GroupAvatar } from "@rakazo/ui-web";
-import { Menu, Monitor, Phone } from "lucide-react";
+import { Menu, Phone } from "lucide-react";
 import { IconTooltip } from "../../components/IconTooltip";
 
-/** The floating header over the transcript: navigation, the chat's name, call and computer. */
+/** The floating header over the transcript: navigation, the chat's name and call. */
 export function ChatHeader({
   inGroup,
   active,
@@ -12,11 +12,10 @@ export function ChatHeader({
   activeSnapshot,
   phoneCallsEnabled,
   inCall,
-  computerPanelOpen,
+  panelOpen,
   onOpenNavigation,
-  onOpenChatSettings,
+  onTogglePanel,
   onCall,
-  onToggleComputer,
 }: {
   inGroup: boolean;
   active: Bot | undefined;
@@ -24,11 +23,10 @@ export function ChatHeader({
   activeSnapshot: ThreadSnapshot | null;
   phoneCallsEnabled: boolean;
   inCall: boolean;
-  computerPanelOpen: boolean;
+  panelOpen: boolean;
   onOpenNavigation: () => void;
-  onOpenChatSettings: () => void;
+  onTogglePanel: () => void;
   onCall: (bot: Bot) => void;
-  onToggleComputer: (bot: Bot) => void;
 }) {
   const { t } = useLingui();
   return (
@@ -47,13 +45,20 @@ export function ChatHeader({
       <Button
         variant="floating"
         data-testid="bot-settings-trigger"
-        onClick={onOpenChatSettings}
+        aria-expanded={panelOpen}
+        onClick={onTogglePanel}
         className="app-no-drag h-auto min-w-0 gap-2 py-1 ps-1 pe-3.5"
       >
         {inGroup ? (
           <GroupAvatar members={activeSnapshot?.members ?? activeGroup?.members ?? []} size={26} />
         ) : active ? (
-          <BotAvatar color={active.color} identity={active.id} size={26} status={active.status} />
+          <BotAvatar
+            avatarSet={active.avatarSet}
+            color={active.color}
+            identity={active.id}
+            size={26}
+            status={active.status}
+          />
         ) : null}
         <span className="min-w-0">
           <span className="block truncate text-[15px] font-medium text-foreground" dir="auto">
@@ -76,20 +81,6 @@ export function ChatHeader({
               className="app-no-drag"
             >
               <Phone strokeWidth={1.6} className="size-[17px]" />
-            </Button>
-          </IconTooltip>
-        ) : null}
-        {!inGroup && active ? (
-          <IconTooltip label={t`Agent computer`}>
-            <Button
-              variant="floating"
-              size="icon-lg"
-              aria-label={t`Agent computer`}
-              aria-pressed={computerPanelOpen}
-              onClick={() => onToggleComputer(active)}
-              className="app-no-drag"
-            >
-              <Monitor strokeWidth={1.6} className="size-[18px]" />
             </Button>
           </IconTooltip>
         ) : null}

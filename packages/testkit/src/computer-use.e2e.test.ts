@@ -14,7 +14,7 @@ describeLive("real model and sandbox computer journey", () => {
   let dataDir: string | undefined;
   let handles: Awaited<ReturnType<typeof createApp>>;
   let computer: ComputerRef | undefined;
-  let sandboxProvider: "boat" | "e2b";
+  let sandboxProvider: "boat" | "e2b" | "novita";
   let botId: string | undefined;
   let runId: string | undefined;
 
@@ -37,9 +37,11 @@ describeLive("real model and sandbox computer journey", () => {
       sandboxProvider,
       agentRuntime: "pi",
       e2bApiKey: process.env.E2B_API_KEY,
+      novitaApiKey: process.env.NOVITA_API_KEY,
+      sandboxTemplate: process.env.SANDBOX_TEMPLATE,
       boatApiKey: process.env.BOAT_API_KEY,
       boatApiUrl: process.env.BOAT_API_URL,
-      openRouterKey: process.env.OPENROUTER_API_KEY,
+      deploymentModelKey: process.env.OPENROUTER_API_KEY,
       defaultProvider: "openrouter",
       defaultModel: process.env.COMPUTER_E2E_MODEL,
       wakeupDriver: "memory",
@@ -271,7 +273,7 @@ function testContext(botId: string) {
   };
 }
 
-type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
+type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
 type RunState = { status: string; error: string | null };
 
 async function rpc<T>(app: App, cookie: string, procedure: string, body: unknown): Promise<T> {

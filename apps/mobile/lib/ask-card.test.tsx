@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type { LoginFieldInput } from "@rakazo/contracts";
 import type { CSSProperties, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -12,7 +13,8 @@ type SheetProps = {
   destination: string;
   pending: boolean;
   onClose: () => void;
-  onSave: (password: string, username: string) => Promise<void>;
+  loginFields: readonly string[] | undefined;
+  onSave: (fields: LoginFieldInput[], remember: boolean) => Promise<void>;
 };
 let sheet: SheetProps;
 
@@ -185,10 +187,43 @@ const loginAsk = {
   },
 };
 
+const loginAnswer = [
+  { label: "Username", value: "example-user", hidden: false },
+  { label: "Password", value: "example-password", hidden: true },
+];
+
 async function openSheet() {
   await act(async () => container.querySelector("button")!.click());
   expect(sheet.destination).toBe("login.example.test");
 }
+
+it("asks for a login card's fields and answers with them and an empty answer", async () => {
+  const onAnswer = vi.fn(async () => undefined);
+  await render({ ...loginAsk, loginFields: ["Email", "PIN"] }, onAnswer);
+  await openSheet();
+  expect(sheet.loginFields).toEqual(["Email", "PIN"]);
+
+  await act(async () => sheet.onSave(loginAnswer, true));
+  expect(onAnswer).toHaveBeenCalledWith("", loginAnswer);
+  expect(container.textContent).toContain("Saved");
+});
+
+it("answers a login with Save to Vault off for this run only and reads Sent", async () => {
+  const onAnswer = vi.fn(async () => undefined);
+  await render(loginAsk, onAnswer);
+  await openSheet();
+
+  await act(async () => sheet.onSave(loginAnswer, false));
+  expect(onAnswer).toHaveBeenCalledWith("", loginAnswer, false);
+  expect(state("Sent")?.dataset.color).toBe("success");
+  expect(container.textContent).not.toContain("Saved");
+});
+
+it("leaves a login card without requested fields to the default labels", async () => {
+  await render(loginAsk);
+  await openSheet();
+  expect(sheet.loginFields).toBeUndefined();
+});
 
 it("closes an open login sheet once the viewer is no longer the run's user", async () => {
   const renderAs = (canDismiss: boolean) =>
@@ -233,7 +268,7 @@ it("keeps a reopened sheet open when an earlier save completes", async () => {
   const first = sheet;
   let saving!: Promise<void>;
   await act(async () => {
-    saving = first.onSave("example-password", "example-user");
+    saving = first.onSave(loginAnswer, true);
   });
   await act(async () => first.onClose());
   await openSheet();
@@ -272,7 +307,7 @@ it("closes the current sheet and keeps the card saved when refresh fails", async
     ),
   );
   await openSheet();
-  await act(async () => sheet.onSave("example-password", "example-user"));
+  await act(async () => sheet.onSave(loginAnswer, true));
   expect(rpc).toHaveBeenCalledTimes(1);
   expect(refresh).toHaveBeenCalledTimes(1);
   expect(container.querySelector("[data-sheet]")).toBeNull();
@@ -332,6 +367,9 @@ it("shows a dismissed secret card as a muted Dismissed and a saved one as Saved"
   await render({ input: "secret", status: "answered", answer: "" });
   expect(state("Saved")?.dataset.color).toBe("success");
   expect(container.textContent).not.toContain("Dismissed");
+  // A login used for this run only reads Sent, also once the card is reloaded.
+  await render({ input: "secret", status: "answered", answer: "", remembered: false });
+  expect(state("Sent")?.dataset.color).toBe("success");
 });
 
 it("offers Dismiss only on secret cards", async () => {
@@ -458,6 +496,7 @@ it("uses the full column for wide asks and reserves only the visible avatar gutt
         status: "pending",
       },
     ],
+    mcpApproval: [{ kind: "mcp_approval", serverId: "server-1", name: "Example" }],
   };
   const measure = (kind: keyof typeof blocks, avatar: boolean, inGroup: boolean) =>
     messageRowLayout(blocks[kind] as MobileMessage["blocks"], {
@@ -480,11 +519,13 @@ it("uses the full column for wide asks and reserves only the visible avatar gutt
     expect(regular.menuMaxWidth).toBe(avatar ? 360 - gutter : 324);
   }
   // Connect cards take the full bubble width rather than shrinking to their button.
-  const card = measure("appConnect", false, false);
-  expect(card.width).toBe("90%");
-  expect(card.maxWidth).toBe("90%");
-  expect(card.menuMaxWidth).toBe(324);
-  expect(card.menuFullWidth).toBe(true);
+  for (const kind of ["appConnect", "mcpApproval"] as const) {
+    const card = measure(kind, false, false);
+    expect(card.width).toBe("90%");
+    expect(card.maxWidth).toBe("90%");
+    expect(card.menuMaxWidth).toBe(324);
+    expect(card.menuFullWidth).toBe(true);
+  }
 });
 
 it.each([

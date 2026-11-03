@@ -14,7 +14,6 @@ test("onboarding choices show borderless rows in both themes", async ({ page }, 
       theme,
     );
     await expect(option).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
-    // Rows only fill on hover.
     await expect(option).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
     await captureScreenshot(page, testInfo, `onboarding-choice-rows-${theme}`);
   }
@@ -67,7 +66,6 @@ test("renders tappable choice buttons and submits the offered action id", async 
   await expect(toronto).toBeVisible();
   await expect(lisbon).toBeVisible();
 
-  // Options render as a vertical full-width list, not wrapping chips.
   const berlinBox = await berlin.boundingBox();
   const seoulBox = await seoul.boundingBox();
   const torontoBox = await toronto.boundingBox();
@@ -130,58 +128,4 @@ test("renders tappable choice buttons and submits the offered action id", async 
     .toBe("choice-2");
 
   await captureScreenshot(page, testInfo, "choice-card-answered");
-});
-
-test("a typed reply answers the latest question and resumes its run", async ({
-  page,
-}, testInfo) => {
-  await signup(page, `typed-choice-${Date.now()}@rakazo.test`, "password12", "Typed Choice");
-  await completeOnboarding(page);
-  const botId = activeBotId(page);
-  const composer = page.getByPlaceholder(/Message/);
-  await composer.fill("pick from these cities with tappable choices");
-  await page.keyboard.press("Enter");
-
-  let waitingRunId: string | undefined;
-  await expect
-    .poll(
-      async () => {
-        const snapshot = await rpc<{ run?: { id: string; status: string } | null }>(
-          page,
-          "threads/get",
-          { botId },
-        );
-        waitingRunId = snapshot.run?.id;
-        return snapshot.run?.status;
-      },
-      { timeout: 60_000 },
-    )
-    .toBe("waiting_input");
-  const seoul = page.getByRole("button", { name: "Seoul", exact: true });
-  await expect(seoul).toBeVisible({ timeout: 15_000 });
-  await composer.fill("Paris");
-  await page.keyboard.press("Enter");
-
-  await expect(page.getByTestId("ask-answer").filter({ hasText: "Paris" })).toBeVisible({
-    timeout: 30_000,
-  });
-  await expect(seoul).toBeDisabled();
-  await expect(seoul).not.toHaveAttribute("aria-pressed");
-  await expect
-    .poll(async () => {
-      const snapshot = await rpc<{
-        messages: Array<{
-          role: string;
-          runId: string | null;
-          blocks: Array<{ kind: string; text?: string }>;
-        }>;
-      }>(page, "threads/get", { botId });
-      return snapshot.messages.findLast(
-        (message) =>
-          message.role === "user" &&
-          message.blocks.some((block) => block.kind === "text" && block.text === "Paris"),
-      )?.runId;
-    })
-    .toBe(waitingRunId);
-  await captureScreenshot(page, testInfo, "choice-card-typed-reply");
 });

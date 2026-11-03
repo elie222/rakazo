@@ -5,7 +5,7 @@ import { fakeDatabase } from "./bot-secrets.test-support.js";
 import { generateSecretValue } from "./secret-generator.js";
 import { EncryptedSecretStore } from "./secrets.js";
 
-const scope = { userId: "user-1", spaceId: "space-1", botId: "bot-1" };
+const scope = { userId: "user-1", spaceId: "space-1" };
 const secretStore = new EncryptedSecretStore("test-only-encryption-key");
 const signup = {
   name: "example_account",
@@ -77,6 +77,7 @@ describe("generateSecretValue", () => {
 describe("generate_secret", () => {
   const savedPassword = async (db: ReturnType<typeof fakeDatabase>) => {
     const fill = await resolveLoginFill({
+      runId: "run-1",
       prisma: db.prisma,
       secretStore,
       scope,
@@ -106,6 +107,7 @@ describe("generate_secret", () => {
     expect(db.rows()[0]!.ciphertext).not.toContain(password);
     expect(
       await resolveLoginFill({
+        runId: "run-1",
         prisma: db.prisma,
         secretStore,
         scope,

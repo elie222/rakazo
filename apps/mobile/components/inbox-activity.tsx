@@ -91,6 +91,7 @@ function ActivityRow({
         <BotAvatar
           identity={run.botId}
           color={bot?.color ?? FALLBACK_COLOR}
+          avatarSet={bot?.avatarSet}
           status={run.status}
           motion="lazy"
         />

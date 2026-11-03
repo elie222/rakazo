@@ -43,6 +43,8 @@ postgres("history retrieval (PostgreSQL)", () => {
         '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").result')::text));
       CREATE INDEX synthetic_history_seq ON messages ("threadId",seq);
       ANALYZE messages;
+      ALTER TABLE bots ADD COLUMN name text DEFAULT 'History bot';
+      ALTER TABLE chat_groups ADD COLUMN name text DEFAULT 'History group';
     `);
   });
   afterAll(async () => {
@@ -484,5 +486,172 @@ postgres("history retrieval (PostgreSQL)", () => {
     expect(
       (await readHistory(prisma, channelScope, { messageId: "channel-result" })).messages,
     ).toEqual([]);
+  });
+  it("authorizes only the requesting user's active chats in their space, including owned groups", async () => {
+    await pool.query(`
+      INSERT INTO bots (id, "spaceId", "userId", "archivedAt", name) VALUES
+        ('cross-peer','synthetic-space','synthetic-user',NULL,'Researcher'),
+        ('cross-team','synthetic-space','team-member',NULL,'Team member'),
+        ('cross-space','other-space','synthetic-user',NULL,'Other space'),
+        ('cross-archived','synthetic-space','synthetic-user',now(),'Archived');
+      INSERT INTO chat_groups (id, "spaceId", "userId", "archivedAt") VALUES
+        ('cross-group','synthetic-space','synthetic-user',NULL),
+        ('cross-archived-group','synthetic-space','synthetic-user',now()),
+        ('cross-team-group','synthetic-space','team-member',NULL);
+      INSERT INTO threads VALUES
+        ('cross-peer-thread','synthetic-space','synthetic-user','cross-peer',NULL),
+        ('cross-team-thread','synthetic-space','team-member','cross-team',NULL),
+        ('cross-space-thread','other-space','synthetic-user','cross-space',NULL),
+        ('cross-archived-thread','synthetic-space','synthetic-user','cross-archived',NULL),
+        ('cross-group-thread','synthetic-space','synthetic-user',NULL,'cross-group'),
+        ('cross-archived-group-thread','synthetic-space','synthetic-user',NULL,'cross-archived-group'),
+        ('cross-team-group-thread','synthetic-space','team-member',NULL,'cross-team-group');
+      INSERT INTO chat_group_members VALUES ('cross-group','cross-peer');
+      INSERT INTO messages SELECT 'cross-' || id, id, 90000, 'user', NULL, NULL, '2026-02-01'::timestamptz,
+        '[{"kind":"text","text":"quasar launch violet apricot"}]'::jsonb
+        FROM threads WHERE id LIKE 'cross-%';
+      INSERT INTO messages VALUES
+        ('cross-structured','cross-peer-thread',90001,'bot',NULL,NULL,'2026-02-02',
+          '[{"kind":"bot_message_received","text":"quasar handoff violet"}]'),
+        ('cross-reply','cross-peer-thread',90002,'bot',NULL,NULL,'2026-02-03',
+          '[{"kind":"text","text":"quasar answer violet"}]');
+    `);
+    await pool.query(`
+      INSERT INTO runs VALUES ('cross-peer-run','synthetic-space','synthetic-user','cross-peer-thread','cross-peer',
+        'cross-cross-peer-thread','completed',now(),now());
+      UPDATE messages SET "runId" = 'cross-peer-run' WHERE id = 'cross-reply';
+      INSERT INTO artifacts VALUES ('cross-artifact','synthetic-space','synthetic-user','cross-peer',NULL,
+        'cross-peer-run','launch.txt','text/plain',10,now());
+    `);
+    const grant = {
+      ...scope,
+      allowMyChats: true,
+      searchBeforeSeq: 1,
+      searchAt: new Date("2026-03-01"),
+    };
+    const input = HistorySearchInputSchema.parse({
+      scope: "my_chats",
+      queries: [" quasar ", "VIOLET", "QUASAR"],
+    });
+    const querySpy = vi.spyOn(prisma, "$queryRaw");
+    const result = await searchHistory(prisma, grant, input);
+    const rankedQuery = querySpy.mock.calls[0]![0] as Prisma.Sql;
+    querySpy.mockRestore();
+    const explained = await pool.query(
+      `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${rankedQuery.text}`,
+      rankedQuery.values,
+    );
+    expect(JSON.stringify(explained.rows)).toContain("synthetic_history_fts");
+    expect(result.queries).toEqual(["quasar", "VIOLET"]);
+    const single = await searchHistory(prisma, grant, { scope: "my_chats", query: "quasar" });
+    expect(single.queries).toEqual(["quasar"]);
+    for (const hit of single.messages) expect(hit.matchedQueryIndexes).toEqual([0]);
+    expect(result.messages).toHaveLength(4);
+    expect(new Set(result.messages.map((hit) => hit.messageId)).size).toBe(4);
+    expect(new Set(result.messages.map((hit) => hit.threadId))).toEqual(
+      new Set(["cross-peer-thread", "cross-group-thread"]),
+    );
+    for (const hit of result.messages) expect(hit.matchedQueryIndexes).toEqual([0, 1]);
+    expect(result.chats?.find((chat) => chat.threadId === "cross-peer-thread")?.name).toBe(
+      "Researcher",
+    );
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(10000);
+    // A bot filter narrows owned group membership too; it never grants a foreign thread.
+    expect(
+      (await searchHistory(prisma, grant, { ...input, botId: "cross-team" })).messages,
+    ).toEqual([]);
+    expect(
+      (await searchHistory(prisma, grant, { ...input, botId: "cross-peer" })).messages,
+    ).toHaveLength(4);
+    expect(
+      (
+        await searchHistory(prisma, grant, { ...input, after: "2026-02-02", before: "2026-02-03" })
+      ).messages.map((hit) => hit.messageId),
+    ).toEqual(["cross-structured"]);
+    for (const [kind, ids] of [
+      ["bot_messages", ["cross-structured"]],
+      ["bot_replies", ["cross-reply"]],
+      ["user_messages", ["cross-cross-peer-thread", "cross-cross-group-thread"]],
+    ] as const) {
+      expect(
+        new Set(
+          (await searchHistory(prisma, grant, { ...input, kinds: [kind] })).messages.map(
+            (hit) => hit.messageId,
+          ),
+        ),
+      ).toEqual(new Set(ids));
+    }
+    const first = await searchHistory(prisma, grant, { ...input, limit: 2 });
+    const next = await searchHistory(prisma, grant, first.nextSearch!);
+    expect(new Set([...first.messages, ...next.messages].map((hit) => hit.messageId)).size).toBe(4);
+    expect(next.nextSearch).toBeNull();
+    expect((await searchHistory(prisma, grant, { query: "quasar" })).messages).toEqual([]);
+    const own = await readHistory(prisma, grant, {
+      threadId: "cross-peer-thread",
+      messageId: "cross-structured",
+      limit: 1,
+    });
+    expect(own.messages[0]?.text).toContain("quasar handoff");
+    expect(
+      (
+        await readHistory(prisma, grant, {
+          threadId: "cross-group-thread",
+          messageId: "cross-cross-group-thread",
+          limit: 1,
+        })
+      ).messages,
+    ).toHaveLength(1);
+    const linked = await readHistory(prisma, grant, {
+      threadId: "cross-peer-thread",
+      messageId: "cross-cross-peer-thread",
+      limit: 1,
+    });
+    expect(linked.runs[0]?.id).toBe("cross-peer-run");
+    expect(linked.runs[0]?.outcomes[0]?.messageId).toBe("cross-reply");
+    expect(linked.runs[0]?.artifacts[0]?.id).toBe("cross-artifact");
+    const missing = await readHistory(prisma, grant, { threadId: "missing", messageId: "missing" });
+    for (const threadId of [
+      "cross-team-thread",
+      "cross-space-thread",
+      "cross-archived-thread",
+      "cross-archived-group-thread",
+      "cross-team-group-thread",
+    ]) {
+      expect(
+        await readHistory(prisma, grant, { threadId, messageId: `cross-${threadId}` }),
+      ).toEqual(missing);
+    }
+    for (const denied of [
+      { ...grant, channelId: "channel-a" },
+      { ...grant, allowMyChats: false },
+      scope,
+    ]) {
+      await expect(searchHistory(prisma, denied, input)).rejects.toThrow("direct human app runs");
+      expect(
+        await readHistory(prisma, denied, {
+          threadId: "cross-peer-thread",
+          messageId: "cross-structured",
+        }),
+      ).toEqual(missing);
+    }
+    // Ownership, not being the space owner, is sufficient (the team member has no other access).
+    expect(
+      (
+        await searchHistory(
+          prisma,
+          { ...grant, userId: "team-member" },
+          { ...input, kinds: ["user_messages"] },
+        )
+      ).messages
+        .map((hit) => hit.threadId)
+        .sort(),
+    ).toEqual(["cross-team-group-thread", "cross-team-thread"]);
+    await pool.query(`UPDATE bots SET "archivedAt" = now() WHERE id = 'cross-peer'`);
+    expect(
+      await readHistory(prisma, grant, {
+        threadId: "cross-peer-thread",
+        messageId: "cross-structured",
+      }),
+    ).toEqual(missing);
   });
 });

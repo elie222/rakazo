@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Panel } from "../../lib/right-panel-state";
 import type { createSpaceRpc } from "../../lib/rpc";
 import { selectSpace } from "../../lib/rpc";
+import type { CommandPaletteAction } from "./command-palette";
 import { CommandPalette } from "./command-palette";
 import { isCommandPaletteHotkey } from "./command-palette-hotkey";
 import type { CreateBotDialogInput } from "./create-bot-dialog";
@@ -107,9 +108,9 @@ export function ShellDialogs({
   openSpaceSettings,
   closeMobileSidebar,
   createBot,
-  onImportFromCreate,
   clearOpenThread,
   deleteRoutineDialogProps,
+  paletteActions,
 }: {
   dialogs: ShellDialogsState;
   rpc: ReturnType<typeof createSpaceRpc>;
@@ -125,9 +126,9 @@ export function ShellDialogs({
   openSpaceSettings: (spaceId: string) => void;
   closeMobileSidebar: () => void;
   createBot: (input: CreateBotDialogInput) => Promise<void>;
-  onImportFromCreate: () => void;
   clearOpenThread: () => void;
   deleteRoutineDialogProps: ComponentProps<typeof DeleteItemDialog> | null;
+  paletteActions: CommandPaletteAction[];
 }) {
   const { t } = useLingui();
   const {
@@ -309,25 +310,35 @@ export function ShellDialogs({
           closeMobileSidebar();
           navigate(`/app/${id}`);
         }}
+        actions={paletteActions.map((action) => ({
+          ...action,
+          onSelect: () => {
+            closeMobileSidebar();
+            action.onSelect();
+          },
+        }))}
       />
 
       {createBotOpen ? (
-        <CreateBotDialog
-          onCancel={() => setCreateBotOpen(false)}
-          onCreate={createBot}
-          onImport={onImportFromCreate}
-        />
+        <CreateBotDialog onCancel={() => setCreateBotOpen(false)} onCreate={createBot} />
       ) : null}
 
       {newSpaceOpen ? (
         <NewSpaceDialog
           onCancel={() => setNewSpaceOpen(false)}
-          onConfirm={async (name) => {
-            const space = await rpc.spaces.create({ name });
+          onCreate={async (name) => (await rpc.spaces.create({ name })).id}
+          loadItems={() => rpc.availability.items()}
+          chooseItems={async (spaceId, items) => {
+            await rpc.availability.chooseForSpace({
+              spaceId,
+              items: items.map(({ kind, id }) => ({ kind, id })),
+            });
+          }}
+          onDone={(spaceId) => {
             if (!alive.current) return;
-            if (!selectSpace(space.id)) {
+            if (!selectSpace(spaceId)) {
               setNewSpaceOpen(false);
-              await refreshBots();
+              void refreshBots();
               return;
             }
             window.location.assign("/onboarding");

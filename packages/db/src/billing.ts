@@ -1,9 +1,9 @@
+import { randomUUID } from "node:crypto";
 import type { BillingSubscriptionSnapshot } from "@rakazo/adapter-kit";
 import { BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
 import type { BillingAccount, PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 
-/** Subscription states that let an organization use the product. */
 const ACCESS_STATUSES = new Set(["trialing", "active", "past_due"]);
 
 export function hasBillingAccess(status: string | null): boolean {
@@ -31,7 +31,6 @@ export function byokFreeUntil(credits: { byokFreeUntil: Date | null }, now = new
   return credits.byokFreeUntil && credits.byokFreeUntil > now ? credits.byokFreeUntil : null;
 }
 
-/** Billing gate for runs: the organization that owns the space must have model access. */
 export async function spaceHasModelAccess(prisma: PrismaClient, spaceId: string) {
   const space = await prisma.space.findUnique({
     where: { id: spaceId },
@@ -112,6 +111,38 @@ export async function replaceBillingCustomer(
   });
 }
 
+/**
+ * Claims the organization's checkout lease, coordinating API instances without holding a
+ * connection over provider calls. Returns the lease id, or null while another request holds it.
+ */
+export async function claimCheckoutLease(
+  prisma: PrismaClient,
+  organizationId: string,
+  ttlMs: number,
+): Promise<string | null> {
+  const leaseId = randomUUID();
+  const now = new Date();
+  const { count } = await prisma.billingAccount.updateMany({
+    where: {
+      organizationId,
+      OR: [{ checkoutLeaseExpiresAt: null }, { checkoutLeaseExpiresAt: { lte: now } }],
+    },
+    data: { checkoutLeaseId: leaseId, checkoutLeaseExpiresAt: new Date(now.getTime() + ttlMs) },
+  });
+  return count > 0 ? leaseId : null;
+}
+
+export async function releaseCheckoutLease(
+  prisma: PrismaClient,
+  organizationId: string,
+  leaseId: string,
+): Promise<void> {
+  await prisma.billingAccount.updateMany({
+    where: { organizationId, checkoutLeaseId: leaseId },
+    data: { checkoutLeaseId: null, checkoutLeaseExpiresAt: null },
+  });
+}
+
 /** The subscription exists but has no access until the owner settles it in the billing portal. */
 export function needsBillingPortal(status: string | null): boolean {
   return status === "unpaid" || status === "paused";
@@ -186,7 +217,6 @@ export async function organizationForMember(
   return { organizationId: space.organizationId, isOwner: isOwnerRole(member.role) };
 }
 
-/** Organizations the user owns that have a billing customer. */
 export async function ownedBillingAccounts(
   prisma: PrismaClient,
   userId: string,

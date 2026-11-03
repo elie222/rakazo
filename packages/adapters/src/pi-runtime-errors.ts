@@ -9,6 +9,7 @@ import {
   normalizeRunError,
   parseModelFallbackFailure,
 } from "@rakazo/core";
+import { terminalOAuthRefreshErrorMarker } from "./pi-oauth.js";
 import { isOpenCodeProvider } from "./pi-runtime-stream.js";
 
 export function assistantText(message: unknown): string {
@@ -117,6 +118,9 @@ function modelFailureClass(error: string, message: string): number {
   // OpenCode drops chat sessions on its side; the next send opens a new one.
   if (isTransientModelError(error) || message === OPENCODE_SESSION_ERROR)
     return MODEL_FAILURE_RANK.indexOf(TransientModelError);
+  // A refresh token the provider no longer accepts; the credential is already retired.
+  if (terminalOAuthRefreshErrorMarker(message))
+    return MODEL_FAILURE_RANK.indexOf(ModelAccountError);
   const { kind } = normalizeRunError(message);
   if (kind === "output") return MODEL_FAILURE_RANK.indexOf(ModelOutputError);
   if (kind) return MODEL_FAILURE_RANK.indexOf(ModelAccountError);

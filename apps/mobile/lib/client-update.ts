@@ -80,15 +80,15 @@ export function noteClientUpdateRequired(): void {
   );
 }
 
-/**
- * expo-updates checks only at launch. Check again when the app returns to the foreground, and
- * download what it finds so the next launch runs it; nothing reloads under the user.
- */
 /** Name this build on every API request, and prompt for an update when the server refuses it. */
 export function installClientUpdates(): void {
   configureClientBuild({ headers: clientBuildHeaders, onUpdateRequired: noteClientUpdateRequired });
 }
 
+/**
+ * expo-updates checks only at launch. Check again when the app returns to the foreground, and
+ * download what it finds so the next launch runs it; nothing reloads under the user.
+ */
 export function watchForegroundUpdates(now: () => number = Date.now): () => void {
   if (!Updates.isEnabled) return () => {};
   let lastCheck = now();

@@ -4,6 +4,7 @@ import {
   SandboxDamagedError,
   SandboxRateLimitError,
   SandboxUnavailableError,
+  SandboxUnresponsiveError,
   VoiceAccountError,
 } from "@rakazo/adapter-kit";
 import { MODEL_IMAGE_INPUT_ERROR } from "@rakazo/core";
@@ -61,6 +62,37 @@ describe("logUnexpectedRpcError", () => {
     });
   });
 
+  it("keeps a failure after the client disconnected out of error reports", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const client = new AbortController();
+    const router = {
+      voices: os.handler(() => {
+        client.abort("Client connection prematurely closed.");
+        throw new Error("Client connection prematurely closed.");
+      }),
+    };
+    const rpc = new RPCHandler(router, {
+      clientInterceptors: [
+        onError((error, { path, signal }) => handleRpcError(error, path, signal)),
+      ],
+    });
+
+    await rpc.handle(
+      new Request("http://localhost/rpc/voices", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+        signal: client.signal,
+      }),
+      { prefix: "/rpc", context: {} },
+    );
+
+    expect(sink.events.map((event) => [event.level, event.message])).toEqual([
+      ["warn", "rpc voices client disconnected"],
+    ]);
+  });
+
   it("returns a provider rate limit as too many requests without an error report", () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
@@ -103,6 +135,32 @@ describe("logUnexpectedRpcError", () => {
         level: "warn",
         message: "rpc computer/boot computer unavailable",
         reason: "sandbox did not become ready",
+      }),
+    ]);
+  });
+
+  it("returns an unreachable computer provider as a retryable 503 without an error report", () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const error = new SandboxUnresponsiveError("Boat API request failed (HTTP 502)");
+
+    let thrown: unknown;
+    try {
+      handleRpcError(error, ["computer", "screenUrl"]);
+    } catch (failure) {
+      thrown = failure;
+    }
+
+    expect(thrown).toBeInstanceOf(ORPCError);
+    expect(thrown).toMatchObject({
+      code: "SERVICE_UNAVAILABLE",
+      message: new SandboxUnavailableError().message,
+    });
+    expect(sink.events).toEqual([
+      expect.objectContaining({
+        level: "warn",
+        message: "rpc computer/screenUrl computer unavailable",
+        reason: "Boat API request failed (HTTP 502)",
       }),
     ]);
   });

@@ -1,5 +1,6 @@
 // Persistent, lossless X11 desktop capture with MIT-SHM and XDamage metadata.
 #include <X11/Xlib.h>
+#include <X11/XKBlib.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/XShm.h>
 #include <X11/extensions/Xdamage.h>
@@ -10,6 +11,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ipc.h>
+#include <poll.h>
+#include <unistd.h>
+#include <setjmp.h>
 #include <sys/shm.h>
 
 typedef struct {
@@ -67,16 +71,54 @@ static unsigned char channel(unsigned long pixel, unsigned long mask) {
   return (unsigned char)((((pixel & mask) >> shift) * 255U + maximum / 2U) / maximum);
 }
 
-static void release_image(XCapture *capture) {
+static __thread sigjmp_buf xio_jmp;
+static __thread int xio_jmp_active = 0;
+
+static int xio_error_handler(Display *display) {
+  (void)display;
+  if (xio_jmp_active) {
+    xio_jmp_active = 0;
+    siglongjmp(xio_jmp, 1);
+  }
+  return 0;
+}
+
+static int display_alive(Display *display) {
+  if (!display) return 0;
+  struct pollfd pfd = {.fd = XConnectionNumber(display), .events = POLLIN};
+  if (poll(&pfd, 1, 0) < 0) return 0;
+  return (pfd.revents & (POLLHUP | POLLERR | POLLNVAL)) == 0;
+}
+
+static void close_display(Display *display, int alive) {
+  if (!display) return;
+  if (!alive) {
+    const int fd = XConnectionNumber(display);
+    if (fd >= 0) close(fd);
+    return;
+  }
+  XSetIOErrorHandler(xio_error_handler);
+  if (sigsetjmp(xio_jmp, 1) == 0) {
+    xio_jmp_active = 1;
+    XCloseDisplay(display);
+    xio_jmp_active = 0;
+  } else {
+    xio_jmp_active = 0;
+    const int fd = XConnectionNumber(display);
+    if (fd >= 0) close(fd);
+  }
+}
+
+static void release_image(XCapture *capture, int detach_server) {
   if (!capture || !capture->image) return;
-  XShmDetach(capture->display, &capture->shminfo);
+  if (detach_server && capture->display) XShmDetach(capture->display, &capture->shminfo);
   XDestroyImage(capture->image);
   shmdt(capture->shminfo.shmaddr);
   capture->image = NULL;
 }
 
 static int allocate_image(XCapture *capture, int width, int height) {
-  release_image(capture);
+  release_image(capture, 1);
   capture->image = XShmCreateImage(capture->display, DefaultVisual(capture->display, DefaultScreen(capture->display)),
       DefaultDepth(capture->display, DefaultScreen(capture->display)), ZPixmap, NULL, &capture->shminfo, width, height);
   if (!capture->image) return -1;
@@ -97,31 +139,63 @@ static int allocate_image(XCapture *capture, int width, int height) {
   return capture->rgb ? 0 : -1;
 }
 
-void *rakazo_xcapture_open(const char *display_name) {
-  XCapture *capture = calloc(1, sizeof(*capture));
-  if (!capture) return NULL;
+static int open_capture(XCapture *capture, const char *display_name) {
   capture->display = XOpenDisplay(display_name);
-  if (!capture->display || !XShmQueryExtension(capture->display)) {
-    if (capture->display) XCloseDisplay(capture->display);
-    free(capture);
-    return NULL;
-  }
+  if (!capture->display || !display_alive(capture->display) || !XShmQueryExtension(capture->display)) return -1;
   capture->root = RootWindow(capture->display, DefaultScreen(capture->display));
   int event_base, error_base;
   capture->damage_supported = XDamageQueryExtension(capture->display, &event_base, &error_base);
   if (capture->damage_supported) capture->damage = XDamageCreate(capture->display, capture->root, XDamageReportNonEmpty);
+  return 0;
+}
+
+void *rakazo_xcapture_open(const char *display_name) {
+  XCapture *volatile capture = calloc(1, sizeof(*capture));
+  if (!capture) return NULL;
+  XSetIOErrorHandler(xio_error_handler);
+  if (sigsetjmp(xio_jmp, 1) != 0) {
+    xio_jmp_active = 0;
+    release_image(capture, 0);
+    close_display(capture->display, 0);
+    free(capture);
+    return NULL;
+  }
+  xio_jmp_active = 1;
+  const int failed = open_capture(capture, display_name);
+  xio_jmp_active = 0;
+  if (failed) {
+    close_display(capture->display, display_alive(capture->display));
+    free(capture);
+    return NULL;
+  }
   return capture;
 }
 
 int rakazo_xcapture_copy(void *context, const unsigned char **rgb, int *width, int *height) {
-  XCapture *capture = context;
-  if (!capture || !rgb || !width || !height) return -1;
-  XWindowAttributes attributes;
-  if (!XGetWindowAttributes(capture->display, capture->root, &attributes)) return -1;
-  if (!capture->image || attributes.width != capture->width || attributes.height != capture->height) {
-    if (allocate_image(capture, attributes.width, attributes.height)) return -1;
+  XCapture *volatile capture = context;
+  if (!capture || !rgb || !width || !height || !display_alive(capture->display)) return -1;
+  XSetIOErrorHandler(xio_error_handler);
+  if (sigsetjmp(xio_jmp, 1) != 0) {
+    xio_jmp_active = 0;
+    return -1;
   }
-  if (!XShmGetImage(capture->display, capture->root, capture->image, 0, 0, AllPlanes)) return -1;
+  xio_jmp_active = 1;
+  XWindowAttributes attributes;
+  if (!XGetWindowAttributes(capture->display, capture->root, &attributes)) {
+    xio_jmp_active = 0;
+    return -1;
+  }
+  if (!capture->image || attributes.width != capture->width || attributes.height != capture->height) {
+    if (allocate_image(capture, attributes.width, attributes.height)) {
+      xio_jmp_active = 0;
+      return -1;
+    }
+  }
+  if (!XShmGetImage(capture->display, capture->root, capture->image, 0, 0, AllPlanes)) {
+    xio_jmp_active = 0;
+    return -1;
+  }
+  xio_jmp_active = 0;
   for (int y = 0; y < capture->height; y++) {
     for (int x = 0; x < capture->width; x++) {
       const unsigned long pixel = extract_pixel(capture->image, x, y);
@@ -170,13 +244,20 @@ int rakazo_xcapture_png(void *context, const unsigned char **png_bytes, size_t *
 }
 
 int rakazo_xcapture_damage(void *context, int *x, int *y, int *width, int *height) {
-  XCapture *capture = context;
-  if (!capture || !capture->damage_supported || !capture->damage) return 0;
+  XCapture *volatile capture = context;
+  if (!capture || !capture->damage_supported || !capture->damage || !display_alive(capture->display)) return 0;
+  XSetIOErrorHandler(xio_error_handler);
+  if (sigsetjmp(xio_jmp, 1) != 0) {
+    xio_jmp_active = 0;
+    return 0;
+  }
+  xio_jmp_active = 1;
   XserverRegion region = XFixesCreateRegion(capture->display, NULL, 0);
   XDamageSubtract(capture->display, capture->damage, None, region);
   int count = 0;
   XRectangle *rectangles = XFixesFetchRegion(capture->display, region, &count);
   XFixesDestroyRegion(capture->display, region);
+  xio_jmp_active = 0;
   if (!rectangles || count == 0) {
     if (rectangles) XFree(rectangles);
     return 0;
@@ -198,13 +279,22 @@ int rakazo_xcapture_damage(void *context, int *x, int *y, int *width, int *heigh
 }
 
 void rakazo_xcapture_close(void *context) {
-  XCapture *capture = context;
+  XCapture *volatile capture = context;
   if (!capture) return;
-  if (capture->damage) XDamageDestroy(capture->display, capture->damage);
-  release_image(capture);
+  const int alive = display_alive(capture->display);
+  XSetIOErrorHandler(xio_error_handler);
+  if (alive && sigsetjmp(xio_jmp, 1) == 0) {
+    xio_jmp_active = 1;
+    if (capture->damage) XDamageDestroy(capture->display, capture->damage);
+    release_image(capture, 1);
+    xio_jmp_active = 0;
+  } else {
+    xio_jmp_active = 0;
+    release_image(capture, 0);
+  }
   free(capture->rgb);
   free(capture->png);
-  if (capture->display) XCloseDisplay(capture->display);
+  close_display(capture->display, alive);
   free(capture);
 }
 
@@ -216,8 +306,24 @@ static KeySym key_symbol(const char *name) {
   return XStringToKeysym(name);
 }
 
+static int xinput_argv_locked(XCapture *capture, int argc, const char *const *argv);
+
 int rakazo_xinput_argv(void *context, int argc, const char *const *argv) {
-  XCapture *capture = context;
+  XCapture *volatile capture = context;
+  if (!capture || !capture->display) return 0;
+  if (!display_alive(capture->display)) return -1;
+  XSetIOErrorHandler(xio_error_handler);
+  if (sigsetjmp(xio_jmp, 1) != 0) {
+    xio_jmp_active = 0;
+    return -1;
+  }
+  xio_jmp_active = 1;
+  const int result = xinput_argv_locked(capture, argc, argv);
+  xio_jmp_active = 0;
+  return display_alive(capture->display) ? result : -1;
+}
+
+static int xinput_argv_locked(XCapture *capture, int argc, const char *const *argv) {
   if (!capture || argc < 4 || strcmp(argv[0], "env") || strncmp(argv[1], "DISPLAY=", 8) || strcmp(argv[2], "xdotool")) return 0;
   if (!XTestQueryExtension(capture->display, &(int){0}, &(int){0}, &(int){0}, &(int){0})) return -1;
   if (!strcmp(argv[3], "key") && argc == 6 && !strcmp(argv[4], "--clearmodifiers")) {
@@ -226,10 +332,12 @@ int rakazo_xinput_argv(void *context, int argc, const char *const *argv) {
     strcpy(combo, argv[5]);
     KeyCode keys[8]; int count = 0;
     for (char *part = strtok(combo, "+"); part; part = strtok(NULL, "+")) {
-      KeyCode key = XKeysymToKeycode(capture->display, key_symbol(part));
-      if (!key || count == 8) return 0;
+      const KeySym symbol = key_symbol(part);
+      const KeyCode key = symbol == NoSymbol ? 0 : XKeysymToKeycode(capture->display, symbol);
+      if (!key || XkbKeycodeToKeysym(capture->display, key, 0, 0) != symbol || count == 8) return 0;
       keys[count++] = key;
     }
+    if (!count) return 0;
     for (int i = 0; i < count; i++) XTestFakeKeyEvent(capture->display, keys[i], True, CurrentTime);
     for (int i = count - 1; i >= 0; i--) XTestFakeKeyEvent(capture->display, keys[i], False, CurrentTime);
     XFlush(capture->display);

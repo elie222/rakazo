@@ -626,3 +626,121 @@ test("live page helper types codes as real key presses into one-box-per-digit fi
     await rm(profile, { recursive: true, force: true });
   }
 });
+
+test("live page helper types a purchase's card into a payment provider's frame only", async () => {
+  const profile = await mkdtemp(path.join(os.tmpdir(), "page-browser-card-"));
+  const merchant = "https://shop.example.test";
+  const cardForm = `<!doctype html><title>Card</title>
+    <input id="number" aria-label="Card number" autocomplete="cc-number" inputmode="numeric">
+    <input id="expiry" aria-label="Expiry" autocomplete="cc-exp">
+    <input id="cvc" aria-label="CVC" autocomplete="cc-csc">
+    <input id="postal" aria-label="ZIP" autocomplete="billing postal-code" maxlength="3">
+    <script>
+      for (const field of document.querySelectorAll("input")) field.addEventListener("input", (event) => {
+        if (!event.isTrusted) document.body.dataset.untrusted = "1";
+      });
+      const number = document.getElementById("number");
+      number.addEventListener("input", () => {
+        number.value = number.value.replace(/\\D/g, "").replace(/(\\d{4})(?=\\d)/g, "$1 ");
+      });
+      const expiry = document.getElementById("expiry");
+      expiry.addEventListener("input", () => {
+        const digits = expiry.value.replace(/\\D/g, "").slice(0, 4);
+        expiry.value = digits.length > 2 ? digits.slice(0, 2) + " / " + digits.slice(2) : digits;
+      });
+    </script>`;
+  const checkout = (frame: string) =>
+    `<!doctype html><title>Checkout</title><h1>Pay</h1>
+      <iframe src="${frame}" style="width:420px;height:220px;border:0"></iframe>`;
+  let context: Awaited<ReturnType<typeof chromium.launchPersistentContext>> | undefined;
+  try {
+    context = await chromium.launchPersistentContext(profile, {
+      headless: true,
+      // Payment frames run in their own renderer, as on any real checkout.
+      args: ["--remote-debugging-port=0", "--site-per-process"],
+    });
+    let port = "";
+    await expect(async () => {
+      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0];
+      expect(port).toMatch(/^\d+$/);
+    }).toPass({ timeout: 5_000 });
+    async function command(name: string, args: Record<string, unknown> = {}) {
+      const { stdout } = await execute("python3", [helper, name, JSON.stringify(args)], {
+        env: { ...process.env, RAKAZO_CDP_PORT: port },
+        timeout: 30_000,
+      });
+      return JSON.parse(stdout);
+    }
+    // Fulfilled here: nothing reaches the real payment provider.
+    await context.route(/^https:\/\/(js\.stripe\.com|[a-z]+\.example\.test)\//, (route) => {
+      const url = new URL(route.request().url());
+      route.fulfill({
+        contentType: "text/html",
+        body: url.pathname.startsWith("/card")
+          ? cardForm
+          : checkout(
+              url.pathname === "/ads"
+                ? "https://ads.example.test/card"
+                : "https://js.stripe.com/card",
+            ),
+      });
+    });
+    const fill = (cardField: string, text: string) =>
+      command("act", {
+        actions: [{ kind: "fill", text, origin: merchant, field: "card", cardField }],
+      });
+    const page = context.pages()[0]!;
+    await page.goto(`${merchant}/checkout`);
+    const card = page.frameLocator("iframe").locator("body");
+    await expect(card.locator("#number")).toBeVisible();
+    const snapshot = await command("snapshot");
+    expect(snapshot.tree).toContain(
+      "Card fields are in a payment frame: use fill_card without ref.",
+    );
+    expect(snapshot.tree).not.toContain("Embedded frames require desktop tools.");
+
+    const number = "4242424242424242";
+    const filled = [
+      await fill("number", number),
+      await fill("expiry", "12/34"),
+      await fill("cvc", "123"),
+    ];
+    for (const result of filled) expect(result).toMatchObject({ ok: true, completed: 1 });
+    expect(JSON.stringify(filled)).not.toContain(number);
+    await expect(card.locator("#number")).toHaveValue("4242 4242 4242 4242");
+    await expect(card.locator("#expiry")).toHaveValue("12 / 34");
+    await expect(card.locator("#cvc")).toHaveValue("123");
+    await expect(card.locator("#number")).toHaveCSS("-webkit-text-security", "disc");
+    await expect(card).not.toHaveAttribute("data-untrusted", "1");
+
+    expect(await fill("postal_code", "94110")).toEqual({
+      ok: false,
+      completed: 0,
+      uncertain: false,
+      error: "This field didn't accept the card, so it was cleared.",
+    });
+    await expect(card.locator("#postal")).toHaveValue("");
+
+    await page.goto("https://elsewhere.example.test/checkout");
+    await expect(card.locator("#number")).toBeVisible();
+    expect(await fill("number", number)).toMatchObject({
+      ok: false,
+      completed: 0,
+      uncertain: false,
+      error: expect.stringMatching(/^The page is not on the merchant's site/),
+    });
+    await expect(card.locator("#number")).toHaveValue("");
+    await page.goto(`${merchant}/ads`);
+    await expect(card.locator("#number")).toBeVisible();
+    expect((await command("snapshot")).tree).toContain("Embedded frames require desktop tools.");
+    expect(await fill("number", number)).toMatchObject({
+      ok: false,
+      completed: 0,
+      error: expect.stringMatching(/^No field for this card detail/),
+    });
+    await expect(card.locator("#number")).toHaveValue("");
+  } finally {
+    await context?.close();
+    await rm(profile, { recursive: true, force: true });
+  }
+});

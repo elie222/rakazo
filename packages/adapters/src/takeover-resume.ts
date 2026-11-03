@@ -36,7 +36,6 @@ export function takeoverResumeFromRelease(reason: unknown): {
 export type TakeoverContinuePlan = {
   resumeCheckpoint: TakeoverResumeCheckpoint | null;
   heldForTakeover: boolean;
-  resumeHeldLease: boolean;
   takeoverResume: ReturnType<typeof takeoverResumeFromRelease> | null;
 };
 
@@ -49,7 +48,6 @@ export function takeoverContinuePlan(run: {
   return {
     resumeCheckpoint,
     heldForTakeover,
-    resumeHeldLease: heldForTakeover || Boolean(resumeCheckpoint),
     takeoverResume: resumeCheckpoint
       ? takeoverResumeFromRelease(resumeCheckpoint === "takeover-skipped" ? "skipped" : "done")
       : null,

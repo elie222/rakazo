@@ -23,6 +23,7 @@ const CONNECT_ERRNOS = new Set(["ECONNREFUSED", "EHOSTUNREACH", "ENETUNREACH", "
 export interface SmtpEmailConfig {
   url: string;
   from: string;
+  replyTo?: string;
 }
 
 interface SmtpEmailDependencies {
@@ -110,6 +111,8 @@ export class SmtpEmailProvider implements TransactionalEmailProvider {
           subject: message.subject,
           text: message.text,
           html: message.html,
+          replyTo: this.config.replyTo,
+          headers: message.headers,
         });
         return;
       } catch (error) {

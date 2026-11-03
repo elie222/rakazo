@@ -20,6 +20,7 @@ import {
   HOST_COMPUTER_MAX_FILE_BYTES,
   hostComputerDeadlineMs,
 } from "./host-computer-protocol.js";
+import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 
 /** Authenticated native host transport. Commands are never retried after a lost response. */
 export class HostComputerSandbox implements SandboxProvider {
@@ -190,6 +191,7 @@ export class HostComputerSandbox implements SandboxProvider {
       { method: "exportWorkspace", botId: computer.botId },
       context,
     )) {
+      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
       yield { ...file, content: new Uint8Array(Buffer.from(file.content, "base64")) };
     }
   }
@@ -198,7 +200,10 @@ export class HostComputerSandbox implements SandboxProvider {
     files: AsyncIterable<PortableFile>,
     context: AdapterContext,
   ) {
-    for await (const file of files) await this.writeFile(computer, file, context);
+    for await (const file of files) {
+      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
+      await this.writeFile(computer, file, context);
+    }
   }
   snapshot(computer: ComputerRef, context: AdapterContext) {
     return this.one<{ id: string; createdAt: string }>(

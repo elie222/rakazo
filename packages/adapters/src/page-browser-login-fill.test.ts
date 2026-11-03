@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { JSDOM } from "jsdom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { resolveRequestSecretDestination } from "./bot-secrets.js";
 
 /** The live page helper's isolated-world script, executed here rather than reimplemented. */
@@ -51,7 +51,15 @@ function installPageHelper(url: string, html: string) {
       __rakazoPageBrowser: {
         snapshot: () => {
           elements: Array<{ ref: string; name: string; role: string; value?: string }>;
+          tree: string;
+          frames: boolean;
         };
+        findCard: (token: string) => number;
+        hasCardField: () => boolean;
+        focusCard: () => boolean;
+        cardHolds: () => boolean;
+        cardTyped: (length: number) => boolean;
+        emptyCard: () => void;
         fill: (ref: string, value: string, origin?: string, field?: string) => { url: string };
         focusForKeys: (ref: string, whole?: boolean) => { focused: boolean };
         focusHolds: () => boolean;
@@ -198,6 +206,129 @@ describe("live page helper saved-login fill", () => {
     const email = refFor("Email", browser.snapshot().elements);
     expect(() => browser.fill(email, "fake-user", origin)).toThrow(/HTTPS/);
     expect(fieldValue(domWindow, "Email")).toBe("");
+  });
+});
+
+describe("live page helper card fill", () => {
+  const html = `
+    <input aria-label="Card number" />
+    <input aria-label="Phone" type="tel" />
+    <input aria-label="Security code" type="password" />
+    <input aria-label="Email" type="email" />
+    <input aria-label="Query" type="search" />
+    <input aria-label="Pin" type="number" />
+    <textarea aria-label="Notes"></textarea>
+    <select aria-label="Country"><option>US</option></select>
+    <div aria-label="Editor" contenteditable="true" role="textbox"></div>
+  `;
+  const origin = "https://shop.example.test";
+  const number = "4242424242424242";
+
+  it("types a card into text, tel, and password inputs on the merchant's HTTPS origin, hidden", () => {
+    const { domWindow, browser } = installPageHelper(`${origin}/pay`, html);
+    const snap = browser.snapshot();
+    browser.fill(refFor("Card number", snap.elements), number, origin, "card");
+    browser.fill(refFor("Phone", snap.elements), number, origin, "card");
+    browser.fill(refFor("Security code", snap.elements), "123", origin, "card");
+    expect(fieldValue(domWindow, "Card number")).toBe(number);
+    expect(fieldValue(domWindow, "Security code")).toBe("123");
+    expect(JSON.stringify(browser.snapshot())).not.toContain(number);
+    expect(JSON.stringify(browser.snapshot())).not.toContain('"123"');
+  });
+
+  it("draws a filled card as dots on screen until the field is filled with something else", () => {
+    const { domWindow, browser } = installPageHelper(`${origin}/pay`, html);
+    const ref = refFor("Card number", browser.snapshot().elements);
+    const input = domWindow.document.querySelector<HTMLInputElement>('[aria-label="Card number"]')!;
+    // jsdom drops vendor properties, so watch the CSSOM calls Chrome applies.
+    const set = vi.spyOn(input.style, "setProperty");
+    const remove = vi.spyOn(input.style, "removeProperty");
+    browser.fill(ref, number, origin, "card");
+    expect(set).toHaveBeenCalledWith("-webkit-text-security", "disc", "important");
+    expect(remove).not.toHaveBeenCalled();
+    browser.fill(ref, "plain text");
+    expect(remove).toHaveBeenCalledWith("-webkit-text-security");
+  });
+
+  it("refuses any other field, with card wording", () => {
+    const { domWindow, browser } = installPageHelper(`${origin}/pay`, html);
+    const snap = browser.snapshot();
+    for (const name of ["Email", "Query", "Pin", "Notes", "Country", "Editor"]) {
+      expect(() => browser.fill(refFor(name, snap.elements), number, origin, "card"), name).toThrow(
+        /^Refused: A card can only be typed into a card field\.$/,
+      );
+    }
+    expect(domWindow.document.body.innerHTML).not.toContain(number);
+  });
+
+  it("refuses another site, plain HTTP, and a card without its origin", () => {
+    for (const [url, saved, error] of [
+      ["https://shop.example.test.evil.test/pay", origin, /not on the merchant's site/],
+      ["http://shop.example.test/pay", "http://shop.example.test", /only be filled on HTTPS/],
+      [`${origin}/pay`, undefined, /only be filled on HTTPS/],
+    ] as const) {
+      const { domWindow, browser } = installPageHelper(url, html);
+      const ref = refFor("Card number", browser.snapshot().elements);
+      expect(() => browser.fill(ref, number, saved, "card"), url).toThrow(error);
+      expect(fieldValue(domWindow, "Card number"), url).toBe("");
+    }
+  });
+
+  it("clears a card the field only partly accepts", () => {
+    const { domWindow, browser } = installPageHelper(`${origin}/pay`, html);
+    const field = domWindow.document.querySelector<HTMLInputElement>('[aria-label="Card number"]')!;
+    // A page script that formats the number as it is set changes what reads back.
+    const setter = Object.getOwnPropertyDescriptor(domWindow.HTMLInputElement.prototype, "value")!;
+    Object.defineProperty(field, "value", {
+      get: () => setter.get!.call(field).slice(0, 12),
+      set: (value: string) => setter.set!.call(field, value),
+    });
+    const ref = refFor("Card number", browser.snapshot().elements);
+    expect(() => browser.fill(ref, number, origin, "card")).toThrow(
+      /^Refused: This field didn't accept the card, so it was cleared\.$/,
+    );
+    expect(setter.get!.call(field)).toBe("");
+  });
+
+  it("finds the one visible card field by its autocomplete token for a fill without a ref", () => {
+    const { domWindow, browser } = installPageHelper(
+      `${origin}/pay`,
+      `<input aria-label="Autofill" autocomplete="cc-number" aria-hidden="true" />
+        <input aria-label="Faded" autocomplete="cc-exp" style="opacity: 0" />
+        <input aria-label="Email" autocomplete="cc-csc" type="email" />
+        <input aria-label="Card number" autocomplete="section-pay billing CC-Number" />
+        <input aria-label="Postal" autocomplete="postal-code" /><input autocomplete="postal-code" />
+        <iframe></iframe>`,
+    );
+    expect(browser.findCard("cc-exp")).toBe(0);
+    expect(browser.findCard("cc-csc")).toBe(0);
+    expect(browser.findCard("postal-code")).toBe(2);
+    expect(browser.focusCard()).toBe(false);
+    expect(browser.hasCardField()).toBe(true);
+    expect(browser.findCard("cc-number")).toBe(1);
+    const field = domWindow.document.querySelector<HTMLInputElement>('[aria-label="Card number"]')!;
+    const mask = vi.spyOn(field.style, "setProperty");
+    expect(browser.focusCard()).toBe(true);
+    expect(mask).toHaveBeenCalledWith("-webkit-text-security", "disc", "important");
+    expect(browser.cardHolds()).toBe(true);
+    field.value = "4242 4242 4242 4242";
+    expect(browser.cardTyped(16)).toBe(true);
+    expect(browser.cardTyped(15)).toBe(false);
+    const snapshot = browser.snapshot();
+    expect(snapshot.frames).toBe(true);
+    expect(JSON.stringify(snapshot)).not.toContain("4242 4242");
+    expect(JSON.stringify(snapshot)).not.toContain("4242424242424242");
+    domWindow.document.querySelector<HTMLInputElement>('[aria-label="Email"]')!.focus();
+    expect(browser.cardHolds()).toBe(false);
+    browser.emptyCard();
+    expect(field.value).toBe("");
+  });
+
+  it("is refused by a helper that reads an unknown field as a password, outside password inputs", () => {
+    // An older helper treats "card" like a password; a card number field is never one.
+    const { browser } = installPageHelper(`${origin}/pay`, html);
+    const ref = refFor("Card number", browser.snapshot().elements);
+    expect(() => browser.fill(ref, number, origin, "unknown-field")).toThrow(/password field/);
   });
 });
 
@@ -673,5 +804,53 @@ describe("live page helper upload targets", () => {
     expect(elements.find((el) => el.name === "Save")?.role).toBe("button");
     expect(elements.find((el) => el.name === "Receipt")?.role).toBe("file upload");
     expect(elements.filter((el) => el.role === "file upload")).toHaveLength(81);
+  });
+});
+
+describe("live page helper referenced names", () => {
+  it("resolves label references in order, including hidden text, and falls back when empty", () => {
+    const { domWindow, browser } = installPageHelper(
+      "https://example.test/",
+      `
+      <span id="first" hidden>  Share </span><span id="second"> with   team </span><span id="empty"> </span>
+      <button aria-labelledby=" second missing first " aria-label="Other"></button>
+      <button aria-labelledby=" missing " aria-label="Fallback"></button>
+      <button aria-labelledby="   " aria-label="Whitespace fallback"></button>
+      <button aria-labelledby="empty" aria-label="Empty fallback"></button>
+    `,
+    );
+    expect(browser.snapshot().elements.map((element) => element.name)).toEqual([
+      "with team Share",
+      "Fallback",
+      "Whitespace fallback",
+      "Empty fallback",
+    ]);
+    domWindow.close();
+  });
+});
+
+describe("live page helper shadow-root names", () => {
+  it("resolves upload labels only within each input's root", () => {
+    const { domWindow, browser } = installPageHelper(
+      "https://example.test/",
+      `<span id="label">Outer label</span><span id="outer-only">Outer only</span><button aria-labelledby="inner-only" aria-label="Light fallback"></button><div id="host"></div>`,
+    );
+    const host = domWindow.document.getElementById("host")!;
+    const root = host.attachShadow({ mode: "open" });
+    root.innerHTML = `
+      <span id="label" hidden>Inner label</span><span id="inner-only">Inner only</span>
+      <input type="file" aria-labelledby="label" aria-label="Fallback one" />
+      <input type="file" aria-labelledby="outer-only" aria-label="Fallback two" />
+    `;
+    expect(
+      browser
+        .snapshot()
+        .elements.filter((element) => element.role === "file upload")
+        .map((element) => element.name),
+    ).toEqual(["Inner label", "Fallback two"]);
+    expect(browser.snapshot().elements.find((element) => element.role === "button")?.name).toBe(
+      "Light fallback",
+    );
+    domWindow.close();
   });
 });

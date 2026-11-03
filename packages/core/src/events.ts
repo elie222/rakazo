@@ -301,9 +301,19 @@ export type LiveMessageUpdate =
   | { type: "tool"; name: string };
 
 export function reduceLiveMessageBlocks(
-  blocks: readonly MessageBlock[],
+  current: readonly MessageBlock[],
   update: LiveMessageUpdate,
 ): MessageBlock[] {
+  // A reset drops the text streamed so far (it will not be in the reply) and keeps the steps,
+  // including tools still waiting on that text to finish its sentence.
+  let blocks = current;
+  if (update.type === "progress" && update.payload?.reset === true) {
+    const waiting = current.at(-1)?.kind === "progress" ? current.at(-1) : undefined;
+    blocks = current.filter((block) => block.kind !== "text" && block.kind !== "progress");
+    for (const name of waiting?.kind === "progress" ? (waiting.pendingToolNames ?? []) : []) {
+      blocks = appendToolCallSegment(blocks, name);
+    }
+  }
   const tail = blocks.at(-1);
   const segments = tail?.kind === "progress" ? blocks.slice(0, -1) : blocks;
   const priorText = liveMessageText(blocks);
@@ -371,15 +381,52 @@ export function liveActivityLine(
   return (tail?.kind === "progress" && tail.activity && tail.text.trim()) || undefined;
 }
 
-export type ToolStep = { label: string; count: number };
+export type ToolStep = { label: string; count: number; note?: string };
 
 export function appendToolStep(steps: readonly ToolStep[], toolName: string): ToolStep[] {
   const label = humanizeToolName(toolName);
   const last = steps.at(-1);
   if (last && last.label === label) {
-    return [...steps.slice(0, -1), { label, count: last.count + 1 }];
+    return [...steps.slice(0, -1), { ...last, count: last.count + 1 }];
   }
   return [...steps, { label, count: 1 }];
+}
+
+/** Puts a note on the newest step, splitting it off a run of the same step so it stays in order. */
+export function noteLastToolStep(segments: readonly MessageBlock[], note: string): MessageBlock[] {
+  const index = segments.findLastIndex((block) => block.kind === "steps");
+  const block = segments[index];
+  const last = block?.kind === "steps" ? block.steps.at(-1) : undefined;
+  if (block?.kind !== "steps" || !last) return [...segments];
+  const steps = block.steps.slice(0, -1);
+  if (last.count > 1)
+    steps.push({ ...last, count: last.count - 1 }, { label: last.label, count: 1, note });
+  else steps.push({ ...last, note: last.note ? `${last.note}\n\n${note}` : note });
+  const next = [...segments];
+  next[index] = { ...block, steps };
+  return next;
+}
+
+/** Removes the newest `count` notes from the steps. */
+export function withoutLastToolStepNotes(
+  segments: readonly MessageBlock[],
+  count: number,
+): MessageBlock[] {
+  let left = count;
+  const next = [...segments];
+  for (let index = next.length - 1; index >= 0 && left > 0; index -= 1) {
+    const block = next[index];
+    if (block?.kind !== "steps") continue;
+    const steps = [...block.steps];
+    for (let step = steps.length - 1; step >= 0 && left > 0; step -= 1) {
+      const { note, ...rest } = steps[step]!;
+      if (note === undefined) continue;
+      steps[step] = rest;
+      left -= 1;
+    }
+    next[index] = { ...block, steps };
+  }
+  return next;
 }
 
 export type ToolCallStreak = { key: string | undefined; count: number };
@@ -519,11 +566,24 @@ function redactedRanges(value: string, secrets: Iterable<string>): Array<[number
   return ranges;
 }
 
-export function redactSecrets(value: string, secrets: string[]): string {
+export function redactSecrets(value: string, secrets: readonly string[]): string {
   let output = "";
   let offset = 0;
   for (const [start, end] of redactedRanges(value, secrets)) {
     output += `${value.slice(offset, start)}[redacted]`;
+    offset = end;
+  }
+  return output + value.slice(offset);
+}
+
+/** Redacts `text` as the continuation of `before`, so a value split across the two is hidden too. */
+export function redactSecretsAfter(before: string, text: string, secrets: string[]): string {
+  const value = before + text;
+  let output = "";
+  let offset = before.length;
+  for (const [start, end] of redactedRanges(value, secrets)) {
+    if (end <= offset) continue;
+    output += `${value.slice(offset, Math.max(start, offset))}[redacted]`;
     offset = end;
   }
   return output + value.slice(offset);
@@ -651,6 +711,13 @@ export function createStreamingRedactor(secrets: string[]) {
     },
     finish() {
       return drain(true);
+    },
+    /**
+     * Drops what is held back without showing it, but keeps matching against it, so a value
+     * split between the dropped text and the next chunk is still hidden.
+     */
+    skip() {
+      covered = buffer.length;
     },
   };
 }

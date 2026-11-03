@@ -131,6 +131,9 @@ export function buildModelConnectPlaintext(
     const secret: StoredModelSecret = {
       kind: "openai_compatible",
       baseUrl: prepared.baseUrl,
+      ...(input.apiProtocol !== undefined || compatiblePrevious?.apiProtocol !== undefined
+        ? { apiProtocol: input.apiProtocol ?? compatiblePrevious?.apiProtocol }
+        : {}),
       ...(headers !== undefined ? { headers } : {}),
       ...(compatibleCacheCapabilities !== undefined
         ? { cacheCapabilities: compatibleCacheCapabilities }
@@ -189,11 +192,12 @@ export function buildModelConnectPlaintext(
     });
   }
   if (previous?.kind === "oauth") {
-    return serializeModelSecret({
-      kind: "oauth",
-      credential: previous.credential,
-      ...(maxTokens !== undefined ? { maxTokens } : {}),
-    });
+    const limit = maxTokens !== undefined ? { maxTokens } : {};
+    return serializeModelSecret(
+      previous.reconnectRequired
+        ? { kind: "oauth", reconnectRequired: true, ...limit }
+        : { kind: "oauth", credential: previous.credential, ...limit },
+    );
   }
   if (input.provider === CHATGPT_OAUTH_PROVIDER) {
     throw new Error(CHATGPT_SUBSCRIPTION_REQUIRED_MESSAGE);
@@ -293,6 +297,7 @@ export function modelCredentialDto(
     return {
       ...credential,
       authKind: modelCredentialAuthKind(parsed),
+      ...(parsed.kind === "oauth" && parsed.reconnectRequired ? { reconnectRequired: true } : {}),
       ...(parsed.maxTokens !== undefined ? { maxTokens: parsed.maxTokens } : {}),
       ...(parsed.kind !== "oauth"
         ? {
@@ -321,6 +326,7 @@ export function modelCredentialDto(
         ? modelIdSupportsImages(parsed.visionModelIds, row.defaultModel)
         : compatibleCredential.supportsImages,
     baseUrl: parsed.baseUrl,
+    ...(parsed.apiProtocol !== undefined ? { apiProtocol: parsed.apiProtocol } : {}),
     ...(parsed.headers !== undefined ? { headerNames: Object.keys(parsed.headers) } : {}),
     reasoning: parsed.reasoning ?? false,
     ...(credential.thinkingLevel !== undefined || parsed.thinkingLevel !== undefined

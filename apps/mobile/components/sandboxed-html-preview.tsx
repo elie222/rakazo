@@ -2,6 +2,10 @@ import { withSandboxedArtifactCsp } from "@rakazo/core";
 import { StyleSheet, View } from "react-native";
 import { WebView } from "react-native-webview";
 
+function isPreviewDocument(url: string): boolean {
+  return url === "about:blank" || url === "about:blank/";
+}
+
 /**
  * Renders bot-authored HTML in a WebView that cannot reach the app's session:
  * a fresh `source.html` load has no cookies/local storage from the rest of
@@ -9,10 +13,6 @@ import { WebView } from "react-native-webview";
  * and navigation is limited to the preview document itself. The CSP meta tag
  * (the same policy as the web viewer) blocks outbound network requests.
  */
-function isPreviewDocument(url: string): boolean {
-  return url === "about:blank" || url === "about:blank/";
-}
-
 export function SandboxedHtmlPreview({ html }: { html: string }) {
   return (
     <View style={styles.container}>

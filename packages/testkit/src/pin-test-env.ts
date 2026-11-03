@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { afterAll } from "vitest";
 
 const dom = (
@@ -63,7 +64,26 @@ process.env.ANALYTICS_PROVIDER = "none";
 // without runAsTenant/runAsSystem returns nothing there, as in production, so
 // fail the suite on it instead. Loaded only then: other tests need no database.
 if (process.env.VERIFY_DATABASE) {
-  const { drainUnscopedDatabaseAccess } = await import("@rakazo/db");
+  const { createPool, drainUnscopedDatabaseAccess } = await import("@rakazo/db");
+  // Each app reconciles all durable work in its database, including a fixture's unfinished
+  // runs, so parallel files each get a copy of the pristine migrated database.
+  if (process.env.COPY_TEST_DATABASE) {
+    const owner = new URL(process.env.DATABASE_MIGRATION_URL!);
+    const template = owner.pathname.slice(1);
+    const copy = `${template}_${randomUUID().replaceAll("-", "")}`;
+    owner.pathname = "/postgres";
+    const admin = createPool(owner.href);
+    try {
+      await admin.query(`CREATE DATABASE "${copy}" TEMPLATE "${template}"`);
+    } finally {
+      await admin.end();
+    }
+    for (const name of ["DATABASE_URL", "DATABASE_MIGRATION_URL", "REALTIME_DATABASE_URL"]) {
+      const url = new URL(process.env[name]!);
+      url.pathname = `/${copy}`;
+      process.env[name] = url.href;
+    }
+  }
   afterAll(() => {
     const sites = drainUnscopedDatabaseAccess();
     if (sites.length) {

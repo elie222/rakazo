@@ -11,10 +11,8 @@ import {
 import type { MiddlewareHandler } from "hono";
 
 /**
- * The web build ships in the same image as the API (every Dockerfile builds both from one
- * checkout), and its Vite build writes its id beside its assets. Reading it there keeps one source
- * of truth instead of a second build-time value the two could disagree on. Dev servers and images
- * without a web build have none, and then the handshake stays quiet.
+ * The web build ships in the same image as the API, so reading its id from its assets keeps one
+ * source of truth. Dev servers and images without a web build have none; the handshake stays quiet.
  */
 export function readDeployedWebBuild(
   file: URL = new URL("../../web/dist/build-id", import.meta.url),

@@ -26,7 +26,7 @@ async function fetchGithubStars(fetchImpl: typeof fetch = fetch): Promise<number
 }
 
 // Last known count, shown when the build cannot reach GitHub.
-const GITHUB_STARS_FALLBACK = 5_740;
+const GITHUB_STARS_FALLBACK = 6_000;
 let githubStars: Promise<number> | undefined;
 
 /** One lookup per build: anonymous requests share a 60/hour limit, and every page shows the count. */
@@ -35,7 +35,6 @@ export async function githubStarsLabel(): Promise<string> {
   return formatStarCount(await githubStars);
 }
 
-/** Installer URLs from the latest desktop release; empty when GitHub is unavailable. */
 /** Desktop platforms to offer: macOS always, Windows and Linux once a release ships them. */
 export function availableDesktopPlatforms(downloads: DesktopDownloads) {
   return (["mac", "windows", "linux"] as const).filter(

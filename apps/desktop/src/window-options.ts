@@ -18,14 +18,21 @@ function windowChrome(platform: NodeJS.Platform) {
     backgroundColor: "#161616",
     show: true,
     autoHideMenuBar: true,
-    frame: mac,
+    frame: mac || platform === "win32",
     titleBarStyle: mac ? ("hiddenInset" as const) : undefined,
     trafficLightPosition: mac ? { x: 16, y: 16 } : undefined,
   };
 }
 
-export function browserWindowOptions(platform: NodeJS.Platform) {
-  return { width: 1440, height: 900, ...windowChrome(platform) };
+type WorkArea = { width: number; height: number };
+
+/** Opens as a window inside the screen's work area rather than filling it. */
+export function browserWindowOptions(platform: NodeJS.Platform, workArea: WorkArea) {
+  return {
+    width: Math.min(1280, Math.round(workArea.width * 0.8)),
+    height: Math.min(840, Math.round(workArea.height * 0.85)),
+    ...windowChrome(platform),
+  };
 }
 
 /**
@@ -36,7 +43,15 @@ export function developmentIconFile(platform: NodeJS.Platform) {
   return platform === "darwin" ? "icon-macos.png" : "icon.png";
 }
 
-/** The first-run setup window is smaller and keeps the same frameless chrome. */
-export function setupWindowOptions(platform: NodeJS.Platform) {
-  return { width: 720, height: 700, minWidth: 480, minHeight: 560, ...windowChrome(platform) };
+/** The first-run setup window is smaller and keeps the same platform chrome. */
+export function setupWindowOptions(platform: NodeJS.Platform, workArea: WorkArea) {
+  const width = Math.min(720, workArea.width);
+  const height = Math.min(700, workArea.height);
+  return {
+    width,
+    height,
+    minWidth: Math.min(480, width),
+    minHeight: Math.min(560, height),
+    ...windowChrome(platform),
+  };
 }

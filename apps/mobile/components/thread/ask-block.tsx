@@ -1,3 +1,4 @@
+import type { LoginFieldInput } from "@rakazo/contracts";
 import { isSecretAskBlock } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useRef, useState } from "react";
@@ -24,7 +25,11 @@ export function AskBlock({
   ask: Extract<MobileMessage["blocks"][number], { kind: "ask" }>;
   canAnswer: boolean;
   canDismiss: boolean;
-  onAnswer: (answer: string, username?: string) => Promise<void>;
+  onAnswer: (
+    answer: string,
+    fields?: readonly LoginFieldInput[],
+    remember?: false,
+  ) => Promise<void>;
   /** Turns down a secret request without a value. */
   onDismiss: () => Promise<void>;
   actionProps: MessageActionProps;
@@ -38,6 +43,7 @@ export function AskBlock({
   const sheetSession = useRef(0);
   const session = sheetSession.current;
   const [saved, setSaved] = useState(false);
+  const [sentOnce, setSentOnce] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const answered = saved || dismissed || ask.status === "answered";
   const secretInput = isSecretAskBlock(ask);
@@ -125,7 +131,13 @@ export function AskBlock({
           }}
         >
           {secretInput
-            ? t(dismissed || ask.dismissed ? "Dismissed" : "Saved")
+            ? t(
+                dismissed || ask.dismissed
+                  ? "Dismissed"
+                  : sentOnce || ask.remembered === false
+                    ? "Sent"
+                    : "Saved",
+              )
             : t("Answered: {answer}", { answer: ask.answer ?? t("Done") })}
         </Text>
       ) : canAnswer && ownerOnly ? null : canAnswer && loginInput ? (
@@ -211,8 +223,11 @@ export function AskBlock({
           onClose={() => {
             if (session === sheetSession.current) setSheetOpen(false);
           }}
-          onSave={async (password, username) => {
-            await onAnswer(password, username);
+          loginFields={ask.loginFields}
+          onSave={async (fields, remember) => {
+            if (remember) await onAnswer("", fields);
+            else await onAnswer("", fields, false);
+            setSentOnce(!remember);
             setSaved(true);
             if (session === sheetSession.current) setSheetOpen(false);
           }}

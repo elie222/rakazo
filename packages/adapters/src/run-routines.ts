@@ -207,7 +207,8 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     });
     if (!currentModel) return null;
     const timerTick = routine.watch == null && !isOneShotRoutineCrons(routine.crons);
-    if (timerTick) {
+    const timerNonce = timerTick ? routineTimerNonce(routine.id, scheduledFor) : undefined;
+    if (timerNonce) {
       const pending = await findPendingRoutineTick(tx, {
         routineId: routine.id,
         spaceId: routine.spaceId,
@@ -218,6 +219,12 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
         ...routineRunModelPin(currentModel),
       });
       if (pending) return { ...pending, coalesced: true };
+      // An edit racing an earlier tick can rewind the schedule onto an occurrence that already ran.
+      const fired = await tx.run.findUnique({
+        where: { spaceId_clientNonce: { spaceId: routine.spaceId, clientNonce: timerNonce } },
+        select: { id: true },
+      });
+      if (fired) return "fired" as const;
     }
     const task = await tx.task.create({
       data: {
@@ -239,13 +246,17 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
         status: "queued",
         trigger: "routine",
         routineId: routine.id,
-        ...(timerTick ? { clientNonce: routineTimerNonce(routine.id, scheduledFor) } : {}),
+        clientNonce: timerNonce,
         ...routineRunModelPin(currentModel),
       },
     });
     return { ...run, coalesced: false };
   });
   if (!claimed) return;
+  if (claimed === "fired") {
+    if (nextRunAt) await deps.jobs.enqueue(routineWakeupJob(routine.id, nextRunAt));
+    return;
+  }
   if ("cancelledEvents" in claimed && claimed.cancelledEvents) {
     for (const event of claimed.cancelledEvents) {
       await deps.events.notify(event.threadId, event.seq).catch(() => undefined);

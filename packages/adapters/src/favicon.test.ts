@@ -25,6 +25,11 @@ let port = 0;
 
 beforeAll(async () => {
   server = createServer(async (request: IncomingMessage, response: ServerResponse) => {
+    // Local tools can probe any listening loopback port; only testFetch requests count.
+    if (!request.headers["x-test-host"]) {
+      response.writeHead(404).end();
+      return;
+    }
     const key = `${request.headers["x-test-host"]}${request.url}`;
     hits.push(key);
     const route = routes.get(key);

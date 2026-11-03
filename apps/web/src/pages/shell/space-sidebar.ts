@@ -3,7 +3,6 @@ import { groupBotsForSidebar } from "@rakazo/core";
 type SidebarChat = {
   id: string;
   name: string;
-  title?: string | null;
   preview?: string | null;
   pinned: boolean;
   sectionId: string | null;
@@ -47,7 +46,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
   const showSpaceNames = spaces.length > 1;
   return spaces.flatMap((space) => {
     const visibleBots = space.bots.filter((bot) =>
-      `${bot.name} ${bot.title ?? ""} ${bot.preview ?? ""}`.toLowerCase().includes(needle),
+      `${bot.name} ${bot.preview ?? ""}`.toLowerCase().includes(needle),
     );
     const visibleGroups = space.groups.filter((group) =>
       `${group.name} ${group.preview ?? ""}`.toLowerCase().includes(needle),

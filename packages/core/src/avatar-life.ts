@@ -16,7 +16,6 @@ import { isRunWorking } from "./run-state.js";
  * avatar turns into the typing dots. Only a few surfaces move at all.
  */
 
-/** What the bot is doing, as a moving avatar shows it. */
 export type AvatarLifeState = "idle" | "working" | "thinking";
 
 /**
@@ -236,7 +235,6 @@ export function avatarFrame(pose: AvatarPose, awake: number): AvatarFrame {
   };
 }
 
-/** A smooth 0–1 step of `x` between `from` and `to`. */
 function smoothStep(from: number, to: number, x: number): number {
   "worklet";
   const t = Math.min(Math.max((x - from) / (to - from), 0), 1);

@@ -21,3 +21,10 @@ export function secretFieldTraits(
   }
   return { textContentType: "oneTimeCode", autoComplete: "one-time-code" };
 }
+
+/** A hidden login value offers saved passwords; a visible one is plain text. */
+export function loginFieldTraits(hidden: boolean): SecretFieldTraits {
+  return hidden
+    ? secretFieldTraits("password", { auth: { type: "login" } })
+    : { textContentType: "none", autoComplete: "off" };
+}
