@@ -15,6 +15,10 @@ const REQUIRED = [
 export function assertPublishConfigured() {
   const missing = REQUIRED.filter((name) => !process.env[name]?.trim());
   if (missing.length > 0) throw new Error(`--publish needs ${missing.join(", ")}`);
+  // Signed uploads carry the access key, so they go over HTTPS only, as CI's publishers require.
+  if (!process.env.S3_ENDPOINT?.startsWith("https://")) {
+    throw new Error("S3_ENDPOINT must use HTTPS");
+  }
 }
 
 /**

@@ -202,6 +202,19 @@ it("shows the bot's reply mode and rules until the room overrides them, then sav
     );
     rules.dispatchEvent(new Event("input", { bubbles: true }));
   });
+  // Emptying the field follows the bot again, so there is nothing to reset.
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(rules, "");
+    rules.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(container.textContent).not.toContain("Reset");
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+      rules,
+      "Only release questions.",
+    );
+    rules.dispatchEvent(new Event("input", { bubbles: true }));
+  });
   await click("Reset");
   expect(rules.value).toBe("");
   await click("GitHub: Group updates");

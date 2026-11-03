@@ -106,6 +106,22 @@ it("shows the bot's reply mode and rules when inheriting, and saves a room overr
     automatedSenderPolicies: {},
   });
 
+  // Emptying the field follows the bot again rather than saving no rules.
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(rules, "");
+    rules.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(host.textContent).not.toContain("Reset");
+  await act(async () => button("Save").click());
+  expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({ teamChatRules: null }));
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+      rules,
+      "Only launch questions.",
+    );
+    rules.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+
   await act(async () => button("Reset").click());
   expect(rules.value).toBe("");
   await act(async () => button("Save").click());

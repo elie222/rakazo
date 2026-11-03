@@ -142,6 +142,7 @@ class RakazoPdfView(context: Context, appContext: AppContext) : ExpoView(context
     pages.scaleX = 1f
     pages.scaleY = 1f
     pages.translationX = 0f
+    post { fitListHeight() }
   }
 
   private fun zoomTo(target: Float, focusX: Float, focusY: Float) {
@@ -157,7 +158,20 @@ class RakazoPdfView(context: Context, appContext: AppContext) : ExpoView(context
     scale = next
     pages.scaleX = next
     pages.scaleY = next
+    fitListHeight()
     panTo(x)
+  }
+
+  /**
+   * The list scales from its top, so a zoomed list keeps its own height at this view's height
+   * divided by the zoom: scaled up, it fills the view exactly and scrolls to the last page's end.
+   */
+  private fun fitListHeight() {
+    val params = pages.layoutParams ?: return
+    val next = if (scale == 1f) LayoutParams.MATCH_PARENT else Math.round(height / scale)
+    if (params.height == next) return
+    params.height = next
+    pages.layoutParams = params
   }
 
   private fun panTo(x: Float) {

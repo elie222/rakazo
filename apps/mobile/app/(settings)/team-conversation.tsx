@@ -17,7 +17,7 @@ import {
 import type { NativeStackNavigationOptions } from "expo-router";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { LoadFailure } from "../../components/load-failure";
 import { MenuPickerMenu } from "../../components/menu-picker";
 import { NativeActionButton } from "../../components/native-action-button";
@@ -47,7 +47,6 @@ export default function TeamConversationSettings() {
   // Typed hours stay a draft until saved, so Save works while the field still has focus.
   const [hoursDrafts, setHoursDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const saveRef = useRef(async () => {});
@@ -136,7 +135,6 @@ export default function TeamConversationSettings() {
 
   async function save() {
     setSaving(true);
-    setError(null);
     try {
       await rpc("externalConversations/updatePolicy", {
         externalConversationId: conversation.id,
@@ -152,7 +150,8 @@ export default function TeamConversationSettings() {
       });
       router.back();
     } catch (err) {
-      setError(errorText(err, t("Could not save")));
+      // Save sits in the header, so a failure needs to show where the person is looking.
+      Alert.alert(errorText(err, t("Could not save")));
     } finally {
       setSaving(false);
     }
@@ -214,7 +213,8 @@ export default function TeamConversationSettings() {
         <TextInput
           accessibilityLabel={t("Instructions for this room")}
           value={rules ?? ""}
-          onChangeText={setRules}
+          // An emptied field follows the bot again, as it shows.
+          onChangeText={(text) => setRules(text || null)}
           maxLength={4000}
           multiline
           placeholder={bot.teamChatRules || undefined}
@@ -285,7 +285,6 @@ export default function TeamConversationSettings() {
           })}
         </SettingsGroup>
       ) : null}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
     </ScrollView>
   );
 }
@@ -321,6 +320,5 @@ function createStyles() {
       textAlign: "right",
       fontSize: 16,
     },
-    error: { color: mobileTokens().destructive, padding: 12 },
   });
 }

@@ -146,7 +146,8 @@ export function ExternalConversationSettings({
           value={rules ?? ""}
           maxLength={4000}
           onChange={(event) => {
-            setRules(event.target.value);
+            // An emptied field follows the bot again, as its placeholder shows.
+            setRules(event.target.value || null);
             setSaved(false);
           }}
           placeholder={bot.teamChatRules || undefined}
