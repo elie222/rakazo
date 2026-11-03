@@ -295,6 +295,11 @@ function SpaceShell() {
   const dismissDiskWarning = (botId: string) => {
     const current = computerState.computerRef.current;
     if (current?.botId === botId) commitComputer({ ...current, diskFullPercent: undefined });
+    const cached = computerState.computerCacheRef.current.get(botId)?.computer;
+    if (cached)
+      computerState.cacheComputerFor(botId, {
+        computer: { ...cached, diskFullPercent: undefined },
+      });
     void rpc.computer.dismissDiskWarning({ botId }).catch(() => undefined);
   };
   useReportedUiLocale(rpc, bootstrapMe?.locale);

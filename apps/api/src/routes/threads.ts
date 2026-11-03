@@ -282,7 +282,7 @@ export function threadsRoutes(ctx: RouterContext) {
         };
         let sent: Awaited<ReturnType<typeof send>> | undefined;
         try {
-          if (input.text?.trim() || input.artifactIds?.length) {
+          if (input.text?.trim() || input.artifactIds?.length || input.intent) {
             // A saved message for this nonce is replayed before any of this runs.
             sent = await send(actor, input, startRoutines);
           } else {
