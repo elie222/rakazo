@@ -262,10 +262,6 @@ class RakazoNotificationService : Service() {
 
   private fun post(run: RunRecord, copy: NotificationCopy) {
     if (!run.notificationsEnabled || isOpenThread(run)) return
-    // Polling is the fallback; it must not replace a push's richer notification for the thread.
-    if (manager.activeNotifications.any {
-        it.id == run.threadId.hashCode() && it.notification.extras.getBoolean(SenderPush.EXTRA_PUSHED)
-      }) return
     val notification = builder(copy.channel)
       .setSmallIcon(R.drawable.ic_rakazo_notification)
       .setContentTitle(copy.title)
@@ -433,7 +429,9 @@ class RakazoNotificationService : Service() {
         openThreadId = threadId
       }
       if (threadId != null) {
-        context.getSystemService(NotificationManager::class.java).cancel(threadId.hashCode())
+        val manager = context.getSystemService(NotificationManager::class.java)
+        manager.cancel(threadId.hashCode())
+        manager.cancel(SenderPush.notificationId(threadId))
       }
       start(context, resetToken = false, action = ACTION_THREAD_CHANGED)
     }

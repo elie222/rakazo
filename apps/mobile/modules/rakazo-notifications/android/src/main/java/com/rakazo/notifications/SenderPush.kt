@@ -25,7 +25,9 @@ import org.json.JSONObject
 internal object SenderPush {
   private const val MAX_AVATAR_CHARS = 1400
   private const val MAX_AVATAR_PIXELS = 96
-  const val EXTRA_PUSHED = "rakazo.pushed"
+
+  /** Its own ID per thread, as Expo's had, so the poller's fallback post never replaces it. */
+  fun notificationId(threadId: String) = "push:$threadId".hashCode()
 
   fun present(context: Context, data: JSONObject): Boolean {
     val title = data.optString("notificationTitle").takeIf(String::isNotBlank) ?: return false
@@ -70,12 +72,11 @@ internal object SenderPush {
       .addExtras(Bundle().apply {
         putString("rakazo.botId", botId)
         putString("rakazo.threadId", threadId)
-        putBoolean(EXTRA_PUSHED, true)
         data.optString("groupId").takeIf(String::isNotBlank)?.let { putString("rakazo.groupId", it) }
       })
     runCatching { addSender(context, builder, data, title, body) }
       .onFailure { Log.w("RakazoSenderPush", "Posting without the sender", it) }
-    context.getSystemService(NotificationManager::class.java).notify(threadId.hashCode(), builder.build())
+    context.getSystemService(NotificationManager::class.java).notify(notificationId(threadId), builder.build())
   }
 
   private fun addSender(context: Context, builder: Notification.Builder, data: JSONObject, title: String, body: String) {
