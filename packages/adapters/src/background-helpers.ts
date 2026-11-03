@@ -8,7 +8,11 @@ import {
   isConversationalRun,
 } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
-import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  assertRunCanWriteHistory,
+  createThreadMessageInTransaction,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { helperResultText, MAX_PARALLEL_SUBAGENTS } from "./pi-runtime-subagent.js";
@@ -82,22 +86,21 @@ export async function startBackgroundHelper(
       },
     });
     if (running >= MAX_PARALLEL_SUBAGENTS) return "full" as const;
+    // Only this turn's live worker may start one, but the card is not part of the turn: a turn
+    // ending settles its own helper cards as stopped, while this helper keeps working.
+    await assertRunCanWriteHistory(tx, runId, { lease: runLeaseFor(deps, runId) });
     const message = await createThreadMessageInTransaction(tx, {
       threadId: thread.id,
       role: "bot",
       blocks: [card],
       botId: bot.id,
-      runId,
       markUnread: false,
-      lease: runLeaseFor(deps, runId),
     });
     const event = await appendEventInTransaction(tx, {
       spaceId: run.spaceId,
       threadId: thread.id,
       botId: bot.id,
       type: "thread.message.created",
-      runId,
-      lease: runLeaseFor(deps, runId),
       payload: { messageId: message.id, role: "bot", blocks: [card] },
     });
     // The helper's own thread: no chat list shows it, nothing sent to the bot waits behind the

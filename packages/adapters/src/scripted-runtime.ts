@@ -96,7 +96,7 @@ export class ScriptedAgentRuntime implements AgentRuntime {
         }
         for (const call of turn.toolCalls ?? []) {
           const executionId = `${request.runId}:${call.name}:${toolCallSeq++}`;
-          if (call.name === "run_subagent" && call.args.background !== true) {
+          if (call.name === "run_subagent") {
             const agentId = `${request.runId}:subagent`;
             const name = String(call.args.name ?? "helper");
             const task = String(call.args.task ?? request.prompt);
@@ -609,16 +609,6 @@ code-b
   if (helperResult) {
     return [{ assistant: `your helper finished: ${helperResult}`, complete: true }];
   }
-  if (lower.includes("in the background")) {
-    const task = prompt.replace(/\s*in the background/i, "").trim();
-    return [
-      {
-        assistant: "a background helper is on it; ask me anything meanwhile.",
-        toolCalls: [{ name: "run_subagent", args: { name: "helper", task, background: true } }],
-        complete: true,
-      },
-    ];
-  }
   if (lower.includes("subagent") || lower.includes("delegate to a helper")) {
     return [
       {
@@ -758,9 +748,7 @@ code-b
 }
 
 function shouldFail(prompt: string): boolean {
-  const lower = prompt.toLowerCase();
-  // Asking a background helper to fail makes the helper's run fail, not this one.
-  return lower.includes("fail this run") && !lower.includes("in the background");
+  return prompt.toLowerCase().includes("fail this run");
 }
 
 /**
@@ -795,12 +783,8 @@ function scriptedFailure(prompt: string): string {
 /** How long a scripted run keeps working before it finishes; undefined runs its script. */
 function hangDuration(prompt: string): number | undefined {
   const lower = prompt.toLowerCase();
-  // Asking another bot or a background helper to keep working makes that run hang, not this one.
-  if (
-    lower.includes("message the bot named") ||
-    lower.includes("message bot named") ||
-    lower.includes("in the background")
-  ) {
+  // Asking another bot to keep working makes that bot's run hang, not this one.
+  if (lower.includes("message the bot named") || lower.includes("message bot named")) {
     return undefined;
   }
   const seconds = /\bwork for (\d+) seconds?\b/.exec(lower)?.[1];

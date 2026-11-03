@@ -71,6 +71,21 @@ const BACKGROUND_HELPER_TOOL_NAMES: ReadonlySet<string> = new Set([
   "cloud_agent_status",
 ]);
 
+/** Cross-owner agent connections only exist for chat-linked bots, in turns that can talk. */
+export function offersAgentConnectionTools(options: {
+  hasMessagingIdentity: boolean;
+  crossSpaceCommunication: boolean;
+  trigger: string;
+}): boolean {
+  return (
+    options.hasMessagingIdentity &&
+    options.crossSpaceCommunication &&
+    !isBackgroundRunTrigger(options.trigger) &&
+    options.trigger !== "created" &&
+    options.trigger !== BACKGROUND_HELPER_TRIGGER
+  );
+}
+
 export function selectBuiltinToolsForRun(options: {
   ticketBoardEnabled?: boolean;
   phoneCallsEnabled?: boolean;

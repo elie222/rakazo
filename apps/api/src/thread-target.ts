@@ -1476,6 +1476,7 @@ export async function stopThreadRuns(
         botId: true,
         userId: true,
         spaceId: true,
+        threadId: true,
         trigger: true,
         sourceMessageId: true,
       },
@@ -1524,8 +1525,11 @@ export async function stopThreadRuns(
     // flip and the progress purge below. Other clients learn the run ended, and
     // the fresh seq keeps max(seq) above every deleted progress row so a client
     // whose cursor pointed at one never discards later refreshes as stale.
+    // Not for a helper in a thread of its own: in the chat it would read as the bot stopping,
+    // and the helper's card update tells the chat instead.
     let eventSeq: number | null = null;
     for (const run of cancelled) {
+      if (run.threadId !== target.threadId) continue;
       const event = await appendEventInTransaction(tx, {
         spaceId: actor.spaceId,
         threadId: target.threadId,

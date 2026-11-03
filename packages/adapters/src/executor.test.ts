@@ -7,7 +7,7 @@ import {
   cloudflareModelConfigMessage,
   FLEET_TOOL_NAMES,
 } from "@rakazo/contracts";
-import { ONCE_ROUTINE_CRON } from "@rakazo/core";
+import { BACKGROUND_HELPER_TRIGGER, ONCE_ROUTINE_CRON } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
@@ -2742,6 +2742,44 @@ description: Prepare standup notes
       }),
     );
     expect(enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("runs a background helper while the bot's computer is switching", async () => {
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const enqueue = vi.fn(async () => undefined);
+    const prisma = {
+      run: {
+        findUnique: vi.fn(async () => ({
+          id: "run-1",
+          botId: "bot-1",
+          status: "queued",
+          trigger: BACKGROUND_HELPER_TRIGGER,
+          checkpoint: null,
+          leaseFence: 0,
+        })),
+        findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
+        updateMany,
+      },
+      bot: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          computerId: "computer-1",
+          computerSwitching: true,
+        })),
+      },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({ prisma, jobs: { enqueue } } as unknown as Parameters<
+      typeof createRunExecutor
+    >[0]);
+
+    // The mock ends at the turn's setup; what matters is that the switch did not send it back.
+    await executor.continueRun("run-1", "worker-1").catch(() => undefined);
+
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(
+      updateMany.mock.calls.some(
+        (call: unknown[]) => (call[0] as { data?: { status?: string } }).data?.status === "queued",
+      ),
+    ).toBe(false);
   });
 
   it("preserves a concurrent release checkpoint when a held continue requeues", async () => {

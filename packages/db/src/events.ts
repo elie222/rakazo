@@ -398,8 +398,21 @@ export async function clearThread(
     const runIds = (await cancelRunsInTransaction(tx, activeRuns, now)).map((run) => run.id);
     // Expire as tombstones so a still-open provider screen claim cannot reset fencing to 1.
     await expireComputerExecutionLeases(tx, { runId: { in: runIds } });
-    await tx.message.deleteMany({ where: { threadId: input.threadId } });
-    await tx.event.deleteMany({ where: { threadId: input.threadId } });
+    // What the helpers this chat started wrote in their own threads goes with it, before the
+    // cards that link them are deleted.
+    const helperThreads = input.groupId
+      ? []
+      : await tx.run.findMany({
+          where: {
+            trigger: BACKGROUND_HELPER_TRIGGER,
+            sourceMessage: { threadId: input.threadId },
+          },
+          select: { threadId: true },
+          distinct: ["threadId"],
+        });
+    const cleared = { in: [input.threadId, ...helperThreads.map((run) => run.threadId)] };
+    await tx.message.deleteMany({ where: { threadId: cleared } });
+    await tx.event.deleteMany({ where: { threadId: cleared } });
     if (thread.nextMessageSeq > 0) {
       // nextMessageSeq is not reset, so mark every deleted message as already compacted.
       // Leaving the cursor behind would let compaction re-summarize deleted history (or, reset

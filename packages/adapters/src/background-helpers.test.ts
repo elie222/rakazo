@@ -1,10 +1,14 @@
 import { runContinueJob } from "@rakazo/adapter-kit";
+import { settleRunSubagents } from "@rakazo/core";
+import type * as Db from "@rakazo/db";
+import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { startBackgroundHelper } from "./background-helpers.js";
 import type { RunContext } from "./run-context.js";
 
 vi.mock("@rakazo/db", async (original) => ({
-  ...(await original<typeof import("@rakazo/db")>()),
+  ...(await original<typeof Db>()),
+  assertRunCanWriteHistory: vi.fn(async () => undefined),
   createThreadMessageInTransaction: vi.fn(async () => ({ id: "card" })),
   appendEventInTransaction: vi.fn(async () => ({ seq: 7 })),
 }));
@@ -63,6 +67,17 @@ describe("starting a background helper", () => {
     });
     expect(h.createRun.mock.calls[0]?.[0]).not.toHaveProperty("data.modelPinned");
     expect(h.enqueue).toHaveBeenCalledExactlyOnceWith(runContinueJob("helper-run"));
+  });
+
+  it("keeps its card running when the turn that started it ends", async () => {
+    const h = harness();
+    await startBackgroundHelper(h.ctx, START);
+    const [, input] = vi.mocked(createThreadMessageInTransaction).mock.lastCall!;
+    const [, event] = vi.mocked(appendEventInTransaction).mock.lastCall!;
+    // The turn's run.completed settles that turn's helper cards on every live client.
+    const card = { id: "card", runId: input.runId, blocks: input.blocks };
+    expect(settleRunSubagents([card], h.ctx.runId)).toEqual([card]);
+    expect(event.runId).toBeUndefined();
   });
 
   it.each([

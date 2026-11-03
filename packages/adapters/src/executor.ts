@@ -15,7 +15,6 @@ import {
   expandSkillReferencesInPrompt,
   formatSkillRunPrompt,
   formatSkillsCatalogInstruction,
-  isBackgroundRunTrigger,
   isCallClientNonce,
   isMessagingChannelRun,
   isOwnerStartedRun,
@@ -172,6 +171,7 @@ import {
 import {
   BUILTIN_AGENT_TOOL_NAMES,
   offeredFleetTools,
+  offersAgentConnectionTools,
   selectBuiltinToolsForRun,
 } from "./run-tool-selection.js";
 import { applyTool } from "./run-tools.js";
@@ -352,7 +352,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         },
       });
       if (!leaseTarget.computerId) throw new Error("Bot has no computer");
-      if (leaseTarget.computerSwitching) {
+      // A background helper never uses the computer, so it neither waits for a switch nor holds
+      // the bot's next turn.
+      const backgroundHelper = run.trigger === BACKGROUND_HELPER_TRIGGER;
+      if (leaseTarget.computerSwitching && !backgroundHelper) {
         await requeueComputerRun(deps, runId, workerId, fence, resumeCheckpoint, heldForTakeover);
         return;
       }
@@ -377,8 +380,6 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         }
       }
       let computerLease: ComputerExecutionLease | null = null;
-      // A background helper never uses the computer, so it must not hold the bot's next turn.
-      const backgroundHelper = run.trigger === BACKGROUND_HELPER_TRIGGER;
       try {
         computerLease = backgroundHelper
           ? null
@@ -1169,11 +1170,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             userComputer: userComputer === "connected",
             userComputerScreen,
           }),
-          // Cross-owner agent connections only exist for chat-linked bots.
-          ...(hasMessagingIdentity &&
-          bot.crossSpaceCommunication === true &&
-          !isBackgroundRunTrigger(run.trigger) &&
-          run.trigger !== "created"
+          ...(offersAgentConnectionTools({
+            hasMessagingIdentity,
+            crossSpaceCommunication: bot.crossSpaceCommunication === true,
+            trigger: run.trigger,
+          })
             ? agentConnectionTools.filter((tool) => !disabledBuiltinTools.has(tool.name))
             : []),
         ];

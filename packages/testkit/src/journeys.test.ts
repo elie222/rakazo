@@ -2180,6 +2180,12 @@ describeJourneys("required product journeys", () => {
     expect(
       (await helperCards(cookie, bot.id)).find((card) => card.messageId === firstCard!.messageId),
     ).toMatchObject({ status: "failed", result: "stopped" });
+    // Its card tells the chat; a run.cancelled there would read as the bot stopping.
+    const cancelledIn = (runId: string) =>
+      prisma.event
+        .findMany({ where: { runId, type: "run.cancelled" }, select: { threadId: true } })
+        .then((events) => events.map((event) => event.threadId));
+    expect(await cancelledIn(helper.id)).not.toContain(chat.id);
 
     // Another chat cannot stop this chat's helper by naming its card.
     const secondCard = (await helperCards(cookie, bot.id)).find((c) => c.status === "running");
@@ -2197,20 +2203,38 @@ describeJourneys("required product journeys", () => {
         where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
       }),
     ).toBe(0);
+    expect(await cancelledIn(second.id)).not.toContain(chat.id);
+    const turn = await prisma.run.findFirstOrThrow({
+      where: { threadId: chat.id, trigger: "user", status: "cancelled" },
+      select: { id: true },
+    });
+    expect(await cancelledIn(turn.id)).toEqual([chat.id]);
     await reconcile();
     expect(await prisma.run.count({ where: { botId: bot.id, trigger: "helper_result" } })).toBe(0);
   });
 
-  it("13d: clearing the chat stops its helpers", async () => {
+  it("13d: clearing the chat stops its helpers and removes what they wrote", async () => {
     const { cookie, bot } = await newChief("Background Clear");
+    await startHelper(cookie, bot.id, "summarize the venue notes");
+    const done = await waitForHelper(bot.id, "completed");
+    const written = () =>
+      Promise.all([
+        prisma.message.count({ where: { threadId: done.threadId } }),
+        prisma.event.count({ where: { threadId: done.threadId } }),
+      ]);
+    expect((await written())[1]).toBeGreaterThan(0);
     await startHelper(cookie, bot.id, "keep working on the venue list");
     const helper = await waitForHelper(bot.id, "running");
     await rpc(app, cookie, "threads/clear", { botId: bot.id });
     expect((await prisma.run.findUniqueOrThrow({ where: { id: helper.id } })).status).toBe(
       "cancelled",
     );
+    expect(await written()).toEqual([0, 0]);
     await reconcile();
-    expect(await prisma.run.count({ where: { botId: bot.id, trigger: "helper_result" } })).toBe(0);
+    // The finished helper came back before the clear; the stopped one never does.
+    expect(await prisma.run.count({ where: { clientNonce: `helper-result:${helper.id}` } })).toBe(
+      0,
+    );
   });
 
   it("13e: helpers only read: approval-gated and connector writes are refused in any mode", async () => {

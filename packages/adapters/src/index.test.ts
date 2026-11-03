@@ -2,7 +2,7 @@ import { createCipheriv, createHash } from "node:crypto";
 import { BUILTIN_TOOL_NAMES, FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { agentConnectionTools, builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
-import { selectBuiltinToolsForRun } from "./run-tool-selection.js";
+import { offersAgentConnectionTools, selectBuiltinToolsForRun } from "./run-tool-selection.js";
 import { inferScript, ScriptedAgentRuntime } from "./scripted-runtime.js";
 import { EncryptedSecretStore } from "./secrets.js";
 
@@ -223,6 +223,16 @@ describe("builtin tools", () => {
       expect(owner, name).toContain(name);
       expect(helper, name).not.toContain(name);
     }
+  });
+
+  it("offers agent connections to a chat-linked bot's turns, but not to its helpers", () => {
+    const linked = { hasMessagingIdentity: true, crossSpaceCommunication: true };
+    expect(offersAgentConnectionTools({ ...linked, trigger: "user" })).toBe(true);
+    expect(offersAgentConnectionTools({ ...linked, trigger: "helper" })).toBe(false);
+    expect(offersAgentConnectionTools({ ...linked, trigger: "tickets" })).toBe(false);
+    expect(
+      offersAgentConnectionTools({ ...linked, crossSpaceCommunication: false, trigger: "user" }),
+    ).toBe(false);
   });
 
   it("exposes the tools the executor actually applies", async () => {
