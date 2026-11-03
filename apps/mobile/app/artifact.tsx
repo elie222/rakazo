@@ -18,8 +18,8 @@ import {
 } from "react-native";
 import { NativeSymbol } from "../components/native-symbol";
 import { PdfPreview } from "../components/pdf-preview";
-import { VideoPreview } from "../components/video-preview";
 import { SandboxedHtmlPreview } from "../components/sandboxed-html-preview";
+import { VideoPreview } from "../components/video-preview";
 import { formatActivityRelativeTime } from "../lib/activity";
 import { mobileTokens } from "../lib/appearance";
 import { shareLocalFile, writeArtifactCacheFile } from "../lib/artifact-open";

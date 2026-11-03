@@ -50,14 +50,7 @@ export function isAttachmentImageMimeType(mimeType: string): boolean {
   return (ATTACHMENT_IMAGE_MIME_TYPES as readonly string[]).includes(mimeType);
 }
 
-export type ArtifactPreviewKind =
-  | "html"
-  | "markdown"
-  | "pdf"
-  | "image"
-  | "video"
-  | "text"
-  | "none";
+export type ArtifactPreviewKind = "html" | "markdown" | "pdf" | "image" | "video" | "text" | "none";
 
 const TEXT_APPLICATION_MIME_TYPES = new Set([
   "application/json",
