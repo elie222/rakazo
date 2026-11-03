@@ -1,6 +1,6 @@
 import { BotAvatarValueSchema, parseBotAvatarValue } from "@rakazo/contracts";
 import { avatarIdentitySeed, organicAvatarPath } from "./avatar-shape.js";
-import { resolvePersonaColorDef } from "./bot-avatar-colors.js";
+import { botEyeTone, resolvePersonaColorDef } from "./bot-avatar-colors.js";
 import {
   SHIPPED_BOT_AVATAR_SHAPE_KEYS,
   SHIPPED_BOT_AVATAR_SHAPES,
@@ -24,7 +24,8 @@ export function notificationAvatarSource(bot: {
     parsed && "color" in parsed ? parsed.color : bot.color,
   );
   const color = colorDef.hex;
-  const botEyeColor = colorDef.eyeColor;
+  // A notification has no page to cut the eyes from: white, or dark ink on a pale body.
+  const botEyeColor = botEyeTone(color) === "dark" ? "#141414" : "#FFFFFF";
   let viewBox = "-60 -60 120 120";
   let body = `<path d="${organicAvatarPath(avatarIdentitySeed(bot.id))}" fill="${color}"/><g fill="${botEyeColor}"><rect x="-14" y="-10" width="8" height="22" rx="4"/><rect x="6" y="-10" width="8" height="22" rx="4"/></g>`;
   if (parsed?.kind === "shape") {
