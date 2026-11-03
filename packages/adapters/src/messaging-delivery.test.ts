@@ -393,7 +393,23 @@ describe("deliverMessagingOutbound", () => {
     expect(noIdentity.sendToThread).not.toHaveBeenCalled();
   });
 
-  it("mirrors only owner notifications from bot_message runs to the linked DM", async () => {
+  it("mirrors only owner notifications from a turn answering another bot's request", async () => {
+    const wake = (intent: string) => ({
+      ...messagingRun,
+      trigger: "bot_message",
+      sourceMessage: {
+        blocks: [
+          {
+            kind: "bot_message_received",
+            fromBotId: "bot-2",
+            fromBotName: "Peer",
+            text: "Is the venue booked?",
+            intent,
+            hop: 1,
+          },
+        ],
+      },
+    });
     const replies = [
       { id: "m-1", clientNonce: null, blocks: [{ kind: "text", text: "Ack, on it" }] },
       {
@@ -402,10 +418,7 @@ describe("deliverMessagingOutbound", () => {
         blocks: [{ kind: "text", text: "Approve the deploy?" }],
       },
     ];
-    const deps = createDeps({
-      run: { ...messagingRun, trigger: "bot_message" },
-      messages: replies,
-    });
+    const deps = createDeps({ run: wake("request"), messages: replies });
     await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
     expect(deps.sendToThread).toHaveBeenCalledTimes(1);
     expect(deps.sendToThread).toHaveBeenCalledWith(
@@ -414,17 +427,17 @@ describe("deliverMessagingOutbound", () => {
     );
     expect(deps.rows).toEqual([expect.objectContaining({ idempotencyKey: "msg:m-2" })]);
 
-    const silent = createDeps({
-      run: { ...messagingRun, trigger: "bot_message" },
-      messages: [replies[0]],
-    });
+    const silent = createDeps({ run: wake("question"), messages: [replies[0]] });
     await deliverMessagingOutbound(silent, { runId: "run-1" }, context);
     expect(silent.sendToThread).not.toHaveBeenCalled();
     expect(silent.rows).toHaveLength(0);
 
-    const inbound = createDeps({ messages: replies });
-    await deliverMessagingOutbound(inbound, { runId: "run-1" }, context);
-    expect(inbound.sendToThread).toHaveBeenCalledTimes(2);
+    // Inbound chat turns, and a delegated result or status whose reply goes to no bot, mirror as before.
+    for (const run of [messagingRun, wake("result"), wake("status")]) {
+      const mirrored = createDeps({ run, messages: replies });
+      await deliverMessagingOutbound(mirrored, { runId: "run-1" }, context);
+      expect(mirrored.sendToThread).toHaveBeenCalledTimes(2);
+    }
   });
 
   it("holds sendblue DM sends at the consecutive-outbound cap", async () => {

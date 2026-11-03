@@ -7,8 +7,8 @@ import {
 import { messageBot } from "./bot-messages.js";
 import { endCallFromTool, requestUserCall } from "./call-request.js";
 import { handoffToGroupBot } from "./group-handoff.js";
-import { ownerNotifyClientNonce } from "./messaging-delivery.js";
-import { publishMessage } from "./run-messages.js";
+import { answersAnotherBot, ownerNotifyClientNonce } from "./messaging-delivery.js";
+import { isUniqueViolation, publishMessage } from "./run-messages.js";
 import {
   canPostLongTaskHeadsUp,
   canPublishDurableProgress,
@@ -113,9 +113,13 @@ export const messagingTools: ToolHandlers = {
   async notify_owner(ctx, call) {
     const { deps, run, bot } = ctx;
     const { reply } = ctx.state;
-    if (run.trigger !== "bot_message" || !(await deps.messaging?.hasIdentity(bot.id)))
+    if (
+      !answersAnotherBot(run.trigger, ctx.source.peerMessage) ||
+      !(await deps.messaging?.hasIdentity(bot.id))
+    )
       return call.finish({
-        error: "notify_owner needs a turn another bot started and a linked chat.",
+        error:
+          "notify_owner needs a turn answering another bot's request or question, and a linked chat.",
       });
     const rawMessage = redactSecrets(String(call.args.message ?? ""), ctx.secrets);
     const maxLength = messageUserMaxLength();
@@ -132,7 +136,13 @@ export const messagingTools: ToolHandlers = {
       return call.finish({
         error: "Not sent: your owner already got as many notifications as one turn allows.",
       });
-    await publishMessage(deps, run, "bot", [{ kind: "text", text }], true, clientNonce);
+    try {
+      await publishMessage(deps, run, "bot", [{ kind: "text", text }], true, clientNonce);
+    } catch (error) {
+      // A concurrent retry of this call already posted it.
+      if (!isUniqueViolation(error)) throw error;
+      return call.finish({ ok: true });
+    }
     reply.ownerNotifyCount += 1;
     return call.finish(
       isProgressMessageTruncated(rawMessage, maxLength)

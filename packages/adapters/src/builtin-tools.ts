@@ -1695,7 +1695,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "notify_owner",
     get description() {
-      return `Send your owner a short message in their linked chat (such as Telegram). Your replies in this turn go to the bot that messaged you and stay in the app; this is the only way to reach your owner from here. Use it for what they need to see or act on: a result they asked for, an approval, a decision, a problem. Do not use it for acknowledgements or status between bots. At most ${MID_TURN_PROGRESS_MAX_PER_RUN} per turn, each cut off at ${messageUserMaxLength()} characters.`;
+      return `Send your owner a short message in their linked chat (such as Telegram). You are answering another bot's request or question: your replies go back to that bot and stay in the app, so this is the only way to reach your owner from this turn. Use it for what they need to see or act on: a result they asked for, an approval, a decision, a problem. Do not use it for acknowledgements or status between bots. At most ${MID_TURN_PROGRESS_MAX_PER_RUN} per turn, each cut off at ${messageUserMaxLength()} characters.`;
     },
     get inputSchema() {
       return {

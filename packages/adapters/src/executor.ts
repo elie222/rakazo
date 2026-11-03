@@ -107,6 +107,7 @@ import {
 } from "./history-speakers.js";
 import { createMediaGenerationProvider } from "./media-generation-factory.js";
 import { loadAgentMemoryContext } from "./memory-context.js";
+import { answersAnotherBot } from "./messaging-delivery.js";
 import { HostedModelCreditsRequiredError } from "./model-credit-observer.js";
 import {
   effectiveModelRole,
@@ -1146,8 +1147,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           : false;
         const messagingContext =
           [
-            // A bot_message turn reaches the owner's chat only through notify_owner.
-            hasMessagingIdentity && run.trigger !== "bot_message" ? messagingDmSurfaceNote() : null,
+            // A turn answering another bot reaches the owner's chat only through notify_owner.
+            hasMessagingIdentity && !answersAnotherBot(run.trigger, peerMessage)
+              ? messagingDmSurfaceNote()
+              : null,
             messagingChannelRun
               ? messagingChannelPrivacyBlock()
               : nonOwnerChatRun
@@ -1224,7 +1227,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
             paymentWalletEnabled,
             messagingChannelRun: nonOwnerChatRun,
-            linkedChat: hasMessagingIdentity,
+            linkedChat: hasMessagingIdentity && answersAnotherBot(run.trigger, peerMessage),
             voiceCall,
             disabledBuiltinTools: bot.disabledBuiltinTools,
             fleetManagement: bot.fleetManagement,

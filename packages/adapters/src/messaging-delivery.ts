@@ -8,7 +8,12 @@ import type {
 } from "@rakazo/adapter-kit";
 import { messagingDeliverJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { botMessageHopExhausted, nextBotMessageHop, pageLinksAsTitles } from "@rakazo/core";
+import {
+  botMessageContext,
+  botMessageHopExhausted,
+  nextBotMessageHop,
+  pageLinksAsTitles,
+} from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
@@ -84,6 +89,15 @@ export function ownerNotifyClientNonce(runId: string, key: string): string {
   return `${OWNER_NOTIFY_CLIENT_NONCE_PREFIX}${runId}:${key}`;
 }
 
+/** A turn answering another bot's request or question: its replies go back to that bot. */
+export function answersAnotherBot(trigger: string, wake: { intent?: string } | undefined): boolean {
+  return (
+    trigger === "bot_message" &&
+    !!wake &&
+    ["request", "question"].includes(wake.intent ?? "request")
+  );
+}
+
 export function isOwnerNotifyClientNonce(clientNonce: string | null | undefined): boolean {
   return Boolean(clientNonce?.startsWith(OWNER_NOTIFY_CLIENT_NONCE_PREFIX));
 }
@@ -128,14 +142,17 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
   if (!identity) return;
 
   // Replies to another bot stay in the app; only what the bot sent with notify_owner leaves.
+  const answersBot = answersAnotherBot(
+    run.trigger,
+    botMessageContext((run.sourceMessage?.blocks ?? []) as MessageBlock[]),
+  );
   const messages = (
     await deps.prisma.message.findMany({
       where: { runId: run.id, role: "bot" },
       orderBy: { seq: "asc" },
     })
-  ).filter(
-    (message) => run.trigger !== "bot_message" || isOwnerNotifyClientNonce(message.clientNonce),
-  );
+  ).filter((message) => !answersBot || isOwnerNotifyClientNonce(message.clientNonce));
+
   const sendsFiles = deps.messaging
     .platforms()
     .some((platform) => platform.provider === identity.provider && platform.capabilities.files);

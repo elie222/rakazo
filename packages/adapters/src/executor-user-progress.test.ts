@@ -61,7 +61,8 @@ async function runTurn(
     runtimeError?: Error;
     runtimeCancel?: boolean;
     failHelperId?: string;
-    failMessageOnce?: boolean;
+    /** The first message write fails, with this error when one is given. */
+    failMessageOnce?: boolean | Error;
     history?: Array<{ id: string; seq: number; role: string; text: string; clientNonce?: string }>;
     /** When the run started; defaults to now, a turn too fresh for interim messages. */
     startedAt?: Date;
@@ -198,8 +199,10 @@ async function runTurn(
     message: {
       create: vi.fn(async ({ data }: { data: { blocks: MessageBlock[] } }) => {
         if (failMessage) {
+          const error =
+            failMessage instanceof Error ? failMessage : new Error("fixture message unavailable");
           failMessage = false;
-          throw new Error("fixture message unavailable");
+          throw error;
         }
         messages.push(data);
         return { ...data, id: `message-${messages.length}` };
@@ -747,14 +750,20 @@ describe("notes that can't be posted as messages", () => {
     expect(lines).toContainEqual({ text: "Reading march.csv", activity: true });
   });
 
-  it("lets only a bot_message turn with a linked chat notify its owner", async () => {
-    const turn = async (trigger: string, linkedChat = true) => {
+  it("lets only a turn answering another bot's request notify the owner's linked chat", async () => {
+    const turn = async (
+      trigger: string,
+      linkedChat = true,
+      intent: "request" | "question" | "fyi" = "request",
+      failMessageOnce?: Error,
+    ) => {
       const results: unknown[] = [];
       let seen: AgentRunRequest | undefined;
       let offered = false;
-      const { messages } = await runTurn("", false, undefined, [], "fyi", {
+      const { messages } = await runTurn("", false, undefined, [], intent, {
         trigger,
         linkedChat,
+        failMessageOnce,
         runtime: async function* (request) {
           seen = request;
           offered = request.tools.some((tool) => tool.name === "notify_owner");
@@ -796,22 +805,39 @@ describe("notes that can't be posted as messages", () => {
     ).toEqual(["Approve the deploy?".length, max, max]);
     expect(delegated.instructions).not.toContain("mirrored to their chat");
 
-    for (const [trigger, linkedChat] of [
-      ["bot_message", false],
-      ["messaging", true],
-      ["user", true],
-      ["routine", true],
+    expect((await turn("bot_message", true, "question")).offered).toBe(true);
+
+    // A retried call whose first write already landed is a success, not a failed turn.
+    const raced = await turn(
+      "bot_message",
+      true,
+      "request",
+      Object.assign(new Error("Unique constraint failed"), { code: "P2002" }),
+    );
+    expect(raced.results.slice(0, 2)).toEqual([{ error: "message is required" }, { ok: true }]);
+
+    for (const [trigger, linkedChat, intent] of [
+      ["bot_message", false, "request"],
+      // An fyi wake's reply goes to no bot, so it reaches the chat as before.
+      ["bot_message", true, "fyi"],
+      ["messaging", true, "request"],
+      ["user", true, "request"],
+      ["routine", true, "request"],
     ] as const) {
-      const other = await turn(trigger, linkedChat);
+      const other = await turn(trigger, linkedChat, intent);
       expect(other.offered).toBe(false);
       expect(other.results).toEqual(
         Array(5).fill({
-          error: "notify_owner needs a turn another bot started and a linked chat.",
+          error:
+            "notify_owner needs a turn answering another bot's request or question, and a linked chat.",
         }),
       );
       expect(other.notices).toEqual([]);
     }
     expect((await turn("user")).instructions).toContain("mirrored to their chat");
+    expect((await turn("bot_message", true, "fyi")).instructions).toContain(
+      "mirrored to their chat",
+    );
   });
 
   it("tells the bot whether a message_user update it can't post can be retried", async () => {

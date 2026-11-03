@@ -75,7 +75,7 @@ export function selectBuiltinToolsForRun(options: {
   mediaImagesEnabled?: boolean;
   mediaVideoEnabled?: boolean;
   messagingChannelRun: boolean;
-  /** The bot has a linked messaging chat, so a bot_message turn can notify its owner there. */
+  /** The bot has a linked chat and this turn answers another bot, so it can notify its owner. */
   linkedChat?: boolean;
   /** Hanging up is only offered to a turn the caller spoke on a live call. */
   voiceCall?: boolean;
