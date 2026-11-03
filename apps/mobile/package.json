@@ -5,7 +5,12 @@
   "main": "index.ts",
   "expo": {
     "autolinking": {
-      "nativeModulesDir": "./modules"
+      "nativeModulesDir": "./modules",
+      "android": {
+        "buildFromSource": [
+          "expo-notifications"
+        ]
+      }
     }
   },
   "scripts": {
