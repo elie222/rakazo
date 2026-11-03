@@ -393,10 +393,6 @@ function ShellSidebarFooter({
           setMenuOpen(false);
           openSettings("general");
         }}
-        onUsage={() => {
-          setMenuOpen(false);
-          openSettings("usage");
-        }}
         onInvite={
           referral
             ? () => {
