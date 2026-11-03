@@ -1,5 +1,6 @@
 import { getLogger } from "@rakazo/logging";
 import type { FleetCardSummary } from "./approval-ask.js";
+import { redactConnectorPayload } from "./connector-safety.js";
 import { cardName } from "./fleet-tools.js";
 import type { RunContext } from "./run-context.js";
 
@@ -106,7 +107,8 @@ function purchaseProbe(name: string, args: Record<string, unknown>) {
     const kind = String(step.kind);
     const own =
       typeof step.x === "number" && typeof step.y === "number"
-        ? { x: step.x, y: step.y }
+        ? // Rounded as the desktop rounds it before pressing.
+          { x: Math.round(step.x), y: Math.round(step.y) }
         : undefined;
     if (kind === "move") {
       pointer = own ?? pointer;
@@ -189,11 +191,14 @@ export async function detectPurchase(
     found = { ...unchecked, steps: [] };
   }
   if (!found) return undefined;
+  // Page text is stored with the approval: a value the run must keep secret never goes with it.
+  const shown = (text: string, max: number) =>
+    String(redactConnectorPayload(pageText(text, max), ctx.secrets));
   return {
     steps: found.steps,
     site: found.site,
-    label: pageText(found.label, 80),
-    amount: pageText(found.amount, 40),
+    label: shown(found.label, 80),
+    amount: shown(found.amount, 40),
     amountSource: found.amountSource === "button" ? "button" : "page",
   };
 }

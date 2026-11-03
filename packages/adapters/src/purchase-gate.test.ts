@@ -26,6 +26,7 @@ function contextWith(
     context: { signal: new AbortController().signal },
     providers: { browser: { purchaseCheck: check } },
     state: { walletHosts: new Set<string>() },
+    secrets: [],
     computer: { pageBrowserAllowed: true, heldForTakeover: false, get: async () => ({ id: "c" }) },
     ...overrides,
   } as unknown as RunContext;
@@ -117,6 +118,10 @@ describe("purchase detection for the page tools", () => {
     });
     expect(await request([{ kind: "up" }])).toMatchObject({ points: [], unplaced: true });
     expect(await request([{ kind: "click" }])).toMatchObject({ points: [], unplaced: true });
+    // Checked where the desktop presses: at the rounded spot.
+    expect(await request([{ kind: "click", x: 5.4, y: 6.6 }])).toMatchObject({
+      points: [{ x: 5, y: 7 }],
+    });
     // A right-click presses nothing, so it is not asked about.
     expect(await request([{ kind: "click", x: 5, y: 6, button: "right" }])).toBeUndefined();
   });
@@ -212,6 +217,17 @@ describe("purchase detection for the page tools", () => {
     // It is spent: a second purchase on that host asks.
     expect((await prepare()).purchase).toBeDefined();
     expect([...ctx.state.walletHosts]).toEqual(["other.example.test"]);
+  });
+
+  it("never stores a value the run keeps secret, even when the page shows it on the button", async () => {
+    const check = vi.fn(async () => ({
+      purchase: { ...found, label: "Pay with 4242424242424242", amount: "$5" },
+    }));
+    const ctx = contextWith(check as never, { secrets: ["4242424242424242"] });
+    const purchase = await detectPurchase(ctx, "browser_act", {
+      actions: [{ kind: "click", ref: "e1" }],
+    });
+    expect(purchase?.label).not.toContain("4242424242424242");
   });
 
   it("keeps only the page's visible words and bounds them", async () => {
