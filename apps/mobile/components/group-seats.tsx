@@ -1,10 +1,9 @@
 import {
   avatarIdentitySeed,
   organicAvatarPath,
-  SHIPPED_BOT_AVATAR_CENTER,
+  SHIPPED_BOT_AVATAR_EYES,
   SHIPPED_BOT_AVATAR_VIEWBOX,
 } from "@rakazo/core";
-import { botEyeColor } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { memo, useId } from "react";
 import type { ColorValue } from "react-native";
@@ -13,7 +12,6 @@ import Svg, {
   Circle,
   ClipPath,
   Defs,
-  Ellipse,
   G,
   Image,
   Mask,
@@ -21,7 +19,7 @@ import Svg, {
   Rect,
   Text as SvgText,
 } from "react-native-svg";
-import { mobileBotAvatarPresentation } from "../lib/bot-avatar";
+import { botEyeInk, mobileBotAvatarPresentation } from "../lib/bot-avatar";
 import type { GroupSeat } from "../lib/group-seats";
 import {
   GROUP_SEAT_SIZE,
@@ -30,7 +28,7 @@ import {
   groupSeats,
   groupSeatsWidth,
 } from "../lib/group-seats";
-import { native, useResolvedAppearance } from "../lib/native";
+import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
 
 type SeatMember = { botId?: string; name?: string; color: string };
 
@@ -57,13 +55,14 @@ export const GroupSeats = memo(function GroupSeats({
   const id = useId().replace(/:/g, "");
   // Redraws the faint "+N" when the appearance changes.
   useResolvedAppearance();
+  const page = useMobileTokens();
   const seats = groupSeats(members);
   const step = groupSeatStep(size);
   const gap = groupSeatGap(size);
   const width = groupSeatsWidth(seats.length, size);
   const arts = seats.map((seat, index) =>
     seat.kind === "member"
-      ? seatArt(seat.member, size, `${id}-${index}`)
+      ? seatArt(seat.member, size, `${id}-${index}`, page)
       : markArt(seat, size, native.systemTertiaryLabel),
   );
   const placed = (index: number, art: SeatArt) => {
@@ -147,7 +146,12 @@ function markArt(
 }
 
 /** A still face in the member's shape: the same drawing as their avatar at rest. */
-function seatArt(member: SeatMember, size: number, key: string): SeatArt {
+function seatArt(
+  member: SeatMember,
+  size: number,
+  key: string,
+  page: { background: string; foreground: string },
+): SeatArt {
   const parsed = mobileBotAvatarPresentation(member.color);
   const r = size / 2;
   if (parsed.kind === "image" && parsed.imageUrl) {
@@ -179,16 +183,25 @@ function seatArt(member: SeatMember, size: number, key: string): SeatArt {
       number,
       number,
     ];
-    const center = SHIPPED_BOT_AVATAR_CENTER;
+    const eyes = SHIPPED_BOT_AVATAR_EYES;
+    const eyeY = eyes.centerY - eyes.height / 2;
     return {
       box: [x, y, units],
       outline: (paint) => <Path d={parsed.shapePath} {...paint} />,
       face: (
         <>
           <Path d={parsed.shapePath} fill={parsed.color} />
-          <G fill={parsed.eyeColor}>
-            <Ellipse cx={center - 29} cy={center - 8} rx={10} ry={7} />
-            <Ellipse cx={center + 29} cy={center - 8} rx={10} ry={7} />
+          <G fill={botEyeInk(parsed.color, page)}>
+            {[eyes.leftX, eyes.rightX].map((x) => (
+              <Rect
+                key={x}
+                x={x}
+                y={eyeY}
+                width={eyes.width}
+                height={eyes.height}
+                rx={eyes.width / 2}
+              />
+            ))}
           </G>
         </>
       ),
@@ -203,7 +216,7 @@ function seatArt(member: SeatMember, size: number, key: string): SeatArt {
     face: (
       <>
         <Path d={outline} fill={color} />
-        <G transform={`rotate(${(seed % 9) - 4})`} fill={botEyeColor}>
+        <G transform={`rotate(${(seed % 9) - 4})`} fill={botEyeInk(color, page)}>
           <Rect x={-14} y={-12} width={7} height={24} rx={3.5} />
           <Rect x={7} y={-12} width={7} height={24} rx={3.5} />
         </G>

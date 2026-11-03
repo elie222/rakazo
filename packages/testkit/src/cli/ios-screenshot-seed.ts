@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import type { BotSecretDestination, MessageBlock } from "@rakazo/contracts";
-import { encodeLoginSecret } from "@rakazo/contracts";
+import { encodeCardSecret, encodeContactSecret, encodeLoginSecret } from "@rakazo/contracts";
 import { allocateTicketNumber, createDb, createThreadMessage, ensureBoard } from "@rakazo/db";
 import { pageViewerCode } from "@rakazo/page-kit/compile";
 import { PNG } from "pngjs";
@@ -194,10 +194,12 @@ export async function seedIosScreenshotFixture(input: {
       matchValue: "example.com",
     });
   }
-  // One of each kind people save: a website sign-in, an API token, and a command variable.
+  // One of each kind people save: a website sign-in, a card, a contact, an API token, and a
+  // command variable. The card number is a well-known test number, not a real card.
   const vault = await rpc<{ name: string }[]>(input.apiUrl, populated.headers, "vault/list");
-  const vaultEntries: { destination: BotSecretDestination; value: string }[] = [
+  const vaultEntries: { destination: BotSecretDestination; value: string; title?: string }[] = [
     {
+      title: "Help desk",
       destination: {
         name: "help-desk",
         origin: "https://help.example.com",
@@ -217,6 +219,25 @@ export async function seedIosScreenshotFixture(input: {
         auth: { type: "bearer" },
       },
       value: "fixture-status-token",
+    },
+    {
+      title: "Home",
+      destination: { name: "home", origin: "", auth: { type: "contact" } },
+      value: encodeContactSecret({
+        name: "Sam Fixture",
+        line1: "1 Example Street",
+        city: "Springfield",
+        postalCode: "12345",
+      }),
+    },
+    {
+      destination: { name: "visa-4242", origin: "", auth: { type: "card" } },
+      value: encodeCardSecret({
+        number: "4242424242424242",
+        expMonth: 8,
+        expYear: 2030,
+        billing: "home",
+      }),
     },
     {
       destination: { name: "deploy_token", origin: "", auth: { type: "command" } },

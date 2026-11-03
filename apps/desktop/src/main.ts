@@ -54,6 +54,7 @@ import {
   t,
   withDetail,
 } from "./i18n.js";
+import { verifyDownloadedLinuxUpdate } from "./linux-update-signature.js";
 import { saveLocalComputerHost } from "./local-settings.js";
 import {
   LocalStackController,
@@ -605,7 +606,7 @@ function oauthPopupWindowOptions(partition: string | null) {
     frame: true,
     titleBarStyle: "default" as const,
     autoHideMenuBar: true,
-    backgroundColor: "#161616",
+    backgroundColor: "#0A0A0A",
     webPreferences: oauthPopupSessionPreferences(partition),
   };
 }
@@ -1325,6 +1326,9 @@ app.whenReady().then(async () => {
     () => {
       quitting = false;
     },
+    process.platform === "linux"
+      ? (update) => verifyDownloadedLinuxUpdate(update, (url, signal) => net.fetch(url, { signal }))
+      : undefined,
   );
   try {
     hostComputer = await prepareHostComputer(userDataDir);
@@ -1822,6 +1826,10 @@ app.on("window-all-closed", () => {
   // during startup; its teardown must not quit the app.
   if (liveProbeWindows > 0) return;
   if (process.platform !== "darwin") app.quit();
+});
+
+app.on("quit", (_event, exitCode) => {
+  if (exitCode === 0) desktopUpdater?.installOnQuit();
 });
 
 app.on("before-quit", () => {

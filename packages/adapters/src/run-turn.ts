@@ -869,6 +869,7 @@ export async function completeRun(ctx: RunContext) {
       body: notifyBody,
       botId: bot.id,
       threadId: thread.id,
+      runId: run.id,
     });
   }
   // Last, and never fatal: the run is already finalized, so a failure here must not reach
@@ -1012,7 +1013,13 @@ export async function failRun(
     await backOffRoutineAfterAccountError(deps, run.routineId, new Date(), refusal?.resetAt);
   }
   const retrying = !failed.continuationRunId && (await scheduleRoutineRetry(deps, run, error));
-  if (runSendsFinishNotification(run.trigger) && !failed.continuationRunId && !retrying) {
+  // Nobody asked for a check-in, so its failure is not news to the user.
+  if (
+    runSendsFinishNotification(run.trigger) &&
+    !isStrategicInitiativeRun(run) &&
+    !failed.continuationRunId &&
+    !retrying
+  ) {
     await notifyRun(deps, run, {
       kind: "failure",
       title: `${displayName(bot.name, "Bot")} failed`,

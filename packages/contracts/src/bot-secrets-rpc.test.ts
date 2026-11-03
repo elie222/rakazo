@@ -57,7 +57,10 @@ describe("botSecrets rpc contract", () => {
       "auth",
       "createdAt",
       "name",
+      "note",
       "origin",
+      "preview",
+      "title",
       "updatedAt",
     ]);
     const parsed = BotSecretMetadata.parse({
@@ -71,5 +74,27 @@ describe("botSecrets rpc contract", () => {
     });
     expect(parsed).not.toHaveProperty("value");
     expect(parsed).not.toHaveProperty("ciphertext");
+  });
+
+  it("never carries a card's number or security code in a preview", () => {
+    const parsed = BotSecretMetadata.parse({
+      name: "visa-4242",
+      origin: "",
+      auth: { type: "card" },
+      preview: {
+        card: {
+          brand: "Visa",
+          last4: "4242",
+          expMonth: 8,
+          expYear: 2030,
+          number: "4242424242424242",
+          cvc: "123",
+        },
+      },
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+    });
+    expect(JSON.stringify(parsed)).not.toContain("4242424242424242");
+    expect(parsed.preview?.card).not.toHaveProperty("cvc");
   });
 });

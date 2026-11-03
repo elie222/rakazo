@@ -41,6 +41,7 @@ function ownBotUpdateCall() {
     fleetSummary: undefined,
     heldForApproval: false,
     purchase: undefined,
+    cardUse: undefined,
   };
   return { ctx, request: () => structuredClone(request) };
 }
