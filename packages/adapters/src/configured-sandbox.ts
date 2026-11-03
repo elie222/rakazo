@@ -213,7 +213,12 @@ export class ConfiguredSandbox implements SandboxProvider {
             };
       };
   }
+  /** Rereads everything now; a save on this instance calls it so its change applies at once. */
   async refresh() {
+    await this.reload();
+    this.owners.clear();
+  }
+  private async reload() {
     const selection = await this.load();
     // A connection kept after going back to the default is built only when a computer needs it.
     this.selected =
@@ -223,10 +228,9 @@ export class ConfiguredSandbox implements SandboxProvider {
     if (!selection.settings) this.forgetOwner("deployment");
     this.selection = selection;
     this.selectionLoadedAt = Date.now();
-    this.owners.clear();
   }
   private async current() {
-    if (Date.now() - this.selectionLoadedAt >= SETTINGS_TTL_MS) await this.refresh();
+    if (Date.now() - this.selectionLoadedAt >= SETTINGS_TTL_MS) await this.reload();
   }
   private forgetOwner(owner: string) {
     for (const { id } of computerProviderRegistry) this.providers.delete(`${owner}:${id}`);
@@ -285,7 +289,7 @@ export class ConfiguredSandbox implements SandboxProvider {
       const provider = await this.providerFor(own, computer.botId);
       if (provider.ownsReference?.(computer) ?? true) return provider;
     }
-    if (fresh) await this.refresh();
+    if (fresh) await this.reload();
     else await this.current();
     const saved = computerSettingsForProvider(this.selection.settings, computer.kind);
     if (saved) {
@@ -305,10 +309,10 @@ export class ConfiguredSandbox implements SandboxProvider {
     throw gone;
   }
   private async target(homeKey?: string) {
-    const own = homeKey ? await this.ownSettings(homeKey, true) : null;
+    const own = homeKey ? await this.ownSettings(homeKey) : null;
     if (own) return this.providerFor(own, homeKey!);
     // An unreadable store must not stop every computer from starting: use the last settings read.
-    await this.refresh().catch((error) => {
+    await this.current().catch((error) => {
       if (!this.selectionLoadedAt) throw error;
     });
     return this.selection.provider !== "default" && this.selected ? this.selected : this.primary;

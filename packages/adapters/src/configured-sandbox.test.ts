@@ -262,16 +262,17 @@ it("reuses adapters only for the same ciphertext and credentials, and invalidate
   });
   await sandbox.provisionKind();
   await sandbox.provisionKind();
-  expect(load).toHaveBeenCalledTimes(2);
+  // Starts within the window reuse the settings already read.
+  expect(load).toHaveBeenCalledTimes(1);
   expect(createProvider).toHaveBeenCalledTimes(1);
   changed?.("encrypted-1");
-  await sandbox.provisionKind();
+  await sandbox.refresh();
   expect(createProvider).toHaveBeenCalledTimes(2);
   saved = { ...saved, ciphertext: "encrypted-2" };
-  await sandbox.provisionKind();
+  await sandbox.refresh();
   expect(createProvider).toHaveBeenCalledTimes(3);
   saved = { ...saved, values: { ...values, mcpToken: "replacement-token" } };
-  await sandbox.provisionKind();
+  await sandbox.refresh();
   expect(createProvider).toHaveBeenCalledTimes(4);
 });
 
