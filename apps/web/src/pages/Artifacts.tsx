@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { VideoPreview } from "../components/ArtifactFileCard";
 import { IconTooltip } from "../components/IconTooltip";
 import { PdfViewer } from "../components/PdfViewer";
 import { SandboxedHtmlViewer } from "../components/SandboxedHtmlViewer";
@@ -951,6 +952,8 @@ function ArtifactPreview({ artifact, bytes }: { artifact: Artifact; bytes: Uint8
       );
     case "pdf":
       return <PdfViewer bytes={bytes} title={artifact.name} />;
+    case "video":
+      return <VideoPreview bytes={bytes} name={artifact.name} />;
     case "image":
       return <ImagePreview bytes={bytes} mimeType={artifact.mimeType} name={artifact.name} />;
     case "none":

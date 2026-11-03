@@ -173,7 +173,7 @@ export function AskBlock({
       ) : canAnswer ? (
         <>
           <TextInput
-            accessibilityLabel={secretInput ? secretLabel : t("Answer")}
+            accessibilityLabel={secretInput ? secretLabel : t("Type your answer")}
             value={answer}
             onChangeText={setAnswer}
             placeholder={secretInput ? secretLabel : t("Type your answer")}

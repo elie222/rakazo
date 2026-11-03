@@ -67,7 +67,7 @@ describe("the one recovery action", () => {
     ['401: {"message":"Invalid API key"}', "Replace key"],
     [
       '403: {"message":"Key limit exceeded (weekly limit)","metadata":{"limit_source":"openrouter_key_limit"}}',
-      "Add Model",
+      "Add model",
     ],
     ["Request timed out.", null],
     ['429: {"message":"Too many requests"}', null],

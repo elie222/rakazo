@@ -30,6 +30,7 @@ import { chatRouteHeader } from "../components/chat-route-header";
 import { CodeCopyButton } from "../components/code-copy-button";
 import { ComputerUpdateProgress } from "../components/computer-update-progress";
 import { floatingHeaderOptions, glassHeaderOptions } from "../components/glass-title";
+import { IncomingCall } from "../components/IncomingCall";
 import { MermaidDiagram } from "../components/mermaid-diagram";
 import { MessageMenuHost } from "../components/message-action-menu";
 import { MessageActionSheetHost } from "../components/message-action-sheet-host";
@@ -50,6 +51,7 @@ import { replaceWithSignIn } from "../lib/auth-routing";
 import { AvatarScreenFocus } from "../lib/avatar-life";
 import { installClientUpdates, watchForegroundUpdates } from "../lib/client-update";
 import { bootstrapI18n, useI18n } from "../lib/i18n";
+import { startIncomingCalls } from "../lib/incoming-calls";
 import { loadLinkFavicon } from "../lib/link-favicons";
 import {
   configureForegroundNotifications,
@@ -264,6 +266,14 @@ function LayoutContent() {
   const chatAnimation = split ? "none" : undefined;
   const [ready, setReady] = useState(false);
   useNotificationResponses(ready);
+  const callSession = useSyncExternalStore(
+    subscribeSessionGeneration,
+    currentReadySessionGeneration,
+  );
+  useEffect(() => {
+    if (!ready) return;
+    return startIncomingCalls();
+  }, [ready, callSession]);
   const screen = analyticsScreen(usePathname());
   useEffect(() => setMobileMonitoringScreen(screen), [screen]);
   useEffect(() => {
@@ -491,6 +501,7 @@ function LayoutContent() {
               <MessageMenuHost />
               <MessageActionSheetHost />
               <CallCard />
+              <IncomingCall />
             </ThemeProvider>
           </ChatContentProviders>
         ) : (

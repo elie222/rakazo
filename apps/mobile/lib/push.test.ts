@@ -8,6 +8,7 @@ vi.mock("./live-notifications.js", () => ({
 vi.mock("./network-cache.js", () => ({ clearNetworkCache: vi.fn() }));
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 vi.mock("expo-constants", () => ({ default: { easConfig: { projectId: "fake-project" } } }));
+vi.mock("expo-modules-core", () => ({ requireOptionalNativeModule: () => null }));
 
 // Expo runs every module's async functions on one serial native queue, so a call
 // that waits there holds up SecureStore too.

@@ -89,7 +89,7 @@ configureUnsentSends({
     if (isModelRequiredSendError(attempt.error)) {
       Alert.alert(t("Add an AI model to keep chatting"), undefined, [
         { text: t("Not Now"), style: "cancel" },
-        { text: t("Add Model"), onPress: openModelSettings, isPreferred: true },
+        { text: t("Add model"), onPress: openModelSettings, isPreferred: true },
       ]);
     } else if (!attempt.imageConfirmation) {
       Alert.alert(t("Failed to send message"), attempt.error);

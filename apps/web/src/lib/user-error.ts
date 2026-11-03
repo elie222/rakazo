@@ -7,6 +7,7 @@ import {
 import type { CredentialField } from "@rakazo/core";
 import {
   authErrorMessage,
+  CALL_NOT_RINGING_ERROR,
   MAX_PASSWORD_LENGTH,
   MODEL_IMAGE_INPUT_ERROR,
   MODEL_IMAGE_INPUT_UNKNOWN,
@@ -25,6 +26,8 @@ export function errorText(error: unknown, fallback = t`Something went wrong. Try
     return t`This model cannot read images. Choose a model that supports images.`;
   if (typeof message === "string" && message.trim() === MODEL_IMAGE_INPUT_UNKNOWN)
     return t`Image input is not configured for this model.`;
+  if (typeof message === "string" && message.trim() === CALL_NOT_RINGING_ERROR)
+    return t`This call is no longer ringing.`;
   if (errorCode(error) === CONNECTOR_AUTH_UNAVAILABLE)
     return t`This app needs its own sign-in setup to connect.`;
   if (errorCode(error) === MCP_OAUTH_CLIENT_REQUIRED) return t`Needs an OAuth client ID`;

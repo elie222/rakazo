@@ -9,7 +9,7 @@ name: Thread error recovery
 - extendedWaitUntil:
     visible: ".*weekly limit.*"
     timeout: 20000
-- assertVisible: "Add Model"
+- assertVisible: "Add model"
 - assertNotVisible: "Change model"
 - waitForAnimationToEnd:
     timeout: 3000

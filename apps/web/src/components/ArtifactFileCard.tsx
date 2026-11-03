@@ -31,7 +31,9 @@ function isTextPreview(mimeType: string) {
 
 function isPreviewable(mimeType: string) {
   return (
-    isTextPreview(mimeType) || artifactPreviewKind(mimeType) === "pdf" || mimeType === "video/mp4"
+    isTextPreview(mimeType) ||
+    artifactPreviewKind(mimeType) === "pdf" ||
+    artifactPreviewKind(mimeType) === "video"
   );
 }
 
@@ -237,7 +239,7 @@ function FilePreview({
           </div>
         ) : kind === "html" && state.text !== undefined ? (
           <SandboxedHtmlViewer html={state.text} title={name} />
-        ) : mimeType === "video/mp4" ? (
+        ) : kind === "video" ? (
           <VideoPreview bytes={state.bytes} name={name} />
         ) : kind === "pdf" ? (
           <PdfViewer bytes={state.bytes} title={name} />
@@ -346,7 +348,7 @@ function AudioArtifactPreview({
   );
 }
 
-function VideoPreview({ bytes, name }: { bytes: Uint8Array; name: string }) {
+export function VideoPreview({ bytes, name }: { bytes: Uint8Array; name: string }) {
   const [src, setSrc] = useState<string>();
   useEffect(() => {
     const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: "video/mp4" }));

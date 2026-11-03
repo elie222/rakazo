@@ -65,7 +65,7 @@ describe("notDelivered", () => {
     expect(message).toBeUndefined();
     expect(buttons).toEqual([
       { text: "translated: Not Now", style: "cancel" },
-      { text: "translated: Add Model", onPress: expect.any(Function), isPreferred: true },
+      { text: "translated: Add model", onPress: expect.any(Function), isPreferred: true },
     ]);
     expect(router.push).not.toHaveBeenCalled();
     buttons![1]!.onPress!();
