@@ -256,11 +256,13 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         const spaceId = selectedSpaceId();
         void rpc("billing/status")
           .then((billing) => {
-            rememberReferral(spaceId, billing.referral);
             const current =
               requestId === inboxRequestId.current &&
               generation === currentSessionGeneration() &&
               apiBase === currentApiBase();
+            // Only while this session is still the live one: a reply after sign-out must not
+            // restore the previous owner's link.
+            if (current) rememberReferral(spaceId, billing.referral);
             if (current && billing.funding !== undefined && !billing.access && !isPaywallShown())
               router.push("/paywall");
           })

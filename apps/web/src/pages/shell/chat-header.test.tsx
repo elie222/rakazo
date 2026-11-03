@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
+
 import type { BillingStatus, Bot } from "@rakazo/contracts";
+import { BOT_COLORS } from "@rakazo/contracts";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -68,7 +70,9 @@ function renderHeader({ inGroup = false } = {}) {
     root.render(
       <ChatHeader
         inGroup={inGroup}
-        active={inGroup ? undefined : ({ id: "bot-1", name: "Helper", color: "#3EC5A8" } as Bot)}
+        active={
+          inGroup ? undefined : ({ id: "bot-1", name: "Helper", color: BOT_COLORS[0] } as Bot)
+        }
         activeGroup={undefined}
         activeSnapshot={null}
         phoneCallsEnabled={false}
