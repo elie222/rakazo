@@ -3575,11 +3575,20 @@ describe("connections.complete", () => {
 
   it("keeps the app-only ref while a sibling authorization for the same app is unresolved", async () => {
     const { complete, connector, connection, row } = pollFixture("connected");
-    connection.findMany.mockResolvedValue([{ providerRef: "gmail" }] as never);
+    connection.findMany.mockResolvedValue([{ providerRef: "gmail", status: "pending" }] as never);
     Object.assign(connector, { resolveConnectedAccountId: vi.fn(async () => "account-2") });
 
     await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
     expect(row.providerRef).toBe("gmail");
+  });
+
+  it("stores the account id beside an abandoned sibling attempt", async () => {
+    const { complete, connector, connection, row } = pollFixture("connected");
+    connection.findMany.mockResolvedValue([{ providerRef: null, status: "error" }] as never);
+    Object.assign(connector, { resolveConnectedAccountId: vi.fn(async () => "account-1") });
+
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
+    expect(row.providerRef).toBe("account-1");
   });
 
   it("stores the connected account a request id resolves to", async () => {

@@ -671,7 +671,7 @@ export function connectionsRoutes(ctx: RouterContext) {
                     id: { not: existing.id },
                     status: { in: ["connected", "pending", "error"] },
                   },
-                  select: { providerRef: true },
+                  select: { providerRef: true, status: true },
                 });
                 // Exclude concrete account ids only. A pending sibling may still
                 // store a slug or authorization-request id; passing those raw refs
@@ -685,7 +685,8 @@ export function connectionsRoutes(ctx: RouterContext) {
                   // them would pick an arbitrary ACTIVE id and over-exclude.
                   if (!ref || ref === existing.provider) {
                     // A connected row has no claim on a newer account a sibling may have just authorized.
-                    if (current.status === "connected") return current;
+                    if (current.status === "connected" && sibling.status === "pending")
+                      return current;
                     continue;
                   }
                   const resolvedSiblingId = await resolveAccountId(ref, []);
