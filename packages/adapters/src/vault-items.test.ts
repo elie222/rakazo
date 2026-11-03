@@ -219,7 +219,10 @@ describe("filling a saved card", () => {
       redactions: expect.arrayContaining(["4242424242424242"]),
     });
     expect(await fill(db, "expiry")).toMatchObject({ text: "08/30" });
-    expect(await fill(db, "cvc")).toMatchObject({ text: "123" });
+    const cvc = await fill(db, "cvc");
+    expect(cvc).toMatchObject({ text: "123" });
+    // Hiding 3 digits would blank every total and order number that contains them.
+    expect("redactions" in cvc && cvc.redactions).not.toContain("123");
     // The billing contact's postal code.
     expect(await fill(db, "postal_code")).toMatchObject({ text: "12345" });
   });

@@ -1470,8 +1470,10 @@ export async function resolveVaultCardFill(input: {
   if (input.field === "number") return { text: card.number, origin, redactions };
   if (input.field === "expiry") return { text: cardExpiry(card), origin, redactions };
   if (input.field === "cvc") {
+    // Only the number is hidden, as for a wallet card: hiding 3 or 4 digits would blank every total
+    // and order number that contains them for the rest of the run.
     return card.cvc
-      ? { text: card.cvc, origin, redactions: [...redactions, card.cvc] }
+      ? { text: card.cvc, origin, redactions }
       : { error: "This card has no security code saved." };
   }
   const billing = card.billing
