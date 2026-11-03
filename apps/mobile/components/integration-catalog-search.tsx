@@ -1,5 +1,5 @@
 import type { SignInMcpServer } from "@rakazo/core";
-import { newClientId, signInMcpServers } from "@rakazo/core";
+import { findOrAddMcpServer, signInMcpServers } from "@rakazo/core";
 import { useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { rpc } from "../lib/api";
@@ -55,17 +55,10 @@ export function IntegrationCatalogSearch({
     setPending(server.endpoint);
     setError(null);
     try {
-      const existing = (await rpc("mcp/servers/list")).find(
-        (row) => row.endpoint === server.endpoint,
-      );
-      const row =
-        existing ??
-        (await rpc("mcp/servers/create", {
-          slug: `integration-${newClientId().slice(0, 8)}`,
-          name: server.name,
-          transport: "streamable_http",
-          endpoint: server.endpoint,
-        }));
+      const row = await findOrAddMcpServer(server, {
+        list: () => rpc("mcp/servers/list"),
+        create: (config) => rpc("mcp/servers/create", config),
+      });
       if ((await signInToMcpServer(row.id)) !== "cancelled") await onConnected();
     } catch (reason) {
       setError(errorText(reason, t("Could not connect")));
