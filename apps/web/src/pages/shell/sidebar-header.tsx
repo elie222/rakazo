@@ -73,7 +73,13 @@ export function SidebarHeader({
             onClick={toggleActivityMode}
             className={`app-no-drag ${activityMode ? "bg-accent text-foreground" : "text-muted-foreground"}`}
           >
-            <Bell size={15} strokeWidth={1.8} aria-hidden="true" />
+            {/* A filled bell marks Activity on, so on and hovered never look alike. */}
+            <Bell
+              size={15}
+              strokeWidth={1.8}
+              fill={activityMode ? "currentColor" : "none"}
+              aria-hidden="true"
+            />
           </Button>
         </IconTooltip>
         <IconTooltip label={toggleLabel}>
