@@ -29,7 +29,8 @@ export function pageMutationOptions(queries: SpaceQueries, queryClient: QueryCli
         queries.pages.rename.call(input),
       onSuccess: (summary: PageSummary, input: { pageId: string }) => {
         patch(input.pageId, { title: summary.title });
-        void relist();
+        // The share link's slug comes from the title, so read the page again for the new link.
+        reconcile(null, input);
       },
       onError: reconcile,
     },

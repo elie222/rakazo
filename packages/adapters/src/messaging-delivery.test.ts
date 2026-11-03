@@ -327,6 +327,21 @@ describe("deliverMessagingOutbound", () => {
     });
     await deliverMessagingOutbound(example, { runId: "run-1" }, context);
     expect(sentBodies(example)).toEqual(["Plan", "Write `[Plan](page:cm123)` to link it."]);
+
+    // A real link still counts when the same text also shows it as a code example.
+    const both = createDeps({
+      messages: [
+        card,
+        {
+          id: "m-2",
+          blocks: [
+            { kind: "text", text: "Open [Plan](page:cm123), or write `[Plan](page:cm123)`." },
+          ],
+        },
+      ],
+    });
+    await deliverMessagingOutbound(both, { runId: "run-1" }, context);
+    expect(sentBodies(both)).toEqual(["Open Plan, or write `[Plan](page:cm123)`."]);
   });
 
   it("resolves the DM thread once and caches it when the identity has none", async () => {

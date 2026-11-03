@@ -744,10 +744,12 @@ function linkedPageIds(messages: readonly { blocks: unknown }[]): Set<string> {
   const ids = new Set<string>();
   for (const message of messages)
     for (const text of textBlocks(message.blocks)) {
-      // Only links the conversion names count; one inside a code example stays as written.
+      // Only links the conversion names count; one inside a code example stays as written, so a
+      // page counts when fewer of its links remain after converting than were written.
       const converted = pageLinksAsTitles(text);
+      const count = (source: string, link: string) => source.split(link).length - 1;
       for (const match of text.matchAll(/\]\(page:([A-Za-z0-9_-]{1,64})\)/g))
-        if (!converted.includes(match[0])) ids.add(match[1]!);
+        if (count(converted, match[0]) < count(text, match[0])) ids.add(match[1]!);
     }
   return ids;
 }

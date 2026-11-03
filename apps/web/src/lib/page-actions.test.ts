@@ -34,6 +34,9 @@ describe("pageMutationOptions", () => {
 
     // Started on A; the user has since opened B when these answers arrive.
     options.rename.onSuccess({ ...detail("A", "Renamed"), title: "Renamed" }, { pageId: "A" });
+    // A rename changes the share link's slug, so A's reads are fetched again; B's are not.
+    expect(client.getQueryState(linked)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(key("B"))?.isInvalidated).toBe(false);
     options.setVisibility.onSuccess(
       { visibility: "link", shareUrl: "https://rakazo.example/p/a-x" },
       { pageId: "A" },
