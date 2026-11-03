@@ -18,7 +18,7 @@ function selectedSpace(page: Page) {
 async function openAvatarMenu(page: Page) {
   await page.getByTestId("user-menu-trigger").click();
   const menu = page.locator('[data-slot="popover-content"]');
-  await expect(menu.getByRole("button", { name: "Create organization" })).toBeVisible();
+  await expect(menu.getByRole("button", { name: "Settings" })).toBeVisible();
   return menu;
 }
 
@@ -45,12 +45,21 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
   await signup(page, `organizations-${stamp}@rakazo.test`, "password12", "Org Owner");
   await completeOnboarding(page);
 
-  // One organization: only Create organization sits under the account.
+  // One organization: the menu lists none, and creating one lives in settings.
   let menu = await openAvatarMenu(page);
   await expect(menu.getByRole("button", { name: "Personal", exact: true })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "org-menu-single");
+  await page.keyboard.press("Escape");
 
-  await menu.getByRole("button", { name: "Create organization" }).click();
+  let settings = await openUserSettings(page);
+  await settings.getByTestId("settings-nav-organization").click();
+  await expect(
+    settings
+      .getByTestId("organization-settings")
+      .getByRole("button", { name: "Delete organization" }),
+  ).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "org-settings-single");
+  await settings.getByRole("button", { name: "Create organization" }).click();
   const create = page.getByRole("dialog", { name: "Create organization" });
   await create.getByLabel("Name").fill("Work");
   await captureScreenshot(page, testInfo, "org-create-dialog");
@@ -84,7 +93,6 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
     "aria-checked",
     "false",
   );
-  await expect(page.getByRole("menuitem", { name: "Create organization" })).toBeVisible();
   await captureScreenshot(page, testInfo, "org-account-menu-onboarding");
   await page.unrouteAll({ behavior: "wait" });
   await page.getByRole("menuitemradio", { name: "Personal" }).click();
@@ -114,7 +122,7 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
   await expect.poll(() => selectedSpace(page)).toBe(work.defaultSpaceId);
   await expect(page).toHaveURL((url) => url.pathname === workChat);
 
-  const settings = await openUserSettings(page);
+  settings = await openUserSettings(page);
   await settings.getByTestId("settings-nav-organization").click();
   const organization = settings.getByTestId("organization-settings");
   const name = organization.getByLabel("Name");

@@ -2409,9 +2409,8 @@ msgstr "Criar Conta"
 msgid "Create group"
 msgstr "Criar grupo"
 
-#: src/components/AccountMenu.tsx
 #: src/components/CreateOrganizationDialog.tsx
-#: src/components/SidebarFooter.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 msgid "Create organization"
 msgstr "Criar organização"
 

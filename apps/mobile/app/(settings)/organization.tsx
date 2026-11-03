@@ -1,3 +1,4 @@
+import { useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -13,11 +14,13 @@ import {
   refreshOrganizations,
   useOrganizations,
 } from "../../lib/organizations";
+import { openFromSettingsSheet } from "../../lib/settings-sheet";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
 export default function OrganizationSettings() {
   const { t } = useI18n();
+  const router = useRouter();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   const query = useOrganizations();
@@ -102,6 +105,15 @@ export default function OrganizationSettings() {
           ) : (
             <SettingsRow key="name" title={current.name} />
           )}
+        </SettingsGroup>
+        <SettingsGroup>
+          <SettingsRow
+            key="create"
+            accessibilityRole="button"
+            disabled={pending}
+            title={t("Create organization")}
+            onPress={() => openFromSettingsSheet(router, "/new-organization")}
+          />
         </SettingsGroup>
         {canDelete ? (
           <SettingsGroup>

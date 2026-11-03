@@ -35,8 +35,12 @@ tags:
 
 - openLink: "rakazo:///account"
 - scrollUntilVisible:
-    element: "Create organization"
+    element: "Organization"
     direction: DOWN
+- tapOn: "Organization"
+- extendedWaitUntil:
+    visible: "Create organization"
+    timeout: 10000
 - takeScreenshot: "40-account-organization"
 - tapOn: "Create organization"
 - extendedWaitUntil:
@@ -62,9 +66,9 @@ tags:
 - tapOn:
     id: "organization-menu"
 - extendedWaitUntil:
-    visible: "Create organization"
+    visible: "Personal"
     timeout: 10000
-- assertVisible: "Personal"
+- assertVisible: "Work"
 - takeScreenshot: "43-organization-menu"
 - tapOn: "Personal"
 - tapOn:
@@ -79,7 +83,7 @@ tags:
 - tapOn:
     id: "organization-menu"
 - extendedWaitUntil:
-    visible: "Create organization"
+    visible: "Personal"
     timeout: 10000
 - tapOn: "Work"
 - extendedWaitUntil:

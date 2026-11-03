@@ -13,7 +13,9 @@ import {
   FieldLabel,
   Input,
 } from "@rakazo/ui-web";
+import { Plus } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { CreateOrganizationDialog } from "../components/CreateOrganizationDialog";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import type { Organization } from "../lib/organizations";
 import { organizationsQuery, useOrganizations } from "../lib/organizations";
@@ -57,6 +59,7 @@ function OrganizationSettings({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [creating, setCreating] = useState(false);
   useEffect(() => {
     onBusyChange?.(pending);
   }, [pending, onBusyChange]);
@@ -130,15 +133,22 @@ function OrganizationSettings({
           ) : null}
         </SettingsRow>
       </SettingsGroup>
-      {canDelete ? (
-        <Button
-          variant="destructive"
-          className="rounded-full"
-          onClick={() => setConfirmingDelete(true)}
-        >
-          <Trans>Delete organization</Trans>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" className="rounded-full" onClick={() => setCreating(true)}>
+          <Plus aria-hidden="true" />
+          <Trans>Create organization</Trans>
         </Button>
-      ) : null}
+        {canDelete ? (
+          <Button
+            variant="destructive"
+            className="rounded-full"
+            onClick={() => setConfirmingDelete(true)}
+          >
+            <Trans>Delete organization</Trans>
+          </Button>
+        ) : null}
+      </div>
+      <CreateOrganizationDialog open={creating} onOpenChange={setCreating} />
       {confirmingDelete ? (
         <DeleteOrganizationDialog
           organization={organization}

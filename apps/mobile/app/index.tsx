@@ -30,7 +30,7 @@ import { ActivitySection } from "../components/inbox-activity";
 import { InboxHeader } from "../components/inbox-header";
 import { InboxListFooter, SWIPE_ROWS, useInboxRenderItem } from "../components/inbox-render-item";
 import { CompactRowsContext, SelectedChatContext } from "../components/inbox-rows";
-import { OrganizationTitleMenu, organizationTitleActions } from "../components/organization-menu";
+import { OrganizationTitleMenu } from "../components/organization-menu";
 import { PickChatPane } from "../components/pick-chat-pane";
 import { useUnreadJumpPills } from "../components/unread-jump-overlay";
 import { fetchSpaceActivity } from "../lib/activity";
@@ -81,6 +81,7 @@ import { native, useThemedStyles } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
 import {
   ensureOrganizations,
+  organizationSwitchActions,
   organizationSwitchEpoch,
   subscribeOrganizationSwitch,
   useOrganizations,
@@ -708,7 +709,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   );
 
   const organizations = useOrganizations(hasSession && !onShareSelect).data;
-  const hasOrganizationMenu = organizationTitleActions(organizations, t).length > 0;
+  const hasOrganizationMenu = organizationSwitchActions(organizations).length > 0;
   const headerTitle = useMemo(
     () => (hasOrganizationMenu ? () => <OrganizationTitleMenu list={organizations} /> : undefined),
     [hasOrganizationMenu, organizations],

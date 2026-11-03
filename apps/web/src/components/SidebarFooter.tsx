@@ -17,7 +17,6 @@ import {
   Link2,
   LogOut,
   Plug,
-  Plus,
   ScrollText,
   Settings,
   Smartphone,
@@ -53,7 +52,6 @@ type Props = {
   organizations?: Organization[];
   activeOrganizationId?: string | null;
   onSwitchOrganization?: (organization: Organization) => void;
-  onCreateOrganization?: () => void;
 };
 
 // Marks are 24px wide, overlap by 2px, and need 2px for the outer ring.
@@ -84,7 +82,6 @@ export function SidebarFooter({
   organizations = [],
   activeOrganizationId,
   onSwitchOrganization,
-  onCreateOrganization,
 }: Props) {
   const { t } = useLingui();
   const update = useSidebarUpdate();
@@ -152,8 +149,9 @@ export function SidebarFooter({
                 <p className="truncate text-xs text-muted-foreground">{email}</p>
               ) : null}
             </div>
-            {organizations.length > 1
-              ? organizations.map((organization) => {
+            {organizations.length > 1 ? (
+              <>
+                {organizations.map((organization) => {
                   const active = organization.id === activeOrganizationId;
                   return (
                     <Button
@@ -167,18 +165,7 @@ export function SidebarFooter({
                       {active ? <Check aria-hidden="true" strokeWidth={1.75} /> : null}
                     </Button>
                   );
-                })
-              : null}
-            {onCreateOrganization ? (
-              <>
-                <Button
-                  variant="ghost"
-                  className="h-9 w-full justify-start gap-2.5 font-normal"
-                  onClick={onCreateOrganization}
-                >
-                  <Plus className="text-muted-foreground" strokeWidth={1.75} />
-                  <Trans>Create organization</Trans>
-                </Button>
+                })}
                 <div className="my-1 border-t border-border" />
               </>
             ) : null}

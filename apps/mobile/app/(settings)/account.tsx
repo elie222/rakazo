@@ -456,13 +456,6 @@ export default function Account() {
               title={t("Organization")}
               value={activeOrganization(organizations)?.name}
             />
-            <SettingsRow
-              key="create-organization"
-              accessibilityRole="button"
-              disabled={pending}
-              onPress={() => openFromSettingsSheet(router, "/new-organization")}
-              title={t("Create organization")}
-            />
           </SettingsGroup>
         ) : null}
 

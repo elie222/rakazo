@@ -8,8 +8,12 @@ name: Organizations
       RAKAZO_ACTIVE_EMAIL: ${RAKAZO_SCREENSHOT_EMAIL}
 - openLink: "rakazo:///account"
 - scrollUntilVisible:
-    element: "Create organization"
+    element: "Organization.*"
     direction: DOWN
+    timeout: 15000
+- tapOn: "Organization.*"
+- extendedWaitUntil:
+    visible: "Create organization"
     timeout: 15000
 - waitForAnimationToEnd:
     timeout: 3000
@@ -67,7 +71,7 @@ name: Organizations
 - tapOn:
     id: "organization-menu"
 - extendedWaitUntil:
-    visible: "Create organization"
+    visible: "Work"
     timeout: 10000
 - waitForAnimationToEnd:
     timeout: 3000

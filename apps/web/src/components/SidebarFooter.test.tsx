@@ -283,7 +283,6 @@ async function renderOrganizations(
           organizations={organizations}
           activeOrganizationId="org-personal"
           onSwitchOrganization={onSwitchOrganization}
-          onCreateOrganization={() => {}}
         />
       </DesktopUpdatesProvider>,
     ),
@@ -291,22 +290,15 @@ async function renderOrganizations(
   return [...document.querySelector('[data-slot="popover-content"]')!.querySelectorAll("button")];
 }
 
-it("offers only Create organization with one organization", async () => {
+it("shows no organization rows with one organization", async () => {
   const rows = await renderOrganizations([personal]);
-  expect(rows.map((row) => row.textContent).slice(0, 2)).toEqual([
-    "Create organization",
-    "Settings",
-  ]);
+  expect(rows[0]!.textContent).toBe("Settings");
 });
 
-it("lists two organizations with the active one checked, then Create organization", async () => {
+it("lists two organizations with the active one checked", async () => {
   const onSwitch = vi.fn();
   const rows = await renderOrganizations([personal, work], onSwitch);
-  expect(rows.map((row) => row.textContent).slice(0, 3)).toEqual([
-    "Personal",
-    "Work",
-    "Create organization",
-  ]);
+  expect(rows.map((row) => row.textContent).slice(0, 3)).toEqual(["Personal", "Work", "Settings"]);
   expect(rows[0]!.getAttribute("aria-current")).toBe("true");
   expect(rows[0]!.querySelector("svg")).not.toBeNull();
   expect(rows[1]!.hasAttribute("aria-current")).toBe(false);

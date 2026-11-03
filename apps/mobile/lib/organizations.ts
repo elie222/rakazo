@@ -15,7 +15,6 @@ import { queryClient, removeSpaceQueries, rpcQuery } from "./query";
 
 export type Organization = OrganizationList["organizations"][number];
 
-export const CREATE_ORGANIZATION_ACTION = "create-organization";
 const ORGANIZATION_ACTION_PREFIX = "organization:";
 
 let switchEpoch = 0;
