@@ -1,9 +1,23 @@
 import { providerQuotaResetAt } from "@rakazo/contracts";
 
-/** A model call failed for a reason that should clear on its own, such as an overloaded provider. */
-export class TransientModelError extends Error {
-  constructor(message: string) {
+/** A failure at the model boundary. Raw diagnostics remain in memory for classification only. */
+export class ModelProviderError extends Error {
+  readonly httpStatus?: number;
+
+  constructor(message: string, diagnostics?: unknown) {
     super(message);
+    this.name = "ModelProviderError";
+    // Retain structured HTTP metadata without keeping request bodies or raw causes.
+    this.httpStatus = [...errorFacts(diagnostics).statuses].find(
+      (value) => Number.isInteger(value) && value >= 400 && value <= 599,
+    );
+  }
+}
+
+/** A model call failed for a reason that should clear on its own, such as an overloaded provider. */
+export class TransientModelError extends ModelProviderError {
+  constructor(message: string, diagnostics?: unknown) {
+    super(message, diagnostics);
     this.name = "TransientModelError";
   }
 }
@@ -12,9 +26,9 @@ export class TransientModelError extends Error {
  * The user's model provider rejected the key, hit a credit or usage limit, or no longer serves
  * the model. The user fixes it in their provider account or connection settings; not a server fault.
  */
-export class ModelAccountError extends Error {
-  constructor(message: string) {
-    super(message);
+export class ModelAccountError extends ModelProviderError {
+  constructor(message: string, diagnostics?: unknown) {
+    super(message, diagnostics);
     this.name = "ModelAccountError";
   }
 }
@@ -23,9 +37,9 @@ export class ModelAccountError extends Error {
  * The model returned nothing usable: an empty reply, a malformed tool call, or output cut off
  * by its limit. The provider and the runtime worked; another try or another model fixes it.
  */
-export class ModelOutputError extends Error {
-  constructor(message: string) {
-    super(message);
+export class ModelOutputError extends ModelProviderError {
+  constructor(message: string, diagnostics?: unknown) {
+    super(message, diagnostics);
     this.name = "ModelOutputError";
   }
 }
@@ -63,6 +77,31 @@ function errorFacts(value: unknown) {
     }
   }
   return { text: text.join(" ").toLowerCase(), statuses };
+}
+
+/** Persist only controlled descriptions, never provider response bodies or credentials. */
+export function modelFailureReason(error: ModelProviderError): string {
+  const { statuses } = errorFacts(error);
+  const status = [...statuses].find(
+    (value) => Number.isInteger(value) && value >= 400 && value <= 599,
+  );
+  const description =
+    error instanceof TransientModelError
+      ? "The model provider is temporarily unavailable."
+      : error instanceof ModelAccountError
+        ? "The model provider rejected the account or request."
+        : error instanceof ModelOutputError
+          ? "The model returned unusable output."
+          : "The model request failed.";
+  const errorClass =
+    error instanceof TransientModelError
+      ? "TransientModelError"
+      : error instanceof ModelAccountError
+        ? "ModelAccountError"
+        : error instanceof ModelOutputError
+          ? "ModelOutputError"
+          : "ModelProviderError";
+  return `${errorClass}: ${description}${status ? ` HTTP ${status}.` : ""}`;
 }
 
 /** Transport timeouts may expire before the model request's overall budget. */

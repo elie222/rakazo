@@ -1,4 +1,10 @@
-import { ModelAccountError, ModelOutputError, TransientModelError } from "@rakazo/adapter-kit";
+import {
+  ModelAccountError,
+  ModelOutputError,
+  ModelProviderError,
+  modelFailureReason,
+  TransientModelError,
+} from "@rakazo/adapter-kit";
 import {
   MODEL_CONTEXT_TOO_SMALL_ERROR,
   MODEL_OUTPUT_LIMIT_ERROR,
@@ -6,14 +12,20 @@ import {
 } from "@rakazo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const provider = vi.hoisted(() => ({ errorMessage: "" }));
+const provider = vi.hoisted(() => ({
+  errorMessage: "",
+  messages: [] as unknown[],
+  thrown: undefined as unknown,
+}));
 
 vi.mock("@earendil-works/pi-agent-core", () => ({
   Agent: class {
-    state = { errorMessage: provider.errorMessage, messages: [] };
+    state = { errorMessage: provider.errorMessage, messages: provider.messages };
 
     subscribe() {}
-    async prompt() {}
+    async prompt() {
+      if (provider.thrown) throw provider.thrown;
+    }
     async waitForIdle() {}
     abort() {}
   },
@@ -68,12 +80,43 @@ function consume() {
 describe("Pi runtime errors", () => {
   beforeEach(() => {
     provider.errorMessage = "Request was aborted by policy";
+    provider.messages = [];
+    provider.thrown = undefined;
   });
 
   it("propagates provider failures instead of completing with error text", async () => {
     const failure = consume();
     await expect(failure).rejects.toThrow("Request was aborted by policy");
     await expect(failure).rejects.not.toBeInstanceOf(TransientModelError);
+  });
+
+  it("surfaces a gateway failure recorded only on the terminal assistant message", async () => {
+    provider.errorMessage = "";
+    provider.messages = [
+      {
+        role: "assistant",
+        content: [],
+        stopReason: "error",
+        errorMessage: "HTTP 502 <html>gateway failure secret=fixture-secret</html>",
+      },
+    ];
+    const error = await consume().catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(ModelProviderError);
+    expect(modelFailureReason(error as ModelProviderError)).toBe(
+      "TransientModelError: The model provider is temporarily unavailable. HTTP 502.",
+    );
+  });
+
+  it("keeps a thrown HTTP status without retaining the response in the saved reason", async () => {
+    provider.thrown = Object.assign(new Error("gateway rejected request"), {
+      status: 502,
+      body: { apiKey: "fixture-secret", prompt: "private request" },
+    });
+    const error = await consume().catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(ModelProviderError);
+    expect(modelFailureReason(error as ModelProviderError)).toBe(
+      "ModelProviderError: The model request failed. HTTP 502.",
+    );
   });
 
   it("marks a provider overload that outlasted its retries as transient", async () => {

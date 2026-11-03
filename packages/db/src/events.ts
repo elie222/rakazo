@@ -1877,7 +1877,10 @@ async function finalizeRunOnce(
     const replyBlocks =
       input.outcome === "completed"
         ? completedRunBlocks(input.blocks, writableRun?.startedAt ?? null, now)
-        : (input.partialReply ?? []);
+        : [
+            ...(input.partialReply ?? []),
+            { kind: "text" as const, text: `Run failed: ${input.error || "Unknown error."}` },
+          ];
     if (replyBlocks.length > 0) {
       const message = await createThreadMessageInTransaction(tx, {
         threadId: input.threadId,

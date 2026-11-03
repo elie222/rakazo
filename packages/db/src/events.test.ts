@@ -114,7 +114,10 @@ describe("finalizeRun", () => {
           findMany: vi.fn(async () => []),
           updateMany: vi.fn(async () => ({ count: 0 })),
         },
-        message: { findFirst: vi.fn(async () => null) },
+        message: {
+          findFirst: vi.fn(async () => null),
+          create: vi.fn(async () => ({ id: "failure-notice" })),
+        },
         bot: { update: vi.fn(async () => ({})) },
       };
       const transaction = vi
@@ -144,7 +147,7 @@ describe("finalizeRun", () => {
       expect(tx.externalEffect.deleteMany).toHaveBeenCalledWith({
         where: { runId: "run-1", kind: "runtime_checkpoint", status: "runtime_checkpoint" },
       });
-      expect(createEvent).toHaveBeenCalledOnce();
+      expect(createEvent).toHaveBeenCalledTimes(outcome === "failed" ? 2 : 1);
       expect(publish).toHaveBeenCalledOnce();
       // A finished run never resumes to read a waiting secret answer.
       expect(tx.secret.deleteMany).toHaveBeenCalledWith({
@@ -219,7 +222,7 @@ describe("finalizeRun", () => {
     expect(tx.message.create).toHaveBeenCalledExactlyOnceWith({
       data: expect.objectContaining({
         role: "bot",
-        blocks: partialReply,
+        blocks: [...partialReply, { kind: "text", text: "Run failed: terminated" }],
         runId: "run-1",
         clientNonce: partialReplyClientNonce("run-1"),
       }),
@@ -234,8 +237,8 @@ describe("finalizeRun", () => {
     );
   });
 
-  it("saves no message for a failure without a partial reply", async () => {
-    const create = vi.fn();
+  it("saves a failure notice even without a partial reply", async () => {
+    const create = vi.fn(async () => ({ id: "failure-notice" }));
     const tx = {
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       $queryRaw: vi.fn(async () => []),
@@ -276,7 +279,20 @@ describe("finalizeRun", () => {
       outcome: "failed",
       error: "terminated",
     });
-    expect(create).not.toHaveBeenCalled();
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        threadId: "thread-1",
+        botId: "bot-1",
+        runId: "run-1",
+        role: "bot",
+        blocks: [{ kind: "text", text: "Run failed: terminated" }],
+      }),
+    });
+    expect(tx.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "failed", error: "terminated" }),
+      }),
+    );
   });
 
   it("resumes a held messaging inbound as a messaging run", async () => {
@@ -316,7 +332,10 @@ describe("finalizeRun", () => {
         ]),
         updateMany: vi.fn(async () => ({ count: 1 })),
       },
-      message: { findFirst: vi.fn(async () => null) },
+      message: {
+        findFirst: vi.fn(async () => null),
+        create: vi.fn(async () => ({ id: "failure-notice" })),
+      },
       bot: { update: vi.fn(async () => ({})) },
     };
     const prisma = {
@@ -387,7 +406,10 @@ describe("finalizeRun", () => {
         ]),
         updateMany: vi.fn(async () => ({ count: 1 })),
       },
-      message: { findFirst: vi.fn(async () => null) },
+      message: {
+        findFirst: vi.fn(async () => null),
+        create: vi.fn(async () => ({ id: "failure-notice" })),
+      },
       bot: { update: vi.fn(async () => ({})) },
     };
     const prisma = {
@@ -480,7 +502,10 @@ describe("finalizeRun", () => {
         ]),
         updateMany: vi.fn(async () => ({ count: 1 })),
       },
-      message: { findFirst: vi.fn(async () => null) },
+      message: {
+        findFirst: vi.fn(async () => null),
+        create: vi.fn(async () => ({ id: "failure-notice" })),
+      },
       bot: { update: vi.fn(async () => ({})) },
     };
     const prisma = {

@@ -1,6 +1,8 @@
 import type { NotificationMessage } from "@rakazo/adapter-kit";
 import {
   ModelAccountError,
+  ModelProviderError,
+  modelFailureReason,
   SandboxAllowanceUsedError,
   SandboxRateLimitError,
   TransientModelError,
@@ -225,13 +227,17 @@ async function failRun(scenario: Scenario) {
   expect(finalizeRun).toHaveBeenCalledWith(
     expect.objectContaining({
       outcome: "failed",
-      error: scenario.pinnedTo ? "Connect that model provider first" : scenario.error.message,
+      error: scenario.pinnedTo
+        ? "Connect that model provider first"
+        : scenario.error instanceof ModelProviderError
+          ? modelFailureReason(scenario.error)
+          : scenario.error.message,
     }),
   );
   const retries = enqueue.mock.calls
     .map(([job]) => job)
     .filter((job) => job.name === "routine.retry");
-  return { retries, send, prisma };
+  return { retries, send, prisma, finalizeRun };
 }
 
 const overloaded = () =>
@@ -245,6 +251,24 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+it("records a safe provider failure even when finish notifications are off", async () => {
+  const { finalizeRun, send } = await failRun({
+    trigger: "user",
+    notifyOnFinish: false,
+    error: new TransientModelError(
+      'HTTP 502 gateway body={"apiKey":"fixture-key","prompt":"private"}',
+    ),
+  });
+  expect(finalizeRun).toHaveBeenCalledWith(
+    expect.objectContaining({
+      threadId: "thread-1",
+      outcome: "failed",
+      error: "TransientModelError: The model provider is temporarily unavailable. HTTP 502.",
+    }),
+  );
+  expect(send).not.toHaveBeenCalled();
 });
 
 describe("routine failure notifications", () => {
@@ -443,7 +467,7 @@ function retryHarness(scenario: RetryScenario = {}) {
     thinkingLevel: "low",
     modelPinned: true,
     createdAt: failedAt,
-    error: overloaded().message,
+    error: modelFailureReason(overloaded()),
   };
   const tx = {
     routine: {
@@ -560,7 +584,7 @@ describe("running a routine retry", () => {
         {
           kind: "failure",
           title: "Assistant failed",
-          body: overloaded().message,
+          body: modelFailureReason(overloaded()),
           badge: 1,
           botId: "bot-1",
           threadId: "thread-1",
@@ -845,7 +869,7 @@ describe("exhausted routine retry notification", () => {
       expect.objectContaining({
         kind: "failure",
         title: "Assistant failed",
-        body: overloaded().message.slice(0, 180),
+        body: modelFailureReason(overloaded()).slice(0, 180),
         botId: "bot-1",
         threadId: "thread-1",
       }),
@@ -899,8 +923,13 @@ describe("reporting a failed run", () => {
     ["a rejected model key", new ModelAccountError('401: {"message":"Invalid API-key provided."}')],
     ["the computer provider's rate limit", new SandboxRateLimitError()],
   ])("logs %s as a warning, not an error report", async (_label, error) => {
+    const originalMessage = error.message;
     expect(await failedRunLog(error)).toEqual([
-      expect.objectContaining({ level: "warn", "run.failure": error.name, reason: error.message }),
+      expect.objectContaining({
+        level: "warn",
+        "run.failure": error.name,
+        reason: error instanceof ModelProviderError ? modelFailureReason(error) : originalMessage,
+      }),
     ]);
   });
 

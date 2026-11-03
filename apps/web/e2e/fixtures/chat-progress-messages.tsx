@@ -5,7 +5,9 @@ import { bootstrapI18n, i18n } from "../../src/lib/i18n";
 import "../../src/styles.css";
 import { FixtureTranscript, reduceThreadEvents } from "./thread-fixture";
 
-const live = new URLSearchParams(location.search).get("live") === "1";
+const params = new URLSearchParams(location.search);
+const live = params.get("live") === "1";
+const failed = params.get("failed") === "1";
 
 // A bot posts a message_user update mid-turn, keeps calling tools, then replies.
 const midTurn: Partial<ProductEvent>[] = [
@@ -40,10 +42,25 @@ const events: Partial<ProductEvent>[] = live
         payload: {
           messageId: "bot-reply",
           role: "bot",
-          blocks: [{ kind: "text", text: "Tuesday afternoon is free." }],
+          blocks: [
+            {
+              kind: "text",
+              text: failed
+                ? "Run failed: TransientModelError: The model provider is temporarily unavailable. HTTP 502."
+                : "Tuesday afternoon is free.",
+            },
+          ],
         },
       },
-      { type: "run.completed" },
+      failed
+        ? {
+            type: "run.failed",
+            payload: {
+              error:
+                "TransientModelError: The model provider is temporarily unavailable. HTTP 502.",
+            },
+          }
+        : { type: "run.completed" },
     ];
 const snapshot = reduceThreadEvents(events);
 

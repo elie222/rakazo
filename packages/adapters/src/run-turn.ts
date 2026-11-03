@@ -4,6 +4,8 @@ import {
   historyCompactJob,
   ModelAccountError,
   ModelOutputError,
+  ModelProviderError,
+  modelFailureReason,
   runContinueJob,
   SandboxAllowanceUsedError,
   SandboxRateLimitError,
@@ -910,7 +912,10 @@ export async function failRun(
   if (!ctx.state.terminalCheckpointComplete) {
     await ctx.computer.checkpoint.flush().catch(() => undefined);
   }
-  const message = redactSecrets(userRunError(error), ctx.secrets);
+  const message = redactSecrets(
+    error instanceof ModelProviderError ? modelFailureReason(error) : userRunError(error),
+    ctx.secrets,
+  );
   // Reply text the user watched stream in since the last saved message stays in the
   // thread, above the error, instead of vanishing with the live row.
   recordExplicitNoResponse(reply, reply.assistantTurnText);
