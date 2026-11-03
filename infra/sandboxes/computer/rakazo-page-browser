@@ -2387,16 +2387,18 @@ def run(argv: list[str]) -> int:
         connected = True
         browser = AgentBrowser(port)
         tabs: Tabs | None = None
-        # Best effort here and below: a tab list that fails leaves the call as it was.
-        with contextlib.suppress(Exception):
-            started = Tabs(browser.home, port, (version or {}).get("webSocketDebuggerUrl"), browser.use_tab)
-            browser.deadline = started.deadline = tab_deadline()
-            try:
-                started.begin()
-            finally:
-                browser.deadline = None
-            # Only once it knows the tabs the call began with: without them, every tab would look new.
-            tabs = started
+        # Best effort here and below: a tab list that fails leaves the call as it was. A purchase check
+        # presses nothing, so it leaves the tabs and what they have opened to the next call.
+        if command != "purchase_check":
+            with contextlib.suppress(Exception):
+                started = Tabs(browser.home, port, (version or {}).get("webSocketDebuggerUrl"), browser.use_tab)
+                browser.deadline = started.deadline = tab_deadline()
+                try:
+                    started.begin()
+                finally:
+                    browser.deadline = None
+                # Only once it knows the tabs the call began with: without them, every tab would look new.
+                tabs = started
         target, address = front_tab(port)
         if args.get("downloads") is not None:
             client = CdpClient(discover_ws_url(port))

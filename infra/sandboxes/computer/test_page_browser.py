@@ -640,6 +640,18 @@ class PurchaseTest(unittest.TestCase):
             helper.run(["rakazo-page-browser", "purchase_check", '{"desktop": true}'])
         self.assertEqual(json.loads(printed.call_args.args[0])["ok"], False)
 
+    def test_a_purchase_check_leaves_the_tabs_alone(self):
+        listing = [{"type": "page", "id": "tab-1", "url": "https://shop.example.test/pay"}]
+        browser = FakeAgentBrowser()
+        with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), patch.object(helper, "wait_for_cdp"), \
+                patch.object(helper, "http_get_json", return_value=listing), \
+                patch.object(helper, "AgentBrowser", return_value=browser), \
+                patch.object(browser, "use_tab", create=True), \
+                patch.object(helper, "Tabs") as tabs, patch("builtins.print") as printed:
+            helper.run(["rakazo-page-browser", "purchase_check", '{"desktop": true}'])
+        tabs.assert_not_called()
+        self.assertEqual(json.loads(printed.call_args.args[0])["ok"], True)
+
     def test_a_purchase_check_with_no_page_or_a_browser_page_showing_finds_nothing_to_buy(self):
         for listing in ([], [{"type": "page", "id": "newtab", "url": "chrome://newtab/"}]):
             with self.subTest(listing=listing), patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), \
