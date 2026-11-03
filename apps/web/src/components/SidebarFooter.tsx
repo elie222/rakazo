@@ -13,7 +13,6 @@ import {
   BookOpen,
   Download,
   FolderOpen,
-  Gauge,
   Link2,
   LogOut,
   Plug,
@@ -44,7 +43,6 @@ type Props = {
   onLink?: (link: NavLink) => void;
   onArtifacts: () => void;
   onSettings: () => void;
-  onUsage: () => void;
   onInvite?: () => void;
   onLogOut: () => void;
   signingOut: boolean;
@@ -72,7 +70,6 @@ export function SidebarFooter({
   onLink,
   onArtifacts,
   onSettings,
-  onUsage,
   onInvite,
   onLogOut,
   signingOut,
@@ -200,14 +197,6 @@ export function SidebarFooter({
                 {link.label}
               </Button>
             ))}
-            <Button
-              variant="ghost"
-              className="h-9 w-full justify-start gap-2.5 font-normal"
-              onClick={onUsage}
-            >
-              <Gauge className="text-muted-foreground" strokeWidth={1.75} />
-              <Trans>Usage</Trans>
-            </Button>
             <div className="my-1 border-t border-border" />
             <a
               className={`${buttonVariants({ variant: "ghost" })} h-9 w-full justify-start gap-2.5 font-normal`}
