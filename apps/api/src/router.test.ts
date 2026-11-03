@@ -72,7 +72,13 @@ async function handle(handler: RouterHandler, ...args: Parameters<RouterHandler[
 describe("account preferences", () => {
   function preferencesDeps(avatarStyle: string, timezone: string | null = null) {
     const update = vi.fn().mockResolvedValue({});
-    const user = { email: "user@rakazo.test", name: "Test User", avatarStyle, timezone };
+    const user = {
+      email: "user@rakazo.test",
+      name: "Test User",
+      avatarStyle,
+      timezone,
+      secrets: [],
+    };
     const updateMany = vi.fn(
       async ({ where, data }: { where: { timezone: null }; data: { timezone: string } }) => {
         if (user.timezone !== where.timezone) return { count: 0 };
@@ -462,6 +468,7 @@ describe("billing", () => {
           name: "Test User",
           avatarStyle: "robot",
           signupSurvey,
+          secrets: [],
         }),
       },
       signupSurvey: { upsert: upsertSignupSurvey },
@@ -607,6 +614,7 @@ describe("model setup gate", () => {
           email: "user@rakazo.test",
           name: "Test User",
           avatarStyle: "robot",
+          secrets: [],
         }),
       },
       // A bot that follows the main model.
@@ -2179,7 +2187,11 @@ describe("MCP server health", () => {
       secret: { findFirst: vi.fn(), create: vi.fn(), deleteMany: vi.fn() },
       user: {
         findUnique: vi.fn(async () => ({ email: "owner@rakazo.test", emailVerified: true })),
-        findUniqueOrThrow: vi.fn(async () => ({ email: "owner@rakazo.test", name: "Owner" })),
+        findUniqueOrThrow: vi.fn(async () => ({
+          email: "owner@rakazo.test",
+          name: "Owner",
+          secrets: [],
+        })),
       },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue({ ownerUserId: "owner-1" }) },
       $executeRaw: vi.fn(async () => 1),
@@ -3697,6 +3709,7 @@ describe("updater owner gate", () => {
           email: "user@rakazo.test",
           name: "Test User",
           avatarStyle: "robot",
+          secrets: [],
         }),
       },
       userModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
@@ -7859,6 +7872,7 @@ describe("openai-compatible enabled models", () => {
           email: actor.email,
           name: "User",
           avatarStyle: "organic",
+          secrets: [],
         })),
       },
       $transaction: vi.fn(async (fn: (client: unknown) => unknown) => fn(prisma)),

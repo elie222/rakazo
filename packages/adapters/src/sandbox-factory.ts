@@ -1,4 +1,4 @@
-import type { SandboxProvider } from "@rakazo/adapter-kit";
+import type { ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
 import { SandboxKind } from "@rakazo/contracts";
 import { BoatSandboxProvider } from "./boat-sandbox.js";
 import { BoxdSandboxProvider } from "./boxd-sandbox.js";
@@ -23,6 +23,8 @@ export interface SandboxProviderOptions {
   novitaApiKey?: string;
   sandboxTemplate?: string;
   onUnsafeStop?: (providerRef: string) => Promise<void>;
+  /** Whether another running computer still uses the same provider resource. */
+  referenceInUse?: (computer: ComputerRef) => Promise<boolean>;
   daytonaApiKey?: string;
   daytonaApiUrl?: string;
   daytonaTarget?: string;
@@ -159,6 +161,7 @@ export async function createSandboxProvider(
         endUserId: opts.wuyingEndUserId ?? "",
         mcpUrl: opts.wuyingMcpUrl ?? "",
         mcpToken: opts.wuyingMcpToken ?? "",
+        referenceInUse: opts.referenceInUse,
       });
     }
     case "docker":

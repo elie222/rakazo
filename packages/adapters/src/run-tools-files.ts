@@ -1,7 +1,7 @@
 import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import { inferAttachmentMimeType, isBackgroundRunTrigger } from "@rakazo/core";
 import { resolveBotWorkspacePath } from "./computer-support.js";
-import { desktopProtectionGuardMessage } from "./desktop-command-guard.js";
+import { desktopGuardApplies, desktopProtectionGuardMessage } from "./desktop-command-guard.js";
 import { protectedActivateScriptWriteRefusal } from "./desktop-guard-words.js";
 import { generateMediaFromTool } from "./media-generation-tools.js";
 import type { RunContext } from "./run-context.js";
@@ -117,7 +117,7 @@ export const fileTools: ToolHandlers = {
     const { deps, bot, context } = ctx;
     const { name, args } = call;
     const filePath = String(args.path ?? "notes/result.txt");
-    if (ctx.computer.graphical) {
+    if (desktopGuardApplies(ctx.computer)) {
       const activateRefusal = protectedActivateScriptWriteRefusal(filePath);
       if (activateRefusal) {
         return call.finish({ error: desktopProtectionGuardMessage(activateRefusal) });

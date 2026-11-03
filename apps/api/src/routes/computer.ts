@@ -251,6 +251,10 @@ export function computerRoutes(ctx: RouterContext) {
       recover: authed.computer.recover.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
+        if (!computerSupportsUpdate(bot.computer.kind))
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Computer recovery is not available on this device",
+          });
         try {
           return await queueComputerUpdate(deps, bot.computer.id, bot.id, "recover");
         } catch (error) {

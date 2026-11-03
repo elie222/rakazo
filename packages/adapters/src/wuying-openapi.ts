@@ -142,6 +142,14 @@ export class WuyingOpenApi implements WuyingControlPlane {
         missing.name = "SandboxNotFoundError";
         throw missing;
       }
+      // A refused AccessKey stays refused, so it is reported as such rather than as a retry.
+      if (typeof code === "string" && /^(InvalidAccessKey|SignatureDoesNotMatch)/.test(code))
+        throw new Error(`Wuying ${action}: the AccessKey was refused`);
+      if (
+        statusCode === 403 ||
+        (typeof code === "string" && /^(Forbidden|NoPermission)/.test(code))
+      )
+        throw new Error(`Wuying ${action}: the AccessKey is not allowed this action`);
       throw new SandboxUnresponsiveError(`Wuying ${action} failed`);
     }
   }

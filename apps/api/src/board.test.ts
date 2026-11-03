@@ -86,6 +86,7 @@ it.each([false, true])("includes the board capability in me (%s)", async (ticket
         email: "user@rakazo.test",
         name: "Test",
         avatarStyle: "robot",
+        secrets: [],
       })),
     },
     userModelPreference: { findFirst: vi.fn(async () => null) },

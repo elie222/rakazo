@@ -58,11 +58,11 @@ http://{$RAKAZO_HOST:app.example.com} {
 	# A localhost trial must not pin HTTPS onto every local dev server.
 	@hsts not host localhost 127.0.0.1
 	header @hsts Strict-Transport-Security "max-age=31536000"
-	# SAMEORIGIN still lets the app frame its own /novnc/ screen.
-	header {
-		X-Content-Type-Options nosniff
-		X-Frame-Options SAMEORIGIN
-	}
+	# SAMEORIGIN still lets the app frame its own /novnc/ screen. The embedded screen frames its runtime
+	# from an opaque sandboxed page, which SAMEORIGIN rejects; only that exact runtime path omits ancestor restrictions.
+	header X-Content-Type-Options nosniff
+	@framed not path /computer-screen/sdk/ASP/container.html
+	header @framed X-Frame-Options SAMEORIGIN
 
 	handle /health {
 		reverse_proxy api:3100 {

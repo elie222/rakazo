@@ -444,6 +444,14 @@ msgstr ""
 msgid "About {label}"
 msgstr "Über {label}"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key ID"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key secret"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Access token (optional)"
 msgstr "Zugriffstoken (optional)"
@@ -791,6 +799,7 @@ msgid "Any model, with your own key"
 msgstr ""
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/lib/localized-provider-hint.ts
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/model-settings/compatible-key-field.tsx
@@ -811,6 +820,14 @@ msgstr "API-Schlüssel-Header"
 #: src/pages/shell/agent-import.tsx
 msgid "API keys"
 msgstr "API-Schlüssel"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API URL"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
@@ -1976,6 +1993,10 @@ msgstr ""
 msgid "Could not load bots. Reload to try again."
 msgstr ""
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not load computer settings"
+msgstr ""
+
 #: src/components/VaultSettings.tsx
 msgid "Could not load credentials."
 msgstr ""
@@ -2135,6 +2156,10 @@ msgstr "Speichern fehlgeschlagen"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not save computer settings"
 msgstr ""
 
 #: src/pages/GroupPanel.tsx
@@ -2534,6 +2559,11 @@ msgstr "Abgelehnt"
 msgid "Deny"
 msgstr "Ablehnen"
 
+#. placeholder {0}: settings.defaultProvider
+#: src/components/ComputerProviderSettings.tsx
+msgid "Deployment default ({0})"
+msgstr ""
+
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Description"
@@ -2545,6 +2575,10 @@ msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop app"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Desktop ID"
 msgstr ""
 
 #: src/components/DesktopUpdates.tsx
@@ -2755,6 +2789,10 @@ msgstr "E-Mail-Verifizierung erforderlich"
 msgid "Enable {0}"
 msgstr "{0} aktivieren"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "End user ID"
+msgstr ""
+
 #: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr ""
@@ -2789,6 +2827,10 @@ msgstr "Gib eine ganze Zahl von 1 bis 1000 für das Bilderlimit ein."
 #: src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
 msgstr "Gib vor dem Test einen API-Schlüssel ein."
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Environment ID"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
@@ -3056,6 +3098,14 @@ msgstr "Vollbild"
 #: src/pages/Onboarding.tsx
 msgid "Gateway ID"
 msgstr "Gateway-ID"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway URL"
+msgstr ""
 
 #: src/pages/settings-nav.ts
 #: src/pages/SettingsOverlay.tsx
@@ -3911,6 +3961,10 @@ msgstr "Stummschalten"
 msgid "Muted"
 msgstr "Stummgeschaltet"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "My computers"
+msgstr ""
+
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -3984,6 +4038,10 @@ msgstr "Neu"
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "New bot"
 msgstr "Neuer Bot"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "New computers run on"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"
@@ -4345,6 +4403,10 @@ msgstr "Optionaler Header-Wert"
 #: src/pages/Onboarding.tsx
 msgid "Or paste an API key"
 msgstr "Oder einen API-Schlüssel einfügen"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Organization"
+msgstr ""
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
@@ -4758,6 +4820,10 @@ msgstr ""
 msgid "Refreshing…"
 msgstr ""
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Region"
+msgstr ""
+
 #: src/lib/user-error.ts
 msgid "Registration is closed"
 msgstr "Registrierung ist geschlossen"
@@ -5042,6 +5108,10 @@ msgstr "Widerrufen"
 msgid "Revoked"
 msgstr ""
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Root filesystem"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Rotate key"
 msgstr ""
@@ -5117,6 +5187,7 @@ msgid "Saturday"
 msgstr "Samstag"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5151,6 +5222,7 @@ msgid "Save to Vault"
 msgstr "Im Tresor speichern"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Saved"
@@ -5376,6 +5448,7 @@ msgstr "Einrichtung abgeschlossen"
 msgid "Setup help"
 msgstr "Einrichtungshilfe"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Shape"
 msgstr "Form"
@@ -5792,6 +5865,10 @@ msgstr "Tabelle"
 msgid "Take control"
 msgstr "Kontrolle übernehmen"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Target"
+msgstr ""
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "Aufgabe anlernen"
@@ -5810,6 +5887,10 @@ msgstr "Team-Computer"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Template"
 msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
