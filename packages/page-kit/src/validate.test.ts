@@ -62,6 +62,10 @@ describe("checkPageSource", () => {
       "function Card() { return null; }\nconst App = () => React.createElement(Page, { title: 't' }, React.createElement(Card), React.createElement(React.Fragment), React.createElement('div'));",
     ],
     [
+      "a component of its own named like a blocked element",
+      "function Script() { return <Text>x</Text>; }\nconst App = () => <Script />;",
+    ],
+    [
       "require as a plain object key",
       "const notes = { require: 'sign-off' };\nconst App = () => <Text>{notes.require}</Text>;",
     ],
@@ -142,6 +146,16 @@ describe("checkPageSource", () => {
       "foreignObject inside SVG",
       "const App = () => <svg>\n<foreignObject />\n</svg>;",
       "line 2: <foreignObject> is not allowed",
+    ],
+    [
+      "an iframe spelled with a capital inside",
+      "const App = () => <iFrame src='https://x.dev' />;",
+      "line 1: <iFrame> is not allowed",
+    ],
+    [
+      "a script in odd case",
+      "const App = () => <sCRIPT>{'x'}</sCRIPT>;",
+      "line 1: <sCRIPT> is not allowed",
     ],
     [
       "an event handler written as a string",

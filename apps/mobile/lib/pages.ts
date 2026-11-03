@@ -164,7 +164,7 @@ export function savePageVisibility(
   return setPageVisibility(pageId, visibility).then(
     (result) => dispatch({ type: "saved", visibility, shareUrl: result.shareUrl }),
     () =>
-      getLatestPage(pageId, { refresh: true }).then(
+      getLatestPage(pageId, { refresh: true, link: true }).then(
         (page) => dispatch({ type: "failed", visibility, actual: page }),
         () => dispatch({ type: "failed", visibility, actual: null }),
       ),
@@ -200,7 +200,7 @@ export const chatOnScreen = {
 /** The latest version: one read per page until a newer version is known or the chat refocuses. */
 export function getLatestPage(
   pageId: string,
-  options: { refresh?: boolean; atLeastVersion?: number; since?: number } = {},
+  options: { refresh?: boolean; atLeastVersion?: number; since?: number; link?: boolean } = {},
 ): Promise<PageDetail> {
   const cached = options.refresh ? undefined : pageReads.get(pageId);
   if (cached && cached.at >= (options.since ?? lastOnScreen)) {
@@ -209,7 +209,7 @@ export function getLatestPage(
       page.currentVersion >= wanted ? page : getLatestPage(pageId, { refresh: true }),
     );
   }
-  const read = rpc("pages/get", { pageId });
+  const read = rpc("pages/get", options.link ? { pageId, link: true } : { pageId });
   const entry = { read, at: Date.now() };
   pageReads.set(pageId, entry);
   read.catch(() => {

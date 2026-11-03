@@ -2,10 +2,11 @@ import { createHash, randomBytes } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { EncryptedSecretStore } from "@rakazo/adapters";
 import type { PageDetail, PageSummary, ThreadSnapshot } from "@rakazo/contracts";
 import { SHARED_PAGE_PATH_PREFIX } from "@rakazo/contracts";
 import { pageViewerCode } from "@rakazo/page-kit/compile";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { BotIntroHarness } from "./discard-bot-intro.js";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
@@ -424,9 +425,20 @@ describePages("pages", () => {
       version: 1,
       updatedAt: expect.any(String),
     });
-    expect((await rpc<PageDetail>(app, cookie, "pages/get", { pageId: middle })).shareUrl).toBe(
-      firstLink.shareUrl,
-    );
+    // A card's read leaves the secret store alone; only the share popover asks for the link.
+    const { shareSecretId } = await db().page.findUniqueOrThrow({ where: { id: middle } });
+    const load = vi.spyOn(EncryptedSecretStore.prototype, "load");
+    const tokenReads = () =>
+      load.mock.calls.filter(
+        ([, context]) => typeof context === "object" && context.recordId === shareSecretId,
+      ).length;
+    const card = await rpc<PageDetail>(app, cookie, "pages/get", { pageId: middle });
+    expect(card).toMatchObject({ visibility: "link", shareUrl: null });
+    expect(tokenReads()).toBe(0);
+    const linked = await rpc<PageDetail>(app, cookie, "pages/get", { pageId: middle, link: true });
+    expect(linked.shareUrl).toBe(firstLink.shareUrl);
+    expect(tokenReads()).toBe(1);
+    load.mockRestore();
     await share("private");
     expect((await read(firstLink.shareUrl!)).status).toBe(404);
     // Off means the stored token is gone too, not only hidden behind the visibility flag.
@@ -507,7 +519,7 @@ describePages("pages", () => {
     // no page points to.
     const links = await Promise.all([share("link"), share("link")]);
     expect(await secrets()).toBe(1);
-    const live = await rpc<PageDetail>(app, cookie, "pages/get", { pageId });
+    const live = await rpc<PageDetail>(app, cookie, "pages/get", { pageId, link: true });
     expect(links.map((link) => link.shareUrl)).toEqual([live.shareUrl, live.shareUrl]);
     // A link and an off at once end consistent: a link has its one secret, off has none.
     await Promise.all([share("link"), share("private")]);

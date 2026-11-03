@@ -416,12 +416,12 @@ export const CALENDAR_CSS = `
 .rk-cal-month td[data-outside]{background:color-mix(in srgb,var(--foreground) 2%,transparent)}
 .rk-cal-day{display:flex;flex-direction:column;gap:4px;min-width:0;padding:6px 4px}
 .rk-cal-date{display:inline-flex;align-items:center;justify-content:center;align-self:flex-start;min-width:22px;height:22px;padding:0 4px;border-radius:9999px;font-size:12px;line-height:16px}
-.rk-cal-date[data-today]{background:#C21D2E;color:#fff;font-weight:600}
+.rk-cal-date[data-today]{background:var(--destructive-fill);color:var(--destructive-foreground);font-weight:600}
 .rk-cal-chips{display:flex;flex-direction:column;gap:2px;margin:0;padding:0;list-style:none;min-width:0}
 .rk-cal-chip,.rk-cal-more{min-width:0;height:20px;padding:2px 6px;border-radius:6px;font-size:11px;line-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rk-cal-chip{position:relative;height:auto;padding:2px 5px;white-space:normal;background:color-mix(in srgb,var(--rk-c1) 22%,transparent);color:color-mix(in srgb,var(--rk-c1) 55%,var(--foreground))}
 .rk-cal-chip>span{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow-wrap:break-word}
-.rk-cal-chip[data-kind="selected"],.rk-cal-event[data-kind="selected"]{background:#0C64C1;color:#fff}
+.rk-cal-chip[data-kind="selected"],.rk-cal-event[data-kind="selected"]{background:var(--rk-c1);color:var(--rk-on-c1)}
 .rk-cal-event[data-kind="selected"] .rk-cal-event-time{opacity:1}
 .rk-cal-chip[data-kind="free"],.rk-cal-event[data-kind="free"]{background:color-mix(in srgb,var(--foreground) 3%,transparent);color:var(--rk-secondary);outline:1px dashed var(--rk-line);outline-offset:-1px}
 .rk-cal-more{padding:1px 7px;border:1px solid var(--rk-line);color:var(--rk-secondary)}
@@ -429,7 +429,7 @@ export const CALENDAR_CSS = `
 .rk-cal-heads{display:grid;grid-template-columns:repeat(7,minmax(64px,1fr));margin-left:60px;padding-bottom:6px}
 .rk-cal-head{display:flex;align-items:center;gap:2px;padding-left:6px;font-size:12px;line-height:16px;color:var(--rk-secondary);white-space:nowrap}
 .rk-cal-head .rk-cal-date{color:var(--foreground);font-weight:500}
-.rk-cal-head .rk-cal-date[data-today]{color:#fff}
+.rk-cal-head .rk-cal-date[data-today]{color:var(--destructive-foreground)}
 .rk-cal-body{position:relative;margin:9px 0;min-width:0}
 .rk-cal-hours span{position:absolute;left:0;width:52px;transform:translateY(-50%);font-size:12px;line-height:16px;text-align:right;color:var(--rk-secondary);white-space:nowrap}
 .rk-cal-columns{position:absolute;inset:0 0 0 60px;display:grid;grid-template-columns:repeat(auto-fit,minmax(64px,1fr));border-left:1px solid var(--rk-hairline);background:repeating-linear-gradient(to bottom,var(--rk-hairline) 0 1px,transparent 1px ${HOUR_HEIGHT}px)}

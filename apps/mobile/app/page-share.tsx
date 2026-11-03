@@ -52,7 +52,7 @@ export default function PageShareScreen() {
   useEffect(() => {
     let active = true;
     setLoaded({ status: "loading" });
-    void getLatestPage(pageId, { refresh: true }).then(
+    void getLatestPage(pageId, { refresh: true, link: true }).then(
       (page) => {
         if (!active) return;
         dispatch({ type: "loaded", visibility: page.visibility, shareUrl: page.shareUrl });

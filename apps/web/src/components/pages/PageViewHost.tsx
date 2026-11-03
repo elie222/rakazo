@@ -62,6 +62,10 @@ function OpenPage({
     DOCK_CLEARANCE,
   );
   const [shareOpen, setShareOpen] = useState(false);
+  const link = useQuery({
+    ...queries.pages.get.queryOptions({ input: { pageId: shownId, link: true } }),
+    enabled: pageId !== null && shareOpen,
+  });
 
   function close() {
     session.askShare(null);
@@ -150,7 +154,7 @@ function OpenPage({
             title={data.title}
             owner={data.owner}
             visibility={shownVisibility}
-            shareUrl={data.shareUrl}
+            shareUrl={link.data?.shareUrl ?? null}
             open={shareOpen}
             onOpenChange={setShareOpen}
             pending={visibility.isPending}

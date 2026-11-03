@@ -10,9 +10,10 @@ import { errorCode } from "./user-error";
  * page and the lists are read again rather than trusted as they were.
  */
 export function pageMutationOptions(queries: SpaceQueries, queryClient: QueryClient) {
+  // Every read of the page, the share popover's with its link included.
   const patch = (pageId: string, change: Partial<PageDetail>) =>
-    queryClient.setQueryData<PageDetail>(
-      queries.pages.get.queryKey({ input: { pageId } }),
+    queryClient.setQueriesData<PageDetail>(
+      { queryKey: queries.pages.get.queryKey({ input: { pageId } }) },
       (current) => (current ? { ...current, ...change } : current),
     );
   const relist = () => queryClient.invalidateQueries({ queryKey: queries.pages.list.key() });

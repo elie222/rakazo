@@ -291,8 +291,10 @@ export function Gallery({
     })
     .slice(0, GALLERY_MAX);
   const track = useRef<HTMLDivElement>(null);
-  const [current, setCurrent] = useState(0);
+  const [chosen, setCurrent] = useState(0);
   if (items.length === 0) return null;
+  // Fewer photos on a later render keep the last one marked rather than none.
+  const current = Math.min(chosen, items.length - 1);
   const show = (index: number) => {
     const node = track.current;
     if (!node) return;

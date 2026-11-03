@@ -98,10 +98,12 @@ export function checkPageSource(source: string): PageSourceCheck {
       const nameToken =
         tokens[index + 1]?.type === TokenType.jsxName ? tokens[index + 1] : undefined;
       const name = nameToken ? source.slice(nameToken.start, nameToken.end) : "";
-      if (BLOCKED_ELEMENTS.has(name) && !blocked.has(name)) {
-        blocked.add(name);
+      // A lowercase first letter makes an element, and HTML reads its name in any case.
+      const element = /^[a-z]/.test(name) ? name.toLowerCase() : "";
+      if (BLOCKED_ELEMENTS.has(element) && !blocked.has(element)) {
+        blocked.add(element);
         errors.push(
-          `line ${line}: <${name}> is not allowed in a page; ${BLOCKED_ELEMENTS.get(name)}`,
+          `line ${line}: <${name}> is not allowed in a page; ${BLOCKED_ELEMENTS.get(element)}`,
         );
       }
     } else if (
@@ -182,7 +184,7 @@ const BLOCKED_ELEMENTS: ReadonlyMap<string, string> = new Map([
   ["iframe", "pages cannot embed other pages."],
   ["object", "pages cannot embed other content."],
   ["embed", "pages cannot embed other content."],
-  ["foreignObject", "draw with SVG shapes and text instead."],
+  ["foreignobject", "draw with SVG shapes and text instead."],
 ]);
 
 /** \`export { App as default }\`, as bundlers write it, names the default export and nothing else. */

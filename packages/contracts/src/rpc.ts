@@ -1275,8 +1275,15 @@ export const appContract = {
       .output(
         z.strictObject({ items: z.array(PageSummarySchema), nextCursor: z.string().nullable() }),
       ),
+    /** `link` also reads the page's share link, which only the share controls need. */
     get: oc
-      .input(z.strictObject({ pageId: Id, version: z.number().int().positive().optional() }))
+      .input(
+        z.strictObject({
+          pageId: Id,
+          version: z.number().int().positive().optional(),
+          link: z.boolean().optional(),
+        }),
+      )
       .output(PageDetailSchema),
     rename: oc
       .input(z.strictObject({ pageId: Id, title: PageTitleSchema }))

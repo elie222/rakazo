@@ -152,7 +152,7 @@ async function shareUrlFor(
 export async function getPage(
   deps: PageDeps,
   actor: Actor,
-  input: { pageId: string; version?: number },
+  input: { pageId: string; version?: number; link?: boolean },
 ): Promise<PageDetail> {
   const row = await requirePage(deps.prisma, actor, input.pageId);
   const version = input.version ?? row.currentVersion;
@@ -172,11 +172,13 @@ export async function getPage(
     version,
     code: stored.code,
     owner: { name: owner?.name ?? "", image: owner?.image ?? null },
-    // The page opens without its link: a token the store cannot read hides only the link.
-    shareUrl: await shareUrlFor(deps, row).catch((error: unknown) => {
-      getLogger().error("page link token load", error);
-      return null;
-    }),
+    // Cards skip the secret store; a token it cannot read hides only the link.
+    shareUrl: input.link
+      ? await shareUrlFor(deps, row).catch((error: unknown) => {
+          getLogger().error("page link token load", error);
+          return null;
+        })
+      : null,
   };
 }
 

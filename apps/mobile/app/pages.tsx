@@ -71,7 +71,7 @@ export default function PagesScreen() {
     } else if (action === "share")
       router.push({ pathname: "/page-share", params: { pageId: page.id } });
     else if (action === "copy") {
-      void getLatestPage(page.id, { refresh: true })
+      void getLatestPage(page.id, { refresh: true, link: true })
         .then(async (detail) => {
           // Turned off elsewhere since the list was read: the list catches up instead.
           if (detail.shareUrl) await Clipboard.setStringAsync(detail.shareUrl);

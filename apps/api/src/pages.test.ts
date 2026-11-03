@@ -175,11 +175,23 @@ describe("page links", () => {
     await expect(share(fake.deps, "link")).resolves.toEqual(result);
   });
 
+  it("reads a shared page's link from the secret store only when asked for it", async () => {
+    const fake = fakeDeps();
+    const { shareUrl } = await share(fake.deps, "link");
+    fake.store.load.mockClear();
+    const card = await getPage(fake.deps, actor, { pageId: "page-1" });
+    expect(card).toMatchObject({ visibility: "link", shareUrl: null });
+    expect(fake.store.load).not.toHaveBeenCalled();
+    const opened = await getPage(fake.deps, actor, { pageId: "page-1", link: true });
+    expect(opened.shareUrl).toBe(shareUrl);
+    expect(fake.store.load).toHaveBeenCalledTimes(1);
+  });
+
   it("opens a shared page for its owner when its link token cannot be read", async () => {
     const fake = fakeDeps();
     await share(fake.deps, "link");
     fake.store.load.mockRejectedValue(new Error("provider down"));
-    const detail = await getPage(fake.deps, actor, { pageId: "page-1" });
+    const detail = await getPage(fake.deps, actor, { pageId: "page-1", link: true });
     expect(detail).toMatchObject({ code: "compiled", visibility: "link", shareUrl: null });
   });
 });

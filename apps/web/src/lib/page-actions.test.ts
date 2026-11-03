@@ -27,6 +27,9 @@ describe("pageMutationOptions", () => {
     const key = (pageId: string) => queries.pages.get.queryKey({ input: { pageId } });
     client.setQueryData(key("A"), detail("A", "Alpha"));
     client.setQueryData(key("B"), detail("B", "Beta"));
+    // The share popover reads the page with its link under its own key.
+    const linked = queries.pages.get.queryKey({ input: { pageId: "A", link: true } });
+    client.setQueryData(linked, detail("A", "Alpha"));
     const options = pageMutationOptions(queries, client);
 
     // Started on A; the user has since opened B when these answers arrive.
@@ -39,6 +42,9 @@ describe("pageMutationOptions", () => {
     expect(client.getQueryData<PageDetail>(key("A"))).toMatchObject({
       title: "Renamed",
       visibility: "link",
+      shareUrl: "https://rakazo.example/p/a-x",
+    });
+    expect(client.getQueryData<PageDetail>(linked)).toMatchObject({
       shareUrl: "https://rakazo.example/p/a-x",
     });
     expect(client.getQueryData<PageDetail>(key("B"))).toEqual(detail("B", "Beta"));

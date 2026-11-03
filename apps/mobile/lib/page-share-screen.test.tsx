@@ -68,10 +68,12 @@ vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
 vi.mock("./session", () => ({ registerSessionDiskCache: () => undefined }));
 vi.mock("./page-runtime", () => ({ loadPageRuntime: async () => "" }));
 vi.mock("./api", () => ({
-  rpc: vi.fn(async (proc: string, input: { visibility?: "private" | "link" }) => {
+  rpc: vi.fn(async (proc: string, input: { visibility?: "private" | "link"; link?: true }) => {
     if (proc === "pages/get") {
       if (host.readFails) throw new TypeError("Network request failed");
-      return { id: "page-1", title: "Plan", owner: host.owner, ...host.server };
+      // Like the server: the link only when asked for.
+      const shareUrl = input.link === true ? host.server.shareUrl : null;
+      return { id: "page-1", title: "Plan", owner: host.owner, ...host.server, shareUrl };
     }
     if (proc === "pages/setVisibility") {
       host.sent.push(input.visibility!);

@@ -18,9 +18,17 @@ vi.mock("../../lib/query", () => ({
   useSpaceQueries: () => ({
     pages: {
       get: {
-        queryOptions: () => ({
-          queryKey: ["page", "p1"],
-          queryFn: async () => ({ id: "p1", title: "Plan", code: "", owner: { name: "" } }),
+        // Like the server: the link only when asked for.
+        queryOptions: ({ input }: { input: { pageId: string; link?: true } }) => ({
+          queryKey: ["page", input],
+          queryFn: async () => ({
+            id: "p1",
+            title: "Plan",
+            code: "",
+            owner: { name: "" },
+            visibility: "link",
+            shareUrl: input.link === true ? "https://rakazo.example/p/1" : null,
+          }),
         }),
       },
     },
@@ -30,9 +38,13 @@ vi.mock("../../lib/page-actions", () => ({
   pageMutationOptions: () => ({ rename: {}, setVisibility: {} }),
 }));
 vi.mock("./PageView", () => ({
-  PageView: ({ composer }: { composer: ReactNode }) => <div>{composer}</div>,
+  PageView: ({ composer, share }: { composer: ReactNode; share: ReactNode }) => (
+    <div>
+      {share}
+      {composer}
+    </div>
+  ),
 }));
-vi.mock("./SharePopover", () => ({ SharePopover: () => null }));
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -71,6 +83,35 @@ it("docks the chat's composer over a tablet's page sheet, so its reply goes to t
     text: "mark task 3 done",
     replyToMessageId: "m1",
   });
+  root.unmount();
+});
+
+it("shows the link when Share opens on a page that is already shared", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  vi.stubGlobal("fetch", async () => new Response(""));
+  const session = createPageSession();
+  session.askShare("p1");
+  const root = createRoot(document.body.appendChild(document.createElement("div")));
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter initialEntries={["/app/bot-1?page=p1"]}>
+          <PagesProvider value={{ open: () => {}, session }}>
+            <PageViewHost />
+          </PagesProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    ),
+  );
+  await act(async () => await new Promise((resolve) => setTimeout(resolve, 0)));
+  const share = document.querySelector('[data-testid="page-share"]');
+  expect(share?.textContent).toContain("Open link");
+  expect(share?.querySelector("a")?.getAttribute("href")).toBe("https://rakazo.example/p/1");
   root.unmount();
 });
 

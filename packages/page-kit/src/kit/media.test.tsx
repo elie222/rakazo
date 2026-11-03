@@ -3,7 +3,7 @@ import type { ReactElement } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DayView, MonthView, parseDay, WeekView } from "./calendar.js";
+import { CALENDAR_CSS, DayView, MonthView, parseDay, WeekView } from "./calendar.js";
 import {
   Audio,
   Avatar,
@@ -136,6 +136,24 @@ describe("media", () => {
     expect(current()).toEqual(["Show photo 2"]);
     render(<Gallery photos={[]} />);
   });
+
+  it("keeps a photo marked when the gallery loses the one that was shown", () => {
+    const photos = (count: number) =>
+      Array.from({ length: count }, (_, index) => ({ src: PNG, alt: `P${index}` }));
+    const root = createRoot(host.appendChild(document.createElement("div")));
+    act(() => root.render(<Gallery photos={photos(5)} />));
+    click(q('button[aria-label="Show photo 5"]'));
+    act(() => root.render(<Gallery photos={photos(2)} />));
+    const current = () => all("button[aria-current]").map((dot) => dot.getAttribute("aria-label"));
+    expect(current()).toEqual(["Show photo 2"]);
+    act(() => {
+      q(".rk-gallery-track")!.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }),
+      );
+    });
+    expect(current()).toEqual(["Show photo 1"]);
+    act(() => root.unmount());
+  });
 });
 
 describe("cards and people", () => {
@@ -256,6 +274,10 @@ describe("cards and people", () => {
 });
 
 describe("calendar", () => {
+  it("colours today and the selected event from the theme, never a fixed hex", () => {
+    expect(CALENDAR_CSS).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+  });
+
   it("reads only real calendar days", () => {
     expect(parseDay("2026-02-30")).toBeUndefined();
     // Neither a month past December nor a two-digit year rolls into some other real date.
