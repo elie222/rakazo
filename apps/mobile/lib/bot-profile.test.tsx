@@ -52,7 +52,6 @@ vi.mock("./live-notifications", () => ({ afterChatNotifyChange }));
 vi.mock("./artifacts", () => ({
   listSpaceArtifacts,
   matchesArtifactQuery: () => true,
-  mimeBadgeLabel: () => "",
   removeArtifact: vi.fn(),
 }));
 vi.mock("expo-router", () => ({
@@ -659,7 +658,7 @@ describe("routines screen", () => {
     expect(container.querySelector("button")).toBeNull();
   });
 
-  it("offers Try Again after a failed read and its retry, and reloads", async () => {
+  it("offers Try again after a failed read and its retry, and reloads", async () => {
     vi.useFakeTimers();
     let fail = true;
     profileRpc(async () => {
@@ -669,10 +668,10 @@ describe("routines screen", () => {
     await render(createElement(RoutinesScreen));
     expect(container.querySelector("progress")).toBeTruthy();
     await act(async () => vi.advanceTimersByTimeAsync(ROUTINES_RETRY_MS));
-    expect(container.textContent).toBe("Could not load routinesTry Again");
+    expect(container.textContent).toBe("Could not load routinesTry again");
 
     fail = false;
-    await act(async () => button("Try Again").click());
+    await act(async () => button("Try again").click());
     expect(rowFor("Morning digest, On")).toBeTruthy();
   });
 
@@ -1065,8 +1064,21 @@ describe("routine detail", () => {
       history: async () => ({
         runs: [
           run,
-          { ...run, id: "run-2", groupId: "group-1", messageId: "reply-2" },
-          { ...run, id: "run-3", status: "failed", error: "504: timed out", messageId: null },
+          {
+            ...run,
+            id: "run-2",
+            groupId: "group-1",
+            messageId: "reply-2",
+            lateSince: "2026-01-02T11:20:00Z",
+          },
+          {
+            ...run,
+            id: "run-3",
+            status: "failed",
+            error: "504: timed out",
+            messageId: null,
+            lateSince: "2026-01-02T09:00:00Z",
+          },
         ],
         nextCursor: null,
       }),
@@ -1081,6 +1093,13 @@ describe("routine detail", () => {
       node.textContent?.includes("Jan 2,"),
     );
     expect(rows).toHaveLength(3);
+    // A late start is the row's detail, unless the row already explains a failure.
+    expect(rows.map((row) => row.textContent?.includes("Started 40m late"))).toEqual([
+      false,
+      true,
+      false,
+    ]);
+    expect(container.textContent).not.toContain("Started 3h late");
     rows[0]!.click();
     expect(push).toHaveBeenLastCalledWith({
       pathname: "/thread",
@@ -1159,7 +1178,7 @@ describe("routine detail", () => {
     await render(createElement(RoutineDetail));
     expect(container.textContent).toContain("Could not load run history");
     history.mockImplementation(async () => ({ runs: [], nextCursor: null }) as never);
-    await act(async () => button("Try Again").click());
+    await act(async () => button("Try again").click());
     expect(container.textContent).toContain("No runs yet");
   });
 

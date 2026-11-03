@@ -9,6 +9,9 @@ vi.mock("./live-notifications.js", () => ({
 vi.mock("./network-cache.js", () => ({ clearNetworkCache: vi.fn() }));
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 vi.mock("expo-constants", () => ({ default: { easConfig: { projectId: "fake-project" } } }));
+vi.mock("expo-modules-core", () => ({
+  requireOptionalNativeModule: () => ({ incomingState: () => ({}) }),
+}));
 
 // Expo runs every module's async functions on one serial native queue, so a call
 // that waits there holds up SecureStore too.
@@ -143,7 +146,7 @@ describe("push registration on Android", () => {
   });
 });
 
-it("registers native sender delivery only when the installed Android module supports it", async () => {
+it("registers sender delivery and incoming calls together on supported Android builds", async () => {
   Platform.OS = "android";
   vi.mocked(Notifications.getPermissionsAsync).mockResolvedValue({ granted: true } as never);
   vi.mocked(supportsSenderNotifications).mockReturnValue(true);
@@ -151,4 +154,13 @@ it("registers native sender delivery only when the installed Android module supp
   const call = fetch.mock.calls.find(([url]) => url.endsWith("/rpc/notifications/registerPush"));
   const options = (call as unknown as [string, RequestInit])[1];
   expect(JSON.parse(String(options.body)).json).toMatchObject({ presentation: "android_sender" });
+  const callRegistration = fetch.mock.calls.find(([url]) =>
+    url.endsWith("/rpc/notifications/registerCallPush"),
+  );
+  expect(callRegistration).toBeDefined();
+  const callOptions = (callRegistration as unknown as [string, RequestInit])[1];
+  expect(JSON.parse(String(callOptions.body)).json).toMatchObject({
+    expoToken: "ExponentPushToken[fake]",
+    platform: "android",
+  });
 });

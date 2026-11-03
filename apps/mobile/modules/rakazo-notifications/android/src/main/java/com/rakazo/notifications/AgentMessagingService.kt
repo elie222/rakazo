@@ -18,7 +18,7 @@ import expo.modules.notifications.service.delegates.ExpoPresentationDelegate
 import expo.modules.notifications.service.delegates.FirebaseMessagingDelegate
 
 /** Keep Expo's request and tap metadata; add the sender portrait to background pushes. */
-class AgentMessagingService : ExpoFirebaseMessagingService() {
+open class AgentMessagingService : ExpoFirebaseMessagingService() {
   override val firebaseMessagingDelegate by lazy {
     object : FirebaseMessagingDelegate(this@AgentMessagingService) {
       override fun createNotificationRequest(identifier: String, content: INotificationContent, notificationTrigger: FirebaseNotificationTrigger): NotificationRequest {

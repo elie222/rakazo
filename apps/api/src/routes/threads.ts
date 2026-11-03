@@ -516,12 +516,14 @@ export function threadsRoutes(ctx: RouterContext) {
       declineCall: callsEnabled.threads.declineCall.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         if (target.kind !== "bot") throw new IsolationError();
-        await settleCallRequest(deps, {
+        const declined = await settleCallRequest(deps, {
           threadId: target.threadId,
           callId: input.callId,
           from: ["ringing"],
           status: input.outcome,
         });
+        if (declined?.status !== input.outcome)
+          throw new ORPCError("CONFLICT", { message: "This call is no longer ringing." });
         return { ok: true as const };
       }),
       endCall: callsEnabled.threads.endCall.handler(async ({ context, input }) => {

@@ -13,6 +13,7 @@ import {
 import { native, useMobileTokens } from "../lib/native";
 import { useThreadReadOnly } from "../lib/thread-read-only";
 import { errorText } from "../lib/user-error";
+import { GlassIconButton } from "./glass-icon-button";
 import { NativeSymbol } from "./native-symbol";
 
 const styles = StyleSheet.create({
@@ -22,7 +23,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
-  dismiss: { alignItems: "center", height: 24, justifyContent: "center", width: 24 },
   header: { alignItems: "flex-start", flexDirection: "row", gap: 8 },
   heading: { flex: 1, gap: 2 },
   letter: {
@@ -122,18 +122,17 @@ export function ChoiceCard({
           ) : null}
         </View>
         {!readOnly && !answerId ? (
-          <Pressable
+          <GlassIconButton
             testID="choice-card-dismiss"
-            accessibilityRole="button"
             accessibilityLabel={t("Dismiss")}
-            accessibilityState={{ disabled: busy }}
+            ios="xmark"
+            android="close"
+            size={30}
+            iconSize={13}
+            fallbackStyle={{ backgroundColor: native.fillPressed }}
             disabled={busy}
-            hitSlop={10}
             onPress={() => void submit(DISMISSED_CHOICE_ANSWER_ID)}
-            style={styles.dismiss}
-          >
-            <NativeSymbol ios="xmark" android="close" size={14} color={tokens.mutedForeground} />
-          </Pressable>
+          />
         ) : null}
       </View>
       <View style={styles.options}>

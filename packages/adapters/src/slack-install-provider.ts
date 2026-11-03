@@ -64,6 +64,7 @@ export class SlackInstallProvider implements MessagingInstallProvider {
       ok?: boolean;
       access_token?: string;
       team?: { id?: string; name?: string };
+      authed_user?: { id?: string };
       is_enterprise_install?: boolean;
       refresh_token?: string;
     };
@@ -81,6 +82,7 @@ export class SlackInstallProvider implements MessagingInstallProvider {
       workspaceId: result.team.id,
       workspaceName: result.team.name ?? "Slack",
       credential: result.access_token,
+      ...(result.authed_user?.id ? { ownerId: result.authed_user.id } : {}),
     };
   }
 

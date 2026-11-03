@@ -2,7 +2,8 @@ import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { Artifact, Bot } from "@rakazo/contracts";
-import { isAttachmentImageMimeType } from "@rakazo/contracts";
+import { artifactPreviewKind } from "@rakazo/contracts";
+import { artifactTypeLabel } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import {
   AlertDialog,
@@ -38,6 +39,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { VideoPreview } from "../components/ArtifactFileCard";
 import { IconTooltip } from "../components/IconTooltip";
 import { PdfViewer } from "../components/PdfViewer";
 import { SandboxedHtmlViewer } from "../components/SandboxedHtmlViewer";
@@ -655,7 +657,7 @@ function ArtifactCard({
               </span>
             ) : null}
             <span className="rounded-md bg-muted px-2 py-1 text-[11px] font-semibold text-muted-foreground">
-              {mimeLabel(artifact.mimeType)}
+              {artifactTypeLabel(artifact.mimeType)}
             </span>
           </div>
         </div>
@@ -798,14 +800,6 @@ function ArtifactMimeIcon({ mimeType, small }: { mimeType: string; small?: boole
   );
 }
 
-function mimeLabel(mimeType: string): string {
-  if (mimeType === "text/html") return "HTML";
-  if (mimeType === "text/markdown") return "MD";
-  if (mimeType === "application/pdf") return "PDF";
-  const slash = mimeType.indexOf("/");
-  return (slash === -1 ? mimeType : mimeType.slice(slash + 1)).toUpperCase().slice(0, 6);
-}
-
 function PreviewPane({
   artifactId,
   maximized,
@@ -935,31 +929,40 @@ function PreviewPane({
 }
 
 function ArtifactPreview({ artifact, bytes }: { artifact: Artifact; bytes: Uint8Array }) {
-  if (artifact.mimeType === "text/html") {
-    const html = new TextDecoder("utf-8").decode(bytes);
-    return <SandboxedHtmlViewer html={html} title={artifact.name} />;
+  switch (artifactPreviewKind(artifact.mimeType)) {
+    case "html":
+      return (
+        <SandboxedHtmlViewer html={new TextDecoder("utf-8").decode(bytes)} title={artifact.name} />
+      );
+    case "markdown":
+      return (
+        <div className="h-full overflow-y-auto bg-background">
+          <article className="mx-auto w-full max-w-[760px] px-8 py-10 text-[16px] leading-7 text-foreground">
+            <ChatMarkdown>{new TextDecoder("utf-8").decode(bytes)}</ChatMarkdown>
+          </article>
+        </div>
+      );
+    case "text":
+      return (
+        <div className="h-full overflow-auto bg-background">
+          <pre className="px-8 py-10 font-mono text-[13px] leading-6 whitespace-pre-wrap break-words text-foreground">
+            {new TextDecoder("utf-8").decode(bytes)}
+          </pre>
+        </div>
+      );
+    case "pdf":
+      return <PdfViewer bytes={bytes} title={artifact.name} />;
+    case "video":
+      return <VideoPreview bytes={bytes} name={artifact.name} />;
+    case "image":
+      return <ImagePreview bytes={bytes} mimeType={artifact.mimeType} name={artifact.name} />;
+    case "none":
+      return (
+        <div className="grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80">
+          <Trans>Preview isn't available for this file type — download it to view it.</Trans>
+        </div>
+      );
   }
-  if (artifact.mimeType === "text/markdown") {
-    const text = new TextDecoder("utf-8").decode(bytes);
-    return (
-      <div className="h-full overflow-y-auto bg-background">
-        <article className="mx-auto w-full max-w-[760px] px-8 py-10 text-[16px] leading-7 text-foreground">
-          <ChatMarkdown>{text}</ChatMarkdown>
-        </article>
-      </div>
-    );
-  }
-  if (artifact.mimeType === "application/pdf") {
-    return <PdfViewer bytes={bytes} title={artifact.name} />;
-  }
-  if (isAttachmentImageMimeType(artifact.mimeType)) {
-    return <ImagePreview bytes={bytes} mimeType={artifact.mimeType} name={artifact.name} />;
-  }
-  return (
-    <div className="grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80">
-      <Trans>Preview isn't available for this file type — download it to view it.</Trans>
-    </div>
-  );
 }
 
 function ImagePreview({

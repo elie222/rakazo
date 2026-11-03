@@ -1,7 +1,7 @@
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import { useState } from "react";
 import type { ViewProps } from "react-native";
-import { Alert, Pressable, Text, TextInput, View } from "react-native";
+import { Alert, TextInput, View } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import type { AskAction } from "../lib/ask-action-label";
 import { askActionLabel } from "../lib/ask-action-label";
@@ -98,34 +98,17 @@ export function AskActions({
               />
             );
           return (
-            <Pressable
+            <NativeActionButton
               key={action.id}
               accessibilityActions={accessibilityActions}
               onAccessibilityAction={onAccessibilityAction}
+              label={askActionLabel(action, { approval, site }, t)}
+              prominence={emphasized ? "primary" : "secondary"}
+              fill={!approval}
               disabled={disabled || submitting}
+              busy={pendingAction === action.id}
               onPress={() => void submit(action.id)}
-              style={{
-                flexShrink: 1,
-                alignSelf: approval ? undefined : "stretch",
-                borderRadius: 12,
-                paddingHorizontal: 14,
-                paddingVertical: 12,
-                backgroundColor: emphasized ? native.fillPressed : native.fill,
-                opacity: disabled || submitting ? 0.5 : 1,
-              }}
-            >
-              <Text
-                style={{
-                  color: tokens.foreground,
-                  fontSize: 15,
-                  fontWeight: emphasized ? "600" : "400",
-                }}
-              >
-                {pendingAction === action.id
-                  ? t("Sending…")
-                  : askActionLabel(action, { approval, site }, t)}
-              </Text>
-            </Pressable>
+            />
           );
         })}
       </View>

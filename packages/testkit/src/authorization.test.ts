@@ -440,6 +440,16 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["export/bot", { botId: "missing-bot" }],
       ["export/accountToken"],
       ["notifications/identity", { botId: "missing-bot" }],
+      ["notifications/subscribeCalls"],
+      ["notifications/declineIncomingCall", { callId: "00000000-0000-4000-8000-000000000001" }],
+      [
+        "notifications/registerCallPush",
+        {
+          deviceId: "00000000-0000-4000-8000-000000000002",
+          platform: "android",
+          expoToken: "ExponentPushToken[not-real]",
+        },
+      ],
       ["notifications/registerPush", { token: "ExponentPushToken[not-real]" }],
       ["notifications/unregisterPush"],
       ["search/query", { q: "anything" }],
