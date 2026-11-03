@@ -158,6 +158,13 @@ import {
 } from "./integration-settings.js";
 import { ModelHeadersSchema } from "./model-headers.js";
 import { ModelRoleSchema, ModelRoleUpdateSchema, ModelRoleViewSchema } from "./model-roles.js";
+import {
+  PAGE_LIST_MAX_LIMIT,
+  PageDetailSchema,
+  PageSummarySchema,
+  PageTitleSchema,
+  PageVisibilitySchema,
+} from "./pages.js";
 import { PaymentWalletStatusSchema } from "./payments.js";
 import { MessageReactionSchema } from "./reactions.js";
 import { RoutineWatchSchema } from "./routine-watch.js";
@@ -209,6 +216,8 @@ const threadSendFields = threadTarget.safeExtend({
     .optional(),
   replyToMessageId: Id.optional(),
   replyQuote: z.string().trim().min(1).max(REPLY_QUOTE_MAX_LENGTH).optional(),
+  /** Sent from the open page: a reply to its card that quotes nothing. */
+  fromPage: z.literal(true).optional(),
   clientNonce: z.string().min(1).max(200).optional(),
 });
 
@@ -1261,6 +1270,48 @@ export const appContract = {
     get: oc.input(threadTarget.and(z.object({ artifactId: Id }))).output(ArtifactWithContentSchema),
     getById: oc.input(z.object({ artifactId: Id })).output(ArtifactWithContentSchema),
     remove: oc.input(z.object({ artifactId: Id })).output(z.object({ ok: z.literal(true) })),
+  },
+  /** Pages bots built for the caller in this Space. */
+  pages: {
+    /** Pinned first, then most recently updated. */
+    list: oc
+      .input(
+        z.strictObject({
+          botId: Id.optional(),
+          groupId: Id.optional(),
+          cursor: z.string().max(500).optional(),
+          limit: z.number().int().min(1).max(PAGE_LIST_MAX_LIMIT).optional(),
+          /** Titles containing this text, for the command palette. */
+          query: z.string().trim().min(1).max(200).optional(),
+        }),
+      )
+      .output(
+        z.strictObject({ items: z.array(PageSummarySchema), nextCursor: z.string().nullable() }),
+      ),
+    /** `link` also reads the page's share link, which only the share controls need. */
+    get: oc
+      .input(
+        z.strictObject({
+          pageId: Id,
+          version: z.number().int().positive().optional(),
+          link: z.boolean().optional(),
+        }),
+      )
+      .output(PageDetailSchema),
+    rename: oc
+      .input(z.strictObject({ pageId: Id, title: PageTitleSchema }))
+      .output(PageSummarySchema),
+    /**
+     * Turning the link on returns the page's live link, or a new one when it has none it can
+     * read; turning it off breaks the old link, so the next turn-on issues a new one.
+     */
+    setVisibility: oc
+      .input(z.strictObject({ pageId: Id, visibility: PageVisibilitySchema }))
+      .output(
+        z.strictObject({ visibility: PageVisibilitySchema, shareUrl: z.string().nullable() }),
+      ),
+    pin: oc.input(z.strictObject({ pageId: Id, pinned: z.boolean() })).output(PageSummarySchema),
+    remove: oc.input(z.strictObject({ pageId: Id })).output(z.object({ ok: z.literal(true) })),
   },
   usage: {
     list: oc.output(z.array(UsageRecordSchema)),

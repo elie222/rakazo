@@ -17,6 +17,7 @@ vi.mock("@lingui/react/macro", () => {
 });
 
 import { dictation } from "../../lib/dictation";
+import { createPageSession, PagesProvider } from "../../lib/pages";
 import { Composer } from "./composer";
 
 let root: Root | null = null;
@@ -1465,3 +1466,30 @@ it.each([10, -30, window.innerHeight - 10])(
     }
   },
 );
+
+it("answers the page, not an earlier picked message, when the page's reply button fills it", () => {
+  const onClearReply = vi.fn();
+  renderComposer(vi.fn(), {
+    onClearReply,
+    replyTarget: {
+      id: "message-1",
+      threadId: "thread-1",
+      seq: 1,
+      role: "bot",
+      blocks: [{ kind: "text", text: "earlier" }],
+      createdAt: "2026-01-01T00:00:00.000Z",
+    },
+  });
+  const session = createPageSession();
+  session.dock.set({ page: { id: "page-1", title: "Plan" } });
+  act(() =>
+    root?.render(
+      <PagesProvider value={{ open: () => {}, session }}>
+        <Composer {...composerProps} />
+      </PagesProvider>,
+    ),
+  );
+  act(() => session.offerReply("Mark task 3 done"));
+  expect(onClearReply).toHaveBeenCalledTimes(1);
+  expect(container?.querySelector("textarea")?.value).toBe("Mark task 3 done");
+});

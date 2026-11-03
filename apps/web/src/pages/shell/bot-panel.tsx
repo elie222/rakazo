@@ -43,6 +43,7 @@ import type { ReactNode } from "react";
 import { Suspense, useEffect, useId, useRef, useState } from "react";
 import { ErrorBoundary, SectionLoadFailed } from "../../components/ErrorBoundary";
 import { InstructionSettings } from "../../components/InstructionSettings";
+import { PagesList } from "../../components/pages/PagesList";
 import { botProfilePatch } from "../../lib/bot-profile-patch";
 import { thinkingLevelLabel } from "../../lib/model-catalog";
 import { lazyComponent } from "../../lib/preload-recovery";
@@ -99,9 +100,9 @@ export function ComputerModePicker({
   );
 }
 
-export type BotPanelTab = "computer" | "routines" | "settings";
+export type BotPanelTab = "computer" | "routines" | "pages" | "settings";
 
-/** A bot's profile above its Computer, Routines and Advanced tabs. */
+/** A bot's profile above its Computer, Routines, Pages and Advanced tabs. */
 export function BotSettings({
   bot,
   tab = "settings",
@@ -559,6 +560,9 @@ export function BotSettings({
           <TabsTrigger value="routines">
             <Trans>Routines</Trans>
           </TabsTrigger>
+          <TabsTrigger value="pages">
+            <Trans>Pages</Trans>
+          </TabsTrigger>
           <TabsTrigger value="settings">
             <Trans>Advanced</Trans>
           </TabsTrigger>
@@ -568,6 +572,9 @@ export function BotSettings({
         </TabsContent>
         <TabsContent value="routines" className="pt-4">
           {routines}
+        </TabsContent>
+        <TabsContent value="pages" className="pt-4">
+          {tab === "pages" ? <PagesList botId={bot.id} /> : null}
         </TabsContent>
         {/* Stays mounted so scratchpad and knowledge drafts survive a tab switch. */}
         <TabsContent value="settings" keepMounted data-testid="bot-settings-advanced">

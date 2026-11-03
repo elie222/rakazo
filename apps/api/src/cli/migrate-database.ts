@@ -17,6 +17,7 @@ await unwrapEnvFromKeyManager();
 const urls = databaseUrls(process.env);
 await deployMigrations({
   migrationUrl: urls.migrationUrl,
+  previousMigrations: process.env.RAKAZO_DEPLOYED_MIGRATIONS?.split(","),
   dbPackageDir: execFileSync("pnpm", ["--filter", "@rakazo/db", "exec", "pwd"], {
     encoding: "utf8",
   }).trim(),

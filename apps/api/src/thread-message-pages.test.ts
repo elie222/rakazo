@@ -49,7 +49,9 @@ describe("thread message pages", () => {
     "forwards peer charts in %s while keeping background output hidden",
     (type) => {
       const chart = { kind: "chart", name: "Results", spec: {}, data: [] };
-      for (const blocks of [[chart], [{ kind: "text", text: "Results" }, chart]]) {
+      // A page a peer run saved is its reply too.
+      const page = { kind: "page", pageId: "page-1", version: 1, title: "Results" };
+      for (const blocks of [[chart], [{ kind: "text", text: "Results" }, chart], [page]]) {
         expect(shouldForwardPeerThreadEvent({ type, payload: { blocks } })).toBe(true);
         expect(shouldForwardBackgroundThreadEvent({ type, payload: { blocks } })).toBe(false);
       }
@@ -78,10 +80,15 @@ describe("thread message pages", () => {
           blocks: [{ kind: "text", text: "Results" }, chart],
         },
         { id: "peer-chart", runId: "run-peer", blocks: [chart] },
+        {
+          id: "peer-page",
+          runId: "run-peer",
+          blocks: [{ kind: "page", pageId: "page-1", version: 1, title: "Results" }],
+        },
       ].map((row, index) => ({
         ...row,
         threadId: "thread-1",
-        seq: 4 - index,
+        seq: 5 - index,
         role: "bot",
         botId: "bot-1",
         replyToMessageId: null,
@@ -101,10 +108,15 @@ describe("thread message pages", () => {
         },
       } as unknown as PrismaClient;
 
-      const page = await loadMessagePage(prisma, "thread-1", undefined, 4, around);
+      const page = await loadMessagePage(prisma, "thread-1", undefined, 5, around);
 
-      expect(page.messages.map((message) => message.id)).toEqual(["peer-chart", "peer-mixed"]);
+      expect(page.messages.map((message) => message.id)).toEqual([
+        "peer-page",
+        "peer-chart",
+        "peer-mixed",
+      ]);
       expect(page.messages.map((message) => message.blocks)).toEqual([
+        rows[4]?.blocks,
         rows[3]?.blocks,
         rows[2]?.blocks,
       ]);

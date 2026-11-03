@@ -13,7 +13,7 @@
 			resp_headers>Set-Cookie delete
 			# Native sign-in redirects carry the session cookie in the app callback URL.
 			resp_headers>Location delete
-			request>uri regexp "(/reset-password/|/novnc/session/[a-z]+/)[^/?#&]*|([?&](?:token|_token|code|state|ticket|access_token|id_token|hub\.verify_token|path)=)[^&#]*" "${1}${2}REDACTED"
+			request>uri regexp "(/reset-password/|/novnc/session/[a-z]+/|/api/v1/pages/shared/|^/p/)[^/?#&]*|([?&](?:token|_token|code|state|ticket|access_token|id_token|hub\.verify_token|path)=)[^&#]*" "${1}${2}REDACTED"
 		}
 	}
 }
@@ -35,6 +35,12 @@
 	header X-Content-Type-Options nosniff
 	@framed not path /computer-screen/sdk/ASP/container.html
 	header @framed X-Frame-Options SAMEORIGIN
+	# A shared page's link is its only key: keep it out of search results and Referer headers.
+	@sharedPage path /p/*
+	header @sharedPage {
+		X-Robots-Tag "noindex, nofollow"
+		Referrer-Policy no-referrer
+	}
 
 	handle /health {
 		reverse_proxy api:3100 {

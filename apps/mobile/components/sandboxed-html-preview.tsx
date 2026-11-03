@@ -1,10 +1,18 @@
 import { withSandboxedArtifactCsp } from "@rakazo/core";
+import { useRef } from "react";
 import { StyleSheet, View } from "react-native";
 import { WebView } from "react-native-webview";
 
 function isPreviewDocument(url: string): boolean {
   return url === "about:blank" || url === "about:blank/";
 }
+
+// The document's own `postMessage` calls reach the app only through the WebView bridge.
+const FORWARD_WINDOW_MESSAGES = `window.addEventListener("message", function (event) {
+  if (event.source !== window) return;
+  try { window.ReactNativeWebView.postMessage(JSON.stringify(event.data)); } catch (_) {}
+});
+true;`;
 
 /**
  * Renders bot-authored HTML in a WebView that cannot reach the app's session:
@@ -13,18 +21,40 @@ function isPreviewDocument(url: string): boolean {
  * and navigation is limited to the preview document itself. The CSP meta tag
  * (the same policy as the web viewer) blocks outbound network requests.
  */
-export function SandboxedHtmlPreview({ html }: { html: string }) {
+export function SandboxedHtmlPreview({
+  html,
+  background = "white",
+  scrollEnabled,
+  onMessage,
+}: {
+  html: string;
+  /** Pages paint their own themed background; plain HTML is written for a white page. */
+  background?: string;
+  scrollEnabled?: boolean;
+  /** A message the document posted; `answer` posts a reply back into the document. */
+  onMessage?: (data: string, answer: (message: object) => void) => void;
+}) {
+  const view = useRef<WebView>(null);
+  // JSON is a valid script literal for any message, so nothing in it can break out of the call.
+  const answer = (message: object) =>
+    view.current?.injectJavaScript(`window.postMessage(${JSON.stringify(message)}, "*");true;`);
   return (
     <View style={styles.container}>
       <WebView
+        ref={view}
         source={{ html: withSandboxedArtifactCsp(html), baseUrl: "about:blank" }}
-        style={styles.webview}
+        style={[styles.webview, { backgroundColor: background }]}
+        scrollEnabled={scrollEnabled}
+        injectedJavaScriptBeforeContentLoaded={onMessage ? FORWARD_WINDOW_MESSAGES : undefined}
+        onMessage={(event) => onMessage?.(event.nativeEvent.data, answer)}
         javaScriptEnabled
         domStorageEnabled={false}
         allowFileAccess={false}
         allowFileAccessFromFileURLs={false}
         allowUniversalAccessFromFileURLs={false}
         setSupportMultipleWindows={false}
+        // A long-pressed link's preview would load it outside the navigation check below.
+        allowsLinkPreview={false}
         thirdPartyCookiesEnabled={false}
         sharedCookiesEnabled={false}
         mixedContentMode="never"
@@ -37,7 +67,7 @@ export function SandboxedHtmlPreview({ html }: { html: string }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  // Not a theme color: HTML written for a white page leaves its own text dark,
+  // The default is not a theme color: HTML written for a white page leaves its own text dark,
   // so the canvas has to be white in dark mode too.
-  webview: { flex: 1, backgroundColor: "white" },
+  webview: { flex: 1 },
 });

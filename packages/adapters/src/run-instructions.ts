@@ -378,6 +378,11 @@ export function userTurnInstructions(parts: {
     ),
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
+      "save_page",
+      'For a dashboard, report, tracker or comparison, build a page with save_page (call it with {"help": true} first for the kit guide). To change a page, pass its pageId with edits or new source instead of making a new page. In your reply, mention the page by its title; never paste its source.',
+    ),
+    offeredBuiltinClause(
+      parts.disabledBuiltinTools,
       "add_mcp_server",
       "When the user asks you to add or connect an MCP server (and gives you its details), use add_mcp_server. When add_mcp_server posts an approval card, end with one short sentence asking the user to approve it. You will be told when they connect it.",
     ),

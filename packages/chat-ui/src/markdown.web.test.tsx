@@ -881,6 +881,42 @@ describe("web markdown streamed definitions", () => {
   });
 });
 
+describe("web markdown page links", () => {
+  it("draws a page link as a chip that opens the page, or as its title without a handler", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const openPage = vi.fn();
+    const markdown =
+      "See [Duplex voice](page:page_1) and [x](javascript:alert(1)) and [y](rakazo://settings) and [z](page:a/b)";
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown onOpenPage={openPage}>{markdown}</ChatMarkdown>);
+    });
+    const chips = container.querySelectorAll<HTMLButtonElement>("button.rk-chat-page-chip");
+    expect([...chips].map((chip) => chip.textContent)).toEqual(["Duplex voice"]);
+    expect(chips[0]!.querySelector("svg")).not.toBeNull();
+    await act(async () => {
+      chips[0]!.click();
+    });
+    expect(openPage).toHaveBeenCalledWith("page_1");
+    // Other schemes and a malformed page link keep today's plain-text rendering.
+    expect(container.querySelector("a")).toBeNull();
+    expect(container.textContent).toBe("See Duplex voice and x and y and z");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"See [Duplex voice](page:page_1)"}</ChatMarkdown>,
+    );
+    expect(html).toContain("<span>Duplex voice</span>");
+    expect(html).not.toContain("<button");
+    expect(html).not.toContain("<a");
+  });
+});
+
 describe("web markdown parser failure", () => {
   it("shows a message the parser cannot handle as plain text", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
