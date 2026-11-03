@@ -67,4 +67,9 @@ export const NL_MESSAGES: Record<string, string> = {
     "Je wijzigingen aan de pagina {name} zijn goedgekeurd.",
   "We couldn't approve your changes to the {name} page.":
     "We konden je wijzigingen aan de pagina {name} niet goedkeuren.",
+  "Your saved computer files will be deleted": "Je opgeslagen computerbestanden worden verwijderd",
+  "Your saved computer files will be deleted on {date} unless you resubscribe.":
+    "Je opgeslagen computerbestanden worden op {date} verwijderd, tenzij je opnieuw een abonnement neemt.",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "Je opgeslagen computerbestanden worden op {date} verwijderd, tenzij je een abonnement kiest.",
 };

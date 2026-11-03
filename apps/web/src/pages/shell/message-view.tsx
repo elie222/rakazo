@@ -184,7 +184,7 @@ export const MessageView = memo(function MessageView({
         <div
           className="mb-1.5 flex items-center gap-2 text-[13px] font-semibold tracking-tight"
           dir="auto"
-          style={{ color: speakerColorDef.light }}
+          style={{ color: speakerColorDef.hex }}
         >
           <BotAvatar
             color={speakerBot?.color ?? FALLBACK_BOT_COLOR}
@@ -683,7 +683,7 @@ function BotMention({
     <span
       dir="auto"
       className="font-medium"
-      style={live ? { color: resolvePersonaColorDef(block.botId, color).light } : undefined}
+      style={live ? { color: resolvePersonaColorDef(block.botId, color).hex } : undefined}
     >
       {block.name}
     </span>

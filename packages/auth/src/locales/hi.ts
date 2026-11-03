@@ -65,4 +65,9 @@ export const HI_MESSAGES: Record<string, string> = {
   "Your changes to the {name} page are approved.": "{name} पेज में आपके बदलाव स्वीकृत हो गए हैं।",
   "We couldn't approve your changes to the {name} page.":
     "हम {name} पेज में आपके बदलावों को स्वीकृत नहीं कर सके।",
+  "Your saved computer files will be deleted": "आपकी सहेजी गई कंप्यूटर फ़ाइलें हटा दी जाएँगी",
+  "Your saved computer files will be deleted on {date} unless you resubscribe.":
+    "आपकी सहेजी गई कंप्यूटर फ़ाइलें {date} को हटा दी जाएँगी, जब तक आप फिर से सदस्यता नहीं लेते।",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "आपकी सहेजी गई कंप्यूटर फ़ाइलें {date} को हटा दी जाएँगी, जब तक आप कोई प्लान नहीं चुनते।",
 };

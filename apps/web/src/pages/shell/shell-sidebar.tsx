@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { Bot, NavLink } from "@rakazo/contracts";
+import type { Bot, Group, NavLink } from "@rakazo/contracts";
 import { accountDisplay } from "@rakazo/core";
 import {
   Button,
@@ -50,6 +50,9 @@ export function ShellSidebar({
   setCreateMenuOpen,
   search,
   bots,
+  groups,
+  collapsedSidebarSections,
+  toggleSidebarSection,
   setPanel,
   navigate,
   setNewSpaceOpen,
@@ -75,6 +78,9 @@ export function ShellSidebar({
   setCreateMenuOpen: (open: boolean) => void;
   search: SidebarSearch;
   bots: Bot[];
+  groups: Group[];
+  collapsedSidebarSections: ReadonlySet<string>;
+  toggleSidebarSection: (key: string) => void;
   setPanel: (panel: Panel) => void;
   navigate: (path: string) => void;
   setNewSpaceOpen: (open: boolean) => void;
@@ -148,20 +154,17 @@ export function ShellSidebar({
             toggleActivityMode();
           }}
           searchOpen={searchOpen && !mini}
-          onSearch={
-            activityMode && !mini
-              ? undefined
-              : () => {
-                  if (searchOpen && !mini) {
-                    setQuery("");
-                    setSearchOpen(false);
-                    return;
-                  }
-                  if (mini) setCollapsedPref(false);
-                  setSearchOpen(true);
-                  focusSidebarSearch();
-                }
-          }
+          onSearch={() => {
+            if (searchOpen && !mini) {
+              if (activityMode) setActivityFilters({ ...activityFilters, query: "" });
+              else setQuery("");
+              setSearchOpen(false);
+              return;
+            }
+            if (mini) setCollapsedPref(false);
+            setSearchOpen(true);
+            focusSidebarSearch();
+          }}
           setBotsSidebarCollapsedPref={setCollapsedPref}
           bots={bots}
           setMobileSidebarOpen={setMobileOpen}
@@ -170,7 +173,12 @@ export function ShellSidebar({
           setNewSpaceOpen={setNewSpaceOpen}
           setCreateBotOpen={setCreateBotOpen}
         />
-        {mini || !(activityMode || searchOpen || query) ? null : (
+        {mini ||
+        !(
+          searchOpen ||
+          query ||
+          (activityMode && (activityFilterCount > 0 || activityFiltersExpanded))
+        ) ? null : (
           <InputGroup
             data-testid="sidebar-search"
             className="mx-2.5 mb-3 w-auto rounded-xl bg-card dark:bg-input border border-border text-muted-foreground focus-within:border-ring"
@@ -191,11 +199,8 @@ export function ShellSidebar({
                   event.keyCode === 229
                 )
                   return;
-                if (activityMode) {
-                  setActivityFilters({ ...activityFilters, query: "" });
-                  return;
-                }
-                setQuery("");
+                if (activityMode) setActivityFilters({ ...activityFilters, query: "" });
+                else setQuery("");
                 setSearchOpen(false);
               }}
               placeholder={activityMode ? t`Search runs` : t`Search`}
@@ -239,6 +244,18 @@ export function ShellSidebar({
             <>
               {activityMode && !mini ? (
                 <ActivityList
+                  bots={bots}
+                  groups={groups}
+                  toggledSections={collapsedSidebarSections}
+                  onToggleSection={toggleSidebarSection}
+                  onOpenBot={(bot) => {
+                    setMobileOpen(false);
+                    navigate(`/app/${bot.id}`);
+                  }}
+                  onOpenGroup={(group) => {
+                    setMobileOpen(false);
+                    navigate(`/app/g/${group.id}`);
+                  }}
                   filters={activityFilters}
                   onFiltersChange={setActivityFilters}
                   filtersExpanded={activityFiltersExpanded}
@@ -374,10 +391,6 @@ function ShellSidebarFooter({
         onSettings={() => {
           setMenuOpen(false);
           openSettings("general");
-        }}
-        onUsage={() => {
-          setMenuOpen(false);
-          openSettings("usage");
         }}
         onInvite={
           referral

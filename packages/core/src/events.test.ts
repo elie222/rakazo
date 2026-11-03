@@ -20,6 +20,7 @@ import {
   sanitizeJsonValue,
   sanitizeUtf16ForJson,
   stripLiveStreamingProgress,
+  toolNameFromLabel,
   trackToolCallStreak,
   trackToolNameStreak,
   withLiveStreamingProgress,
@@ -631,6 +632,13 @@ describe("projectMessages", () => {
       },
     ]);
     expect(messages).toHaveLength(0);
+  });
+});
+
+describe("toolNameFromLabel", () => {
+  it("turns a displayed name back into the tool name", () => {
+    expect(toolNameFromLabel(" Write  file ")).toBe("Write_file");
+    expect(toolNameFromLabel("write_file")).toBe("write_file");
   });
 });
 

@@ -120,7 +120,7 @@ it.each(["text", "image"] as const)("keeps per-bot sender colours on %s messages
         actionProps={{}}
       />,
     );
-    const senderColor = resolvePersonaColorDef(id, color).light;
+    const senderColor = resolvePersonaColorDef(id, color).hex;
     expect(html).toContain(`color:${senderColor}`);
     for (const surface of [darkTokens.muted, darkTokens.background]) {
       expect(contrastRatio(senderColor, surface)).toBeGreaterThanOrEqual(3);

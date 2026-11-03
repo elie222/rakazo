@@ -1416,7 +1416,9 @@ describe("run notification preference", () => {
         userId: "user-1",
       },
       select: {
-        bot: { select: { notifyOnFinish: true } },
+        bot: {
+          select: { id: true, name: true, color: true, avatarSet: true, notifyOnFinish: true },
+        },
         thread: { select: { groupId: true } },
       },
     });

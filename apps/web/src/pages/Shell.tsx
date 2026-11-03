@@ -339,7 +339,7 @@ function SpaceShell() {
       if (shortcut.type === "search") {
         if (isMobileSidebar) setMobileSidebarOpen(true);
         else if (botsSidebarCollapsed) setBotsSidebarCollapsedPref(false);
-        if (!search.activityMode) search.setSearchOpen(true);
+        search.setSearchOpen(true);
         focusSidebarSearch();
         return true;
       }
@@ -927,6 +927,9 @@ function SpaceShell() {
         setCreateMenuOpen={setCreateMenuOpen}
         search={search}
         bots={bots}
+        groups={groups}
+        collapsedSidebarSections={collapsedSidebarSections}
+        toggleSidebarSection={toggleSidebarSection}
         setPanel={setPanel}
         navigate={navigate}
         setNewSpaceOpen={dialogs.setNewSpaceOpen}

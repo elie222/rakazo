@@ -209,6 +209,12 @@ export async function syncBillingSnapshot(
       data: { subscribedAt: startedAt },
     });
   }
+  if (snapshot?.status === "active") {
+    await prisma.billingAccount.updateMany({
+      where: { customerId, paidAt: null },
+      data: { paidAt: startedAt },
+    });
+  }
   if (written.count > 0) return true;
   return (await prisma.billingAccount.count({ where: { customerId } })) > 0;
 }

@@ -188,6 +188,29 @@ describe("reconcileStrategicInitiatives", () => {
     );
   });
 
+  it("waits a week after a failed check-in before trying that bot again", async () => {
+    const now = new Date("2026-11-02T12:00:00.000Z");
+    const { prisma } = strategicPrisma({ bots: [] });
+    await reconcileStrategicInitiatives({ prisma, jobs: publisher().jobs, now, pageSize: 10 });
+    expect(prisma.bot.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          runs: {
+            none: {
+              OR: expect.arrayContaining([
+                {
+                  clientNonce: { startsWith: "strategic-initiative:" },
+                  status: "failed",
+                  createdAt: { gt: new Date("2026-10-26T12:00:00.000Z") },
+                },
+              ]),
+            },
+          },
+        }),
+      }),
+    );
+  });
+
   it("skips bots without a thread", async () => {
     const now = new Date("2026-11-02T12:00:00.000Z");
     const stale = new Date("2026-11-01T00:00:00.000Z");

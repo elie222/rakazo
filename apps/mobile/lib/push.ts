@@ -23,7 +23,14 @@ export async function registerPushToken() {
     if (!projectId) return;
     const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     if (!token) return;
-    await rpc("notifications/registerPush", { token });
+    await rpc("notifications/registerPush", {
+      token,
+      ...(Platform.OS === "android" &&
+      requireOptionalNativeModule<{ supportsSenderAvatars?: boolean }>("RakazoNotifications")
+        ?.supportsSenderAvatars
+        ? { presentation: "android_sender" as const }
+        : {}),
+    });
     await registerCallPushToken({ expoToken: token });
   } catch {
     // Expo Go without an EAS project id and Android builds without a Firebase config

@@ -68,4 +68,10 @@ export const ES_MESSAGES: Record<string, string> = {
     "{name} ya aparece en el marketplace de plugins de Rakazo.",
   "We couldn't list {name} in the Rakazo plugin marketplace.":
     "No pudimos publicar {name} en el marketplace de plugins de Rakazo.",
+  "Your saved computer files will be deleted":
+    "Se eliminarán los archivos guardados de tu ordenador",
+  "Your saved computer files will be deleted on {date} unless you resubscribe.":
+    "Los archivos guardados de tu ordenador se eliminarán el {date} a menos que vuelvas a suscribirte.",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "Los archivos guardados de tu ordenador se eliminarán el {date} a menos que elijas un plan.",
 };

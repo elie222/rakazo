@@ -15,6 +15,7 @@ import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { appendEventInTransaction, expireStuckRun, withTransactionRetry } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { ExpoPushProvider } from "./expo-push.js";
+import { notificationIdentity } from "./notification-identity.js";
 
 type StuckCursor = { at: Date; id: string };
 
@@ -27,7 +28,7 @@ type StuckCandidate = {
   botId: string;
   userId: string;
   taskId: string;
-  bot: { name: string; notifyOnFinish: boolean };
+  bot: { name: string; color: string; avatarSet: string; notifyOnFinish: boolean };
   thread: { groupId: string | null };
 };
 
@@ -84,7 +85,7 @@ export async function reconcileStuckWork(deps: {
       botId: true,
       userId: true,
       taskId: true,
-      bot: { select: { name: true, notifyOnFinish: true } },
+      bot: { select: { name: true, color: true, avatarSet: true, notifyOnFinish: true } },
       thread: { select: { groupId: true } },
     },
   });
@@ -362,8 +363,12 @@ async function sendStuckNotice(
     botId: run.botId,
     signal: new AbortController().signal,
   };
-  const notice = run.thread.groupId ? { ...message, groupId: run.thread.groupId } : message;
   try {
+    const notice = {
+      ...message,
+      sender: await notificationIdentity({ id: run.botId, ...run.bot }),
+      ...(run.thread.groupId ? { groupId: run.thread.groupId } : {}),
+    };
     if (notifications instanceof ExpoPushProvider) {
       return await notifications.deliver(notice, context);
     }

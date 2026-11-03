@@ -18,6 +18,7 @@ import type { PurchaseCardField } from "@rakazo/contracts";
 import { PurchaseIdInput, PurchaseRequestInput } from "@rakazo/contracts";
 import type { Purchase } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { cardRedactionForms } from "./bot-secrets.js";
 import type { PaymentWalletDeps } from "./payment-wallets.js";
 import { withPaymentWalletCredential } from "./payment-wallets.js";
 import { deleteSecretBestEffort } from "./secret-store-factory.js";
@@ -459,14 +460,6 @@ export async function sealOnce(
 
 function sealedRecordId(purchaseId: string, column: "cardCiphertext" | "tokenCiphertext") {
   return `${column === "cardCiphertext" ? "purchase-card" : "purchase-token"}:${purchaseId}`;
-}
-
-/** A card number as pages show it: as given, digits only, and in groups of four. */
-function cardRedactionForms(number: string): string[] {
-  const digits = number.replace(/\D/g, "");
-  const grouped = digits.replace(/(\d{4})(?=\d)/g, "$1 ");
-  const hyphenated = digits.replace(/(\d{4})(?=\d)/g, "$1-");
-  return [...new Set([number, digits, grouped, hyphenated].filter(Boolean))];
 }
 
 /** Single-use cards and tokens stop working well within this, and with them the reason to hide one. */
