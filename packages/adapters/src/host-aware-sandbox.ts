@@ -16,6 +16,7 @@ import type {
   WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
+import { runAsSystem } from "@rakazo/db";
 import { cancelComputerRunWork } from "./computer-idle.js";
 import { computerProviderDescriptor } from "./computer-provider-registry.js";
 import { manageComputerWorkspaceDirectories } from "./computer-workspace.js";
@@ -74,8 +75,22 @@ async function createBaseRunSandbox(
       hostRoots: [homedir()],
     });
   }
+  const prisma = opts.prisma;
   const primary = await createSandboxProvider(kind, {
     ...opts,
+    referenceInUse: prisma
+      ? async (computer) =>
+          (await runAsSystem("check whether another computer shares a provider resource", () =>
+            prisma.computer.count({
+              where: {
+                kind: computer.kind,
+                providerRef: computer.providerRef,
+                homeKey: { not: computer.botId },
+                state: { in: ["booting", "running"] },
+              },
+            }),
+          )) > 0
+      : opts.referenceInUse,
     onUnsafeStop: opts.prisma
       ? async (providerRef) => {
           const quarantined = await opts.prisma!.computer.updateMany({

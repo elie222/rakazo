@@ -26,6 +26,10 @@ import { credentialDigest } from "./credential-digest.js";
 import { createSandboxProvider } from "./sandbox-factory.js";
 
 export const COMPUTER_PROVIDER_SECRET_KIND = "computer-provider";
+/** Record id binding the deployment's encrypted computer settings to its settings row. */
+export const DEPLOYMENT_COMPUTER_PROVIDER_RECORD = "deployment-computer-provider";
+/** Settings change rarely; other instances pick up a change within this window. */
+const SETTINGS_TTL_MS = 5_000;
 export interface StoredComputerSettings {
   provider: string;
   values: Record<string, string>;
@@ -97,22 +101,21 @@ export async function loadComputerProviderSelection(
   prisma: PrismaClient,
   secrets: Pick<SecretStore, "load">,
 ): Promise<ComputerProviderSelection> {
-  const row = await runAsSystem("read the deployment's computer provider", async () => {
-    const settings = await prisma.deploymentSettings.findUnique({
+  const row = await runAsSystem("read the deployment's computer provider", () =>
+    prisma.deploymentSettings.findUnique({
       where: { id: "default" },
-      select: { computerProvider: true, computerProviderSecretId: true },
-    });
-    const secret = settings?.computerProviderSecretId
-      ? await prisma.secret.findUnique({
-          where: { id: settings.computerProviderSecretId },
-          select: { id: true, ciphertext: true },
-        })
-      : null;
-    return { provider: settings?.computerProvider ?? "default", secret };
-  });
-  const settings = row.secret ? await decryptSettings(secrets, row.secret) : null;
+      select: { computerProvider: true, computerProviderCipher: true },
+    }),
+  );
+  const settings = row?.computerProviderCipher
+    ? await decryptSettings(secrets, {
+        id: DEPLOYMENT_COMPUTER_PROVIDER_RECORD,
+        ciphertext: row.computerProviderCipher,
+      })
+    : null;
   return {
-    provider: settings && settings.provider === row.provider ? row.provider : "default",
+    provider:
+      settings && settings.provider === row?.computerProvider ? settings.provider : "default",
     settings,
   };
 }
@@ -153,7 +156,12 @@ export async function refreshComputerProvider(sandbox: SandboxProvider) {
 export class ConfiguredSandbox implements SandboxProvider {
   readonly pageBrowser: NonNullable<SandboxProvider["pageBrowser"]>;
   private selection: ComputerProviderSelection = { provider: "default", settings: null };
+  private selectionLoadedAt = 0;
   private selected?: SandboxProvider;
+  private readonly owners = new Map<
+    string,
+    { at: number; settings: Promise<StoredComputerSettings | null> }
+  >();
   private readonly providers = new Map<
     string,
     {
@@ -195,10 +203,14 @@ export class ConfiguredSandbox implements SandboxProvider {
       : undefined;
     if (!selection.settings) this.forgetOwner("deployment");
     this.selection = selection;
+    this.selectionLoadedAt = Date.now();
+    this.owners.clear();
+  }
+  private async current() {
+    if (Date.now() - this.selectionLoadedAt >= SETTINGS_TTL_MS) await this.refresh();
   }
   private forgetOwner(owner: string) {
-    for (const key of this.providers.keys())
-      if (key.startsWith(`${owner}:`)) this.providers.delete(key);
+    for (const { id } of computerProviderRegistry) this.providers.delete(`${owner}:${id}`);
   }
   private providerFor(settings: StoredComputerSettings, owner: string) {
     const ciphertext = settings.ciphertext ?? credentialDigest(JSON.stringify(settings));
@@ -227,36 +239,54 @@ export class ConfiguredSandbox implements SandboxProvider {
     );
     return provider;
   }
-  private async ownSettings(homeKey: string) {
-    const settings = (await this.options.loadOwn?.(homeKey)) ?? null;
-    if (!settings) this.forgetOwner(homeKey);
+  private async ownSettings(homeKey: string, fresh = false) {
+    const cached = this.owners.get(homeKey);
+    if (!fresh && cached && Date.now() - cached.at < SETTINGS_TTL_MS) return cached.settings;
+    const settings = Promise.resolve(this.options.loadOwn?.(homeKey) ?? null);
+    this.owners.delete(homeKey);
+    this.owners.set(homeKey, { at: Date.now(), settings });
+    if (this.owners.size > 1000) this.owners.delete(this.owners.keys().next().value!);
+    settings.then(
+      (loaded) => loaded || this.forgetOwner(homeKey),
+      () => this.owners.get(homeKey)?.settings === settings && this.owners.delete(homeKey),
+    );
     return settings;
   }
-  private async route(computer: Pick<ComputerRef, "kind" | "botId" | "providerRef">) {
-    const own = await this.ownSettings(computer.botId);
+  private async route(
+    computer: Pick<ComputerRef, "kind" | "botId" | "providerRef">,
+    fresh = false,
+  ): Promise<SandboxProvider> {
+    // Kinds Settings never selects (Docker, a local host computer) can only belong to the primary.
+    const descriptor = computerProviderRegistry.find((entry) => entry.id === computer.kind);
+    if (!descriptor && (this.primary.ownsReference?.(computer) ?? true)) return this.primary;
+    // Only a provider an account can choose for itself ever runs that account's computers.
+    const perAccount = descriptor?.capabilities.perAccount;
+    const own = perAccount ? await this.ownSettings(computer.botId, fresh) : null;
     if (own?.provider === computer.kind) {
       const provider = await this.providerFor(own, computer.botId);
       if (provider.ownsReference?.(computer) ?? true) return provider;
     }
-    await this.refresh();
+    if (fresh) await this.refresh();
+    else await this.current();
     const saved = computerSettingsForProvider(this.selection.settings, computer.kind);
     if (saved) {
       const provider = await this.providerFor(saved, "deployment");
       if (provider.ownsReference?.(computer) ?? true) return provider;
     }
-    // Kinds Settings never selects (a local host computer, say) can only belong to the primary.
-    const settingsKind = computerProviderRegistry.some((entry) => entry.id === computer.kind);
     const primaryKind =
       (await this.primary.provisionKind?.(computer.botId)) ?? this.primary.describe().id;
-    if (
-      (!settingsKind || computer.kind === primaryKind) &&
-      (this.primary.ownsReference?.(computer) ?? true)
-    )
+    if (computer.kind === primaryKind && (this.primary.ownsReference?.(computer) ?? true))
       return this.primary;
-    throw new Error("The computer's provider connection is no longer configured");
+    // Another instance may have saved the connection since these settings were read.
+    if (!fresh) return this.route(computer, true);
+    // No connection reaches it any more, so it is gone: Reset and deletion can clear it and the
+    // next start provisions where Settings now says.
+    const gone = new Error("The computer's provider connection is no longer configured");
+    gone.name = "SandboxNotFoundError";
+    throw gone;
   }
   private async target(homeKey?: string) {
-    const own = homeKey ? await this.ownSettings(homeKey) : null;
+    const own = homeKey ? await this.ownSettings(homeKey, true) : null;
     if (own) return this.providerFor(own, homeKey!);
     await this.refresh();
     return this.selection.provider !== "default" && this.selected ? this.selected : this.primary;

@@ -1,10 +1,8 @@
 import {
-  COMPUTER_PROVIDER_SECRET_KIND,
   deploymentModelRole,
   findConnectedModelCredential,
   hasHostedModelCredits,
   hostCredentialSource,
-  loadAccountComputerSettings,
   mcpStdioAvailable,
   resolveMemberMainModel,
   selectConfiguredModel,
@@ -33,11 +31,6 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
         timezone: true,
         locale: true,
         signupSurvey: { select: { userId: true } },
-        secrets: {
-          where: { spaceId: null, kind: COMPUTER_PROVIDER_SECRET_KIND },
-          select: { id: true },
-          take: 1,
-        },
       },
     }),
     modelSetup(deps, actor),
@@ -68,13 +61,8 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     computerHost: computerHostFor(setup.settings?.computerHost, deps.env.sandboxProvider),
     canChooseHostComputer:
       Boolean(deps.env.desktopHostChoiceEnabled) && deps.env.sandboxProvider === "docker",
-    sandboxProvider: effectiveSandboxProvider(
-      setup.settings,
-      deps.env.sandboxProvider,
-      user.secrets.length
-        ? (await loadAccountComputerSettings(deps.prisma, deps.secrets, actor.userId))?.provider
-        : undefined,
-    ),
+    // The deployment's provider: an account's own choice covers only its Team Computers.
+    sandboxProvider: effectiveSandboxProvider(setup.settings, deps.env.sandboxProvider),
     mcpStdioEnabled:
       admin &&
       mcpStdioAvailable({

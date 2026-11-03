@@ -14,15 +14,14 @@ Bot 可以把一台现有的[无影云电脑](https://www.aliyun.com/product/ecs
 | 无影 Web SDK | 在电脑面板里显示实时画面，由 Rakazo 在 `/computer-screen/screen.html` 提供 |
 
 每台 bot 电脑的 home 是云电脑上的一个文件夹：`%USERPROFILE%\rakazo\<home>`。文件保存在云电脑自己的磁盘上。
-所有 bot 电脑共用这台云电脑，所以停止其中一台不会关机；Rakazo 只在云电脑关机时把它打开。需要关机时在无影控制台操作，
-或者用无影自己的定时任务。删除 bot 电脑只会删掉它的 home 文件夹，不会删除云电脑本身。
+所有 bot 电脑共用这台云电脑，所以只有最后一台使用它的电脑停止时，Rakazo 才会关机；有电脑需要时再开机。删除 bot 电脑只会删掉它的 home 文件夹，不会删除云电脑本身。
 
 ## 准备工作
 
 需要准备：
 
 1. **一台无影云电脑**（Windows），已经创建好并**分配给一个终端用户**（例如便捷用户）。屏幕登录码就是为这个用户签发的。
-2. **一个 RAM 用户的 AccessKey**，授予 `ecd:DescribeDesktops`、`ecd:StartDesktops` 和
+2. **一个 RAM 用户的 AccessKey**，授予 `ecd:DescribeDesktops`、`ecd:StartDesktops`、`ecd:StopDesktops` 和
    `appstream-center:GetAuthCode` 权限，不要给更多。
 3. **云电脑的 MCP 网关地址和 Bearer Token**。网关需要提供 `wuying-system-tool` 这组工具
    （`process_exec`、`fs_*`、`screen_capture`、`input_*`、`app_start`）。
@@ -55,9 +54,9 @@ Bot 可以把一台现有的[无影云电脑](https://www.aliyun.com/product/ecs
 选 **Deployment default** 就用部署默认的电脑（上面管理员的选择，或 `SANDBOX_PROVIDER`）；
 选 **Wuying** 就用这个账号自己的云电脑、自己的 AccessKey 和 MCP 网关。保存前同样会先检查。
 
-连接信息保存在账号上，不属于某个空间，其他人都读不到。已经在运行的 Team Computer 会留在原来的云电脑上，
-下次启动时才换过去。Private Computer 始终用部署默认的电脑。切回 **Deployment default** 会删除已保存的连接。
-只有 `SANDBOX_PROVIDER` 不是 `desktop` 或 `fake` 时，账号才能选择自己的云电脑。
+连接信息保存在账号上，不属于某个空间，其他人都读不到。还在原来云电脑上的 Team Computer
+会在 Rakazo 下次用到它时换过去，原来的文件留在原来的云电脑上。Private Computer 始终用部署默认的电脑。切回 **Deployment default** 会删除已保存的连接。
+只有部署提供电脑、并且 `SANDBOX_PROVIDER` 不是 `desktop` 或 `fake` 时，账号才能选择自己的云电脑。
 
 ## 用环境变量配置
 

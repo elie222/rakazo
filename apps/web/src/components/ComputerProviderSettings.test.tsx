@@ -97,10 +97,11 @@ it("saves an account's own desktop to the account, never the deployment", async 
   });
   expect(deployment.get).not.toHaveBeenCalled();
   expect(deployment.update).not.toHaveBeenCalled();
-  expect(onProviderChange).toHaveBeenCalledWith(saved.provider);
+  // An account's choice covers its Team Computers, not what the deployment reports.
+  expect(onProviderChange).not.toHaveBeenCalled();
 });
 
-it("reports the deployment default once an account goes back to it", async () => {
+it("sends an account back to the deployment default", async () => {
   account.get.mockResolvedValue({ ...saved, provider: "default", values: {}, savedSecrets: {} });
   account.update.mockResolvedValue({
     ...saved,
@@ -115,7 +116,7 @@ it("reports the deployment default once an account goes back to it", async () =>
   expect(host.querySelector("input")).toBeNull();
   await act(async () => host.querySelector("form")?.requestSubmit());
   expect(account.update).toHaveBeenCalledWith({ provider: "default", values: {} });
-  expect(onProviderChange).toHaveBeenCalledWith("docker");
+  expect(onProviderChange).not.toHaveBeenCalled();
 });
 
 /** Types into the field labelled `label` the way a person pasting would. */

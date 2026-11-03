@@ -7,6 +7,7 @@ import {
   computerProviderDescriptor,
   computerProviderDescriptors,
   computerSettingsForProvider,
+  DEPLOYMENT_COMPUTER_PROVIDER_RECORD,
   loadComputerProviderSelection,
   loadAccountComputerSettings as loadSavedAccountComputerSettings,
   refreshComputerProvider,
@@ -14,13 +15,14 @@ import {
 import type { Actor, ComputerProviderSettings, ComputerProviderUpdate } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { Prisma, runAsSystem } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { requireAdmin } from "./admins.js";
 import type { RouterDeps } from "./router.js";
 import { withSerializableRetry } from "./serializable-retry.js";
 
 export interface ComputerProviderConfigDeps {
   prisma: PrismaClient;
-  secrets: Pick<SecretStore, "put" | "load">;
+  secrets: Pick<SecretStore, "put" | "load" | "delete">;
   sandbox: SandboxProvider;
   env: Pick<RouterDeps["env"], "sandboxProvider" | "adminEmails">;
   resolveHostname?: ResolveHostname;
@@ -57,6 +59,7 @@ function view(
 
 async function checkedSettings(
   deps: ComputerProviderConfigDeps,
+  actor: Actor,
   input: ComputerProviderUpdate,
   previous: StoredComputerSettings | null,
   account = false,
@@ -98,20 +101,35 @@ async function checkedSettings(
     if (deps.verifyConnection) await deps.verifyConnection(settings, signal);
     else await descriptor.verifyConnection?.(values, signal);
     return settings;
-  } catch {
-    // Provider failures and schema errors can contain credentials. Never echo them.
+  } catch (error) {
+    // Provider failures and schema errors can contain credentials: log only the error's class.
+    getLogger().warn("computer_provider.verify_failed", {
+      provider: input.provider,
+      scope: account ? "account" : "deployment",
+      "user.id": actor.userId,
+      "error.name": error instanceof Error ? error.name : typeof error,
+    });
     throw new ORPCError("BAD_REQUEST", { message: "Could not verify computer settings" });
   }
 }
 
-function encrypt(deps: ComputerProviderConfigDeps, actor: Actor, settings: StoredComputerSettings) {
-  return deps.secrets.put(JSON.stringify(settings), {
-    operationId: "computer-provider-config",
-    traceId: "computer-provider-config",
-    spaceId: actor.spaceId,
-    userId: actor.userId,
-    signal: new AbortController().signal,
-  });
+function encrypt(
+  deps: ComputerProviderConfigDeps,
+  actor: Actor,
+  settings: StoredComputerSettings,
+  recordId?: string,
+) {
+  return deps.secrets.put(
+    JSON.stringify(settings),
+    {
+      operationId: "computer-provider-config",
+      traceId: "computer-provider-config",
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      signal: new AbortController().signal,
+    },
+    recordId ? { recordId } : undefined,
+  );
 }
 
 export async function getComputerProviderSettings(
@@ -157,42 +175,24 @@ export async function updateComputerProviderSettings(
     );
   }
   // Blank secrets keep the saved ones, so an admin never has to see them again.
-  const settings = await checkedSettings(deps, input, existing.settings);
-  const stored = await encrypt(deps, actor, settings);
-  await withSerializableRetry(() =>
-    runAsSystem("an admin configures computers", () =>
-      deps.prisma.$transaction(
-        async (tx) => {
-          const current = await tx.deploymentSettings.findUnique({
-            where: { id: "default" },
-            select: { computerProviderSecretId: true },
-          });
-          const secret = await tx.secret.create({
-            data: {
-              id: stored.id,
-              userId: actor.userId,
-              spaceId: actor.spaceId,
-              kind: COMPUTER_PROVIDER_SECRET_KIND,
-              ciphertext: stored.ciphertext,
-            },
-          });
-          await tx.deploymentSettings.upsert({
-            where: { id: "default" },
-            create: {
-              id: "default",
-              computerProvider: input.provider,
-              computerProviderSecretId: secret.id,
-            },
-            update: { computerProvider: input.provider, computerProviderSecretId: secret.id },
-          });
-          if (current?.computerProviderSecretId && current.computerProviderSecretId !== secret.id) {
-            await tx.secret.deleteMany({ where: { id: current.computerProviderSecretId } });
-          }
-        },
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-      ),
-    ),
+  const settings = await checkedSettings(deps, actor, input, existing.settings);
+  // Owned by the deployment row, not a user or space, so no account deletion removes it.
+  const stored = await encrypt(deps, actor, settings, DEPLOYMENT_COMPUTER_PROVIDER_RECORD);
+  await runAsSystem("an admin configures computers", () =>
+    deps.prisma.deploymentSettings.upsert({
+      where: { id: "default" },
+      create: {
+        id: "default",
+        computerProvider: input.provider,
+        computerProviderCipher: stored.ciphertext,
+      },
+      update: { computerProvider: input.provider, computerProviderCipher: stored.ciphertext },
+    }),
   );
+  if (existing.settings?.ciphertext && existing.settings.ciphertext !== stored.ciphertext)
+    await deps.secrets
+      .delete(existing.settings.ciphertext, DEPLOYMENT_COMPUTER_PROVIDER_RECORD)
+      .catch(() => undefined);
   await refreshComputerProvider(deps.sandbox);
   return view(input.provider, settings, deps.env.sandboxProvider);
 }
@@ -202,7 +202,7 @@ async function deploymentProvider(deps: ComputerProviderConfigDeps) {
   const settings = await runAsSystem("read the deployment's computer provider", () =>
     deps.prisma.deploymentSettings.findUnique({
       where: { id: "default" },
-      select: { computerProvider: true, computerProviderSecretId: true },
+      select: { computerProvider: true, computerProviderCipher: true },
     }),
   );
   return effectiveSandboxProvider(settings, deps.env.sandboxProvider);
@@ -222,7 +222,7 @@ export async function getAccountComputerSettings(
     saved,
     defaultProvider,
     true,
-    routesBySettings(deps.env.sandboxProvider),
+    accountCanChoose(defaultProvider),
   );
 }
 
@@ -231,8 +231,9 @@ export async function updateAccountComputerSettings(
   actor: Actor,
   input: ComputerProviderUpdate,
 ): Promise<ComputerProviderSettings> {
-  // Those deployments run every computer on their own provider, never one chosen in Settings.
-  if (!routesBySettings(deps.env.sandboxProvider))
+  // Those deployments run every computer on their own provider, never one chosen in Settings,
+  // and one without computers has none for an account's private computers to fall back on.
+  if (!accountCanChoose(await deploymentProvider(deps)))
     throw new ORPCError("BAD_REQUEST", {
       message: "This deployment cannot use account computer settings",
     });
@@ -249,7 +250,7 @@ export async function updateAccountComputerSettings(
       deps.secrets,
       actor.userId,
     );
-    saved = await checkedSettings(deps, input, previous, true);
+    saved = await checkedSettings(deps, actor, input, previous, true);
     const stored = await encrypt(deps, actor, saved);
     await withSerializableRetry(() =>
       runAsSystem("an account saves computer settings", () =>
@@ -275,14 +276,17 @@ function routesBySettings(envProvider: string) {
   return envProvider !== "desktop" && envProvider !== "fake";
 }
 
-/** Effective provider id after the account and deployment overrides. */
+function accountCanChoose(deploymentProvider: string) {
+  return (
+    routesBySettings(deploymentProvider) && deploymentProvider !== "none" && !!deploymentProvider
+  );
+}
+
+/** Where the deployment's computers run once an admin's choice in Settings applies. */
 export function effectiveSandboxProvider(
-  settings: { computerProvider?: string | null; computerProviderSecretId?: string | null } | null,
+  settings: { computerProvider?: string | null; computerProviderCipher?: string | null } | null,
   envProvider: string,
-  ownProvider?: string,
 ) {
   if (!routesBySettings(envProvider)) return envProvider;
-  return (
-    ownProvider || (settings?.computerProviderSecretId && settings.computerProvider) || envProvider
-  );
+  return (settings?.computerProviderCipher && settings.computerProvider) || envProvider;
 }

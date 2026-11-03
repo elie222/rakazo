@@ -26,7 +26,7 @@ function makeDeps(options: { admin?: boolean } = {}) {
   const state = {
     settings: null as null | {
       computerProvider: string | null;
-      computerProviderSecretId: string | null;
+      computerProviderCipher: string | null;
     },
     secrets: new Map<string, string>(),
   };
@@ -40,7 +40,7 @@ function makeDeps(options: { admin?: boolean } = {}) {
       upsert: vi.fn(async ({ update }: { update: Record<string, string | null> }) => {
         state.settings = {
           computerProvider: null,
-          computerProviderSecretId: null,
+          computerProviderCipher: null,
           ...state.settings,
           ...update,
         };
@@ -68,6 +68,9 @@ function makeDeps(options: { admin?: boolean } = {}) {
         return { id, ref: id, ciphertext: id };
       }),
       load: vi.fn(async (ciphertext: string) => state.secrets.get(ciphertext) ?? ""),
+      delete: vi.fn(async (ciphertext: string) => {
+        state.secrets.delete(ciphertext);
+      }),
     },
     sandbox: { describe: () => ({ id: "docker" }) } as unknown as SandboxProvider,
     env: {
@@ -121,13 +124,13 @@ describe("computer provider settings", () => {
       provider: "desktop",
       values: { ...testDesktop, desktopId: "ecd-other", accessKeySecret: "", mcpToken: "" },
     });
-    const current = state.secrets.get(state.settings?.computerProviderSecretId ?? "") ?? "";
+    const current = state.secrets.get(state.settings?.computerProviderCipher ?? "") ?? "";
     expect(JSON.parse(current).values).toMatchObject({
       desktopId: "ecd-other",
       accessKeySecret: "test-secret",
       mcpToken: "test-token",
     });
-    // The replaced secret row is removed.
+    // The replaced ciphertext is removed.
     expect(state.secrets.size).toBe(1);
   });
 
@@ -180,23 +183,17 @@ describe("computer provider settings", () => {
     expect(state.secrets.size).toBe(1);
   });
 
-  it("reports an account's own desktop over the deployment's provider", () => {
-    expect(effectiveSandboxProvider(null, "docker", "desktop")).toBe("desktop");
-    // Those deployments never route computers by Settings.
-    expect(effectiveSandboxProvider(null, "desktop", "desktop")).toBe("desktop");
-  });
-
   it("reports the selected provider as the sandbox only with a saved connection", () => {
     expect(effectiveSandboxProvider(null, "docker")).toBe("docker");
     expect(
       effectiveSandboxProvider(
-        { computerProvider: "desktop", computerProviderSecretId: null },
+        { computerProvider: "desktop", computerProviderCipher: null },
         "none",
       ),
     ).toBe("none");
     expect(
       effectiveSandboxProvider(
-        { computerProvider: "desktop", computerProviderSecretId: "s" },
+        { computerProvider: "desktop", computerProviderCipher: "c" },
         "none",
       ),
     ).toBe("desktop");
@@ -316,6 +313,12 @@ describe("an account's own computer", () => {
         values: testDesktop,
       }),
     ).rejects.toThrow("This deployment cannot use account computer settings");
+    // Without computers, an account's private computers would have nowhere to run.
+    const none = makeAccountDeps("none");
+    await expect(
+      updateAccountComputerSettings(none.deps, actor, { provider: "desktop", values: testDesktop }),
+    ).rejects.toThrow("This deployment cannot use account computer settings");
+    expect(await getAccountComputerSettings(none.deps, actor)).toMatchObject({ providers: [] });
   });
 });
 
@@ -379,7 +382,7 @@ it("retains previous deployment connections when changing providers", async () =
     provider: "test-cloud",
     values: { apiKey: "test-key" },
   });
-  const stored = JSON.parse(state.secrets.get(state.settings!.computerProviderSecretId!)!);
+  const stored = JSON.parse(state.secrets.get(state.settings!.computerProviderCipher!)!);
   expect(stored).toMatchObject({
     provider: "test-cloud",
     connections: { desktop: testDesktop },

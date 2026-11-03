@@ -18,6 +18,32 @@ function settingsApi(scope: "deployment" | "account") {
   return scope === "account" ? rpc.computerProvider.account : rpc.computerProvider;
 }
 
+// Field labels come from the server in English; translate the ones the registry uses.
+function useFieldLabel() {
+  const { t } = useLingui();
+  const labels: Record<string, string> = {
+    accessKeyId: t`Access key ID`,
+    accessKeySecret: t`Access key secret`,
+    apiKey: t`API key`,
+    apiToken: t`API token`,
+    apiUrl: t`API URL`,
+    baseUrl: t`API URL`,
+    desktopId: t`Desktop ID`,
+    endUserId: t`End user ID`,
+    environmentId: t`Environment ID`,
+    mcpToken: t`Gateway token`,
+    mcpUrl: t`Gateway URL`,
+    org: t`Organization`,
+    region: t`Region`,
+    regionId: t`Region`,
+    rootfs: t`Root filesystem`,
+    shape: t`Shape`,
+    target: t`Target`,
+    template: t`Template`,
+  };
+  return (field: { key: string; label: string }) => labels[field.key] ?? field.label;
+}
+
 function draftFrom(settings: Settings): Draft {
   return { provider: settings.provider, values: settings.values };
 }
@@ -30,6 +56,7 @@ export function ComputerProviderSettings({
   onProviderChange?: (sandboxProvider: string) => void;
 }) {
   const { t } = useLingui();
+  const fieldLabel = useFieldLabel();
   const selectId = useId();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -71,7 +98,9 @@ export function ComputerProviderSettings({
       setSettings(next);
       setDraft(draftFrom(next));
       setSaved(true);
-      onProviderChange?.(next.provider === "default" ? next.defaultProvider : next.provider);
+      // An account's choice covers only its Team Computers, never what the deployment runs.
+      if (scope === "deployment")
+        onProviderChange?.(next.provider === "default" ? next.defaultProvider : next.provider);
     } catch (caught) {
       setError(errorText(caught, t`Could not save computer settings`));
     } finally {
@@ -129,7 +158,7 @@ export function ComputerProviderSettings({
             set({ values: { ...draft.values, [field.key]: value } });
           return field.kind === "select" ? (
             <Field key={field.key}>
-              <FieldLabel htmlFor={`${selectId}-${field.key}`}>{field.label}</FieldLabel>
+              <FieldLabel htmlFor={`${selectId}-${field.key}`}>{fieldLabel(field)}</FieldLabel>
               <NativeSelect
                 id={`${selectId}-${field.key}`}
                 value={draft.values[field.key] ?? ""}
@@ -147,7 +176,7 @@ export function ComputerProviderSettings({
           ) : (
             <TextField
               key={field.key}
-              label={field.label}
+              label={fieldLabel(field)}
               value={draft.values[field.key] ?? ""}
               onChange={change}
               required={field.required && !saved}
@@ -176,7 +205,7 @@ export function ComputerProviderSettings({
             <Trans>My computers</Trans>
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <ComputerProviderSettings scope="account" onProviderChange={onProviderChange} />
+            <ComputerProviderSettings scope="account" />
           </CollapsibleContent>
         </Collapsible>
       ) : null}

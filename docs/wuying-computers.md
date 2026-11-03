@@ -15,8 +15,8 @@ and use the mouse and keyboard there, and you can watch or take over the screen 
 | Wuying Web SDK | Draws the live screen in the computer panel, served by Rakazo at `/computer-screen/screen.html` |
 
 Each bot computer's home is a folder on the desktop, `%USERPROFILE%\rakazo\<home>`. The desktop's
-own disk keeps it. Every computer shares the desktop, so stopping one leaves the desktop on;
-Rakazo only starts it when it is off. Turn it off from the Wuying console or its own schedule.
+own disk keeps it. Computers share the desktop, so Rakazo powers it off only when the last
+computer using it stops, and starts it again when one needs it.
 Deleting a computer removes only its home folder, never the desktop.
 
 ## Before you start
@@ -25,8 +25,8 @@ You need:
 
 1. **A Wuying cloud computer** (Windows), created and **assigned to an end user**, such as a
    convenience user. Screen logins are issued for that user.
-2. **A RAM user's AccessKey** allowed `ecd:DescribeDesktops`, `ecd:StartDesktops` and
-   `appstream-center:GetAuthCode`. Keep it to those actions.
+2. **A RAM user's AccessKey** allowed `ecd:DescribeDesktops`, `ecd:StartDesktops`,
+   `ecd:StopDesktops` and `appstream-center:GetAuthCode`. Keep it to those actions.
 3. **The desktop's MCP gateway URL and bearer token**. The gateway must serve the
    `wuying-system-tool` tools (`process_exec`, `fs_*`, `screen_capture`, `input_*`, `app_start`).
 4. **The Web SDK files**, which are not committed. Fetch the pinned release before you build or
@@ -67,10 +67,10 @@ them on a desktop the account brings, with its own AccessKey and MCP gateway. Th
 before it is saved.
 
 The connection is saved to the account, not a space, and no one else can read it. A Team Computer
-already running stays on its desktop and moves the next time it starts. Private Computers always
-use the deployment's computers. Going back to **Deployment default** deletes the saved
-connection. Accounts choose their own desktop only when `SANDBOX_PROVIDER` is not `desktop` or
-`fake`.
+on the old desktop moves the next time Rakazo uses it; its files stay on the old desktop. Private
+Computers always use the deployment's computers. Going back to **Deployment default** deletes the
+saved connection. Accounts choose their own desktop only when the deployment has computers and
+`SANDBOX_PROVIDER` is not `desktop` or `fake`.
 
 ## Or set it up with environment variables
 

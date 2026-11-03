@@ -9,10 +9,11 @@ export interface WuyingOpenApiConfig {
   regionId: string;
 }
 
-/** The control-plane calls a Wuying computer needs: its state, power-on and screen login. */
+/** The control-plane calls a Wuying computer needs: its state, power and screen login. */
 export interface WuyingControlPlane {
   desktopStatus(desktopId: string, signal: AbortSignal): Promise<WuyingDesktopStatus | null>;
   startDesktop(desktopId: string, signal: AbortSignal): Promise<void>;
+  stopDesktop(desktopId: string, signal: AbortSignal): Promise<void>;
   authCode(endUserId: string, signal: AbortSignal): Promise<string>;
 }
 
@@ -76,6 +77,17 @@ export class WuyingOpenApi implements WuyingControlPlane {
       signal.throwIfAborted();
       await desktop.startDesktopsWithOptions(
         new ecd.StartDesktopsRequest({ regionId: this.config.regionId, desktopId: [desktopId] }),
+        runtime,
+      );
+    });
+  }
+
+  async stopDesktop(desktopId: string, signal: AbortSignal) {
+    await this.call("StopDesktops", signal, async () => {
+      const { ecd, desktop, runtime } = await this.load();
+      signal.throwIfAborted();
+      await desktop.stopDesktopsWithOptions(
+        new ecd.StopDesktopsRequest({ regionId: this.config.regionId, desktopId: [desktopId] }),
         runtime,
       );
     });

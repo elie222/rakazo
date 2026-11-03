@@ -454,6 +454,14 @@ msgstr "About {kb} KB of memory no longer reaches the bot."
 msgid "About {label}"
 msgstr "About {label}"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key ID"
+msgstr "Access key ID"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key secret"
+msgstr "Access key secret"
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Access token (optional)"
 msgstr "Access token (optional)"
@@ -801,6 +809,7 @@ msgid "Any model, with your own key"
 msgstr "Any model, with your own key"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/lib/localized-provider-hint.ts
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/model-settings/compatible-key-field.tsx
@@ -821,6 +830,14 @@ msgstr "API key header"
 #: src/pages/shell/agent-import.tsx
 msgid "API keys"
 msgstr "API keys"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API token"
+msgstr "API token"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API URL"
+msgstr "API URL"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
@@ -2574,6 +2591,10 @@ msgstr "Design"
 msgid "Desktop app"
 msgstr "Desktop app"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Desktop ID"
+msgstr "Desktop ID"
+
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop update"
 msgstr "Desktop update"
@@ -2778,6 +2799,10 @@ msgstr "Email verification required"
 msgid "Enable {0}"
 msgstr "Enable {0}"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "End user ID"
+msgstr "End user ID"
+
 #: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr "Ends {day}"
@@ -2816,6 +2841,10 @@ msgstr "Enter a whole number from 1 to 1000 for the image limit."
 #: src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
 msgstr "Enter an API key before testing."
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Environment ID"
+msgstr "Environment ID"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
@@ -3080,6 +3109,14 @@ msgstr "Fullscreen"
 #: src/pages/Onboarding.tsx
 msgid "Gateway ID"
 msgstr "Gateway ID"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway token"
+msgstr "Gateway token"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway URL"
+msgstr "Gateway URL"
 
 #: src/pages/settings-nav.ts
 #: src/pages/SettingsOverlay.tsx
@@ -4381,6 +4418,10 @@ msgstr "Optional header value"
 msgid "Or paste an API key"
 msgstr "Or paste an API key"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Organization"
+msgstr "Organization"
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
 msgstr "Organization API key"
@@ -4797,6 +4838,10 @@ msgstr "Refresh view"
 msgid "Refreshing…"
 msgstr "Refreshing…"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Region"
+msgstr "Region"
+
 #: src/lib/user-error.ts
 msgid "Registration is closed"
 msgstr "Registration is closed"
@@ -5078,6 +5123,10 @@ msgstr "Revoked"
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Room guidance"
 msgstr "Room guidance"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Root filesystem"
+msgstr "Root filesystem"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Rotate key"
@@ -5415,6 +5464,7 @@ msgstr "Setup complete"
 msgid "Setup help"
 msgstr "Setup help"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Shape"
 msgstr "Shape"
@@ -5812,6 +5862,10 @@ msgstr "Table"
 msgid "Take control"
 msgstr "Take control"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Target"
+msgstr "Target"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "Teach a task"
@@ -5835,6 +5889,10 @@ msgstr "Teams message"
 #: src/pages/RoutineEditor.tsx
 msgid "Teams not enabled"
 msgstr "Teams not enabled"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Template"
+msgstr "Template"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"

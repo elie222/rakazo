@@ -54,15 +54,17 @@ describe("WuyingSandboxProvider", () => {
     await expect(provider.provision({ botId: "a/../b", homePath: "/h" }, ctx)).rejects.toThrow();
   });
 
-  it("starts a stopped desktop, and leaves the shared desktop on when a computer stops", async () => {
+  it("starts a stopped desktop, and stops it only when no other computer still uses it", async () => {
     const desktop = new FakeWuyingDesktop();
     desktop.status = "Stopped";
     const computer = await desktop.provider().provision({ botId: "bot", homePath: "/h" }, ctx);
     expect(computer.started).toBe(true);
     expect(desktop.control).toEqual(["start"]);
-    await desktop.provider().stop();
+    await desktop.provider("ecd-fake", async () => true).stop(computer, ctx);
     expect(desktop.status).toBe("Running");
-    expect(desktop.control).toEqual(["start"]);
+    await desktop.provider("ecd-fake", async () => false).stop(computer, ctx);
+    expect(desktop.status).toBe("Stopped");
+    expect(desktop.control).toEqual(["start", "stop"]);
   });
 
   it("saves a workspace without dependency folders, and reports one too large to save", async () => {

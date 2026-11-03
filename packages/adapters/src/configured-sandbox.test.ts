@@ -198,15 +198,25 @@ describe("ConfiguredSandbox", () => {
     );
   });
 
+  it("reads the deployment's connection from its own settings row", async () => {
+    const prisma = {
+      deploymentSettings: {
+        findUnique: async () => ({ computerProvider: "desktop", computerProviderCipher: "c1" }),
+      },
+    } as unknown as PrismaClient;
+    const load = vi.fn(async () => JSON.stringify(settings));
+    expect(await loadComputerProviderSelection(prisma, { load })).toEqual({
+      provider: "desktop",
+      settings: { ...settings, ciphertext: "c1" },
+    });
+    expect(load).toHaveBeenCalledWith("c1", "deployment-computer-provider");
+  });
+
   it("falls back to the deployment provider when the saved connection no longer decrypts", async () => {
     const prisma = {
       deploymentSettings: {
-        findUnique: async () => ({
-          computerProvider: "desktop",
-          computerProviderSecretId: "s1",
-        }),
+        findUnique: async () => ({ computerProvider: "desktop", computerProviderCipher: "old" }),
       },
-      secret: { findUnique: async () => ({ id: "s1", ciphertext: "old-key" }) },
     };
     const secrets = {
       load: async () => {
@@ -278,11 +288,42 @@ it("routes an existing computer through a retained deployment connection after a
   expect(desktop.calls.some((call) => call === "listFiles")).toBe(true);
 });
 
-it("refuses a reference from a connection that is no longer configured", async () => {
+it("reports a computer no saved connection reaches as gone, so it can be reset", async () => {
   const { sandbox, select } = setup({ provider: "desktop", settings });
   const computer = await sandbox.provision({ botId: "a", homePath: "/h" }, ctx);
   await select({ provider: "default", settings: null });
-  await expect(sandbox.prepare(computer, ctx)).rejects.toThrow("no longer configured");
+  await expect(sandbox.prepare(computer, ctx)).rejects.toMatchObject({
+    name: "SandboxNotFoundError",
+    message: expect.stringContaining("no longer configured"),
+  });
+});
+
+it("reads settings at most once per window, and again before calling a computer gone", async () => {
+  let selection: ComputerProviderSelection = { provider: "default", settings: null };
+  const load = vi.fn(async () => selection);
+  const loadOwn = vi.fn(async () => null);
+  const desktop = new TestDesktop();
+  const sandbox = new ConfiguredSandbox(new FakeSandboxProvider(), load, {
+    loadOwn,
+    createProvider: async () => desktop.provider(),
+  });
+  await sandbox.refresh();
+  const docker = await sandbox.provision({ botId: "a", homePath: "/h" }, ctx);
+  load.mockClear();
+  loadOwn.mockClear();
+  for (let i = 0; i < 5; i += 1) await sandbox.listFiles(docker, "", ctx);
+  // A kind Settings never selects reaches its provider without reading any settings.
+  expect(load).not.toHaveBeenCalled();
+  expect(loadOwn).not.toHaveBeenCalled();
+
+  // Another instance saves a desktop and starts a computer on it before this one rereads.
+  selection = { provider: "desktop", settings };
+  const remote = { ...docker, kind: "desktop" as const, providerRef: "ecd-fake" };
+  await sandbox.listFiles(remote, "", ctx);
+  expect(desktop.calls).toContain("listFiles");
+  const reads = load.mock.calls.length;
+  for (let i = 0; i < 5; i += 1) await sandbox.listFiles(remote, "", ctx);
+  expect(load.mock.calls.length).toBe(reads);
 });
 
 it("refuses a desktop reference belonging to another account connection", async () => {

@@ -106,6 +106,8 @@ export interface WuyingSandboxOptions {
   endUserId: string;
   mcpUrl: string;
   mcpToken: string;
+  /** Whether another running computer still uses this desktop. */
+  referenceInUse?: (computer: ComputerRef) => Promise<boolean>;
 }
 
 export function describeWuyingSandbox() {
@@ -387,7 +389,10 @@ export class WuyingSandboxProvider implements SandboxProvider {
   private readonly runApps = new Map<string, Set<string>>();
 
   constructor(
-    private readonly options: Pick<WuyingSandboxOptions, "desktopId" | "endUserId"> & {
+    private readonly options: Pick<
+      WuyingSandboxOptions,
+      "desktopId" | "endUserId" | "referenceInUse"
+    > & {
       regionId: string;
     },
     private readonly control: WuyingControlPlane,
@@ -397,7 +402,12 @@ export class WuyingSandboxProvider implements SandboxProvider {
   static fromOptions(options: WuyingSandboxOptions) {
     const regionId = options.regionId?.trim() || "cn-hangzhou";
     return new WuyingSandboxProvider(
-      { desktopId: options.desktopId, endUserId: options.endUserId, regionId },
+      {
+        desktopId: options.desktopId,
+        endUserId: options.endUserId,
+        regionId,
+        referenceInUse: options.referenceInUse,
+      },
       new WuyingOpenApi({
         accessKeyId: options.accessKeyId,
         accessKeySecret: options.accessKeySecret,
@@ -993,8 +1003,16 @@ export class WuyingSandboxProvider implements SandboxProvider {
     throw new Error("Snapshots are not available on Wuying computers");
   }
 
-  /** Every computer here shares one desktop, so stopping one leaves it on for the others. */
-  async stop() {}
+  /** Computers share the desktop, so it powers off only when the last one stops. */
+  async stop(computer: ComputerRef, context: AdapterContext) {
+    if (computer.providerRef !== this.options.desktopId) return;
+    if (await this.options.referenceInUse?.(computer)) return;
+    const status = await this.control.desktopStatus(this.options.desktopId, context.signal);
+    if (status === "Stopped" || status === null) return;
+    if (status !== "Stopping")
+      await this.control.stopDesktop(this.options.desktopId, context.signal);
+    await this.waitFor("Stopped", STOP_TIMEOUT_MS, context.signal);
+  }
 
   /** The desktop belongs to the account, so only this computer's home folder is removed. */
   async destroy(computer: ComputerRef, context: AdapterContext) {

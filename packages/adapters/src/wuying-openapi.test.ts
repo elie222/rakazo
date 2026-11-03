@@ -52,7 +52,11 @@ describe("Wuying official SDK control plane", () => {
     });
     desktop.mockResolvedValue({ body: {} });
     await client.startDesktop("ecd-fake", signal());
-    expect(desktop.mock.calls.slice(1).map(([params]) => params.action)).toEqual(["StartDesktops"]);
+    await client.stopDesktop("ecd-fake", signal());
+    expect(desktop.mock.calls.slice(1).map(([params]) => params.action)).toEqual([
+      "StartDesktops",
+      "StopDesktops",
+    ]);
     expect(await client.authCode("fake-user", signal())).toBe("fake-once");
     expect(login.mock.calls[0]?.[0]).toMatchObject({ action: "GetAuthCode" });
     expect(login.mock.calls[0]?.[1].body).toMatchObject({ EndUserId: "fake-user" });

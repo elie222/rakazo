@@ -32,9 +32,9 @@ export class FakeWuyingDesktop implements WuyingDesktopTools, WuyingControlPlane
       this.files.set(key(dir), { path: dir, kind: "directory" });
   }
 
-  provider(desktopId = "ecd-fake") {
+  provider(desktopId = "ecd-fake", referenceInUse?: () => Promise<boolean>) {
     return new WuyingSandboxProvider(
-      { desktopId, endUserId: "end-user", regionId: "cn-hangzhou" },
+      { desktopId, endUserId: "end-user", regionId: "cn-hangzhou", referenceInUse },
       this,
       this,
     );
@@ -60,6 +60,11 @@ export class FakeWuyingDesktop implements WuyingDesktopTools, WuyingControlPlane
   async startDesktop() {
     this.control.push("start");
     this.status = "Running";
+  }
+
+  async stopDesktop() {
+    this.control.push("stop");
+    this.status = "Stopped";
   }
 
   async authCode() {

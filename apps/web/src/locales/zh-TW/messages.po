@@ -455,6 +455,14 @@ msgstr ""
 msgid "About {label}"
 msgstr "關於 {label}"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key ID"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key secret"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Access token (optional)"
 msgstr "存取權杖（選填）"
@@ -802,6 +810,7 @@ msgid "Any model, with your own key"
 msgstr "使用自己的金鑰連接任何模型"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/lib/localized-provider-hint.ts
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/model-settings/compatible-key-field.tsx
@@ -822,6 +831,14 @@ msgstr "API 金鑰標頭"
 #: src/pages/shell/agent-import.tsx
 msgid "API keys"
 msgstr "API 金鑰"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API URL"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
@@ -2575,6 +2592,10 @@ msgstr ""
 msgid "Desktop app"
 msgstr "桌面應用程式"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Desktop ID"
+msgstr ""
+
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop update"
 msgstr "桌面版更新"
@@ -2779,6 +2800,10 @@ msgstr "需要驗證電子信箱"
 msgid "Enable {0}"
 msgstr "啟用 {0}"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "End user ID"
+msgstr ""
+
 #: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr "於 {day} 結束"
@@ -2817,6 +2842,10 @@ msgstr "請輸入 1 到 1000 之間的整數作為影像限制。"
 #: src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
 msgstr "測試前請輸入 API 金鑰。"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Environment ID"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
@@ -3081,6 +3110,14 @@ msgstr "全螢幕"
 #: src/pages/Onboarding.tsx
 msgid "Gateway ID"
 msgstr "閘道器 ID"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway URL"
+msgstr ""
 
 #: src/pages/settings-nav.ts
 #: src/pages/SettingsOverlay.tsx
@@ -4382,6 +4419,10 @@ msgstr "選填標頭值"
 msgid "Or paste an API key"
 msgstr "或貼上 API 金鑰"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Organization"
+msgstr ""
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
 msgstr "組織 API 金鑰"
@@ -4798,6 +4839,10 @@ msgstr "重新整理畫面"
 msgid "Refreshing…"
 msgstr "重新整理中…"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Region"
+msgstr ""
+
 #: src/lib/user-error.ts
 msgid "Registration is closed"
 msgstr "註冊已關閉"
@@ -5079,6 +5124,10 @@ msgstr ""
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Room guidance"
 msgstr "聊天室指引"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Root filesystem"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Rotate key"
@@ -5416,6 +5465,7 @@ msgstr "設定完成"
 msgid "Setup help"
 msgstr "設定說明"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Shape"
 msgstr "形狀"
@@ -5813,6 +5863,10 @@ msgstr "表格"
 msgid "Take control"
 msgstr "接管控制權"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Target"
+msgstr ""
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "示範任務"
@@ -5836,6 +5890,10 @@ msgstr "Teams 訊息"
 #: src/pages/RoutineEditor.tsx
 msgid "Teams not enabled"
 msgstr "未啟用 Teams"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Template"
+msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"

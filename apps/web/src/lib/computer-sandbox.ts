@@ -10,7 +10,12 @@ export function computersAreUnavailable(sandboxProvider: string | null | undefin
 /** Whether an account may run its computers on its own provider on this deployment. */
 export function canChooseOwnComputer(sandboxProvider: string | null | undefined): boolean {
   // Those deployments run every computer on the server's own provider.
-  return sandboxProvider != null && sandboxProvider !== "desktop" && sandboxProvider !== "fake";
+  return (
+    !!sandboxProvider &&
+    !computersAreUnavailable(sandboxProvider) &&
+    sandboxProvider !== "desktop" &&
+    sandboxProvider !== "fake"
+  );
 }
 
 export type SandboxAvailabilityPhase = "idle" | "loading" | "recovered" | "unavailable" | "failure";
