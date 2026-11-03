@@ -961,6 +961,7 @@ export const JA_MESSAGES: Record<string, string> = {
   Unmute: "ミュート解除",
   "Voice chat": "音声チャット",
   "Call sounds": "通話サウンド",
+  "Call greeting": "通話の挨拶",
   "Hello {name}, {bot} here.": "こんにちは、{name}さん。{bot}です。",
   "Hello, {bot} here.": "こんにちは、{bot}です。",
   "OK, switching to {name}.": "了解しました。{name}に切り替えます。",
