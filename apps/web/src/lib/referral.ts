@@ -2,11 +2,13 @@ import type { BillingStatus } from "@rakazo/contracts";
 import { rpc } from "./rpc";
 
 const STORAGE_KEY = "rakazo:referral";
+// What a server-issued invite code can look like; anything else would make billing status fail.
+const CODE = /^[A-Za-z0-9_-]{1,64}$/;
 
 /** Keeps an invite code from the landing URL until the account exists to claim it. */
 export function captureReferral(search: string): void {
   const code = new URLSearchParams(search).get("ref")?.trim();
-  if (!code) return;
+  if (!code || !CODE.test(code)) return;
   try {
     window.localStorage.setItem(STORAGE_KEY, code);
   } catch {
@@ -23,6 +25,11 @@ export async function loadBillingStatus(): Promise<BillingStatus> {
   let code: string | null = null;
   try {
     code = window.localStorage.getItem(STORAGE_KEY);
+    // A malformed code stored by an older build is dropped rather than sent.
+    if (code && !CODE.test(code)) {
+      window.localStorage.removeItem(STORAGE_KEY);
+      code = null;
+    }
   } catch {
     // Storage can be unavailable; billing still loads.
   }

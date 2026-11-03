@@ -49,6 +49,17 @@ describe("referral", () => {
     expect(status).toHaveBeenNthCalledWith(2, { referralCode: "friend42" });
   });
 
+  it("never sends a malformed code, which would make billing status fail", async () => {
+    status.mockResolvedValue({} as Awaited<ReturnType<typeof rpc.billing.status>>);
+    captureReferral(`?ref=${"x".repeat(65)}`);
+    storage.set("rakazo:referral", "bad code!");
+
+    await loadBillingStatus();
+
+    expect(status).toHaveBeenCalledWith(undefined);
+    expect(storage.has("rakazo:referral")).toBe(false);
+  });
+
   it("asks for plain status without a code", async () => {
     status.mockResolvedValue({} as Awaited<ReturnType<typeof rpc.billing.status>>);
 
