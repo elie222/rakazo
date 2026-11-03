@@ -195,6 +195,7 @@ export type FinalizeRunInput = FinalizeRunBase &
         error: string;
         /** Controlled, short text for the conversation; never raw diagnostics. */
         failureNotice?: string;
+        markUnread?: boolean;
         /** Reply text the user saw streaming before the failure, kept as a bot message. */
         partialReply?: MessageBlock[];
       }
@@ -1911,19 +1912,19 @@ async function finalizeRunOnce(
       const blocks: MessageBlock[] = [
         { kind: "text", text: `${displayName(bot.name, "Bot")} failed: ${reason}` },
       ];
+      // Like stuck-run notices, this stays outside background-run chatter filters.
       const notice = await createThreadMessageInTransaction(tx, {
         threadId: input.threadId,
         role: "system",
         blocks,
         botId: input.botId,
-        runId: input.runId,
+        markUnread: input.markUnread ?? false,
       });
       await appendEventInTransaction(tx, {
         spaceId: input.spaceId,
         threadId: input.threadId,
         botId: input.botId,
         type: "thread.message.created",
-        runId: input.runId,
         payload: { messageId: notice.id, role: "system", blocks },
       });
     }

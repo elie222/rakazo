@@ -170,6 +170,41 @@ describe("thread message pages", () => {
     ]);
   });
 
+  it("keeps terminal system notices visible while ticket chatter stays hidden", async () => {
+    const rows = [
+      {
+        id: "notice",
+        runId: null,
+        role: "system",
+        blocks: [{ kind: "text", text: "Bot failed: Request failed." }],
+      },
+      {
+        id: "chatter",
+        runId: "ticket-run",
+        role: "bot",
+        blocks: [{ kind: "text", text: "Working" }],
+      },
+    ].map((row, index) => ({
+      ...row,
+      threadId: "thread-1",
+      seq: 2 - index,
+      botId: "bot-1",
+      replyToMessageId: null,
+      replyQuote: null,
+      createdAt: new Date(0),
+    }));
+    const findUnique = vi.fn(async () => ({ trigger: "tickets" }));
+    const prisma = {
+      message: { findMany: vi.fn(async () => rows), count: vi.fn(async () => 0) },
+      run: { findMany: vi.fn(async () => [{ id: "ticket-run", trigger: "tickets" }]), findUnique },
+    } as unknown as PrismaClient;
+    const page = await loadMessagePage(prisma, "thread-1", undefined, 10);
+    expect(page.messages.map((message) => message.id)).toEqual(["notice"]);
+    // The system event has no runId, so live delivery does not classify it as ticket chatter.
+    expect(await isBackgroundRun(prisma, undefined, new Map())).toBe(false);
+    expect(findUnique).not.toHaveBeenCalled();
+  });
+
   it("caches background-run classification for live events", async () => {
     const findUnique = vi.fn(async () => ({ trigger: "tickets" }));
     const prisma = { run: { findUnique } } as unknown as PrismaClient;

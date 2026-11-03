@@ -282,13 +282,14 @@ describe("finalizeRun", () => {
       leaseFence: 1,
       outcome: "failed",
       failureNotice,
+      markUnread: Boolean(failureNotice),
       error: `setup stderr: secret=fixture-secret ${"x".repeat(400)}`,
     });
     expect(create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         threadId: "thread-1",
         botId: "bot-1",
-        runId: "run-1",
+        runId: undefined,
         role: "system",
         blocks: [
           {
@@ -305,7 +306,7 @@ describe("finalizeRun", () => {
     );
     expect(tx.thread.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ unread: undefined }),
+        data: expect.objectContaining({ unread: failureNotice ? true : undefined }),
       }),
     );
     expect(tx.run.updateMany).not.toHaveBeenCalledWith(

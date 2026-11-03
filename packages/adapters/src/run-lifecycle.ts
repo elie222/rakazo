@@ -6,7 +6,7 @@ import { returnBotMessageOutcome } from "./bot-messages.js";
 import { sleepDeferReason } from "./computer-idle.js";
 import { withComputerScreenAvailability } from "./computer-screens.js";
 import type { ExecutorDeps } from "./executor-deps.js";
-import { notifyRun } from "./run-notifications.js";
+import { completionMarksUnread, notifyRun } from "./run-notifications.js";
 import type { TakeoverResumeCheckpoint } from "./takeover-resume.js";
 import { TAKEOVER_RESUME_CHECKPOINTS } from "./takeover-resume.js";
 
@@ -86,6 +86,7 @@ export async function failRunBeforeTurn(
     leaseFence: lease.fence,
     outcome: "failed",
     error: message,
+    markUnread: completionMarksUnread(run.trigger, ""),
   });
   if (!failed) return false;
   if (failed.continuationRunId) {

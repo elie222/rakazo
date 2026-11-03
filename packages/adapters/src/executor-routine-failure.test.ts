@@ -265,6 +265,7 @@ it("records a safe provider failure even when finish notifications are off", asy
     expect.objectContaining({
       threadId: "thread-1",
       outcome: "failed",
+      markUnread: true,
       error: "TransientModelError: The model provider is temporarily unavailable. HTTP 502.",
     }),
   );
@@ -316,8 +317,9 @@ describe("routine failure notifications", () => {
 
 describe("retrying a routine run after a transient model failure", () => {
   it("schedules one retry and holds the failure notice", async () => {
-    const { retries, send } = await failRun({ error: overloaded() });
+    const { retries, send, finalizeRun } = await failRun({ error: overloaded() });
 
+    expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ markUnread: false }));
     expect(retries).toEqual([
       {
         name: "routine.retry",

@@ -1200,7 +1200,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       });
       expect(
         await system.message.findFirst({
-          where: { threadId: run.threadId, runId: run.id, role: "system" },
+          where: { threadId: run.threadId, role: "system" },
           orderBy: { seq: "desc" },
           select: { blocks: true },
         }),

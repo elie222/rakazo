@@ -948,6 +948,11 @@ export async function failRun(
     leaseFence: ctx.fence,
     outcome: "failed",
     error: message,
+    markUnread: completionMarksUnread(
+      run.trigger,
+      "",
+      ctx.source.peerMessage?.repliesToRequest === true,
+    ),
     ...(error instanceof ModelProviderError || isKnownRunError(message)
       ? { failureNotice: message }
       : {}),
