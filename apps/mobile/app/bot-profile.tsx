@@ -156,6 +156,20 @@ export default function BotProfile() {
           onPress={() => router.push({ pathname: "/routines", params: { botId, name } })}
         />
         <SettingsRow
+          key="pages"
+          accessibilityRole="button"
+          chevron="right"
+          title={t("Pages")}
+          leading={
+            <NativeSymbol
+              ios="doc.richtext"
+              android="document-text-outline"
+              color={tokens.mutedForeground}
+            />
+          }
+          onPress={() => router.push({ pathname: "/pages", params: { botId } })}
+        />
+        <SettingsRow
           key="artifacts"
           accessibilityRole="button"
           chevron="right"

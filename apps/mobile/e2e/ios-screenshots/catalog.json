@@ -119,5 +119,11 @@
     "title": "New account",
     "flow": "flows/new-account.yaml",
     "screens": ["signup-survey", "paywall"]
+  },
+  {
+    "id": "pages",
+    "title": "Pages",
+    "flow": "flows/pages.yaml",
+    "screens": ["page", "page-share", "pages"]
   }
 ]

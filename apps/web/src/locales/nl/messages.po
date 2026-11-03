@@ -480,7 +480,8 @@ msgstr "Accountmenu voor {name}"
 
 #. placeholder {0}: bot.name
 #. placeholder {0}: group.spaceName
-#. placeholder {0}: section.name
+#. placeholder {0}: page.title
+#: src/components/pages/PagesList.tsx
 #: src/pages/BotContextMenu.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/sidebar-roster.tsx
@@ -798,6 +799,10 @@ msgstr ""
 msgid "Any model, with your own key"
 msgstr "Elk model, met je eigen sleutel"
 
+#: src/components/pages/SharePopover.tsx
+msgid "Anyone with the link"
+msgstr "Iedereen met de link"
+
 #: src/components/AskCard.tsx
 #: src/components/ComputerProviderSettings.tsx
 #: src/lib/localized-provider-hint.ts
@@ -1004,6 +1009,10 @@ msgstr "Avatarstudio"
 msgid "Back"
 msgstr "Terug"
 
+#: src/components/pages/PageNotice.tsx
+msgid "Back to chat"
+msgstr "Terug naar chat"
+
 #: src/pages/Auth.tsx
 msgid "Back to sign in"
 msgstr "Terug naar aanmelden"
@@ -1149,6 +1158,10 @@ msgstr "Belt…"
 msgid "Calls"
 msgstr "Aanroepen"
 
+#: src/components/pages/SharePopover.tsx
+msgid "Can view without signing in"
+msgstr "Kan bekijken zonder in te loggen"
+
 #: src/App.tsx
 msgid "Can't reach the server."
 msgstr "De server is niet bereikbaar."
@@ -1293,6 +1306,11 @@ msgstr "Controleer de server-URL en het netwerk en test daarna opnieuw."
 msgid "Check this yourself"
 msgstr "Controleer dit zelf"
 
+#: src/components/pages/PageView.tsx
+#: src/components/pages/PageViewHost.tsx
+msgid "Check your connection and try again."
+msgstr "Controleer je verbinding en probeer het opnieuw."
+
 #: src/pages/Auth.tsx
 msgid "Check your email"
 msgstr "Controleer je e-mail"
@@ -1417,6 +1435,10 @@ msgstr "Modelinstellingen sluiten"
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Close navigation"
 msgstr "Navigatie sluiten"
+
+#: src/components/pages/PageView.tsx
+msgid "Close page"
+msgstr "Pagina sluiten"
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/side-panel.tsx
@@ -1728,6 +1750,8 @@ msgstr ""
 #: src/components/ComputersUnavailableHint.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
+#: src/components/pages/PublicPageShell.tsx
+#: src/components/pages/SharePopover.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1755,6 +1779,8 @@ msgid "Copy diagram source"
 msgstr "Diagrambron kopiëren"
 
 #: src/components/InviteDialog.tsx
+#: src/components/pages/PublicPageShell.tsx
+#: src/components/pages/SharePopover.tsx
 msgid "Copy link"
 msgstr "Link kopiëren"
 
@@ -1805,6 +1831,10 @@ msgstr "Wachtwoord wijzigen mislukt"
 #: src/components/integrations/space-availability.tsx
 msgid "Could not change where this is available"
 msgstr ""
+
+#: src/components/pages/PageViewHost.tsx
+msgid "Could not change who can view this page. Try again."
+msgstr "Kon niet wijzigen wie deze pagina kan bekijken. Probeer het opnieuw."
 
 #: src/lib/model-connection-preflight.ts
 msgid "Could not check stored credentials."
@@ -1899,6 +1929,10 @@ msgstr "Groep verwijderen mislukt"
 #: src/pages/McpServersOverlay.tsx
 msgid "Could not delete MCP server"
 msgstr "MCP-server verwijderen mislukt"
+
+#: src/pages/shell/dialogs.tsx
+msgid "Could not delete page"
+msgstr "Pagina kon niet worden verwijderd"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Could not delete routine"
@@ -2058,6 +2092,10 @@ msgstr "Uitloggen mislukt. Probeer het opnieuw."
 msgid "Could not open billing"
 msgstr "Facturatie openen mislukt"
 
+#: src/components/pages/PagesList.tsx
+msgid "Could not pin this page. Try again."
+msgstr "Deze pagina kon niet worden vastgezet. Probeer het opnieuw."
+
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not play a test clip"
 msgstr "Testfragment afspelen mislukt"
@@ -2127,6 +2165,11 @@ msgstr "Sectie hernoemen mislukt"
 #: src/pages/SpaceSettingsPanel.tsx
 msgid "Could not rename space"
 msgstr "Space hernoemen mislukt"
+
+#: src/components/pages/PagesList.tsx
+#: src/components/pages/PageViewHost.tsx
+msgid "Could not rename this page. Try again."
+msgstr "Kon deze pagina niet hernoemen. Probeer het opnieuw."
 
 #: src/pages/shell/message-cards.tsx
 msgid "Could not render chart"
@@ -2291,6 +2334,10 @@ msgstr "Het standaardgeheugenbereik bijwerken mislukt"
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
 msgstr "De computerinstallatie kon niet worden geverifieerd ({failureMessage}). Herstel de verbinding en controleer het daarna opnieuw."
 
+#: src/components/pages/SharePopover.tsx
+msgid "Couldn't copy. Select the link and copy it."
+msgstr "Kopiëren lukte niet. Selecteer de link en kopieer hem."
+
 #: src/pages/AdminAccessPage.tsx
 msgid "Couldn't load grants"
 msgstr ""
@@ -2299,9 +2346,17 @@ msgstr ""
 msgid "Couldn't load messaging settings"
 msgstr "Berichtinstellingen laden mislukt"
 
+#: src/components/pages/PagesList.tsx
+msgid "Couldn't load pages."
+msgstr "Pagina's konden niet worden geladen."
+
 #: src/pages/PluginSubmissionsPanel.tsx
 msgid "Couldn't load submissions"
 msgstr ""
+
+#: src/pages/SharedPage.tsx
+msgid "Couldn't load this page. Try again."
+msgstr "Deze pagina kon niet worden geladen. Probeer het opnieuw."
 
 #: src/pages/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
@@ -2479,6 +2534,7 @@ msgid "Default scope"
 msgstr "Standaardbereik"
 
 #: src/components/AccountAccess.tsx
+#: src/components/pages/PagesList.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/BotContextMenu.tsx
@@ -2731,6 +2787,10 @@ msgstr "{name} downloaden"
 #: src/components/markdown-copy.tsx
 msgid "Download CSV"
 msgstr "CSV downloaden"
+
+#: src/components/pages/DownloadPdfButton.tsx
+msgid "Download PDF"
+msgstr "PDF downloaden"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Downloading…"
@@ -3023,6 +3083,10 @@ msgstr "Filters"
 #: src/pages/PluginsOverlay.tsx
 msgid "Finance"
 msgstr ""
+
+#: src/components/pages/PagesList.tsx
+msgid "Find a page"
+msgstr "Pagina zoeken"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -3442,6 +3506,10 @@ msgstr "Geïsoleerd"
 msgid "Isolated preview — no access to your account"
 msgstr "Geïsoleerd voorbeeld — geen toegang tot je account"
 
+#: src/components/pages/PageViewHost.tsx
+msgid "It may have been deleted, or it belongs to someone else."
+msgstr "Misschien is hij verwijderd, of is hij van iemand anders."
+
 #: src/pages/shell/shell-dialogs.tsx
 msgid "Its bots and groups are kept and leave the section."
 msgstr "De bots en groepen blijven behouden en verlaten de sectie."
@@ -3449,6 +3517,10 @@ msgstr "De bots en groepen blijven behouden en verlaten de sectie."
 #: src/pages/shell/dialogs.tsx
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."
 msgstr "Het gesprek, de bestanden en de routines worden definitief verwijderd. Bots die het heeft gemaakt blijven in je lijst staan."
+
+#: src/components/pages/PagesList.tsx
+msgid "Its shared link stops working and its cards in chat show it as deleted. This can't be undone."
+msgstr "De gedeelde link werkt dan niet meer en de kaarten in de chat tonen hem als verwijderd. Dit kan niet ongedaan worden gemaakt."
 
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
@@ -3516,6 +3588,11 @@ msgstr "Licht"
 #: src/pages/SpaceSearch.tsx
 msgid "Link"
 msgstr ""
+
+#: src/components/pages/PublicPageShell.tsx
+#: src/components/pages/SharePopover.tsx
+msgid "Link copied"
+msgstr "Link gekopieerd"
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Link DMs"
@@ -4164,6 +4241,10 @@ msgstr "Geen modellen vermeld."
 msgid "No OpenClaw, Hermes or agent document found."
 msgstr "Geen OpenClaw-, Hermes- of agentdocument gevonden."
 
+#: src/components/pages/PagesList.tsx
+msgid "No pages match “{query}”."
+msgstr "Geen pagina's komen overeen met ‘{query}’."
+
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "No remote MCP servers found"
 msgstr "Geen externe MCP-servers gevonden"
@@ -4329,7 +4410,12 @@ msgstr ""
 msgid "Only enter a code {codeHost} sent you."
 msgstr ""
 
+#: src/components/pages/SharePopover.tsx
+msgid "Only you"
+msgstr "Alleen jij"
+
 #: src/components/markdown-link-prompt.tsx
+#: src/components/pages/PagesList.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/shell/computer-panel.tsx
 #: src/pages/shell/import-setup-card.tsx
@@ -4345,6 +4431,10 @@ msgstr "{0} openen"
 #: src/pages/shell/import-setup-card.tsx
 msgid "Open {name}"
 msgstr "{name} openen"
+
+#: src/components/pages/PageCard.tsx
+msgid "Open {title}"
+msgstr "{title} openen"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
@@ -4373,9 +4463,18 @@ msgstr "Externe link openen?"
 msgid "Open in full window"
 msgstr "In volledig venster openen"
 
+#: src/components/pages/SharePopover.tsx
+msgid "Open link"
+msgstr "Link openen"
+
 #: src/pages/shell/chat-header.tsx
 msgid "Open navigation"
 msgstr "Navigatie openen"
+
+#: src/components/pages/PublicPageShell.tsx
+#: src/pages/SharedPage.tsx
+msgid "Open Rakazo"
+msgstr "Rakazo openen"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
@@ -4393,6 +4492,10 @@ msgstr "OpenAI-compatibele server-URL"
 #: src/pages/shell/agent-import.tsx
 msgid "OpenClaw or Hermes"
 msgstr "OpenClaw of Hermes"
+
+#: src/components/pages/DownloadPdfButton.tsx
+msgid "Opens your browser's print dialog. Choose Save as PDF as the destination."
+msgstr "Opent het afdrukvenster van je browser. Kies Opslaan als PDF als bestemming."
 
 #: src/components/SignupSurvey.tsx
 #: src/pages/model-settings/connection-controls.tsx
@@ -4435,18 +4538,67 @@ msgstr "Ander model…"
 msgid "Output"
 msgstr "Uitvoer"
 
+#: src/components/pages/SharePopover.tsx
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
 msgstr "Eigenaar"
 
+#: src/components/pages/PageCard.tsx
+#: src/components/pages/PageView.tsx
+msgid "Page"
+msgstr "Pagina"
+
+#: src/components/pages/PageCard.tsx
+msgid "Page · {when}"
+msgstr "Pagina · {when}"
+
+#: src/components/pages/PageCard.tsx
+msgid "Page · Deleted"
+msgstr "Pagina · Verwijderd"
+
+#: src/components/pages/PageCard.tsx
+msgid "Page · Shared · {when}"
+msgstr "Pagina · Gedeeld · {when}"
+
+#: src/components/pages/PageCard.tsx
+msgid "Page · Updated below"
+msgstr "Pagina · Hieronder bijgewerkt"
+
 #: src/components/markdown-copy.tsx
 msgid "Page {page} of {count}"
 msgstr "Pagina {page} van {count}"
 
+#: src/components/pages/PublicPageShell.tsx
+msgid "Page actions"
+msgstr "Pagina-acties"
+
+#: src/components/pages/SharePopover.tsx
+msgid "Page link"
+msgstr "Paginalink"
+
 #: src/pages/NotFound.tsx
 msgid "Page not found"
 msgstr "Pagina niet gevonden"
+
+#: src/components/pages/PagesList.tsx
+#: src/components/pages/PageView.tsx
+msgid "Page title"
+msgstr "Paginatitel"
+
+#: src/pages/GroupPanel.tsx
+#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/command-palette.tsx
+msgid "Pages"
+msgstr "Pagina's"
+
+#: src/components/pages/PagesList.tsx
+msgid "Pages this bot builds for you appear here. Ask for a dashboard, tracker or plan to make one."
+msgstr "Pagina's die deze bot voor je maakt, verschijnen hier. Vraag om een dashboard, tracker of plan om er een te maken."
+
+#: src/components/pages/PagesList.tsx
+msgid "Pages this group builds for you appear here. Ask for a dashboard, tracker or plan to make one."
+msgstr "Pagina's die deze groep voor je maakt, verschijnen hier. Vraag om een dashboard, tracker of plan om er een te maken."
 
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
@@ -4559,10 +4711,12 @@ msgstr "Kies een model uit de lijst of voer een model-id in dat dit eindpunt aan
 msgid "Pick a tool to check"
 msgstr "Kies een tool om te controleren"
 
+#: src/components/pages/PagesList.tsx
 #: src/pages/BotContextMenu.tsx
 msgid "Pin"
 msgstr "Vastzetten"
 
+#: src/components/pages/PagesList.tsx
 #: src/pages/Shell.tsx
 msgid "Pinned"
 msgstr "Vastgezet"
@@ -4941,6 +5095,8 @@ msgstr "Verwijderd, maar het vernieuwen van de lijst mislukte"
 msgid "Removing…"
 msgstr "Bezig met verwijderen…"
 
+#: src/components/pages/PagesList.tsx
+#: src/components/pages/PageView.tsx
 #: src/components/PasskeySettings.tsx
 msgid "Rename"
 msgstr "Naam wijzigen"
@@ -5464,6 +5620,20 @@ msgstr "Vorm"
 msgid "Shape {0}"
 msgstr ""
 
+#: src/components/pages/PagesList.tsx
+#: src/components/pages/SharePopover.tsx
+msgid "Share"
+msgstr "Delen"
+
+#: src/components/pages/SharePopover.tsx
+msgid "Share “{title}”"
+msgstr "‘{title}’ delen"
+
+#: src/components/pages/SharePopover.tsx
+msgid "Share, anyone with the link can view"
+msgstr "Delen, iedereen met de link kan hem bekijken"
+
+#: src/components/pages/PagesList.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Shared"
@@ -5489,6 +5659,7 @@ msgstr "Bots tonen"
 msgid "Show list"
 msgstr "Lijst tonen"
 
+#: src/components/pages/PagesList.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
@@ -5951,6 +6122,10 @@ msgstr "De modelaanbieder heeft een fout teruggegeven."
 msgid "The model returned an unusable response. Try again."
 msgstr "Het model gaf een onbruikbaar antwoord. Probeer het opnieuw."
 
+#: src/pages/SharedPage.tsx
+msgid "The owner may have turned off its link or deleted it."
+msgstr "De eigenaar heeft de link misschien uitgezet of de pagina verwijderd."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "De aanbieder beperkt het aantal verzoeken."
@@ -5970,6 +6145,10 @@ msgstr "De schermlink is verlopen."
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
 msgstr "De gekozen geheugenaanbieder is niet beschikbaar in deze build."
+
+#: src/components/pages/SharePopover.tsx
+msgid "The shared link stops working"
+msgstr "De gedeelde link werkt dan niet meer"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Their own model is cleared. You can pick one again in each bot."
@@ -6090,6 +6269,21 @@ msgstr "Het contextvenster van dit model is te klein. Kies een ander model."
 #: src/pages/Artifacts.tsx
 msgid "This month"
 msgstr "Deze maand"
+
+#: src/lib/pages.ts
+msgid "This page couldn't be shown."
+msgstr "Deze pagina kon niet worden weergegeven."
+
+#: src/components/pages/PageCard.tsx
+#: src/components/pages/PageView.tsx
+#: src/components/pages/PageViewHost.tsx
+msgid "This page couldn't load"
+msgstr "Deze pagina kon niet worden geladen"
+
+#: src/components/pages/PageViewHost.tsx
+#: src/pages/SharedPage.tsx
+msgid "This page isn't available"
+msgstr "Deze pagina is niet beschikbaar"
 
 #: src/components/AccountAccess.tsx
 msgid "This permanently deletes your account and data."
@@ -6251,8 +6445,11 @@ msgstr "Proefperiodes krijgen minder uren om misbruik te voorkomen."
 msgid "Trusted sites"
 msgstr "Vertrouwde sites"
 
+#: src/components/pages/PageNotice.tsx
+#: src/components/pages/PagesList.tsx
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SharedPage.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "Opnieuw proberen"
@@ -6298,6 +6495,7 @@ msgstr "Koppeling verbreken"
 msgid "Unmute"
 msgstr "Dempen opheffen"
 
+#: src/components/pages/PagesList.tsx
 #: src/pages/BotContextMenu.tsx
 msgid "Unpin"
 msgstr "Vastzetten opheffen"
@@ -6629,6 +6827,10 @@ msgstr "Wanneer gebruiken"
 msgid "Where should bots run?"
 msgstr "Waar moeten bots draaien?"
 
+#: src/components/pages/SharePopover.tsx
+msgid "Who can open this page"
+msgstr "Wie deze pagina kan openen"
+
 #: src/lib/ticket-status.ts
 msgid "Won't do"
 msgstr "Wordt niet gedaan"
@@ -6669,6 +6871,7 @@ msgstr "Jaarlijks"
 msgid "Yesterday"
 msgstr "Gisteren"
 
+#: src/components/pages/SharePopover.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/message-view.tsx

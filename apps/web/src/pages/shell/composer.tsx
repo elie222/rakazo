@@ -19,8 +19,18 @@ import {
 } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { ArrowUp, Box, Paperclip, Plus, Settings, Square, X } from "lucide-react";
-import type { ClipboardEvent, DragEvent, RefObject } from "react";
-import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ClipboardEvent, ComponentProps, DragEvent, RefObject } from "react";
+import {
+  memo,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { createPortal } from "react-dom";
 import {
   HoldToTalkControls,
   HoldToTalkStrip,
@@ -38,6 +48,7 @@ import {
   subscribeComposerDraftAccepted,
   writeComposerDraft,
 } from "../../lib/composer-draft";
+import { usePageSession } from "../../lib/pages";
 import { isFileDrag, isFilePaste } from "../../lib/pending-attachments";
 import { ComposerReplyPreview } from "./chat-context";
 import type { PendingAttachment } from "./chat-shared";
@@ -53,7 +64,7 @@ import { useComposerLayout } from "./use-composer-layout";
 
 const ATTACHMENT_ACCEPT = attachmentPickerAccept(navigator.userAgent);
 const COMPOSER_TEXT = "rk-scroll whitespace-pre-wrap break-words px-0.5 py-0.5 text-body1";
-export const Composer = memo(function Composer({
+const ComposerBody = memo(function Composer({
   artifactTarget,
   activeName,
   running,
@@ -87,6 +98,7 @@ export const Composer = memo(function Composer({
   onSlashAction,
   draftKey,
   enterToSend,
+  docked = false,
 }: {
   activeName?: string;
   running: boolean;
@@ -127,6 +139,8 @@ export const Composer = memo(function Composer({
   onSlashAction?: (action: SlashActionId) => void;
   draftKey: string;
   enterToSend: boolean;
+  /** Floating over an open page instead of sitting under the chat. */
+  docked?: boolean;
 }) {
   const { t } = useLingui();
   const [composition, setComposition] = useState(() => ({
@@ -227,6 +241,23 @@ export const Composer = memo(function Composer({
     textareaRef.current?.setSelectionRange(selection.start, selection.end);
     textareaRef.current?.focus();
   });
+  // A reply button on the open page adds its text here for the user to send, about that page
+  // rather than a message picked before it.
+  const pageSession = usePageSession();
+  const clearReply = useRef(onClearReply);
+  clearReply.current = onClearReply;
+  useEffect(
+    () =>
+      pageSession?.subscribeReply((text) => {
+        clearReply.current?.();
+        const current = compositionRef.current.text;
+        editSelections.current = [{ start: current.length, end: current.length }];
+        const next = current.trim() ? `${current.trimEnd()} ${text}` : text;
+        updateDraft(next);
+        pendingCaret.current = { start: next.length, end: next.length };
+      }),
+    [pageSession, draftKey],
+  );
   const [replyAnnouncement, setReplyAnnouncement] = useState("");
   // What the live region currently holds — a send disarming the reply clears
   // "reply" text, while an explicit cancel must keep "Reply cancelled".
@@ -567,7 +598,7 @@ export const Composer = memo(function Composer({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`relative z-30 m-0 min-w-0 border-0 px-3 pb-4 pt-0 md:px-[max(1.5rem,calc((100%_-_60rem)/2))] md:pb-6 [&>*]:pointer-events-auto ${fileDragActive ? "pointer-events-auto" : "pointer-events-none"} ${
+      className={`relative z-30 m-0 min-w-0 border-0 ${docked ? "p-0" : "px-3 pb-4 pt-0 md:px-[max(1.5rem,calc((100%_-_60rem)/2))] md:pb-6"} [&>*]:pointer-events-auto ${fileDragActive ? "pointer-events-auto" : "pointer-events-none"} ${
         draggingFiles ? "rounded-[14px] ring-2 ring-inset ring-ring" : ""
       }`}
     >
@@ -729,8 +760,14 @@ export const Composer = memo(function Composer({
         ref={composerBarRef}
         data-testid="composer-bar"
         data-expanded={expanded}
-        className={`grid grid-cols-[auto_minmax(0,1fr)_auto] content-end items-center rounded-[26px] border border-border bg-background pe-2.5 ps-3 transition-colors focus-within:border-input ${
-          expanded ? "gap-x-2 gap-y-2 pb-[9px] pt-3" : "gap-x-3.5 py-[9px]"
+        className={`grid grid-cols-[auto_minmax(0,1fr)_auto] content-end items-center rounded-[26px] border border-border pe-2.5 ps-3 transition-colors focus-within:border-input ${
+          docked ? "bg-card" : "bg-background"
+        } ${
+          expanded
+            ? "gap-x-2 gap-y-2 pb-[9px] pt-3"
+            : docked
+              ? "gap-x-3 py-[5px] ps-2 pe-2"
+              : "gap-x-3.5 py-[9px]"
         }`}
       >
         <input
@@ -955,3 +992,35 @@ export const Composer = memo(function Composer({
     </fieldset>
   );
 });
+
+const noDockState = { node: null, page: null };
+const noDock = { subscribe: () => () => {}, get: () => noDockState };
+
+/**
+ * The chat's composer, floated over the open page while one is open. It stays one mount: its
+ * element moves between the chat and the page, so a draft's chips, focus and dictation carry over.
+ */
+export function Composer(props: Omit<ComponentProps<typeof ComposerBody>, "docked">) {
+  const dock = usePageSession()?.dock ?? noDock;
+  const { node: dockNode } = useSyncExternalStore(dock.subscribe, dock.get);
+  const [host] = useState(() => {
+    const element = document.createElement("div");
+    element.style.display = "contents";
+    return element;
+  });
+  const slot = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const target = dockNode ?? slot.current;
+    if (!target || host.parentNode === target) return;
+    const focused = host.contains(document.activeElement) ? document.activeElement : null;
+    target.append(host);
+    if (focused instanceof HTMLElement) focused.focus({ preventScroll: true });
+  }, [dockNode, host]);
+  useEffect(() => () => host.remove(), [host]);
+  return (
+    <>
+      <div ref={slot} className="contents" />
+      {createPortal(<ComposerBody {...props} docked={dockNode !== null} />, host)}
+    </>
+  );
+}

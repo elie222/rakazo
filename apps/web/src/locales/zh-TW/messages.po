@@ -481,7 +481,8 @@ msgstr "{name} 的帳號選單"
 
 #. placeholder {0}: bot.name
 #. placeholder {0}: group.spaceName
-#. placeholder {0}: section.name
+#. placeholder {0}: page.title
+#: src/components/pages/PagesList.tsx
 #: src/pages/BotContextMenu.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/sidebar-roster.tsx
@@ -799,6 +800,10 @@ msgstr ""
 msgid "Any model, with your own key"
 msgstr "使用自己的金鑰連接任何模型"
 
+#: src/components/pages/SharePopover.tsx
+msgid "Anyone with the link"
+msgstr "任何擁有連結的人"
+
 #: src/components/AskCard.tsx
 #: src/components/ComputerProviderSettings.tsx
 #: src/lib/localized-provider-hint.ts
@@ -1005,6 +1010,10 @@ msgstr "頭像工作室"
 msgid "Back"
 msgstr "返回"
 
+#: src/components/pages/PageNotice.tsx
+msgid "Back to chat"
+msgstr "返回聊天"
+
 #: src/pages/Auth.tsx
 msgid "Back to sign in"
 msgstr "返回登入"
@@ -1150,6 +1159,10 @@ msgstr "撥號中…"
 msgid "Calls"
 msgstr "通話"
 
+#: src/components/pages/SharePopover.tsx
+msgid "Can view without signing in"
+msgstr "無需登入即可檢視"
+
 #: src/App.tsx
 msgid "Can't reach the server."
 msgstr "無法連線伺服器。"
@@ -1294,6 +1307,11 @@ msgstr "請檢查伺服器 URL 和網路，然後重新測試。"
 msgid "Check this yourself"
 msgstr "請自行檢查"
 
+#: src/components/pages/PageView.tsx
+#: src/components/pages/PageViewHost.tsx
+msgid "Check your connection and try again."
+msgstr "請檢查網路連線後再試一次。"
+
 #: src/pages/Auth.tsx
 msgid "Check your email"
 msgstr "請檢視電子信箱"
@@ -1418,6 +1436,10 @@ msgstr "關閉模型設定"
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Close navigation"
 msgstr "關閉導覽"
+
+#: src/components/pages/PageView.tsx
+msgid "Close page"
+msgstr "關閉頁面"
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/side-panel.tsx
@@ -1729,6 +1751,8 @@ msgstr "對話"
 #: src/components/ComputersUnavailableHint.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
+#: src/components/pages/PublicPageShell.tsx
+#: src/components/pages/SharePopover.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1756,6 +1780,8 @@ msgid "Copy diagram source"
 msgstr "複製圖表原始碼"
 
 #: src/components/InviteDialog.tsx
+#: src/components/pages/PublicPageShell.tsx
+#: src/components/pages/SharePopover.tsx
 msgid "Copy link"
 msgstr "複製連結"
 
@@ -1806,6 +1832,10 @@ msgstr "無法修改密碼"
 #: src/components/integrations/space-availability.tsx
 msgid "Could not change where this is available"
 msgstr ""
+
+#: src/components/pages/PageViewHost.tsx
+msgid "Could not change who can view this page. Try again."
+msgstr "無法變更誰可以檢視此頁面。請再試一次。"
 
 #: src/lib/model-connection-preflight.ts
 msgid "Could not check stored credentials."
@@ -1900,6 +1930,10 @@ msgstr "無法刪除群組"
 #: src/pages/McpServersOverlay.tsx
 msgid "Could not delete MCP server"
 msgstr "無法刪除 MCP 伺服器"
+
+#: src/pages/shell/dialogs.tsx
+msgid "Could not delete page"
+msgstr "無法刪除頁面"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Could not delete routine"
@@ -2059,6 +2093,10 @@ msgstr "無法登出，請再試一次。"
 msgid "Could not open billing"
 msgstr "無法開啟帳務頁面"
 
+#: src/components/pages/PagesList.tsx
+msgid "Could not pin this page. Try again."
+msgstr "無法置頂此頁面。請再試一次。"
+
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not play a test clip"
 msgstr "無法播放測試片段"
@@ -2128,6 +2166,11 @@ msgstr "無法重新命名分組"
 #: src/pages/SpaceSettingsPanel.tsx
 msgid "Could not rename space"
 msgstr "無法重新命名空間"
+
+#: src/components/pages/PagesList.tsx
+#: src/components/pages/PageViewHost.tsx
+msgid "Could not rename this page. Try again."
+msgstr "無法重新命名此頁面。請再試一次。"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Could not render chart"
@@ -2292,6 +2335,10 @@ msgstr "無法更新預設記憶範圍"
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
 msgstr "無法驗證電腦設定（{failureMessage}）。請修復連線後再次檢查。"
 
+#: src/components/pages/SharePopover.tsx
+msgid "Couldn't copy. Select the link and copy it."
+msgstr "無法複製。請選取連結後複製。"
+
 #: src/pages/AdminAccessPage.tsx
 msgid "Couldn't load grants"
 msgstr ""
@@ -2300,9 +2347,17 @@ msgstr ""
 msgid "Couldn't load messaging settings"
 msgstr "無法載入訊息設定"
 
+#: src/components/pages/PagesList.tsx
+msgid "Couldn't load pages."
+msgstr "無法載入頁面。"
+
 #: src/pages/PluginSubmissionsPanel.tsx
 msgid "Couldn't load submissions"
 msgstr ""
+
+#: src/pages/SharedPage.tsx
+msgid "Couldn't load this page. Try again."
+msgstr "無法載入此頁面。請再試一次。"
 
 #: src/pages/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
@@ -2480,6 +2535,7 @@ msgid "Default scope"
 msgstr "預設範圍"
 
 #: src/components/AccountAccess.tsx
+#: src/components/pages/PagesList.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/BotContextMenu.tsx
@@ -2732,6 +2788,10 @@ msgstr "下載 {name}"
 #: src/components/markdown-copy.tsx
 msgid "Download CSV"
 msgstr "下載 CSV"
+
+#: src/components/pages/DownloadPdfButton.tsx
+msgid "Download PDF"
+msgstr "下載 PDF"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Downloading…"
@@ -3024,6 +3084,10 @@ msgstr "篩選器"
 #: src/pages/PluginsOverlay.tsx
 msgid "Finance"
 msgstr ""
+
+#: src/components/pages/PagesList.tsx
+msgid "Find a page"
+msgstr "尋找頁面"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -3443,6 +3507,10 @@ msgstr "隔離"
 msgid "Isolated preview — no access to your account"
 msgstr "隔離預覽 — 無法存取你的帳號"
 
+#: src/components/pages/PageViewHost.tsx
+msgid "It may have been deleted, or it belongs to someone else."
+msgstr "它可能已被刪除，或屬於其他人。"
+
 #: src/pages/shell/shell-dialogs.tsx
 msgid "Its bots and groups are kept and leave the section."
 msgstr "其中的機器人和群組會保留，並移出該分組。"
@@ -3450,6 +3518,10 @@ msgstr "其中的機器人和群組會保留，並移出該分組。"
 #: src/pages/shell/dialogs.tsx
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."
 msgstr "它的對話、檔案和例行任務將被永久刪除。它建立的機器人仍留在清單中。"
+
+#: src/components/pages/PagesList.tsx
+msgid "Its shared link stops working and its cards in chat show it as deleted. This can't be undone."
+msgstr "其共用連結將失效，聊天中的卡片會顯示為已刪除。此操作無法復原。"
 
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
@@ -3517,6 +3589,11 @@ msgstr "淺色"
 #: src/pages/SpaceSearch.tsx
 msgid "Link"
 msgstr ""
+
+#: src/components/pages/PublicPageShell.tsx
+#: src/components/pages/SharePopover.tsx
+msgid "Link copied"
+msgstr "連結已複製"
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Link DMs"
@@ -4165,6 +4242,10 @@ msgstr "未列出模型。"
 msgid "No OpenClaw, Hermes or agent document found."
 msgstr "找不到 OpenClaw、Hermes 或代理程式文件。"
 
+#: src/components/pages/PagesList.tsx
+msgid "No pages match “{query}”."
+msgstr "沒有符合「{query}」的頁面。"
+
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "No remote MCP servers found"
 msgstr "找不到遠端 MCP 伺服器"
@@ -4330,7 +4411,12 @@ msgstr "單次購買，額度不會到期。"
 msgid "Only enter a code {codeHost} sent you."
 msgstr ""
 
+#: src/components/pages/SharePopover.tsx
+msgid "Only you"
+msgstr "僅限自己"
+
 #: src/components/markdown-link-prompt.tsx
+#: src/components/pages/PagesList.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/shell/computer-panel.tsx
 #: src/pages/shell/import-setup-card.tsx
@@ -4346,6 +4432,10 @@ msgstr "開啟 {0}"
 #: src/pages/shell/import-setup-card.tsx
 msgid "Open {name}"
 msgstr "開啟 {name}"
+
+#: src/components/pages/PageCard.tsx
+msgid "Open {title}"
+msgstr "開啟 {title}"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
@@ -4374,9 +4464,18 @@ msgstr "開啟外部連結？"
 msgid "Open in full window"
 msgstr "在完整視窗中開啟"
 
+#: src/components/pages/SharePopover.tsx
+msgid "Open link"
+msgstr "開啟連結"
+
 #: src/pages/shell/chat-header.tsx
 msgid "Open navigation"
 msgstr "開啟導覽"
+
+#: src/components/pages/PublicPageShell.tsx
+#: src/pages/SharedPage.tsx
+msgid "Open Rakazo"
+msgstr "開啟 Rakazo"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
@@ -4394,6 +4493,10 @@ msgstr "OpenAI 相容伺服器 URL"
 #: src/pages/shell/agent-import.tsx
 msgid "OpenClaw or Hermes"
 msgstr "OpenClaw 或 Hermes"
+
+#: src/components/pages/DownloadPdfButton.tsx
+msgid "Opens your browser's print dialog. Choose Save as PDF as the destination."
+msgstr "開啟瀏覽器的列印對話框。目的地請選擇「另存為 PDF」。"
 
 #: src/components/SignupSurvey.tsx
 #: src/pages/model-settings/connection-controls.tsx
@@ -4436,18 +4539,67 @@ msgstr "其他模型…"
 msgid "Output"
 msgstr "輸出"
 
+#: src/components/pages/SharePopover.tsx
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
 msgstr "擁有者"
 
+#: src/components/pages/PageCard.tsx
+#: src/components/pages/PageView.tsx
+msgid "Page"
+msgstr "頁面"
+
+#: src/components/pages/PageCard.tsx
+msgid "Page · {when}"
+msgstr "頁面 · {when}"
+
+#: src/components/pages/PageCard.tsx
+msgid "Page · Deleted"
+msgstr "頁面 · 已刪除"
+
+#: src/components/pages/PageCard.tsx
+msgid "Page · Shared · {when}"
+msgstr "頁面 · 已共用 · {when}"
+
+#: src/components/pages/PageCard.tsx
+msgid "Page · Updated below"
+msgstr "頁面 · 已在下方更新"
+
 #: src/components/markdown-copy.tsx
 msgid "Page {page} of {count}"
 msgstr "第 {page} 頁，共 {count} 頁"
 
+#: src/components/pages/PublicPageShell.tsx
+msgid "Page actions"
+msgstr "頁面動作"
+
+#: src/components/pages/SharePopover.tsx
+msgid "Page link"
+msgstr "頁面連結"
+
 #: src/pages/NotFound.tsx
 msgid "Page not found"
 msgstr "找不到頁面"
+
+#: src/components/pages/PagesList.tsx
+#: src/components/pages/PageView.tsx
+msgid "Page title"
+msgstr "頁面標題"
+
+#: src/pages/GroupPanel.tsx
+#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/command-palette.tsx
+msgid "Pages"
+msgstr "頁面"
+
+#: src/components/pages/PagesList.tsx
+msgid "Pages this bot builds for you appear here. Ask for a dashboard, tracker or plan to make one."
+msgstr "此機器人為你建立的頁面會顯示在這裡。請它做一個儀表板、追蹤表或計畫即可建立。"
+
+#: src/components/pages/PagesList.tsx
+msgid "Pages this group builds for you appear here. Ask for a dashboard, tracker or plan to make one."
+msgstr "此群組為你建立的頁面會顯示在這裡。請它做一個儀表板、追蹤表或計畫即可建立。"
 
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
@@ -4560,10 +4712,12 @@ msgstr "請從清單中選擇模型，或輸入此端點提供的模型 ID。"
 msgid "Pick a tool to check"
 msgstr "選擇要檢查的工具"
 
+#: src/components/pages/PagesList.tsx
 #: src/pages/BotContextMenu.tsx
 msgid "Pin"
 msgstr "置頂"
 
+#: src/components/pages/PagesList.tsx
 #: src/pages/Shell.tsx
 msgid "Pinned"
 msgstr "置頂"
@@ -4942,6 +5096,8 @@ msgstr "已移除，但清單重新整理失敗"
 msgid "Removing…"
 msgstr "正在移除…"
 
+#: src/components/pages/PagesList.tsx
+#: src/components/pages/PageView.tsx
 #: src/components/PasskeySettings.tsx
 msgid "Rename"
 msgstr "重新命名"
@@ -5465,6 +5621,20 @@ msgstr "形狀"
 msgid "Shape {0}"
 msgstr "形狀 {0}"
 
+#: src/components/pages/PagesList.tsx
+#: src/components/pages/SharePopover.tsx
+msgid "Share"
+msgstr "分享"
+
+#: src/components/pages/SharePopover.tsx
+msgid "Share “{title}”"
+msgstr "分享「{title}」"
+
+#: src/components/pages/SharePopover.tsx
+msgid "Share, anyone with the link can view"
+msgstr "共用，任何擁有連結的人都能檢視"
+
+#: src/components/pages/PagesList.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Shared"
@@ -5490,6 +5660,7 @@ msgstr "顯示機器人"
 msgid "Show list"
 msgstr "顯示清單"
 
+#: src/components/pages/PagesList.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
@@ -5952,6 +6123,10 @@ msgstr "模型供應商回傳了錯誤。"
 msgid "The model returned an unusable response. Try again."
 msgstr "模型回傳了無法使用的回覆，請再試一次。"
 
+#: src/pages/SharedPage.tsx
+msgid "The owner may have turned off its link or deleted it."
+msgstr "擁有者可能已關閉連結或刪除了它。"
+
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "供應商正在限制請求頻率。"
@@ -5971,6 +6146,10 @@ msgstr "螢幕連結已過期。"
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
 msgstr "所選記憶供應商在此版本中不可用。"
+
+#: src/components/pages/SharePopover.tsx
+msgid "The shared link stops working"
+msgstr "共用連結將失效"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Their own model is cleared. You can pick one again in each bot."
@@ -6091,6 +6270,21 @@ msgstr "此模型的上下文視窗太小。請選擇其他模型。"
 #: src/pages/Artifacts.tsx
 msgid "This month"
 msgstr "本月"
+
+#: src/lib/pages.ts
+msgid "This page couldn't be shown."
+msgstr "無法顯示此頁面。"
+
+#: src/components/pages/PageCard.tsx
+#: src/components/pages/PageView.tsx
+#: src/components/pages/PageViewHost.tsx
+msgid "This page couldn't load"
+msgstr "無法載入此頁面"
+
+#: src/components/pages/PageViewHost.tsx
+#: src/pages/SharedPage.tsx
+msgid "This page isn't available"
+msgstr "此頁面無法使用"
 
 #: src/components/AccountAccess.tsx
 msgid "This permanently deletes your account and data."
@@ -6252,8 +6446,11 @@ msgstr "為防止濫用，試用期的時數較少。"
 msgid "Trusted sites"
 msgstr "受信任的網站"
 
+#: src/components/pages/PageNotice.tsx
+#: src/components/pages/PagesList.tsx
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SharedPage.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "重試"
@@ -6299,6 +6496,7 @@ msgstr "取消關聯"
 msgid "Unmute"
 msgstr "取消靜音"
 
+#: src/components/pages/PagesList.tsx
 #: src/pages/BotContextMenu.tsx
 msgid "Unpin"
 msgstr "取消置頂"
@@ -6630,6 +6828,10 @@ msgstr "何時使用"
 msgid "Where should bots run?"
 msgstr "機器人應在哪裡執行？"
 
+#: src/components/pages/SharePopover.tsx
+msgid "Who can open this page"
+msgstr "誰可以開啟此頁面"
+
 #: src/lib/ticket-status.ts
 msgid "Won't do"
 msgstr "不處理"
@@ -6670,6 +6872,7 @@ msgstr "按年"
 msgid "Yesterday"
 msgstr "昨天"
 
+#: src/components/pages/SharePopover.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/message-view.tsx

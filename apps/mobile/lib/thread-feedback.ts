@@ -37,6 +37,8 @@ export type SendPayload = {
   attachments: PickedAttachment[];
   replyTargetId?: string;
   replyQuote: string | null;
+  /** A reply to a page's card, sent from the page: it quotes nothing. */
+  fromPage?: true;
 };
 
 export type SendAttempt = {
@@ -104,6 +106,7 @@ export async function deliverSend(
     artifactIds: artifactIds.length ? artifactIds : undefined,
     replyToMessageId: reroutedToGroup ? undefined : payload.replyTargetId,
     replyQuote: reroutedToGroup ? undefined : (payload.replyQuote ?? undefined),
+    fromPage: reroutedToGroup ? undefined : payload.fromPage,
   });
   return sent.seq;
 }

@@ -1,12 +1,14 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import {
   destroyBot,
+  forgetPageShareSecrets,
   removeAgentHome,
   removeDeletedBotsFromLegacyTeamHome,
   toComputerRef,
 } from "@rakazo/adapters";
 import {
   claimSpacesLeavingWithAccount,
+  deletePageShareSecrets,
   deleteSpaceLeavingWithAccount,
   recordComputerRunEnd,
 } from "@rakazo/db";
@@ -42,7 +44,7 @@ export async function deleteAccountContent(deps: SpaceDeletionDeps, userId: stri
   });
   await settleAll(
     bots.map((bot) =>
-      destroyBot(deps, bot, context(bot.spaceId, bot.id), {
+      destroyBot({ ...deps, secretStore: deps.secrets }, bot, context(bot.spaceId, bot.id), {
         deleteMemories: true,
         strictTeardown: true,
       }),
@@ -94,6 +96,12 @@ export async function deleteAccountContent(deps: SpaceDeletionDeps, userId: stri
     }),
   );
 
+  // Pages in Spaces that stay go with the user row; their links' tokens leave the store now.
+  const memberPageSecrets = await deps.prisma.$transaction((tx) =>
+    deletePageShareSecrets(tx, { userId, spaceId: { notIn: leaving } }),
+  );
+  if (deps.secrets) await forgetPageShareSecrets(deps.secrets, memberPageSecrets);
+
   for (const spaceId of leaving) {
     const deleted = await deleteSpaceLeavingWithAccount(deps.prisma, { spaceId, userId });
     if (!deleted) continue;
@@ -103,6 +111,7 @@ export async function deleteAccountContent(deps: SpaceDeletionDeps, userId: stri
     for (const result of cleanup) {
       if (result.status === "rejected") getLogger().error("space file cleanup", result.reason);
     }
+    if (deps.secrets) await forgetPageShareSecrets(deps.secrets, deleted.pageShareSecrets);
   }
 }
 

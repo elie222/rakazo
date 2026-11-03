@@ -431,6 +431,64 @@ describeMessaging("messaging surface journeys", () => {
     expect(await prisma.run.count({ where: { botId: identity.botId } })).toBe(runsBefore);
   });
 
+  it("stops the owner's work on a direct STOP and answers an idle one; media and group stops stay messages", async () => {
+    const owner = uniqueNumber();
+    const groupId = `grp-stop-${stamp}`;
+    const note = "Stopped. Anything already done stays done.";
+    const text = (content: string, handle: string, extra: Record<string, unknown> = {}) =>
+      app.request(emulator.buildInboundRequest({ fromNumber: owner, content, handle, ...extra }));
+    const runStatus = async (id: string) =>
+      (await prisma.run.findUnique({ where: { id }, select: { status: true } })).status;
+    const running = () =>
+      waitForDatabase(async () =>
+        prisma.run.findFirst({ where: { botId: identity.botId, status: "running" } }),
+      );
+    const confirmations = () =>
+      prisma.messagingOutbound.count({ where: { identityId: identity.id, body: note } });
+    const notes = async () =>
+      (await prisma.message.findMany({ where: { threadId: thread.id, role: "system" } })).filter(
+        (message: { blocks: unknown }) => JSON.stringify(message.blocks).includes(note),
+      ).length;
+
+    await text("keep working until I stop you", `stop-work-${stamp}`);
+    const identity = await waitForDatabase(async () => findIdentity(owner));
+    const thread = await prisma.thread.findFirst({ where: { botId: identity.botId } });
+    const first = await running();
+
+    await text("stop", `stop-group-${stamp}`, {
+      groupId,
+      participants: [owner, uniqueNumber(), emulator.phoneNumber],
+    });
+    await text("stop", `stop-media-${stamp}`, { mediaUrl: "https://cdn.example.test/photo.jpg" });
+    await waitForDatabase(async () =>
+      Boolean(
+        await prisma.message.findFirst({
+          where: { threadId: thread.id, clientNonce: `messaging:sendblue:stop-media-${stamp}` },
+        }),
+      ),
+    );
+    expect(await runStatus(first.id)).toBe("running");
+
+    expect((await text("STOP.", `stop-dm-${stamp}`)).status).toBe(200);
+    await waitForDatabase(async () => (await runStatus(first.id)) === "cancelled");
+    await waitForDatabase(async () =>
+      emulator.sent.some((send) => send.kind === "dm" && send.to === owner && send.body === note),
+    );
+
+    const runs = await prisma.run.count({ where: { botId: identity.botId } });
+    expect([await confirmations(), await notes()]).toEqual([1, 1]);
+
+    // Nothing running: still the command, answered without a turn.
+    await text("stop", `stop-idle-${stamp}`);
+    await waitForDatabase(async () =>
+      emulator.sent.some(
+        (send) => send.kind === "dm" && send.to === owner && send.body === "Nothing is running.",
+      ),
+    );
+    expect(await prisma.run.count({ where: { botId: identity.botId } })).toBe(runs);
+    expect([await confirmations(), await notes()]).toEqual([1, 1]);
+  });
+
   it("leaves an approved channel on LEAVE and can rejoin via a later invite", async () => {
     const owner = uniqueNumber();
     const stranger = uniqueNumber();

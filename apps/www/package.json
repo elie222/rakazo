@@ -15,6 +15,7 @@
     "@astrojs/markdown-satteri": "0.4.4",
     "@astrojs/react": "6.0.6",
     "@astrojs/sitemap": "3.7.4",
+    "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/ui-web": "workspace:*",
     "@vercel/functions": "3.10.3",

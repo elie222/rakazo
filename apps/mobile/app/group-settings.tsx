@@ -121,6 +121,13 @@ export default function GroupSettingsScreen() {
           onPress={() => void save()}
           style={{ marginTop: 24 }}
         />
+        {groupId ? (
+          <NativeActionButton
+            label={t("Pages")}
+            onPress={() => router.push({ pathname: "/pages", params: { groupId } })}
+            style={{ marginTop: 16 }}
+          />
+        ) : null}
         <NativeActionButton
           label={t("Delete group")}
           onPress={remove}

@@ -1324,6 +1324,7 @@ export function blockText(message: MobileMessage) {
         return `${block.status === "archived" ? "Archived" : block.status === "deleted" ? "Deleted" : "Bot"} ${block.name ?? ""}`;
       }
       if (block.kind === "chart") return `[chart: ${block.name ?? "chart"}]`;
+      if (block.kind === "page") return `[page: ${block.title}]`;
       if (block.kind === "image") return `[image: ${block.name ?? "attachment"}]`;
       if (block.kind === "file") {
         return `[file: ${block.name ?? "attachment"}${block.size ? ` (${block.size} bytes)` : ""}]`;

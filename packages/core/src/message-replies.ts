@@ -97,3 +97,11 @@ export function previewMessageText(
     return attachment.kind === "image" ? labels.photo : attachment.name || labels.attachment;
   return labels.message;
 }
+
+/** A message sent from an open page replies to the page's card but shows no quote of it. */
+export function isPageOriginReply(message: {
+  replyQuote?: string | null;
+  replyPreview?: ReplyPreview | null;
+}): boolean {
+  return message.replyPreview?.page === true && !message.replyQuote;
+}

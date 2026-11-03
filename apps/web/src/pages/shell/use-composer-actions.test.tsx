@@ -4,6 +4,8 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { PageSession } from "../../lib/pages";
+import { createPageSession } from "../../lib/pages";
 import type { createSpaceRpc } from "../../lib/rpc";
 import { useComposerActions } from "./use-composer-actions";
 
@@ -32,6 +34,7 @@ let me: Me | null;
 let navigate: ReturnType<typeof vi.fn>;
 let root: Root;
 let latest: ReturnType<typeof useComposerActions>;
+let pageSession: PageSession;
 
 function ref<T>(current: T) {
   return { current };
@@ -40,6 +43,7 @@ function ref<T>(current: T) {
 function Harness() {
   latest = useComposerActions({
     rpc: rpc as unknown as ReturnType<typeof createSpaceRpc>,
+    pageSession,
     activeId: "bot-1",
     inGroup: false,
     groupId: undefined,
@@ -72,6 +76,7 @@ beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   me = null;
   navigate = vi.fn();
+  pageSession = createPageSession();
   rpc = {
     routines: { testRun: vi.fn() },
     artifacts: { create: vi.fn() },
@@ -230,4 +235,35 @@ it("asks the chat to follow on submit, before the send lands", async () => {
     expect.not.objectContaining({ text: expect.anything() }),
   );
   expect(latest.sentCount).toBe(2);
+});
+
+it("names the open page only on text the chat itself sends", async () => {
+  pageSession.dock.set({ page: { id: "p1", title: "Sales" } });
+  const team = { kind: "group" as const, id: "group-2", name: "Team" };
+  rpc.threads.sendWithRoutines.mockResolvedValue({ routineRunIds: ["routine-run"] });
+  rpc.threads.send.mockResolvedValue(null);
+
+  expect(await send("@digest", [digest])).toBe(true);
+  expect(rpc.threads.sendWithRoutines).toHaveBeenLastCalledWith({
+    botId: "bot-1",
+    clientNonce: "nonce-1",
+    routineIds: ["routine-1"],
+  });
+  await act(async () => void (await latest.sendMessage("@Team", [team], "nonce-2")));
+  expect(navigate).toHaveBeenLastCalledWith("/app/g/group-2");
+  expect(rpc.threads.send).not.toHaveBeenCalled();
+
+  await act(async () => void (await latest.sendMessage("@Team hi all", [team], "nonce-3")));
+  expect(rpc.threads.send).toHaveBeenLastCalledWith(
+    expect.objectContaining({ groupId: "group-2", text: "hi all" }),
+  );
+
+  await send("bigger", []);
+  expect(rpc.threads.send).toHaveBeenLastCalledWith(
+    expect.objectContaining({ botId: "bot-1", text: "[Sales](page:p1)\nbigger" }),
+  );
+  await send("@digest and notes", [digest]);
+  expect(rpc.threads.sendWithRoutines).toHaveBeenLastCalledWith(
+    expect.objectContaining({ botId: "bot-1", text: "[Sales](page:p1)\nand notes" }),
+  );
 });

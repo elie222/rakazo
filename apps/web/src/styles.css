@@ -97,3 +97,18 @@ body,
     opacity: 0.3;
   }
 }
+
+/* A page prints alone and light: the app under an open page, its popups and its backdrop stay
+   off the paper, and the paper stays white past the page's end, whatever the app's theme. */
+@media print {
+  html:has([data-page-print]),
+  html:has([data-page-print]) body,
+  html:has([data-page-print]) #root {
+    height: auto;
+    background: #fff;
+  }
+  body:has([data-page-print]) > :not(:has([data-page-print])),
+  [data-slot="dialog-overlay"]:has(~ [data-page-print]) {
+    display: none;
+  }
+}
