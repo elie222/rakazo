@@ -237,7 +237,7 @@ function scratchpadClause(disabled?: ReadonlySet<string>): string | undefined {
  * the item keeps the routine's id so closing the loop cancels it and a later turn sees it.
  */
 const FOLLOW_UP_INSTRUCTION =
-  "Do not wait to be asked about open loops. When something is left open until a known time, you may schedule_create one one-shot follow-up for then that checks the scratchpad item and stays silent if it is done, and scratchpad_add the item with the follow-up's routineId. When the item is resolved, complete it and schedule_cancel its follow-up. Never follow up on something the user declined.";
+  "Do not wait to be asked about open loops. When something is left open until a known time, you may schedule_create one one-shot follow-up for then that checks the scratchpad item and stays silent if it is done, and scratchpad_add the item with the follow-up's routineId in its notes. When the item is resolved, complete it and schedule_cancel its follow-up. Never follow up on something the user declined.";
 
 function spawnBotClause(disabled?: ReadonlySet<string>): string | undefined {
   if (!builtinOffered(disabled, "spawn_bot")) return undefined;

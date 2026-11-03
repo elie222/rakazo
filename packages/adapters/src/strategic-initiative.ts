@@ -43,8 +43,6 @@ function strategicBotEligibility(now: Date): Prisma.BotWhereInput {
         updatedAt: { lte: new Date(now.getTime() - STALE_SCRATCHPAD_ITEM_MS) },
       },
     },
-    // A bot that already set itself a follow-up will be woken by it.
-    routines: { none: { active: true, crons: { has: ONCE_ROUTINE_CRON } } },
     runs: {
       none: {
         OR: [
@@ -127,6 +125,10 @@ export async function reconcileStrategicInitiatives(deps: {
           orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
           take: MAX_ITEMS_IN_PROMPT,
         },
+        routines: {
+          where: { active: true, crons: { has: ONCE_ROUTINE_CRON } },
+          select: { id: true },
+        },
       },
       orderBy: { id: "asc" },
       take: deps.pageSize,
@@ -142,7 +144,12 @@ export async function reconcileStrategicInitiatives(deps: {
       if (!membership) continue;
       if (deps.billingEnabled && !(await spaceHasModelAccess(deps.prisma, bot.spaceId))) continue;
       if (!bot.thread) continue;
-      const runId = await queueStrategicInitiativeRun(deps, bot, deps.now);
+      // An item whose notes name a pending follow-up will be woken by that follow-up.
+      const scratchpadItems = bot.scratchpadItems.filter(
+        (item) => !bot.routines.some((routine) => item.notes.includes(routine.id)),
+      );
+      if (scratchpadItems.length === 0) continue;
+      const runId = await queueStrategicInitiativeRun(deps, { ...bot, scratchpadItems }, deps.now);
       if (!runId) continue;
       queued += 1;
       await deps.jobs.enqueue(runContinueJob(runId)).catch((error) => {
