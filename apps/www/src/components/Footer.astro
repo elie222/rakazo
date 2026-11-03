@@ -1,5 +1,4 @@
 ---
-import { ANDROID_APP_STORE_URL } from "@rakazo/contracts/client-build";
 import {
   DEFAULT_LOCALE,
   LOCALE_HREFLANG,
@@ -17,7 +16,6 @@ import {
   CHANGELOG_URL,
   GITHUB_URL,
   INBOX_ZERO_URL,
-  IOS_APP_URL,
   PLUGIN_SUBMIT_PATH,
   SELF_HOST_GUIDE_PATH,
 } from "../site";
@@ -57,8 +55,7 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
   {
     heading: linkLabels.product,
     links: [
-      { href: IOS_APP_URL, label: linkLabels.iosApp, external: true },
-      { href: ANDROID_APP_STORE_URL, label: linkLabels.androidApp },
+      { href: "/download/", label: linkLabels.download },
       { href: SELF_HOST_GUIDE_PATH, label: linkLabels.docs },
       { href: PLUGIN_SUBMIT_PATH, label: linkLabels.submitPlugin },
       { href: CHANGELOG_URL, label: linkLabels.changelog, external: true },
