@@ -1,4 +1,5 @@
 ---
+import Button from "../components/Button.astro";
 import Footer from "../components/Footer.astro";
 import Header from "../components/Header.astro";
 import { githubStarsLabel } from "../github";
@@ -29,13 +30,13 @@ const starsLabel = await githubStarsLabel();
                   <li>{feature}</li>
                 ))}
               </ul>
-              <a
-                class:list={["button", index === 0 ? "button--secondary" : "button--primary"]}
+              <Button
                 href={plan.action.href}
+                variant={index === 0 ? "secondary" : "primary"}
                 data-attr={`pricing-${index}`}
               >
                 {plan.action.label}
-              </a>
+              </Button>
             </section>
           ))
         }
