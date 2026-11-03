@@ -313,6 +313,10 @@ async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
   const { deps, run } = ctx;
   const { reply } = ctx.state;
   reply.assistantTurnBreakPending = true;
+  if (ctx.replyMode === "messages") {
+    await flushProgress(ctx);
+    await showNarrationStatus(ctx, await publishMidTurnNarration(ctx));
+  }
   if (!event.fromRunUser) return;
   const now = Date.now();
   if (

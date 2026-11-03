@@ -302,6 +302,7 @@ export function botsRoutes(ctx: RouterContext) {
             modelId: source.modelId,
             thinkingLevel: source.thinkingLevel,
             disabledBuiltinTools: source.disabledBuiltinTools,
+            replyMode: source.replyMode,
           })
           .catch((error: unknown) => {
             throw mapSpaceLifecycleError(error);
@@ -365,7 +366,8 @@ export function botsRoutes(ctx: RouterContext) {
           emitBotUpdated:
             botProfileLabelsChanged(input) ||
             input.expectedSettings !== undefined ||
-            input.dailyCheckIns !== undefined,
+            input.dailyCheckIns !== undefined ||
+            input.replyMode !== undefined,
           expectedInstructions: input.expectedInstructions,
           expectedSettings: input.expectedSettings,
           data: {

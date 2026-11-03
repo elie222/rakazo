@@ -526,6 +526,7 @@ export function createRepos(
         notifyOnFinish: boolean;
         dailyCheckIns?: boolean;
         fleetManagement?: boolean;
+        replyMode?: string;
         color?: string;
         avatarSet?: BotAvatarSet;
         avatarFamily?: number;
@@ -617,6 +618,7 @@ export function createRepos(
               notifyOnFinish: input.notifyOnFinish,
               dailyCheckIns: input.dailyCheckIns,
               fleetManagement: input.fleetManagement,
+              replyMode: input.replyMode,
               color: avatar.color,
               avatarSet,
               position: (positions._max.position ?? -1) + 1,

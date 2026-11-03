@@ -1,5 +1,5 @@
 import type { MessageBlock, ReplyMode } from "@rakazo/contracts";
-import { isBackgroundRunTrigger } from "@rakazo/core";
+import { isBackgroundRunTrigger, isConversationalRun } from "@rakazo/core";
 import { NO_RESPONSE } from "./silent-reply.js";
 import { messageUserMaxLength } from "./user-progress.js";
 
@@ -42,6 +42,7 @@ export function runReplyMode(
   disabled?: ReadonlySet<string>,
 ): ReplyMode {
   return botReplyMode === "messages" &&
+    isConversationalRun(trigger) &&
     trigger !== "bot_message" &&
     !runAllowsSilentEmpty(trigger) &&
     !disabled?.has("message_user")

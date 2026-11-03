@@ -605,7 +605,7 @@ describe("runReplyMode", () => {
     expect(runReplyMode("user", "messages")).toBe("messages");
     expect(runReplyMode("messaging", "messages")).toBe("messages");
     expect(runReplyMode("user", "chat")).toBe("chat");
-    for (const trigger of ["routine", "reaction", "bot_message", "tickets"])
+    for (const trigger of ["routine", "reaction", "bot_message", "tickets", "created", "webhook"])
       expect(runReplyMode(trigger, "messages")).toBe("chat");
     expect(runReplyMode("user", "messages", new Set(["message_user"]))).toBe("chat");
   });

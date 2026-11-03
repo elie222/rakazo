@@ -879,6 +879,22 @@ describe("messages mode", () => {
     expect(stepNotes(finalizeRun)).toEqual(["Checking."]);
   });
 
+  it("keeps text written before the person's message out of the reply", async () => {
+    const { finalizeRun, messages } = await runTurn("", false, undefined, [], "fyi", {
+      ...messagesMode,
+      runtimeEvents: [
+        { type: "tool", name: "read_file", args: {}, executionId: "call-1" },
+        { type: "text", text: "Totals look off." },
+        { type: "steered", fromRunUser: true },
+        { type: "text", text: "Yes, the March total is 4." },
+        { type: "done", text: "" },
+      ],
+    });
+    expect(sentTexts(messages)).toEqual([]);
+    expect(finalText(finalizeRun)).toBe("Yes, the March total is 4.");
+    expect(stepNotes(finalizeRun)).toEqual(["Totals look off."]);
+  });
+
   it("stays silent when the model chose silence", async () => {
     const { finalizeRun } = await runTurn("", false, ["Checking.", "NO_RESPONSE"], [], "fyi", {
       ...messagesMode,
