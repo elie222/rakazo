@@ -2757,7 +2757,9 @@ describe("MCP connector stdio credential files", () => {
       await connect?.();
     });
     vi.spyOn(McpSession.prototype, "listTools").mockResolvedValue({ tools: [] });
-    vi.spyOn(McpSession.prototype, "close").mockResolvedValue(undefined);
+    vi.spyOn(McpSession.prototype, "close").mockImplementation(async (afterClose) => {
+      await afterClose?.();
+    });
     return launches;
   }
 
@@ -2801,6 +2803,39 @@ describe("MCP connector stdio credential files", () => {
     expect(JSON.stringify(events)).toContain(text);
     await connector.close();
   });
+
+  it.each([false, true])(
+    "keeps files until a delayed SDK shutdown settles (rejects: %s)",
+    async (rejects) => {
+      const launches = stubSession();
+      vi.mocked(McpSession.prototype.close).mockRestore();
+      const connector = connectorFor(stored());
+      await connector.discoverTools(context);
+      const session = vi.mocked(McpSession.prototype.connectStdio).mock.contexts[0] as McpSession;
+      let finish!: () => void;
+      vi.spyOn(session.client, "close").mockImplementation(
+        () =>
+          new Promise<void>((resolve, reject) => {
+            finish = () => (rejects ? reject(new Error("shutdown failed")) : resolve());
+          }),
+      );
+      const dir = launches[0]!.files.MAIL_CREDENTIALS!.dir;
+      vi.useFakeTimers();
+      try {
+        const closing = connector.close();
+        await vi.advanceTimersByTimeAsync(MCP_CLOSE_TIMEOUT_MS);
+        await closing;
+        expect(existsSync(dir)).toBe(true);
+        finish();
+        vi.useRealTimers();
+        await vi.waitFor(() => expect(existsSync(dir)).toBe(false));
+      } finally {
+        finish();
+        vi.useRealTimers();
+        await connector.close();
+      }
+    },
+  );
 
   it("removes credentials when reconnect replaces a session", async () => {
     const launches = stubSession();
