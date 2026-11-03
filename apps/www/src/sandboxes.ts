@@ -1,5 +1,5 @@
 import type { FaqItem, SourceLink } from "./alternatives";
-import { GITHUB_URL } from "./site";
+import { GITHUB_URL, SITE_URL } from "./site";
 
 export const SANDBOXES_PATH = "/sandboxes/";
 export const SANDBOXES_UPDATED = "November 4, 2026";
@@ -422,7 +422,7 @@ export const SANDBOXES: readonly Sandbox[] = [
       caption: "An approval card in Rakazo.",
     },
     works: [
-      "Let bots use this computer, in Settings → General, works with Rakazo Cloud or any server. A bot asks before its first command in a space and before it first uses each app, in every approval mode, and only in your own chats.",
+      "Let bots use this computer, in Settings → General, works when the app connects to Rakazo Cloud or another server. A bot asks before its first command in a space and before it first uses each app, in every approval mode, and only in your own chats.",
       "With it, bots can also see and use apps on screen on Mac and Windows. macOS asks for Accessibility and Screen Recording.",
       "Use this Mac (Use this computer on Windows and Linux) makes your computer the bot's computer on a local server the app runs. Bots run commands on it without asking, including in routines.",
     ],
@@ -433,7 +433,7 @@ export const SANDBOXES: readonly Sandbox[] = [
       "The app has to stay open.",
     ],
     setup: [
-      "Install the desktop app. With any server, turn on Let bots use this computer in Settings → General, and turn it off there to revoke access.",
+      "Install the desktop app. Connected to Rakazo Cloud or another server, turn on Let bots use this computer in Settings → General, and turn it off there to revoke access.",
       "On a local server started by the app, choose Use this Mac when it asks Where should bots run?, and use Revoke Local Computer Access in the app menu to undo it.",
     ],
     faq: [
@@ -476,7 +476,7 @@ export function sandboxMarkdown(sandbox: Sandbox): string {
     "## Set it up",
     "",
     ...sandbox.setup.flatMap((paragraph) => [paragraph, ""]),
-    `[Computer providers guide](${COMPUTER_PROVIDERS_DOCS_PATH})`,
+    `[Computer providers guide](${SITE_URL}${COMPUTER_PROVIDERS_DOCS_PATH})`,
     "",
     "## FAQ",
     "",
@@ -484,7 +484,7 @@ export function sandboxMarkdown(sandbox: Sandbox): string {
     "## Other places to run bot computers",
     "",
     ...SANDBOXES.filter((other) => other.slug !== sandbox.slug).map(
-      (other) => `- [${other.name}](${sandboxPath(other.slug)})`,
+      (other) => `- [${other.name}](${SITE_URL}${sandboxPath(other.slug)})`,
     ),
     "",
     "## Sources",
