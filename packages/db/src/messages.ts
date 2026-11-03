@@ -24,14 +24,25 @@ export async function loadRunHistoryMessages(
   const sourceMessage =
     SOURCE_BOUNDED_RUN_TRIGGERS.has(run.trigger) && run.sourceMessageId
       ? await prisma.message.findFirst({
-          where: { id: run.sourceMessageId, threadId: run.threadId, role: "user" },
+          where: { id: run.sourceMessageId, threadId: run.threadId },
           select: { seq: true },
         })
       : null;
   return prisma.message.findMany({
     where: {
       threadId: run.threadId,
-      ...(sourceMessage ? { seq: { lte: sourceMessage.seq } } : {}),
+      ...(sourceMessage
+        ? {
+            AND: [
+              {
+                OR: [
+                  { seq: { lte: sourceMessage.seq } },
+                  { steeringMessages: { some: { botId: run.botId, runId: run.id } } },
+                ],
+              },
+            ],
+          }
+        : {}),
       ...(channelId
         ? {
             OR: [

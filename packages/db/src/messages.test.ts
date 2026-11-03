@@ -94,7 +94,71 @@ describe("createThreadMessage", () => {
 });
 
 describe("loadRunHistoryMessages", () => {
-  it("bounds user-triggered history at its source message", async () => {
+  it.each(["user", "follow_up", "messaging"])(
+    "bounds %s history at its source message regardless of source role",
+    async (trigger) => {
+      const findFirst = vi.fn().mockResolvedValue({ seq: 12 });
+      const findMany = vi.fn().mockResolvedValue([]);
+      const prisma = { message: { findFirst, findMany } } as unknown as PrismaClient;
+
+      await loadRunHistoryMessages(
+        prisma,
+        {
+          id: "run-1",
+          threadId: "thread-1",
+          botId: "bot-1",
+          sourceMessageId: "message-12",
+          trigger,
+        },
+        40,
+      );
+
+      expect(findFirst).toHaveBeenCalledWith({
+        where: { id: "message-12", threadId: "thread-1" },
+        select: { seq: true },
+      });
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            threadId: "thread-1",
+            AND: [
+              {
+                OR: [
+                  { seq: { lte: 12 } },
+                  { steeringMessages: { some: { botId: "bot-1", runId: "run-1" } } },
+                ],
+              },
+            ],
+          }),
+        }),
+      );
+    },
+  );
+
+  it("bounds bot-authored group handoff sources", async () => {
+    const findFirst = vi.fn().mockResolvedValue({ seq: 12 });
+    const findMany = vi.fn().mockResolvedValue([]);
+    const prisma = { message: { findFirst, findMany } } as unknown as PrismaClient;
+
+    await loadRunHistoryMessages(
+      prisma,
+      {
+        id: "run-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        sourceMessageId: "handoff-12",
+        trigger: "follow_up",
+      },
+      40,
+    );
+
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { id: "handoff-12", threadId: "thread-1" },
+      select: { seq: true },
+    });
+  });
+
+  it("includes later channel input claimed for the bounded run", async () => {
     const findFirst = vi.fn().mockResolvedValue({ seq: 12 });
     const findMany = vi.fn().mockResolvedValue([]);
     const prisma = { message: { findFirst, findMany } } as unknown as PrismaClient;
@@ -106,18 +170,31 @@ describe("loadRunHistoryMessages", () => {
         threadId: "thread-1",
         botId: "bot-1",
         sourceMessageId: "message-12",
-        trigger: "user",
+        trigger: "messaging",
       },
       40,
+      "channel-1",
     );
 
-    expect(findFirst).toHaveBeenCalledWith({
-      where: { id: "message-12", threadId: "thread-1", role: "user" },
-      select: { seq: true },
-    });
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ threadId: "thread-1", seq: { lte: 12 } }),
+        where: expect.objectContaining({
+          AND: [
+            {
+              OR: [
+                { seq: { lte: 12 } },
+                { steeringMessages: { some: { botId: "bot-1", runId: "run-1" } } },
+              ],
+            },
+          ],
+          OR: [
+            {
+              role: "user",
+              blocks: { array_contains: [{ kind: "channel_message", channelId: "channel-1" }] },
+            },
+            { role: "bot", runId: "run-1" },
+          ],
+        }),
       }),
     );
   });
