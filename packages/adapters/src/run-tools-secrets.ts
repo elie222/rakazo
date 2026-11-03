@@ -115,7 +115,7 @@ export const secretTools: ToolHandlers = {
       destination?.auth.type === "login" ? requestedLoginFields(args.fields) : undefined;
     if (loginFields?.error) return call.finish({ error: loginFields.error });
     // A saved login whose site was wrong is replaced only from a card answered for this site.
-    let replaces: string | undefined;
+    let replaces: { id: string; origin: string } | undefined;
     if (destination) {
       const saved = await findBotSecret(deps.prisma, run, destination.name);
       const existing = saved?.destination;
@@ -137,7 +137,7 @@ export const secretTools: ToolHandlers = {
             error: `A login named ${existing.name} is saved for ${existing.origin}. For a different site or account, use another name; ask again with replace true only if ${existing.origin} was the wrong site for this same account, which replaces the saved login.`,
           });
         }
-        replaces = saved?.id;
+        if (saved) replaces = { id: saved.id, origin: existing.origin };
       }
       const conflict = await findCommandVariableConflict(deps.prisma, run, destination);
       if (conflict) {

@@ -520,7 +520,10 @@ describeIntegration("reusable credential lifecycle", () => {
         });
         expect(message.blocks).toEqual(
           expect.arrayContaining([
-            expect.objectContaining({ credential: sites[site], replaces: saved.id }),
+            expect.objectContaining({
+              credential: sites[site],
+              replaces: { id: saved.id, origin: www.origin },
+            }),
           ]),
         );
         runs[site].card = message.id;

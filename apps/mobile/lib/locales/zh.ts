@@ -279,6 +279,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Always allow": "始终允许",
   "Always allow this tool": "始终允许此工具",
   "Always allow {site}": "始终允许 {site}",
+  "Replaces the login saved for {site}": "替换为 {site} 保存的登录信息",
   "Always allowed": "已始终允许",
   "Android blocked notifications.": "Android 已阻止通知。",
   Answer: "接听",

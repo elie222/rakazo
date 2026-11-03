@@ -124,6 +124,11 @@ export function AskBlock({
       {secretInput && destination ? (
         <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }}>{destination}</Text>
       ) : null}
+      {secretInput && ask.replaces && !ownerOnly && !answered ? (
+        <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }}>
+          {t("Replaces the login saved for {site}", { site: ask.replaces.origin })}
+        </Text>
+      ) : null}
       {ask.detail && (!secretInput || ask.oneTimeCode) ? (
         <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }}>{ask.detail}</Text>
       ) : null}

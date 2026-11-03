@@ -141,7 +141,10 @@ describe("answering a login card that replaces a saved login's site", () => {
       destination: { ...credential, origin: WWW },
       plaintext: typed("fake-password-www"),
     });
-    const ask = { credential, ...(replacing ? { replaces: db.rows()[0]!.id } : {}) };
+    const ask = {
+      credential,
+      ...(replacing ? { replaces: { id: db.rows()[0]!.id, origin: WWW } } : {}),
+    };
     const runSecrets: Array<Record<string, unknown>> = [];
     Object.assign(db.prisma, {
       run: { findFirst: async () => ({ botId: "bot", userId: "user" }) },

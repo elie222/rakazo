@@ -5125,6 +5125,10 @@ msgstr "Reemplazar clave"
 msgid "Replace value"
 msgstr "Reemplazar valor"
 
+#: src/components/AskCard.tsx
+msgid "Replaces the login saved for {replacedSite}"
+msgstr ""
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
 msgstr "Responde a"

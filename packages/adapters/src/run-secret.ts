@@ -181,7 +181,7 @@ export function createRunSecretWriter(secretStore: SecretStore): RunSecretWriter
                 scope,
                 destination: ask.credential,
                 plaintext,
-                replaces: ask.replaces,
+                replaces: ask.replaces?.id,
               })
             : await secretStore.put(
                 ask.oneTimeCode

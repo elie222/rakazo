@@ -1090,6 +1090,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Always act": "一律處理",
   "Always allow this tool": "一律允許此工具",
   "Always allow {site}": "一律允許 {site}",
+  "Replaces the login saved for {site}": "取代為 {site} 儲存的登入資訊",
   Approvals: "核准",
   Rules: "規則",
   Ask: "詢問",

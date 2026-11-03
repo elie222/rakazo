@@ -305,6 +305,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Always allow": "Всегда разрешать",
   "Always allow this tool": "Всегда разрешать этот инструмент",
   "Always allow {site}": "Всегда разрешать {site}",
+  "Replaces the login saved for {site}": "Заменяет сохранённый вход для {site}",
   "Always allowed": "Всегда разрешено",
   "Android blocked notifications.": "Android заблокировал уведомления.",
   Answer: "Ответить",

@@ -144,6 +144,7 @@ export function AskCard({
   const commandInput = secretInput && block.credential?.auth.type === "command";
   const codeInput = secretInput && Boolean(block.oneTimeCode);
   const codeHost = block.oneTimeCode ? new URL(block.oneTimeCode.origin).host : undefined;
+  const replacedSite = block.replaces?.origin;
 
   // A password field can't hold line breaks, so it would flatten a multi-line command variable
   // such as an SSH private key. That text is kept as is and the field turns read-only, so what
@@ -297,6 +298,11 @@ export function AskCard({
           ) : (
             block.credential?.origin
           )}
+        </div>
+      ) : null}
+      {secretInput && replacedSite && !ownerOnly && !answered ? (
+        <div className="mt-0.5 break-all text-[13px] text-muted-foreground">
+          {t`Replaces the login saved for ${replacedSite}`}
         </div>
       ) : null}
       {codeInput && block.detail ? (

@@ -5126,6 +5126,10 @@ msgstr "替換金鑰"
 msgid "Replace value"
 msgstr "取代值"
 
+#: src/components/AskCard.tsx
+msgid "Replaces the login saved for {replacedSite}"
+msgstr ""
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
 msgstr "回覆對象"

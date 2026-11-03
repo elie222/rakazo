@@ -434,16 +434,14 @@ describe("request_secret for a login saved for another site", () => {
       saved: SAVED,
     });
     expect(toolResults).toMatchObject([{ details: { secret: "paused" } }]);
-    // The card names the saved login by its id only, so chat members don't learn its site.
     expect(cards).toEqual([
       expect.objectContaining({
         kind: "ask",
         input: "secret",
         credential: DESTINATION,
-        replaces: "saved-login-1",
+        replaces: { id: "saved-login-1", origin: "https://www.example.test" },
       }),
     ]);
-    expect(JSON.stringify(cards)).not.toContain("www.example.test");
     expect(vaultWrites(calls)).toBeNull();
   });
 
@@ -458,7 +456,7 @@ describe("request_secret for a login saved for another site", () => {
     expect(cards).toEqual([
       expect.objectContaining({
         credential: { ...DESTINATION, origin: "https://xn--bcher-kva.example.test" },
-        replaces: "saved-login-1",
+        replaces: { id: "saved-login-1", origin: "https://www.example.test" },
       }),
     ]);
   });
