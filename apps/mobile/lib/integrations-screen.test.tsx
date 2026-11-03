@@ -4,10 +4,10 @@ import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
-import { Linking } from "react-native";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Integrations from "../app/(settings)/integrations";
 import { ConnectorIcon } from "../components/connector-icon";
+import { signInToMcpServer } from "./mcp-oauth";
 
 const state = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -19,7 +19,6 @@ const state = vi.hoisted(() => ({
   scope: vi.fn(),
   persisted: vi.fn(),
   focused: true,
-  appStateChange: null as null | ((state: string) => void),
 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("expo-router", () => ({
@@ -48,6 +47,7 @@ vi.mock("./integrations-cache", () => ({
   writeIntegrationsCache: state.write,
 }));
 vi.mock("./last-bot", () => ({ loadLastBotId: async () => "" }));
+vi.mock("./mcp-oauth", () => ({ signInToMcpServer: vi.fn(async () => "connected") }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({ destructive: "red" }) }));
 vi.mock("./native", () => ({
   native: {},
@@ -167,12 +167,6 @@ vi.mock("react-native", () => {
     useWindowDimensions: () => ({ width: 390 }),
     Alert: { alert: vi.fn() },
     Linking: { openURL: vi.fn() },
-    AppState: {
-      addEventListener: vi.fn((_event: string, callback: (value: string) => void) => {
-        state.appStateChange = callback;
-        return { remove: vi.fn() };
-      }),
-    },
   };
 });
 
@@ -201,7 +195,6 @@ beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   state.current = true;
   state.focused = true;
-  state.appStateChange = null;
   state.scope.mockReset().mockResolvedValue({ userId: "user-a", spaceId: "space-a" });
   state.persisted.mockReset().mockResolvedValue(null);
   state.read.mockReset().mockReturnValue(null);
@@ -848,17 +841,11 @@ it("saves native MCP API key auth as a named encrypted header", async () => {
   );
 });
 
-it("registers an OAuth MCP server and starts the existing browser callback flow", async () => {
+it("registers an OAuth MCP server, signs in, and reads the servers again", async () => {
   const fallback = state.rpc.getMockImplementation();
   state.rpc.mockImplementation((proc: string, args: unknown) => {
     if (proc === "mcp/servers/create")
       return Promise.resolve({ id: "oauth-server", name: "Test", enabled: true });
-    if (proc === "mcp/oauth/begin")
-      return Promise.resolve({
-        status: "authorization_required",
-        sessionId: "test-session",
-        authorizationUrl: "https://identity.example.test/authorize",
-      });
     return fallback?.(proc, args);
   });
   await openMcpSource();
@@ -867,6 +854,7 @@ it("registers an OAuth MCP server and starts the existing browser callback flow"
       .find((button) => button.textContent === "OAuth")
       ?.click();
   });
+  const initialReads = state.rpc.mock.calls.filter(([proc]) => proc === "mcp/servers/list").length;
   await act(async () => {
     [...container.querySelectorAll("button")]
       .find((button) => button.textContent === "Verify and add")
@@ -878,13 +866,7 @@ it("registers an OAuth MCP server and starts the existing browser callback flow"
       transport: "streamable_http",
     }),
   );
-  expect(state.rpc).toHaveBeenCalledWith("mcp/oauth/begin", { serverId: "oauth-server" });
-  expect(Linking.openURL).toHaveBeenCalledWith("https://identity.example.test/authorize");
-
-  const initialReads = state.rpc.mock.calls.filter(([proc]) => proc === "mcp/servers/list").length;
-  await act(async () => {
-    state.appStateChange?.("active");
-  });
+  expect(signInToMcpServer).toHaveBeenCalledWith("oauth-server");
   expect(
     state.rpc.mock.calls.filter(([proc]) => proc === "mcp/servers/list").length,
   ).toBeGreaterThan(initialReads);

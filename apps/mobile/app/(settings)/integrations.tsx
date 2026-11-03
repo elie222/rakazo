@@ -33,7 +33,6 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import {
   ActivityIndicator,
   Alert,
-  AppState,
   Linking,
   Pressable,
   ScrollView,
@@ -62,6 +61,7 @@ import {
   writeIntegrationsCache,
 } from "../../lib/integrations-cache";
 import { loadLastBotId } from "../../lib/last-bot";
+import { signInToMcpServer } from "../../lib/mcp-oauth";
 import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
 import type { PluginParams } from "../../lib/plugin-marketplace";
@@ -144,7 +144,6 @@ export default function Integrations() {
   const [toolsOpen, setToolsOpen] = useState(true);
   const [toolsTick, setToolsTick] = useState(0);
   const connectionAttempt = useRef<AbortController | null>(null);
-  const oauthBrowserOpen = useRef(false);
 
   const cacheScope = useRef<IntegrationsCacheScope | null>(null);
   const snapshot = useRef<IntegrationsSnapshot>({ catalog: [], connections: [] });
@@ -430,16 +429,6 @@ export default function Integrations() {
       };
     }, []),
   );
-
-  useEffect(() => {
-    // The OAuth callback lands in the browser, so refresh once the user comes back.
-    const subscription = AppState.addEventListener("change", (state) => {
-      if (state !== "active" || !oauthBrowserOpen.current || !mounted.current) return;
-      oauthBrowserOpen.current = false;
-      void retryRefresh();
-    });
-    return () => subscription.remove();
-  }, []);
 
   useEffect(() => {
     if (!detailKey) {
@@ -897,15 +886,8 @@ export default function Integrations() {
     setPending(`oauth:${serverId}`);
     setMcpError(null);
     try {
-      // The API picks the registered web callback; native clients cannot supply one.
-      const result = await rpc("mcp/oauth/begin", { serverId });
-      if (!isCurrent()) return;
-      if (result.status === "authorization_required") {
-        oauthBrowserOpen.current = true;
-        await Linking.openURL(result.authorizationUrl);
-      } else {
-        await refresh();
-      }
+      await signInToMcpServer(serverId);
+      if (isCurrent()) await refresh();
     } catch (reason) {
       if (isCurrent()) setMcpError(errorText(reason, t("Could not start MCP OAuth")));
     } finally {

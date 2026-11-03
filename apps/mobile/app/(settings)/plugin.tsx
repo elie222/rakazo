@@ -41,6 +41,7 @@ import { useAppForeground } from "../../lib/app-foreground";
 import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
 import { loadLastBotId } from "../../lib/last-bot";
+import { signInToMcpServer } from "../../lib/mcp-oauth";
 import { native, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
 import type { PluginParams } from "../../lib/plugin-marketplace";
@@ -229,16 +230,8 @@ export default function PluginScreen() {
     run(
       server.id,
       async () => {
-        const { webUrl } = await rpc("integrationSetup/get");
-        const started = await rpc("mcp/oauth/begin", {
-          serverId: server.id,
-          redirectUri: new URL("/mcp/oauth/callback", webUrl).toString(),
-        });
-        if (started.status === "authorization_required") {
-          await Linking.openURL(started.authorizationUrl);
-          return;
-        }
-        if (started.status === "authorization_not_requested")
+        const status = await signInToMcpServer(server.id);
+        if (status === "authorization_not_requested")
           setNoAuth((current) => new Set([...current, server.id]));
         await load();
       },
