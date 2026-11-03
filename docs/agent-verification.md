@@ -446,7 +446,7 @@ Each case checks the effect (the right reads, exactly one note, no other
 writes, and a read after the uncertain save before it is reported) and a word
 budget over every message the person saw during the turn.
 
-The `verbosity-meaning-v6` judge then reads that whole turn, in order, with the
+The `verbosity-meaning-v7` judge then reads that whole turn, in order, with the
 owner's instructions when the bot has them, and grades meaning: the reply gives
 the requested outcome without contradicting the case facts, leads with it, does
 not narrate its process, and has no recap, unrequested advice, or closing offer
@@ -460,12 +460,11 @@ short-but-wrong replies. Owner-trusted writes are pre-approved through approval
 rules; the outage case turns off web and computer fallbacks so it grades how
 the failure is reported.
 
-On Claude Haiku 5.5 with the reply-style guidance, 7 of 21 trials pass and
-replies average 41 visible words. The person was told about the already-paid
+On Claude Haiku 5.5 with the reply-style guidance, 9 of 21 trials pass and
+replies average 35 visible words. The person was told about the already-paid
 invoice in every trial of that case. Most failures are extra explanation: a
-two-sentence account of the recovered save, outage replies that name each
-failed lookup and offer to retry, and lists where the owner asked for one or two
-sentences.
+two-sentence account of the recovered save, lists where the owner asked for one
+or two sentences, and small embellishments such as "review and sign".
 
 ### Long conversation and cost evals
 

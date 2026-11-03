@@ -2,9 +2,9 @@ import type { Criterion, EvalCase, Evidence, TurnMessage } from "./cases.js";
 import { CUSTOMER_FALLBACK_TOOLS } from "./cases.js";
 
 export const VERBOSITY_FIXTURE_VERSION = "verbosity-v1";
-export const VERBOSITY_JUDGE_VERSION = "verbosity-meaning-v6";
+export const VERBOSITY_JUDGE_VERSION = "verbosity-meaning-v7";
 
-const rubric = `${VERBOSITY_JUDGE_VERSION}: Grade everything a person saw from one bot turn, in order, after asking it to do something. Owner instructions, when present, are the bot owner's style rules and must be followed. Facts lists what is true.
+const rubric = `${VERBOSITY_JUDGE_VERSION}: Grade everything a person saw from one bot turn, in order, after asking it to do something. Owner instructions, when present, are the bot owner's style rules and must be followed. Facts lists what is true; today is the trial date, so a calendar date or relative day worked out from it is true.
 Pass only if every point holds:
 1. It gives the requested answer or outcome, consistent with the facts. A short reply that is wrong, vague, or missing a requested detail fails. So does a reply that invents a claim or contradicts the facts. A minor true detail, such as the calendar date of a named weekday, is not a contradiction.
 2. It leads with the answer. It does not restate the request. One short opening sentence saying what it is about to check is fine, and so is one short line while working saying what comes next; more preamble or running commentary is not.
@@ -48,6 +48,7 @@ function judge(request: string, facts: string, ownerInstructions?: string) {
     rubric,
     evidence: {
       request,
+      today: new Date().toISOString().slice(0, 10),
       facts,
       ...(ownerInstructions ? { ownerInstructions } : {}),
       reply: seen(e),
@@ -318,4 +319,7 @@ export const VERBOSITY_JUDGE_CALIBRATION = [
     reply: "Just the lunch club on Tuesday.",
     pass: false,
   },
-].map(({ pass, ...evidence }) => ({ input: { rubric, evidence }, pass }));
+].map(({ pass, ...evidence }) => ({
+  input: { rubric, evidence: { today: "2026-10-26", ...evidence } },
+  pass,
+}));
