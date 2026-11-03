@@ -1,8 +1,10 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { ReplyPreviewSchema } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
+import { messageReplyPreview } from "./message-quote.js";
 import {
   channelMessageSender,
+  isPageOriginReply,
   previewMessageText,
   replyAttachment,
   replyLabel,
@@ -185,5 +187,20 @@ describe("previewMessageText", () => {
       "Attachment",
     );
     expect(previewMessageText({ role: "bot", blocks: [] }, labels)).toBe("Message");
+  });
+});
+
+describe("page card replies", () => {
+  it("marks a page card parent so a reply sent from the open page shows no quote", () => {
+    const card = messageReplyPreview(
+      [{ kind: "page", pageId: "p1", version: 2, title: "Q3 plan" }],
+      "bot",
+    );
+    expect(ReplyPreviewSchema.parse(card)).toMatchObject({ page: true, text: "Q3 plan" });
+    expect(isPageOriginReply({ replyPreview: card })).toBe(true);
+    expect(isPageOriginReply({ replyPreview: card, replyQuote: "Q3 plan" })).toBe(false);
+    const text = messageReplyPreview([{ kind: "text", text: "hi" }], "bot");
+    expect(text.page).toBeUndefined();
+    expect(isPageOriginReply({ replyPreview: text })).toBe(false);
   });
 });

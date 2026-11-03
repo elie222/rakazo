@@ -480,7 +480,8 @@ msgstr "Account menu for {name}"
 
 #. placeholder {0}: bot.name
 #. placeholder {0}: group.spaceName
-#. placeholder {0}: section.name
+#. placeholder {0}: page.title
+#: src/components/pages/PagesList.tsx
 #: src/pages/BotContextMenu.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/sidebar-roster.tsx
@@ -798,6 +799,10 @@ msgstr "Anthropic Messages"
 msgid "Any model, with your own key"
 msgstr "Any model, with your own key"
 
+#: src/components/pages/SharePopover.tsx
+msgid "Anyone with the link"
+msgstr "Anyone with the link"
+
 #: src/components/AskCard.tsx
 #: src/components/ComputerProviderSettings.tsx
 #: src/lib/localized-provider-hint.ts
@@ -1004,6 +1009,10 @@ msgstr "Avatar Studio"
 msgid "Back"
 msgstr "Back"
 
+#: src/components/pages/PageNotice.tsx
+msgid "Back to chat"
+msgstr "Back to chat"
+
 #: src/pages/Auth.tsx
 msgid "Back to sign in"
 msgstr "Back to sign in"
@@ -1149,6 +1158,10 @@ msgstr "Calling…"
 msgid "Calls"
 msgstr "Calls"
 
+#: src/components/pages/SharePopover.tsx
+msgid "Can view without signing in"
+msgstr "Can view without signing in"
+
 #: src/App.tsx
 msgid "Can't reach the server."
 msgstr "Can't reach the server."
@@ -1293,6 +1306,11 @@ msgstr "Check the server URL and network, then test again."
 msgid "Check this yourself"
 msgstr "Check this yourself"
 
+#: src/components/pages/PageView.tsx
+#: src/components/pages/PageViewHost.tsx
+msgid "Check your connection and try again."
+msgstr "Check your connection and try again."
+
 #: src/pages/Auth.tsx
 msgid "Check your email"
 msgstr "Check your email"
@@ -1417,6 +1435,10 @@ msgstr "Close model settings"
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Close navigation"
 msgstr "Close navigation"
+
+#: src/components/pages/PageView.tsx
+msgid "Close page"
+msgstr "Close page"
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/side-panel.tsx
@@ -1728,6 +1750,8 @@ msgstr "Conversations"
 #: src/components/ComputersUnavailableHint.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
+#: src/components/pages/PublicPageShell.tsx
+#: src/components/pages/SharePopover.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1754,6 +1778,11 @@ msgstr "Copy code"
 #: src/components/markdown-copy.tsx
 msgid "Copy diagram source"
 msgstr "Copy diagram source"
+
+#: src/components/pages/PublicPageShell.tsx
+#: src/components/pages/SharePopover.tsx
+msgid "Copy link"
+msgstr "Copy link"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
@@ -1802,6 +1831,10 @@ msgstr "Could not change password"
 #: src/components/integrations/space-availability.tsx
 msgid "Could not change where this is available"
 msgstr "Could not change where this is available"
+
+#: src/components/pages/PageViewHost.tsx
+msgid "Could not change who can view this page. Try again."
+msgstr "Could not change who can view this page. Try again."
 
 #: src/lib/model-connection-preflight.ts
 msgid "Could not check stored credentials."
@@ -1896,6 +1929,10 @@ msgstr "Could not delete group"
 #: src/pages/McpServersOverlay.tsx
 msgid "Could not delete MCP server"
 msgstr "Could not delete MCP server"
+
+#: src/pages/shell/dialogs.tsx
+msgid "Could not delete page"
+msgstr "Could not delete page"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Could not delete routine"
@@ -2055,6 +2092,10 @@ msgstr "Could not log out. Try again."
 msgid "Could not open billing"
 msgstr "Could not open billing"
 
+#: src/components/pages/PagesList.tsx
+msgid "Could not pin this page. Try again."
+msgstr "Could not pin this page. Try again."
+
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not play a test clip"
 msgstr "Could not play a test clip"
@@ -2124,6 +2165,11 @@ msgstr "Could not rename section"
 #: src/pages/SpaceSettingsPanel.tsx
 msgid "Could not rename space"
 msgstr "Could not rename space"
+
+#: src/components/pages/PagesList.tsx
+#: src/components/pages/PageViewHost.tsx
+msgid "Could not rename this page. Try again."
+msgstr "Could not rename this page. Try again."
 
 #: src/pages/shell/message-cards.tsx
 msgid "Could not render chart"
@@ -2288,6 +2334,10 @@ msgstr "Could not update the default memory scope"
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
 msgstr "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
 
+#: src/components/pages/SharePopover.tsx
+msgid "Couldn't copy. Select the link and copy it."
+msgstr "Couldn't copy. Select the link and copy it."
+
 #: src/pages/AdminAccessPage.tsx
 msgid "Couldn't load grants"
 msgstr "Couldn't load grants"
@@ -2296,9 +2346,17 @@ msgstr "Couldn't load grants"
 msgid "Couldn't load messaging settings"
 msgstr "Couldn't load messaging settings"
 
+#: src/components/pages/PagesList.tsx
+msgid "Couldn't load pages."
+msgstr "Couldn't load pages."
+
 #: src/pages/PluginSubmissionsPanel.tsx
 msgid "Couldn't load submissions"
 msgstr "Couldn't load submissions"
+
+#: src/pages/SharedPage.tsx
+msgid "Couldn't load this page. Try again."
+msgstr "Couldn't load this page. Try again."
 
 #: src/pages/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
@@ -2476,6 +2534,7 @@ msgid "Default scope"
 msgstr "Default scope"
 
 #: src/components/AccountAccess.tsx
+#: src/components/pages/PagesList.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/BotContextMenu.tsx
@@ -2728,6 +2787,10 @@ msgstr "Download {name}"
 #: src/components/markdown-copy.tsx
 msgid "Download CSV"
 msgstr "Download CSV"
+
+#: src/components/pages/DownloadPdfButton.tsx
+msgid "Download PDF"
+msgstr "Download PDF"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Downloading…"
@@ -3020,6 +3083,10 @@ msgstr "Filters"
 #: src/pages/PluginsOverlay.tsx
 msgid "Finance"
 msgstr "Finance"
+
+#: src/components/pages/PagesList.tsx
+msgid "Find a page"
+msgstr "Find a page"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -3436,6 +3503,10 @@ msgstr "Isolated"
 msgid "Isolated preview — no access to your account"
 msgstr "Isolated preview — no access to your account"
 
+#: src/components/pages/PageViewHost.tsx
+msgid "It may have been deleted, or it belongs to someone else."
+msgstr "It may have been deleted, or it belongs to someone else."
+
 #: src/pages/shell/shell-dialogs.tsx
 msgid "Its bots and groups are kept and leave the section."
 msgstr "Its bots and groups are kept and leave the section."
@@ -3443,6 +3514,10 @@ msgstr "Its bots and groups are kept and leave the section."
 #: src/pages/shell/dialogs.tsx
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."
 msgstr "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."
+
+#: src/components/pages/PagesList.tsx
+msgid "Its shared link stops working and its cards in chat show it as deleted. This can't be undone."
+msgstr "Its shared link stops working and its cards in chat show it as deleted. This can't be undone."
 
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
@@ -3510,6 +3585,11 @@ msgstr "Light"
 #: src/pages/SpaceSearch.tsx
 msgid "Link"
 msgstr "Link"
+
+#: src/components/pages/PublicPageShell.tsx
+#: src/components/pages/SharePopover.tsx
+msgid "Link copied"
+msgstr "Link copied"
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Link DMs"
@@ -4158,6 +4238,10 @@ msgstr "No models listed."
 msgid "No OpenClaw, Hermes or agent document found."
 msgstr "No OpenClaw, Hermes or agent document found."
 
+#: src/components/pages/PagesList.tsx
+msgid "No pages match “{query}”."
+msgstr "No pages match “{query}”."
+
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "No remote MCP servers found"
 msgstr "No remote MCP servers found"
@@ -4323,7 +4407,12 @@ msgstr "One-time purchase. Credits do not expire."
 msgid "Only enter a code {codeHost} sent you."
 msgstr "Only enter a code {codeHost} sent you."
 
+#: src/components/pages/SharePopover.tsx
+msgid "Only you"
+msgstr "Only you"
+
 #: src/components/markdown-link-prompt.tsx
+#: src/components/pages/PagesList.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/shell/computer-panel.tsx
 #: src/pages/shell/import-setup-card.tsx
@@ -4339,6 +4428,10 @@ msgstr "Open {0}"
 #: src/pages/shell/import-setup-card.tsx
 msgid "Open {name}"
 msgstr "Open {name}"
+
+#: src/components/pages/PageCard.tsx
+msgid "Open {title}"
+msgstr "Open {title}"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
@@ -4367,9 +4460,18 @@ msgstr "Open external link?"
 msgid "Open in full window"
 msgstr "Open in full window"
 
+#: src/components/pages/SharePopover.tsx
+msgid "Open link"
+msgstr "Open link"
+
 #: src/pages/shell/chat-header.tsx
 msgid "Open navigation"
 msgstr "Open navigation"
+
+#: src/components/pages/PublicPageShell.tsx
+#: src/pages/SharedPage.tsx
+msgid "Open Rakazo"
+msgstr "Open Rakazo"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
@@ -4387,6 +4489,10 @@ msgstr "OpenAI-compatible server URL"
 #: src/pages/shell/agent-import.tsx
 msgid "OpenClaw or Hermes"
 msgstr "OpenClaw or Hermes"
+
+#: src/components/pages/DownloadPdfButton.tsx
+msgid "Opens your browser's print dialog. Choose Save as PDF as the destination."
+msgstr "Opens your browser's print dialog. Choose Save as PDF as the destination."
 
 #: src/components/SignupSurvey.tsx
 #: src/pages/model-settings/connection-controls.tsx
@@ -4429,18 +4535,67 @@ msgstr "Other model…"
 msgid "Output"
 msgstr "Output"
 
+#: src/components/pages/SharePopover.tsx
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
 msgstr "Owner"
 
+#: src/components/pages/PageCard.tsx
+#: src/components/pages/PageView.tsx
+msgid "Page"
+msgstr "Page"
+
+#: src/components/pages/PageCard.tsx
+msgid "Page · {when}"
+msgstr "Page · {when}"
+
+#: src/components/pages/PageCard.tsx
+msgid "Page · Deleted"
+msgstr "Page · Deleted"
+
+#: src/components/pages/PageCard.tsx
+msgid "Page · Shared · {when}"
+msgstr "Page · Shared · {when}"
+
+#: src/components/pages/PageCard.tsx
+msgid "Page · Updated below"
+msgstr "Page · Updated below"
+
 #: src/components/markdown-copy.tsx
 msgid "Page {page} of {count}"
 msgstr "Page {page} of {count}"
 
+#: src/components/pages/PublicPageShell.tsx
+msgid "Page actions"
+msgstr "Page actions"
+
+#: src/components/pages/SharePopover.tsx
+msgid "Page link"
+msgstr "Page link"
+
 #: src/pages/NotFound.tsx
 msgid "Page not found"
 msgstr "Page not found"
+
+#: src/components/pages/PagesList.tsx
+#: src/components/pages/PageView.tsx
+msgid "Page title"
+msgstr "Page title"
+
+#: src/pages/GroupPanel.tsx
+#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/command-palette.tsx
+msgid "Pages"
+msgstr "Pages"
+
+#: src/components/pages/PagesList.tsx
+msgid "Pages this bot builds for you appear here. Ask for a dashboard, tracker or plan to make one."
+msgstr "Pages this bot builds for you appear here. Ask for a dashboard, tracker or plan to make one."
+
+#: src/components/pages/PagesList.tsx
+msgid "Pages this group builds for you appear here. Ask for a dashboard, tracker or plan to make one."
+msgstr "Pages this group builds for you appear here. Ask for a dashboard, tracker or plan to make one."
 
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
@@ -4553,10 +4708,12 @@ msgstr "Pick a model from the list or enter a model id served by this endpoint."
 msgid "Pick a tool to check"
 msgstr "Pick a tool to check"
 
+#: src/components/pages/PagesList.tsx
 #: src/pages/BotContextMenu.tsx
 msgid "Pin"
 msgstr "Pin"
 
+#: src/components/pages/PagesList.tsx
 #: src/pages/Shell.tsx
 msgid "Pinned"
 msgstr "Pinned"
@@ -4935,6 +5092,8 @@ msgstr "Removed, but list refresh failed"
 msgid "Removing…"
 msgstr "Removing…"
 
+#: src/components/pages/PagesList.tsx
+#: src/components/pages/PageView.tsx
 #: src/components/PasskeySettings.tsx
 msgid "Rename"
 msgstr "Rename"
@@ -5458,6 +5617,20 @@ msgstr "Shape"
 msgid "Shape {0}"
 msgstr "Shape {0}"
 
+#: src/components/pages/PagesList.tsx
+#: src/components/pages/SharePopover.tsx
+msgid "Share"
+msgstr "Share"
+
+#: src/components/pages/SharePopover.tsx
+msgid "Share “{title}”"
+msgstr "Share “{title}”"
+
+#: src/components/pages/SharePopover.tsx
+msgid "Share, anyone with the link can view"
+msgstr "Share, anyone with the link can view"
+
+#: src/components/pages/PagesList.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Shared"
@@ -5483,6 +5656,7 @@ msgstr "Show bots"
 msgid "Show list"
 msgstr "Show list"
 
+#: src/components/pages/PagesList.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
@@ -5945,6 +6119,10 @@ msgstr "The model provider returned an error."
 msgid "The model returned an unusable response. Try again."
 msgstr "The model returned an unusable response. Try again."
 
+#: src/pages/SharedPage.tsx
+msgid "The owner may have turned off its link or deleted it."
+msgstr "The owner may have turned off its link or deleted it."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "The provider is rate-limiting requests."
@@ -5964,6 +6142,10 @@ msgstr "The screen link expired."
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
 msgstr "The selected memory provider is not available in this build."
+
+#: src/components/pages/SharePopover.tsx
+msgid "The shared link stops working"
+msgstr "The shared link stops working"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Their own model is cleared. You can pick one again in each bot."
@@ -6080,6 +6262,21 @@ msgstr "This model's context window is too small. Choose another model."
 #: src/pages/Artifacts.tsx
 msgid "This month"
 msgstr "This month"
+
+#: src/lib/pages.ts
+msgid "This page couldn't be shown."
+msgstr "This page couldn't be shown."
+
+#: src/components/pages/PageCard.tsx
+#: src/components/pages/PageView.tsx
+#: src/components/pages/PageViewHost.tsx
+msgid "This page couldn't load"
+msgstr "This page couldn't load"
+
+#: src/components/pages/PageViewHost.tsx
+#: src/pages/SharedPage.tsx
+msgid "This page isn't available"
+msgstr "This page isn't available"
 
 #: src/components/AccountAccess.tsx
 msgid "This permanently deletes your account and data."
@@ -6241,8 +6438,11 @@ msgstr "Trials get fewer hours to prevent abuse."
 msgid "Trusted sites"
 msgstr "Trusted sites"
 
+#: src/components/pages/PageNotice.tsx
+#: src/components/pages/PagesList.tsx
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SharedPage.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "Try again"
@@ -6288,6 +6488,7 @@ msgstr "Unlink"
 msgid "Unmute"
 msgstr "Unmute"
 
+#: src/components/pages/PagesList.tsx
 #: src/pages/BotContextMenu.tsx
 msgid "Unpin"
 msgstr "Unpin"
@@ -6619,6 +6820,10 @@ msgstr "When to use"
 msgid "Where should bots run?"
 msgstr "Where should bots run?"
 
+#: src/components/pages/SharePopover.tsx
+msgid "Who can open this page"
+msgstr "Who can open this page"
+
 #: src/lib/ticket-status.ts
 msgid "Won't do"
 msgstr "Won't do"
@@ -6659,6 +6864,7 @@ msgstr "Yearly"
 msgid "Yesterday"
 msgstr "Yesterday"
 
+#: src/components/pages/SharePopover.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/message-view.tsx

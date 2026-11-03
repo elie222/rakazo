@@ -743,6 +743,7 @@ export async function sendThreadMessage(
     mentions?: MentionTargetInput[];
     replyToMessageId?: string;
     replyQuote?: string;
+    fromPage?: true;
     clientNonce?: string;
     /** No model to start a turn: the send may only stop active work. */
     noModel?: boolean;
@@ -793,7 +794,11 @@ export async function sendThreadMessage(
               reply.botId ?? undefined,
             );
             // Attachment labels stay in the preview; only selected text is persisted as a quote.
-            if (!requestedReplyQuote && !replyPreview.attachment) {
+            if (
+              !requestedReplyQuote &&
+              !replyPreview.attachment &&
+              !(input.fromPage && replyPreview.page)
+            ) {
               replyQuote = replyPreview.text || undefined;
             }
           }

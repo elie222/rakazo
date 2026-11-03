@@ -275,6 +275,75 @@ describe("deliverMessagingOutbound", () => {
     });
   });
 
+  it("sends a page the bot named as its title, never as an app-only page link", async () => {
+    const deps = createDeps({
+      messages: [
+        {
+          id: "m-1",
+          blocks: [
+            { kind: "text", text: "I made a [Test dashboard](page:cm123) for you." },
+            { kind: "page", pageId: "cm123", version: 1, title: "Test dashboard" },
+          ],
+        },
+      ],
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.sendToThread).toHaveBeenCalledWith(
+      { threadId: "sendblue:dm-1", body: "I made a Test dashboard for you." },
+      context,
+    );
+  });
+
+  const sentBodies = (deps: ReturnType<typeof createDeps>) =>
+    (deps.sendToThread.mock.calls as unknown as [{ body: string }][]).map(([input]) => input.body);
+
+  it("sends a page card's title when the reply does not name the page, and only once when it does", async () => {
+    const card = {
+      id: "m-1",
+      blocks: [{ kind: "page", pageId: "cm123", version: 1, title: "Plan" }],
+    };
+    const silent = createDeps({
+      messages: [card, { id: "m-2", blocks: [{ kind: "text", text: "Done." }] }],
+    });
+    await deliverMessagingOutbound(silent, { runId: "run-1" }, context);
+    expect(sentBodies(silent)).toEqual(["Plan", "Done."]);
+
+    const named = createDeps({
+      messages: [
+        card,
+        { id: "m-2", blocks: [{ kind: "text", text: "Here is [Plan](page:cm123)." }] },
+      ],
+    });
+    await deliverMessagingOutbound(named, { runId: "run-1" }, context);
+    expect(sentBodies(named)).toEqual(["Here is Plan."]);
+
+    // A link shown inside a code example names nothing, so the card's title still goes.
+    const example = createDeps({
+      messages: [
+        card,
+        { id: "m-2", blocks: [{ kind: "text", text: "Write `[Plan](page:cm123)` to link it." }] },
+      ],
+    });
+    await deliverMessagingOutbound(example, { runId: "run-1" }, context);
+    expect(sentBodies(example)).toEqual(["Plan", "Write `[Plan](page:cm123)` to link it."]);
+
+    // A real link still counts when the same text also shows it as a code example.
+    const both = createDeps({
+      messages: [
+        card,
+        {
+          id: "m-2",
+          blocks: [
+            { kind: "text", text: "Open [Plan](page:cm123), or write `[Plan](page:cm123)`." },
+          ],
+        },
+      ],
+    });
+    await deliverMessagingOutbound(both, { runId: "run-1" }, context);
+    expect(sentBodies(both)).toEqual(["Open Plan, or write `[Plan](page:cm123)`."]);
+  });
+
   it("resolves the DM thread once and caches it when the identity has none", async () => {
     const deps = createDeps({
       identity: { dmThreadId: null },

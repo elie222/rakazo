@@ -1,6 +1,6 @@
 import type { ChatMermaidConfig } from "@rakazo/chat-ui/mermaid";
 
-/** Served by the API (`apps/api/src/diagram-script.ts`), so the app does not bundle Mermaid. */
+/** Served by the API (`apps/api/src/script-assets.ts`), so the app does not bundle Mermaid. */
 export const DIAGRAM_SCRIPT_PATH = "/api/v1/assets/mermaid.js";
 
 /** Long enough for a first, uncached download of Mermaid on a slow connection. */

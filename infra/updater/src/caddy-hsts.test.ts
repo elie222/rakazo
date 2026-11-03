@@ -25,6 +25,12 @@ describe.each(caddyfiles)("%s HSTS", (filename) => {
     expect(httpsSite).not.toContain("frame-ancestors 'none'");
   });
 
+  it("keeps shared page links out of search results and Referer headers", () => {
+    expect(httpsSite).toContain(
+      '@sharedPage path /p/*\n\theader @sharedPage {\n\t\tX-Robots-Tag "noindex, nofollow"\n\t\tReferrer-Policy no-referrer\n\t}',
+    );
+  });
+
   it("lets the embedded screen frame its SDK runtime from an opaque origin", () => {
     expect(httpsSite).toContain(`@framed not path ${COMPUTER_SCREEN_RUNTIME_PATH}`);
     expect(httpsSite).not.toContain("not path /computer-screen/*");

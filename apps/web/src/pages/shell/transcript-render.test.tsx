@@ -141,3 +141,22 @@ it.each([false, true])(
     }
   },
 );
+
+it("redraws a page card's reply only when a newer card supersedes it", () => {
+  const card = (id: string, version: number): ThreadMessage => ({
+    ...message(id, ""),
+    botId: "bot",
+    blocks: [{ kind: "page", pageId: "page", version, title: "Plan" }],
+  });
+  const reply = { ...message("reply", "Here is the plan"), botId: "bot" };
+  const earlier = [card("card", 1), reply];
+  act(() => root.render(<Host messages={[...earlier, message("progress:run", "Draft")]} />));
+  act(() =>
+    root.render(<Host messages={[...earlier, message("progress:run", "Draft continues")]} />),
+  );
+  expect(messageRenders.has("card")).toBe(false);
+  expect(messageRenders.get("reply")).toBe(1);
+
+  act(() => root.render(<Host messages={[...earlier, card("card-2", 2)]} />));
+  expect(messageRenders.get("reply")).toBe(2);
+});
