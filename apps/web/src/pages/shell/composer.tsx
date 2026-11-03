@@ -241,11 +241,15 @@ const ComposerBody = memo(function Composer({
     textareaRef.current?.setSelectionRange(selection.start, selection.end);
     textareaRef.current?.focus();
   });
-  // A reply button on the open page adds its text here for the user to send.
+  // A reply button on the open page adds its text here for the user to send, about that page
+  // rather than a message picked before it.
   const pageSession = usePageSession();
+  const clearReply = useRef(onClearReply);
+  clearReply.current = onClearReply;
   useEffect(
     () =>
       pageSession?.subscribeReply((text) => {
+        clearReply.current?.();
         const current = compositionRef.current.text;
         editSelections.current = [{ start: current.length, end: current.length }];
         const next = current.trim() ? `${current.trimEnd()} ${text}` : text;

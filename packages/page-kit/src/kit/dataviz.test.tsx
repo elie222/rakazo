@@ -128,6 +128,27 @@ describe("charts", () => {
     ).toBe("No data");
   });
 
+  it("keeps side-by-side columns at a positive width however many labels share the plot", () => {
+    const labels = Array.from({ length: 300 }, (_, index) => `d${index}`);
+    const values = labels.map((_, index) => index + 1);
+    const dense = mount(
+      <ColumnSeries
+        labels={labels}
+        series={[
+          { name: "a", values },
+          { name: "b", values },
+          { name: "c", values },
+        ]}
+      />,
+    );
+    const widths = [...dense.querySelectorAll("path[d^='M']")].flatMap((path) => {
+      const match = /^M(-?[\d.]+) [-\d.]+H(-?[\d.]+)/.exec(path.getAttribute("d")!);
+      return match ? [Number(match[2]) - Number(match[1])] : [];
+    });
+    expect(widths.length).toBeGreaterThan(0);
+    expect(widths.filter((width) => width < -1e-9)).toEqual([]);
+  });
+
   it("splits each stacked bar by its parts and writes the total or the given display", () => {
     const root = mount(
       <StackedBars

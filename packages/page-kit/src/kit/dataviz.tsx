@@ -458,7 +458,8 @@ export function ColumnSeries({
     baseline -
     ((Math.min(scale.high, Math.max(scale.low, v)) - scale.low) / (scale.high - scale.low)) *
       (baseline - top);
-  const gap = 2;
+  // The gap narrows with the slot, so many labels never leave a column less than nothing.
+  const gap = Math.min(2, (slot * 0.62) / (4 * rows.length));
   const group = stacked
     ? Math.min(28, slot * 0.62)
     : Math.min(slot * 0.62, rows.length * 28 + (rows.length - 1) * gap);
