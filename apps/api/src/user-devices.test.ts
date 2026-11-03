@@ -394,8 +394,8 @@ describe("device sessions", () => {
   });
 
   it("ties a device paired before sessions were recorded to its desktop's sign-in", async () => {
-    const { pair, app, store, rows } = setup();
-    const { token } = await (await pair("user-1", { session: "desktop" })).json();
+    const { pair, app, store, rows, events } = setup();
+    const { deviceId, token } = await (await pair("user-1", { session: "desktop" })).json();
     rows[0]!.sessionId = null;
     const tie = (user: string | null, authorization = `Bearer ${token}`, session = "desktop") =>
       app.request("/api/devices/self/session", {
@@ -414,6 +414,9 @@ describe("device sessions", () => {
     expect((await tie("user-1")).status).toBe(204);
     expect((await tie("user-1", `Bearer ${token}`, "phone")).status).toBe(204);
     expect(rows[0]!.sessionId).toBe("desktop");
+    expect(events.filter((event) => event.type === "device.tied")).toMatchObject([
+      { type: "device.tied", userId: "user-1", metadata: { deviceId } },
+    ]);
 
     await endUserDeviceSession(store, { id: "desktop", userId: "user-1" });
     expect(rows[0]!.revokedAt).toBeInstanceOf(Date);

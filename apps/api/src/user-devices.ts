@@ -162,12 +162,18 @@ export function mountUserDeviceRoutes(app: Hono, deps: UserDeviceRouteDeps) {
     const session = await deps.session(c.req.raw);
     if (!device || !session) return c.json({ error: "Unauthorized" }, 401);
     if (device.userId !== session.userId) return c.json({ error: "Forbidden" }, 403);
-    await runAsSystem("tie a user device to its sign-in", () =>
+    const { count } = await runAsSystem("tie a user device to its sign-in", () =>
       prisma.userDevice.updateMany({
         where: { id: device.id, userId: device.userId, revokedAt: null, sessionId: null },
         data: { sessionId: session.sessionId },
       }),
     );
+    if (count)
+      await recordSecurityEvent({
+        type: "device.tied",
+        userId: device.userId,
+        metadata: { deviceId: device.id },
+      });
     return c.body(null, 204);
   });
 
