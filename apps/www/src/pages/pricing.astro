@@ -22,7 +22,7 @@ const starsLabel = await githubStarsLabel();
             <section class="feature-card pricing__plan">
               <h2>{plan.name}</h2>
               <p class="pricing__price">{plan.price}</p>
-              {plan.note && <p class="pricing__note">{plan.note}</p>}
+              <p class="pricing__note">{plan.note}</p>
               <ul>
                 {plan.features.map((feature) => (
                   <li>{feature}</li>

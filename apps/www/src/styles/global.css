@@ -2643,6 +2643,7 @@ button.product-demo__dock-icon {
 }
 
 .feature-card p.pricing__note {
+  min-height: 1.6em;
   margin-top: 6px;
   color: var(--muted-2);
   font-size: 14px;

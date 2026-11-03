@@ -20,10 +20,10 @@ export const PRICING_PLANS: PricingPlan[] = [
   {
     name: "Self-hosted",
     price: "Free",
-    note: "Forever",
     features: [
       "Open source, Apache-2.0",
       "Your server or your own computer",
+      "Bot computers in Docker or a sandbox",
       "Any model you connect",
       "No usage limits",
     ],
@@ -38,7 +38,7 @@ export const PRICING_PLANS: PricingPlan[] = [
         : `${dollars(BYOK_ANNUAL_PRICE_CENTS / 12)}/mo billed yearly`,
     features: [
       "Hosted by us",
-      "Your ChatGPT or Claude subscription, or any API key",
+      "ChatGPT, Claude, or any API key",
       "Cloud computer included",
       "Free trial",
     ],
