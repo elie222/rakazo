@@ -895,6 +895,20 @@ describe("messages mode", () => {
     expect(stepNotes(finalizeRun)).toEqual(["Totals look off."]);
   });
 
+  it("adds no reply after a message_user that ends the turn", async () => {
+    const { finalizeRun, messages } = await runTurn("", false, undefined, [], "fyi", {
+      ...messagesMode,
+      runtime: async function* (request) {
+        yield { type: "text", text: "Found it, telling them now." };
+        yield { type: "tool", name: "message_user", args: {}, executionId: "call-1" };
+        await request.executeTool!("message_user", { message: "The total is 4." }, "call-1");
+        yield { type: "done", text: "" };
+      },
+    });
+    expect(sentTexts(messages)).toEqual(["The total is 4."]);
+    expect(finalText(finalizeRun)).toBe("");
+  });
+
   it("stays silent when the model chose silence", async () => {
     const { finalizeRun } = await runTurn("", false, ["Checking.", "NO_RESPONSE"], [], "fyi", {
       ...messagesMode,

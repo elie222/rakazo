@@ -447,6 +447,7 @@ export default function BotSettingsScreen() {
         dailyCheckInsSave.flush(),
         crossSpaceSave.flush(),
         fleetSave.flush(),
+        replyModeSave.flush(),
         notifySave.flush(),
         nameSave.flush(),
       ]);

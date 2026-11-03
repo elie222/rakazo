@@ -103,6 +103,11 @@ export const messagingTools: ToolHandlers = {
     await publishMessage(deps, run, "bot", [{ kind: "text", text }], true, nextProgressNonce(ctx));
     reply.midTurnUserTexts.push(text);
     reply.publishedMidTurnUserMessage = true;
+    // The person already has this message; notes written before it are no longer a missing answer.
+    if (ctx.replyMode === "messages") {
+      reply.workingNotes.length = 0;
+      reply.lastDiscardedMidTurnNarration = "";
+    }
     return call.finish(
       truncated
         ? {
