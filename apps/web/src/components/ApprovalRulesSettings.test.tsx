@@ -365,11 +365,11 @@ it("adds an explicit tool rule without waiting for an approval card", async () =
   }
 });
 
-it("keeps the form and shows why a tool name was rejected", async () => {
+it("keeps the form and shows why a save failed", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   rpcMock.approvalRules.list.mockResolvedValue([]);
   rpcMock.autoReview.get.mockResolvedValue(settings);
-  rpcMock.approvalRules.set.mockRejectedValue(new Error("Not a tool name"));
+  rpcMock.approvalRules.set.mockRejectedValue(new Error("Could not save"));
   const { container, root } = await render();
   try {
     await vi.waitFor(() => expect(button(container, "Add rule")!.disabled).toBe(false));
@@ -388,7 +388,7 @@ it("keeps the form and shows why a tool name was rejected", async () => {
         .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
     );
     expect(container.querySelector("form")).not.toBeNull();
-    expect(container.textContent).toContain("Not a tool name");
+    expect(container.textContent).toContain("Could not save");
   } finally {
     await act(async () => root.unmount());
     container.remove();

@@ -12,7 +12,6 @@ import {
   approvalModeFromPreference,
   approvalPreferenceFromMode,
   callRequestClientNonce,
-  isToolName,
 } from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
 import {
@@ -209,9 +208,6 @@ export function accountRoutes(ctx: RouterContext) {
       }),
       set: authed.approvalRules.set.handler(async ({ context, input }) => {
         const { scope, ...rule } = input;
-        if (rule.matchKind === "tool" && !isToolName(rule.matchValue)) {
-          throw new ORPCError("BAD_REQUEST", { message: "Not a tool name" });
-        }
         return approvalRuleDto(
           await deps.prisma.$transaction((tx) => saveApprovalRule(tx, context.actor, rule, scope)),
         );

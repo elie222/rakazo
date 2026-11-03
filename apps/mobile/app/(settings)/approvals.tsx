@@ -92,13 +92,14 @@ export default function ApprovalRules() {
         matchKind: rule.matchKind,
         matchValue: rule.matchValue,
       });
-      // Saving replaces any other effect on the same match.
+      // Saving replaces every other rule on the same match, whatever its case.
+      const value = rule.matchValue.toLowerCase();
       setRules(
         (current) =>
           current?.flatMap((entry) => {
             if (entry.id === rule.id) return [saved];
             const sameMatch =
-              entry.matchKind === rule.matchKind && entry.matchValue === rule.matchValue;
+              entry.matchKind === rule.matchKind && entry.matchValue.toLowerCase() === value;
             return sameMatch ? [] : [entry];
           }) ?? null,
       );

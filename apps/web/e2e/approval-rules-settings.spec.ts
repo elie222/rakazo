@@ -8,9 +8,6 @@ test("adds a tool rule and switches it between Ask and Block", async ({ page }, 
   await settings.getByTestId("settings-nav-confirmations").click();
   await settings.getByRole("button", { name: "Add rule", exact: true }).click();
   const toolName = settings.getByRole("textbox", { name: "Tool name" });
-  await toolName.fill("Write file");
-  await settings.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(settings.getByText("Not a tool name", { exact: true })).toBeVisible();
   await toolName.fill("write_file");
   await settings.getByRole("button", { name: "Save", exact: true }).click();
   const rule = settings.getByRole("group", { name: "Write file", exact: true });

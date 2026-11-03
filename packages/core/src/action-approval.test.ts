@@ -12,7 +12,6 @@ import {
   isApprovalAskBlock,
   isOwnerStartedRun,
   isSecretAskBlock,
-  isToolName,
   newSiteOutcome,
   outboundSiteGate,
   planActionGate,
@@ -164,17 +163,6 @@ describe("resolveActionApprovalDetail", () => {
     const base = { toolName: "gmail_read_thread", connectorKind: "gmail", rules };
     expect(resolveActionApprovalDetail(base).decision).toBe("allow");
     expect(resolveActionApprovalDetail({ ...base, readOnly: false }).decision).toBe("ask");
-  });
-});
-
-describe("isToolName", () => {
-  it("accepts tool identifiers and rejects prose", () => {
-    for (const name of ["write_file", "GMAIL_SEND_EMAIL", "mcp__docs__search.pages", "web-fetch"]) {
-      expect(isToolName(name)).toBe(true);
-    }
-    for (const name of ["Write file", "_hidden", "rm -rf /", "send; email", "écrire"]) {
-      expect(isToolName(name)).toBe(false);
-    }
   });
 });
 

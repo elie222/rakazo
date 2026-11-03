@@ -89,11 +89,6 @@ export type ActionApprovalRule = Pick<
   "effect" | "matchKind" | "matchValue"
 >;
 
-/** A tool rule typed by hand names a tool the way bots call it, like `write_file`. */
-export function isToolName(value: string): boolean {
-  return /^[A-Za-z0-9][\w./-]*$/.test(value);
-}
-
 export function connectorKindFromToolName(toolName: string, connectorKinds: string[] = []): string {
   const normalizedTool = toolName.toLowerCase();
   const matched = connectorKinds
