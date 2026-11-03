@@ -441,7 +441,7 @@ describe("OIDC callbacks", () => {
     expect(rows("user")).toHaveLength(1);
     expect(rows("account")).toHaveLength(1);
   });
-  it("links only through an authenticated link flow", async () => {
+  it("links only through an authenticated link flow from a verified account", async () => {
     setup();
     expect(
       (await request("/link-social", { provider: "oidc", callbackURL: `${origin}/app` })).status,
@@ -451,6 +451,9 @@ describe("OIDC callbacks", () => {
       password: "test-password-123",
       name: "Local",
     });
+    const unverified = await request(await start(undefined, true));
+    expect(unverified.headers.get("location")).toContain("error=unable_to_link_account");
+    rows("user")[0]!.emailVerified = true;
     const response = await request(await start(undefined, true));
     expect(response.headers.get("location")).toBe(`${origin}/app`);
     expect(rows("account")).toHaveLength(2);
@@ -463,6 +466,7 @@ describe("OIDC callbacks", () => {
       password: "test-password-123",
       name: "Local",
     });
+    rows("user")[0]!.emailVerified = true;
     await request(await start(undefined, true));
     expect(await (await request("/account-security")).json()).toMatchObject({ ssoLinked: true });
     const oldAccountId = rows("account").find(
@@ -529,6 +533,29 @@ describe("OIDC callbacks", () => {
     const response = await request(callback);
     expect(response.headers.get("location")).toContain("error=unable_to_link_account");
     expect(rows("account").filter((account) => account.providerId === "oidc")).toHaveLength(0);
+  });
+  it("links an unverified account from its own browser when nothing can verify it", async () => {
+    setup({ email: undefined });
+    await request("/sign-up/email", {
+      email: "sso@example.test",
+      password: "test-password-123",
+      name: "Local",
+    });
+    const session = cookies;
+    const planted = await start(undefined, true);
+    const authorize = `${issuer}/authorize?state=${new URL(`${origin}${planted}`).searchParams.get("state")}`;
+    cookies = "";
+    await request(
+      `/expo-authorization-proxy?${new URLSearchParams({ authorizationURL: authorize })}`,
+    );
+    expect((await request(planted)).headers.get("location")).toContain(
+      "error=unable_to_link_account",
+    );
+    cookies = session;
+    expect((await request(await start(undefined, true))).headers.get("location")).toBe(
+      `${origin}/app`,
+    );
+    expect(rows("account").filter((account) => account.providerId === "oidc")).toHaveLength(1);
   });
   it("links a verified account from the native browser", async () => {
     setup();

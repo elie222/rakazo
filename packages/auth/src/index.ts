@@ -254,12 +254,14 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         if (isMessagingEmail(email)) return { error: "EMAIL_NOT_AVAILABLE" };
         if (source.action === "link-account") {
           if (!verified) return { error: "unable_to_link_account" };
-          // The native authorization proxy can plant a link state in any browser, so an
-          // unverified address alone does not show who the account belongs to.
+          // Anyone can register an address, so linking waits for verification. Without email
+          // nothing can verify; then only the account's own browser may link, since the
+          // native authorization proxy can plant a link state in any other.
           const target = await ctx.context.internalAdapter.findUserById(String(user.id));
           if (
             !target ||
-            (!target.emailVerified && (await sessionForAuthHook(ctx))?.user.id !== target.id)
+            (!target.emailVerified &&
+              (env.email || (await sessionForAuthHook(ctx))?.user.id !== target.id))
           )
             return { error: "unable_to_link_account" };
           return;

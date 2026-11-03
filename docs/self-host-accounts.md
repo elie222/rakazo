@@ -168,8 +168,9 @@ claims stay unverified, including on subsequent sign-ins, and an unverified clai
 the account's email. Sign-in never links accounts by email.
 If an email belongs to another account, sign in to that existing account and choose **Link SSO**
 in account settings. Linking requires an authenticated session, a verified provider email and
-matching email addresses. An account whose email is not yet verified can link SSO only from a
-browser signed in to it, so not from the mobile app until it verifies. The issuer and provider subject identify the linked account thereafter. Changing issuers does
+matching email addresses. With email delivery, an account links SSO only after its email is
+verified. Without it, an unverified account links only from a browser signed in to it, so not
+from the mobile app. The issuer and provider subject identify the linked account thereafter. Changing issuers does
 not reuse an old identity. Old-issuer links remain stored but do not count as linked to the
 current provider, so **Link SSO** becomes available again. Link the new identity from the
 existing signed-in account; authenticated-session, verified-email and matching-email checks
