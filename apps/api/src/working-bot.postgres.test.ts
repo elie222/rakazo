@@ -12,6 +12,7 @@ import {
 } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
+  cancelThreadRuns,
   resolveThreadTarget,
   STOPPED_BY_MESSAGE_NOTE,
   stoppedRoutineNote,
@@ -227,6 +228,14 @@ describe.skipIf(!enabled)("working bot visibility (PostgreSQL)", () => {
         const other = await prisma.routine.create({
           data: { ...scope, name: "Sample report", prompt: "Write the sample report", crons: [] },
         });
+        const sameName = await prisma.routine.create({
+          data: {
+            ...scope,
+            name: "Sample inbox sweep",
+            prompt: "Sweep the shared inbox",
+            crons: [],
+          },
+        });
         await prisma.run.createMany({
           data: [
             {
@@ -243,6 +252,13 @@ describe.skipIf(!enabled)("working bot visibility (PostgreSQL)", () => {
               trigger: "routine",
               routineId: other.id,
             },
+            {
+              ...scope,
+              taskId: task.id,
+              status: "queued",
+              trigger: "routine",
+              routineId: sameName.id,
+            },
           ],
         });
 
@@ -255,20 +271,38 @@ describe.skipIf(!enabled)("working bot visibility (PostgreSQL)", () => {
           actor,
           target,
         );
-        const notes = await prisma.message.findMany({
-          where: { threadId: target.threadId, role: "system" },
-          select: { blocks: true, botId: true },
-        });
-        expect(notes).toHaveLength(2);
-        expect(notes).toEqual(
-          expect.arrayContaining(
-            ["Sample inbox sweep", "Sample report"].map((name) => ({
-              botId: bot.id,
-              blocks: [{ kind: "meta", text: stoppedRoutineNote(name) }],
-            })),
-          ),
+        const noteTexts = async () =>
+          (
+            await prisma.message.findMany({
+              where: { threadId: target.threadId, role: "system", botId: bot.id },
+              orderBy: { seq: "asc" },
+              select: { blocks: true },
+            })
+          ).map((message) => (message.blocks as Array<{ text: string }>)[0]?.text);
+        expect((await noteTexts()).sort()).toEqual(
+          [
+            stoppedRoutineNote("Sample inbox sweep"),
+            stoppedRoutineNote("Sample inbox sweep"),
+            stoppedRoutineNote("Sample report"),
+          ].sort(),
         );
-        expect(JSON.stringify(notes)).not.toContain(STOPPED_BY_MESSAGE_NOTE);
+
+        await prisma.run.createMany({
+          data: [
+            {
+              ...scope,
+              taskId: task.id,
+              status: "running",
+              trigger: "routine",
+              routineId: other.id,
+            },
+            { ...scope, taskId: task.id, status: "queued", trigger: "user" },
+          ],
+        });
+        await prisma.$transaction(cancelThreadRuns(actor, target, { botId: bot.id }));
+        expect((await noteTexts()).slice(3).sort()).toEqual(
+          [stoppedRoutineNote("Sample report"), STOPPED_BY_MESSAGE_NOTE].sort(),
+        );
       });
     } finally {
       await runAsSystem("test fixture cleanup", async () => {

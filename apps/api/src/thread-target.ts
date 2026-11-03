@@ -1518,6 +1518,7 @@ export function cancelThreadRuns(
         userId: true,
         spaceId: true,
         trigger: true,
+        routineId: true,
         routine: { select: { name: true } },
       },
     });
@@ -1575,26 +1576,24 @@ export function cancelThreadRuns(
       });
       eventSeq = event.seq;
     }
+    const named = (run: (typeof cancelled)[number]) =>
+      run.trigger === "routine" && run.routine && run.routineId ? run.routine.name : undefined;
     const routineNotes = [
       ...new Map(
-        cancelled.flatMap((run) =>
-          run.trigger === "routine" && run.routine
-            ? [
-                [
-                  `${run.botId}:${run.routine.name}`,
-                  { botId: run.botId, text: stoppedRoutineNote(run.routine.name) },
-                ] as const,
-              ]
-            : [],
-        ),
+        cancelled.flatMap((run) => {
+          const name = named(run);
+          return name
+            ? [[run.routineId, { botId: run.botId, text: stoppedRoutineNote(name) }] as const]
+            : [];
+        }),
       ).values(),
     ];
-    const notes =
-      routineNotes.length > 0
-        ? routineNotes
-        : ids.length && note
-          ? [{ botId: note.botId, text: STOPPED_BY_MESSAGE_NOTE }]
-          : [];
+    const notes = [
+      ...routineNotes,
+      ...(note && cancelled.some((run) => !named(run))
+        ? [{ botId: note.botId, text: STOPPED_BY_MESSAGE_NOTE }]
+        : []),
+    ];
     for (const { botId, text } of notes) {
       const blocks: MessageBlock[] = [{ kind: "meta", text }];
       const message = await createThreadMessageInTransaction(tx, {
