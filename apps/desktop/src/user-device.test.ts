@@ -38,11 +38,22 @@ afterEach(async () => {
 
 describe("device token storage", () => {
   it("keeps one encrypted, owner-only token per server origin", async () => {
-    await savePairedDevice(userData, origin, { token: "secret-token", deviceId: "d1" }, cipher);
-    await savePairedDevice(userData, other, { token: "other-token", deviceId: null }, cipher);
+    await savePairedDevice(
+      userData,
+      origin,
+      { token: "secret-token", deviceId: "d1", userId: "user-1" },
+      cipher,
+    );
+    await savePairedDevice(
+      userData,
+      other,
+      { token: "other-token", deviceId: null, userId: null },
+      cipher,
+    );
     expect(await readPairedDevice(userData, origin, cipher)).toEqual({
       token: "secret-token",
       deviceId: "d1",
+      userId: "user-1",
     });
     expect((await readPairedDevice(userData, other, cipher))?.token).toBe("other-token");
     const dir = path.join(userData, "devices");
@@ -57,7 +68,7 @@ describe("device token storage", () => {
   });
 
   it("refuses to store a token without secure storage and ignores undecryptable ones", async () => {
-    const device = { token: "t", deviceId: null };
+    const device = { token: "t", deviceId: null, userId: null };
     await expect(
       savePairedDevice(userData, origin, device, { ...cipher, available: async () => false }),
     ).rejects.toThrow();
@@ -73,12 +84,15 @@ describe("device token storage", () => {
     ).toBeNull();
   });
 
-  it("keeps this computer's consent per server origin", async () => {
+  it("keeps this computer's consent per server origin, with the account it was given for", async () => {
     expect(await readDeviceConsent(userData, origin)).toBeNull();
-    await saveDeviceConsent(userData, origin, "allowed");
-    await saveDeviceConsent(userData, other, "declined");
-    expect(await readDeviceConsent(userData, origin)).toBe("allowed");
-    expect(await readDeviceConsent(userData, other)).toBe("declined");
+    await saveDeviceConsent(userData, origin, { consent: "allowed", userId: "user-1" });
+    await saveDeviceConsent(userData, other, { consent: "declined", userId: null });
+    expect(await readDeviceConsent(userData, origin)).toEqual({
+      consent: "allowed",
+      userId: "user-1",
+    });
+    expect(await readDeviceConsent(userData, other)).toEqual({ consent: "declined", userId: null });
   });
 });
 
@@ -96,7 +110,7 @@ describe("remote computer access", () => {
       token: string;
       closed: boolean;
       cancelled: number;
-      revoke: () => void;
+      revoke: (reason?: "session-ended") => void;
       authorize: () => Promise<boolean>;
     }[] = [];
     const access = createUserDeviceAccess({
@@ -154,6 +168,7 @@ describe("remote computer access", () => {
     expect(await readPairedDevice(userData, origin, cipher)).toEqual({
       token: "device-token",
       deviceId: "device-1",
+      userId: null,
     });
   });
 
@@ -172,7 +187,7 @@ describe("remote computer access", () => {
     expect(await clients[0]!.authorize()).toBe(true);
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(access.state(origin)?.allowed).toBe(true);
-    expect(await readDeviceConsent(userData, origin)).toBe("allowed");
+    expect(await readDeviceConsent(userData, origin)).toMatchObject({ consent: "allowed" });
 
     const relaunched = setup({ confirm });
     await relaunched.access.select(origin);
@@ -188,7 +203,7 @@ describe("remote computer access", () => {
     expect(await clients[0]!.authorize()).toBe(false);
     expect(await clients[0]!.authorize()).toBe(false);
     expect(confirm).toHaveBeenCalledTimes(1);
-    expect(await readDeviceConsent(userData, origin)).toBe("declined");
+    expect(await readDeviceConsent(userData, origin)).toMatchObject({ consent: "declined" });
 
     confirm.mockResolvedValue(true);
     await access.setAllowed(origin, true);
@@ -201,7 +216,7 @@ describe("remote computer access", () => {
   });
 
   it("stops running and waiting work, but keeps the connection, when turned off", async () => {
-    await saveDeviceConsent(userData, origin, "allowed");
+    await saveDeviceConsent(userData, origin, { consent: "allowed", userId: null });
     const { access, clients } = setup();
     await access.select(origin);
     await access.pair();
@@ -211,7 +226,7 @@ describe("remote computer access", () => {
   });
 
   it("stops work and stays off when saving the choice fails", async () => {
-    await saveDeviceConsent(userData, origin, "allowed");
+    await saveDeviceConsent(userData, origin, { consent: "allowed", userId: null });
     const { access, clients } = setup();
     await access.select(origin);
     await access.pair();
@@ -239,20 +254,20 @@ describe("remote computer access", () => {
     await access.setAllowed(origin, false);
     answer(true);
     expect(await waiting).toBe(false);
-    expect(await readDeviceConsent(userData, origin)).toBe("declined");
+    expect(await readDeviceConsent(userData, origin)).toMatchObject({ consent: "declined" });
 
     const turningOn = access.setAllowed(origin, true);
     await vi.waitFor(() => expect(confirm).toHaveBeenCalledTimes(2));
     clients[0]!.revoke();
     answer(true);
     await turningOn;
-    expect(await readDeviceConsent(userData, origin)).toBe("declined");
+    expect(await readDeviceConsent(userData, origin)).toMatchObject({ consent: "declined" });
     expect(access.state(origin)).toEqual({ deviceId: null, allowed: false });
     expect(requests.filter(({ url }) => url.endsWith("/pair"))).toHaveLength(1);
   });
 
   it("fails turning on and stays off when pairing fails", async () => {
-    await saveDeviceConsent(userData, origin, "declined");
+    await saveDeviceConsent(userData, origin, { consent: "declined", userId: null });
     let status = 409;
     const fetch = vi.fn(async () =>
       status === 200
@@ -263,7 +278,7 @@ describe("remote computer access", () => {
     await access.select(origin);
     await expect(access.setAllowed(origin, true)).rejects.toThrow();
     expect(access.state(origin)).toEqual({ deviceId: null, allowed: false });
-    expect(await readDeviceConsent(userData, origin)).toBe("declined");
+    expect(await readDeviceConsent(userData, origin)).toMatchObject({ consent: "declined" });
     status = 200;
     await access.setAllowed(origin, true);
     expect(access.state(origin)).toEqual({ deviceId: "device-1", allowed: true });
@@ -271,7 +286,7 @@ describe("remote computer access", () => {
   });
 
   it("keeps access off when it is turned off while pairing", async () => {
-    await saveDeviceConsent(userData, origin, "declined");
+    await saveDeviceConsent(userData, origin, { consent: "declined", userId: null });
     let respond: () => void = () => undefined;
     const fetch = vi.fn(
       () =>
@@ -286,7 +301,7 @@ describe("remote computer access", () => {
     await access.setAllowed(origin, false);
     respond();
     await turningOn;
-    expect(await readDeviceConsent(userData, origin)).toBe("declined");
+    expect(await readDeviceConsent(userData, origin)).toMatchObject({ consent: "declined" });
     expect(access.state(origin)?.allowed).toBe(false);
   });
 
@@ -320,6 +335,7 @@ describe("remote computer access", () => {
     expect(await readPairedDevice(userData, origin, cipher)).toEqual({
       token: "device-token",
       deviceId: "device-1",
+      userId: null,
     });
   });
 
@@ -354,8 +370,13 @@ describe("remote computer access", () => {
   });
 
   it("reconnects on launch, disconnects when switching servers, and stops on close", async () => {
-    await savePairedDevice(userData, origin, { token: "saved-token", deviceId: "d1" }, cipher);
-    await saveDeviceConsent(userData, other, "declined");
+    await savePairedDevice(
+      userData,
+      origin,
+      { token: "saved-token", deviceId: "d1", userId: null },
+      cipher,
+    );
+    await saveDeviceConsent(userData, other, { consent: "declined", userId: null });
     const { access, clients, requests } = setup();
     await access.select(origin);
     expect(clients).toMatchObject([{ origin, token: "saved-token", closed: false }]);
@@ -371,8 +392,13 @@ describe("remote computer access", () => {
   });
 
   it("forgets a revoked token and stays unpaired until turned back on", async () => {
-    await savePairedDevice(userData, origin, { token: "saved-token", deviceId: "d1" }, cipher);
-    await saveDeviceConsent(userData, origin, "allowed");
+    await savePairedDevice(
+      userData,
+      origin,
+      { token: "saved-token", deviceId: "d1", userId: null },
+      cipher,
+    );
+    await saveDeviceConsent(userData, origin, { consent: "allowed", userId: null });
     const confirm = vi.fn(async () => true);
     const { access, clients, requests } = setup({ confirm });
     await access.select(origin);
@@ -381,7 +407,7 @@ describe("remote computer access", () => {
       expect(await readPairedDevice(userData, origin, cipher)).toBeNull(),
     );
     await vi.waitFor(async () =>
-      expect(await readDeviceConsent(userData, origin)).toBe("declined"),
+      expect(await readDeviceConsent(userData, origin)).toMatchObject({ consent: "declined" }),
     );
     expect(access.state(origin)).toEqual({ deviceId: null, allowed: false });
     await access.pair();
@@ -391,5 +417,125 @@ describe("remote computer access", () => {
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(access.state(origin)).toEqual({ deviceId: "device-1", allowed: true });
     expect(clients.at(-1)).toMatchObject({ token: "device-token", closed: false });
+  });
+  /** A server that pairs whoever the window is signed in as. */
+  function accountServer() {
+    const server = { account: null as string | null, paired: 0 };
+    const fetch = vi.fn(async (url: string) => {
+      if (!url.endsWith("/api/devices/pair")) return new Response(null, { status: 204 });
+      if (server.account === null) return new Response(null, { status: 401 });
+      server.paired += 1;
+      return Response.json({
+        deviceId: `device-${server.paired}`,
+        token: `token-${server.paired}`,
+        userId: server.account,
+      });
+    });
+    return { server, fetch };
+  }
+
+  it("keeps access for an account that signs out and back in, without asking again", async () => {
+    const { server, fetch } = accountServer();
+    const confirm = vi.fn(async () => true);
+    const { access, clients } = setup({ fetch, confirm });
+    server.account = "alice";
+    await access.select(origin);
+    await access.pair();
+    expect(await clients[0]!.authorize()).toBe(true);
+    expect(confirm).toHaveBeenCalledTimes(1);
+
+    server.account = null;
+    clients[0]!.revoke("session-ended");
+    await vi.waitFor(async () =>
+      expect(await readPairedDevice(userData, origin, cipher)).toBeNull(),
+    );
+    expect(access.state(origin)).toEqual({ deviceId: null, allowed: false });
+    await access.pair();
+    expect(clients).toHaveLength(1);
+
+    server.account = "alice";
+    await access.pair();
+    expect(clients.at(-1)).toMatchObject({ token: "token-2", closed: false });
+    expect(access.state(origin)).toEqual({ deviceId: "device-2", allowed: true });
+    expect(await clients.at(-1)!.authorize()).toBe(true);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(await readDeviceConsent(userData, origin)).toEqual({
+      consent: "allowed",
+      userId: "alice",
+    });
+  });
+
+  it("never hands one account's access to the next person who signs in", async () => {
+    const { server, fetch } = accountServer();
+    const confirm = vi.fn(async () => true);
+    const { access, clients } = setup({ fetch, confirm });
+    server.account = "alice";
+    await access.select(origin);
+    await access.setAllowed(origin, true);
+    expect(access.state(origin)).toEqual({ deviceId: "device-1", allowed: true });
+
+    server.account = null;
+    clients[0]!.revoke("session-ended");
+    server.account = "bob";
+    await access.pair();
+    expect(clients.at(-1)).toMatchObject({ token: "token-2", closed: false });
+    expect(access.state(origin)).toEqual({ deviceId: "device-2", allowed: false });
+
+    confirm.mockResolvedValueOnce(false);
+    expect(await clients.at(-1)!.authorize()).toBe(false);
+    expect(confirm).toHaveBeenCalledTimes(2);
+  });
+
+  it("ignores a prompt from a sign-in that ended before it was answered", async () => {
+    const { server, fetch } = accountServer();
+    let answer: (allowed: boolean) => void = () => undefined;
+    const confirm = vi.fn(() => new Promise<boolean>((resolve) => (answer = resolve)));
+    const { access, clients } = setup({ fetch, confirm });
+    server.account = "alice";
+    await access.select(origin);
+    await access.pair();
+    const waiting = clients[0]!.authorize();
+    await vi.waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+
+    server.account = null;
+    clients[0]!.revoke("session-ended");
+    server.account = "bob";
+    await access.pair();
+    answer(true);
+    expect(await waiting).toBe(false);
+    expect(access.state(origin)).toEqual({ deviceId: "device-2", allowed: false });
+    expect(await readDeviceConsent(userData, origin)).toBeNull();
+  });
+
+  it("pairs the next account even when its page loaded before the old pairing ended", async () => {
+    const { server, fetch } = accountServer();
+    const { access, clients } = setup({ fetch });
+    server.account = "alice";
+    await access.select(origin);
+    await access.pair();
+
+    server.account = "bob";
+    await access.pair();
+    expect(clients).toHaveLength(1);
+    clients[0]!.revoke("session-ended");
+    await vi.waitFor(() => expect(clients).toHaveLength(2));
+    expect(clients[1]).toMatchObject({ token: "token-2", closed: false });
+    expect(access.state(origin)).toEqual({ deviceId: "device-2", allowed: false });
+  });
+
+  it("does not let a saved answer for another account through after a relaunch", async () => {
+    await savePairedDevice(
+      userData,
+      origin,
+      { token: "saved-token", deviceId: "d1", userId: "bob" },
+      cipher,
+    );
+    await saveDeviceConsent(userData, origin, { consent: "allowed", userId: "alice" });
+    const confirm = vi.fn(async () => false);
+    const { access, clients } = setup({ confirm });
+    await access.select(origin);
+    expect(access.state(origin)).toEqual({ deviceId: "d1", allowed: false });
+    expect(await clients[0]!.authorize()).toBe(false);
+    expect(confirm).toHaveBeenCalledTimes(1);
   });
 });
