@@ -136,3 +136,10 @@ it("retains a failure reason while accepting activity rows from older servers", 
   expect(RunActivityRowSchema.parse({ ...row, error }).error).toBe(error);
   expect(RunActivityRowSchema.safeParse(row).success).toBe(true);
 });
+
+it.each(["9".repeat(400), "9000000000000"])(
+  "ignores quota resets outside the date range: %s",
+  (delay) => {
+    expect(providerQuotaResetAt(`retry-after: ${delay}`, Date.UTC(2026, 0, 1))).toBeUndefined();
+  },
+);
