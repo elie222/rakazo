@@ -5451,7 +5451,6 @@ msgstr ""
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign in"
 msgstr "Oturum aç"
 
@@ -5487,7 +5486,6 @@ msgid "Sign in with the subscription, or test the API key instead."
 msgstr "Abonelikle oturum aç veya bunun yerine API anahtarını test et."
 
 #: src/pages/Auth.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign up"
 msgstr "Kaydol"
 
@@ -6667,10 +6665,6 @@ msgstr ""
 #: src/components/ModelCredits.tsx
 msgid "Your subscription or API key"
 msgstr ""
-
-#: src/pages/Welcome.tsx
-msgid "Your team of always-on agents<0/>that you can give real work to."
-msgstr "Gerçek işler verebileceğin,<0/>her zaman açık agent takımın."
 
 #: src/components/ModelCredits.tsx
 msgid "Your trial ends and your card is charged {price} today."

@@ -5451,7 +5451,6 @@ msgstr ""
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign in"
 msgstr "Entrar"
 
@@ -5487,7 +5486,6 @@ msgid "Sign in with the subscription, or test the API key instead."
 msgstr "Entre com a assinatura ou teste a chave de API."
 
 #: src/pages/Auth.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign up"
 msgstr "Cadastre-se"
 
@@ -6667,10 +6665,6 @@ msgstr ""
 #: src/components/ModelCredits.tsx
 msgid "Your subscription or API key"
 msgstr ""
-
-#: src/pages/Welcome.tsx
-msgid "Your team of always-on agents<0/>that you can give real work to."
-msgstr "Sua equipe de agentes sempre ativos<0/>, a quem você pode dar trabalho de verdade."
 
 #: src/components/ModelCredits.tsx
 msgid "Your trial ends and your card is charged {price} today."
