@@ -357,7 +357,13 @@ export class ConfiguredSandbox implements SandboxProvider {
   }
 
   async environment(computer: ComputerRef, context: AdapterContext) {
-    return (await this.route(computer)).environment?.(computer, context);
+    // Asked before a new or moving computer starts, so describe where it will start.
+    const provider = await this.route(computer).catch(async (error: unknown) => {
+      const target = await this.target(computer.botId);
+      if (target.describe().id !== computer.kind) throw error;
+      return target;
+    });
+    return provider.environment?.(computer, context);
   }
 
   async workspaceDirectories(

@@ -382,3 +382,16 @@ it("keeps starting computers on the last settings read while the store is unread
   expect(await sandbox.provisionKind("a")).toBe("fake");
   expect((await sandbox.provision({ botId: "a", homePath: "/h" }, ctx)).kind).toBe("fake");
 });
+
+it("describes where a computer will start before it has started there", async () => {
+  const { sandbox } = setup({ provider: "desktop", settings });
+  await sandbox.refresh();
+  const environment = { home: "C:\\Users\\bot", shell: "powershell.exe", platform: "win32" };
+  const desktop = await (
+    sandbox as unknown as { target(homeKey: string): Promise<FakeSandboxProvider> }
+  ).target("new");
+  Object.assign(desktop, { environment: async () => environment });
+  await expect(
+    sandbox.environment({ id: "new", botId: "new", kind: "desktop", providerRef: "" }, ctx),
+  ).resolves.toEqual(environment);
+});
