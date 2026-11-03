@@ -350,11 +350,11 @@ function credentialContentSecrets(content: string): string[] {
 
 /** Stop the process, then remove the credential files it was launched with. */
 async function closeEntry(entry: { session: McpSession; credentialDir?: string }): Promise<void> {
-  try {
-    await closeMcpResource(() => entry.session.close());
-  } finally {
-    if (entry.credentialDir) await rm(entry.credentialDir, { recursive: true, force: true });
-  }
+  await closeMcpResource(() =>
+    entry.session.close(async () => {
+      if (entry.credentialDir) await rm(entry.credentialDir, { recursive: true, force: true });
+    }),
+  );
 }
 
 export class McpConnector implements ConnectorProvider {
