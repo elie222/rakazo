@@ -156,7 +156,13 @@ export function buildApprovalAskBlock(
   }
   const fetchSite = webFetchSite(toolName, args);
   const summary = describeApprovalAction(toolName, args, options?.batch);
-  const detail = formatApprovalDetail(toolName, args, options?.reviewReason, options?.batch);
+  const detail = formatApprovalDetail(
+    toolName,
+    args,
+    options?.reviewReason,
+    options?.batch,
+    secrets,
+  );
   const safeDetail = detail ? redactSecrets(detail, secrets) : undefined;
   return {
     kind: "ask",
@@ -226,6 +232,7 @@ function formatApprovalDetail(
   args: Record<string, unknown>,
   reviewReason: string | undefined,
   batch: ToolBatch | undefined,
+  secrets: string[],
 ): string | undefined {
   const lines: string[] = [];
   if (reviewReason?.trim()) {
@@ -237,29 +244,76 @@ function formatApprovalDetail(
     );
   }
   // A fetch carries data in its path and query, so the card shows the whole URL.
-  const keys = SITE_SENDING_TOOLS.has(toolName)
-    ? ["url", "method", "body"]
-    : ["collection", "title", "to", "recipient_email", "cc", "bcc", "subject", "amount", "body"];
-  const pushArgs = (values: Record<string, unknown>) => {
-    for (const key of keys) {
-      const value = values[key];
-      if (value == null || value === "") continue;
-      lines.push(`${key}: ${String(value)}`);
-    }
-  };
+  const shown = (values: Record<string, unknown>) =>
+    argumentLines(
+      redactLeaves(values, secrets) as Record<string, unknown>,
+      SITE_SENDING_TOOLS.has(toolName) ? ["url", "method", "body"] : undefined,
+    );
   const items = batch ? args[batch.items] : undefined;
   if (batch && Array.isArray(items)) {
+    // Every action and its destinations first, then each action's long text.
+    const later: string[] = [];
     for (const item of items) {
       const entry = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
       const action = entry[batch.action];
-      lines.push((typeof action === "string" && action.trim()) || "…");
-      pushArgs(objectArguments(entry[batch.arguments]));
+      const name = (typeof action === "string" && action.trim()) || "…";
+      const { first, last } = shown(objectArguments(entry[batch.arguments]));
+      lines.push(name, ...first);
+      later.push(...last.map((line) => `${name} ${line}`));
     }
+    lines.push(...later);
   } else {
-    pushArgs(args);
+    const { first, last } = shown(args);
+    lines.push(...first, ...last);
   }
   if (lines.length === 0) return undefined;
   return lines.join("\n");
+}
+
+/** Longer text goes below the short values, so recipients and places always come first. */
+const SHORT_ARGUMENT_LENGTH = 200;
+
+/**
+ * Every argument as a `key: value` line, since any one may name who or where a call reaches.
+ * `first` holds short values in their order, then long lists and objects; `last` holds long text
+ * such as a message body, which the card's length limit cuts first.
+ */
+function argumentLines(
+  values: Record<string, unknown>,
+  keys = Object.keys(values),
+): { first: string[]; last: string[] } {
+  const short: string[] = [];
+  const structured: string[] = [];
+  const last: string[] = [];
+  for (const key of keys) {
+    const value = values[key];
+    const text = argumentText(value);
+    if (!text) continue;
+    const line = `${key}: ${text}`;
+    if (text.length <= SHORT_ARGUMENT_LENGTH) short.push(line);
+    else (typeof value === "string" ? last : structured).push(line);
+  }
+  return { first: [...short, ...structured], last };
+}
+
+function argumentText(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value) && value.every((item) => item === null || typeof item !== "object"))
+    return value.map(String).join(", ");
+  return JSON.stringify(value) ?? "";
+}
+
+/** Redacts every string inside a value, since JSON escaping could hide a secret from the card. */
+function redactLeaves(value: unknown, secrets: string[]): unknown {
+  if (typeof value === "string") return redactSecrets(value, secrets);
+  if (Array.isArray(value)) return value.map((item) => redactLeaves(item, secrets));
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, redactLeaves(item, secrets)]),
+    );
+  return value;
 }
 
 /** A batch entry's arguments, as an object or a JSON string. */

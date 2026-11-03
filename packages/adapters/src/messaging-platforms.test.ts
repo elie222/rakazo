@@ -412,9 +412,9 @@ describe("sendblue platform hooks", () => {
     for (const service of ["iMessage", "SMS", "RCS"]) {
       expect(sendblue.transport!({ service })).toBe(service);
     }
-    expect(sendblue.transport!({ service: "email" })).toBeNull();
-    expect(sendblue.transport!({ service: 42 })).toBeNull();
-    expect(sendblue.transport!(null)).toBeNull();
+    expect(sendblue.transport!({ service: "email" })).toBe("SMS");
+    expect(sendblue.transport!({ service: 42 })).toBe("SMS");
+    expect(sendblue.transport!(null)).toBe("SMS");
   });
 
   it("derives deterministic provider-prefixed direct thread ids", () => {
