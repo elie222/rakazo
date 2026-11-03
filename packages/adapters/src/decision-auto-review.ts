@@ -13,15 +13,11 @@ import {
   AUTO_REVIEW_PASS,
   autoReviewMinConfidence,
   autoReviewTimeoutMs,
-  MAX_OWNER_WORDS_CHARS,
-  reviewArgsTooLong,
+  reviewTooLong,
   sanitizeAutoReviewReason,
   TOO_LONG_TO_REVIEW,
-  truncateReviewText,
 } from "./auto-review.js";
 
-const MAX_TASK_CHARS = 400;
-const MAX_BOT_CHARS = 240;
 export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v2";
 export class DecisionAutoReviewProvider implements AutoReviewProvider {
   constructor(
@@ -43,7 +39,7 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
   }
   async review(request: AutoReviewRequest, context: AdapterContext): Promise<AutoReviewResult> {
     const modelLabel = `${this.options.providerId}/${this.options.model}`;
-    if (reviewArgsTooLong(request)) {
+    if (reviewTooLong(request)) {
       return { decision: "ask", model: modelLabel, reason: TOO_LONG_TO_REVIEW };
     }
     try {
@@ -55,11 +51,8 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
             toolName: request.toolName,
             connectorKind: request.connectorKind,
             args: request.args,
-            userTask: truncateReviewText(
-              request.userTask,
-              request.newSite ? MAX_OWNER_WORDS_CHARS : MAX_TASK_CHARS,
-            ),
-            botDescription: truncateReviewText(request.botDescription, MAX_BOT_CHARS),
+            userTask: request.userTask.trim(),
+            botDescription: request.botDescription.trim(),
             matchingRules: request.matchingRules.map((rule) => ({
               effect: rule.effect,
               matchKind: rule.matchKind,

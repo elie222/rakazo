@@ -88,6 +88,39 @@ describe("JevAutoReviewProvider", () => {
     expect(calls).toBe(0);
   });
 
+  it.each(["userTask", "botDescription"] as const)(
+    "asks without calling the checker when the %s is too long to show in full",
+    async (field) => {
+      let calls = 0;
+      const provider = new JevAutoReviewProvider({
+        apiKey: "ts-key",
+        fetch: async () => {
+          calls += 1;
+          throw new Error("must not call");
+        },
+      });
+      const result = await provider.review({ ...request, [field]: "x".repeat(10_000) }, context);
+      expect(result.decision).toBe("ask");
+      expect(calls).toBe(0);
+    },
+  );
+
+  it("sends a long owner task whole", async () => {
+    let sent = "";
+    const provider = new JevAutoReviewProvider({
+      apiKey: "ts-key",
+      fetch: async (_url, init) => {
+        sent = String(init?.body);
+        return jsonResponse({
+          answers: { decision: { type: "choice", choice: "pass", confidence: 0.9 } },
+        });
+      },
+    });
+    const userTask = `Reply to the thread. ${"Keep it short. ".repeat(100)}Never cc anyone.`;
+    await provider.review({ ...request, userTask }, context);
+    expect((JSON.parse(sent) as { state: { userTask: string } }).state.userTask).toBe(userTask);
+  });
+
   it("sends a new site's whole URL and asks about the site", async () => {
     let sent = "";
     const provider = new JevAutoReviewProvider({
