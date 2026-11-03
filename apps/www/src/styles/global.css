@@ -2607,6 +2607,26 @@ button.product-demo__dock-icon {
   color: var(--blue);
 }
 
+.privacy-copy .platform-list {
+  display: grid;
+  gap: 0;
+  margin: 32px 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+
+.platform-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 18px;
+}
+
 .brand-kit__logos {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -3368,6 +3388,10 @@ button.product-demo__dock-icon {
   .button--small,
   .setup-copy {
     width: 100%;
+  }
+
+  .platform-list .button {
+    width: auto;
   }
 
   .card-grid-3,
