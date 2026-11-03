@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import { PageIcon } from "@rakazo/chat-ui/web";
+import { PAGE_TITLE_MAX_LENGTH } from "@rakazo/contracts";
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
 import { Pencil, X } from "lucide-react";
 import type { ReactNode } from "react";
@@ -62,7 +63,7 @@ export function PageView({
     return () => window.clearTimeout(timer);
   }, [waiting, attempt]);
   const onDrawn = useCallback(() => setDrawn(true), []);
-  const control = `grid place-items-center rounded-full border border-foreground/[0.06] text-foreground outline-none hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-ring ${compact ? "size-11" : "size-[35px]"}`;
+  const control = `grid place-items-center rounded-full p-0 border border-foreground/[0.06] text-foreground outline-none hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-ring ${compact ? "size-11" : "size-[35px]"}`;
   return (
     <Dialog
       open={open}
@@ -207,7 +208,7 @@ function TitlePill({ title, onRename }: { title: string; onRename?: (title: stri
           autoFocus
           aria-label={t`Page title`}
           value={draft}
-          maxLength={200}
+          maxLength={PAGE_TITLE_MAX_LENGTH}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commit}
           onKeyDown={(event) => {

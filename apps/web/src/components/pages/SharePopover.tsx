@@ -2,6 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { PageVisibility } from "@rakazo/contracts";
 import { accountDisplay } from "@rakazo/core";
 import {
+  Button,
   Popover,
   PopoverContent,
   PopoverTitle,
@@ -15,7 +16,7 @@ import { useCopyText } from "../../lib/copy-text";
 
 const TILE = "grid size-8 shrink-0 place-items-center rounded-[8px] bg-foreground/[0.04]";
 const LINK_PILL =
-  "flex h-8 min-w-0 flex-1 items-center justify-center gap-2 rounded-full ring-[0.5px] ring-border px-3 text-[14px] leading-5 text-foreground outline-none hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-ring";
+  "flex h-8 min-w-0 flex-1 items-center justify-center gap-2 rounded-full ring-[0.5px] ring-border px-3 text-[14px] leading-5 font-normal text-foreground outline-none hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-ring";
 
 /** Two overlapping rounded squares: the Copy link glyph. */
 function CopyGlyph() {
@@ -170,8 +171,8 @@ export function SharePopover({
         {shared && shareUrl !== null ? (
           <div className="mt-0.5 flex flex-col gap-2 px-4">
             <div className="flex gap-2">
-              <button
-                type="button"
+              <Button
+                variant="ghost"
                 className={`${LINK_PILL} ${copied ? "text-success" : ""}`}
                 onClick={() => copy(shareUrl)}
               >
@@ -179,7 +180,7 @@ export function SharePopover({
                 <span className="truncate">
                   {copied ? <Trans>Copied</Trans> : <Trans>Copy link</Trans>}
                 </span>
-              </button>
+              </Button>
               <a href={shareUrl} target="_blank" rel="noopener noreferrer" className={LINK_PILL}>
                 <ArrowUpRight className="size-4" strokeWidth={1.6} />
                 <span className="truncate">

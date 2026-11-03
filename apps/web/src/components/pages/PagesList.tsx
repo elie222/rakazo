@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { PageIcon } from "@rakazo/chat-ui/web";
 import type { PageSummary } from "@rakazo/contracts";
+import { PAGE_TITLE_MAX_LENGTH } from "@rakazo/contracts";
 import { uniquePages } from "@rakazo/core";
 import {
   Button,
@@ -123,7 +124,7 @@ function OwnerPages({ botId, groupId }: { botId?: string; groupId?: string }) {
             autoFocus
             aria-label={t`Page title`}
             value={renaming.draft}
-            maxLength={200}
+            maxLength={PAGE_TITLE_MAX_LENGTH}
             onChange={(event) => setRenaming({ id: page.id, draft: event.target.value })}
             onFocus={(event) => event.currentTarget.select()}
             onBlur={commitRename}

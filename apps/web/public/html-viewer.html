@@ -4,7 +4,8 @@
 // the nested srcdoc and rejects navigations the sandbox and inner CSP do not block.
 // Each document the shell shows gets a fresh key. Only the guard placed first in the document knows
 // it: the guard removes its own script before the page's run and keeps the key in a closure, so a
-// page can report no click or key it did not get from the person. Every such gesture lets the page
+// page can report no click or key it did not get from the person. It reads a held key's repeat
+// through what it captured first, which the page cannot redefine. Every such gesture lets the page
 // ask the app for one action, right after it.
 let key = "";
 let gesture = 0;
@@ -12,7 +13,7 @@ let gestureAt = 0;
 const GESTURE_WINDOW_MS = 1000;
 function guard() {
   key = Array.from(crypto.getRandomValues(new Uint32Array(4)), (n) => n.toString(36)).join("");
-  return `<script>(() => { const up = parent, key = "${key}"; document.currentScript.remove(); const tell = (event) => { if (event.isTrusted && !event.repeat) up.postMessage({ type: "rakazo-page:gesture", key }, "*"); }; addEventListener("pointerup", tell, true); addEventListener("keydown", tell, true); })();</${"script"}>`;
+  return `<script>(() => { const up = parent, key = "${key}"; document.currentScript.remove(); const apply = Reflect.apply, repeat = Object.getOwnPropertyDescriptor(KeyboardEvent.prototype, "repeat").get; const tell = () => up.postMessage({ type: "rakazo-page:gesture", key }, "*"); addEventListener("pointerup", (event) => { if (event.isTrusted) tell(); }, true); addEventListener("keydown", (event) => { if (event.isTrusted && !apply(repeat, event, [])) tell(); }, true); })();</${"script"}>`;
 }
 addEventListener("message", (event) => {
   const preview = document.getElementById("preview");

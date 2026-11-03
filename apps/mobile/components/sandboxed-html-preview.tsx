@@ -53,6 +53,8 @@ export function SandboxedHtmlPreview({
         allowFileAccessFromFileURLs={false}
         allowUniversalAccessFromFileURLs={false}
         setSupportMultipleWindows={false}
+        // A long-pressed link's preview would load it outside the navigation check below.
+        allowsLinkPreview={false}
         thirdPartyCookiesEnabled={false}
         sharedCookiesEnabled={false}
         mixedContentMode="never"

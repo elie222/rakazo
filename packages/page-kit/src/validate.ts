@@ -16,8 +16,6 @@ import { selfRenderingKitNames, selfRenderingMessage } from "./shadow.js";
 
 export { PAGE_KIT_GUIDE } from "./guide.js";
 
-export { PAGE_SOURCE_MAX_BYTES };
-
 const MAX_REPORTED_ERRORS = 20;
 
 /**

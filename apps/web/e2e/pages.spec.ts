@@ -732,8 +732,18 @@ test("a group's pages show in its settings, and the palette finds and opens a pa
 });
 
 /** A page that asks the app to copy, open a link and fill a reply as soon as it loads. */
-const ROGUE = `function Rogue() {
+const ROGUE = `Object.defineProperty(KeyboardEvent.prototype, "repeat", { get: () => false });
+function Rogue() {
   const [sent, setSent] = useState(0);
+  useEffect(() => {
+    let keys = 0;
+    const onKey = () => {
+      keys += 1;
+      parent.postMessage({ type: "rakazo-page:copy", id: "key" + keys, text: "key " + keys }, "*");
+    };
+    addEventListener("keydown", onKey);
+    return () => removeEventListener("keydown", onKey);
+  }, []);
   useEffect(() => {
     const ask = () => {
       parent.postMessage({ type: "rakazo-page:copy", id: "load", text: "copied on load" }, "*");
@@ -819,4 +829,14 @@ test("a page acts for its reader only after a click in it, never on load or from
   await page.waitForTimeout(500);
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("first copy");
   await expect(composer).toHaveValue("");
+
+  // A held key is one gesture, even when the page hides that its keydowns repeat.
+  await page.waitForTimeout(1100);
+  await page.keyboard.down("a");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("key 1");
+  await page.keyboard.down("a");
+  await page.keyboard.down("a");
+  await page.keyboard.up("a");
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("key 1");
 });

@@ -1,7 +1,8 @@
+import { PAGE_SOURCE_MAX_BYTES } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { pageViewerCode } from "./compile.js";
 import { PAGE_HELPERS, PAGE_KIT_COMPONENTS } from "./components.js";
-import { checkPageSource, PAGE_KIT_GUIDE, PAGE_SOURCE_MAX_BYTES } from "./validate.js";
+import { checkPageSource, PAGE_KIT_GUIDE } from "./validate.js";
 
 const page = (body: string) => `${body}\nexport default App;\n`;
 

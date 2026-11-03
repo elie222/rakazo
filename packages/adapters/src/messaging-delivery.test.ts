@@ -295,6 +295,9 @@ describe("deliverMessagingOutbound", () => {
     );
   });
 
+  const sentBodies = (deps: ReturnType<typeof createDeps>) =>
+    (deps.sendToThread.mock.calls as unknown as [{ body: string }][]).map(([input]) => input.body);
+
   it("sends a page card's title when the reply does not name the page, and only once when it does", async () => {
     const card = {
       id: "m-1",
@@ -304,7 +307,7 @@ describe("deliverMessagingOutbound", () => {
       messages: [card, { id: "m-2", blocks: [{ kind: "text", text: "Done." }] }],
     });
     await deliverMessagingOutbound(silent, { runId: "run-1" }, context);
-    expect(silent.sendToThread.mock.calls.map(([input]) => input.body)).toEqual(["Plan", "Done."]);
+    expect(sentBodies(silent)).toEqual(["Plan", "Done."]);
 
     const named = createDeps({
       messages: [
@@ -313,7 +316,7 @@ describe("deliverMessagingOutbound", () => {
       ],
     });
     await deliverMessagingOutbound(named, { runId: "run-1" }, context);
-    expect(named.sendToThread.mock.calls.map(([input]) => input.body)).toEqual(["Here is Plan."]);
+    expect(sentBodies(named)).toEqual(["Here is Plan."]);
   });
 
   it("resolves the DM thread once and caches it when the identity has none", async () => {

@@ -690,6 +690,71 @@ describePages("pages", () => {
     expect((await read(hosts.token)).status).toBe(404);
   });
 
+  it("keeps a page from a co-member of its Space and from its owner's other Space", async () => {
+    const ownerCookie = await signup(app, `pages-cospace-${stamp}@rakazo.test`, "Space Owner");
+    const owner = await rpc<{ userId: string; spaceId: string }>(app, ownerCookie, "me");
+    const space = await db().space.findUniqueOrThrow({
+      where: { id: owner.spaceId },
+      select: { organizationId: true },
+    });
+    const { id: pageId } = await db().page.create({
+      data: {
+        spaceId: owner.spaceId,
+        userId: owner.userId,
+        title: "Owner's plan",
+        versions: {
+          create: {
+            version: 1,
+            title: "Owner's plan",
+            source: page("Plan"),
+            code: pageViewerCode(page("Plan")),
+          },
+        },
+      },
+    });
+    const memberCookie = await signup(app, `pages-cospace-member-${stamp}@rakazo.test`, "Member");
+    const member = await rpc<{ userId: string }>(app, memberCookie, "me");
+    await db().member.deleteMany({ where: { userId: member.userId } });
+    await db().member.create({
+      data: {
+        id: `pages-cospace-org-${stamp}`,
+        organizationId: space.organizationId,
+        userId: member.userId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+    // Joining the organization adds the member to its Space.
+    expect(
+      await db().spaceMember.count({ where: { spaceId: owner.spaceId, userId: member.userId } }),
+    ).toBe(1);
+    const other = await rpc<{ id: string }>(app, ownerCookie, "spaces/create", { name: "Other" });
+    const attempts = [
+      ["pages/get", { pageId }],
+      ["pages/rename", { pageId, title: "Taken" }],
+      ["pages/setVisibility", { pageId, visibility: "link" }],
+      ["pages/pin", { pageId, pinned: true }],
+      ["pages/remove", { pageId }],
+    ] as const;
+    for (const [cookie, spaceId] of [
+      [memberCookie, owner.spaceId],
+      [ownerCookie, other.id],
+    ] as const) {
+      expect(await rpc(app, cookie, "pages/list", {}, spaceId)).toEqual({
+        items: [],
+        nextCursor: null,
+      });
+      for (const [proc, body] of attempts) {
+        expect((await raw(app, cookie, proc, body, spaceId)).status).toBe(404);
+      }
+    }
+    expect(await db().page.findUniqueOrThrow({ where: { id: pageId } })).toMatchObject({
+      title: "Owner's plan",
+      visibility: "private",
+      pinnedAt: null,
+    });
+  });
+
   it("lets only one of two saves built on the same version through", async () => {
     const cookie = await signup(app, `pages-save-race-${stamp}@rakazo.test`, "Save Racer");
     const first = await createBot(app, cookie, "First");
