@@ -11,6 +11,7 @@ import {
   anySignal,
   createRefreshCoalescer,
   isRunTerminalEvent,
+  isRunWorking,
   runThreadSubscription,
 } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
@@ -27,6 +28,7 @@ import type { SpaceQueries } from "../../lib/query";
 import { queryClient } from "../../lib/query";
 import type { createSpaceRpc } from "../../lib/rpc";
 import {
+  activeThreadRuns,
   isComputerStatusEvent,
   isThreadSnapshotEvent,
   prependThreadMessagePage,
@@ -312,7 +314,14 @@ export function useThreadSync({
       ? undefined
       : (queryClient.getQueryData(threadKey) ??
         (seed?.thread?.botId === active.id ? seed.thread : undefined));
-    if (cachedThread && snapshotRef.current?.botId !== active.id) commitSnapshot(cachedThread);
+    if (
+      cachedThread &&
+      snapshotRef.current?.botId !== active.id &&
+      (active.threadStatus === undefined ||
+        activeThreadRuns(cachedThread).some((run) => isRunWorking(run.status)) ===
+          isRunWorking(active.threadStatus))
+    )
+      commitSnapshot(cachedThread);
     const sidebarRefresh = createRefreshCoalescer(() => refreshBots());
     const snapshotRefresh = createRefreshCoalescer(() => refreshThread(active.id));
     const abort = new AbortController();

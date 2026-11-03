@@ -332,6 +332,7 @@ async function memberSpaceNavigation(
           unread: bot.unread,
           preview: bot.preview,
           status: bot.status,
+          threadStatus: bot.threadStatus,
           runErrorId: bot.runErrorId,
           updatedAt: bot.updatedAt,
         })),

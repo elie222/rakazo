@@ -34,6 +34,7 @@ import {
   activeRunSelection,
   previewFromBlocks,
   primaryActiveRun,
+  threadRunStatus,
   withLatestBotRuns,
 } from "./thread-listing.js";
 import { withTransactionRetry } from "./transaction-retry.js";
@@ -232,6 +233,7 @@ export function createRepos(
         parentBotId: bot.parentBotId,
         preview: previewFromBlocks(bot.thread.messages[0]?.blocks),
         status: activeRun?.status ?? "idle",
+        threadStatus: threadRunStatus(bot.runs, bot.thread.id),
         runErrorId: rosterRunErrorId(bot.thread.runs[0], activeRun),
         updatedAt: rosterUpdatedAt(bot.thread.messages[0], bot.updatedAt).toISOString(),
       };
@@ -482,7 +484,7 @@ export function createRepos(
             if (messages.length === 0) break;
           }
           const activeRun = primaryActiveRun(bot.runs);
-          return mapBot(
+          const mapped = mapBot(
             bot,
             preview,
             activeRun?.status ?? "idle",
@@ -494,6 +496,7 @@ export function createRepos(
                 : [],
             ),
           );
+          return { ...mapped, threadStatus: threadRunStatus(bot.runs, mapped.threadId) };
         }),
       );
     },
