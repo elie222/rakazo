@@ -168,7 +168,16 @@ async function runWithModel(
     run: {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => run),
-      findFirst: vi.fn(async () => ({ bot: { notifyOnFinish: true }, thread: { groupId: null } })),
+      findFirst: vi.fn(async () => ({
+        bot: {
+          id: run.botId,
+          name: "Boris",
+          color: "blue",
+          avatarSet: "default",
+          notifyOnFinish: true,
+        },
+        thread: { groupId: null },
+      })),
       updateMany: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         Object.assign(run, data);
         return { count: 1 };

@@ -81,6 +81,7 @@
       "./plugins/with-worklets-headers",
       "./plugins/with-scene-lifecycle",
       "./plugins/with-lan-cleartext",
+      "./plugins/with-agent-notifications",
       "./plugins/with-app-intents"
     ],
     "locales": {
@@ -101,10 +102,12 @@
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         },
-        "UIBackgroundModes": ["voip", "audio", "remote-notification"]
+        "UIBackgroundModes": ["voip", "audio", "remote-notification"],
+        "NSUserActivityTypes": ["INSendMessageIntent"]
       },
       "entitlements": {
-        "com.apple.developer.usernotifications.time-sensitive": true
+        "com.apple.developer.usernotifications.time-sensitive": true,
+        "com.apple.developer.usernotifications.communication": true
       }
     },
     "android": {
@@ -133,6 +136,13 @@
                 {
                   "targetName": "RakazoWidgets",
                   "bundleIdentifier": "com.rakazo.app.widgets"
+                },
+                {
+                  "targetName": "AgentNotifications",
+                  "bundleIdentifier": "com.rakazo.app.notifications",
+                  "entitlements": {
+                    "com.apple.developer.usernotifications.communication": true
+                  }
                 }
               ]
             }

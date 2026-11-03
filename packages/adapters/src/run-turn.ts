@@ -869,6 +869,7 @@ export async function completeRun(ctx: RunContext) {
       body: notifyBody,
       botId: bot.id,
       threadId: thread.id,
+      runId: run.id,
     });
   }
   // Last, and never fatal: the run is already finalized, so a failure here must not reach
