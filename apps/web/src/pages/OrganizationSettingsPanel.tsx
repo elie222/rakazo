@@ -34,7 +34,9 @@ export function OrganizationSettingsPanel({
     <OrganizationSettings
       key={organization.id}
       organization={organization}
-      canDelete={organization.canManage && organizations.length > 1}
+      canDelete={
+        organization.canManage && organizations.filter((each) => each.canManage).length > 1
+      }
       onBusyChange={onBusyChange}
     />
   );

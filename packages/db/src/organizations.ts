@@ -135,7 +135,7 @@ export async function renameOrganization(
 export async function claimOrganizationForDeletion(
   prisma: PrismaClient,
   input: { userId: string; organizationId: string },
-): Promise<{ claimId: string; spaceIds: string[] }> {
+): Promise<{ claimId: string; spaceIds: string[]; fresh: boolean }> {
   const claimId = `organization-deletion:${input.organizationId}`;
   return withTransactionRetry(() =>
     prisma.$transaction(
@@ -164,11 +164,14 @@ export async function claimOrganizationForDeletion(
         await lockOrganizationSpaces(tx, input.organizationId);
         const spaces = await tx.space.findMany({
           where: { organizationId: input.organizationId },
-          select: { id: true },
+          select: { id: true, deletionClaimId: true },
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         });
+        // Only the attempt that placed the claim may release it; a retry or a concurrent attempt
+        // joins it instead.
+        const fresh = spaces.every((space) => space.deletionClaimId !== claimId);
         for (const { id } of spaces) await claimSpaceForDeletion(tx, id, claimId);
-        return { claimId, spaceIds: spaces.map((space) => space.id) };
+        return { claimId, spaceIds: spaces.map((space) => space.id), fresh };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),

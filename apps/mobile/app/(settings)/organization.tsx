@@ -43,7 +43,9 @@ export default function OrganizationSettings() {
   }
   const current = organization;
   const name = draft ?? current.name;
-  const canDelete = current.canManage && (query.data?.organizations.length ?? 0) > 1;
+  const canDelete =
+    current.canManage &&
+    (query.data?.organizations.filter((each) => each.canManage).length ?? 0) > 1;
 
   async function rename() {
     const next = name.trim();

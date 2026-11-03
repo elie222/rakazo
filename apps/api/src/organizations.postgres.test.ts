@@ -17,6 +17,7 @@ import {
   billingAccountForOrganization,
   bootstrapUserSpace,
   ContentKeyRing,
+  claimOrganizationForDeletion,
   createDb,
   extendByokFreePeriod,
   IsolationError,
@@ -365,6 +366,26 @@ describePostgres("organizations (PostgreSQL)", () => {
     expect(await system.space.findUnique({ where: { id: work.id } })).toMatchObject({
       deletionClaimId: null,
       deletingAt: null,
+    });
+  });
+
+  it("leaves another attempt's claim in place when a joining attempt's billing fails", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    await subscribe(asUser(ada, work.id));
+    const first = await runAsSystem("an earlier deletion attempt", () =>
+      claimOrganizationForDeletion(system, { userId: ada.userId, organizationId: work.id }),
+    );
+    vi.spyOn(emulator, "cancelCustomerSubscriptions").mockRejectedValueOnce(
+      new Error("billing unavailable"),
+    );
+
+    await expect(client(ada).organizations.remove({ organizationId: work.id })).rejects.toThrow(
+      "billing unavailable",
+    );
+
+    expect(await system.space.findUnique({ where: { id: work.id } })).toMatchObject({
+      deletionClaimId: first.claimId,
     });
   });
 

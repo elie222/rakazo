@@ -71,7 +71,7 @@ export async function deleteOrganization(
   userId: string,
   organizationId: string,
 ): Promise<void> {
-  const { claimId, spaceIds } = await claimOrganizationForDeletion(deps.prisma, {
+  const { claimId, spaceIds, fresh } = await claimOrganizationForDeletion(deps.prisma, {
     userId,
     organizationId,
   });
@@ -79,7 +79,7 @@ export async function deleteOrganization(
     await keepOrganizationTrialUse(deps.prisma, organizationId);
     await deps.billing?.cancelForDeletedOrganization(organizationId);
   } catch (error) {
-    await releaseOrganizationDeletionClaim(deps.prisma, { organizationId, claimId });
+    if (fresh) await releaseOrganizationDeletionClaim(deps.prisma, { organizationId, claimId });
     throw error;
   }
   const inOrganization = { spaceId: { in: spaceIds } };
