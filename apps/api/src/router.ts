@@ -1,5 +1,6 @@
 import type {
   AgentHomeStore,
+  AgentRuntime,
   ArtifactStore,
   JobPublisher,
   MemoryStore,
@@ -69,6 +70,7 @@ export interface RouterDeps {
   auth: Auth;
   jobs: JobPublisher;
   sandbox: SandboxProvider;
+  runtime: AgentRuntime;
   memory: MemoryStore;
   memoryProviders: MemoryProviderResolver;
   home: AgentHomeStore;

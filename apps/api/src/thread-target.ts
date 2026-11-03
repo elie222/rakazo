@@ -1464,10 +1464,7 @@ export async function deliverRunCancellations(
         ]);
       } catch (error) {
         failedRunIds.push(runId);
-        getLogger().error(
-          `runtime cancellation delivery failed for run ${runId}`,
-          error instanceof Error ? error.message : "unknown error",
-        );
+        getLogger().error(`runtime cancellation delivery failed for run ${runId}`, error);
       } finally {
         clearTimeout(timer);
       }
