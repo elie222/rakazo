@@ -528,6 +528,8 @@ export const RoutineSchema = z.object({
   watchState: RoutineWatchStateSchema.nullable(),
   lastRunAt: z.string().nullable(),
   nextRunAt: z.string().nullable(),
+  /** Computed by the server; absent on older servers. Not a worker-health diagnosis. */
+  scheduleDelayed: z.boolean().optional(),
   createdAt: z.string(),
   /** False when another Space member created it; only its creator can change it. */
   editable: z.boolean().optional(),
@@ -1763,6 +1765,39 @@ export const DeploymentSettingsSchema = z.object({
   canChooseHostComputer: z.boolean(),
   sandboxProvider: z.string(),
 });
+
+/** Public metadata only; adapter validation and constructor options stay server-side. */
+export const ComputerProviderFieldSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  kind: z.enum(["text", "secret", "url", "select"]),
+  required: z.boolean(),
+  options: z.array(z.object({ value: z.string(), label: z.string() })).optional(),
+  validation: z.enum(["public-https"]).optional(),
+  /** A saved credential must be re-entered when its destination changes. */
+  destination: z.string().optional(),
+});
+export type ComputerProviderField = z.infer<typeof ComputerProviderFieldSchema>;
+export const ComputerProviderDescriptorSchema = z.object({
+  id: z.string(),
+  displayName: z.string(),
+  fields: z.array(ComputerProviderFieldSchema),
+  capabilities: z.object({ perAccount: z.boolean() }),
+});
+export type ComputerProviderDescriptor = z.infer<typeof ComputerProviderDescriptorSchema>;
+export const ComputerProviderSettingsSchema = z.object({
+  provider: z.string(),
+  defaultProvider: z.string(),
+  providers: z.array(ComputerProviderDescriptorSchema),
+  values: z.record(z.string(), z.string()),
+  savedSecrets: z.record(z.string(), z.boolean()),
+});
+export type ComputerProviderSettings = z.infer<typeof ComputerProviderSettingsSchema>;
+export const ComputerProviderUpdateSchema = z.object({
+  provider: z.string().trim().min(1).max(64),
+  values: z.record(z.string().max(64), z.string().trim().max(4096)).default({}),
+});
+export type ComputerProviderUpdate = z.infer<typeof ComputerProviderUpdateSchema>;
 
 export const ServerUpdateSourceSchema = z.object({
   repoUrl: z.string().max(400),

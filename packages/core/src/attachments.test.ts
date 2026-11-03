@@ -117,8 +117,11 @@ describe("attachment helpers", () => {
           name: "brief.pdf",
           size: 99,
         },
+        { kind: "page", pageId: "p1", version: 3, title: "Signups" },
       ]),
-    ).toBe("hello\n[image: shot.png]\n[file: brief.pdf (application/pdf, 99 bytes)]");
+    ).toBe(
+      "hello\n[image: shot.png]\n[file: brief.pdf (application/pdf, 99 bytes)]\n[page: Signups (pageId p1, version 3)]",
+    );
   });
 
   it("appends a voice note transcript after the file note", () => {

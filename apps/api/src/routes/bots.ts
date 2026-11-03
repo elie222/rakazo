@@ -6,6 +6,7 @@ import {
   archiveBot,
   checkpointAndStopComputer,
   forgetBotSecret,
+  forgetPageShareSecrets,
   hasActiveComputerControl,
   listBotSecretMetadata,
   normalizeSecretDestination,
@@ -668,6 +669,7 @@ export function botsRoutes(ctx: RouterContext) {
           if (result.status === "rejected")
             getLogger().error("group artifact cleanup", result.reason);
         }
+        await forgetPageShareSecrets(deps.secrets, removed.pageShareSecrets);
         return { ok: true as const };
       }),
     },

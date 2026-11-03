@@ -203,6 +203,20 @@ describeWithDatabase("structured @ mention targets", () => {
       expect(await prisma.run.count({ where: { routineId: digest.id } })).toBe(2);
     });
 
+    it("treats stop sent with a routine as a message, so the routine still runs", async () => {
+      const { cookie, bot, digest } = await owner("Stop");
+      const sent = await rpc<Receipt>(app, cookie, "threads/sendWithRoutines", {
+        botId: bot.id,
+        clientNonce: `send-stop-${stamp}`,
+        text: "stop",
+        routineIds: [digest.id],
+      });
+      const [routineRun] = sent.routineRunIds;
+      expect((await prisma.run.findUniqueOrThrow({ where: { id: routineRun! } })).status).not.toBe(
+        "cancelled",
+      );
+    });
+
     it.each([
       ["routines-only", {}],
       ["with-text", { text: "and the notes" }],

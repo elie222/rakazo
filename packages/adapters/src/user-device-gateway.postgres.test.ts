@@ -61,9 +61,23 @@ describePostgres("user devices (PostgreSQL)", () => {
   afterAll(async () => close?.());
 
   it("routes a user's request through the connection row and forgets revoked devices", async () => {
+    const session = await prisma.session.create({
+      data: {
+        id: `${suffix}-route-session`,
+        token: `${suffix}-route-session-token`,
+        userId,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
     const token = createUserDeviceToken();
     const device = await prisma.userDevice.create({
-      data: { userId, name: "Laptop", platform: "linux", tokenHash: hashUserDeviceToken(token) },
+      data: {
+        userId,
+        name: "Laptop",
+        platform: "linux",
+        tokenHash: hashUserDeviceToken(token),
+        sessionId: session.id,
+      },
     });
     const hub = new UserDeviceHub({ prisma: raw, address: "http://127.0.0.1:1" });
     hubs.push(hub);

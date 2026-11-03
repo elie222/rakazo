@@ -250,7 +250,7 @@ export async function provisionComputer(
   }
 
   // A computer that bills starts only while its organization has allowance left this period.
-  const startKind = (await deps.sandbox.provisionKind?.()) ?? existing.kind;
+  const startKind = (await deps.sandbox.provisionKind?.(existing.homeKey)) ?? existing.kind;
   if (await sandboxAllowanceUsedUp(deps, { spaceId: existing.spaceId, kind: startKind }))
     throw new SandboxAllowanceUsedError();
 
@@ -383,7 +383,9 @@ export async function provisionComputer(
     await cache?.forgetMissingCache(existing.homeKey);
     const hydrated =
       cache !== undefined &&
-      mountsServerHome((await deps.sandbox.provisionKind?.()) ?? deps.sandbox.describe().id);
+      mountsServerHome(
+        (await deps.sandbox.provisionKind?.(existing.homeKey)) ?? deps.sandbox.describe().id,
+      );
     if (hydrated)
       await cache.hydrate(existing.homeKey, {
         keepLiveCache: reconnecting && existing.kind === "docker",

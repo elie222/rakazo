@@ -74,6 +74,27 @@ describe("bundled desktop renderer", () => {
     ).toBe("public, max-age=31536000, immutable");
   });
 
+  it("permits opaque ancestors only for the exact embedded runtime", () => {
+    const runtimePath = "/computer-screen/sdk/ASP/container.html";
+    const headers = (pathname: string) =>
+      bundledRendererHeaders(path.join(root, pathname), `${origin}${pathname}`);
+    const runtime = headers(runtimePath);
+    expect(runtime.get("content-security-policy")).toContain(
+      "sandbox allow-scripts allow-pointer-lock",
+    );
+    expect(runtime.get("content-security-policy")).not.toContain("frame-ancestors");
+    expect(runtime.has("x-frame-options")).toBe(false);
+    for (const pathname of [
+      "/computer-screen/screen.html",
+      "/computer-screen/other.html",
+      `${runtimePath}/`,
+      `${runtimePath}.extra`,
+    ]) {
+      expect(headers(pathname).get("content-security-policy")).toContain("frame-ancestors 'self'");
+      expect(headers(pathname).get("x-frame-options")).toBe("SAMEORIGIN");
+    }
+  });
+
   it("treats filesystem path misses as renderer fallbacks", () => {
     for (const code of ["ENOENT", "EISDIR", "ENOTDIR"]) {
       expect(isRendererAssetMiss(Object.assign(new Error(code), { code }))).toBe(true);

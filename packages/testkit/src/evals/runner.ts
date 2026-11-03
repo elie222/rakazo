@@ -14,7 +14,7 @@ import { discardBotIntroRun } from "../discard-bot-intro.js";
 import { sessionCookieHeader } from "../index.js";
 import { asSystem } from "../system-db.js";
 import type { EvalCase, Evidence, SettingsSnapshot } from "./cases.js";
-import { EMPTY_SETTINGS } from "./cases.js";
+import { EMPTY_SETTINGS, wakesRoutines } from "./cases.js";
 import type { ClarificationBlock } from "./clarification.js";
 import { expectedClarificationText } from "./clarification.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "./history-observer.js";
@@ -162,8 +162,11 @@ export async function runTrial(
     const prisma = asSystem(handles.prisma);
     db = prisma;
     realtime.attach(prisma);
-    if (scenario.routine && handles.notifications !== notifications)
-      throw new EvalFailure("harness", "Silence eval requires the capturing notification provider");
+    if (wakesRoutines(scenario) && handles.notifications !== notifications)
+      throw new EvalFailure(
+        "harness",
+        "Routine wake evals require the capturing notification provider",
+      );
     const trial = handles;
     const { app } = trial;
     const setupActor = async () => {
@@ -190,7 +193,7 @@ export async function runTrial(
         title: "",
         description: "",
         instructions: "",
-        notifyOnFinish: Boolean(scenario.routine),
+        notifyOnFinish: wakesRoutines(scenario),
       });
       botId = bot.id;
       const persistedBot = await prisma.bot.findUniqueOrThrow({
@@ -454,9 +457,11 @@ export async function runTrial(
         clearedToolCount = seenTools.size - (await countCurrentTools());
         continue;
       }
-      if (scenario.routine) await rpc(app, cookie, "threads/markRead", { botId });
+      if (scenario.routine || "wakeRoutine" in step)
+        await rpc(app, cookie, "threads/markRead", { botId });
       const notificationOffset = notifications.sent.length;
       let runId: string;
+      let scheduled: RoutineEvidence["scheduled"];
       if ("ask" in step) {
         runId = (
           await rpc<{ runId: string }>(
@@ -522,6 +527,8 @@ export async function runTrial(
         );
       } else {
         const routines = await prisma.routine.findMany({ where: { botId } });
+        // A follow-up the bot cancelled once its loop closed has nothing left to wake.
+        if (step.ifScheduled && !routines.some((routine) => routine.active)) continue;
         if (routines.length !== 1)
           throw new EvalFailure("agent", "Expected exactly one authored routine");
         const routine = routines[0]!;
@@ -543,6 +550,11 @@ export async function runTrial(
             },
             ...services.listGithubReleases(),
           ]);
+        scheduled = {
+          at: routine.nextRunAt?.toISOString() ?? null,
+          timezone: routine.timezone,
+          createdAt: routine.createdAt.toISOString(),
+        };
         const scheduledFor = new Date(Date.now() - 1_000);
         await prisma.routine.update({
           where: { id: routine.id },
@@ -656,7 +668,7 @@ export async function runTrial(
       }
       // Completion is committed before notification delivery and before the reply returns to a
       // peer. Drain the executor before observing.
-      if ((scenario.routine || "fromPeer" in step) && handles.awaitIdle)
+      if ((wakesRoutines(scenario) || "fromPeer" in step) && handles.awaitIdle)
         await withinDeadline(handles.awaitIdle(), deadline);
       const snap = await rpc<{
         messages: Array<{
@@ -723,7 +735,7 @@ export async function runTrial(
           reply: returned.length ? returned.join("\n") : null,
         });
       }
-      if (scenario.routine && "wakeRoutine" in step) {
+      if ("wakeRoutine" in step) {
         const messages = await prisma.message.findMany({
           where: { runId, role: "bot" },
           select: { blocks: true },
@@ -742,6 +754,7 @@ export async function runTrial(
           calls: structuredClone(services.calls),
           observedCompletion:
             !realtime.failed && observed.some((event) => event.type === "run.completed"),
+          scheduled,
         });
       }
       if (/Eval spend cap|stopped scheduling inference|no configured pricing/i.test(lastText))
@@ -768,6 +781,12 @@ export async function runTrial(
       where: { botId },
       select: { name: true, prompt: true, crons: true, active: true },
     });
+    // schedule_cancel deletes the routine, but its creation event stays in the thread. The event
+    // append is best-effort, so a routine that still exists counts even without one.
+    const routinesCreated = Math.max(
+      routines.length,
+      await prisma.event.count({ where: { botId, type: "routine.created" } }),
+    );
     await captureTools();
     const finalStep = scenario.steps.length;
     const evidence: Evidence = {
@@ -780,6 +799,7 @@ export async function runTrial(
       notes: services.notes,
       calls: services.calls,
       routines,
+      routinesCreated,
       memory: memories.map((m) => m.content).join("\n"),
       approvalPending,
       clarificationPending,
@@ -808,7 +828,7 @@ export async function runTrial(
         ...(scenario.history && replies.length > 1
           ? Object.fromEntries(replies.map((reply, index) => [`turn-${index + 1}-response`, reply]))
           : {}),
-        ...(scenario.routine ? { "routine-observations": JSON.stringify(routineRuns) } : {}),
+        ...(routineRuns.length ? { "routine-observations": JSON.stringify(routineRuns) } : {}),
         ...(peerExchanges.length ? { "peer-exchanges": JSON.stringify(peerExchanges) } : {}),
         ...(evidence.toolCalls.length ? { "tool-calls": JSON.stringify(evidence.toolCalls) } : {}),
         "memory-snapshot": evidence.memory,
