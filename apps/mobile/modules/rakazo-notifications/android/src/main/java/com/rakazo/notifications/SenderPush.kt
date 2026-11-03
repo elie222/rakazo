@@ -25,6 +25,7 @@ import org.json.JSONObject
 internal object SenderPush {
   private const val MAX_AVATAR_CHARS = 1400
   private const val MAX_AVATAR_PIXELS = 96
+  const val EXTRA_PUSHED = "rakazo.pushed"
 
   fun present(context: Context, data: JSONObject): Boolean {
     val title = data.optString("notificationTitle").takeIf(String::isNotBlank) ?: return false
@@ -32,16 +33,26 @@ internal object SenderPush {
     val threadId = data.optString("threadId").takeIf(String::isNotBlank) ?: return false
     if (RakazoNotificationService.isOpenThread(botId, threadId)) return true
     // Matches the app's foreground handler: finished work is already on screen.
-    if (data.optString("kind") == "completion" && inForeground()) return true
-    return runCatching { post(context, data, title, botId, threadId) }
+    val foreground = inForeground()
+    if (data.optString("kind") == "completion" && foreground) return true
+    return runCatching { post(context, data, title, botId, threadId, foreground) }
       .onFailure { Log.w("RakazoSenderPush", "Could not post push", it) }
       .isSuccess
   }
 
-  private fun post(context: Context, data: JSONObject, title: String, botId: String, threadId: String) {
+  private fun post(
+    context: Context,
+    data: JSONObject,
+    title: String,
+    botId: String,
+    threadId: String,
+    foreground: Boolean,
+  ) {
     val body = data.optString("notificationBody")
-    val channel = when (data.optString("kind")) {
-      "help", "takeover", "failure" -> Channels.ATTENTION
+    // Like the app's foreground handler, a push that arrives while the app is open stays quiet.
+    val channel = when {
+      foreground && Build.VERSION.SDK_INT < 29 -> Channels.LIVE
+      data.optString("kind") in setOf("help", "takeover", "failure") -> Channels.ATTENTION
       else -> Channels.MESSAGES
     }
     createRakazoChannels(context)
@@ -55,9 +66,11 @@ internal object SenderPush {
       .setAutoCancel(true)
       .setCategory(Notification.CATEGORY_MESSAGE)
       .apply { if (data.has("notificationBadge")) setNumber(data.optInt("notificationBadge")) }
+      .apply { if (foreground && Build.VERSION.SDK_INT >= 29) setSilent(true) }
       .addExtras(Bundle().apply {
         putString("rakazo.botId", botId)
         putString("rakazo.threadId", threadId)
+        putBoolean(EXTRA_PUSHED, true)
         data.optString("groupId").takeIf(String::isNotBlank)?.let { putString("rakazo.groupId", it) }
       })
     runCatching { addSender(context, builder, data, title, body) }
