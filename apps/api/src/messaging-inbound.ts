@@ -146,7 +146,7 @@ async function handleDirectEvent(
     if (!text && attachments.length === 0) return;
     // Owner commands are only parsed in the verified 1:1 conversation.
     const command = parseMessagingCommand(event.content);
-    if (command && (await applyOwnerCommand(deps, existing, command))) return;
+    if (command && (await applyOwnerCommand(deps, existing, command, event))) return;
     // A linked sender pasting a fresh code re-points this address at another
     // of their bots (only their own codes apply).
     if (await tryRedeemLinkCode(deps, event)) return;
@@ -527,11 +527,44 @@ async function tryRedeemLinkCode(
   return true;
 }
 
+/** How long a channel invite or connection request can be answered by text. */
+export const TEXT_ANSWER_WINDOW_MS = 24 * 60 * 60 * 1000;
+const SPOOFABLE_TRANSPORT = "SMS";
+
+/**
+ * The one request a bare YES or NO answers: the request whose prompt is the newest message this
+ * line sent the person, sent within the answer window and still pending. Anything said since,
+ * by the bot or the product, makes the reply an ordinary message.
+ */
+async function answeredRequest(deps: MessagingInboundDeps, identity: IdentityRow) {
+  const latest = await deps.prisma.messagingOutbound.findFirst({
+    where: { identityId: identity.id, kind: "dm" },
+    orderBy: { createdAt: "desc" },
+    select: { idempotencyKey: true, createdAt: true },
+  });
+  if (!latest || Date.now() - latest.createdAt.getTime() > TEXT_ANSWER_WINDOW_MS) return null;
+  const [kind, first, second] = latest.idempotencyKey.split(":");
+  if (kind === "invite" && first && second === identity.id) {
+    const membership = await deps.prisma.messagingChannelMember.findFirst({
+      where: { channelId: first, identityId: identity.id, status: "invited" },
+    });
+    return membership ? ({ kind: "channel", membership } as const) : null;
+  }
+  if (kind === "connect" && first && second === identity.botId) {
+    const connection = await deps.prisma.agentConnection.findFirst({
+      where: { requesterBotId: first, targetBotId: identity.botId, status: "pending" },
+    });
+    return connection ? ({ kind: "connection", connection } as const) : null;
+  }
+  return null;
+}
+
 /** Returns true when the command matched a pending item and was handled. */
 async function applyOwnerCommand(
   deps: MessagingInboundDeps,
   identity: IdentityRow,
   command: "approve" | "decline" | "leave",
+  event: Pick<MessagingInboundMessage, "transport">,
 ): Promise<boolean> {
   if (command === "leave") {
     const membership = await deps.prisma.messagingChannelMember.findFirst({
@@ -562,23 +595,19 @@ async function applyOwnerCommand(
     return true;
   }
 
-  const membership = await deps.prisma.messagingChannelMember.findFirst({
-    where: { identityId: identity.id, status: "invited" },
-    orderBy: { updatedAt: "desc" },
-  });
-  const connection = await deps.prisma.agentConnection.findFirst({
-    where: { targetBotId: identity.botId, status: "pending" },
-    orderBy: { updatedAt: "desc" },
-  });
-  // YES/NO answers whichever pending item is newest, channel invite or
-  // agent connection.
-  const target =
-    membership && (!connection || membership.updatedAt >= connection.updatedAt)
-      ? ({ kind: "channel", membership } as const)
-      : connection
-        ? ({ kind: "connection", connection } as const)
-        : null;
+  const target = await answeredRequest(deps, identity);
   if (!target) return false;
+  // A text message's sender can be forged, so this answer needs the app.
+  if (event.transport === SPOOFABLE_TRANSPORT) {
+    await writeConfirmation(
+      deps.prisma,
+      identity,
+      `command:app:${target.kind === "channel" ? target.membership.id : target.connection.id}`,
+      "Answer this request in the Rakazo app.",
+    );
+    await enqueueDeliverJob(deps);
+    return true;
+  }
   const approved = command === "approve";
 
   if (target.kind === "channel") {

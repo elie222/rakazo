@@ -232,3 +232,67 @@ it("shows a bot's first instructions as plain text", () => {
   );
   expect(block).toMatchObject({ detail: "Draft only" });
 });
+
+describe("approval card arguments", () => {
+  const detailOf = (toolName: string, args: Record<string, unknown>) => {
+    const block = buildApprovalAskBlock("effect-1", toolName, args, []);
+    if (block.kind !== "ask") throw new Error("expected ask block");
+    return block.detail ?? "";
+  };
+
+  it.each([
+    [
+      "GMAIL_SEND_EMAIL",
+      { recipient_email: "a@example.test", to_email: "b@example.test" },
+      "to_email: b@example.test",
+    ],
+    [
+      "GOOGLECALENDAR_CREATE_EVENT",
+      { summary: "Sync", attendees: ["c@example.test", "d@example.test"] },
+      "attendees: c@example.test, d@example.test",
+    ],
+    [
+      "GMAIL_SEND_EMAIL",
+      { to: "a@example.test", extra_recipients: ["e@example.test"] },
+      "extra_recipients: e@example.test",
+    ],
+    ["SLACK_SEND_MESSAGE", { channel: "C-OUTSIDE", text: "Hello" }, "channel: C-OUTSIDE"],
+    [
+      "GITHUB_CREATE_AN_ISSUE",
+      { owner: "someone-else", repo: "public-repo", title: "Notes" },
+      "repo: public-repo",
+    ],
+    [
+      "SEND_WEBHOOK",
+      { destination: { url: "https://hooks.example.test/x" } },
+      'destination: {"url":"https://hooks.example.test/x"}',
+    ],
+  ])("shows where %s sends", (toolName, args, line) => {
+    expect(detailOf(toolName, args).split("\n")).toContain(line);
+  });
+
+  it("puts every destination above long text, so none sits below a long body", () => {
+    const detail = detailOf("GMAIL_SEND_EMAIL", {
+      body: "b".repeat(5_000),
+      to: "a@example.test",
+      bcc: "hidden@example.test",
+    });
+    expect(detail.split("\n").slice(0, 2)).toEqual([
+      "to: a@example.test",
+      "bcc: hidden@example.test",
+    ]);
+    expect(detail.length).toBeLessThanOrEqual(4_001);
+  });
+
+  it("shows each batched action's destinations", () => {
+    const block = buildApprovalAskBlock(
+      "effect-1",
+      "MULTI_EXECUTE",
+      { tools: [{ tool_slug: "GMAIL_SEND_EMAIL", arguments: { to_email: "f@example.test" } }] },
+      [],
+      { batch: { items: "tools", action: "tool_slug", arguments: "arguments" } },
+    );
+    if (block.kind !== "ask") throw new Error("expected ask block");
+    expect(block.detail?.split("\n")).toContain("to_email: f@example.test");
+  });
+});

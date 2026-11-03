@@ -237,15 +237,12 @@ function formatApprovalDetail(
     );
   }
   // A fetch carries data in its path and query, so the card shows the whole URL.
-  const keys = SITE_SENDING_TOOLS.has(toolName)
-    ? ["url", "method", "body"]
-    : ["collection", "title", "to", "recipient_email", "cc", "bcc", "subject", "amount", "body"];
   const pushArgs = (values: Record<string, unknown>) => {
-    for (const key of keys) {
-      const value = values[key];
-      if (value == null || value === "") continue;
-      lines.push(`${key}: ${String(value)}`);
-    }
+    lines.push(
+      ...(SITE_SENDING_TOOLS.has(toolName)
+        ? argumentLines(values, ["url", "method", "body"])
+        : argumentLines(values)),
+    );
   };
   const items = batch ? args[batch.items] : undefined;
   if (batch && Array.isArray(items)) {
@@ -260,6 +257,33 @@ function formatApprovalDetail(
   }
   if (lines.length === 0) return undefined;
   return lines.join("\n");
+}
+
+/** Longer text goes below the short values, so recipients and places always come first. */
+const SHORT_ARGUMENT_LENGTH = 200;
+
+/**
+ * Every argument as a `key: value` line, since any one may name who or where a call reaches.
+ * Short values keep their order ahead of long text such as a message body.
+ */
+function argumentLines(values: Record<string, unknown>, keys = Object.keys(values)): string[] {
+  const short: string[] = [];
+  const long: string[] = [];
+  for (const key of keys) {
+    const text = argumentText(values[key]);
+    if (!text) continue;
+    (text.length > SHORT_ARGUMENT_LENGTH ? long : short).push(`${key}: ${text}`);
+  }
+  return [...short, ...long];
+}
+
+function argumentText(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value) && value.every((item) => item === null || typeof item !== "object"))
+    return value.map(String).join(", ");
+  return JSON.stringify(value) ?? "";
 }
 
 /** A batch entry's arguments, as an object or a JSON string. */

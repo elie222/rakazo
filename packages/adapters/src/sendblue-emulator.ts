@@ -17,6 +17,8 @@ export interface EmulatorInboundInput {
   participants?: string[];
   handle?: string;
   mediaUrl?: string;
+  /** The network the message arrived on; iMessage unless set. */
+  service?: "iMessage" | "SMS" | "RCS";
 }
 
 /**
@@ -105,7 +107,7 @@ export class SendBlueEmulator {
         content: input.content,
         is_outbound: false,
         status: "RECEIVED",
-        service: "iMessage",
+        service: input.service ?? "iMessage",
         message_handle: input.handle ?? this.nextHandle(),
         from_number: input.fromNumber,
         to_number: this.phoneNumber,
