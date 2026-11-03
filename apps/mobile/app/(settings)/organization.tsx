@@ -43,7 +43,7 @@ export default function OrganizationSettings() {
   }
   const current = organization;
   const name = draft ?? current.name;
-  const canDelete = (query.data?.organizations.length ?? 0) > 1;
+  const canDelete = current.canManage && (query.data?.organizations.length ?? 0) > 1;
 
   async function rename() {
     const next = name.trim();
@@ -86,16 +86,20 @@ export default function OrganizationSettings() {
         contentInsetAdjustmentBehavior="automatic"
       >
         <SettingsGroup accessibilityLabel={t("Name")} label={t("Name")}>
-          <SettingsInputRow
-            key="name"
-            accessibilityLabel={t("Name")}
-            editable={!pending}
-            maxLength={60}
-            value={name}
-            onChangeText={setDraft}
-            onEndEditing={() => void rename()}
-            returnKeyType="done"
-          />
+          {current.canManage ? (
+            <SettingsInputRow
+              key="name"
+              accessibilityLabel={t("Name")}
+              editable={!pending}
+              maxLength={60}
+              value={name}
+              onChangeText={setDraft}
+              onEndEditing={() => void rename()}
+              returnKeyType="done"
+            />
+          ) : (
+            <SettingsRow key="name" title={current.name} />
+          )}
         </SettingsGroup>
         {canDelete ? (
           <SettingsGroup>

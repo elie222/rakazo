@@ -1,8 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { organizationLandingSpaceId, organizationOfSpace } from "./organizations.js";
 
-const work = { id: "org-work", name: "Work", defaultSpaceId: "a1", spaceIds: ["a1", "a2"] };
-const home = { id: "org-home", name: "Home", defaultSpaceId: "b1", spaceIds: ["b1", "b2"] };
+const work = {
+  id: "org-work",
+  name: "Work",
+  defaultSpaceId: "a1",
+  spaceIds: ["a1", "a2"],
+  canManage: true,
+};
+const home = {
+  id: "org-home",
+  name: "Home",
+  defaultSpaceId: "b1",
+  spaceIds: ["b1", "b2"],
+  canManage: true,
+};
 
 describe("organizationLandingSpaceId", () => {
   it("opens the Space last used there, else the default", () => {

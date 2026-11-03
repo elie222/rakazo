@@ -4,7 +4,7 @@ import {
   createOrganizationForUser,
   firstOrganizationSpace,
   InvalidSpaceNameError,
-  listOwnedOrganizations,
+  listMemberOrganizations,
   OrganizationLimitError,
   recordAuditEvent,
   renameOrganization,
@@ -20,8 +20,8 @@ export function organizationsRoutes(ctx: RouterContext) {
   return {
     organizations: {
       list: authed.organizations.list.handler(({ context }) =>
-        runAsSystem("list the organizations a user owns", () =>
-          listOwnedOrganizations(deps.prisma, context.actor),
+        runAsSystem("list the organizations a user belongs to", () =>
+          listMemberOrganizations(deps.prisma, context.actor),
         ),
       ),
       create: authed.organizations.create.handler(({ context, input }) =>

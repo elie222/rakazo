@@ -56,8 +56,27 @@ describe("unavailable space", () => {
         json: {
           activeOrganizationId: "personal",
           organizations: [
-            { id: "personal", name: "Personal", defaultSpaceId: "home", spaceIds: spaces },
-            { id: "work", name: "Work", defaultSpaceId: "work-home", spaceIds: ["work-home"] },
+            {
+              id: "personal",
+              name: "Personal",
+              defaultSpaceId: "home",
+              spaceIds: spaces,
+              canManage: true,
+            },
+            {
+              id: "work",
+              name: "Work",
+              defaultSpaceId: "work-home",
+              spaceIds: ["work-home"],
+              canManage: true,
+            },
+            {
+              id: "team",
+              name: "Team",
+              defaultSpaceId: "team-home",
+              spaceIds: ["team-home"],
+              canManage: false,
+            },
           ],
         },
       });
@@ -94,6 +113,13 @@ describe("unavailable space", () => {
       expect(items.get("rakazo:space-id")).toBe("space-a");
       expect(reload).not.toHaveBeenCalled();
     }
+  });
+
+  it("keeps a space in an organization the user is only a member of", async () => {
+    const { items, reload } = browser("team-home", ["home"]);
+    await leaveUnavailableSpace("team-home");
+    expect(items.get("rakazo:space-id")).toBe("team-home");
+    expect(reload).not.toHaveBeenCalled();
   });
 
   it("keeps a space that belongs to another of the user's organizations", async () => {

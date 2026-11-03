@@ -21,7 +21,7 @@ import { queryClient, useQueryUserId } from "../lib/query";
 import { clearSpaceSelection, rpc, selectSpace } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 
-/** The organization the app is showing: its name, and deletion while the user has another. */
+/** The organization the app is showing: its name, and, for its owner, renaming and deletion. */
 export function OrganizationSettingsPanel({
   onBusyChange,
 }: {
@@ -34,7 +34,7 @@ export function OrganizationSettingsPanel({
     <OrganizationSettings
       key={organization.id}
       organization={organization}
-      canDelete={organizations.length > 1}
+      canDelete={organization.canManage && organizations.length > 1}
       onBusyChange={onBusyChange}
     />
   );
@@ -85,32 +85,40 @@ function OrganizationSettings({
       <SettingsGroup>
         <SettingsRow
           label={
-            <label htmlFor={nameId}>
+            organization.canManage ? (
+              <label htmlFor={nameId}>
+                <Trans>Name</Trans>
+              </label>
+            ) : (
               <Trans>Name</Trans>
-            </label>
+            )
           }
           control={
-            <Input
-              id={nameId}
-              className="w-56"
-              maxLength={60}
-              value={draft}
-              disabled={pending}
-              onChange={(event) => {
-                setDraft(event.target.value);
-                setError(null);
-              }}
-              onBlur={() => void save()}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") event.stopPropagation();
-                if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-                if (event.key === "Enter") event.currentTarget.blur();
-                if (event.key === "Escape") {
-                  setDraft(organization.name);
+            organization.canManage ? (
+              <Input
+                id={nameId}
+                className="w-56"
+                maxLength={60}
+                value={draft}
+                disabled={pending}
+                onChange={(event) => {
+                  setDraft(event.target.value);
                   setError(null);
-                }
-              }}
-            />
+                }}
+                onBlur={() => void save()}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") event.stopPropagation();
+                  if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+                  if (event.key === "Enter") event.currentTarget.blur();
+                  if (event.key === "Escape") {
+                    setDraft(organization.name);
+                    setError(null);
+                  }
+                }}
+              />
+            ) : (
+              <p className="break-words text-sm">{organization.name}</p>
+            )
           }
         >
           {error ? (

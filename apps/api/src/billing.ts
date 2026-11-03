@@ -322,7 +322,7 @@ export function createBillingService(deps: {
       billingAccountFor(actor, organizationId),
       creditAccount(prisma, organizationId),
       trialDays(organizationId),
-      ownerHadTrial(prisma, actor.userId),
+      ownerHadTrial(prisma, actor.userId, "byok"),
     ]);
     try {
       return await openCheckout(actor, account, true, (customerId) =>
@@ -433,7 +433,7 @@ export function createBillingService(deps: {
           billingAccountForOrganization(prisma, organizationId),
           deps.sandbox ? sandboxAllowance({ prisma, sandbox: deps.sandbox }, organizationId) : null,
           trialDays(organizationId),
-          ownerHadTrial(prisma, actor.userId),
+          ownerHadTrial(prisma, actor.userId, "byok"),
         ]);
         const freeUntil =
           credits.mode === "byok" &&
@@ -485,7 +485,7 @@ export function createBillingService(deps: {
         billingAccountForOrganization(prisma, organizationId),
         price(),
         trialDays(organizationId),
-        ownerHadTrial(prisma, actor.userId),
+        ownerHadTrial(prisma, actor.userId, "managed"),
       ]);
       const status = account?.status ?? null;
       return {
@@ -525,7 +525,7 @@ export function createBillingService(deps: {
       });
       const seats = await organizationSeatCount(prisma, organizationId);
       const trial =
-        account.subscribedAt || (await ownerHadTrial(prisma, actor.userId))
+        account.subscribedAt || (await ownerHadTrial(prisma, actor.userId, "managed"))
           ? {}
           : { trialDays: await trialDays(organizationId) };
       try {

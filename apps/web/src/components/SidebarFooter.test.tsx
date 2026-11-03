@@ -244,8 +244,20 @@ it("keeps at most three marks with the same tile and a missing-logo fallback", a
   expect(tiles[1]!.textContent).toBe("N");
 });
 
-const personal = { id: "org-personal", name: "Personal", defaultSpaceId: "s1", spaceIds: ["s1"] };
-const work = { id: "org-work", name: "Work", defaultSpaceId: "s2", spaceIds: ["s2"] };
+const personal = {
+  id: "org-personal",
+  name: "Personal",
+  defaultSpaceId: "s1",
+  spaceIds: ["s1"],
+  canManage: true,
+};
+const work = {
+  id: "org-work",
+  name: "Work",
+  defaultSpaceId: "s2",
+  spaceIds: ["s2"],
+  canManage: true,
+};
 
 async function renderOrganizations(
   organizations: (typeof personal)[],

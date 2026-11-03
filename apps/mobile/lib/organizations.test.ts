@@ -42,12 +42,14 @@ const work: Organization = {
   name: "Work",
   defaultSpaceId: "space-a1",
   spaceIds: ["space-a1", "space-a2"],
+  canManage: true,
 };
 const home: Organization = {
   id: "org-home",
   name: "Home",
   defaultSpaceId: "space-b1",
   spaceIds: ["space-b1", "space-b2"],
+  canManage: true,
 };
 
 function seed(spaceId: string) {

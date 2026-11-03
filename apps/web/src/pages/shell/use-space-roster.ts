@@ -14,7 +14,7 @@ import { replaceEqualDeep } from "@tanstack/react-query";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { takeInitialBootstrap } from "../../lib/bootstrap";
-import { linkedBotSpaceId } from "../../lib/bootstrap-target";
+import { linkedBotRoute } from "../../lib/bootstrap-target";
 import { localTimezone } from "../../lib/local-timezone";
 import { markOnce } from "../../lib/performance";
 import type { ChatTarget } from "../../lib/query";
@@ -390,9 +390,11 @@ export function useSpaceBootstrap({
         ) {
           return;
         }
-        const linkedSpaceId = groupId ? undefined : linkedBotSpaceId(bootstrap, botId);
-        if (linkedSpaceId && botId) {
-          openSpaceChat.current(linkedSpaceId, `/app/${botId}`);
+        const linked = groupId
+          ? undefined
+          : linkedBotRoute(bootstrap, botId, window.location.search);
+        if (linked) {
+          openSpaceChat.current(linked.spaceId, linked.path);
           return;
         }
         if (

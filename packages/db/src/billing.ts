@@ -43,14 +43,13 @@ export async function extendByokFreePeriod(
     UPDATE model_credit_accounts
     SET "byokFreeUntil" = GREATEST(COALESCE("byokFreeUntil", now()), now()) + make_interval(days => ${days}::int)
     WHERE "organizationId" = ${organizationId}`;
-  await markOwnersTrialUsed(tx, { id: organizationId });
 }
 
-const HAD_TRIAL: Prisma.OrganizationWhereInput = {
-  OR: [
-    { billing: { is: { subscribedAt: { not: null } } } },
-    { modelCredits: { is: { byokFreeUntil: { not: null } } } },
-  ],
+const SUBSCRIBED: Prisma.OrganizationWhereInput = {
+  billing: { is: { subscribedAt: { not: null } } },
+};
+const HAD_FREE_DAYS: Prisma.OrganizationWhereInput = {
+  modelCredits: { is: { byokFreeUntil: { not: null } } },
 };
 
 /** Survives the organization, so deleting it never earns its owner another trial. */
@@ -285,16 +284,21 @@ export async function ownedBillingAccounts(
   );
 }
 
-/** Before an organization's billing rows go, so one that predates the user-level mark still counts. */
+/** Before an organization's billing rows go, so a subscription that predates the user-level mark still counts. */
 export async function keepOrganizationTrialUse(prisma: PrismaClient, organizationId: string) {
-  await markOwnersTrialUsed(prisma, { id: organizationId, ...HAD_TRIAL });
+  await markOwnersTrialUsed(prisma, { id: organizationId, ...SUBSCRIBED });
 }
 
 /**
- * One trial per person. Organizations that subscribed or got free days before the user-level
- * mark existed still count, so older accounts need no backfill.
+ * One trial per person: any subscription uses it up. Free own-key days also use up the own-key
+ * trial, but not the managed plan's. Organizations that subscribed before the user-level mark
+ * existed still count, so older accounts need no backfill.
  */
-export async function ownerHadTrial(prisma: PrismaClient, userId: string): Promise<boolean> {
+export async function ownerHadTrial(
+  prisma: PrismaClient,
+  userId: string,
+  plan: "byok" | "managed",
+): Promise<boolean> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { billingTrialUsedAt: true },
@@ -304,7 +308,7 @@ export async function ownerHadTrial(prisma: PrismaClient, userId: string): Promi
     where: {
       userId,
       role: { contains: "owner" },
-      organization: HAD_TRIAL,
+      organization: plan === "byok" ? { OR: [SUBSCRIBED, HAD_FREE_DAYS] } : SUBSCRIBED,
     },
     select: { id: true },
   });

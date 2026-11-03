@@ -15,8 +15,15 @@ const personal = {
   name: "Personal",
   defaultSpaceId: "home",
   spaceIds: ["home", "side"],
+  canManage: true,
 };
-const work = { id: "org-work", name: "Work", defaultSpaceId: "work-home", spaceIds: ["work-home"] };
+const work = {
+  id: "org-work",
+  name: "Work",
+  defaultSpaceId: "work-home",
+  spaceIds: ["work-home"],
+  canManage: true,
+};
 
 let items: Map<string, string>;
 beforeEach(() => {

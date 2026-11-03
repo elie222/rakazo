@@ -57,7 +57,9 @@ export async function createOrganizationForUser(
   await withTransactionRetry(() =>
     prisma.$transaction(async (tx) => {
       await lockUserOrganizations(tx, input.userId);
-      const owned = await tx.member.count({ where: { userId: input.userId, role: OWNER } });
+      const owned = await tx.member.count({
+        where: { userId: input.userId, role: OWNER, organization: LIVE },
+      });
       if (owned >= MAX_ORGANIZATIONS_PER_USER) throw new OrganizationLimitError();
       await createOrganizationWithDefaultSpace(tx, {
         userId: input.userId,
@@ -70,19 +72,21 @@ export async function createOrganizationForUser(
   return { id: orgId, name, defaultSpaceId: orgId };
 }
 
-export async function listOwnedOrganizations(
+/** Every organization the user is a member of; only those they own can be managed. */
+export async function listMemberOrganizations(
   prisma: PrismaClient,
   actor: Pick<Actor, "userId" | "spaceId">,
 ): Promise<OrganizationList> {
   const [current, organizations, memberships] = await Promise.all([
     prisma.space.findUnique({ where: { id: actor.spaceId }, select: { organizationId: true } }),
     prisma.organization.findMany({
-      where: { members: { some: { userId: actor.userId, role: OWNER } }, ...LIVE },
+      where: { members: { some: { userId: actor.userId } }, ...LIVE },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       select: {
         id: true,
         name: true,
         spaces: { where: { isDefault: true }, select: { id: true }, take: 1 },
+        members: { where: { userId: actor.userId }, select: { role: true }, take: 1 },
       },
     }),
     prisma.spaceMember.findMany({
@@ -98,6 +102,7 @@ export async function listOwnedOrganizations(
       id: organization.id,
       name: organization.name,
       defaultSpaceId: organization.spaces[0]!.id,
+      canManage: organization.members.some((member) => member.role.includes("owner")),
       spaceIds: memberships
         .filter((membership) => membership.organizationId === organization.id)
         .map((membership) => membership.spaceId),

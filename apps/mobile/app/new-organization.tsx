@@ -27,7 +27,7 @@ export default function NewOrganization() {
     setError(null);
     try {
       const created = await rpc("organizations/create", { name: trimmed });
-      const target = { ...created, spaceIds: [created.defaultSpaceId] };
+      const target = { ...created, spaceIds: [created.defaultSpaceId], canManage: true };
       if (!(await switchOrganization(target, organizations?.organizations ?? []))) {
         Alert.alert(t("Could not switch spaces"), t("Try again."));
         router.dismissAll();

@@ -255,11 +255,18 @@ const threadSendWithRoutinesInput = threadSendFields.safeExtend({
 
 const spaceName = z.string().trim().min(1).max(60);
 const organizationName = spaceName;
-/** Every organization the signed-in user owns, and which one the current Space belongs to. */
+/** Every organization the signed-in user belongs to, and which one the current Space belongs to. */
 export const OrganizationListSchema = z.object({
   activeOrganizationId: Id,
   organizations: z.array(
-    z.object({ id: Id, name: z.string(), defaultSpaceId: Id, spaceIds: z.array(Id) }),
+    z.object({
+      id: Id,
+      name: z.string(),
+      defaultSpaceId: Id,
+      spaceIds: z.array(Id),
+      /** Whether the user owns it, so can rename or delete it. */
+      canManage: z.boolean(),
+    }),
   ),
 });
 export type OrganizationList = z.infer<typeof OrganizationListSchema>;

@@ -62,7 +62,13 @@ it("enables Delete only once the organization's exact name is typed", async () =
   await act(async () =>
     root.render(
       <DeleteOrganizationDialog
-        organization={{ id: "org-work", name: "Work", defaultSpaceId: "s2", spaceIds: ["s2"] }}
+        organization={{
+          id: "org-work",
+          name: "Work",
+          defaultSpaceId: "s2",
+          spaceIds: ["s2"],
+          canManage: true,
+        }}
         onCancel={() => undefined}
         onConfirm={onConfirm}
       />,

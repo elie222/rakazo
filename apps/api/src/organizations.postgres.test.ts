@@ -163,8 +163,20 @@ describePostgres("organizations (PostgreSQL)", () => {
     await expect(client(ada).organizations.list()).resolves.toEqual({
       activeOrganizationId: ada.spaceId,
       organizations: [
-        { id: ada.spaceId, name: "Personal", defaultSpaceId: ada.spaceId, spaceIds: [ada.spaceId] },
-        { id: work.id, name: "Work", defaultSpaceId: work.id, spaceIds: [work.id] },
+        {
+          id: ada.spaceId,
+          name: "Personal",
+          defaultSpaceId: ada.spaceId,
+          spaceIds: [ada.spaceId],
+          canManage: true,
+        },
+        {
+          id: work.id,
+          name: "Work",
+          defaultSpaceId: work.id,
+          spaceIds: [work.id],
+          canManage: true,
+        },
       ],
     });
     await expect(client(asUser(ada, work.id)).organizations.list()).resolves.toMatchObject({
@@ -207,6 +219,42 @@ describePostgres("organizations (PostgreSQL)", () => {
       reason: { code: "BAD_REQUEST", message: "You can have up to 10 organizations." },
     });
     await expect(system.member.count({ where: { userId: ada.userId } })).resolves.toBe(10);
+
+    // One stuck mid-deletion no longer takes a slot.
+    const stuck = (results.find(
+      (result) => result.status === "fulfilled",
+    ) as PromiseFulfilledResult<{
+      id: string;
+    }>)!.value;
+    await system.space.update({ where: { id: stuck.id }, data: { deletingAt: new Date() } });
+    await expect(client(ada).organizations.create({ name: "Eleventh" })).resolves.toMatchObject({
+      name: "Eleventh",
+    });
+  });
+
+  it("lists a team organization the user is only a member of, without managing it", async () => {
+    const ada = await signup();
+    const grace = await signup();
+    const team = await client(grace).organizations.create({ name: "Team" });
+    await system.member.create({
+      data: {
+        id: `member-${ada.userId}-team`,
+        organizationId: team.id,
+        userId: ada.userId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+
+    const { organizations } = await client(ada).organizations.list();
+    expect(organizations.map(({ name, canManage }) => ({ name, canManage }))).toEqual([
+      { name: "Personal", canManage: true },
+      { name: "Team", canManage: false },
+    ]);
+    expect(organizations[1]?.spaceIds).toEqual([team.defaultSpaceId]);
+    await expect(
+      client(ada).organizations.rename({ organizationId: team.id, name: "Mine" }),
+    ).rejects.toBeInstanceOf(Error);
   });
 
   it("lets only the owner rename or delete an organization, and never their last one", async () => {
@@ -424,6 +472,22 @@ describePostgres("organizations (PostgreSQL)", () => {
     await runAsSystem("organizations test", () => byok.selectFunding(inWork, "byok"));
     const { customerId } = (await billingAccountForOrganization(system, work.id))!;
     expect(provider.byokCheckouts.get(customerId)?.trialDays).toBeUndefined();
+  });
+
+  it("still offers the managed plan's trial after free own-key days", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    const inWork = asUser(ada, work.id);
+    await system.modelCreditAccount.create({ data: { organizationId: ada.spaceId } });
+    await system.$transaction((tx) => extendByokFreePeriod(tx, ada.spaceId, 30));
+
+    await expect(
+      system.user.findUniqueOrThrow({ where: { id: ada.userId } }),
+    ).resolves.toMatchObject({ billingTrialUsedAt: null });
+    await expect(billing.status(inWork)).resolves.toMatchObject({ trialAvailable: true });
+    await runAsSystem("organizations test", () => billing.checkout(inWork));
+    const { customerId } = (await billingAccountForOrganization(system, work.id))!;
+    expect(emulator.checkouts.get(customerId)?.trialDays).toEqual(expect.any(Number));
   });
 
   it("deletes and cancels every organization of a deleted account", async () => {
