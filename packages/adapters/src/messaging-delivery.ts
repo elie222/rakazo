@@ -8,7 +8,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { messagingDeliverJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { botMessageHopExhausted, nextBotMessageHop } from "@rakazo/core";
+import { botMessageHopExhausted, nextBotMessageHop, pageLinksAsTitles } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
@@ -740,7 +740,7 @@ function extractText(blocks: unknown): string {
         (block as { kind?: string }).kind === "text" &&
         typeof (block as { text?: string }).text === "string",
     )
-    .map((block) => block.text)
+    .map((block) => pageLinksAsTitles(block.text))
     .join("\n")
     .trim();
 }

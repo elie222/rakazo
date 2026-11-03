@@ -1,6 +1,6 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
-import type { ClientRequest, IncomingMessage } from "node:http";
+import type { ClientRequest, IncomingMessage, ServerResponse } from "node:http";
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
@@ -100,6 +100,14 @@ function attachDesktopStackProbe(
     res.setHeader("content-type", "application/json; charset=utf-8");
     res.end(JSON.stringify(body));
   });
+}
+
+function sharedPageHeaders(req: IncomingMessage, res: ServerResponse, next: () => void) {
+  if (req.url?.startsWith("/p/")) {
+    res.setHeader("x-robots-tag", "noindex, nofollow");
+    res.setHeader("referrer-policy", "no-referrer");
+  }
+  next();
 }
 
 function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string, api: string) {
@@ -542,6 +550,16 @@ export default defineConfig(({ command, mode }) => {
             }
             next();
           });
+        },
+      },
+      {
+        // A shared page's link is its only key: keep it out of search results and Referer.
+        name: "rakazo-shared-page-headers",
+        configureServer(server) {
+          server.middlewares.use(sharedPageHeaders);
+        },
+        configurePreviewServer(server) {
+          server.middlewares.use(sharedPageHeaders);
         },
       },
       {

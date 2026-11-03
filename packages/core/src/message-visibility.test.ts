@@ -217,6 +217,16 @@ describe("user-visible messages", () => {
     expect(expandPeerReplies(transcript, new Set(["received"]))).toEqual([received, chartReply]);
   });
 
+  it("folds page-only peer replies under their received marker", () => {
+    const pageReply = message("page_reply", "run-peer", [
+      { kind: "page", pageId: "page-1", version: 1, title: "Results" },
+    ]);
+    const transcript = foldPeerReplies([received, pageReply], { includePeerReceipts: true });
+
+    expect(transcript.messages).toEqual([received]);
+    expect(transcript.folded.get("received")).toEqual([pageReply]);
+  });
+
   it("keeps chart-only relays inline", () => {
     const relayReceipt = { ...received, replyToMessageId: "sent" };
     const chartReply = message("chart_reply", "run-peer", [

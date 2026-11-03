@@ -1,15 +1,26 @@
 import { createDb, createThreadMessage } from "@rakazo/db";
+import { pageViewerCode } from "@rakazo/page-kit/compile";
 import { sessionCookieHeader } from "../index.js";
 
 const MARKER = "marigold checklist";
 const READY = "The fixture workspace is ready.";
 const GROUP_READY = "The fixture launch plan is ready.";
 const FILE_NAME = "launch-notes.txt";
+const PAGE_TITLE = "Launch dashboard";
+const PAGE_SOURCE = [
+  "const App = () => (",
+  '  <Page title="Launch dashboard" summary="Fixture figures for the screenshot catalog.">',
+  '    <Metrics metrics={[{ value: "128", label: "Signups" }, { value: "4.2%", label: "Trial to paid" }]} />',
+  "  </Page>",
+  ");",
+  "export default App;",
+].join("\n");
 
 export interface IosScreenshotFixture {
   botId: string;
   groupId: string;
   routineId: string;
+  pageId: string;
 }
 
 interface BotRow {
@@ -109,6 +120,7 @@ export async function seedIosScreenshotFixture(input: {
 
   const me = await rpc<MeRow>(input.apiUrl, populated.headers, "me");
   const db = createDb(input.databaseUrl, { applicationName: "ios-screenshots" });
+  let pageId = "";
   try {
     await ensureThreadCopy(db.prisma, {
       threadId: researcher.threadId,
@@ -123,12 +135,56 @@ export async function seedIosScreenshotFixture(input: {
       userId: me.userId,
     });
     await ensureText(db.prisma, group.threadId, "bot", writer.id, GROUP_READY);
+    pageId = await ensurePage(db.prisma, {
+      threadId: researcher.threadId,
+      botId: researcher.id,
+      spaceId: me.spaceId,
+      userId: me.userId,
+    });
   } finally {
     await db.prisma.$disconnect();
     await db.pool.end();
   }
 
-  return { botId: researcher.id, groupId: group.id, routineId: routine.id };
+  return { botId: researcher.id, groupId: group.id, routineId: routine.id, pageId };
+}
+
+/** A page the bot built, named in its reply with the card under it, for the page screens. */
+async function ensurePage(
+  prisma: ReturnType<typeof createDb>["prisma"],
+  input: { threadId: string; botId: string; spaceId: string; userId: string },
+) {
+  const existing = await prisma.page.findFirst({
+    where: { userId: input.userId, spaceId: input.spaceId, title: PAGE_TITLE },
+    select: { id: true },
+  });
+  if (existing) return existing.id;
+  const page = await prisma.page.create({
+    data: {
+      spaceId: input.spaceId,
+      userId: input.userId,
+      botId: input.botId,
+      title: PAGE_TITLE,
+      versions: {
+        create: {
+          version: 1,
+          title: PAGE_TITLE,
+          source: PAGE_SOURCE,
+          code: pageViewerCode(PAGE_SOURCE),
+        },
+      },
+    },
+  });
+  await createThreadMessage(prisma, {
+    threadId: input.threadId,
+    role: "bot",
+    botId: input.botId,
+    blocks: [
+      { kind: "text", text: `I made a [${PAGE_TITLE}](page:${page.id}) from the launch notes.` },
+      { kind: "page", pageId: page.id, version: 1, title: PAGE_TITLE },
+    ],
+  });
+  return page.id;
 }
 
 async function ensureBot(

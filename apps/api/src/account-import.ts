@@ -37,6 +37,7 @@ import {
   SpaceLimitError,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { checkPageSource } from "@rakazo/page-kit/validate";
 import { Unzip, UnzipInflate } from "fflate";
 import type { Hono } from "hono";
 import { cancelBody } from "./http-body.js";
@@ -74,6 +75,8 @@ const unreadable = () => new AccountImportError("The file is not a readable Raka
 const invalidEntry = () => new AccountImportError("The export contains an unexpected file.");
 const outOfOrder = () => new AccountImportError("The export's files are out of order.");
 const missingRecord = () => new AccountImportError("The export refers to a missing record.");
+const brokenPage = () =>
+  new AccountImportError("The export contains a page that cannot be opened.");
 const tooLarge = () => new AccountImportError("The export is too large.", 413);
 
 export type AccountImportDeps = SpaceDeletionDeps & { maxArtifactBytes: number };
@@ -213,6 +216,25 @@ export async function readArchive(
   if (index === 0 || open) throw unreadable();
 }
 
+/**
+ * Bots name pages inside their words as `[title](page:id)`, which whole-value ids miss. Any
+ * block's text can carry one (a reply, an ask, a message to another bot), so every string is
+ * rewritten.
+ */
+function remapPageLinks(value: unknown, ids: ReadonlyMap<string, string>): unknown {
+  if (typeof value === "string")
+    return value.replace(
+      /\(page:([A-Za-z0-9_-]{1,64})\)/g,
+      (_link, id: string) => `(page:${ids.get(id) ?? id})`,
+    );
+  if (Array.isArray(value)) return value.map((item) => remapPageLinks(item, ids));
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, remapPageLinks(item, ids)]),
+    );
+  return value;
+}
+
 /** Replaces every string that is exactly a mapped id; ids are random, so text never collides. */
 export function remapIds(value: unknown, ids: ReadonlyMap<string, string>): unknown {
   if (typeof value === "string") return ids.get(value) ?? value;
@@ -241,6 +263,9 @@ class SpaceImport {
   >();
   readonly groupThreads = new Map<string, string>();
   readonly threadSeqs = new Map<string, number>();
+  /** Each page's newest version so far, which it opens on; 0 until one arrives. */
+  readonly pageVersions = new Map<string, number>();
+  readonly seenPageVersions = new Set<string>();
   readonly artifacts = new Map<string, PendingArtifact>();
   readonly parentLinks: Array<{ botId: string; parentBotId: string }> = [];
   readonly homes = new Map<string, string>();
@@ -477,9 +502,17 @@ class AccountImporter implements ArchiveSink {
     const tail = this.takeLine();
     if (tail) await this.recordLine(tail);
     const space = this.current!;
+    // A page without a version could never open.
+    if ([...space.pageVersions.values()].includes(0)) throw missingRecord();
     await this.tenant(async () => {
       await this.writeMessages(space);
       const { prisma } = this.deps;
+      // The page opens on, and its next save follows, the newest version the archive holds.
+      for (const [sourceId, currentVersion] of space.pageVersions)
+        await prisma.page.update({
+          where: { id: space.mapped(sourceId) },
+          data: { currentVersion },
+        });
       for (const link of space.parentLinks) {
         const parentBotId = space.ids.get(link.parentBotId);
         if (parentBotId)
@@ -568,6 +601,46 @@ class AccountImporter implements ArchiveSink {
         // Blocks may name records later in the file (artifacts), so messages wait for every id.
         space.messages ??= createWriteStream(space.messagesPath);
         await writeLine(space.messages, `${JSON.stringify(record)}\n`);
+        return;
+      }
+      case "page":
+        space.pageVersions.set(record.id, 0);
+        await prisma.page.create({
+          data: {
+            id: newId(),
+            spaceId,
+            userId,
+            botId: space.optional(record.botId),
+            groupId: space.optional(record.groupId),
+            title: record.title,
+            pinnedAt: date(record.pinnedAt),
+            currentVersion: record.currentVersion,
+            createdAt: new Date(record.createdAt),
+            updatedAt: new Date(record.updatedAt),
+          },
+        });
+        return;
+      case "page_version": {
+        const pageId = space.mapped(record.pageId);
+        // Checked as a save checks it, so every imported version opens.
+        const check = checkPageSource(record.source);
+        if (!check.ok) throw brokenPage();
+        const key = `${record.pageId}:${record.version}`;
+        if (space.seenPageVersions.has(key)) throw unreadable();
+        space.seenPageVersions.add(key);
+        const newest = space.pageVersions.get(record.pageId)!;
+        space.pageVersions.set(record.pageId, Math.max(newest, record.version));
+        await prisma.pageVersion.create({
+          data: {
+            id: newId(),
+            pageId,
+            version: record.version,
+            title: record.title,
+            source: record.source,
+            code: check.code,
+            createdAt: new Date(record.createdAt),
+          },
+        });
         return;
       }
       case "artifact":
@@ -819,7 +892,10 @@ class AccountImporter implements ArchiveSink {
         threadId,
         seq: record.seq,
         role: record.role,
-        blocks: remapIds(record.blocks, space.ids) as Prisma.InputJsonValue,
+        blocks: remapPageLinks(
+          remapIds(record.blocks, space.ids),
+          space.ids,
+        ) as Prisma.InputJsonValue,
         botId: space.optional(record.botId),
         replyToMessageId: space.optional(record.replyToMessageId),
         replyQuote: record.replyQuote,

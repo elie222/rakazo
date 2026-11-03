@@ -49,6 +49,7 @@
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
     "@rakazo/logging": "workspace:*",
+    "@rakazo/page-kit": "workspace:*",
     "@stripe/link-sdk": "0.15.0",
     "chat": "4.43.0",
     "chat-adapter-sendblue": "0.2.0",

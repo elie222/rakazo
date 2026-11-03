@@ -275,6 +275,26 @@ describe("deliverMessagingOutbound", () => {
     });
   });
 
+  it("sends a page the bot named as its title, never as an app-only page link", async () => {
+    const deps = createDeps({
+      messages: [
+        {
+          id: "m-1",
+          blocks: [
+            { kind: "text", text: "I made a [Test dashboard](page:cm123) for you." },
+            { kind: "page", pageId: "cm123", version: 1, title: "Test dashboard" },
+          ],
+        },
+      ],
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.sendToThread).toHaveBeenCalledWith(
+      { threadId: "sendblue:dm-1", body: "I made a Test dashboard for you." },
+      context,
+    );
+  });
+
   it("resolves the DM thread once and caches it when the identity has none", async () => {
     const deps = createDeps({
       identity: { dmThreadId: null },

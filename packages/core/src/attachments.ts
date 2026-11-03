@@ -170,6 +170,10 @@ export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
       if (block.kind === "text") return block.text;
       if (block.kind === "chart") return `[chart: ${block.name}]`;
       if (block.kind === "image") return `[image: ${block.name}]`;
+      // The id lets a later turn, or another chat, update this page instead of making a new one.
+      if (block.kind === "page") {
+        return `[page: ${block.title} (pageId ${block.pageId}, version ${block.version})]`;
+      }
       if (block.kind === "file") {
         return `[file: ${block.name} (${block.mimeType}, ${block.size} bytes)]`;
       }

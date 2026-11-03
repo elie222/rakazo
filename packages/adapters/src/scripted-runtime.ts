@@ -162,6 +162,18 @@ export class ScriptedAgentRuntime implements AgentRuntime {
   }
 }
 
+/** A JSON object written in a message, or undefined for anything else, malformed text included. */
+function jsonObject(text: string): Record<string, unknown> | undefined {
+  try {
+    const value: unknown = JSON.parse(text);
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function inferScript(
   prompt: string,
   resumeFromCheckpoint?: string,
@@ -169,7 +181,22 @@ export function inferScript(
   // A bot-message wake embeds the sender's name and id around the peer's words, and an
   // ordinary reply opens with the quoted target; a generated id can contain a journey
   // keyword by chance ("crm" inside a cuid), so the branches key on the words alone.
-  const lower = (peerMessage(prompt)?.text ?? prompt.replace(REPLY_CONTEXT, "")).toLowerCase();
+  const words = peerMessage(prompt)?.text ?? prompt.replace(REPLY_CONTEXT, "");
+  const lower = words.toLowerCase();
+  // In a group the words open with the mention that picked this bot.
+  const page = /^(?:@\S+\s+)?call save_page with (.+?)(?:\nthen say ([\s\S]+))?$/s.exec(
+    words.trim(),
+  );
+  const pageArgs = page ? jsonObject(page[1]!) : undefined;
+  if (page && pageArgs) {
+    return [
+      {
+        assistant: page[2],
+        toolCalls: [{ name: "save_page", args: pageArgs }],
+        complete: true,
+      },
+    ];
+  }
   if (lower.includes("can you check my gmail inbox?")) {
     return [
       {

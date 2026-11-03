@@ -18,7 +18,7 @@ import {
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Platform, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
@@ -55,6 +55,7 @@ import {
   configureForegroundNotifications,
   resumeLiveNotifications,
 } from "../lib/live-notifications";
+import { OpenPageContext } from "../lib/message-mentions";
 import { setMobileMonitoringScreen } from "../lib/monitoring";
 import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
 import { useNotificationResponses } from "../lib/open-notification";
@@ -226,6 +227,11 @@ function ChatContentProviders({
   );
   const session = useSyncExternalStore(subscribeSessionGeneration, currentReadySessionGeneration);
   const trustedSites = useTrustedLinkSites();
+  const router = useRouter();
+  const openPage = useCallback(
+    (pageId: string) => router.push({ pathname: "/page", params: { pageId } }),
+    [router],
+  );
   useEffect(() => {
     void loadTrustedLinkSites().catch(() => undefined);
   }, [endpoint, session]);
@@ -245,7 +251,7 @@ function ChatContentProviders({
         <LinkFaviconsContext.Provider value={linkFavicons}>
           <MermaidDiagramContext.Provider value={MermaidDiagram}>
             <CodeCopyButtonContext.Provider value={CodeCopyButton}>
-              {children}
+              <OpenPageContext.Provider value={openPage}>{children}</OpenPageContext.Provider>
             </CodeCopyButtonContext.Provider>
           </MermaidDiagramContext.Provider>
         </LinkFaviconsContext.Provider>
@@ -444,6 +450,26 @@ function LayoutContent() {
                     />
                     <Stack.Screen name="artifacts" options={glassHeaderOptions(t("Artifacts"))} />
                     <Stack.Screen name="artifact" options={{ title: t("Artifact") }} />
+                    <Stack.Screen name="pages" options={glassHeaderOptions(t("Pages"))} />
+                    <Stack.Screen
+                      name="page"
+                      options={{
+                        headerShown: false,
+                        // An iPad shows a page as a sheet over the chat; a phone shows it whole.
+                        presentation:
+                          Platform.OS === "ios" && Platform.isPad ? "pageSheet" : "fullScreenModal",
+                      }}
+                    />
+                    <Stack.Screen
+                      name="page-share"
+                      options={{
+                        headerShown: false,
+                        presentation: "formSheet",
+                        sheetAllowedDetents: [0.6, 1],
+                        sheetGrabberVisible: true,
+                        contentStyle: { backgroundColor: native.groupedPage },
+                      }}
+                    />
                     <Stack.Screen
                       name="group-thread"
                       options={({ route }) => ({

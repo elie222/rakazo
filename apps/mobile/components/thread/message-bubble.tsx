@@ -47,6 +47,7 @@ import { McpApprovalCard } from "../McpApprovalCard";
 import type { MarkdownArtifactPreviewTarget } from "../markdown-artifact-preview";
 import { MessageCaption } from "../message-caption";
 import { NativeSymbol } from "../native-symbol";
+import { PageCard } from "../pages/page-card";
 import { PeerReceiptLine } from "../peer-receipt-line";
 import { AskBlock } from "./ask-block";
 import type { MessageRowActions } from "./message-row";
@@ -126,14 +127,19 @@ function MessageBubbleWithMentions({
   );
 }
 
+/** Blocks drawn as their own card between the message's text pieces. */
+function isOwnCardBlock(block: MessageBlock): boolean {
+  return isSpecialMessageBlock(block) || block.kind === "page";
+}
+
 function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
   const { message } = props;
-  if (!message.blocks.some(isSpecialMessageBlock)) return <MessageBubbleContent {...props} />;
+  if (!message.blocks.some(isOwnCardBlock)) return <MessageBubbleContent {...props} />;
 
   const pieces: MessageBlock[][] = [];
   for (const block of message.blocks) {
     const previous = pieces.at(-1);
-    if (isSpecialMessageBlock(block) || !previous || isSpecialMessageBlock(previous[0]!)) {
+    if (isOwnCardBlock(block) || !previous || isOwnCardBlock(previous[0]!)) {
       pieces.push([block]);
     } else {
       previous.push(block);
@@ -141,6 +147,8 @@ function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
   }
   const content = pieces.map((blocks, index) => {
     const first = blocks[0]!;
+    if (first.kind === "page")
+      return <PageCard key={`page-${index}`} block={first} messageId={message.id} />;
     return isSpecialMessageBlock(first) ? (
       <SpecialMessageCard
         key={first.kind === "subagent" ? first.agentId : `${first.kind}-${index}`}

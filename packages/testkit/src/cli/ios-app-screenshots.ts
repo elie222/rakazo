@@ -90,6 +90,8 @@ async function main() {
             `RAKAZO_SCREENSHOT_GROUP_ID=${fixture.groupId}`,
             "-e",
             `RAKAZO_SCREENSHOT_ROUTINE_ID=${fixture.routineId}`,
+            "-e",
+            `RAKAZO_SCREENSHOT_PAGE_ID=${fixture.pageId}`,
             path.join(CATALOG_DIR, section.flow),
           ],
           process.env,

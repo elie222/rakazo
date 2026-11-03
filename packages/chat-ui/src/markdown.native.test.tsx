@@ -191,6 +191,7 @@ vi.mock("react-native", async () => {
     Linking: linking,
     Alert: { alert },
     I18nManager: i18n,
+    useColorScheme: () => "dark",
     useWindowDimensions: () => windowSize,
   };
 });
@@ -1970,5 +1971,43 @@ describe("native markdown diagrams", () => {
   it("leaves other fences and an empty mermaid fence as code", () => {
     expect(renderWithDiagrams("```ts\nconst a = 1;\n```")).not.toContain("<diagram-probe");
     expect(renderWithDiagrams("```mermaid\n\n```")).not.toContain("<diagram-probe");
+  });
+});
+
+describe("native markdown page links", () => {
+  it("draws a page link as a chip that opens the page, or as its title without a handler", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    linking.openURL.mockClear();
+    const openPage = vi.fn();
+    const markdown =
+      "See [Duplex voice](page:page_1) and [x](javascript:alert(1)) and [z](page:a/b)";
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown onOpenPage={openPage}>{markdown}</ChatMarkdown>);
+    });
+    const links = [...container.querySelectorAll<HTMLElement>("[data-accessibility-role='link']")];
+    expect(links.map((link) => link.textContent)).toEqual(["Duplex voice"]);
+    expect(links[0]!.querySelector("rn-view")).not.toBeNull();
+    expect(links[0]!.querySelector("[data-text-decoration-line='underline']")?.textContent).toBe(
+      "Duplex voice",
+    );
+    await act(async () => {
+      links[0]!.click();
+    });
+    expect(openPage).toHaveBeenCalledWith("page_1");
+    expect(linking.openURL).not.toHaveBeenCalled();
+    expect(alert).not.toHaveBeenCalledWith(expect.anything(), "page:page_1", expect.anything());
+
+    await act(async () => {
+      root.render(<ChatMarkdown>{markdown}</ChatMarkdown>);
+    });
+    expect(container.querySelector("[data-accessibility-role='link']")).toBeNull();
+    expect(container.textContent).toContain("See Duplex voice and x and z");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
   });
 });

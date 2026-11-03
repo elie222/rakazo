@@ -24,6 +24,12 @@ describe.each(caddyfiles)("%s HSTS", (filename) => {
     expect(httpsSite).not.toContain("frame-ancestors 'none'");
   });
 
+  it("keeps shared page links out of search results and Referer headers", () => {
+    expect(httpsSite).toContain(
+      '@sharedPage path /p/*\n\theader @sharedPage {\n\t\tX-Robots-Tag "noindex, nofollow"\n\t\tReferrer-Policy no-referrer\n\t}',
+    );
+  });
+
   it("replaces the client-supplied forwarding header on API and RPC requests", () => {
     expect(httpsSite.match(/header_up X-Forwarded-For \{client_ip\}/g)).toHaveLength(2);
     expect(httpsSite).not.toContain("{remote_host}");

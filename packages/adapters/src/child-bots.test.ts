@@ -283,6 +283,66 @@ describe("spawned bot archival", () => {
 });
 
 describe("destroyBot", () => {
+  it("removes its deleted pages' link tokens from the secret store once the delete commits", async () => {
+    const order: string[] = [];
+    const transaction = vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => {
+      const result = await callback({
+        $queryRaw: vi.fn().mockResolvedValue([{ id: "bot-1" }]),
+        chatGroup: {
+          findMany: vi.fn().mockResolvedValue([]),
+          deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+        },
+        artifact: {
+          findMany: vi.fn().mockResolvedValue([]),
+          deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+        },
+        page: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        secret: {
+          findMany: vi.fn().mockResolvedValue([{ id: "secret-1", ciphertext: "ref-1" }]),
+          deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+        computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        $executeRaw: vi.fn().mockResolvedValue(0),
+        botDeletion: { create: vi.fn().mockResolvedValue({}) },
+        bot: { delete: vi.fn().mockResolvedValue({}) },
+      });
+      order.push("commit");
+      return result;
+    });
+    const prisma = {
+      computer: { findUnique: vi.fn().mockResolvedValue(null) },
+      run: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      routine: { findMany: vi.fn().mockResolvedValue([]) },
+      $transaction: transaction,
+    } as unknown as PrismaClient;
+    const removeSecret = vi.fn(async () => {
+      order.push("store delete");
+    });
+
+    await destroyBot(
+      {
+        prisma,
+        sandbox: {} as SandboxProvider,
+        home: {} as AgentHomeStore,
+        jobs: { cancel: vi.fn() } as unknown as JobPublisher,
+        secretStore: { delete: removeSecret },
+      },
+      { id: "bot-1", spaceId: "workspace-1", userId: "user-1", name: "Gone", archivedAt: null },
+      context,
+      { deleteMemories: true },
+    );
+
+    expect(removeSecret).toHaveBeenCalledWith(
+      "ref-1",
+      expect.objectContaining({ recordId: "secret-1" }),
+    );
+    expect(order).toEqual(["commit", "store delete"]);
+  });
+
   it("moves bot memories into shared memory before the cascading delete", async () => {
     const createDeletion = vi.fn().mockResolvedValue({});
     const deleteBot = vi.fn().mockResolvedValue({});
@@ -299,6 +359,11 @@ describe("destroyBot", () => {
           deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
         },
         artifact: { findMany: findArtifacts, deleteMany: deleteArtifacts },
+        page: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        secret: {
+          findMany: vi.fn().mockResolvedValue([]),
+          deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+        },
         computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
         computer: { updateMany: releaseComputers },
         $executeRaw: executeRaw,
@@ -385,6 +450,11 @@ describe("destroyBot", () => {
       callback({
         $queryRaw: vi.fn().mockResolvedValue([]),
         artifact: { findMany: vi.fn(), deleteMany: vi.fn() },
+        page: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        secret: {
+          findMany: vi.fn().mockResolvedValue([]),
+          deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+        },
         botDeletion: { create: createDeletion },
         bot: { delete: deleteBot },
       }),
@@ -437,6 +507,11 @@ describe("destroyBot", () => {
           findMany: vi.fn().mockResolvedValue([]),
           deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
         },
+        page: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        secret: {
+          findMany: vi.fn().mockResolvedValue([]),
+          deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+        },
         computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
         computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         $executeRaw: vi.fn().mockResolvedValue(1),
@@ -455,7 +530,7 @@ describe("destroyBot", () => {
       },
       externalEffect: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
       message: { findMany: vi.fn(async () => []) },
-      secret: { deleteMany: deleteSecrets },
+      secret: { findMany: vi.fn().mockResolvedValue([]), deleteMany: deleteSecrets },
       routine: { findMany: vi.fn().mockResolvedValue([]) },
       $transaction: transaction,
     } as unknown as PrismaClient;
@@ -564,12 +639,13 @@ describe("destroyBot", () => {
         },
         attempt: { updateMany: cancelAttempts },
         task: { updateMany: cancelTasks },
-        secret: { deleteMany: vi.fn() },
+        secret: { findMany: vi.fn().mockResolvedValue([]), deleteMany: vi.fn() },
         chatGroupMember: { deleteMany: deleteMemberships },
         artifact: {
           findMany: vi.fn().mockResolvedValue([]),
           deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
         },
+        page: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
         computerExecutionLease: {
           deleteMany: deleteExecutionLeases,
           updateMany: expireExecutionLeases,
@@ -2008,7 +2084,7 @@ describe("archiveBot", () => {
             .mockResolvedValue([{ id: "run-1", userId: "user-1", spaceId: "workspace-1" }]),
         },
         task: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
-        secret: { deleteMany: deleteSecrets },
+        secret: { findMany: vi.fn().mockResolvedValue([]), deleteMany: deleteSecrets },
         routine: { updateMany: disableRoutines },
         computerExecutionLease: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
@@ -2359,6 +2435,11 @@ function deletionPrisma(team: { id: string }) {
         deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       artifact: {
+        findMany: vi.fn().mockResolvedValue([]),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      page: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      secret: {
         findMany: vi.fn().mockResolvedValue([]),
         deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       },

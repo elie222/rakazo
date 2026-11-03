@@ -80,12 +80,18 @@ const BARE_SECRET =
 const WINDOWS_PROFILE = /[A-Z]:[\\/]Users[\\/](?:(?![A-Z]:[\\/])[^\\/\r\n])+/gi;
 const POSIX_PROFILE = /(?:\/Users\/|\/home\/)[^/\s]+/g;
 
+// A shared page's link is its only credential, in the API path and in the web page path, alone
+// or anywhere in text after an origin or a separator. The lookbehind runs only after a link path
+// matched and stops at the previous slash, so the scan stays linear.
+const PAGE_SHARE_LINK =
+  /(\/(?:api\/v1\/pages\/shared|p)\/)(?<=(?:^|[\s"'`(<=,;[{]|:\/\/[^/\s]*)\/(?:api\/v1\/pages\/shared|p)\/)[^/?#\s"'`<>()[\]{},;:]+/gi;
 // An unfinished quoted value consumes the rest of the text as well.
 const INVALID_HEADER_VALUE =
   /Headers\.append: (\\?")[\s\S]*?(?:\1 is an invalid header value\.|$)/g;
 
 export function redactSensitiveText(text: string): string {
   return text
+    .replace(PAGE_SHARE_LINK, `$1${REDACTED}`)
     .replace(INVALID_HEADER_VALUE, `Headers.append: $1${REDACTED}$1 is an invalid header value.`)
     .replace(EMAIL_CANDIDATE, (candidate) => (candidate.includes("@") ? REDACTED : candidate))
     .replace(JSON_SECRET_FIELD, `"$1":"${REDACTED}"`)

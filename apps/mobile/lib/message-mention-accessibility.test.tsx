@@ -39,7 +39,16 @@ vi.mock("./native", () => ({ native: {}, useResolvedAppearance: () => "dark" }))
 
 vi.mock("@rakazo/chat-ui/native", () => ({
   ChatMarkdown: () => null,
-  plainTextLinkParts: (text: string) => [{ type: "text", value: text }],
+  plainTextLinkParts: (text: string) =>
+    text
+      .split(/(\[[^\]]*\]\(page:[^)]+\))/)
+      .filter(Boolean)
+      .map((piece) => {
+        const page = piece.match(/^\[([^\]]*)\]\(page:([^)]+)\)$/);
+        return page
+          ? { type: "page", value: page[1], pageId: page[2] }
+          : { type: "text", value: piece };
+      }),
   withBlockMentions: <T,>(blocks: T) => blocks,
 }));
 
@@ -63,6 +72,7 @@ vi.mock("../components/inline-image-attachment", () => ({ InlineImageAttachment:
 vi.mock("../components/instruction-undo", () => ({ InstructionUndo: () => null }));
 vi.mock("../components/McpApprovalCard", () => ({ McpApprovalCard: () => null }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("../components/pages/page-card", () => ({ PageCard: () => null }));
 
 import { MessageBubble } from "../components/thread/message-bubble";
 
@@ -152,6 +162,13 @@ describe("bots named in a sent message", () => {
     props!.onAccessibilityAction!(action("reply"));
     expect(forwarded).toHaveBeenCalledOnce();
     expect(onOpenBot).toHaveBeenCalledOnce();
+  });
+
+  it("names no bot from a page link's title", () => {
+    expect(surface("[@Ada notes](page:pg_1) for @Ben")!.accessibilityActions).toEqual([
+      { name: "reply", label: "Reply" },
+      { name: "open-bot:bot-ben", label: "Open Ben" },
+    ]);
   });
 
   it("adds nothing when no bot is named or the message is not the user's", () => {

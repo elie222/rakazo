@@ -1,5 +1,6 @@
 import * as z from "zod";
 import { Id, IsoDate } from "./ids.js";
+import { PageSourceSchema, PageTitleSchema } from "./pages.js";
 
 /**
  * A whole account as one zip, to move between Rakazo installs (Cloud to self-hosted and back).
@@ -14,7 +15,7 @@ import { Id, IsoDate } from "./ids.js";
  *
  * Content is decrypted. Ids are the source install's; an import gives every row a new id and
  * rewrites references, including ids inside message blocks. Credentials, integrations, runs,
- * billing and computers are not exported: they belong to the source install.
+ * billing, computers and page links are not exported: they belong to the source install.
  */
 export const ACCOUNT_EXPORT_FORMAT = "rakazo-account-export";
 export const ACCOUNT_EXPORT_VERSION = 1;
@@ -110,6 +111,27 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     botId: Id.nullable(),
     replyToMessageId: Id.nullable(),
     replyQuote: z.string().nullable(),
+    createdAt: IsoDate,
+  }),
+  /** A page arrives private: its link stays with the source install. */
+  z.object({
+    type: z.literal("page"),
+    id: Id,
+    botId: Id.nullable(),
+    groupId: Id.nullable(),
+    title: PageTitleSchema,
+    pinnedAt: IsoDate.nullable(),
+    currentVersion: z.number().int().positive(),
+    createdAt: IsoDate,
+    updatedAt: IsoDate,
+  }),
+  z.object({
+    type: z.literal("page_version"),
+    id: Id,
+    pageId: Id,
+    version: z.number().int().positive(),
+    title: PageTitleSchema,
+    source: PageSourceSchema,
     createdAt: IsoDate,
   }),
   z.object({

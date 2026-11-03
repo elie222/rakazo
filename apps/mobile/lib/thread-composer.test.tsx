@@ -462,6 +462,26 @@ describe("thread composer isolation", () => {
     expect(container.querySelector('[data-testid="mention-picker"]')).toBeNull();
   });
 
+  it("adds a page's reply on the same line as the draft, without sending it", () => {
+    act(() => composer.current!.addReply("Pick B"));
+    expect(composer.current!.snapshot().promptText).toBe("Pick B");
+    type("then  ");
+    act(() => composer.current!.addReply("Pick B"));
+    expect(composer.current!.snapshot().promptText).toBe("then Pick B");
+    expect(props.send).not.toHaveBeenCalled();
+  });
+
+  it("says when the user deletes the last of its text", () => {
+    const onEmptied = vi.fn();
+    render({ onEmptied });
+    act(() => composer.current!.addReply("Pick B"));
+    onEmptied.mockClear();
+    type("Pick");
+    expect(onEmptied).not.toHaveBeenCalled();
+    type("");
+    expect(onEmptied).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps inserted text when backspacing into a mention afterwards", () => {
     type("ask @He");
     press("@{name}");

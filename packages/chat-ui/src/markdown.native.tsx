@@ -1,5 +1,12 @@
 import type { ColorTokens, ResolvedAppearance } from "@rakazo/ui-tokens";
-import { darkTokens, fontWeight, MAX_FONT_SCALE, typeScale } from "@rakazo/ui-tokens";
+import {
+  darkTokens,
+  fontWeight,
+  MAX_FONT_SCALE,
+  pageIconBars,
+  tokensForAppearance,
+  typeScale,
+} from "@rakazo/ui-tokens";
 import type {
   ASTNode,
   MarkdownStyleMap,
@@ -25,6 +32,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useColorScheme,
   useWindowDimensions,
   View,
 } from "react-native";
@@ -40,6 +48,7 @@ import {
   markdownLinkNeedsPrompt,
   markdownLinkSite,
   markdownMentionId,
+  markdownPageId,
   markRemoteImageLoaded,
   plainTextLinkParts,
   RemoteImagesContext,
@@ -55,6 +64,7 @@ import {
   useMarkdownLinkTrust,
 } from "./markdown-link-prompt";
 import { isMermaidFence } from "./mermaid";
+import { PAGE_ICON } from "./page-icon";
 
 function keepMarkdownLinkToken(_url: string) {
   return true;
@@ -317,6 +327,12 @@ function markdownStyles(palette: ColorTokens) {
       textDecorationLine: "underline",
       textDecorationColor: palette.input,
     },
+    // A page named in a message keeps the text's colour; only a faint underline marks it.
+    page_chip_title: {
+      textDecorationLine: "underline",
+      textDecorationColor:
+        palette.foreground.length === 7 ? `${palette.foreground}4D` : palette.input,
+    },
     link_favicon_plate: {
       backgroundColor: palette.faviconPlate,
       padding: 2,
@@ -338,7 +354,8 @@ async function openSafeLink(url: string) {
 
 const OpenLinkContext = createContext<(url: string) => void>(() => undefined);
 
-function useNativeLinkConfirm() {
+/** Opens a link the way a chat link opens: through the prompt unless it is in-app or trusted. */
+export function useNativeLinkConfirm() {
   const appOrigin = useMarkdownLinkAppOrigin();
   const copy = useMarkdownLinkCopy();
   const { sites, trust } = useMarkdownLinkTrust();
@@ -1109,7 +1126,10 @@ const renderRules: RenderRules = {
   },
 };
 
-const MentionContext = createContext<ChatMarkdownProps["renderMention"]>(undefined);
+/** What a chip in the text does: a mention's rendering, and opening a linked page. */
+const InlineChipsContext = createContext<Pick<ChatMarkdownProps, "renderMention" | "onOpenPage">>(
+  {},
+);
 
 function MarkdownMention({
   id,
@@ -1120,8 +1140,131 @@ function MarkdownMention({
   name: string;
   children: ReactNode;
 }) {
-  const renderMention = useContext(MentionContext);
+  const { renderMention } = useContext(InlineChipsContext);
   return renderMention?.(id, name) ?? <Text>{children}</Text>;
+}
+
+/** `PAGE_ICON` drawn from views so it can sit inline in text; the flap is a border triangle. */
+export function PageIcon({
+  width = PAGE_ICON.width,
+  style,
+}: {
+  width?: number;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const s = width / PAGE_ICON.width;
+  const { foldX, foldY, radius } = PAGE_ICON;
+  const colors = tokensForAppearance(useColorScheme() === "light" ? "light" : "dark");
+  const sheet = { position: "absolute", backgroundColor: colors.pageIconSheet } as const;
+  return (
+    <View
+      accessible={false}
+      importantForAccessibility="no-hide-descendants"
+      style={[{ width, height: PAGE_ICON.height * s }, style]}
+    >
+      <View
+        style={[
+          sheet,
+          {
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: foldX * s,
+            borderTopLeftRadius: radius * s,
+            borderBottomLeftRadius: radius * s,
+          },
+        ]}
+      />
+      <View
+        style={[
+          sheet,
+          {
+            left: foldX * s - 0.5,
+            right: 0,
+            top: foldY * s,
+            bottom: 0,
+            borderBottomRightRadius: radius * s,
+          },
+        ]}
+      />
+      <View
+        style={{
+          position: "absolute",
+          left: foldX * s,
+          top: 0,
+          width: 0,
+          height: 0,
+          borderLeftWidth: (PAGE_ICON.width - foldX) * s,
+          borderTopWidth: foldY * s,
+          borderLeftColor: colors.pageIconFold,
+          borderTopColor: "transparent",
+        }}
+      />
+      {PAGE_ICON.lines.map((line) => (
+        <View
+          key={line.y}
+          style={{
+            position: "absolute",
+            left: line.x * s,
+            top: line.y * s,
+            width: line.width * s,
+            height: line.height * s,
+            borderRadius: (line.height / 2) * s,
+            backgroundColor: colors[line.token],
+          }}
+        />
+      ))}
+      {PAGE_ICON.bars.map((bar, index) => (
+        <View
+          key={bar.x}
+          style={{
+            position: "absolute",
+            left: bar.x * s,
+            top: bar.y * s,
+            width: PAGE_ICON.barWidth * s,
+            height: bar.height * s,
+            borderRadius: (PAGE_ICON.barWidth / 2) * s,
+            backgroundColor: pageIconBars[index],
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
+// The chip's icon is 17/16 of the text, its bottom 2pt below the baseline and 7pt before the
+// title at 16pt text. Inline views drop their margins, so the gap is part of the view.
+const chipIconHeight = (typeScale.body.fontSize * 17) / 16;
+const chipIconWidth = (chipIconHeight * PAGE_ICON.width) / PAGE_ICON.height;
+const pageChipMarker = {
+  width: chipIconWidth + (chipIconHeight * 7) / 17,
+  height: chipIconHeight,
+  transform: [{ translateY: (chipIconHeight * 2) / 17 }],
+} as const;
+
+function MarkdownPageChip({
+  pageId,
+  children,
+  titleStyle,
+  onOpenPage,
+}: {
+  pageId: string;
+  children: ReactNode;
+  titleStyle: MarkdownStyleMap[string];
+  /** A user bubble's opener; Markdown reads it from the message. */
+  onOpenPage?: (pageId: string) => void;
+}) {
+  const fromMessage = useContext(InlineChipsContext).onOpenPage;
+  const openPage = onOpenPage ?? fromMessage;
+  if (!openPage) return <Text>{children}</Text>;
+  return (
+    <Text accessibilityRole="link" onPress={() => openPage(pageId)}>
+      <View style={pageChipMarker}>
+        <PageIcon width={chipIconWidth} />
+      </View>
+      <Text style={titleStyle}>{children}</Text>
+    </Text>
+  );
 }
 
 function renderMarkdownLink(
@@ -1130,6 +1273,14 @@ function renderMarkdownLink(
   styleMap: MarkdownStyleMap,
   block: boolean,
 ) {
+  const pageId = markdownPageId(node.attributes.href);
+  if (pageId) {
+    return (
+      <MarkdownPageChip key={node.key} pageId={pageId} titleStyle={styleMap.page_chip_title}>
+        {children}
+      </MarkdownPageChip>
+    );
+  }
   const mentionId = markdownMentionId(node.attributes.href);
   if (mentionId) {
     return (
@@ -1306,6 +1457,7 @@ type LinkifiedTextProps = {
   palette: ColorTokens;
   /** Renders the runs between links, which are plain strings by default. */
   renderText?: (text: string) => ReactNode;
+  onOpenPage?: (pageId: string) => void;
 };
 
 export const LinkifiedText = memo(function LinkifiedText({
@@ -1314,6 +1466,7 @@ export const LinkifiedText = memo(function LinkifiedText({
   linkColor,
   palette,
   renderText,
+  onOpenPage,
 }: LinkifiedTextProps) {
   const openLink = useNativeLinkConfirm();
   const labelStyle: TextStyle = {
@@ -1331,6 +1484,18 @@ export const LinkifiedText = memo(function LinkifiedText({
             <Fragment key={index}>{renderText(part.value)}</Fragment>
           ) : (
             part.value
+          );
+        }
+        if (part.type === "page") {
+          return (
+            <MarkdownPageChip
+              key={index}
+              pageId={part.pageId}
+              titleStyle={{ textDecorationLine: "underline", textDecorationColor: linkColor }}
+              onOpenPage={onOpenPage}
+            >
+              {part.value}
+            </MarkdownPageChip>
           );
         }
         const open = () => {
@@ -1376,6 +1541,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   children,
   streaming = false,
   renderMention,
+  onOpenPage,
   palette = darkTokens,
   colorScheme = "dark",
 }: ChatMarkdownProps & { palette?: ColorTokens; colorScheme?: ResolvedAppearance }) {
@@ -1396,9 +1562,10 @@ export const ChatMarkdown = memo(function ChatMarkdown({
     },
   };
 
+  const inlineChips = useMemo(() => ({ renderMention, onOpenPage }), [renderMention, onOpenPage]);
   return (
     <OpenLinkContext.Provider value={openLink}>
-      <MentionContext.Provider value={renderMention}>
+      <InlineChipsContext.Provider value={inlineChips}>
         <View style={layout.wrap}>
           <LinkFaviconsPausedContext.Provider value={streaming}>
             <DiagramSurfaceContext.Provider value={diagramSurface}>
@@ -1412,7 +1579,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
             </DiagramSurfaceContext.Provider>
           </LinkFaviconsPausedContext.Provider>
         </View>
-      </MentionContext.Provider>
+      </InlineChipsContext.Provider>
     </OpenLinkContext.Provider>
   );
 });
