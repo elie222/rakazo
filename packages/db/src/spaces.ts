@@ -125,7 +125,7 @@ async function createSpaceDefaults(
   });
 }
 
-function normalizeSpaceName(name: string): string {
+export function normalizeSpaceName(name: string): string {
   const trimmed = name.trim();
   if (!displayName(trimmed, "") || trimmed.length > 60) throw new InvalidSpaceNameError();
   return trimmed;
@@ -470,9 +470,9 @@ export async function personalOrganizationIds(
 export async function claimSpacesLeavingWithAccount(
   prisma: PrismaClient,
   userId: string,
-): Promise<string[]> {
+): Promise<{ claimId: string; spaceIds: string[] }> {
   const organizationIds = await personalOrganizationIds(prisma, userId);
-  const claimId = accountDeletionClaimId(userId);
+  const claimId = `account-deletion:${userId}`;
   const candidates = await prisma.space.findMany({
     where: {
       OR: [
@@ -484,67 +484,77 @@ export async function claimSpacesLeavingWithAccount(
     select: { id: true },
     orderBy: { createdAt: "asc" },
   });
-  const claimed: string[] = [];
+  const spaceIds: string[] = [];
   for (const { id } of candidates) {
     const won = await withTransactionRetry(() =>
-      prisma.$transaction(
-        async (tx) => {
-          await lockSpaceDeletion(tx, id);
-          const space = await tx.space.findUnique({
-            where: { id },
-            select: { deletingAt: true, deletionClaimId: true },
-          });
-          if (!space) return false;
-          if (space.deletionClaimId === claimId) return true;
-          const others = await tx.spaceMember.count({
-            where: { spaceId: id, userId: { not: userId } },
-          });
-          if (others > 0) return false;
-          const stale = new Date(Date.now() - SPACE_DELETION_CLAIM_TIMEOUT_MS);
-          if (space.deletionClaimId && space.deletingAt && space.deletingAt >= stale)
-            throw new SpaceDeletionInProgressError();
-          await tx.space.update({
-            where: { id },
-            data: { deletingAt: new Date(), deletionClaimId: claimId },
-          });
-          return true;
-        },
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-      ),
+      prisma.$transaction((tx) => claimSpaceForDeletion(tx, id, claimId, userId), {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      }),
     );
-    if (won) claimed.push(id);
+    if (won) spaceIds.push(id);
   }
-  return claimed;
+  return { claimId, spaceIds };
 }
 
 /**
- * Delete a space claimed by `claimSpacesLeavingWithAccount`, once its bots and sandboxes are
- * gone. Rows left in it go by cascade, and its keys with it. Returns the stored artifacts to
- * remove after commit, or null when someone joined after the claim: the space stays, unclaimed.
+ * Claims a Space for a whole-account or whole-organization deletion, keeping a claim it already
+ * holds. False when the Space is gone or, with `soleMemberId`, someone else belongs to it.
  */
-export async function deleteSpaceLeavingWithAccount(
+export async function claimSpaceForDeletion(
+  tx: Prisma.TransactionClient,
+  spaceId: string,
+  claimId: string,
+  soleMemberId?: string,
+): Promise<boolean> {
+  await lockSpaceDeletion(tx, spaceId);
+  const space = await tx.space.findUnique({
+    where: { id: spaceId },
+    select: { deletingAt: true, deletionClaimId: true },
+  });
+  if (!space) return false;
+  if (space.deletionClaimId === claimId) return true;
+  if (soleMemberId) {
+    const others = await tx.spaceMember.count({
+      where: { spaceId, userId: { not: soleMemberId } },
+    });
+    if (others > 0) return false;
+  }
+  const stale = new Date(Date.now() - SPACE_DELETION_CLAIM_TIMEOUT_MS);
+  if (space.deletionClaimId && space.deletingAt && space.deletingAt >= stale)
+    throw new SpaceDeletionInProgressError();
+  await tx.space.update({
+    where: { id: spaceId },
+    data: { deletingAt: new Date(), deletionClaimId: claimId },
+  });
+  return true;
+}
+
+/**
+ * Delete a space claimed by `claimSpaceForDeletion`, once its bots and sandboxes are gone. Rows
+ * left in it go by cascade, and its keys with it. Returns the stored artifacts to remove after
+ * commit. With `soleMemberId`, a space someone joined after the claim is released instead and
+ * null is returned.
+ */
+export async function deleteClaimedSpace(
   prisma: PrismaClient,
-  input: { spaceId: string; userId: string },
+  input: { spaceId: string; claimId: string; soleMemberId?: string },
 ): Promise<{ artifactKeys: string[]; pageShareSecrets: PageShareSecret[] } | null> {
-  const claimId = accountDeletionClaimId(input.userId);
+  const { spaceId, claimId, soleMemberId } = input;
   return withTransactionRetry(() =>
     prisma.$transaction(
       async (tx) => {
-        await lockSpaceDeletion(tx, input.spaceId);
+        await lockSpaceDeletion(tx, spaceId);
         const [others, remainingBots, remainingComputers, artifacts] = await Promise.all([
-          tx.spaceMember.count({
-            where: { spaceId: input.spaceId, userId: { not: input.userId } },
-          }),
-          tx.bot.count({ where: { spaceId: input.spaceId } }),
-          tx.computer.count({ where: { spaceId: input.spaceId } }),
-          tx.artifact.findMany({
-            where: { spaceId: input.spaceId },
-            select: { storageKey: true },
-          }),
+          soleMemberId
+            ? tx.spaceMember.count({ where: { spaceId, userId: { not: soleMemberId } } })
+            : 0,
+          tx.bot.count({ where: { spaceId } }),
+          tx.computer.count({ where: { spaceId } }),
+          tx.artifact.findMany({ where: { spaceId }, select: { storageKey: true } }),
         ]);
         if (others > 0) {
           await tx.space.updateMany({
-            where: { id: input.spaceId, deletionClaimId: claimId },
+            where: { id: spaceId, deletionClaimId: claimId },
             data: { deletingAt: null, deletionClaimId: null },
           });
           return null;
@@ -553,12 +563,10 @@ export async function deleteSpaceLeavingWithAccount(
         if (remainingBots > 0 || remainingComputers > 0) throw new SpaceDeletionInProgressError();
         // The page links' tokens go with the Space; the caller removes them from the store.
         const pageShareSecrets = await tx.secret.findMany({
-          where: { pageShare: { is: { spaceId: input.spaceId } } },
+          where: { pageShare: { is: { spaceId } } },
           select: { id: true, ciphertext: true },
         });
-        const gone = await tx.space.deleteMany({
-          where: { id: input.spaceId, deletionClaimId: claimId },
-        });
+        const gone = await tx.space.deleteMany({ where: { id: spaceId, deletionClaimId: claimId } });
         return {
           artifactKeys: artifacts.map((artifact) => artifact.storageKey),
           pageShareSecrets: gone.count > 0 ? pageShareSecrets : [],
@@ -590,9 +598,4 @@ export async function renameSpaceForMember(
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),
   );
-}
-
-/** Stable per account, so a retried deletion keeps its own claims. */
-function accountDeletionClaimId(userId: string) {
-  return `account-deletion:${userId}`;
 }

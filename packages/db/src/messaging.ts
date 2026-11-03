@@ -92,7 +92,10 @@ export async function provisionMessagingIdentity(
       });
   }
 
-  const membership = await prisma.spaceMember.findFirst({ where: { userId: user.id } });
+  const membership = await prisma.spaceMember.findFirst({
+    where: { userId: user.id },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
   const spaceId = membership?.spaceId ?? (await bootstrapUserSpace(prisma, user, env)).spaceId;
 
   // A previous attempt may have died between createBot and the identity row;

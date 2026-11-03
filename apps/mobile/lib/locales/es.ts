@@ -1252,6 +1252,10 @@ export const ES_MESSAGES: Record<string, string> = {
     "{count} bots ahora usan el modelo predeterminado del espacio.",
   "Could not switch {failedNames}. Try again.":
     "No se pudo cambiar {failedNames}. Vuelve a intentarlo.",
+  "Create organization": "Crear organización",
+  Organization: "Organización",
+  "Delete organization": "Eliminar organización",
+  "Type {name} to confirm": "Escribe {name} para confirmar",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

@@ -1314,6 +1314,10 @@ export const ZH_MESSAGES: Record<string, string> = {
   "1 bot now uses the space default.": "1 个 Bot 已改用空间默认。",
   "{count} bots now use the space default.": "{count} 个 Bot 已改用空间默认。",
   "Could not switch {failedNames}. Try again.": "无法切换 {failedNames}。请重试。",
+  "Create organization": "创建组织",
+  Organization: "组织",
+  "Delete organization": "删除组织",
+  "Type {name} to confirm": "输入 {name} 以确认",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

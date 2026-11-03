@@ -1191,6 +1191,7 @@ msgstr "Kan afbeeldingen niet lezen"
 #: src/pages/model-settings/space-bots-model.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -2386,6 +2387,7 @@ msgstr "Je tijdzone bijwerken mislukt"
 msgid "Couldn't update your wallet"
 msgstr ""
 
+#: src/components/CreateOrganizationDialog.tsx
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -2406,6 +2408,12 @@ msgstr "Account aanmaken"
 #: src/pages/GroupPanel.tsx
 msgid "Create group"
 msgstr "Groep aanmaken"
+
+#: src/components/AccountMenu.tsx
+#: src/components/CreateOrganizationDialog.tsx
+#: src/components/SidebarFooter.tsx
+msgid "Create organization"
+msgstr "Organisatie maken"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Create Routine"
@@ -2552,6 +2560,7 @@ msgstr "Standaardbereik"
 #: src/pages/BotContextMenu.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/archived-chats.tsx
 #: src/pages/shell/dialogs.tsx
@@ -2578,6 +2587,7 @@ msgstr "{0} verwijderen"
 #. placeholder {0}: deleting.name
 #. placeholder {0}: item.name
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Delete {0}?"
 msgstr "{0} verwijderen?"
@@ -2594,6 +2604,10 @@ msgstr "Groep verwijderen"
 #: src/pages/shell/dialogs.tsx
 msgid "Delete memories too"
 msgstr "Herinneringen ook verwijderen"
+
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Delete organization"
+msgstr "Organisatie verwijderen"
 
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Delete section"
@@ -2614,6 +2628,7 @@ msgstr "verwijderd"
 
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Deleting…"
 msgstr "Bezig met verwijderen…"
@@ -4061,6 +4076,7 @@ msgstr "Gedempt"
 msgid "My computers"
 msgstr ""
 
+#: src/components/CreateOrganizationDialog.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -4068,6 +4084,7 @@ msgstr ""
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/providers-section.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -4527,8 +4544,9 @@ msgid "Or paste an API key"
 msgstr "Of plak een API-sleutel"
 
 #: src/components/ComputerProviderSettings.tsx
+#: src/pages/settings-nav.ts
 msgid "Organization"
-msgstr ""
+msgstr "Organisatie"
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
@@ -6239,6 +6257,7 @@ msgstr "Dit gesprek rinkelt niet meer."
 msgid "This can't be undone."
 msgstr "Dit kan niet ongedaan worden gemaakt."
 
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "This cannot be undone."
 msgstr "Dit kan niet ongedaan worden gemaakt."
@@ -6488,6 +6507,10 @@ msgstr "dinsdag"
 #: src/components/VaultSettings.tsx
 msgid "Type"
 msgstr "Type"
+
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Type {name} to confirm"
+msgstr "Typ {name} om te bevestigen"
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Type without recording"

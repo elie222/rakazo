@@ -29,6 +29,7 @@ import { GlassIconButton } from "../components/glass-icon-button";
 import { NativeActionButton } from "../components/native-action-button";
 import { NativeSegmentedControl } from "../components/native-segmented-control";
 import { NativeSymbol } from "../components/native-symbol";
+import { useOrganizationMenuAction } from "../components/organization-menu";
 import { FORM_COLUMN_WIDTH } from "../lib/adaptive-layout";
 import { rpc, signOut } from "../lib/api";
 import { replaceWithSignIn } from "../lib/auth-routing";
@@ -45,6 +46,7 @@ import {
 import { translucentColor } from "../lib/color";
 import { dateLocaleForUi, useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
+import { organizationSwitchActions, useOrganizations } from "../lib/organizations";
 import { errorText } from "../lib/user-error";
 
 type Amount = (typeof MODEL_CREDIT_AMOUNTS)[number];
@@ -77,6 +79,8 @@ export default function Paywall() {
   const [interval, setByokInterval] = useState<ByokInterval>("month");
   const [pending, setPending] = useState(false);
   const deletion = useAccountDeletion();
+  const organizations = useOrganizations(!dismissible).data;
+  const organizationAction = useOrganizationMenuAction(organizations);
   useEffect(() => {
     if (deletion.error) Alert.alert(deletion.error);
   }, [deletion.error]);
@@ -180,13 +184,15 @@ export default function Paywall() {
       ) : (
         <MenuView
           actions={[
+            ...organizationSwitchActions(organizations),
             { id: "sign-out", title: t("Sign out") },
             { id: "delete", title: t("Delete account") },
           ]}
           onPressAction={({ nativeEvent }) => {
             if (pending || deletion.pending) return;
             if (nativeEvent.event === "delete") void deletion.request();
-            else void leave();
+            else if (nativeEvent.event === "sign-out") void leave();
+            else organizationAction(nativeEvent.event);
           }}
         >
           <View

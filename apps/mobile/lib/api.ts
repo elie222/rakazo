@@ -95,6 +95,8 @@ import { authResponseErrorText, errorText, sessionSaveErrorText } from "./user-e
 
 const SPACE_KEY = "rakazo.space_id";
 const SPACE_ROLLBACK_KEY = "rakazo.space_rollback";
+/** The Space last used in each organization on this device, by organization id. */
+const ORGANIZATION_SPACES_KEY = "rakazo.org_spaces";
 const RPC_TIMEOUT_MS = 8_000;
 export const MAX_MOBILE_AUTH_RESPONSE_BYTES = 256 * 1024;
 export const MAX_MOBILE_RPC_RESPONSE_BYTES = 16 * 1024 * 1024;
@@ -296,7 +298,36 @@ export async function selectInitialSpace(id: string) {
   return selectSpace(id);
 }
 
+export async function loadOrganizationSpaces(): Promise<Record<string, string>> {
+  try {
+    const parsed: unknown = JSON.parse(
+      (await SecureStore.getItemAsync(ORGANIZATION_SPACES_KEY)) || "{}",
+    );
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? Object.fromEntries(
+          Object.entries(parsed).filter(
+            (entry): entry is [string, string] => typeof entry[1] === "string",
+          ),
+        )
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+export async function rememberOrganizationSpace(
+  organizationId: string,
+  spaceId: string,
+): Promise<void> {
+  const spaces = await loadOrganizationSpaces();
+  await writeStoredValue(
+    ORGANIZATION_SPACES_KEY,
+    JSON.stringify({ ...spaces, [organizationId]: spaceId }),
+  );
+}
+
 export async function clearSpace(): Promise<boolean> {
+  await clearStoredValue(ORGANIZATION_SPACES_KEY);
   const spaceCleared = await clearStoredValue(SPACE_KEY);
   const rollbackCleared = await clearStoredValue(SPACE_ROLLBACK_KEY);
   if (!spaceCleared || !rollbackCleared) return false;
@@ -361,6 +392,7 @@ async function clearCredentialsForEndpointChange(): Promise<
   const sessionCleared = await clearSessionToken();
   cachedSpaceId = "";
   bumpSpaceSelectionGeneration();
+  await clearStoredValue(ORGANIZATION_SPACES_KEY);
   const spaceCleared = await clearStoredValue(SPACE_KEY);
   if (sessionCleared && spaceCleared) {
     return {

@@ -1336,6 +1336,10 @@ export const JA_MESSAGES: Record<string, string> = {
     "{count}個のボットがスペースのデフォルトを使用するようになりました。",
   "Could not switch {failedNames}. Try again.":
     "{failedNames}を切り替えられませんでした。もう一度お試しください。",
+  "Create organization": "組織を作成",
+  Organization: "組織",
+  "Delete organization": "組織を削除",
+  "Type {name} to confirm": "確認のため {name} と入力",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "{peer}とのメッセージ{count}件" };

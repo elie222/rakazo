@@ -54,15 +54,11 @@ describe("unavailable space", () => {
       expect(new Headers(init?.headers).has("x-rakazo-space-id")).toBe(false);
       return Response.json({
         json: {
-          current: {
-            id: "home",
-            name: "Home",
-            bots: [],
-            groups: [],
-            externalConversations: [],
-            botSections: [],
-          },
-          spaces: spaces.map((id) => ({ id })),
+          activeOrganizationId: "personal",
+          organizations: [
+            { id: "personal", name: "Personal", defaultSpaceId: "home", spaceIds: spaces },
+            { id: "work", name: "Work", defaultSpaceId: "work-home", spaceIds: ["work-home"] },
+          ],
         },
       });
     });
@@ -98,6 +94,13 @@ describe("unavailable space", () => {
       expect(items.get("rakazo:space-id")).toBe("space-a");
       expect(reload).not.toHaveBeenCalled();
     }
+  });
+
+  it("keeps a space that belongs to another of the user's organizations", async () => {
+    const { items, reload } = browser("work-home", ["home"]);
+    await leaveUnavailableSpace("work-home");
+    expect(items.get("rakazo:space-id")).toBe("work-home");
+    expect(reload).not.toHaveBeenCalled();
   });
 });
 

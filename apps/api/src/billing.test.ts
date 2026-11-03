@@ -18,8 +18,10 @@ function service(getPrice: BillingProvider["getPrice"], role = "owner") {
     member: {
       findUnique: vi.fn().mockResolvedValue({ role }),
       count: vi.fn().mockResolvedValue(3),
+      findFirst: vi.fn().mockResolvedValue(null),
     },
     billingAccount: { findUnique: vi.fn().mockResolvedValue(null) },
+    user: { findUnique: vi.fn().mockResolvedValue({ billingTrialUsedAt: null }) },
   } as unknown as PrismaClient;
   const provider = {
     describe: () => ({ capabilities: { trials: true, portal: true } }),

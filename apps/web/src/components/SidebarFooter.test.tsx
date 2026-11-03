@@ -243,3 +243,62 @@ it("keeps at most three marks with the same tile and a missing-logo fallback", a
   expect(new Set(tiles.map((tile) => tile.className)).size).toBe(1);
   expect(tiles[1]!.textContent).toBe("N");
 });
+
+const personal = { id: "org-personal", name: "Personal", defaultSpaceId: "s1", spaceIds: ["s1"] };
+const work = { id: "org-work", name: "Work", defaultSpaceId: "s2", spaceIds: ["s2"] };
+
+async function renderOrganizations(
+  organizations: (typeof personal)[],
+  onSwitchOrganization = vi.fn(),
+) {
+  await act(async () =>
+    root.render(
+      <DesktopUpdatesProvider>
+        <SidebarFooter
+          name="Demo User"
+          initials="DU"
+          email="account@rakazo.test"
+          open
+          onOpenChange={() => {}}
+          onIntegrations={() => {}}
+          onSkills={() => {}}
+          onArtifacts={() => {}}
+          onSettings={() => {}}
+          onUsage={() => {}}
+          onLogOut={() => {}}
+          signingOut={false}
+          logOutError={null}
+          organizations={organizations}
+          activeOrganizationId="org-personal"
+          onSwitchOrganization={onSwitchOrganization}
+          onCreateOrganization={() => {}}
+        />
+      </DesktopUpdatesProvider>,
+    ),
+  );
+  return [...document.querySelector('[data-slot="popover-content"]')!.querySelectorAll("button")];
+}
+
+it("offers only Create organization with one organization", async () => {
+  const rows = await renderOrganizations([personal]);
+  expect(rows.map((row) => row.textContent).slice(0, 2)).toEqual([
+    "Create organization",
+    "Settings",
+  ]);
+});
+
+it("lists two organizations with the active one checked, then Create organization", async () => {
+  const onSwitch = vi.fn();
+  const rows = await renderOrganizations([personal, work], onSwitch);
+  expect(rows.map((row) => row.textContent).slice(0, 3)).toEqual([
+    "Personal",
+    "Work",
+    "Create organization",
+  ]);
+  expect(rows[0]!.getAttribute("aria-current")).toBe("true");
+  expect(rows[0]!.querySelector("svg")).not.toBeNull();
+  expect(rows[1]!.hasAttribute("aria-current")).toBe(false);
+  expect(rows[1]!.querySelector("svg")).toBeNull();
+  await act(async () => rows[1]!.click());
+  expect(onSwitch).toHaveBeenCalledWith(work);
+});

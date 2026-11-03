@@ -1191,6 +1191,7 @@ msgstr "Görselleri okuyamaz"
 #: src/pages/model-settings/space-bots-model.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -2386,6 +2387,7 @@ msgstr ""
 msgid "Couldn't update your wallet"
 msgstr ""
 
+#: src/components/CreateOrganizationDialog.tsx
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -2406,6 +2408,12 @@ msgstr "Hesap oluştur"
 #: src/pages/GroupPanel.tsx
 msgid "Create group"
 msgstr "Grup oluştur"
+
+#: src/components/AccountMenu.tsx
+#: src/components/CreateOrganizationDialog.tsx
+#: src/components/SidebarFooter.tsx
+msgid "Create organization"
+msgstr "Kuruluş oluştur"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Create Routine"
@@ -2552,6 +2560,7 @@ msgstr "Varsayılan kapsam"
 #: src/pages/BotContextMenu.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/archived-chats.tsx
 #: src/pages/shell/dialogs.tsx
@@ -2578,6 +2587,7 @@ msgstr "{0} sil"
 #. placeholder {0}: deleting.name
 #. placeholder {0}: item.name
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Delete {0}?"
 msgstr "{0} silinsin mi?"
@@ -2594,6 +2604,10 @@ msgstr "Grubu sil"
 #: src/pages/shell/dialogs.tsx
 msgid "Delete memories too"
 msgstr "Hafızayı da sil"
+
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Delete organization"
+msgstr "Kuruluşu sil"
 
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Delete section"
@@ -2614,6 +2628,7 @@ msgstr "silindi"
 
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Deleting…"
 msgstr "Siliniyor…"
@@ -4061,6 +4076,7 @@ msgstr ""
 msgid "My computers"
 msgstr ""
 
+#: src/components/CreateOrganizationDialog.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -4068,6 +4084,7 @@ msgstr ""
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/providers-section.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -4527,8 +4544,9 @@ msgid "Or paste an API key"
 msgstr "Veya bir API anahtarı yapıştır"
 
 #: src/components/ComputerProviderSettings.tsx
+#: src/pages/settings-nav.ts
 msgid "Organization"
-msgstr ""
+msgstr "Kuruluş"
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
@@ -6239,6 +6257,7 @@ msgstr ""
 msgid "This can't be undone."
 msgstr "Bu işlem geri alınamaz."
 
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "This cannot be undone."
 msgstr "Bu işlem geri alınamaz."
@@ -6488,6 +6507,10 @@ msgstr "Salı"
 #: src/components/VaultSettings.tsx
 msgid "Type"
 msgstr ""
+
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Type {name} to confirm"
+msgstr "Onaylamak için {name} yazın"
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Type without recording"

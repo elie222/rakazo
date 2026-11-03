@@ -38,6 +38,8 @@ model User {
   /// emails then follow the language of the browser that asked for them.
   locale                      String?
   marketingEmailOptOutAt      DateTime?
+  /// When an organization this person owns first subscribed or was given free own-key days.
+  billingTrialUsedAt          DateTime?
   sessions                    Session[]
   accounts                    Account[]
   passkeys                    Passkey[]

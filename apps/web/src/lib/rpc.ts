@@ -12,6 +12,7 @@ import { identityLabels } from "./identity-display";
 import { reportClientError } from "./monitoring";
 
 const SPACE_STORAGE_KEY = "rakazo:space-id";
+export const ORGANIZATION_SPACES_STORAGE_KEY = "rakazo:org-spaces";
 
 type RpcClientContext = { spaceId?: string | null };
 
@@ -47,6 +48,7 @@ export function selectSpace(id: string): boolean {
 export function clearSpaceSelection(): void {
   try {
     window.localStorage.removeItem(SPACE_STORAGE_KEY);
+    window.localStorage.removeItem(ORGANIZATION_SPACES_STORAGE_KEY);
   } catch {
     // Ignore storage failures on sign-out / reset paths.
   }
@@ -120,13 +122,20 @@ let leavingSpace: Promise<void> | null = null;
 /**
  * The server answers 401 when the selected space is no longer one of the user's, for instance
  * after they are removed from it, and every request would keep failing. Ask without a space which
- * spaces the user has; if the selected one is not among them, reload into their default space.
+ * spaces the user has in any organization; if the selected one is not among them, reload into
+ * their default space.
  */
 export function leaveUnavailableSpace(spaceId: string): Promise<void> {
   leavingSpace ??= (async () => {
     try {
-      const { spaces } = await rpc.spaces.list(undefined, { context: { spaceId: null } });
-      if (spaces.some((space) => space.id === spaceId) || selectedSpaceId() !== spaceId) return;
+      const { organizations } = await rpc.organizations.list(undefined, {
+        context: { spaceId: null },
+      });
+      if (
+        organizations.some((organization) => organization.spaceIds.includes(spaceId)) ||
+        selectedSpaceId() !== spaceId
+      )
+        return;
       clearSpaceSelection();
       window.location.reload();
     } catch {

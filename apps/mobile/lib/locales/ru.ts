@@ -1343,6 +1343,10 @@ export const RU_MESSAGES: Record<string, string> = {
     "Ботов переведено на модель пространства по умолчанию: {count}.",
   "Could not switch {failedNames}. Try again.":
     "Не удалось переключить {failedNames}. Попробуйте снова.",
+  "Create organization": "Создать организацию",
+  Organization: "Организация",
+  "Delete organization": "Удалить организацию",
+  "Type {name} to confirm": "Введите {name} для подтверждения",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

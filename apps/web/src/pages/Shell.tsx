@@ -360,6 +360,7 @@ function SpaceShell() {
         ?.focus();
     },
   });
+  const openSpaceChatRef = useRef<(spaceId: string, path: string) => void>(() => {});
   useSpaceBootstrap({
     rpc,
     roster,
@@ -374,6 +375,7 @@ function SpaceShell() {
     chat: groupId ? { groupId } : active ? { botId: active.id } : undefined,
     navigate,
     redirectKeepingOverlay,
+    openSpaceChat: openSpaceChatRef,
   });
   const { notifyBrowserForEvent, flushPendingBrowserNotifications } =
     useBrowserNotifications(botsRef);
@@ -494,6 +496,9 @@ function SpaceShell() {
     overlayRevision,
     closeMobileSidebar: () => setMobileSidebarOpen(false),
   });
+  useLayoutEffect(() => {
+    openSpaceChatRef.current = openSpaceChat;
+  }, [openSpaceChat]);
 
   const activeSnapshot = inGroup
     ? snapshot?.groupId === groupId
@@ -985,6 +990,7 @@ function SpaceShell() {
         openSettings={openSettings}
         openIntegrations={() => setOverlay({ kind: "integrations" })}
         openSkills={() => setOverlay({ kind: "skills" })}
+        openSpaceChat={openSpaceChat}
       />
 
       {/* Keep the composer's z-index inside the chat so phone overlays like the side panel cover it. */}

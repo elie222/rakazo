@@ -14,6 +14,7 @@ import { replaceEqualDeep } from "@tanstack/react-query";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { takeInitialBootstrap } from "../../lib/bootstrap";
+import { linkedBotSpaceId } from "../../lib/bootstrap-target";
 import { localTimezone } from "../../lib/local-timezone";
 import { markOnce } from "../../lib/performance";
 import type { ChatTarget } from "../../lib/query";
@@ -244,6 +245,7 @@ export function useSpaceBootstrap({
   chat,
   navigate,
   redirectKeepingOverlay,
+  openSpaceChat,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   roster: SpaceRoster;
@@ -258,6 +260,8 @@ export function useSpaceBootstrap({
   chat: ChatTarget | undefined;
   navigate: Navigation["navigate"];
   redirectKeepingOverlay: Navigation["redirectKeepingOverlay"];
+  /** Opens a linked bot that lives in another of the user's Spaces. */
+  openSpaceChat: RefObject<(spaceId: string, path: string) => void>;
 }) {
   const {
     bots,
@@ -384,6 +388,11 @@ export function useSpaceBootstrap({
             ? groupList.some((group) => group.id === routeGroupId.current)
             : bootstrap.bots.some((bot) => bot.id === routeBotId.current))
         ) {
+          return;
+        }
+        const linkedSpaceId = groupId ? undefined : linkedBotSpaceId(bootstrap, botId);
+        if (linkedSpaceId && botId) {
+          openSpaceChat.current(linkedSpaceId, `/app/${botId}`);
           return;
         }
         if (

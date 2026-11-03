@@ -34,15 +34,30 @@ export function byokFreeUntil(credits: { byokFreeUntil: Date | null }, now = new
 export const FREE_MONTH_DAYS = 30;
 
 /** One statement, so concurrent grants each add their days. */
-export function extendByokFreePeriod(
+export async function extendByokFreePeriod(
   tx: Prisma.TransactionClient,
   organizationId: string,
   days: number,
 ) {
-  return tx.$executeRaw`
+  await tx.$executeRaw`
     UPDATE model_credit_accounts
     SET "byokFreeUntil" = GREATEST(COALESCE("byokFreeUntil", now()), now()) + make_interval(days => ${days}::int)
     WHERE "organizationId" = ${organizationId}`;
+  await markOwnersTrialUsed(tx, { id: organizationId });
+}
+
+/** Survives the organization, so deleting it never earns its owner another trial. */
+async function markOwnersTrialUsed(
+  db: Pick<PrismaClient, "user"> | Prisma.TransactionClient,
+  organization: Prisma.OrganizationWhereInput,
+) {
+  await db.user.updateMany({
+    where: {
+      billingTrialUsedAt: null,
+      members: { some: { organization, role: { contains: "owner" } } },
+    },
+    data: { billingTrialUsedAt: new Date() },
+  });
 }
 
 export async function spaceHasModelAccess(prisma: PrismaClient, spaceId: string) {
@@ -208,6 +223,7 @@ export async function syncBillingSnapshot(
       where: { customerId, subscribedAt: null },
       data: { subscribedAt: startedAt },
     });
+    await markOwnersTrialUsed(prisma, { billing: { is: { customerId } } });
   }
   if (snapshot?.status === "active") {
     await prisma.billingAccount.updateMany({
@@ -260,6 +276,32 @@ export async function ownedBillingAccounts(
       ? [membership.organization.billing]
       : [],
   );
+}
+
+/**
+ * One trial per person. Organizations that subscribed or got free days before the user-level
+ * mark existed still count, so older accounts need no backfill.
+ */
+export async function ownerHadTrial(prisma: PrismaClient, userId: string): Promise<boolean> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { billingTrialUsedAt: true },
+  });
+  if (user?.billingTrialUsedAt) return true;
+  const used = await prisma.member.findFirst({
+    where: {
+      userId,
+      role: { contains: "owner" },
+      organization: {
+        OR: [
+          { billing: { is: { subscribedAt: { not: null } } } },
+          { modelCredits: { is: { byokFreeUntil: { not: null } } } },
+        ],
+      },
+    },
+    select: { id: true },
+  });
+  return used !== null;
 }
 
 function isOwnerRole(role: string): boolean {

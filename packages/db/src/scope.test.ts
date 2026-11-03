@@ -2,8 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { IsolationError, requireMembership } from "./scope.js";
 
-function prismaForMembership(found: boolean) {
+function prismaForMembership(found: boolean, lastActive: string[] = []) {
   return {
+    $queryRaw: vi.fn(async () => lastActive.map((spaceId) => ({ spaceId }))),
     spaceMember: {
       findFirst: vi.fn(async ({ where }: { where: { userId: string; spaceId?: string } }) =>
         found
@@ -51,8 +52,29 @@ describe("requireMembership", () => {
 
     expect(prisma.spaceMember.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: { userId: "user-1" },
         orderBy: [{ space: { isDefault: "desc" } }, { createdAt: "asc" }, { id: "asc" }],
       }),
     );
+  });
+
+  it("without a requested Space, opens the one the user was last active in", async () => {
+    const prisma = prismaForMembership(true, ["space-recent"]);
+
+    await expect(requireMembership(prisma, "user-1")).resolves.toMatchObject({
+      spaceId: "space-recent",
+    });
+    expect(prisma.spaceMember.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: "user-1", spaceId: "space-recent" } }),
+    );
+  });
+
+  it("does not look up recent activity for a requested Space", async () => {
+    const prisma = prismaForMembership(true, ["space-recent"]);
+
+    await expect(requireMembership(prisma, "user-1", "space-support")).resolves.toMatchObject({
+      spaceId: "space-support",
+    });
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
   });
 });

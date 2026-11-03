@@ -469,6 +469,15 @@ function LayoutContent() {
                         headerBackVisible: false,
                       }}
                     />
+                    <Stack.Screen
+                      name="new-organization"
+                      options={{
+                        title: t("Create organization"),
+                        presentation: "modal",
+                        gestureEnabled: true,
+                        headerBackVisible: false,
+                      }}
+                    />
                     <Stack.Screen name="artifacts" options={glassHeaderOptions(t("Artifacts"))} />
                     <Stack.Screen name="artifact" options={{ title: t("Artifact") }} />
                     <Stack.Screen name="pages" options={glassHeaderOptions(t("Pages"))} />

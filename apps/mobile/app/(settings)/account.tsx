@@ -62,6 +62,7 @@ import {
   setLiveNotificationSettings,
 } from "../../lib/live-notifications";
 import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
+import { activeOrganization, useOrganizations } from "../../lib/organizations";
 import type { MobilePasskey } from "../../lib/passkey";
 import {
   addPasskey,
@@ -185,6 +186,7 @@ export default function Account() {
   const updateLabel = formatUpdateLabel(versionInfo.update, t);
   const versionAccessibility = [versionInfo.nativeLabel, updateLabel].filter(Boolean).join(". ");
   const approvals = useApprovalSettings(ACCOUNT_SETTINGS);
+  const organizations = useOrganizations().data;
   const settingsLink = ({ title, href }: { title: string; href: Extract<Href, string> }) => (
     <SettingsRow
       key={href}
@@ -443,6 +445,26 @@ export default function Account() {
           />
           {focus !== "usage" ? usageBlock : null}
         </SettingsGroup>
+
+        {organizations ? (
+          <SettingsGroup>
+            <SettingsRow
+              key="organization"
+              accessibilityRole="button"
+              chevron="right"
+              onPress={() => router.push("/organization")}
+              title={t("Organization")}
+              value={activeOrganization(organizations)?.name}
+            />
+            <SettingsRow
+              key="create-organization"
+              accessibilityRole="button"
+              disabled={pending}
+              onPress={() => openFromSettingsSheet(router, "/new-organization")}
+              title={t("Create organization")}
+            />
+          </SettingsGroup>
+        ) : null}
 
         {(security?.sso && !security.ssoLinked) || canChangePassword ? (
           <SettingsGroup>

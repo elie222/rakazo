@@ -20,6 +20,7 @@ import { BillingSettingsPanel } from "./BillingSettingsPanel";
 import { MemorySettingsOverlay } from "./MemorySettingsOverlay";
 import { MessagingSettingsPanel } from "./MessagingSettingsPanel";
 import { ModelSettingsOverlay } from "./ModelSettingsOverlay";
+import { OrganizationSettingsPanel } from "./OrganizationSettingsPanel";
 import { PaymentWalletSettingsPanel } from "./PaymentWalletSettingsPanel";
 import { SpaceSettingsPanel } from "./SpaceSettingsPanel";
 import { useSettingsNavItems } from "./settings-nav";
@@ -392,6 +393,9 @@ export function SettingsOverlay({
                       onClose={requestClose}
                       onBusyChange={setVoiceBusy}
                     />
+                  ) : null}
+                  {section === "organization" ? (
+                    <OrganizationSettingsPanel onBusyChange={setVoiceBusy} />
                   ) : null}
                   {section === "confirmations" ? <ApprovalRulesSettings scope="account" /> : null}
                   {section === "vault" ? <VaultSettings scope="account" /> : null}
