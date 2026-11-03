@@ -73,14 +73,13 @@ export function SidebarHeader({
             onClick={toggleActivityMode}
             className={`app-no-drag flex h-7 w-7 items-center justify-center rounded-full ${
               activityMode
-                ? "bg-primary text-primary-foreground"
+                ? "bg-accent text-foreground"
                 : "text-muted-foreground/70 hover:text-foreground/75"
             }`}
           >
             <Bell
               size={15}
               strokeWidth={1.8}
-              fill={activityMode ? "currentColor" : "none"}
               aria-hidden="true"
             />
           </Button>
