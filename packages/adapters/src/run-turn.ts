@@ -16,6 +16,7 @@ import {
   displayName,
   humanizeToolName,
   isBackgroundRunTrigger,
+  isKnownRunError,
   redactSecrets,
   TAKEOVER_COMPUTER_PENDING_STATE,
   userRunError,
@@ -913,7 +914,9 @@ export async function failRun(
     await ctx.computer.checkpoint.flush().catch(() => undefined);
   }
   const message = redactSecrets(
-    error instanceof ModelProviderError ? modelFailureReason(error) : userRunError(error),
+    error instanceof ModelProviderError && !isKnownRunError(error.message)
+      ? modelFailureReason(error)
+      : userRunError(error),
     ctx.secrets,
   );
   // Reply text the user watched stream in since the last saved message stays in the

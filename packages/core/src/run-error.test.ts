@@ -4,6 +4,7 @@ import {
   APPROVED_ACTION_NOT_RUN_ERROR,
   HOSTED_MODEL_CREDITS_REQUIRED_ERROR,
   isImageInputConfirmation,
+  isKnownRunError,
   isModelRequiredSendError,
   MISSING_MODEL_RUN_ERROR,
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
@@ -878,4 +879,13 @@ describe("the one action that fixes a failed run", () => {
       });
     },
   );
+});
+
+describe("known application run errors", () => {
+  it("allows fixed recovery advice but no external diagnostic text", () => {
+    expect(isKnownRunError(APPROVED_ACTION_NOT_RUN_ERROR)).toBe(true);
+    expect(isKnownRunError(MODEL_IMAGE_INPUT_ERROR)).toBe(true);
+    expect(isKnownRunError("HTTP 502 gateway body=fixture-secret")).toBe(false);
+    expect(isKnownRunError(`${MODEL_IMAGE_INPUT_ERROR} fixture-secret`)).toBe(false);
+  });
 });

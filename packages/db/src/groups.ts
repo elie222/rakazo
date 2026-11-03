@@ -685,13 +685,14 @@ export async function lockOwnedGroup(
   actor: Pick<Actor, "spaceId" | "userId">,
   groupId: string,
 ) {
+  // Serialize edits without blocking foreign-key checks from concurrent thread messages.
   const locked = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT id
     FROM chat_groups
     WHERE id = ${groupId}
       AND "spaceId" = ${actor.spaceId}
       AND "userId" = ${actor.userId}
-    FOR UPDATE
+    FOR NO KEY UPDATE
   `;
   if (locked.length !== 1) throw new IsolationError();
 }

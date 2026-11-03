@@ -118,6 +118,21 @@ const APP_RUN_ERRORS = new Set([
   ...stuckWorkStatusMessages(),
 ]);
 
+const KNOWN_MODEL_RUN_ERRORS = new Set([
+  MODEL_OUTPUT_LIMIT_ERROR,
+  MODEL_OUTPUT_CUT_ERROR,
+  MODEL_CONTEXT_TOO_SMALL_ERROR,
+  VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR,
+  MODEL_REQUEST_LIMIT_ERROR,
+  MODEL_IMAGE_INPUT_UNKNOWN,
+  MODEL_IMAGE_INPUT_ERROR,
+]);
+
+/** Only application-owned literals may bypass the generic provider failure description. */
+export function isKnownRunError(message: string): boolean {
+  return APP_RUN_ERRORS.has(message) || KNOWN_MODEL_RUN_ERRORS.has(message);
+}
+
 export const RUN_ERROR_LIMIT_MESSAGES = {
   key: {
     none: "{provider} key hit its limit.",
