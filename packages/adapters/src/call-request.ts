@@ -214,9 +214,9 @@ export async function requestUserCall(
           externalConversationId: null,
           bot: { userId: run.userId, spaceId: run.spaceId, archivedAt: null },
         },
-        select: { id: true },
+        select: { bot: { select: { name: true } } },
       });
-      if (!target) return { error: "Calls require the bot's own one-to-one chat." };
+      if (!target?.bot) return { error: "Calls require the bot's own one-to-one chat." };
       const refusal = await callRequestRefusal(tx, {
         ...run,
         groupChat: false,
@@ -247,7 +247,11 @@ export async function requestUserCall(
           callId: request.callId,
         },
       });
-      return { eventSeq: event.seq, firstResponseRunId: event.firstResponse ? run.id : undefined };
+      return {
+        eventSeq: event.seq,
+        firstResponseRunId: event.firstResponse ? run.id : undefined,
+        botName: target.bot.name,
+      };
     }),
   );
   if ("error" in result) return result;
@@ -267,22 +271,16 @@ export async function requestUserCall(
     return { error: "Could not ring the user. Send a message instead." };
   }
   await deps.events.notifyIncomingCalls?.(run.userId).catch(() => undefined);
-  if (deps.notifications?.incomingCall && request.expiresAt.getTime() > Date.now()) {
-    const bot = await deps.prisma.bot.findFirst({
-      where: { id: run.botId, userId: run.userId },
-      select: { name: true },
-    });
-    // Delivery to every device (and its APNs timeout) must not hold the bot's turn.
-    if (bot)
-      void deps.notifications
-        .incomingCall(run.userId, {
-          callId: request.callId,
-          botId: run.botId,
-          botName: bot.name,
-          expiresAt: request.expiresAt.toISOString(),
-        })
-        .catch((error: unknown) => getLogger().warn("call.push_failed", { error }));
-  }
+  // Delivery to every device (and its APNs timeout) must not hold the bot's turn.
+  if (request.expiresAt.getTime() > Date.now())
+    void deps.notifications
+      ?.incomingCall?.(run.userId, {
+        callId: request.callId,
+        botId: run.botId,
+        botName: result.botName,
+        expiresAt: request.expiresAt.toISOString(),
+      })
+      .catch((error: unknown) => getLogger().warn("call.push_failed", { error }));
   return { ok: true, status: "ringing" };
 }
 

@@ -244,10 +244,11 @@ describe("requestUserCall security", () => {
     let saved: { id: string; blocks: unknown; botId: string; thread: { spaceId: string } } | null =
       null;
     const tx = {
-      bot: { findFirst: vi.fn(async () => ({ name: "Caller" })) },
       $queryRaw: vi.fn(async () => []),
       thread: {
-        findFirst: vi.fn(async (): Promise<{ id: string } | null> => ({ id: run.threadId })),
+        findFirst: vi.fn(
+          async (): Promise<{ bot: { name: string } } | null> => ({ bot: { name: "Caller" } }),
+        ),
 
         update: vi.fn(async () => ({ nextMessageSeq: 1, nextEventSeq: 1 })),
       },

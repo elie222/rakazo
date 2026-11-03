@@ -44,7 +44,8 @@ internal object IncomingCalls {
   private fun id(call: JSONObject) = call.optString("callId").hashCode()
   /** Calls settled while their start push was still in flight must not ring when it lands. */
   private fun ended(context: Context) = context.getSharedPreferences("rakazo.ended_calls", Context.MODE_PRIVATE)
-  fun report(context: Context, call: JSONObject) {
+  /** [fromApp]: the app is leaving the foreground, which the process importance may not show yet. */
+  fun report(context: Context, call: JSONObject, fromApp: Boolean = false) {
     if (!fresh(call) || NotificationStorage(context).token.isBlank()) return
     if (ended(context).contains(call.optString("callId"))) return
     val known = prefs(context).contains(call.optString("callId"))
@@ -52,7 +53,7 @@ internal object IncomingCalls {
     if (!known) context.sendBroadcast(Intent(CHANGED).setPackage(context.packageName))
     val process = ActivityManager.RunningAppProcessInfo()
     ActivityManager.getMyMemoryState(process)
-    if (process.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND) return
+    if (!fromApp && process.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND) return
     val manager = context.getSystemService(NotificationManager::class.java)
     if (Build.VERSION.SDK_INT >= 26) {
       val channel = NotificationChannel(CHANNEL, context.getString(R.string.rakazo_call_title), NotificationManager.IMPORTANCE_HIGH)

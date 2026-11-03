@@ -69,11 +69,13 @@ export function nextIncomingCall<
   );
 }
 
+export const CALL_NOT_RINGING_ERROR = "This call is no longer ringing.";
+
 /** Both surfaces use the same action and reject stale answers before opening audio. */
 export async function respondToIncomingCall<T>(
   call: { expiresAt: string },
   respond: () => Promise<T>,
 ): Promise<T> {
-  if (!callIsRinging(call)) throw new Error("This call is no longer ringing.");
+  if (!callIsRinging(call)) throw new Error(CALL_NOT_RINGING_ERROR);
   return respond();
 }

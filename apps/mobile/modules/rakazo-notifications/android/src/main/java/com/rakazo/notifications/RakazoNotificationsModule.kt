@@ -36,7 +36,7 @@ class RakazoNotificationsModule : Module() {
       storage.headers = org.json.JSONObject(headers.filterKeys { it.lowercase() != "authorization" && it.lowercase() != "x-rakazo-space-id" }).toString()
     }
     AsyncFunction("reportIncomingCall") { call: Map<String, String> ->
-      IncomingCalls.report(context(), org.json.JSONObject(call))
+      IncomingCalls.report(context(), org.json.JSONObject(call), fromApp = true)
     }
     AsyncFunction("endIncomingCall") { id: String -> IncomingCalls.end(context(), id) }
     AsyncFunction("finishAnswer") { id: String, success: Boolean -> IncomingCalls.end(context(), id) }
