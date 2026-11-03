@@ -943,8 +943,8 @@ html[data-platform="web"] [data-show]:not([data-show~="web"]) {
 
 .site-footer__columns {
   display: grid;
-  grid-template-columns: repeat(3, minmax(140px, auto));
-  gap: 48px;
+  grid-template-columns: repeat(4, minmax(120px, auto));
+  gap: 40px;
 }
 
 .site-footer__column h2 {

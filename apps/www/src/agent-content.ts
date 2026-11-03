@@ -1,4 +1,5 @@
 import { ALTERNATIVES, alternativeMarkdown } from "./alternatives";
+import { SANDBOXES, sandboxPath } from "./sandboxes";
 import { BRAND_COLORS, BRAND_LOGOS } from "./brand";
 import { GROK_ALTERNATIVE_MARKDOWN } from "./grok-alternative";
 import { OPENCLAW_MARKDOWN, SELF_HOST_MARKDOWN } from "./guide";
@@ -198,6 +199,7 @@ Rakazo Cloud at https://app.rakazo.com is in beta. Self-hosting is also availabl
 - [OpenClaw comparison](https://rakazo.com/openclaw-alternative/)
 - [Docs](https://rakazo.com/docs/): getting started, using Rakazo, and self-hosting. Each page has a Markdown version.
 - [Integrations](https://rakazo.com/integrations/): every app a bot can connect to. [Markdown list](https://rakazo.com/integrations.md); each app page has a Markdown version with its actions.
+- Where bot computers can run: ${SANDBOXES.map((sandbox) => `[${sandbox.name}](https://rakazo.com${sandboxPath(sandbox.slug)})`).join(", ")}. Each page has a Markdown version.
 - [Submit a plugin](https://rakazo.com/plugins/submit/): list a plugin in the Rakazo marketplace. [Markdown with the API](https://rakazo.com/plugins/submit.md).
 - [Blog](https://rakazo.com/blog/)
 - [Releases](https://github.com/elie222/rakazo/releases)

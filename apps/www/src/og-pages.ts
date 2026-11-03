@@ -1,6 +1,7 @@
 import { ALTERNATIVES, ALTERNATIVES_HUB } from "./alternatives";
 import { GROK_ALTERNATIVE_H1 } from "./grok-alternative";
 import { OPENCLAW_H1 } from "./guide";
+import { SANDBOXES } from "./sandboxes";
 
 export type OgPage = {
   id: string;
@@ -47,6 +48,11 @@ export function ogPages(): OgPage[] {
       kicker: "Guide",
       title: "Self-hosted AI agent",
     },
+    ...SANDBOXES.map((sandbox) => ({
+      id: `sandbox-${sandbox.slug}`,
+      kicker: "Bot computers",
+      title: sandbox.h1,
+    })),
     ...BLOG_OG,
   ];
 }

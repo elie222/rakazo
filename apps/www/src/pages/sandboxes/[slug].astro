@@ -1,0 +1,96 @@
+---
+import type { Sandbox } from "../../sandboxes";
+import Button from "../../components/Button.astro";
+import CaptionedImage from "../../components/CaptionedImage.astro";
+import InlineCode from "../../components/InlineCode.astro";
+import SiteFrame from "../../components/SiteFrame.astro";
+import { ogPublicPath } from "../../og-pages";
+import {
+  COMPUTER_PROVIDERS_DOCS_PATH,
+  SANDBOXES,
+  SANDBOXES_UPDATED,
+  sandboxPath,
+} from "../../sandboxes";
+import { GITHUB_URL } from "../../site";
+
+interface Props {
+  sandbox: Sandbox;
+}
+
+export function getStaticPaths() {
+  return SANDBOXES.map((sandbox) => ({
+    params: { slug: sandbox.slug },
+    props: { sandbox },
+  }));
+}
+
+const { sandbox } = Astro.props;
+const others = SANDBOXES.filter((other) => other.slug !== sandbox.slug);
+---
+
+<SiteFrame
+  title={sandbox.title}
+  description={sandbox.description}
+  faq={sandbox.faq}
+  ogImage={ogPublicPath(`sandbox-${sandbox.slug}`)}
+  markdownAlternate={`${sandboxPath(sandbox.slug).slice(0, -1)}.md`}
+>
+  <h1>{sandbox.h1}</h1>
+  <p class="page-updated">Updated {SANDBOXES_UPDATED}.</p>
+  {sandbox.intro.map((paragraph) => <p><InlineCode text={paragraph} /></p>)}
+
+  <CaptionedImage
+    src={sandbox.image.webp}
+    avif={sandbox.image.avif}
+    alt={sandbox.image.alt}
+    caption={sandbox.image.caption}
+    width={sandbox.image.width}
+    height={sandbox.image.height}
+    loading="eager"
+  />
+
+  <h2>What your bots get</h2>
+  <ul>
+    {sandbox.works.map((item) => <li><InlineCode text={item} /></li>)}
+  </ul>
+
+  <h2>Limits</h2>
+  <ul>
+    {sandbox.limits.map((item) => <li><InlineCode text={item} /></li>)}
+  </ul>
+
+  <h2>Set it up</h2>
+  {sandbox.setup.map((paragraph) => <p><InlineCode text={paragraph} /></p>)}
+  <div class="alt-actions">
+    <Button href={COMPUTER_PROVIDERS_DOCS_PATH}>Computer providers guide</Button>
+    <Button href={GITHUB_URL} variant="secondary" external>View on GitHub</Button>
+  </div>
+
+  <h2 id="faq">FAQ</h2>
+  {
+    sandbox.faq.map((item, index) => (
+      <section aria-labelledby={`faq-${index}`}>
+        <h3 id={`faq-${index}`}>{item.question}</h3>
+        <p><InlineCode text={item.answer} /></p>
+      </section>
+    ))
+  }
+
+  <h2>Other places to run bot computers</h2>
+  <ul>
+    {others.map((other) => <li><a href={sandboxPath(other.slug)}>{other.name}</a></li>)}
+  </ul>
+
+  <h2>Sources</h2>
+  <ul class="source-list">
+    {
+      sandbox.sources.map((source) => (
+        <li>
+          <a href={source.href} target="_blank" rel="noreferrer">
+            {source.label}
+          </a>
+        </li>
+      ))
+    }
+  </ul>
+</SiteFrame>

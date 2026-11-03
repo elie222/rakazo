@@ -10,6 +10,7 @@ import {
   type Locale,
 } from "../i18n/locales";
 import { HUB_CARDS } from "../alternatives";
+import { SANDBOXES, sandboxPath } from "../sandboxes";
 import { getHomeCopy } from "../i18n/home";
 import type { HomeCopy } from "../i18n/home";
 import {
@@ -68,6 +69,13 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
       ...HUB_CARDS.map((card) => ({ href: card.href, label: card.name })),
       { href: "/alternatives/", label: linkLabels.all },
     ],
+  },
+  {
+    heading: linkLabels.sandboxes,
+    links: SANDBOXES.map((sandbox) => ({
+      href: sandboxPath(sandbox.slug),
+      label: sandbox.slug === "your-computer" ? linkLabels.yourComputer : sandbox.name,
+    })),
   },
   {
     heading: linkLabels.company,
