@@ -315,6 +315,22 @@ export async function ownerHadTrial(
   return used !== null;
 }
 
+/** Whether the organization's owner has used their one trial, whichever member is asking. */
+export async function organizationOwnerHadTrial(
+  prisma: PrismaClient,
+  organizationId: string,
+  plan: "byok" | "managed",
+): Promise<boolean> {
+  const members = await prisma.member.findMany({
+    where: { organizationId, role: { contains: "owner" } },
+    select: { userId: true, role: true },
+  });
+  for (const member of members) {
+    if (isOwnerRole(member.role) && (await ownerHadTrial(prisma, member.userId, plan))) return true;
+  }
+  return false;
+}
+
 function isOwnerRole(role: string): boolean {
   return role
     .split(",")

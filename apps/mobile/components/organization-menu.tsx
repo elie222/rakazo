@@ -36,6 +36,7 @@ export function OrganizationTitleMenu({ list }: { list: OrganizationList | undef
     <MenuView
       actions={actions}
       colorScheme={resolveMobileAppearance()}
+      style={styles.anchor}
       onPressAction={({ nativeEvent }) => onAction(nativeEvent.event)}
     >
       <View
@@ -62,11 +63,13 @@ export function OrganizationTitleMenu({ list }: { list: OrganizationList | undef
 
 function createStyles() {
   return StyleSheet.create({
+    anchor: { flexShrink: 1, minWidth: 0 },
     title: {
       flexDirection: "row",
       alignItems: "center",
       gap: 4,
       maxWidth: 220,
+      flexShrink: 1,
       minHeight: 44,
       paddingHorizontal: 8,
     },

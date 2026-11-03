@@ -32,9 +32,9 @@ import {
   MICROS_PER_DOLLAR,
   needsBillingPortal,
   organizationForMember,
+  organizationOwnerHadTrial,
   organizationSeatCount,
   ownedBillingAccounts,
-  ownerHadTrial,
   reconcileCreditPurchase,
   releaseCheckoutLease,
   replaceBillingCustomer,
@@ -159,6 +159,12 @@ export function createBillingService(deps: {
   async function managedOrganization(actor: Actor) {
     const found = await organization(actor);
     if (!found.isOwner) throw new ORPCError("FORBIDDEN");
+    // Deletion cancels billing once, so nothing may start a charge after it claims the org.
+    const deleting = await prisma.space.findFirst({
+      where: { organizationId: found.organizationId, isDefault: true, deletingAt: { not: null } },
+      select: { id: true },
+    });
+    if (deleting) throw new ORPCError("CONFLICT", { message: "Organization is being deleted" });
     return found;
   }
 
@@ -322,7 +328,7 @@ export function createBillingService(deps: {
       billingAccountFor(actor, organizationId),
       creditAccount(prisma, organizationId),
       trialDays(organizationId),
-      ownerHadTrial(prisma, actor.userId, "byok"),
+      organizationOwnerHadTrial(prisma, organizationId, "byok"),
     ]);
     try {
       return await openCheckout(actor, account, true, (customerId) =>
@@ -433,7 +439,7 @@ export function createBillingService(deps: {
           billingAccountForOrganization(prisma, organizationId),
           deps.sandbox ? sandboxAllowance({ prisma, sandbox: deps.sandbox }, organizationId) : null,
           trialDays(organizationId),
-          ownerHadTrial(prisma, actor.userId, "byok"),
+          organizationOwnerHadTrial(prisma, organizationId, "byok"),
         ]);
         const freeUntil =
           credits.mode === "byok" &&
@@ -485,7 +491,7 @@ export function createBillingService(deps: {
         billingAccountForOrganization(prisma, organizationId),
         price(),
         trialDays(organizationId),
-        ownerHadTrial(prisma, actor.userId, "managed"),
+        organizationOwnerHadTrial(prisma, organizationId, "managed"),
       ]);
       const status = account?.status ?? null;
       return {
@@ -525,7 +531,7 @@ export function createBillingService(deps: {
       });
       const seats = await organizationSeatCount(prisma, organizationId);
       const trial =
-        account.subscribedAt || (await ownerHadTrial(prisma, actor.userId, "managed"))
+        account.subscribedAt || (await organizationOwnerHadTrial(prisma, organizationId, "managed"))
           ? {}
           : { trialDays: await trialDays(organizationId) };
       try {

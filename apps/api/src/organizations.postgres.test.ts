@@ -460,6 +460,38 @@ describePostgres("organizations (PostgreSQL)", () => {
     });
   });
 
+  it("shows a team member the owner's trial, not their own", async () => {
+    const ada = await signup();
+    const grace = await signup();
+    await subscribe(grace);
+    const team = await client(grace).organizations.create({ name: "Team" });
+    await system.member.create({
+      data: {
+        id: `member-${ada.userId}-trial-team`,
+        organizationId: team.id,
+        userId: ada.userId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+
+    await expect(billing.status(ada)).resolves.toMatchObject({ trialAvailable: true });
+    await expect(billing.status(asUser(ada, team.defaultSpaceId))).resolves.toMatchObject({
+      trialAvailable: false,
+    });
+  });
+
+  it("refuses a checkout for an organization being deleted", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    await system.space.update({ where: { id: work.id }, data: { deletingAt: new Date() } });
+
+    await expect(
+      runAsSystem("organizations test", () => billing.checkout(asUser(ada, work.id))),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(await billingAccountForOrganization(system, work.id)).toBeNull();
+  });
+
   it("offers a new organization no trial once another of the owner's subscribed", async () => {
     const ada = await signup();
     await expect(billing.status(ada)).resolves.toMatchObject({ trialAvailable: true });
