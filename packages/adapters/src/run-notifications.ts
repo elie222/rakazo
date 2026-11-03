@@ -88,12 +88,7 @@ export async function notifyRun(
     return undefined;
   });
   const bot = notice.bot;
-  const sender =
-    bot &&
-    (await notificationIdentity(bot).catch((error) => {
-      getLogger().error("notification avatar", error);
-      return { botId: bot.id, name: bot.name };
-    }));
+  const sender = bot && (await notificationIdentity(bot));
   await deps.notifications
     .send(
       {

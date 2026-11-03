@@ -1,5 +1,5 @@
 import { notificationAvatarSource } from "@rakazo/core";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { notificationIdentity } from "./notification-identity.js";
 
 it.each(["organic", "rakazo"])("creates a bounded JPEG for the %s avatar", async (avatarSet) => {
@@ -32,4 +32,17 @@ it("uses a saved profile picture, with no external avatar fetch", async () => {
   expect(
     notificationAvatarSource({ id: "bot", color: "https://untrusted.example/avatar.png" }),
   ).toMatch(/^data:image\/svg\+xml,/);
+});
+
+it("shares one render per avatar and does not retry a broken one", async () => {
+  const color = "data:image/png;base64,bm90IGFuIGltYWdl";
+  const bot = { id: "broken", name: "Marketing", color };
+  const { default: sharp } = await import("sharp");
+  const render = vi.spyOn(sharp.prototype, "toBuffer");
+  const [first, second] = await Promise.all([notificationIdentity(bot), notificationIdentity(bot)]);
+  await notificationIdentity(bot);
+  expect(first).toEqual({ botId: "broken", name: "Marketing" });
+  expect(second).toEqual(first);
+  expect(render).toHaveBeenCalledTimes(1);
+  render.mockRestore();
 });

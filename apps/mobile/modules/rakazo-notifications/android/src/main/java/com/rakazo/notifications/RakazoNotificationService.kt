@@ -64,12 +64,12 @@ class RakazoNotificationService : Service() {
       manager.cancelAll()
       state.edit().putBoolean(THREAD_NOTIFICATION_IDS, true).apply()
     }
-    createRakazoChannels(localizedContext(NotificationStorage(this).locale))
+    createRakazoChannels(this)
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     // Channel names follow the current locale; recreating an existing channel updates its copy.
-    createRakazoChannels(localizedContext(NotificationStorage(this).locale))
+    createRakazoChannels(this)
     val generation = synchronized(sessionLock) {
       if (intent?.getBooleanExtra(EXTRA_RESET_TOKEN, false) == true) tokenCache.reset()
       intent?.getStringExtra(EXTRA_MUTED_BOT_ID)?.let { botId ->
@@ -123,7 +123,7 @@ class RakazoNotificationService : Service() {
         return
       }
       val seeded = prepareHistorySpace(generation, storage.endpoint, storage.spaceId, token) ?: return
-      val copyContext = localizedContext(storage.locale)
+      val copyContext = localizedContext(this, storage.locale)
       var recentPageBusy = true
       try {
         if (generation != sessionGeneration.get()) return
@@ -375,13 +375,6 @@ class RakazoNotificationService : Service() {
       intent,
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
-  }
-
-  private fun localizedContext(tag: String): Context {
-    if (tag.isBlank()) return this
-    val configuration = Configuration(resources.configuration)
-    configuration.setLocale(Locale.forLanguageTag(tag))
-    return createConfigurationContext(configuration)
   }
 
   private fun stop() {
@@ -1050,8 +1043,16 @@ private fun JSONObject.requiredString(name: String): String =
 private fun JSONObject.optionalString(name: String): String? =
   if (isNull(name)) null else optString(name).takeIf(String::isNotBlank)
 
-internal fun createRakazoChannels(context: Context) {
+internal fun localizedContext(base: Context, tag: String): Context {
+  if (tag.isBlank()) return base
+  val configuration = Configuration(base.resources.configuration)
+  configuration.setLocale(Locale.forLanguageTag(tag))
+  return base.createConfigurationContext(configuration)
+}
+
+internal fun createRakazoChannels(base: Context) {
   if (Build.VERSION.SDK_INT < 26) return
+  val context = localizedContext(base, NotificationStorage(base).locale)
   listOf(
     NotificationChannel(
       Channels.LIVE,

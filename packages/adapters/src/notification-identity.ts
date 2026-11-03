@@ -1,10 +1,14 @@
 import { createHash } from "node:crypto";
 import { notificationAvatarSource } from "@rakazo/core";
+import { getLogger } from "@rakazo/logging";
 
 const MAX_AVATAR_BYTES = 1050;
 const MAX_CACHED_AVATARS = 1000;
-/** Rendered thumbnails by bot id, keyed on the avatar inputs so an edited avatar renders again. */
-const avatars = new Map<string, { key: string; avatar: string | undefined }>();
+/**
+ * Thumbnails by bot id, keyed on the avatar inputs so an edited avatar renders again. The render
+ * is stored before it settles, so concurrent sends share it and a failed render is not retried.
+ */
+const avatars = new Map<string, { key: string; avatar: Promise<string | undefined> }>();
 
 async function renderAvatar(bot: { id: string; color: string; avatarSet?: string | null }) {
   const source = notificationAvatarSource(bot);
@@ -34,14 +38,21 @@ export async function notificationIdentity(bot: {
     .digest("base64url");
   let cached = avatars.get(bot.id);
   if (cached?.key !== key) {
-    cached = { key, avatar: await renderAvatar(bot) };
+    cached = {
+      key,
+      avatar: renderAvatar(bot).catch((error: unknown) => {
+        getLogger().error("notification avatar", error);
+        return undefined;
+      }),
+    };
     avatars.delete(bot.id);
     if (avatars.size >= MAX_CACHED_AVATARS) avatars.delete(avatars.keys().next().value!);
     avatars.set(bot.id, cached);
   }
+  const avatar = await cached.avatar;
   return {
     botId: bot.id,
     name: bot.name.trim().slice(0, 100) || "Bot",
-    ...(cached.avatar ? { avatar: cached.avatar } : {}),
+    ...(avatar ? { avatar } : {}),
   };
 }

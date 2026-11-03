@@ -868,10 +868,10 @@ it("carries sender identity, marks actionable notifications high priority, and b
     {
       kind: "help",
       title: "Marketing",
-      body: "🔔".repeat(180),
+      body: `x${"🔔".repeat(400)}`,
       botId: "bot",
       threadId: "thread",
-      sender: { botId: "bot", name: "Head of Marketing", avatar: "a".repeat(1400) },
+      sender: { botId: "bot", name: "Head of Marketing", avatar: "a".repeat(2600) },
     },
     notifyContext,
   );
@@ -881,10 +881,12 @@ it("carries sender identity, marks actionable notifications high priority, and b
   expect(request.data.sender).toEqual({
     botId: "bot",
     name: "Head of Marketing",
-    avatar: "a".repeat(1400),
+    avatar: "a".repeat(2600),
   });
   expect(request).toMatchObject({ mutableContent: true, priority: "high" });
   expect(Buffer.byteLength(JSON.stringify(request))).toBeLessThanOrEqual(3300);
+  expect(request.body).toMatch(/^x(🔔)+…$/u);
+  expect(Array.from(request.body as string)).toHaveLength(90);
 });
 
 it("uses data-only delivery only for Android builds that registered sender support", async () => {

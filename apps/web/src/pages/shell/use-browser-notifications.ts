@@ -2,11 +2,11 @@ import type { Bot, ProductEvent } from "@rakazo/contracts";
 import { isRunWaitingOnUser, isRunWorking, notificationAvatarSource } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
+import type { NavigateFunction } from "react-router-dom";
 import {
   deliverBrowserNotification as deliverNativeBrowserNotification,
   shouldNotifyBrowser,
 } from "../../lib/browser-notifications";
-import { selectSpace } from "../../lib/rpc";
 
 type PendingBrowserNotification = {
   event: Pick<ProductEvent, "id" | "type" | "threadId" | "botId" | "payload">;
@@ -23,6 +23,7 @@ export function useBrowserNotifications(
   bots: Bot[],
   openBotId: string | undefined,
   spaceId: string | undefined,
+  navigate: NavigateFunction,
 ) {
   const previousRoster = useRef<{ spaceId: string | undefined; bots: Bot[] } | null>(null);
   const notifiedBrowserEvents = useRef(new Set<string>());
@@ -48,10 +49,9 @@ export function useBrowserNotifications(
               icon: notificationAvatarSource(currentBot),
             });
             notification.onclick = () => {
-              selectSpace(currentBot.spaceId);
               window.focus();
-              if (pending.groupId) window.location.assign(`/app/g/${pending.groupId}`);
-              else if (!pending.groupNotification) window.location.assign(`/app/${currentBot.id}`);
+              if (pending.groupId) void navigate(`/app/g/${pending.groupId}`);
+              else if (!pending.groupNotification) void navigate(`/app/${currentBot.id}`);
               notification.close();
             };
           },
@@ -59,7 +59,7 @@ export function useBrowserNotifications(
       );
       return result !== "pending";
     },
-    [openBotId],
+    [openBotId, navigate],
   );
   useEffect(() => {
     const previous = previousRoster.current;
@@ -68,21 +68,21 @@ export function useBrowserNotifications(
     for (const bot of bots) {
       const before = previous.bots.find((entry) => entry.id === bot.id);
       if (!before || bot.id === openBotId || !bot.notifyOnFinish) continue;
-      const failed =
-        bot.unread && !isRunWorking(bot.status) && (bot.status === "failed" || !!bot.runErrorId);
-      const waiting = isRunWaitingOnUser(bot.status) || failed;
-      const interrupted =
-        waiting && (before.status !== bot.status || before.runErrorId !== bot.runErrorId);
-      const replied =
-        !waiting && !isRunWorking(bot.status) && bot.unread && bot.preview !== before.preview;
+      // Only the agent's own chat: preview, unread and runErrorId describe it, while status may
+      // come from a group run, which that group's open stream announces instead.
+      const failed = bot.unread && !!bot.runErrorId && bot.runErrorId !== before.runErrorId;
+      const newMessage = bot.unread && bot.updatedAt !== before.updatedAt;
+      const waiting = newMessage && isRunWaitingOnUser(bot.status);
+      const interrupted = failed || waiting;
+      const replied = !interrupted && newMessage && !isRunWorking(bot.status);
       if (!interrupted && !replied) continue;
       const event = {
-        id: `roster:${bot.threadId}:${bot.updatedAt}:${bot.status}`,
-        type: interrupted
-          ? bot.status === "failed" || bot.runErrorId
-            ? ("run.failed" as const)
-            : ("run.waiting_input" as const)
-          : ("thread.message.created" as const),
+        id: failed ? `roster:failed:${bot.runErrorId}` : `roster:${bot.threadId}:${bot.updatedAt}`,
+        type: failed
+          ? ("run.failed" as const)
+          : waiting
+            ? ("run.waiting_input" as const)
+            : ("thread.message.created" as const),
         threadId: bot.threadId,
         botId: bot.id,
         payload: replied ? { role: "bot", blocks: [{ kind: "text", text: bot.preview }] } : {},

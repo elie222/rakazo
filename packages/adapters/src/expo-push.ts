@@ -293,7 +293,8 @@ export class ExpoPushProvider implements NotificationProvider {
     if (!registration) return "undeliverable";
     const token = registration.token;
     const title = capped(message.title, MAX_PUSH_TITLE_CHARS);
-    let text = capped(message.body, MAX_PUSH_BODY_CHARS);
+    let bodyChars = MAX_PUSH_BODY_CHARS;
+    let text = capped(message.body, bodyChars);
     const data = expoPushData(message, context.spaceId, randomUUID());
     const shared = {
       to: token,
@@ -319,8 +320,9 @@ export class ExpoPushProvider implements NotificationProvider {
             ...(urgent ? { priority: "high" } : {}),
           };
     let payload = build();
-    while (Buffer.byteLength(JSON.stringify(payload)) > MAX_PUSH_PAYLOAD_BYTES && text) {
-      text = text.slice(0, Math.floor(text.length / 2));
+    while (Buffer.byteLength(JSON.stringify(payload)) > MAX_PUSH_PAYLOAD_BYTES && bodyChars > 1) {
+      bodyChars = Math.floor(bodyChars / 2);
+      text = capped(message.body, bodyChars);
       payload = build();
     }
     const { status, body } = await this.postWithBackoff(EXPO_PUSH_URL, payload, context.signal);

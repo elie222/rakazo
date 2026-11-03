@@ -380,6 +380,7 @@ function SpaceShell() {
     bots,
     inGroup ? undefined : active?.id,
     shellSpaceId ?? undefined,
+    navigate,
   );
   const { speakingMessageId, speakMessage } = useReadAloud({
     active,
