@@ -45,14 +45,17 @@ function PagePreview({
         setDocumentFailed(false);
       })
       .catch(() => {
-        if (active) setDocumentFailed(true);
+        if (!active) return;
+        setDocument(null);
+        setDocumentFailed(true);
       });
     return () => {
       active = false;
     };
   }, [detail, theme, t]);
   const layout = pagePreviewLayout(width);
-  const unavailable = failed || (documentFailed && !document);
+  // A newer version keeps the older preview while it builds, but never past a failure.
+  const unavailable = failed || documentFailed;
   return (
     <View
       pointerEvents="none"
@@ -65,7 +68,7 @@ function PagePreview({
           {t("This page couldn't load")}
         </Text>
       ) : null}
-      {document && width > 0 ? (
+      {document && !unavailable && width > 0 ? (
         <View
           style={{
             position: "absolute",

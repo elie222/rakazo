@@ -650,14 +650,33 @@ describePostgres("account import (PostgreSQL)", () => {
     });
   });
 
-  it("refuses a page with no version, a source that cannot open or a repeated version, leaving nothing behind", async () => {
+  it("imports a version today's check refuses, so it opens on its own error", async () => {
+    const result = await runImport(
+      archive(
+        pageRecords([1, 2], {
+          source: (version) =>
+            version === 1 ? "<Page" : "const App = () => <Card />;\nexport default App;\n",
+        }),
+      ),
+    );
+    const versions = await system.pageVersion.findMany({
+      where: { page: { spaceId: result.spaces[0]!.id } },
+      orderBy: { version: "asc" },
+      select: { version: true, code: true },
+    });
+    expect(versions.map((version) => version.version)).toEqual([1, 2]);
+    expect(versions[0]!.code).toMatch(/^throw new Error\(/);
+    expect(versions[1]!.code).toContain("Card");
+  });
+
+  it("refuses a page with no version, a version of something that is not a page or a repeated version, leaving nothing behind", async () => {
     const before = await ownedSpaceIds();
     for (const records of [
       pageRecords([]),
-      pageRecords([1, 2], {
-        source: (version) => (version === 2 ? "<Page" : `export default () => <Page title="v" />;`),
-      }),
-      pageRecords([1], { source: () => "const App = () => <Card />;\nexport default App;\n" }),
+      // A version naming a bot, not a page.
+      pageRecords([1]).map((record) =>
+        record.type === "page_version" ? { ...record, pageId: "src-bot-child" } : record,
+      ),
       // The same version twice, under different ids.
       pageRecords([1, 1]).map((record, index) =>
         record.type === "page_version" ? { ...record, id: `src-page-copy-${index}` } : record,

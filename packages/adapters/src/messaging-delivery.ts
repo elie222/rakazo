@@ -117,7 +117,7 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
   if (!identity) return;
 
   // bot_message runs can carry the bot's user-facing reply after a delegate wake.
-  // extractText only keeps kind:"text", so inter-bot chatter blocks never leak out.
+  // extractText keeps only text and page titles, so inter-bot chatter blocks never leak out.
 
   const messages = await deps.prisma.message.findMany({
     where: { runId: run.id, role: "bot" },
@@ -130,9 +130,10 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
   // re-sends only the parts that failed and never repeats delivered text.
   // Explicit createdAt keeps the parts in order for the drain.
   const createdAt = Date.now();
+  const linkedPages = linkedPageIds(messages);
   const rows = messages
     .flatMap((message) => {
-      const body = extractText(message.blocks);
+      const body = extractText(message.blocks, linkedPages);
       const parts = body ? splitOutboundBody(identity.provider, body) : [];
       return [
         ...parts.map((part, index) => ({
@@ -198,8 +199,9 @@ async function mirrorChannelRun(
     )
   )
     return;
+  const linkedPages = linkedPageIds(replies);
   const messages = replies
-    .map((message) => ({ message, text: extractText(message.blocks) }))
+    .map((message) => ({ message, text: extractText(message.blocks, linkedPages) }))
     .filter((entry) => entry.text);
   if (messages.length === 0) return;
 
@@ -730,17 +732,43 @@ function extractArtifactIds(blocks: unknown): string[] {
   );
 }
 
-function extractText(blocks: unknown): string {
+function textBlocks(blocks: unknown): string[] {
+  if (!Array.isArray(blocks)) return [];
+  return blocks.flatMap((block: { kind?: unknown; text?: unknown } | null) =>
+    block?.kind === "text" && typeof block.text === "string" ? [block.text] : [],
+  );
+}
+
+/** Pages the run's replies already link by name, so their cards add nothing more. */
+function linkedPageIds(messages: readonly { blocks: unknown }[]): Set<string> {
+  const ids = new Set<string>();
+  for (const message of messages)
+    for (const text of textBlocks(message.blocks))
+      for (const match of text.matchAll(/\]\(page:([A-Za-z0-9_-]{1,64})\)/g)) ids.add(match[1]!);
+  return ids;
+}
+
+/**
+ * The text other channels get. A page card cannot travel, so a page the reply does not name goes
+ * as its title.
+ */
+function extractText(blocks: unknown, linkedPages: ReadonlySet<string>): string {
   if (!Array.isArray(blocks)) return "";
   return blocks
-    .filter(
-      (block): block is { kind: string; text: string } =>
-        typeof block === "object" &&
-        block !== null &&
-        (block as { kind?: string }).kind === "text" &&
-        typeof (block as { text?: string }).text === "string",
+    .flatMap(
+      (block: { kind?: unknown; text?: unknown; pageId?: unknown; title?: unknown } | null) => {
+        if (block?.kind === "text" && typeof block.text === "string")
+          return [pageLinksAsTitles(block.text)];
+        if (
+          block?.kind === "page" &&
+          typeof block.title === "string" &&
+          typeof block.pageId === "string" &&
+          !linkedPages.has(block.pageId)
+        )
+          return [block.title];
+        return [];
+      },
     )
-    .map((block) => pageLinksAsTitles(block.text))
     .join("\n")
     .trim();
 }

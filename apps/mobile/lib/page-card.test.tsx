@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { ReactNode } from "react";
-import { act, createElement } from "react";
+import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 
@@ -15,13 +15,16 @@ vi.mock("react-native", () => ({
   Pressable: ({
     children,
     onPress,
+    onLayout,
     disabled,
   }: {
     children?: ReactNode;
     onPress?: () => void;
+    onLayout?: (event: { nativeEvent: { layout: { width: number } } }) => void;
     disabled?: boolean;
   }) => {
     host.press = disabled ? undefined : onPress;
+    useEffect(() => onLayout?.({ nativeEvent: { layout: { width: 320 } } }), [onLayout]);
     return createElement("div", {}, children);
   },
   Text: ({ children }: { children?: ReactNode }) => createElement("p", {}, children),
@@ -96,4 +99,39 @@ it("says a preview could not load instead of showing a blank card, and still ope
   const shown = await card();
   expect(shown.container.textContent).not.toContain("couldn't load");
   shown.unmount();
+});
+
+it("drops a shown preview when a refresh of the page fails", async () => {
+  host.runtimeFails = false;
+  host.detail = { id: "page-1", title: "Plan", code: "code", currentVersion: 1 };
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const render = () =>
+    act(async () =>
+      root.render(
+        createElement(PageCard, {
+          block: { kind: "page", pageId: "page-1", version: 1, title: "Plan" },
+          messageId: "m1",
+        }),
+      ),
+    );
+  await render();
+  expect(container.querySelector("iframe")).not.toBeNull();
+
+  host.detail = "failed";
+  await render();
+  expect(container.querySelector("iframe")).toBeNull();
+  expect(container.textContent).toContain("This page couldn't load");
+
+  // A newer version whose preview cannot build drops the older one too.
+  host.detail = { id: "page-1", title: "Plan", code: "code", currentVersion: 1 };
+  await render();
+  expect(container.querySelector("iframe")).not.toBeNull();
+  host.runtimeFails = true;
+  host.detail = { id: "page-1", title: "Plan", code: "code-2", currentVersion: 2 };
+  await render();
+  expect(container.querySelector("iframe")).toBeNull();
+  expect(container.textContent).toContain("This page couldn't load");
+  act(() => root.unmount());
 });

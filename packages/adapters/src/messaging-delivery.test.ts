@@ -295,6 +295,27 @@ describe("deliverMessagingOutbound", () => {
     );
   });
 
+  it("sends a page card's title when the reply does not name the page, and only once when it does", async () => {
+    const card = {
+      id: "m-1",
+      blocks: [{ kind: "page", pageId: "cm123", version: 1, title: "Plan" }],
+    };
+    const silent = createDeps({
+      messages: [card, { id: "m-2", blocks: [{ kind: "text", text: "Done." }] }],
+    });
+    await deliverMessagingOutbound(silent, { runId: "run-1" }, context);
+    expect(silent.sendToThread.mock.calls.map(([input]) => input.body)).toEqual(["Plan", "Done."]);
+
+    const named = createDeps({
+      messages: [
+        card,
+        { id: "m-2", blocks: [{ kind: "text", text: "Here is [Plan](page:cm123)." }] },
+      ],
+    });
+    await deliverMessagingOutbound(named, { runId: "run-1" }, context);
+    expect(named.sendToThread.mock.calls.map(([input]) => input.body)).toEqual(["Here is Plan."]);
+  });
+
   it("resolves the DM thread once and caches it when the identity has none", async () => {
     const deps = createDeps({
       identity: { dmThreadId: null },

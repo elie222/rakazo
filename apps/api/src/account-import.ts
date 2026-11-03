@@ -37,6 +37,7 @@ import {
   SpaceLimitError,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { pageViewerCode } from "@rakazo/page-kit/compile";
 import { checkPageSource } from "@rakazo/page-kit/validate";
 import { Unzip, UnzipInflate } from "fflate";
 import type { Hono } from "hono";
@@ -75,8 +76,6 @@ const unreadable = () => new AccountImportError("The file is not a readable Raka
 const invalidEntry = () => new AccountImportError("The export contains an unexpected file.");
 const outOfOrder = () => new AccountImportError("The export's files are out of order.");
 const missingRecord = () => new AccountImportError("The export refers to a missing record.");
-const brokenPage = () =>
-  new AccountImportError("The export contains a page that cannot be opened.");
 const tooLarge = () => new AccountImportError("The export is too large.", 413);
 
 export type AccountImportDeps = SpaceDeletionDeps & { maxArtifactBytes: number };
@@ -621,15 +620,16 @@ class AccountImporter implements ArchiveSink {
         });
         return;
       case "page_version": {
+        const newest = space.pageVersions.get(record.pageId);
+        if (newest === undefined) throw missingRecord();
         const pageId = space.mapped(record.pageId);
-        // Checked as a save checks it, so every imported version opens.
-        const check = checkPageSource(record.source);
-        if (!check.ok) throw brokenPage();
         const key = `${record.pageId}:${record.version}`;
         if (space.seenPageVersions.has(key)) throw unreadable();
         space.seenPageVersions.add(key);
-        const newest = space.pageVersions.get(record.pageId)!;
         space.pageVersions.set(record.pageId, Math.max(newest, record.version));
+        // The checker tightens over time and is not the security boundary (the viewer's sandbox
+        // is), so a version an older release saved still imports and opens on its own error.
+        const check = checkPageSource(record.source);
         await prisma.pageVersion.create({
           data: {
             id: newId(),
@@ -637,7 +637,7 @@ class AccountImporter implements ArchiveSink {
             version: record.version,
             title: record.title,
             source: record.source,
-            code: check.code,
+            code: check.ok ? check.code : pageViewerCode(record.source),
             createdAt: new Date(record.createdAt),
           },
         });
