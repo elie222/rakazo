@@ -1825,7 +1825,10 @@ PURCHASE_HELPERS = r"""
   }
   const pageCards = () => deepInputs().filter(cardLike);
   // What the control says, in each way it can say it: its own text or value, its aria label, its title.
-  const tidy = (text) => clean(String(text ?? "").replace(/[‎‏‪-‮ ]/g, " "));
+  // Direction marks and no-break spaces read as spaces; zero-width characters, which split a word without
+  // showing, are dropped.
+  const tidy = (text) => clean(String(text ?? "").replace(/[‎‏‪-‮ ]/g, " ")
+    .replace(/[\u200B-\u200D\u2060-\u2064\uFEFF]/g, ""));
   function wordsOf(el) {
     const root = el.getRootNode();
     const named = (el.getAttribute("aria-labelledby") || "").trim().split(/\s+/).filter(Boolean)

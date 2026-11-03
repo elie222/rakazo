@@ -330,6 +330,11 @@ describe("purchase detection in the page helper", () => {
     });
   });
 
+  it("reads a label split by zero-width characters as it shows", () => {
+    const { intent } = page(`<button type="button">B\u200buy now</button>`);
+    expect(intent("B\u200buy now")?.reason).toBe("final_step");
+  });
+
   it("counts a disabled control as no purchase", () => {
     const { helper, win } = page(`<button id="b">Pay now</button>`);
     const button = win.document.getElementById("b")!;

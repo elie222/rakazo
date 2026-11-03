@@ -84,7 +84,8 @@ function purchaseProbe(name: string, args: Record<string, unknown>) {
       const step = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
       return {
         kind: String(step.kind ?? ""),
-        ref: typeof step.ref === "string" ? step.ref : undefined,
+        // As browser_act reads it, so the check looks at the element the click will press.
+        ref: step.ref === undefined ? undefined : String(step.ref).trim(),
       };
     });
     return steps.some((step) => step.kind === "click") ? { actions: steps } : undefined;
