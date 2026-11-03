@@ -33,4 +33,6 @@ test("a nearly full computer offers to clean up its disk", async ({ page }, test
   await warning.getByRole("button", { name: "Clean up", exact: true }).click();
   await expect(warning).toHaveCount(0);
   expect(sent).toMatchObject({ text: expect.stringContaining("disk is nearly full") });
+  // A status read still in flight would otherwise fail once the page closes.
+  await page.unrouteAll({ behavior: "wait" });
 });
