@@ -149,6 +149,20 @@ describe("remote computer access", () => {
     return { access, requests, clients };
   }
 
+  it("does not pair or grant computer access to a cleartext remote server", async () => {
+    const fetch = vi.fn();
+    const confirm = vi.fn(async () => true);
+    const { access, clients } = setup({ fetch, confirm });
+    const remote = "http://192.168.1.20:3100";
+    await access.select(remote);
+    await access.pair();
+    await access.setAllowed(remote, true);
+    expect(access.state(remote)).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(clients).toHaveLength(0);
+  });
+
   it("pairs with the window session on its own and connects without granting anything", async () => {
     const confirm = vi.fn(async () => true);
     const { access, requests, clients } = setup({ confirm });
