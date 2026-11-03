@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Integrations from "../app/(settings)/integrations";
 import { ConnectorIcon } from "../components/connector-icon";
+import type * as McpOAuth from "./mcp-oauth";
 import { signInToMcpServer } from "./mcp-oauth";
 
 const state = vi.hoisted(() => ({
@@ -47,7 +48,10 @@ vi.mock("./integrations-cache", () => ({
   writeIntegrationsCache: state.write,
 }));
 vi.mock("./last-bot", () => ({ loadLastBotId: async () => "" }));
-vi.mock("./mcp-oauth", () => ({ signInToMcpServer: vi.fn(async () => "connected") }));
+vi.mock("./mcp-oauth", async (importOriginal) => ({
+  ...(await importOriginal<typeof McpOAuth>()),
+  signInToMcpServer: vi.fn(async () => "connected"),
+}));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({ destructive: "red" }) }));
 vi.mock("./native", () => ({
   native: {},
@@ -1047,4 +1051,73 @@ it("drops an integrations.sh answer for a search the user has since changed", as
 
   const results = container.querySelector('[data-testid="integration-catalog-search"]');
   expect(results?.textContent).toBe("Search integrations.sh");
+});
+
+it("shows a catalog server that still needs a client after its sign-in fails", async () => {
+  const added = {
+    id: "tracker-server",
+    slug: "integration-1",
+    name: "Tracker",
+    description: "",
+    transport: "streamable_http",
+    endpoint: "https://mcp.tracker.example/mcp",
+    headerKeys: [],
+    enabled: true,
+    hasSecret: false,
+    oauthClientId: null,
+    health: { status: "error", code: MCP_OAUTH_CLIENT_REQUIRED },
+  };
+  let servers: unknown[] = [];
+  const fallback = state.rpc.getMockImplementation();
+  state.rpc.mockImplementation((proc: string, args: unknown) => {
+    if (proc === "mcp/servers/list") return Promise.resolve(servers);
+    if (proc === "capabilities/catalogSearch")
+      return Promise.resolve({
+        enabled: true,
+        results: [
+          {
+            domain: "tracker.example",
+            name: "Tracker",
+            description: "",
+            pageUrl: null,
+            surfaces: [
+              {
+                kind: "mcp",
+                slug: "tracker",
+                source: added.endpoint,
+                auth: { type: "oauth", headerName: null, note: null },
+              },
+            ],
+          },
+        ],
+      });
+    if (proc === "mcp/servers/create") {
+      servers = [added];
+      return Promise.resolve(added);
+    }
+    if (proc === "integrationSetup/get")
+      return Promise.resolve({ webUrl: "https://rakazo.example.test/integrations/setup" });
+    return fallback?.(proc, args);
+  });
+  vi.mocked(signInToMcpServer).mockRejectedValueOnce(new Error("Needs an OAuth client ID"));
+  await render();
+  await act(async () => resolveCatalog([item]));
+  const search = container.querySelector('input[placeholder="Search apps"]') as HTMLInputElement;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+      search,
+      "tracker",
+    );
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const button = (label: string) =>
+    [...container.querySelectorAll("button")].find((node) => node.textContent === label);
+  await act(async () => button("Search integrations.sh")?.click());
+  await act(async () => button("Sign in")?.click());
+
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(search, "");
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(container.querySelector('[data-testid="mcp-oauth-client-form"]')).not.toBeNull();
 });

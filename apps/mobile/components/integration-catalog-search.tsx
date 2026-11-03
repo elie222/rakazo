@@ -65,6 +65,8 @@ export function IntegrationCatalogSearch({
       if ((await signInToMcpServer(row.id)) !== "cancelled") await onConnected();
     } catch (reason) {
       setError(errorText(reason, t("Could not connect")));
+      // The server is added even when sign-in fails; show it, with any client it needs.
+      await onConnected().catch(() => undefined);
     } finally {
       setPending(null);
     }
