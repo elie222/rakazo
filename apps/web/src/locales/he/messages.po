@@ -1119,6 +1119,10 @@ msgstr "מסך הבוט"
 msgid "Bot screen preview"
 msgstr "תצוגה מקדימה של מסך הבוט"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Bot style"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Bot's model"
 msgstr "המודל של הבוט"
@@ -2416,6 +2420,10 @@ msgstr "לא ניתן היה לטעון את הדף. נסו שוב."
 
 #: src/pages/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
+msgstr ""
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Couldn't update bot style"
 msgstr ""
 
 #: src/pages/MessagingSettingsPanel.tsx
@@ -4657,6 +4665,7 @@ msgstr ""
 msgid "Organization API key"
 msgstr "מפתח API של הארגון"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Original"
 msgstr ""
@@ -4968,6 +4977,7 @@ msgstr "Pull request"
 msgid "Queued"
 msgstr "בתור"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Rakazo"
 msgstr "Rakazo"
