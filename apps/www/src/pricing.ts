@@ -38,7 +38,7 @@ export const PRICING_PLANS: PricingPlan[] = [
         : `${dollars(BYOK_ANNUAL_PRICE_CENTS / 12)}/mo billed yearly`,
     features: [
       "Hosted by us",
-      "ChatGPT, Claude, or any API key",
+      "Claude, ChatGPT, or any API key",
       "Cloud computer included",
       `${TRIAL_DAYS}-day free trial`,
     ],
