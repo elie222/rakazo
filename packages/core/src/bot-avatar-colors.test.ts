@@ -9,6 +9,8 @@ import {
 describe("botEyeTone", () => {
   it("cuts eyes in the page color unless the body is nearly white or black", () => {
     expect(botEyeTone("#FF5EB1")).toBe("page");
+    // White cut-outs would fade on a pale amber body in light mode.
+    expect(botEyeTone("#FFAF38")).toBe("dark");
     expect(botEyeTone("#FFFFFF")).toBe("dark");
     expect(botEyeTone("#111111")).toBe("light");
   });

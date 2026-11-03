@@ -142,7 +142,7 @@ describe("GroupSeats", () => {
     const eyes = Array.from(container.querySelectorAll("svg-g[data-fill]"), (group) =>
       group.getAttribute("data-fill"),
     );
-    // Cut-outs in the page color, as on the bot's own avatar.
-    expect(eyes).toEqual(["#FFFFFF", "#FFFFFF"]);
+    // Both bodies are pale, so their eyes stay dark on a light page, as on the bot's own avatar.
+    expect(eyes).toEqual(["#141414", "#141414"]);
   });
 });

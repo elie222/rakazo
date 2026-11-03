@@ -182,11 +182,11 @@ function oklchToHex(lightness: number, chroma: number, hue: number): string {
 
 /**
  * Which ink a bot's eyes take. They are cut-outs in the page color (dark in dark mode, light in
- * light mode), unless the body is so close to white or black that the cut-out would vanish in
- * one theme; then they stay the ink that contrasts with the body.
+ * light mode), unless the body is pale or dark enough that the cut-out would fade in one theme;
+ * then they stay the ink that contrasts with the body. Amber, emerald and cyan are pale enough.
  */
 export function botEyeTone(bodyHex: string): "page" | "dark" | "light" {
-  if (contrastRatio(bodyHex, "#FFFFFF") < 1.6) return "dark";
+  if (contrastRatio(bodyHex, "#FFFFFF") < 2.4) return "dark";
   if (contrastRatio(bodyHex, "#000000") < 2) return "light";
   return "page";
 }

@@ -291,10 +291,10 @@ describe("BotAvatar", () => {
   it("draws a plain-colour bot with the organic body for its identity", () => {
     const view = render("#3EC5A8");
     expect(bodies(view)).toEqual([organicAvatarPath(avatarIdentitySeed("bot-1"))]);
-    // Its eyes are cut-outs in the page color, the same as a group title's still faces.
+    // A pale body keeps dark eyes on a light page, the same as a group title's still faces.
     expect(Array.from(view.querySelectorAll("rect"), (eye) => eye.dataset.fill)).toEqual([
-      "#FFF",
-      "#FFF",
+      "#141414",
+      "#141414",
     ]);
     expect(view.querySelector("img")).toBeNull();
     expect(view.querySelector("ellipse")).toBeNull();

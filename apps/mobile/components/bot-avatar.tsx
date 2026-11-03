@@ -270,10 +270,8 @@ function LegacyBotAvatar({
   // itself that sign, so it carries none.
   const isWorking = isRunWorking(status) && !composing && motion !== "running";
   const parsed = mobileBotAvatarPresentation(color);
-  const eyeColor = botEyeInk(
-    parsed.kind === "shape" || parsed.kind === "color" ? parsed.color : color,
-    useMobileTokens(),
-  );
+  const fillColor = parsed.kind === "shape" || parsed.kind === "color" ? parsed.color : color;
+  const eyeColor = botEyeInk(fillColor, tokens);
   const onScreen = useAvatarOnScreen();
   const reducedMotion = useReducedMotion();
   const settling = useSettling(state);
@@ -289,7 +287,6 @@ function LegacyBotAvatar({
   const life = useLife(state, clock, size, motion);
   const poke = usePoke(life, pokeable && clock === "running");
   const bodyStyle = useBodyStyle(life, size);
-  const fillColor = parsed.kind === "shape" || parsed.kind === "color" ? parsed.color : color;
   const picture =
     parsed.kind === "image" && parsed.imageUrl ? (
       <View

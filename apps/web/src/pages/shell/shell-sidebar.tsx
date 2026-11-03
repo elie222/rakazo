@@ -173,7 +173,12 @@ export function ShellSidebar({
           setNewSpaceOpen={setNewSpaceOpen}
           setCreateBotOpen={setCreateBotOpen}
         />
-        {mini || !(searchOpen || query || (activityMode && activityFilterCount > 0)) ? null : (
+        {mini ||
+        !(
+          searchOpen ||
+          query ||
+          (activityMode && (activityFilterCount > 0 || activityFiltersExpanded))
+        ) ? null : (
           <InputGroup
             data-testid="sidebar-search"
             className="mx-2.5 mb-3 w-auto rounded-xl bg-card dark:bg-input border border-border text-muted-foreground focus-within:border-ring"
