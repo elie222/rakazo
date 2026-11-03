@@ -67,6 +67,7 @@ type Effect = {
 
 function fixture({
   name = "demo_get_item",
+  route,
   catalog = false,
   readOnly = true,
   rules = [] as ActionApprovalRule[],
@@ -125,6 +126,7 @@ function fixture({
   /** Simulates another writer landing between the save's read and its commit. */
   advanceRevisionAfterRead?: boolean;
   name?: string;
+  route?: ConnectorTool["route"];
   catalog?: boolean;
   readOnly?: boolean;
   rules?: ActionApprovalRule[];
@@ -153,7 +155,7 @@ function fixture({
       properties: { id: { type: "string" } },
       required: ["id"],
     },
-    route: { connectorId: "demo", resourceId: "resource-1", toolName: name },
+    route: route ?? { connectorId: "demo", resourceId: "resource-1", toolName: name },
   };
   const effects: Effect[] = [];
   const results: unknown[] = [];
@@ -508,7 +510,7 @@ function fixture({
         ? await request.executeTool!(call.name, call.args, call.executionId)
         : await request.executeTool!(
             catalog ? "demo_execute_tool" : name,
-            catalog ? { id: `resource-1:${name}`, arguments: call.args } : call.args,
+            catalog ? { id: catalogEntries([tool])[0]!.id, arguments: call.args } : call.args,
             call.executionId,
           );
       results.push(result);
@@ -1051,6 +1053,25 @@ describe("connector read-only metadata and approval enforcement", () => {
       await f.run();
       expect(f.execute).toHaveBeenCalledOnce();
       expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    });
+
+    it("keeps an original action block on account-scoped tools even with Auto Review", async () => {
+      const f = fixture({
+        catalog,
+        name: "demo_send_message__account",
+        route: {
+          connectorId: "demo",
+          resourceId: "resource-1",
+          toolName: "demo_send_message",
+          connectionId: "work",
+        },
+        autoReview: true,
+        rules: [{ effect: "deny", matchKind: "tool", matchValue: "demo_send_message" }],
+      });
+      await f.run();
+      expect(f.execute).not.toHaveBeenCalled();
+      expect(reviewMock).not.toHaveBeenCalled();
+      expect(JSON.stringify(f.results[0])).toContain("blocked");
     });
 
     it("refuses a blocked tool in Never ask without asking or running it", async () => {
