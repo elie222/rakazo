@@ -8,7 +8,7 @@ import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import { peekInitialBootstrap } from "../lib/bootstrap";
 import { lazyComponent } from "../lib/preload-recovery";
 import { loadBillingStatus } from "../lib/referral";
-import { rpc } from "../lib/rpc";
+import { rpc, SPACE_SELECTED_EVENT } from "../lib/rpc";
 import type { SupportChat } from "../lib/support-chat";
 import { useSupportChat } from "../lib/support-chat";
 
@@ -110,12 +110,24 @@ export function SubscriptionGate({
         })
         .catch(() => undefined);
     };
+    // Another Space can belong to another organization with its own invite link and plan: the
+    // previous one's link is dropped at once, and billing reloads for the new one.
+    const spaceSelected = () => {
+      setState((current) =>
+        current.kind !== "loading" && current.status
+          ? { ...current, status: { ...current.status, referral: null } }
+          : current,
+      );
+      recheck();
+    };
     window.addEventListener("focus", recheck);
     document.addEventListener("visibilitychange", recheck);
+    window.addEventListener(SPACE_SELECTED_EVENT, spaceSelected);
     return () => {
       active = false;
       window.removeEventListener("focus", recheck);
       document.removeEventListener("visibilitychange", recheck);
+      window.removeEventListener(SPACE_SELECTED_EVENT, spaceSelected);
     };
   }, [billed]);
 
