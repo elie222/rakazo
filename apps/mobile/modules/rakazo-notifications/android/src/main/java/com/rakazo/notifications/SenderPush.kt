@@ -77,8 +77,9 @@ internal object SenderPush {
       .apply { portrait?.let { setIcon(Icon.createWithBitmap(it)) } }
       .build()
     val user = Person.Builder().setName(context.applicationInfo.loadLabel(context.packageManager)).build()
+    // The title says why it alerted ("… failed"), so it stays as the heading above the sender.
     val style = Notification.MessagingStyle(user).addMessage(body, System.currentTimeMillis(), person)
-    if (data.optString("groupId").isNotBlank()) style.setConversationTitle(title).setGroupConversation(true)
+      .setConversationTitle(title).setGroupConversation(true)
     builder.setStyle(style)
   }
 

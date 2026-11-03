@@ -30,7 +30,9 @@ final class NotificationService: UNNotificationServiceExtension {
     )
     let intent = INSendMessageIntent(
       recipients: nil, outgoingMessageType: .outgoingMessageText,
-      content: request.content.body, speakableGroupName: nil,
+      // The title says why it alerted ("… failed"), so it stays as the heading above the sender.
+      content: request.content.body,
+      speakableGroupName: request.content.title.isEmpty ? nil : INSpeakableString(spokenPhrase: request.content.title),
       conversationIdentifier: data["threadId"] as? String,
       serviceName: nil, sender: person, attachments: nil
     )
