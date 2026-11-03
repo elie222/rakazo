@@ -469,6 +469,315 @@ class SnapshotTest(unittest.TestCase):
         self.assertEqual(latest, (now - 20) / 1000)
 
 
+class FakePurchases:
+    """The tab's purchase checks: a control's box carries what a click on it would buy, under "pay"."""
+
+    host = "shop.example.test"
+    shows = None
+    on_desktop = None
+    offscreen = set()
+    fails = False
+
+    def __init__(self, port, target):
+        if FakePurchases.fails:
+            raise RuntimeError("CDP unavailable")
+
+    def close(self):
+        pass
+
+    def site(self):
+        return FakePurchases.host
+
+    def where(self):
+        return {"url": "https://shop.example.test/pay", "title": "Pay"}
+
+    def click(self, box, scrolled):
+        if box.get("ref") in FakePurchases.offscreen and not scrolled:
+            raise helper.Offscreen()
+        return box.get("pay")
+
+    def signals(self, enter, deadline=float("inf"), frames=True):
+        return FakePurchases.shows
+
+    def signals_or_ask(self, enter):
+        return FakePurchases.shows
+
+    def desktop(self, args):
+        return FakePurchases.on_desktop
+
+
+RealPurchases = helper.Purchases
+
+
+def setUpModule():
+    helper.Purchases = FakePurchases
+
+
+def tearDownModule():
+    helper.Purchases = RealPurchases
+
+
+PAY = {"reason": "final_step", "label": "Pay $5", "amount": "$5", "amountFrom": "button"}
+
+
+def pays(browser, ref="e8", purchase=PAY):
+    browser.boxes[ref] = {"ref": ref, "x": 0, "y": 0, "width": 10, "height": 10, "pay": purchase}
+    return browser
+
+
+class PurchaseTest(unittest.TestCase):
+    def setUp(self):
+        closed = patch.object(helper, "browser_closed", return_value=False)
+        closed.start()
+        self.addCleanup(closed.stop)
+        FakePurchases.host, FakePurchases.shows, FakePurchases.on_desktop = "shop.example.test", None, None
+        FakePurchases.offscreen, FakePurchases.fails = set(), False
+
+    def act(self, actions, browser):
+        with patch.object(helper.time, "sleep"), patch.object(helper, "QUIET_SECONDS", 0.0):
+            return page(browser).act(actions)
+
+    def test_a_click_that_completes_a_purchase_is_refused_unless_the_user_approved_it(self):
+        browser = pays(FakeAgentBrowser())
+        result = self.act([{"kind": "click", "ref": "e8"}], browser)
+        self.assertEqual(result["error"], helper.PURCHASE_REFUSED)
+        self.assertEqual(result["purchase"], {**PAY, "site": "shop.example.test"})
+        self.assertEqual((result["ok"], result["completed"], result["uncertain"]), (False, 0, False))
+        self.assertEqual(browser.actions(), [])
+
+    def test_an_approved_purchase_click_is_pressed_only_on_the_site_it_was_approved_for(self):
+        approved = {"kind": "click", "ref": "e8", "approved": True, "label": "Pay $5", "amount": "$5"}
+        browser = pays(FakeAgentBrowser())
+        self.assertTrue(self.act([{**approved, "site": "shop.example.test"}], browser)["ok"])
+        self.assertEqual(browser.actions(), [["click", "@e8"]])
+        browser = pays(FakeAgentBrowser())
+        self.assertEqual(self.act([{**approved, "site": "other.example.test"}], browser)["error"],
+                         helper.PURCHASE_REFUSED)
+        self.assertEqual(browser.actions(), [])
+
+    def test_an_approved_click_is_refused_when_the_button_or_total_is_not_what_the_user_saw(self):
+        for changed in ({"label": "Pay $50"}, {"amount": "$50"}):
+            browser = pays(FakeAgentBrowser())
+            step = {"kind": "click", "ref": "e8", "approved": True, "site": "shop.example.test",
+                    "label": "Pay $5", "amount": "$5", **changed}
+            with self.subTest(changed=changed):
+                self.assertEqual(self.act([step], browser)["error"], helper.PURCHASE_CHANGED)
+                self.assertEqual(browser.actions(), [])
+        # Invisible characters and spacing are not a change.
+        browser = pays(FakeAgentBrowser())
+        step = {"kind": "click", "ref": "e8", "approved": True, "site": "shop.example.test",
+                "label": "Pay\u200b  $5", "amount": "$5"}
+        self.assertTrue(self.act([step], browser)["ok"])
+
+    def test_an_earlier_click_runs_and_the_purchase_click_after_it_is_refused(self):
+        browser = pays(FakeAgentBrowser())
+        result = self.act([{"kind": "fill", "ref": "e2", "text": "Grace"}, {"kind": "click", "ref": "e8"}], browser)
+        self.assertEqual((result["completed"], result["error"]), (1, helper.PURCHASE_REFUSED))
+        self.assertEqual(browser.actions(), [["fill", "@e2", "Grace"]])
+
+    def test_a_click_inside_a_frame_asks_whenever_the_page_shows_a_payment(self):
+        browser = FakeAgentBrowser()
+        FakePurchases.shows = {**PAY, "reason": "payment_page"}
+        self.assertEqual(self.act([{"kind": "click", "ref": "e10"}], browser)["error"], helper.PURCHASE_REFUSED)
+        self.assertEqual(browser.actions(), [])
+        FakePurchases.shows = None
+        self.assertTrue(self.act([{"kind": "click", "ref": "e10"}], FakeAgentBrowser())["ok"])
+
+    def test_a_page_that_cannot_be_read_refuses_the_click_with_the_card_for_an_unknown_page(self):
+        FakePurchases.fails = True
+        browser = FakeAgentBrowser()
+        result = self.act([{"kind": "click", "ref": "e8"}], browser)
+        self.assertEqual(result["purchase"], {**helper.UNREADABLE_PURCHASE, "site": ""})
+        self.assertEqual(browser.actions(), [])
+        # The user allowed that card: the click goes ahead.
+        step = {"kind": "click", "ref": "e8", "approved": True, "site": "", "label": "", "amount": ""}
+        self.assertTrue(self.act([step], FakeAgentBrowser())["ok"])
+
+    def test_a_control_out_of_view_is_scrolled_to_before_it_is_checked(self):
+        browser = pays(FakeAgentBrowser())
+        FakePurchases.offscreen = {"e8"}
+        self.assertEqual(self.act([{"kind": "click", "ref": "e8"}], browser)["error"], helper.PURCHASE_REFUSED)
+        self.assertEqual(browser.actions(), [["scrollintoview", "@e8"]])
+
+    def test_purchase_check_names_the_clicks_that_would_buy_and_presses_nothing(self):
+        browser = pays(FakeAgentBrowser(), "e7")
+        result = page(browser).purchase_check({"actions": [
+            {"kind": "fill", "ref": "e2", "text": "x"}, {"kind": "click", "ref": "e8"},
+            {"kind": "click", "ref": "e7"}, {"kind": "click", "ref": "e99"}]})
+        self.assertEqual(result, {"ok": True, "site": "shop.example.test", "url": "https://shop.example.test/pay",
+                                  "title": "Pay", "purchase": {
+            "steps": [2], "label": "Pay $5", "amount": "$5", "amountFrom": "button", "reason": "final_step"}})
+        self.assertEqual(browser.actions(), [])
+
+    def test_one_card_approves_one_purchase_click_of_a_batch(self):
+        browser = pays(pays(FakeAgentBrowser(), "e7"), "e8")
+        result = page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e7"}, {"kind": "click", "ref": "e8"}]})
+        self.assertEqual(result["purchase"]["steps"], [0])
+
+    def test_purchase_check_for_the_screen_asks_the_page(self):
+        FakePurchases.on_desktop = {**PAY, "reason": "payment_page"}
+        result = page(FakeAgentBrowser()).purchase_check({"desktop": True, "enter": True})
+        self.assertEqual(result["purchase"]["steps"], [])
+        self.assertEqual(result["purchase"]["reason"], "payment_page")
+        FakePurchases.on_desktop = None
+        self.assertIsNone(page(FakeAgentBrowser()).purchase_check({"desktop": True})["purchase"])
+
+    def test_an_approval_applies_only_to_a_click_with_its_site(self):
+        for step in ({"kind": "fill", "ref": "e2", "text": "x", "approved": True, "site": "a"},
+                     {"kind": "click", "ref": "e8", "approved": True},
+                     {"kind": "click", "ref": "e8", "approved": "yes", "site": "a"},
+                     {"kind": "click", "ref": "e8", "label": "Pay"},
+                     {"kind": "click", "ref": "e8", "approved": True, "site": "a", "amount": 5}):
+            with self.subTest(step=step), self.assertRaisesRegex(RuntimeError, "approv"):
+                helper.validate_actions([step])
+
+    def test_a_purchase_check_with_no_browser_finds_nothing_and_one_that_cannot_list_tabs_fails(self):
+        with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), patch.object(helper, "browser_closed", return_value=True), \
+                patch("builtins.print") as printed:
+            helper.run(["rakazo-page-browser", "purchase_check", '{"desktop": true}'])
+        self.assertEqual(json.loads(printed.call_args.args[0])["purchase"], None)
+        # A browser that is running but slow to answer is a failed check, which asks.
+        with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), patch.object(helper, "browser_closed", return_value=False), \
+                patch.object(helper, "wait_for_cdp", side_effect=RuntimeError("CDP not ready on port 1: timed out")), \
+                patch("builtins.print") as printed:
+            helper.run(["rakazo-page-browser", "purchase_check", '{"desktop": true}'])
+        self.assertEqual(json.loads(printed.call_args.args[0])["ok"], False)
+        with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), patch.object(helper, "wait_for_cdp"), \
+                patch.object(helper, "page_tabs", side_effect=RuntimeError("tab list too large")), \
+                patch("builtins.print") as printed:
+            helper.run(["rakazo-page-browser", "purchase_check", '{"desktop": true}'])
+        self.assertEqual(json.loads(printed.call_args.args[0])["ok"], False)
+
+    def test_a_purchase_check_leaves_the_tabs_alone(self):
+        listing = [{"type": "page", "id": "tab-1", "url": "https://shop.example.test/pay"}]
+        browser = FakeAgentBrowser()
+        with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), patch.object(helper, "wait_for_cdp"), \
+                patch.object(helper, "http_get_json", return_value=listing), \
+                patch.object(helper, "AgentBrowser", return_value=browser), \
+                patch.object(browser, "use_tab", create=True), \
+                patch.object(helper, "Tabs") as tabs, patch("builtins.print") as printed:
+            helper.run(["rakazo-page-browser", "purchase_check", '{"desktop": true}'])
+        tabs.assert_not_called()
+        self.assertEqual(json.loads(printed.call_args.args[0])["ok"], True)
+
+    def test_a_purchase_check_with_no_page_or_a_browser_page_showing_finds_nothing_to_buy(self):
+        for listing in ([], [{"type": "page", "id": "newtab", "url": "chrome://newtab/"}]):
+            with self.subTest(listing=listing), patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), \
+                    patch.object(helper, "wait_for_cdp"), patch.object(helper, "http_get_json", return_value=listing), \
+                    patch("builtins.print") as printed:
+                self.assertEqual(helper.run(["rakazo-page-browser", "purchase_check", '{"desktop": true}']), 0)
+            self.assertEqual(json.loads(printed.call_args.args[0]),
+                             {"ok": True, "site": "", "purchase": None, "url": listing[0]["url"] if listing else "",
+                              "title": ""})
+
+
+class DesktopPurchaseTest(unittest.TestCase):
+    """The real checks, with the page's answers scripted by what is asked."""
+
+    def purchases(self, answers, frames=()):
+        found = object.__new__(RealPurchases)
+        found.client, found.session = Mock(), "page"
+        asked = []
+
+        def ask(session, world, call):
+            asked.append((session, call))
+            for start, answer in answers.items():
+                if call.startswith(start):
+                    if isinstance(answer, Exception):
+                        raise answer
+                    return answer(call) if callable(answer) else answer
+            raise AssertionError(call)
+
+        found.ask = ask
+        found.frames = lambda deadline: list(frames)
+        return found, asked
+
+    def test_a_click_asks_only_when_its_spot_lands_on_a_control_that_pays(self):
+        found, _ = self.purchases({"pagePoint": {"x": 5, "y": 6, "inside": True},
+                                   "purchaseAt(5, 6": {"purchase": PAY, "frames": False}})
+        self.assertEqual(found.desktop({"points": [{"x": 100, "y": 200}]}), PAY)
+        found, asked = self.purchases({"pagePoint": {"x": 5, "y": 6, "inside": True},
+                                       "purchaseAt": {"purchase": None, "inFrame": False, "frames": False}})
+        self.assertIsNone(found.desktop({"points": [{"x": 100, "y": 200}]}))
+        self.assertFalse(any(call.startswith("paymentPage") for _, call in asked))
+        # Outside the browser window: nothing on the page is pressed.
+        found, _ = self.purchases({"pagePoint": {"x": -5, "y": 6, "inside": False}})
+        self.assertIsNone(found.desktop({"points": [{"x": 1, "y": 2}]}))
+
+    def test_a_key_or_a_click_that_cannot_be_placed_asks_when_the_page_shows_a_payment(self):
+        shows = {**PAY, "reason": "payment_page"}
+        for args in ({"enter": True}, {"unplaced": True}, {"points": [{"x": 1, "y": 2}]}):
+            found, asked = self.purchases({"pagePoint": None,
+                                           "paymentPage": {"purchase": shows, "frames": False}})
+            with self.subTest(args=args):
+                self.assertEqual(found.desktop(args), shows)
+                self.assertIn(("page", f"paymentPage(false, {json.dumps(args.get('enter') is True)})"), asked)
+
+    def test_the_page_s_frames_are_asked_when_the_page_itself_shows_nothing(self):
+        shows = {**PAY, "reason": "payment_page"}
+        found, asked = self.purchases({"paymentPage": lambda call: {"purchase": None, "frames": False}},
+                                      frames=[("frame-session", 7)])
+        original = found.ask
+
+        def ask(session, world, call):
+            if session == "frame-session":
+                return {"purchase": shows}
+            return original(session, world, call)
+
+        found.ask = ask
+        self.assertEqual(found.desktop({"enter": True}), shows)
+
+    def test_a_check_that_fails_asks_by_what_the_page_shows_and_an_unreadable_page_asks(self):
+        found, _ = self.purchases({"pagePoint": RuntimeError("gone"),
+                                   "paymentPage": {"purchase": None, "frames": False}})
+        self.assertIsNone(found.desktop({"points": [{"x": 1, "y": 2}]}))
+        found, _ = self.purchases({"pagePoint": RuntimeError("gone"), "paymentPage": RuntimeError("gone")})
+        self.assertEqual(found.desktop({"points": [{"x": 1, "y": 2}]}), helper.UNREADABLE_PURCHASE)
+
+    def test_a_page_with_a_payment_frame_is_asked_again_with_the_frame(self):
+        shows = {**PAY, "reason": "payment_page"}
+        found, _ = self.purchases({"purchaseAt(5.0, 6.0, false)": {"purchase": None, "inFrame": False, "frames": True},
+                                   "purchaseAt(5.0, 6.0, true)": {"purchase": shows, "frames": True}})
+        with patch.object(secrets, "payment_frames", return_value=[("f", "frame", 3)]):
+            self.assertEqual(found.click({"x": 0, "y": 1, "width": 10, "height": 10}, False), shows)
+        with patch.object(secrets, "payment_frames", return_value=[]):
+            self.assertIsNone(found.click({"x": 0, "y": 1, "width": 10, "height": 10}, False))
+
+    def test_a_spot_that_cannot_be_looked_into_asks_by_what_any_frame_shows(self):
+        shows = {**PAY, "reason": "payment_page"}
+        found, _ = self.purchases({"purchaseAt": RuntimeError("frame gone"),
+                                   "paymentPage": {"purchase": None, "frames": False}},
+                                  frames=[("frame-session", 7)])
+        original = found.ask
+        found.ask = lambda session, world, call: ({"purchase": shows} if session == "frame-session"
+                                                   else original(session, world, call))
+        self.assertEqual(found.click({"x": 0, "y": 0, "width": 10, "height": 10}, False), shows)
+
+    def test_a_control_out_of_view_is_offscreen_until_scrolled_to_and_then_unknown(self):
+        found, _ = self.purchases({"purchaseAt": {"offscreen": True},
+                                   "paymentPage": {"purchase": None, "frames": False}})
+        with self.assertRaises(helper.Offscreen):
+            found.click({"x": 0, "y": 900, "width": 10, "height": 10}, False)
+        self.assertIsNone(found.click({"x": 0, "y": 900, "width": 10, "height": 10}, True))
+        # Still out of view after scrolling: the page's own signals decide.
+        shows = {**PAY, "reason": "payment_page"}
+        found, _ = self.purchases({"purchaseAt": {"offscreen": True},
+                                   "paymentPage": {"purchase": shows, "frames": False}})
+        self.assertEqual(found.click({"x": 0, "y": 900, "width": 10, "height": 10}, True), shows)
+
+    def test_a_spot_inside_a_frame_of_the_same_process_is_looked_up_in_that_frame(self):
+        found, _ = self.purchases({"purchaseAt": {"purchase": None, "inFrame": True, "scroll": [0, 0], "frames": True}})
+        calls = {"DOM.getNodeForLocation": {"backendNodeId": 9, "frameId": "inner"},
+                 "Page.getFrameTree": {"frameTree": {"frame": {"id": "top"}}},
+                 "DOM.describeNode": {"node": {"nodeName": "BUTTON"}},
+                 "DOM.resolveNode": {"object": {"objectId": "button"}},
+                 "Runtime.callFunctionOn": {"result": {"value": PAY}}}
+        found.client.call.side_effect = lambda method, *args, **kwargs: calls[method]
+        with patch.object(secrets, "payment_frames", return_value=[]), \
+                patch.object(secrets, "world_in", return_value=4), patch.object(secrets, "eval_json"):
+            self.assertEqual(found.click({"x": 0, "y": 0, "width": 10, "height": 10}, False), PAY)
+
+
 class ActTest(unittest.TestCase):
     def act(self, actions, browser=None):
         browser = browser or FakeAgentBrowser()

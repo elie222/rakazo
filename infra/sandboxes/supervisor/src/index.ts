@@ -560,12 +560,36 @@ app.post("/computers/:id/browser", async (c) => {
         downloads: downloadFolder,
       }),
       z.object({
+        command: z.literal("purchase_check"),
+        // Only clicks are looked at; `desktop` asks about a click or key on the screen instead.
+        actions: z
+          .array(z.object({ kind: z.string().max(40), ref: z.string().max(200).optional() }))
+          .max(24)
+          .optional(),
+        desktop: z.boolean().optional(),
+        enter: z.boolean().optional(),
+        unplaced: z.boolean().optional(),
+        points: z
+          .array(z.object({ x: z.number().finite(), y: z.number().finite() }))
+          .max(24)
+          .optional(),
+      }),
+      z.object({
         command: z.literal("act"),
         downloads: downloadFolder,
         actions: z
           .array(
             z.discriminatedUnion("kind", [
-              z.object({ kind: z.literal("click"), ref: z.string().min(1).max(200) }),
+              z.object({
+                kind: z.literal("click"),
+                ref: z.string().min(1).max(200),
+                // The user approved a purchase click on this site (see rakazo-page-browser).
+                approved: z.boolean().optional(),
+                // Empty for a page without a host (about:blank, data:, file:).
+                site: z.string().max(253).optional(),
+                label: z.string().max(200).optional(),
+                amount: z.string().max(100).optional(),
+              }),
               z.object({
                 kind: z.literal("upload"),
                 ref: z.string().min(1).max(200),
@@ -668,8 +692,9 @@ app.post("/computers/:id/browser", async (c) => {
   try {
     const reusable = await screen(true);
     let result = await runHelper(reusable);
-    // A reused screen skipped setup, so a browser that has since exited gets it before one retry.
-    if (reusable.reused && pageBrowserNotReady(result))
+    // A reused screen skipped setup, so a browser that has since exited gets it before one retry. A
+    // purchase check presses nothing and never starts the browser again: no browser has nothing to buy.
+    if (reusable.reused && body.command !== "purchase_check" && pageBrowserNotReady(result))
       result = await runHelper(await screen(false));
     // A nonzero exit or malformed output cannot establish which mutations ran.
     if (result.code !== 0 || Buffer.byteLength(result.stdout) > 512 * 1024) {

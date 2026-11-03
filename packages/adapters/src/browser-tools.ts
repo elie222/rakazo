@@ -12,6 +12,7 @@ import { PURCHASE_CARD_FIELDS } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import { redactConnectorPayload } from "./connector-safety.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
+import type { PurchaseApproval } from "./purchase-gate.js";
 import { MAX_ACTIONS_PER_CALL } from "./tool-loop.js";
 
 /** The action kinds `browser_act` takes, as its tool schema lists them. */
@@ -162,6 +163,8 @@ export async function browserActFromTool(
     resolveUploadPath?: (path: string) => string;
     /** Trusted upload roots relative to the computer home, set by the executor. */
     uploadRoots?: string[];
+    /** The purchase the user approved for this call; its clicks alone may complete it. */
+    approvedPurchase?: PurchaseApproval;
   } = {},
 ) {
   try {
@@ -278,6 +281,20 @@ export async function browserActFromTool(
           // password field and "username" into a text, email or telephone field.
           field: card ? "card" : resolved.hidden === false ? "username" : "password",
         });
+      }
+    }
+    const approved = options.approvedPurchase;
+    // A card for a page that could not be checked names no click: it covers each one, and the page
+    // browser still refuses any click it then finds buying on a known site.
+    const approvedSteps =
+      approved && !approved.site && !approved.steps.length
+        ? actions.flatMap((step, index) => (step.kind === "click" ? [index] : []))
+        : (approved?.steps ?? []);
+    for (const index of approvedSteps) {
+      const step = actions[index];
+      if (step?.kind === "click" && approved) {
+        const { site, label, amount } = approved;
+        actions[index] = { ...step, approved: true, site, label, amount };
       }
     }
     // Taken just before the page is asked, by one call only, so two fills never both type it.

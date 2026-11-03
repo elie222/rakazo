@@ -36,6 +36,7 @@ import {
   protectedComputerLifecycleRefusal,
 } from "./desktop-command-guard.js";
 import { nativeShellCommandArgv, usesNativeShell } from "./native-shell.js";
+import { purchaseApprovalOf } from "./purchase-gate.js";
 import { resolvePurchaseCardFill, resolvePurchasePayTokenFill } from "./purchase-service.js";
 import type { RunContext } from "./run-context.js";
 import { addRunSecrets } from "./run-context.js";
@@ -157,6 +158,8 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
         ? browserSnapshotFromTool
         : null;
   return computerScreenToolResult(async () => {
+    // A call that presses an approved purchase spends it: a card it types leaves no pass for the next one.
+    const paying = purchaseApprovalOf(args.purchaseApproval);
     const result = tool
       ? redactBrowserResult(
           await tool(ctx.providers.browser, await ctx.computer.get("tool", name), context, args, {
@@ -174,6 +177,7 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
             desktopTools,
             downloads,
             redactions,
+            approvedPurchase: paying,
             // Team bots may send only their own folder or shared/ off the computer; a
             // private computer's helper already confines uploads to its home folder.
             uploadRoots:
@@ -208,6 +212,7 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
               );
               if ("error" in resolved) return resolved;
               addRunSecrets(ctx, resolved.redactions);
+              if (!paying) ctx.state.walletHosts.add(new URL(resolved.origin).host);
               return { text: resolved.text, origin: resolved.origin };
             },
             resolveCodeFill: async () => {
@@ -233,6 +238,7 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
               if ("error" in resolved) return resolved;
               addRunSecrets(ctx, resolved.redactions);
               const { text, origin, merchantAccountId } = resolved;
+              if (!paying) ctx.state.walletHosts.add(new URL(origin).host);
               return { text, origin, merchantAccountId };
             },
           },
