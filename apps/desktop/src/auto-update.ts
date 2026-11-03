@@ -245,7 +245,16 @@ export interface ElectronAutoUpdater {
   checkForUpdates: () => Promise<unknown>;
   downloadUpdate: () => Promise<unknown>;
   quitAndInstall: () => void;
+  install: (isSilent: boolean, isForceRunAfter: boolean) => boolean;
 }
+
+export interface DownloadedUpdate {
+  version: string;
+  downloadedFile: string;
+}
+
+/** Rejects to keep a downloaded update from ever installing. */
+export type DownloadVerifier = (update: DownloadedUpdate) => Promise<void>;
 
 interface UpdateClock {
   now: () => number;
@@ -264,6 +273,15 @@ function versionFrom(payload: unknown): string | null {
     : null;
 }
 
+function downloadedFileFrom(payload: unknown): string | null {
+  if (typeof payload !== "object" || payload === null || !("downloadedFile" in payload)) {
+    return null;
+  }
+  return typeof payload.downloadedFile === "string" && payload.downloadedFile !== ""
+    ? payload.downloadedFile
+    : null;
+}
+
 function percentFrom(payload: unknown): number | null {
   if (typeof payload !== "object" || payload === null || !("percent" in payload)) return null;
   return typeof payload.percent === "number" && Number.isFinite(payload.percent)
@@ -276,6 +294,8 @@ export class DesktopUpdateController {
   private current: DesktopUpdateState;
   private lastCheck = 0;
   private updaterPromise: Promise<ElectronAutoUpdater | null> | null = null;
+  private loadedUpdater: ElectronAutoUpdater | null = null;
+  private verification: Promise<void> | null = null;
   private checkPromise: Promise<DesktopUpdateState> | null = null;
   private downloadPromise: Promise<DesktopUpdateState> | null = null;
   private checkWasRequested = false;
@@ -286,6 +306,7 @@ export class DesktopUpdateController {
     private readonly loadUpdater: () => Promise<ElectronAutoUpdater>,
     private readonly clock: UpdateClock = systemClock,
     private readonly onInstallFailure?: () => void,
+    private readonly verifyDownload?: DownloadVerifier,
   ) {
     this.current = initialUpdateState(environment);
   }
@@ -313,7 +334,8 @@ export class DesktopUpdateController {
     const loading = this.loadUpdater()
       .then((updater) => {
         updater.autoDownload = false;
-        updater.autoInstallOnAppQuit = true;
+        // The updater would install on quit before an async verifier could finish.
+        updater.autoInstallOnAppQuit = this.verifyDownload === undefined;
         updater.allowPrerelease = false;
         updater.allowDowngrade = false;
         updater.disableWebInstaller = true;
@@ -338,17 +360,22 @@ export class DesktopUpdateController {
         });
         updater.on("update-downloaded", (payload) => {
           const version = versionFrom(payload);
-          if (version !== null) {
-            this.push({ type: "downloaded", version });
-          } else {
+          if (version === null) {
             this.push({
               type: "failed",
               error: new Error("The downloaded update did not include a version."),
               userInitiated: this.checkWasRequested,
             });
+            return;
           }
+          if (this.verifyDownload === undefined) {
+            this.push({ type: "downloaded", version });
+            return;
+          }
+          this.verification = this.verified(version, downloadedFileFrom(payload));
         });
         updater.on("error", (error) => this.fail(error));
+        this.loadedUpdater = updater;
         return updater;
       })
       .catch((error: unknown) => {
@@ -358,6 +385,16 @@ export class DesktopUpdateController {
       });
     this.updaterPromise = loading;
     return loading;
+  }
+
+  private async verified(version: string, downloadedFile: string | null) {
+    try {
+      if (downloadedFile === null) throw new Error("The downloaded update signature has no file.");
+      await this.verifyDownload?.({ version, downloadedFile });
+      this.push({ type: "downloaded", version });
+    } catch (error) {
+      this.push({ type: "failed", error, userInitiated: this.checkWasRequested });
+    }
   }
 
   check(userInitiated: boolean) {
@@ -423,6 +460,7 @@ export class DesktopUpdateController {
     this.push({ type: "download-start" });
     try {
       await updater.downloadUpdate();
+      await this.verification;
     } catch (error) {
       if (this.state().phase === "downloading") {
         this.push({ type: "failed", error, userInitiated: this.checkWasRequested });
@@ -457,5 +495,18 @@ export class DesktopUpdateController {
       this.fail(error);
     }
     return this.current;
+  }
+
+  /** Stands in for the updater's own install-on-quit once a verifier has passed the download. */
+  installOnQuit() {
+    const updater = this.loadedUpdater;
+    if (this.verifyDownload === undefined || updater === null) return;
+    if (this.installStarted || this.current.phase !== "ready") return;
+    this.installStarted = true;
+    try {
+      updater.install(true, false);
+    } catch {
+      // The app is already quitting; the verified download stays cached for the next launch.
+    }
   }
 }

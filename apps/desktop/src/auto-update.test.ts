@@ -36,6 +36,7 @@ function fakeUpdater(overrides: Partial<ElectronAutoUpdater> = {}) {
     checkForUpdates: vi.fn(async () => undefined),
     downloadUpdate: vi.fn(async () => undefined),
     quitAndInstall: vi.fn(),
+    install: vi.fn(() => true),
     ...overrides,
   };
   return {
@@ -598,5 +599,109 @@ describe("DesktopUpdateController", () => {
     await controller.check(true);
     expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(2);
     expect(controller.state()).toMatchObject({ phase: "idle", message: null });
+  });
+
+  describe("with a download verifier", () => {
+    const downloaded = { version: "0.2.0", downloadedFile: "/cache/Rakazo-0.2.0.AppImage" };
+
+    function verifiedUpdater() {
+      let fake: ReturnType<typeof fakeUpdater>;
+      fake = fakeUpdater({
+        checkForUpdates: vi.fn(async () => {
+          fake.emit("checking-for-update");
+          fake.emit("update-available", { version: "0.2.0" });
+        }),
+        downloadUpdate: vi.fn(async () => {
+          fake.emit("update-downloaded", downloaded);
+        }),
+      });
+      return fake;
+    }
+
+    it("offers the update only after the verifier passes it", async () => {
+      const fake = verifiedUpdater();
+      let pass!: () => void;
+      const verify = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            pass = resolve;
+          }),
+      );
+      const controller = new DesktopUpdateController(
+        packaged,
+        async () => fake.updater,
+        clock,
+        undefined,
+        verify,
+      );
+      await controller.check(false);
+      const downloading = controller.download();
+      await vi.waitFor(() => expect(verify).toHaveBeenCalledWith(downloaded));
+      expect(fake.updater.autoInstallOnAppQuit).toBe(false);
+      expect(controller.state().phase).toBe("downloading");
+      expect(await controller.install()).toMatchObject({ phase: "downloading" });
+      controller.installOnQuit();
+      expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
+      expect(fake.updater.install).not.toHaveBeenCalled();
+
+      pass();
+      expect(await downloading).toMatchObject({ phase: "ready", availableVersion: "0.2.0" });
+      controller.installOnQuit();
+      controller.installOnQuit();
+      expect(fake.updater.install).toHaveBeenCalledTimes(1);
+      expect(fake.updater.install).toHaveBeenCalledWith(true, false);
+    });
+
+    it("never installs an update the verifier rejects", async () => {
+      const fake = verifiedUpdater();
+      const verify = vi.fn(async () => {
+        throw new Error("Linux update signature is invalid.");
+      });
+      const controller = new DesktopUpdateController(
+        packaged,
+        async () => fake.updater,
+        clock,
+        undefined,
+        verify,
+      );
+      await controller.check(false);
+      await vi.waitFor(() => expect(controller.state().phase).toBe("error"));
+      expect(controller.state().message).toBe(
+        classifyUpdaterFailure(new Error("signature")).message,
+      );
+      expect(await controller.install()).toMatchObject({ phase: "error" });
+      controller.installOnQuit();
+      expect(fake.updater.autoInstallOnAppQuit).toBe(false);
+      expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
+      expect(fake.updater.install).not.toHaveBeenCalled();
+    });
+
+    it("rejects a download the updater reports without a file", async () => {
+      const fake = verifiedUpdater();
+      vi.mocked(fake.updater.downloadUpdate).mockImplementation(async () => {
+        fake.emit("update-downloaded", { version: "0.2.0" });
+      });
+      const verify = vi.fn(async () => undefined);
+      const controller = new DesktopUpdateController(
+        packaged,
+        async () => fake.updater,
+        clock,
+        undefined,
+        verify,
+      );
+      await controller.check(false);
+      await vi.waitFor(() => expect(controller.state().phase).toBe("error"));
+      expect(verify).not.toHaveBeenCalled();
+    });
+
+    it("leaves install-on-quit to the updater when nothing needs verifying", async () => {
+      const fake = verifiedUpdater();
+      const controller = new DesktopUpdateController(packaged, async () => fake.updater, clock);
+      await controller.check(false);
+      await vi.waitFor(() => expect(controller.state().phase).toBe("ready"));
+      expect(fake.updater.autoInstallOnAppQuit).toBe(true);
+      controller.installOnQuit();
+      expect(fake.updater.install).not.toHaveBeenCalled();
+    });
   });
 });
