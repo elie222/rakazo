@@ -1,4 +1,5 @@
 import type { Bot, ProductEvent } from "@rakazo/contracts";
+import { notificationAvatarSource } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useRef } from "react";
 import {
@@ -29,7 +30,8 @@ export function useBrowserNotifications(botsRef: RefObject<Bot[]>) {
         windowFocused: document.hasFocus(),
         permission: Notification.permission,
         notifiedEventIds: notifiedBrowserEvents.current,
-        show: (title, body, tag) => new Notification(title, { body, tag }),
+        show: (title, body, tag) =>
+          new Notification(title, { body, tag, icon: notificationAvatarSource(currentBot) }),
       },
     );
     return result !== "pending";
