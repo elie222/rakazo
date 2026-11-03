@@ -189,7 +189,10 @@ describePostgres("user devices (PostgreSQL)", () => {
 
     // Sign-out revokes it after authentication but before the socket is attached.
     await prisma.session.delete({ where: { id: session.id } });
-    await prisma.userDevice.update({ where: { id: device.id }, data: { revokedAt: new Date() } });
+    await prisma.userDevice.update({
+      where: { id: device.id },
+      data: { revokedAt: new Date(), revokedBy: "session" },
+    });
     const socket = new Socket();
     await hub.attach(authenticated!, socket);
     expect(socket.sent).toContainEqual({ type: "revoked", reason: "session-ended" });

@@ -30,6 +30,7 @@ describe("user device client", () => {
   let serverUrl: string;
   let upgrades: IncomingMessage[];
   let reject401: boolean;
+  let refusedBecause: string | undefined;
   let client: UserDeviceClient | undefined;
   let revoked: ReturnType<typeof vi.fn<(reason?: string) => void>>;
   const sockets: WebSocket[] = [];
@@ -38,6 +39,7 @@ describe("user device client", () => {
     root = await realpath(await mkdtemp(path.join(tmpdir(), "rakazo-device-test-")));
     upgrades = [];
     reject401 = false;
+    refusedBecause = undefined;
     revoked = vi.fn<(reason?: string) => void>();
     http = createServer();
     wss = new WebSocketServer({ noServer: true });
@@ -48,7 +50,8 @@ describe("user device client", () => {
         request.url !== USER_DEVICE_CONNECT_PATH ||
         request.headers.authorization !== `Bearer ${token}`
       ) {
-        socket.end("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n");
+        const why = refusedBecause ? `x-rakazo-device-revoked: ${refusedBecause}\r\n` : "";
+        socket.end(`HTTP/1.1 401 Unauthorized\r\n${why}Content-Length: 0\r\n\r\n`);
         return;
       }
       wss.handleUpgrade(request, socket, head, (ws) => {
@@ -303,6 +306,20 @@ describe("user device client", () => {
     expect(revoked).toHaveBeenCalledWith(undefined);
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(upgrades).toHaveLength(1);
+  });
+
+  it("passes on why a refused token was revoked, and only a reason it knows", async () => {
+    reject401 = true;
+    refusedBecause = "session-ended";
+    start();
+    await until(() => revoked.mock.calls.length === 1);
+    expect(revoked).toHaveBeenCalledWith("session-ended");
+
+    client!.close();
+    refusedBecause = "something-else";
+    start();
+    await until(() => revoked.mock.calls.length === 2);
+    expect(revoked).toHaveBeenLastCalledWith(undefined);
   });
 
   it("keeps quiet commands alive with heartbeat frames", async () => {

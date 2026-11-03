@@ -173,4 +173,50 @@ describe.skipIf(!databaseUrl)("paired computers end with the sign-in that paired
     expect(await active(attacker.token)).toBe(false);
     expect(await active(legacy.token)).toBe(false);
   });
+
+  it("releases a computer whose sign-in ended while it was offline", async () => {
+    const owner = await newAccount();
+    const desktop = await owner.signIn();
+    const device = await pair(desktop);
+    // Expired, or deleted without the sign-out hook: no revocation ran.
+    await runAsSystem("expire the pairing sign-in", () =>
+      handles.prisma.session.updateMany({
+        where: { userId: device.userId },
+        data: { expiresAt: new Date(Date.now() - 1_000) },
+      }),
+    );
+    expect(await revokedAt(device.deviceId)).toBeNull();
+
+    const phone = await owner.signIn();
+    const listed = await handles.app.request(USER_DEVICE_PATH, { headers: { cookie: phone } });
+    expect((await listed.json()).devices).toEqual([]);
+    const released = await runAsSystem("read a paired computer", () =>
+      handles.prisma.userDevice.findUniqueOrThrow({ where: { id: device.deviceId } }),
+    );
+    expect(released).toMatchObject({ revokedBy: "session" });
+    expect(released.revokedAt).toBeInstanceOf(Date);
+  });
+
+  it("tells a computer reconnecting after its sign-in ended why it was turned away", async () => {
+    const owner = await newAccount();
+    const desktop = await owner.signIn();
+    const signedOut = await pair(desktop);
+    const removed = await pair(await owner.signIn());
+    await auth("/sign-out", {}, desktop);
+    await handles.app.request(`${USER_DEVICE_PATH}/${removed.deviceId}`, {
+      method: "DELETE",
+      headers: { cookie: await owner.signIn() },
+    });
+
+    const reasons = await runAsSystem("read revoke reasons", () =>
+      handles.prisma.userDevice.findMany({
+        where: { id: { in: [signedOut.deviceId, removed.deviceId] } },
+        select: { id: true, revokedBy: true },
+      }),
+    );
+    expect(Object.fromEntries(reasons.map((row) => [row.id, row.revokedBy]))).toEqual({
+      [signedOut.deviceId]: "session",
+      [removed.deviceId]: "owner",
+    });
+  });
 });

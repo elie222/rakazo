@@ -43,7 +43,7 @@ async function revokeDevice(
   const { count } = await runAsSystem("revoke a user device", () =>
     prisma.userDevice.updateMany({
       where: { id: deviceId, userId, revokedAt: null },
-      data: { revokedAt: new Date() },
+      data: { revokedAt: new Date(), revokedBy: by },
     }),
   );
   if (!count) return false;
@@ -102,6 +102,7 @@ export function mountUserDeviceRoutes(app: Hono, deps: UserDeviceRouteDeps) {
     const session = await deps.session(c.req.raw);
     if (!session) return c.json({ error: "Unauthorized" }, 401);
     const { userId, sessionId } = session;
+    await deps.devices.releaseSignedOut(userId);
     const body = await readBoundedBody(c.req.raw, 4096);
     if (body === null) return c.json({ error: "Request too large" }, 413);
     const input = userDevicePairRequest.safeParse(parseJson(body));
@@ -133,6 +134,7 @@ export function mountUserDeviceRoutes(app: Hono, deps: UserDeviceRouteDeps) {
   app.get(USER_DEVICE_PATH, async (c) => {
     const session = await deps.session(c.req.raw);
     if (!session) return c.json({ error: "Unauthorized" }, 401);
+    await deps.devices.releaseSignedOut(session.userId);
     return c.json({
       devices: await deps.devices.list(session.userId),
     } satisfies UserDeviceList);
