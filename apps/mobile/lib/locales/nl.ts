@@ -1162,6 +1162,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from} tot {to}",
   "Every {day}": "Elke {day}",
   "Every {days} and {last}": "Elke {days} en {last}",
+  "Schedule delayed": "Geplande uitvoering vertraagd",
 
   // Native remote MCP authentication controls.
   "API key header name": "Naam van API-sleutelheader",

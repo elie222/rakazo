@@ -1177,6 +1177,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from}至{to}",
   "Every {day}": "每{day}",
   "Every {days} and {last}": "每{days}和{last}",
+  "Schedule delayed": "计划执行延迟",
 
   // Native remote MCP authentication controls.
   "API key header name": "API 密钥请求头名称",

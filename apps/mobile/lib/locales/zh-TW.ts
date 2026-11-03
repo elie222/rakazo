@@ -1175,6 +1175,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from}至{to}",
   "Every {day}": "每{day}",
   "Every {days} and {last}": "每{days}和{last}",
+  "Schedule delayed": "排程執行延遲",
+
   // Remote MCP authorization controls.
   "API key header name": "API 金鑰標頭名稱",
   Bearer: "Bearer",

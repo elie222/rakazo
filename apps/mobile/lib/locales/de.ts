@@ -1170,6 +1170,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from} bis {to}",
   "Every {day}": "Jeden {day}",
   "Every {days} and {last}": "Jeden {days} und {last}",
+  "Schedule delayed": "Ausführung verzögert",
 
   // Native remote MCP authentication controls.
   "API key header name": "Name des API-Schlüssel-Headers",

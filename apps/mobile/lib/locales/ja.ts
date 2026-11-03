@@ -1194,6 +1194,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from}〜{to}",
   "Every {day}": "毎週{day}",
   "Every {days} and {last}": "毎週{days}と{last}",
+  "Schedule delayed": "予定の実行が遅れています",
 
   // Native remote MCP authentication controls.
   "API key header name": "APIキーヘッダー名",

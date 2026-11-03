@@ -1110,6 +1110,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "{from} to {to}": "De {from} a {to}",
   "Every {day}": "Cada {day}",
   "Every {days} and {last}": "Cada {days} y {last}",
+  "Schedule delayed": "Ejecución programada retrasada",
   "API key header name": "Nombre del encabezado de la clave de API",
   Bearer: "Bearer",
   "Connect OAuth": "Conectar OAuth",
