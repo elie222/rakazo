@@ -35,8 +35,8 @@ export const HI_MESSAGES: Record<string, string> = {
   "Have any questions? Reply to this email.": "कोई सवाल है? इस ईमेल का जवाब दें।",
   Unsubscribe: "सदस्यता छोड़ें",
   "Invite a friend": "किसी दोस्त को आमंत्रित करें",
-  "Invite a friend to Rakazo and earn a free month when they start a qualifying subscription with a new card.":
-    "किसी दोस्त को Rakazo पर आमंत्रित करें और जब वह नए कार्ड से कोई योग्य सदस्यता शुरू करे, तो एक महीना मुफ़्त पाएँ।",
+  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
+    "किसी दोस्त को Rakazo पर बुलाएँ: उन्हें {weeks} हफ़्ते मुफ़्त मिलते हैं, और जब वे नए कार्ड से योग्य सदस्यता शुरू करते हैं तो आपको एक महीना मुफ़्त मिलता है।",
   "Open Rakazo": "Rakazo खोलें",
   "and choose Invite friends for your link.": "और अपना लिंक पाने के लिए दोस्तों को आमंत्रित करें चुनें।",
   "Have any questions? Just reply to this email.": "कोई सवाल है? बस इस ईमेल का जवाब दें।",

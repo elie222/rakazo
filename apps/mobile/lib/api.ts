@@ -75,6 +75,7 @@ import {
   syncMobileAvatarSession,
 } from "./logo-avatar-activity";
 import { reportMobileError } from "./monitoring";
+import { followSelectedSpace, selectedSpaceChanged } from "./referral";
 import { API_BASE_STORAGE_KEY as ENDPOINT_KEY } from "./server-config";
 import { fetchServer, loadServerHeaders, saveServerHeaders, serverHeaders } from "./server-headers";
 import {
@@ -116,6 +117,7 @@ function setCachedApiBase(url: string): void {
   for (const listener of apiBaseListeners) listener();
 }
 let cachedSpaceId = "";
+followSelectedSpace(() => cachedSpaceId || null);
 /** Bumped on every in-memory Space selection change so a delayed response
  * cannot treat a later reselection of the same Space id as its own. */
 let spaceSelectionGeneration = 0;
@@ -130,6 +132,8 @@ export function spaceSelectionSeq(): number {
 
 function bumpSpaceSelectionGeneration(): void {
   spaceSelectionGeneration += 1;
+  // Another Space can belong to another organization, with its own invite link.
+  selectedSpaceChanged();
 }
 
 /** Keeps a timeout or cancel reason; turns transport and parsing detail into copy. */

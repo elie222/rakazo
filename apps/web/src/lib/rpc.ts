@@ -24,18 +24,24 @@ export function selectedSpaceId(): string | null {
   }
 }
 
+/** Fired after the selected Space changes, so per-organization state (billing) can reload. */
+export const SPACE_SELECTED_EVENT = "rakazo:space-selected";
+
 export function selectSpace(id: string): boolean {
+  let selected: boolean;
   try {
     window.localStorage.setItem(SPACE_STORAGE_KEY, id);
-    return true;
+    selected = true;
   } catch {
     try {
       // Write failed but the desired selection is already durable — treat as success.
-      return window.localStorage.getItem(SPACE_STORAGE_KEY) === id;
+      selected = window.localStorage.getItem(SPACE_STORAGE_KEY) === id;
     } catch {
-      return false;
+      selected = false;
     }
   }
+  if (selected) window.dispatchEvent(new Event(SPACE_SELECTED_EVENT));
+  return selected;
 }
 
 export function clearSpaceSelection(): void {

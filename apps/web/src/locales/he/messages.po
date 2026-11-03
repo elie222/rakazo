@@ -1759,7 +1759,6 @@ msgstr ""
 msgid "Copied"
 msgstr "הועתק"
 
-#: src/components/InviteDialog.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1779,6 +1778,7 @@ msgstr "העתקת קוד"
 msgid "Copy diagram source"
 msgstr "העתקת מקור הדיאגרמה"
 
+#: src/components/InviteDialog.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
 msgid "Copy link"
@@ -3179,10 +3179,6 @@ msgstr ""
 msgid "General"
 msgstr "כללי"
 
-#: src/components/InviteDialog.tsx
-msgid "Get a free month for each friend who starts a trial."
-msgstr "קבלו חודש חינם על כל חבר שמתחיל תקופת ניסיון."
-
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
 msgstr "הורדת האפליקציה לנייד"
@@ -3194,6 +3190,10 @@ msgstr "מתכונן"
 #: src/pages/RoutineEditor.tsx
 msgid "Git event"
 msgstr "אירוע Git"
+
+#: src/components/InviteDialog.tsx
+msgid "Give a friend {weeks} weeks free"
+msgstr "תנו לחבר {weeks} שבועות בחינם"
 
 #: src/pages/NotFound.tsx
 msgid "Go home"
@@ -3485,7 +3485,10 @@ msgstr "יחידת המרווח"
 msgid "Invalid code"
 msgstr "קוד לא תקין"
 
-#: src/components/InviteDialog.tsx
+#: src/pages/shell/chat-header.tsx
+msgid "Invite a friend"
+msgstr "הזמנת חבר"
+
 #: src/components/SidebarFooter.tsx
 msgid "Invite friends"
 msgstr "הזמנת חברים"
@@ -6167,6 +6170,10 @@ msgstr "הקבצים או הבחירות כבר לא תואמים. יש לבחו
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr "לא ניתן לקרוא את ההגדרות השמורות. יש להסיר ולהוסיף מחדש."
 
+#: src/components/InviteDialog.tsx
+msgid "They get {weeks} weeks free."
+msgstr "הם מקבלים {weeks} שבועות בחינם."
+
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
@@ -6888,6 +6895,10 @@ msgstr "אפשר לסגור את החלון."
 #: src/components/call/VoiceChatCard.tsx
 msgid "You declined"
 msgstr ""
+
+#: src/components/InviteDialog.tsx
+msgid "You get a free month when they start their trial with a new card."
+msgstr "אתם מקבלים חודש חינם כשהם מתחילים את תקופת הניסיון עם כרטיס חדש."
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "You have control"

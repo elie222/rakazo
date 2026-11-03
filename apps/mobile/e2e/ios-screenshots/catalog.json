@@ -21,7 +21,7 @@
     "id": "thread",
     "title": "Thread",
     "flow": "flows/thread.yaml",
-    "screens": ["thread", "group-thread", "artifact"]
+    "screens": ["thread", "group-thread", "artifact", "invite"]
   },
   {
     "id": "thread-errors",

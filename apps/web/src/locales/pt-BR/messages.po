@@ -1759,7 +1759,6 @@ msgstr ""
 msgid "Copied"
 msgstr "Copiado"
 
-#: src/components/InviteDialog.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1779,6 +1778,7 @@ msgstr "Copiar código"
 msgid "Copy diagram source"
 msgstr "Copiar fonte do diagrama"
 
+#: src/components/InviteDialog.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
 msgid "Copy link"
@@ -3179,10 +3179,6 @@ msgstr ""
 msgid "General"
 msgstr "Geral"
 
-#: src/components/InviteDialog.tsx
-msgid "Get a free month for each friend who starts a trial."
-msgstr "Ganhe um mês grátis para cada amigo que iniciar um teste."
-
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
 msgstr "Baixar o aplicativo móvel"
@@ -3194,6 +3190,10 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "Git event"
 msgstr ""
+
+#: src/components/InviteDialog.tsx
+msgid "Give a friend {weeks} weeks free"
+msgstr "Dê {weeks} semanas grátis a um amigo"
 
 #: src/pages/NotFound.tsx
 msgid "Go home"
@@ -3485,7 +3485,10 @@ msgstr "Unidade do intervalo:"
 msgid "Invalid code"
 msgstr "Código inválido"
 
-#: src/components/InviteDialog.tsx
+#: src/pages/shell/chat-header.tsx
+msgid "Invite a friend"
+msgstr "Convidar um amigo"
+
 #: src/components/SidebarFooter.tsx
 msgid "Invite friends"
 msgstr "Convidar amigos"
@@ -6167,6 +6170,10 @@ msgstr "Estes arquivos ou escolhas não correspondem mais. Escolha os arquivos d
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr ""
 
+#: src/components/InviteDialog.tsx
+msgid "They get {weeks} weeks free."
+msgstr "Seu amigo ganha {weeks} semanas grátis."
+
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
@@ -6888,6 +6895,10 @@ msgstr "Você pode fechar esta janela."
 #: src/components/call/VoiceChatCard.tsx
 msgid "You declined"
 msgstr ""
+
+#: src/components/InviteDialog.tsx
+msgid "You get a free month when they start their trial with a new card."
+msgstr "Você ganha um mês grátis quando eles começarem o teste com um cartão novo."
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "You have control"

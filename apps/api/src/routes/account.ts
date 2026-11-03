@@ -101,9 +101,12 @@ export function accountRoutes(ctx: RouterContext) {
       setMonthlyCredits: authed.billing.setMonthlyCredits.handler(async ({ context, input }) =>
         requireBilling(deps).setMonthlyCredits(context.actor, input.amountCents),
       ),
-      status: authed.billing.status.handler(async ({ context }) =>
-        requireBilling(deps).status(context.actor),
-      ),
+      status: authed.billing.status.handler(async ({ context, input }) => {
+        const billing = requireBilling(deps);
+        // A failed claim fails the request, so the client keeps the code and sends it again.
+        if (input?.referralCode) await billing.claimReferral(context.actor, input.referralCode);
+        return billing.status(context.actor);
+      }),
       refresh: authed.billing.refresh.handler(async ({ context }) => {
         const billing = requireBilling(deps);
         await billing.syncForActor(context.actor);

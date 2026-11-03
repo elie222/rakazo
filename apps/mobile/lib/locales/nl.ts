@@ -1264,6 +1264,12 @@ export const NL_MESSAGES: Record<string, string> = {
   "Invite friends": "Vrienden uitnodigen",
   "Get a free month for each friend who starts a trial.":
     "Krijg een gratis maand voor elke vriend die een proefperiode start.",
+  "Invite a friend": "Nodig een vriend uit",
+  "Give a friend {weeks} weeks free": "Geef een vriend {weeks} weken gratis",
+  "They get {weeks} weeks free.": "Zij krijgen {weeks} weken gratis.",
+  "You get a free month when they start their trial with a new card.":
+    "Jij krijgt een gratis maand zodra zij hun proefperiode met een nieuwe kaart starten.",
+  "Share link": "Link delen",
   "1 free month earned": "1 gratis maand verdiend",
   "{count} free months earned": "{count} gratis maanden verdiend",
   "Submit a plugin": "Plugin indienen",

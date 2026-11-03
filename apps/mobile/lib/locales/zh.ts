@@ -1277,6 +1277,12 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Invite friends": "邀请朋友",
   "Get a free month for each friend who starts a trial.":
     "每有一位朋友开始试用，你就能获得一个月免费。",
+  "Invite a friend": "邀请朋友",
+  "Give a friend {weeks} weeks free": "送朋友 {weeks} 周免费",
+  "They get {weeks} weeks free.": "对方可免费使用 {weeks} 周。",
+  "You get a free month when they start their trial with a new card.":
+    "对方用新卡开始试用后，你将获得一个月免费。",
+  "Share link": "分享链接",
   "1 free month earned": "已获得 1 个月免费",
   "{count} free months earned": "已获得 {count} 个月免费",
   "Submit a plugin": "提交插件",

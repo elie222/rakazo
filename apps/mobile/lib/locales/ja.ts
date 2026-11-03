@@ -1295,6 +1295,12 @@ export const JA_MESSAGES: Record<string, string> = {
   "Invite friends": "友だちを招待",
   "Get a free month for each friend who starts a trial.":
     "友だちがトライアルを開始するたびに、1か月無料になります。",
+  "Invite a friend": "友だちを招待",
+  "Give a friend {weeks} weeks free": "友だちに{weeks}週間無料をプレゼント",
+  "They get {weeks} weeks free.": "友だちは{weeks}週間無料で使えます。",
+  "You get a free month when they start their trial with a new card.":
+    "友だちが新しいカードでトライアルを始めると、あなたは1か月無料になります。",
+  "Share link": "リンクを共有",
   "1 free month earned": "1か月分の無料期間を獲得",
   "{count} free months earned": "{count}か月分の無料期間を獲得",
   "Submit a plugin": "プラグインを申請",
