@@ -3430,6 +3430,10 @@ msgstr "邀請朋友"
 msgid "Invite friends"
 msgstr "邀請朋友"
 
+#: src/components/InviteDialog.tsx
+msgid "Invite link"
+msgstr "邀請連結"
+
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Isolated"

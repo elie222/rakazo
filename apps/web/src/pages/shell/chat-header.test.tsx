@@ -22,6 +22,7 @@ vi.mock("@rakazo/ui-web", () => {
   const Plain = ({ children }: { children?: ReactNode }) => <>{children}</>;
   return {
     BotAvatar: () => null,
+    Input: (props: Record<string, unknown>) => <input {...props} />,
     GroupAvatar: () => null,
     Button: ({
       variant: _v,
@@ -105,6 +106,10 @@ it("opens the invite with both rewards and copies the link", async () => {
   expect(dialog.textContent).toContain("They get 2 weeks free.");
   expect(dialog.textContent).toContain(
     "You get a free month when they start their trial with a new card.",
+  );
+  // The link is also shown, so it can be copied by hand.
+  expect(dialog.querySelector<HTMLInputElement>('input[aria-label="Invite link"]')?.value).toBe(
+    "https://example.test/sign-up?ref=abc",
   );
   expect(dialog.textContent).toContain("2 free months earned");
   const copy = [...dialog.querySelectorAll("button")].find(

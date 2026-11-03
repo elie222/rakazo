@@ -1,4 +1,4 @@
-import { Plural, Trans } from "@lingui/react/macro";
+import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { BillingStatus } from "@rakazo/contracts";
 import { BOT_COLORS, DEFAULT_NEW_BOT_AVATAR_SET, INVITED_TRIAL_WEEKS } from "@rakazo/contracts";
 import {
@@ -8,6 +8,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  Input,
 } from "@rakazo/ui-web";
 import { CalendarPlus, Check, Copy, Gift } from "lucide-react";
 import { useCopyText } from "../lib/copy-text";
@@ -27,6 +28,7 @@ export function InviteDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { t } = useLingui();
   const [copied, copy] = useCopyText();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -66,6 +68,13 @@ export function InviteDialog({
             />
           </p>
         ) : null}
+        {/* Shown as well, so the link can be copied by hand where the clipboard is unavailable. */}
+        <Input
+          readOnly
+          aria-label={t`Invite link`}
+          value={referral.url}
+          onFocus={(event) => event.currentTarget.select()}
+        />
         <Button size="lg" className="w-full" onClick={() => copy(referral.url)}>
           {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
           {copied ? <Trans>Copied</Trans> : <Trans>Copy link</Trans>}

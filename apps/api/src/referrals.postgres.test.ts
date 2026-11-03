@@ -88,6 +88,22 @@ dbTests("referrals", () => {
     }
   });
 
+  it("ignores a code from another organization the claimer belongs to", async () => {
+    const owner = await newOrganization("self-referrer");
+    const second = await newOrganization("self-second");
+    await prisma.member.create({
+      data: {
+        id: `${second.organizationId}-owner`,
+        organizationId: second.organizationId,
+        userId: owner.userId,
+        role: "owner",
+        createdAt: new Date(),
+      },
+    });
+    await service.claimReferral(second, await inviteCode(owner));
+    await expect(service.status(second)).resolves.toMatchObject({ trialDays: TRIAL_DAYS });
+  });
+
   it("grants the referrer a free month when the friend starts a trial with a new card", async () => {
     const referrer = await newOrganization("referrer");
     const referrerCustomer = await startTrial(referrer);

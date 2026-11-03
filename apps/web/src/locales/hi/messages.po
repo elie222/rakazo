@@ -3429,6 +3429,10 @@ msgstr "किसी दोस्त को आमंत्रित करे�
 msgid "Invite friends"
 msgstr "दोस्तों को आमंत्रित करें"
 
+#: src/components/InviteDialog.tsx
+msgid "Invite link"
+msgstr "आमंत्रण लिंक"
+
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Isolated"

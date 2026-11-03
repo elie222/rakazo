@@ -3429,6 +3429,10 @@ msgstr "הזמנת חבר"
 msgid "Invite friends"
 msgstr "הזמנת חברים"
 
+#: src/components/InviteDialog.tsx
+msgid "Invite link"
+msgstr "קישור הזמנה"
+
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Isolated"

@@ -108,6 +108,15 @@ export function createReferrals(deps: {
         billingAccountForOrganization(prisma, organizationId),
       ]);
       if (!referrer || referrer.organizationId === organizationId || account?.subscribedAt) return;
+      // The friend's longer trial is a gift between people, so a code from another organization
+      // the same person belongs to earns nothing.
+      const shared = await prisma.member.count({
+        where: {
+          organizationId: referrer.organizationId,
+          user: { members: { some: { organizationId } } },
+        },
+      });
+      if (shared > 0) return;
       await prisma.referral.createMany({
         data: [{ organizationId, referrerOrganizationId: referrer.organizationId }],
         skipDuplicates: true,

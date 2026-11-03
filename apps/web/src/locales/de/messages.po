@@ -3429,6 +3429,10 @@ msgstr "Freund einladen"
 msgid "Invite friends"
 msgstr "Freunde einladen"
 
+#: src/components/InviteDialog.tsx
+msgid "Invite link"
+msgstr "Einladungslink"
+
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Isolated"

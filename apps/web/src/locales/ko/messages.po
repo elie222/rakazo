@@ -3429,6 +3429,10 @@ msgstr "친구 초대"
 msgid "Invite friends"
 msgstr "친구 초대"
 
+#: src/components/InviteDialog.tsx
+msgid "Invite link"
+msgstr "초대 링크"
+
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Isolated"

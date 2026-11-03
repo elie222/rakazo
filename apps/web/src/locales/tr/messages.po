@@ -3429,6 +3429,10 @@ msgstr "Bir arkadaşını davet et"
 msgid "Invite friends"
 msgstr "Arkadaşlarını davet et"
 
+#: src/components/InviteDialog.tsx
+msgid "Invite link"
+msgstr "Davet bağlantısı"
+
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Isolated"
