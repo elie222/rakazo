@@ -57,7 +57,6 @@ async function render(
           onBoard={onBoard}
           onArtifacts={() => {}}
           onSettings={() => {}}
-          onUsage={() => {}}
           onLogOut={() => {}}
           signingOut={false}
           logOutError={null}
@@ -145,7 +144,6 @@ it("opens integrations and keeps the existing account actions and links", async 
     "Skills",
     "Artifacts",
     "Board",
-    "Usage",
     "Get the mobile app",
     "Docs",
     "Log out",

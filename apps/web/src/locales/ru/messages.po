@@ -6595,7 +6595,6 @@ msgstr "Загрузить"
 msgid "Urgent"
 msgstr ""
 
-#: src/components/SidebarFooter.tsx
 #: src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "Использование"

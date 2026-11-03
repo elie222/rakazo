@@ -6595,7 +6595,6 @@ msgstr "上传"
 msgid "Urgent"
 msgstr "紧急"
 
-#: src/components/SidebarFooter.tsx
 #: src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "用量"
