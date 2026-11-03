@@ -735,6 +735,16 @@ class DesktopPurchaseTest(unittest.TestCase):
         with patch.object(secrets, "payment_frames", return_value=[]):
             self.assertIsNone(found.click({"x": 0, "y": 1, "width": 10, "height": 10}, False))
 
+    def test_a_spot_that_cannot_be_looked_into_asks_by_what_any_frame_shows(self):
+        shows = {**PAY, "reason": "payment_page"}
+        found, _ = self.purchases({"purchaseAt": RuntimeError("frame gone"),
+                                   "paymentPage": {"purchase": None, "frames": False}},
+                                  frames=[("frame-session", 7)])
+        original = found.ask
+        found.ask = lambda session, world, call: ({"purchase": shows} if session == "frame-session"
+                                                   else original(session, world, call))
+        self.assertEqual(found.click({"x": 0, "y": 0, "width": 10, "height": 10}, False), shows)
+
     def test_a_control_out_of_view_is_offscreen_until_scrolled_to_and_then_unknown(self):
         found, _ = self.purchases({"purchaseAt": {"offscreen": True},
                                    "paymentPage": {"purchase": None, "frames": False}})

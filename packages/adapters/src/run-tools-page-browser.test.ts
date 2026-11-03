@@ -271,6 +271,14 @@ describe("a run remembers the sites it typed an approved wallet purchase into", 
     };
     await pageBrowserTool(ctx as never, call as never);
     expect([...walletHosts]).toEqual([host]);
+    // A call that presses an approved purchase spends it: the card it types leaves no pass behind.
+    walletHosts.clear();
+    const approved = { steps: [], site: host, label: "Pay", amount: "$5" };
+    await pageBrowserTool(
+      ctx as never,
+      { ...call, args: { actions: [action], purchaseApproval: approved } } as never,
+    );
+    expect([...walletHosts]).toEqual([]);
   });
 });
 

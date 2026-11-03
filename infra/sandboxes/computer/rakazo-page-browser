@@ -2193,7 +2193,14 @@ class Purchases:
             verdict, found = "unknown", None
         if verdict == "offscreen" and not scrolled:
             raise Offscreen()
-        return found if verdict == "buy" else None if verdict == "none" else self.signals_or_ask(False)
+        if verdict != "unknown":
+            return found if verdict == "buy" else None
+        # The spot could not be looked into, perhaps a frame: what the page or any of its frames shows decides,
+        # within the same time.
+        try:
+            return self.signals(False, deadline)
+        except Exception:  # noqa: BLE001
+            return dict(UNREADABLE_PURCHASE)
 
     def desktop(self, args: dict[str, Any]) -> dict[str, Any] | None:
         """The purchase a click or key on the screen would complete, or None.
