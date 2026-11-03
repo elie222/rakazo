@@ -1998,6 +1998,7 @@ msgstr "Integraties laden mislukt"
 msgid "Could not load MCP servers"
 msgstr "MCP-servers laden mislukt"
 
+#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "Modelinstellingen laden mislukt"
@@ -5123,12 +5124,13 @@ msgstr "Draait wanneer deze bot een geverifieerd bericht van deze aanbieder ontv
 msgid "Sales & CRM"
 msgstr ""
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Same as main model"
-msgstr "Zelfde als hoofdmodel"
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Same as {botName}"
 msgstr "Zelfde als {botName}"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Same as main model"
+msgstr "Zelfde als hoofdmodel"
 
 #: src/lib/cron.ts
 msgid "Saturday"

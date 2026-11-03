@@ -1998,6 +1998,7 @@ msgstr "Не удалось загрузить интеграции"
 msgid "Could not load MCP servers"
 msgstr "Не удалось загрузить серверы MCP."
 
+#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "Не удалось загрузить настройки модели."
@@ -5123,12 +5124,13 @@ msgstr "Запускается, когда этот бот получает пр
 msgid "Sales & CRM"
 msgstr ""
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Same as main model"
-msgstr "Как у основной модели"
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Same as {botName}"
 msgstr "Как у {botName}"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Same as main model"
+msgstr "Как у основной модели"
 
 #: src/lib/cron.ts
 msgid "Saturday"

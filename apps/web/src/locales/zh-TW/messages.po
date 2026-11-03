@@ -1999,6 +1999,7 @@ msgstr "無法載入整合"
 msgid "Could not load MCP servers"
 msgstr "無法載入 MCP 伺服器"
 
+#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "無法載入模型設定"
@@ -5124,12 +5125,13 @@ msgstr "當此機器人收到來自這個供應商且通過驗證的訊息時執
 msgid "Sales & CRM"
 msgstr ""
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Same as main model"
-msgstr "與主模型相同"
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Same as {botName}"
 msgstr "與 {botName} 相同"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Same as main model"
+msgstr "與主模型相同"
 
 #: src/lib/cron.ts
 msgid "Saturday"

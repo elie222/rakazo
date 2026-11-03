@@ -27,6 +27,8 @@ export const ComputerModelViewSchema = z.object({
   options: z.array(
     ComputerModelChoiceSchema.extend({
       label: z.string(),
+      /** The connection's display name, so clients can group its models. */
+      connection: z.string(),
       thinkingLevels: z.array(ThinkingLevelSchema),
     }),
   ),

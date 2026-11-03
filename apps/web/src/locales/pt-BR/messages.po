@@ -1998,6 +1998,7 @@ msgstr "Não foi possível carregar as integrações"
 msgid "Could not load MCP servers"
 msgstr "Não foi possível carregar os servidores MCP"
 
+#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "Não foi possível carregar as configurações do modelo"
@@ -5123,12 +5124,13 @@ msgstr ""
 msgid "Sales & CRM"
 msgstr ""
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Same as main model"
-msgstr "Igual ao modelo principal"
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Same as {botName}"
 msgstr "Igual a {botName}"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Same as main model"
+msgstr "Igual ao modelo principal"
 
 #: src/lib/cron.ts
 msgid "Saturday"

@@ -1,12 +1,14 @@
 import { ORPCError } from "@orpc/server";
 import {
+  compatibleThinkingLevels,
   connectionServesModel,
   enabledOpenAiCompatibleModelIds,
+  isCatalogModelChoice,
   loadStoredModelSecret,
   modelAcceptsImageInput,
+  modelAuthFromPlaintext,
   modelIdSupportsImages,
   parseModelSecret,
-  prepareStoredModelAuth,
 } from "@rakazo/adapters";
 import type {
   Actor,
@@ -15,7 +17,11 @@ import type {
   ComputerModelView,
   ModelCatalogEntry,
 } from "@rakazo/contracts";
-import { ComputerModelSelectionSchema, canonicalPiProviderId } from "@rakazo/contracts";
+import {
+  ComputerModelSelectionSchema,
+  canonicalPiProviderId,
+  connectionDisplayName,
+} from "@rakazo/contracts";
 import { findModelCredentialById, lockSpaceSettings, Prisma, settingsTarget } from "@rakazo/db";
 import type { RouterDeps } from "./router.js";
 import { withSerializableRetry } from "./serializable-retry.js";
@@ -85,6 +91,7 @@ export function computerModelSettings(
     credential: NonNullable<Awaited<ReturnType<typeof findModelCredentialById>>>,
     allEntries: ModelCatalogEntry[],
   ): Promise<ComputerModelView["options"]> {
+    // Load and decrypt once per connection; each model check below reuses the plaintext.
     const stored = await loadStoredModelSecret(
       deps.prisma,
       deps.secrets,
@@ -95,51 +102,69 @@ export function computerModelSettings(
     const secret = parseModelSecret(stored.plaintext);
     if (secret.kind === "oauth" && secret.reconnectRequired) return [];
     const provider = canonicalPiProviderId(credential.provider);
-    // Deliberately one exact connection. Another account's live catalog cannot authorize it.
-    const entries = allEntries.filter(
-      (entry) =>
-        entry.provider === provider && !entry.placeholder && entry.protocol !== "decisions",
+    const providerEntries = allEntries.filter((entry) => entry.provider === provider);
+    const providerName = providerEntries[0]?.providerName ?? provider;
+    const connection = connectionDisplayName(
+      {
+        provider: credential.provider,
+        label: credential.label ?? "",
+        baseUrl: secret.kind === "openai_compatible" ? secret.baseUrl : undefined,
+      },
+      providerName,
     );
-    const result: ComputerModelView["options"] = [];
-    for (const entry of entries) {
-      if (entry.credentialIds && !entry.credentialIds.includes(credential.id)) continue;
-      if (
-        secret.kind === "openai_compatible" &&
-        !enabledOpenAiCompatibleModelIds(secret, credential.defaultModel).includes(entry.id)
-      )
-        continue;
-      if (!(await connectionServesModel(modelDeps, actor.userId, credential, provider, entry.id)))
-        continue;
-      const auth = await prepareStoredModelAuth(
-        deps.prisma,
-        deps.secrets,
-        actor.userId,
-        credential.secretId,
-        provider,
-        entry.id,
-        deps.codexCatalog,
-      );
-      if (auth.auth.status !== "ready") continue;
-      const acceptsImages =
-        secret.kind === "openai_compatible"
-          ? modelIdSupportsImages(secret.visionModelIds, entry.id) ||
-            (secret.visionModelIds === undefined &&
-              "supportsImages" in credential &&
-              credential.supportsImages === true &&
-              credential.defaultModel === entry.id)
-          : entry.images;
-      if (acceptsImages === false || !modelAcceptsImageInput(provider, entry.id, acceptsImages))
-        continue;
-      result.push({
-        mode: "model",
-        provider,
-        credentialId: credential.id,
-        modelId: entry.id,
-        label: `${entry.label} — ${credential.label ?? provider} (${provider}, ${secret.kind === "oauth" ? "OAuth" : secret.kind === "openai_compatible" && !secret.apiKey ? "local" : "API key"})`,
-        thinkingLevels: entry.thinkingLevels ?? [],
-      });
-    }
-    return result;
+    // The catalog lists a custom endpoint only as a placeholder; its models live on the connection.
+    const entries: Array<Pick<ModelCatalogEntry, "id" | "label" | "images" | "thinkingLevels">> =
+      secret.kind === "openai_compatible"
+        ? enabledOpenAiCompatibleModelIds(secret, credential.defaultModel).map((id) => ({
+            id,
+            label: id,
+            thinkingLevels: compatibleThinkingLevels(credential, stored.plaintext, id)
+              .allowed as ModelCatalogEntry["thinkingLevels"],
+          }))
+        : providerEntries.filter(
+            (entry) =>
+              !entry.placeholder &&
+              entry.protocol !== "decisions" &&
+              (!entry.credentialIds || entry.credentialIds.includes(credential.id)),
+          );
+    const checked = await Promise.all(
+      entries.map(async (entry) => {
+        const acceptsImages =
+          secret.kind === "openai_compatible"
+            ? modelIdSupportsImages(secret.visionModelIds, entry.id) ||
+              (secret.visionModelIds === undefined &&
+                "supportsImages" in credential &&
+                credential.supportsImages === true &&
+                credential.defaultModel === entry.id)
+            : entry.images;
+        if (acceptsImages === false || !modelAcceptsImageInput(provider, entry.id, acceptsImages))
+          return null;
+        const auth = await modelAuthFromPlaintext(
+          stored.plaintext,
+          actor.userId,
+          provider,
+          entry.id,
+          deps.codexCatalog,
+        );
+        if (auth.status !== "ready") return null;
+        // Bundled models are served whenever the auth check passes; others need this account's list.
+        if (
+          !isCatalogModelChoice(provider, entry.id) &&
+          !(await connectionServesModel(modelDeps, actor.userId, credential, provider, entry.id))
+        )
+          return null;
+        return {
+          mode: "model" as const,
+          provider,
+          credentialId: credential.id,
+          modelId: entry.id,
+          label: entry.label,
+          connection,
+          thinkingLevels: entry.thinkingLevels ?? [],
+        };
+      }),
+    );
+    return checked.filter((option) => option !== null);
   }
   async function allOptions(actor: Actor): Promise<ComputerModelView["options"]> {
     const [rows, entries] = await Promise.all([

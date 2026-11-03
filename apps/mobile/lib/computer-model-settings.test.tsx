@@ -30,9 +30,10 @@ vi.mock("react-native", () => ({
     disabled?: boolean;
   }) => createElement("button", { type: "button", onClick: onPress, disabled }, children),
 }));
-vi.mock("../components/settings-group", () => ({
-  SettingsGroup: ({ children, label }: { children: ReactNode; label: string }) =>
-    createElement("section", null, label, children),
+vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
+vi.mock("./thinking-level", () => ({ thinkingLevelLabel: (level: string) => level }));
+vi.mock("../components/load-failure", () => ({
+  LoadFailure: ({ message }: { message: string }) => createElement("p", null, message),
 }));
 vi.mock("../components/menu-picker", () => ({
   MenuPicker: ({
@@ -79,6 +80,7 @@ it.each(["account", "space", "bot"] as const)(
       modelId: "gpt-4o",
       credentialId: "codex-target",
       label: "Vision",
+      connection: "Codex (Work)",
       thinkingLevels: ["medium", "high"],
     };
     rpc.mockImplementation(async (_path, input) => ({
@@ -97,7 +99,7 @@ it.each(["account", "space", "bot"] as const)(
         }),
       ),
     );
-    expect(host.textContent).toContain("Computer-use model");
+    expect(host.querySelector("select")?.getAttribute("aria-label")).toBe("Computer-use model");
     expect(host.textContent).toContain("Same as main model");
     expect(capture).toHaveBeenCalledWith("space");
     await act(async () => {
@@ -120,8 +122,6 @@ it.each(["account", "space", "bot"] as const)(
       },
       { requestContext: { headers: { "x-rakazo-space-id": "space" } } },
     );
-    expect(host.querySelectorAll("select")).toHaveLength(1);
-    await act(async () => host.querySelector("button")!.click());
     expect(host.textContent).toContain("Default (Medium)");
     expect(host.querySelectorAll("select")).toHaveLength(2);
     await act(async () => root.unmount());

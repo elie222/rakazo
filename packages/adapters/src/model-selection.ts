@@ -376,25 +376,43 @@ export async function prepareStoredModelAuth(
   if (secret.status === "unreadable") {
     return { ref: secret.ciphertext, auth: { status: "unreadable" } };
   }
-  const { plaintext } = secret;
+  return {
+    ref: secret.ciphertext,
+    auth: await modelAuthFromPlaintext(
+      secret.plaintext,
+      userId,
+      provider,
+      modelId,
+      live,
+      liveOpts,
+    ),
+  };
+}
+
+/** The same check as `prepareStoredModelAuth` on a secret already loaded once. */
+export async function modelAuthFromPlaintext(
+  plaintext: string,
+  userId: string,
+  provider: string,
+  modelId: string,
+  live?: CodexLiveCatalog,
+  liveOpts?: CodexLiveReadOptions,
+): Promise<StoredModelAuthRead> {
   let message: string | undefined;
   try {
     message = validateModelAuthAvailability(provider, modelId, plaintext);
   } catch {
     // A secret that decrypts but does not parse is as unreadable as a corrupt one.
-    return { ref: secret.ciphertext, auth: { status: "unreadable" } };
+    return { status: "unreadable" };
   }
   // validateModelAuthAvailability already parsed the secret without throwing.
   if (
     message &&
     (await codexLiveListsModel(live, userId, parseModelSecret(plaintext), modelId, liveOpts))
   ) {
-    return { ref: secret.ciphertext, auth: { status: "ready" } };
+    return { status: "ready" };
   }
-  return {
-    ref: secret.ciphertext,
-    auth: message ? { status: "rejected", message } : { status: "ready" },
-  };
+  return message ? { status: "rejected", message } : { status: "ready" };
 }
 
 export async function readStoredModelAuth(

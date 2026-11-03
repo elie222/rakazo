@@ -1998,6 +1998,7 @@ msgstr "연동 목록을 불러오지 못했습니다."
 msgid "Could not load MCP servers"
 msgstr "MCP 서버 목록을 불러오지 못했습니다."
 
+#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "AI 모델 설정을 불러오지 못했습니다."
@@ -5123,12 +5124,13 @@ msgstr ""
 msgid "Sales & CRM"
 msgstr ""
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Same as main model"
-msgstr "기본 모델과 동일"
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Same as {botName}"
 msgstr "{botName}와(과) 동일"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Same as main model"
+msgstr "기본 모델과 동일"
 
 #: src/lib/cron.ts
 msgid "Saturday"

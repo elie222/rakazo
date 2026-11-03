@@ -636,12 +636,14 @@ export default function BotSettingsScreen() {
             ) : null}
 
             {me && bot ? (
-              <ComputerModelSettings
-                key={`${bot.id}:${bot.modelProvider}:${bot.modelId}`}
-                target={{ kind: "bot", botId: bot.id }}
-                userId={me.userId}
-                spaceId={me.spaceId}
-              />
+              <SettingsGroup label={t("Computer-use model")}>
+                <ComputerModelSettings
+                  key={`${bot.id}:${bot.modelProvider}:${bot.modelId}`}
+                  target={{ kind: "bot", botId: bot.id }}
+                  userId={me.userId}
+                  spaceId={me.spaceId}
+                />
+              </SettingsGroup>
             ) : null}
             <SettingsGroup label={t("Computer")}>
               <ComputerModePicker plain value={computerMode} onChange={setComputerMode} />

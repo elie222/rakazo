@@ -119,27 +119,14 @@ function fixture() {
   const catalog = vi.fn(
     async () =>
       [
+        // As in the real catalog, a custom endpoint appears only as a placeholder.
         {
           provider: "openai-compatible",
-          id: "vision",
-          label: "Vision",
+          providerName: "OpenAI-compatible",
+          id: "custom",
+          label: "Custom model id",
           billing: "local",
-          images: true,
-          thinkingLevels: ["low", "medium", "high"],
-        },
-        {
-          provider: "openai-compatible",
-          id: "text",
-          label: "Text",
-          billing: "local",
-          images: false,
-        },
-        {
-          provider: "openai-compatible",
-          id: "other-account",
-          label: "Other",
-          billing: "local",
-          credentialIds: ["other"],
+          placeholder: true,
         },
         {
           provider: "anthropic",
@@ -178,6 +165,14 @@ describe("computer settings persistence and authorization", () => {
       options: [{ modelId: "vision", credentialId: "conn" }],
     });
     expect((await api.load(actor, target)).options).toHaveLength(1);
+  });
+  it("offers a custom endpoint's own models, named by connection, with one secret read", async () => {
+    const { api, secrets } = fixture();
+    const view = await api.load(actor, target);
+    expect(view.options).toEqual([
+      expect.objectContaining({ modelId: "vision", label: "vision", connection: "OpenAI-compatible (Local)" }),
+    ]);
+    expect(secrets.load).toHaveBeenCalledTimes(1);
   });
   it.each(["account", "space", "bot"] as const)(
     "selects another owned provider and reads back/clears %s",
@@ -296,7 +291,8 @@ describe("computer settings persistence and authorization", () => {
         provider: "anthropic",
         credentialId: "claude",
         modelId: choice.modelId,
-        label: expect.stringContaining("OAuth"),
+        label: "Claude",
+        connection: expect.stringContaining("Subscription"),
       }),
     );
     expect((await f.api.save(actor, target, choice)).selection).toEqual(choice);

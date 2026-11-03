@@ -1998,6 +1998,7 @@ msgstr "連携を読み込めませんでした"
 msgid "Could not load MCP servers"
 msgstr "MCPサーバーを読み込めませんでした"
 
+#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "モデル設定を読み込めませんでした"
@@ -5123,12 +5124,13 @@ msgstr "このボットがこのプロバイダーから検証済みのメッセ
 msgid "Sales & CRM"
 msgstr ""
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Same as main model"
-msgstr "メインモデルと同じ"
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Same as {botName}"
 msgstr "{botName}と同じ"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Same as main model"
+msgstr "メインモデルと同じ"
 
 #: src/lib/cron.ts
 msgid "Saturday"

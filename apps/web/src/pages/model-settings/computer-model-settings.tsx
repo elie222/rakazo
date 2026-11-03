@@ -1,10 +1,16 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ComputerModelTarget, ThinkingLevel } from "@rakazo/contracts";
 import { computerModelKey, createComputerModelSettings } from "@rakazo/core";
-import { Button, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
+import {
+  Button,
+  NativeSelect,
+  NativeSelectOptGroup,
+  NativeSelectOption,
+} from "@rakazo/ui-web";
 import { useEffect, useId, useMemo, useSyncExternalStore } from "react";
 import { thinkingLevelLabel } from "../../lib/model-catalog";
 import { useSpaceRpc } from "../../lib/space-rpc";
+import { errorText } from "../../lib/user-error";
 
 export function ComputerModelSettings({
   target,
@@ -40,6 +46,14 @@ export function ComputerModelSettings({
   const key = computerModelKey(selection);
   const selected = state.view?.options.find((entry) => computerModelKey(entry) === key);
   const blocked = state.busy || state.stale;
+  const connections = new Map<string, NonNullable<typeof selected>[]>();
+  for (const entry of state.view?.options ?? [])
+    connections.set(entry.connection, [...(connections.get(entry.connection) ?? []), entry]);
+  // The default effort is medium, so offer the control only where that default is real.
+  const thinkingLevels =
+    selected && selected.thinkingLevels.length > 1 && selected.thinkingLevels.includes("medium")
+      ? selected.thinkingLevels
+      : [];
   return (
     <div className="space-y-2" aria-busy={state.busy}>
       <label htmlFor={id} className="block text-sm font-medium">
@@ -83,13 +97,17 @@ export function ComputerModelSettings({
                 {selection.modelId} — {t`Unavailable`}
               </NativeSelectOption>
             ) : null}
-            {state.view.options.map((entry) => (
-              <NativeSelectOption key={computerModelKey(entry)} value={computerModelKey(entry)}>
-                {entry.label}
-              </NativeSelectOption>
+            {[...connections].map(([connection, entries]) => (
+              <NativeSelectOptGroup key={connection} label={connection}>
+                {entries.map((entry) => (
+                  <NativeSelectOption key={computerModelKey(entry)} value={computerModelKey(entry)}>
+                    {entry.label}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelectOptGroup>
             ))}
           </NativeSelect>
-          {selected && selected.thinkingLevels.length > 0 && selection?.mode === "model" ? (
+          {thinkingLevels.length > 0 && selection?.mode === "model" ? (
             <details>
               <summary className="cursor-pointer text-xs text-muted-foreground py-2">
                 <Trans>Thinking</Trans>
@@ -106,7 +124,7 @@ export function ComputerModelSettings({
                 }
               >
                 <NativeSelectOption value="">{t`Default (Medium)`}</NativeSelectOption>
-                {selected.thinkingLevels.map((level) => (
+                {thinkingLevels.map((level) => (
                   <NativeSelectOption key={level} value={level}>
                     {thinkingLevelLabel(level)}
                   </NativeSelectOption>
@@ -122,7 +140,7 @@ export function ComputerModelSettings({
       ) : null}
       {state.error ? (
         <div role="alert" className="text-sm text-destructive">
-          <p>{state.error}</p>
+          <p>{errorText(state.error, t`Could not load model settings`)}</p>
           <Button
             variant="outline"
             size="sm"

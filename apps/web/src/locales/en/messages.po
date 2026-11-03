@@ -1998,6 +1998,7 @@ msgstr "Could not load integrations"
 msgid "Could not load MCP servers"
 msgstr "Could not load MCP servers"
 
+#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "Could not load model settings"
@@ -5123,12 +5124,13 @@ msgstr "Runs when this bot receives a verified message from this provider."
 msgid "Sales & CRM"
 msgstr "Sales & CRM"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Same as main model"
-msgstr "Same as main model"
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Same as {botName}"
 msgstr "Same as {botName}"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Same as main model"
+msgstr "Same as main model"
 
 #: src/lib/cron.ts
 msgid "Saturday"

@@ -329,7 +329,7 @@ export function ModelSettingsOverlay({
             panel={connectionAt === "approval" ? panelFor(true) : null}
           />
           {credentials.length ? (
-            <details className="rounded-xl bg-muted/50 p-4 space-y-4">
+            <details className="mb-8 space-y-4 rounded-xl bg-muted/50 p-4">
               <summary className="cursor-pointer text-sm font-medium">
                 <Trans>Computer-use model</Trans>
               </summary>
@@ -339,7 +339,7 @@ export function ModelSettingsOverlay({
                   userId={me!.userId}
                   spaceId={me!.spaceId}
                   target={{ kind: "connection", credentialId: credential.id, scope }}
-                  label={credential.label || credential.provider}
+                  label={connectionName(credential)}
                 />
               ))}
             </details>

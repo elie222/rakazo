@@ -1998,6 +1998,7 @@ msgstr "无法加载集成"
 msgid "Could not load MCP servers"
 msgstr "无法加载 MCP 服务器"
 
+#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "无法加载模型设置"
@@ -5123,12 +5124,13 @@ msgstr "这个 Bot 收到该提供方发来的已验证消息时会运行。"
 msgid "Sales & CRM"
 msgstr "销售与 CRM"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Same as main model"
-msgstr "与主模型相同"
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Same as {botName}"
 msgstr "与 {botName} 相同"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Same as main model"
+msgstr "与主模型相同"
 
 #: src/lib/cron.ts
 msgid "Saturday"

@@ -1,5 +1,6 @@
 import {
   canonicalPiProviderId,
+  connectionDisplayName,
   isOllamaCloudBaseUrl,
   OLLAMA_CLOUD_BASE_URL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -17,6 +18,7 @@ import { LoadFailure } from "../../components/load-failure";
 import { ModelProviders } from "../../components/model-providers";
 import type { ConnectableProvider, ModelConnectIntent } from "../../components/model-role-settings";
 import { ModelRoleSettings } from "../../components/model-role-settings";
+import { SettingsGroup } from "../../components/settings-group";
 import { SpaceBotsModel } from "../../components/space-bots-model";
 import type { MobileBot, MobileModel, MobileModelCredential } from "../../lib/api";
 // Connections belong to the account, so renaming and removing them go to the selected Space.
@@ -295,15 +297,24 @@ export default function Models() {
               title={t("Approval model")}
               defaultLabel={t("Choose a model")}
             />
-            {credentials.map((credential) => (
-              <ComputerModelSettings
-                key={credential.id}
-                target={{ kind: "connection", credentialId: credential.id, scope: target.scope }}
-                userId={shared.userId}
-                spaceId={shared.spaceId}
-                label={`${t("Computer-use model")} · ${credential.label || credential.provider}`}
-              />
-            ))}
+            <SettingsGroup label={t("Computer-use model")}>
+              {credentials.map((credential) => (
+                <ComputerModelSettings
+                  key={credential.id}
+                  target={{ kind: "connection", credentialId: credential.id, scope: target.scope }}
+                  userId={shared.userId}
+                  spaceId={shared.spaceId}
+                  label={connectionDisplayName(
+                    credential,
+                    catalog.find(
+                      (entry) =>
+                        canonicalPiProviderId(entry.provider) ===
+                        canonicalPiProviderId(credential.provider),
+                    )?.providerName ?? credential.provider,
+                  )}
+                />
+              ))}
+            </SettingsGroup>
             {/* Connections are the account's in every Space, so a Space's override lists only its models. */}
             {target.scope === "account" ? (
               <ModelProviders

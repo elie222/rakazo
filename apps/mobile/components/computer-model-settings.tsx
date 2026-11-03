@@ -1,14 +1,16 @@
 import type { ComputerModelTarget, ThinkingLevel } from "@rakazo/contracts";
 import { computerModelKey, createComputerModelSettings } from "@rakazo/core";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { Pressable, Text, View } from "react-native";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { Text, View } from "react-native";
 import { captureApiRequestContext, currentApiBase, rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import { thinkingLevelLabel } from "../lib/thinking-level";
+import { errorText } from "../lib/user-error";
+import { LoadFailure } from "./load-failure";
 import { MenuPicker } from "./menu-picker";
-import { SettingsGroup } from "./settings-group";
 
+/** One settings row; `label` names the connection it configures, if any. */
 export function ComputerModelSettings({
   target,
   userId,
@@ -22,7 +24,6 @@ export function ComputerModelSettings({
 }) {
   const { t } = useI18n();
   const tokens = useMobileTokens();
-  const [advanced, setAdvanced] = useState(false);
   const targetKey = JSON.stringify(target);
   const base = currentApiBase();
   const controller = useMemo(() => {
@@ -46,6 +47,11 @@ export function ComputerModelSettings({
   const key = computerModelKey(selection);
   const selected = state.view?.options.find((entry) => computerModelKey(entry) === key);
   const blocked = state.busy || state.stale;
+  // The default effort is medium, so offer the control only where that default is real.
+  const thinkingLevels =
+    selected && selected.thinkingLevels.length > 1 && selected.thinkingLevels.includes("medium")
+      ? selected.thinkingLevels
+      : [];
   const choices = [
     {
       key: "inherit",
@@ -58,14 +64,16 @@ export function ComputerModelSettings({
     ...(state.view?.options.map((entry) => ({
       key: computerModelKey(entry),
       label: entry.label,
+      group: entry.connection,
     })) ?? []),
   ];
   return (
-    <SettingsGroup label={label ?? t("Computer-use model")}>
+    <View>
       {state.view ? (
         <View pointerEvents={blocked ? "none" : "auto"} accessibilityState={{ disabled: blocked }}>
           <MenuPicker
-            label={t("Computer-use model")}
+            label={label ?? t("Computer-use model")}
+            showLabel={Boolean(label)}
             choices={choices}
             value={key}
             onChange={(value) => {
@@ -88,58 +96,41 @@ export function ComputerModelSettings({
               );
             }}
           />
-          {selected?.thinkingLevels.length && selection?.mode === "model" ? (
-            <>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ expanded: advanced }}
-                onPress={() => setAdvanced(!advanced)}
-                style={{ minHeight: 44, justifyContent: "center" }}
-              >
-                <Text style={{ color: tokens.foreground }}>{t("Thinking")}</Text>
-              </Pressable>
-              {advanced ? (
-                <MenuPicker
-                  label={t("Computer thinking")}
-                  choices={[
-                    { key: "", label: t("Default (Medium)") },
-                    ...selected.thinkingLevels.map((level) => ({
-                      key: level,
-                      label: thinkingLevelLabel(level, t),
-                    })),
-                  ]}
-                  value={selection.thinkingLevel ?? ""}
-                  onChange={(value) => {
-                    if (!blocked)
-                      void controller.save({
-                        ...selection,
-                        thinkingLevel: (value || null) as ThinkingLevel | null,
-                      });
-                  }}
-                />
-              ) : null}
-            </>
+          {thinkingLevels.length > 0 && selection?.mode === "model" ? (
+            <MenuPicker
+              divider
+              label={t("Computer thinking")}
+              choices={[
+                { key: "", label: t("Default (Medium)") },
+                ...thinkingLevels.map((level) => ({
+                  key: level,
+                  label: thinkingLevelLabel(level, t),
+                })),
+              ]}
+              value={selection.thinkingLevel ?? ""}
+              onChange={(value) => {
+                if (!blocked)
+                  void controller.save({
+                    ...selection,
+                    thinkingLevel: (value || null) as ThinkingLevel | null,
+                  });
+              }}
+            />
           ) : null}
         </View>
-      ) : null}
-      {state.busy && !state.view ? (
-        <Text style={{ color: tokens.mutedForeground }}>{t("Loading…")}</Text>
+      ) : state.busy ? (
+        <Text style={{ color: tokens.mutedForeground, padding: 16 }}>
+          {t("Loading…")}
+        </Text>
       ) : null}
       {state.error ? (
-        <View>
-          <Text accessibilityRole="alert" style={{ color: tokens.destructive }}>
-            {state.error}
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            disabled={state.busy}
-            onPress={() => void controller.load()}
-            style={{ minHeight: 44, justifyContent: "center" }}
-          >
-            <Text style={{ color: tokens.foreground }}>{t("Retry")}</Text>
-          </Pressable>
+        <View style={{ padding: 16 }}>
+          <LoadFailure
+            message={errorText(state.error, t("Could not load model settings"))}
+            onRetry={() => void controller.load()}
+          />
         </View>
       ) : null}
-    </SettingsGroup>
+    </View>
   );
 }

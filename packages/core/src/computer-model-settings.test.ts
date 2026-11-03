@@ -8,7 +8,7 @@ it("loads explicitly, prevents edits on failure and retries", async () => {
   const c = createComputerModelSettings({ load, save }, "load");
   expect(c.snapshot().busy).toBe(true);
   await c.load();
-  expect(c.snapshot()).toMatchObject({ busy: false, stale: true, error: "offline" });
+  expect(c.snapshot()).toMatchObject({ busy: false, stale: true, error: new Error("offline") });
   await c.save({ mode: "main" });
   expect(save).not.toHaveBeenCalled();
   await c.load();
@@ -26,7 +26,7 @@ it("uses persisted readback, and never shows a failed write as saved", async () 
   await c.save(null);
   expect(c.snapshot()).toMatchObject({
     stale: true,
-    error: "save failed",
+    error: new Error("save failed"),
     view: { selection: { mode: "main" } },
   });
 });

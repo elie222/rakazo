@@ -4,7 +4,8 @@ type State = {
   view: ComputerModelView | null;
   busy: boolean;
   stale: boolean;
-  error: string | null;
+  /** The failure itself; each surface turns it into copy. */
+  error: unknown;
 };
 const pending = new Map<string, Promise<unknown>>();
 // Metadata only; a revisit shows the last readback disabled until fresh authentication succeeds.
@@ -47,7 +48,7 @@ export function createComputerModelSettings(
         if (version === generation) publish({ view, busy: false, stale: false, error: null });
       } catch (e) {
         if (version === generation)
-          publish({ busy: false, stale: true, error: e instanceof Error ? e.message : String(e) });
+          publish({ busy: false, stale: true, error: e });
       }
     },
     async save(selection: ComputerModelSelection) {
@@ -63,7 +64,7 @@ export function createComputerModelSettings(
         if (version === generation) publish({ view, busy: false, stale: false });
       } catch (e) {
         if (version === generation)
-          publish({ busy: false, stale: true, error: e instanceof Error ? e.message : String(e) });
+          publish({ busy: false, stale: true, error: e });
       } finally {
         if (pending.get(identity) === work) pending.delete(identity);
       }

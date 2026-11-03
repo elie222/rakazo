@@ -1998,6 +1998,7 @@ msgstr "לא ניתן לטעון את האינטגרציות"
 msgid "Could not load MCP servers"
 msgstr "לא ניתן לטעון את שרתי ה-MCP"
 
+#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "לא ניתן לטעון את הגדרות המודל"
@@ -5123,12 +5124,13 @@ msgstr "רץ כשהבוט הזה מקבל הודעה מאומתת מהספק ה�
 msgid "Sales & CRM"
 msgstr ""
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Same as main model"
-msgstr "כמו המודל הראשי"
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Same as {botName}"
 msgstr "כמו {botName}"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Same as main model"
+msgstr "כמו המודל הראשי"
 
 #: src/lib/cron.ts
 msgid "Saturday"

@@ -26,6 +26,7 @@ const option = {
   credentialId: "conn",
   modelId: "gpt-4o",
   label: "GPT-4o",
+  connection: "OpenAI (Work)",
   thinkingLevels: ["low", "medium", "high"],
 };
 const empty = { selection: null, options: [option] };
@@ -109,10 +110,13 @@ it.each(["account", "space", "bot"] as const)(
       provider: "openai-codex",
       credentialId: "codex-target",
       modelId: "gpt-5.3-codex",
-      label: "Codex account (OAuth)",
+      label: "GPT-5.3 Codex",
+      connection: "ChatGPT (Personal)",
     };
     const view = { selection: null, options: [option, other] };
     client.models.computer.mockResolvedValue(view);
+    const groups = () =>
+      [...document.querySelectorAll("optgroup")].map((group) => group.getAttribute("label"));
     client.models.setComputer.mockImplementation(async ({ selection }) => ({ ...view, selection }));
     const target: ComputerModelTarget =
       scope === "bot"
@@ -132,10 +136,19 @@ it.each(["account", "space", "bot"] as const)(
       },
     });
     expect(host.querySelector("select")!.value).toBe(computerModelKey(other));
-    expect(host.textContent).toContain("Codex account (OAuth)");
+    expect(groups()).toEqual(["OpenAI (Work)", "ChatGPT (Personal)"]);
     unmount();
   },
 );
+it("offers effort only where the medium default applies", async () => {
+  const fixed = { ...option, thinkingLevels: ["off"] };
+  const selection = { ...fixed, thinkingLevel: null };
+  client.models.computer.mockResolvedValue({ selection, options: [fixed] });
+  const { host, unmount } = await render();
+  expect(host.querySelectorAll("select")).toHaveLength(1);
+  expect(host.textContent).not.toContain("Default (Medium)");
+  unmount();
+});
 it("shows loading, error and retry instead of a false saved default", async () => {
   let reject!: (reason: Error) => void;
   client.models.computer.mockReturnValueOnce(
