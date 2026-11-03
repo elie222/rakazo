@@ -329,6 +329,19 @@ describe("sandbox idle", () => {
     expect(harness.sandbox.stop).toHaveBeenCalledOnce();
   });
 
+  it("keeps the disk reading when a home too large to save keeps the computer running", async () => {
+    const harness = idleHarness({ exportError: new WorkspaceTooLargeError("bytes") });
+    harness.prisma.run.findFirst.mockResolvedValue(null);
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.prisma.computer.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { diskUsedBytes: 91n * 1024n, diskFreeBytes: 9n * 1024n, state: "running" },
+      }),
+    );
+  });
+
   it("checkpoints before suspending a stable idle computer", async () => {
     const harness = idleHarness();
     harness.prisma.run.findFirst.mockResolvedValue(null);

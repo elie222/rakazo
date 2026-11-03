@@ -546,7 +546,8 @@ export async function sleepComputerIfIdle(
     updatedAt: checkpointedAt,
   };
 
-  // Read beside the save so the warning and the next run's note show what the last run left.
+  // Read beside the save so the warning and the next run's note show what the last run left,
+  // including when the save fails because build output outgrew it.
   const disk = measureComputerDisk(deps.sandbox, ref, ctx).then((measured) =>
     measured ? diskUpdate(measured) : {},
   );
@@ -574,7 +575,7 @@ export async function sleepComputerIfIdle(
     if (saved.count !== 1) {
       await deps.prisma.computer.updateMany({
         where: suspensionClaim,
-        data: { state: "running" },
+        data: { ...(await disk), state: "running" },
       });
       scheduleComputerSleep(deps.jobs, computerId);
       return;
@@ -612,7 +613,7 @@ export async function sleepComputerIfIdle(
     } else {
       await deps.prisma.computer.updateMany({
         where: suspensionClaim,
-        data: { state: "running" },
+        data: { ...(await disk), state: "running" },
       });
       scheduleComputerSleep(deps.jobs, computerId, undefined, rateLimitEnds(error));
       if (deferSleep(error, computer)) {
@@ -637,7 +638,7 @@ export async function sleepComputerIfIdle(
   if (activeAfterCheckpoint || takeoverAfterCheckpoint || backgroundAfterCheckpoint) {
     await deps.prisma.computer.updateMany({
       where: suspensionClaim,
-      data: { state: "running" },
+      data: { ...(await disk), state: "running" },
     });
     scheduleComputerSleep(
       deps.jobs,
@@ -654,7 +655,7 @@ export async function sleepComputerIfIdle(
   ) {
     await deps.prisma.computer.updateMany({
       where: suspensionClaim,
-      data: { state: "running" },
+      data: { ...(await disk), state: "running" },
     });
     scheduleComputerSleep(deps.jobs, computerId);
     return;
@@ -667,7 +668,7 @@ export async function sleepComputerIfIdle(
   } catch (error) {
     await deps.prisma.computer.updateMany({
       where: suspensionClaim,
-      data: { state: "running" },
+      data: { ...(await disk), state: "running" },
     });
     scheduleComputerSleep(deps.jobs, computerId, undefined, rateLimitEnds(error));
     if (deferSleep(error, computer)) {
