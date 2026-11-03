@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
-import type { UserDeviceRevokeReason } from "@rakazo/adapters";
+import type { UserDeviceClientOptions } from "@rakazo/adapters/user-device-client";
 import type {
   RakazoDesktopDevice,
   UserDevicePairRequest,
@@ -142,7 +142,7 @@ export function createUserDeviceAccess(deps: {
     origin: string,
     token: string,
     events: {
-      onRevoked: (reason?: UserDeviceRevokeReason) => void;
+      onRevoked: UserDeviceClientOptions["onRevoked"];
       authorize: () => Promise<boolean>;
     },
   ) => { close(): void; cancelAll(): void };
