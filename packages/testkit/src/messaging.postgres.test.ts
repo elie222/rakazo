@@ -315,13 +315,14 @@ describeMessaging("messaging surface journeys", () => {
     const identity = await findIdentity(sender);
     const runsBefore = await prisma.run.count({ where: { botId: identity.botId } });
 
-    // 2. The owner approves by text command.
+    // 2. The owner approves by text command, sent as plain SMS.
     await waitForInviteSent(sender);
     const yes = await app.request(
       emulator.buildInboundRequest({
         fromNumber: sender,
         content: "YES",
         handle: `grp-yes-${stamp}`,
+        service: "SMS",
       }),
     );
     expect(yes.status).toBe(200);
