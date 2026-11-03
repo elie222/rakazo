@@ -23,6 +23,7 @@ model AiDataConsent {
 
 model User {
   aiDataConsents AiDataConsent[]
+  pages          Page[]
   id                          String                       @id
   name                        String
   email                       String
@@ -435,6 +436,7 @@ model Space {
   agentHomes                  AgentHome[]
   browserProfiles             BrowserProfile[]
   artifacts                   Artifact[]
+  pages                       Page[]
   notificationPreferences     NotificationPreference[]
   computers                   Computer[]
   computerRuns                ComputerRun[]
@@ -762,6 +764,7 @@ model Bot {
   agentHome         AgentHome?
   browserProfile    BrowserProfile?
   artifacts         Artifact[]
+  pages             Page[]
   tasks             Task[]
   runs              Run[]
   steeringMessages  SteeringMessage[]
@@ -831,6 +834,7 @@ model ChatGroup {
   members    ChatGroupMember[]
   thread     Thread?
   artifacts  Artifact[]
+  pages      Page[]
 
   @@index([spaceId, userId, archivedAt, pinned, updatedAt])
   @@index([sectionId])
@@ -1553,6 +1557,52 @@ model Artifact {
   @@map("artifacts")
 }
 
+/// A page a bot built: a report, dashboard or tracker the user opens from chat and can share.
+model Page {
+  id             String        @id @default(cuid())
+  spaceId        String
+  space          Space         @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  botId          String?
+  bot            Bot?          @relation(fields: [botId], references: [id], onDelete: SetNull)
+  groupId        String?
+  group          ChatGroup?    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  title          String
+  visibility     String        @default("private")
+  /// sha256 of the link token; the public read looks pages up by it.
+  shareTokenHash String?       @unique
+  /// The link token itself, sealed in the secret store so the owner can copy the link again.
+  shareSecretId  String?       @unique
+  shareSecret    Secret?       @relation(fields: [shareSecretId], references: [id], onDelete: SetNull)
+  pinnedAt       DateTime?
+  currentVersion Int           @default(1)
+  createdAt      DateTime      @default(now())
+  /// Set when the page's content or title changes; pinning or sharing it is not an update.
+  updatedAt      DateTime      @default(now())
+  versions       PageVersion[]
+
+  @@index([spaceId, userId, updatedAt])
+  @@index([botId])
+  @@index([groupId])
+  @@map("pages")
+}
+
+model PageVersion {
+  id        String   @id @default(cuid())
+  pageId    String
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  version   Int
+  title     String
+  source    String
+  /// The source compiled for the viewer when it was saved, so reads never run the compiler.
+  code      String
+  createdAt DateTime @default(now())
+
+  @@unique([pageId, version])
+  @@map("page_versions")
+}
+
 model UsageRecord {
   id                 String   @id @default(cuid())
   spaceId            String
@@ -1634,6 +1684,7 @@ model Secret {
   mcpServers        McpServer[]
   spaceMemoryConfig SpaceMemoryConfig?
   agentSecret       AgentSecret?
+  pageShare         Page?
 
   @@index([userId, spaceId])
   @@map("secrets")

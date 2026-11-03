@@ -5,7 +5,7 @@ Chat with your bots, answer their questions, watch their computers and take call
 ## Install
 
 - iPhone: [App Store](https://apps.apple.com/app/rakazo/id6801531099).
-- Android: [download the APK](https://github.com/elie222/rakazo/releases/download/android/rakazo.apk).
+- Android: [Google Play](https://play.google.com/store/apps/details?id=com.rakazo.app).
 
 You can also choose **Get the mobile app** from the account menu in the web or desktop app.
 

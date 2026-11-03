@@ -7,7 +7,7 @@ import {
   cloudflareModelConfigMessage,
   FLEET_TOOL_NAMES,
 } from "@rakazo/contracts";
-import { ONCE_ROUTINE_CRON } from "@rakazo/core";
+import { isOwnerStartedRun, ONCE_ROUTINE_CRON } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
@@ -35,7 +35,11 @@ import { createRunWorkspaceCheckpoint } from "./run-lifecycle.js";
 import { isTerminalModelSetupError } from "./run-model.js";
 import { runNotificationsEnabled } from "./run-notifications.js";
 import { REACTION_SILENT_REPLY_GUIDANCE } from "./run-replies.js";
-import { offeredFleetTools, selectBuiltinToolsForRun } from "./run-tool-selection.js";
+import {
+  followUpsOffered,
+  offeredFleetTools,
+  selectBuiltinToolsForRun,
+} from "./run-tool-selection.js";
 import { historyMyChatsAllowed } from "./run-tools-memory.js";
 import {
   loadCurrentTurnImages,
@@ -517,6 +521,46 @@ describe("run tool selection", () => {
     );
     expect(toolNames("user")).toContain("schedule_create");
     expect(toolNames("user")).toContain("task_catalog");
+  });
+
+  it("offers self-set follow-ups only on runs the owner started, with tools to track them", () => {
+    const offered = (trigger: string, disabledBuiltinTools?: string[], followUpFromUser = true) =>
+      followUpsOffered(
+        selectBuiltinToolsForRun({
+          graphicalToolsAllowed: true,
+          pageBrowserAllowed: true,
+          groupId: null,
+          trigger,
+          semanticMemoryEnabled: false,
+          messagingChannelRun: false,
+          disabledBuiltinTools,
+        }),
+        isOwnerStartedRun(trigger, followUpFromUser),
+      );
+    expect(offered("user")).toBe(true);
+    expect(offered("follow_up")).toBe(true);
+    expect(offered("call_end")).toBe(true);
+    // A group hand-off queues a follow_up whose source message another bot wrote.
+    expect(offered("follow_up", undefined, false)).toBe(false);
+    for (const trigger of [
+      "routine",
+      "webhook",
+      "tickets",
+      "bot_message",
+      "created",
+      "messaging",
+      "spawn",
+    ]) {
+      expect(offered(trigger)).toBe(false);
+    }
+    for (const tool of [
+      "scratchpad_add",
+      "scratchpad_complete",
+      "schedule_create",
+      "schedule_cancel",
+    ]) {
+      expect(offered("user", [tool])).toBe(false);
+    }
   });
 
   it("offers bot management tools only with the switch on and only on runs the owner started", () => {
@@ -1406,6 +1450,7 @@ describe("userTurnInstructions", () => {
     "Send progress updates only when the work will take minutes — long computer tasks or multi-step jobs — never for quick replies and never to announce that you are starting. The one exception: once you are working in a browser or on a desktop on a task that will take a few minutes, tell the person right away with message_user that it will take a while. Even then send at most a few brief updates (a sentence or two each), not one per tool call, and do not narrate routine steps. Thinking stays private. message_user is capped at 500 characters and will be silently cut off if you exceed it \u2014 never put your final answer, a report, or any long-form deliverable in it. Always put the complete final answer in your normal reply, never split across message_user calls, and never assume a message_user update already delivered your content.";
   const stableTail = [
     'For charts and data visualization, use the render_plot tool: it renders bar, line, scatter, histogram, heatmap, faceted and many more chart types from a JSON spec and attaches the PNG to the chat. Call render_plot with {"help": true} before your first chart to read the full guide.',
+    'For a dashboard, report, tracker or comparison, build a page with save_page (call it with {"help": true} first for the kit guide). To change a page, pass its pageId with edits or new source instead of making a new page. In your reply, mention the page by its title; never paste its source.',
     "When the user asks you to add or connect an MCP server (and gives you its details), use add_mcp_server. When add_mcp_server posts an approval card, end with one short sentence asking the user to approve it. You will be told when they connect it.",
     "Never print API keys, access tokens, or secret values. Prefer tools over claiming you already did the work.",
     "Treat pagination cursors as opaque: copy the returned continuation value exactly, never calculate or guess it. When the tool reports no next page, stop; if a cursor is rejected, recheck the last successful result before retrying.",
@@ -1530,6 +1575,32 @@ describe("userTurnInstructions", () => {
       expect(text).not.toContain("search_history");
       expect(text).not.toContain("read_history");
     }
+  });
+
+  it("asks for self-set follow-ups after the scratchpad guidance only when the run offers them", () => {
+    const toolLine = (followUpsOffered?: boolean) =>
+      userTurnInstructions({
+        ...base,
+        groupContext: undefined,
+        messagingContext: undefined,
+        redactedMemoryContext: undefined,
+        redactedScratchpadContext: undefined,
+        hasHistoricalContext: false,
+        agentEnvironmentInstruction: undefined,
+        botDirectory: undefined,
+        pluginLine: undefined,
+        agentSkillsLine: undefined,
+        taughtSkillsLine: undefined,
+        followUpsOffered,
+      }).filter(Boolean)[1];
+    const offered = toolLine(true);
+    expect(offered).toContain(
+      "(not reminders — those are schedule_*). Do not wait to be asked about open loops.",
+    );
+    expect(offered).toContain("stays silent if it is done");
+    expect(offered).toContain("complete it and schedule_cancel its follow-up");
+    expect(toolLine(false)).toBe(computerLine);
+    expect(toolLine()).toBe(computerLine);
   });
 
   it("states bot management rules only when the run is offered bot management write tools", () => {
@@ -1905,6 +1976,8 @@ describe("createRunExecutor", () => {
     expect(tools.some((tool) => tool.startsWith("scratchpad_"))).toBe(false);
     expect(tools).not.toContain("board_tickets");
     expect(tools.some((tool) => tool.startsWith("ticket_"))).toBe(false);
+    expect(tools.some((tool) => tool.startsWith("schedule_"))).toBe(false);
+    expect(tools.some((tool) => tool.startsWith("skill_"))).toBe(false);
     expect(tools).toContain("web_fetch");
   });
 

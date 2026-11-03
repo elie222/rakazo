@@ -42,6 +42,14 @@ describe("Pi runtime transport", () => {
     expect(reliableStreamOptions(codexModel).maxRetries).toBe(Number(value));
   });
 
+  it("reads the configured stream timeout on each call unless the caller sets one", () => {
+    vi.stubEnv("MODEL_STREAM_TIMEOUT_MS", "240000");
+    expect(reliableStreamOptions(codexModel).timeoutMs).toBe(240_000);
+    expect(reliableStreamOptions(codexModel, { timeoutMs: 5_000 }).timeoutMs).toBe(5_000);
+    vi.stubEnv("MODEL_STREAM_TIMEOUT_MS", "soon");
+    expect(reliableStreamOptions(codexModel).timeoutMs).toBe(MODEL_STREAM_TIMEOUT_MS);
+  });
+
   it.each([0, 2])("preserves an explicit retry limit of %i", (maxRetries) => {
     vi.stubEnv("MODEL_STREAM_MAX_RETRIES", "3");
     expect(reliableStreamOptions(codexModel, { maxRetries }).maxRetries).toBe(maxRetries);

@@ -50,13 +50,16 @@ export function userMentionTargets(
   return targets;
 }
 
-/** A sent message cut into plain runs and mentions; a link or email address is never searched for names. */
+/**
+ * A sent message cut into plain runs and mentions; a link, email address or page link is never
+ * searched for names.
+ */
 export function textWithMentions(
   text: string,
   targets: readonly UserMentionTarget[],
 ): MentionTextPart<UserMentionTarget>[] {
   return plainTextLinkParts(text).flatMap((piece) =>
-    piece.type === "link" ? [{ text: piece.value }] : splitMentionText(piece.value, targets),
+    piece.type === "text" ? splitMentionText(piece.value, targets) : [{ text: piece.value }],
   );
 }
 
@@ -70,3 +73,6 @@ export function mentionedBots(
       bots.set(part.target.id, part.target);
   return [...bots.values()];
 }
+
+/** Opens a page a reply links as `[title](page:<pageId>)`. */
+export const OpenPageContext = createContext<((pageId: string) => void) | undefined>(undefined);

@@ -1,5 +1,35 @@
 export const NL_MESSAGES: Record<string, string> = {
   "Daily check-ins on unfinished work": "Dagelijks navragen over onafgemaakt werk",
+  "Pages this group builds for you appear here.":
+    "Pagina's die deze groep voor je maakt, verschijnen hier.",
+  Deleted: "Verwijderd",
+  "Its link stops working. This cannot be undone.":
+    "De link werkt dan niet meer. Dit kan niet ongedaan worden gemaakt.",
+  "Could not delete the page.": "De pagina kon niet worden verwijderd.",
+  "Could not pin the page.": "De pagina kon niet worden vastgezet.",
+  "Could not rename the page.": "De naam van de pagina kon niet worden gewijzigd.",
+  "Open {title}": "{title} openen",
+  "Updated below": "Hieronder bijgewerkt",
+  Page: "Pagina",
+  "This page couldn't be shown.": "Deze pagina kon niet worden weergegeven.",
+  "This page couldn't load": "Deze pagina kon niet worden geladen",
+  "Only you": "Alleen jij",
+  "Anyone with the link": "Iedereen met de link",
+  "No sign-in needed": "Geen aanmelding nodig",
+  "Share “{title}”": "“{title}” delen",
+  "Who can view": "Wie kan kijken",
+  "Could not change who can view this page. Try again.":
+    "Kon niet wijzigen wie deze pagina kan zien. Probeer het opnieuw.",
+  "Copy link": "Link kopiëren",
+  "Open in browser": "Openen in browser",
+  "Could not copy the link.": "De link kon niet worden gekopieerd.",
+  "This page isn't available": "Deze pagina is niet beschikbaar",
+  "Could not load this page.": "Deze pagina laden mislukt.",
+  Pages: "Pagina's",
+  "Could not load pages.": "Pagina's laden mislukt.",
+  "Pages this bot builds for you appear here.":
+    "Pagina's die deze bot voor je maakt, verschijnen hier.",
+  Shared: "Gedeeld",
   "How other bots see it": "Hoe andere bots deze zien",
   "Share to": "Delen met",
   "{count} files": "{count} bestanden",
@@ -1132,6 +1162,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from} tot {to}",
   "Every {day}": "Elke {day}",
   "Every {days} and {last}": "Elke {days} en {last}",
+  "Schedule delayed": "Geplande uitvoering vertraagd",
 
   // Native remote MCP authentication controls.
   "API key header name": "Naam van API-sleutelheader",

@@ -1,6 +1,11 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
-import { ACTIVE_RUN_STATUSES, escapePromptData, truncatePlainText } from "@rakazo/core";
+import {
+  ACTIVE_RUN_STATUSES,
+  escapePromptData,
+  ONCE_ROUTINE_CRON,
+  truncatePlainText,
+} from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { STRATEGIC_INITIATIVE_NONCE_PREFIX, spaceHasModelAccess } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -10,6 +15,7 @@ import { modelCreditBillingEnabled } from "./run-model.js";
 const STRATEGIC_INITIATIVE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const STALE_SCRATCHPAD_ITEM_MS = 12 * 60 * 60 * 1000;
 const MAX_ITEMS_IN_PROMPT = 5;
+const MAX_STALE_ITEMS_SCANNED = 50;
 const MAX_NOTES_CHARS = 220;
 const STRATEGIC_INITIATIVE_SAFE_TOOL_NAMES = new Set(["ask_user", "message_user"]);
 
@@ -118,7 +124,20 @@ export async function reconcileStrategicInitiatives(deps: {
           },
           select: { title: true, notes: true, updatedAt: true },
           orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
-          take: MAX_ITEMS_IN_PROMPT,
+          take: MAX_STALE_ITEMS_SCANNED,
+        },
+        // A follow-up covers its item until it fires and for a day after, like a check-in.
+        routines: {
+          where: {
+            crons: { has: ONCE_ROUTINE_CRON },
+            OR: [
+              { active: true },
+              {
+                lastRunAt: { gt: new Date(deps.now.getTime() - STRATEGIC_INITIATIVE_INTERVAL_MS) },
+              },
+            ],
+          },
+          select: { id: true },
         },
       },
       orderBy: { id: "asc" },
@@ -135,7 +154,11 @@ export async function reconcileStrategicInitiatives(deps: {
       if (!membership) continue;
       if (deps.billingEnabled && !(await spaceHasModelAccess(deps.prisma, bot.spaceId))) continue;
       if (!bot.thread) continue;
-      const runId = await queueStrategicInitiativeRun(deps, bot, deps.now);
+      const scratchpadItems = bot.scratchpadItems
+        .filter((item) => !bot.routines.some((routine) => item.notes.includes(routine.id)))
+        .slice(0, MAX_ITEMS_IN_PROMPT);
+      if (scratchpadItems.length === 0) continue;
+      const runId = await queueStrategicInitiativeRun(deps, { ...bot, scratchpadItems }, deps.now);
       if (!runId) continue;
       queued += 1;
       await deps.jobs.enqueue(runContinueJob(runId)).catch((error) => {

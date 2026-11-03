@@ -21,6 +21,7 @@ import {
   openLogoAvatarActivityFeed,
   webLogoAvatarActivity,
 } from "../../lib/logo-avatar-activity.js";
+import { relistPagesForBlocks } from "../../lib/page-actions";
 import { markOnce } from "../../lib/performance";
 import type { SpaceQueries } from "../../lib/query";
 import { queryClient } from "../../lib/query";
@@ -375,6 +376,7 @@ export function useThreadSync({
         }
         if (event.type === "thread.message.created") {
           const blocks = (event.payload.blocks as Array<{ kind?: string }>) ?? [];
+          relistPagesForBlocks(queries, queryClient, blocks);
           if (blocks.some((block) => block.kind === "child_bot")) {
             void sidebarRefresh.invalidate().catch(() => undefined);
           }
@@ -456,6 +458,13 @@ export function useThreadSync({
         );
         if (event.type === "thread.message.created" && event.payload.role === "bot") {
           markGroupReadOnReply(groupId);
+        }
+        if (event.type === "thread.message.created") {
+          relistPagesForBlocks(
+            queries,
+            queryClient,
+            (event.payload.blocks as Array<{ kind?: string }>) ?? [],
+          );
         }
         if (
           event.type === "run.started" ||

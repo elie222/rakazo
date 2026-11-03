@@ -235,7 +235,7 @@ describe("archiveGroup", () => {
       run: { findMany: findManyRuns, updateManyAndReturn: runUpdateMany },
       attempt: { updateMany: attemptUpdateMany },
       task: { updateMany: taskUpdateMany },
-      secret: { deleteMany: vi.fn() },
+      secret: { findMany: vi.fn().mockResolvedValue([]), deleteMany: vi.fn() },
       computerExecutionLease: { findMany: leaseFindMany, updateMany: leaseUpdateMany },
       computer: { findMany: findManyComputers, updateMany: computerUpdateMany },
       event: { deleteMany: eventDeleteMany },

@@ -62,7 +62,8 @@ alone.
 
 ## Android APK
 
-Until Rakazo is on Google Play, Android users can install an APK.
+Android users should install [Rakazo from Google Play](https://play.google.com/store/apps/details?id=com.rakazo.app).
+For manual installation, an APK remains available.
 `release-mobile` publishes it, or run the `release-android-apk` workflow from
 `main` on its own. It builds the `android-apk` EAS profile, signed with the
 project's managed keystore, and replaces the rolling `android` GitHub release,

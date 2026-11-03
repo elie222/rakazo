@@ -9,7 +9,7 @@ import { ModelConnectInputSchema } from "@rakazo/contracts";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import type { StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import type { EvalCase } from "../evals/cases.js";
-import { EVAL_CASES, HISTORY_EVAL_CASES } from "../evals/cases.js";
+import { EVAL_CASES, HISTORY_EVAL_CASES, wakesRoutines } from "../evals/cases.js";
 import {
   DELIBERATION_EVAL_CASES,
   DELIBERATION_FIXTURE_VERSION,
@@ -25,6 +25,12 @@ import {
 import { HISTORY_FIXTURE_VERSION } from "../evals/history-fixtures.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "../evals/history-observer.js";
 import { observeSyntheticHistory } from "../evals/history-observer.js";
+import {
+  INITIATIVE_EVAL_CASES,
+  INITIATIVE_FIXTURE_VERSION,
+  INITIATIVE_JUDGE_CALIBRATION,
+  INITIATIVE_JUDGE_VERSION,
+} from "../evals/initiative.js";
 import type { EvalJudge, JudgeInput } from "../evals/judge.js";
 import { createEvalJudge } from "../evals/judge.js";
 import type { CacheDecisionMeasurement, EvalPricing, MeasuredCall } from "../evals/measurement.js";
@@ -103,6 +109,11 @@ async function main() {
       fixtureVersion: SILENCE_FIXTURE_VERSION,
       judge: { version: SILENCE_JUDGE_VERSION, calibration: SILENCE_JUDGE_CALIBRATION },
     },
+    initiative: {
+      cases: INITIATIVE_EVAL_CASES,
+      fixtureVersion: INITIATIVE_FIXTURE_VERSION,
+      judge: { version: INITIATIVE_JUDGE_VERSION, calibration: INITIATIVE_JUDGE_CALIBRATION },
+    },
     memory: {
       cases: MEMORY_EVAL_CASES,
       fixtureVersion: MEMORY_FIXTURE_VERSION,
@@ -122,7 +133,7 @@ async function main() {
   };
   if (!Object.hasOwn(suites, values.suite!))
     throw new Error(
-      "Unknown suite; use product, history, group, silence, deliberation, memory, tool-choice, or approval",
+      "Unknown suite; use product, history, group, silence, initiative, deliberation, memory, tool-choice, or approval",
     );
   const suite = suites[values.suite!]!;
   const suiteJudge = suite.judge;
@@ -632,7 +643,7 @@ async function main() {
               wakeupDriver: "memory",
               composio,
               messaging,
-              ...(scenario.routine ? witnesses : {}),
+              ...(wakesRoutines(scenario) ? witnesses : {}),
               messagingOpenSignup: false,
               defaultProvider: connection.provider,
               defaultModel: connection.modelId!,

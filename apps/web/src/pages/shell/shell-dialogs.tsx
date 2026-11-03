@@ -6,9 +6,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@rakazo/ui-web";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Settings, Trash2 } from "lucide-react";
 import type { ComponentProps, RefObject } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
+import { PAGE_PARAM } from "../../lib/pages";
+import { useSpaceQueries } from "../../lib/query";
 import type { Panel } from "../../lib/right-panel-state";
 import type { createSpaceRpc } from "../../lib/rpc";
 import { selectSpace } from "../../lib/rpc";
@@ -149,6 +152,14 @@ export function ShellDialogs({
   const spaceMenuTarget = spaceMenu
     ? (spaces.find((space) => space.id === spaceMenu.id) ?? null)
     : null;
+  const queries = useSpaceQueries();
+  const [pageSearch, setPageSearch] = useState("");
+  const pageQuery = useDeferredValue(pageSearch.trim());
+  const pages = useQuery({
+    ...queries.pages.list.queryOptions({ input: pageQuery ? { query: pageQuery } : {} }),
+    enabled: commandPaletteOpen,
+    placeholderData: keepPreviousData,
+  });
   return (
     <>
       {spaceMenu ? (
@@ -299,6 +310,13 @@ export function ShellDialogs({
         onSelectBot={(id) => {
           closeMobileSidebar();
           navigate(`/app/${id}`);
+        }}
+        pages={pages.data?.items.filter((page) => page.groupId || page.botId)}
+        onSearchChange={setPageSearch}
+        onSelectPage={(page) => {
+          closeMobileSidebar();
+          const chat = page.groupId ? `/app/g/${page.groupId}` : `/app/${page.botId}`;
+          navigate(`${chat}?${PAGE_PARAM}=${encodeURIComponent(page.id)}`);
         }}
         actions={paletteActions.map((action) => ({
           ...action,
