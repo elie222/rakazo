@@ -179,7 +179,8 @@ export class Dictation {
   private transcribeAbort: AbortController | null = null;
   private audioContext: AudioContext | null = null;
   private vadTimer: ReturnType<typeof setInterval> | undefined;
-  private speechMonitored = false;
+  private speechSamples = 0;
+  private sampleInput: (() => boolean) | undefined;
   private heardSpeech = false;
   private onFinal: ((text: string) => void) | null = null;
 
@@ -232,7 +233,7 @@ export class Dictation {
       }
     }
     this.chunks = [];
-    this.speechMonitored = false;
+    this.speechSamples = 0;
     this.heardSpeech = false;
     this.onFinal = null;
     if (this.snapshot.status !== "idle" || this.snapshot.error) this.set(IDLE);
@@ -456,7 +457,7 @@ export class Dictation {
       return;
     }
     const keptSpeech = this.snapshot.transcript.trim().length > 0;
-    this.speechMonitored = false;
+    this.speechSamples = 0;
     this.heardSpeech = keptSpeech;
     const endpoint = mode === "endpoint";
     const monitoring = this.monitorInput(stream, mine, endpoint ? endpointMs : undefined);
@@ -478,6 +479,7 @@ export class Dictation {
         if (event.data.size) this.chunks.push(event.data);
       };
       media.onstop = () => {
+        if (this.token === mine) this.sampleInput?.();
         for (const track of stream.getTracks()) track.stop();
         if (this.token !== mine) return;
         this.stopVad();
@@ -513,22 +515,26 @@ export class Dictation {
       analyser.fftSize = 2048;
       source.connect(analyser);
       this.audioContext = ctx;
-      if (ctx.state === "suspended") void ctx.resume();
+      if (ctx.state === "suspended") void ctx.resume().catch(() => undefined);
       const data = new Uint8Array(analyser.fftSize);
-      this.speechMonitored = true;
-      let silentFor = 0;
-      this.vadTimer = setInterval(() => {
-        const media = this.media;
-        if (this.token !== mine || !media || media.state === "inactive") return;
+      this.sampleInput = () => {
+        if (this.token !== mine || ctx.state !== "running") return false;
         analyser.getByteTimeDomainData(data);
         let sum = 0;
         for (const sample of data) {
           const n = (sample - 128) / 128;
           sum += n * n;
         }
-        const rms = Math.sqrt(sum / data.length);
-        if (rms > SILENCE_RMS) {
-          this.heardSpeech = true;
+        this.speechSamples += 1;
+        const speech = Math.sqrt(sum / data.length) > SILENCE_RMS;
+        if (speech) this.heardSpeech = true;
+        return speech;
+      };
+      let silentFor = 0;
+      this.vadTimer = setInterval(() => {
+        const media = this.media;
+        if (this.token !== mine || !media || media.state === "inactive") return;
+        if (this.sampleInput?.()) {
           silentFor = 0;
           return;
         }
@@ -552,6 +558,7 @@ export class Dictation {
   private stopVad() {
     clearInterval(this.vadTimer);
     this.vadTimer = undefined;
+    this.sampleInput = undefined;
     const ctx = this.audioContext;
     this.audioContext = null;
     if (ctx) void ctx.close().catch(() => undefined);
@@ -560,8 +567,11 @@ export class Dictation {
   private async transcribeChunks(mine: number, spaceId: string | null) {
     if (this.token !== mine) return;
     // Whisper-style models invent text for silence, so a recording that never rose above
-    // the speech threshold is not sent. Only gate when the level was actually measured.
-    if (this.speechMonitored && !this.heardSpeech) {
+    // the speech threshold is not sent. Require multiple running-context readings so
+    // a quick release with only a final sample still gets transcribed.
+    if (this.speechSamples >= 2 && !this.heardSpeech) {
+      this.chunks = [];
+      this.media = null;
       const prefix = normalizedTranscript(this.snapshot.transcript);
       if (prefix) {
         this.finish(prefix, mine);
