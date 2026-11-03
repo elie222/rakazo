@@ -17,16 +17,25 @@ export class BotSectionNameConflictError extends Error {
   }
 }
 
+/**
+ * The actor for a request. Without a chosen Space, a session opens the organization it was
+ * first given, which is the one the user was last active in, so its requests never drift
+ * between organizations as runs finish elsewhere.
+ */
 export async function requireMembership(
   prisma: PrismaClient,
   userId: string,
   requestedSpaceId?: string | null,
+  sessionId?: string,
 ): Promise<Actor> {
-  const spaceId = requestedSpaceId || (await lastActiveSpaceId(prisma, userId));
+  const organizationId = requestedSpaceId
+    ? null
+    : await sessionOrganizationId(prisma, userId, sessionId);
   const membership = await prisma.spaceMember.findFirst({
     where: {
       userId,
-      ...(spaceId ? { spaceId } : {}),
+      ...(requestedSpaceId ? { spaceId: requestedSpaceId } : {}),
+      ...(organizationId ? { organizationId } : {}),
     },
     orderBy: [{ space: { isDefault: "desc" } }, { createdAt: "asc" }, { id: "asc" }],
     select: {
@@ -46,15 +55,52 @@ export async function requireMembership(
   };
 }
 
+async function sessionOrganizationId(
+  prisma: PrismaClient,
+  userId: string,
+  sessionId: string | undefined,
+): Promise<string | null> {
+  return runAsSystem("pick the organization a session opens", async () => {
+    const pinned = sessionId
+      ? (
+          await prisma.session.findUnique({
+            where: { id: sessionId },
+            select: { activeOrganizationId: true },
+          })
+        )?.activeOrganizationId
+      : null;
+    if (pinned) {
+      const stillMember = await prisma.member.findFirst({
+        where: { organizationId: pinned, userId },
+        select: { id: true },
+      });
+      if (stillMember) return pinned;
+    }
+    const spaceId = await lastActiveSpaceId(prisma, userId);
+    const organizationId = spaceId
+      ? ((
+          await prisma.space.findUnique({
+            where: { id: spaceId },
+            select: { organizationId: true },
+          })
+        )?.organizationId ?? null)
+      : null;
+    if (sessionId && organizationId) {
+      await prisma.session.updateMany({
+        where: { id: sessionId, userId },
+        data: { activeOrganizationId: organizationId },
+      });
+    }
+    return organizationId;
+  });
+}
+
 /**
  * The Space of the user's latest finished run, for a client that has not picked one. One
  * index probe per membership, on the partial index that serves recent activity.
  */
 async function lastActiveSpaceId(prisma: PrismaClient, userId: string): Promise<string | null> {
-  const [latest] = await runAsSystem(
-    "pick the Space a user was last active in",
-    () =>
-      prisma.$queryRaw<Array<{ spaceId: string }>>`
+  const [latest] = await prisma.$queryRaw<Array<{ spaceId: string }>>`
       SELECT member."spaceId"
       FROM "space_members" AS member
       JOIN "spaces" AS space ON space."id" = member."spaceId" AND space."deletingAt" IS NULL
@@ -71,8 +117,7 @@ async function lastActiveSpaceId(prisma: PrismaClient, userId: string): Promise<
       ) AS latest
       WHERE member."userId" = ${userId}
       ORDER BY latest."completedAt" DESC
-      LIMIT 1`,
-  );
+      LIMIT 1`;
   return latest?.spaceId ?? null;
 }
 

@@ -96,6 +96,35 @@ describe("switchOrganization", () => {
     expect(state.router.replace).toHaveBeenCalledWith("/");
   });
 
+  it("lets the last of two quick picks win", async () => {
+    const third: Organization = {
+      id: "org-side",
+      name: "Side",
+      defaultSpaceId: "space-c1",
+      spaceIds: ["space-c1"],
+      canManage: true,
+    };
+    let finishFirst: (() => void) | undefined;
+    state.selectSpace.mockImplementationOnce(
+      (id: string) =>
+        new Promise<boolean>((resolve) => {
+          finishFirst = () => {
+            state.selected = id;
+            resolve(true);
+          };
+        }),
+    );
+
+    const first = switchOrganization(home, [work, home, third]);
+    const second = switchOrganization(third, [work, home, third]);
+    await vi.waitFor(() => expect(finishFirst).toBeDefined());
+    finishFirst?.();
+
+    await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
+    expect(state.selected).toBe("space-c1");
+    expect(state.remembered["org-home"]).toBe("space-b1");
+  });
+
   it("falls back to the default Space when the saved one was deleted", async () => {
     state.remembered = { "org-home": "space-gone" };
     await switchOrganization(home, [work, home]);

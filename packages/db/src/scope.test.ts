@@ -2,9 +2,25 @@ import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { IsolationError, requireMembership } from "./scope.js";
 
-function prismaForMembership(found: boolean, lastActive: string[] = []) {
+function prismaForMembership(
+  found: boolean,
+  lastActive: string[] = [],
+  session: { pinned?: string | null; member?: boolean } = {},
+) {
   return {
     $queryRaw: vi.fn(async () => lastActive.map((spaceId) => ({ spaceId }))),
+    session: {
+      findUnique: vi.fn(async () => ({ activeOrganizationId: session.pinned ?? null })),
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    },
+    member: {
+      findFirst: vi.fn(async () => (session.member === false ? null : { id: "member-1" })),
+    },
+    space: {
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => ({
+        organizationId: `org-of-${where.id}`,
+      })),
+    },
     spaceMember: {
       findFirst: vi.fn(async ({ where }: { where: { userId: string; spaceId?: string } }) =>
         found
@@ -58,14 +74,46 @@ describe("requireMembership", () => {
     );
   });
 
-  it("without a requested Space, opens the one the user was last active in", async () => {
+  it("without a requested Space, opens the organization the user was last active in", async () => {
     const prisma = prismaForMembership(true, ["space-recent"]);
 
-    await expect(requireMembership(prisma, "user-1")).resolves.toMatchObject({
-      spaceId: "space-recent",
-    });
+    await requireMembership(prisma, "user-1", null, "session-1");
+
     expect(prisma.spaceMember.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { userId: "user-1", spaceId: "space-recent" } }),
+      expect.objectContaining({
+        where: { userId: "user-1", organizationId: "org-of-space-recent" },
+      }),
+    );
+    expect(prisma.session.updateMany).toHaveBeenCalledWith({
+      where: { id: "session-1", userId: "user-1" },
+      data: { activeOrganizationId: "org-of-space-recent" },
+    });
+  });
+
+  it("keeps a session in the organization it was first given", async () => {
+    const prisma = prismaForMembership(true, ["space-elsewhere"], { pinned: "org-pinned" });
+
+    await requireMembership(prisma, "user-1", null, "session-1");
+
+    expect(prisma.spaceMember.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: "user-1", organizationId: "org-pinned" } }),
+    );
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(prisma.session.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("moves a session on from an organization the user left", async () => {
+    const prisma = prismaForMembership(true, ["space-recent"], {
+      pinned: "org-gone",
+      member: false,
+    });
+
+    await requireMembership(prisma, "user-1", null, "session-1");
+
+    expect(prisma.spaceMember.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: "user-1", organizationId: "org-of-space-recent" },
+      }),
     );
   });
 

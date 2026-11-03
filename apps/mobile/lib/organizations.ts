@@ -109,8 +109,30 @@ async function enterSpace(spaceId: string, leaving: Organization | undefined): P
   return true;
 }
 
-/** Opens `target` where this device last left it, and returns to its inbox. */
+let switching: Promise<boolean> | null = null;
+
+/**
+ * Opens `target` where this device last left it, and returns to its inbox. A pick made while a
+ * switch is still under way waits for it, then switches again, so the last pick wins.
+ */
 export async function switchOrganization(
+  target: Organization,
+  organizations: readonly Organization[],
+): Promise<boolean> {
+  const previous = switching;
+  const next = (async () => {
+    await previous?.catch(() => false);
+    return switchNow(target, organizations);
+  })();
+  switching = next;
+  try {
+    return await next;
+  } finally {
+    if (switching === next) switching = null;
+  }
+}
+
+async function switchNow(
   target: Organization,
   organizations: readonly Organization[],
 ): Promise<boolean> {
