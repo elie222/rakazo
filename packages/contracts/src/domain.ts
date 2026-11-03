@@ -1955,6 +1955,8 @@ export const BYOK_MONTHLY_PRICE_CENTS: number | null = 1500;
  * is written for a plural number of weeks, so check its wording in every language if this changes.
  */
 export const INVITED_TRIAL_WEEKS = 2;
+/** Length of a new organization's free trial of the own-model plan, in days. */
+export const TRIAL_DAYS = 7;
 /** Yearly price in cents of the same plan; `null` offers it monthly only. */
 export const BYOK_ANNUAL_PRICE_CENTS: number | null = 14400;
 export const ByokIntervalSchema = z.enum(["month", "year"]);

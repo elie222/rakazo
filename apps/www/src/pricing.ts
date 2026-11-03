@@ -2,6 +2,7 @@ import {
   BYOK_ANNUAL_PRICE_CENTS,
   BYOK_MONTHLY_PRICE_CENTS,
   MODEL_CREDIT_AMOUNTS,
+  TRIAL_DAYS,
 } from "@rakazo/contracts";
 import { APP_URL, SELF_HOST_GUIDE_PATH } from "./site";
 
@@ -39,7 +40,7 @@ export const PRICING_PLANS: PricingPlan[] = [
       "Hosted by us",
       "ChatGPT, Claude, or any API key",
       "Cloud computer included",
-      "Free trial",
+      `${TRIAL_DAYS}-day free trial`,
     ],
     action: { label: "Start free trial", href: APP_URL },
   },
