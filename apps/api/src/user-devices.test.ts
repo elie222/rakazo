@@ -96,8 +96,10 @@ function fakePrisma() {
       findUnique: async () => null,
     },
     session: {
-      findFirst: async ({ where }: { where: { userId: string } }) =>
-        signedOutUsers.has(where.userId) ? null : { id: `${where.userId}-session` },
+      findFirst: async ({ where }: { where: { id?: string; userId?: string } }) => {
+        if (where.id) return signedIn(where.id) ? { id: where.id } : null;
+        return signedOutUsers.has(where.userId!) ? null : { id: `${where.userId}-session` };
+      },
       findMany: async ({
         where,
       }: {
@@ -420,6 +422,22 @@ describe("device sessions", () => {
 
     await endUserDeviceSession(store, { id: "desktop", userId: "user-1" });
     expect(rows[0]!.revokedAt).toBeInstanceOf(Date);
+  });
+
+  it("ends a computer tied to a sign-in that signed out while it was tying", async () => {
+    const { pair, app, rows } = setup();
+    const { token } = await (await pair("user-1")).json();
+    rows[0]!.sessionId = null;
+    const response = await app.request("/api/devices/self/session", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "x-test-user": "user-1",
+        "x-test-session": "desktop-ended",
+      },
+    });
+    expect(response.status).toBe(401);
+    expect(rows[0]).toMatchObject({ sessionId: "desktop-ended", revokedBy: "session" });
   });
 
   it("never accepts a device paired by a sign-in that already ended", async () => {

@@ -168,12 +168,23 @@ export function mountUserDeviceRoutes(app: Hono, deps: UserDeviceRouteDeps) {
         data: { sessionId: session.sessionId },
       }),
     );
-    if (count)
-      await recordSecurityEvent({
-        type: "device.tied",
-        userId: device.userId,
-        metadata: { deviceId: device.id },
-      });
+    if (!count) return c.body(null, 204);
+    // A sign-out that ran while this was tying would have missed it.
+    const live = await runAsSystem("check a tied sign-in", () =>
+      prisma.session.findFirst({
+        where: { id: session.sessionId, expiresAt: { gt: new Date() } },
+        select: { id: true },
+      }),
+    );
+    if (!live) {
+      await revokeDevice(deps, device.id, device.userId, "session", session.sessionId);
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+    await recordSecurityEvent({
+      type: "device.tied",
+      userId: device.userId,
+      metadata: { deviceId: device.id },
+    });
     return c.body(null, 204);
   });
 
