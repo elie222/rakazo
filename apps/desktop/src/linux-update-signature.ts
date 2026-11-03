@@ -16,9 +16,12 @@ const UPDATE_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]*\.AppImage$/;
 const VERSION = /^\d+\.\d+\.\d+$/;
 const SIGNATURE = /^[A-Za-z0-9+/]{86}==$/;
 
-/** Signing a short message instead of the AppImage keeps verification streaming. */
-export function linuxUpdateSignatureMessage(fileName: string, sha512Hex: string) {
-  return Buffer.from(`rakazo-linux-update-v1\n${fileName}\n${sha512Hex}\n`, "utf8");
+/**
+ * Signing a short message instead of the AppImage keeps verification streaming. The version is
+ * signed so a feed cannot relabel an older signed build as a newer release.
+ */
+export function linuxUpdateSignatureMessage(version: string, fileName: string, sha512Hex: string) {
+  return Buffer.from(`rakazo-linux-update-v1\n${version}\n${fileName}\n${sha512Hex}\n`, "utf8");
 }
 
 export async function sha512File(file: string) {
@@ -30,14 +33,16 @@ export async function sha512File(file: string) {
 export async function verifyLinuxUpdate(
   file: string,
   signature: string,
+  version: string,
   publicKey: KeyObject | string = LINUX_UPDATE_PUBLIC_KEY,
 ) {
   const fileName = path.basename(file);
   const encoded = signature.trim();
-  if (!UPDATE_FILE.test(fileName) || !SIGNATURE.test(encoded)) return false;
+  if (!VERSION.test(version) || !UPDATE_FILE.test(fileName) || !SIGNATURE.test(encoded))
+    return false;
   const key = typeof publicKey === "string" ? createPublicKey(publicKey) : publicKey;
   if (key.asymmetricKeyType !== "ed25519") return false;
-  const message = linuxUpdateSignatureMessage(fileName, await sha512File(file));
+  const message = linuxUpdateSignatureMessage(version, fileName, await sha512File(file));
   return verify(null, message, key, Buffer.from(encoded, "base64"));
 }
 
@@ -82,7 +87,7 @@ export async function verifyDownloadedLinuxUpdate(
       path.basename(payload.downloadedFile),
       fetchUrl,
     );
-    if (!(await verifyLinuxUpdate(payload.downloadedFile, signature, publicKey))) {
+    if (!(await verifyLinuxUpdate(payload.downloadedFile, signature, payload.version, publicKey))) {
       throw new Error("Linux update signature is invalid.");
     }
   } catch (error) {

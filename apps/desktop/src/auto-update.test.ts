@@ -676,6 +676,55 @@ describe("DesktopUpdateController", () => {
       expect(fake.updater.install).not.toHaveBeenCalled();
     });
 
+    it("ignores an earlier verification that finishes after a later download", async () => {
+      const fake = verifiedUpdater();
+      const pending: { resolve: () => void; reject: (error: Error) => void }[] = [];
+      const verify = vi.fn(
+        () => new Promise<void>((resolve, reject) => pending.push({ resolve, reject })),
+      );
+      vi.mocked(fake.updater.downloadUpdate).mockImplementation(async () => {
+        fake.emit("update-downloaded", downloaded);
+        fake.emit("update-downloaded", downloaded);
+      });
+      const controller = new DesktopUpdateController(
+        packaged,
+        async () => fake.updater,
+        clock,
+        undefined,
+        verify,
+      );
+      await controller.check(false);
+      await vi.waitFor(() => expect(pending).toHaveLength(2));
+      pending[1]!.reject(new Error("Linux update signature is invalid."));
+      await vi.waitFor(() => expect(controller.state().phase).toBe("error"));
+      pending[0]!.resolve();
+      await Promise.resolve();
+      expect(controller.state().phase).toBe("error");
+      controller.installOnQuit();
+      expect(fake.updater.install).not.toHaveBeenCalled();
+    });
+
+    it("stays failed when the updater errors while a verification is pending", async () => {
+      const fake = verifiedUpdater();
+      let pass!: () => void;
+      const verify = vi.fn(() => new Promise<void>((resolve) => (pass = resolve)));
+      const controller = new DesktopUpdateController(
+        packaged,
+        async () => fake.updater,
+        clock,
+        undefined,
+        verify,
+      );
+      await controller.check(false);
+      await vi.waitFor(() => expect(verify).toHaveBeenCalled());
+      fake.emit("error", new Error("download failed"));
+      pass();
+      await Promise.resolve();
+      expect(controller.state().phase).toBe("error");
+      controller.installOnQuit();
+      expect(fake.updater.install).not.toHaveBeenCalled();
+    });
+
     it("rejects a download the updater reports without a file", async () => {
       const fake = verifiedUpdater();
       vi.mocked(fake.updater.downloadUpdate).mockImplementation(async () => {

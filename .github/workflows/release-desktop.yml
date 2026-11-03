@@ -386,6 +386,7 @@ jobs:
         shell: bash
         env:
           SIGNING_KEY: ${{ secrets.DESKTOP_LINUX_UPDATE_SIGNING_KEY }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
         run: |
           set -euo pipefail
           if [[ -z "$SIGNING_KEY" ]]; then
@@ -404,7 +405,7 @@ jobs:
             exit 1
           fi
           # Signs each AppImage and checks the result against the public key the app embeds.
-          pnpm exec tsx apps/desktop/scripts/sign-linux-update.ts "$key" "${images[@]}"
+          pnpm exec tsx apps/desktop/scripts/sign-linux-update.ts "$key" "$RELEASE_VERSION" "${images[@]}"
 
       - name: Retain installers and updater metadata
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

@@ -24,8 +24,8 @@ function appImage(contents = "fake appimage") {
   return file;
 }
 
-async function signatureFor(file: string, key = privateKey) {
-  const message = linuxUpdateSignatureMessage(path.basename(file), await sha512File(file));
+async function signatureFor(file: string, key = privateKey, version = "1.2.3") {
+  const message = linuxUpdateSignatureMessage(version, path.basename(file), await sha512File(file));
   return `${sign(null, message, key).toString("base64")}\n`;
 }
 
@@ -39,9 +39,9 @@ afterEach(() => {
 
 describe("linuxUpdateSignatureMessage", () => {
   it("is the versioned three-line format the release workflow signs", () => {
-    expect(linuxUpdateSignatureMessage("Rakazo-1.2.3.AppImage", "ab12").toString("utf8")).toBe(
-      "rakazo-linux-update-v1\nRakazo-1.2.3.AppImage\nab12\n",
-    );
+    expect(
+      linuxUpdateSignatureMessage("1.2.3", "Rakazo-1.2.3.AppImage", "ab12").toString("utf8"),
+    ).toBe("rakazo-linux-update-v1\n1.2.3\nRakazo-1.2.3.AppImage\nab12\n");
   });
 
   it("hashes the whole file with SHA-512", async () => {
@@ -55,35 +55,45 @@ describe("linuxUpdateSignatureMessage", () => {
 describe("verifyLinuxUpdate", () => {
   it("accepts a file signed by the key", async () => {
     const file = appImage();
-    expect(await verifyLinuxUpdate(file, await signatureFor(file), publicKey)).toBe(true);
+    expect(await verifyLinuxUpdate(file, await signatureFor(file), "1.2.3", publicKey)).toBe(true);
   });
 
   it("rejects a file changed after signing", async () => {
     const file = appImage();
     const signature = await signatureFor(file);
     writeFileSync(file, "tampered appimage");
-    expect(await verifyLinuxUpdate(file, signature, publicKey)).toBe(false);
+    expect(await verifyLinuxUpdate(file, signature, "1.2.3", publicKey)).toBe(false);
+  });
+
+  it("rejects a signed older build relabelled as a newer version", async () => {
+    const file = appImage();
+    const signature = await signatureFor(file);
+    expect(await verifyLinuxUpdate(file, signature, "1.3.0", publicKey)).toBe(false);
   });
 
   it("rejects a signature from another key", async () => {
     const file = appImage();
     const other = generateKeyPairSync("ed25519").privateKey;
-    expect(await verifyLinuxUpdate(file, await signatureFor(file, other), publicKey)).toBe(false);
+    expect(await verifyLinuxUpdate(file, await signatureFor(file, other), "1.2.3", publicKey)).toBe(
+      false,
+    );
   });
 
   it("rejects the test key against the embedded release key", async () => {
     const file = appImage();
     expect(createPublicKey(LINUX_UPDATE_PUBLIC_KEY).asymmetricKeyType).toBe("ed25519");
-    expect(await verifyLinuxUpdate(file, await signatureFor(file))).toBe(false);
+    expect(await verifyLinuxUpdate(file, await signatureFor(file), "1.2.3")).toBe(false);
   });
 
   it("rejects malformed signatures and file names", async () => {
     const file = appImage();
-    expect(await verifyLinuxUpdate(file, "", publicKey)).toBe(false);
-    expect(await verifyLinuxUpdate(file, "not base64!", publicKey)).toBe(false);
+    expect(await verifyLinuxUpdate(file, "", "1.2.3", publicKey)).toBe(false);
+    expect(await verifyLinuxUpdate(file, "not base64!", "1.2.3", publicKey)).toBe(false);
     const renamed = path.join(path.dirname(file), "rakazo.sh");
     writeFileSync(renamed, "fake appimage");
-    expect(await verifyLinuxUpdate(renamed, await signatureFor(renamed), publicKey)).toBe(false);
+    expect(await verifyLinuxUpdate(renamed, await signatureFor(renamed), "1.2.3", publicKey)).toBe(
+      false,
+    );
   });
 });
 

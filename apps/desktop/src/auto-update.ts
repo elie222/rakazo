@@ -296,6 +296,8 @@ export class DesktopUpdateController {
   private updaterPromise: Promise<ElectronAutoUpdater | null> | null = null;
   private loadedUpdater: ElectronAutoUpdater | null = null;
   private verification: Promise<void> | null = null;
+  /** Bumped by each download and updater error, so only the latest verification can finish. */
+  private verificationAttempt = 0;
   private checkPromise: Promise<DesktopUpdateState> | null = null;
   private downloadPromise: Promise<DesktopUpdateState> | null = null;
   private checkWasRequested = false;
@@ -372,7 +374,11 @@ export class DesktopUpdateController {
             this.push({ type: "downloaded", version });
             return;
           }
-          this.verification = this.verified(version, downloadedFileFrom(payload));
+          this.verification = this.verified(
+            ++this.verificationAttempt,
+            version,
+            downloadedFileFrom(payload),
+          );
         });
         updater.on("error", (error) => this.fail(error));
         this.loadedUpdater = updater;
@@ -387,13 +393,14 @@ export class DesktopUpdateController {
     return loading;
   }
 
-  private async verified(version: string, downloadedFile: string | null) {
+  private async verified(attempt: number, version: string, downloadedFile: string | null) {
     try {
       if (downloadedFile === null) throw new Error("The downloaded update signature has no file.");
       await this.verifyDownload?.({ version, downloadedFile });
-      this.push({ type: "downloaded", version });
+      if (attempt === this.verificationAttempt) this.push({ type: "downloaded", version });
     } catch (error) {
-      this.push({ type: "failed", error, userInitiated: this.checkWasRequested });
+      if (attempt === this.verificationAttempt)
+        this.push({ type: "failed", error, userInitiated: this.checkWasRequested });
     }
   }
 
@@ -470,6 +477,7 @@ export class DesktopUpdateController {
   }
 
   private fail(error: unknown) {
+    this.verificationAttempt++;
     const installFailed = this.installStarted;
     if (installFailed) this.installStarted = false;
     this.push({
