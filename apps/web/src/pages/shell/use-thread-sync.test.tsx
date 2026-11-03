@@ -36,13 +36,13 @@ function syncInput({
   get,
   refreshBots = vi.fn(async () => {}),
   commitSnapshot,
-  botStatus = "idle",
+  bot = { status: "idle", threadStatus: "idle" },
 }: {
   inGroup: boolean;
   get: () => Promise<ThreadSnapshot>;
   refreshBots?: () => Promise<void>;
   commitSnapshot: (next: ThreadSnapshot | null) => void;
-  botStatus?: string;
+  bot?: { status: string; threadStatus?: string };
 }) {
   return {
     rpc: { threads: { get } },
@@ -76,7 +76,7 @@ function syncInput({
       computerBotIdRef: ref(null),
       refreshComputerScreen: vi.fn(async () => {}),
     },
-    active: inGroup ? undefined : { id: "bot-1", name: "Bot", status: botStatus },
+    active: inGroup ? undefined : { id: "bot-1", name: "Bot", ...bot },
     activeGroup: inGroup ? { id: "group-1", name: "Group" } : undefined,
     inGroup,
     groupId: inGroup ? "group-1" : undefined,
@@ -150,20 +150,28 @@ it.each([
 ])(
   "paints a %s bot's cached chat only when its run state still matches",
   async (botStatus, run, painted) => {
-    await expectCachedPaint(botStatus, { run }, painted);
+    await expectCachedPaint({ status: botStatus, threadStatus: botStatus }, { run }, painted);
   },
 );
 
 it("checks every active run in a cached chat, not just the primary one", async () => {
   await expectCachedPaint(
-    "idle",
+    { status: "idle", threadStatus: "idle" },
     { run: { status: "failed" }, activeRuns: [{ status: "running" }] },
     false,
   );
 });
 
+it("ignores the bot's work in other chats when judging its own cached chat", async () => {
+  await expectCachedPaint({ status: "running", threadStatus: "idle" }, { run: null }, true);
+});
+
+it("paints the cached chat when the server reports no status for it", async () => {
+  await expectCachedPaint({ status: "running" }, { run: null }, true);
+});
+
 async function expectCachedPaint(
-  botStatus: string,
+  bot: { status: string; threadStatus?: string },
   runs: Record<string, unknown>,
   painted: boolean,
 ) {
@@ -175,7 +183,7 @@ async function expectCachedPaint(
     inGroup: false,
     get: () => new Promise<ThreadSnapshot>(() => {}),
     commitSnapshot,
-    botStatus,
+    bot,
   });
   function Probe() {
     useThreadSync(input);

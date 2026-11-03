@@ -1140,6 +1140,7 @@ export type MobileBot = Pick<
   | "threadId"
   | "pinned"
   | "status"
+  | "threadStatus"
   | "sectionId"
   | "archivedAt"
   | "unread"

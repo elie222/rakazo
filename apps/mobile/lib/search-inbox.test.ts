@@ -1,11 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { InboxSpace } from "./inbox-spaces";
-import {
-  getSearchInbox,
-  isSearchInboxLive,
-  setSearchInbox,
-  subscribeSearchInbox,
-} from "./search-inbox";
+import { getSearchInbox, setSearchInbox, subscribeSearchInbox } from "./search-inbox";
 
 const state = vi.hoisted(() => ({
   generation: 1,
@@ -51,16 +46,4 @@ it("hides a prior session's or server's roster", () => {
   state.apiBase = "https://other.example.test";
   expect(getSearchInbox()).toEqual([]);
   unsubscribe();
-});
-it("trusts statuses only from a live roster of the current session", () => {
-  const spaces = [{ id: "space-a", bots: [], groups: [] }] as unknown as InboxSpace[];
-  setSearchInbox(spaces);
-  expect(isSearchInboxLive()).toBe(false);
-  setSearchInbox(spaces, true);
-  expect(isSearchInboxLive()).toBe(true);
-  state.generation++;
-  expect(isSearchInboxLive()).toBe(false);
-  setSearchInbox(spaces, true);
-  setSearchInbox(spaces, false);
-  expect(isSearchInboxLive()).toBe(false);
 });

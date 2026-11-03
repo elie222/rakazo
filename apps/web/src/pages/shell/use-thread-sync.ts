@@ -317,8 +317,9 @@ export function useThreadSync({
     if (
       cachedThread &&
       snapshotRef.current?.botId !== active.id &&
-      activeThreadRuns(cachedThread).some((run) => isRunWorking(run.status)) ===
-        isRunWorking(active.status)
+      (active.threadStatus === undefined ||
+        activeThreadRuns(cachedThread).some((run) => isRunWorking(run.status)) ===
+          isRunWorking(active.threadStatus))
     )
       commitSnapshot(cachedThread);
     const sidebarRefresh = createRefreshCoalescer(() => refreshBots());
