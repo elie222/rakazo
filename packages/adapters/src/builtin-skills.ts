@@ -76,3 +76,21 @@ export const BUILTIN_AGENT_SKILLS: Array<{
   description,
   content: buildSkillMd({ name, description, body }),
 }));
+
+/**
+ * Shown only to a user who saved a key. The name stays reserved either way, so a user skill
+ * cannot take it and hide this one.
+ */
+export const CURSOR_CLI_SKILL: { name: string; description: string; content: string } = {
+  name: "Cursor",
+  description: "Run Cursor's agent CLI on this computer",
+  content: buildSkillMd({
+    name: "Cursor",
+    description: "Run Cursor's agent CLI on this computer",
+    body: `Use the \`agent\` command on this computer's files. The key is already in the command environment. Never ask for it, print it, or write it to a file.
+
+If \`agent\` is missing, install it with \`curl https://cursor.com/install -fsS | bash\`. A command is stopped after a few minutes, so start longer work as its own statement \`nohup agent -p --force --trust --output-format text < /dev/null > agent.log 2>&1 &\` and read the log to follow it. Resume with \`agent ls\` and \`agent --resume\`.
+
+A remote repository and a pull request use cloud_agent_launch, not this command. A terminal the user opened on their own desktop does not have the key; they sign in there with \`agent login\`.`,
+  }),
+};

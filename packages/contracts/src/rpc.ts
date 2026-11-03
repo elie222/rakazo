@@ -43,6 +43,7 @@ import {
   VaultRevealed,
   VaultRevealInput,
 } from "./bot-secrets.js";
+import { CloudAgentCredentialStatusSchema } from "./cloud-agent-credential.js";
 import {
   AccessGrantInputSchema,
   AccessGrantSchema,
@@ -1312,6 +1313,14 @@ export const appContract = {
   },
   runs: {
     list: oc.input(z.object({ filter: z.enum(["active", "recent"]) })).output(RunsListOutputSchema),
+  },
+  /** The signed-in user's cloud-agent key. Absent from the product when the deployment offers none. */
+  cloudAgentCredential: {
+    status: oc.output(CloudAgentCredentialStatusSchema),
+    connect: oc
+      .input(z.object({ apiKey: z.string().max(4096) }))
+      .output(CloudAgentCredentialStatusSchema),
+    disconnect: oc.output(CloudAgentCredentialStatusSchema),
   },
   /** The signed-in user's wallet; absent when the deployment offers none. */
   paymentWallet: {

@@ -46,6 +46,7 @@ model User {
   modelCredentials            UserModelCredential[]
   voiceCredentials            UserVoiceCredential[]
   paymentWallet               PaymentWallet?
+  cloudAgentCredential        CloudAgentCredential?
   secrets                     Secret[]
   mcpServers                  McpServer[]
   botSections                 BotSection[]
@@ -1086,6 +1087,21 @@ model CloudAgent {
   @@index([providerKey, nextPollAt])
   @@index([spaceId, userId, id])
   @@map("cloud_agents")
+}
+
+/// One saved cloud-agent key per user. `ciphertext` is a secret-store reference, not the key.
+model CloudAgentCredential {
+  id          String   @id
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider    String
+  providerKey String
+  ciphertext  String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([providerKey])
+  @@map("cloud_agent_credentials")
 }
 
 model PaymentWallet {

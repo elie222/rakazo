@@ -14,24 +14,41 @@ import { cloudAgentHttpsUrl } from "@rakazo/core";
 import type { CloudAgent } from "@rakazo/db";
 import { appendEventInTransaction, Prisma } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { cloudAgentsEnabled } from "./cloud-agent-factory.js";
+import { cloudAgentCallerForStored } from "./cloud-agent-credentials.js";
 import type { CloudAgentDeps } from "./cloud-agent-service.js";
 import { cloudAgentBlock, enqueueCloudAgent } from "./cloud-agent-service.js";
 import { cloudAgentLaunchSchema, cloudAgentPromptSchema } from "./cloud-agent-tools.js";
 
 const FOLLOWUP_SETTLE_MS = 5 * 60_000;
 
+/** Deploy-key polls never read it. A user-key poll without a store fails closed. */
+const emptySecretStore = {
+  async put(): Promise<never> {
+    throw new Error("Cloud agent secret store is not configured");
+  },
+  async load(): Promise<string> {
+    return "";
+  },
+  async delete(): Promise<void> {
+    return undefined;
+  },
+};
+
 /** Reconcile one persisted intent. A fenced lease serializes remote mutations. */
 export async function pollCloudAgent(
   deps: CloudAgentDeps,
   payload: BackgroundJobPayloads["cloud_agent.poll"],
 ) {
-  const connection = deps.cloudAgent;
-  if (!connection) return;
+  if (!deps.cloudAgent) return;
   const stored = await deps.prisma.cloudAgent.findFirst({
-    where: { id: payload.agentId, providerKey: connection.key },
+    where: { id: payload.agentId },
   });
-  if (!stored?.nextPollAt || !cloudAgentsEnabled(connection, stored.spaceId)) return;
+  if (!stored?.nextPollAt) return;
+  const provider = await cloudAgentCallerForStored(
+    { ...deps, secretStore: deps.secretStore ?? emptySecretStore },
+    stored,
+  );
+  if (!provider) return;
   const token = randomUUID();
   const claimed = await deps.prisma.cloudAgent.updateMany({
     where: {
@@ -51,7 +68,6 @@ export async function pollCloudAgent(
     botId: agent.botId,
     signal: AbortSignal.timeout(60_000),
   };
-  const provider = connection.provider;
   try {
     const [card, member, bot] = await Promise.all([
       deps.prisma.message.findFirst({

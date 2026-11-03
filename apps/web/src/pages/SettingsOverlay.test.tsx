@@ -56,6 +56,7 @@ vi.mock("../lib/rpc", () => ({
 }));
 vi.mock("./BillingSettingsPanel", () => ({ BillingSettingsPanel: () => null }));
 vi.mock("./PaymentWalletSettingsPanel", () => ({ PaymentWalletSettingsPanel: () => null }));
+vi.mock("./CloudAgentSettingsPanel", () => ({ CloudAgentSettingsPanel: () => null }));
 vi.mock("./MemorySettingsOverlay", () => ({
   MemorySettingsOverlay: ({
     config,
@@ -314,6 +315,26 @@ it("offers Wallet only when the deployment has a wallet provider", async () => {
     await rerender({ section: "wallet", paymentWalletProvider: { id: "link", name: "Link" } });
     expect(container.querySelector('[data-testid="settings-nav-wallet"]')).not.toBeNull();
     expect(shown()).toBe("wallet");
+  } finally {
+    await cleanup();
+  }
+});
+
+it("offers the cloud agent section only when the server names a provider", async () => {
+  const { container, rerender, cleanup } = await render({ section: "cloud-agent" });
+  const shown = () =>
+    container.querySelector("[data-settings-section]")?.getAttribute("data-settings-section");
+  try {
+    expect(container.querySelector('[data-testid="settings-nav-cloud-agent"]')).toBeNull();
+    expect(shown()).toBe("general");
+    await rerender({
+      section: "cloud-agent",
+      cloudAgentProvider: { id: "cursor", name: "Cursor" },
+    });
+    expect(container.querySelector('[data-testid="settings-nav-cloud-agent"]')?.textContent).toBe(
+      "Cursor",
+    );
+    expect(shown()).toBe("cloud-agent");
   } finally {
     await cleanup();
   }

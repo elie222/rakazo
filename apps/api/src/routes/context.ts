@@ -338,7 +338,9 @@ export function createRouterContext(deps: RouterDeps) {
     home: deps.home,
     dataDir: deps.dataDir,
   });
-  const agentSkills = createAgentSkillsService(deps.prisma);
+  const agentSkills = createAgentSkillsService(deps.prisma, {
+    cloudAgentProviderId: deps.cloudAgent?.userCredentialProviderId,
+  });
 
   const authed = os
     .use(async ({ context, next }) => {

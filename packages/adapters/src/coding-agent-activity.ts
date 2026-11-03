@@ -16,6 +16,7 @@ export const CODING_AGENTS: readonly CodingAgent[] = [
     name: "opencode",
     sessionFiles: [".local/share/opencode/opencode.db", ".local/share/opencode/opencode.db-wal"],
   },
+  { name: "cursor", sessionFiles: [".cursor/chats", ".cursor/projects"] },
 ];
 
 // Prints the first agent with a session file written in the last $1 minutes.

@@ -1168,6 +1168,7 @@ export type MobileMe = Pick<
   | "needsSignupSurvey"
   | "billingEnabled"
   | "paymentWalletProvider"
+  | "cloudAgentProvider"
   | "ticketBoardEnabled"
 >;
 

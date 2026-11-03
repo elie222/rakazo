@@ -12,6 +12,7 @@ const settingsScreens = new Set([
   "approvals",
   "archived-bots",
   "change-password",
+  "cloud-agent",
   "integration-setup",
   "integrations",
   "messaging",

@@ -77,14 +77,20 @@ describe("cloud agent conformance over the Cursor wire emulator (offline)", () =
 
 describe("cloud agent composition", () => {
   it("fails closed without explicit credential and Space configuration", () => {
+    for (const source of [{}, { CLOUD_AGENT_PROVIDER: "bogus" }, { CLOUD_AGENT_PROVIDER: "" }]) {
+      expect(resolveCloudAgentProvider(source)).toBe("none");
+      expect(createCloudAgentConnection(source)).toBeNull();
+    }
     for (const source of [
-      {},
-      { CLOUD_AGENT_PROVIDER: "bogus" },
       { CLOUD_AGENT_PROVIDER: "cursor" },
       { CLOUD_AGENT_PROVIDER: "cursor", CURSOR_API_KEY: "fake-key" },
     ]) {
-      expect(resolveCloudAgentProvider(source)).toBe("none");
-      expect(createCloudAgentConnection(source)).toBeNull();
+      expect(resolveCloudAgentProvider(source)).toBe("cursor");
+      const pending = createCloudAgentConnection(source);
+      expect(pending?.provider).toBeUndefined();
+      expect(pending?.userCredentialProviderId).toBe("cursor");
+      expect(pending?.displayName).toBe("Cursor");
+      expect(cloudAgentsEnabled(pending, "test-space")).toBe(false);
     }
     const connection = createCloudAgentConnection({
       CLOUD_AGENT_PROVIDER: "cursor",
@@ -94,6 +100,7 @@ describe("cloud agent composition", () => {
     expect(cloudAgentsEnabled(connection, "test-space")).toBe(true);
     expect(cloudAgentsEnabled(connection, "other-space")).toBe(false);
     expect(connection.key).not.toContain("fake-key");
+    expect(connection.userCredentialProviderId).toBe("cursor");
     const rotated = createCloudAgentConnection({
       CLOUD_AGENT_PROVIDER: "cursor",
       CURSOR_API_KEY: "other-fake-key",

@@ -38,6 +38,7 @@ import { accountRoutes } from "./routes/account.js";
 import { availabilityRoutes } from "./routes/availability.js";
 import { boardsRoutes } from "./routes/boards.js";
 import { botsRoutes } from "./routes/bots.js";
+import { cloudAgentCredentialRoutes } from "./routes/cloud-agent-credential.js";
 import { computerRoutes } from "./routes/computer.js";
 import { connectionsRoutes } from "./routes/connections.js";
 import { contentRoutes } from "./routes/content.js";
@@ -162,6 +163,7 @@ export function createRouter(deps: RouterDeps) {
     ...connectionsRoutes(ctx),
     ...messagingRoutes(ctx),
     ...contentRoutes(ctx),
+    ...cloudAgentCredentialRoutes(ctx),
     ...paymentWalletRoutes(ctx),
   });
 }

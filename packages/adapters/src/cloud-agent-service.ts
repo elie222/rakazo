@@ -1,11 +1,15 @@
-import type { AdapterContext, JobPublisher } from "@rakazo/adapter-kit";
+import type { AdapterContext, JobPublisher, SecretStore } from "@rakazo/adapter-kit";
 import { cloudAgentPollJob } from "@rakazo/adapter-kit";
 import { cloudAgentBlockFromPayload } from "@rakazo/core";
 import type { CloudAgent, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  createThreadMessageInTransaction,
+  runAsSystem,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { activeCloudAgentBinding, savedCloudAgentProviderKeys } from "./cloud-agent-credentials.js";
 import type { CloudAgentConnection } from "./cloud-agent-factory.js";
-import { cloudAgentsEnabled } from "./cloud-agent-factory.js";
 import { cloudAgentLaunchSchema, cloudAgentReplySchema } from "./cloud-agent-tools.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { runLeaseFor } from "./run-messages.js";
@@ -15,6 +19,8 @@ export interface CloudAgentDeps {
   jobs: JobPublisher;
   events: Pick<ThreadEvents, "notify">;
   cloudAgent: CloudAgentConnection | null | undefined;
+  /** Loads a user's saved key while polling. Deploy-key agents do not need it. */
+  secretStore?: Pick<SecretStore, "put" | "load" | "delete">;
   runLease?: ExecutorDeps["runLease"];
 }
 
@@ -31,7 +37,8 @@ export async function executeCloudAgentTool(
   args: Record<string, unknown>,
 ) {
   const connection = deps.cloudAgent;
-  if (!connection || !cloudAgentsEnabled(connection, context.spaceId)) {
+  const active = await activeCloudAgentBinding(deps, context.userId, context.spaceId);
+  if (!connection || !active) {
     return { error: "Cloud agents are not configured for this space." };
   }
   let agent: CloudAgent;
@@ -50,7 +57,7 @@ export async function executeCloudAgentTool(
         if (
           existing.spaceId !== context.spaceId ||
           existing.userId !== context.userId ||
-          existing.providerKey !== connection.key
+          existing.providerKey !== active.providerKey
         ) {
           throw new Error("Cloud agent operation scope changed");
         }
@@ -59,7 +66,7 @@ export async function executeCloudAgentTool(
       const created = await tx.cloudAgent.create({
         data: {
           operationKey: context.operationId,
-          providerKey: connection.key,
+          providerKey: active.providerKey,
           spaceId: context.spaceId,
           userId: context.userId,
           botId: context.botId,
@@ -105,12 +112,12 @@ export async function executeCloudAgentTool(
     const owned = await deps.prisma.cloudAgent.findFirst({
       where: {
         id: String(args.id).trim(),
-        providerKey: connection.key,
         spaceId: context.spaceId,
         userId: context.userId,
       },
     });
-    if (!owned) return { error: "Unknown cloud agent." };
+    if (!owned || owned.providerKey !== active.providerKey)
+      return { error: "Unknown cloud agent." };
     agent = owned;
     if (name === "cloud_agent_reply") {
       if (
@@ -167,12 +174,27 @@ export async function enqueueCloudAgent(
 export async function reconcileCloudAgents(
   deps: Pick<CloudAgentDeps, "prisma" | "jobs" | "cloudAgent">,
 ) {
-  if (!deps.cloudAgent) return;
+  const connection = deps.cloudAgent;
+  if (!connection) return;
+  const userKeys = await runAsSystem("list saved cloud agent keys", () =>
+    savedCloudAgentProviderKeys(deps.prisma, connection.userCredentialProviderId),
+  );
+  const bindings = [
+    ...(connection.provider && connection.key
+      ? [
+          {
+            providerKey: connection.key,
+            ...(connection.spaceId ? { spaceId: connection.spaceId } : {}),
+          },
+        ]
+      : []),
+    ...(userKeys.length ? [{ providerKey: { in: userKeys } }] : []),
+  ];
+  if (!bindings.length) return;
   const due = await deps.prisma.cloudAgent.findMany({
     where: {
-      providerKey: deps.cloudAgent.key,
       nextPollAt: { lte: new Date() },
-      ...(deps.cloudAgent.spaceId ? { spaceId: deps.cloudAgent.spaceId } : {}),
+      OR: bindings,
     },
     orderBy: [{ nextPollAt: "asc" }, { id: "asc" }],
     take: 100,

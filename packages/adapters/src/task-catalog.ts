@@ -14,6 +14,7 @@ type TaskCatalogInput = {
   userId: string;
   threadId?: string;
   tools: readonly Pick<ConnectorTool, "name" | "description" | "readOnly">[];
+  cloudAgentProviderId?: string;
 };
 
 /**
@@ -50,10 +51,14 @@ export async function taskCatalogFromTool(deps: TaskCatalogToolDeps, input: Task
       orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
       select: { id: true, name: true, goal: true, status: true },
     }),
-    listAgentSkillRecords(deps.prisma, {
-      spaceId: input.spaceId,
-      userId: input.userId,
-    }),
+    listAgentSkillRecords(
+      deps.prisma,
+      {
+        spaceId: input.spaceId,
+        userId: input.userId,
+      },
+      { cloudAgentProviderId: input.cloudAgentProviderId },
+    ),
   ]);
 
   const seenTools = new Set<string>();

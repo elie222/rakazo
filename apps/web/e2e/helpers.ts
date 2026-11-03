@@ -218,6 +218,7 @@ export async function openUserSettings(
     | "voice"
     | "vault"
     | "wallet"
+    | "cloud-agent"
     | "usage"
     | "computer"
     | "billing"

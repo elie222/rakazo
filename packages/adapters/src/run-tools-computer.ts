@@ -6,7 +6,12 @@ import { redactSecrets, sandboxCommandTimeoutMs } from "@rakazo/core";
 import { RunHistoryWriteError } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { redactShellStreams } from "./agent-environment.js";
-import { resolveCodeFill, resolveLoginFill, shellCommandEnvironment } from "./bot-secrets.js";
+import {
+  commandCredentialRedactions,
+  resolveCodeFill,
+  resolveLoginFill,
+  shellCommandEnvironment,
+} from "./bot-secrets.js";
 import {
   browserActFromTool,
   browserNavigateFromTool,
@@ -14,6 +19,7 @@ import {
   browserSnapshotFromTool,
   redactBrowserResult,
 } from "./browser-tools.js";
+import { cloudAgentCliOnComputer, loadCloudAgentCliKey } from "./cloud-agent-credentials.js";
 import { BACKGROUND_WORK_LAUNCH } from "./computer-idle.js";
 import {
   displayBotWorkspacePath,
@@ -320,6 +326,20 @@ export const computerTools: ToolHandlers = {
       scope: run,
       registerRedactions: (values) => addRunSecrets(ctx, values),
     });
+    // The user's saved key, never the deployment key, and never written to the computer.
+    const cliKey = cloudAgentCliOnComputer({
+      kind: ctx.computer.stored.kind,
+      platform: ctx.computer.hostEnvironment?.platform,
+    })
+      ? await loadCloudAgentCliKey(
+          { prisma: deps.prisma, secretStore: deps.secretStore, cloudAgent: deps.cloudAgent },
+          run.userId,
+        )
+      : null;
+    const commandEnv = cliKey
+      ? { ...commandEnvironment.env, CURSOR_API_KEY: cliKey }
+      : commandEnvironment.env;
+    if (cliKey) addRunSecrets(ctx, commandCredentialRedactions({ CURSOR_API_KEY: cliKey }));
     ctx.computer.checkpoint.markDirty();
     const commandEvent = {
       executionId,
@@ -391,8 +411,7 @@ export const computerTools: ToolHandlers = {
                   command,
                 ],
             cwd,
-            env:
-              Object.keys(commandEnvironment.env).length > 0 ? commandEnvironment.env : undefined,
+            env: Object.keys(commandEnv).length > 0 ? commandEnv : undefined,
             unsetEnv: commandEnvironment.unsetEnv,
             timeoutMs: sandboxCommandTimeoutMs(),
           },

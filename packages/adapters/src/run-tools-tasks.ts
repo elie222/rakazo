@@ -34,6 +34,12 @@ import {
   updateTicket,
 } from "./ticket-tools.js";
 
+function skillCatalog(ctx: {
+  deps: { cloudAgent?: { userCredentialProviderId?: string } | null };
+}) {
+  return { cloudAgentProviderId: ctx.deps.cloudAgent?.userCredentialProviderId };
+}
+
 /** The task catalog, scratchpad, ticket board, schedules and skills. */
 export const taskTools: ToolHandlers = {
   async task_catalog(ctx) {
@@ -44,6 +50,7 @@ export const taskTools: ToolHandlers = {
       userId: run.userId,
       ...(thread.groupId ? { threadId: thread.id } : {}),
       tools: ctx.tools.offered,
+      cloudAgentProviderId: skillCatalog(ctx).cloudAgentProviderId,
     });
   },
   async scratchpad_list(ctx, call) {
@@ -262,6 +269,7 @@ export const taskTools: ToolHandlers = {
         skillId: args.skillId ? String(args.skillId) : undefined,
         file: args.file ? String(args.file) : undefined,
       },
+      skillCatalog(ctx),
     );
   },
   async skill_create(ctx, call) {
@@ -280,6 +288,7 @@ export const taskTools: ToolHandlers = {
           body: args.body ? String(args.body) : undefined,
           content: args.content ? String(args.content) : undefined,
         },
+        skillCatalog(ctx),
       ),
     );
   },
@@ -301,6 +310,7 @@ export const taskTools: ToolHandlers = {
           body: args.body !== undefined ? String(args.body) : undefined,
           content: args.content ? String(args.content) : undefined,
         },
+        skillCatalog(ctx),
       ),
     );
   },
@@ -318,6 +328,7 @@ export const taskTools: ToolHandlers = {
           name: args.name ? String(args.name) : undefined,
           skillId: args.skillId ? String(args.skillId) : undefined,
         },
+        skillCatalog(ctx),
       ),
     );
   },
