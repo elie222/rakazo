@@ -6,7 +6,15 @@ import {
 } from "@rakazo/contracts";
 import { APP_URL, SELF_HOST_GUIDE_PATH } from "./site";
 
-const dollars = (cents: number) => `$${cents / 100}`;
+/** Whole dollars when the amount is round ("$15"), otherwise cents ("$12.50"). */
+function dollars(cents: number) {
+  const rounded = Math.round(cents);
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: rounded % 100 === 0 ? 0 : 2,
+  }).format(rounded / 100);
+}
 
 export type PricingPlan = {
   name: string;
