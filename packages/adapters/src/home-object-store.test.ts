@@ -75,6 +75,8 @@ function fakeComputers(rows: ComputerRow[]) {
         where: Record<string, unknown>;
         select: Record<string, boolean>;
       }) => rows.filter((row) => matches(row, where)).map((row) => pick(row, select)),
+      findFirst: async ({ select }: { select: Record<string, boolean> }) =>
+        rows[0] ? pick(rows[0], select) : null,
       updateMany: async ({
         where,
         data,
@@ -309,6 +311,7 @@ describe("ObjectAgentHomeStore", () => {
       load: (homeKey) => records.load(homeKey),
       advance: (...args) => records.advance(...args),
       revisions: (ids) => records.revisions(ids),
+      hasComputers: () => records.hasComputers(),
       kinds: (keys) => records.kinds(keys),
       create: async (homeKey) => {
         await interleave?.();
@@ -367,6 +370,7 @@ describe("ObjectAgentHomeStore", () => {
       load: (homeKey) => records.load(homeKey),
       create: (homeKey) => records.create(homeKey),
       revisions: (ids) => records.revisions(ids),
+      hasComputers: () => records.hasComputers(),
       kinds: (keys) => records.kinds(keys),
       // The update commits, then the connection drops before the reply.
       advance: async (...args) => {
@@ -816,12 +820,20 @@ describe("ObjectAgentHomeStore", () => {
     await expect(readdir(path.join(root, "home-revisions"))).resolves.toEqual(["team-2.txt"]);
   });
 
-  it("deletes nothing when the database knows none of the stored homes", async () => {
+  it("deletes nothing when the database has no computers", async () => {
     const { store, storage, rows } = await setup();
     await store.commit("bot-1", await staged({ "a.txt": "keep" }), context);
     rows.splice(0);
     expect(await store.sweep()).toBe(0);
     expect(storage.objects.size).toBe(1);
+  });
+
+  it("deletes the last stored home once its computer no longer points at it", async () => {
+    const { store, storage, rows } = await setup();
+    await store.commit("bot-1", await staged({ "a.txt": "gone" }), context);
+    for (const row of rows) Object.assign(row, { homeStorageId: null, homeStorageRevision: null });
+    expect(await store.sweep()).toBe(1);
+    expect(storage.objects.size).toBe(0);
   });
 
   it("migrates local homes once, verifies them and keeps the local copy", async () => {
