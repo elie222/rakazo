@@ -229,6 +229,7 @@ export function AskBlock({
         <SecretAskSheet
           title={plainAskTitle(ask.text)}
           destination={secretDestinationLabel(ask.credential)}
+          replacedSite={ask.replaces?.origin}
           // Once any save is accepted, or the viewer is no longer the run's user, the open sheet
           // clears its own fields, then closes itself.
           pending={canAnswer && !answered && !ownerOnly}

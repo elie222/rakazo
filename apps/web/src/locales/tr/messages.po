@@ -5127,7 +5127,7 @@ msgstr ""
 
 #: src/components/AskCard.tsx
 msgid "Replaces the login saved for {replacedSite}"
-msgstr ""
+msgstr "{replacedSite} için kayıtlı girişin yerini alır"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"

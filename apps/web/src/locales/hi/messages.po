@@ -5127,7 +5127,7 @@ msgstr ""
 
 #: src/components/AskCard.tsx
 msgid "Replaces the login saved for {replacedSite}"
-msgstr ""
+msgstr "{replacedSite} के लिए सहेजे गए लॉगिन को बदलता है"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"

@@ -5127,7 +5127,7 @@ msgstr "値を置き換え"
 
 #: src/components/AskCard.tsx
 msgid "Replaces the login saved for {replacedSite}"
-msgstr ""
+msgstr "{replacedSite} に保存されたログインを置き換えます"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"

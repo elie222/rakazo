@@ -5127,7 +5127,7 @@ msgstr "החלפת ערך"
 
 #: src/components/AskCard.tsx
 msgid "Replaces the login saved for {replacedSite}"
-msgstr ""
+msgstr "מחליף את פרטי ההתחברות שנשמרו עבור {replacedSite}"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"

@@ -5128,7 +5128,7 @@ msgstr "取代值"
 
 #: src/components/AskCard.tsx
 msgid "Replaces the login saved for {replacedSite}"
-msgstr ""
+msgstr "取代為 {replacedSite} 儲存的登入資訊"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"

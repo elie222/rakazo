@@ -5127,7 +5127,7 @@ msgstr "Waarde vervangen"
 
 #: src/components/AskCard.tsx
 msgid "Replaces the login saved for {replacedSite}"
-msgstr ""
+msgstr "Vervangt de opgeslagen login voor {replacedSite}"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"

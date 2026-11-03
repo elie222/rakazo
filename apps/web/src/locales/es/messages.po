@@ -5127,7 +5127,7 @@ msgstr "Reemplazar valor"
 
 #: src/components/AskCard.tsx
 msgid "Replaces the login saved for {replacedSite}"
-msgstr ""
+msgstr "Reemplaza el inicio de sesión guardado para {replacedSite}"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
