@@ -32,5 +32,5 @@ test("a nearly full computer offers to clean up its disk", async ({ page }, test
   await captureScreenshot(page, testInfo, "computer-disk-warning");
   await warning.getByRole("button", { name: "Clean up", exact: true }).click();
   await expect(warning).toHaveCount(0);
-  expect(sent).toMatchObject({ intent: "free_disk_space" });
+  expect(sent).toMatchObject({ text: expect.stringContaining("disk is nearly full") });
 });

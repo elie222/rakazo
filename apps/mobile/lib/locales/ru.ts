@@ -709,6 +709,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Take control": "Взять управление",
   "Clean up": "Очистить",
   "Computer is {percent}% full": "Компьютер заполнен на {percent}%",
+  "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need.":
+    "Диск компьютера почти заполнен. Освободите место, удалив ненужные результаты сборки и кеши.",
   "Tap + to create a bot": "Нажмите +, чтобы создать бота",
   Team: "Команда",
   "Team Computer": "Командный компьютер",

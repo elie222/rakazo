@@ -208,14 +208,12 @@ const threadSendFields = threadTarget.safeExtend({
   replyToMessageId: Id.optional(),
   replyQuote: z.string().trim().min(1).max(REPLY_QUOTE_MAX_LENGTH).optional(),
   clientNonce: z.string().min(1).max(200).optional(),
-  /** The server writes the message, in place of `text`. */
-  intent: z.enum(["free_disk_space"]).optional(),
 });
 
 const threadSendInput = threadSendFields.superRefine((input, ctx) => {
   const text = input.text?.trim() ?? "";
   const artifactIds = input.artifactIds ?? [];
-  if (!text && artifactIds.length === 0 && !input.intent) {
+  if (!text && artifactIds.length === 0) {
     ctx.addIssue({
       code: "custom",
       message: "Provide text or at least one attachment",

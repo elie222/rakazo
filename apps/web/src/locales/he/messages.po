@@ -6622,6 +6622,10 @@ msgstr "Anthropic"
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "הכרטיס שלך יחויב היום ב-{annualPrice}, בניכוי החלק שלא נוצל מהחודש הזה."
 
+#: src/pages/Shell.tsx
+msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
+msgstr "הדיסק של המחשב כמעט מלא. פנה מקום על ידי מחיקת תוצרי בנייה ומטמונים שכבר לא נחוצים."
+
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr ""

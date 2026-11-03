@@ -485,6 +485,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Take control": "Controle overnemen",
   "Clean up": "Opruimen",
   "Computer is {percent}% full": "Computer is voor {percent}% vol",
+  "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need.":
+    "De schijf van je computer is bijna vol. Maak ruimte vrij door build-uitvoer en caches te verwijderen die je niet meer nodig hebt.",
   "You have control": "Jij hebt de controle",
   "Active model": "Actief model",
   "Authorization code": "Autorisatiecode",

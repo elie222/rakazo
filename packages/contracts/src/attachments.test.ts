@@ -35,13 +35,6 @@ describe("attachment contracts", () => {
     ).toBe(false);
   });
 
-  it("accepts a send whose message the server writes from its intent", () => {
-    const schema = appContract.threads.send["~orpc"].inputSchema!;
-    expect(schema.safeParse({ botId: "bot-1", intent: "free_disk_space" }).success).toBe(true);
-    expect(schema.safeParse({ botId: "bot-1" }).success).toBe(false);
-    expect(schema.safeParse({ botId: "bot-1", intent: "other" }).success).toBe(false);
-  });
-
   it.each(ATTACHMENT_AUDIO_MIME_TYPES)("allows %s as an audio file block", (mimeType) => {
     expect(isAllowedAttachmentMimeType(mimeType)).toBe(true);
     expect(isAttachmentAudioMimeType(mimeType)).toBe(true);

@@ -1198,7 +1198,11 @@ function SpaceShell() {
                 const botId = active.id;
                 setCleaningUpDisk(true);
                 void rpc.threads
-                  .send({ botId, clientNonce: crypto.randomUUID(), intent: "free_disk_space" })
+                  .send({
+                    botId,
+                    clientNonce: crypto.randomUUID(),
+                    text: t`Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need.`,
+                  })
                   .then(async () => {
                     // The refresh must read the dismissal, or it would paint the warning again.
                     await dismissDiskWarning(botId);

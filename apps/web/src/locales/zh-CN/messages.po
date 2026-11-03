@@ -6622,6 +6622,10 @@ msgstr "你的 Anthropic"
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "今天将从你的卡中扣款 {annualPrice}，并抵扣本月未使用的部分。"
 
+#: src/pages/Shell.tsx
+msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
+msgstr "电脑的磁盘快满了。请删除不再需要的构建输出和缓存，以释放空间。"
+
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr ""

@@ -391,7 +391,12 @@ export default function Computer() {
   async function cleanUpDisk() {
     setCleaningUp(true);
     try {
-      await rpc("threads/send", { botId: botId ?? "", intent: "free_disk_space" });
+      await rpc("threads/send", {
+        botId: botId ?? "",
+        text: t(
+          "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need.",
+        ),
+      });
       dismissDiskWarning();
     } catch (err) {
       setError(errorText(err));

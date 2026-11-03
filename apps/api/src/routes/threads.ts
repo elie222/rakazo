@@ -88,11 +88,6 @@ export function takeoverReleaser(deps: RouterDeps, actor: Actor, target: ThreadT
   };
 }
 
-const INTENT_MESSAGES = {
-  free_disk_space:
-    "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need.",
-};
-
 export function threadsRoutes(ctx: RouterContext) {
   const { deps, authed, callsEnabled, codexCatalog, repos, agentSkills } = ctx;
   /** The bot a reaction can wake: the thread's bot, or in a group the bot that wrote the message. */
@@ -107,14 +102,9 @@ export function threadsRoutes(ctx: RouterContext) {
         )?.botId ?? target.memberBotIds[0]!);
   const send = async (
     actor: Actor,
-    request: Parameters<typeof sendThreadMessage>[3] & {
-      botId?: string;
-      groupId?: string;
-      intent?: keyof typeof INTENT_MESSAGES;
-    },
+    input: Parameters<typeof sendThreadMessage>[3] & { botId?: string; groupId?: string },
     startRoutines?: Parameters<typeof sendThreadMessage>[5],
   ) => {
-    const input = request.intent ? { ...request, text: INTENT_MESSAGES[request.intent] } : request;
     const setup = await modelSetup(deps, actor);
     const target = await resolveThreadTarget(deps.prisma, actor, input);
     // A bot with its own runnable model needs no main model.
@@ -282,7 +272,7 @@ export function threadsRoutes(ctx: RouterContext) {
         };
         let sent: Awaited<ReturnType<typeof send>> | undefined;
         try {
-          if (input.text?.trim() || input.artifactIds?.length || input.intent) {
+          if (input.text?.trim() || input.artifactIds?.length) {
             // A saved message for this nonce is replayed before any of this runs.
             sent = await send(actor, input, startRoutines);
           } else {
