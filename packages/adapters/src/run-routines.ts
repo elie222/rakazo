@@ -177,10 +177,14 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
           new Date(Date.now()),
           routine.timezone,
         );
-  const skillRecords = await listAgentSkillRecords(deps.prisma, {
-    spaceId: routine.spaceId,
-    userId: routine.userId,
-  });
+  const skillRecords = await listAgentSkillRecords(
+    deps.prisma,
+    {
+      spaceId: routine.spaceId,
+      userId: routine.userId,
+    },
+    { cloudAgentProviderId: deps.cloudAgent?.userCredentialProviderId },
+  );
   const routinePrompt =
     expandSkillReferencesInPrompt(routine.prompt, skillRecords) +
     (watchTick?.run ? watchTick.note : "");

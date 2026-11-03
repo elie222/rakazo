@@ -664,6 +664,9 @@ export default function Account() {
               ...(me?.paymentWalletProvider
                 ? [{ title: t("Wallet"), href: "/wallet" } as const]
                 : []),
+              ...(me?.cloudAgentProvider
+                ? [{ title: me.cloudAgentProvider.name, href: "/cloud-agent" } as const]
+                : []),
               { title: t("Integrations"), href: "/integrations" },
               { title: t("Skills"), href: "/skills" },
               ...(messagingEnabled ? [{ title: t("Messaging"), href: "/messaging" } as const] : []),

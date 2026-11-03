@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import {
+  Bot,
   Brain,
   CloudDownload,
   Cpu,
@@ -26,6 +27,8 @@ export type SettingsNavItem = {
 export function useSettingsNavItems(available: {
   messaging: boolean;
   wallet: boolean;
+  /** The provider name the server sends; none hides the section. */
+  cloudAgent: { name: string } | null;
   computer: boolean;
   billing: boolean;
   updates: boolean;
@@ -41,6 +44,9 @@ export function useSettingsNavItems(available: {
       ? [{ id: "messaging" as const, label: t`Messaging`, icon: MessageCircle }]
       : []),
     ...(available.wallet ? [{ id: "wallet" as const, label: t`Wallet`, icon: Wallet }] : []),
+    ...(available.cloudAgent
+      ? [{ id: "cloud-agent" as const, label: available.cloudAgent.name, icon: Bot }]
+      : []),
     { id: "memory", label: t`Memory`, icon: Brain },
     { id: "usage", label: t`Usage`, icon: Gauge },
     ...(available.computer ? [{ id: "computer" as const, label: t`Computer`, icon: Monitor }] : []),

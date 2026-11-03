@@ -35,6 +35,14 @@ describe("activeCodingAgent", () => {
     );
   });
 
+  it("treats a recent Cursor CLI session as a working agent", async () => {
+    await session(".cursor/chats/abc/session/store.db", 1);
+
+    await expect(activeCodingAgent(localShell(home), computer, context, 10 * 60_000)).resolves.toBe(
+      "cursor",
+    );
+  });
+
   it("finds no agent once every session has been quiet for the window", async () => {
     await session(".codex/sessions/2026/10/30/rollout.jsonl", 11);
     await session(".local/share/opencode/opencode.db", 30);

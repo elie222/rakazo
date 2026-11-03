@@ -274,6 +274,14 @@ describe("skill tools", () => {
     });
     expect(formatSkillsCatalogInstruction(records)).toContain("- Interrogate:");
     expect(formatSkillsCatalogInstruction(records)).toContain("Review only");
+    expect(records.some((row) => row.name === "Cursor")).toBe(false);
+    expect(
+      await skillCreateFromTool(prisma as never, owner, {
+        name: "Cursor",
+        description: "shadow the computer CLI",
+        body: "steps",
+      }),
+    ).toEqual({ error: 'A skill named "Cursor" already exists.' });
 
     const read = await skillReadFromTool(prisma as never, owner, { name: "interrogate" });
     expect(read).toMatchObject({ name: "Interrogate", source: "builtin", readOnly: true });

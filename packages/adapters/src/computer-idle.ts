@@ -493,7 +493,8 @@ export async function sleepComputerIfIdle(
   const backgroundHolds = async () =>
     !allowanceUsed &&
     ((!limitReached && (await hasActiveBackgroundWork(deps.sandbox, ref, ctx, computerId))) ||
-      (await activeCodingAgent(deps.sandbox, ref, ctx, sandboxIdleMs())) !== undefined);
+      (computer.kind !== "wuying" &&
+        (await activeCodingAgent(deps.sandbox, ref, ctx, sandboxIdleMs())) !== undefined));
   const graceEndsAt = () =>
     allowanceUsed || activeControl || deps.sandbox.billsWhileRunning?.(ref) === true
       ? Promise.resolve(null)

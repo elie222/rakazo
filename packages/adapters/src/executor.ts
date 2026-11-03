@@ -64,7 +64,7 @@ import {
 import { createBrowserProvider } from "./browser-provider-factory.js";
 import { partitionTools } from "./builtin-tool-bridge.js";
 import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
-import { cloudAgentsEnabled } from "./cloud-agent-factory.js";
+import { cloudAgentToolsEnabled } from "./cloud-agent-credentials.js";
 import { mergeConnectedPlugins, needsLivePluginSync } from "./composio-connector.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import type { ComputerExecutionLease } from "./computer-lifecycle.js";
@@ -574,10 +574,14 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           deps.prisma.taughtSkill.findMany({
             where: { botId: run.botId, spaceId: run.spaceId, status: "saved" },
           }),
-          listAgentSkillRecords(deps.prisma, {
-            spaceId: run.spaceId,
-            userId: run.userId,
-          }),
+          listAgentSkillRecords(
+            deps.prisma,
+            {
+              spaceId: run.spaceId,
+              userId: run.userId,
+            },
+            { cloudAgentProviderId: deps.cloudAgent?.userCredentialProviderId },
+          ),
           loadBotCommandEnvironment(deps.prisma, deps.secretStore, run),
           loadLoginPasswordRedactions(deps.prisma, deps.secretStore, run),
           deps.paymentWallet ? loadPurchaseRedactions(deps, run) : [],
@@ -1219,7 +1223,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             semanticMemoryForgets: Boolean(semanticMemory?.forget),
             mediaImagesEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.images),
             mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
-            cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
+            cloudAgentEnabled: await cloudAgentToolsEnabled(
+              deps.prisma,
+              cloudAgent,
+              run.userId,
+              run.spaceId,
+            ),
             paymentWalletEnabled,
             messagingChannelRun: nonOwnerChatRun,
             voiceCall,

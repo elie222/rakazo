@@ -8,6 +8,7 @@ const SETTINGS_SECTIONS = [
   "vault",
   "messaging",
   "wallet",
+  "cloud-agent",
   "usage",
   "computer",
   "billing",

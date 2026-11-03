@@ -76,6 +76,7 @@ export default function SettingsLayout() {
       <Stack.Screen name="models" options={glassHeaderOptions(t("Models"))} />
       <Stack.Screen name="voice" options={glassHeaderOptions(t("Voice"))} />
       <Stack.Screen name="wallet" options={glassHeaderOptions(t("Wallet"))} />
+      <Stack.Screen name="cloud-agent" options={glassHeaderOptions("")} />
       <Stack.Screen
         name="approvals"
         options={{

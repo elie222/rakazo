@@ -16,6 +16,7 @@ import {
   UsageSettingsPanel,
 } from "./AccountSettingsOverlay";
 import { BillingSettingsPanel } from "./BillingSettingsPanel";
+import { CloudAgentSettingsPanel } from "./CloudAgentSettingsPanel";
 import { MemorySettingsOverlay } from "./MemorySettingsOverlay";
 import { MessagingSettingsPanel } from "./MessagingSettingsPanel";
 import { ModelSettingsOverlay } from "./ModelSettingsOverlay";
@@ -48,6 +49,7 @@ export function SettingsOverlay({
   onSandboxProviderChange,
   messagingEnabled = false,
   paymentWalletProvider = null,
+  cloudAgentProvider = null,
   memoryConfig,
   onMemoryConfigChange,
   onClose,
@@ -76,6 +78,8 @@ export function SettingsOverlay({
   messagingEnabled?: boolean;
   /** The wallet this deployment lets bots spend from; none hides Wallet. */
   paymentWalletProvider?: { id: string; name: string } | null;
+  /** Cloud agents a member connects with their own key; none hides the section. */
+  cloudAgentProvider?: { id: string; name: string } | null;
   memoryConfig: SpaceMemoryConfig | null | undefined;
   onMemoryConfigChange: (config: SpaceMemoryConfig | null) => void;
   onClose: () => void;
@@ -98,6 +102,7 @@ export function SettingsOverlay({
     (requestedSection === "billing" && !billingEnabled) ||
     (requestedSection === "messaging" && !messagingEnabled) ||
     (requestedSection === "wallet" && !paymentWalletProvider) ||
+    (requestedSection === "cloud-agent" && !cloudAgentProvider) ||
     (requestedSection === "updates" && !showUpdates)
       ? "general"
       : requestedSection;
@@ -134,6 +139,7 @@ export function SettingsOverlay({
   const navItems = useSettingsNavItems({
     messaging: messagingEnabled,
     wallet: Boolean(paymentWalletProvider),
+    cloudAgent: cloudAgentProvider,
     computer: showComputer,
     billing: billingEnabled,
     updates: showUpdates,
@@ -173,6 +179,7 @@ export function SettingsOverlay({
     billingEnabled,
     messagingEnabled,
     paymentWalletProvider,
+    cloudAgentProvider,
     showUpdates,
     i18n.locale,
   ]);
@@ -390,6 +397,9 @@ export function SettingsOverlay({
                   {section === "messaging" && messagingEnabled ? <MessagingSettingsPanel /> : null}
                   {section === "wallet" && paymentWalletProvider ? (
                     <PaymentWalletSettingsPanel provider={paymentWalletProvider} />
+                  ) : null}
+                  {section === "cloud-agent" && cloudAgentProvider ? (
+                    <CloudAgentSettingsPanel provider={cloudAgentProvider} />
                   ) : null}
                   {section === "usage" ? (
                     <UsageSettingsPanel usage={usage} panelRef={usageRef} />

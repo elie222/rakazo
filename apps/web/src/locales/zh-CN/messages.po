@@ -1151,6 +1151,7 @@ msgstr "无法读取图像"
 #: src/components/VaultSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/CloudAgentSettingsPanel.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/connection-controls.tsx
@@ -1564,6 +1565,7 @@ msgstr "请确认此浏览器会话可以访问该 URL，然后重新测试。"
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/pages/CloudAgentSettingsPanel.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -2275,9 +2277,17 @@ msgstr "无法加载消息设置"
 msgid "Couldn't load submissions"
 msgstr "无法加载提交记录"
 
+#: src/pages/CloudAgentSettingsPanel.tsx
+msgid "Couldn't load your key"
+msgstr ""
+
 #: src/pages/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
 msgstr "无法加载钱包"
+
+#: src/pages/CloudAgentSettingsPanel.tsx
+msgid "Couldn't save your key"
+msgstr ""
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
@@ -2588,6 +2598,7 @@ msgstr "已禁用"
 msgid "Discard recording"
 msgstr "丢弃录音"
 
+#: src/pages/CloudAgentSettingsPanel.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
@@ -2601,6 +2612,7 @@ msgstr "断开"
 msgid "Disconnect {disconnectName}?"
 msgstr "断开 {disconnectName}？"
 
+#: src/pages/CloudAgentSettingsPanel.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 msgid "Disconnect {name}?"
 msgstr "断开 {name}？"
@@ -3417,6 +3429,10 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr "密钥"
+
+#: src/pages/CloudAgentSettingsPanel.tsx
+msgid "Key"
+msgstr ""
 
 #: src/components/LoginFields.tsx
 msgid "Label"

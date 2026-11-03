@@ -8,7 +8,8 @@ import {
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { availableInSpace } from "@rakazo/db";
-import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.js";
+import { BUILTIN_AGENT_SKILLS, CURSOR_CLI_SKILL } from "./builtin-skills.js";
+import { userHasCloudAgentCredential } from "./cloud-agent-credentials.js";
 
 export const SKILL_TOOL_NAMES = new Set([
   "skill_read",
@@ -52,15 +53,36 @@ function toRecord(row: AgentSkillRow): SkillRecord & { id: string } {
   };
 }
 
-function builtinRecords(): Array<SkillRecord & { id: string }> {
-  return BUILTIN_AGENT_SKILLS.map((skill) => ({
+export type AgentSkillCatalogOptions = {
+  /** When set, a saved key for this provider adds the computer CLI skill. */
+  cloudAgentProviderId?: string;
+};
+
+function skillRecord(skill: {
+  name: string;
+  description: string;
+  content: string;
+}): SkillRecord & { id: string } {
+  return {
     id: `builtin:${skill.name}`,
     name: skill.name,
     description: skill.description,
     content: skill.content,
-    source: "builtin" as const,
+    source: "builtin",
     readOnly: true,
-  }));
+  };
+}
+
+function builtinRecords(includeCursorCli: boolean): Array<SkillRecord & { id: string }> {
+  const skills = includeCursorCli
+    ? [...BUILTIN_AGENT_SKILLS, CURSOR_CLI_SKILL]
+    : BUILTIN_AGENT_SKILLS;
+  return skills.map(skillRecord);
+}
+
+/** The computer CLI skill name is reserved even while that skill is hidden. */
+function reservedSkillName(name: string): boolean {
+  return Boolean(findSkillByName([CURSOR_CLI_SKILL], name));
 }
 
 function rejectOversizedContent(content: string): string | undefined {
@@ -101,6 +123,7 @@ const SHARED_SKILL_ERROR =
 export async function listAgentSkillRecords(
   prisma: PrismaClient,
   owner: SkillOwner,
+  options?: AgentSkillCatalogOptions,
 ): Promise<Array<SkillRecord & { id: string }>> {
   const rows = await prisma.agentSkill.findMany({
     where: availableInSpace(owner),
@@ -108,15 +131,21 @@ export async function listAgentSkillRecords(
     omit: { files: true },
     orderBy: [{ name: "asc" }, { id: "asc" }],
   });
-  return mergeBuiltinSkills(builtinRecords(), rows.map(toRecord));
+  const includeCursorCli = await userHasCloudAgentCredential(
+    prisma,
+    owner.userId,
+    options?.cloudAgentProviderId,
+  );
+  return mergeBuiltinSkills(builtinRecords(includeCursorCli), rows.map(toRecord));
 }
 
 async function findOwnedSkill(
   prisma: PrismaClient,
   owner: SkillOwner,
   input: { skillId?: string; name?: string },
+  options?: AgentSkillCatalogOptions,
 ): Promise<(SkillRecord & { id: string }) | null> {
-  const skills = await listAgentSkillRecords(prisma, owner);
+  const skills = await listAgentSkillRecords(prisma, owner, options);
   if (input.skillId) {
     return skills.find((skill) => skill.id === input.skillId) ?? null;
   }
@@ -138,8 +167,9 @@ export async function skillReadFromTool(
   prisma: PrismaClient,
   owner: SkillOwner,
   input: { name?: string; skillId?: string; file?: string },
+  options?: AgentSkillCatalogOptions,
 ): Promise<Record<string, unknown>> {
-  const skill = await findOwnedSkill(prisma, owner, input);
+  const skill = await findOwnedSkill(prisma, owner, input, options);
   if (!skill) return { error: "Skill not found." };
   const row = skill.id.startsWith("builtin:")
     ? null
@@ -170,6 +200,7 @@ export async function skillCreateFromTool(
   prisma: PrismaClient,
   owner: SkillOwner,
   input: { name?: string; description?: string; body?: string; content?: string },
+  options?: AgentSkillCatalogOptions,
 ): Promise<Record<string, unknown>> {
   let name = "";
   let description = "";
@@ -197,7 +228,8 @@ export async function skillCreateFromTool(
   const oversized = rejectOversizedContent(content);
   if (oversized) return { error: oversized };
 
-  const existing = await findOwnedSkill(prisma, owner, { name });
+  if (reservedSkillName(name)) return { error: `A skill named "${name}" already exists.` };
+  const existing = await findOwnedSkill(prisma, owner, { name }, options);
   if (existing) return { error: `A skill named "${existing.name}" already exists.` };
 
   try {
@@ -234,11 +266,17 @@ export async function skillUpdateFromTool(
     body?: string;
     content?: string;
   },
+  options?: AgentSkillCatalogOptions,
 ): Promise<Record<string, unknown>> {
-  const existing = await findOwnedSkill(prisma, owner, {
-    skillId: input.skillId,
-    name: input.name,
-  });
+  const existing = await findOwnedSkill(
+    prisma,
+    owner,
+    {
+      skillId: input.skillId,
+      name: input.name,
+    },
+    options,
+  );
   if (!existing) return { error: "Skill not found." };
   if (existing.readOnly || existing.source !== "user" || existing.id.startsWith("builtin:")) {
     return { error: "Builtin and plugin skills are read-only." };
@@ -278,7 +316,9 @@ export async function skillUpdateFromTool(
   if (oversized) return { error: oversized };
 
   if (nextName.toLowerCase() !== existing.name.toLowerCase()) {
-    const clash = await findOwnedSkill(prisma, owner, { name: nextName });
+    if (reservedSkillName(nextName))
+      return { error: `A skill named "${nextName}" already exists.` };
+    const clash = await findOwnedSkill(prisma, owner, { name: nextName }, options);
     if (clash && clash.id !== existing.id) {
       return { error: `A skill named "${clash.name}" already exists.` };
     }
@@ -305,8 +345,9 @@ export async function skillDeleteFromTool(
   prisma: PrismaClient,
   owner: SkillOwner,
   input: { name?: string; skillId?: string },
+  options?: AgentSkillCatalogOptions,
 ): Promise<Record<string, unknown>> {
-  const existing = await findOwnedSkill(prisma, owner, input);
+  const existing = await findOwnedSkill(prisma, owner, input, options);
   if (!existing) return { error: "Skill not found." };
   if (existing.readOnly || existing.source !== "user" || existing.id.startsWith("builtin:")) {
     return { error: "Builtin and plugin skills are read-only." };

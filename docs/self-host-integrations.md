@@ -208,11 +208,11 @@ Configure the API and worker with the same values:
 
 ```dotenv
 CLOUD_AGENT_PROVIDER=cursor
-CLOUD_AGENT_SPACE_ID=example-space-id
-CURSOR_API_KEY=replace-with-your-key
 ```
 
-The key and explicit Space ID are both required. Use a credential whose connected repositories may be accessed by members of that Space. Each created agent is additionally bound to its initiating user; another user cannot inspect, reply to, or cancel it by supplying an agent ID. The deployment key is never a model tool argument.
+`cursor` turns the feature on. `CURSOR_API_KEY` and `CLOUD_AGENT_SPACE_ID` are optional and, together, are only a fallback for that one Space when a user has not saved a key. Each user can paste their own key in Settings. That key works in every Space they belong to, and it also authenticates the `agent` command on the bot computer. The image does not include that binary; a bot installs it when the user has saved a key. The deployment key is never given to that command and is never a model tool argument.
+
+Use a credential whose connected repositories may be accessed by the people who can start agents with it. Each created agent is bound to its initiating user; another user cannot inspect, reply to, or cancel it by supplying an agent ID. Replacing or removing a user's key is refused while that user still has an agent that has not finished, failed, been cancelled, or expired, so the worker can still cancel it. An agent already started with a previous key keeps that binding and stops updating until the previous key is restored.
 
 The tools are `cloud_agent_launch`, `cloud_agent_status`, `cloud_agent_reply`, and `cloud_agent_cancel`. All three mutations participate in the existing action-approval rules and auto-review policy. As with other consequential tools, an empty rule set and disabled auto-review permit execution by default.
 

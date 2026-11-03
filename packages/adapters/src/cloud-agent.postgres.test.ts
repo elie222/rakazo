@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import type { AdapterContext, BackgroundJob, JobPublisher } from "@rakazo/adapter-kit";
+import type {
+  AdapterContext,
+  BackgroundJob,
+  CloudAgentProvider,
+  JobPublisher,
+} from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import {
   asSystem,
@@ -91,7 +96,7 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
       return { bot, thread, run };
     });
     const wire = new CursorCloudAgentEmulator();
-    const connection: CloudAgentConnection = {
+    const connection: CloudAgentConnection & { provider: CloudAgentProvider } = {
       key: `test-connection:${id}`,
       spaceId: id,
       provider: new CursorCloudAgentProvider({ apiKey: "fake-key", fetch: wire.fetch }),

@@ -1151,6 +1151,7 @@ msgstr "Can't read images"
 #: src/components/VaultSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/CloudAgentSettingsPanel.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/connection-controls.tsx
@@ -1564,6 +1565,7 @@ msgstr "Confirm the URL is reachable from this browser session, then test again.
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/pages/CloudAgentSettingsPanel.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -2275,9 +2277,17 @@ msgstr "Couldn't load messaging settings"
 msgid "Couldn't load submissions"
 msgstr "Couldn't load submissions"
 
+#: src/pages/CloudAgentSettingsPanel.tsx
+msgid "Couldn't load your key"
+msgstr "Couldn't load your key"
+
 #: src/pages/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
 msgstr "Couldn't load your wallet"
+
+#: src/pages/CloudAgentSettingsPanel.tsx
+msgid "Couldn't save your key"
+msgstr "Couldn't save your key"
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
@@ -2588,6 +2598,7 @@ msgstr "Disabled"
 msgid "Discard recording"
 msgstr "Discard recording"
 
+#: src/pages/CloudAgentSettingsPanel.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
@@ -2601,6 +2612,7 @@ msgstr "Disconnect"
 msgid "Disconnect {disconnectName}?"
 msgstr "Disconnect {disconnectName}?"
 
+#: src/pages/CloudAgentSettingsPanel.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 msgid "Disconnect {name}?"
 msgstr "Disconnect {name}?"
@@ -3417,6 +3429,10 @@ msgstr "Keep tool results whole"
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr "key"
+
+#: src/pages/CloudAgentSettingsPanel.tsx
+msgid "Key"
+msgstr "Key"
 
 #: src/components/LoginFields.tsx
 msgid "Label"
