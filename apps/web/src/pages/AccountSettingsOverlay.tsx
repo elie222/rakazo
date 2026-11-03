@@ -568,6 +568,10 @@ export function ComputerSettingsPanel({
   onRecoveryDismissed?: () => void;
   canConfigureComputers?: boolean;
 }) {
+  // Once shown, the hint stays mounted so a successful check can show its confirmation.
+  const unavailable = computersAreUnavailable(sandboxProvider);
+  const [hintShown, setHintShown] = useState(unavailable);
+  if (unavailable && !hintShown) setHintShown(true);
   return (
     <div
       data-testid="computers-setup-settings"
@@ -576,7 +580,7 @@ export function ComputerSettingsPanel({
       <h3 className="text-heading3 font-medium text-foreground">
         <Trans>Computers</Trans>
       </h3>
-      {computersAreUnavailable(sandboxProvider) ? (
+      {hintShown ? (
         <ComputersUnavailableHint
           className="mt-3 text-[13px] leading-relaxed text-muted-foreground"
           sandboxProvider={sandboxProvider}

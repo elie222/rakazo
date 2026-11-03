@@ -635,8 +635,26 @@ connection.close()`;
   });
 });
 
-it("guards by the kind a run starts its computer as, not the kind it last ran as", () => {
+it("guards by the computer a run actually uses", () => {
   const stored = { kind: "docker" };
   expect(desktopGuardApplies({ graphical: true, stored })).toBe(true);
-  expect(desktopGuardApplies({ graphical: true, stored, kind: "wuying" })).toBe(false);
+  // Not started yet: it may still reuse the running Linux computer.
+  expect(desktopGuardApplies({ graphical: true, stored, kind: "wuying" })).toBe(true);
+  expect(
+    desktopGuardApplies({
+      graphical: true,
+      stored,
+      kind: "wuying",
+      lazy: { ready: { kind: "wuying" } },
+    }),
+  ).toBe(false);
+  expect(
+    desktopGuardApplies({
+      graphical: true,
+      stored,
+      kind: "wuying",
+      lazy: { ready: { kind: "docker" } },
+    }),
+  ).toBe(true);
+  expect(desktopGuardApplies({ graphical: true, stored: { kind: "wuying" } })).toBe(false);
 });
