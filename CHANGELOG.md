@@ -28,9 +28,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Web search, link icons, the plugin marketplace and plugin installs now go through the proxy set in `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`, while the private-network guard still applies. Before, they always connected directly, so behind a corporate proxy the marketplace showed "Some plugins could not be loaded" and installs failed ([configuration](docs/self-host-configuration.md)).
 - undici, the HTTP library that several dependencies pull in, is updated past a batch of new advisories, two of them critical.
 - Log and error-report redaction no longer stalls on long text full of malformed sign-in tokens. Before, one unauthenticated monitoring report could block the API process.
+- A message in a shared channel can no longer use or change the bot owner's private routines and saved skills, or pull a private skill's contents into the reply.
 
 ### Added
 
+- Bots can build pages, like dashboards, from a fixed set of components. A page appears as a card in the chat and opens full screen with the chat docked below. The Library lists pages to rename, pin, delete or share by link, on web and mobile.
+- When a conversation leaves something open until a known time, such as "I'll send you the lease on Friday at 5", the bot can set itself one follow-up for then without being asked. It stays silent if the item is already done, and the daily check-in skips a bot that already has a follow-up pending.
 - When a bot calls you, the iOS and Android apps now ring. While the app is open you get a full-screen call with Answer and Decline. When the app is in the background or the phone is locked, iOS rings through the system call screen and Android shows a lock-screen call notification. Self-hosters can set `APNS_VOIP_*` so iPhones ring while locked ([mobile incoming calls](docs/self-host-clients.md#mobile-incoming-calls)).
 - When a site texts or emails a sign-in code, the bot asks for it with a "Code for" card in the chat and fills it into the page without seeing it. You no longer have to take over the screen for each code. Boxes with one input per digit and fields inside another site's frame still need a takeover.
 - Telegram bots can take part in group chats. A group shows up under **Requests**, and each member approves it from their own **Messaging** settings. A message in the group then goes to every approved member's bot, and each forum topic is its own conversation ([chat apps](docs/messaging-apps.md#group-chats)).
@@ -52,8 +55,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - When you sign up with an email domain that looks mistyped, like `name@gmial.com`, the form offers the likely address.
 - Long model and provider lists can be searched on web and mobile.
 - The mobile Models screen lists bots that use their own model, with "Use space default" to move them onto the main model, as web already does.
-- A routine's run history marks scheduled runs that started late, for example "Started 2h late", on web and mobile.
+- A routine shows "Schedule delayed" when its next scheduled run is more than five minutes overdue, and its run history marks scheduled runs that started late, for example "Started 2h late", on web and mobile.
 - Messaging your bot just "stop" or "stop now" while it works stops it, as if you had pressed Stop. This works in the app chat and in your private chat with the bot on a chat app, where it replies "Nothing is running." when the bot is idle.
+- Self-hosters can set `MODEL_STREAM_TIMEOUT_MS`, `MODEL_STREAM_IDLE_TIMEOUT_MS` and `MODEL_CONNECT_TIMEOUT_MS` (defaults 120 s, 180 s and 30 s), for example when bots share one local model server and queue for minutes.
 
 ### Changed
 
@@ -77,6 +81,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - When a deploy or self-hosted update replaces the worker, the old worker finishes its running jobs, for up to 45 minutes, before it stops, while the new worker takes new jobs ([upgrading](docs/self-host-upgrading.md)).
 - A deploy's database migration gives up on a lock after five seconds and tries again later instead of holding up live requests. When a migration collides with live traffic (a deadlock or lock timeout), the upgrade marks that attempt rolled back and tries up to two more times instead of blocking every later upgrade.
 - The API and worker load optional vendor SDKs only when they are configured, not on every boot.
+- Android download links on the website, in the app and in the welcome email now go to Google Play instead of an APK.
+- Long screen tasks carry at most nine screenshots per model call instead of seventeen, so each step is faster. A screenshot removed this way keeps its text result.
 
 ### Removed
 
@@ -101,7 +107,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Page browser: steps are about half a second faster. It reads pages that had already loaded, waits for a site's sign-in check, reads the tab that is on screen, and points the bot to `fill_card` for card fields inside a payment frame. Disabled controls get a plain answer instead of a screenshot fallback or a cleared field, a whole SMS code is typed into split boxes in one step, alert and confirm boxes are reported, and a page that navigates away stops the bot's typing.
 - Answering a card no longer fails now and then with a database error when the Space's content keys are wrapped by a key manager.
 - Requests still running when the API shuts down during a deploy now finish instead of failing. A query or usage save that hits a database deadlock is retried instead of failing.
-- A `-- deferred` migration now stays held back after a failed migration run.
+- A `-- deferred` migration now stays held back after a failed migration run or a failed rollout, until the release that stopped reading it has deployed.
 - A provider timing out while downloading a linked file is now retried. A model that isn't a chat model, or that needs a region the workspace hasn't enabled, now tells you to pick another model. A reply with a broken header is reported as an unusable model response instead of a server fault.
 - A web voice call answers the turn you just spoke instead of going quiet or reading an older message again. During a voice call, the call card and incoming call prompts show on every signed-in page.
 - Ask Bot in Shortcuts waits for the bot's reply reliably, and a voice call started from a shortcut opens with a fresh greeting.
