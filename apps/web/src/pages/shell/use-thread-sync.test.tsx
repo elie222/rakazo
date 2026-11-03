@@ -150,23 +150,39 @@ it.each([
 ])(
   "paints a %s bot's cached chat only when its run state still matches",
   async (botStatus, run, painted) => {
-    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    const cached = { botId: "bot-1", messages: [], run } as unknown as ThreadSnapshot;
-    vi.mocked(queryClient.getQueryData).mockReturnValueOnce(cached);
-    const commitSnapshot = vi.fn();
-    const input = syncInput({
-      inGroup: false,
-      get: () => new Promise<ThreadSnapshot>(() => {}),
-      commitSnapshot,
-      botStatus,
-    });
-    function Probe() {
-      useThreadSync(input);
-      return null;
-    }
-    const root = createRoot(document.createElement("div"));
-    await act(async () => root.render(createElement(Probe)));
-    expect(commitSnapshot.mock.calls.some(([next]) => next === cached)).toBe(painted);
-    act(() => root.unmount());
+    await expectCachedPaint(botStatus, { run }, painted);
   },
 );
+
+it("checks every active run in a cached chat, not just the primary one", async () => {
+  await expectCachedPaint(
+    "idle",
+    { run: { status: "failed" }, activeRuns: [{ status: "running" }] },
+    false,
+  );
+});
+
+async function expectCachedPaint(
+  botStatus: string,
+  runs: Record<string, unknown>,
+  painted: boolean,
+) {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const cached = { botId: "bot-1", messages: [], ...runs } as unknown as ThreadSnapshot;
+  vi.mocked(queryClient.getQueryData).mockReturnValueOnce(cached);
+  const commitSnapshot = vi.fn();
+  const input = syncInput({
+    inGroup: false,
+    get: () => new Promise<ThreadSnapshot>(() => {}),
+    commitSnapshot,
+    botStatus,
+  });
+  function Probe() {
+    useThreadSync(input);
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  await act(async () => root.render(createElement(Probe)));
+  expect(commitSnapshot.mock.calls.some(([next]) => next === cached)).toBe(painted);
+  act(() => root.unmount());
+}

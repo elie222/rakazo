@@ -248,7 +248,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const notificationThreadId = snap?.threadId ?? requestedThreadId ?? currentBot?.threadId;
   activeThreadId.current = notificationThreadId;
   const currentBotStatus =
-    snap && !showingSaved ? snap.run?.status : (titleBot?.status ?? snap?.run?.status);
+    snap && (!showingSaved || error) ? snap.run?.status : (titleBot?.status ?? snap?.run?.status);
   // The group's members in its order, once the chat or its group list has loaded them; the
   // title seats the inbox's copy until then.
   const groupMembers = threadGroupMembers(groupId, snap, mentionGroups);

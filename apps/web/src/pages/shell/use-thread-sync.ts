@@ -28,6 +28,7 @@ import type { SpaceQueries } from "../../lib/query";
 import { queryClient } from "../../lib/query";
 import type { createSpaceRpc } from "../../lib/rpc";
 import {
+  activeThreadRuns,
   isComputerStatusEvent,
   isThreadSnapshotEvent,
   prependThreadMessagePage,
@@ -316,7 +317,8 @@ export function useThreadSync({
     if (
       cachedThread &&
       snapshotRef.current?.botId !== active.id &&
-      isRunWorking(cachedThread.run?.status) === isRunWorking(active.status)
+      activeThreadRuns(cachedThread).some((run) => isRunWorking(run.status)) ===
+        isRunWorking(active.status)
     )
       commitSnapshot(cachedThread);
     const sidebarRefresh = createRefreshCoalescer(() => refreshBots());
