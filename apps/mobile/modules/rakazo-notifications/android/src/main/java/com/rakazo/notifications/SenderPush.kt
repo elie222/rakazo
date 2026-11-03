@@ -57,6 +57,7 @@ internal object SenderPush {
       .addExtras(Bundle().apply {
         putString("rakazo.botId", botId)
         putString("rakazo.threadId", threadId)
+        data.optString("groupId").takeIf(String::isNotBlank)?.let { putString("rakazo.groupId", it) }
       })
     runCatching { addSender(context, builder, data, title, body) }
       .onFailure { Log.w("RakazoSenderPush", "Posting without the sender", it) }
