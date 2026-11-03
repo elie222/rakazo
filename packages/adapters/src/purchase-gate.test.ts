@@ -98,20 +98,24 @@ describe("purchase detection for the page tools", () => {
       points: [{ x: 5, y: 6 }],
       unplaced: false,
     });
-    // An up lands where the pointer is: the last move, not its own x and y; with no pointer it is unplaced.
+    // An up is checked where the pointer is (the main screen) and at its own spot (an extra display).
     expect(
       await request([
         { kind: "move", x: 1, y: 2 },
         { kind: "up", x: 99, y: 99 },
       ]),
     ).toMatchObject({
-      points: [{ x: 1, y: 2 }],
+      points: [
+        { x: 1, y: 2 },
+        { x: 99, y: 99 },
+      ],
       unplaced: false,
     });
     expect(await request([{ kind: "up", x: 99, y: 99 }])).toMatchObject({
-      points: [],
+      points: [{ x: 99, y: 99 }],
       unplaced: true,
     });
+    expect(await request([{ kind: "up" }])).toMatchObject({ points: [], unplaced: true });
     expect(await request([{ kind: "click" }])).toMatchObject({ points: [], unplaced: true });
     // A right-click presses nothing, so it is not asked about.
     expect(await request([{ kind: "click", x: 5, y: 6, button: "right" }])).toBeUndefined();

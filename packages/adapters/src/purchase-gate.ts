@@ -92,7 +92,7 @@ function purchaseProbe(name: string, args: Record<string, unknown>) {
   const points: Array<{ x: number; y: number }> = [];
   let enter = false;
   // A spot is judged on the page as it is now. Once a click, key, typing, wait or scroll has run in the
-  // batch the page may have changed, so a later click cannot be placed; an `up` lands where the pointer is.
+  // batch the page may have changed, so a later click cannot be placed; an `up` is checked where the pointer is and at its own spot.
   let disturbed = false;
   let unplaced = false;
   // A focus that opens a URL brings up a page this check cannot see beforehand: a click or key after it
@@ -114,10 +114,13 @@ function purchaseProbe(name: string, args: Record<string, unknown>) {
       disturbed = true;
     } else if (["click", "down", "up"].includes(kind)) {
       if (opened) unchecked = true;
-      const at = kind === "up" ? pointer : own;
+      // The main screen releases where the pointer is; an extra display moves to the up's own spot first.
+      const spots = kind === "up" ? [pointer, ...(own ? [own] : [])] : [own];
       if (kind !== "up") pointer = own ?? pointer;
-      if (!at || disturbed || points.length >= 24) unplaced = true;
-      else points.push(at);
+      for (const at of spots) {
+        if (!at || disturbed || points.length >= 24) unplaced = true;
+        else points.push(at);
+      }
       disturbed = true;
     } else {
       disturbed = true;
