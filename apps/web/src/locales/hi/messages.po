@@ -1759,7 +1759,6 @@ msgstr ""
 msgid "Copied"
 msgstr "कॉपी किया गया"
 
-#: src/components/InviteDialog.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1779,6 +1778,7 @@ msgstr "कोड कॉपी करें"
 msgid "Copy diagram source"
 msgstr "डायग्राम स्रोत कॉपी करें"
 
+#: src/components/InviteDialog.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
 msgid "Copy link"
@@ -3179,10 +3179,6 @@ msgstr ""
 msgid "General"
 msgstr "सामान्य"
 
-#: src/components/InviteDialog.tsx
-msgid "Get a free month for each friend who starts a trial."
-msgstr "ट्रायल शुरू करने वाले हर दोस्त के लिए एक महीना मुफ़्त पाएँ।"
-
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
 msgstr "मोबाइल ऐप पाएँ"
@@ -3194,6 +3190,10 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "Git event"
 msgstr ""
+
+#: src/components/InviteDialog.tsx
+msgid "Give a friend {weeks} weeks free"
+msgstr "किसी दोस्त को {weeks} हफ़्ते मुफ़्त दें"
 
 #: src/pages/NotFound.tsx
 msgid "Go home"
@@ -3485,7 +3485,10 @@ msgstr "अंतराल इकाई"
 msgid "Invalid code"
 msgstr "अमान्य कोड"
 
-#: src/components/InviteDialog.tsx
+#: src/pages/shell/chat-header.tsx
+msgid "Invite a friend"
+msgstr "किसी दोस्त को आमंत्रित करें"
+
 #: src/components/SidebarFooter.tsx
 msgid "Invite friends"
 msgstr "दोस्तों को आमंत्रित करें"
@@ -5125,6 +5128,10 @@ msgstr "कुंजी बदलें"
 msgid "Replace value"
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "Replaces the login saved for {replacedSite}"
+msgstr "{replacedSite} के लिए सहेजे गए लॉगिन को बदलता है"
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
 msgstr "जवाब देता है"
@@ -6167,6 +6174,10 @@ msgstr "ये फ़ाइलें या विकल्प अब मेल 
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr ""
 
+#: src/components/InviteDialog.tsx
+msgid "They get {weeks} weeks free."
+msgstr "उन्हें {weeks} हफ़्ते मुफ़्त मिलते हैं।"
+
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
@@ -6888,6 +6899,10 @@ msgstr "आप यह विंडो बंद कर सकते हैं।
 #: src/components/call/VoiceChatCard.tsx
 msgid "You declined"
 msgstr "आपने कॉल अस्वीकार की"
+
+#: src/components/InviteDialog.tsx
+msgid "You get a free month when they start their trial with a new card."
+msgstr "जब वे नए कार्ड से अपना ट्रायल शुरू करते हैं, तो आपको एक महीना मुफ़्त मिलता है।"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "You have control"

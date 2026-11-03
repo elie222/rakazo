@@ -1759,7 +1759,6 @@ msgstr ""
 msgid "Copied"
 msgstr "コピーしました"
 
-#: src/components/InviteDialog.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1779,6 +1778,7 @@ msgstr "コードをコピー"
 msgid "Copy diagram source"
 msgstr "ダイアグラムのソースをコピー"
 
+#: src/components/InviteDialog.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
 msgid "Copy link"
@@ -3179,10 +3179,6 @@ msgstr ""
 msgid "General"
 msgstr "一般"
 
-#: src/components/InviteDialog.tsx
-msgid "Get a free month for each friend who starts a trial."
-msgstr "友だちがトライアルを開始するたびに、1か月無料になります。"
-
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
 msgstr "モバイルアプリを入手"
@@ -3194,6 +3190,10 @@ msgstr "準備中"
 #: src/pages/RoutineEditor.tsx
 msgid "Git event"
 msgstr "Gitイベント"
+
+#: src/components/InviteDialog.tsx
+msgid "Give a friend {weeks} weeks free"
+msgstr "友だちに{weeks}週間無料をプレゼント"
 
 #: src/pages/NotFound.tsx
 msgid "Go home"
@@ -3485,7 +3485,10 @@ msgstr "間隔の単位"
 msgid "Invalid code"
 msgstr "無効なコード"
 
-#: src/components/InviteDialog.tsx
+#: src/pages/shell/chat-header.tsx
+msgid "Invite a friend"
+msgstr "友だちを招待"
+
 #: src/components/SidebarFooter.tsx
 msgid "Invite friends"
 msgstr "友だちを招待"
@@ -5125,6 +5128,10 @@ msgstr "キーを置き換え"
 msgid "Replace value"
 msgstr "値を置き換え"
 
+#: src/components/AskCard.tsx
+msgid "Replaces the login saved for {replacedSite}"
+msgstr "{replacedSite} に保存されたログインを置き換えます"
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
 msgstr "返信対象"
@@ -6167,6 +6174,10 @@ msgstr "ファイルまたは選択内容が一致しなくなりました。も
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr "保存された設定を読み取れません。削除してから再度追加してください。"
 
+#: src/components/InviteDialog.tsx
+msgid "They get {weeks} weeks free."
+msgstr "友だちは{weeks}週間無料で使えます。"
+
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
@@ -6888,6 +6899,10 @@ msgstr "このウィンドウを閉じても構いません。"
 #: src/components/call/VoiceChatCard.tsx
 msgid "You declined"
 msgstr "辞退しました"
+
+#: src/components/InviteDialog.tsx
+msgid "You get a free month when they start their trial with a new card."
+msgstr "友だちが新しいカードでトライアルを始めると、あなたは1か月無料になります。"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "You have control"

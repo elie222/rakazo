@@ -305,6 +305,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Always allow": "Всегда разрешать",
   "Always allow this tool": "Всегда разрешать этот инструмент",
   "Always allow {site}": "Всегда разрешать {site}",
+  "Replaces the login saved for {site}": "Заменяет сохранённый вход для {site}",
   "Always allowed": "Всегда разрешено",
   "Android blocked notifications.": "Android заблокировал уведомления.",
   Answer: "Ответить",
@@ -1303,6 +1304,12 @@ export const RU_MESSAGES: Record<string, string> = {
   "Invite friends": "Пригласить друзей",
   "Get a free month for each friend who starts a trial.":
     "Получайте бесплатный месяц за каждого друга, который начнёт пробный период.",
+  "Invite a friend": "Пригласить друга",
+  "Give a friend {weeks} weeks free": "Подарите другу {weeks} недели бесплатно",
+  "They get {weeks} weeks free.": "Друг получает {weeks} недели бесплатно.",
+  "You get a free month when they start their trial with a new card.":
+    "Вы получите бесплатный месяц, когда друг начнёт пробный период с новой картой.",
+  "Share link": "Поделиться ссылкой",
   "1 free month earned": "Получен 1 бесплатный месяц",
   "{count} free months earned": "Бесплатных месяцев получено: {count}",
   "Submit a plugin": "Предложить плагин",

@@ -4,7 +4,12 @@ import type { Actor, AnalyticsEvent } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { billingAccountForOrganization, createBillingAccount, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { BILLING_RETURN_PATH, createBillingService, TRIAL_DAYS } from "./billing.js";
+import {
+  BILLING_RETURN_PATH,
+  createBillingService,
+  INVITED_TRIAL_DAYS,
+  TRIAL_DAYS,
+} from "./billing.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =
@@ -253,6 +258,35 @@ describePostgres("billing service (PostgreSQL)", () => {
       expect(accounts[0]!.customerId).toBe(accounts[1]!.customerId);
     } finally {
       await prisma.organization.deleteMany({ where: { id: raced } });
+    }
+  });
+
+  it("gives an invited organization a longer first trial", async () => {
+    const invited = `${organizationId}-invited`;
+    const referrer = `${organizationId}-referrer`;
+    const createdAt = new Date();
+    for (const id of [invited, referrer])
+      await prisma.organization.create({ data: { id, name: id, slug: id, createdAt } });
+    try {
+      await prisma.space.create({
+        data: { id: invited, organizationId: invited, name: "General", isDefault: true },
+      });
+      await prisma.member.create({
+        data: { id: invited, organizationId: invited, userId: ownerId, role: "owner", createdAt },
+      });
+      await prisma.referralCode.create({
+        data: { organizationId: referrer, code: `ref-${suffix}` },
+      });
+      const actor = { ...owner, spaceId: invited };
+      await billing.claimReferral(actor, `ref-${suffix}`);
+      await expect(billing.status(actor)).resolves.toMatchObject({
+        trialDays: INVITED_TRIAL_DAYS,
+      });
+      await billing.checkout(actor);
+      const account = await billingAccountForOrganization(prisma, invited);
+      expect(emulator.checkouts.get(account!.customerId)?.trialDays).toBe(INVITED_TRIAL_DAYS);
+    } finally {
+      await prisma.organization.deleteMany({ where: { id: { in: [invited, referrer] } } });
     }
   });
 });

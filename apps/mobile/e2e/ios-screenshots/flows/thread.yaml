@@ -59,3 +59,12 @@ name: Thread
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 05-attachment-preview
+# The catalog's offline billing has invites on, so the Pro account always sees the gift.
+- openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- tapOn: "Invite a friend"
+- extendedWaitUntil:
+    visible: ".*2 weeks free.*"
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 06-invite

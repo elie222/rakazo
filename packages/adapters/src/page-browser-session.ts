@@ -186,7 +186,7 @@ export class PageBrowserSession {
       throw new FillRefused(
         card
           ? `The page is not on the merchant's site for this purchase. ${REOPEN_MERCHANT_SITE}`
-          : `The page is not on the site this login was saved for. ${REOPEN_SAVED_SITE}`,
+          : `This login is saved for ${saved.origin}; the page is on ${page.origin}. ${REOPEN_SAVED_SITE}`,
       );
     }
   }

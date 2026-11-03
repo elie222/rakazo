@@ -1759,7 +1759,6 @@ msgstr "对话"
 msgid "Copied"
 msgstr "已复制"
 
-#: src/components/InviteDialog.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1779,6 +1778,7 @@ msgstr "复制代码"
 msgid "Copy diagram source"
 msgstr "复制图表源代码"
 
+#: src/components/InviteDialog.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
 msgid "Copy link"
@@ -3179,10 +3179,6 @@ msgstr ""
 msgid "General"
 msgstr "通用"
 
-#: src/components/InviteDialog.tsx
-msgid "Get a free month for each friend who starts a trial."
-msgstr "每有一位朋友开始试用，你就能获得一个月免费。"
-
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
 msgstr "获取移动应用"
@@ -3194,6 +3190,10 @@ msgstr "正在准备"
 #: src/pages/RoutineEditor.tsx
 msgid "Git event"
 msgstr "Git 事件"
+
+#: src/components/InviteDialog.tsx
+msgid "Give a friend {weeks} weeks free"
+msgstr "送朋友 {weeks} 周免费"
 
 #: src/pages/NotFound.tsx
 msgid "Go home"
@@ -3485,7 +3485,10 @@ msgstr "间隔单位"
 msgid "Invalid code"
 msgstr "验证码无效"
 
-#: src/components/InviteDialog.tsx
+#: src/pages/shell/chat-header.tsx
+msgid "Invite a friend"
+msgstr "邀请朋友"
+
 #: src/components/SidebarFooter.tsx
 msgid "Invite friends"
 msgstr "邀请朋友"
@@ -5125,6 +5128,10 @@ msgstr "替换密钥"
 msgid "Replace value"
 msgstr "替换值"
 
+#: src/components/AskCard.tsx
+msgid "Replaces the login saved for {replacedSite}"
+msgstr "替换为 {replacedSite} 保存的登录信息"
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
 msgstr "回复对象"
@@ -6167,6 +6174,10 @@ msgstr "这些文件或选择已不再匹配。请重新选择文件。"
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr "这些已保存的设置读不出来。请移除后再添加一次。"
 
+#: src/components/InviteDialog.tsx
+msgid "They get {weeks} weeks free."
+msgstr "对方可免费使用 {weeks} 周。"
+
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
@@ -6888,6 +6899,10 @@ msgstr "可以关闭此窗口。"
 #: src/components/call/VoiceChatCard.tsx
 msgid "You declined"
 msgstr "你已拒接"
+
+#: src/components/InviteDialog.tsx
+msgid "You get a free month when they start their trial with a new card."
+msgstr "对方用新卡开始试用后，你将获得一个月免费。"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "You have control"

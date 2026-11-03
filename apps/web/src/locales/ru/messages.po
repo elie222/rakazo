@@ -1759,7 +1759,6 @@ msgstr ""
 msgid "Copied"
 msgstr "Скопировано"
 
-#: src/components/InviteDialog.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1779,6 +1778,7 @@ msgstr "Копировать код"
 msgid "Copy diagram source"
 msgstr "Копировать источник диаграммы"
 
+#: src/components/InviteDialog.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
 msgid "Copy link"
@@ -3179,10 +3179,6 @@ msgstr ""
 msgid "General"
 msgstr "Общие"
 
-#: src/components/InviteDialog.tsx
-msgid "Get a free month for each friend who starts a trial."
-msgstr "Получайте бесплатный месяц за каждого друга, который начнёт пробный период."
-
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
 msgstr "Скачать мобильное приложение"
@@ -3194,6 +3190,10 @@ msgstr "Подготовка"
 #: src/pages/RoutineEditor.tsx
 msgid "Git event"
 msgstr "Git-событие"
+
+#: src/components/InviteDialog.tsx
+msgid "Give a friend {weeks} weeks free"
+msgstr "Подарите другу {weeks} недели бесплатно"
 
 #: src/pages/NotFound.tsx
 msgid "Go home"
@@ -3485,7 +3485,10 @@ msgstr "Единица интервала"
 msgid "Invalid code"
 msgstr "Неверный код"
 
-#: src/components/InviteDialog.tsx
+#: src/pages/shell/chat-header.tsx
+msgid "Invite a friend"
+msgstr "Пригласить друга"
+
 #: src/components/SidebarFooter.tsx
 msgid "Invite friends"
 msgstr "Пригласить друзей"
@@ -5125,6 +5128,10 @@ msgstr "Заменить ключ"
 msgid "Replace value"
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "Replaces the login saved for {replacedSite}"
+msgstr "Заменяет сохранённый вход для {replacedSite}"
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
 msgstr "Отвечает на"
@@ -6167,6 +6174,10 @@ msgstr "Эти файлы или выбор больше не совпадают
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr ""
 
+#: src/components/InviteDialog.tsx
+msgid "They get {weeks} weeks free."
+msgstr "Друг получает {weeks} недели бесплатно."
+
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
@@ -6888,6 +6899,10 @@ msgstr "Вы можете закрыть это окно."
 #: src/components/call/VoiceChatCard.tsx
 msgid "You declined"
 msgstr "Вы отклонили"
+
+#: src/components/InviteDialog.tsx
+msgid "You get a free month when they start their trial with a new card."
+msgstr "Вы получите бесплатный месяц, когда друг начнёт пробный период с новой картой."
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "You have control"

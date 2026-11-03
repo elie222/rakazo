@@ -683,6 +683,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Always allow": "Permitir siempre",
   "Always allow this tool": "Permitir siempre esta herramienta",
   "Always allow {site}": "Permitir siempre {site}",
+  "Replaces the login saved for {site}": "Reemplaza el inicio de sesión guardado para {site}",
   "Could not submit answer": "No se pudo enviar la respuesta",
   Deny: "Denegar",
   "Please try again.": "Inténtalo de nuevo.",
@@ -1208,6 +1209,12 @@ export const ES_MESSAGES: Record<string, string> = {
   "Invite friends": "Invitar amigos",
   "Get a free month for each friend who starts a trial.":
     "Consigue un mes gratis por cada amigo que empiece una prueba.",
+  "Invite a friend": "Invitar a un amigo",
+  "Give a friend {weeks} weeks free": "Regala a un amigo {weeks} semanas gratis",
+  "They get {weeks} weeks free.": "Recibe {weeks} semanas gratis.",
+  "You get a free month when they start their trial with a new card.":
+    "Tú recibes un mes gratis cuando empiecen su prueba con una tarjeta nueva.",
+  "Share link": "Compartir enlace",
   "1 free month earned": "1 mes gratis ganado",
   "{count} free months earned": "{count} meses gratis ganados",
   "Submit a plugin": "Enviar un plugin",

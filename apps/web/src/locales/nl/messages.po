@@ -1759,7 +1759,6 @@ msgstr ""
 msgid "Copied"
 msgstr "Gekopieerd"
 
-#: src/components/InviteDialog.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1779,6 +1778,7 @@ msgstr "Code kopiëren"
 msgid "Copy diagram source"
 msgstr "Diagrambron kopiëren"
 
+#: src/components/InviteDialog.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
 msgid "Copy link"
@@ -3179,10 +3179,6 @@ msgstr ""
 msgid "General"
 msgstr "Algemeen"
 
-#: src/components/InviteDialog.tsx
-msgid "Get a free month for each friend who starts a trial."
-msgstr "Krijg een gratis maand voor elke vriend die een proefperiode start."
-
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
 msgstr "De mobiele app downloaden"
@@ -3194,6 +3190,10 @@ msgstr "Aan het voorbereiden"
 #: src/pages/RoutineEditor.tsx
 msgid "Git event"
 msgstr "Git-gebeurtenis"
+
+#: src/components/InviteDialog.tsx
+msgid "Give a friend {weeks} weeks free"
+msgstr "Geef een vriend {weeks} weken gratis"
 
 #: src/pages/NotFound.tsx
 msgid "Go home"
@@ -3485,7 +3485,10 @@ msgstr "Intervaleenheid"
 msgid "Invalid code"
 msgstr "Ongeldige code"
 
-#: src/components/InviteDialog.tsx
+#: src/pages/shell/chat-header.tsx
+msgid "Invite a friend"
+msgstr "Nodig een vriend uit"
+
 #: src/components/SidebarFooter.tsx
 msgid "Invite friends"
 msgstr "Vrienden uitnodigen"
@@ -5125,6 +5128,10 @@ msgstr "Sleutel vervangen"
 msgid "Replace value"
 msgstr "Waarde vervangen"
 
+#: src/components/AskCard.tsx
+msgid "Replaces the login saved for {replacedSite}"
+msgstr "Vervangt de opgeslagen login voor {replacedSite}"
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
 msgstr "Reageert op"
@@ -6167,6 +6174,10 @@ msgstr "Deze bestanden of keuzes kloppen niet meer. Kies de bestanden opnieuw."
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr "Deze opgeslagen instellingen kunnen niet worden gelezen. Verwijder ze en voeg ze opnieuw toe."
 
+#: src/components/InviteDialog.tsx
+msgid "They get {weeks} weeks free."
+msgstr "Zij krijgen {weeks} weken gratis."
+
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
@@ -6888,6 +6899,10 @@ msgstr "Je kunt dit venster sluiten."
 #: src/components/call/VoiceChatCard.tsx
 msgid "You declined"
 msgstr "Je hebt geweigerd"
+
+#: src/components/InviteDialog.tsx
+msgid "You get a free month when they start their trial with a new card."
+msgstr "Jij krijgt een gratis maand zodra zij hun proefperiode met een nieuwe kaart starten."
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "You have control"
