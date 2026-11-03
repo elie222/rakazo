@@ -70,8 +70,9 @@ function textLength(message: ToolResultMessage): number {
 
 /**
  * Keep the latest screenshots within an optional model image budget. The runtime context policy
- * applies this to every request, so a run never carries more than the default two (fewer under a
- * smaller model limit). An older frame keeps its result text and gains a one-line note.
+ * applies this only when it rebuilds a run's transcript; between rebuilds screenshots accumulate
+ * up to the model's limit, so a rebuild keeps at most the default two to leave room for more.
+ * An older frame keeps its result text and gains a one-line note.
  */
 export function pruneComputerScreenshotContext(
   messages: Message[],
