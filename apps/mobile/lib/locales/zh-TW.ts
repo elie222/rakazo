@@ -261,6 +261,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   Sent: "已傳送",
   " (unread)": "（未讀）",
   Appearance: "外觀",
+  "Bot style": "機器人樣式",
+  "Couldn't update bot style": "無法更新機器人樣式",
   Dark: "深色",
   Light: "淺色",
   System: "跟隨系統",

@@ -676,6 +676,8 @@ export const ES_MESSAGES: Record<string, string> = {
   "This device": "Este dispositivo",
   "Agent messages": "Mensajes de agentes",
   Appearance: "Apariencia",
+  "Bot style": "Estilo de bots",
+  "Couldn't update bot style": "No se pudo actualizar el estilo de bots",
   Archived: "Archivado",
   Cancel: "Cancelar",
   Close: "Cerrar",

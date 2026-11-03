@@ -1119,6 +1119,10 @@ msgstr "Bot 화면"
 msgid "Bot screen preview"
 msgstr "Bot 화면 미리보기"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Bot style"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Bot's model"
 msgstr "봇의 모델"
@@ -2416,6 +2420,10 @@ msgstr "이 페이지를 불러올 수 없습니다. 다시 시도하세요."
 
 #: src/pages/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
+msgstr ""
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Couldn't update bot style"
 msgstr ""
 
 #: src/pages/MessagingSettingsPanel.tsx
@@ -4657,6 +4665,7 @@ msgstr ""
 msgid "Organization API key"
 msgstr "조직 API 키"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Original"
 msgstr ""
@@ -4968,6 +4977,7 @@ msgstr "풀 리퀘스트"
 msgid "Queued"
 msgstr "대기 중"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Rakazo"
 msgstr "Rakazo"

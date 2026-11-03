@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { Bot, BotSection, Group, Space } from "@rakazo/contracts";
+import type { Bot, BotAvatarSet, BotSection, Group, Space } from "@rakazo/contracts";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -101,6 +101,7 @@ export function ShellDialogs({
   openSpaceSettings,
   closeMobileSidebar,
   createBot,
+  botAvatarSet,
   clearOpenThread,
   deleteRoutineDialogProps,
   paletteActions,
@@ -119,6 +120,8 @@ export function ShellDialogs({
   openSpaceSettings: (spaceId: string) => void;
   closeMobileSidebar: () => void;
   createBot: (input: CreateBotDialogInput) => Promise<void>;
+  /** The account's set, which a new bot takes. */
+  botAvatarSet: BotAvatarSet;
   clearOpenThread: () => void;
   deleteRoutineDialogProps: ComponentProps<typeof DeleteItemDialog> | null;
   paletteActions: CommandPaletteAction[];
@@ -328,7 +331,11 @@ export function ShellDialogs({
       />
 
       {createBotOpen ? (
-        <CreateBotDialog onCancel={() => setCreateBotOpen(false)} onCreate={createBot} />
+        <CreateBotDialog
+          avatarSet={botAvatarSet}
+          onCancel={() => setCreateBotOpen(false)}
+          onCreate={createBot}
+        />
       ) : null}
 
       {newSpaceOpen ? (

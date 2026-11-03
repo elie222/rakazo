@@ -16,6 +16,7 @@ import {
 import { urlSite } from "@rakazo/core/egress";
 import {
   auditLogOrganization,
+  commitBotUpdate,
   findAutoReviewPreference,
   findDefaultVoiceCredential,
   findModelCredential,
@@ -28,11 +29,13 @@ import {
   Prisma,
   removeApprovalRule,
   runAsSystem,
+  runAsTenant,
   saveApprovalRule,
   saveAutoReviewPreference,
   selectVoicePreference,
   voicePreferenceTarget,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { createAccessGrant, listAccessGrants, revokeAccessGrant } from "../access-grants.js";
 import { requireAdmin } from "../admins.js";
 import { aiConsentStatus, allowAiConsent } from "../ai-consent.js";
@@ -149,14 +152,57 @@ export function accountRoutes(ctx: RouterContext) {
     },
     preferences: {
       update: authed.preferences.update.handler(async ({ context, input }): Promise<Me> => {
+        const userId = context.actor.userId;
+        const botAvatarSet = input.botAvatarSet;
+        // Waits for any bot creation holding the user row, so no new bot is missed below.
         await deps.prisma.user.update({
-          where: { id: context.actor.userId },
+          where: { id: userId },
           // An avatar style from an older app is accepted and ignored: there is only one.
           data: {
             ...(input.timezone === undefined ? {} : { timezone: input.timezone }),
             ...(input.locale === undefined ? {} : { locale: input.locale }),
+            ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
           },
         });
+        if (botAvatarSet !== undefined) {
+          // Every bot of this user not pinned to another set follows the new default, in every
+          // space they own bots in, announced like any edit so other devices redraw it.
+          const bots = await runAsSystem("restyle the user's own bots in all their spaces", () =>
+            deps.prisma.bot.findMany({
+              where: { userId, avatarSetPinned: false, avatarSet: { not: botAvatarSet } },
+              select: { id: true, spaceId: true, thread: { select: { id: true } } },
+            }),
+          );
+          for (const bot of bots) {
+            const threadId = bot.thread?.id;
+            if (!threadId) continue;
+            // A newer save changed the default again: its own pass owns the remaining bots.
+            const current = await deps.prisma.user.findUniqueOrThrow({
+              where: { id: userId },
+              select: { botAvatarSet: true },
+            });
+            if (current.botAvatarSet !== botAvatarSet) break;
+            // The default is saved; a bot that fails here keeps its style until the next save.
+            await runAsTenant({ spaceId: bot.spaceId, userId }, () =>
+              commitBotUpdate({
+                prisma: deps.prisma,
+                notify: (thread, seq) => deps.events.notify(thread, seq),
+                spaceId: bot.spaceId,
+                threadId,
+                botId: bot.id,
+                emitBotUpdated: true,
+                // Pinned since it was listed: leave the owner's choice alone.
+                expectedSettings: { avatarSetPinned: false },
+                data: { avatarSet: botAvatarSet },
+              }),
+            ).catch((error) => {
+              if (
+                !(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025")
+              )
+                getLogger().error("bot style restyle", error);
+            });
+          }
+        }
         return meDto(deps, context.actor);
       }),
       adoptTimezone: authed.preferences.adoptTimezone.handler(

@@ -86,12 +86,14 @@ describe("account preferences", () => {
         return { count: 1 };
       },
     );
+    const botFindMany = vi.fn().mockResolvedValue([]);
     const prisma = {
       user: {
         update,
         updateMany,
         findUniqueOrThrow: vi.fn().mockResolvedValue(user),
       },
+      bot: { findMany: botFindMany },
       userModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
@@ -112,7 +114,14 @@ describe("account preferences", () => {
       email: "user@rakazo.test",
       isDeploymentOwner: true,
     } satisfies Actor;
-    return { update, updateMany, deps, actor, handler: new RPCHandler(createRouter(deps)) };
+    return {
+      update,
+      updateMany,
+      botFindMany,
+      deps,
+      actor,
+      handler: new RPCHandler(createRouter(deps)),
+    };
   }
 
   it("records only validated screens under the authenticated actor", async () => {
@@ -324,6 +333,31 @@ describe("account preferences", () => {
     await expect(response.json()).resolves.toEqual({
       json: expect.objectContaining({ avatarStyle: "organic" }),
     });
+  });
+
+  it("saves the bot style and restyles only bots not pinned to another set", async () => {
+    const { update, botFindMany, actor, handler } = preferencesDeps("organic");
+
+    const response = await handle(
+      handler,
+      new Request("http://127.0.0.1/rpc/preferences/update", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { botAvatarSet: "rakazo" } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+
+    expect(response.status).toBe(200);
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { botAvatarSet: "rakazo" },
+    });
+    expect(botFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: "user-1", avatarSetPinned: false, avatarSet: { not: "rakazo" } },
+      }),
+    );
   });
 
   it("rejects avatar styles outside robot|organic", async () => {

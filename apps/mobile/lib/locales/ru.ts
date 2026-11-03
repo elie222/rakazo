@@ -301,6 +301,8 @@ export const RU_MESSAGES: Record<string, string> = {
   Sent: "Отправлено",
   " (unread)": " (непрочитано)",
   Appearance: "Внешний вид",
+  "Bot style": "Стиль ботов",
+  "Couldn't update bot style": "Не удалось изменить стиль ботов",
   Dark: "Тёмная",
   Light: "Светлая",
   System: "Системная",

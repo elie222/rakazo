@@ -1119,6 +1119,10 @@ msgstr "Pantalla del bot"
 msgid "Bot screen preview"
 msgstr "Vista previa de la pantalla del bot"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Bot style"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Bot's model"
 msgstr "Modelo del bot"
@@ -2417,6 +2421,10 @@ msgstr "No se pudo cargar esta página. Inténtalo de nuevo."
 #: src/pages/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
 msgstr "No se pudo cargar tu billetera"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Couldn't update bot style"
+msgstr ""
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
@@ -4657,6 +4665,7 @@ msgstr ""
 msgid "Organization API key"
 msgstr "Clave de API de organización"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Original"
 msgstr "Original"
@@ -4968,6 +4977,7 @@ msgstr "Solicitud de incorporación"
 msgid "Queued"
 msgstr "En cola"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Rakazo"
 msgstr "Rakazo"

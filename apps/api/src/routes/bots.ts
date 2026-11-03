@@ -310,7 +310,9 @@ export function botsRoutes(ctx: RouterContext) {
       create: authed.bots.create.handler(async ({ context, input }) => {
         let bot: Bot;
         try {
-          bot = await repos.createBot(context.actor, input);
+          // Older apps always send Original, which would pin every new bot to it.
+          const { avatarSet: _ignored, ...request } = input;
+          bot = await repos.createBot(context.actor, request);
         } catch (error) {
           throw mapSpaceLifecycleError(error);
         }
@@ -346,6 +348,7 @@ export function botsRoutes(ctx: RouterContext) {
             dailyCheckIns: source.dailyCheckIns,
             color: source.color,
             avatarSet: resolveBotAvatarSet(source.avatarSet),
+            avatarSetPinned: source.avatarSetPinned,
             computerMode: source.computer?.scope === "dedicated" ? "dedicated" : "team",
             modelProvider: source.modelProvider,
             modelId: source.modelId,
@@ -405,6 +408,16 @@ export function botsRoutes(ctx: RouterContext) {
         if (!modelChange.ok) throw new ORPCError("BAD_REQUEST", { message: modelChange.error });
         const thinkingLevel = input.thinkingLevel;
         if (!existing.thread) throw new IsolationError();
+        // Picking a set on one bot pins it unless it is the owner's default, which unpins it.
+        const avatarSetPinned =
+          input.avatarSet === undefined
+            ? undefined
+            : await deps.prisma.user
+                .findUniqueOrThrow({
+                  where: { id: context.actor.userId },
+                  select: { botAvatarSet: true },
+                })
+                .then((user) => input.avatarSet !== resolveBotAvatarSet(user.botAvatarSet));
         await commitBotUpdate({
           prisma: deps.prisma,
           notify: (threadId, seq) => deps.events.notify(threadId, seq),
@@ -424,6 +437,7 @@ export function botsRoutes(ctx: RouterContext) {
             notifyOnFinish: input.notifyOnFinish,
             color: input.color,
             avatarSet: input.avatarSet,
+            avatarSetPinned,
             pinned: input.pinned,
             memoryScope: input.memoryScope,
             sectionId: input.sectionId,

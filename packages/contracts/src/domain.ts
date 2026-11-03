@@ -405,6 +405,7 @@ export const CreateBotInput = z.object({
   dailyCheckIns: z.boolean().optional(),
   fleetManagement: z.boolean().optional(),
   color: BotAvatarValueSchema.optional(),
+  /** Ignored: a new bot takes its owner's set. Older apps still send one. */
   avatarSet: BotAvatarSetSchema.optional(),
   /** Organic body family (0-9); the server picks a matching id unless one is reserved. */
   avatarFamily: z.number().int().min(0).max(9).optional(),
@@ -1929,6 +1930,8 @@ export const MeSchema = z.object({
   /** Whether this account can add stdio MCP servers here. Absent from older servers. */
   mcpStdioEnabled: z.boolean().default(false),
   avatarStyle: AvatarStyleSchema,
+  /** The icon set new and unpinned bots wear. Absent from servers that predate it. */
+  botAvatarSet: BotAvatarSetSchema.optional(),
   /**
    * The user's IANA timezone, or null when unset (bots then see UTC only).
    * Absent from servers that predate it.

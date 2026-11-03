@@ -697,6 +697,8 @@ export const JA_MESSAGES: Record<string, string> = {
   "This device": "このデバイス",
   "Agent messages": "エージェントのメッセージ",
   Appearance: "外観",
+  "Bot style": "ボットのスタイル",
+  "Couldn't update bot style": "ボットのスタイルを更新できませんでした",
   Archived: "アーカイブ済み",
   Cancel: "キャンセル",
   Close: "閉じる",

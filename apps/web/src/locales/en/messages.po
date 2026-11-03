@@ -1119,6 +1119,10 @@ msgstr "Bot screen"
 msgid "Bot screen preview"
 msgstr "Bot screen preview"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Bot style"
+msgstr "Bot style"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Bot's model"
 msgstr "Bot's model"
@@ -2417,6 +2421,10 @@ msgstr "Couldn't load this page. Try again."
 #: src/pages/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
 msgstr "Couldn't load your wallet"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Couldn't update bot style"
+msgstr "Couldn't update bot style"
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
@@ -4657,6 +4665,7 @@ msgstr "Organization"
 msgid "Organization API key"
 msgstr "Organization API key"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Original"
 msgstr "Original"
@@ -4968,6 +4977,7 @@ msgstr "Pull request"
 msgid "Queued"
 msgstr "Queued"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Rakazo"
 msgstr "Rakazo"
