@@ -124,7 +124,14 @@ export default function ApprovalRules() {
   const addToolRef = useRef(addTool);
   addToolRef.current = addTool;
 
+  const canAdd = rules !== null && !loadError;
   useLayoutEffect(() => {
+    if (!canAdd) {
+      navigation.setOptions(
+        iosAtLeast(26) ? { unstable_headerRightItems: () => [] } : { headerRight: () => null },
+      );
+      return;
+    }
     const open = () => {
       if (Platform.OS !== "ios") {
         setError(null);
@@ -159,7 +166,7 @@ export default function ApprovalRules() {
             ),
           },
     );
-  }, [navigation, t]);
+  }, [canAdd, navigation, t]);
 
   const effectLabel = (effect: ActionApprovalRule["effect"]) =>
     effect === "always_allow" ? t("Allow") : effect === "deny" ? t("Block") : t("Ask");
