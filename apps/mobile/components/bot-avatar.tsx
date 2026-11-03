@@ -17,11 +17,10 @@ import {
   botAvatarActivity,
   isRunWorking,
   organicAvatarPath,
-  SHIPPED_BOT_AVATAR_CENTER,
+  SHIPPED_BOT_AVATAR_EYES,
   SHIPPED_BOT_AVATAR_VIEWBOX,
   usesLogoAvatar,
 } from "@rakazo/core";
-import { botEyeColor } from "@rakazo/ui-tokens";
 import { memo, useSyncExternalStore } from "react";
 import { Image, Pressable, View } from "react-native";
 import Animated, {
@@ -29,10 +28,10 @@ import Animated, {
   useAnimatedStyle,
   useReducedMotion,
 } from "react-native-reanimated";
-import Svg, { Ellipse, G, Path, Rect } from "react-native-svg";
+import Svg, { G, Path, Rect } from "react-native-svg";
 import type { AvatarLife } from "../lib/avatar-life";
 import { useAvatarOnScreen, useLife, usePoke, useSettling } from "../lib/avatar-life";
-import { mobileBotAvatarPresentation } from "../lib/bot-avatar";
+import { botEyeInk, mobileBotAvatarPresentation } from "../lib/bot-avatar";
 import { useI18n } from "../lib/i18n";
 import { mobileLogoAvatarActivity } from "../lib/logo-avatar-activity";
 import { useMobileTokens } from "../lib/native";
@@ -40,7 +39,6 @@ import { LogoAvatar } from "./logo-avatar";
 import { NativeSymbol } from "./native-symbol";
 
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
-const AnimatedEllipse = Animated.createAnimatedComponent(Ellipse);
 
 /** How far (0–1) the face has turned into the typing dots, for a morph of 0–1. */
 function morphGrow(morph: number): number {
@@ -272,6 +270,10 @@ function LegacyBotAvatar({
   // itself that sign, so it carries none.
   const isWorking = isRunWorking(status) && !composing && motion !== "running";
   const parsed = mobileBotAvatarPresentation(color);
+  const eyeColor = botEyeInk(
+    parsed.kind === "shape" || parsed.kind === "color" ? parsed.color : color,
+    useMobileTokens(),
+  );
   const onScreen = useAvatarOnScreen();
   const reducedMotion = useReducedMotion();
   const settling = useSettling(state);
@@ -305,7 +307,7 @@ function LegacyBotAvatar({
     ) : parsed.kind === "shape" ? (
       <ShippedShapeAvatar
         color={parsed.color}
-        eyeColor={parsed.eyeColor}
+        eyeColor={eyeColor}
         shapePath={parsed.shapePath}
         size={size}
         life={life}
@@ -314,6 +316,7 @@ function LegacyBotAvatar({
     ) : (
       <OrganicAvatar
         color={fillColor}
+        eyeColor={eyeColor}
         identity={identity}
         size={size}
         life={life}
@@ -395,27 +398,24 @@ function ShippedShapeAvatar({
   life: AvatarLife;
   bodyStyle: BodyStyle;
 }) {
-  const center = SHIPPED_BOT_AVATAR_CENTER;
-  // Offsets are in motion units, scaled to the shape's view box.
-  const eyeProps = (cx: number) => () => {
+  const eyes = SHIPPED_BOT_AVATAR_EYES;
+  // Offsets are in motion units, scaled to the shape's view box; eyes close about their centre.
+  const eyeProps = (x: number) => () => {
     "worklet";
     const state = eyeState(life);
     const scale = SHAPE_UNITS / AVATAR_MOTION_UNITS;
-    return {
-      cx: cx + state.x * scale,
-      cy: center - 8 + state.y * scale,
-      ry: state.hidden ? 0 : 7 * state.lid,
-    };
+    const height = state.hidden ? 0 : eyes.height * state.lid;
+    return { x: x + state.x * scale, y: eyes.centerY - height / 2 + state.y * scale, height };
   };
-  const leftEye = useAnimatedProps(eyeProps(center - 29));
-  const rightEye = useAnimatedProps(eyeProps(center + 29));
+  const leftEye = useAnimatedProps(eyeProps(eyes.leftX));
+  const rightEye = useAnimatedProps(eyeProps(eyes.rightX));
   return (
     <Animated.View style={[{ width: size, height: size }, bodyStyle]}>
       <Svg width={size} height={size} viewBox={SHIPPED_BOT_AVATAR_VIEWBOX}>
         <Path d={shapePath} fill={color} />
         <G fill={eyeColor}>
-          <AnimatedEllipse animatedProps={leftEye} rx={10} />
-          <AnimatedEllipse animatedProps={rightEye} rx={10} />
+          <AnimatedRect animatedProps={leftEye} width={eyes.width} rx={eyes.width / 2} />
+          <AnimatedRect animatedProps={rightEye} width={eyes.width} rx={eyes.width / 2} />
         </G>
       </Svg>
     </Animated.View>
@@ -424,12 +424,14 @@ function ShippedShapeAvatar({
 
 function OrganicAvatar({
   color,
+  eyeColor,
   identity,
   size,
   life,
   bodyStyle,
 }: {
   color: string;
+  eyeColor: string;
   identity?: string;
   size: number;
   life: AvatarLife;
@@ -451,8 +453,8 @@ function OrganicAvatar({
       <Svg width={size} height={size} viewBox="-60 -60 120 120">
         <Path d={organicAvatarPath(seed)} fill={color} />
         <G transform={`rotate(${(seed % 9) - 4})`}>
-          <AnimatedRect animatedProps={leftEyeProps} width={7} rx={3.5} fill={botEyeColor} />
-          <AnimatedRect animatedProps={rightEyeProps} width={7} rx={3.5} fill={botEyeColor} />
+          <AnimatedRect animatedProps={leftEyeProps} width={7} rx={3.5} fill={eyeColor} />
+          <AnimatedRect animatedProps={rightEyeProps} width={7} rx={3.5} fill={eyeColor} />
         </G>
       </Svg>
     </Animated.View>

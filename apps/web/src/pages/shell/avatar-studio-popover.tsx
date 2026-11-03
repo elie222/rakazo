@@ -16,6 +16,7 @@ import {
   DialogTitle,
   defaultBotAvatarValue,
   parseBotAvatar,
+  resolvePersonaColorDef,
   Tabs,
   TabsContent,
   TabsList,
@@ -47,7 +48,11 @@ export function BotLookPicker({
   onChange: (value: string, identity?: string) => void;
 }) {
   const parsed = parseBotAvatar(value);
-  const currentColor = parsed.color || DEFAULT_BOT_AVATAR_COLOR;
+  // A bot saved with a color's earlier, deeper value still selects and keeps that color.
+  const currentColor = resolvePersonaColorDef(
+    "preview",
+    parsed.color || DEFAULT_BOT_AVATAR_COLOR,
+  ).hex;
   const isDefaultLook = !parsed.isImage && parsed.shapeIndex === undefined;
 
   function selectColor(color: string) {
@@ -124,7 +129,7 @@ export function BotLookPicker({
         </div>
       ) : null}
 
-      <div className="border-t border-border pt-2">
+      <div>
         {organicIdentities ? null : (
           <div className="mb-2 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
             <Trans>Color</Trans>
@@ -254,7 +259,7 @@ export function AvatarStudioPopover({
           status={status}
           avatarSet={avatarSet}
         />
-        <div className="absolute -right-1 -bottom-1 flex size-6 items-center justify-center rounded-full border-2 border-background bg-secondary text-foreground shadow-md transition-transform group-hover:scale-110">
+        <div className="absolute -right-1 -bottom-1 flex size-6 items-center justify-center rounded-full border-2 border-background bg-secondary text-foreground shadow-md opacity-0 transition group-hover:scale-110 group-hover:opacity-100 group-focus-visible:opacity-100 [@media(hover:none)]:opacity-100">
           <Pencil size={12} strokeWidth={2.2} />
         </div>
       </button>

@@ -1,15 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   BOT_COLOR_LIST,
+  botEyeTone,
   chatUserBubbleColors,
   contrastRatio,
-  resolvePersonaColorDef,
 } from "./bot-avatar-colors.js";
 
-describe("persona avatar colors", () => {
-  it("keeps Amber Gold on dark eyes instead of a brightness heuristic", () => {
-    expect(resolvePersonaColorDef("preview", "#EAB308").eyeColor).toBe("#141414");
-    expect(resolvePersonaColorDef("preview", "#8B5CF6").eyeColor).toBe("#FFFFFF");
+describe("botEyeTone", () => {
+  it("cuts eyes in the page color unless the body is nearly white or black", () => {
+    expect(botEyeTone("#FF5EB1")).toBe("page");
+    expect(botEyeTone("#FFFFFF")).toBe("dark");
+    expect(botEyeTone("#111111")).toBe("light");
   });
 });
 
@@ -18,10 +19,10 @@ describe("chatUserBubbleColors", () => {
     const red = chatUserBubbleColors("#EF4444::shape_2", "bot-1");
     expect(red?.foreground).toBe("#FFFFFF");
     expect(contrastRatio(red!.background, red!.foreground)).toBeGreaterThanOrEqual(4.5);
-    expect(chatUserBubbleColors("#64748B", "bot-1")).toEqual({
-      background: "#64748B",
-      foreground: "#FFFFFF",
-    });
+    // A bot saved with a color's earlier value wears that color's current bubble.
+    expect(chatUserBubbleColors("#64748B", "bot-1")).toEqual(
+      chatUserBubbleColors("#94A3B8", "bot-1"),
+    );
   });
 
   it.each(BOT_COLOR_LIST.filter((color) => color.id !== "white"))(
@@ -33,6 +34,13 @@ describe("chatUserBubbleColors", () => {
       expect(contrastRatio(bubble!.background, bubble!.foreground)).toBeGreaterThanOrEqual(4.5);
     },
   );
+
+  it("deepens bright colors without turning them muddy", () => {
+    const orange = chatUserBubbleColors("#FF781C", "bot-1")!;
+    // Darkening in RGB pulled orange toward brown; OKLCH keeps it orange.
+    expect(orange.background).toBe("#CD4A00");
+    expect(contrastRatio(orange.background, orange.foreground)).toBeGreaterThanOrEqual(4.5);
+  });
 
   it("deepens custom violet for readable white text", () => {
     const bubble = chatUserBubbleColors("#A855F7", "bot-1")!;
