@@ -321,6 +321,15 @@ describe("purchase detection in the page helper", () => {
     expect(helper.purchaseOfNode(win.document.getElementById("go")!)?.reason).toBe("payment_page");
   });
 
+  it("shows the amount a control's aria label names when its text names none", () => {
+    const { intent } = page(`<p>Total: $90</p><button aria-label="Pay $113">Pay</button>`);
+    expect(intent("Pay $113")).toMatchObject({
+      amount: "$113",
+      amountFrom: "button",
+      label: "Pay",
+    });
+  });
+
   it("counts a disabled control as no purchase", () => {
     const { helper, win } = page(`<button id="b">Pay now</button>`);
     const button = win.document.getElementById("b")!;

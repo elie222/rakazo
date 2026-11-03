@@ -199,7 +199,6 @@ export class ComputerBrowserProvider implements BrowserProvider {
         url: typeof live.url === "string" ? live.url : "",
         title: typeof live.title === "string" ? live.title : "",
         ...(tree !== undefined ? { tree, elements } : {}),
-        ...(live.purchase ? { purchase: live.purchase } : {}),
         ...downloadsOf(live),
         error: live.error || DETACHED_MESSAGE,
       };

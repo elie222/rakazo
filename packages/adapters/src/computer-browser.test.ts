@@ -415,14 +415,12 @@ describe("page browser safety", () => {
     expect(result).not.toHaveProperty("tree");
   });
 
-  it("passes on the purchase a refused click would have completed", async () => {
-    const purchase = { site: "shop.example.test", label: "Pay $5", amount: "$5" };
+  it("passes on a refused purchase click as settled, with no desktop fallback", async () => {
     const provider = new ComputerBrowserProvider({
       liveDriver: async () => ({
         ok: false,
         completed: 0,
         uncertain: false,
-        purchase,
         error: "This click would complete a purchase",
       }),
     });
@@ -431,7 +429,7 @@ describe("page browser safety", () => {
       { actions: [{ kind: "click", ref: "e1" }] },
       baseContext,
     );
-    expect(result).toMatchObject({ ok: false, uncertain: false, purchase });
+    expect(result).toMatchObject({ ok: false, uncertain: false });
     expect(result).not.toHaveProperty("fallback");
   });
 

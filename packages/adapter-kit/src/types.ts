@@ -1192,8 +1192,6 @@ export interface BrowserActResult {
   note?: string;
   /** A JavaScript dialog the page has open on the screen, which page tools cannot answer. */
   dialog?: string;
-  /** The page browser stopped before a click that completes a purchase, which needs the user's approval. */
-  purchase?: BrowserPurchase;
 }
 
 /** A purchase step as the page shows it: the label and amount are page text. */
@@ -1242,9 +1240,9 @@ export type PageBrowserCommand =
 
 export type PageBrowserResult = Partial<BrowserSnapshotResult & BrowserActResult> & {
   ok: boolean;
-  /** A purchase check: the page's origin and host. */
-  origin?: string;
+  /** A purchase check: the page's host, and what the purchase is as the page shows it. */
   site?: string;
+  purchase?: unknown;
 };
 
 export type CloudAgentStatus = "running" | "finished" | "failed" | "cancelled" | "expired";

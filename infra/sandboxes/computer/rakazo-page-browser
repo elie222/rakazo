@@ -1918,8 +1918,9 @@ PURCHASE_HELPERS = r"""
   // Page text is cut by characters, not code units, so a cut never leaves half an emoji.
   const cut = (text, max) => Array.from(text).slice(0, max).join("");
   // What the card shows: the button's text, and the amount the button names or else the page's total.
-  function shownPurchase(reason, label) {
-    const named = moneyIn(label, false);
+  // `words`: everything the control says, so an amount only its aria label names is the one shown.
+  function shownPurchase(reason, label, words = [label]) {
+    const named = words.map((word) => moneyIn(word, false)).find(Boolean) || "";
     return { reason, label: cut(label, 80), amount: named || totalShown(), amountFrom: named ? "button" : "page" };
   }
   // `frame`: the page shows a payment provider's card frame, which only the caller can vouch for.
@@ -1932,7 +1933,7 @@ PURCHASE_HELPERS = r"""
         || el.getAttribute("role") === "button" || pressable(el)) && isFinalStep(words, el)) reason = "final_step";
     else if ((frame || pageCards().length) && pressable(el) && !inSurroundings(el)
         && !words.some((word) => NOT_PAYING.test(phrase(word)))) reason = "payment_page";
-    return reason ? shownPurchase(reason, words[0] || "") : null;
+    return reason ? shownPurchase(reason, words[0] || "", words) : null;
   }
   // The control a click at this spot of the page presses, unless it lands on a field, label or nothing.
   function pressedControl(hit) {
