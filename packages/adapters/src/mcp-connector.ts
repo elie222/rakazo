@@ -352,7 +352,11 @@ function credentialContentSecrets(content: string): string[] {
 async function closeEntry(entry: { session: McpSession; credentialDir?: string }): Promise<void> {
   await closeMcpResource(() =>
     entry.session.close(async () => {
-      if (entry.credentialDir) await rm(entry.credentialDir, { recursive: true, force: true });
+      if (entry.credentialDir)
+        await rm(entry.credentialDir, { recursive: true, force: true }).catch(() => {
+          // Filesystem errors can include credential paths; report only the failure.
+          getLogger().warn("MCP credential file cleanup failed");
+        });
     }),
   );
 }
