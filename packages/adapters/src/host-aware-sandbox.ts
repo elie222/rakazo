@@ -56,7 +56,12 @@ export async function createRunSandbox(
       createProvider: (settings) =>
         createBaseRunSandbox(settings.provider, {
           ...opts,
-          ...computerProviderDescriptor(settings.provider).verify(settings.values),
+          // Only what Settings holds overrides the environment; limits it has no field for remain.
+          ...Object.fromEntries(
+            Object.entries(
+              computerProviderDescriptor(settings.provider).verify(settings.values),
+            ).filter(([, value]) => value !== undefined),
+          ),
         }),
     },
   );

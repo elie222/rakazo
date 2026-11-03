@@ -210,13 +210,20 @@ function makeAccountDeps(sandboxProvider = "docker") {
     Object.entries(where).every(([key, value]) =>
       value && typeof value === "object" && "not" in value
         ? row[key as keyof SecretRow] !== value.not
-        : row[key as keyof SecretRow] === value,
+        : value && typeof value === "object" && "in" in value
+          ? (value.in as unknown[]).includes(row[key as keyof SecretRow])
+          : row[key as keyof SecretRow] === value,
     );
   const secret = {
     findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
       const row = rows.findLast((candidate) => matches(candidate, where));
       return row ? { id: row.id, ciphertext: row.id } : null;
     }),
+    findMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
+      rows
+        .filter((candidate) => matches(candidate, where))
+        .map((row) => ({ id: row.id, ciphertext: row.id })),
+    ),
     create: vi.fn(async ({ data }: { data: SecretRow }) => {
       rows.push({ id: data.id, userId: data.userId, spaceId: data.spaceId, kind: data.kind });
       return data;
@@ -274,6 +281,7 @@ describe("an account's own computer", () => {
       values: { ...testDesktop, desktopId: "ecd-other", accessKeySecret: "", mcpToken: "" },
     });
     expect(rows.map((row) => row.id)).toEqual(["secret-2"]);
+    expect(deps.secrets.delete).toHaveBeenCalledWith("secret-1", "secret-1");
     expect(JSON.parse(state.secrets.get("secret-2") ?? "").values).toMatchObject({
       desktopId: "ecd-other",
       accessKeySecret: "test-secret",
@@ -297,6 +305,8 @@ describe("an account's own computer", () => {
     });
     expect(back).toMatchObject({ provider: "default", defaultProvider: "docker", values: {} });
     expect(rows.map((row) => row.userId)).toEqual(["user-2"]);
+    expect(deps.secrets.delete).toHaveBeenCalledWith("secret-1", "secret-1");
+    expect(deps.secrets.delete).not.toHaveBeenCalledWith("secret-2", "secret-2");
   });
 
   it("refuses unreachable desktops and deployments that never route by Settings", async () => {
