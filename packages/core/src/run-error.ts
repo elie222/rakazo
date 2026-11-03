@@ -31,6 +31,9 @@ export const VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR =
 export const MODEL_REQUEST_LIMIT_ERROR =
   "This connection's request limit is too small. Choose another model.";
 
+/** A run pinned to a provider the user has no connection for. */
+export const PINNED_PROVIDER_NOT_CONNECTED = "Connect that model provider first";
+
 export const MISSING_MODEL_RUN_ERROR = "Connect a model in Settings before running bots.";
 
 /** A deployment model run while the organization has not chosen Rakazo credits. */
@@ -107,6 +110,7 @@ const MODEL_OUTPUT_RUN_ERRORS = new Set([
 ]);
 /** App advice whose fix is connecting a model. */
 const MODEL_CONNECTION_RUN_ERRORS = new Set([
+  PINNED_PROVIDER_NOT_CONNECTED,
   MISSING_MODEL_RUN_ERROR,
   HOSTED_MODEL_CREDITS_REQUIRED_ERROR,
 ]);
