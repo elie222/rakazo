@@ -40,22 +40,26 @@ export default function BillingScreen() {
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [amount, setAmount] = useState<Amount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
   const [pending, setPending] = useState(false);
-  // Filed under the Space the request was made for, so a late answer never lands in another.
-  const show = useCallback((next: BillingStatus, spaceId = selectedSpaceId()) => {
-    setStatus(next);
-    rememberReferral(spaceId, next.referral);
-    setAmount(
-      ModelCreditAmountSchema.catch(DEFAULT_MONTHLY_CREDIT_AMOUNT).parse(next.monthlyAmountCents),
-    );
-  }, []);
+  // This screen shows the Space it opened in; every answer it gets, including a late one after a
+  // Space switch, is filed under that Space.
+  const [space] = useState(selectedSpaceId);
+  const show = useCallback(
+    (next: BillingStatus) => {
+      setStatus(next);
+      rememberReferral(space, next.referral);
+      setAmount(
+        ModelCreditAmountSchema.catch(DEFAULT_MONTHLY_CREDIT_AMOUNT).parse(next.monthlyAmountCents),
+      );
+    },
+    [space],
+  );
   useFocusEffect(
     useCallback(() => {
       let active = true;
       const load = () => {
-        const spaceId = selectedSpaceId();
         void rpc("billing/status")
           .then((next) => {
-            if (active) show(next, spaceId);
+            if (active) show(next);
           })
           .catch(() => {
             if (active) Alert.alert(t("Could not load billing"));

@@ -118,7 +118,8 @@ export function SubscriptionGate({
         // A later read already showed; keep it.
         return shown > read ? null : gateFor(status);
       })
-      .catch((): GateState => ({ kind: "open" }))
+      // A failure must not undo a newer read that already showed.
+      .catch((): GateState | null => (shown > 0 ? null : { kind: "open" }))
       .then((next) => {
         if (active && next) setState(next);
       });
