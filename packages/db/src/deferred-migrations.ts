@@ -23,11 +23,14 @@ async function appliedMigrations(client: Client): Promise<Set<string> | undefine
  * Names of `-- deferred` migrations to leave out of this run. Each is held back the first time a
  * migration run sees it and applied on the next, so it lands one release after the code that stops
  * reading what it drops. That keeps the previous release working while the two run side by side,
- * and keeps rolling back one release safe. A database with no applied migrations holds nothing.
+ * and keeps rolling back one release safe. When supplied, previousMigrations also requires that
+ * the last successful deployment contained the migration, so a failed rollout cannot advance it.
+ * A database with no applied migrations holds nothing.
  */
 export async function heldBackMigrations(
   migrationUrl: string,
   migrationsDir: string,
+  previousMigrations?: readonly string[],
 ): Promise<string[]> {
   const deferred = readdirSync(migrationsDir, { withFileTypes: true })
     .filter(
@@ -53,7 +56,12 @@ export async function heldBackMigrations(
       'INSERT INTO "_deferred_migrations" (name) SELECT unnest($1::text[]) ON CONFLICT DO NOTHING RETURNING name',
       [pending],
     );
-    return firstSeen.map((row) => row.name);
+    const held = new Set(firstSeen.map((row) => row.name));
+    if (previousMigrations !== undefined) {
+      const previous = new Set(previousMigrations);
+      for (const name of pending) if (!previous.has(name)) held.add(name);
+    }
+    return [...held];
   } finally {
     await client.end();
   }
@@ -153,9 +161,14 @@ export async function deployMigrations(input: {
   migrationsDir?: string;
   lockRetryDelaysMs?: number[];
   lockTimeoutMs?: number;
+  previousMigrations?: readonly string[];
 }) {
   const migrationsDir = input.migrationsDir ?? path.join(input.dbPackageDir, "prisma/migrations");
-  const held = await heldBackMigrations(input.migrationUrl, migrationsDir);
+  const held = await heldBackMigrations(
+    input.migrationUrl,
+    migrationsDir,
+    input.previousMigrations,
+  );
   let migrationsPath = migrationsDir;
   if (held.length) {
     migrationsPath = mkdtempSync(path.join(tmpdir(), "rakazo-migrations-"));

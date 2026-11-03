@@ -179,9 +179,11 @@ roll_out() {
   local service old
   # Migrations run first, from their own container: it is the only one given the owner login.
   # The old API keeps serving meanwhile, so each migration must work with the previous release.
-  # A rollback to a release without that service has nothing to run: its API migrates on start.
+  # On older releases the API migrates on start, so only start its database here.
   if compose 1m config --services | grep -qx migrate; then
-    compose "${UP_TIMEOUT}" run --rm -T migrate
+    compose "${UP_TIMEOUT}" run --rm -T -e "RAKAZO_DEPLOYED_MIGRATIONS=${deployed_migrations}" migrate
+  else
+    compose "${UP_TIMEOUT}" up -d --wait postgres
   fi
   for service in api web; do
     old="$(compose 1m ps --all --quiet "${service}")"
@@ -243,6 +245,14 @@ fi
 if [[ "${previous_revision}" == "${target_revision}" && "${deployed_revision}" == "${target_revision}" ]] && healthy; then
   echo "Production is already at ${target_revision} and healthy."
   exit 0
+fi
+
+# A failed rollout may have already seen its deferred drops. Only a release that actually ran
+# can make those drops safe; retrying it, or skipping to another release, must keep holding them.
+# Unknown deployment history fails closed until a successful release records its revision.
+deployed_migrations=""
+if [[ "${deployed_revision}" =~ ^[[:xdigit:]]{40}$ ]]; then
+  deployed_migrations="$(git ls-tree --name-only "${deployed_revision}:packages/db/prisma/migrations" 2>/dev/null | paste -sd, -)" || deployed_migrations=""
 fi
 
 app_image=""
