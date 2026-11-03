@@ -11,7 +11,6 @@ tags:
     permissions:
       notifications: allow
       microphone: allow
-      camera: deny
 - runFlow: helpers/sign-in.yaml
 
 # Device speech (expo-speech): no voice provider is connected yet.
@@ -85,9 +84,14 @@ tags:
     visible: "Remove rakazo-fixture.pdf"
     timeout: 15000
 
-# Camera permission (the emulator has no camera, so the flow denies it).
+# Camera permission (the emulator has no camera, so the flow denies the prompt).
 - tapOn: "Attach file"
 - tapOn: "Camera"
+- runFlow:
+    when:
+      visible: "Don.t allow"
+    commands:
+      - tapOn: "Don.t allow"
 - extendedWaitUntil:
     visible: "Skipped Camera.*"
     timeout: 10000
