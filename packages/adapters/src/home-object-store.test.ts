@@ -1002,6 +1002,36 @@ describe("the local cache of object-backed homes", () => {
     expect(await store.readFile("bot-1", "a.txt", context)).toBe("local only");
   });
 
+  it("never restores a cached copy into a fresh computer once its stored copy is deleted", async () => {
+    const { root, rows, store } = await setup(["bot-1", "bot-2"]);
+    await store.commit("bot-1", await staged({ "a.txt": "deleted" }), context);
+    await store.commit("bot-2", await staged({ "a.txt": "deleted too" }), context);
+    await store.hydrate("bot-1");
+    await store.hydrate("bot-2");
+    // The marker keeps the bare revision a previous release reads, during a rollout or rollback.
+    expect(await readFile(path.join(root, "home-revisions", "bot-1.txt"), "utf8")).toBe(
+      rows[0]!.homeStorageRevision,
+    );
+    // A copy an older release downloaded has no download record until it is next read.
+    await rm(path.join(root, "home-downloads", "bot-2"));
+    expect(await store.readFile("bot-2", "a.txt", context)).toBe("deleted too");
+    for (const row of rows)
+      Object.assign(row, { homeStorageId: null, homeStorageKey: null, homeStorageRevision: null });
+
+    for (const homeKey of ["bot-1", "bot-2"]) {
+      const { sandbox, restored } = remoteSandbox(async function* () {});
+      await restoreComputerWorkspace(
+        store,
+        sandbox,
+        homeKey,
+        { ...boatComputer, botId: homeKey },
+        context,
+      );
+      expect(restored).toEqual([]);
+    }
+    expect(await entries(path.join(root, "homes"))).toEqual([]);
+  });
+
   it("evicts idle copies of remote computers' homes, never a Docker computer's", async () => {
     const { root, rows, store } = await setup(["remote-idle", "remote-recent", "docker-idle"]);
     rows[2]!.kind = "docker";

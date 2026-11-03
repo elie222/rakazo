@@ -19,7 +19,7 @@ const hotQueries = [
   },
   {
     name: "a bot's run lease fence",
-    index: "runs_botId_idx",
+    index: "runs_botId_createdAt_idx",
     sql: `SELECT max("leaseFence") FROM runs WHERE "botId" = $1`,
   },
   {

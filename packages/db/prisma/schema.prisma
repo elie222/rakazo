@@ -281,6 +281,8 @@ model BillingAccount {
   cancellationReason  String?
   cancellationComment String?
   subscribedAt        DateTime?
+  /// When a subscription was first seen active, so a trial that never paid is not a paid plan.
+  paidAt              DateTime?
   syncedAt            DateTime?
   checkoutLeaseId     String?
   checkoutLeaseExpiresAt DateTime?
@@ -1010,7 +1012,7 @@ model Run {
   @@index([trigger, status, messagingMirroredAt, updatedAt])
   @@index([trigger, status, teamChatMirroredAt, updatedAt])
   @@index([spaceId, botId])
-  @@index([botId])
+  @@index([botId, createdAt])
   @@index([taskId])
   @@index([sourceMessageId])
   @@index([threadId, status, createdAt])
@@ -1476,9 +1478,26 @@ model Computer {
   executionLeases         ComputerExecutionLease[]
   maintenanceId           String?
   updates                 ComputerUpdate[]
+  homeDeletionNotice      HomeDeletionNotice?
 
   @@index([spaceId, scope])
   @@map("computers")
+}
+
+/// Hosted billing only: a stopped computer whose saved home is due for deletion after its plan
+/// ended or it went unused. `claimId` leases the row to one process while it emails.
+model HomeDeletionNotice {
+  computerId     String    @id
+  computer       Computer  @relation(fields: [computerId], references: [id], onDelete: Cascade)
+  claimId        String?
+  claimExpiresAt DateTime?
+  /// When the owner was emailed; null until then, and nothing is deleted before it.
+  warnedAt       DateTime?
+  /// The deletion date the email gave.
+  deleteAfter    DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@map("home_deletion_notices")
 }
 
 /// One stretch a computer ran at its provider, from `computers.runningSince` until it stopped,

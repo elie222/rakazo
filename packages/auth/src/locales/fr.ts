@@ -69,4 +69,10 @@ export const FR_MESSAGES: Record<string, string> = {
     "Vos modifications de la page {name} sont approuvées.",
   "We couldn't approve your changes to the {name} page.":
     "Nous n'avons pas pu approuver vos modifications de la page {name}.",
+  "Your saved computer files will be deleted":
+    "Les fichiers enregistrés de votre ordinateur vont être supprimés",
+  "Your saved computer files will be deleted on {date} unless you resubscribe.":
+    "Les fichiers enregistrés de votre ordinateur seront supprimés le {date}, sauf si vous vous réabonnez.",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "Les fichiers enregistrés de votre ordinateur seront supprimés le {date}, sauf si vous choisissez une offre.",
 };
