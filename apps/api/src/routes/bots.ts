@@ -719,20 +719,28 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       remove: authed.groups.remove.handler(async ({ context, input }) => {
         const removed = await groupRepos.removeGroup(context.actor, input.groupId);
-        await stopCancelledGroupRuns(deps, context.actor, removed);
-        const cleanup = await Promise.allSettled(
-          removed.artifactStorageKeys.map((storageKey) =>
-            deps.artifacts.remove(
-              storageKey,
-              computerContext(context.actor, removed.contextBotId, `group-remove:${input.groupId}`),
+        try {
+          await stopCancelledGroupRuns(deps, context.actor, removed);
+        } finally {
+          // The group row is already gone, so a retry could no longer find these.
+          const cleanup = await Promise.allSettled(
+            removed.artifactStorageKeys.map((storageKey) =>
+              deps.artifacts.remove(
+                storageKey,
+                computerContext(
+                  context.actor,
+                  removed.contextBotId,
+                  `group-remove:${input.groupId}`,
+                ),
+              ),
             ),
-          ),
-        );
-        for (const result of cleanup) {
-          if (result.status === "rejected")
-            getLogger().error("group artifact cleanup", result.reason);
+          );
+          for (const result of cleanup) {
+            if (result.status === "rejected")
+              getLogger().error("group artifact cleanup", result.reason);
+          }
+          await forgetPageShareSecrets(deps.secrets, removed.pageShareSecrets);
         }
-        await forgetPageShareSecrets(deps.secrets, removed.pageShareSecrets);
         return { ok: true as const };
       }),
     },
