@@ -1,4 +1,5 @@
 export const ES_MESSAGES: Record<string, string> = {
+  "Daily check-ins on unfinished work": "Seguimiento diario del trabajo pendiente",
   "How other bots see it": "Cómo lo ven otros bots",
   "Share to": "Compartir en",
   "{count} files": "{count} archivos",
@@ -196,6 +197,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Custom server {host}": "Servidor personalizado {host}",
   "Don’t have an account?": "¿No tienes una cuenta?",
   Email: "Correo",
+  "Did you mean {email}?": "¿Quisiste decir {email}?",
   "Forgot password?": "¿Olvidaste la contraseña?",
   "Loading…": "Cargando…",
   Password: "Contraseña",
@@ -214,6 +216,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Could not create bot": "No se pudo crear el bot",
   "Could not delete space": "No se pudo eliminar el espacio",
   "Could not load bots": "No se pudieron cargar los bots",
+  "Could not open this PDF.": "No se pudo abrir este PDF.",
   "Could not save the default space": "No se pudo guardar el espacio predeterminado",
   "Could not switch spaces": "No se pudo cambiar de espacio",
   Create: "Crear",
@@ -255,6 +258,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "Aprueba este servidor para que tu agente use sus herramientas.",
   "Answered: {answer}": "Respondido: {answer}",
+  "Only enter a code {host} sent you.": "Introduce solo un código que te haya enviado {host}.",
   Archive: "Archivar",
   "Attach file": "Adjuntar archivo",
   Attachment: "Archivo adjunto",
@@ -281,6 +285,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Could not share image": "No se pudo compartir la imagen",
   "Loading image…": "Cargando imagen…",
   "Open image {name}": "Abrir imagen {name}",
+  "Open {name}": "Abrir {name}",
   "Tap to open": "Toca para abrir",
   "Could not open message": "No se pudo abrir el mensaje",
   "Could not send answer": "No se pudo enviar la respuesta",
@@ -306,7 +311,6 @@ export const ES_MESSAGES: Record<string, string> = {
   New: "Nuevos",
   "New messages": "Mensajes nuevos",
   "Load earlier messages": "Cargar mensajes anteriores",
-  "Markdown file": "Archivo Markdown",
   Message: "Mensaje",
   "Message from {peer}": "Mensaje de {peer}",
   "Message {name}": "Mensaje a {name}",
@@ -724,6 +728,9 @@ export const ES_MESSAGES: Record<string, string> = {
   "{count}d ago": "hace {count} d",
   "{count}h ago": "hace {count} h",
   "{count}m ago": "hace {count} min",
+  "Started {count}m late": "Empezó con {count} min de retraso",
+  "Started {count}h late": "Empezó con {count} h de retraso",
+  "Started {count}d late": "Empezó con {count} d de retraso",
   "Could not clear the custom server URL": "No se pudo borrar la URL del servidor personalizado",
   "Could not clear the local session": "No se pudo borrar la sesión local",
   "Could not clear the previous server session":
@@ -940,6 +947,12 @@ export const ES_MESSAGES: Record<string, string> = {
   "Your trial ends and your card is charged today.":
     "Tu prueba termina y se cobrará a tu tarjeta hoy.",
   "Start plan": "Iniciar plan",
+  "Switch to yearly": "Cambiar a anual",
+  "Switch to yearly?": "¿Cambiar a anual?",
+  "Your card is charged {price} today, less the unused part of this month.":
+    "Hoy se cobrará {price} a tu tarjeta, menos la parte no usada de este mes.",
+  "Your plan becomes {price} / year when your trial ends.":
+    "Cuando termine tu prueba, tu plan pasará a {price} / año.",
   "Monthly credits": "Créditos mensuales",
   "Upgrade now": "Mejorar plan ahora",
   "Downgrade at renewal": "Bajar de plan al renovar",

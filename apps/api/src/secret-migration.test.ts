@@ -7,7 +7,9 @@ function fixture() {
     secret: Array.from({ length: 101 }, (_, i) => ({
       id: `row-${String(i).padStart(3, "0")}`,
       ciphertext: `fake-ref-${i}`,
-      kind: i === 0 ? "run-secret:run" : "model",
+      kind:
+        ["run-secret:run", "run-login:run:site", "run-code:run", "run-code-spent:run"][i] ??
+        "model",
     })),
     botSecret: [{ id: "bot-row", ciphertext: "fake-bot-ref" }],
     vaultCredential: [{ id: "vault-row", ciphertext: "fake-vault-ref" }],
@@ -58,6 +60,9 @@ describe("migration persistence", () => {
     for await (const row of f.repository.rows()) rows.push(row);
     expect(rows).toHaveLength(104);
     expect(rows[0]).toMatchObject({ ephemeral: true, id: "row-000", label: "secret" });
+    // A run's login and codes are short-lived too, and stay in local encryption.
+    expect(rows.slice(0, 4).map((row) => row.ephemeral)).toEqual([true, true, true, true]);
+    expect(rows[4]?.ephemeral).toBeFalsy();
     expect(rows.at(-1)).toMatchObject({
       id: "composio",
       recordId: "integration-provider:composio",

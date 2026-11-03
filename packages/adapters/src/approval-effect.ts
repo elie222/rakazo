@@ -134,6 +134,7 @@ export type BoundApprovalRoute = {
   resourceId: string;
   toolName: string;
   resourceRevision?: string | number;
+  connectionId?: string;
 };
 
 export function catalogApprovalRequest(
@@ -172,6 +173,8 @@ export function catalogApprovalDetails(
     typeof (route as BoundApprovalRoute).connectorId !== "string" ||
     typeof (route as BoundApprovalRoute).resourceId !== "string" ||
     typeof (route as BoundApprovalRoute).toolName !== "string" ||
+    ((route as BoundApprovalRoute).connectionId !== undefined &&
+      typeof (route as BoundApprovalRoute).connectionId !== "string") ||
     ((route as BoundApprovalRoute).resourceRevision !== undefined &&
       typeof (route as BoundApprovalRoute).resourceRevision !== "string" &&
       typeof (route as BoundApprovalRoute).resourceRevision !== "number")
@@ -217,6 +220,8 @@ export function boundDirectApprovalDetails(
     typeof (route as BoundApprovalRoute).connectorId !== "string" ||
     typeof (route as BoundApprovalRoute).resourceId !== "string" ||
     typeof (route as BoundApprovalRoute).toolName !== "string" ||
+    ((route as BoundApprovalRoute).connectionId !== undefined &&
+      typeof (route as BoundApprovalRoute).connectionId !== "string") ||
     ((route as BoundApprovalRoute).resourceRevision !== undefined &&
       typeof (route as BoundApprovalRoute).resourceRevision !== "string" &&
       typeof (route as BoundApprovalRoute).resourceRevision !== "number") ||
@@ -245,6 +250,7 @@ export function approvalRoutesMatch(
       left.connectorId === right.connectorId &&
       left.resourceId === right.resourceId &&
       left.toolName === right.toolName &&
+      left.connectionId === right.connectionId &&
       left.resourceRevision === right.resourceRevision,
   );
 }
@@ -309,7 +315,8 @@ export function catalogExecuteToolName(connectorId: string): string {
 }
 
 export function catalogIdForRoute(route: BoundApprovalRoute): string {
-  return `${route.resourceId}:${encodeURIComponent(route.toolName)}`;
+  const account = route.connectionId ? `:${encodeURIComponent(route.connectionId)}` : "";
+  return `${route.resourceId}${account}:${encodeURIComponent(route.toolName)}`;
 }
 
 export function parseCatalogApprovalTarget(
@@ -344,7 +351,8 @@ export function catalogApprovalMatchesLiveRoute(
   // Legacy catalog approvals without a bound route cannot prove revision identity.
   // If the live tool carries a revision (MCP), fail closed rather than replaying
   // across an OAuth reauth that the old envelope could not name.
-  if (liveRoute?.resourceRevision !== undefined) return false;
+  if (liveRoute?.resourceRevision !== undefined || liveRoute?.connectionId !== undefined)
+    return false;
   const target = parseCatalogApprovalTarget(catalog.args);
   return Boolean(
     liveRoute &&

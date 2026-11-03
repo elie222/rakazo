@@ -1,4 +1,5 @@
 export const NL_MESSAGES: Record<string, string> = {
+  "Daily check-ins on unfinished work": "Dagelijks navragen over onafgemaakt werk",
   "How other bots see it": "Hoe andere bots deze zien",
   "Share to": "Delen met",
   "{count} files": "{count} bestanden",
@@ -206,6 +207,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Custom server {host}": "Eigen server {host}",
   "Don’t have an account?": "Heb je geen account?",
   Email: "E-mail",
+  "Did you mean {email}?": "Bedoelde je {email}?",
   "Forgot password?": "Wachtwoord vergeten?",
   "Loading…": "Bezig met laden…",
   Password: "Wachtwoord",
@@ -224,6 +226,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Could not create bot": "Bot aanmaken mislukt",
   "Could not delete space": "Space verwijderen mislukt",
   "Could not load bots": "Bots laden mislukt",
+  "Could not open this PDF.": "Kan deze pdf niet openen.",
   "Could not save the default space": "De standaardspace opslaan mislukt",
   "Could not switch spaces": "Van space wisselen mislukt",
   Create: "Aanmaken",
@@ -266,6 +269,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "Keur deze server goed zodat je agent zijn tools kan gebruiken.",
   "Answered: {answer}": "Beantwoord: {answer}",
+  "Only enter a code {host} sent you.": "Voer alleen een code in die {host} je heeft gestuurd.",
   Archive: "Archiveren",
   Attach: "Bijvoegen",
   "Attach file": "Bestand bijvoegen",
@@ -293,6 +297,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Could not share image": "Afbeelding delen mislukt",
   "Loading image…": "Afbeelding laden…",
   "Open image {name}": "Afbeelding {name} openen",
+  "Open {name}": "{name} openen",
   "Tap to open": "Tik om te openen",
   "Could not open message": "Bericht openen mislukt",
   "Could not send answer": "Antwoord verzenden mislukt",
@@ -318,7 +323,6 @@ export const NL_MESSAGES: Record<string, string> = {
   New: "Nieuw",
   "New messages": "Nieuwe berichten",
   "Load earlier messages": "Eerdere berichten laden",
-  "Markdown file": "Markdown-bestand",
   Message: "Bericht",
   "Message from {peer}": "Bericht van {peer}",
   "Message {name}": "{name} berichten",
@@ -766,6 +770,9 @@ export const NL_MESSAGES: Record<string, string> = {
   "{count}d ago": "{count}d geleden",
   "{count}h ago": "{count}u geleden",
   "{count}m ago": "{count}m geleden",
+  "Started {count}m late": "{count}m te laat gestart",
+  "Started {count}h late": "{count}u te laat gestart",
+  "Started {count}d late": "{count}d te laat gestart",
   "Could not clear the custom server URL": "De eigen server-URL wissen mislukt",
   "Could not clear the local session": "De lokale sessie wissen mislukt",
   "Could not clear the previous server session": "De vorige serversessie wissen mislukt",
@@ -994,6 +1001,12 @@ export const NL_MESSAGES: Record<string, string> = {
   "Your trial ends and your card is charged today.":
     "Je proefperiode eindigt en je kaart wordt vandaag belast.",
   "Start plan": "Abonnement starten",
+  "Switch to yearly": "Overstappen op jaarlijks",
+  "Switch to yearly?": "Overstappen op jaarlijks?",
+  "Your card is charged {price} today, less the unused part of this month.":
+    "Je kaart wordt vandaag belast met {price}, min het ongebruikte deel van deze maand.",
+  "Your plan becomes {price} / year when your trial ends.":
+    "Na je proefperiode kost je plan {price} per jaar.",
   "Monthly credits": "Maandelijks tegoed",
   "Upgrade now": "Nu upgraden",
   "Downgrade at renewal": "Downgraden bij verlenging",

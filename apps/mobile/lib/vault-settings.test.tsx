@@ -34,7 +34,7 @@ const { element } = vi.hoisted(() => ({
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({
-  native: {},
+  native: { tertiaryLabel: "tertiary-label" },
   useResolvedAppearance: () => "light",
   useThemedStyles: (factory: () => unknown) => factory(),
 }));
@@ -109,20 +109,26 @@ vi.mock("../components/load-failure", () => ({
   LoadFailure: ({ message, onRetry }: { message: string; onRetry: () => void }) =>
     createElement("button", { type: "button", onClick: onRetry }, `${message} Retry`),
 }));
+vi.mock("../components/native-symbol", () => ({
+  NativeSymbol: ({ ios, android, color }: { ios: string; android: string; color: string }) =>
+    createElement("i", { "data-ios": ios, "data-android": android, "data-color": color }),
+}));
 vi.mock("../components/settings-group", () => ({
   SettingsGroup: element("section"),
   SettingsRow: ({
     title,
     detail,
     onPress,
+    trailing,
   }: {
     title: string;
     detail?: string;
     onPress?: () => void;
+    trailing?: ReactNode;
   }) =>
     onPress
       ? createElement("button", { type: "button", onClick: onPress }, title)
-      : createElement("span", null, detail ? `${title}: ${detail}` : title),
+      : createElement("span", null, detail ? `${title}: ${detail}` : title, trailing),
 }));
 // The sheet is covered by its own test; here it reports what it was opened for and saves a fixed
 // destination, rejecting the way the real sheet expects when the save fails.
@@ -232,6 +238,25 @@ it("lists the account vault with each credential's site or command variable", as
     "netbird-key: Command variable $NETBIRD_KEY",
   ]);
   expect(button("Add credential")).toBeDefined();
+});
+
+it("marks every credential with a trailing ellipsis inside its single native action menu", async () => {
+  state.credentials.push(credential({ name: "legacy", auth: null }));
+  await render();
+
+  for (const credential of state.credentials) {
+    const scope = menu(credential.name);
+    const icons = scope.querySelectorAll("span > i");
+    expect(icons).toHaveLength(1);
+    expect(icons[0]?.getAttribute("data-ios")).toBe("ellipsis");
+    expect(icons[0]?.getAttribute("data-android")).toBe("ellipsis-horizontal");
+    expect(icons[0]?.getAttribute("data-color")).toBe("tertiary-label");
+    expect([...scope.querySelectorAll("button")].map((node) => node.textContent)).toEqual(
+      credential.auth ? ["Show", "Replace value", "Remove"] : ["Remove"],
+    );
+  }
+  expect(container.querySelectorAll("i")).toHaveLength(3);
+  expect(button("Add credential")?.querySelector("i")).toBeNull();
 });
 
 it("edits a Space's own vault through that Space", async () => {

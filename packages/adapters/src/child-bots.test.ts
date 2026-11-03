@@ -483,6 +483,8 @@ describe("destroyBot", () => {
       where: {
         OR: [
           { userId: "user-1", spaceId: "workspace-1", kind: "run-secret:run-1" },
+          { userId: "user-1", spaceId: "workspace-1", kind: "run-code:run-1" },
+          { userId: "user-1", spaceId: "workspace-1", kind: "run-code-spent:run-1" },
           { userId: "user-1", spaceId: "workspace-1", kind: { startsWith: "run-login:run-1:" } },
         ],
       },
@@ -2061,6 +2063,8 @@ describe("archiveBot", () => {
       where: {
         OR: [
           { userId: "user-1", spaceId: "workspace-1", kind: "run-secret:run-1" },
+          { userId: "user-1", spaceId: "workspace-1", kind: "run-code:run-1" },
+          { userId: "user-1", spaceId: "workspace-1", kind: "run-code-spent:run-1" },
           { userId: "user-1", spaceId: "workspace-1", kind: { startsWith: "run-login:run-1:" } },
         ],
       },

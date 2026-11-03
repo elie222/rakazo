@@ -422,7 +422,7 @@ msgstr "@{0}"
 
 #: src/components/ModelCredits.tsx
 msgid "/ month"
-msgstr ""
+msgstr "/ Monat"
 
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
@@ -1046,7 +1046,7 @@ msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Billing period"
-msgstr ""
+msgstr "Abrechnungszeitraum"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
@@ -1168,7 +1168,6 @@ msgid "Can't reach the server."
 msgstr "Server nicht erreichbar."
 
 #: src/components/TextOnlyMark.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "Kann keine Bilder lesen"
@@ -1492,10 +1491,6 @@ msgstr "Spalte {index}"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Comfortable"
-msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Coming soon"
 msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
@@ -2435,6 +2430,10 @@ msgstr "{label} anpassen"
 msgid "Customize bot avatar"
 msgstr "Bot-Avatar anpassen"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Daily check-ins on unfinished work"
+msgstr "Tägliche Rückfragen zu offenen Aufgaben"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Dark"
@@ -2619,6 +2618,10 @@ msgstr ""
 #: src/lib/dictation.ts
 msgid "Dictation failed."
 msgstr ""
+
+#: src/pages/Auth.tsx
+msgid "Did you mean <0>{emailSuggestion}</0>?"
+msgstr "Meintest du <0>{emailSuggestion}</0>?"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
@@ -3067,7 +3070,6 @@ msgid "Forgot password?"
 msgstr "Passwort vergessen?"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "Kostenlos"
 
@@ -3514,10 +3516,6 @@ msgstr "Bots können Fakten nach Bedeutung speichern und abrufen, zusätzlich zu
 msgid "Light"
 msgstr "Hell"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Linear issue"
-msgstr ""
-
 #: src/pages/SpaceSearch.tsx
 msgid "Link"
 msgstr ""
@@ -3875,7 +3873,6 @@ msgstr "Modus"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3896,7 +3893,7 @@ msgstr "Modellverbindungen"
 msgid "Model id"
 msgstr "Modell-ID"
 
-#: src/pages/model-settings/model-picker.tsx
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 msgid "Model options"
 msgstr "Modelloptionen"
@@ -3911,8 +3908,8 @@ msgstr "Modelle"
 msgid "Models at provider cost"
 msgstr ""
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Models from server"
 msgstr "Modelle vom Server"
 
@@ -4150,7 +4147,6 @@ msgid "No matching artifacts on this page."
 msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -4337,6 +4333,10 @@ msgstr "Einmalig"
 msgid "One-time purchase. Credits do not expire."
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "Only enter a code {codeHost} sent you."
+msgstr ""
+
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/shell/computer-panel.tsx
@@ -4434,8 +4434,8 @@ msgstr ""
 msgid "Original message unavailable"
 msgstr "Originalnachricht nicht verfügbar"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "Anderes Modell…"
 
@@ -4455,10 +4455,6 @@ msgstr "Seite {page} von {count}"
 #: src/pages/NotFound.tsx
 msgid "Page not found"
 msgstr "Seite nicht gefunden"
-
-#: src/pages/RoutineEditor.tsx
-msgid "PagerDuty incident"
-msgstr ""
 
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
@@ -4868,6 +4864,7 @@ msgid "Release control"
 msgstr "Kontrolle abgeben"
 
 #: src/components/InstructionSettings.tsx
+#: src/lib/client-update.ts
 msgid "Reload"
 msgstr "Neu laden"
 
@@ -5289,8 +5286,8 @@ msgstr "Bereiche (optional)"
 msgid "Screen not connected"
 msgstr "Bildschirm nicht verbunden"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5323,8 +5320,8 @@ msgstr ""
 msgid "Search integrations.sh"
 msgstr ""
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"
@@ -5410,10 +5407,6 @@ msgstr "Wird gesendet…"
 
 #: src/components/AskCard.tsx
 msgid "Sent"
-msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Sentry alert"
 msgstr ""
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
@@ -5733,6 +5726,18 @@ msgstr "Aufnahme starten"
 msgid "Start your plan now?"
 msgstr "Plan jetzt starten?"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}d late"
+msgstr "{count} T. verspätet gestartet"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}h late"
+msgstr "{count} Std. verspätet gestartet"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}m late"
+msgstr "{count} Min. verspätet gestartet"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "Startet"
@@ -5809,7 +5814,7 @@ msgstr "Abonnieren"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe for {annualPrice} / year"
-msgstr ""
+msgstr "Für {annualPrice} / Jahr abonnieren"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
@@ -5841,9 +5846,18 @@ msgstr "Unterstützt Bilder"
 msgid "Supports thinking"
 msgstr "Unterstützt Denkmodus"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
-msgstr ""
+msgstr "Wechseln"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly"
+msgstr "Zu jährlich wechseln"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly?"
+msgstr "Zu jährlich wechseln?"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
@@ -5884,10 +5898,6 @@ msgstr "Team-Computer"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
-msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Teams not enabled"
 msgstr ""
 
 #: src/components/ComputerProviderSettings.tsx
@@ -6329,6 +6339,10 @@ msgstr "Anweisungen aktualisieren?"
 msgid "Update progress"
 msgstr ""
 
+#: src/lib/client-update.ts
+msgid "Update required"
+msgstr "Update erforderlich"
+
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"
 msgstr ""
@@ -6652,7 +6666,7 @@ msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Yearly"
-msgstr ""
+msgstr "Jährlich"
 
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
@@ -6688,6 +6702,10 @@ msgstr "Du hast die Kontrolle"
 msgid "Your Anthropic"
 msgstr "Dein Anthropic"
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged {annualPrice} today, less the unused part of this month."
+msgstr "Deine Karte wird heute mit {annualPrice} belastet, abzüglich des ungenutzten Teils dieses Monats."
+
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr ""
@@ -6718,6 +6736,10 @@ msgstr "Dein OpenAI"
 #: src/lib/run-error.ts
 msgid "Your OpenRouter"
 msgstr "Dein OpenRouter"
+
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {annualPrice} / year when your trial ends."
+msgstr "Nach dem Testzeitraum kostet dein Plan {annualPrice} / Jahr."
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"

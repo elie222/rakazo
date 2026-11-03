@@ -5,8 +5,12 @@ import { HOST_COMPUTER_MAX_BYTES } from "./host-computer-protocol.js";
 import type { HostComputerCall } from "./host-computer-runner.js";
 import { createHostComputerRunner } from "./host-computer-runner.js";
 import type { HostScreen } from "./host-screen.js";
-import type { UserDeviceClientMessage } from "./user-device-protocol.js";
-import { userDeviceServerMessage } from "./user-device-protocol.js";
+import type { UserDeviceClientMessage, UserDeviceRevokeReason } from "./user-device-protocol.js";
+import {
+  USER_DEVICE_REVOKED_HEADER,
+  userDeviceRevokeReason,
+  userDeviceServerMessage,
+} from "./user-device-protocol.js";
 
 /** One frame or request plus its small envelope, in either direction. */
 export const USER_DEVICE_MAX_MESSAGE_BYTES = HOST_COMPUTER_MAX_BYTES + 4096;
@@ -21,7 +25,7 @@ export interface UserDeviceClientOptions {
   /** Drives this computer's apps. Owned by the caller, which closes it. */
   screen?: HostScreen;
   /** The server revoked the device or rejected its token. The client has already stopped. */
-  onRevoked: () => void;
+  onRevoked: (reason?: UserDeviceRevokeReason) => void;
   /** Whether this computer lets the server's bots run anything. Asked before every request. */
   authorize: () => Promise<boolean>;
   retryMs?: { min: number; max: number };
@@ -59,10 +63,10 @@ export function startUserDeviceClient(options: UserDeviceClientOptions) {
     runner.setEnabled(true);
   }
 
-  function revoked() {
+  function revoked(reason?: UserDeviceRevokeReason) {
     if (stopped) return;
     stop();
-    options.onRevoked();
+    options.onRevoked(reason);
   }
 
   function scheduleReconnect() {
@@ -101,7 +105,10 @@ export function startUserDeviceClient(options: UserDeviceClientOptions) {
     ws.on("unexpected-response", (request, response) => {
       request.destroy();
       ws.terminate();
-      if (response.statusCode === 401) revoked();
+      if (response.statusCode === 401)
+        revoked(
+          userDeviceRevokeReason.safeParse(response.headers[USER_DEVICE_REVOKED_HEADER]).data,
+        );
     });
     ws.on("open", () => {
       openedAt = Date.now();
@@ -146,7 +153,7 @@ export function startUserDeviceClient(options: UserDeviceClientOptions) {
         return;
       }
       if (message.type === "revoked") {
-        revoked();
+        revoked(message.reason);
         return;
       }
       if (message.type === "cancel") {

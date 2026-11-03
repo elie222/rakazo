@@ -800,6 +800,7 @@ export async function updateChildBot(
     return { error: "Change another bot's instructions with set_child_instructions." };
   }
   const profile = {
+    dailyCheckIns: argumentGiven(args.dailyCheckIns) ? args.dailyCheckIns : undefined,
     name: argumentGiven(args.name) ? args.name : undefined,
     description: argumentGiven(args.description) ? args.description : undefined,
     notifyOnFinish: argumentGiven(args.notifyOnFinish)
@@ -1219,7 +1220,7 @@ function singleLine(value: string): string {
 const CARD_TITLE_ESCAPED = new RegExp(CARD_TITLE_ESCAPED_CHARACTERS, "g");
 
 /** A name in a card title, which renders as Markdown: one line, and no links or emphasis. */
-function cardName(value: string): string {
+export function cardName(value: string): string {
   return singleLine(value).replace(CARD_TITLE_ESCAPED, "\\$&");
 }
 
@@ -1339,6 +1340,7 @@ export async function updateOwnBotFromTool(
       description: true,
       color: true,
       notifyOnFinish: true,
+      dailyCheckIns: true,
     },
   });
   try {
@@ -1364,5 +1366,6 @@ export async function updateOwnBotFromTool(
     description: updated.description,
     avatar: updated.color.startsWith("data:image/") ? "image" : updated.color,
     notifyOnFinish: updated.notifyOnFinish,
+    dailyCheckIns: updated.dailyCheckIns,
   };
 }

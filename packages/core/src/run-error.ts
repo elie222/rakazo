@@ -191,7 +191,7 @@ export function parseModelFallbackFailure(
  * reply. Never matched against model prose.
  */
 const MODEL_OUTPUT_FAILURE =
-  /^(?:Provider (?:finish_reason|stopped with): |Unhandled stop reason: |Provider returned an empty response\b|Failed to parse tool call arguments as JSON\b|[Tt]ool call validation failed\b|Parsing failed\. The model generated output that could not be parsed\b|Upstream request failed: \[api_error\] Upstream response was not valid JSON\b|The model refused to complete the request\b|(?:Codex error: )?This content was flagged for possible cybersecurity risk\b|This request (?:triggered restrictions on [^\n.]{1,80} and )?was blocked (?:under|as it seems to violate) Anthropic's )/;
+  /^(?:Provider (?:finish_reason|stopped with): |Unhandled stop reason: |Provider returned an empty response\b|Failed to parse tool call arguments as JSON\b|[Tt]ool call validation failed\b|Parsing failed\. The model generated output that could not be parsed\b|Upstream request failed: \[api_error\] Upstream response was not valid JSON\b|The model refused to complete the request\b|(?:Codex error: )?This content was flagged for possible cybersecurity risk\b|This request (?:triggered restrictions on [^\n.]{1,80} and )?was blocked (?:under|as it seems to violate) Anthropic's |(?:[\w.]+Error: )?unexpected tokens remaining in message header:)/;
 
 /** The provider cut off the model's reply, such as a half-written tool call, at its output limit. */
 const MODEL_OUTPUT_LIMIT_REACHED = /\bcut ?off by max_(?:completion_|output_)?tokens\b/i;
@@ -308,6 +308,19 @@ export function normalizeRunError(
     typeof payload.message === "string" ? asRecord(asRecord(parseJson(payload.message)).error) : {};
   if (Object.keys(wrapped).length) payload = wrapped;
   const message = typeof payload.message === "string" ? payload.message : body;
+  // Output diagnostics can quote generated text that mentions a timeout or a quota.
+  if (
+    trimmed === MODEL_OUTPUT_LIMIT_ERROR ||
+    MODEL_OUTPUT_FAILURE.test(trimmed) ||
+    MODEL_OUTPUT_FAILURE.test(message)
+  ) {
+    return {
+      summary: translate("The model returned an unusable response. Try again."),
+      details,
+      recovery: "model",
+      kind: "output",
+    };
+  }
   const metadata = asRecord(payload.metadata ?? record.metadata);
   const signals = [
     message,
@@ -489,12 +502,7 @@ export function normalizeRunError(
     )
   ) {
     summary = translate("{provider} took too long to respond. Try again.", { provider });
-  } else if (
-    trimmed === MODEL_OUTPUT_LIMIT_ERROR ||
-    MODEL_OUTPUT_FAILURE.test(trimmed) ||
-    MODEL_OUTPUT_FAILURE.test(message) ||
-    MODEL_OUTPUT_LIMIT_REACHED.test(message)
-  ) {
+  } else if (MODEL_OUTPUT_LIMIT_REACHED.test(message)) {
     recovery = "model";
     kind = "output";
     summary = translate("The model returned an unusable response. Try again.");

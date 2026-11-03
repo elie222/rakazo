@@ -422,7 +422,7 @@ msgstr "@{0}"
 
 #: src/components/ModelCredits.tsx
 msgid "/ month"
-msgstr ""
+msgstr "/ महीना"
 
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
@@ -1046,7 +1046,7 @@ msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Billing period"
-msgstr ""
+msgstr "बिलिंग अवधि"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
@@ -1168,7 +1168,6 @@ msgid "Can't reach the server."
 msgstr "सर्वर तक नहीं पहुंचा जा सका।"
 
 #: src/components/TextOnlyMark.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "तस्वीरें नहीं पढ़ सकता"
@@ -1492,10 +1491,6 @@ msgstr "स्तंभ {index}"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Comfortable"
-msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Coming soon"
 msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
@@ -2435,6 +2430,10 @@ msgstr "{label} अनुकूलित करें"
 msgid "Customize bot avatar"
 msgstr "बॉट अवतार अनुकूलित करें"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Daily check-ins on unfinished work"
+msgstr "अधूरे काम पर रोज़ पूछें"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Dark"
@@ -2619,6 +2618,10 @@ msgstr ""
 #: src/lib/dictation.ts
 msgid "Dictation failed."
 msgstr ""
+
+#: src/pages/Auth.tsx
+msgid "Did you mean <0>{emailSuggestion}</0>?"
+msgstr "क्या आपका मतलब <0>{emailSuggestion}</0> था?"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
@@ -3067,7 +3070,6 @@ msgid "Forgot password?"
 msgstr "पासवर्ड भूल गए?"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr ""
 
@@ -3514,10 +3516,6 @@ msgstr "बॉट्स को MEMORY.md के साथ-साथ अर्थ
 msgid "Light"
 msgstr "लाइट"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Linear issue"
-msgstr ""
-
 #: src/pages/SpaceSearch.tsx
 msgid "Link"
 msgstr ""
@@ -3875,7 +3873,6 @@ msgstr "मोड"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3896,7 +3893,7 @@ msgstr "मॉडल कनेक्शन"
 msgid "Model id"
 msgstr "मॉडल आईडी"
 
-#: src/pages/model-settings/model-picker.tsx
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 msgid "Model options"
 msgstr "मॉडल विकल्प"
@@ -3911,8 +3908,8 @@ msgstr "मॉडल्स"
 msgid "Models at provider cost"
 msgstr ""
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Models from server"
 msgstr "सर्वर से मॉडल"
 
@@ -4150,7 +4147,6 @@ msgid "No matching artifacts on this page."
 msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -4337,6 +4333,10 @@ msgstr "एक बार"
 msgid "One-time purchase. Credits do not expire."
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "Only enter a code {codeHost} sent you."
+msgstr ""
+
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/shell/computer-panel.tsx
@@ -4434,8 +4434,8 @@ msgstr ""
 msgid "Original message unavailable"
 msgstr "मूल संदेश उपलब्ध नहीं है"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "अन्य मॉडल…"
 
@@ -4455,10 +4455,6 @@ msgstr "पृष्ठ {page} / {count}"
 #: src/pages/NotFound.tsx
 msgid "Page not found"
 msgstr "पेज नहीं मिला"
-
-#: src/pages/RoutineEditor.tsx
-msgid "PagerDuty incident"
-msgstr ""
 
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
@@ -4868,6 +4864,7 @@ msgid "Release control"
 msgstr "नियंत्रण छोड़ें"
 
 #: src/components/InstructionSettings.tsx
+#: src/lib/client-update.ts
 msgid "Reload"
 msgstr "फिर से लोड करें"
 
@@ -5289,8 +5286,8 @@ msgstr "स्कोप (वैकल्पिक)"
 msgid "Screen not connected"
 msgstr "स्क्रीन कनेक्ट नहीं है"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5323,8 +5320,8 @@ msgstr ""
 msgid "Search integrations.sh"
 msgstr ""
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"
@@ -5410,10 +5407,6 @@ msgstr "भेजा जा रहा है…"
 
 #: src/components/AskCard.tsx
 msgid "Sent"
-msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Sentry alert"
 msgstr ""
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
@@ -5733,6 +5726,18 @@ msgstr "रिकॉर्डिंग शुरू करें"
 msgid "Start your plan now?"
 msgstr "अपना प्लान अभी शुरू करें?"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}d late"
+msgstr "{count} दिन देर से शुरू हुआ"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}h late"
+msgstr "{count} घंटे देर से शुरू हुआ"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}m late"
+msgstr "{count} मिनट देर से शुरू हुआ"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "शुरू हो रहा है"
@@ -5809,7 +5814,7 @@ msgstr "सदस्यता लें"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe for {annualPrice} / year"
-msgstr ""
+msgstr "{annualPrice} / वर्ष में सब्सक्राइब करें"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
@@ -5841,9 +5846,18 @@ msgstr "छवियों का समर्थन"
 msgid "Supports thinking"
 msgstr "सोचने की क्षमता का समर्थन करता है"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
-msgstr ""
+msgstr "बदलें"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly"
+msgstr "वार्षिक पर जाएं"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly?"
+msgstr "वार्षिक पर जाएं?"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
@@ -5884,10 +5898,6 @@ msgstr "टीम कंप्यूटर"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
-msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Teams not enabled"
 msgstr ""
 
 #: src/components/ComputerProviderSettings.tsx
@@ -6329,6 +6339,10 @@ msgstr "निर्देश अपडेट करें?"
 msgid "Update progress"
 msgstr ""
 
+#: src/lib/client-update.ts
+msgid "Update required"
+msgstr "अपडेट आवश्यक है"
+
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"
 msgstr ""
@@ -6652,7 +6666,7 @@ msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Yearly"
-msgstr ""
+msgstr "वार्षिक"
 
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
@@ -6688,6 +6702,10 @@ msgstr "नियंत्रण आपके पास है"
 msgid "Your Anthropic"
 msgstr "आपका Anthropic"
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged {annualPrice} today, less the unused part of this month."
+msgstr "आज आपके कार्ड से {annualPrice} लिए जाएंगे, इस महीने के बचे हुए हिस्से को घटाकर।"
+
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr ""
@@ -6718,6 +6736,10 @@ msgstr "आपका OpenAI"
 #: src/lib/run-error.ts
 msgid "Your OpenRouter"
 msgstr "आपका OpenRouter"
+
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {annualPrice} / year when your trial ends."
+msgstr "ट्रायल खत्म होने पर आपका प्लान {annualPrice} / वर्ष हो जाएगा।"
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"

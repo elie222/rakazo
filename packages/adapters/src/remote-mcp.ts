@@ -26,6 +26,7 @@ import { composioToolBatch } from "./composio-batch.js";
 import { sensitiveQueryParameter } from "./connector-http.js";
 import { combineSignals } from "./connector-safety.js";
 import { credentialDigest } from "./credential-digest.js";
+import { limitMcpResponseBody } from "./mcp-response-limit.js";
 import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
 import {
   createAddressCheckedLookup,
@@ -276,7 +277,7 @@ async function withRemoteMcpClient<T>(
       redirect: "manual",
       signal,
     },
-    fetch: safeFetch,
+    fetch: async (input, init) => limitMcpResponseBody(await safeFetch(input, init), init?.headers),
   });
   const client = new Client({ name: "rakazo", version: "0.1.0" }, { capabilities: {} });
   try {
@@ -460,8 +461,9 @@ export class RemoteMcpSessionCache {
         redirect: "manual",
       },
       fetch: async (input, init) => {
+        let response: Response;
         try {
-          return await safeFetch(input, init);
+          response = await safeFetch(input, init);
         } catch (error) {
           if (error instanceof ConnectorRedirectError) throw error;
           throw new RemoteMcpTransportError(
@@ -469,6 +471,7 @@ export class RemoteMcpSessionCache {
             { cause: error },
           );
         }
+        return limitMcpResponseBody(response, init?.headers);
       },
     });
     const client = new Client({ name: "rakazo", version: "0.1.0" }, { capabilities: {} });

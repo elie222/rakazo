@@ -1,4 +1,5 @@
 export const JA_MESSAGES: Record<string, string> = {
+  "Daily check-ins on unfinished work": "未完了の作業を毎日確認",
   "How other bots see it": "他のボットからの見え方",
   "Share to": "共有先",
   "{count} files": "{count}個のファイル",
@@ -194,6 +195,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Custom server {host}": "カスタムサーバー {host}",
   "Don’t have an account?": "アカウントをお持ちでないですか？",
   Email: "メールアドレス",
+  "Did you mean {email}?": "{email} のことですか？",
   "Forgot password?": "パスワードをお忘れですか？",
   "Loading…": "読み込み中…",
   Password: "パスワード",
@@ -212,6 +214,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Could not create bot": "ボットを作成できませんでした",
   "Could not delete space": "スペースを削除できませんでした",
   "Could not load bots": "ボットを読み込めませんでした",
+  "Could not open this PDF.": "このPDFを開けませんでした。",
   "Could not save the default space": "デフォルトのスペースを保存できませんでした",
   "Could not switch spaces": "スペースを切り替えられませんでした",
   Create: "作成",
@@ -253,6 +256,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "このサーバーを承認すると、エージェントがそのツールを使用できるようになります。",
   "Answered: {answer}": "回答済み: {answer}",
+  "Only enter a code {host} sent you.": "{host} から送られたコードだけを入力してください。",
   Archive: "アーカイブ",
   Attach: "添付",
   "Attach file": "ファイルを添付",
@@ -280,6 +284,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Could not share image": "画像を共有できませんでした",
   "Loading image…": "画像を読み込み中…",
   "Open image {name}": "画像{name}を開く",
+  "Open {name}": "{name}を開く",
   "Tap to open": "タップして開く",
   "Could not open message": "メッセージを開けませんでした",
   "Could not send answer": "回答を送信できませんでした",
@@ -305,7 +310,6 @@ export const JA_MESSAGES: Record<string, string> = {
   New: "新規",
   "New messages": "新しいメッセージ",
   "Load earlier messages": "以前のメッセージを読み込む",
-  "Markdown file": "Markdownファイル",
   Message: "メッセージ",
   "Message from {peer}": "{peer}からのメッセージ",
   "Message {name}": "{name}にメッセージ",
@@ -755,6 +759,9 @@ export const JA_MESSAGES: Record<string, string> = {
   "{count}d ago": "{count}日前",
   "{count}h ago": "{count}時間前",
   "{count}m ago": "{count}分前",
+  "Started {count}m late": "{count}分遅れて開始",
+  "Started {count}h late": "{count}時間遅れて開始",
+  "Started {count}d late": "{count}日遅れて開始",
   "Could not clear the custom server URL": "カスタムサーバーURLをクリアできませんでした",
   "Could not clear the local session": "ローカルセッションをクリアできませんでした",
   "Could not clear the previous server session": "以前のサーバーセッションをクリアできませんでした",
@@ -982,6 +989,12 @@ export const JA_MESSAGES: Record<string, string> = {
   "Your trial ends and your card is charged today.":
     "トライアルが終了し、本日カードに請求されます。",
   "Start plan": "プランを開始",
+  "Switch to yearly": "年払いに切り替え",
+  "Switch to yearly?": "年払いに切り替えますか？",
+  "Your card is charged {price} today, less the unused part of this month.":
+    "本日カードに{price}が請求されます（今月の未使用分を差し引きます）。",
+  "Your plan becomes {price} / year when your trial ends.":
+    "トライアル終了後、プランは年額 {price} になります。",
   "Monthly credits": "月間クレジット",
   "Upgrade now": "今すぐアップグレード",
   "Downgrade at renewal": "更新時にダウングレード",

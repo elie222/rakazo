@@ -19,6 +19,7 @@ import {
   currentSessionGeneration,
   replaceSessionTokenIfCurrent,
   restoreSessionToken,
+  rotateSessionTokenIfCurrent,
   saveSessionToken,
 } from "./session";
 import type { UiLocale } from "./ui-locale";
@@ -1590,8 +1591,13 @@ describe("mobile call on a session change", () => {
     ["sign-in to another account", () => saveSessionToken("fake-token-b")],
     ["server change", () => restoreSessionToken("fake-token-b")],
     [
-      "password change",
+      "SSO or passkey sign-in",
       () => replaceSessionTokenIfCurrent(currentSessionGeneration(), "fake-token-b"),
+    ],
+    // Its requests are pinned to the session the server just revoked.
+    [
+      "password change",
+      () => rotateSessionTokenIfCurrent(currentSessionGeneration(), "fake-token-a", "fake-token-b"),
     ],
   ])("ends the call and closes its microphone and feed on %s", async (_name, change) => {
     const fake = fakes({ onDevice: true });
