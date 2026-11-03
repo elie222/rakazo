@@ -102,6 +102,10 @@ class TypingStopped(RuntimeError):
     """Typing ended before the last key. The message never repeats any of the text."""
 
 
+class PageLeft(TypingStopped):
+    """Typing ended because the page began to leave, so its result waits for the next one."""
+
+
 class KeysNotKept(RuntimeError):
     """Every key was pressed, but the field did not keep them all: the step ran, its result is wrong."""
 
@@ -1174,7 +1178,7 @@ class PageBrowser:
             if keys_per_command and error.index % keys_per_command == 0 and "Typing stopped" in str(error):
                 done, total = error.index // keys_per_command, len(chars)
                 if "Typing stopped: page" in str(error):
-                    raise TypingStopped(f"The page changed while typing, after {done} of {total} characters, "
+                    raise PageLeft(f"The page changed while typing, after {done} of {total} characters, "
                                         "so the rest was not typed. Take a fresh snapshot before continuing.") from None
                 raise TypingStopped(f"Focus left the field while typing, after {done} of {total} characters, "
                                     "so the rest was not typed. Check the page in this snapshot before trying again.") from None
@@ -1243,7 +1247,7 @@ class PageBrowser:
         except (Settled, TypingStopped, KeysNotKept) as exc:
             # Nothing changed for this step, or typing stopped where it says. The page as it is goes with the reason.
             try:
-                snap = self.snapshot(0.0)
+                snap = self.snapshot(ACTION_WAIT_SECONDS if isinstance(exc, PageLeft) else 0.0)
             except Exception:  # noqa: BLE001
                 snap = {}
             error = NOT_KEPT if isinstance(exc, KeysNotKept) else str(exc)
@@ -1347,6 +1351,9 @@ TYPE_START = "(() => {" + CODE_BOXES + r"""
   const el = focused();
   if (el instanceof HTMLIFrameElement || el instanceof HTMLFrameElement) return { frame: true };
   if (!el || el === document.body) throw new Error("The field did not take keyboard focus. Click it, then type again.");
+  // A page that starts to leave keeps its document until the next one loads; no key goes to it then.
+  let leaving = false;
+  addEventListener("beforeunload", () => { leaving = true; }, { once: true });
   const code = codeOf(el);
   let start = code ? code.at : 0;
   if (code && code.size > 1 && WHOLE) {
@@ -1371,14 +1378,14 @@ TYPE_START = "(() => {" + CODE_BOXES + r"""
   } else if ((el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) && el.value) {
     empty(el);
   }
-  window.__rakazoTyping = { token: "TOKEN", el, code, start };
+  window.__rakazoTyping = { token: "TOKEN", el, code, start, leaving: () => leaving };
   return { multiline: !(el instanceof HTMLInputElement) };
 })()"""
 
 # Focus may move on by itself to the next box of the code, and nowhere else.
 TYPE_CHECK = "(() => {" + CODE_BOXES + r"""
   const typing = window.__rakazoTyping;
-  if (typing?.token !== "TOKEN") throw new Error("Typing stopped: page");
+  if (typing?.token !== "TOKEN" || typing.leaving()) throw new Error("Typing stopped: page");
   const active = focused();
   const { el, code } = typing;
   const holds = active === el || el.contains(active) || (code !== null && code.container.isConnected
