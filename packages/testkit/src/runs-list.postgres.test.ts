@@ -41,7 +41,7 @@ describeRunsList("runs.list activity tracker", () => {
     await stop?.();
   });
 
-  it("lists active runs from two bots and keeps completed runs under recent", async () => {
+  it("lists active runs and retains failure reasons in recent history", async () => {
     const cookie = await signup(app, `runs-${stamp}@rakazo.test`, "Runs User");
     const alpha = await rpc<{ id: string }>(app, cookie, "bots/create", {
       name: "Alpha",
@@ -77,6 +77,18 @@ describeRunsList("runs.list activity tracker", () => {
       true,
     );
     expect(recent.runs.some((run) => run.botName === "Beta")).toBe(false);
+
+    const failed = await seedRun(prisma, beta.id, "failed", "beta failed");
+    const error = "TransientModelError: The model provider is temporarily unavailable. HTTP 502.";
+    await prisma.run.update({ where: { id: failed.id }, data: { error } });
+    const history = await rpc<{ runs: RunActivityRow[] }>(app, cookie, "runs/list", {
+      filter: "recent",
+    });
+    expect(history.runs.find((run) => run.runId === failed.id)).toMatchObject({
+      status: "failed",
+      error,
+    });
+    expect(history.runs.find((run) => run.status === "completed")?.error).toBeNull();
   });
 
   it("never returns runs from another workspace", async () => {
@@ -248,7 +260,7 @@ describeRunsList("runs.list activity tracker", () => {
 async function seedRun(
   prisma: PrismaClient,
   botId: string,
-  status: "queued" | "running" | "completed",
+  status: "queued" | "running" | "completed" | "failed",
   prompt: string,
   completedAt?: Date | null,
 ) {
@@ -272,7 +284,8 @@ async function seedRun(
       taskId: task.id,
       status,
       trigger: "user",
-      completedAt: status === "completed" ? (completedAt ?? new Date()) : null,
+      completedAt:
+        status === "completed" || status === "failed" ? (completedAt ?? new Date()) : null,
     },
   });
 }

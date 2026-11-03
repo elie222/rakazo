@@ -3,6 +3,11 @@ import {
   isModelCredentialRejected,
   isRetryableProviderUnavailable,
   isTransientModelError,
+  ModelAccountError,
+  ModelOutputError,
+  ModelProviderError,
+  modelFailureReason,
+  TransientModelError,
 } from "./model-errors.js";
 
 describe("transient model errors", () => {
@@ -494,5 +499,32 @@ describe("postfixed credential failures", () => {
         message: "credential expired; quota exhausted",
       }),
     ).toBe(false);
+  });
+});
+
+describe("safe model failure reasons", () => {
+  it.each([
+    [ModelProviderError, "ModelProviderError: The model request failed."],
+    [TransientModelError, "TransientModelError: The model provider is temporarily unavailable."],
+    [ModelAccountError, "ModelAccountError: The model provider rejected the account or request."],
+    [ModelOutputError, "ModelOutputError: The model returned unusable output."],
+  ])("uses controlled text for %s", (Failure, expected) => {
+    const error = new Failure('VendorExample secret=fixture-key body={"prompt":"private text"}');
+    error.name = "untrusted-error-name";
+    expect(modelFailureReason(error)).toBe(expected);
+  });
+
+  it("reads a nested HTTP status and ignores invalid statuses and cycles", () => {
+    const cause = { response: { statusCode: 504 }, cause: {} };
+    cause.cause = cause;
+    const error = new ModelProviderError("request failed", { cause });
+    expect(error.cause).toBeUndefined();
+    expect(error.httpStatus).toBe(504);
+    expect(modelFailureReason(error)).toBe(
+      "ModelProviderError: The model request failed. HTTP 504.",
+    );
+    expect(
+      modelFailureReason(new ModelProviderError("request failed", { cause: { status: 900 } })),
+    ).toBe("ModelProviderError: The model request failed.");
   });
 });

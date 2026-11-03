@@ -1,16 +1,20 @@
 import type { NotificationMessage } from "@rakazo/adapter-kit";
 import {
   ModelAccountError,
+  ModelProviderError,
   SandboxAllowanceUsedError,
   SandboxRateLimitError,
   TransientModelError,
 } from "@rakazo/adapter-kit";
+import { normalizeRunError } from "@rakazo/core";
 import type * as DbModule from "@rakazo/db";
 import { countUnreadInboxChats } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
+
+import { modelRunFailureReason as modelFailureReason } from "./pi-runtime-errors.js";
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
@@ -194,7 +198,7 @@ async function failRun(scenario: Scenario) {
     artifact: { findMany: vi.fn(async () => []) },
     $transaction: vi.fn(async () => null),
   };
-  const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
+  const finalizeRun = vi.fn(async (_input: { error: string }) => ({ continuationRunId: null }));
   const enqueue = vi.fn(async (job: { name: string }) => {
     if (job.name === "routine.retry" && scenario.retryEnqueueFails) throw new Error("queue down");
   });
@@ -225,13 +229,17 @@ async function failRun(scenario: Scenario) {
   expect(finalizeRun).toHaveBeenCalledWith(
     expect.objectContaining({
       outcome: "failed",
-      error: scenario.pinnedTo ? "Connect that model provider first" : scenario.error.message,
+      error: scenario.pinnedTo
+        ? "Connect that model provider first"
+        : scenario.error instanceof ModelProviderError
+          ? modelFailureReason(scenario.error)
+          : scenario.error.message,
     }),
   );
   const retries = enqueue.mock.calls
     .map(([job]) => job)
     .filter((job) => job.name === "routine.retry");
-  return { retries, send, prisma };
+  return { retries, send, prisma, finalizeRun };
 }
 
 const overloaded = () =>
@@ -245,6 +253,49 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+it("records a safe provider failure even when finish notifications are off", async () => {
+  const { finalizeRun, send } = await failRun({
+    trigger: "user",
+    notifyOnFinish: false,
+    error: new TransientModelError(
+      'HTTP 502 gateway body={"apiKey":"fixture-key","prompt":"private"}',
+    ),
+  });
+  expect(finalizeRun).toHaveBeenCalledWith(
+    expect.objectContaining({
+      threadId: "thread-1",
+      outcome: "failed",
+      markUnread: true,
+      error: "TransientModelError: The model provider is temporarily unavailable. HTTP 502.",
+    }),
+  );
+  expect(send).not.toHaveBeenCalled();
+});
+
+it("keeps a quota failure's recovery and reset without saving upstream diagnostics", async () => {
+  const resetAt = NOW.getTime() + 6 * 60 * MINUTE;
+  const { finalizeRun } = await failRun({
+    trigger: "user",
+    notifyOnFinish: false,
+    error: new ModelAccountError(
+      `429: ${JSON.stringify({
+        message: "The key hit its weekly limit.",
+        metadata: {
+          limit_source: "key_limit",
+          headers: { "X-RateLimit-Reset": String(resetAt) },
+          provider: "VendorExample",
+          raw: "fixture-secret private request body",
+        },
+      })}`,
+    ),
+  });
+  const reason = finalizeRun.mock.calls[0]?.[0]?.error ?? "";
+  expect(reason).not.toContain("fixture-secret");
+  expect(reason).not.toContain("VendorExample");
+  expect(reason).toContain("HTTP 429.");
+  expect(normalizeRunError(reason)).toMatchObject({ kind: "key", recovery: "connection", resetAt });
 });
 
 describe("routine failure notifications", () => {
@@ -292,8 +343,9 @@ describe("routine failure notifications", () => {
 
 describe("retrying a routine run after a transient model failure", () => {
   it("schedules one retry and holds the failure notice", async () => {
-    const { retries, send } = await failRun({ error: overloaded() });
+    const { retries, send, finalizeRun } = await failRun({ error: overloaded() });
 
+    expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ markUnread: false }));
     expect(retries).toEqual([
       {
         name: "routine.retry",
@@ -443,7 +495,7 @@ function retryHarness(scenario: RetryScenario = {}) {
     thinkingLevel: "low",
     modelPinned: true,
     createdAt: failedAt,
-    error: overloaded().message,
+    error: modelFailureReason(overloaded()),
   };
   const tx = {
     routine: {
@@ -560,7 +612,7 @@ describe("running a routine retry", () => {
         {
           kind: "failure",
           title: "Assistant failed",
-          body: overloaded().message,
+          body: modelFailureReason(overloaded()),
           badge: 1,
           botId: "bot-1",
           threadId: "thread-1",
@@ -845,7 +897,7 @@ describe("exhausted routine retry notification", () => {
       expect.objectContaining({
         kind: "failure",
         title: "Assistant failed",
-        body: overloaded().message.slice(0, 180),
+        body: modelFailureReason(overloaded()).slice(0, 180),
         botId: "bot-1",
         threadId: "thread-1",
       }),
@@ -899,8 +951,13 @@ describe("reporting a failed run", () => {
     ["a rejected model key", new ModelAccountError('401: {"message":"Invalid API-key provided."}')],
     ["the computer provider's rate limit", new SandboxRateLimitError()],
   ])("logs %s as a warning, not an error report", async (_label, error) => {
+    const originalMessage = error.message;
     expect(await failedRunLog(error)).toEqual([
-      expect.objectContaining({ level: "warn", "run.failure": error.name, reason: error.message }),
+      expect.objectContaining({
+        level: "warn",
+        "run.failure": error.name,
+        reason: error instanceof ModelProviderError ? modelFailureReason(error) : originalMessage,
+      }),
     ]);
   });
 

@@ -6,7 +6,7 @@ import { returnBotMessageOutcome } from "./bot-messages.js";
 import { sleepDeferReason } from "./computer-idle.js";
 import { withComputerScreenAvailability } from "./computer-screens.js";
 import type { ExecutorDeps } from "./executor-deps.js";
-import { notifyRun } from "./run-notifications.js";
+import { completionMarksUnread, notifyRun } from "./run-notifications.js";
 import type { TakeoverResumeCheckpoint } from "./takeover-resume.js";
 import { TAKEOVER_RESUME_CHECKPOINTS } from "./takeover-resume.js";
 
@@ -74,6 +74,7 @@ export async function failRunBeforeTurn(
   botName: string,
   lease: { attemptId: string; workerId: string; fence: number },
   message: string,
+  userFacingPeerReply = false,
 ): Promise<boolean> {
   const failed = await deps.events.finalizeRun({
     spaceId: run.spaceId,
@@ -86,6 +87,7 @@ export async function failRunBeforeTurn(
     leaseFence: lease.fence,
     outcome: "failed",
     error: message,
+    markUnread: completionMarksUnread(run.trigger, "", userFacingPeerReply),
   });
   if (!failed) return false;
   if (failed.continuationRunId) {

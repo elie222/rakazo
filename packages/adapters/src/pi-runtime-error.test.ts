@@ -1,20 +1,36 @@
-import { ModelAccountError, ModelOutputError, TransientModelError } from "@rakazo/adapter-kit";
+import {
+  ModelAccountError,
+  ModelOutputError,
+  ModelProviderError,
+  modelFailureReason,
+  TransientModelError,
+} from "@rakazo/adapter-kit";
 import {
   MODEL_CONTEXT_TOO_SMALL_ERROR,
   MODEL_OUTPUT_LIMIT_ERROR,
   modelFallbackFailure,
+  normalizeRunError,
 } from "@rakazo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const provider = vi.hoisted(() => ({ errorMessage: "" }));
+const provider = vi.hoisted(() => ({
+  errorMessage: "",
+  messages: [] as unknown[],
+  thrown: undefined as unknown,
+  idleThrown: undefined as unknown,
+}));
 
 vi.mock("@earendil-works/pi-agent-core", () => ({
   Agent: class {
-    state = { errorMessage: provider.errorMessage, messages: [] };
+    state = { errorMessage: provider.errorMessage, messages: provider.messages };
 
     subscribe() {}
-    async prompt() {}
-    async waitForIdle() {}
+    async prompt() {
+      if (provider.thrown) throw provider.thrown;
+    }
+    async waitForIdle() {
+      if (provider.idleThrown) throw provider.idleThrown;
+    }
     abort() {}
   },
 }));
@@ -37,6 +53,7 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 }));
 
 import { PiAgentRuntime } from "./pi-runtime.js";
+import { modelRunFailureReason } from "./pi-runtime-errors.js";
 
 function consume() {
   const runtime = new PiAgentRuntime();
@@ -68,11 +85,57 @@ function consume() {
 describe("Pi runtime errors", () => {
   beforeEach(() => {
     provider.errorMessage = "Request was aborted by policy";
+    provider.messages = [];
+    provider.thrown = undefined;
+    provider.idleThrown = undefined;
   });
 
   it("propagates provider failures instead of completing with error text", async () => {
     const failure = consume();
     await expect(failure).rejects.toThrow("Request was aborted by policy");
+    await expect(failure).rejects.not.toBeInstanceOf(TransientModelError);
+  });
+
+  it("surfaces a gateway failure recorded only on the terminal assistant message", async () => {
+    provider.errorMessage = "";
+    provider.messages = [
+      {
+        role: "assistant",
+        content: [],
+        stopReason: "error",
+        errorMessage: "HTTP 502 <html>gateway failure secret=fixture-secret</html>",
+      },
+    ];
+    const error = await consume().catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(ModelProviderError);
+    expect(modelFailureReason(error as ModelProviderError)).toBe(
+      "TransientModelError: The model provider is temporarily unavailable. HTTP 502.",
+    );
+  });
+
+  it.each(["Internal runtime failure", "Internal parser failure quoting HTTP 502"])(
+    "keeps internal runtime failures outside the provider error class: %s",
+    async (message) => {
+      provider.errorMessage = "";
+      provider.idleThrown = new TypeError(message);
+      const failure = consume();
+      await expect(failure).rejects.not.toBeInstanceOf(ModelProviderError);
+      await expect(failure).rejects.toThrow(message);
+    },
+  );
+
+  it.each([
+    "ModelAccountError[auth]: Diagnostic text without a category.",
+    "ModelOutputError: Diagnostic text without a category.",
+    "TransientModelError: Diagnostic text without a category.",
+    "ModelProviderError: Diagnostic text without a category.",
+    "  ModelAccountError[auth]: \nModelAccountError[auth]: Diagnostic text without a category.",
+  ])("does not trust a saved-kind tag supplied by a provider: %s", async (message) => {
+    provider.errorMessage = message;
+    const failure = consume();
+    await expect(failure).rejects.toBeInstanceOf(ModelProviderError);
+    await expect(failure).rejects.not.toBeInstanceOf(ModelAccountError);
+    await expect(failure).rejects.not.toBeInstanceOf(ModelOutputError);
     await expect(failure).rejects.not.toBeInstanceOf(TransientModelError);
   });
 
@@ -253,4 +316,38 @@ describe("Pi runtime errors after every backup failed", () => {
     await expect(failure).rejects.not.toBeInstanceOf(ModelAccountError);
     await expect(failure).rejects.not.toBeInstanceOf(ModelOutputError);
   });
+});
+
+it.each([
+  ["429 insufficient credits", "credit", "model"],
+  ["429 spending limit exceeded", "spending", "model"],
+  ["Your authentication token has expired.", "auth", "connection"],
+  [
+    'OAuth refresh failed: status=400; body={"error":"invalid_grant","private":"fixture-secret"}',
+    "auth",
+    "connection",
+  ],
+])("preserves controlled account recovery for %s", (message, kind, recovery) => {
+  const reason = modelRunFailureReason(new ModelAccountError(message));
+  expect(reason).not.toContain("fixture-secret");
+  expect(normalizeRunError(reason)).toMatchObject({ kind, recovery });
+});
+
+it.each([
+  "400 context_length_exceeded",
+  "400 unsupported model",
+  '400 {"code":"model_terms_required","message":"Accept the model terms."}',
+  "400 key limit exceeded",
+  "429 insufficient credits",
+  "429 spending limit exceeded",
+  "429 too many requests",
+  "401 invalid API key",
+  "Provider returned an empty response",
+])("round-trips a saved error kind without reclassifying its summary: %s", (message) => {
+  const original = normalizeRunError(message);
+  const saved = modelRunFailureReason(new ModelAccountError(message));
+  const restored = normalizeRunError(saved);
+  expect(original.kind).toBeDefined();
+  expect(restored.kind).toBe(original.kind);
+  expect(restored.recovery).toBe(original.recovery);
 });

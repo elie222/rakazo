@@ -6,6 +6,7 @@ import {
   selectCompatibleModelCredential,
   usableModelId,
 } from "@rakazo/contracts";
+import { PINNED_PROVIDER_NOT_CONNECTED } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { chooseModelCredential, findModelCredential, findModelCredentialById } from "@rakazo/db";
 import { resolveDeploymentModel } from "./deployment-model.js";
@@ -104,8 +105,7 @@ export function defaultCatalogModelId(
   return usableModelId((entries.find((item) => item.recommended) ?? entries[0])?.id);
 }
 
-/** A run pinned to a provider the user has no connection for. */
-export const PINNED_PROVIDER_NOT_CONNECTED = "Connect that model provider first";
+export { PINNED_PROVIDER_NOT_CONNECTED };
 
 export class UnavailableModelForAuthError extends Error {
   constructor(message = UNAVAILABLE_MODEL_FOR_AUTH_MESSAGE) {

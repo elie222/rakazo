@@ -1198,6 +1198,15 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       expect(await system.task.findUniqueOrThrow({ where: { id: run.taskId } })).toMatchObject({
         status: "failed",
       });
+      expect(
+        await system.message.findFirst({
+          where: { threadId: run.threadId, role: "system" },
+          orderBy: { seq: "desc" },
+          select: { blocks: true },
+        }),
+      ).toEqual({
+        blocks: [{ kind: "text", text: "Fixture failed: The run could not be completed." }],
+      });
       expect(vi.mocked(fixture.jobs.cancel).mock.calls).not.toContainEqual([runJobKey(run.id)]);
       expect(releaseScreen.mock.calls.some(([, context]) => context.runId === run.id)).toBe(false);
     },

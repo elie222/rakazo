@@ -4,6 +4,7 @@ import {
   APPROVED_ACTION_NOT_RUN_ERROR,
   HOSTED_MODEL_CREDITS_REQUIRED_ERROR,
   isImageInputConfirmation,
+  isKnownRunError,
   isModelRequiredSendError,
   MISSING_MODEL_RUN_ERROR,
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
@@ -15,6 +16,7 @@ import {
   MODEL_REQUIRED_SEND_ERROR,
   modelFallbackFailure,
   normalizeRunError,
+  PINNED_PROVIDER_NOT_CONNECTED,
   userRunError,
   VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR,
 } from "./run-error.js";
@@ -878,4 +880,33 @@ describe("the one action that fixes a failed run", () => {
       });
     },
   );
+});
+
+describe("known application run errors", () => {
+  it("allows fixed recovery advice but no external diagnostic text", () => {
+    expect(isKnownRunError(APPROVED_ACTION_NOT_RUN_ERROR)).toBe(true);
+    expect(isKnownRunError(MODEL_IMAGE_INPUT_ERROR)).toBe(true);
+    expect(isKnownRunError(PINNED_PROVIDER_NOT_CONNECTED)).toBe(true);
+    expect(normalizeRunError(PINNED_PROVIDER_NOT_CONNECTED)).toMatchObject({
+      recovery: "connection",
+    });
+    expect(isKnownRunError("HTTP 502 gateway body=fixture-secret")).toBe(false);
+    expect(isKnownRunError(`${MODEL_IMAGE_INPUT_ERROR} fixture-secret`)).toBe(false);
+  });
+});
+
+it.each([
+  [
+    "ModelAccountError: The model provider rejected the account or request. HTTP 401.",
+    "auth",
+    "connection",
+  ],
+  [
+    "ModelAccountError: The model provider rejected the account or request. HTTP 403.",
+    "access",
+    "model",
+  ],
+  ["ModelOutputError: The model returned unusable output.", "output", "model"],
+])("keeps recovery actions for a safe failure reason: %s", (reason, kind, recovery) => {
+  expect(normalizeRunError(reason)).toMatchObject({ kind, recovery });
 });

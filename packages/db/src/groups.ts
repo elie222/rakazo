@@ -644,6 +644,8 @@ export function createGroupRepos(prisma: PrismaClient) {
     async removeGroup(actor: Actor, groupId: string) {
       return prisma.$transaction(async (tx) => {
         await lockOwnedGroup(tx, actor, groupId);
+        // Block new artifact foreign keys before snapshotting the blobs to delete.
+        await tx.$queryRaw`SELECT id FROM chat_groups WHERE id = ${groupId} FOR UPDATE`;
         const group = await tx.chatGroup.findUnique({
           where: { id: groupId },
           select: {
@@ -685,13 +687,14 @@ export async function lockOwnedGroup(
   actor: Pick<Actor, "spaceId" | "userId">,
   groupId: string,
 ) {
+  // Serialize edits without blocking foreign-key checks from concurrent thread messages.
   const locked = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT id
     FROM chat_groups
     WHERE id = ${groupId}
       AND "spaceId" = ${actor.spaceId}
       AND "userId" = ${actor.userId}
-    FOR UPDATE
+    FOR NO KEY UPDATE
   `;
   if (locked.length !== 1) throw new IsolationError();
 }

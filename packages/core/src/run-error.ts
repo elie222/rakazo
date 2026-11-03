@@ -3,6 +3,7 @@ import {
   COMPUTER_ALLOWANCE_USED_ERROR,
   COMPUTER_RATE_LIMIT_ERROR,
   providerQuotaResetAt,
+  RUN_ERROR_KINDS,
 } from "@rakazo/contracts";
 import { stuckWorkStatusMessages } from "./stuck-work.js";
 
@@ -29,6 +30,9 @@ export const VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR =
 /** The provider account's request budget cannot fit the agent's mandatory context. */
 export const MODEL_REQUEST_LIMIT_ERROR =
   "This connection's request limit is too small. Choose another model.";
+
+/** A run pinned to a provider the user has no connection for. */
+export const PINNED_PROVIDER_NOT_CONNECTED = "Connect that model provider first";
 
 export const MISSING_MODEL_RUN_ERROR = "Connect a model in Settings before running bots.";
 
@@ -106,6 +110,7 @@ const MODEL_OUTPUT_RUN_ERRORS = new Set([
 ]);
 /** App advice whose fix is connecting a model. */
 const MODEL_CONNECTION_RUN_ERRORS = new Set([
+  PINNED_PROVIDER_NOT_CONNECTED,
   MISSING_MODEL_RUN_ERROR,
   HOSTED_MODEL_CREDITS_REQUIRED_ERROR,
 ]);
@@ -117,6 +122,21 @@ const APP_RUN_ERRORS = new Set([
   COMPUTER_ALLOWANCE_USED_ERROR,
   ...stuckWorkStatusMessages(),
 ]);
+
+const KNOWN_MODEL_RUN_ERRORS = new Set([
+  MODEL_OUTPUT_LIMIT_ERROR,
+  MODEL_OUTPUT_CUT_ERROR,
+  MODEL_CONTEXT_TOO_SMALL_ERROR,
+  VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR,
+  MODEL_REQUEST_LIMIT_ERROR,
+  MODEL_IMAGE_INPUT_UNKNOWN,
+  MODEL_IMAGE_INPUT_ERROR,
+]);
+
+/** Only application-owned literals may bypass the generic provider failure description. */
+export function isKnownRunError(message: string): boolean {
+  return APP_RUN_ERRORS.has(message) || KNOWN_MODEL_RUN_ERRORS.has(message);
+}
 
 export const RUN_ERROR_LIMIT_MESSAGES = {
   key: {
@@ -229,6 +249,8 @@ export function normalizeRunError(
   period?: "none" | "daily" | "weekly" | "monthly";
 } {
   const trimmed = details.trim();
+  const savedKindName = /^ModelAccountError\[(\w+)\]: /.exec(trimmed)?.[1];
+  const savedKind = RUN_ERROR_KINDS.find((kind) => kind === savedKindName);
   if ([MODEL_IMAGE_INPUT_ERROR, MODEL_IMAGE_INPUT_UNKNOWN].includes(trimmed)) {
     return {
       summary: translate(trimmed),
@@ -310,6 +332,8 @@ export function normalizeRunError(
   const message = typeof payload.message === "string" ? payload.message : body;
   // Output diagnostics can quote generated text that mentions a timeout or a quota.
   if (
+    savedKind === "output" ||
+    trimmed.startsWith("ModelOutputError: ") ||
     trimmed === MODEL_OUTPUT_LIMIT_ERROR ||
     MODEL_OUTPUT_FAILURE.test(trimmed) ||
     MODEL_OUTPUT_FAILURE.test(message)
@@ -331,7 +355,15 @@ export function normalizeRunError(
     ),
   ].join(" ");
   const status =
-    [prefix?.[1], prefix?.[2], record.status, record.code, payload.code, payload.httpCode]
+    [
+      prefix?.[1],
+      prefix?.[2],
+      trimmed.match(/\bHTTP ([45]\d{2})\.$/)?.[1],
+      record.status,
+      record.code,
+      payload.code,
+      payload.httpCode,
+    ]
       .map(Number)
       .find((value) => Number.isInteger(value) && value >= 100 && value <= 599) ??
     // Bedrock names its modeled exception instead of reporting the HTTP status.
@@ -356,18 +388,23 @@ export function normalizeRunError(
   // A 429 that resets hours from now is a quota to wait out, not a short rate window.
   const quotaResetAt = status === 429 ? providerQuotaResetAt(trimmed, now) : undefined;
   if (
-    status !== 413 &&
-    quotaResetAt === undefined &&
-    (status === 429 ||
-      /rate[_ -]limit|too many requests|resource[_ ]?exhausted|request limit reached/i.test(
-        signals,
-      )) &&
-    // OpenAI's per-minute limits link to billing as a way to raise them.
-    (!financialQuota || /\b(?:rpm|tpm)\b/i.test(signals))
+    savedKind === "rate" ||
+    (status !== 413 &&
+      quotaResetAt === undefined &&
+      !/^ModelAccountError(?:\[\w+\])?: /.test(trimmed) &&
+      (status === 429 ||
+        /rate[_ -]limit|too many requests|resource[_ ]?exhausted|request limit reached/i.test(
+          signals,
+        )) &&
+      // OpenAI's per-minute limits link to billing as a way to raise them.
+      (!financialQuota || /\b(?:rpm|tpm)\b/i.test(signals)))
   ) {
     kind = "rate";
     summary = translate("{provider} is rate limiting requests. Try again shortly.", { provider });
   } else if (
+    savedKind === "key" ||
+    savedKind === "credit" ||
+    savedKind === "spending" ||
     status === 402 ||
     quotaResetAt !== undefined ||
     /\b(?:daily|weekly|monthly|usage)[\s\S]{0,30}limit|\b(?:quota|insufficient[_ ](?:quota|credits?|funds|balance)|credit[_ ]balance|(?:no|out of|more) credits?)\b|(?:key|credit|spend|spending|budget|billing)[\s\S]{0,40}(?:limit|exceed|exhaust|insufficient)|(?:limit|insufficient)[\s\S]{0,30}(?:credit|spend|budget)/i.test(
@@ -388,15 +425,18 @@ export function normalizeRunError(
     // OpenRouter names the limit that tripped. "Make sure your key is on the correct account"
     // in a credit error is not a key limit.
     const limitSource = typeof metadata.limit_source === "string" ? metadata.limit_source : "";
-    kind = (
-      limitSource
-        ? /key_limit/.test(limitSource)
-        : /key[_ ]limit|\bkey\b[^.]{0,30}\blimit\b/i.test(signals)
-    )
-      ? "key"
-      : /credit|insufficient_quota|free[_ -]tier/i.test(signals)
-        ? "credit"
-        : "spending";
+    kind =
+      savedKind === "key" || savedKind === "credit" || savedKind === "spending"
+        ? savedKind
+        : (
+              limitSource
+                ? /key_limit/.test(limitSource)
+                : /key[_ ]limit|\bkey\b[^.]{0,30}\blimit\b/i.test(signals)
+            )
+          ? "key"
+          : /credit|insufficient_quota|free[_ -]tier/i.test(signals)
+            ? "credit"
+            : "spending";
     // A capped key is fixed by connecting another; an account out of money or quota is not, but
     // another model keeps the user going.
     recovery = kind === "key" ? "connection" : "model";
@@ -438,6 +478,7 @@ export function normalizeRunError(
     kind = "context";
     summary = translate(MODEL_CONTEXT_TOO_SMALL_ERROR);
   } else if (
+    savedKind === "context" ||
     status === 413 ||
     /context[_ -](?:length|size|window)|maximum context|exceeds the model context|prompt is too long|too many (?:tokens|images)|request too large/i.test(
       signals,
@@ -451,6 +492,7 @@ export function normalizeRunError(
     kind = "rate";
     summary = translate("{provider} is rate limiting requests. Try again shortly.", { provider });
   } else if (
+    savedKind === "auth" ||
     status === 401 ||
     ((status === 403 ||
       /(?:invalid|incorrect)[_ -](?:api[_ -])?key|api[_ -]?key[_ -](?:invalid|expired)|authentication_error|\bauthentication token (?:has|is) expired\b|\binvalidated oauth token\b|\bapi key is not scoped to a workspace\b/i.test(
@@ -463,13 +505,14 @@ export function normalizeRunError(
     summary = translate("{provider} rejected the API key. Check your connection settings.", {
       provider,
     });
-  } else if (status === 403 || payload.code === "model_terms_required") {
+  } else if (savedKind === "access" || status === 403 || payload.code === "model_terms_required") {
     // The key works, but the provider refuses this model to the account or plan, or serves it
     // only inside its own apps.
     recovery = "model";
     kind = "access";
     summary = translate("{provider} denied access to this model.", { provider });
   } else if (
+    savedKind === "model" ||
     status === 404 ||
     status === 410 ||
     payload.param === "model" ||

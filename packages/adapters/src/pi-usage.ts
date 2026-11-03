@@ -15,6 +15,7 @@ import type {
   ModelCallObserver,
   UsageOperationKind,
 } from "@rakazo/adapter-kit";
+import { ModelProviderError } from "@rakazo/adapter-kit";
 import { Agent } from "undici";
 import { withChatCompletionsCompatibility } from "./chat-completions-compat.js";
 import type { ContextBudget } from "./context-selection.js";
@@ -326,7 +327,7 @@ export function observedPiStream(
     onUsage?: (usage: AgentUsage) => void;
     recordUsage?: (event: Extract<AgentRuntimeEvent, { type: "usage" }>) => void | Promise<void>;
     /** Provider failures only; excludes context, reservations and usage settlement. */
-    onProviderError?: (message: AssistantMessage) => void;
+    onProviderError?: (message: AssistantMessage, httpStatus?: number) => void;
   },
 ) {
   const stream = createAssistantMessageEventStream();
@@ -528,6 +529,13 @@ export function observedPiStream(
             /* Already failing. */
           }
         }
+        const errorText =
+          terminalError instanceof Error ? terminalError.message : String(terminalError);
+        // Only the actual provider stream owns HTTP metadata; local hooks may quote status codes.
+        const status =
+          providerThrew && terminalError === providerError
+            ? new ModelProviderError(errorText, terminalError).httpStatus
+            : undefined;
         // Preserve a proper Pi terminal message so Agent and cancellation both settle.
         const message = {
           role: "assistant" as const,
@@ -544,11 +552,11 @@ export function observedPiStream(
             cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
           },
           stopReason: "error" as const,
-          errorMessage:
-            terminalError instanceof Error ? terminalError.message : String(terminalError),
+          errorMessage: errorText,
           timestamp: Date.now(),
         };
-        if (providerThrew && terminalError === providerError) hooks?.onProviderError?.(message);
+        if (providerThrew && terminalError === providerError)
+          hooks?.onProviderError?.(message, status);
         stream.push({ type: "error", reason: "error", error: message });
         stream.end(message);
       }

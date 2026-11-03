@@ -4,6 +4,7 @@ import {
   historyCompactJob,
   ModelAccountError,
   ModelOutputError,
+  ModelProviderError,
   runContinueJob,
   SandboxAllowanceUsedError,
   SandboxRateLimitError,
@@ -14,6 +15,7 @@ import {
   displayName,
   humanizeToolName,
   isBackgroundRunTrigger,
+  isKnownRunError,
   redactSecrets,
   redactSecretsAfter,
   TAKEOVER_COMPUTER_PENDING_STATE,
@@ -33,6 +35,7 @@ import {
   HISTORY_WINDOW_SIZE,
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
+import { modelRunFailureReason } from "./pi-runtime-errors.js";
 import {
   backOffRoutineAfterAccountError,
   clearRoutineBackoff,
@@ -920,7 +923,12 @@ export async function failRun(
   if (!ctx.state.terminalCheckpointComplete) {
     await ctx.computer.checkpoint.flush().catch(() => undefined);
   }
-  const message = redactSecrets(userRunError(error), ctx.secrets);
+  const message = redactSecrets(
+    error instanceof ModelProviderError && !isKnownRunError(error.message)
+      ? modelRunFailureReason(error)
+      : userRunError(error),
+    ctx.secrets,
+  );
   // Reply text the user watched stream in since the last saved message stays in the
   // thread, above the error, instead of vanishing with the live row.
   recordExplicitNoResponse(reply, reply.assistantTurnText);
@@ -950,6 +958,14 @@ export async function failRun(
     leaseFence: ctx.fence,
     outcome: "failed",
     error: message,
+    markUnread: completionMarksUnread(
+      run.trigger,
+      "",
+      ctx.source.peerMessage?.repliesToRequest === true,
+    ),
+    ...(error instanceof ModelProviderError || isKnownRunError(message)
+      ? { failureNotice: message }
+      : {}),
     ...(partialReply.length > 0 ? { partialReply } : {}),
   });
   if (!failed) return;

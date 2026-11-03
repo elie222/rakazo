@@ -116,3 +116,30 @@ describe("providerQuotaResetAt", () => {
     expect(providerQuotaResetAt(text, now)).toBeUndefined();
   });
 });
+
+it("retains a failure reason while accepting activity rows from older servers", () => {
+  const row = {
+    runId: "run-1",
+    botId: "bot-1",
+    botName: "Bot",
+    groupId: null,
+    groupName: null,
+    threadId: "thread-1",
+    status: "failed",
+    trigger: "user",
+    notificationsEnabled: false,
+    promptSnippet: "Task",
+    agentMessage: null,
+    updatedAt: "2026-11-03T00:00:00.000Z",
+  };
+  const error = "ModelProviderError: The model request failed. HTTP 502.";
+  expect(RunActivityRowSchema.parse({ ...row, error }).error).toBe(error);
+  expect(RunActivityRowSchema.safeParse(row).success).toBe(true);
+});
+
+it.each(["9".repeat(400), "9000000000000"])(
+  "ignores quota resets outside the date range: %s",
+  (delay) => {
+    expect(providerQuotaResetAt(`retry-after: ${delay}`, Date.UTC(2026, 0, 1))).toBeUndefined();
+  },
+);

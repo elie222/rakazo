@@ -18,7 +18,12 @@ import type {
   AgentUsage,
   ModelCallObserver,
 } from "@rakazo/adapter-kit";
-import { ModelAccountError, ModelOutputError, TransientModelError } from "@rakazo/adapter-kit";
+import {
+  ModelAccountError,
+  ModelOutputError,
+  ModelProviderError,
+  TransientModelError,
+} from "@rakazo/adapter-kit";
 import {
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
   MODEL_IMAGE_INPUT_ERROR,
@@ -382,7 +387,7 @@ export class PiAgentRuntime implements AgentRuntime {
           },
         };
         // The idle watchdog may clone a terminal message, preserving its content array.
-        const providerFailures = new WeakSet<AssistantMessage["content"]>();
+        const providerFailures = new WeakMap<AssistantMessage["content"], number | undefined>();
         const hasBackups = Boolean(request.fallbackModels?.length);
         let agent: Agent;
         let activeStreamTarget = host.activeModel;
@@ -426,7 +431,8 @@ export class PiAgentRuntime implements AgentRuntime {
                     {
                       ...usageHooks,
                       prepareContext,
-                      onProviderError: (message) => providerFailures.add(message.content),
+                      onProviderError: (message, httpStatus) =>
+                        providerFailures.set(message.content, httpStatus),
                     },
                   ),
                 target.config.cacheCapabilities?.retentionMode,
@@ -982,7 +988,12 @@ export class PiAgentRuntime implements AgentRuntime {
               ...fallbackState.backupOutcomes.values(),
             ]);
           }
-          throw modelFailure(error, message);
+          throw modelFailure(error, message, {
+            httpStatus:
+              terminalMessage?.role === "assistant"
+                ? providerFailures.get(terminalMessage.content)
+                : undefined,
+          });
         }
         // Only an assistant message can hold the answer a provider left off the deltas;
         // a trailing tool result is tool output, not the model's reply.
@@ -1056,12 +1067,14 @@ export class PiAgentRuntime implements AgentRuntime {
         const message = sanitizeError(error instanceof Error ? error.message : String(error));
         queue.fail(
           error instanceof TransientModelError
-            ? new TransientModelError(message)
+            ? new TransientModelError(message, { cause: error })
             : error instanceof ModelAccountError
-              ? new ModelAccountError(message)
+              ? new ModelAccountError(message, { cause: error })
               : error instanceof ModelOutputError
-                ? new ModelOutputError(message)
-                : new Error(message),
+                ? new ModelOutputError(message, { cause: error })
+                : error instanceof ModelProviderError
+                  ? new ModelProviderError(message, { cause: error })
+                  : new Error(message),
         );
       } finally {
         stopThinking();

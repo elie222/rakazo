@@ -60,7 +60,11 @@ export function providerQuotaResetAt(text: string, now = Date.now()): number | u
     : delay
       ? now + Number(delay) * 1000
       : undefined;
-  return resetAt !== undefined && resetAt - now > PROVIDER_QUOTA_MIN_RESET_MS ? resetAt : undefined;
+  return resetAt !== undefined &&
+    Number.isFinite(new Date(resetAt).getTime()) &&
+    resetAt - now > PROVIDER_QUOTA_MIN_RESET_MS
+    ? resetAt
+    : undefined;
 }
 
 export const RoutineRunSchema = z.object({
@@ -95,6 +99,7 @@ export const RunActivityRowSchema = z.object({
   groupName: z.string().nullable(),
   threadId: Id,
   status: RunStatus,
+  error: z.string().nullable().optional(),
   trigger: RunTriggerSchema,
   notificationsEnabled: z.boolean(),
   promptSnippet: z.string(),

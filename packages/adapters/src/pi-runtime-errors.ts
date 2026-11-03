@@ -2,6 +2,8 @@ import {
   isTransientModelError,
   ModelAccountError,
   ModelOutputError,
+  ModelProviderError,
+  modelFailureReason,
   TransientModelError,
 } from "@rakazo/adapter-kit";
 import {
@@ -11,6 +13,28 @@ import {
 } from "@rakazo/core";
 import { terminalOAuthRefreshErrorMarker } from "./pi-oauth.js";
 import { isOpenCodeProvider } from "./pi-runtime-stream.js";
+
+/** Keep controlled account recovery advice without retaining upstream diagnostic text. */
+export function modelRunFailureReason(error: ModelProviderError): string {
+  if (!(error instanceof ModelAccountError)) return modelFailureReason(error);
+  const providerMessage = stripSavedErrorKind(error.message);
+  const normalized = normalizeRunError(
+    terminalOAuthRefreshErrorMarker(providerMessage) ? "authentication_error" : providerMessage,
+    (message, values) => {
+      // Keep a machine-readable reset below instead of the localized calendar label.
+      if (message === "{summary} Resets {date}.") return String(values?.summary ?? "");
+      return message.replace(/\{(\w+)\}/g, (placeholder, key: string) =>
+        key === "provider" ? "Your model provider" : String(values?.[key] ?? placeholder),
+      );
+    },
+  );
+  if (!normalized.kind) return modelFailureReason(error);
+  const reset = normalized.resetAt
+    ? ` Resets at ${new Date(normalized.resetAt).toISOString()}.`
+    : "";
+  const status = error.httpStatus ? ` HTTP ${error.httpStatus}.` : "";
+  return `ModelAccountError[${normalized.kind}]: ${normalized.summary}${reset}${status}`;
+}
 
 export function assistantText(message: unknown): string {
   if (!message || typeof message !== "object" || !("content" in message)) return "";
@@ -94,11 +118,11 @@ function looksLikeOpenCodeSessionError(message: string): boolean {
 /**
  * One classification for retries, reporting and the run error view. A failure the view
  * attributes to the user's provider account, key, plan or model choice, or to the model's own
- * unusable output, is not a server fault. Anything it cannot place stays a plain error.
+ * unusable output, is not a server fault. Unclassified provider failures keep the generic provider error type.
  */
-export function modelFailure(error: string, message: string): Error {
+export function modelFailure(error: string, message: string, diagnostics?: unknown): Error {
   // When every model failed, the run is only as clear as its least explained failure: an
-  // unexplained part stays a server error, and a part the user must fix outranks bad output,
+  // unexplained part stays a generic provider failure, and a part the user must fix outranks bad output,
   // which outranks one that clears on its own. Skipped backups never ran, so they do not count.
   const fallback = parseModelFallbackFailure(message);
   const failures = fallback
@@ -107,25 +131,39 @@ export function modelFailure(error: string, message: string): Error {
         ...fallback.backups.filter((item) => item.status === "failed").map((item) => item.reason),
       ].map((part) => modelFailureClass(part, part))
     : [modelFailureClass(error, message)];
-  const Failure = MODEL_FAILURE_RANK[Math.max(...failures)] ?? Error;
-  return new Failure(message);
+  const Failure = MODEL_FAILURE_RANK[Math.max(...failures)] ?? ModelProviderError;
+  return new Failure(message, diagnostics);
 }
 
-/** Least to most severe; a server fault (plain Error) is last. */
-const MODEL_FAILURE_RANK = [TransientModelError, ModelOutputError, ModelAccountError, Error];
+/** Least to most severe; an unclassified provider failure is last. */
+const MODEL_FAILURE_RANK = [
+  TransientModelError,
+  ModelOutputError,
+  ModelAccountError,
+  ModelProviderError,
+];
+
+function stripSavedErrorKind(message: string): string {
+  return message.replace(
+    /^\s*(?:(?:ModelAccountError|ModelOutputError|ModelProviderError|TransientModelError)(?:\[\w+\])?:\s*)+/,
+    "",
+  );
+}
 
 function modelFailureClass(error: string, message: string): number {
-  const { kind } = normalizeRunError(message);
+  const providerError = stripSavedErrorKind(error);
+  const providerMessage = stripSavedErrorKind(message);
+  const { kind } = normalizeRunError(providerMessage);
   // Output diagnostics can quote generated text that looks like a timeout.
   if (kind === "output") return MODEL_FAILURE_RANK.indexOf(ModelOutputError);
   // OpenCode drops chat sessions on its side; the next send opens a new one.
-  if (isTransientModelError(error) || message === OPENCODE_SESSION_ERROR)
+  if (isTransientModelError(providerError) || providerMessage === OPENCODE_SESSION_ERROR)
     return MODEL_FAILURE_RANK.indexOf(TransientModelError);
   // A refresh token the provider no longer accepts; the credential is already retired.
-  if (terminalOAuthRefreshErrorMarker(message))
+  if (terminalOAuthRefreshErrorMarker(providerMessage))
     return MODEL_FAILURE_RANK.indexOf(ModelAccountError);
   if (kind) return MODEL_FAILURE_RANK.indexOf(ModelAccountError);
-  return MODEL_FAILURE_RANK.indexOf(Error);
+  return MODEL_FAILURE_RANK.indexOf(ModelProviderError);
 }
 
 export function sanitizeProviderError(provider: string, message: string): string {
