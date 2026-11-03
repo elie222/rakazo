@@ -136,7 +136,7 @@ export class MessagingInstallations implements MessagingInstallationStore {
             data: {
               ciphertext: sealed.ciphertext,
               workspaceName: external.workspaceName,
-              ...(ownerAddress ? { ownerAddress } : {}),
+              ownerAddress,
             },
           });
           if (updated.count !== 1) throw new Error("Workspace connection changed; try again");

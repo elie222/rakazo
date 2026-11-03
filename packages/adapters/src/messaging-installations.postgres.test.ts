@@ -150,6 +150,22 @@ describePostgres("messaging workspace installation (PostgreSQL)", () => {
     expect(await fromOwner("E-MISSING")).toBe(false);
   });
 
+  it("forgets the previous installer when a reconnect names nobody", async () => {
+    fetcher.mockResolvedValueOnce(
+      Response.json({
+        ok: true,
+        access_token: "fake-install-token-2",
+        team: { id: "T-TEST", name: "Example workspace" },
+      }),
+    );
+    const state = await start(0);
+    await manager.complete(actors[0]!, state, "code");
+    const installation = await asSystem(prisma).messagingInstallation.findUniqueOrThrow({
+      where: { provider_workspaceId: { provider: "slack", workspaceId: "T-TEST" } },
+    });
+    expect(installation.ownerAddress).toBeNull();
+  });
+
   it("exposes personal link availability only to current space members without exposing installation ownership", async () => {
     const memberActor = { ...actors[1]!, spaceId: actors[0]!.spaceId };
     expect(await runAsTenant(actors[1]!, () => manager.canLinkPersonalMessages(actors[1]!))).toBe(
