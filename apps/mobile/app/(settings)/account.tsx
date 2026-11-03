@@ -164,6 +164,8 @@ export default function Account() {
   // A list that fails to refresh keeps its last count, so a passing error doesn't hide the row.
   const archivedCounts = useRef({ bots: 0, groups: 0 });
   const [usage, setUsage] = useState<UsageSummary | null>(null);
+  // Messaging appears only on servers that have a chat app connected, as on web.
+  const [messagingEnabled, setMessagingEnabled] = useState(false);
   const appearance = getCachedAppearancePreference();
   const streamReplies = useSyncExternalStore(
     subscribeResponseStreaming,
@@ -203,6 +205,9 @@ export default function Account() {
       .catch(() => undefined);
     void rpc("usage/summary")
       .then(setUsage)
+      .catch(() => undefined);
+    void rpc("messaging/status")
+      .then((status) => setMessagingEnabled(status.enabled))
       .catch(() => undefined);
     if (Platform.OS === "android") {
       void getLiveNotificationSettings()
@@ -649,7 +654,7 @@ export default function Account() {
                 : []),
               { title: t("Integrations"), href: "/integrations" },
               { title: t("Skills"), href: "/skills" },
-              { title: t("Messaging"), href: "/messaging" },
+              ...(messagingEnabled ? [{ title: t("Messaging"), href: "/messaging" } as const] : []),
               { title: t("AI data sharing"), href: "/ai-data-sharing" },
             ] as const
           ).map(settingsLink)}

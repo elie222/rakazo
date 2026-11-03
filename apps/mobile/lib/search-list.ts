@@ -11,12 +11,13 @@ export function searchHitPreview(snippet: string): string {
   return plainTextFromMarkdown(cleaned);
 }
 
+/** The snippet, after the chat it came from unless the row title already names that chat. */
 export function searchHitRowPreview(
-  hit: Pick<SearchHit, "groupName" | "botName" | "snippet">,
+  hit: Pick<SearchHit, "title" | "groupName" | "botName" | "snippet">,
 ): string {
   const context = hit.groupName ?? hit.botName ?? "";
   const preview = searchHitPreview(hit.snippet);
-  if (!context) return preview;
+  if (!context || context === hit.title) return preview;
   if (!preview) return context;
   return `${context}: ${preview}`;
 }

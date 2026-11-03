@@ -532,11 +532,7 @@ function PlanCard({
 }) {
   const tokens = useMobileTokens();
   return (
-    <Pressable
-      accessibilityRole="radio"
-      accessibilityState={{ checked: selected }}
-      accessibilityLabel={title}
-      onPress={onPress}
+    <View
       style={[
         styles.plan,
         {
@@ -548,32 +544,45 @@ function PlanCard({
         },
       ]}
     >
-      <View style={styles.planHeader}>
-        <NativeSymbol
-          ios={selected ? "checkmark.circle.fill" : "circle"}
-          android={selected ? "checkmark-circle" : "ellipse-outline"}
-          size={22}
-          color={selected ? tokens.primary : tokens.faintForeground}
-        />
-        <Text style={[styles.planTitle, { color: tokens.foreground }]}>{title}</Text>
-      </View>
-      <View style={styles.planBody}>
-        <View style={styles.priceRow}>
-          {typeof price === "string" ? (
-            <Text style={[styles.price, { color: tokens.foreground }]}>{price}</Text>
-          ) : (
-            price
-          )}
-          {badge ? (
-            <View style={[styles.badge, { backgroundColor: tokens.primary }]}>
-              <Text style={[styles.badgeLabel, { color: tokens.primaryForeground }]}>{badge}</Text>
-            </View>
-          ) : null}
+      <Pressable
+        accessibilityRole="radio"
+        accessibilityState={{ checked: selected }}
+        accessibilityLabel={[title, typeof price === "string" ? price : null, detail]
+          .filter(Boolean)
+          .join(", ")}
+        onPress={onPress}
+        style={styles.planPress}
+      >
+        <View style={styles.planHeader}>
+          <NativeSymbol
+            ios={selected ? "checkmark.circle.fill" : "circle"}
+            android={selected ? "checkmark-circle" : "ellipse-outline"}
+            size={22}
+            color={selected ? tokens.primary : tokens.faintForeground}
+          />
+          <Text style={[styles.planTitle, { color: tokens.foreground }]}>{title}</Text>
         </View>
-        <Text style={[styles.planDetail, { color: tokens.mutedForeground }]}>{detail}</Text>
-        {accessory ? <View style={styles.planAccessory}>{accessory}</View> : null}
-      </View>
-    </Pressable>
+        <View style={styles.planBody}>
+          <View style={styles.priceRow}>
+            {typeof price === "string" ? (
+              <Text style={[styles.price, { color: tokens.foreground }]}>{price}</Text>
+            ) : (
+              price
+            )}
+            {badge ? (
+              <View style={[styles.badge, { backgroundColor: tokens.primary }]}>
+                <Text style={[styles.badgeLabel, { color: tokens.primaryForeground }]}>
+                  {badge}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+          <Text style={[styles.planDetail, { color: tokens.mutedForeground }]}>{detail}</Text>
+        </View>
+      </Pressable>
+      {/* Outside the radio, so VoiceOver can reach its own control. */}
+      {accessory ? <View style={styles.planAccessory}>{accessory}</View> : null}
+    </View>
   );
 }
 
@@ -663,7 +672,8 @@ const styles = StyleSheet.create({
   planHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   planTitle: { ...typeScale.cardTitle, flex: 1 },
   planBody: { paddingLeft: 32, gap: 2 },
-  planAccessory: { marginTop: 10 },
+  planPress: { gap: 8 },
+  planAccessory: { marginTop: 4, marginLeft: 32 },
   price: { fontSize: 22, lineHeight: 28, fontWeight: "600" },
   planDetail: typeScale.secondary,
   amount: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start" },

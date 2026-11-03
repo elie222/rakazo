@@ -5,6 +5,8 @@ export interface IosScreenshotSection {
   id: string;
   title: string;
   flow: string;
+  /** App routes this section captures, e.g. "thread" for app/thread.tsx. */
+  screens: string[];
 }
 
 const SECTION_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -27,6 +29,7 @@ export async function loadIosScreenshotCatalog(
     const id = record.id;
     const title = record.title;
     const flow = record.flow;
+    const screens = record.screens;
     if (typeof id !== "string" || !SECTION_ID.test(id)) {
       throw new Error(`Invalid iOS screenshot section id: ${String(id)}`);
     }
@@ -38,7 +41,14 @@ export async function loadIosScreenshotCatalog(
     if (typeof flow !== "string" || flow.split(/[\\/]/).includes("..") || path.isAbsolute(flow)) {
       throw new Error(`Section ${id} has an unsafe flow path`);
     }
-    sections.push({ id, title: title.trim(), flow });
+    if (
+      !Array.isArray(screens) ||
+      screens.length === 0 ||
+      !screens.every((screen) => typeof screen === "string" && screen.length > 0)
+    ) {
+      throw new Error(`Section ${id} needs the screens it captures`);
+    }
+    sections.push({ id, title: title.trim(), flow, screens });
   }
   return sections;
 }

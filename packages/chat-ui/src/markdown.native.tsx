@@ -67,6 +67,7 @@ const MONO_FONT = Platform.select({ ios: "ui-monospace", default: "monospace" })
 const BULLET_SIZE = 5;
 // List markers sit in an 18 pt column, 8 pt before the item text.
 const MARKER_COLUMN = 18;
+const TASK_BOX_SIZE = 14;
 const MARKER_GAP = 8;
 // Advances at the list-number size (15 pt): a tabular digit, and the "." or ")" after it.
 const NUMBER_DIGIT_WIDTH = 9.6;
@@ -96,6 +97,43 @@ const POP_ISOLATE = "\u2069";
 const markdownParser = createMarkdownIt();
 markdownParser.validateLink = keepMarkdownLinkToken;
 linkifyExplicitUrls(markdownParser);
+markTaskListItems(markdownParser);
+
+const TASK_MARKER = /^\[([ xX])\]\s+/;
+
+/** The parts of a markdown-it token the task list rule reads and writes. */
+type ParsedToken = {
+  type: string;
+  content: string;
+  children: ParsedToken[] | null;
+  attrSet(name: string, value: string): void;
+};
+
+/**
+ * GitHub task lists, as web renders them: a list item starting `[ ]` or `[x]` loses that text
+ * and carries its state, so the list item rule draws a checkbox instead.
+ */
+function markTaskListItems(parser: typeof markdownParser) {
+  parser.core.ruler.after("inline", "task_list_items", (state: { tokens: ParsedToken[] }) => {
+    const tokens = state.tokens;
+    for (let index = 2; index < tokens.length; index += 1) {
+      const inline = tokens[index];
+      const item = tokens[index - 2];
+      if (
+        inline?.type !== "inline" ||
+        tokens[index - 1]?.type !== "paragraph_open" ||
+        item?.type !== "list_item_open"
+      )
+        continue;
+      const first = inline.children?.[0];
+      const match = first?.type === "text" ? TASK_MARKER.exec(first.content) : null;
+      if (!first || !match) continue;
+      first.content = first.content.slice(match[0].length);
+      inline.content = inline.content.replace(TASK_MARKER, "");
+      item.attrSet("data-task", match[1] === " " ? "open" : "done");
+    }
+  });
+}
 
 /** The code of each fenced or indented block in a message, as its copy button copies it. */
 export function markdownCodeBlocks(markdown: string): string[] {
@@ -946,6 +984,34 @@ function listItemRule(
   const list = parent.find(
     (ancestor) => ancestor.type === "bullet_list" || ancestor.type === "ordered_list",
   );
+  const task = node.attributes?.["data-task"];
+  if (task === "open" || task === "done") {
+    const color =
+      (StyleSheet.flatten(styleMap.bullet_list_icon) as TextStyle | undefined)?.color ??
+      body?.color;
+    return (
+      <View
+        key={node.key}
+        style={row}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: task === "done" }}
+      >
+        <View style={[layout.bulletMarker, direction ? layout.taskAfter : layout.taskBefore]}>
+          <Text style={marker} accessible={false} importantForAccessibility="no">
+            {ZERO_WIDTH_SPACE}
+          </Text>
+          <View style={[layout.taskBox, { borderColor: color }]}>
+            {task === "done" ? (
+              <Text style={[layout.taskCheck, { color }]} accessible={false}>
+                ✓
+              </Text>
+            ) : null}
+          </View>
+        </View>
+        <View style={layout.listContent}>{children}</View>
+      </View>
+    );
+  }
   if (list?.type === "bullet_list") {
     // A dot in the list-marker colour, centred on the item's first line, at the end of the marker
     // column. The invisible character gives the marker that line's height at the current text size.
@@ -1452,6 +1518,23 @@ const layout = StyleSheet.create({
     height: BULLET_SIZE,
     borderRadius: BULLET_SIZE / 2,
   },
+  taskBefore: {
+    marginLeft: MARKER_COLUMN - TASK_BOX_SIZE,
+    marginRight: MARKER_GAP,
+  },
+  taskAfter: {
+    marginLeft: MARKER_GAP,
+    marginRight: MARKER_COLUMN - TASK_BOX_SIZE,
+  },
+  taskBox: {
+    width: TASK_BOX_SIZE,
+    height: TASK_BOX_SIZE,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  taskCheck: { fontSize: 11, lineHeight: 13, fontWeight: "700" },
   // Deliberately no `flex: 1`: an automatic basis gives the item its text's natural width.
   listContent: {
     flexGrow: 1,

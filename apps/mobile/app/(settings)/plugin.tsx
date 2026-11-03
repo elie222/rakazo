@@ -14,7 +14,13 @@ import {
   isCatalogItemConnected,
 } from "@rakazo/core";
 import type { NativeStackNavigationOptions } from "expo-router";
-import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import {
+  Redirect,
+  useFocusEffect,
+  useLocalSearchParams,
+  useNavigation,
+  useRouter,
+} from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -50,7 +56,13 @@ import { errorText } from "../../lib/user-error";
 
 const SKILLS_SHOWN = 5;
 
-export default function PluginScreen() {
+/** A link without a plugin (an old link, a restored route) lands on Integrations instead. */
+export default function PluginRoute() {
+  const { source, installedSource, name } = useLocalSearchParams<PluginParams>();
+  return source && installedSource && name ? <PluginScreen /> : <Redirect href="/integrations" />;
+}
+
+function PluginScreen() {
   const params = useLocalSearchParams<PluginParams>();
   const navigation = useNavigation();
   const router = useRouter();
