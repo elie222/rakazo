@@ -166,13 +166,14 @@ export async function saveSessionToken(token: string) {
   sessionInvalidated = true;
   sessionFallback = undefined;
   const clearingScope = invalidateSessionCaches();
+  // Marked before the token lands, so an account deletion that clears it afterwards also clears the mark.
+  await rememberSignedIn();
   await enqueueScopeWrite(() => SecureStore.setItemAsync(SESSION_KEY, token));
   await clearingScope;
   if (generation !== sessionGeneration) return;
   sessionInvalidated = false;
   sessionFallback = undefined;
   if (generation === sessionGeneration) publishSessionGeneration();
-  await rememberSignedIn();
 }
 
 /** Clears the session. Returns false only when SecureStore could neither delete nor overwrite. */
