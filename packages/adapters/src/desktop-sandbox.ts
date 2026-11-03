@@ -39,18 +39,21 @@ import {
 import type { NativeProcessTree } from "./desktop-process-tree.js";
 import { spawnOwnedCommand } from "./desktop-process-tree.js";
 import { isAllowedDesktopPath, normalizeDesktopWorkspacePath } from "./desktop-sandbox-paths.js";
+import type { Win32FileHandle } from "./desktop-sandbox-win32-path.js";
 import {
   createExclusiveChildViaDirectoryFdWin32,
   mkdirChildViaDirectoryFdWin32,
   openChildDirectoryViaDirectoryFdWin32,
   openExistingChildViaDirectoryFdWin32,
   pathFromDirectoryFd,
-  type Win32FileHandle,
   win32NtRelativeAvailable,
 } from "./desktop-sandbox-win32-path.js";
 import { removeOwnedWorkspaceChildren } from "./desktop-workspace-cleanup.js";
 import { hostCommandEnvironment } from "./sandbox-command-environment.js";
-import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
+import {
+  isTaggedCacheDirectory,
+  shouldSkipPortableWorkspaceFile,
+} from "./workspace-save-policy.js";
 
 const O_NOFOLLOW = constants.O_NOFOLLOW ?? 0;
 
@@ -862,8 +865,10 @@ async function* walkDesktopWorkspace(
     if (!child) continue;
     const info = await stat(child);
     if (shouldSkipPortableWorkspaceFile(relative, info.isDirectory())) continue;
-    if (info.isDirectory()) yield* walkDesktopWorkspace(home, relative, maxFileBytes);
-    else if (info.isFile()) {
+    if (info.isDirectory()) {
+      if (!(await isTaggedCacheDirectory(child)))
+        yield* walkDesktopWorkspace(home, relative, maxFileBytes);
+    } else if (info.isFile()) {
       if (maxFileBytes !== undefined && info.size > maxFileBytes)
         throw new Error(`computer file exceeds ${maxFileBytes} bytes`);
       yield {

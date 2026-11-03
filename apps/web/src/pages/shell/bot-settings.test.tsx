@@ -190,7 +190,7 @@ describe("BotSettings help", () => {
     const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async () => undefined);
     await renderSettings(onSave, { ...bot, fleetManagement: false });
     const label = [...container.querySelectorAll("label")].find(
-      (entry) => entry.textContent === "Manage the bots it creates",
+      (entry) => entry.textContent === "Manage other bots",
     );
     const toggle = document.getElementById(label?.htmlFor ?? "");
     const speechToggle = container.querySelector<HTMLButtonElement>('[id$="-auto-speak"]');
@@ -199,7 +199,7 @@ describe("BotSettings help", () => {
     expect(speechRow?.firstElementChild?.textContent).toBe("Read replies aloud");
     expect(speechRow?.lastElementChild).toBe(speechToggle);
     expect(toggle?.getAttribute("aria-checked")).toBe("false");
-    expect(container.querySelector('[aria-label="About Manage the bots it creates"]')).toBeNull();
+    expect(container.querySelector('[aria-label="About Manage other bots"]')).toBeNull();
     expect(toggle?.getAttribute("aria-checked")).toBe("false");
     expect(onSave).not.toHaveBeenCalled();
     await act(async () => toggle?.click());
@@ -494,4 +494,17 @@ it("treats cross-space communication as on unless turned off", async () => {
   await act(async () => toggle?.click());
   await flush();
   expect(onSave).toHaveBeenCalledWith({ crossSpaceCommunication: false });
+});
+
+it("defaults daily check-ins on and saves the opt-out", async () => {
+  const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async () => undefined);
+  await renderSettings(onSave);
+  const toggle = container.querySelector<HTMLButtonElement>('[id$="-daily-check-ins"]');
+  expect(toggle?.getAttribute("aria-checked")).toBe("true");
+  expect(container.querySelector('label[for$="-daily-check-ins"]')?.textContent?.trim()).toBe(
+    "Daily check-ins on unfinished work",
+  );
+  await act(async () => toggle?.click());
+  await flush();
+  expect(onSave).toHaveBeenCalledWith({ dailyCheckIns: false });
 });

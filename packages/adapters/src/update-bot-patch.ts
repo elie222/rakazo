@@ -5,6 +5,7 @@ export type UpdateBotPatch = {
   description?: string;
   color?: string;
   notifyOnFinish?: boolean;
+  dailyCheckIns?: boolean;
 };
 
 function hasUpdateBotAvatarArgs(args: Record<string, unknown>): boolean {
@@ -19,6 +20,11 @@ export function parseUpdateBotPatch(
   const patch: UpdateBotPatch = {};
   if (args.name !== undefined) patch.name = String(args.name);
   if (args.description !== undefined) patch.description = String(args.description);
+  if (args.dailyCheckIns !== undefined) {
+    if (typeof args.dailyCheckIns !== "boolean")
+      return { error: "dailyCheckIns must be true or false." };
+    patch.dailyCheckIns = args.dailyCheckIns;
+  }
   const notifyRaw = args.notifyOnFinish !== undefined ? args.notifyOnFinish : args.notify_on_finish;
   if (notifyRaw !== undefined) {
     if (typeof notifyRaw !== "boolean") {

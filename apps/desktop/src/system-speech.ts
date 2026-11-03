@@ -1,13 +1,13 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { RakazoDesktopSpeechEvent } from "@rakazo/contracts";
+import { secureHttpOrigin } from "@rakazo/contracts/network-host";
 import type { IpcMainInvokeEvent, WebContents } from "electron";
 import type { AppTarget } from "./app-frame.js";
 import { fromAppFrame } from "./app-frame.js";
+import { isLanguageTag } from "./i18n.js";
 
 export const SPEECH_EVENT_CHANNEL = "desktop.speech.event";
 
-/** Language tags only: the value becomes the recognizer's argument. */
-const LANGUAGE_TAG = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,3}$/;
 /** The Web Speech codes the page handles; the recognizer may report no others. */
 const ERROR_CODES = new Set([
   "aborted",
@@ -58,11 +58,12 @@ export function createSystemSpeech(
 
   return {
     start(event: InvokeEvent, language: unknown, session: unknown): boolean {
+      const target = getTarget();
       if (
-        !fromAppFrame(getTarget(), event) ||
-        typeof language !== "string" ||
-        language.length > 35 ||
-        !LANGUAGE_TAG.test(language) ||
+        !secureHttpOrigin(target?.url) ||
+        !fromAppFrame(target, event) ||
+        // Language tags only: the value becomes the recognizer's argument.
+        !isLanguageTag(language) ||
         !Number.isSafeInteger(session) ||
         (session as number) <= 0
       )

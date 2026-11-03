@@ -1,6 +1,6 @@
 import type { RunActivityRow } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { activityPreview, formatActivityRelativeTime } from "./activity";
+import { activityPreview, formatActivityRelativeTime, routineRunLateLabel } from "./activity";
 import { resetI18nForTests } from "./i18n";
 
 vi.mock("./api", () => ({ rpc: vi.fn() }));
@@ -73,6 +73,35 @@ describe("activity preview", () => {
     expect(activityPreview({ ...run, promptSnippet: "" })).toBe("");
     expect(activityPreview({ ...run, trigger: "user", agentMessage: null })).toBe(
       "Maya asked: Ready",
+    );
+  });
+});
+
+describe("routineRunLateLabel", () => {
+  const run = {
+    id: "run-1",
+    botId: "bot-1",
+    groupId: null,
+    status: "completed" as const,
+    error: null,
+    createdAt: "2026-01-02T12:00:00Z",
+    startedAt: "2026-01-02T12:00:00Z",
+    lateSince: null,
+    completedAt: "2026-01-02T12:01:00Z",
+    messageId: null,
+  };
+
+  it("labels only a run that started late, in the active language", () => {
+    expect(routineRunLateLabel(run)).toBeUndefined();
+    expect(routineRunLateLabel({ ...run, lateSince: "2026-01-02T11:40:00Z" })).toBe(
+      "Started 20m late",
+    );
+    expect(routineRunLateLabel({ ...run, lateSince: "2026-01-02T09:30:00Z" })).toBe(
+      "Started 2h late",
+    );
+    resetI18nForTests("de");
+    expect(routineRunLateLabel({ ...run, lateSince: "2025-12-30T12:00:00Z" })).toBe(
+      "3 T. verspätet gestartet",
     );
   });
 });

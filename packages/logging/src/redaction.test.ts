@@ -91,24 +91,27 @@ describe("redaction", () => {
     });
   });
 
-  it("handles a full-envelope-sized failed email candidate without blocking", () => {
-    const moduleUrl = new URL("./redaction.ts", import.meta.url).href;
-    // A child deadline also catches synchronous regex stalls that block the test runner's timers.
-    const output = execFileSync(
-      process.execPath,
-      [
-        "--import",
-        "tsx",
-        "--input-type=module",
-        "-e",
-        `import { redactSensitiveText } from ${JSON.stringify(moduleUrl)};
-         const text = "a.".repeat(512 * 1024);
+  it.each(["a.", "eyJ-"])(
+    "handles a full-envelope-sized failed candidate without blocking: %s",
+    (part) => {
+      const moduleUrl = new URL("./redaction.ts", import.meta.url).href;
+      // A child deadline also catches synchronous regex stalls that block the test runner's timers.
+      const output = execFileSync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          "--input-type=module",
+          "-e",
+          `import { redactSensitiveText } from ${JSON.stringify(moduleUrl)};
+         const text = ${JSON.stringify(part)}.repeat(1024 * 1024 / ${part.length});
          process.stdout.write(String(redactSensitiveText(text) === text));`,
-      ],
-      { encoding: "utf8", timeout: 5_000 },
-    );
-    expect(output).toBe("true");
-  });
+        ],
+        { encoding: "utf8", timeout: 5_000 },
+      );
+      expect(output).toBe("true");
+    },
+  );
 
   it("keeps non-email candidates and redacts adjacent and punctuated email addresses", () => {
     expect(
@@ -288,6 +291,18 @@ describe("redaction", () => {
     expect(redacted).not.toMatch(/ZmFrZTpmaXh0dXJl|fixture-credential/);
   });
 
+  it.each([
+    ["eyJ-header.payload.signature", "[Redacted]"],
+    ["eyJ-header.payload.signature-", "[Redacted]-"],
+    ["eyJ-header.payload", "eyJ-header.payload"],
+    ["eyJ-header-ak_fixture", "eyJ-header-[Redacted]"],
+    ["eyJ-header-sk-fixturesecret", "eyJ-header-[Redacted]"],
+    ["sk-fixture-eyJheader.payload.signature", "[Redacted].payload.signature"],
+    ["eyJ-header-sk-fixturesecret.payload.signature", "[Redacted]"],
+  ])("preserves JWT and key redaction within candidates: %s", (text, expected) => {
+    expect(redactSensitiveText(text)).toBe(expected);
+  });
+
   it("redacts quoted JSON fields whose names contain a secret name", () => {
     expect(
       redactSensitiveText(
@@ -309,6 +324,48 @@ describe("redaction", () => {
         "-e",
         `import { redactSensitiveText } from ${JSON.stringify(moduleUrl)};
          const text = "token".repeat(200 * 1024) + ' "' + "secret".repeat(100 * 1024);
+         process.stdout.write(String(redactSensitiveText(text) === text));`,
+      ],
+      { encoding: "utf8", timeout: 5_000 },
+    );
+    expect(output).toBe("true");
+  });
+
+  it("redacts a shared page's link anywhere in text, and leaves other paths", () => {
+    const token = "Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9";
+    expect(
+      redactSensitiveText(
+        `Failed to open https://app.example.com/p/q3-plan-${token}: 404\n` +
+          `    at GET /api/v1/pages/shared/${token}?x=1 (fetch)\n` +
+          `next=https://a.example/go?to=https://b.example/p/plan-${token}#top ` +
+          `"/p/${token}" /app/p/page1 src/p/index.ts`,
+      ),
+    ).toBe(
+      "Failed to open https://app.example.com/p/[Redacted]: 404\n" +
+        "    at GET /api/v1/pages/shared/[Redacted]?x=1 (fetch)\n" +
+        "next=https://a.example/go?to=https://b.example/p/[Redacted]#top " +
+        '"/p/[Redacted]" /app/p/page1 src/p/index.ts',
+    );
+    const logged = JSON.stringify(
+      redactBindings({
+        err: new Error(`open https://app.example.com/p/plan-${token}`),
+        url: `/p/${token}`,
+      }),
+    );
+    expect(logged).not.toContain(token);
+  });
+
+  it("scans text full of link-like paths without blocking", () => {
+    const moduleUrl = new URL("./redaction.ts", import.meta.url).href;
+    const output = execFileSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "--input-type=module",
+        "-e",
+        `import { redactSensitiveText } from ${JSON.stringify(moduleUrl)};
+         const text = "https://" + ("x".repeat(64 * 1024) + "/p").repeat(16) + "a/p".repeat(200 * 1024);
          process.stdout.write(String(redactSensitiveText(text) === text));`,
       ],
       { encoding: "utf8", timeout: 5_000 },

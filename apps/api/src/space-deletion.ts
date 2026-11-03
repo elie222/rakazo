@@ -4,8 +4,14 @@ import type {
   ArtifactStore,
   JobPublisher,
   SandboxProvider,
+  SecretStore,
 } from "@rakazo/adapter-kit";
-import { destroyBot, removeAgentHome, toComputerRef } from "@rakazo/adapters";
+import {
+  destroyBot,
+  forgetPageShareSecrets,
+  removeAgentHome,
+  toComputerRef,
+} from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -40,6 +46,8 @@ export type SpaceDeletionDeps = {
   artifacts: ArtifactStore;
   dataDir: string;
   messagingInstallations?: Parameters<typeof destroyBot>[0]["messagingInstallations"];
+  /** Removes deleted page links' tokens from a remote secret store. */
+  secrets?: Pick<SecretStore, "delete">;
 };
 
 /** The owner-only rules live in the db layer. A worker that dies mid-way leaves the Space
@@ -124,7 +132,7 @@ export async function deleteSpaceWithContent(
       try {
         await teardown(
           () =>
-            destroyBot(deps, bot, context(bot.id), {
+            destroyBot({ ...deps, secretStore: deps.secrets }, bot, context(bot.id), {
               deleteMemories: true,
               strictTeardown: true,
             }),
@@ -173,6 +181,7 @@ export async function deleteSpaceWithContent(
     for (const result of cleanup) {
       if (result.status === "rejected") getLogger().error("space file cleanup", result.reason);
     }
+    if (deps.secrets) await forgetPageShareSecrets(deps.secrets, deleted.pageShareSecrets);
     return { activeSpaceId: deleted.id };
   } catch (error) {
     if (signal?.aborted) claimReleasable = false;

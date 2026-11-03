@@ -74,12 +74,20 @@ describe("Wuying official SDK control plane", () => {
       message: "fake-key-id",
       data: { AuthCode: "fake-once" },
     });
-    await expect(api().stopDesktop("ecd-fake", signal())).rejects.toEqual(
-      new SandboxUnresponsiveError("Wuying StopDesktops failed"),
+    await expect(api().startDesktop("ecd-fake", signal())).rejects.toEqual(
+      new SandboxUnresponsiveError("Wuying StartDesktops failed"),
     );
     call.mockRejectedValue({ code: "Throttling.User", data: "fake-secret" });
     await expect(api().startDesktop("ecd-fake", signal())).rejects.toBeInstanceOf(
       SandboxRateLimitError,
+    );
+    call.mockRejectedValue({ code: "InvalidAccessKeyId.NotFound", data: "fake-secret" });
+    await expect(api().desktopStatus("ecd-fake", signal())).rejects.toThrow(
+      /^Wuying DescribeDesktops: the AccessKey was refused$/,
+    );
+    call.mockRejectedValue({ code: "Forbidden.RAM", statusCode: 403 });
+    await expect(api().startDesktop("ecd-fake", signal())).rejects.toThrow(
+      "Wuying StartDesktops: the AccessKey is not allowed this action",
     );
     call.mockRejectedValue({ code: "InvalidDesktop.NotFound" });
     await expect(api().desktopStatus("ecd-fake", signal())).rejects.toMatchObject({

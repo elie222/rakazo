@@ -5,6 +5,7 @@ import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases, restoreBotUnderComputerQuota } from "./computers.js";
 import { transientRunEventsWhere } from "./events.js";
+import { deletePageShareSecrets } from "./page-shares.js";
 import { withNewestThreadMessages } from "./preview-messages.js";
 import { IsolationError } from "./scope.js";
 import { lockSpaceForContentCreation } from "./spaces.js";
@@ -649,14 +650,31 @@ export function createGroupRepos(prisma: PrismaClient) {
           select: {
             artifacts: { select: { storageKey: true } },
             members: { orderBy: groupMemberOrder, take: 1, select: { botId: true } },
+            thread: { select: { id: true } },
           },
         });
         const contextBotId = group?.members[0]?.botId;
         if (!contextBotId) throw new IsolationError();
+        // The thread's runs cascade away with the group, but their computer leases don't:
+        // cancel them first so the route can stop their work and release the leases.
+        const activeRuns = group.thread
+          ? await tx.run.findMany({
+              where: { threadId: group.thread.id, status: { in: activeRunStatuses } },
+              select: { id: true, taskId: true, userId: true, spaceId: true },
+            })
+          : [];
+        const runIds = (await cancelRunsInTransaction(tx, activeRuns, new Date())).map(
+          (run) => run.id,
+        );
+        const { targets } = await snapshotRunTeardownTargets(tx, runIds);
+        const pageShareSecrets = await deletePageShareSecrets(tx, { groupId });
         await tx.chatGroup.delete({ where: { id: groupId } });
         return {
           contextBotId,
           artifactStorageKeys: group.artifacts.map((artifact) => artifact.storageKey),
+          cancelledRunIds: runIds,
+          computers: targets,
+          pageShareSecrets,
         };
       });
     },

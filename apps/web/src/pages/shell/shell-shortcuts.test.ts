@@ -133,6 +133,14 @@ describe("shellShortcut", () => {
   });
 });
 
+describe("keydown without a key", () => {
+  it("is neither a shortcut nor typing, as autofill sends it", () => {
+    const event = keyEvent({ key: undefined as unknown as string, ctrlKey: true });
+    expect(shellShortcut(event, macApp)).toBeNull();
+    expect(startsTyping(event)).toBe(false);
+  });
+});
+
 describe("startsTyping", () => {
   it("takes printable keys pressed outside text fields", () => {
     expect(startsTyping(keyEvent({ key: "h" }))).toBe(true);

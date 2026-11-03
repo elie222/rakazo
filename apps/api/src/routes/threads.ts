@@ -34,6 +34,7 @@ import {
 } from "../thread-message-pages.js";
 import type { ThreadTarget } from "../thread-target.js";
 import {
+  isStopMessage,
   markThreadRead,
   markThreadUnreadFrom,
   reactToThreadMessage,
@@ -107,11 +108,10 @@ export function threadsRoutes(ctx: RouterContext) {
   ) => {
     const setup = await modelSetup(deps, actor);
     const target = await resolveThreadTarget(deps.prisma, actor, input);
-    // A bot with its own runnable model needs no main model.
-    if (
-      setup.needsModel &&
-      !(await botsRunOwnModels(deps, actor, sendTargetBotIds(target, input)))
-    ) {
+    // A bot with its own runnable model needs no main model, and stopping work needs none.
+    const noModel =
+      setup.needsModel && !(await botsRunOwnModels(deps, actor, sendTargetBotIds(target, input)));
+    if (noModel && (target.kind !== "bot" || !isStopMessage(input))) {
       throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
     }
     if (target.kind === "bot") {
@@ -138,7 +138,7 @@ export function threadsRoutes(ctx: RouterContext) {
       },
       actor,
       target,
-      input,
+      { ...input, noModel },
       takeoverReleaser(deps, actor, target),
       startRoutines,
     ).catch((error: unknown) => {
@@ -516,12 +516,14 @@ export function threadsRoutes(ctx: RouterContext) {
       declineCall: callsEnabled.threads.declineCall.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         if (target.kind !== "bot") throw new IsolationError();
-        await settleCallRequest(deps, {
+        const declined = await settleCallRequest(deps, {
           threadId: target.threadId,
           callId: input.callId,
           from: ["ringing"],
           status: input.outcome,
         });
+        if (declined?.status !== input.outcome)
+          throw new ORPCError("CONFLICT", { message: "This call is no longer ringing." });
         return { ok: true as const };
       }),
       endCall: callsEnabled.threads.endCall.handler(async ({ context, input }) => {

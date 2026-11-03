@@ -5,9 +5,9 @@ import type {
   ApprovalMode,
   SettingsScope,
 } from "@rakazo/contracts";
-import { humanizeToolName } from "@rakazo/core";
+import { humanizeToolName, toolNameFromLabel } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
-import { Button, ToggleGroup, ToggleGroupItem } from "@rakazo/ui-web";
+import { Button, Input, ToggleGroup, ToggleGroupItem } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -32,6 +32,8 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
   const autoReview = autoReviewQuery.data ?? null;
   const loading = rulesQuery.isPending || autoReviewQuery.isPending;
   const loadFailed = rulesQuery.error ?? autoReviewQuery.error;
+  const [adding, setAdding] = useState(false);
+  const [tool, setTool] = useState("");
   const [saving, setSaving] = useState(false);
   const [actionError, setError] = useState<string | null>(null);
   const error =
@@ -74,17 +76,39 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
       t`Could not save Auto Review`,
     );
 
-  const setEffect = (rule: ActionApprovalRule, effect: "always_allow" | "deny") =>
+  async function putRule(rule: Pick<ActionApprovalRule, "effect" | "matchKind" | "matchValue">) {
+    if (rule.matchKind === "category") return;
+    const saved = await rpc.approvalRules.set({
+      scope,
+      effect: rule.effect,
+      matchKind: rule.matchKind,
+      matchValue: rule.matchValue,
+    });
+    // Saving replaces any other effect on the same match.
+    await setRules((current) => [
+      ...current.filter(
+        (other) =>
+          other.matchKind !== saved.matchKind ||
+          other.matchValue.toLowerCase() !== saved.matchValue.toLowerCase(),
+      ),
+      saved,
+    ]);
+  }
+
+  const setEffect = (rule: ActionApprovalRule, effect: ActionApprovalRule["effect"]) =>
+    save(() => putRule({ ...rule, effect }), t`Could not save rule`);
+
+  const addTool = () =>
     save(async () => {
-      if (rule.matchKind === "category") return;
-      const saved = await rpc.approvalRules.set({
-        scope,
-        effect,
-        matchKind: rule.matchKind,
-        matchValue: rule.matchValue,
-      });
-      // Saving replaces the rule's other effect on the same match.
-      await setRules((current) => [...current.filter((other) => other.id !== rule.id), saved]);
+      const name = toolNameFromLabel(tool);
+      // An existing rule keeps its effect; changing it stays an explicit choice in the list.
+      const exists = rules.some(
+        (rule) => rule.matchKind === "tool" && rule.matchValue.toLowerCase() === name.toLowerCase(),
+      );
+      if (!exists)
+        await putRule({ effect: "require_approval", matchKind: "tool", matchValue: name });
+      setTool("");
+      setAdding(false);
     }, t`Could not save rule`);
 
   const removeRule = (rule: ActionApprovalRule) =>
@@ -125,6 +149,36 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
           ) : null}
         </SettingsRow>
       </SettingsGroup>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={loading || Boolean(loadFailed) || saving}
+        onClick={() => setAdding(!adding)}
+        aria-expanded={adding}
+      >
+        <Trans>Add rule</Trans>
+      </Button>
+      {adding ? (
+        <form
+          className="flex items-center gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (tool.trim()) void addTool();
+          }}
+        >
+          <Input
+            aria-label={t`Tool name`}
+            placeholder={t`Tool name`}
+            value={tool}
+            maxLength={253}
+            disabled={saving}
+            onChange={(event) => setTool(event.target.value)}
+          />
+          <Button type="submit" size="sm" disabled={saving || !tool.trim()}>
+            <Trans>Save</Trans>
+          </Button>
+        </form>
+      ) : null}
       {rules.length > 0 ? (
         <SettingsGroup title={<Trans>Rules</Trans>} data-testid="approval-rules">
           {rules.map((rule) => (
@@ -148,7 +202,13 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
                       aria-label={ruleLabel(rule)}
                       value={[rule.effect]}
                       onValueChange={([next]) => {
-                        if (next === "always_allow" || next === "deny") void setEffect(rule, next);
+                        if (
+                          next === "always_allow" ||
+                          next === "require_approval" ||
+                          next === "deny"
+                        ) {
+                          void setEffect(rule, next);
+                        }
                       }}
                       disabled={saving}
                       spacing={1}
@@ -157,12 +217,9 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
                       <ToggleGroupItem value="always_allow" className={segment}>
                         <Trans>Allow</Trans>
                       </ToggleGroupItem>
-                      {/* An older ask rule keeps showing what it does until it is switched. */}
-                      {rule.effect === "require_approval" ? (
-                        <ToggleGroupItem value="require_approval" className={segment}>
-                          <Trans>Ask</Trans>
-                        </ToggleGroupItem>
-                      ) : null}
+                      <ToggleGroupItem value="require_approval" className={segment}>
+                        <Trans>Ask</Trans>
+                      </ToggleGroupItem>
                       <ToggleGroupItem value="deny" className={segment}>
                         <Trans>Block</Trans>
                       </ToggleGroupItem>

@@ -1,5 +1,5 @@
 import type { TransactionalEmailProvider } from "@rakazo/adapter-kit";
-import { referralEmail } from "@rakazo/auth";
+import { emailLocale, referralEmail } from "@rakazo/auth";
 import { ActorSchema } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { unsubscribeUrl } from "./marketing-email.js";
@@ -27,7 +27,13 @@ export function sendReferralEmails(deps: {
         members: { some: { role: { contains: "owner" } } },
         emailSends: { none: { kind: KIND } },
       },
-      select: { id: true, email: true, name: true, members: { select: { role: true } } },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        locale: true,
+        members: { select: { role: true } },
+      },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       take: 100,
     });
@@ -43,6 +49,7 @@ export function sendReferralEmails(deps: {
           user,
           deps.appUrl,
           unsubscribeUrl(deps.origin, deps.secret, user.id),
+          emailLocale(user.locale),
         );
         // Claim before sending: concurrent instances race on (userId, kind), and an
         // uncertain delivery is never retried.
@@ -58,24 +65,5 @@ export function sendReferralEmails(deps: {
         deps.onError(error);
       }
     }
-  };
-}
-
-/** Runs the sweep at startup and hourly; every API instance may run it, the claim dedupes. */
-export function startReferralEmails(sweep: () => Promise<void>, onError: (error: unknown) => void) {
-  let running: Promise<void> | undefined;
-  const tick = () => {
-    running ??= sweep()
-      .catch(onError)
-      .finally(() => {
-        running = undefined;
-      });
-  };
-  const timer = setInterval(tick, HOUR_MS);
-  timer.unref();
-  tick();
-  return async () => {
-    clearInterval(timer);
-    await running;
   };
 }

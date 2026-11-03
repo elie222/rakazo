@@ -1,15 +1,20 @@
 import { randomUUID } from "node:crypto";
 import type { AgentRuntime, JobPublisher, NotificationProvider } from "@rakazo/adapter-kit";
 import { runJobKey } from "@rakazo/adapter-kit";
-import { CapturingNotificationProvider, MessagingTeamChatEmulator } from "@rakazo/adapters";
-import type { ModelConnectInput, RunStatus } from "@rakazo/contracts";
+import {
+  CapturingNotificationProvider,
+  MessagingTeamChatEmulator,
+  messageBot,
+} from "@rakazo/adapters";
+import type { MessageBlock, ModelConnectInput, RunStatus } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, isTerminal } from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
+import { createThreadEvents } from "@rakazo/db";
 import { discardBotIntroRun } from "../discard-bot-intro.js";
 import { sessionCookieHeader } from "../index.js";
 import { asSystem } from "../system-db.js";
 import type { EvalCase, Evidence, SettingsSnapshot } from "./cases.js";
-import { EMPTY_SETTINGS } from "./cases.js";
+import { EMPTY_SETTINGS, wakesRoutines } from "./cases.js";
 import type { ClarificationBlock } from "./clarification.js";
 import { expectedClarificationText } from "./clarification.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "./history-observer.js";
@@ -90,11 +95,15 @@ export async function runTrial(
   const notifications = new CapturingNotificationProvider();
   const realtime = new SilenceObserver();
   const routineRuns: RoutineEvidence[] = [];
+  const peerExchanges: NonNullable<Evidence["peerExchanges"]> = [];
   let handles: EvalApp | undefined;
   // The harness observes product state outside any request or job.
   let db: EvalApp["prisma"] | undefined;
   let cookie = "";
   let botId = "";
+  let peer: { id: string; name: string } | undefined;
+  // A group case talks to the subject inside a group thread; every other case uses its direct chat.
+  let group: { id: string; threadId: string; memberIds: Map<string, string> } | undefined;
   let seededThreadId: string | undefined;
   const runIds: string[] = [];
   const runSteps = new Map<string, number>();
@@ -153,8 +162,11 @@ export async function runTrial(
     const prisma = asSystem(handles.prisma);
     db = prisma;
     realtime.attach(prisma);
-    if (scenario.routine && handles.notifications !== notifications)
-      throw new EvalFailure("harness", "Silence eval requires the capturing notification provider");
+    if (wakesRoutines(scenario) && handles.notifications !== notifications)
+      throw new EvalFailure(
+        "harness",
+        "Routine wake evals require the capturing notification provider",
+      );
     const trial = handles;
     const { app } = trial;
     const setupActor = async () => {
@@ -181,7 +193,7 @@ export async function runTrial(
         title: "",
         description: "",
         instructions: "",
-        notifyOnFinish: Boolean(scenario.routine),
+        notifyOnFinish: wakesRoutines(scenario),
       });
       botId = bot.id;
       const persistedBot = await prisma.bot.findUniqueOrThrow({
@@ -199,15 +211,64 @@ export async function runTrial(
       // Direct synthetic fixture state, so setup never depends on the behavior under test.
       if (scenario.botSetup)
         await prisma.bot.update({ where: { id: botId }, data: scenario.botSetup });
+      if (scenario.botMemory) {
+        const documents = await rpc<Array<{ id: string; path: string }>>(
+          app,
+          cookie,
+          "memory/list",
+          {
+            botId,
+            scope: "bot",
+          },
+        );
+        const index = documents.find((document) => document.path === "MEMORY.md");
+        if (!index) throw new EvalFailure("harness", "New bot has no MEMORY.md to seed");
+        await rpc(app, cookie, "memory/update", {
+          documentId: index.id,
+          content: scenario.botMemory,
+        });
+      }
+      if (scenario.peer) {
+        const created = await rpc<{ id: string }>(app, cookie, "bots/create", {
+          name: scenario.peer.name,
+          title: "",
+          description: scenario.peer.description,
+          instructions: scenario.peer.instructions,
+          notifyOnFinish: false,
+        });
+        await discardBotIntroRun(trial, cookie, created.id);
+        await rpc(app, cookie, "bots/update", {
+          botId: created.id,
+          modelProvider: options.connection.provider,
+          modelId: options.connection.modelId,
+        });
+        peer = { id: created.id, name: scenario.peer.name };
+      }
+      if (scenario.group) {
+        // Members only author seeded history; no step mentions them, so they never run a model.
+        const memberIds = new Map<string, string>();
+        for (const name of scenario.group.members) {
+          const member = await rpc<{ id: string }>(app, cookie, "bots/create", {
+            name,
+            title: "",
+            description: "",
+            instructions: "",
+            notifyOnFinish: false,
+          });
+          await discardBotIntroRun(trial, cookie, member.id);
+          memberIds.set(name, member.id);
+        }
+        const created = await rpc<{ id: string; threadId: string }>(app, cookie, "groups/create", {
+          name: "Launch desk",
+          botIds: [botId, ...memberIds.values()],
+        });
+        group = { ...created, memberIds };
+      }
       messagingLinked = false;
       messagingAddress = `U-eval-${randomUUID()}`;
       messaging.resetWitnesses();
-      if (scenario.approvalTool)
-        await rpc(app, cookie, "approvalRules/set", {
-          effect: "require_approval",
-          matchKind: "tool",
-          matchValue: scenario.approvalTool,
-        });
+      // Ask mode asks before any change, so the write stops at its approval card.
+      if (scenario.approvalTool) await rpc(app, cookie, "autoReview/set", { mode: "ask" });
     };
     await setupActor();
     if (scenario.routine) {
@@ -221,11 +282,16 @@ export async function runTrial(
         notify: true,
       });
     }
+    const botAuthor = (author: string | undefined) => {
+      if (!author) return botId;
+      const id = group?.memberIds.get(author);
+      if (!id) throw new EvalFailure("harness", `History author ${author} is not a group member`);
+      return id;
+    };
     if (scenario.history) {
-      const thread = await prisma.thread.findUniqueOrThrow({
-        where: { botId },
-        select: { id: true },
-      });
+      const thread = group
+        ? { id: group.threadId }
+        : await prisma.thread.findUniqueOrThrow({ where: { botId }, select: { id: true } });
       seededThreadId = thread.id;
       // Direct synthetic fixture setup, never pay a model to author filler.
       for (let offset = 0; offset < scenario.history.messages.length; offset += 500) {
@@ -250,7 +316,7 @@ export async function runTrial(
                 : []),
             ],
             createdAt: m.createdAt,
-            ...(m.role === "bot" ? { botId } : {}),
+            ...(m.role === "bot" ? { botId: botAuthor(m.author) } : {}),
           })),
         });
       }
@@ -391,13 +457,36 @@ export async function runTrial(
         clearedToolCount = seenTools.size - (await countCurrentTools());
         continue;
       }
-      if (scenario.routine) await rpc(app, cookie, "threads/markRead", { botId });
+      if (scenario.routine || "wakeRoutine" in step)
+        await rpc(app, cookie, "threads/markRead", { botId });
       const notificationOffset = notifications.sent.length;
       let runId: string;
+      let scheduled: RoutineEvidence["scheduled"];
       if ("ask" in step) {
         runId = (
-          await rpc<{ runId: string }>(app, cookie, "threads/send", { botId, text: step.ask })
+          await rpc<{ runId: string }>(
+            app,
+            cookie,
+            "threads/send",
+            group
+              ? { groupId: group.id, text: step.ask, mentions: [{ kind: "bot", id: botId }] }
+              : { botId, text: step.ask },
+          )
         ).runId;
+      } else if ("fromPeer" in step) {
+        if (!peer) throw new EvalFailure("harness", "A fromPeer step needs the case's peer bot");
+        await deliverPeerMessage(prisma, handles.jobs, peer, botId, step.fromPeer);
+        runId = await poll(
+          async () =>
+            (
+              await prisma.run.findFirst({
+                where: { botId, trigger: "bot_message", id: { notIn: runIds } },
+                orderBy: { createdAt: "desc" },
+                select: { id: true },
+              })
+            )?.id,
+          deadline,
+        );
       } else if ("slack" in step) {
         if (!messagingLinked) {
           const link = await rpc<{ code: string }>(app, cookie, "messaging/link/start", { botId });
@@ -438,6 +527,8 @@ export async function runTrial(
         );
       } else {
         const routines = await prisma.routine.findMany({ where: { botId } });
+        // A follow-up the bot cancelled once its loop closed has nothing left to wake.
+        if (step.ifScheduled && !routines.some((routine) => routine.active)) continue;
         if (routines.length !== 1)
           throw new EvalFailure("agent", "Expected exactly one authored routine");
         const routine = routines[0]!;
@@ -459,6 +550,11 @@ export async function runTrial(
             },
             ...services.listGithubReleases(),
           ]);
+        scheduled = {
+          at: routine.nextRunAt?.toISOString() ?? null,
+          timezone: routine.timezone,
+          createdAt: routine.createdAt.toISOString(),
+        };
         const scheduledFor = new Date(Date.now() - 1_000);
         await prisma.routine.update({
           where: { id: routine.id },
@@ -481,10 +577,15 @@ export async function runTrial(
       }
       runIds.push(runId);
       runSteps.set(runId, stepIndex + 1);
+      // Every reply to a peer is graded, so it is never setup.
       if (
+        !("fromPeer" in step) &&
         scenario.steps
           .slice(stepIndex + 1)
-          .some((next) => "ask" in next || "slack" in next || "wakeRoutine" in next)
+          .some(
+            (next) =>
+              "ask" in next || "slack" in next || "wakeRoutine" in next || "fromPeer" in next,
+          )
       )
         setupRunIds.add(runId);
       const requestStarted = (
@@ -565,8 +666,9 @@ export async function runTrial(
       if ("slack" in step && terminal.status === "completed") {
         await waitForMessagingDelivery(prisma, runId, deadline);
       }
-      // Completion is committed before notification delivery. Drain the executor before observing.
-      if (scenario.routine && handles.awaitIdle)
+      // Completion is committed before notification delivery and before the reply returns to a
+      // peer. Drain the executor before observing.
+      if ((wakesRoutines(scenario) || "fromPeer" in step) && handles.awaitIdle)
         await withinDeadline(handles.awaitIdle(), deadline);
       const snap = await rpc<{
         messages: Array<{
@@ -574,7 +676,7 @@ export async function runTrial(
           runId?: string | null;
           blocks: ClarificationBlock[];
         }>;
-      }>(app, cookie, "threads/get", { botId });
+      }>(app, cookie, "threads/get", group ? { groupId: group.id } : { botId });
       approvalPending =
         terminal.status === "waiting_input" &&
         snap.messages.some((m) =>
@@ -616,7 +718,24 @@ export async function runTrial(
         lastText = [lastText, clarification].filter(Boolean).join("\n");
       }
       replies.push(lastText);
-      if (scenario.routine && "wakeRoutine" in step) {
+      if ("fromPeer" in step) {
+        const returned = (
+          await prisma.message.findMany({
+            where: { runId, role: "bot" },
+            orderBy: { seq: "asc" },
+            select: { blocks: true },
+          })
+        ).flatMap((message) =>
+          (message.blocks as MessageBlock[]).flatMap((block) =>
+            block.kind === "bot_message_sent" && block.toBotId === peer?.id ? [block.text] : [],
+          ),
+        );
+        peerExchanges.push({
+          message: step.fromPeer,
+          reply: returned.length ? returned.join("\n") : null,
+        });
+      }
+      if ("wakeRoutine" in step) {
         const messages = await prisma.message.findMany({
           where: { runId, role: "bot" },
           select: { blocks: true },
@@ -635,6 +754,7 @@ export async function runTrial(
           calls: structuredClone(services.calls),
           observedCompletion:
             !realtime.failed && observed.some((event) => event.type === "run.completed"),
+          scheduled,
         });
       }
       if (/Eval spend cap|stopped scheduling inference|no configured pricing/i.test(lastText))
@@ -661,17 +781,25 @@ export async function runTrial(
       where: { botId },
       select: { name: true, prompt: true, crons: true, active: true },
     });
+    // schedule_cancel deletes the routine, but its creation event stays in the thread. The event
+    // append is best-effort, so a routine that still exists counts even without one.
+    const routinesCreated = Math.max(
+      routines.length,
+      await prisma.event.count({ where: { botId, type: "routine.created" } }),
+    );
     await captureTools();
     const finalStep = scenario.steps.length;
     const evidence: Evidence = {
       text: lastText,
       replies,
       routineRuns,
+      peerExchanges,
       files,
       records: services.records,
       notes: services.notes,
       calls: services.calls,
       routines,
+      routinesCreated,
       memory: memories.map((m) => m.content).join("\n"),
       approvalPending,
       clarificationPending,
@@ -700,7 +828,8 @@ export async function runTrial(
         ...(scenario.history && replies.length > 1
           ? Object.fromEntries(replies.map((reply, index) => [`turn-${index + 1}-response`, reply]))
           : {}),
-        ...(scenario.routine ? { "routine-observations": JSON.stringify(routineRuns) } : {}),
+        ...(routineRuns.length ? { "routine-observations": JSON.stringify(routineRuns) } : {}),
+        ...(peerExchanges.length ? { "peer-exchanges": JSON.stringify(peerExchanges) } : {}),
         ...(evidence.toolCalls.length ? { "tool-calls": JSON.stringify(evidence.toolCalls) } : {}),
         "memory-snapshot": evidence.memory,
       }).map(([key, value]) => [key, value === null ? null : redact(value, secrets)]),
@@ -858,6 +987,54 @@ async function rpc<T>(app: App, cookie: string, proc: string, body: unknown = {}
   const parsed = (await res.json()) as { json?: T; error?: unknown };
   if (!res.ok || parsed.error) throw new Error(`${proc} failed (${res.status})`);
   return parsed.json as T;
+}
+
+/**
+ * Speak as the peer through message_bot's own delivery, so the subject wakes exactly as it
+ * would from a teammate. The peer's turn is fixture setup: no model is paid to write its words.
+ */
+async function deliverPeerMessage(
+  prisma: EvalApp["prisma"],
+  jobs: JobPublisher,
+  peer: { id: string; name: string },
+  targetBotId: string,
+  text: string,
+) {
+  const { spaceId, userId, thread } = await prisma.bot.findUniqueOrThrow({
+    where: { id: peer.id },
+    select: { spaceId: true, userId: true, thread: { select: { id: true } } },
+  });
+  if (!thread) throw new EvalFailure("harness", "Peer bot has no chat");
+  const task = await prisma.task.create({
+    data: {
+      spaceId,
+      userId,
+      botId: peer.id,
+      threadId: thread.id,
+      prompt: "Synthetic peer turn",
+      status: "completed",
+    },
+  });
+  const run = await prisma.run.create({
+    data: {
+      spaceId,
+      userId,
+      botId: peer.id,
+      threadId: thread.id,
+      taskId: task.id,
+      status: "completed",
+      trigger: "user",
+      completedAt: new Date(),
+    },
+  });
+  const sent = await messageBot(
+    { prisma, events: createThreadEvents(prisma), jobs },
+    { id: run.id, spaceId, threadId: thread.id, botId: peer.id, userId },
+    peer,
+    { bot_id: targetBotId, message: text, intent: "request" },
+    { allowTerminalSource: true },
+  );
+  if (!sent.ok) throw new EvalFailure("harness", `Peer message was not delivered: ${sent.error}`);
 }
 
 async function poll<T>(read: () => Promise<T | undefined>, deadline: number): Promise<T> {

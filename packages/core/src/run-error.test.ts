@@ -66,6 +66,14 @@ describe("normalizeRunError", () => {
       "Your model provider can't run this model.",
     ],
     ['{"error":{"code":"model_not_found"}}', "Your model provider can't run this model."],
+    [
+      '400: {"message":"Model example is not a chat model; call /v1/example instead of /v1/chat/completions","type":"invalid_request_error"}',
+      "Your model provider can't run this model.",
+    ],
+    [
+      '400: {"type":"server_error","message":"Upstream request failed: This example model requires Global regions. Select Global in your workspace\'s Privacy settings to use it."}',
+      "Your model provider can't run this model.",
+    ],
     ["Request timed out", "Your model provider took too long to respond. Try again."],
     [
       '504: {"message":"Gateway error"}',
@@ -389,6 +397,10 @@ describe("normalizeRunError", () => {
       "This request triggered restrictions on violative cyber content and was blocked under Anthropic's Usage Policy. To learn more, see the refusals guide.",
       "This request was blocked as it seems to violate Anthropic's Terms of Service restrictions on reverse engineering or duplicating model outputs.",
       "Provider returned an empty response",
+      'unexpected tokens remaining in message header: Some("to=functions.example")',
+      'HarmonyError: unexpected tokens remaining in message header: Some("analysis")',
+      '500: {"message":"unexpected tokens remaining in message header: Some(\\"analysis\\")"}',
+      'unexpected tokens remaining in message header: Some("credit limit, timeout, model not found")',
       "Failed to parse tool call arguments as JSON",
       '400: {"message":"Failed to parse tool call arguments as JSON","code":"tool_use_failed"}',
       "Tool call validation failed: attempted to call tool 'commentary' which was not in request.tools",
@@ -423,6 +435,7 @@ describe("normalizeRunError", () => {
       '400: {"message":"failed to template request: Unexpected message role.","type":"invalid_request_error"}',
       '400: {"message":"Provider returned error","code":400,"metadata":{"raw":"The `uniqueItems` JSON Schema keyword is not supported."}}',
       "Approved tool requests were not fully replayed",
+      "Internal failure while handling unexpected tokens remaining in message header: unknown",
       '500: {"message":"Internal error"}',
       '503: {"message":"The model is unavailable right now."}',
       '503: {"message":"Unsupported model fixture-model"}',

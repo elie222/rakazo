@@ -51,7 +51,11 @@ function computer(state: ComputerStatus["state"]): ComputerStatus {
   };
 }
 
-async function render(status: ComputerStatus | null, onOpen = vi.fn()) {
+async function render(
+  status: ComputerStatus | null,
+  onOpen = vi.fn(),
+  disk?: { cleaningUpDisk?: boolean; onCleanUpDisk: () => void; onDismissDiskWarning: () => void },
+) {
   await act(async () => {
     root.render(
       <ComputerPanel
@@ -68,6 +72,7 @@ async function render(status: ComputerStatus | null, onOpen = vi.fn()) {
         onRecovered={() => undefined}
         onRecoveryDismissed={() => undefined}
         onOpen={onOpen}
+        {...disk}
       />,
     );
   });
@@ -106,4 +111,47 @@ it("previews a running computer's screen", async () => {
   await render(computer("running"));
   expect(container.querySelector('[data-state="idle"]')).toBeNull();
   expect(container.querySelector("iframe")).not.toBeNull();
+});
+
+it.each([computer("running"), computer("suspended")])(
+  "warns that the disk is nearly full and offers a clean up",
+  async (status) => {
+    const disk = { onCleanUpDisk: vi.fn(), onDismissDiskWarning: vi.fn() };
+    await render({ ...status, diskFullPercent: 93 }, vi.fn(), disk);
+    const warning = container.querySelector('[data-testid="computer-disk-warning"]');
+    expect(warning?.textContent).toContain("Clean up");
+    const [cleanUp, dismiss] = warning?.querySelectorAll("button") ?? [];
+    await act(async () => cleanUp?.click());
+    await act(async () => dismiss?.click());
+    expect(disk.onCleanUpDisk).toHaveBeenCalledOnce();
+    expect(disk.onDismissDiskWarning).toHaveBeenCalledOnce();
+  },
+);
+
+it("holds Clean up while a clean up is being sent", async () => {
+  const disk = { cleaningUpDisk: true, onCleanUpDisk: vi.fn(), onDismissDiskWarning: vi.fn() };
+  await render({ ...computer("running"), diskFullPercent: 93 }, vi.fn(), disk);
+  const [cleanUp] =
+    container.querySelector('[data-testid="computer-disk-warning"]')?.querySelectorAll("button") ??
+    [];
+  expect(cleanUp?.hasAttribute("disabled")).toBe(true);
+});
+
+it("keeps the live screen mounted while the disk warning comes and goes", async () => {
+  const disk = { onCleanUpDisk: vi.fn(), onDismissDiskWarning: vi.fn() };
+  await render(computer("running"), vi.fn(), disk);
+  const frame = container.querySelector("iframe");
+  await render({ ...computer("running"), diskFullPercent: 93 }, vi.fn(), disk);
+  expect(container.querySelector('[data-testid="computer-disk-warning"]')).not.toBeNull();
+  expect(container.querySelector("iframe")).toBe(frame);
+  await render(computer("running"), vi.fn(), disk);
+  expect(container.querySelector("iframe")).toBe(frame);
+});
+
+it("shows no disk warning while the disk has room", async () => {
+  await render(computer("running"), vi.fn(), {
+    onCleanUpDisk: vi.fn(),
+    onDismissDiskWarning: vi.fn(),
+  });
+  expect(container.querySelector('[data-testid="computer-disk-warning"]')).toBeNull();
 });

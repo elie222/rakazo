@@ -109,4 +109,16 @@ describe("usage ledger", () => {
     });
     expect(data?.runId).toBeUndefined();
   });
+  it("records usage whose first transaction lost a deadlock", async () => {
+    const createMany = vi
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new Error("deadlock"), { code: "P2034" }))
+      .mockResolvedValueOnce({ count: 1 });
+    await recordUsage(
+      client(createMany),
+      { type: "usage", provider: "fixture", model: "test", inputTokens: 1, outputTokens: 1 },
+      { spaceId: "space-fixture", userId: "user-fixture", runId: "run-fixture" },
+    );
+    expect(createMany).toHaveBeenCalledTimes(2);
+  });
 });

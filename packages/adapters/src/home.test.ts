@@ -23,6 +23,7 @@ const hooks = vi.hoisted(() => ({
   beforeReaddir: undefined as ((target: string) => Promise<void>) | undefined,
   beforeOpen: undefined as ((target: string) => Promise<void>) | undefined,
   afterOpen: undefined as ((target: string) => Promise<void>) | undefined,
+  beforeMkdir: undefined as ((target: string) => Promise<void>) | undefined,
 }));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -37,6 +38,10 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     readdir: async (...args: Parameters<typeof fs.readdir>) => {
       await hooks.beforeReaddir?.(String(args[0]));
       return fs.readdir(...args);
+    },
+    mkdir: async (...args: Parameters<typeof fs.mkdir>) => {
+      await hooks.beforeMkdir?.(String(args[0]));
+      return fs.mkdir(...args);
     },
     open: async (...args: Parameters<typeof fs.open>) => {
       await hooks.beforeOpen?.(String(args[0]));
@@ -61,6 +66,7 @@ afterEach(async () => {
   hooks.beforeReaddir = undefined;
   hooks.beforeOpen = undefined;
   hooks.afterOpen = undefined;
+  hooks.beforeMkdir = undefined;
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
@@ -163,6 +169,33 @@ describe("LocalAgentHomeStore path containment", () => {
     expect(await store.readFile("bot-1", "link.txt", context)).toBe("before");
     await store.writeFile("bot-1", "link.txt", "after", context);
     expect(await readFile(path.join(home, "target.txt"), "utf8")).toBe("after");
+  });
+
+  it("rejects an opened file reached through a swapped parent even after the parent is restored", async () => {
+    const { root, store, home } = await fixture();
+    const directory = path.join(await realpath(home), "notes");
+    const parked = path.join(await realpath(home), "parked-notes");
+    const outside = path.join(await realpath(root), "outside");
+    const target = path.join(directory, "result.txt");
+    await mkdir(directory);
+    await mkdir(outside);
+    await writeFile(target, "inside");
+    await writeFile(path.join(outside, "result.txt"), "outside");
+    hooks.beforeOpen = async (file) => {
+      if (file !== target) return;
+      hooks.beforeOpen = undefined;
+      await rename(directory, parked);
+      await symlink(outside, directory, "junction");
+    };
+    hooks.afterOpen = async (file) => {
+      if (file !== target) return;
+      hooks.afterOpen = undefined;
+      await rm(directory);
+      await rename(parked, directory);
+    };
+
+    await expect(store.readFile("bot-1", "notes/result.txt", context)).rejects.toThrow(/escapes/i);
+    expect(await store.readFile("bot-1", "notes/result.txt", context)).toBe("inside");
   });
 
   it("allows directory symlinks that remain inside the bot home", async () => {
@@ -444,6 +477,28 @@ describe("LocalAgentHomeStore path containment", () => {
       if (target.endsWith("result.txt")) throw error;
     };
     await expect(exported(store)).rejects.toBe(error);
+  });
+
+  it("lists a folder another request creates at the same moment", async () => {
+    const { store, home } = await fixture();
+    hooks.beforeMkdir = async (target) => {
+      if (target === path.join(await realpath(home), "shared")) {
+        hooks.beforeMkdir = undefined;
+        await mkdir(target);
+      }
+    };
+
+    expect(await store.list("bot-1", "shared", context)).toEqual([]);
+  });
+
+  it("still refuses a dangling link where a folder would be made", async () => {
+    const { root, store, home } = await fixture();
+    await symlink(path.join(root, "outside"), path.join(home, "shared"));
+
+    await expect(store.list("bot-1", "shared", context)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(stat(path.join(root, "outside"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("skips hidden names before resolving their targets", async () => {

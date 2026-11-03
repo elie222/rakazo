@@ -7,8 +7,8 @@ import { useSearchParams } from "react-router-dom";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import { peekInitialBootstrap } from "../lib/bootstrap";
 import { lazyComponent } from "../lib/preload-recovery";
-import { claimStoredReferral } from "../lib/referral";
-import { rpc } from "../lib/rpc";
+import { loadBillingStatus } from "../lib/referral";
+import { rpc, SPACE_SELECTED_EVENT } from "../lib/rpc";
 import type { SupportChat } from "../lib/support-chat";
 import { useSupportChat } from "../lib/support-chat";
 
@@ -76,8 +76,7 @@ export function SubscriptionGate({
         if (!capabilities.billing) return { kind: "open" };
         const me = await loadMe();
         if (!me.billingEnabled) return { kind: "open" };
-        void claimStoredReferral();
-        const status = await rpc.billing.status();
+        const status = await loadBillingStatus();
         if (active && capabilities.crispWebsiteId) {
           setSupportChat({
             crispWebsiteId: capabilities.crispWebsiteId,
@@ -96,27 +95,50 @@ export function SubscriptionGate({
     };
   }, []);
 
-  const billed = state.kind !== "loading" && state.status !== undefined;
+  // Once billing has answered, checks keep running, even after a later read fails and the gate
+  // drops its status.
+  const [billed, setBilled] = useState(false);
+  if (!billed && state.kind !== "loading" && state.status !== undefined) setBilled(true);
   useEffect(() => {
     if (!billed) return;
     // Checkout can finish in another window (the system browser on desktop), and a free period
     // can end while the app is open.
     let active = true;
-    const recheck = () => {
+    // Numbered, so an older read (say, for the Space just left) never replaces a newer one.
+    let latest = 0;
+    const recheck = (onFailure?: () => void) => {
       if (document.visibilityState === "hidden") return;
+      const read = ++latest;
       rpc.billing
         .status()
         .then((status) => {
-          if (active) setState(gateFor(status));
+          if (active && read === latest) setState(gateFor(status));
         })
-        .catch(() => undefined);
+        .catch(() => {
+          if (active && read === latest) onFailure?.();
+        });
     };
-    window.addEventListener("focus", recheck);
-    document.addEventListener("visibilitychange", recheck);
+    const onFocus = () => recheck();
+    // Another Space can belong to another organization with its own invite link and plan: the
+    // previous one's link is dropped at once, and billing reloads for the new one.
+    // If the new Space's read fails, nothing of the previous one stays: the app opens without a
+    // status, as on any failed lookup, since the API enforces access.
+    const spaceSelected = () => {
+      setState((current) =>
+        current.kind !== "loading" && current.status
+          ? { ...current, status: { ...current.status, referral: null } }
+          : current,
+      );
+      recheck(() => setState({ kind: "open" }));
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    window.addEventListener(SPACE_SELECTED_EVENT, spaceSelected);
     return () => {
       active = false;
-      window.removeEventListener("focus", recheck);
-      document.removeEventListener("visibilitychange", recheck);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+      window.removeEventListener(SPACE_SELECTED_EVENT, spaceSelected);
     };
   }, [billed]);
 

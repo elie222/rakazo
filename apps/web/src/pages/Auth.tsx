@@ -4,6 +4,7 @@ import {
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
   signupRequiresEmailVerification,
+  suggestEmailCorrection,
 } from "@rakazo/core";
 import { Button, Input, InputOTP, InputOTPGroup, InputOTPSlot, Label } from "@rakazo/ui-web";
 import { useEffect, useRef, useState } from "react";
@@ -15,6 +16,7 @@ import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import { clearSpaceSelection } from "../lib/rpc";
 import { runSsoFlow } from "../lib/sso-flow";
 import { authErrorText, credentialIssueText } from "../lib/user-error";
+import { WindowChrome } from "./WindowChrome";
 
 type AuthMode = "in" | "up" | "forgot";
 
@@ -28,6 +30,9 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [emailBlurred, setEmailBlurred] = useState(false);
+  const [warnedEmail, setWarnedEmail] = useState<string | null>(null);
+  const emailSuggestion = mode === "up" ? suggestEmailCorrection(email) : null;
   const [error, setError] = useState<string | null>(() => {
     const code = searchParams.get("error");
     if (!code) return null;
@@ -93,6 +98,11 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     });
     if (issue) {
       setError(credentialIssueText(issue));
+      return;
+    }
+    if (emailSuggestion && warnedEmail !== email) {
+      setWarnedEmail(email);
+      setEmailBlurred(true);
       return;
     }
     setPending(true);
@@ -308,12 +318,31 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                     name="email"
                     autoComplete={mode === "in" ? "username webauthn" : "username"}
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      setEmailBlurred(false);
+                    }}
+                    onBlur={() => setEmailBlurred(true)}
                     placeholder={t`Your email address`}
                     type="email"
                     required
                     className={fieldClass}
                   />
+                  {emailSuggestion && emailBlurred ? (
+                    <p role="status" className="mt-2 text-sm text-warning">
+                      <Trans>
+                        Did you mean{" "}
+                        <button
+                          type="button"
+                          className="font-medium underline"
+                          onClick={() => setEmail(emailSuggestion)}
+                        >
+                          {emailSuggestion}
+                        </button>
+                        ?
+                      </Trans>
+                    </p>
+                  ) : null}
                 </div>
               )}
               {mode !== "forgot" && !codeStep ? (
@@ -522,17 +551,25 @@ export function AuthFrame({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-full items-center justify-center bg-background px-6 py-16 text-foreground">
-      <form onSubmit={onSubmit} className="flex w-[460px] flex-col items-center">
-        <div className="flex h-[74px] w-[74px] items-center justify-center gap-[11px] rounded-full bg-muted">
-          <span className="h-5 w-[9px] rounded-full bg-primary" />
-          <span className="h-5 w-[9px] rounded-full bg-primary" />
-        </div>
-        <h1 aria-live="polite" className="mb-9 mt-7 text-4xl font-medium tracking-tight">
-          {title}
-        </h1>
-        {children}
-      </form>
+    <div
+      className="flex min-h-full flex-col bg-background text-foreground"
+      data-rakazo-surface="auth"
+    >
+      <div className="app-drag flex gap-2 px-5 py-[18px]">
+        <WindowChrome />
+      </div>
+      <div className="flex flex-1 items-center justify-center px-6 pb-16">
+        <form onSubmit={onSubmit} className="flex w-full max-w-[460px] flex-col items-center">
+          <div className="flex h-[74px] w-[74px] items-center justify-center gap-[11px] rounded-full bg-muted">
+            <span className="h-5 w-[9px] rounded-full bg-primary" />
+            <span className="h-5 w-[9px] rounded-full bg-primary" />
+          </div>
+          <h1 aria-live="polite" className="mb-9 mt-7 text-4xl font-medium tracking-tight">
+            {title}
+          </h1>
+          {children}
+        </form>
+      </div>
     </div>
   );
 }

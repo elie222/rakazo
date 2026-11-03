@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
+import { nextIncomingCall, respondToIncomingCall } from "@rakazo/core";
 import { BotAvatar, Button, defaultBotAvatarValue } from "@rakazo/ui-web";
 import { Phone, PhoneOff } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -80,21 +81,19 @@ export function IncomingCall({
   }, []);
 
   const currentNow = Math.max(now, Date.now());
-  const bot = onCall
-    ? undefined
-    : bots.find((bot) => {
-        const call = bot.incomingCall;
-        return call && !handled.has(call.callId) && Date.parse(call.expiresAt) > currentNow;
-      });
+  const bot = onCall ? undefined : nextIncomingCall(bots, handled, currentNow);
   const call = bot?.incomingCall;
   const callId = call?.callId;
 
   useEffect(() => {
     if (!callId) return;
     setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [callId]);
+    const timer = setTimeout(
+      () => setNow(Date.now()),
+      Math.max(0, Date.parse(call.expiresAt) - Date.now()),
+    );
+    return () => clearTimeout(timer);
+  }, [callId, call?.expiresAt]);
 
   useEffect(() => {
     if (!callId) return;
@@ -111,19 +110,24 @@ export function IncomingCall({
   }, [callId]);
 
   useEffect(() => {
-    if (!bot || !call || notified.current.has(call.callId)) return;
-    if (document.visibilityState === "visible" || typeof Notification === "undefined") return;
-    if (Notification.permission !== "granted") return;
-    const notice = new Notification(t`${bot.name} is calling you`, {
-      tag: `call:${call.callId}`,
-      requireInteraction: true,
-    });
-    notification.current = notice;
-    notified.current.add(call.callId);
-    notice.onclick = () => {
-      window.focus();
-      notice.close();
+    const notify = () => {
+      if (!bot || !call || notified.current.has(call.callId)) return;
+      if (document.visibilityState === "visible" || typeof Notification === "undefined") return;
+      if (Notification.permission !== "granted") return;
+      const notice = new Notification(t`${bot.name} is calling you`, {
+        tag: `call:${call.callId}`,
+        requireInteraction: true,
+      });
+      notification.current = notice;
+      notified.current.add(call.callId);
+      notice.onclick = () => {
+        window.focus();
+        notice.close();
+      };
     };
+    notify();
+    document.addEventListener("visibilitychange", notify);
+    return () => document.removeEventListener("visibilitychange", notify);
   }, [bot, call, t]);
 
   if (!bot || !call) return null;
@@ -134,10 +138,15 @@ export function IncomingCall({
     setBusy(true);
     setError(null);
     try {
-      await rpc.threads.declineCall({ botId: bot.id, callId: call.callId, outcome: "declined" });
+      await respondToIncomingCall(call, () =>
+        rpc.notifications.declineIncomingCall({ callId: call.callId }),
+      );
       setHandled((current) => new Set(current).add(call.callId));
     } catch (cause) {
-      setError(errorText(cause, t`Could not send that`));
+      // Already answered elsewhere or rung out: there is nothing left to decline.
+      if ((cause as { code?: string } | null)?.code === "CONFLICT")
+        setHandled((current) => new Set(current).add(call.callId));
+      else setError(errorText(cause, t`Could not send that`));
     } finally {
       setBusy(false);
     }
@@ -150,7 +159,9 @@ export function IncomingCall({
     const target = { botId: bot.id, callId: call.callId };
     const context = { spaceId: selectedSpaceId() };
     try {
-      const answered = await rpc.threads.answerCall(target, { context });
+      const answered = await respondToIncomingCall(call, () =>
+        rpc.threads.answerCall(target, { context }),
+      );
       // The page reloads for another session: a hang-up now would carry that session's cookie.
       if (isLeavingSession()) return;
       if (!mounted.current) {

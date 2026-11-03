@@ -2,13 +2,16 @@ import type {
   JobPublisher,
   MessagingInboundAttachment,
   MessagingInboundMessage,
+  SandboxProvider,
 } from "@rakazo/adapter-kit";
 import { messagingDeliverJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
+import { ATTACHMENT_MAX_COUNT, isAttachmentAudioMimeType } from "@rakazo/contracts";
+import type { MessagingCommand } from "@rakazo/core";
 import {
   displayName,
   messageBlockForArtifact,
+  normalizeVoiceTranscript,
   parseMessagingCommand,
   promptTextForAttachments,
   sanitizeMessagingLabel,
@@ -34,6 +37,7 @@ import {
   MESSAGE_ROUTING_REASON,
   MESSAGE_ROUTING_RESERVATION_MS,
 } from "./team-chat-startup.js";
+import { cancelThreadRuns, finishThreadStop, STOPPED_BY_MESSAGE_NOTE } from "./thread-target.js";
 import {
   deliverWebhookEvent,
   formatUntrustedDeliveryPayload,
@@ -45,6 +49,7 @@ export interface MessagingInboundDeps {
   prisma: PrismaClient;
   events: Pick<ThreadEvents, "sendUserMessage" | "notify">;
   jobs: Pick<JobPublisher, "enqueue">;
+  sandbox: SandboxProvider;
   provision: (
     request: MessagingIdentityRequest,
     env: SignupPolicyEnv,
@@ -64,8 +69,36 @@ export interface MessagingInboundDeps {
     attachment: MessagingInboundAttachment;
     clientNonce: string;
     downloadDeadline?: number;
-  }) => Promise<{ id: string; name: string; mimeType: string; size: number }>;
+  }) => Promise<{
+    id: string;
+    name: string;
+    mimeType: string;
+    size: number;
+    /** Downloaded content; absent when a replayed delivery returned a stored row. */
+    bytes?: Uint8Array;
+  }>;
+  /**
+   * Transcribes inbound audio with the bot owner's voice provider. On null or
+   * a throw only the file reference is delivered. `signal` aborts when the
+   * budget runs out.
+   */
+  transcribe?: (input: {
+    spaceId: string;
+    userId: string;
+    audio: Uint8Array;
+    mimeType: string;
+    signal: AbortSignal;
+  }) => Promise<string | null>;
 }
+
+/** A stored inbound attachment, with spoken words when audio was transcribed. */
+type StoredAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  transcript?: string;
+};
 
 type IdentityRow = {
   id: string;
@@ -78,7 +111,7 @@ type IdentityRow = {
 
 /**
  * Inbound routing. 1:1 messages are messages to the sender's own bot (with
- * provisioning on first contact and the YES/NO/LEAVE owner commands).
+ * provisioning on first contact and the YES/NO/LEAVE/STOP owner commands).
  * Group messages drive channel discovery — upsert channel + members, DM
  * invites to linked owners, one intro when strangers are present — and
  * fan out to every approved member bot's own thread.
@@ -117,7 +150,13 @@ async function handleDirectEvent(
     if (!text && attachments.length === 0) return;
     // Owner commands are only parsed in the verified 1:1 conversation.
     const command = parseMessagingCommand(event.content);
-    if (command && (await applyOwnerCommand(deps, existing, command))) return;
+    if (command === "stop") {
+      // Only a bare "stop" is the command; one carrying media is delivered as a message.
+      if (attachments.length === 0 && !event.mediaUrl) {
+        await stopOwnerWork(deps, existing, event);
+        return;
+      }
+    } else if (command && (await applyOwnerCommand(deps, existing, command))) return;
     // A linked sender pasting a fresh code re-points this address at another
     // of their bots (only their own codes apply).
     if (await tryRedeemLinkCode(deps, event)) return;
@@ -213,13 +252,16 @@ async function handleDirectEvent(
   }
 }
 
+/** Time for all voice note transcripts of one inbound message; files are delivered without them after it. */
+const VOICE_TRANSCRIBE_BUDGET_MS = 20_000;
+
 /** Download provider-held files into thread artifacts, mirroring the team-chat path. */
 async function storeInboundMedia(
   deps: MessagingInboundDeps,
   ids: ProvisionedMessagingIdentity,
   event: MessagingInboundMessage,
 ) {
-  const artifacts: Array<{ id: string; name: string; mimeType: string; size: number }> = [];
+  const stored: Array<{ artifact: StoredAttachment; bytes: Uint8Array | undefined }> = [];
   const unavailable: string[] = [];
   const downloadDeadline = Date.now() + 2_000;
   for (const [index, attachment] of (event.attachments ?? []).entries()) {
@@ -228,16 +270,19 @@ async function storeInboundMedia(
       continue;
     }
     try {
-      artifacts.push(
-        await deps.storeAttachment({
-          spaceId: ids.spaceId,
-          userId: ids.userId,
-          botId: ids.botId,
-          attachment,
-          clientNonce: `messaging-attachment:${event.provider}:${event.handle}:${index}`,
-          downloadDeadline,
-        }),
-      );
+      const { bytes, ...artifact } = await deps.storeAttachment({
+        spaceId: ids.spaceId,
+        userId: ids.userId,
+        botId: ids.botId,
+        attachment,
+        clientNonce: `messaging-attachment:${event.provider}:${event.handle}:${index}`,
+        downloadDeadline,
+      });
+      // Only audio is transcribed; other files' bytes are not kept past their download.
+      stored.push({
+        artifact,
+        bytes: isAttachmentAudioMimeType(artifact.mimeType) ? bytes : undefined,
+      });
     } catch (error) {
       getLogger().warn("messaging attachment was not stored", {
         reason: error instanceof Error ? error.message : String(error),
@@ -245,7 +290,61 @@ async function storeInboundMedia(
       unavailable.push(`[file: ${sanitizeMessagingLabel(attachment.name)} (unavailable)]`);
     }
   }
+  // Transcribe only after every download, so a slow transcription cannot use up the
+  // download deadline of the attachments that follow it. One short budget covers all
+  // transcripts, so the webhook is answered before the provider retries it.
+  const transcribeDeadline = Date.now() + VOICE_TRANSCRIBE_BUDGET_MS;
+  const artifacts: StoredAttachment[] = [];
+  for (const { artifact, bytes } of stored) {
+    artifacts.push(await withVoiceTranscript(deps, ids, artifact, bytes, transcribeDeadline));
+  }
   return { artifacts, unavailable };
+}
+
+/**
+ * Best-effort transcript for a stored audio attachment. No provider, oversize
+ * audio or a failed call leaves the artifact unchanged, so the message is
+ * still delivered with the file reference.
+ */
+async function withVoiceTranscript(
+  deps: MessagingInboundDeps,
+  ids: Pick<ProvisionedMessagingIdentity, "spaceId" | "userId">,
+  artifact: StoredAttachment,
+  bytes: Uint8Array | undefined,
+  deadline: number,
+): Promise<StoredAttachment> {
+  if (!deps.transcribe || !bytes || !isAttachmentAudioMimeType(artifact.mimeType)) return artifact;
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) return artifact;
+  // The timer both stops waiting and cancels the provider call, so a stalled
+  // request does not keep running after the message is delivered without it.
+  const cancel = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      cancel.abort();
+      resolve(null);
+    }, remaining);
+  });
+  const call = deps
+    .transcribe({
+      spaceId: ids.spaceId,
+      userId: ids.userId,
+      audio: bytes,
+      mimeType: artifact.mimeType,
+      signal: cancel.signal,
+    })
+    .catch((error) => {
+      // Reason only: the audio and the transcript never reach the log.
+      getLogger().warn("messaging attachment transcription failed", {
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    });
+  const transcript = await Promise.race([call, timedOut]).finally(() => clearTimeout(timer));
+  // Normalized once here, so the direct prompt and the routine payload carry the same bounded text.
+  const normalized = normalizeVoiceTranscript(transcript);
+  return normalized ? { ...artifact, transcript: normalized } : artifact;
 }
 
 /** Wake provider-neutral message routines through the same approval boundary as webhooks. */
@@ -256,7 +355,7 @@ export async function wakeMessageRoutines(
   options?: {
     /** Wake clientNonce prefix; must match TeamChatBridge.providerId when event.provider differs. */
     deliveryProvider?: string;
-    artifacts?: Array<{ id: string; name: string; mimeType: string; size: number }>;
+    artifacts?: StoredAttachment[];
     unavailable?: string[];
     /**
      * TeamChat external message id. When set, atomically reassert routine
@@ -328,6 +427,13 @@ export async function wakeMessageRoutines(
             mimeType,
             size,
           })),
+        }
+      : {}),
+    ...(options?.artifacts?.some((artifact) => artifact.transcript)
+      ? {
+          voiceTranscripts: options.artifacts
+            .filter((artifact) => artifact.transcript)
+            .map((artifact) => ({ name: artifact.name, transcript: artifact.transcript })),
         }
       : {}),
   });
@@ -403,33 +509,112 @@ async function tryRedeemLinkCode(
 ): Promise<boolean> {
   const code = normalizeMessagingLinkCode(event.content);
   if (!code) return false;
-  const redeemed = await redeemMessagingLinkCode(deps.prisma, {
-    code,
-    provider: event.provider,
-    address: event.from,
-    dmThreadId: event.threadId,
-    spaceId: event.installationSpaceId,
-    installationId: event.installationId,
-  });
-  if (!redeemed) return false;
-  const bot = await deps.prisma.bot.findUnique({
-    where: { id: redeemed.botId },
-    select: { name: true },
-  });
-  await enqueueConfirmation(
-    deps,
-    { id: redeemed.identityId },
-    redeemed.confirmationKey,
-    `Linked. Messages here now reach "${bot?.name ?? "your agent"}".`,
+  const redeemed = await redeemMessagingLinkCode(
+    deps.prisma,
+    {
+      code,
+      provider: event.provider,
+      address: event.from,
+      dmThreadId: event.threadId,
+      spaceId: event.installationSpaceId,
+      installationId: event.installationId,
+    },
+    async (tx, linked) => {
+      const bot = await tx.bot.findUnique({
+        where: { id: linked.botId },
+        select: { name: true },
+      });
+      await writeConfirmation(
+        tx,
+        { id: linked.identityId },
+        linked.confirmationKey,
+        `Linked. Messages here now reach "${bot?.name ?? "your agent"}".`,
+      );
+    },
   );
+  if (!redeemed) return false;
+  await enqueueDeliverJob(deps);
   return true;
+}
+
+/**
+ * The owner's "stop", an owner command like YES/NO/LEAVE: Stop for their bot's chat, always
+ * answered by text. The answer's row, written first, is this delivery's receipt, so a
+ * redelivered or concurrent copy finds it and changes nothing.
+ */
+async function stopOwnerWork(
+  deps: MessagingInboundDeps,
+  identity: IdentityRow,
+  event: MessagingInboundMessage,
+): Promise<void> {
+  const thread = await deps.prisma.thread.findFirstOrThrow({
+    where: { botId: identity.botId },
+    select: { id: true },
+  });
+  const key = `command:stop:${identity.id}:${event.handle}`;
+  const target = { kind: "bot", botId: identity.botId, threadId: thread.id } as const;
+  const stop = await deps.prisma.$transaction(async (tx) => {
+    const receipt = await tx.messagingOutbound.createMany({
+      data: [
+        { idempotencyKey: key, kind: "dm", identityId: identity.id, body: "Nothing is running." },
+      ],
+      skipDuplicates: true,
+    });
+    if (receipt.count === 0) return null;
+    const stop = await cancelThreadRuns(identity, target, { botId: identity.botId })(tx);
+    if (stop.runIds.length) {
+      await tx.messagingOutbound.update({
+        where: { idempotencyKey: key },
+        data: { body: STOPPED_BY_MESSAGE_NOTE },
+      });
+    }
+    return stop;
+  });
+  await enqueueDeliverJob(deps);
+  if (stop?.runIds.length) await finishThreadStop(deps, identity, target, stop);
+}
+
+/** How long a channel invite or connection request can be answered by text. */
+export const TEXT_ANSWER_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The one request a bare YES or NO answers: the request whose prompt is the newest message this
+ * line delivered to the person, sent within the answer window and still pending. Anything said since,
+ * by the bot or the product, makes the reply an ordinary message.
+ */
+async function answeredRequest(deps: MessagingInboundDeps, identity: IdentityRow) {
+  const latest = await deps.prisma.messagingOutbound.findFirst({
+    where: { identityId: identity.id, kind: "dm", status: { in: ["pending", "sent"] } },
+    orderBy: { createdAt: "desc" },
+    select: { idempotencyKey: true, createdAt: true, status: true },
+  });
+  if (
+    latest?.status !== "sent" ||
+    Date.now() - latest.createdAt.getTime() > TEXT_ANSWER_WINDOW_MS
+  ) {
+    return null;
+  }
+  const [kind, first, second] = latest.idempotencyKey.split(":");
+  if (kind === "invite" && first && second === identity.id) {
+    const membership = await deps.prisma.messagingChannelMember.findFirst({
+      where: { channelId: first, identityId: identity.id, status: "invited" },
+    });
+    return membership ? ({ kind: "channel", membership } as const) : null;
+  }
+  if (kind === "connect" && first && second === identity.botId) {
+    const connection = await deps.prisma.agentConnection.findFirst({
+      where: { requesterBotId: first, targetBotId: identity.botId, status: "pending" },
+    });
+    return connection ? ({ kind: "connection", connection } as const) : null;
+  }
+  return null;
 }
 
 /** Returns true when the command matched a pending item and was handled. */
 async function applyOwnerCommand(
   deps: MessagingInboundDeps,
   identity: IdentityRow,
-  command: "approve" | "decline" | "leave",
+  command: Exclude<MessagingCommand, "stop">,
 ): Promise<boolean> {
   if (command === "leave") {
     const membership = await deps.prisma.messagingChannelMember.findFirst({
@@ -437,38 +622,30 @@ async function applyOwnerCommand(
       orderBy: { updatedAt: "desc" },
     });
     if (!membership) return false;
-    const { count } = await deps.prisma.messagingChannelMember.updateMany({
-      where: { id: membership.id, status: "approved" },
-      data: { status: "left" },
+    // One transaction, so a failed confirmation leaves the membership as it
+    // was and a redelivered LEAVE cannot move on to the next group.
+    const claimed = await deps.prisma.$transaction(async (tx) => {
+      const { count } = await tx.messagingChannelMember.updateMany({
+        where: { id: membership.id, status: "approved" },
+        data: { status: "left" },
+      });
+      // State changed under us (e.g. swept out and re-invited): treat the
+      // text as a normal message rather than overwriting the newer state.
+      if (count === 0) return false;
+      await writeConfirmation(
+        tx,
+        identity,
+        `command:leave:${membership.id}`,
+        "You've left the channel. Your agent will no longer post there. The group chat itself is unchanged.",
+      );
+      return true;
     });
-    // State changed under us (e.g. swept out and re-invited): treat the
-    // text as a normal message rather than overwriting the newer state.
-    if (count === 0) return false;
-    await enqueueConfirmation(
-      deps,
-      identity,
-      `command:leave:${membership.id}`,
-      "You've left the channel. Your agent will no longer post there. The group chat itself is unchanged.",
-    );
+    if (!claimed) return false;
+    await enqueueDeliverJob(deps);
     return true;
   }
 
-  const membership = await deps.prisma.messagingChannelMember.findFirst({
-    where: { identityId: identity.id, status: "invited" },
-    orderBy: { updatedAt: "desc" },
-  });
-  const connection = await deps.prisma.agentConnection.findFirst({
-    where: { targetBotId: identity.botId, status: "pending" },
-    orderBy: { updatedAt: "desc" },
-  });
-  // YES/NO answers whichever pending item is newest, channel invite or
-  // agent connection.
-  const target =
-    membership && (!connection || membership.updatedAt >= connection.updatedAt)
-      ? ({ kind: "channel", membership } as const)
-      : connection
-        ? ({ kind: "connection", connection } as const)
-        : null;
+  const target = await answeredRequest(deps, identity);
   if (!target) return false;
   const approved = command === "approve";
 
@@ -562,24 +739,6 @@ async function enqueueDeliverJob(deps: MessagingInboundDeps): Promise<void> {
   });
 }
 
-async function enqueueConfirmation(
-  deps: MessagingInboundDeps,
-  identity: { id: string },
-  key: string,
-  body: string,
-): Promise<void> {
-  // Keys are stable per membership/connection across approval cycles; clear
-  // the prior cycle's row or skipDuplicates would swallow the new text.
-  await deps.prisma.messagingOutbound.deleteMany({ where: { idempotencyKey: key } });
-  await deps.prisma.messagingOutbound.createMany({
-    data: [{ idempotencyKey: key, kind: "dm", identityId: identity.id, body }],
-    skipDuplicates: true,
-  });
-  await deps.jobs.enqueue(messagingDeliverJob()).catch((error) => {
-    getLogger().error("messaging confirmation enqueue error", error);
-  });
-}
-
 async function handleChannelEvent(
   deps: MessagingInboundDeps,
   event: MessagingInboundMessage,
@@ -590,6 +749,37 @@ async function handleChannelEvent(
     create: { provider: event.provider, threadId: event.threadId, name: channelName },
     update: channelName ? { name: channelName } : {},
   });
+
+  // Telegram reports departures one service message at a time; a rosterless
+  // platform has no sweep, so this delta is the only removal signal. Our own
+  // bot leaving ends every membership: nothing more is delivered there. The
+  // event itself carries no conversation — no intro, no run — and it runs before
+  // member discovery, so a departing sender is never invited or announced.
+  if (event.departures) {
+    // Leaving the chat ends membership in every conversation of it: forum topics
+    // are channels of their own (`<provider>:<chat>:<topic>`) on the same mount.
+    const chat = event.threadId.split(":").slice(0, 2).join(":");
+    const chatChannels = await deps.prisma.messagingChannel.findMany({
+      where: {
+        provider: event.provider,
+        OR: [{ threadId: chat }, { threadId: { startsWith: `${chat}:` } }],
+      },
+      select: { id: true },
+    });
+    // The query includes this channel: its thread id is the chat or one of its topics.
+    const channelIds = chatChannels.map((row) => row.id);
+    await deps.prisma.messagingChannelMember.updateMany({
+      where: event.departures.botLeft
+        ? { channelId: { in: channelIds }, status: { in: ["invited", "approved"] } }
+        : {
+            channelId: { in: channelIds },
+            address: { in: event.departures.addresses },
+            status: { in: ["invited", "approved"] },
+          },
+      data: { status: "left" },
+    });
+    return;
+  }
 
   const participants = [...event.participants];
   if (!participants.includes(event.from)) participants.push(event.from);
@@ -675,6 +865,9 @@ async function handleChannelEvent(
     });
   }
 
+  // A service message (a pin, a join) carries nothing for a bot to read.
+  if (!event.content.trim() && !event.mediaUrl && !event.attachments?.length) return;
+
   // Only approved owners' bots participate.
   const senderMember = await deps.prisma.messagingChannelMember.findUnique({
     where: { channelId_address: { channelId: channel.id, address: event.from } },
@@ -716,6 +909,8 @@ async function handleChannelEvent(
       threadId: thread.id,
     };
     if (await wakeMessageRoutines(deps, target, event)) continue;
+    // Group runs carry only text; a bare photo would start an empty prompt.
+    if (!event.content.trim()) continue;
 
     const sent = await deps.events.sendUserMessage({
       spaceId: identity.spaceId,

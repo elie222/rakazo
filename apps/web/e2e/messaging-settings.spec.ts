@@ -185,8 +185,8 @@ test("messaging settings show linked chat apps, channels, connections, and team 
   await messagingSettings.getByRole("button", { name: "Settings", exact: true }).click();
   const conversationSettings = page.getByTestId("external-conversation-settings");
   await expect(conversationSettings).toBeVisible();
-  await expect(conversationSettings.getByText("Listening")).toBeVisible();
-  await expect(conversationSettings.getByText("Room guidance")).toBeVisible();
+  await expect(conversationSettings.getByText("Replies to")).toBeVisible();
+  await expect(conversationSettings.getByText("Instructions for this room")).toBeVisible();
   await expect(conversationSettings.getByText("GitHub")).toBeVisible();
   await captureScreenshot(page, testInfo, "messaging-team-conversation-settings");
   await settings.getByTestId("settings-nav-general").click();

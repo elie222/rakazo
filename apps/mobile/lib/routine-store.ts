@@ -3,7 +3,7 @@ import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import type { QueryFunction } from "@tanstack/react-query";
 import { hashKey, useQuery } from "@tanstack/react-query";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { captureApiRequestContext, rpc } from "./api";
 import { queryClient, rpcQuery } from "./query";
 import { createQueuedSave } from "./queued-save";
@@ -103,7 +103,7 @@ export function setRoutineActive(
         (rows ?? []).map((row) => (row.id === routine.id ? change(row) : row)),
       );
     toggle = createQueuedSave(routine.active, {
-      onChange: (value) => void patch((row) => ({ ...row, active: value })),
+      onChange: (value) => void patch((row) => ({ ...row, active: value, scheduleDelayed: false })),
       save: async (value) => {
         const context = await requestContext;
         // Signed out or switched since the tap: that list is gone, so nothing is sent.
@@ -161,7 +161,7 @@ export async function removeBotRoutine(botId: string, routineId: string): Promis
  * The bot's routines, shared by every screen that shows them. Each time a screen comes into
  * view it shows what is already known and reads again, then keeps reading while it stays.
  */
-export function useBotRoutines(botId: string, { poll = true }: { poll?: boolean } = {}) {
+export function useBotRoutines(botId: string) {
   const [shownSince] = useState(Date.now);
   const { data, error, dataUpdatedAt, errorUpdatedAt } = useQuery(
     { ...routinesQuery(botId), enabled: false, select: oldestFirst },
@@ -171,16 +171,22 @@ export function useBotRoutines(botId: string, { poll = true }: { poll?: boolean 
     useCallback(() => {
       if (!botId) return;
       void loadBotRoutines(botId);
-      if (!poll) return;
       const timer = setInterval(() => void loadBotRoutines(botId), ROUTINES_POLL_MS);
       return () => clearInterval(timer);
-    }, [botId, poll]),
+    }, [botId]),
+  );
+  const failedSinceShown = errorUpdatedAt >= shownSince && errorUpdatedAt > dataUpdatedAt;
+  // A delay seen before a failed read may already have cleared.
+  const routines = useMemo(
+    () => (failedSinceShown ? data?.map((r) => ({ ...r, scheduleDelayed: false })) : data),
+    [data, failedSinceShown],
   );
   return {
-    routines: data,
+    routines,
     error,
     /** A read answered since this screen opened, so a missing routine is really gone. */
     readSinceShown: dataUpdatedAt >= shownSince,
-    failedSinceShown: errorUpdatedAt >= shownSince && errorUpdatedAt > dataUpdatedAt,
+    /** The latest read since this screen opened failed. */
+    failedSinceShown,
   };
 }

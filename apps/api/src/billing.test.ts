@@ -24,6 +24,7 @@ function service(getPrice: BillingProvider["getPrice"], role = "owner") {
   const provider = {
     describe: () => ({ capabilities: { trials: true, portal: true } }),
     getPrice: vi.fn(getPrice),
+    endTrial: vi.fn(),
   } as unknown as BillingProvider;
   return {
     provider,
@@ -46,10 +47,12 @@ describe("billing status", () => {
     await expect(billing.status(actor)).resolves.toMatchObject({ price: null, access: false });
   });
 
-  it("refuses checkout and portal for non-owners", async () => {
-    const { billing } = service(async () => price, "member");
+  it("refuses checkout, portal, and ending the trial for non-owners", async () => {
+    const { billing, provider } = service(async () => price, "member");
     await expect(billing.checkout(actor)).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(billing.portal(actor)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(billing.endTrial(actor)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(provider.endTrial).not.toHaveBeenCalled();
   });
 });
 

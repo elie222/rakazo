@@ -1,7 +1,11 @@
 import { strict as assert } from "node:assert";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { setFlagsFromString } from "node:v8";
+import { runInNewContext } from "node:vm";
+import { Agent } from "undici";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MCP_CLOSE_TIMEOUT_MS } from "./mcp-close.js";
 import { StoredMcpOAuthProvider } from "./mcp-oauth.js";
 import {
   McpSession,
@@ -30,6 +34,136 @@ function logicalHref(input: string | URL | Request, init?: RequestInit): string 
 }
 
 describe("MCP transport seam", () => {
+  it.each(["init", "request"] as const)(
+    "keeps the %s abort signal connected after GC while an SSE body is open",
+    async (kind) => {
+      setFlagsFromString("--expose-gc");
+      const gc = runInNewContext("gc") as () => void;
+      setFlagsFromString("--no-expose-gc");
+      const controller = new AbortController();
+      let forwarded: AbortSignal | null | undefined;
+      const fetch = secureFetch(
+        new URL("https://mcp.example.test/mcp"),
+        {},
+        {},
+        {
+          ...TEST_NETWORK,
+          fetch: async (_input, init) => {
+            forwarded = init?.signal;
+            return new Response(
+              new ReadableStream({
+                start(stream) {
+                  init?.signal?.addEventListener("abort", () => stream.error(init.signal?.reason), {
+                    once: true,
+                  });
+                },
+              }),
+              { headers: { "content-type": "text/event-stream" } },
+            );
+          },
+        },
+      );
+      // Drop every Request before GC; retain only the caller's controller and body.
+      const response = await (async () => {
+        const init = { signal: controller.signal, headers: { accept: "text/event-stream" } };
+        return kind === "init"
+          ? fetch("https://mcp.example.test/mcp", init)
+          : fetch(new Request("https://mcp.example.test/mcp", init));
+      })();
+      const reading = response
+        .body!.getReader()
+        .read()
+        .catch((error: unknown) => error);
+      try {
+        for (let i = 0; i < 10; i += 1) {
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          gc();
+        }
+        controller.abort(new Error("session closed"));
+        expect(forwarded?.aborted).toBe(true);
+        expect(await reading).toEqual(new Error("session closed"));
+      } finally {
+        await fetch.close();
+      }
+    },
+  );
+
+  it("honors an explicit signal override, including null, for a Request input", async () => {
+    const original = new AbortController();
+    const override = new AbortController();
+    const seen: Array<AbortSignal | null | undefined> = [];
+    const fetch = secureFetch(
+      new URL("https://mcp.example.test/mcp"),
+      {},
+      {},
+      {
+        ...TEST_NETWORK,
+        fetch: async (_input, init) => {
+          seen.push(init?.signal);
+          return new Response(null);
+        },
+      },
+    );
+    try {
+      const request = new Request("https://mcp.example.test/mcp", { signal: original.signal });
+      await fetch(request, { signal: override.signal });
+      await fetch(request, { signal: null });
+      expect(seen).toEqual([override.signal, null]);
+    } finally {
+      await fetch.close();
+    }
+  });
+
+  it("bounds both SDK and dispatcher close, and observes a late cleanup rejection", async () => {
+    const session = new McpSession();
+    await session.connectRemote({
+      url: "https://mcp.example.test/mcp",
+      network: {
+        ...TEST_NETWORK,
+        fetch: async (input, init) => {
+          const message = await new Request(input, init).json();
+          if (message.method !== "initialize") return new Response(null, { status: 202 });
+          return Response.json({
+            jsonrpc: "2.0",
+            id: message.id,
+            result: {
+              protocolVersion: "2025-11-25",
+              capabilities: {},
+              serverInfo: { name: "test", version: "1" },
+            },
+          });
+        },
+      },
+    });
+    vi.useFakeTimers();
+    const clientClose = vi
+      .spyOn(session.client, "close")
+      .mockImplementation(() => new Promise(() => {}));
+    let rejectClose: ((error: Error) => void) | undefined;
+    const dispatcherClose = vi.spyOn(Agent.prototype, "close").mockImplementation(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectClose = reject;
+        }),
+    );
+    try {
+      const closing = session.close();
+      await vi.advanceTimersByTimeAsync(MCP_CLOSE_TIMEOUT_MS);
+      expect(clientClose).toHaveBeenCalledOnce();
+      expect(dispatcherClose).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(MCP_CLOSE_TIMEOUT_MS);
+      await closing;
+      rejectClose!(new Error("late close failure"));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      clientClose.mockRestore();
+      dispatcherClose.mockRestore();
+      vi.useRealTimers();
+      await session.close();
+    }
+  });
+
   it("rejects unsafe URLs and oversized URLs before network access", () => {
     expect(() => validateUrl("http://remote.example/mcp")).toThrow("HTTPS");
     expect(() => validateUrl("https://user:pass@example.com/mcp")).toThrow("credentials");

@@ -29,9 +29,6 @@ const tableEvents = vi.hoisted(() => ({
   onLayout: undefined as
     | ((event: { nativeEvent: { layout: { width: number; height: number } } }) => void)
     | undefined,
-  onScroll: undefined as
-    | ((event: { nativeEvent: { contentOffset: { x: number } } }) => void)
-    | undefined,
   onStartShouldSetResponder: undefined as (() => boolean) | undefined,
   onContentSizeChange: undefined as ((width: number, height: number) => void) | undefined,
 }));
@@ -84,9 +81,6 @@ vi.mock("react-native", async () => {
         imageLoads.push(rest.onLoad as (typeof imageLoads)[number]);
         delete rest.onLoad;
         delete rest.onError;
-      }
-      if (tag === "rn-scroll-view" && typeof rest.onScroll === "function") {
-        tableEvents.onScroll = rest.onScroll as typeof tableEvents.onScroll;
       }
       if (tag === "rn-scroll-view" && typeof rest.onContentSizeChange === "function") {
         tableEvents.onContentSizeChange =
@@ -157,6 +151,7 @@ vi.mock("react-native", async () => {
       "marginRight",
       "accessibilityElementsHidden",
       "importantForAccessibility",
+      "accessibilityRole",
     ]),
     get Text() {
       return reactNativeText.current;
@@ -197,6 +192,7 @@ vi.mock("react-native", async () => {
     Linking: linking,
     Alert: { alert },
     I18nManager: i18n,
+    useColorScheme: () => "dark",
     useWindowDimensions: () => windowSize,
   };
 });
@@ -338,7 +334,7 @@ describe("native markdown tables", () => {
     expect(html).toContain('data-flex-shrink="0"');
   });
 
-  it("keeps an offscreen column from stretching the row, and lets it back in when scrolled", async () => {
+  it("lets every cell set its row's height, even in columns scrolled out of view", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -350,27 +346,16 @@ describe("native markdown tables", () => {
       tableEvents.onLayout?.({ nativeEvent: { layout: { width: 70, height: 40 } } });
     });
 
-    const rows = () => tableRows(container.innerHTML);
-    const notesHeights = () =>
-      [
-        ...new DOMParser()
-          .parseFromString(container.innerHTML, "text/html")
-          .querySelectorAll("rn-view[data-border-bottom-width]"),
-      ].map(
-        (view) =>
-          view.querySelector("rn-view[data-max-width]:last-child")?.getAttribute("data-height") ??
-          null,
-      );
-    expect(rows()).toHaveLength(2);
-    expect(notesHeights()).toEqual(["28", "28"]);
-
-    const notesStart = (rows()[0]?.cells ?? [])
-      .slice(0, -1)
-      .reduce((total, width) => total + width, 0);
-    await act(async () => {
-      tableEvents.onScroll?.({ nativeEvent: { contentOffset: { x: notesStart } } });
-    });
-    expect(notesHeights()).toEqual([null, null]);
+    const cells = [
+      ...new DOMParser()
+        .parseFromString(container.innerHTML, "text/html")
+        .querySelectorAll("rn-view[data-border-bottom-width] rn-view[data-max-width]"),
+    ];
+    expect(cells).toHaveLength(6);
+    for (const cell of cells) {
+      expect(cell.getAttribute("data-height")).toBeNull();
+      expect(cell.getAttribute("data-overflow")).toBeNull();
+    }
 
     await act(async () => {
       root.unmount();
@@ -601,6 +586,105 @@ describe("native markdown code blocks", () => {
       root.unmount();
     });
     container.remove();
+  });
+});
+
+describe("native markdown prose fences", () => {
+  const draft =
+    "Dear team, this line of prose is far wider than a bubble, so it wraps instead of scrolling.";
+
+  // Stands in for the app's copy button, as the code copy tests do.
+  function CopyProbe({ code }: { code: string }) {
+    return createElement("copy-probe", { "data-code": code });
+  }
+
+  it.each(["text", "txt", "plaintext", "Text"])(
+    "wraps a fence marked %j as prose in the body font",
+    (language) => {
+      const html = renderToStaticMarkup(
+        <ChatMarkdown palette={lightTokens} colorScheme="light">
+          {`\`\`\`${language}\n${draft}\n\`\`\``}
+        </ChatMarkdown>,
+      );
+      const document = new DOMParser().parseFromString(html, "text/html");
+      // No sideways scroll view: the line wraps inside the fence's card.
+      expect(document.querySelector("rn-scroll-view")).toBeNull();
+      expect(
+        document.querySelector(`[data-background-color="${lightTokens.secondary}"]`),
+      ).not.toBeNull();
+      expect(textStyle(html, draft)).toMatchObject({
+        "data-color": lightTokens.foreground,
+        "data-font-size": "17",
+        "data-line-height": "22",
+      });
+      expect(textStyle(html, draft)["data-font-family"]).toBeUndefined();
+    },
+  );
+
+  it.each(["ts", ""])(
+    "keeps a fence marked %j monospaced in a sideways scroll view",
+    (language) => {
+      const html = renderToStaticMarkup(
+        <ChatMarkdown colorScheme="light">{`\`\`\`${language}\nconst a = 1;\n\`\`\``}</ChatMarkdown>,
+      );
+      const document = new DOMParser().parseFromString(html, "text/html");
+      expect(document.querySelector("rn-scroll-view")).not.toBeNull();
+      expect(
+        document.querySelector("rn-scroll-view rn-text")?.getAttribute("data-font-family"),
+      ).toBe("ui-monospace");
+    },
+  );
+
+  it("preserves a prose fence's lines and blank lines", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown colorScheme="light">
+        {"```text\nDear team,\n\n  see you Monday.\n```"}
+      </ChatMarkdown>,
+    );
+    const document = new DOMParser().parseFromString(html, "text/html");
+    const lines = [...document.querySelectorAll("rn-text")]
+      .filter((text) => !text.querySelector("rn-view"))
+      .map((text) => text.textContent);
+    expect(lines).toEqual(["text", "Dear team,", " ", "  see you Monday."]);
+  });
+
+  it("gives a prose fence a copy button for its exact code, outside any scroll view", () => {
+    const code = "Dear team,\n\n  see you Monday.";
+    const html = renderToStaticMarkup(
+      <CodeCopyButtonContext.Provider value={CopyProbe}>
+        <ChatMarkdown
+          palette={lightTokens}
+          colorScheme="light"
+        >{`\`\`\`text\n${code}\n\`\`\``}</ChatMarkdown>
+      </CodeCopyButtonContext.Provider>,
+    );
+    const document = new DOMParser().parseFromString(html, "text/html");
+    const probes = document.querySelectorAll("copy-probe");
+    expect(probes).toHaveLength(1);
+    expect(probes[0]?.getAttribute("data-code")).toBe(code);
+    expect(probes[0]?.closest("rn-scroll-view")).toBeNull();
+    // The button sits inside the fence's frame, beside the prose.
+    const frame = probes[0]?.parentElement?.parentElement;
+    expect(frame?.getAttribute("data-border-width")).toBeTruthy();
+    expect(frame?.getAttribute("data-background-color")).toBe(lightTokens.secondary);
+  });
+
+  it("aligns each prose line by its own direction, like a paragraph", () => {
+    const align = (markdown: string, line: string) =>
+      textStyle(
+        renderToStaticMarkup(<ChatMarkdown colorScheme="light">{markdown}</ChatMarkdown>),
+        line,
+      )["data-text-align"];
+    expect(align("```text\nשלום רב.\nDear team,\n```", "שלום רב.")).toBe("right");
+    expect(align("```text\nשלום רב.\nDear team,\n```", "Dear team,")).toBeUndefined();
+    i18n.isRTL = true;
+    try {
+      // React Native mirrors `right` in a right-to-left layout, so it lands on the left.
+      expect(align("```text\nDear team,\n```", "Dear team,")).toBe("right");
+      expect(align("```text\nשלום רב.\n```", "שלום רב.")).toBeUndefined();
+    } finally {
+      i18n.isRTL = false;
+    }
   });
 });
 
@@ -837,6 +921,47 @@ describe("native markdown lists", () => {
     // 13 + 5 + 8: the dot ends where a one-digit number ends.
     expect(dots[0]?.parentElement?.getAttribute("data-margin-left")).toBe("13");
     expect(dots[0]?.parentElement?.getAttribute("data-margin-right")).toBe("8");
+  });
+
+  it("draws task list items as checkboxes instead of their [ ] and [x] text", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"- [x] Draft the announcement\n- [ ] Collect quotes\n- plain"}</ChatMarkdown>,
+    );
+    expect(html).not.toContain("[x]");
+    expect(html).not.toContain("[ ]");
+    expect(html).toContain("Draft the announcement");
+    expect(html.match(/data-accessibility-role="checkbox"/g)).toHaveLength(2);
+    expect(html.match(/✓/g)).toHaveLength(1);
+    // Each task is one accessible element that reads its text with its state.
+    expect(html).toMatch(/accessible=""[^>]*accessibilityLabel="Draft the announcement"/);
+    // The plain item keeps its bullet.
+    expect(bulletDots(html)).toHaveLength(1);
+  });
+
+  it("draws a checkbox when the task text starts on the next line", () => {
+    const html = renderToStaticMarkup(<ChatMarkdown>{"- [x]\n  Ship it"}</ChatMarkdown>);
+    expect(html).not.toContain("[x]");
+    expect(html).toContain("Ship it");
+    expect(html.match(/data-accessibility-role="checkbox"/g)).toHaveLength(1);
+  });
+
+  it("keeps each nested task's own checkbox state", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"- [ ] Launch\n  - [x] Draft\n  - [ ] Review"}</ChatMarkdown>,
+    );
+    expect(html.match(/data-accessibility-role="checkbox"/g)).toHaveLength(3);
+    expect(html).toMatch(/accessibilityLabel="Launch"/);
+    expect(html).toMatch(/accessibilityLabel="Draft"/);
+  });
+
+  it("keeps escaped [x] and [ ] as literal text", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"- \\[x\\] done literally\n- \\[ \\] open literally"}</ChatMarkdown>,
+    );
+    expect(html).toContain("[x] done literally");
+    expect(html).toContain("[ ] open literally");
+    expect(html).not.toContain('data-accessibility-role="checkbox"');
+    expect(bulletDots(html)).toHaveLength(2);
   });
 
   it("draws the bullet dot in the list-marker colour", () => {
@@ -1888,5 +2013,43 @@ describe("native markdown diagrams", () => {
   it("leaves other fences and an empty mermaid fence as code", () => {
     expect(renderWithDiagrams("```ts\nconst a = 1;\n```")).not.toContain("<diagram-probe");
     expect(renderWithDiagrams("```mermaid\n\n```")).not.toContain("<diagram-probe");
+  });
+});
+
+describe("native markdown page links", () => {
+  it("draws a page link as a chip that opens the page, or as its title without a handler", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    linking.openURL.mockClear();
+    const openPage = vi.fn();
+    const markdown =
+      "See [Duplex voice](page:page_1) and [x](javascript:alert(1)) and [z](page:a/b)";
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown onOpenPage={openPage}>{markdown}</ChatMarkdown>);
+    });
+    const links = [...container.querySelectorAll<HTMLElement>("[data-accessibility-role='link']")];
+    expect(links.map((link) => link.textContent)).toEqual(["Duplex voice"]);
+    expect(links[0]!.querySelector("rn-view")).not.toBeNull();
+    expect(links[0]!.querySelector("[data-text-decoration-line='underline']")?.textContent).toBe(
+      "Duplex voice",
+    );
+    await act(async () => {
+      links[0]!.click();
+    });
+    expect(openPage).toHaveBeenCalledWith("page_1");
+    expect(linking.openURL).not.toHaveBeenCalled();
+    expect(alert).not.toHaveBeenCalledWith(expect.anything(), "page:page_1", expect.anything());
+
+    await act(async () => {
+      root.render(<ChatMarkdown>{markdown}</ChatMarkdown>);
+    });
+    expect(container.querySelector("[data-accessibility-role='link']")).toBeNull();
+    expect(container.textContent).toContain("See Duplex voice and x and z");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
   });
 });

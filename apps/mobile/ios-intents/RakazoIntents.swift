@@ -152,10 +152,16 @@ private struct Delivery {
 /// as a message the user sent. Without a chosen bot it goes to the one whose chat was opened last.
 private func send(_ message: String, file: IntentFile?, to bot: BotEntity?) async throws -> Delivery {
   guard let target = target(bot) else { throw MessageBotError.noBot }
+  return try await send(message, file: file, to: target, with: RakazoSession.load(), timeout: 60)
+}
+
+private func send(
+  _ message: String, file: IntentFile?, to target: (botId: String, spaceId: String?),
+  with session: RakazoSession, timeout: TimeInterval
+) async throws -> Delivery {
   let botId = target.botId
-  let session = try RakazoSession.load()
   let spaceId = target.spaceId ?? session.selectedSpaceId
-  try await session.requireConsent(["botId": botId], spaceId: spaceId)
+  try await session.requireConsent(["botId": botId], spaceId: spaceId, timeout: timeout)
   var input: [String: Any] = [
     "botId": botId,
     "text": message.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -174,40 +180,48 @@ private func send(_ message: String, file: IntentFile?, to bot: BotEntity?) asyn
     input["artifactIds"] = [artifact.id]
     input["imageHandling"] = "confirm"
   }
-  let sent: Sent = try await session.rpc("threads/send", input, spaceId: spaceId)
+  let sent: Sent = try await session.rpc(
+    "threads/send", input, spaceId: spaceId, timeout: timeout)
   return Delivery(session: session, botId: botId, spaceId: spaceId, runId: sent.runId)
+}
+
+/// A voice message goes to the bot whose chat was opened last; its reply arrives as a notification.
+/// The bot and session are read now, while unlocked. Its island waits on the send, so a lost
+/// connection gives up sooner than a typed message would.
+func lastBotSender() throws -> (String) async throws -> Void {
+  guard let target = target(nil) else { throw MessageBotError.noBot }
+  let session = try RakazoSession.load()
+  return { message in
+    _ = try await send(message, file: nil, to: target, with: session, timeout: 15)
+  }
 }
 
 /// The bot's text for the run, once it finishes or stops to wait for the user; nil if it is still
 /// working after about half a minute, which is as long as Siri waits comfortably.
 private func reply(to sent: Delivery) async throws -> String? {
-  let deadline = Date().addingTimeInterval(28)
-  while Date() < deadline {
-    try await Task.sleep(nanoseconds: 2_000_000_000)
-    // The message is already sent, so a dropped connection only means no reply yet.
-    let thread: ThreadSnapshot
-    do {
-      thread = try await sent.session.rpc(
-        "threads/get", ["botId": sent.botId], spaceId: sent.spaceId, timeout: 5)
-    } catch is URLError {
-      continue
-    }
-    let active = thread.activeRuns?.first { $0.id == sent.runId }
-    if let active, !active.status.hasPrefix("waiting") { continue }
-    if active == nil, thread.run?.id == sent.runId, thread.run?.status == "failed" {
-      throw MessageBotError.server(nil)
-    }
-    let text = thread.messages
-      .filter { $0.runId == sent.runId && $0.role == "bot" }
-      .flatMap(\.blocks).compactMap(\.text).joined(separator: "\n\n")
-    if text.isEmpty, active != nil { throw MessageBotError.needsYou }
-    // Replies are markdown; Siri and the result dialog show plain text.
-    let options = AttributedString.MarkdownParsingOptions(
-      interpretedSyntax: .inlineOnlyPreservingWhitespace)
-    return (try? AttributedString(markdown: text, options: options)).map { String($0.characters) }
-      ?? text
+  guard try await sent.session.waitForReply(runId: sent.runId, botId: sent.botId, spaceId: sent.spaceId)
+  else { return nil }
+  let thread: ThreadSnapshot
+  do {
+    thread = try await sent.session.rpc(
+      "threads/get", ["botId": sent.botId], spaceId: sent.spaceId, timeout: 5)
+  } catch let error as URLError {
+    if error.code == .cancelled { throw error }
+    return nil
   }
-  return nil
+  if thread.run?.id == sent.runId, thread.run?.status == "failed" {
+    throw MessageBotError.server(nil)
+  }
+  let text = thread.messages
+    .filter { $0.runId == sent.runId && $0.role == "bot" }
+    .flatMap(\.blocks).compactMap(\.text).joined(separator: "\n\n")
+  if text.isEmpty, thread.activeRuns?.contains(where: { $0.id == sent.runId }) == true {
+    throw MessageBotError.needsYou
+  }
+  let options = AttributedString.MarkdownParsingOptions(
+    interpretedSyntax: .inlineOnlyPreservingWhitespace)
+  return (try? AttributedString(markdown: text, options: options)).map { String($0.characters) }
+    ?? text
 }
 
 /// Puts the actions in Shortcuts, Spotlight and the Action button without the user building one.
@@ -238,6 +252,11 @@ struct RakazoShortcuts: AppShortcutsProvider {
       phrases: ["Start a voice chat in \(.applicationName)"],
       shortTitle: "Start Voice Chat",
       systemImageName: "waveform")
+    AppShortcut(
+      intent: RecordVoiceMessageIntent(),
+      phrases: ["Record a message in \(.applicationName)"],
+      shortTitle: "Record Message",
+      systemImageName: "mic")
   }
 }
 
@@ -319,7 +338,21 @@ struct RoutineQuery: EntityQuery {
   }
 }
 
+/// Never forward a session or proxy credential to a redirect destination.
+private final class RejectRedirects: NSObject, URLSessionTaskDelegate {
+  func urlSession(
+    _ session: URLSession, task: URLSessionTask,
+    willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+    completionHandler: @escaping (URLRequest?) -> Void
+  ) {
+    completionHandler(nil)
+  }
+}
+
 private struct RakazoSession {
+  private static let transport = URLSession(
+    configuration: .ephemeral, delegate: RejectRedirects(), delegateQueue: nil)
+
   let apiBase: String
   let token: String
   let selectedSpaceId: String?
@@ -352,20 +385,75 @@ private struct RakazoSession {
   }
 
   /// The app asks before AI first sees the user's data; an action from here cannot ask.
-  func requireConsent(_ target: [String: String], spaceId: String?) async throws {
+  func requireConsent(
+    _ target: [String: String], spaceId: String?, timeout: TimeInterval = 60
+  ) async throws {
     let uses = ["model", "memory"]
     var input: [String: Any] = target
     input["uses"] = uses
-    let consent: ConsentStatus = try await rpc("aiConsent/status", input, spaceId: spaceId)
+    let consent: ConsentStatus = try await rpc(
+      "aiConsent/status", input, spaceId: spaceId, timeout: timeout)
     guard consent.recipients.allSatisfy({ $0.allowed || !uses.contains($0.use) }) else {
       throw MessageBotError.consentRequired
     }
   }
 
-  /// Calls an oRPC procedure the way lib/api.ts does.
-  func rpc<Output: Decodable>(
-    _ procedure: String, _ input: [String: Any], spaceId: String?, timeout: TimeInterval = 60
-  ) async throws -> Output {
+  /// Uses the same replayable SSE feed as the mobile chat, including a reply that finished
+  /// before this subscription opened. The resource deadline also bounds an idle stream.
+  func waitForReply(runId: String, botId: String, spaceId: String?) async throws -> Bool {
+    var request = try request(
+      "threads/subscribe", ["botId": botId, "cursor": 0], spaceId: spaceId, timeout: 28)
+    request.setValue("text/event-stream", forHTTPHeaderField: "accept")
+    let config = URLSessionConfiguration.ephemeral
+    config.timeoutIntervalForResource = 28
+    let stream = URLSession(configuration: config, delegate: RejectRedirects(), delegateQueue: nil)
+    defer { stream.invalidateAndCancel() }
+    do {
+      let (bytes, response) = try await stream.bytes(for: request)
+      try checkResponse(response)
+      var frame = Data()
+      var previousLf = false
+      var discardingFrame = false
+      // AsyncBytes.lines omits empty lines, so split SSE frames on bytes instead.
+      for try await byte in bytes {
+        if byte == 13 { continue }
+        if byte == 10 && previousLf {
+          previousLf = false
+          if discardingFrame {
+            discardingFrame = false
+            continue
+          }
+          let payload = String(decoding: frame, as: UTF8.self).split(separator: "\n")
+            .filter { $0.hasPrefix("data:") }
+            .map { $0.dropFirst(5).trimmingCharacters(in: .whitespaces) }
+            .joined(separator: "\n")
+          frame.removeAll(keepingCapacity: true)
+          guard let data = payload.data(using: .utf8),
+            let event = try? JSONDecoder().decode(Envelope<ReplyEvent>.self, from: data).json,
+            event.runId == runId
+          else { continue }
+          if ["run.completed", "run.failed", "run.cancelled", "run.waiting_input",
+              "computer.takeover.requested"].contains(event.type) { return true }
+        } else {
+          previousLf = byte == 10
+          guard !discardingFrame else { continue }
+          frame.append(byte)
+          if frame.count > 1_048_576 {
+            frame.removeAll(keepingCapacity: true)
+            discardingFrame = true
+          }
+        }
+      }
+    } catch let error as URLError {
+      if error.code == .cancelled { throw error }
+      // The message was sent; a timeout or dropped stream leaves its reply in the app.
+    }
+    return false
+  }
+
+  private func request(
+    _ procedure: String, _ input: [String: Any], spaceId: String?, timeout: TimeInterval
+  ) throws -> URLRequest {
     guard let url = URL(string: "\(apiBase)/rpc/\(procedure)") else {
       throw MessageBotError.signedOut
     }
@@ -377,7 +465,21 @@ private struct RakazoSession {
     request.setValue("Bearer \(token)", forHTTPHeaderField: "authorization")
     if let spaceId { request.setValue(spaceId, forHTTPHeaderField: "x-rakazo-space-id") }
     request.httpBody = try JSONSerialization.data(withJSONObject: ["json": input])
-    let (data, response) = try await URLSession.shared.data(for: request)
+    return request
+  }
+
+  private func checkResponse(_ response: URLResponse) throws {
+    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+    if status == 401 { throw MessageBotError.signedOut }
+    guard (200..<300).contains(status) else { throw MessageBotError.server(nil) }
+  }
+
+  /// Calls an oRPC procedure the way lib/api.ts does.
+  func rpc<Output: Decodable>(
+    _ procedure: String, _ input: [String: Any], spaceId: String?, timeout: TimeInterval = 60
+  ) async throws -> Output {
+    let request = try request(procedure, input, spaceId: spaceId, timeout: timeout)
+    let (data, response) = try await Self.transport.data(for: request)
     let status = (response as? HTTPURLResponse)?.statusCode ?? 0
     if status == 401 { throw MessageBotError.signedOut }
     guard (200..<300).contains(status) else {
@@ -443,6 +545,10 @@ private struct BotRoutines: Decodable {
     let name: String
   }
   let routines: [Routine]
+}
+private struct ReplyEvent: Decodable {
+  let runId: String?
+  let type: String
 }
 private struct ThreadSnapshot: Decodable {
   struct Run: Decodable {

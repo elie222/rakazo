@@ -1,4 +1,5 @@
 import type {
+  BillingCancellationReason,
   CacheCapabilities as ConnectionCacheCapabilities,
   ConnectionCatalogItem,
   ModelApiProtocol,
@@ -287,6 +288,8 @@ export interface ConnectorRoute {
   toolName: string;
   resourceId?: string;
   resourceRevision?: string | number;
+  /** Authorized local connection selected by this tool. Never fall back to another account. */
+  connectionId?: string;
   /** Source label for lazy catalog name indexes. Never exposed as a model schema field. */
   catalogGroup?: string;
 }
@@ -531,12 +534,20 @@ export interface AgentRunRequest {
   routineId?: string | null;
   sourceMessageId?: string | null;
   prompt: string;
+  /** Group threads: the label ("User") the model sees on the prompt, the same as on history. */
+  promptSpeaker?: string;
   instructions: string;
   history: Array<{
     id?: string;
     createdAt?: string;
     role: "user" | "assistant" | "system";
     content: string;
+    /**
+     * Who wrote this message when it is neither this bot nor the human of a direct chat: another
+     * bot's current name, or "User" for the human in a group thread. The runtime shows such a
+     * message to the model as a user turn that starts with "[speaker]: ". Never a real person's name.
+     */
+    speaker?: string;
     /** Images attached to this message, hydrated only for recent user turns. */
     images?: AgentInputImage[];
   }>;
@@ -824,11 +835,15 @@ export interface ArtifactPut {
 }
 
 export interface NotificationMessage {
+  /** Verified sender metadata. Avatar is a bounded JPEG thumbnail, base64 encoded. */
+  sender?: { botId: string; name: string; avatar?: string };
   kind: "completion" | "failure" | "help" | "takeover";
   title: string;
   body: string;
   botId: string;
   threadId: string;
+  /** The finished run, so a device that also polls for finished work does not alert twice. */
+  runId?: string;
   /** Group chat that owns threadId, so a tap does not open the bot's direct thread. */
   groupId?: string;
   /** Unread chats to show on the app icon, when the sender knows them. */
@@ -905,6 +920,13 @@ export interface MessagingInboundMessage {
   channelName: string | null;
   /** Group roster addresses when the platform reports them; often empty. */
   participants: string[];
+  /**
+   * Member departures this event reports one at a time (Telegram service
+   * messages on a platform that sends no roster): addresses that left or were
+   * removed, plus our own bot leaving, which ends every membership because
+   * nothing more can be delivered to that channel.
+   */
+  departures?: { addresses: string[]; botLeft: boolean };
   content: string;
   mediaUrl: string | null;
   /** Files the platform only serves to the bot's credentials (Slack url_private, …). */
@@ -1029,7 +1051,21 @@ export interface BrowserCapabilities {
 
 export interface BrowserNavigateRequest {
   url: string;
+  /** Folder in the computer's home that a file download is saved to; without it, none is saved. */
+  downloads?: string;
   signal?: AbortSignal;
+}
+
+/** A file the page downloaded: where it was saved, or why it was not. */
+export interface BrowserDownload {
+  name?: string;
+  path?: string;
+  /** Bytes saved, or so far while it is still downloading. */
+  size?: number;
+  type?: string;
+  /** Still downloading when the result was sent; the file appears at `path` once it is done. */
+  state?: "downloading";
+  error?: string;
 }
 
 export interface BrowserNavigateResult {
@@ -1040,12 +1076,21 @@ export interface BrowserNavigateResult {
   elements?: BrowserSnapshotNode[];
   /** The page was still loading or waiting on its own requests when it was captured. */
   loading?: boolean;
+  downloads?: BrowserDownload[];
   /** When set, the page tool could not operate; use computer_act instead. */
   fallback?: "computer_act";
   error?: string;
+  /** What the page did that the bot should know, such as an alert that was closed. */
+  note?: string;
+  /** A JavaScript dialog the page has open on the screen, which page tools cannot answer. */
+  dialog?: string;
 }
 
 export interface BrowserSnapshotRequest {
+  /** Words to find controls by anywhere on the page, such as "newsletter signup". */
+  query?: string;
+  /** Folder in the computer's home that a PDF the tab shows is saved to; without it, none is saved. */
+  downloads?: string;
   signal?: AbortSignal;
 }
 
@@ -1070,8 +1115,13 @@ export interface BrowserSnapshotResult {
   elements: BrowserSnapshotNode[];
   /** The page was still loading or waiting on its own requests when it was captured. */
   loading?: boolean;
+  downloads?: BrowserDownload[];
   fallback?: "computer_act";
   error?: string;
+  /** What the page did that the bot should know, such as an alert that was closed. */
+  note?: string;
+  /** A JavaScript dialog the page has open on the screen, which page tools cannot answer. */
+  dialog?: string;
 }
 
 export type BrowserActKind = "click" | "fill" | "type" | "upload";
@@ -1079,7 +1129,18 @@ export type BrowserActKind = "click" | "fill" | "type" | "upload";
 export const MAX_BROWSER_UPLOAD_FILES = 10;
 
 export type BrowserActStep =
-  | { kind: "click"; ref: string }
+  /**
+   * `approved`, `site`, `label`, `amount`: the user approved this click, which completes a purchase, on
+   * that site, as the card showed the button and total. The click is refused if either has changed.
+   */
+  | {
+      kind: "click";
+      ref: string;
+      approved?: boolean;
+      site?: string;
+      label?: string;
+      amount?: string;
+    }
   /** Attaches computer files to a file input without opening a native file chooser. */
   | { kind: "upload"; ref: string; paths: string[]; roots?: string[] }
   | {
@@ -1093,7 +1154,7 @@ export type BrowserActStep =
        * field) or visible field ("username"), or an approved purchase's card detail. A card fill
        * always carries `origin`.
        */
-      field?: "username" | "password" | "card";
+      field?: "username" | "password" | "card" | "code";
     }
   | {
       kind: "fill";
@@ -1113,6 +1174,8 @@ export type BrowserActStep =
 
 export interface BrowserActRequest {
   actions: BrowserActStep[];
+  /** Folder in the computer's home that a file download is saved to; without it, none is saved. */
+  downloads?: string;
   signal?: AbortSignal;
 }
 
@@ -1128,17 +1191,65 @@ export interface BrowserActResult {
   elements?: BrowserSnapshotNode[];
   /** The page was still loading or waiting on its own requests when that snapshot was taken. */
   loading?: boolean;
+  downloads?: BrowserDownload[];
   fallback?: "computer_act";
   error?: string;
+  /** What the page did that the bot should know, such as an alert that was closed. */
+  note?: string;
+  /** A JavaScript dialog the page has open on the screen, which page tools cannot answer. */
+  dialog?: string;
+}
+
+/** A purchase step as the page shows it: the label and amount are page text. */
+export interface BrowserPurchase {
+  /** The page's host. An approval holds for this site only. */
+  site: string;
+  label: string;
+  amount: string;
+  /** Whether the amount is the one the button names or the total the page shows. */
+  amountSource?: "button" | "page";
+}
+
+export interface BrowserPurchaseCheckRequest {
+  /** The steps of a browser_act call; only clicks are looked at. */
+  actions?: Array<{ kind: string; ref?: string }>;
+  /**
+   * Ask about clicks or a key on the screen, which name no element. `points` are the clicks' spots in screen
+   * pixels; `enter` is a key that submits or presses the focused control.
+   */
+  desktop?: boolean;
+  enter?: boolean;
+  points?: Array<{ x: number; y: number }>;
+  /** A click whose spot cannot be told (the page may have changed under it): the page decides. */
+  unplaced?: boolean;
+  signal?: AbortSignal;
+}
+
+/** `steps`: the indexes of the clicks that would complete the purchase. */
+export interface BrowserPurchaseCheckResult {
+  purchase: (BrowserPurchase & { steps: number[] }) | null;
 }
 
 /** A sandbox must route these commands through its owned screen, never generic host execution. */
 export type PageBrowserCommand =
-  | { command: "navigate"; url: string }
-  | { command: "snapshot" }
-  | { command: "act"; actions: BrowserActStep[] };
+  | { command: "navigate"; url: string; downloads?: string }
+  | { command: "snapshot"; query?: string; downloads?: string }
+  | { command: "act"; actions: BrowserActStep[]; downloads?: string }
+  | {
+      command: "purchase_check";
+      actions?: BrowserPurchaseCheckRequest["actions"];
+      desktop?: boolean;
+      enter?: boolean;
+      points?: BrowserPurchaseCheckRequest["points"];
+      unplaced?: boolean;
+    };
 
-export type PageBrowserResult = Partial<BrowserSnapshotResult & BrowserActResult> & { ok: boolean };
+export type PageBrowserResult = Partial<BrowserSnapshotResult & BrowserActResult> & {
+  ok: boolean;
+  /** A purchase check: the page's host, and what the purchase is as the page shows it. */
+  site?: string;
+  purchase?: unknown;
+};
 
 export type CloudAgentStatus = "running" | "finished" | "failed" | "cancelled" | "expired";
 
@@ -1264,6 +1375,8 @@ export interface BillingCreditCheckoutRequest {
 }
 
 export interface BillingByokCheckoutRequest extends Omit<BillingCreditCheckoutRequest, "monthly"> {
+  /** How often `amountCents` bills; monthly when omitted. */
+  interval?: "month" | "year";
   /** Omitted when the customer has already used its trial. */
   trialDays?: number;
 }
@@ -1277,13 +1390,21 @@ export interface BillingSubscriptionSnapshot {
   status: BillingSubscriptionStatus;
   seats: number;
   trialEndsAt: Date | null;
+  /** Start of the period being billed, or of the trial while one runs. */
+  currentPeriodStartsAt: Date | null;
   currentPeriodEndsAt: Date | null;
   cancelAtPeriodEnd: boolean;
   endedAt: Date | null;
   /** The flat own-key plan, which grants access without credits. */
   byokPlan?: boolean;
+  /** What the own-key plan bills each period, which stays at the price it was bought at. */
+  byokPriceCents?: number;
+  /** The own-key plan's billing period. */
+  byokInterval?: "month" | "year";
   /** Stable identity of the subscription's card across customers, when the provider has one. */
   cardFingerprint?: string;
+  cancellationReason?: BillingCancellationReason;
+  cancellationComment?: string;
 }
 
 export interface BillingCheckoutRequest {

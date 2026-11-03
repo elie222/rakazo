@@ -106,16 +106,26 @@ export async function openIntegrationsAdd(page: Page, item: string) {
   await page.getByRole("menuitem", { name: item, exact: true }).click();
 }
 
-/** Opens the bot panel from the header pill and shows one tab, leaving an open routine editor. */
-export async function openBotPanelTab(page: Page, name: "Computer" | "Routines" | "Advanced") {
+/**
+ * Opens the bot panel from the header pill and shows one tab, leaving an open routine editor.
+ * `name` is the tab's label in the UI language ("Routines", or "자동 실행" in Korean).
+ */
+export async function openBotPanelTab(page: Page, name: string) {
   const pill = page.getByTestId("bot-settings-trigger");
   const tab = page.getByTestId("bot-settings").getByRole("tab", { name, exact: true });
-  if (!(await tab.isVisible())) {
-    // The pill closes whatever else the sidebar shows, such as a restored routine editor.
-    if ((await pill.getAttribute("aria-expanded")) === "true") await pill.click();
-    await expect(pill).toHaveAttribute("aria-expanded", "false");
-    await pill.click();
-  }
+  // A reloaded page restores its saved panel a moment after it draws, so a single pass can
+  // race that restore; the sequence is retried until the tab shows.
+  await expect(async () => {
+    if (!(await tab.isVisible())) {
+      // The pill closes whatever else the sidebar shows, such as a restored routine editor.
+      if ((await pill.getAttribute("aria-expanded")) === "true") {
+        await pill.click();
+        await expect(pill).toHaveAttribute("aria-expanded", "false", { timeout: 2_000 });
+      }
+      await pill.click();
+    }
+    await expect(tab).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
   await tab.click();
   await expect(tab).toHaveAttribute("aria-selected", "true");
 }

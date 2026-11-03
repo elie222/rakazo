@@ -8,7 +8,7 @@ import type {
   ThreadMessage,
 } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
-import { isPeerReceiptBlocks, isSecretAskBlock, isToolActivityBlock } from "@rakazo/core";
+import { isPeerReceiptBlocks, isToolActivityBlock } from "@rakazo/core";
 import { BotAvatar, Button, cn, resolvePersonaColorDef } from "@rakazo/ui-web";
 import { UserRound } from "lucide-react";
 import { memo, useCallback, useMemo } from "react";
@@ -16,6 +16,7 @@ import { ArtifactFileCard } from "../../components/ArtifactFileCard";
 import { AskCard } from "../../components/AskCard";
 import { CollaborationMarker } from "../../components/ai/CollaborationMarker";
 import { CloudAgentCard } from "../../components/CloudAgentCard";
+import { PageBlockCard } from "../../components/pages/PageBlockCard";
 import { SubagentCard } from "../../components/SubagentCard";
 import {
   LIVE_TOOL_STEP_WINDOW,
@@ -27,6 +28,8 @@ import {
 import { SkillDraftCard } from "../../components/teach/SkillDraftCard";
 import type { ArtifactTarget } from "../../lib/artifact-open";
 import { messageProviderLabel } from "../../lib/messaging";
+import type { PageBlock } from "../../lib/page-cards";
+import { useOpenPage } from "../../lib/pages";
 import {
   isToolOnlyNarration,
   renderableMessageBlocks,
@@ -52,6 +55,8 @@ export const MessageView = memo(function MessageView({
   canDismiss,
   message,
   mentions,
+  pages,
+  isPageSuperseded,
   onAnswer,
   onOpenBot,
   onOpenPeerMessages,
@@ -81,6 +86,10 @@ export const MessageView = memo(function MessageView({
   message: ThreadMessage;
   /** Bots this reply announces, named inline in its text. */
   mentions?: readonly ChildBotBlock[];
+  /** Pages saved just before this reply, drawn under its text. */
+  pages?: readonly PageBlock[];
+  /** Whether a later card in the chat shows the same page. */
+  isPageSuperseded?: (messageId: string, block: PageBlock) => boolean;
   onAnswer: (
     message: ThreadMessage,
     text: string,
@@ -135,6 +144,18 @@ export const MessageView = memo(function MessageView({
         : message.blocks,
     [message.blocks, mentions],
   );
+  const openPage = useOpenPage();
+  const pageCards = pages?.length ? (
+    <div className="mt-3 flex flex-col gap-3">
+      {pages.map((page) => (
+        <PageBlockCard
+          key={`${page.pageId}:${page.version}`}
+          block={page}
+          updated={isPageSuperseded?.(message.id, page) ?? false}
+        />
+      ))}
+    </div>
+  ) : null;
   const visibleNarrationBlocks = renderableMessageBlocks(blocks, showToolActivity);
   const renderMention = useCallback(
     (id: string) => {
@@ -163,7 +184,7 @@ export const MessageView = memo(function MessageView({
         <div
           className="mb-1.5 flex items-center gap-2 text-[13px] font-semibold tracking-tight"
           dir="auto"
-          style={{ color: speakerColorDef.light }}
+          style={{ color: speakerColorDef.hex }}
         >
           <BotAvatar
             color={speakerBot?.color ?? FALLBACK_BOT_COLOR}
@@ -256,6 +277,7 @@ export const MessageView = memo(function MessageView({
                       <ChatMarkdown
                         streaming={block.kind === "progress"}
                         renderMention={renderMention}
+                        onOpenPage={openPage}
                       >
                         {block.text}
                       </ChatMarkdown>
@@ -279,6 +301,7 @@ export const MessageView = memo(function MessageView({
           </div>
           {hoverActions}
         </div>
+        {pageCards}
       </>
     );
   }
@@ -386,7 +409,7 @@ export const MessageView = memo(function MessageView({
                   className="max-w-full rounded-[20px] bg-muted px-[18px] py-3 text-body1 text-foreground"
                   dir="auto"
                 >
-                  <ChatMarkdown streaming renderMention={renderMention}>
+                  <ChatMarkdown streaming renderMention={renderMention} onOpenPage={openPage}>
                     {block.text}
                   </ChatMarkdown>
                 </div>
@@ -430,6 +453,15 @@ export const MessageView = memo(function MessageView({
                   block={block}
                 />
               </div>
+            );
+          }
+          if (block.kind === "page") {
+            return (
+              <PageBlockCard
+                key={i}
+                block={block}
+                updated={isPageSuperseded?.(message.id, block) ?? false}
+              />
             );
           }
           if (block.kind === "chart") {
@@ -490,9 +522,9 @@ export const MessageView = memo(function MessageView({
             );
           }
           if (block.kind === "text" && message.role === "user") {
-            // User bubbles stay literal text on web and mobile. Only explicit URLs
-            // and email addresses are links, so a sent address is tappable without
-            // formatting bold or headings.
+            // User bubbles stay literal text on web and mobile. Only explicit URLs,
+            // email addresses and page links are links, so a sent address is tappable
+            // without formatting bold or headings.
             return (
               <div
                 key={i}
@@ -504,7 +536,7 @@ export const MessageView = memo(function MessageView({
                   className="max-w-full whitespace-pre-wrap wrap-anywhere rounded-[20px] bg-chat-user px-[18px] py-3 text-body1 text-chat-user-foreground"
                   dir="auto"
                 >
-                  <LinkifiedText>{block.text}</LinkifiedText>
+                  <LinkifiedText onOpenPage={openPage}>{block.text}</LinkifiedText>
                 </div>
                 {i === hoverAnchorIndex ? hoverActions : null}
               </div>
@@ -522,7 +554,9 @@ export const MessageView = memo(function MessageView({
                   dir="auto"
                 >
                   <div data-quote-message-id={quoteMessageId}>
-                    <ChatMarkdown renderMention={renderMention}>{block.text}</ChatMarkdown>
+                    <ChatMarkdown renderMention={renderMention} onOpenPage={openPage}>
+                      {block.text}
+                    </ChatMarkdown>
                   </div>
                   {voiceReady ? (
                     <Button
@@ -558,10 +592,7 @@ export const MessageView = memo(function MessageView({
           }
           if (block.kind === "ask") {
             return (
-              <div
-                key={i}
-                className={`relative w-full min-w-0 ${isSecretAskBlock(block) ? "" : "max-w-xl"}`}
-              >
+              <div key={i} className="relative w-full min-w-0">
                 <AskCard
                   block={block}
                   canAnswer={canAnswer}
@@ -630,6 +661,7 @@ export const MessageView = memo(function MessageView({
         })}
         {hoverAnchorIndex === -1 ? hoverActions : null}
       </div>
+      {pageCards}
     </>
   );
 });
@@ -651,7 +683,7 @@ function BotMention({
     <span
       dir="auto"
       className="font-medium"
-      style={live ? { color: resolvePersonaColorDef(block.botId, color).light } : undefined}
+      style={live ? { color: resolvePersonaColorDef(block.botId, color).hex } : undefined}
     >
       {block.name}
     </span>

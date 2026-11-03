@@ -14,7 +14,8 @@ import {
   BillingCustomerNotFoundError,
   BillingNoMonthlyCreditsError,
 } from "@rakazo/adapter-kit";
-import { ModelCreditAmountSchema } from "@rakazo/contracts";
+import type { BillingCancellationReason } from "@rakazo/contracts";
+import { BILLING_CANCELLATION_REASONS, ModelCreditAmountSchema } from "@rakazo/contracts";
 import { z } from "zod";
 
 export const STRIPE_API_VERSION = "2026-09-30.endive";
@@ -48,10 +49,14 @@ const subscriptionSchema = z.object({
   metadata: z.record(z.string(), z.string()).optional(),
   created: z.number(),
   trial_end: z.number().nullish(),
+  current_period_start: z.number().nullish(),
   current_period_end: z.number().nullish(),
   cancel_at_period_end: z.boolean().nullish(),
   cancel_at: z.number().nullish(),
   ended_at: z.number().nullish(),
+  cancellation_details: z
+    .object({ feedback: z.string().nullish(), comment: z.string().nullish() })
+    .nullish(),
   default_payment_method: z
     .union([
       z.string(),
@@ -63,8 +68,15 @@ const subscriptionSchema = z.object({
       z.object({
         id: z.string(),
         quantity: z.number().int().nullish(),
+        current_period_start: z.number().nullish(),
         current_period_end: z.number().nullish(),
-        price: idSchema.extend({ product: z.string().optional() }),
+        price: idSchema.extend({
+          product: z.string().optional(),
+          unit_amount: z.number().int().nullish(),
+          recurring: z
+            .object({ interval: z.string(), interval_count: z.number().int().nullish() })
+            .nullish(),
+        }),
       }),
     ),
   }),
@@ -104,7 +116,7 @@ export class StripeBillingProvider implements BillingProvider {
   private readonly apiBase: string;
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
-  private readonly monthlyPrices = new Map<string, string>();
+  private readonly recurringPrices = new Map<string, string>();
 
   constructor(config: StripeBillingConfig) {
     this.config = config;
@@ -196,7 +208,7 @@ export class StripeBillingProvider implements BillingProvider {
           input.monthly
             ? {
                 quantity: 1,
-                price: await this.monthlyPrice(
+                price: await this.recurringPrice(
                   `rakazo_monthly_credits_${input.amountCents}`,
                   input.amountCents,
                   "Rakazo monthly model credits",
@@ -238,7 +250,7 @@ export class StripeBillingProvider implements BillingProvider {
       items: [
         {
           id: item.id,
-          price: await this.monthlyPrice(
+          price: await this.recurringPrice(
             `rakazo_monthly_credits_${amountCents}`,
             amountCents,
             "Rakazo monthly model credits",
@@ -261,6 +273,7 @@ export class StripeBillingProvider implements BillingProvider {
     )
       throw new BillingCheckoutCompletedError();
     const metadata = { [BYOK_PLAN_METADATA]: "byok" };
+    const interval = input.interval ?? "month";
     const session = urlSchema.parse(
       await this.request("POST", "/v1/checkout/sessions", {
         customer: input.customerId,
@@ -271,11 +284,7 @@ export class StripeBillingProvider implements BillingProvider {
         line_items: [
           {
             quantity: 1,
-            price: await this.monthlyPrice(
-              `rakazo_byok_monthly_${input.amountCents}`,
-              input.amountCents,
-              "Rakazo own-key plan",
-            ),
+            price: await this.byokPrice(input.amountCents, interval),
           },
         ],
         metadata,
@@ -289,6 +298,50 @@ export class StripeBillingProvider implements BillingProvider {
       }),
     );
     return { url: session.url };
+  }
+
+  async switchByokToYearly(customerId: string, subscriptionId: string, amountCents: number) {
+    // Re-read just before charging: a credit checkout may have completed since the caller checked.
+    const subscriptions = await this.listSubscriptions(customerId);
+    const live = (s: StripeSubscription) =>
+      holdsBillingSubscription(mapStripeSubscriptionStatus(s.status));
+    const subscription = subscriptions.find((s) => s.id === subscriptionId);
+    const item = subscription?.items.data[0];
+    const status = subscription && mapStripeSubscriptionStatus(subscription.status);
+    if (
+      !subscription ||
+      !item ||
+      !isByokPlan(subscription) ||
+      // Paid up and not cancelling: an overdue month must not be credited against the year.
+      (status !== "active" && status !== "trialing") ||
+      subscription.cancel_at_period_end ||
+      subscription.cancel_at != null ||
+      // One plan billed every month, as own-key checkout creates it.
+      subscription.items.data.length !== 1 ||
+      (item.quantity ?? 1) !== 1 ||
+      item.price.recurring?.interval !== "month" ||
+      (item.price.recurring.interval_count ?? 1) !== 1 ||
+      // Twelve months at the current price must still cost more than the year.
+      (item.price.unit_amount ?? 0) * 12 <= amountCents ||
+      subscriptions.some((s) => live(s) && creditAmount(s.metadata?.rakazo_credit_cents))
+    )
+      return false;
+    // A new interval restarts the billing cycle today; the unused month is credited against it.
+    await this.request("POST", `/v1/subscriptions/${encodeURIComponent(subscription.id)}`, {
+      items: [{ id: item.id, price: await this.byokPrice(amountCents, "year"), quantity: 1 }],
+      proration_behavior: "always_invoice",
+      payment_behavior: "error_if_incomplete",
+    });
+    return true;
+  }
+
+  private byokPrice(amountCents: number, interval: "month" | "year") {
+    return this.recurringPrice(
+      `rakazo_byok_${interval === "year" ? "yearly" : "monthly"}_${amountCents}`,
+      amountCents,
+      "Rakazo own-key plan",
+      interval,
+    );
   }
 
   async endByokPlans(customerId: string) {
@@ -310,22 +363,24 @@ export class StripeBillingProvider implements BillingProvider {
     }
   }
 
-  private async monthlyPrice(
+  private async recurringPrice(
     lookupKey: string,
     amountCents: number,
     productName: string,
+    interval: "month" | "year" = "month",
   ): Promise<string> {
-    const cached = this.monthlyPrices.get(lookupKey);
+    const cached = this.recurringPrices.get(lookupKey);
     if (cached) return cached;
-    const id = await this.findOrCreateMonthlyPrice(lookupKey, amountCents, productName);
-    this.monthlyPrices.set(lookupKey, id);
+    const id = await this.findOrCreateRecurringPrice(lookupKey, amountCents, productName, interval);
+    this.recurringPrices.set(lookupKey, id);
     return id;
   }
 
-  private async findOrCreateMonthlyPrice(
+  private async findOrCreateRecurringPrice(
     lookupKey: string,
     amountCents: number,
     productName: string,
+    interval: "month" | "year",
   ): Promise<string> {
     const query = encodeStripeForm({
       active: true,
@@ -346,7 +401,7 @@ export class StripeBillingProvider implements BillingProvider {
         price.product.active &&
         price.currency === "usd" &&
         price.unit_amount === amountCents &&
-        price.recurring.interval === "month" &&
+        price.recurring.interval === interval &&
         price.recurring.interval_count === 1,
     );
     if (existing) return existing.id;
@@ -355,7 +410,7 @@ export class StripeBillingProvider implements BillingProvider {
       await this.request("POST", "/v1/prices", {
         currency: "usd",
         unit_amount: amountCents,
-        recurring: { interval: "month" },
+        recurring: { interval },
         product_data: { name: productName },
         lookup_key: lookupKey,
         transfer_lookup_key: true,
@@ -569,6 +624,20 @@ export class StripeBillingProvider implements BillingProvider {
         await this.rethrowUnlessEnded(error, customerId, chosen.subscription.id);
       }
     }
+  }
+
+  async endTrial(customerId: string) {
+    const chosen = pickStripeSubscription(await this.listLiveSubscriptions(customerId));
+    if (
+      chosen?.status !== "trialing" ||
+      toSnapshot(chosen.subscription, chosen.status).cancelAtPeriodEnd
+    )
+      return;
+    // Bills the first period now; a declined card fails the request and the trial runs on.
+    await this.request("POST", `/v1/subscriptions/${encodeURIComponent(chosen.subscription.id)}`, {
+      trial_end: "now",
+      payment_behavior: "error_if_incomplete",
+    });
   }
 
   async cancelCustomerSubscriptions(customerId: string) {
@@ -797,6 +866,8 @@ function toSnapshot(
   if (!item) throw new Error("Stripe subscription has no items");
   const method = subscription.default_payment_method;
   const fingerprint = typeof method === "object" ? method?.card?.fingerprint : undefined;
+  const reason = cancellationReason(subscription.cancellation_details?.feedback);
+  const comment = subscription.cancellation_details?.comment?.trim();
   return {
     creditAmountCents: creditAmount(subscription.metadata?.rakazo_credit_cents),
     subscriptionId: subscription.id,
@@ -805,12 +876,32 @@ function toSnapshot(
     status,
     seats: item.quantity ?? 1,
     trialEndsAt: fromSeconds(subscription.trial_end),
+    currentPeriodStartsAt: fromSeconds(
+      item.current_period_start ?? subscription.current_period_start,
+    ),
     currentPeriodEndsAt: fromSeconds(item.current_period_end ?? subscription.current_period_end),
     cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end) || subscription.cancel_at != null,
     endedAt: fromSeconds(subscription.ended_at),
-    ...(isByokPlan(subscription) ? { byokPlan: true } : {}),
+    ...(isByokPlan(subscription)
+      ? {
+          byokPlan: true,
+          byokInterval: item.price.recurring?.interval === "year" ? "year" : "month",
+          ...(item.price.unit_amount != null
+            ? { byokPriceCents: item.price.unit_amount * (item.quantity ?? 1) }
+            : {}),
+        }
+      : {}),
     ...(fingerprint ? { cardFingerprint: fingerprint } : {}),
+    ...(reason ? { cancellationReason: reason } : {}),
+    ...(comment ? { cancellationComment: comment } : {}),
   };
+}
+
+function cancellationReason(
+  feedback: string | null | undefined,
+): BillingCancellationReason | undefined {
+  if (!feedback) return undefined;
+  return BILLING_CANCELLATION_REASONS.find((reason) => reason === feedback) ?? "other";
 }
 
 function fromSeconds(value: number | null | undefined) {

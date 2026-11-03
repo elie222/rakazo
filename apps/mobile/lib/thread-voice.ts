@@ -77,7 +77,7 @@ export function useAutoSpeakReply({
       botId: currentBot.id,
       speaker: {
         name: currentBot.name,
-        color: resolvePersonaColorDef(currentBot.id, currentBot.color).light,
+        color: resolvePersonaColorDef(currentBot.id, currentBot.color).hex,
       },
     }).catch(() => undefined);
   }, [
@@ -275,11 +275,13 @@ export function useThreadVoiceCall({
   useEffect(() => {
     if (!botId || readOnly) return;
     const unsubscribe = onShortcutVoiceChat(() => {
-      if (takeShortcutVoiceChat(botId)) void startVoiceCallRef.current(true);
+      if (takeShortcutVoiceChat(botId)) void startVoiceCallRef.current();
     });
     const session = currentSessionGeneration();
-    if (takeRingOnArrival(botId, session) || takeShortcutVoiceChat(botId)) {
+    if (takeRingOnArrival(botId, session)) {
       void startVoiceCall(true, session);
+    } else if (takeShortcutVoiceChat(botId)) {
+      void startVoiceCall(false, session);
     }
     return unsubscribe;
   }, [botId, readOnly]);

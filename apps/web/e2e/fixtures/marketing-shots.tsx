@@ -109,7 +109,7 @@ function CreateShot() {
       }
       fill(name, "Inbox");
       document.querySelector<HTMLButtonElement>('button[aria-label="Shape 1"]')?.click();
-      document.querySelector<HTMLButtonElement>('button[aria-label="Color #8B5CF6"]')?.click();
+      document.querySelector<HTMLButtonElement>('button[aria-label="Color #A97EFE"]')?.click();
       setReady(true);
     };
     fillWhenOpen();

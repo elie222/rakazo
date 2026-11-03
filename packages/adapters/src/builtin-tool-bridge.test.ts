@@ -55,7 +55,8 @@ describe("built-in tool bridge", () => {
       "web_search",
       "write_file",
     ]);
-    expect(definitionBytes(listed)).toBeLessThanOrEqual(30_550);
+    // request_secret carries the card and contact kinds.
+    expect(definitionBytes(listed)).toBeLessThanOrEqual(31_600);
     expect(deferred.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["render_plot", "create_space", "generate_secret", "scratchpad_add"]),
     );

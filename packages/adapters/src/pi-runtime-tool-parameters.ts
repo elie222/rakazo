@@ -75,7 +75,7 @@ function builtinParameters(tool: ConnectorTool) {
     });
   }
   if (tool.name === "remember") {
-    return Type.Object({ content: Type.String(), path: Type.String() });
+    return Type.Object({ content: Type.String(), old_text: Type.Optional(Type.String()) });
   }
   if (tool.name === "shell" || tool.name === "user_computer_shell") {
     return Type.Object({
@@ -110,6 +110,7 @@ function builtinParameters(tool: ConnectorTool) {
       artifact_id: Type.Optional(Type.String()),
       use_attached_image: Type.Optional(Type.Boolean()),
       notifyOnFinish: Type.Optional(Type.Boolean()),
+      dailyCheckIns: Type.Optional(Type.Boolean()),
       model: Type.Optional(Type.String()),
       thinkingLevel: Type.Optional(stringEnum(ThinkingLevelSchema.options, {})),
       readAloud: Type.Optional(Type.Boolean()),
@@ -374,6 +375,7 @@ export function prepareFleetArguments(
   for (const key of FLEET_FLAG_ARGS) {
     if (argumentGiven(raw[key])) out[key] = raw[key];
   }
+  if (argumentGiven(raw.dailyCheckIns)) out.dailyCheckIns = raw.dailyCheckIns;
   const notify = raw.notifyOnFinish ?? raw.notify_on_finish;
   if (argumentGiven(notify)) out.notifyOnFinish = notify;
   return out;

@@ -5,7 +5,7 @@ import type { Duplex } from "node:stream";
 import type { UserDeviceSummary } from "@rakazo/contracts";
 import { USER_DEVICE_CONNECT_PATH } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { runAsSystem } from "@rakazo/db";
+import { recordSecurityEvent, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
@@ -15,8 +15,16 @@ import {
   hostComputerDeadlineMs,
   hostComputerRequest,
 } from "./host-computer-protocol.js";
-import type { UserDevice, UserDeviceGateway } from "./user-device-protocol.js";
-import { userDeviceClientMessage } from "./user-device-protocol.js";
+import type {
+  UserDevice,
+  UserDeviceGateway,
+  UserDeviceRevokeReason,
+} from "./user-device-protocol.js";
+import {
+  USER_DEVICE_REVOKED_HEADER,
+  userDeviceClientMessage,
+  userDeviceRevokeReason,
+} from "./user-device-protocol.js";
 
 /** Internal API endpoints other processes forward to. Not under /api, so the public proxy never routes them. */
 export const USER_DEVICE_FORWARD_PATH = "/internal/user-devices/request";
@@ -113,6 +121,78 @@ export interface UserDeviceRoute {
   connectionId: string;
 }
 
+/** Why a device was revoked, as the device is told. */
+function revokeReason(revokedBy: string | null): UserDeviceRevokeReason | undefined {
+  return revokedBy === "session" ? "session-ended" : undefined;
+}
+
+/** Sessions among these that were deleted or have expired. */
+async function endedSessions(prisma: PrismaClient, sessionIds: string[]): Promise<Set<string>> {
+  if (!sessionIds.length) return new Set();
+  const live = await runAsSystem("check user device sessions", () =>
+    prisma.session.findMany({
+      where: { id: { in: sessionIds }, expiresAt: { gt: new Date() } },
+      select: { id: true },
+    }),
+  );
+  const kept = new Set(live.map((session) => session.id));
+  return new Set(sessionIds.filter((id) => !kept.has(id)));
+}
+
+/** Users among these with no sign-in left. */
+async function signedOutUsers(prisma: PrismaClient, userIds: string[]): Promise<Set<string>> {
+  if (!userIds.length) return new Set();
+  const live = await runAsSystem("check users' remaining sign-ins", () =>
+    prisma.session.findMany({
+      where: { userId: { in: userIds }, expiresAt: { gt: new Date() } },
+      select: { userId: true },
+      distinct: ["userId"],
+    }),
+  );
+  const kept = new Set(live.map((session) => session.userId));
+  return new Set(userIds.filter((id) => !kept.has(id)));
+}
+
+/**
+ * Revokes the devices whose pairing sign-in was deleted or expired without its sign-out hook
+ * revoking them, and those paired before sign-ins were recorded once their user has none left.
+ * Returns the ids it revoked.
+ */
+async function revokeSignedOut(
+  prisma: PrismaClient,
+  devices: { id: string; userId: string; sessionId: string | null }[],
+): Promise<string[]> {
+  const [ended, signedOut] = await Promise.all([
+    endedSessions(
+      prisma,
+      devices.flatMap((device) => (device.sessionId ? [device.sessionId] : [])),
+    ),
+    signedOutUsers(prisma, [
+      ...new Set(devices.filter((device) => !device.sessionId).map((device) => device.userId)),
+    ]),
+  ]);
+  const revoked: string[] = [];
+  for (const device of devices.filter((device) =>
+    device.sessionId ? ended.has(device.sessionId) : signedOut.has(device.userId),
+  )) {
+    // Matching the session too leaves a device a password change or a tie just moved alone.
+    const { count } = await runAsSystem("revoke a user device whose sign-in ended", () =>
+      prisma.userDevice.updateMany({
+        where: { id: device.id, sessionId: device.sessionId, revokedAt: null },
+        data: { revokedAt: new Date(), revokedBy: "session" },
+      }),
+    );
+    if (!count) continue;
+    await recordSecurityEvent({
+      type: "device.revoked",
+      userId: device.userId,
+      metadata: { deviceId: device.id, by: "session" },
+    });
+    revoked.push(device.id);
+  }
+  return revoked;
+}
+
 /**
  * Holds the live device sockets of one API process. Connections are recorded in the database
  * with this process's internal address so the worker and other API processes can forward.
@@ -137,8 +217,15 @@ export class UserDeviceHub {
   }
 
   async authenticate(header: string | null | undefined): Promise<AuthenticatedDevice | null> {
+    return (await this.lookup(header)).device ?? null;
+  }
+
+  /** The device a token belongs to, or why it was turned away. */
+  private async lookup(
+    header: string | null | undefined,
+  ): Promise<{ device?: AuthenticatedDevice; reason?: UserDeviceRevokeReason }> {
     const token = userDeviceBearer(header);
-    if (!token) return null;
+    if (!token) return {};
     const hash = hashUserDeviceToken(token);
     const device = await runAsSystem("authenticate a user device", () =>
       this.deps.prisma.userDevice.findUnique({
@@ -150,13 +237,24 @@ export class UserDeviceHub {
           platform: true,
           tokenHash: true,
           revokedAt: true,
+          revokedBy: true,
+          sessionId: true,
         },
       }),
     );
     // The lookup is by hash; compare again in constant time so a lookup quirk never authorizes.
-    if (!device || device.revokedAt) return null;
-    if (!timingSafeEqual(Buffer.from(device.tokenHash), Buffer.from(hash))) return null;
-    return { id: device.id, userId: device.userId, name: device.name, platform: device.platform };
+    if (!device || !timingSafeEqual(Buffer.from(device.tokenHash), Buffer.from(hash))) return {};
+    if (device.revokedAt) return { reason: revokeReason(device.revokedBy) };
+    if ((await revokeSignedOut(this.deps.prisma, [device])).length)
+      return { reason: "session-ended" };
+    return {
+      device: {
+        id: device.id,
+        userId: device.userId,
+        name: device.name,
+        platform: device.platform,
+      },
+    };
   }
 
   /** Node `upgrade` listener for the device socket path; every other upgrade is refused. */
@@ -166,14 +264,17 @@ export class UserDeviceHub {
     const onError = (error: Error) =>
       getLogger().warn("user device upgrade socket error", { error });
     socket.on("error", onError);
-    const reject = (status: number, text: string) => {
-      socket.end(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+    const reject = (status: number, text: string, reason?: UserDeviceRevokeReason) => {
+      const why = reason ? `${USER_DEVICE_REVOKED_HEADER}: ${reason}\r\n` : "";
+      socket.end(
+        `HTTP/1.1 ${status} ${text}\r\n${why}Connection: close\r\nContent-Length: 0\r\n\r\n`,
+      );
     };
     const path = new URL(request.url ?? "/", "http://device").pathname;
     if (path !== USER_DEVICE_CONNECT_PATH || this.closed) return reject(404, "Not Found");
-    void this.authenticate(request.headers.authorization)
-      .then((device) => {
-        if (!device) return reject(401, "Unauthorized");
+    void this.lookup(request.headers.authorization)
+      .then(({ device, reason }) => {
+        if (!device) return reject(401, "Unauthorized", reason);
         socket.off("error", onError);
         this.wss.handleUpgrade(request, socket, head, (ws) => {
           void this.attach(device, ws).catch((error) => {
@@ -225,6 +326,16 @@ export class UserDeviceHub {
         await tx.userDevice.update({ where: { id: device.id }, data: { lastSeenAt: now } });
       }),
     );
+    // A sign-out that revoked this device while it was connecting found no socket to close.
+    const current = await runAsSystem("recheck a connected user device", () =>
+      this.deps.prisma.userDevice.findUnique({
+        where: { id: device.id },
+        select: { id: true, userId: true, revokedAt: true, revokedBy: true, sessionId: true },
+      }),
+    );
+    if (current?.revokedAt) this.disconnect(device.id, revokeReason(current.revokedBy));
+    else if (current && (await revokeSignedOut(this.deps.prisma, [current])).length)
+      this.disconnect(device.id, "session-ended");
     return connectionId;
   }
 
@@ -301,11 +412,11 @@ export class UserDeviceHub {
   }
 
   /** Closes this process's socket for a device and fails its in-flight requests. */
-  disconnect(deviceId: string): void {
+  disconnect(deviceId: string, reason?: UserDeviceRevokeReason): void {
     const entry = this.live.get(deviceId);
     if (!entry) return;
     try {
-      entry.socket.send(JSON.stringify({ type: "revoked" }));
+      entry.socket.send(JSON.stringify({ type: "revoked", reason }));
     } catch {
       // Closing anyway.
     }
@@ -376,7 +487,7 @@ export class UserDeviceHub {
     if (!live.length) return;
     try {
       const now = new Date();
-      const revoked = await runAsSystem("refresh user device connections", () =>
+      const devices = await runAsSystem("refresh user device connections", () =>
         this.deps.prisma.$transaction(async (tx) => {
           await tx.userDeviceConnection.updateMany({
             where: { connectionId: { in: live.map((entry) => entry.connectionId) } },
@@ -387,13 +498,19 @@ export class UserDeviceHub {
             data: { lastSeenAt: now },
           });
           return tx.userDevice.findMany({
-            where: { id: { in: live.map((entry) => entry.device.id) }, revokedAt: { not: null } },
-            select: { id: true },
+            where: { id: { in: live.map((entry) => entry.device.id) } },
+            select: { id: true, userId: true, revokedAt: true, revokedBy: true, sessionId: true },
           });
         }),
       );
       // A revoke whose direct disconnect did not reach this process still closes here.
-      for (const device of revoked) this.disconnect(device.id);
+      for (const device of devices.filter((device) => device.revokedAt))
+        this.disconnect(device.id, revokeReason(device.revokedBy));
+      const signedOut = await revokeSignedOut(
+        this.deps.prisma,
+        devices.filter((device) => !device.revokedAt),
+      );
+      for (const id of signedOut) this.disconnect(id, "session-ended");
     } catch (error) {
       getLogger().warn("user device heartbeat failed", { error });
     }
@@ -423,6 +540,18 @@ export class UserDevices implements UserDeviceGateway {
   async connected(userId: string): Promise<UserDevice | null> {
     const route = await this.route(userId);
     return route && { deviceId: route.deviceId, name: route.name, platform: route.platform };
+  }
+
+  /** Revokes the user's devices whose pairing sign-in ended while they were offline. */
+  async releaseSignedOut(userId: string): Promise<void> {
+    const devices = await runAsSystem("find a user's signed-in devices", () =>
+      this.deps.prisma.userDevice.findMany({
+        where: { userId, revokedAt: null },
+        select: { id: true, userId: true, sessionId: true },
+      }),
+    );
+    for (const id of await revokeSignedOut(this.deps.prisma, devices))
+      await this.disconnect(id, "session-ended");
   }
 
   /** The user's paired devices, newest first, each with its own live connection. */
@@ -482,8 +611,8 @@ export class UserDevices implements UserDeviceGateway {
   }
 
   /** Closes the device's socket wherever it is held. Best effort; heartbeats close it otherwise. */
-  async disconnect(deviceId: string): Promise<void> {
-    this.deps.hub?.disconnect(deviceId);
+  async disconnect(deviceId: string, reason?: UserDeviceRevokeReason): Promise<void> {
+    this.deps.hub?.disconnect(deviceId, reason);
     const connection = await runAsSystem("find a user device connection", () =>
       this.deps.prisma.userDeviceConnection.findUnique({ where: { deviceId } }),
     );
@@ -494,7 +623,7 @@ export class UserDevices implements UserDeviceGateway {
         authorization: `Bearer ${this.deps.forwardSecret}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({ deviceId }),
+      body: JSON.stringify({ deviceId, reason }),
       redirect: "error",
       signal: AbortSignal.timeout(5_000),
     })
@@ -555,6 +684,11 @@ export class UserDevices implements UserDeviceGateway {
 }
 
 /** Body of a forwarded request; the forward secret authorizes it. */
+export const userDeviceDisconnectBody = z.object({
+  deviceId: z.string().min(1).max(64),
+  reason: userDeviceRevokeReason.optional(),
+});
+
 export const userDeviceForwardBody = z.object({
   deviceId: z.string().min(1).max(64),
   userId: z.string().min(1).max(128),

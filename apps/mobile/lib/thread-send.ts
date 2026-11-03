@@ -1,6 +1,11 @@
 import type { LoginFieldInput, MessageReaction } from "@rakazo/contracts";
 import type { SlashActionId } from "@rakazo/core";
-import { attachmentsForThread, newClientId, resolveComposerSendPlan } from "@rakazo/core";
+import {
+  attachmentsForThread,
+  newClientId,
+  pageReply,
+  resolveComposerSendPlan,
+} from "@rakazo/core";
 import { useNavigation, useRouter } from "expo-router";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -13,6 +18,7 @@ import { chatSettingsRoute } from "./chat-settings-route";
 import { cancelFocusPrompt } from "./focus-prompt";
 import { useI18n } from "./i18n";
 import { resumeLiveNotifications } from "./live-notifications";
+import { takePageReply } from "./pages";
 import { currentSessionGeneration } from "./session";
 import { answerThreadMessage } from "./thread-answer";
 import type { useThreadAttachments } from "./thread-attachments";
@@ -74,6 +80,7 @@ export function useThreadSend({
   const [replyTarget, setReplyTarget] = useState<MobileMessage | null>(null);
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
   const [quoteTarget, setQuoteTarget] = useState<MobileMessage | null>(null);
+  const replyPage = useRef<{ id: string; title: string } | null>(null);
   const [sending, setSending] = useState(false);
   const preparingSend = useRef(false);
 
@@ -82,9 +89,25 @@ export function useThreadSend({
     setReplyTarget(null);
     setReplyQuote(null);
     setQuoteTarget(null);
+    replyPage.current = null;
     setAttachmentNotice(null);
     setError(null);
   }, [threadKey]);
+
+  /** A reply tapped on one of this chat's pages lands in the composer unsent, about that page. */
+  const receivePageReply = useCallback(() => {
+    const handle = composerRef.current;
+    const reply = handle ? takePageReply(threadKey) : null;
+    if (!handle || !reply) return;
+    handle.addReply(reply.text);
+    // The page is what it answers now, not a message picked before the page opened.
+    setReplyTarget(null);
+    setReplyQuote(null);
+    replyPage.current = reply.page;
+  }, [threadKey]);
+  const composerEmptied = useCallback(() => {
+    replyPage.current = null;
+  }, []);
 
   function runSlashAction(action: SlashActionId) {
     if (action === "chat-settings") {
@@ -147,20 +170,30 @@ export function useThreadSend({
     );
     const groupTarget = plan.rerouteGroupId ?? initialGroupTarget;
     const botTarget = reroutedToGroup ? undefined : initialBotTarget;
+    // As on the web: a page's reply goes to its card here, or names the page when none is loaded.
+    const messages = history.snapRef.current?.messages ?? [];
+    const fromPage =
+      plan.shouldSend && !reroutedToGroup
+        ? pageReply(plan.trimmed, messages, replyPage.current, replyTarget?.id)
+        : { text: plan.trimmed };
+    const pageCard = messages.find((message) => message.id === fromPage.replyToMessageId);
     let attempt: SendAttempt;
     try {
       attempt = feedback.sendAttempt({
         originThreadKey: originThreadKey!,
-        displayText: submitted.promptText,
-        replyPreview: replyQuote ?? (replyTarget ? previewMessageText(replyTarget) : null),
+        displayText: fromPage.text === plan.trimmed ? submitted.promptText : fromPage.text,
+        replyPreview: pageCard
+          ? previewMessageText(pageCard)
+          : (replyQuote ?? (replyTarget ? previewMessageText(replyTarget) : null)),
         initialBotTarget,
         botTarget,
         groupTarget,
         reroutedToGroup,
-        plan,
+        plan: { ...plan, trimmed: fromPage.text },
         attachments,
-        replyTargetId: replyTarget?.id,
-        replyQuote,
+        replyTargetId: pageCard?.id ?? replyTarget?.id,
+        replyQuote: pageCard ? null : replyQuote,
+        fromPage: pageCard ? true : undefined,
       });
     } catch (error) {
       Alert.alert(t("Failed to send message"), errorText(error));
@@ -172,6 +205,7 @@ export function useThreadSend({
     );
     setReplyTarget(null);
     setReplyQuote(null);
+    replyPage.current = null;
     setAttachmentNotice(null);
     followOwnSend();
     await deliver(attempt);
@@ -305,6 +339,8 @@ export function useThreadSend({
     setReplyQuote,
     quoteTarget,
     setQuoteTarget,
+    receivePageReply,
+    composerEmptied,
     sending,
     send,
     retry,

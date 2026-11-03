@@ -33,7 +33,11 @@ import { AccountAccess, LinkSsoRow } from "../components/AccountAccess";
 import { AccountDataSettings } from "../components/AccountDataSettings";
 import { SuccessPop } from "../components/ai/primitives";
 import { ComputerDeviceSettings } from "../components/ComputerDeviceSettings";
-import { ComputersUnavailableHint } from "../components/ComputersUnavailableHint";
+import { ComputerProviderSettings } from "../components/ComputerProviderSettings";
+import {
+  ComputersUnavailableHint,
+  computersAreUnavailable,
+} from "../components/ComputersUnavailableHint";
 import { DesktopUpdateSection } from "../components/DesktopUpdates";
 import { PasskeySettings } from "../components/PasskeySettings";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
@@ -556,11 +560,17 @@ export function ComputerSettingsPanel({
   sandboxProvider,
   onSandboxProviderChange,
   onRecoveryDismissed,
+  canConfigureComputers = false,
 }: {
   sandboxProvider?: string | null;
   onSandboxProviderChange?: (sandboxProvider: string) => void;
   onRecoveryDismissed?: () => void;
+  canConfigureComputers?: boolean;
 }) {
+  // Once shown, the hint stays mounted so a successful check can show its confirmation.
+  const unavailable = computersAreUnavailable(sandboxProvider);
+  const [hintShown, setHintShown] = useState(unavailable);
+  if (unavailable && !hintShown) setHintShown(true);
   return (
     <div
       data-testid="computers-setup-settings"
@@ -569,12 +579,21 @@ export function ComputerSettingsPanel({
       <h3 className="text-heading3 font-medium text-foreground">
         <Trans>Computers</Trans>
       </h3>
-      <ComputersUnavailableHint
-        className="mt-3 text-[13px] leading-relaxed text-muted-foreground"
-        sandboxProvider={sandboxProvider}
-        onRecovered={onSandboxProviderChange}
-        onRecoveryDismissed={onRecoveryDismissed}
-      />
+      {hintShown ? (
+        <ComputersUnavailableHint
+          className="mt-3 text-[13px] leading-relaxed text-muted-foreground"
+          sandboxProvider={sandboxProvider}
+          onRecovered={onSandboxProviderChange}
+          onRecoveryDismissed={onRecoveryDismissed}
+        />
+      ) : null}
+      {/* The server decides what an account may change, including removing keys it saved. */}
+      {canConfigureComputers || sandboxProvider ? (
+        <ComputerProviderSettings
+          scope={canConfigureComputers ? "deployment" : "account"}
+          onProviderChange={onSandboxProviderChange}
+        />
+      ) : null}
     </div>
   );
 }

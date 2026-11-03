@@ -42,6 +42,8 @@ import {
 import { Check, Copy } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { AccountMenu } from "../components/AccountMenu";
+import { FoundModelPicker } from "../components/FoundModelPicker";
 import {
   ModelPreflightFeedback,
   modelPreflightTestingLabel,
@@ -60,6 +62,7 @@ import {
   unavailableSelectedModel,
 } from "../lib/model-connection-preflight";
 import { rpc } from "../lib/rpc";
+import { useSignOut } from "../lib/sign-out";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 import { errorText } from "../lib/user-error";
 import { CompatibleKeyField } from "./model-settings/compatible-key-field";
@@ -175,6 +178,7 @@ export function OnboardingPage() {
   const resetOpenAiCompatibleProbe = modelProbe.reset;
   const createStartedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  const { signingOut, logOut } = useSignOut("/sign-in", setError);
   const [notice, setNotice] = useState<string | null>(null);
   const [preflightTesting, setPreflightTesting] = useState(false);
   const [preflightTarget, setPreflightTarget] = useState<"api-key" | "compatible" | null>(null);
@@ -234,7 +238,11 @@ export function OnboardingPage() {
     for (const entry of catalog) {
       if (!seen.has(entry.provider)) seen.set(entry.provider, entry);
     }
-    return popularModelProvidersFirst([...seen.values()], (entry) => entry.provider);
+    return popularModelProvidersFirst(
+      [...seen.values()],
+      (entry) => entry.provider,
+      (entry) => entry.providerName ?? entry.provider,
+    );
   }, [catalog]);
 
   const modelsForProvider = useMemo(
@@ -264,8 +272,7 @@ export function OnboardingPage() {
       cloudflareRoutingReady &&
       (isOpenAiCompatible ? openAiCompatibleReady : acceptsKey && apiKey.trim()),
   );
-  const otherModelLabel = t`Other model…`;
-  // Subscriptions and the common API providers first; every other provider follows.
+  // Subscriptions and the common API providers first; every other provider follows by name.
   const providerOptions = useMemo(() => {
     const byId = new Map(providers.map((entry) => [entry.provider, entry]));
     // Beside the subscriptions, the key-based options say API.
@@ -281,16 +288,20 @@ export function OnboardingPage() {
         label: optionLabel(option.provider, option.auth),
       })),
     ];
-    const rest = providers
-      .filter(
-        (entry) => !MAIN_PROVIDER_OPTIONS.some((option) => option.provider === entry.provider),
-      )
-      .flatMap((entry) => {
-        const item = { value: entry.provider, label: entry.providerName ?? entry.provider };
-        return entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID
-          ? [item, { value: "ollama-preset", label: t`Ollama Cloud` }]
-          : [item];
-      });
+    const rest = popularModelProvidersFirst(
+      providers
+        .filter(
+          (entry) => !MAIN_PROVIDER_OPTIONS.some((option) => option.provider === entry.provider),
+        )
+        .flatMap((entry) => {
+          const item = { value: entry.provider, label: entry.providerName ?? entry.provider };
+          return entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID
+            ? [item, { value: "ollama-preset", label: t`Ollama Cloud` }]
+            : [item];
+        }),
+      (option) => option.value,
+      (option) => option.label,
+    );
     return { main, rest };
   }, [billingEnabled, providers, t]);
   // Base UI Select.Value only resolves labels when Root gets `items`.
@@ -301,13 +312,6 @@ export function OnboardingPage() {
   const modelItems = useMemo(
     () => modelsForProvider.map((entry) => ({ value: entry.id, label: entry.label })),
     [modelsForProvider],
-  );
-  const probeModelItems = useMemo(
-    () => [
-      ...probeModels.map((id) => ({ value: id, label: id })),
-      { value: CUSTOM_MODEL_OPTION, label: otherModelLabel },
-    ],
-    [otherModelLabel, probeModels],
   );
 
   function invalidatePreflight() {
@@ -557,6 +561,7 @@ export function OnboardingPage() {
 
   return (
     <div className="min-h-full bg-background px-6 py-12" data-rakazo-surface="onboarding">
+      <AccountMenu signingOut={signingOut} onLogOut={() => void logOut()} />
       <div className="mx-auto w-full max-w-[560px]">
         {step === "survey" ? <SignupSurvey onDone={() => setSurveyDone(true)} /> : null}
         {step === "model" ? (
@@ -652,38 +657,16 @@ export function OnboardingPage() {
                         <Trans>Model</Trans>
                       </span>
                       {probeModels.length && !manualModelId ? (
-                        <Select
+                        <FoundModelPicker
+                          models={probeModels}
                           value={modelId}
-                          onValueChange={(value) => {
-                            if (typeof value !== "string") return;
-                            const next = value;
+                          onChange={(next) => {
                             invalidatePreflight();
-                            if (next === CUSTOM_MODEL_OPTION) {
-                              setManualModelId(true);
-                              setModelId("");
-                            } else {
-                              setManualModelId(false);
-                              setModelId(next);
-                            }
+                            setManualModelId(next === CUSTOM_MODEL_OPTION);
+                            setModelId(next === CUSTOM_MODEL_OPTION ? "" : next);
                           }}
-                          items={probeModelItems}
-                        >
-                          <SelectTrigger aria-label={t`Models from server`} className="mt-2 w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectGroup>
-                              {probeModels.map((id) => (
-                                <SelectItem key={id} value={id}>
-                                  {id}
-                                </SelectItem>
-                              ))}
-                              <SelectItem value={CUSTOM_MODEL_OPTION}>
-                                <Trans>Other model…</Trans>
-                              </SelectItem>
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
+                          otherValue={CUSTOM_MODEL_OPTION}
+                        />
                       ) : (
                         <Input
                           value={modelId}

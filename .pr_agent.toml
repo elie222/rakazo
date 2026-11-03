@@ -1,0 +1,3 @@
+# Qodo is the default reviewer (see .github/workflows/review-bot.yml).
+[github_app]
+handle_push_trigger = true

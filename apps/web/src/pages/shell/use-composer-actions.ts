@@ -22,6 +22,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { requestBrowserNotificationPermission } from "../../lib/browser-notifications";
 import { setComposerUnsavedWork } from "../../lib/composer-draft";
 import { scheduleFocusPrompt } from "../../lib/focus-prompt";
+import type { PageSession } from "../../lib/pages";
 import {
   readFileAsBase64,
   revokePendingAttachmentPreviews,
@@ -47,6 +48,7 @@ type ThreadRefresh = RefObject<(id: string) => Promise<ThreadSnapshot>>;
  */
 export function useComposerActions({
   rpc,
+  pageSession,
   activeId,
   inGroup,
   groupId,
@@ -67,6 +69,8 @@ export function useComposerActions({
   flushPendingBrowserNotifications,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
+  /** The chat's open page, whose card a message sent from it replies to. */
+  pageSession: PageSession;
   activeId: string | undefined;
   inGroup: boolean;
   groupId: string | undefined;
@@ -94,8 +98,8 @@ export function useComposerActions({
   const [sending, setSending] = useState(false);
   const [sentCount, setSentCount] = useState(0);
   useEffect(() => {
-    setComposerUnsavedWork(sending || pendingAttachments.length > 0);
-    return () => setComposerUnsavedWork(false);
+    setComposerUnsavedWork({ sending, attachments: pendingAttachments.length > 0 });
+    return () => setComposerUnsavedWork({ sending: false, attachments: false });
   }, [sending, pendingAttachments.length]);
   const sendingRef = useRef(false);
   const [sendFailure, setSendFailure] = useState<{
@@ -314,7 +318,7 @@ export function useComposerActions({
   }, []);
   const sendMessage = useCallback(
     async (
-      text: string,
+      draft: string,
       mentions: ComposerMention[],
       clientNonce: string,
       imageHandling?: "file",
@@ -326,7 +330,7 @@ export function useComposerActions({
       const originThreadKey = initialGroupTarget ?? initialBotTarget;
       const attachments = attachmentsForThread(pendingAttachments, originThreadKey);
       const plan = resolveComposerSendPlan({
-        text,
+        text: draft,
         mentions,
         hasAttachments: attachments.length > 0,
       });
@@ -343,7 +347,13 @@ export function useComposerActions({
         const permissionRequest = requestBrowserNotificationPermission();
         if (permissionRequest) void permissionRequest.then(flushPendingBrowserNotifications);
       }
-      const trimmed = plan.trimmed;
+      // The open page rides only on text this chat sends, never on a group or routine-only send.
+      const fromPage =
+        plan.shouldSend && !reroutedToGroup
+          ? pageSession.send(plan.trimmed, activeSnapshot?.messages ?? [], activeReplyTarget?.id)
+          : { text: plan.trimmed, replyToMessageId: undefined };
+      const trimmed = fromPage.text.trim();
+      const replyToMessageId = fromPage.replyToMessageId;
       sendingRef.current = true;
       setSending(true);
       setSendError(null);
@@ -416,8 +426,12 @@ export function useComposerActions({
           text: trimmed || undefined,
           mentions: plan.mentionPayload.length ? plan.mentionPayload : undefined,
           artifactIds: artifactIds.length ? artifactIds : undefined,
-          replyToMessageId: reroutedToGroup ? undefined : activeReplyTarget?.id,
-          replyQuote: reroutedToGroup ? undefined : (activeReplyQuote ?? undefined),
+          replyToMessageId: reroutedToGroup
+            ? undefined
+            : (replyToMessageId ?? activeReplyTarget?.id),
+          replyQuote:
+            reroutedToGroup || replyToMessageId ? undefined : (activeReplyQuote ?? undefined),
+          fromPage: !reroutedToGroup && replyToMessageId ? true : undefined,
         } as const;
         // The routines run in the same server operation as the message: both or neither.
         const sent = plan.shouldRunRoutines
@@ -485,6 +499,8 @@ export function useComposerActions({
     [
       activeReplyTarget?.id,
       activeReplyQuote,
+      activeSnapshot?.messages,
+      pageSession,
       clearReply,
       flushPendingBrowserNotifications,
       navigate,

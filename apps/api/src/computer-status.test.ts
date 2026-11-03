@@ -14,6 +14,24 @@ describe("toComputerStatus", () => {
       }),
     ).toMatchObject({ state: "error", screenAvailable: false });
   });
+  it("warns at 90% full until the user hides it, and again once the disk fills further", () => {
+    const computer = {
+      kind: "docker",
+      state: "running",
+      scope: "team",
+      controlHolder: "none",
+      homeRevision: "saved",
+      diskUsedBytes: 91n,
+      diskFreeBytes: 9n,
+    };
+    const status = (changes: object) => toComputerStatus("bot", { ...computer, ...changes });
+    expect(status({}).diskFullPercent).toBe(91);
+    expect(ComputerStatusSchema.parse(status({})).diskFullPercent).toBe(91);
+    expect(status({ diskUsedBytes: 89n, diskFreeBytes: 11n }).diskFullPercent).toBeUndefined();
+    expect(status({ diskDismissedPercent: 91 }).diskFullPercent).toBeUndefined();
+    expect(status({ diskDismissedPercent: 90 }).diskFullPercent).toBe(91);
+    expect(status({ diskUsedBytes: null }).diskFullPercent).toBeUndefined();
+  });
   it("only marks control that is bound to a waiting run as a requested takeover", () => {
     const computer = {
       kind: "fake",

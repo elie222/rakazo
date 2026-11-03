@@ -2,39 +2,30 @@ import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { LoginFieldInput, ThreadMessage } from "@rakazo/contracts";
-import {
-  BOT_INSTRUCTIONS_MAX_LENGTH,
-  commandVariableName,
-  LoginSecretValue,
-  loginCardFields,
-} from "@rakazo/contracts";
+import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import {
   isApprovalAskBlock,
   isSecretAskBlock,
   resolveAskChoice,
   selectedAskActionLabel,
 } from "@rakazo/core";
-import { Button, Input, Label, Switch, Textarea } from "@rakazo/ui-web";
+import { Button, Input, Textarea } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { useState } from "react";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 import { BuiCard } from "./ai/primitives";
-import { LoginFieldValue } from "./LoginFields";
 import { OptionRow, optionLetter } from "./OptionRow";
+import { SecretAskCard } from "./SecretAskCard";
 
 export type AskBlock = Extract<ThreadMessage["blocks"][number], { kind: "ask" }>;
 
 function formatAnsweredState(
   answer: string | undefined,
   approval: boolean,
-  secret: boolean,
   outcome?: "created" | "cancelled",
   actions?: AskBlock["actions"],
-  dismissed?: boolean,
-  remembered?: false,
 ): string {
-  if (secret) return dismissed ? t`Dismissed` : remembered === false ? t`Sent` : t`Saved`;
   if (!answer) return t`Answered`;
   if (!approval) return answer === "approved" ? t`Sent` : selectedAskActionLabel(answer, actions);
   if (outcome === "created") return t`Created`;
@@ -69,19 +60,7 @@ function approvalActionLabel(
   return fallback;
 }
 
-function secretFieldLabel(purpose: AskBlock["purpose"]): string {
-  if (purpose === "password") return t`Password`;
-  if (purpose === "api_key") return t`API key`;
-  return t`Code`;
-}
-
-export function AskCard({
-  block,
-  canAnswer,
-  canDismiss,
-  onAnswer,
-  onDismiss,
-}: {
+export type AskCardProps = {
   block: AskBlock;
   canAnswer: boolean;
   canDismiss: boolean;
@@ -89,27 +68,28 @@ export function AskCard({
   onAnswer: (text: string, fields?: LoginFieldInput[], remember?: false) => Promise<void>;
   /** Turns down a secret request without a value. */
   onDismiss: () => Promise<void>;
-}) {
+};
+
+/** A question, approval or protected-input request from the bot. */
+export function AskCard(props: AskCardProps) {
+  return isSecretAskBlock(props.block) ? (
+    <SecretAskCard {...props} />
+  ) : (
+    <PromptAskCard {...props} />
+  );
+}
+
+function PromptAskCard({ block, canAnswer, onAnswer }: AskCardProps) {
   const { t } = useLingui();
   const [editing, setEditing] = useState(false);
   const [answer, setAnswer] = useState(block.instructionUpdate?.after ?? "");
-  const [dismissed, setDismissed] = useState(false);
   const [acceptedAnswer, setAcceptedAnswer] = useState<string>();
-  const [acceptedRemembered, setAcceptedRemembered] = useState<false>();
   const [undone, setUndone] = useState(false);
-  const emptyLogin = () => loginCardFields(block.loginFields);
-  const [login, setLogin] = useState(emptyLogin);
-  const [remember, setRemember] = useState(true);
-  const rememberId = useId();
-  const [secretField, setSecretField] = useState<HTMLInputElement | null>(null);
-  const [pastedLines, setPastedLines] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const submitting = pendingAction !== null;
-  const answered = block.status === "answered" || acceptedAnswer !== undefined || dismissed;
+  const answered = block.status === "answered" || acceptedAnswer !== undefined;
   const displayedAnswer = block.status === "answered" ? block.answer : acceptedAnswer;
-  const displayedDismissed = block.status === "answered" ? block.dismissed : dismissed;
-  const displayedRemembered = block.status === "answered" ? block.remembered : acceptedRemembered;
   const approvalActions = isApprovalAskBlock(block) ? block.actions : undefined;
   const askActions = block.actions;
   const displayActions = block.instructionUpdate
@@ -117,9 +97,8 @@ export function AskCard({
         action.id === "allow" ? [action, { id: "edit", label: t`Edit` }] : [action],
       )
     : askActions;
-  const secretInput = isSecretAskBlock(block);
   const optionQuestion =
-    !approvalActions && !block.instructionUpdate && !secretInput && Boolean(askActions?.length);
+    !approvalActions && !block.instructionUpdate && Boolean(askActions?.length);
   const chosenOption =
     answered && displayedAnswer ? resolveAskChoice(displayedAnswer, askActions) : undefined;
   // An edited draft is shown in the user's words, so the card reads as answered. A typed reply to
@@ -128,82 +107,20 @@ export function AskCard({
     answered &&
     !optionQuestion &&
     !approvalActions &&
-    !secretInput &&
     !block.instructionUpdate &&
     displayedAnswer !== "approved"
       ? displayedAnswer
       : undefined;
-  // A login or credential is saved for the run's user, so only they can fill one in; others see
-  // the card without fields or buttons.
-  const ownerOnly = secretInput && Boolean(block.credential) && !canDismiss;
-  const loginInput = secretInput && block.credential?.auth.type === "login";
-  const shownLoginLabels = block.loginFields ?? [t`Username`, t`Password`];
-  const loginReady = LoginSecretValue.safeParse({ fields: login }).success;
-  const secretLabel = secretFieldLabel(block.purpose);
-  const commandInput = secretInput && block.credential?.auth.type === "command";
-
-  // A password field can't hold line breaks, so it would flatten a multi-line command variable
-  // such as an SSH private key. That text is kept as is and the field turns read-only, so what
-  // is saved is exactly what was pasted; Clear makes it editable again.
-  useEffect(() => {
-    if (!commandInput || !secretField) return;
-    const field = secretField;
-    const keepLineBreaks = (event: InputEvent) => {
-      const text = (event.data ?? event.dataTransfer?.getData("text/plain") ?? "").replace(
-        /\r\n?/g,
-        "\n",
-      );
-      if (field.readOnly || !event.cancelable || !text.trim().includes("\n")) return;
-      event.preventDefault();
-      const start = field.selectionStart ?? field.value.length;
-      const end = field.selectionEnd ?? start;
-      setAnswer(field.value.slice(0, start) + text + field.value.slice(end));
-      setPastedLines(true);
-    };
-    field.addEventListener("beforeinput", keepLineBreaks);
-    return () => field.removeEventListener("beforeinput", keepLineBreaks);
-  }, [commandInput, secretField]);
-
-  async function submitAnswer(value: string, fields?: LoginFieldInput[]) {
-    if (submitting) return;
-    if (fields ? !loginReady : secretInput ? value.length === 0 : !value.trim()) return;
-    const submitValue = secretInput ? value : value.trim();
-    setPendingAction(secretInput ? "submit" : submitValue);
+  async function submitAnswer(value: string) {
+    if (submitting || !value.trim()) return;
+    const submitValue = value.trim();
+    setPendingAction(submitValue);
     setError(null);
-    if (secretInput) {
-      setAnswer("");
-      setLogin(emptyLogin());
-      setPastedLines(false);
-    }
     try {
-      if (fields && !remember) await onAnswer(submitValue, fields, false);
-      else await onAnswer(submitValue, fields);
-      if (fields && !remember) setAcceptedRemembered(false);
-      setAcceptedAnswer(secretInput ? "" : submitValue);
+      await onAnswer(submitValue);
+      setAcceptedAnswer(submitValue);
     } catch (err) {
-      // A secret answer's failure may echo the secret, so never show its message.
-      setError(
-        secretInput
-          ? t`Could not submit this answer`
-          : errorText(err, t`Could not submit this answer`),
-      );
-    } finally {
-      setPendingAction(null);
-    }
-  }
-
-  async function dismissSecret() {
-    if (submitting) return;
-    setPendingAction("dismiss");
-    setError(null);
-    setAnswer("");
-    setLogin(emptyLogin());
-    setPastedLines(false);
-    try {
-      await onDismiss();
-      setDismissed(true);
-    } catch {
-      setError(t`Could not submit this answer`);
+      setError(errorText(err, t`Could not submit this answer`));
     } finally {
       setPendingAction(null);
     }
@@ -262,13 +179,7 @@ export function AskCard({
 
   return (
     <BuiCard
-      data-testid={
-        secretInput
-          ? "secret-ask-card"
-          : block.instructionUpdate
-            ? "instruction-approval-card"
-            : undefined
-      }
+      data-testid={block.instructionUpdate ? "instruction-approval-card" : undefined}
       className="w-full min-w-0 max-w-xl px-5 py-4"
     >
       <div className="text-[15.5px] leading-[1.5] text-foreground">
@@ -278,22 +189,7 @@ export function AskCard({
           <ChatMarkdown>{block.text}</ChatMarkdown>
         )}
       </div>
-      {secretInput && block.credential ? (
-        <div
-          data-testid="secret-ask-destination"
-          className="mt-2 break-all text-[13px] text-muted-foreground"
-        >
-          {block.credential.auth.type === "command" ? (
-            <span className="flex flex-wrap gap-x-2">
-              <span>{t`Command variable`}</span>
-              <span>${commandVariableName(block.credential.name)}</span>
-            </span>
-          ) : (
-            block.credential.origin
-          )}
-        </div>
-      ) : null}
-      {block.detail && !secretInput ? (
+      {block.detail ? (
         <pre
           data-testid="ask-detail"
           className={
@@ -351,7 +247,6 @@ export function AskCard({
       ) : answered ? (
         <div className="mt-3.5 flex items-center gap-1.5 text-[13.5px] font-medium text-muted-foreground">
           {displayedAnswer === "deny" ||
-          displayedDismissed ||
           approvalActions?.find((action) => action.id === displayedAnswer)?.outcome ===
             "cancelled" ? null : (
             <Check aria-hidden className="size-4" />
@@ -363,18 +258,15 @@ export function AskCard({
             : formatAnsweredState(
                 displayedAnswer,
                 Boolean(approvalActions),
-                secretInput,
                 approvalActions?.find((action) => action.id === displayedAnswer)?.outcome,
                 askActions,
-                displayedDismissed,
-                displayedRemembered,
               )}
         </div>
       ) : !canAnswer ? (
         <div className="mt-3.5 text-[13.5px] font-medium text-muted-foreground">
           <Trans>No longer active</Trans>
         </div>
-      ) : ownerOnly ? null : displayActions?.length ? (
+      ) : displayActions?.length ? (
         <div className="mt-3.5 flex flex-wrap gap-2">
           {displayActions.map((action) => (
             <Button
@@ -405,102 +297,6 @@ export function AskCard({
             </Button>
           ))}
         </div>
-      ) : secretInput ? (
-        <form
-          className="mt-3.5 flex flex-col gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (loginInput) void submitAnswer("", login);
-            else void submitAnswer(answer);
-          }}
-        >
-          {loginInput ? (
-            login.map((field, index) => (
-              <LoginFieldValue
-                key={field.label}
-                label={shownLoginLabels[index] ?? field.label}
-                field={field}
-                disabled={submitting}
-                onChange={(change) =>
-                  setLogin((current) =>
-                    current.map((field, at) => (at === index ? { ...field, ...change } : field)),
-                  )
-                }
-              />
-            ))
-          ) : (
-            <Input
-              ref={setSecretField}
-              className="w-full"
-              aria-label={secretLabel}
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              disabled={submitting}
-              readOnly={pastedLines}
-              value={pastedLines ? answer.replaceAll("\n", " ") : answer}
-              onChange={(event) => setAnswer(event.target.value)}
-              placeholder={secretLabel}
-            />
-          )}
-          {pastedLines ? (
-            <Button
-              type="button"
-              variant="outline"
-              className="self-start"
-              disabled={submitting}
-              onClick={() => {
-                setAnswer("");
-                setPastedLines(false);
-                secretField?.focus();
-              }}
-            >
-              <Trans>Clear</Trans>
-            </Button>
-          ) : null}
-          {loginInput ? (
-            <div className="mt-1 flex items-center gap-2">
-              <Switch
-                id={rememberId}
-                size="sm"
-                checked={remember}
-                disabled={submitting}
-                onCheckedChange={setRemember}
-              />
-              <Label htmlFor={rememberId} className="text-[13px] font-normal text-muted-foreground">
-                <Trans>Save to Vault</Trans>
-              </Label>
-            </div>
-          ) : null}
-          <div className="flex gap-2">
-            <Button
-              type="submit"
-              disabled={(loginInput ? !loginReady : answer.length === 0) || submitting}
-            >
-              {loginInput && !remember ? (
-                pendingAction === "submit" ? (
-                  <Trans>Sending…</Trans>
-                ) : (
-                  <Trans>Continue</Trans>
-                )
-              ) : pendingAction === "submit" ? (
-                <Trans>Saving…</Trans>
-              ) : (
-                <Trans>Save</Trans>
-              )}
-            </Button>
-            {canDismiss ? (
-              <Button
-                type="button"
-                variant="outline"
-                disabled={submitting}
-                onClick={() => void dismissSecret()}
-              >
-                <Trans>Dismiss</Trans>
-              </Button>
-            ) : null}
-          </div>
-        </form>
       ) : editing ? (
         <form
           className="mt-3.5 flex flex-col gap-2"

@@ -83,6 +83,7 @@ export default function Computer() {
   const name = displayName(nameParam, t("Bot"));
   const foreground = useAppForeground();
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
+  const [cleaningUp, setCleaningUp] = useState(false);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [screenError, setScreenError] = useState<string | null>(null);
   const [screenOriginError, setScreenOriginError] = useState(false);
@@ -109,7 +110,11 @@ export default function Computer() {
   const [screenReload, setScreenReload] = useState(0);
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl, currentApiBase());
-  useEffect(() => setScreenError(null), [embeddedScreenUrl]);
+  // Every screen URL read rotates its token, so only a different stream earns a fresh load.
+  // Clearing on a rotated token reloaded a screen this device cannot reach every few seconds,
+  // and each reload blanked the preview in place of the error.
+  const embeddedScreenStream = embeddedScreenUrl ? screenStreamKey(embeddedScreenUrl) : null;
+  useEffect(() => setScreenError(null), [embeddedScreenStream]);
   // Without a WebView a dropped URL never fails on its own, so say so instead of a dead preview.
   const unreachableScreen =
     computer?.state === "running" && Boolean(screenUrl) && !embeddedScreenUrl;
@@ -382,6 +387,28 @@ export default function Computer() {
     }
   }
 
+  function dismissDiskWarning() {
+    setComputer((current) => current && { ...current, diskFullPercent: undefined });
+    void rpc("computer/dismissDiskWarning", { botId: botId ?? "" }).catch(() => undefined);
+  }
+
+  async function cleanUpDisk() {
+    setCleaningUp(true);
+    try {
+      await rpc("threads/send", {
+        botId: botId ?? "",
+        text: t(
+          "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need.",
+        ),
+      });
+      dismissDiskWarning();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setCleaningUp(false);
+    }
+  }
+
   async function releaseComputer(reason?: ComputerReleaseReason) {
     if (!botId || !refreshController.isActive()) return;
     const action = refreshController.beginAction();
@@ -585,6 +612,33 @@ export default function Computer() {
           />
         )}
       </View>
+      {computer?.diskFullPercent !== undefined ? (
+        <View
+          style={{
+            marginTop: 16,
+            flexDirection: stacked ? "column" : "row",
+            alignItems: stacked ? "flex-start" : "center",
+            gap: 12,
+          }}
+        >
+          <Text
+            style={{ color: tokens.warning, ...(stacked ? { alignSelf: "stretch" } : { flex: 1 }) }}
+          >
+            {t("Computer is {percent}% full", { percent: computer.diskFullPercent })}
+          </Text>
+          <NativeActionButton
+            label={t("Dismiss")}
+            prominence="plain"
+            onPress={dismissDiskWarning}
+          />
+          <NativeActionButton
+            label={t("Clean up")}
+            prominence="secondary"
+            busy={cleaningUp}
+            onPress={() => void cleanUpDisk()}
+          />
+        </View>
+      ) : null}
       {computer ? (
         <ComputerMaintenanceActions
           botId={botId ?? ""}

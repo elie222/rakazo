@@ -126,17 +126,41 @@ export function messageBlockForArtifact(artifact: {
   };
 }
 
+/** Untrusted transcript text is bounded before it reaches a prompt. */
+const VOICE_TRANSCRIPT_MAX_CHARS = 4000;
+
+/** Keeps tabs and newlines, drops C0, DEL and C1 control characters, trims and bounds the text. */
+export function normalizeVoiceTranscript(value: string | null | undefined): string {
+  if (!value) return "";
+  const printable = Array.from(value)
+    .filter((char) => {
+      const code = char.codePointAt(0) ?? 0;
+      if (code === 9 || code === 10) return true;
+      return code >= 32 && !(code >= 0x7f && code <= 0x9f);
+    })
+    .join("");
+  return printable.trim().slice(0, VOICE_TRANSCRIPT_MAX_CHARS);
+}
+
 export function promptTextForAttachments(
   text: string | undefined,
-  artifacts: Array<{ name: string; mimeType: string; size: number }>,
+  artifacts: Array<{
+    name: string;
+    mimeType: string;
+    size: number;
+    /** Normalized words transcribed from an inbound audio attachment. */
+    transcript?: string;
+  }>,
 ): string {
   const caption = text?.trim() ?? "";
   const notes = artifacts
     .filter((artifact) => !isAttachmentImageMimeType(artifact.mimeType))
-    .map(
-      (artifact) =>
-        `User attached file ${JSON.stringify(artifact.name)} (${artifact.mimeType}, ${artifact.size} bytes).`,
-    );
+    .map((artifact) => {
+      const note = `User attached file ${JSON.stringify(artifact.name)} (${artifact.mimeType}, ${artifact.size} bytes).`;
+      return artifact.transcript
+        ? `${note}\n[voice note transcript: ${artifact.transcript}]`
+        : note;
+    });
   return [caption, ...notes].filter(Boolean).join("\n\n") || "See attached files.";
 }
 
@@ -146,6 +170,10 @@ export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
       if (block.kind === "text") return block.text;
       if (block.kind === "chart") return `[chart: ${block.name}]`;
       if (block.kind === "image") return `[image: ${block.name}]`;
+      // The id lets a later turn, or another chat, update this page instead of making a new one.
+      if (block.kind === "page") {
+        return `[page: ${block.title} (pageId ${block.pageId}, version ${block.version})]`;
+      }
       if (block.kind === "file") {
         return `[file: ${block.name} (${block.mimeType}, ${block.size} bytes)]`;
       }
@@ -223,6 +251,14 @@ const MIME_TYPE_EXTENSIONS: Record<AttachmentMimeType, string> = {
   "application/json": ".json",
   "application/zip": ".zip",
 };
+
+/** Short file-type badge, as a file's extension reads ("TXT", "MD", "PDF"). */
+export function artifactTypeLabel(mimeType: string): string {
+  const extension = attachmentExtensionForMimeType(mimeType);
+  if (extension) return extension.slice(1).toUpperCase();
+  const slash = mimeType.indexOf("/");
+  return (slash === -1 ? mimeType : mimeType.slice(slash + 1)).toUpperCase().slice(0, 6);
+}
 
 export function inferAttachmentMimeType(
   name: string,

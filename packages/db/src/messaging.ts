@@ -237,6 +237,7 @@ export async function redeemMessagingLinkCode(
     spaceId?: string;
     installationId?: string;
   },
+  confirm?: (tx: Prisma.TransactionClient, redeemed: RedeemedMessagingLink) => Promise<void>,
 ): Promise<RedeemedMessagingLink | null> {
   const row = await prisma.messagingLinkCode.findUnique({ where: { code: request.code } });
   if (
@@ -253,6 +254,7 @@ export async function redeemMessagingLinkCode(
       const existing = await tx.messagingIdentity.findUnique({
         where: { provider_address: { provider: request.provider, address: request.address } },
       });
+      let identityId: string;
       if (existing) {
         if (existing.userId !== row.userId) return null;
         await tx.messagingIdentity.update({
@@ -266,32 +268,30 @@ export async function redeemMessagingLinkCode(
             installationId: request.installationId ?? null,
           },
         });
-        return {
-          identityId: existing.id,
-          userId: row.userId,
-          spaceId: row.spaceId,
-          botId: row.botId,
-          confirmationKey: `link:${row.id}`,
-        };
+        identityId = existing.id;
+      } else {
+        const identity = await tx.messagingIdentity.create({
+          data: {
+            provider: request.provider,
+            address: request.address,
+            dmThreadId: request.dmThreadId,
+            installationId: request.installationId,
+            userId: row.userId,
+            spaceId: row.spaceId,
+            botId: row.botId,
+          },
+        });
+        identityId = identity.id;
       }
-      const identity = await tx.messagingIdentity.create({
-        data: {
-          provider: request.provider,
-          address: request.address,
-          dmThreadId: request.dmThreadId,
-          installationId: request.installationId,
-          userId: row.userId,
-          spaceId: row.spaceId,
-          botId: row.botId,
-        },
-      });
-      return {
-        identityId: identity.id,
+      const redeemed = {
+        identityId,
         userId: row.userId,
         spaceId: row.spaceId,
         botId: row.botId,
         confirmationKey: `link:${row.id}`,
       };
+      await confirm?.(tx, redeemed);
+      return redeemed;
     });
   } catch (error) {
     // botId is unique (one chat app per bot) and (provider, address) can race
@@ -304,4 +304,90 @@ export async function redeemMessagingLinkCode(
 
 function isUniqueViolationError(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
+}
+
+/** Run nonce of a team-chat message: `teamchat:<provider>:<provider event id>`. */
+export function teamChatRunClientNonce(provider: string, providerEventId: string): string {
+  return `teamchat:${provider}:${providerEventId}`;
+}
+
+/**
+ * The other messages a team-chat run answers alongside its waking one, or null when the batch
+ * predates recording them.
+ */
+function teamChatBatchMessageIds(batchContext: string | null): string[] | null {
+  if (!batchContext) return [];
+  try {
+    const ids = (JSON.parse(batchContext) as { messageIds?: unknown } | null)?.messageIds;
+    return Array.isArray(ids) && ids.every((id) => typeof id === "string") ? ids : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether every person a team-chat run answers is the bot's owner: the person who installed
+ * the workspace, or a sender the owner linked to their own account. Other people, other apps
+ * and bots, and anything that cannot be traced to its messages are not.
+ */
+export async function teamChatRunFromOwner(
+  prisma: PrismaClient,
+  input: { externalConversationId: string; sourceClientNonce: string | null | undefined },
+): Promise<boolean> {
+  const conversation = await prisma.externalConversation.findUnique({
+    where: { id: input.externalConversationId },
+    select: { provider: true, workspaceId: true, userId: true, botId: true },
+  });
+  if (!conversation) return false;
+  const prefix = teamChatRunClientNonce(conversation.provider, "");
+  if (!input.sourceClientNonce?.startsWith(prefix)) return false;
+  const waking = await prisma.externalMessage.findUnique({
+    where: {
+      externalConversationId_providerEventId: {
+        externalConversationId: input.externalConversationId,
+        providerEventId: input.sourceClientNonce.slice(prefix.length),
+      },
+    },
+    select: { id: true, senderId: true, senderIsBot: true, batchContext: true },
+  });
+  if (!waking) return false;
+  const batchIds = teamChatBatchMessageIds(waking.batchContext)?.filter((id) => id !== waking.id);
+  if (!batchIds) return false;
+  const batch = batchIds.length
+    ? await prisma.externalMessage.findMany({
+        where: { id: { in: batchIds }, externalConversationId: input.externalConversationId },
+        select: { senderId: true, senderIsBot: true },
+      })
+    : [];
+  if (batch.length !== batchIds.length) return false;
+  const senders = [waking, ...batch];
+  if (senders.some((sender) => sender.senderIsBot)) return false;
+  const addresses = [...new Set(senders.map((sender) => sender.senderId))];
+  const [installation, identities] = await Promise.all([
+    prisma.messagingInstallation.findUnique({
+      where: {
+        provider_workspaceId: {
+          provider: conversation.provider,
+          workspaceId: conversation.workspaceId,
+        },
+      },
+      select: { ownerAddress: true, userId: true, botId: true },
+    }),
+    prisma.messagingIdentity.findMany({
+      where: {
+        provider: conversation.provider,
+        address: { in: addresses },
+        userId: conversation.userId,
+      },
+      select: { address: true },
+    }),
+  ]);
+  const owner = new Set(identities.map((identity) => identity.address));
+  if (
+    installation?.ownerAddress &&
+    installation.userId === conversation.userId &&
+    installation.botId === conversation.botId
+  )
+    owner.add(installation.ownerAddress);
+  return addresses.every((address) => owner.has(address));
 }

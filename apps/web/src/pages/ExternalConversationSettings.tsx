@@ -21,14 +21,17 @@ import {
   Input,
   NativeSelect,
   NativeSelectOption,
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Textarea,
-  ToggleGroup,
-  ToggleGroupItem,
 } from "@rakazo/ui-web";
 import { RotateCcw } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { SuccessPop } from "../components/ai/primitives";
-import { IconTooltip } from "../components/IconTooltip";
 import { errorText } from "../lib/user-error";
 
 export function ExternalConversationSettings({
@@ -45,7 +48,7 @@ export function ExternalConversationSettings({
   const [mode, setMode] = useState<ListenMode>(() =>
     listenMode(conversation.teamChatAmbientEnabled),
   );
-  const [rules, setRules] = useState<string | null>(conversation.teamChatRules);
+  const [rules, setRules] = useState<string | null>(conversation.teamChatRules || null);
   const [policies, setPolicies] = useState<AutomatedSenderPolicies>(
     conversation.automatedSenderPolicies,
   );
@@ -56,7 +59,13 @@ export function ExternalConversationSettings({
     () => roomAutomatedSenders(policies, conversation.automatedSenders),
     [conversation.automatedSenders, policies],
   );
-  const effectiveListening = ambientValue(mode) ?? bot.teamChatAmbientEnabled;
+  const botName = bot.name;
+  const replyChoices: Array<{ value: ListenMode; label: string }> = [
+    { value: "inherit", label: t`Same as ${botName}` },
+    { value: "listen", label: t`Every message` },
+    { value: "mentions", label: t`Mentions only` },
+  ];
+  const effectiveMode = (ambientValue(mode) ?? bot.teamChatAmbientEnabled) ? "listen" : "mentions";
   const senderModeLabels: Record<AutomatedSenderPolicyMode, string> = {
     ignore: t`Ignore`,
     rollup: t`Group updates`,
@@ -80,86 +89,78 @@ export function ExternalConversationSettings({
         </p>
       </div>
 
-      <div>
-        <span id={`${fieldId}-listening`} className="text-[13.5px] text-muted-foreground">
-          <Trans>Listening</Trans>
+      <div className="flex items-center justify-between gap-3">
+        <span id={`${fieldId}-replies`} className="text-[13.5px] text-foreground">
+          <Trans>Replies to</Trans>
         </span>
-        <ToggleGroup
-          aria-labelledby={`${fieldId}-listening`}
-          value={[mode]}
-          onValueChange={([next]) => {
+        <Select
+          value={mode}
+          onValueChange={(next) => {
             if (!next) return;
             setMode(next as ListenMode);
             setSaved(false);
           }}
-          spacing={1}
-          className="mt-2 grid w-full grid-cols-3 rounded-lg bg-muted/40 p-1"
+          items={replyChoices}
         >
-          {(
-            [
-              { value: "inherit" as const, label: t`${bot.name} default` },
-              { value: "listen" as const, label: t`Listen` },
-              { value: "mentions" as const, label: t`Mentions only` },
-            ] satisfies Array<{ value: ListenMode; label: string }>
-          ).map((option) => (
-            <ToggleGroupItem
-              key={option.value}
-              value={option.value}
-              className="h-auto min-h-9 whitespace-normal rounded-md px-2 text-[12px] leading-4 font-normal text-muted-foreground hover:bg-transparent aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm"
-            >
-              {option.label}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+          <SelectTrigger size="sm" aria-labelledby={`${fieldId}-replies`}>
+            <SelectValue>
+              {replyChoices.find((choice) => choice.value === effectiveMode)?.label}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent alignItemWithTrigger={false} align="end">
+            <SelectGroup>
+              {replyChoices.map((choice) => (
+                <SelectItem key={choice.value} value={choice.value}>
+                  {choice.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
       </div>
 
       <label
         htmlFor={`${fieldId}-rules`}
         className="mt-6 block text-[13.5px] text-muted-foreground"
       >
-        <span className="flex items-center justify-between gap-3">
-          <Trans>Room guidance</Trans>
+        <span className="flex min-h-7 items-center justify-between gap-3">
+          <Trans>Instructions for this room</Trans>
           {rules !== null ? (
-            <IconTooltip label={t`Use default guidance`}>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                type="button"
-                aria-label={t`Use default guidance`}
-                onClick={() => {
-                  setRules(null);
-                  setSaved(false);
-                }}
-                className="shrink-0 text-muted-foreground"
-              >
-                <RotateCcw size={14} strokeWidth={1.8} />
-              </Button>
-            </IconTooltip>
-          ) : (
-            <span className="text-[11.5px] text-muted-foreground/70">
-              <Trans>{bot.name} default</Trans>
-            </span>
-          )}
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              onClick={() => {
+                setRules(null);
+                setSaved(false);
+              }}
+              className="shrink-0 text-muted-foreground"
+            >
+              <RotateCcw size={14} strokeWidth={1.8} />
+              <Trans>Reset</Trans>
+            </Button>
+          ) : null}
         </span>
         <Textarea
           id={`${fieldId}-rules`}
-          value={rules ?? bot.teamChatRules}
+          value={rules ?? ""}
           maxLength={4000}
           onChange={(event) => {
-            setRules(event.target.value);
+            // An emptied field follows the bot again, as its placeholder shows.
+            setRules(event.target.value || null);
             setSaved(false);
           }}
-          placeholder={t`Engage when... Ignore...`}
+          placeholder={bot.teamChatRules || undefined}
           rows={6}
           className="mt-2 min-h-36 resize-y"
         />
       </label>
 
-      <div className="mt-6 border-t border-border pt-5">
-        <h3 className="text-[13.5px] text-muted-foreground">
-          <Trans>Automated senders</Trans>
-        </h3>
-        {senders.length > 0 ? (
+      {senders.length > 0 ? (
+        <div className="mt-6 border-t border-border pt-5">
+          <h3 className="text-[13.5px] text-muted-foreground">
+            <Trans>Automated senders</Trans>
+          </h3>
           <div className="mt-2 divide-y divide-border">
             {senders.map((sender) => {
               const policy = senderPolicy(policies, sender);
@@ -218,17 +219,7 @@ export function ExternalConversationSettings({
               );
             })}
           </div>
-        ) : (
-          <p className="mt-2 text-[12.5px] leading-5 text-muted-foreground/70">
-            <Trans>Automated senders will appear after they post here.</Trans>
-          </p>
-        )}
-      </div>
-
-      {!effectiveListening ? (
-        <p className="mt-5 text-[12.5px] leading-5 text-muted-foreground/70">
-          <Trans>{bot.name} will still respond to direct mentions.</Trans>
-        </p>
+        </div>
       ) : null}
       {error ? <p className="mt-3 text-[13px] text-destructive">{error}</p> : null}
       <div className="mt-6 flex min-h-10 items-center gap-3">

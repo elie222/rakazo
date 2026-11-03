@@ -97,6 +97,26 @@ describe("update_preferences", () => {
     await expect(call({})).resolves.toEqual({ timezone: "UTC", marketingEmails: true });
   });
 
+  it("ends the turn instead of repeating the outside-content refusal", async () => {
+    const { users, call } = fakeAccount(true, true);
+    await expect(call({ marketingEmails: false })).resolves.toEqual({
+      error: expect.stringContaining("outside content"),
+    });
+    const repeat = await call({ marketingEmails: false });
+    expect(repeat).toMatchObject({
+      kind: "agent_tool_result",
+      terminate: true,
+      content: [
+        {
+          type: "text",
+          text: expect.stringContaining("Settings"),
+        },
+      ],
+    });
+    expect(JSON.stringify(repeat)).not.toContain("outside content");
+    expect(users.starter.marketingEmailOptOutAt).toBeNull();
+  });
+
   it("applies a change the owner approved after outside content", async () => {
     const { users, call } = fakeAccount(true, true, "update_preferences");
     await expect(call({ timezone: "Asia/Tokyo" })).resolves.toMatchObject({

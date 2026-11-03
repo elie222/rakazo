@@ -57,7 +57,7 @@ type ComputerUpdateProgress = (
   stage: Exclude<ComputerUpdate["stage"], "preparing">,
 ) => Promise<void>;
 
-const EXECUTION_LEASE_MS = 5 * 60_000;
+export const EXECUTION_LEASE_MS = 5 * 60_000;
 const BOOT_WAIT_ATTEMPTS = 40;
 const BOOT_WAIT_MS = 250;
 const RUNNING_CHECK_RETRY_MS = [250, 750];
@@ -249,8 +249,8 @@ export async function provisionComputer(
     }
   }
 
-  // A computer that bills starts only while its organization has allowance left this month.
-  const startKind = (await deps.sandbox.provisionKind?.()) ?? existing.kind;
+  // A computer that bills starts only while its organization has allowance left this period.
+  const startKind = (await deps.sandbox.provisionKind?.(existing.homeKey)) ?? existing.kind;
   if (await sandboxAllowanceUsedUp(deps, { spaceId: existing.spaceId, kind: startKind }))
     throw new SandboxAllowanceUsedError();
 
@@ -383,7 +383,9 @@ export async function provisionComputer(
     await cache?.forgetMissingCache(existing.homeKey);
     const hydrated =
       cache !== undefined &&
-      mountsServerHome((await deps.sandbox.provisionKind?.()) ?? deps.sandbox.describe().id);
+      mountsServerHome(
+        (await deps.sandbox.provisionKind?.(existing.homeKey)) ?? deps.sandbox.describe().id,
+      );
     if (hydrated)
       await cache.hydrate(existing.homeKey, {
         keepLiveCache: reconnecting && existing.kind === "docker",
@@ -1251,6 +1253,9 @@ export async function replaceComputer(
         controlRunId: null,
         // The replacement is a new machine; damage to the old one is no reason to hold it back.
         autoRecoveredAt: null,
+        diskUsedBytes: null,
+        diskFreeBytes: null,
+        diskDismissedPercent: null,
         updatedAt: claimStamp,
       },
     });

@@ -705,6 +705,94 @@ describe("prepared run-secret writes", () => {
     }
   });
 
+  it("keeps a code for the run's user only, as its site and digits, until a newer one replaces it", async () => {
+    const store = new EncryptedSecretStore("fake-key");
+    const db = database();
+    const prisma = withSecretPersistence(db.prisma, store);
+    const origin = "https://login.example.test";
+    Object.assign(prisma, {
+      run: { findFirst: async () => ({ botId: "bot", userId: "user" }) },
+      spaceSettingOverride: { findUnique: async () => null },
+      message: {
+        findFirst: async () => ({
+          blocks: [
+            {
+              kind: "ask",
+              text: "Code",
+              input: "secret",
+              status: "pending",
+              purpose: "otp",
+              oneTimeCode: { origin },
+            },
+          ],
+        }),
+      },
+    });
+    const writer = createRunSecretWriter(store);
+    const answer = (code: string, answeredByUserId = "user", site = origin) =>
+      writer.withPrepared!(
+        prisma,
+        {
+          spaceId: "space",
+          runId: "run",
+          threadId: "thread",
+          messageId: "message",
+          answeredByUserId,
+          answer: code,
+        },
+        (prepared) =>
+          prisma
+            .$transaction((tx) =>
+              prepared.store({
+                botId: "bot",
+                runId: "run",
+                userId: "user",
+                spaceId: "space",
+                // The answer route hands the writer the code as the page will take it.
+                plaintext: code.replace(/\s+/g, ""),
+                oneTimeCode: { origin: site },
+                remember: true,
+                tx,
+              }),
+            )
+            .then(() => true)
+            .catch(() => false),
+      );
+    const codes = () => db.tables.get("secret")!.filter((row) => row.kind === "run-code:run");
+    try {
+      // Another member of the Space cannot answer, and a non-code is not kept.
+      expect(await answer("123456", "someone-else")).toBe(false);
+      expect(await answer("x".repeat(13))).toBe(false);
+      expect(await answer("12")).toBe(false);
+      expect(await answer("   ")).toBe(false);
+      expect(codes()).toEqual([]);
+
+      // A store for another site than the card's is refused too.
+      expect(await answer("123456", "user", "https://other.example.test")).toBe(false);
+      expect(codes()).toEqual([]);
+
+      expect(await answer("123 456")).toBe(true);
+      expect(codes()).toHaveLength(1);
+      const [row] = codes();
+      expect(row?.ciphertext).not.toContain("123456");
+      expect(JSON.parse(await store.load(row!.ciphertext!, row!.id))).toEqual({
+        origin,
+        code: "123456",
+      });
+
+      expect(await answer("654321")).toBe(true);
+      expect(codes()).toHaveLength(1);
+      expect(JSON.parse(await store.load(codes()[0]!.ciphertext!, codes()[0]!.id)).code).toBe(
+        "654321",
+      );
+      // Never kept as a saved credential or login.
+      expect(db.tables.get("vaultCredential")).toEqual([]);
+      expect(db.tables.get("secret")!.filter((r) => r.kind !== "run-code:run")).toEqual([]);
+    } finally {
+      await store.close();
+    }
+  });
+
   it("does not encrypt a secret answer over the value limit", async () => {
     const store = new EncryptedSecretStore("fake-key");
     const put = vi.spyOn(store, "put");

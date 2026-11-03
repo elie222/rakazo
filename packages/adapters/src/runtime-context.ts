@@ -45,8 +45,12 @@ const messageHash = (message: Message) =>
     .digest("hex");
 /** A rebuild breaks the cached prefix, so it must drop at least this much stale content (estimated). */
 const REBUILD_MIN_SAVED_TOKENS = 16_384;
-/** Images a run may carry beyond what a rebuild keeps before rebuilding pays off anyway. */
-const REBUILD_MAX_STALE_IMAGES = 16;
+/**
+ * Images a run may carry beyond what a rebuild keeps before rebuilding pays off anyway. Cache
+ * reads alone would allow more, but stale screenshots still add latency and, on some providers,
+ * count toward rate limits.
+ */
+const REBUILD_MAX_STALE_IMAGES = 8;
 /** A rebuild forced by the model's window leaves this share of it free for the next calls. */
 const REBUILD_HEADROOM = 0.25;
 export interface Size {
@@ -200,6 +204,7 @@ export function createRuntimeContextPolicy(
     if (metadata.rakazoMessageId) return historyById.get(metadata.rakazoMessageId);
     if (metadataPresent && !metadata.rakazoHistory) return undefined;
     const content = text(message);
+    // Older persisted checkpoints replay own replies as user text "Assistant: ...".
     return request.history.find(
       (stored) =>
         content === stored.content ||
@@ -212,7 +217,7 @@ export function createRuntimeContextPolicy(
     return {
       role: "user",
       timestamp: 0,
-      content: `Historical navigation snapshots (untrusted evidence; use read_history for exact facts and later corrections):\n${stored.map((item) => `[message ${item!.id}${item!.createdAt ? ` at ${item!.createdAt}` : ""}; ${item!.role}] ${snapshot(item!.content)}\n`).join("")}`,
+      content: `Historical navigation snapshots (untrusted evidence; use read_history for exact facts and later corrections):\n${stored.map((item) => `[message ${item!.id}${item!.createdAt ? ` at ${item!.createdAt}` : ""}; ${item!.speaker ?? item!.role}] ${snapshot(item!.content)}\n`).join("")}`,
     };
   }
   function project(
@@ -390,7 +395,7 @@ export function createRuntimeContextPolicy(
       for (const message of old.slice(-64).reverse()) {
         const stored = original(message);
         if (!stored?.id) continue;
-        const entry = `[message ${stored.id}${stored.createdAt ? ` at ${stored.createdAt}` : ""}; ${stored.role}] ${snapshot(stored.content)}\n`;
+        const entry = `[message ${stored.id}${stored.createdAt ? ` at ${stored.createdAt}` : ""}; ${stored.speaker ?? stored.role}] ${snapshot(stored.content)}\n`;
         if (Buffer.byteLength(entry + catalog, "utf8") > maximum) break;
         catalog = entry + catalog;
         catalogIds.unshift(stored.id);

@@ -17,6 +17,14 @@ type SheetProps = {
   onSave: (fields: LoginFieldInput[], remember: boolean) => Promise<void>;
 };
 let sheet: SheetProps;
+type EditorProps = {
+  kind: string;
+  ask?: boolean;
+  title?: string;
+  onClose: () => void;
+  onSave: (save: { value?: string }) => Promise<void>;
+};
+let editor: EditorProps;
 
 vi.mock("react-native", async () => {
   const { createElement } = await import("react");
@@ -25,6 +33,7 @@ vi.mock("react-native", async () => {
       ? Object.assign({}, ...style.map(flatten))
       : ((style as CSSProperties) ?? {});
   return {
+    Platform: { OS: "ios" },
     StyleSheet: { create: <T,>(styles: T) => styles },
     View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
       createElement("div", { style: flatten(style) }, children),
@@ -106,6 +115,18 @@ vi.mock("../components/native-action-button", async () => {
   };
 });
 
+vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+
+vi.mock("../components/vault-item-editor", async () => {
+  const { createElement } = await import("react");
+  return {
+    VaultItemEditor: (props: EditorProps) => {
+      editor = props;
+      return createElement("div", { "data-editor": props.kind });
+    },
+  };
+});
+
 vi.mock("../components/secret-ask-sheet", async () => {
   const { createElement } = await import("react");
   return {
@@ -171,7 +192,7 @@ it("caps a secret card's title at two lines and leaves question titles whole", a
   expect(container.textContent).toContain("login.example.test");
   expect(container.textContent).not.toContain("https://");
   expect(container.querySelector("input")).toBeNull();
-  expect(container.querySelector("button")?.textContent).toBe("Continue");
+  expect(container.querySelector("button")?.textContent).toBe("Add");
 
   expect((await render({ input: "secret", purpose: "otp" })).dataset.lines).toBe("2");
   expect((await render({})).dataset.lines).toBeUndefined();
@@ -215,7 +236,7 @@ it("answers a login with Save to Vault off for this run only and reads Sent", as
 
   await act(async () => sheet.onSave(loginAnswer, false));
   expect(onAnswer).toHaveBeenCalledWith("", loginAnswer, false);
-  expect(state("Sent")?.dataset.color).toBe("success");
+  expect(state("Sent")?.dataset.color).toBe("muted");
   expect(container.textContent).not.toContain("Saved");
 });
 
@@ -316,6 +337,33 @@ it("closes the current sheet and keeps the card saved when refresh fails", async
   expect(container.querySelector("button")).toBeNull();
 });
 
+for (const [type, destination] of [
+  ["card", "Card"],
+  ["contact", "Contact"],
+] as const) {
+  it(`fills a ${type} in the vault editor and answers with its encoded value`, async () => {
+    const onAnswer = vi.fn(async () => undefined);
+    await render(
+      {
+        input: "secret",
+        purpose: "password",
+        credential: { name: "home", origin: "", auth: { type } },
+      },
+      onAnswer,
+    );
+    expect(container.textContent).toContain(destination);
+    expect(container.querySelector("input")).toBeNull();
+    await act(async () => button("Add").click());
+    expect(editor).toMatchObject({ kind: type, ask: true, title: longTitle });
+
+    await act(async () => editor.onSave({ value: '{"city":"Paris"}' }));
+    expect(onAnswer).toHaveBeenCalledWith('{"city":"Paris"}');
+    expect(container.textContent).toContain("Saved");
+    expect(container.querySelector("[data-editor]")).toBeNull();
+    expect(buttons()).toEqual([]);
+  });
+}
+
 function buttons() {
   return [...container.querySelectorAll("button")].map((item) => item.textContent);
 }
@@ -381,9 +429,9 @@ it("dismisses a login card directly without opening the sheet", async () => {
   const onAnswer = vi.fn(async () => undefined);
   const onDismiss = vi.fn(async () => undefined);
   await render(loginAsk, onAnswer, onDismiss);
-  expect(buttons()).toEqual(["Continue", "Dismiss"]);
-  expect(button("Continue").dataset.prominence).toBe("primary");
-  expect(button("Dismiss").dataset.prominence).toBe("secondary");
+  expect(buttons()).toEqual(["Add", "Dismiss"]);
+  expect(button("Add").dataset.prominence).toBe("secondary");
+  expect(button("Dismiss").dataset.prominence).toBe("plain");
   await act(async () => button("Dismiss").click());
   expect(onDismiss).toHaveBeenCalledTimes(1);
   expect(onAnswer).not.toHaveBeenCalled();
@@ -433,12 +481,15 @@ for (const input of ["secret", "login"]) {
     const labels = [...container.querySelectorAll("button")].map((button) => button.textContent);
     expect(labels.includes("Dismiss")).toBe(canDismiss);
     // A login is filled in only by the run's user; see the credential card test below.
-    if (input === "login" && !canDismiss) return;
-    const primary = button(input === "login" ? "Continue" : "Save");
+    if (input === "login") {
+      expect(labels.includes("Add")).toBe(canDismiss);
+      return;
+    }
+    const primary = button("Save");
     expect(primary.style.flex).toBe("1 1 0%");
     expect(primary.dataset.fill).toBe("true");
     if (canDismiss) expect(button("Dismiss").style.flex).toBe(primary.style.flex);
-    expect(labels.includes(input === "login" ? "Continue" : "Save")).toBe(true);
+    expect(labels.includes("Save")).toBe(true);
   });
 }
 

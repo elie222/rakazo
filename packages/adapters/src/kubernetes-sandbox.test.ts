@@ -1112,7 +1112,7 @@ describe("KubernetesSandboxProvider", () => {
           const argv = args[3] as string[];
           const script = argv[argv.indexOf("bash") + 2];
           queueMicrotask(() => {
-            if (script?.includes("&& find . ")) {
+            if (script?.includes(" workspace-save ")) {
               args[4]?.write(
                 execFileSync("bash", [
                   "-c",

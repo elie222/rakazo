@@ -89,6 +89,8 @@ describe("queued run supersession", () => {
       where: {
         OR: [
           { userId: "user-1", spaceId: "space-1", kind: "run-secret:run-old" },
+          { userId: "user-1", spaceId: "space-1", kind: "run-code:run-old" },
+          { userId: "user-1", spaceId: "space-1", kind: "run-code-spent:run-old" },
           { userId: "user-1", spaceId: "space-1", kind: { startsWith: "run-login:run-old:" } },
         ],
       },
@@ -1570,6 +1572,7 @@ describe("sendThreadMessage", () => {
       sendThreadMessage(
         {
           prisma,
+          sandbox: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue } as never,
           analytics,
@@ -1682,6 +1685,7 @@ describe("sendThreadMessage", () => {
       sendThreadMessage(
         {
           prisma,
+          sandbox: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue } as never,
         },
@@ -1708,6 +1712,8 @@ describe("sendThreadMessage", () => {
       where: {
         OR: [
           { userId: "user-1", spaceId: "workspace-1", kind: "run-secret:run-waiting-2" },
+          { userId: "user-1", spaceId: "workspace-1", kind: "run-code:run-waiting-2" },
+          { userId: "user-1", spaceId: "workspace-1", kind: "run-code-spent:run-waiting-2" },
           {
             userId: "user-1",
             spaceId: "workspace-1",
@@ -1782,6 +1788,7 @@ describe("sendThreadMessage", () => {
       sendThreadMessage(
         {
           prisma,
+          sandbox: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue } as never,
           analytics,
@@ -1894,6 +1901,7 @@ describe("sendThreadMessage", () => {
       sendThreadMessage(
         {
           prisma,
+          sandbox: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue } as never,
         },
@@ -2021,6 +2029,7 @@ describe("sendThreadMessage", () => {
           sendThreadMessage(
             {
               prisma,
+              sandbox: {} as never,
               events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
               jobs: { enqueue } as never,
             },
@@ -2109,6 +2118,7 @@ describe("sendThreadMessage", () => {
       sendThreadMessage(
         {
           prisma,
+          sandbox: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue } as never,
         },
@@ -2188,6 +2198,7 @@ describe("sendThreadMessage", () => {
       sendThreadMessage(
         {
           prisma,
+          sandbox: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue } as never,
         },
@@ -2276,6 +2287,7 @@ describe("sendThreadMessage", () => {
         sendThreadMessage(
           {
             prisma,
+            sandbox: {} as never,
             events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
             jobs: { enqueue } as never,
           },
@@ -2377,6 +2389,7 @@ describe("sendThreadMessage", () => {
     const result = await sendThreadMessage(
       {
         prisma,
+        sandbox: {} as never,
         events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
         jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
       },
@@ -2454,6 +2467,7 @@ describe("sendThreadMessage", () => {
       sendThreadMessage(
         {
           prisma,
+          sandbox: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue } as never,
         },
@@ -2559,6 +2573,7 @@ describe("sendThreadMessage", () => {
       sendThreadMessage(
         {
           prisma,
+          sandbox: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue } as never,
         },
@@ -2654,6 +2669,7 @@ describe("sendThreadMessage", () => {
       sendThreadMessage(
         {
           prisma,
+          sandbox: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue } as never,
         },
@@ -2764,6 +2780,7 @@ describe("sendThreadMessage", () => {
       sendThreadMessage(
         {
           prisma,
+          sandbox: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue } as never,
         },
@@ -2797,6 +2814,7 @@ describe("sendThreadMessage", () => {
       sendThreadMessage(
         {
           prisma,
+          sandbox: {} as never,
           events: { notify: vi.fn() } as never,
           jobs: { enqueue: vi.fn() } as never,
         },
@@ -2808,7 +2826,7 @@ describe("sendThreadMessage", () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it("persists the quote excerpt alongside the reply target", async () => {
+  it("persists quotes and namespaces a client-chosen strategic initiative nonce", async () => {
     let messageSeq = 0;
     let eventSeq = 0;
     const tx = {
@@ -2859,6 +2877,7 @@ describe("sendThreadMessage", () => {
     const result = await sendThreadMessage(
       {
         prisma,
+        sandbox: {} as never,
         events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
         jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
       },
@@ -2868,10 +2887,15 @@ describe("sendThreadMessage", () => {
         text: "why this?",
         replyToMessageId: "parent",
         replyQuote: "just this span",
-        clientNonce: "nonce-1",
+        clientNonce: "strategic-initiative:bot-1:1",
       },
     );
 
+    expect(tx.run.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ trigger: "user", clientNonce: "send:msg-1" }),
+      }),
+    );
     expect(result).toMatchObject({ runId: "run-1", taskId: "task-1" });
     expect(tx.message.findFirst).toHaveBeenCalledWith({
       where: { id: "parent", threadId: "thread-1" },
@@ -2935,6 +2959,7 @@ describe("sendThreadMessage", () => {
     await sendThreadMessage(
       {
         prisma,
+        sandbox: {} as never,
         events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
         jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
       },
@@ -2995,6 +3020,7 @@ describe("sendThreadMessage", () => {
     const result = await sendThreadMessage(
       {
         prisma,
+        sandbox: {} as never,
         events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
         jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
       },
@@ -3065,6 +3091,7 @@ describe("sendThreadMessage", () => {
       const result = await sendThreadMessage(
         {
           prisma,
+          sandbox: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
         },
@@ -3142,6 +3169,7 @@ describe("sendThreadMessage", () => {
     const result = await sendThreadMessage(
       {
         prisma,
+        sandbox: {} as never,
         events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
         jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
       },
@@ -3222,6 +3250,7 @@ describe("sendThreadMessage", () => {
     const result = await sendThreadMessage(
       {
         prisma,
+        sandbox: {} as never,
         events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
         jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
       },
@@ -3309,6 +3338,7 @@ describe("sendThreadMessage", () => {
       const result = await sendThreadMessage(
         {
           prisma,
+          sandbox: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
         },
@@ -3415,6 +3445,7 @@ describe("sendThreadMessage", () => {
       const result = await sendThreadMessage(
         {
           prisma,
+          sandbox: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
         },
@@ -3525,6 +3556,7 @@ describe("sendThreadMessage", () => {
       await sendThreadMessage(
         {
           prisma,
+          sandbox: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
         },
@@ -3590,6 +3622,7 @@ describe("sendThreadMessage", () => {
     const result = await sendThreadMessage(
       {
         prisma,
+        sandbox: {} as never,
         events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
         jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
       },
@@ -3680,6 +3713,7 @@ describe("sendThreadMessage", () => {
     const result = await sendThreadMessage(
       {
         prisma,
+        sandbox: {} as never,
         events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
         jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
       },
@@ -4076,8 +4110,12 @@ describe("stopThreadRuns", () => {
       where: {
         OR: [
           { userId: "user-1", spaceId: "workspace-1", kind: "run-secret:run-a" },
+          { userId: "user-1", spaceId: "workspace-1", kind: "run-code:run-a" },
+          { userId: "user-1", spaceId: "workspace-1", kind: "run-code-spent:run-a" },
           { userId: "user-1", spaceId: "workspace-1", kind: { startsWith: "run-login:run-a:" } },
           { userId: "user-1", spaceId: "workspace-1", kind: "run-secret:run-b" },
+          { userId: "user-1", spaceId: "workspace-1", kind: "run-code:run-b" },
+          { userId: "user-1", spaceId: "workspace-1", kind: "run-code-spent:run-b" },
           { userId: "user-1", spaceId: "workspace-1", kind: { startsWith: "run-login:run-b:" } },
         ],
       },

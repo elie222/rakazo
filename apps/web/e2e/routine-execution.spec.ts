@@ -25,7 +25,7 @@ test(
     await page.getByRole("option", { name: "한국어", exact: true }).click();
     await page.getByRole("button", { name: "계정 설정 닫기" }).click();
 
-    await page.getByRole("button", { name: "Agent 컴퓨터", exact: true }).click();
+    await openBotPanelTab(page, "자동 실행");
     await page.getByRole("button", { name: "자동 실행 만들기" }).click();
     await page.getByPlaceholder("이 루틴의 이름을 정하세요").fill("한국어 웹훅 확인");
     await page
@@ -195,6 +195,7 @@ test("run history links runs that replied and marks silent ones", async ({ page 
       error: null,
       createdAt: at,
       startedAt: at,
+      lateSince: null,
       completedAt: status === "running" ? null : at,
       messageId: null,
       ...extra,
@@ -210,7 +211,9 @@ test("run history links runs that replied and marks silent ones", async ({ page 
             run(1, "completed", { messageId: `message-${stamp}` }),
             run(2, "completed"),
             run(3, "failed", { error: "504: request timed out" }),
-            run(4, "completed"),
+            run(4, "completed", {
+              lateSince: new Date(Date.now() - (4 * 60 + 40) * minute).toISOString(),
+            }),
           ],
           nextCursor: null,
         },
@@ -231,6 +234,8 @@ test("run history links runs that replied and marks silent ones", async ({ page 
     `/app/${botId}?m=message-${stamp}`,
   );
   await expect(history.getByText("No reply", { exact: true })).toHaveCount(2);
+  await expect(rows.nth(4)).toContainText("Started 40m late");
+  await expect(history.getByText(/Started .* late/)).toHaveCount(1);
   await history.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "routine-run-history-states");
 });

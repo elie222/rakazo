@@ -10,6 +10,7 @@ import {
 import type { Actor, Me } from "@rakazo/contracts";
 import { attachmentMaxBytes, attachmentMaxCount, canonicalPiProviderId } from "@rakazo/contracts";
 import { isAdmin } from "../admins.js";
+import { effectiveSandboxProvider } from "../computer-provider-config.js";
 import type { RouterDeps } from "../router.js";
 
 export { createAdapterContext as computerContext } from "@rakazo/adapter-kit";
@@ -28,12 +29,15 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
         email: true,
         name: true,
         timezone: true,
+        locale: true,
         signupSurvey: { select: { userId: true } },
       },
     }),
     modelSetup(deps, actor),
     isAdmin(deps, actor.userId),
   ]);
+  // Where the deployment runs computers once an admin's choice in Settings applies.
+  const sandboxProvider = effectiveSandboxProvider(setup.settings, deps.env.sandboxProvider);
   return {
     ticketBoardEnabled: deps.env.ticketBoardEnabled === true,
     phoneCallsEnabled: deps.env.phoneCallsEnabled === true,
@@ -56,10 +60,11 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
         Boolean(deps.env.deploymentModelHostCredentials),
       deps.env.defaultProvider,
     ),
-    computerHost: computerHostFor(setup.settings?.computerHost, deps.env.sandboxProvider),
+    computerHost: computerHostFor(setup.settings?.computerHost, sandboxProvider),
     canChooseHostComputer:
-      Boolean(deps.env.desktopHostChoiceEnabled) && deps.env.sandboxProvider === "docker",
-    sandboxProvider: deps.env.sandboxProvider,
+      Boolean(deps.env.desktopHostChoiceEnabled) && sandboxProvider === "docker",
+    // The deployment's provider: an account's own choice covers only its Team Computers.
+    sandboxProvider,
     mcpStdioEnabled:
       admin &&
       mcpStdioAvailable({
@@ -68,6 +73,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
       }),
     avatarStyle: "organic",
     timezone: user.timezone ?? null,
+    locale: user.locale ?? null,
     billingEnabled: Boolean(deps.billing),
     // Only billing deployments ask; self-hosted installs never see the survey.
     needsSignupSurvey: Boolean(deps.billing) && !user.signupSurvey,

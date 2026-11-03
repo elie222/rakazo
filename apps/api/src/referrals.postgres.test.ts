@@ -4,7 +4,7 @@ import { BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, billingAccountForOrganization, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createBillingService } from "./billing.js";
+import { createBillingService, INVITED_TRIAL_DAYS, TRIAL_DAYS } from "./billing.js";
 
 const dbTests =
   process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
@@ -69,6 +69,58 @@ dbTests("referrals", () => {
       rewards: 0,
     });
     await expect(service.status(referrer)).resolves.toMatchObject({ referral });
+  });
+
+  it("gives an invited friend a longer first trial and everyone else the usual one", async () => {
+    const referrer = await newOrganization("trial-referrer");
+    const friend = await newOrganization("trial-friend");
+    const stranger = await newOrganization("trial-stranger");
+    await service.claimReferral(friend, await inviteCode(referrer));
+    await expect(service.status(friend)).resolves.toMatchObject({ trialDays: INVITED_TRIAL_DAYS });
+    await expect(service.status(stranger)).resolves.toMatchObject({ trialDays: TRIAL_DAYS });
+    for (const [actor, days] of [
+      [friend, INVITED_TRIAL_DAYS],
+      [stranger, TRIAL_DAYS],
+    ] as const) {
+      await service.selectFunding(actor, "byok");
+      const { customerId } = (await billingAccountForOrganization(prisma, actor.organizationId))!;
+      expect(provider.byokCheckouts.get(customerId)?.trialDays).toBe(days);
+    }
+  });
+
+  it("ignores a code from another organization the claimer belongs to", async () => {
+    const owner = await newOrganization("self-referrer");
+    const second = await newOrganization("self-second");
+    await prisma.member.create({
+      data: {
+        id: `${second.organizationId}-owner`,
+        organizationId: second.organizationId,
+        userId: owner.userId,
+        role: "owner",
+        createdAt: new Date(),
+      },
+    });
+    // The same person, acting in their second organization.
+    const sameOwner = { ...owner, spaceId: second.spaceId, organizationId: second.organizationId };
+    await service.claimReferral(sameOwner, await inviteCode(owner));
+    await expect(service.status(second)).resolves.toMatchObject({ trialDays: TRIAL_DAYS });
+  });
+
+  it("still gifts the longer trial when two companies only share a teammate", async () => {
+    const referrer = await newOrganization("shared-referrer");
+    const friend = await newOrganization("shared-friend");
+    const teammate = await newOrganization("shared-teammate");
+    await prisma.member.createMany({
+      data: [referrer, friend].map((org) => ({
+        id: `${org.organizationId}-teammate`,
+        organizationId: org.organizationId,
+        userId: teammate.userId,
+        role: "member",
+        createdAt: new Date(),
+      })),
+    });
+    await service.claimReferral(friend, await inviteCode(referrer));
+    await expect(service.status(friend)).resolves.toMatchObject({ trialDays: INVITED_TRIAL_DAYS });
   });
 
   it("grants the referrer a free month when the friend starts a trial with a new card", async () => {

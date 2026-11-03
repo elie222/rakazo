@@ -18,12 +18,20 @@ there.
 From then on, messages you send there go to that bot's chat, and its replies come back to you there.
 The conversation is the same one you see in the Rakazo app.
 
+In direct messages, a voice note the chat app delivers as an audio file (Telegram, for example)
+is transcribed when a voice provider that supports transcription is connected in **Voice**
+settings; without one, the bot receives the audio file.
+
 To stop, choose **Unlink**.
 
 ## Slack
 
 Choose **Connect** next to Slack to add Rakazo to your Slack workspace, then **Link DMs** so direct
 messages reach your bot.
+
+The bot uses its memory and notes only for your own messages: the Slack account that connected the
+workspace or linked its DMs. It answers anyone else in the workspace, including guests and other
+apps, the way it answers a group chat.
 
 A [routine](./routines.md) can also start from a **Slack message**.
 
@@ -33,7 +41,18 @@ Add your bot to a group or channel in the chat app. The invite appears under **R
 **Settings → Messaging**; choose **Approve** or **Decline**. Approved groups are listed under
 **Conversations**, where you can **Leave** one at any time.
 
-Open a conversation's **Settings** to decide how the bot behaves there:
+You can also answer an invite or a connection request by replying YES or NO to its message, within a
+day and before anything else arrives from the line.
+
+On Telegram, groups link personally, like on iMessage: each member who has linked the app gets
+their own invite under **Requests**, and messages from approved linked members reach each approved
+member's own bot. Members who have not linked Telegram only trigger a one-time intro note in the
+group. Turn privacy mode off so the bot hears the whole group: in BotFather run `/setprivacy` and
+choose **Disable**, or make the bot a group admin. With privacy mode on it only sees messages that
+mention it. Telegram broadcast channels are not group chats; posts there never reach your bot.
+
+Slack rooms added through a workspace are team conversations, the only ones with per-room
+settings. Open a conversation's **Settings** to decide how the bot behaves there:
 
 - **Listening**: **Listen** to everything, or **Mentions only**. Either way, the bot answers when
   mentioned directly.

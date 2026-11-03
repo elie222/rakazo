@@ -112,6 +112,7 @@ vi.mock("../components/AppConnectCard", () => ({ AppConnectCard: () => null }));
 vi.mock("../components/audio-attachment", () => ({ AudioAttachment: () => null }));
 vi.mock("../components/ChoiceCard", () => ({ ChoiceCard: () => null }));
 vi.mock("../components/ComputerCard", () => ({ ComputerCard: () => null }));
+vi.mock("../components/pages/page-card", () => ({ PageCard: () => null }));
 vi.mock("../components/inline-image-attachment", () => ({
   InlineImageAttachment: ({ name, onOpen }: { name: string; onOpen: () => void }) => (
     <button type="button" aria-label={name} onClick={onOpen} />
@@ -138,7 +139,7 @@ function Bubble(props: Partial<BubbleProps> & Pick<BubbleProps, "message">) {
       onAnswer={async () => undefined}
       onOpenBot={() => undefined}
       onOpenComputer={() => undefined}
-      onPreviewMarkdown={() => undefined}
+      onPreviewFile={() => undefined}
       onPreviewImage={() => undefined}
       onOpenPeerChat={() => undefined}
       actionProps={{}}

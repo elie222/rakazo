@@ -1,0 +1,21 @@
+appId: com.rakazo.app
+name: Billing
+---
+- runFlow:
+    file: ../subflows/sign-in.yaml
+    env:
+      RAKAZO_ACTIVE_EMAIL: ${RAKAZO_SCREENSHOT_EMAIL}
+- openLink: "rakazo:///billing"
+- extendedWaitUntil:
+    visible: ".*Renews.*|.*Plan.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 01-billing
+- openLink: "rakazo:///wallet"
+- extendedWaitUntil:
+    visible: "Disconnect"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 02-wallet

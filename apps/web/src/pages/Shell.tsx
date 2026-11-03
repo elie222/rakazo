@@ -38,6 +38,7 @@ import { ComputerUpdateProgress } from "../components/ComputerUpdateProgress";
 import { CallCard, CallReturnBar } from "../components/call/CallCard";
 import { IncomingCall } from "../components/call/IncomingCall";
 import { PageLoading } from "../components/PageLoading";
+import { PageViewHost } from "../components/pages/PageViewHost";
 import type { ArtifactTarget } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
 import { peekBootstrapSeed } from "../lib/bootstrap";
@@ -55,6 +56,7 @@ import {
 import { computersAreUnavailable } from "../lib/computer-sandbox";
 import { desktopBridge } from "../lib/desktop";
 import { hasOpenDialog } from "../lib/has-open-dialog";
+import { PagesProvider, usePagesForChat } from "../lib/pages";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { usePreloadRecoveryState } from "../lib/preload-recovery";
 import { lastChatKey, lastChatOf, queryClient, spaceQueries, spaceSeedKey } from "../lib/query";
@@ -67,6 +69,7 @@ import { getToolActivityEnabled, subscribeToolActivity } from "../lib/tool-activ
 import type { AppearancePreference } from "../lib/ui-appearance";
 import { getUiAppearancePreference, setUiAppearance } from "../lib/ui-appearance";
 import { useDesktopBadge } from "../lib/use-desktop-badge";
+import { errorText } from "../lib/user-error";
 import { HostComputerPrompt } from "./HostComputerPrompt";
 import { RoutineList } from "./RoutineEditor";
 import { useSettingsNavItems } from "./settings-nav";
@@ -97,6 +100,7 @@ import { useComputerControls, useComputerState } from "./shell/use-computer";
 import { useMessageJump } from "./shell/use-message-jump";
 import { useMobileSidebar } from "./shell/use-mobile-sidebar";
 import { useReadAloud } from "./shell/use-read-aloud";
+import { useReportedUiLocale } from "./shell/use-reported-ui-locale";
 import { useRightPanel, useRightPanelRestore } from "./shell/use-right-panel";
 import { useRoutineEditor } from "./shell/use-routine-editor";
 import { useShellNavigation } from "./shell/use-shell-navigation";
@@ -192,7 +196,7 @@ function SpaceShell() {
   const rightPanel = useRightPanel({ searchParams, setSearchParams });
   const { panel, setPanel, modelFocusRequest, setModelFocusRequest } = rightPanel;
   const lastBotTab = useRef<Panel>("routines");
-  if (panel === "routines" || panel === "computer" || panel === "settings")
+  if (panel === "routines" || panel === "computer" || panel === "pages" || panel === "settings")
     lastBotTab.current = panel;
   const [peerConversation, setPeerConversation] = usePreloadRecoveryState<{
     peerBotId: string;
@@ -243,6 +247,7 @@ function SpaceShell() {
     useQuery(queries.voice.status.queryOptions()).data ?? null;
   const { mobileSidebarOpen, setMobileSidebarOpen, swipeHandlers } = useMobileSidebar();
   const isMobileSidebar = useIsMobile();
+  const pages = usePagesForChat();
   const miniSidebar = botsSidebarCollapsed && !isMobileSidebar;
   const [botMenu, setBotMenu] = useState<{ kind: "bot" | "group"; id: string } | null>(null);
   const closeBotMenu = useCallback(() => setBotMenu(null), []);
@@ -264,7 +269,11 @@ function SpaceShell() {
   const inGroup = Boolean(groupId);
   const chatPanelOpen = inGroup
     ? panel === "group-settings"
-    : panel === "computer" || panel === "routines" || panel === "settings" || panel === "routine";
+    : panel === "computer" ||
+      panel === "routines" ||
+      panel === "pages" ||
+      panel === "settings" ||
+      panel === "routine";
   // Until the route names the chat reopened from cache, that chat stands in for it.
   const routeChat = botId || groupId ? undefined : startChat;
   const active =
@@ -289,6 +298,18 @@ function SpaceShell() {
   activeGroupId.current = groupId;
   const computerState = useComputerState({ rpc, panel, activeId: active?.id, activeBotId });
   const { computer, computerOpen, setComputerOpen, booting, commitComputer } = computerState;
+  const [cleaningUpDisk, setCleaningUpDisk] = useState(false);
+  const dismissDiskWarning = (botId: string) => {
+    const current = computerState.computerRef.current;
+    if (current?.botId === botId) commitComputer({ ...current, diskFullPercent: undefined });
+    const cached = computerState.computerCacheRef.current.get(botId)?.computer;
+    if (cached)
+      computerState.cacheComputerFor(botId, {
+        computer: { ...cached, diskFullPercent: undefined },
+      });
+    return rpc.computer.dismissDiskWarning({ botId }).catch(() => undefined);
+  };
+  useReportedUiLocale(rpc, bootstrapMe?.locale);
   const cycleBots = useMemo(
     () => groupBotsForSidebar(bots, botSections).flatMap((group) => group.bots),
     [bots, botSections],
@@ -318,7 +339,7 @@ function SpaceShell() {
       if (shortcut.type === "search") {
         if (isMobileSidebar) setMobileSidebarOpen(true);
         else if (botsSidebarCollapsed) setBotsSidebarCollapsedPref(false);
-        if (!search.activityMode) search.setSearchOpen(true);
+        search.setSearchOpen(true);
         focusSidebarSearch();
         return true;
       }
@@ -588,6 +609,7 @@ function SpaceShell() {
   const { computerBot, openComputer } = computerControls;
   const composer = useComposerActions({
     rpc,
+    pageSession: pages.session,
     activeId: active?.id,
     inGroup,
     groupId,
@@ -905,6 +927,9 @@ function SpaceShell() {
         setCreateMenuOpen={setCreateMenuOpen}
         search={search}
         bots={bots}
+        groups={groups}
+        collapsedSidebarSections={collapsedSidebarSections}
+        toggleSidebarSection={toggleSidebarSection}
         setPanel={setPanel}
         navigate={navigate}
         setNewSpaceOpen={dialogs.setNewSpaceOpen}
@@ -988,6 +1013,7 @@ function SpaceShell() {
             activeGroup={activeGroup}
             activeSnapshot={activeSnapshot}
             phoneCallsEnabled={Boolean(bootstrapMe?.phoneCallsEnabled)}
+            voiceReady={Boolean(voiceStatus?.ready)}
             inCall={Boolean(active) && call?.botId === active?.id}
             panelOpen={chatPanelOpen}
             onOpenNavigation={() => setMobileSidebarOpen(true)}
@@ -1132,6 +1158,7 @@ function SpaceShell() {
         ) : null}
       </main>
 
+      <PageViewHost />
       <CallCard onSettings={() => openSettings("voice")} />
       <IncomingCall
         bots={bootstrapMe?.phoneCallsEnabled ? bots : []}
@@ -1178,6 +1205,25 @@ function SpaceShell() {
               onRecoveryDismissed={computerControls.releaseComputerRecovery}
               onOpenComputerSettings={() => openSettings("computer")}
               onOpen={() => void openComputer()}
+              cleaningUpDisk={cleaningUpDisk}
+              onCleanUpDisk={() => {
+                const botId = active.id;
+                setCleaningUpDisk(true);
+                void rpc.threads
+                  .send({
+                    botId,
+                    clientNonce: crypto.randomUUID(),
+                    text: t`Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need.`,
+                  })
+                  .then(async () => {
+                    // The refresh must read the dismissal, or it would paint the warning again.
+                    await dismissDiskWarning(botId);
+                    void refreshThread(botId);
+                  })
+                  .catch((error: unknown) => composer.setSendError(errorText(error)))
+                  .finally(() => setCleaningUpDisk(false));
+              }}
+              onDismissDiskWarning={() => void dismissDiskWarning(active.id)}
             />
           ) : null
         }
@@ -1299,5 +1345,9 @@ function SpaceShell() {
   );
 
   // Empty chrome until the first bot list lands would flash "Select a bot" before the chat.
-  return initialBotsLoaded || initialLoadFailed ? shell : <PageLoading />;
+  return initialBotsLoaded || initialLoadFailed ? (
+    <PagesProvider value={pages}>{shell}</PagesProvider>
+  ) : (
+    <PageLoading />
+  );
 }

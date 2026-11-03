@@ -494,6 +494,11 @@ export function humanizeToolName(name: string): string {
   return lower.charAt(0).toUpperCase() + lower.slice(1);
 }
 
+/** Reverses humanizeToolName for a typed name; rules match tool names ignoring case. */
+export function toolNameFromLabel(label: string): string {
+  return label.trim().replace(/\s+/g, "_");
+}
+
 export function progressMessageText(
   payload: Record<string, unknown> | undefined,
   previousText = "",

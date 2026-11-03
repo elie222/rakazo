@@ -3,10 +3,16 @@ import {
   effectiveModelRole,
   hasHostedModelCredits,
   isAutoReviewCheckerConfigured,
+  loadUserIncomingCalls,
   PushSessionEndedError,
+  settleCallRequest,
 } from "@rakazo/adapters";
 import type { ActionApprovalRule, Actor, Me, SettingsScope } from "@rakazo/contracts";
-import { approvalModeFromPreference, approvalPreferenceFromMode } from "@rakazo/core";
+import {
+  approvalModeFromPreference,
+  approvalPreferenceFromMode,
+  callRequestClientNonce,
+} from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
 import {
   auditLogOrganization,
@@ -49,7 +55,7 @@ import {
   voiceProviderFor,
 } from "../voice.js";
 import type { RouterContext } from "./context.js";
-import { meDto } from "./shared.js";
+import { HEARTBEAT_MS, meDto, SESSION_RECHECK_MS } from "./shared.js";
 
 export function accountRoutes(ctx: RouterContext) {
   const { deps, os, authed } = ctx;
@@ -87,7 +93,7 @@ export function accountRoutes(ctx: RouterContext) {
           const record = await firstModelConnectAnalytics(deps, context.actor, "credits");
           record(undefined, { name: "model_connect_started" });
         }
-        return billing.selectFunding(context.actor, input.funding, input.client);
+        return billing.selectFunding(context.actor, input.funding, input.client, input.interval);
       }),
       purchaseCredits: authed.billing.purchaseCredits.handler(async ({ context, input }) =>
         requireBilling(deps).purchaseCredits(context.actor, input),
@@ -95,20 +101,33 @@ export function accountRoutes(ctx: RouterContext) {
       setMonthlyCredits: authed.billing.setMonthlyCredits.handler(async ({ context, input }) =>
         requireBilling(deps).setMonthlyCredits(context.actor, input.amountCents),
       ),
-      status: authed.billing.status.handler(async ({ context }) =>
-        requireBilling(deps).status(context.actor),
-      ),
+      status: authed.billing.status.handler(async ({ context, input }) => {
+        const billing = requireBilling(deps);
+        // A failed claim fails the request, so the client keeps the code and sends it again.
+        if (input?.referralCode) await billing.claimReferral(context.actor, input.referralCode);
+        return billing.status(context.actor);
+      }),
       refresh: authed.billing.refresh.handler(async ({ context }) => {
         const billing = requireBilling(deps);
         await billing.syncForActor(context.actor);
         return billing.status(context.actor);
       }),
       checkout: authed.billing.checkout.handler(async ({ context, input }) =>
-        requireBilling(deps).checkout(context.actor, input?.client),
+        requireBilling(deps).checkout(context.actor, input?.client, input?.interval),
       ),
       portal: authed.billing.portal.handler(async ({ context, input }) =>
         requireBilling(deps).portal(context.actor, input?.client),
       ),
+      endTrial: authed.billing.endTrial.handler(async ({ context }) => {
+        const billing = requireBilling(deps);
+        await billing.endTrial(context.actor);
+        return billing.status(context.actor);
+      }),
+      switchToYearly: authed.billing.switchToYearly.handler(async ({ context }) => {
+        const billing = requireBilling(deps);
+        await billing.switchToYearly(context.actor);
+        return billing.status(context.actor);
+      }),
       claimReferral: authed.billing.claimReferral.handler(async ({ context, input }) => {
         await requireBilling(deps).claimReferral(context.actor, input.code);
         return { ok: true as const };
@@ -133,7 +152,10 @@ export function accountRoutes(ctx: RouterContext) {
         await deps.prisma.user.update({
           where: { id: context.actor.userId },
           // An avatar style from an older app is accepted and ignored: there is only one.
-          data: input.timezone === undefined ? {} : { timezone: input.timezone },
+          data: {
+            ...(input.timezone === undefined ? {} : { timezone: input.timezone }),
+            ...(input.locale === undefined ? {} : { locale: input.locale }),
+          },
         });
         return meDto(deps, context.actor);
       }),
@@ -247,11 +269,100 @@ export function accountRoutes(ctx: RouterContext) {
       }),
     },
     notifications: {
+      subscribeCalls: authed.notifications.subscribeCalls.handler(async function* ({ context }) {
+        if (!deps.env?.phoneCallsEnabled || !deps.events.followIncomingCalls)
+          throw new ORPCError("NOT_FOUND");
+        const controller = new AbortController();
+        const signal = context.signal
+          ? AbortSignal.any([context.signal, controller.signal])
+          : controller.signal;
+        const signals = deps.events.followIncomingCalls(context.actor.userId, signal);
+        let pending: Promise<IteratorResult<void>> | undefined;
+        let authorizedAt = Date.now();
+        try {
+          while (!context.signal?.aborted) {
+            pending ??= signals.next();
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const next = await Promise.race([
+              pending,
+              new Promise<"heartbeat">((resolve) => {
+                timer = setTimeout(() => resolve("heartbeat"), HEARTBEAT_MS);
+              }),
+            ]).finally(() => clearTimeout(timer));
+            if (context.stillAuthorized && Date.now() - authorizedAt >= SESSION_RECHECK_MS) {
+              if (!(await context.stillAuthorized())) throw new ORPCError("UNAUTHORIZED");
+              authorizedAt = Date.now();
+            }
+            if (next === "heartbeat") {
+              yield { type: "heartbeat" as const };
+              continue;
+            }
+            pending = undefined;
+            if (next.done) return;
+            yield {
+              type: "incoming.calls" as const,
+              payload: { calls: await loadUserIncomingCalls(deps.prisma, context.actor.userId) },
+            };
+          }
+        } finally {
+          controller.abort();
+          await signals.return(undefined);
+        }
+      }),
+      declineIncomingCall: authed.notifications.declineIncomingCall.handler(
+        async ({ context, input }) => {
+          if (!deps.env?.phoneCallsEnabled) throw new ORPCError("NOT_FOUND");
+          // A locked device has only the call id, and may be viewing a different Space.
+          const settled = await runAsSystem(
+            "decline the signed-in call owner's incoming call",
+            async () => {
+              const message = await deps.prisma.message.findFirst({
+                where: {
+                  clientNonce: callRequestClientNonce(input.callId),
+                  role: "bot",
+                  thread: {
+                    userId: context.actor.userId,
+                    groupId: null,
+                    bot: { userId: context.actor.userId },
+                  },
+                },
+                select: { threadId: true },
+              });
+              if (!message) throw new ORPCError("NOT_FOUND");
+              return settleCallRequest(deps, {
+                threadId: message.threadId,
+                callId: input.callId,
+                from: ["ringing"],
+                status: "declined",
+              });
+            },
+          );
+          if (settled?.status !== "declined") throw new ORPCError("CONFLICT");
+          return { ok: true as const };
+        },
+      ),
+      registerCallPush: authed.notifications.registerCallPush.handler(
+        async ({ context, input }) => {
+          if (!context.sessionId) throw new ORPCError("UNAUTHORIZED");
+          try {
+            await deps.pushTokens.saveDevice?.(context.actor.userId, input, context.sessionId);
+          } catch (error) {
+            if (error instanceof PushSessionEndedError) throw new ORPCError("UNAUTHORIZED");
+            throw error;
+          }
+          return { ok: true as const };
+        },
+      ),
       registerPush: authed.notifications.registerPush.handler(async ({ context, input }) => {
         const sessionId = context.sessionId;
         if (!sessionId) throw new ORPCError("UNAUTHORIZED");
         try {
-          await deps.pushTokens.save(context.actor.userId, input.token, sessionId);
+          await deps.pushTokens.save(
+            context.actor.userId,
+            input.token,
+            sessionId,
+            input.presentation,
+          );
         } catch (error) {
           if (error instanceof PushSessionEndedError) throw new ORPCError("UNAUTHORIZED");
           throw error;
@@ -259,6 +370,8 @@ export function accountRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
       unregisterPush: authed.notifications.unregisterPush.handler(async ({ context }) => {
+        if (context.sessionId)
+          await deps.pushTokens.endSession(context.actor.userId, context.sessionId);
         await deps.pushTokens.remove(context.actor.userId);
         return { ok: true as const };
       }),
@@ -342,7 +455,7 @@ export function accountRoutes(ctx: RouterContext) {
           ? await loadVoiceCredential(deps, context.actor, input.provider, input.scope)
           : await loadDefaultVoiceCredential(deps, context.actor, input.scope);
         if (!row) return [];
-        return (await voiceProviderFor(deps, context.actor, row.cred.provider)).listVoices(
+        return (await voiceProviderFor(deps, row.cred.provider)).listVoices(
           row.apiKey,
           voiceContext(context.actor, context.signal),
         );

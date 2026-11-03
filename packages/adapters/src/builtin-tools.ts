@@ -2,6 +2,7 @@ import type { ConnectorTool } from "@rakazo/adapter-kit";
 import {
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
+  BOT_MEMORY_MAX_BYTES,
   BotSecretName,
   botSecretDestinationSchema,
   FEEDBACK_DESCRIPTION_MAX_LENGTH,
@@ -43,7 +44,7 @@ function secretAskToolSurface() {
       allowPrivateHttpOrigins
         ? "HTTPS origin, or an HTTP origin on a private LAN host"
         : "HTTPS origin"
-    }, or connectionId for a one-use connector code. Credential names must start with a lowercase letter and use only lowercase letters, digits, hyphens, or underscores (max 64 characters). For a website login the user wants saved, use auth {type:"login"} with the HTTPS origin of the sign-in form's page or frame, and fields with the labels the site signs in with (default Username and Password); the card asks for each, and browser_act fill_secret types one by its label. The user decides which fields are hidden: a hidden field is typed only into a password field. A field whose label is an ID, phone, email or username starts visible on the card and any other starts hidden, so label each field by what the site calls it. If one is refused in another field, ask again with replace true so the user can make it visible. The user may choose not to save a login: the result then says saved false, the login works only until this run ends, and a later run must ask again, so never say it was saved. For a value this bot's shell commands need, use auth {type:"command"} with no origin; it is exported to them as an environment variable named after the credential in upper case with hyphens as underscores (netbird-setup-key becomes $NETBIRD_SETUP_KEY). Existing named credentials are reused unless replace is true. A sign-in without a password, such as fields ["ID number","Phone"], still uses auth {type:"login"}; never ask for those in chat or on the screen. For a texted or emailed code, CAPTCHA, passkeys, or anything else that needs the live desktop, call request_takeover.`,
+    }, or connectionId for a one-use connector code. Credential names must start with a lowercase letter and use only lowercase letters, digits, hyphens, or underscores (max 64 characters). For a website login the user wants saved, use auth {type:"login"} with the HTTPS origin of the sign-in form's page or frame, and fields with the labels the site signs in with (default Username and Password); the card asks for each, and browser_act fill_secret types one by its label. The user decides which fields are hidden: a hidden field is typed only into a password field. A field whose label is an ID, phone, email or username starts visible on the card and any other starts hidden, so label each field by what the site calls it. If one is refused in another field, ask again with replace true so the user can make it visible. The user may choose not to save a login: the result then says saved false, the login works only until this run ends, and a later run must ask again, so never say it was saved. For a value this bot's shell commands need, use auth {type:"command"} with no origin; it is exported to them as an environment variable named after the credential in upper case with hyphens as underscores (netbird-setup-key becomes $NETBIRD_SETUP_KEY). Use auth {type:"card"} for a payment card, which you see only as brand, last four and expiry, and {type:"contact"} for an address, phone or email named for who or where (home, mom); neither has an origin. Existing named credentials are reused unless replace is true, as is a site's saved login. A sign-in without a password, such as fields ["ID number","Phone"], still uses auth {type:"login"}; never ask for those in chat or on the screen. For a code the site texted or emailed, use oneTimeCode {origin} with the page's HTTPS origin: you never see the code, browser_act fill_code types it, and a wrong or new code needs a new request. Never ask for a code in chat. For CAPTCHA, passkeys, or anything else that needs the live desktop, call request_takeover.`,
     inputSchema: {
       oneOf: [
         {
@@ -58,7 +59,7 @@ function secretAskToolSurface() {
             ),
             replace: {
               type: "boolean",
-              description: "Ask the user to replace an existing credential value.",
+              description: "Ask the user to replace a saved value or a login's site.",
             },
             fields: {
               type: "array",
@@ -80,6 +81,21 @@ function secretAskToolSurface() {
             connectionId: { type: "string" },
           },
           required: ["label", "purpose", "connectionId"],
+          additionalProperties: false,
+        },
+        {
+          type: "object",
+          properties: {
+            label: { type: "string" },
+            purpose: { type: "string", enum: SecretAskPurpose.options },
+            oneTimeCode: {
+              type: "object",
+              properties: { origin: { type: "string" } },
+              required: ["origin"],
+              additionalProperties: false,
+            },
+          },
+          required: ["label", "purpose", "oneTimeCode"],
           additionalProperties: false,
         },
       ],
@@ -321,7 +337,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "browser_navigate",
     description:
-      'Open a URL in the page browser on this bot\'s computer and return the page like browser_snapshot. Prefer this over pixel clicks for web pages. If the result includes fallback:"computer_act", use computer_act on the desktop browser instead.',
+      'Open a URL in the page browser on this bot\'s computer and return the page like browser_snapshot, or for a file download its saved path in downloads. Prefer this over pixel clicks for web pages. If the result includes fallback:"computer_act", use computer_act on the desktop browser instead.',
     inputSchema: {
       type: "object",
       properties: {
@@ -333,13 +349,18 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "browser_snapshot",
     description:
-      "Capture an accessibility-style snapshot of the current page with element refs (e1, e2, …). Use refs with browser_act. A dropdown lists its options, and a line says when page text or controls were cut off. Frames follow the page, under their site. Prefer this over computer_observe for web pages. If loading is true, take another snapshot before deciding what the page shows. If fallback is computer_act, use the desktop tools instead.",
-    inputSchema: { type: "object", properties: {} },
+      "Capture an accessibility-style snapshot of the current page with element refs (e1, e2, …). Use refs with browser_act. A dropdown lists its options, and a line says when page text or controls were cut off. query lists only the controls whose name, label or nearby text match it, from anywhere on the page. Frames follow the page, under their site. Prefer this over computer_observe for web pages. If loading is true, take another snapshot before deciding what the page shows. If fallback is computer_act, use the desktop tools instead.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", maxLength: 200 },
+      },
+    },
     readOnly: true,
   },
   {
     name: "browser_act",
-    description: `Click or fill page elements by ref from browser_snapshot (kinds: ${BROWSER_ACT_KINDS.join(", ")}). click is a real mouse click, and fill on a dropdown takes one of its options' visible labels or values. The result shows the page after the action, and a snapshot covers the whole page, so scrolling is rarely needed. upload attaches your files to a "file upload" element; use it instead of clicking upload buttons. fill_secret types one field of a login saved with request_secret, by its label, only on the site it was saved for (in a frame: the frame's site); you never see the value. fill_card types an approved purchase's card details, only on its merchant site; leave out ref to find the field, including in a payment frame. fill_pay_token hands an approved purchase's pay token to its checkout; no ref. type presses keys like a keyboard and replaces the field's text; use it for code boxes and fields that ignore fill. For a code split into one box per digit, type the whole code once into the first box, and to correct it type it again. Prefer this over computer_act for web pages. If the result includes fallback:"computer_act", use computer_act instead.`,
+    description: `Click or fill page elements by ref from browser_snapshot (kinds: ${BROWSER_ACT_KINDS.join(", ")}). click is a real mouse click, and fill on a dropdown takes one of its options' visible labels or values. The result shows the page after the action, and a snapshot covers the whole page, so scrolling is rarely needed. upload attaches your files to a "file upload" element; use it instead of clicking upload buttons. fill_secret types one field of a login saved with request_secret, by its label, only on the site it was saved for (in a frame: the frame's site); you never see the value. fill_card types an approved purchase's card or a saved card, only on its approved site; leave out ref to find the field, even in a payment frame. fill_code types a request_secret oneTimeCode once, only on its site. fill_pay_token hands an approved purchase's pay token to its checkout; no ref. type presses keys like a keyboard and replaces the field's text; use it for code boxes and fields that ignore fill. For a code split into one box per digit, type the whole code once into the first box, and to correct it type it again. A file download, or a PDF a tab shows, is saved to Downloads and listed in downloads with its path; if its state is downloading, the file appears there when done. Prefer this over computer_act for web pages. If the result includes fallback:"computer_act", use computer_act instead.`,
     inputSchema: {
       type: "object",
       properties: {
@@ -369,6 +390,14 @@ export const builtinAgentTools: ConnectorTool[] = [
               purchase: {
                 type: "string",
                 description: "Approved purchase id for fill_card or fill_pay_token.",
+              },
+              card: {
+                type: "string",
+                description: "Saved card for fill_card, with site; each call asks the user.",
+              },
+              site: {
+                type: "string",
+                description: "Checkout's HTTPS origin.",
               },
               field: {
                 type: "string",
@@ -536,7 +565,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "request_takeover",
     description:
-      "Ask the user to take over the computer screen for passwords, 2FA, CAPTCHA, payment, passkeys, or other protected input. Never ask the user to paste protected values in chat.",
+      "Ask the user to take over the computer screen for CAPTCHA, payment, passkeys, or other protected input request_secret cannot take. Never ask the user to paste protected values in chat.",
     inputSchema: {
       type: "object",
       properties: { reason: { type: "string" } },
@@ -615,7 +644,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "list_secrets",
     description:
-      "List saved credential names and destinations available to this bot and user, and the environment variable of each command variable. Values are never returned.",
+      "List saved credentials with their destinations and command variables, cards (brand, last four, expiry), contacts (all fields) and notes on when to use each. Values are never returned.",
     inputSchema: { type: "object", properties: {} },
   },
   {
@@ -671,6 +700,29 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "save_page",
+    description:
+      'Save a page the user opens from the chat: a dashboard, report, tracker or comparison. Pass the page as JSX source written against the Rakazo page kit; call with {"help": true} first for the kit guide. Problems come back with line numbers and nothing is saved. To change a page, pass its pageId with edits (applied together, or not at all) or full source; pass only pageId to read its current source.',
+    inputSchema: {
+      type: "object",
+      properties: {
+        help: { type: "boolean", description: "Return the page kit guide instead of saving." },
+        pageId: { type: "string", description: "The page to read or update." },
+        title: { type: "string", description: "Page title; required for a new page." },
+        source: { type: "string", description: "The whole page as JSX." },
+        edits: {
+          type: "array",
+          description: "Changes to the current source; each find must occur exactly once.",
+          items: {
+            type: "object",
+            properties: { find: { type: "string" }, replace: { type: "string" } },
+            required: ["find", "replace"],
+          },
+        },
+      },
+    },
+  },
+  {
     name: "add_mcp_server",
     description:
       "Connect a remote MCP tool server to this Space when the user asks you to add one and provides the details (URL, optional token/headers). The server is created immediately and an approval card appears in the chat; its tools reach you once the user approves it there. Do not invent endpoints; only use details the user provided. Local (stdio) servers can only be added by an admin in Settings.",
@@ -706,13 +758,12 @@ export const builtinAgentTools: ConnectorTool[] = [
   },
   {
     name: "remember",
-    description:
-      "Add a durable fact to this bot's explicit memory. The fact is appended; existing memory is kept.",
+    description: `Save one short new fact to your memory, one call per fact. To change or drop a fact, pass old_text from its entry with new or empty content. Holds ${BOT_MEMORY_MAX_BYTES / 1024} KB.`,
     inputSchema: {
       type: "object",
       properties: {
         content: { type: "string" },
-        path: { type: "string" },
+        old_text: { type: "string" },
       },
       required: ["content"],
     },
@@ -1466,12 +1517,13 @@ export const builtinAgentTools: ConnectorTool[] = [
         },
         use_attached_image: {
           type: "boolean",
-          description:
-            "If true, use the latest image attached on this user message as the profile picture.",
+          description: "Use the latest image attached to this message as the profile picture.",
         },
+        // Explained in the update_bot instructions; kept short for the listed-tool budget.
+        dailyCheckIns: { type: "boolean" },
         notifyOnFinish: {
           type: "boolean",
-          description: "true notifies the user when this bot finishes a run; false silences that.",
+          description: "Notify the user when this bot finishes a run.",
         },
         instructions: {
           type: "string",
@@ -1507,7 +1559,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "list_fleet",
     description:
-      "List the bots and groups in this space with their ids, sections and pinned state, and which bots you created. Pass bot_id of a bot in this space to read only its full instructions and instructionsVersion, which set_child_instructions needs as expected_version. Call this before changing the bots you manage.",
+      "List the bots and groups in this space with their ids, sections and pinned state. You can manage every bot listed; createdByMe only says which ones you created. Pass bot_id of a bot in this space to read only its full instructions and instructionsVersion, which set_child_instructions needs as expected_version. Call this before changing the bots you manage.",
     inputSchema: {
       type: "object",
       properties: {

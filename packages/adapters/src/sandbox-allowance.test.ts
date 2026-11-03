@@ -13,6 +13,12 @@ function allowanceDeps(input: {
   billing: boolean;
   mode: string | null;
   creditAmountCents?: number | null;
+  subscription?: {
+    status: string;
+    cancelAtPeriodEnd?: boolean;
+    currentPeriodStartsAt?: Date | null;
+    byokInterval?: "month" | "year";
+  };
   hours?: Array<{ kind: string; hours: number }>;
   sandbox?: Partial<SandboxProvider>;
 }) {
@@ -24,9 +30,15 @@ function allowanceDeps(input: {
       findUnique: vi.fn().mockResolvedValue({
         modelCredits: input.mode ? { mode: input.mode } : null,
         billing:
-          input.creditAmountCents === undefined
+          input.creditAmountCents === undefined && !input.subscription
             ? null
-            : { creditAmountCents: input.creditAmountCents },
+            : {
+                creditAmountCents: input.creditAmountCents ?? null,
+                status: input.subscription?.status ?? null,
+                cancelAtPeriodEnd: input.subscription?.cancelAtPeriodEnd ?? false,
+                currentPeriodStartsAt: input.subscription?.currentPeriodStartsAt ?? null,
+                byokInterval: input.subscription?.byokInterval ?? null,
+              },
       }),
     },
     $queryRaw: vi.fn().mockResolvedValue(input.hours ?? []),
@@ -47,7 +59,7 @@ describe("computer allowance", () => {
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
   });
 
-  it("gives an own-key organization $5 a month", async () => {
+  it("gives an own-key organization $5 a period", async () => {
     const { deps } = allowanceDeps({
       billing: true,
       mode: "byok",
@@ -69,13 +81,81 @@ describe("computer allowance", () => {
     expect((await sandboxAllowance(deps, "organization"))?.limitMicros).toBe(0);
   });
 
-  it("counts the month from its first day, up to now", async () => {
-    const { deps, prisma } = allowanceDeps({ billing: true, mode: "byok" });
+  it("gives a trial $2 and a cancelled trial nothing", async () => {
+    const trial = allowanceDeps({
+      billing: true,
+      mode: "byok",
+      subscription: { status: "trialing" },
+    });
+    expect((await sandboxAllowance(trial.deps, "organization"))?.limitMicros).toBe(2_000_000);
+    const cancelled = allowanceDeps({
+      billing: true,
+      mode: "byok",
+      subscription: { status: "trialing", cancelAtPeriodEnd: true },
+    });
+    expect((await sandboxAllowance(cancelled.deps, "organization"))?.limitMicros).toBe(0);
+  });
+
+  it("keeps the full allowance for a paid plan set to cancel", async () => {
+    const { deps } = allowanceDeps({
+      billing: true,
+      mode: "byok",
+      subscription: { status: "active", cancelAtPeriodEnd: true },
+    });
+    expect((await sandboxAllowance(deps, "organization"))?.limitMicros).toBe(5_000_000);
+  });
+
+  it("counts from the start of the billing period, up to now", async () => {
+    const periodStart = new Date("2026-02-20T14:00:00.000Z");
+    const { deps, prisma } = allowanceDeps({
+      billing: true,
+      mode: "byok",
+      subscription: { status: "active", currentPeriodStartsAt: periodStart },
+    });
+    const now = new Date("2026-03-17T08:30:00.000Z");
+    await sandboxAllowance(deps, "organization", now);
+    const values = prisma.$queryRaw.mock.calls[0]?.slice(1);
+    expect(values).toContainEqual(periodStart);
+    expect(values).toContainEqual(now);
+  });
+
+  it("renews a yearly plan's allowance monthly, on the day the year began", async () => {
+    const periodStart = new Date("2026-01-31T14:00:00.000Z");
+    const since = async (now: string) => {
+      const { deps, prisma } = allowanceDeps({
+        billing: true,
+        mode: "byok",
+        subscription: {
+          status: "active",
+          currentPeriodStartsAt: periodStart,
+          byokInterval: "year",
+        },
+      });
+      await sandboxAllowance(deps, "organization", new Date(now));
+      // The query reads `now`, `now`, then `since`.
+      return prisma.$queryRaw.mock.calls[0]?.[3];
+    };
+    expect(await since("2026-01-31T15:00:00.000Z")).toEqual(periodStart);
+    // February is short, so its anniversary is the 28th.
+    expect(await since("2026-03-10T00:00:00.000Z")).toEqual(new Date("2026-02-28T14:00:00.000Z"));
+    expect(await since("2026-03-31T13:00:00.000Z")).toEqual(new Date("2026-02-28T14:00:00.000Z"));
+    expect(await since("2026-03-31T14:00:00.000Z")).toEqual(new Date("2026-03-31T14:00:00.000Z"));
+    expect(await since("2026-12-05T00:00:00.000Z")).toEqual(new Date("2026-11-30T14:00:00.000Z"));
+  });
+
+  it("counts the calendar month without a live subscription", async () => {
+    const { deps, prisma } = allowanceDeps({
+      billing: true,
+      mode: "byok",
+      subscription: {
+        status: "canceled",
+        currentPeriodStartsAt: new Date("2026-02-20T14:00:00.000Z"),
+      },
+    });
     const now = new Date("2026-03-17T08:30:00.000Z");
     await sandboxAllowance(deps, "organization", now);
     const values = prisma.$queryRaw.mock.calls[0]?.slice(1);
     expect(values).toContainEqual(new Date("2026-03-01T00:00:00.000Z"));
-    expect(values).toContainEqual(now);
   });
 
   it("counts only computers that bill while running", async () => {
@@ -110,7 +190,7 @@ describe("computer allowance used up", () => {
   }
   const paid = { spaceId: "space", kind: "e2b" };
 
-  it("stops a billed computer only once the month's allowance is spent", async () => {
+  it("stops a billed computer only once the period's allowance is spent", async () => {
     expect(await sandboxAllowanceUsedUp(usedUpDeps(24), paid)).toBe(false);
     expect(await sandboxAllowanceUsedUp(usedUpDeps(25), paid)).toBe(true);
   });

@@ -747,6 +747,50 @@ describe("web markdown code copy", () => {
   });
 });
 
+describe("web markdown prose fences", () => {
+  const draft =
+    "Dear team, this line of prose is far wider than a bubble, so it wraps instead of scrolling.";
+
+  function renderMarkdown(markdown: string) {
+    const holder = document.createElement("div");
+    holder.innerHTML = renderToStaticMarkup(<ChatMarkdown>{markdown}</ChatMarkdown>);
+    return holder;
+  }
+
+  it.each(["text", "txt", "plaintext", "Text"])("wraps a fence marked %j as prose", (language) => {
+    const html = renderMarkdown(`\`\`\`${language}\n${draft}\n\`\`\``);
+    expect(html.querySelector("pre")?.className).toBe("rk-chat-markdown-pre-prose");
+  });
+
+  it.each(["ts", ""])("keeps a fence marked %j as code", (language) => {
+    const html = renderMarkdown(`\`\`\`${language}\nconst a = 1;\n\`\`\``);
+    expect(html.querySelector("pre")?.className).toBe("");
+  });
+
+  it("copies a text fence's code exactly as written", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown>{"```text\nDear team,\n\n  see you Monday.\n```"}</ChatMarkdown>);
+    });
+    const button = container.querySelector("button");
+    expect(button?.getAttribute("aria-label")).toBe("Copy code");
+    await act(async () => {
+      button?.click();
+    });
+    expect(writeText).toHaveBeenCalledWith("Dear team,\n\n  see you Monday.");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    Reflect.deleteProperty(navigator, "clipboard");
+  });
+});
+
 describe("web markdown mentions", () => {
   it("draws a mention the app renders and keeps an unknown one as its name", () => {
     const html = renderToStaticMarkup(
@@ -834,6 +878,42 @@ describe("web markdown streamed definitions", () => {
       </ChatMarkdown>,
     );
     expect(html).toContain('href="https://example.test/ref"');
+  });
+});
+
+describe("web markdown page links", () => {
+  it("draws a page link as a chip that opens the page, or as its title without a handler", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const openPage = vi.fn();
+    const markdown =
+      "See [Duplex voice](page:page_1) and [x](javascript:alert(1)) and [y](rakazo://settings) and [z](page:a/b)";
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown onOpenPage={openPage}>{markdown}</ChatMarkdown>);
+    });
+    const chips = container.querySelectorAll<HTMLButtonElement>("button.rk-chat-page-chip");
+    expect([...chips].map((chip) => chip.textContent)).toEqual(["Duplex voice"]);
+    expect(chips[0]!.querySelector("svg")).not.toBeNull();
+    await act(async () => {
+      chips[0]!.click();
+    });
+    expect(openPage).toHaveBeenCalledWith("page_1");
+    // Other schemes and a malformed page link keep today's plain-text rendering.
+    expect(container.querySelector("a")).toBeNull();
+    expect(container.textContent).toBe("See Duplex voice and x and y and z");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"See [Duplex voice](page:page_1)"}</ChatMarkdown>,
+    );
+    expect(html).toContain("<span>Duplex voice</span>");
+    expect(html).not.toContain("<button");
+    expect(html).not.toContain("<a");
   });
 });
 

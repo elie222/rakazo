@@ -14,7 +14,7 @@ The first time it opens, the app asks which server to use:
 - **Rakazo Cloud**: sign in to your rakazo.com account.
 - **This computer**: run your own Rakazo locally in Docker. If Docker isn't installed, the app links
   to Docker Desktop, OrbStack and Docker Engine. Everything, including your bots' computers, then
-  runs on your machine.
+  runs on your machine. It is yours alone: once you create your account, it accepts no other.
 - **Existing instance**: connect to a Rakazo server you or your team already run. Enter its
   **Server address** and choose **Check connection**.
 
@@ -35,7 +35,9 @@ files.
   let them work directly on yours. **Computer Access…** in the app menu changes this later, and
   **Revoke Local Computer Access** turns it off.
 - With any server, turn on **Let bots use this computer** in **Settings → General** under
-  **Computers**. Your computer then shows as **Connected** or **Offline** there.
+  **Computers**. Your computer then shows as **Connected** or **Offline** there. Access belongs to
+  the account that turned it on and ends when that account signs out, resets its password or signs
+  out everywhere. Signing back in to the same account restores it without asking again.
 
 Either way, the app asks **Allow bots to use this computer?** before access is granted. See
 [The bot's computer](./computer.md#use-your-own-computer).
