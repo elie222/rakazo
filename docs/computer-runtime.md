@@ -14,32 +14,25 @@ Pi runs in the Rakazo API/worker process. It is not installed in, or executed by
 
 ## Computer-use model
 
-Web, Electron and mobile can select a separate **Computer-use model** from any of the
-member's connected, enabled vision models. The selected connection may use a different
-provider or authentication type from the main model, including an explicitly chosen
-subscription/OAuth connection or paid API key. Choices identify the connection and auth
-type; selecting one does not change the main model, its effort, or backup order.
+Settings → Models has a **Computer-use model** list next to the main and approval models.
+It is one more model role: account-wide unless a Space overrides models, with backups taken
+in order. Left empty, the main model works the screen itself, as before. It is meant for a
+main model that cannot see, such as a text-only or self-hosted one.
 
-Connection defaults are stored on the **source** (main) connection, with the target's
-provider, credential ID, model and optional thinking level. A Space may override these
-defaults. Bot **Use provider default** inherits the active main connection's default;
-bot **Same as main model** explicitly suppresses it. Clearing a connection default means
-same-main. Legacy defaults without target identity pins still refer to their original
-source connection. The additive migration does not reorder main preferences.
+When it is set, the main model gets `enter_computer_mode` instead of the graphical tools.
+Calling it hands a concrete goal to the computer-use model in the same run, which gets the
+screen tools; `leave_computer_mode` returns a summary to the main model (with its active
+fallback and effort). Each model uses its own connection and context limits. A choice that
+is unavailable or cannot see images is skipped for the next one; if none works, the main
+model keeps the screen. The role is skipped when it names the main model itself, and for a
+main model that runs without a connection of the member's own, since a paused turn pins
+both models by connection.
 
-With a separate target, `enter_computer_mode` switches the same run to that target and
-unlocks graphical tools; `leave_computer_mode` returns to the main model (including its
-active fallback) and effort. Each role uses its own endpoint, credentials, context limits
-and billing observer. The computer role never borrows main credentials or main backups;
-an unavailable saved target fails closed. A different-provider main fallback does not
-prevent entering the configured computer target.
-
-Approval and takeover checkpoints pin **both** role identities and their authentication
-types. Resume resolves those exact accounts before inference, even if current settings
-changed. Provider-tagged history stays intact in checkpoints; Pi's provider serializers
-translate foreign reasoning and tool/result IDs rather than forwarding another
-provider's signed or encrypted reasoning. Offline role-switch and wire-format
-regressions cover switching between providers in both directions without contacting them.
+Approval and takeover checkpoints pin both models and their authentication types. Resume
+uses exactly those, even if settings changed meanwhile; a paused turn whose model or
+account is gone fails instead of retrying. Pi's provider serializers translate foreign
+reasoning and tool/result IDs, and replace screenshots with a placeholder for a main model
+that cannot see them.
 
 ## Computer contract
 

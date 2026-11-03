@@ -53,6 +53,8 @@ export const JA_MESSAGES: Record<string, string> = {
   Block: "ブロック",
   "Add a model in Settings to use this.": "使用するには設定でモデルを追加してください。",
   "Approval model": "承認モデル",
+  "Computer-use model": "コンピューター操作モデル",
+  "Same as main model": "メインモデルと同じ",
   "Main model": "メインモデル",
   "Add fallback": "バックアップモデルを追加",
   "Manage {provider}": "{provider} を管理",

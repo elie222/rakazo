@@ -1576,6 +1576,10 @@ msgstr "電腦正在休眠，開啟即可喚醒。"
 msgid "Computer is stopped"
 msgstr "電腦已停止"
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model"
+msgstr "電腦操作模型"
+
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Computers"
@@ -5361,6 +5365,10 @@ msgstr ""
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Same as {botName}"
 msgstr "與 {botName} 相同"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Same as main model"
+msgstr "與主模型相同"
 
 #: src/lib/cron.ts
 msgid "Saturday"

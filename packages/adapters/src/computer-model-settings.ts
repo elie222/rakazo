@@ -1,71 +1,67 @@
 import type { AgentRunModel } from "@rakazo/adapter-kit";
-import type { ComputerModelSelection } from "@rakazo/contracts";
-import { ComputerModelSelectionSchema } from "@rakazo/contracts";
+import { isModelCredentialRejected } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import { settingsTarget } from "@rakazo/db";
-import { modelAcceptsImageInput } from "./model-vision.js";
+import { appliedModelRole } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
+import { computerTarget } from "./pi-runtime-computer-mode.js";
+import { isTerminalModelSetupError } from "./run-model.js";
 import { restoreTurnCheckpoint } from "./turn-checkpoint.js";
 
-type Scope = { userId: string; spaceId: string };
 type Resolve = (
   provider: string,
   id: string,
-  connectionId: string,
+  connectionId?: string,
   thinkingLevel?: string,
 ) => Promise<AgentRunModel>;
-/** Connection-local defaults: never borrow another account's preference or credentials. */
+
+/**
+ * The member's computer-use model: the first of their choices that computer mode can run.
+ * None set, or none usable, leaves the main model working the screen itself.
+ */
 export async function resolveComputerRunModel(
   deps: { prisma: PrismaClient; resolve: Resolve },
-  scope: Scope,
+  scope: { userId: string; spaceId: string },
   main: AgentRunModel,
-  override: unknown,
 ): Promise<AgentRunModel | undefined> {
-  const selection = ComputerModelSelectionSchema.parse(override ?? null);
   // A paused turn pins both identities by connection, so a hosted main model cannot switch.
-  if (selection?.mode === "main" || !main.connectionId) return undefined;
-  let choice: ComputerModelSelection = selection;
-  if (!choice) {
-    const target = await settingsTarget(deps.prisma, scope, "models");
-    const preference =
-      target === "space"
-        ? await deps.prisma.spaceModelPreference.findFirst({
-            where: {
-              userId: scope.userId,
-              spaceId: scope.spaceId,
-              credentialId: main.connectionId,
-            },
-          })
-        : await deps.prisma.userModelPreference.findFirst({
-            where: { userId: scope.userId, credentialId: main.connectionId },
-          });
-    if (!preference?.computerModelId) return undefined;
-    choice = ComputerModelSelectionSchema.parse({
-      mode: "model",
-      provider: preference.computerProvider ?? main.provider,
-      credentialId: preference.computerCredentialId ?? main.connectionId,
-      modelId: preference.computerModelId,
-      thinkingLevel: preference.computerThinkingLevel ?? null,
-    });
+  if (!main.connectionId) return undefined;
+  const { primary, backups } = await appliedModelRole(deps.prisma, scope, "computer");
+  for (const choice of primary ? [primary, ...backups] : []) {
+    if (choice.provider === main.provider && choice.modelId === main.id) return undefined;
+    try {
+      const model = await deps.resolve(
+        choice.provider,
+        choice.modelId,
+        choice.credentialId,
+        choice.thinkingLevel ?? undefined,
+      );
+      if (!model.connectionId) continue;
+      // The same check computer mode runs, so a model it would refuse never breaks the run.
+      computerTarget(model);
+      return model;
+    } catch (error) {
+      getLogger().warn("computer_model.unavailable", {
+        "model.provider": choice.provider,
+        "error.message": error instanceof Error ? error.message : String(error),
+      });
+    }
   }
-  if (choice?.mode !== "model") return undefined;
-  const model = await deps.resolve(
-    choice.provider,
-    choice.modelId,
-    choice.credentialId,
-    choice.thinkingLevel ?? "medium",
+  return undefined;
+}
+
+const LOST_PIN_MESSAGES = new Set([
+  "Pinned computer mode model is unavailable",
+  "Computer model checkpoint requires its pinned connection",
+  "Backup model credential is no longer available",
+]);
+
+/** A paused computer turn's model or account is gone for good, not briefly unreachable. */
+export function isLostPinnedModel(error: unknown): boolean {
+  return (
+    isTerminalModelSetupError(error) ||
+    isModelCredentialRejected(error) ||
+    (error instanceof Error && LOST_PIN_MESSAGES.has(error.message))
   );
-  if (
-    model.provider !== choice.provider ||
-    model.id !== choice.modelId ||
-    model.connectionId !== choice.credentialId
-  )
-    throw new Error("Computer model connection is no longer available");
-  if (
-    !modelAcceptsImageInput(model.provider, model.id, model.acceptsImages) ||
-    model.acceptsImages === false
-  )
-    throw new Error("Computer model must support image input");
-  return model;
 }
 
 /** A stored checkpoint is authority for its two identities, not for arbitrary connections. */

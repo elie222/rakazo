@@ -78,7 +78,11 @@ import {
   renewComputerExecutionLease,
   screenLeaseIdForRun,
 } from "./computer-lifecycle.js";
-import { computerCheckpointResolver, resolveComputerRunModel } from "./computer-model-settings.js";
+import {
+  computerCheckpointResolver,
+  isLostPinnedModel,
+  resolveComputerRunModel,
+} from "./computer-model-settings.js";
 import { teamBotWorkspaceDirectory } from "./computer-support.js";
 import { checkpointRunComputerWorkspace } from "./computer-workspace.js";
 import {
@@ -536,7 +540,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const resolveCheckpointModel = (
           provider: string,
           id: string,
-          connectionId: string,
+          connectionId?: string,
           effort?: string,
         ) =>
           resolveConnectedModel(
@@ -558,12 +562,20 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const savedComputerMode = checkpointModelResolver
           ? restoreTurnCheckpoint(computerCheckpoint!, checkpointIdentity).computerMode
           : undefined;
-        const pinnedComputerModels = savedComputerMode
-          ? await restoreComputerModels(
+        let pinnedComputerModels: Awaited<ReturnType<typeof restoreComputerModels>> | undefined;
+        let pinnedComputerFailure: string | undefined;
+        if (savedComputerMode) {
+          try {
+            pinnedComputerModels = await restoreComputerModels(
               { resolveFallbackModel: checkpointModelResolver },
               savedComputerMode,
-            )
-          : undefined;
+            );
+          } catch (error) {
+            // A paused turn whose model or account is gone cannot resume; retrying will not help.
+            if (!isLostPinnedModel(error)) throw error;
+            pinnedComputerFailure = (error as Error).message;
+          }
+        }
         const messagingSource =
           run.trigger === "messaging" && run.sourceMessageId
             ? await deps.prisma.message.findUnique({
@@ -939,6 +951,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             await backOffRoutineAfterAccountError(deps, run.routineId);
           }
         };
+        if (pinnedComputerFailure) {
+          await failRunBeforeModel(pinnedComputerFailure, true);
+          return;
+        }
         if (pinError) {
           await failRunBeforeModel(pinError, pinError === PINNED_PROVIDER_NOT_CONNECTED);
           return;
@@ -1238,9 +1254,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           ...resolvedModelRunFields(resolved),
           thinkingLevel: thinkingLevel ?? resolved.thinkingLevel ?? null,
         };
-        // Saved identities win on resume, including when the bot/default was cleared meanwhile.
-        // Only runs that can drive a screen need it, and a target that has since gone away must
-        // not fail runs that never reach computer mode; settings show it as unavailable.
+        // Saved identities win on resume, including when the setting was cleared meanwhile.
         const computerModel =
           pinnedComputerModels?.computer ??
           (scripted || checkpointModelResolver || !graphical
@@ -1249,14 +1263,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 { prisma: deps.prisma, resolve: resolveCheckpointModel },
                 { userId: run.userId, spaceId: run.spaceId },
                 mainRunModel,
-                bot.computerModel,
-              ).catch((error: unknown) => {
-                getLogger().warn("computer_model.unavailable", {
-                  "run.id": run.id,
-                  "error.message": error instanceof Error ? error.message : String(error),
-                });
-                return undefined;
-              }));
+              ));
         const sourceMessage =
           (run.trigger === "user" || run.trigger === "follow_up") && run.sourceMessageId
             ? await deps.prisma.message.findUnique({

@@ -30,7 +30,7 @@ const VISION_MODEL = "openai/gpt-4o";
 type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void };
 type Gate = { reached: Deferred<void>; release: Deferred<void> };
 type RunHooks = {
-  computer?: { defaultModelId?: string; override?: unknown; checkpoint?: string };
+  computer?: { defaultModelId?: string; checkpoint?: string };
   runtimeGate?: Gate;
   notificationGate?: Gate;
   computerLeaseRenewal?: () => Promise<boolean>;
@@ -191,7 +191,6 @@ async function runWithModel(
         modelProvider: null,
         modelId: null,
         thinkingLevel: null,
-        computerModel: hooks?.computer?.override ?? null,
         computerId: "computer-1",
         computerSwitching: false,
         memoryScope: null,
@@ -276,6 +275,7 @@ async function runWithModel(
     },
   };
   if (hooks?.computer) {
+    const computerModelId = hooks.computer.defaultModelId;
     prisma.userModelRoleChoice.findMany.mockImplementation(async ({ where }) =>
       where.role === "main"
         ? [
@@ -287,7 +287,17 @@ async function runWithModel(
               thinkingLevel: "high",
             },
           ]
-        : [],
+        : where.role === "computer" && computerModelId
+          ? [
+              {
+                provider: "openrouter",
+                modelId: computerModelId,
+                credentialId: "main-conn",
+                position: 0,
+                thinkingLevel: null,
+              },
+            ]
+          : [],
     );
     const credential = {
       id: "main-conn",
@@ -302,8 +312,6 @@ async function runWithModel(
       credentialId: credential.id,
       modelId,
       thinkingLevel: "high",
-      computerModelId: hooks.computer.defaultModelId ?? null,
-      computerThinkingLevel: null,
       isDefault: true,
       credential,
     });
@@ -392,23 +400,18 @@ async function runWithModel(
 }
 
 describe("computer settings reach the shared API/worker executor", () => {
-  it("supplies the active connection default without changing main effort or tool definitions", async () => {
-    const { request } = await runWithModel(VISION_MODEL, undefined, false, false, true, {
+  it("hands screen work to the chosen model without changing main effort", async () => {
+    const { request } = await runWithModel(TEXT_ONLY_MODEL, undefined, false, false, true, {
       computer: { defaultModelId: VISION_MODEL },
     });
     expect(request.model).toMatchObject({
-      id: VISION_MODEL,
+      id: TEXT_ONLY_MODEL,
       connectionId: "main-conn",
       thinkingLevel: "high",
     });
-    expect(request.computerModel).toMatchObject({
-      id: VISION_MODEL,
-      connectionId: "main-conn",
-      thinkingLevel: "medium",
-    });
+    expect(request.computerModel).toMatchObject({ id: VISION_MODEL, connectionId: "main-conn" });
     expect(request.tools?.some((tool) => tool.name === "computer_observe")).toBe(true);
-    expect(request.tools?.some((tool) => tool.name === "enter_computer_mode")).toBe(false);
-    expect(request.tools?.some((tool) => tool.name === "list_files")).toBe(true);
+    expect(request.currentTurnImages).toBeUndefined();
     await expect(
       request.onModelChange?.(request.computerModel!.provider, request.computerModel!.id),
     ).resolves.toBeUndefined();
@@ -417,19 +420,12 @@ describe("computer settings reach the shared API/worker executor", () => {
     ).resolves.toBeUndefined();
     await expect(request.onModelChange?.("unselected", "model")).rejects.toThrow(/not selected/);
   });
-  it("keeps GUI definitions available for a vision computer model when main is text-only", async () => {
-    const { request } = await runWithModel(TEXT_ONLY_MODEL, undefined, false, false, true, {
+  it("does not switch when the computer-use model is the main model", async () => {
+    const { request } = await runWithModel(VISION_MODEL, undefined, false, false, true, {
       computer: { defaultModelId: VISION_MODEL },
     });
-    expect(request.computerModel?.id).toBe(VISION_MODEL);
-    expect(request.tools?.some((tool) => tool.name === "computer_observe")).toBe(true);
-    expect(request.currentTurnImages).toBeUndefined();
-  });
-  it("honors the bot's explicit same-main over the connection default", async () => {
-    const { request } = await runWithModel(VISION_MODEL, undefined, false, false, true, {
-      computer: { defaultModelId: VISION_MODEL, override: { mode: "main" } },
-    });
     expect(request.computerModel).toBeUndefined();
+    expect(request.tools?.some((tool) => tool.name === "computer_observe")).toBe(true);
   });
   it("resolves resumed pins after settings are cleared and refuses an unpinned account", async () => {
     const pin = {
@@ -609,7 +605,6 @@ describe("recent turn images follow model vision", () => {
         expect.objectContaining({
           where: {
             userId: "user-1",
-            hasMainPreference: true,
             modelId: backup.modelId,
             credential: { provider: backup.provider },
           },

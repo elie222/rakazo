@@ -365,9 +365,13 @@ export class PiAgentRuntime implements AgentRuntime {
               botId: request.botId,
               userId: context.userId,
               traceId: context?.traceId,
-              provider: model.provider,
-              model: model.id,
-              thinkingLevel,
+              // A resumed computer-mode turn starts on the computer model.
+              provider: host.activeModel.model.provider,
+              model: host.activeModel.model.id,
+              thinkingLevel: thinkingLevelFor(
+                host.activeModel.model,
+                host.activeModel.config.thinkingLevel,
+              ),
               systemPrompt,
               initialMessages: history,
             });

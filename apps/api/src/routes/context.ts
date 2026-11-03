@@ -1,10 +1,12 @@
 import { implement, ORPCError } from "@orpc/server";
+import type { ModelCredential } from "@rakazo/adapters";
 import {
   applyCodexLiveCatalog,
   applyProviderLiveCatalog,
   CHATGPT_OAUTH_PROVIDER,
   CodexCatalogCache,
   codexLiveCatalogsForSpace,
+  compatibleModelSeesImages,
   connectionServesModel,
   createFaviconResolver,
   decisionModelCatalog,
@@ -13,9 +15,12 @@ import {
   hiddenCatalogModel,
   kickModelCredentialRefresh,
   listAvailablePiCatalog,
+  loadStoredModelSecret,
   McpOAuthBroker,
+  modelAcceptsImageInput,
   modelCredentialAuthKindsForSpace,
   offeredCatalog,
+  parseModelSecret,
   providerCatalogCache,
   providerLiveCatalogsForSpace,
   savedCatalogSelections,
@@ -264,6 +269,28 @@ export function createRouterContext(deps: RouterDeps) {
     );
   };
   const servingDeps = { prisma: deps.prisma, secretStore: deps.secrets, codexCatalog };
+  const seesImages = async (
+    actor: Actor,
+    choice: ModelRoleChoice,
+    entry: ModelCatalogEntry | undefined,
+    credential: ModelCredential,
+  ) => {
+    if (canonicalPiProviderId(choice.provider) !== OPENAI_COMPATIBLE_PROVIDER_ID)
+      return modelAcceptsImageInput(choice.provider, choice.modelId, entry?.images);
+    if (!credential) return false;
+    const stored = await loadStoredModelSecret(
+      deps.prisma,
+      deps.secrets,
+      actor.userId,
+      credential.secretId,
+    );
+    if (stored.status !== "loaded") return false;
+    const secret = parseModelSecret(stored.plaintext);
+    return (
+      secret.kind === "openai_compatible" &&
+      compatibleModelSeesImages(credential, secret, choice.modelId)
+    );
+  };
   /** The connection serving each choice (null when deployment-managed), the one runs use. */
   const validateRoleChoices = async (
     actor: Actor,
@@ -300,6 +327,8 @@ export function createRouterContext(deps: RouterDeps) {
         throw new ORPCError("BAD_REQUEST", {
           message: "That model is not available for this connection",
         });
+      if (role === "computer" && !(await seesImages(actor, choice, entry, credential)))
+        throw new ORPCError("BAD_REQUEST", { message: "Choose a model that can see images" });
       if (choice.thinkingLevel) {
         const { allowed } = await prepareAllowedThinkingLevels(
           deps,

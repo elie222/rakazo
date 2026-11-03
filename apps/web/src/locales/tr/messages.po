@@ -1575,6 +1575,10 @@ msgstr ""
 msgid "Computer is stopped"
 msgstr "Bilgisayar durduruldu"
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model"
+msgstr "Bilgisayar kullanım modeli"
+
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Computers"
@@ -5360,6 +5364,10 @@ msgstr ""
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Same as {botName}"
 msgstr "{botName} ile aynı"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Same as main model"
+msgstr "Ana modelle aynı"
 
 #: src/lib/cron.ts
 msgid "Saturday"

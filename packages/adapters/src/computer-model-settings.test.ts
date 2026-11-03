@@ -1,4 +1,5 @@
 import type { AgentRunModel } from "@rakazo/adapter-kit";
+import type { ModelRoleChoice } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { computerCheckpointResolver, resolveComputerRunModel } from "./computer-model-settings.js";
@@ -11,155 +12,76 @@ const main: AgentRunModel = {
   acceptsImages: true,
 };
 const scope = { userId: "user", spaceId: "space" };
-function setup(preference: unknown = null, space = false) {
+function setup(choices: ModelRoleChoice[] = [], unavailable: string[] = []) {
   const prisma = {
-    spaceSettingOverride: { findUnique: vi.fn(async () => (space ? {} : null)) },
-    userModelPreference: { findFirst: vi.fn(async () => preference) },
-    spaceModelPreference: { findFirst: vi.fn(async () => preference) },
+    spaceSettingOverride: { findUnique: vi.fn(async () => null) },
+    userModelRoleChoice: {
+      findMany: vi.fn(async () =>
+        choices.map((choice, position) => ({
+          ...choice,
+          credentialId: choice.credentialId ?? null,
+          thinkingLevel: choice.thinkingLevel ?? null,
+          position,
+        })),
+      ),
+    },
   } as unknown as PrismaClient;
   const resolve = vi.fn(
-    async (provider: string, id: string, connectionId: string, thinkingLevel?: string) =>
-      ({ ...main, provider, id, connectionId, thinkingLevel }) as AgentRunModel,
+    async (provider: string, id: string, connectionId?: string, thinkingLevel?: string) => {
+      if (unavailable.includes(id)) throw new Error("Connect that model provider again.");
+      return { ...main, provider, id, connectionId, thinkingLevel } as AgentRunModel;
+    },
   );
   return { prisma, resolve };
 }
-describe("computer model settings resolution", () => {
-  it("keeps legacy unset and explicit same-main runs unchanged", async () => {
+const vision = { provider: "anthropic", modelId: "claude-sonnet-4-5", credentialId: "account-b" };
+describe("computer-use model resolution", () => {
+  it("switches to nothing when the member chose no computer model", async () => {
     const deps = setup();
-    expect(await resolveComputerRunModel(deps, scope, main, null)).toBeUndefined();
-    expect(await resolveComputerRunModel(deps, scope, main, { mode: "main" })).toBeUndefined();
+    expect(await resolveComputerRunModel(deps, scope, main)).toBeUndefined();
     expect(deps.resolve).not.toHaveBeenCalled();
   });
-  it("leaves a hosted main model without a computer model, since a pause could not resume it", async () => {
-    const deps = setup();
-    const hosted = { ...main, connectionId: undefined };
-    const choice = {
-      mode: "model",
+  it("runs the chosen model on its own connection", async () => {
+    const deps = setup([vision]);
+    expect(await resolveComputerRunModel(deps, scope, main)).toMatchObject({
       provider: "anthropic",
-      modelId: "claude-sonnet-4-5",
-      credentialId: "claude",
-    };
-    expect(await resolveComputerRunModel(deps, scope, hosted, choice)).toBeUndefined();
-    expect(deps.resolve).not.toHaveBeenCalled();
-  });
-  it("uses only the active connection's provider preference and medium effort", async () => {
-    const deps = setup({ computerModelId: "gpt-4o-mini", computerThinkingLevel: null });
-    expect(await resolveComputerRunModel(deps, scope, main, null)).toMatchObject({
-      id: "gpt-4o-mini",
-      connectionId: "account-a",
-      thinkingLevel: "medium",
-    });
-    expect(deps.prisma.userModelPreference.findFirst).toHaveBeenCalledWith({
-      where: { userId: "user", credentialId: "account-a" },
+      id: "claude-sonnet-4-5",
+      connectionId: "account-b",
     });
   });
-  it.each([false, true])(
-    "resolves an explicit cross-provider connection default (Space=%s)",
-    async (space) => {
-      const deps = setup(
-        {
-          computerProvider: "anthropic",
-          computerCredentialId: "claude",
-          computerModelId: "claude-sonnet-4-5",
-        },
-        space,
-      );
-      expect(await resolveComputerRunModel(deps, scope, main, null)).toMatchObject({
-        provider: "anthropic",
-        id: "claude-sonnet-4-5",
-        connectionId: "claude",
-        thinkingLevel: "medium",
-      });
-      expect(deps.resolve).toHaveBeenCalledWith(
-        "anthropic",
-        "claude-sonnet-4-5",
-        "claude",
-        "medium",
-      );
-    },
-  );
-  it("uses Space policy instead of account policy", async () => {
-    const deps = setup({ computerModelId: "gpt-4o-mini", computerThinkingLevel: "low" }, true);
-    expect(await resolveComputerRunModel(deps, scope, main, null)).toMatchObject({
-      thinkingLevel: "low",
-    });
-    expect(deps.prisma.spaceModelPreference.findFirst).toHaveBeenCalledWith({
-      where: { ...scope, credentialId: "account-a" },
-    });
-    expect(deps.prisma.userModelPreference.findFirst).not.toHaveBeenCalled();
+  it("does not switch when the chosen model is the main model", async () => {
+    const deps = setup([{ provider: main.provider, modelId: main.id }]);
+    expect(await resolveComputerRunModel(deps, scope, main)).toBeUndefined();
   });
-  it("filters Space policy by member only when given a whole run row", async () => {
-    const deps = setup({ computerModelId: "gpt-4o-mini" }, true);
-    const run = { ...scope, id: "run", botId: "bot", status: "running", leaseFence: 1 };
-    await resolveComputerRunModel(deps, run, main, null);
-    expect(deps.prisma.spaceModelPreference.findFirst).toHaveBeenCalledWith({
-      where: { ...scope, credentialId: "account-a" },
-    });
-  });
-  it("explicit same-main suppresses a provider default; null inherits it", async () => {
-    const deps = setup({ computerModelId: "gpt-4o-mini" });
-    expect(await resolveComputerRunModel(deps, scope, main, { mode: "main" })).toBeUndefined();
-    expect(deps.prisma.userModelPreference.findFirst).not.toHaveBeenCalled();
-    expect(await resolveComputerRunModel(deps, scope, main, null)).toMatchObject({
-      id: "gpt-4o-mini",
-    });
-  });
-  it("allows explicit cross-provider/auth choices but rejects substituted accounts", async () => {
-    const deps = setup();
-    const selection = {
-      mode: "model",
-      provider: "openai",
-      modelId: "gpt-4o-mini",
-      credentialId: "account-b",
-    };
-    await expect(
-      resolveComputerRunModel(deps, scope, main, {
-        ...selection,
-        provider: "anthropic",
-        modelId: "claude-sonnet-4-5",
-      }),
-    ).resolves.toMatchObject({ provider: "anthropic", connectionId: "account-b" });
-    deps.resolve.mockResolvedValueOnce({ ...main, connectionId: "other" });
-    await expect(resolveComputerRunModel(deps, scope, main, selection)).rejects.toThrow(
-      /connection/,
+  it("takes the next choice when one is unavailable or cannot see", async () => {
+    const deps = setup(
+      [
+        { ...vision, modelId: "gone" },
+        { provider: "deepseek", modelId: "deepseek-chat", credentialId: "account-c" },
+        { provider: "openai", modelId: "gpt-4o-mini", credentialId: "account-a" },
+      ],
+      ["gone"],
     );
+    expect(await resolveComputerRunModel(deps, scope, main)).toMatchObject({ id: "gpt-4o-mini" });
+  });
+  it("skips a model computer mode would refuse, such as one with no key", async () => {
+    const deps = setup([vision]);
     deps.resolve.mockResolvedValueOnce({
       ...main,
-      id: selection.modelId,
+      ...{ provider: "anthropic", id: "claude-sonnet-4-5" },
+      apiKey: undefined,
       connectionId: "account-b",
-      oauth: {
-        credential: {
-          type: "oauth",
-          access: "target-token",
-          refresh: "target-refresh",
-          expires: 9999999999999,
-        },
-      },
     });
-    await expect(resolveComputerRunModel(deps, scope, main, selection)).resolves.toMatchObject({
-      connectionId: "account-b",
-      oauth: { credential: { access: "target-token" } },
-    });
+    expect(await resolveComputerRunModel(deps, scope, main)).toBeUndefined();
   });
-  it("rejects nonvision and missing targets, never tries a backup", async () => {
-    const deps = setup({ computerModelId: "gpt-4o-mini" });
-    deps.resolve.mockResolvedValueOnce({ ...main, id: "gpt-4o-mini", acceptsImages: false });
-    await expect(resolveComputerRunModel(deps, scope, main, null)).rejects.toThrow(/image/);
-    deps.resolve.mockRejectedValueOnce(new Error("Disconnected"));
-    await expect(resolveComputerRunModel(deps, scope, main, null)).rejects.toThrow("Disconnected");
-    expect(deps.resolve).toHaveBeenCalledTimes(2);
+  it("leaves the main model on the screen when no choice works", async () => {
+    const deps = setup([{ ...vision, modelId: "gone" }], ["gone"]);
+    expect(await resolveComputerRunModel(deps, scope, main)).toBeUndefined();
   });
-  it("does not configure an unrelated provider after main failover", async () => {
-    const deps = setup();
-    expect(
-      await resolveComputerRunModel(
-        deps,
-        scope,
-        { ...main, provider: "anthropic", connectionId: "claude" },
-        null,
-      ),
-    ).toBeUndefined();
-    expect(deps.resolve).not.toHaveBeenCalled();
+  it("leaves a hosted main model without a computer model, since a pause could not resume it", async () => {
+    const deps = setup([vision]);
+    const hosted = { ...main, connectionId: undefined };
+    expect(await resolveComputerRunModel(deps, scope, hosted)).toBeUndefined();
   });
 });
 it("leaves legacy checkpoint compatibility to the existing executor, including provider changes", () => {
@@ -172,7 +94,7 @@ it("leaves legacy checkpoint compatibility to the existing executor, including p
   ).toBeUndefined();
 });
 it("checkpoint resolution permits only saved identities, even after settings were cleared", async () => {
-  const resolve = vi.fn(async (provider: string, id: string, connectionId: string) => ({
+  const resolve = vi.fn(async (provider: string, id: string, connectionId?: string) => ({
     ...main,
     provider,
     id,

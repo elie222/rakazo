@@ -248,12 +248,6 @@ function fixture(runId = "run-1") {
         description: "Test assistant",
         modelProvider: "openrouter",
         modelId: choice.modelId,
-        computerModel: {
-          mode: "model",
-          provider: "anthropic",
-          modelId: "computer-c",
-          credentialId: "computer-account",
-        },
         computerId: "computer-1",
         computer: { id: "computer-1", scope: "dedicated" },
       })),
@@ -287,7 +281,21 @@ function fixture(runId = "run-1") {
     },
     connection: { findMany: vi.fn(async () => []) },
     userModelPreference: { findFirst: vi.fn(async () => null) },
-    userModelRoleChoice: { findMany: vi.fn(async () => []) },
+    userModelRoleChoice: {
+      findMany: vi.fn(async ({ where }: { where: { role?: string } }) =>
+        where.role === "computer"
+          ? [
+              {
+                position: 0,
+                provider: "anthropic",
+                modelId: "computer-c",
+                credentialId: "computer-account",
+                thinkingLevel: null,
+              },
+            ]
+          : [],
+      ),
+    },
     userModelCredential: { findFirst: vi.fn(async () => null) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
@@ -512,25 +520,29 @@ it.each([
       credential: { type: "oauth" as const, access: "fixture", refresh: "fixture", expires: 1 },
     },
   },
-])("rejects mismatched saved credentials %j before consulting current B", async (override) => {
-  const f = await paused();
-  f.effect.status = "approved";
-  f.choice.modelId = "main-b";
-  vi.mocked(resolveModelKey).mockClear();
-  vi.mocked(resolveConnectedRunModel).mockResolvedValueOnce({
-    provider: "openrouter",
-    id: "main-a",
-    connectionId: "main-account",
-    apiKey: "fixture-key",
-    ...override,
-  });
-  await expect(f.run()).rejects.toMatchObject({
-    cause: { message: "Pinned computer mode model is unavailable" },
-  });
-  expect(resolveModelKey).not.toHaveBeenCalled();
-  expect(fake.stream).not.toHaveBeenCalled();
-  expect(f.browserAct).not.toHaveBeenCalled();
-});
+])(
+  "fails the run once for mismatched saved credentials %j without consulting current B",
+  async (override) => {
+    const f = await paused();
+    f.effect.status = "approved";
+    f.choice.modelId = "main-b";
+    vi.mocked(resolveModelKey).mockClear();
+    vi.mocked(resolveConnectedRunModel).mockResolvedValueOnce({
+      provider: "openrouter",
+      id: "main-a",
+      connectionId: "main-account",
+      apiKey: "fixture-key",
+      ...override,
+    });
+    await f.run();
+    expect(f.finalizeRun).toHaveBeenLastCalledWith(
+      expect.objectContaining({ error: "Pinned computer mode model is unavailable" }),
+    );
+    expect(resolveModelKey).not.toHaveBeenCalled();
+    expect(fake.stream).not.toHaveBeenCalled();
+    expect(f.browserAct).not.toHaveBeenCalled();
+  },
+);
 it.each(["main-a", "computer-c"])(
   "fails closed when saved %s is unavailable even though current B is valid",
   async (id) => {
