@@ -917,5 +917,5 @@ it("uses data-only delivery only for Android builds that registered sender suppo
     notificationBadge: 3,
     sender: { botId: "bot", name: "Marketing" },
   });
-  expect(request.priority).toBe("high");
+  expect(request).not.toHaveProperty("priority");
 });

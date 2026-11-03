@@ -308,7 +308,7 @@ export class ExpoPushProvider implements NotificationProvider {
       registration.presentation === "android_sender"
         ? {
             ...shared,
-            priority: "high",
+            ...(urgent ? { priority: "high" } : {}),
             data: {
               ...data,
               notificationTitle: title,
