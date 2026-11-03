@@ -172,7 +172,8 @@ reference to the uploaded asset.
 
 ## Reporting
 
-The user reads the chat, not the loop. Stay quiet while watching; speak up
+Be concise. Too much information is hard to digest, so leave out anything the
+user does not need to act on or know. Stay quiet while watching; speak up
 mid-loop only when you are blocked or need a decision.
 
 End with a few short lines, not sections:
@@ -181,12 +182,12 @@ End with a few short lines, not sections:
   risk, say so; still do not merge unless the user asked.
 - Any decision the user needs to make.
 - Review findings you declined that the user might reasonably disagree with,
-  one line each. Leave the rest to your PR replies.
+  one line each.
 - Tests only when something failed or a real risk went untested.
 - If you stopped at a limit, what was still pending.
 
-Do not restate the PR description, list routine checks that passed, or recap
-each fix round; that detail already lives on the PR.
+No routine checks that passed, no recap of each fix round, no restating what
+the change does at length.
 
 ## Reference
 
