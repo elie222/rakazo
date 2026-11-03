@@ -118,8 +118,14 @@ name: Settings
 - extendedWaitUntil:
     visible: ".*Take control.*|.*Open computer.*"
     timeout: 20000
+# The computer boots and its desktop loads after the page opens; Maestro cannot see inside the
+# screen, so give it a few seconds before the shot.
+- extendedWaitUntil:
+    visible: "Desktop never shows this text"
+    timeout: 8000
+    optional: true
 - waitForAnimationToEnd:
-    timeout: 3000
+    timeout: 5000
 - takeScreenshot: 14-computer
 - openLink: "rakazo:///account"
 - scrollUntilVisible:
