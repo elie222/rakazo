@@ -29,6 +29,10 @@ To stop, choose **Unlink**.
 Choose **Connect** next to Slack to add Rakazo to your Slack workspace, then **Link DMs** so direct
 messages reach your bot.
 
+The bot uses its memory and notes only for your own messages: the Slack account that connected the
+workspace or linked its DMs. It answers anyone else in the workspace, including guests and other
+apps, the way it answers a group chat.
+
 A [routine](./routines.md) can also start from a **Slack message**.
 
 ## Group chats
