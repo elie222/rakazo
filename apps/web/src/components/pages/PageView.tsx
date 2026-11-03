@@ -56,6 +56,13 @@ export function PageView({
   const [drawn, setDrawn] = useState(false);
   const [stalled, setStalled] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  // A new document (an update, a theme change) has to draw again before it shows.
+  const [shown, setShown] = useState(document);
+  if (shown !== document) {
+    setShown(document);
+    setDrawn(false);
+    setStalled(false);
+  }
   const waiting = document !== null && !drawn && notice === null;
   useEffect(() => {
     if (!waiting) return;
@@ -69,13 +76,13 @@ export function PageView({
       open={open}
       onOpenChange={(next, details) => {
         // Escape in the share popover or its menu closes only that, not the page under it.
-        // The popup may already be closing when this runs, so its presence decides.
+        // The popup may already be closing when this runs, so where the key landed decides.
+        const target = details.event?.target;
         if (
           !next &&
           details.reason === "escape-key" &&
-          globalThis.document.querySelector(
-            '[data-slot="popover-content"], [data-slot="dropdown-menu-content"]',
-          )
+          target instanceof Element &&
+          target.closest('[data-slot="popover-content"], [data-slot="dropdown-menu-content"]')
         ) {
           details.cancel();
           return;
