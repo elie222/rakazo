@@ -1,9 +1,10 @@
 {
   "expo": {
-    "name": "Atlas Dots",
-    "slug": "atlas-dots",
-    "scheme": "atlasdots",
-    "version": "1.0.11",
+    "name": "Rakazo",
+    "slug": "rakazo",
+    "owner": "inbox-zero",
+    "scheme": "rakazo",
+    "version": "1.0.12",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
@@ -79,12 +80,16 @@
       ],
       "./plugins/with-worklets-headers",
       "./plugins/with-scene-lifecycle",
-      "./plugins/with-lan-cleartext"
+      "./plugins/with-lan-cleartext",
+      "./plugins/with-app-intents"
     ],
+    "locales": {
+      "es": "./locales/es.json"
+    },
     "ios": {
-      "bundleIdentifier": "com.atlasdots.app",
+      "bundleIdentifier": "com.rakazo.app",
       "buildNumber": "1",
-      "supportsTablet": false,
+      "supportsTablet": true,
       "icon": "../../packages/ui-tokens/assets/Rakazo.icon",
       "config": {
         "usesNonExemptEncryption": false
@@ -99,7 +104,7 @@
       }
     },
     "android": {
-      "package": "com.atlasdots.app",
+      "package": "com.rakazo.app",
       "versionCode": 10,
       "softwareKeyboardLayoutMode": "resize",
       "icon": "./assets/icon.png",
@@ -116,7 +121,19 @@
       "router": {},
       "supportsRTL": true,
       "eas": {
-        "projectId": "07f7eb04-45e3-47fe-9374-99a2f991131e"
+        "projectId": "07f7eb04-45e3-47fe-9374-99a2f991131e",
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "RakazoWidgets",
+                  "bundleIdentifier": "com.rakazo.app.widgets"
+                }
+              ]
+            }
+          }
+        }
       }
     },
     "runtimeVersion": {

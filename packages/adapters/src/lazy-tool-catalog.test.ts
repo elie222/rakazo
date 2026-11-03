@@ -11,6 +11,7 @@ import {
   lazyCatalogTools,
   loadCatalogEntry,
   NAME_INDEX_MAX_NAMES,
+  parseConnectorToolArgs,
   resolveCatalogCall,
   SELECTED_SCHEMA_MAX_BYTES,
   searchCatalog,
@@ -235,7 +236,7 @@ describe("lazy tool catalog", () => {
         { group: "github", count: githubTools.length },
         { group: "linear", count: linearTools.length },
       ],
-      hint: expect.stringContaining("Built-in tools are called directly"),
+      hint: expect.stringContaining("Built-in tools are not in this catalog"),
     });
   });
 
@@ -244,7 +245,7 @@ describe("lazy tool catalog", () => {
     const result = searchCatalog(entries, { query: "read_file" });
     expect(result).toMatchObject({
       groups: expect.arrayContaining([{ group: "github", count: githubTools.length }]),
-      hint: expect.stringContaining("Built-in tools are called directly"),
+      hint: expect.stringContaining("Built-in tools are not in this catalog"),
     });
     expect("tools" in result && result.tools.length).toBeGreaterThan(0);
     expect(searchCatalog(entries, { query: "linear issue" })).not.toHaveProperty("hint");
@@ -495,6 +496,83 @@ describe("lazy tool catalog", () => {
 
     await expect(execute()).rejects.toThrow();
     expect(executeResolved).not.toHaveBeenCalled();
+  });
+
+  it("validates args against local refs that point inside the schema", () => {
+    const value = {
+      anyOf: [
+        { type: "string" },
+        { type: "number" },
+        {
+          type: "object",
+          properties: { nested: { $ref: "#/properties/values/additionalProperties/anyOf/0" } },
+        },
+      ],
+    };
+    const schema = {
+      type: "object",
+      properties: {
+        resource_type: { type: "string" },
+        values: {
+          type: "object",
+          additionalProperties: {
+            anyOf: [
+              value,
+              {
+                type: "array",
+                items: { $ref: "#/properties/values/additionalProperties/anyOf/0" },
+              },
+            ],
+          },
+        },
+      },
+      required: ["resource_type", "values"],
+    };
+
+    const args = {
+      resource_type: "companies",
+      values: { name: "Acme", domains: ["acme.test"], owner: { nested: { nested: 1 } } },
+    };
+    expect(() => assertConnectorToolArgs(schema, args)).not.toThrow();
+    expect(() =>
+      assertConnectorToolArgs(schema, { resource_type: "companies", values: { name: true } }),
+    ).toThrow(/invalid/i);
+  });
+
+  it("decodes pointer refs per RFC 6901 and keeps a property named __proto__", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        "a/properties/b": { type: "number" },
+        a: { type: "object", properties: { b: { type: "string" } } },
+        slash: { $ref: "#/properties/a%2Fproperties%2Fb" },
+        ["__proto__"]: { type: "string" },
+      },
+      required: ["__proto__"],
+    };
+    const args = JSON.parse('{"slash":"1","__proto__":"x"}');
+
+    expect(() => assertConnectorToolArgs(schema, args)).not.toThrow();
+    expect(() => assertConnectorToolArgs(schema, { ...args, slash: 1 })).toThrow(/invalid/i);
+  });
+
+  it("leaves ref-shaped data in defaults untouched while hoisting refs", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        a: { type: "string" },
+        b: { $ref: "#/properties/a" },
+        default: { $ref: "#/properties/a" },
+        payload: { type: "object", default: { $ref: "#/properties/a" } },
+      },
+    };
+
+    expect(parseConnectorToolArgs(schema, { b: "x", default: "y" })).toEqual({
+      b: "x",
+      default: "y",
+      payload: { $ref: "#/properties/a" },
+    });
+    expect(() => parseConnectorToolArgs(schema, { default: 1 })).toThrow(/invalid/i);
   });
 
   it("accepts group-qualified names a model builds from search output", () => {

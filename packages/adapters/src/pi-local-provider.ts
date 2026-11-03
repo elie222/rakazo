@@ -3,12 +3,14 @@ import { createProvider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 
 import { declaredVisionModelIds, inputModalities } from "./model-modalities.js";
+import { LOCAL_PROVIDER_ID, localModelIds } from "./pi-local-provider-id.js";
+
 /**
  * Local OpenAI-compatible model server (Ollama, LM Studio, llama.cpp, MLX).
  * The server is keyless, but `resolve` returns a placeholder because Models
  * hides providers with no resolvable auth.
  */
-export const LOCAL_PROVIDER_ID = "local";
+export { LOCAL_PROVIDER_ID };
 
 /** Model ids the local server serves with vision, declared by the operator. */
 export const LOCAL_VISION_MODELS_ENV = "RAKAZO_LOCAL_VISION_MODELS";
@@ -44,14 +46,6 @@ function tokenLimit(name: string, fallback: number): number {
     throw new Error(`${name} must be a positive integer, received "${raw}"`);
   }
   return value;
-}
-
-/** Comma-separated model ids exactly as the local server names them. */
-function localModelIds(): string[] {
-  return (process.env.RAKAZO_LOCAL_MODELS ?? "")
-    .split(",")
-    .map((id) => id.trim())
-    .filter((id) => id.length > 0);
 }
 
 function localModel(id: string): Model<"openai-completions"> {

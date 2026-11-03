@@ -3,6 +3,7 @@ import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import type * as Db from "@rakazo/db";
 import { bootstrapUserSpace, recordSecurityEvent } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AuthEnv } from "./index.js";
 import { CLIENT_IP_HEADER, createAuth } from "./index.js";
 
 // Exercise Better Auth's real routing, password hashing, verification and
@@ -41,6 +42,7 @@ function fixture({
   webOrigin = "http://web.example.test",
   requestOrigin,
   stalledDelivery = false,
+  ...hooks
 }: {
   allowlist?: string;
   delivery?: boolean;
@@ -49,7 +51,7 @@ function fixture({
   requestOrigin?: string;
   /** The provider accepts the message but never settles, like a hung SMTP connection. */
   stalledDelivery?: boolean;
-} = {}) {
+} & Pick<AuthEnv, "singleAccount" | "afterDeleteSession" | "afterReplaceSession"> = {}) {
   const data: Record<string, Record<string, unknown>[]> = {
     user: [],
     account: [],
@@ -86,9 +88,17 @@ function fixture({
       }),
     },
     user: {
-      findMany: vi.fn(async () =>
+      findUnique: vi.fn(async ({ where }: { where: { id?: string; email?: string } }) => {
+        const user = data.user!.find((row) => row.id === where.id || row.email === where.email);
+        return user ? { locale: user.locale ?? null } : null;
+      }),
+      findMany: vi.fn(async ({ where }: { where?: { id?: { not?: string } } } = {}) =>
         data
-          .user!.filter((user) => !String(user.email).toLowerCase().endsWith("@messaging.invalid"))
+          .user!.filter(
+            (user) =>
+              user.id !== where?.id?.not &&
+              !String(user.email).toLowerCase().endsWith("@messaging.invalid"),
+          )
           .slice(0, 2)
           .map((user) => ({ id: String(user.id) })),
       ),
@@ -119,6 +129,7 @@ function fixture({
     member: { findMany: vi.fn(async () => []) },
     messagingIdentity: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     messagingLinkCode: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    account: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     userDevice: { updateMany: vi.fn(async () => ({ count: 0 })) },
     passkey: {
       deleteMany: vi.fn(async ({ where }: { where: { userId: string } }) => {
@@ -131,9 +142,11 @@ function fixture({
     },
     organization: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     spaceMember: {
-      findFirst: vi.fn(async ({ where }: { where: { userId: string } }) =>
-        members.has(where.userId) ? { spaceId: "space-1" } : null,
-      ),
+      findFirst: vi.fn(async ({ where }: { where: { userId: string | { in: string[] } } }) => {
+        const ids = typeof where.userId === "string" ? [where.userId] : where.userId.in;
+        const userId = ids.find((id) => members.has(id));
+        return userId ? { spaceId: "space-1", userId } : null;
+      }),
     },
   };
   vi.mocked(bootstrapUserSpace).mockImplementation(async (_prisma, user) => {
@@ -142,6 +155,7 @@ function fixture({
   });
   const secret = "offline-auth-secret-at-least-32-characters";
   const auth = createAuth(prisma as never, {
+    ...hooks,
     secret,
     baseURL,
     webOrigin,
@@ -712,6 +726,15 @@ describe("identity confirmation", () => {
     expect(await reused.json()).toMatchObject({ code: "OTP_EXPIRED" });
   });
 
+  it("writes a code email in the language the account last used the app in", async () => {
+    const f = fixture();
+    const token = await codeAccount(f);
+    const user = f.data.user!.find((row) => row.email === "approved@example.test")!;
+    user.locale = "es";
+    expect((await f.request("/request-identity-code", {}, token)).status).toBe(200);
+    expect(f.messages.at(-1)).toMatchObject({ subject: "Tu código de confirmación de Rakazo" });
+  });
+
   it("binds an emailed code to the session that requested it", async () => {
     const f = fixture();
     const token = await codeAccount(f);
@@ -1049,6 +1072,7 @@ describe("passkeys", () => {
       where: { userId, revokedAt: null },
       data: { revokedAt: expect.any(Date) },
     });
+    expect(f.prisma.$transaction).not.toHaveBeenCalledWith(expect.any(Array));
   });
 
   it("keeps a verified account's passkeys on code sign-in", async () => {
@@ -1206,3 +1230,147 @@ function cbor(value: unknown): Buffer {
   }
   throw new Error("unsupported CBOR value");
 }
+
+describe("single-person deployments", () => {
+  const password = "offline-password12";
+
+  it("admits the first account, then closes registration to anyone else", async () => {
+    const f = fixture({ delivery: false, singleAccount: true });
+    expect((await f.signup("owner@example.test")).status).toBe(200);
+
+    const second = await f.signup("someone@example.test");
+    expect(second.status).toBe(400);
+    expect(await second.json()).toMatchObject({ code: "REGISTRATION_CLOSED" });
+    expect(f.data.user!.map((user) => user.email)).toEqual(["owner@example.test"]);
+
+    expect((await f.signin("owner@example.test")).status).toBe(200);
+    expect(bootstrapUserSpace).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a session to an account that was never admitted", async () => {
+    const f = fixture({ delivery: false, singleAccount: true });
+    expect((await f.signup("owner@example.test")).status).toBe(200);
+    const now = new Date();
+    f.data.user!.push({
+      id: "late-user",
+      name: "Late",
+      email: "late@example.test",
+      emailVerified: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+    f.data.account!.push({
+      id: "account-late-user",
+      userId: "late-user",
+      providerId: "credential",
+      accountId: "late-user",
+      password: await (await f.auth.$context).password.hash(password),
+      createdAt: now,
+      updatedAt: now,
+    });
+    const response = await f.signin("late@example.test");
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "REGISTRATION_CLOSED" });
+    expect(f.members.has("late-user")).toBe(false);
+  });
+
+  it("does not create an account from an emailed code once there is one", async () => {
+    const f = fixture({ singleAccount: true });
+    expect((await f.signup("owner@example.test")).status).toBe(200);
+    const sent = f.messages.length;
+    expect((await f.sendCode("someone@example.test")).status).toBe(200);
+    expect(f.messages).toHaveLength(sent);
+  });
+
+  it("ignores messaging-only users when admitting the first account", async () => {
+    const f = fixture({ delivery: false, singleAccount: true });
+    const now = new Date();
+    f.data.user!.push({
+      id: "msg-user",
+      name: "Chat",
+      email: "msg-abc@messaging.invalid",
+      emailVerified: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+    expect((await f.signup("owner@example.test")).status).toBe(200);
+  });
+
+  it("is not closed by an earlier signup that never got in", async () => {
+    const f = fixture({ delivery: false, singleAccount: true });
+    const now = new Date();
+    f.data.user!.push({
+      id: "abandoned",
+      name: "Abandoned",
+      email: "abandoned@example.test",
+      emailVerified: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+    expect((await f.signup("owner@example.test")).status).toBe(200);
+    expect((await f.signup("someone@example.test")).status).toBe(400);
+  });
+
+  it("keeps registration open on other deployments", async () => {
+    const f = fixture({ delivery: false });
+    expect((await f.signup("owner@example.test")).status).toBe(200);
+    expect((await f.signup("someone@example.test")).status).toBe(200);
+  });
+});
+
+describe("ending sessions", () => {
+  const sessionIds = (rows: Record<string, unknown>[]) => rows.map((row) => String(row.id));
+
+  async function signedInTwice() {
+    const afterDeleteSession = vi.fn(async (_session: { id: string; userId: string }) => {});
+    const afterReplaceSession = vi.fn(
+      async (
+        _previous: { id: string; userId: string },
+        _next: { id: string; userId: string },
+      ) => {},
+    );
+    const f = fixture({ afterDeleteSession, afterReplaceSession });
+    const { token: first } = (await (await f.signup()).json()) as { token: string };
+    const { token: second } = (await (await f.signin()).json()) as { token: string };
+    const ids = sessionIds(f.data.session!);
+    expect(ids).toHaveLength(2);
+    return { f, first, second, ids, afterDeleteSession, afterReplaceSession };
+  }
+  const ended = (hook: { mock: { calls: [{ id: string }, ...unknown[]][] } }) =>
+    hook.mock.calls.map(([session]) => session.id).sort();
+
+  it("reports every session a password reset ends", async () => {
+    const { f, ids, afterDeleteSession } = await signedInTwice();
+    await f.request("/request-password-reset", { email: "approved@example.test" });
+    const token = f.messages.at(-1)!.text.match(/reset-password\/([^?\s]+)/)![1]!;
+    const reset = await f.request("/reset-password", { token, newPassword: "offline-password34" });
+    expect(reset.status).toBe(200);
+    expect(f.data.session).toHaveLength(0);
+    expect(ended(afterDeleteSession)).toEqual([...ids].sort());
+  });
+
+  it("reports every session that signing out everywhere ends", async () => {
+    const { f, first, ids, afterDeleteSession } = await signedInTwice();
+    expect((await f.request("/revoke-sessions", {}, first)).status).toBe(200);
+    expect(ended(afterDeleteSession)).toEqual([...ids].sort());
+  });
+
+  it("reports the other sessions a password change ends and moves the caller's own", async () => {
+    const { f, second, ids, afterDeleteSession, afterReplaceSession } = await signedInTwice();
+    const changed = await f.request(
+      "/change-password",
+      {
+        currentPassword: "offline-password12",
+        newPassword: "offline-password34",
+        revokeOtherSessions: true,
+      },
+      second,
+    );
+    expect(changed.status).toBe(200);
+    expect(ended(afterDeleteSession)).toEqual([ids[0]]);
+    expect(afterReplaceSession).toHaveBeenCalledTimes(1);
+    const [previous, next] = afterReplaceSession.mock.calls[0]!;
+    expect(previous.id).toBe(ids[1]);
+    expect(sessionIds(f.data.session!)).toEqual([next.id]);
+  });
+});

@@ -1,11 +1,18 @@
+import { t } from "@lingui/core/macro";
 import {
   CLIENT_UPDATE_REQUIRED_STATUS,
   compareBuilds,
   SERVER_BUILD_HEADER,
 } from "@rakazo/contracts";
+import { toast } from "@rakazo/ui-web";
 import { getSnapshot as activeCall } from "./call-session";
 import { CLIENT_BUILD } from "./client-build";
-import { composerHoldsUnsavedWork, hasUnsentComposerDraft } from "./composer-draft";
+import {
+  composerHoldsUnsavedWork,
+  composerHoldsWorkInFlight,
+  hasUnsentComposerDraft,
+} from "./composer-draft";
+import { hasOpenDialog } from "./has-open-dialog";
 import { recoveryReload } from "./preload-recovery";
 import { onRpcResponse } from "./rpc";
 
@@ -18,7 +25,8 @@ export const CLIENT_UPDATE_CHECK_SPACING_MS = 30_000;
 export const CLIENT_UPDATE_REQUIRED_RETRIES = 10;
 const INPUT_EVENTS = ["keydown", "pointerdown", "input", "wheel", "touchstart"] as const;
 
-type Moment = "hidden" | "navigation" | "idle";
+/** `required`: the server refused this build. */
+type Moment = "hidden" | "navigation" | "idle" | "required";
 
 export type ClientUpdateDeps = {
   build: string;
@@ -33,6 +41,13 @@ export type ClientUpdateDeps = {
   reload: () => boolean;
   /** Work a reload would lose at any moment: a call, a send in flight, attachments in memory. */
   holdsUnsavedWork: () => boolean;
+  /**
+   * The part of it that finishes on its own: a call or a send in flight. A refused build waits only
+   * for this, since the server rejects the requests that would send attachments.
+   */
+  holdsWorkInFlight: () => boolean;
+  /** A refused build is waiting on work: let the user reload now instead. */
+  offerReload: () => void;
   /** Also saved-but-unsent text, which blocks only the idle reload. */
   hasUnsentDraft: () => boolean;
   now: () => number;
@@ -44,8 +59,8 @@ export type ClientUpdateDeps = {
  * Moves an open tab onto a newer deployment without interrupting anyone. API replies name the
  * deployed build; once it is newer than this bundle, the tab reloads at the first safe moment —
  * hidden, navigating, or idle with nothing unsent — and only after the web server confirms it
- * already serves a newer build, which it may not yet mid-deploy. A refused client (426) reloads at
- * once; drafts live in local storage and survive it.
+ * already serves a newer build, which it may not yet mid-deploy. A refused client (426) reloads as
+ * soon as no typed text, open dialog, or unsaved work would be lost, offering a reload meanwhile.
  *
  * Loops are impossible by construction: every reload records the build it left and the build it
  * expected, and a tab that comes back on the same build never reloads for that target again (a
@@ -81,8 +96,9 @@ export function createClientUpdates(deps: ClientUpdateDeps) {
     return Boolean(element.isContentEditable && element.textContent);
   };
   const safe = (moment: Moment): boolean => {
-    if (editing() || deps.holdsUnsavedWork()) return false;
-    if (deps.document.querySelector('[role="dialog"], [role="alertdialog"], dialog[open]')) {
+    const held = moment === "required" ? deps.holdsWorkInFlight() : deps.holdsUnsavedWork();
+    if (editing() || held) return false;
+    if (hasOpenDialog(deps.document)) {
       return false;
     }
     if (moment !== "idle") return true;
@@ -99,17 +115,22 @@ export function createClientUpdates(deps: ClientUpdateDeps) {
   };
 
   /**
-   * Reload only onto a build the server already serves, and only once per build pair. A soft
-   * update re-checks that the moment is still safe after the fetch; a refused build (`moment`
-   * null) reloads regardless.
+   * Reload only onto a build the server already serves, and only once per build pair. Re-checks
+   * that the moment is still safe after the fetch.
    */
-  const reloadOntoServedBuild = async (moment: Moment | null): Promise<boolean> => {
+  const reloadOntoServedBuild = async (moment: Moment): Promise<boolean> => {
     checking = true;
     lastCheck = deps.now();
     try {
       const served = await deps.servedBuild().catch(() => null);
       if (!newer(served) || attempted(served)) return false;
-      if (moment && !safe(moment)) return false;
+      if (!safe(moment)) {
+        // Work appeared while it checked: a held refusal keeps the retry this check used.
+        if (moment === "required") {
+          requiredRetries = Math.min(requiredRetries + 1, CLIENT_UPDATE_REQUIRED_RETRIES);
+        }
+        return false;
+      }
       let previous: string | null = null;
       try {
         previous = deps.storage?.getItem(ATTEMPT_KEY) ?? null;
@@ -131,6 +152,16 @@ export function createClientUpdates(deps: ClientUpdateDeps) {
     if (deps.now() - lastCheck < CLIENT_UPDATE_CHECK_SPACING_MS) return;
     void reloadOntoServedBuild(moment);
   };
+  /** False when a check is running or the moment is not safe, so a held refusal keeps its retries. */
+  const tryRequired = (): boolean => {
+    if (checking) return false;
+    if (!safe("required")) {
+      deps.offerReload();
+      return false;
+    }
+    void reloadOntoServedBuild("required");
+    return true;
+  };
 
   const updates = {
     /** Every API reply names the deployed build. */
@@ -141,13 +172,13 @@ export function createClientUpdates(deps: ClientUpdateDeps) {
       if (deps.document.visibilityState === "hidden") tryAt("hidden");
     },
     /**
-     * The server refused this build: reload now, whatever the user is doing. Mid-rollout the web
-     * server may still serve this build, so keep checking each minute for a while.
+     * The server refused this build: reload now unless that would lose work, else once it is gone.
+     * Mid-rollout the web server may still serve this build, so keep checking each minute for a while.
      */
     updateRequired() {
       if (!deps.build) return;
       requiredRetries = CLIENT_UPDATE_REQUIRED_RETRIES;
-      if (!checking) void reloadOntoServedBuild(null);
+      tryRequired();
     },
     navigated() {
       tryAt("navigation");
@@ -168,9 +199,8 @@ export function createClientUpdates(deps: ClientUpdateDeps) {
         }),
       ];
       const idle = deps.setInterval(() => {
-        if (requiredRetries > 0 && !checking) {
-          requiredRetries--;
-          void reloadOntoServedBuild(null);
+        if (requiredRetries > 0) {
+          if (tryRequired()) requiredRetries--;
         } else tryAt("idle");
       }, 60_000);
       return () => {
@@ -210,6 +240,14 @@ export function clientUpdates(): ReturnType<typeof createClientUpdates> {
     },
     reload: recoveryReload,
     holdsUnsavedWork: () => activeCall() !== null || composerHoldsUnsavedWork(),
+    holdsWorkInFlight: () => activeCall() !== null || composerHoldsWorkInFlight(),
+    offerReload: () =>
+      toast(t`Update required`, {
+        id: "client-update-required",
+        duration: Number.POSITIVE_INFINITY,
+        dismissible: false,
+        action: { label: t`Reload`, onClick: () => window.location.reload() },
+      }),
     hasUnsentDraft: () => hasUnsentComposerDraft(),
     now: () => Date.now(),
     setInterval: (callback, ms) => window.setInterval(callback, ms),

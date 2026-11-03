@@ -16,6 +16,7 @@ import {
   modelFallbackFailure,
   normalizeRunError,
   userRunError,
+  VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR,
 } from "./run-error.js";
 
 describe("normalizeRunError", () => {
@@ -65,6 +66,14 @@ describe("normalizeRunError", () => {
       "Your model provider can't run this model.",
     ],
     ['{"error":{"code":"model_not_found"}}', "Your model provider can't run this model."],
+    [
+      '400: {"message":"Model example is not a chat model; call /v1/example instead of /v1/chat/completions","type":"invalid_request_error"}',
+      "Your model provider can't run this model.",
+    ],
+    [
+      '400: {"type":"server_error","message":"Upstream request failed: This example model requires Global regions. Select Global in your workspace\'s Privacy settings to use it."}',
+      "Your model provider can't run this model.",
+    ],
     ["Request timed out", "Your model provider took too long to respond. Try again."],
     [
       '504: {"message":"Gateway error"}',
@@ -187,6 +196,10 @@ describe("normalizeRunError", () => {
       ],
       ['413: {"message":"Request entity too large"}', tooLong],
       ["Required context exceeds the model context budget", tooLong],
+      [
+        '400: {"message":"Too many images provided.  This model supports up to 3 images","type":"invalid_request_error"}',
+        tooLong,
+      ],
       ["terminated", tookTooLong],
       ["read ECONNRESET", tookTooLong],
       ["socket hang up", tookTooLong],
@@ -302,6 +315,7 @@ describe("normalizeRunError", () => {
           { "@type": "type.googleapis.com/google.rpc.ErrorInfo", reason: "API_KEY_INVALID" },
         ],
       }),
+      '400 {"type":"error","error":{"type":"invalid_request_error","message":"This API key is not scoped to a workspace."}}',
     ])("sends a rejected key to the connection: %s", (details) => {
       expect(normalizeRunError(details)).toMatchObject({
         summary: "Your model provider rejected the API key. Check your connection settings.",
@@ -345,17 +359,18 @@ describe("normalizeRunError", () => {
       expect(normalizeRunError(details)).toMatchObject({ kind: "model", recovery: "model" });
     });
 
-    it.each([MODEL_CONTEXT_TOO_SMALL_ERROR, MODEL_REQUEST_LIMIT_ERROR])(
-      "offers another model for an unusable request budget: %s",
-      (details) => {
-        expect(normalizeRunError(details)).toEqual({
-          summary: details,
-          details,
-          kind: "context",
-          recovery: "model",
-        });
-      },
-    );
+    it.each([
+      MODEL_CONTEXT_TOO_SMALL_ERROR,
+      MODEL_REQUEST_LIMIT_ERROR,
+      VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR,
+    ])("offers another model for an unusable request budget: %s", (details) => {
+      expect(normalizeRunError(details)).toEqual({
+        summary: details,
+        details,
+        kind: "context",
+        recovery: "model",
+      });
+    });
 
     it("says a reply was cut off at the output limit, with the model's fix", () => {
       expect(normalizeRunError(MODEL_OUTPUT_CUT_ERROR)).toEqual({
@@ -382,9 +397,17 @@ describe("normalizeRunError", () => {
       "This request triggered restrictions on violative cyber content and was blocked under Anthropic's Usage Policy. To learn more, see the refusals guide.",
       "This request was blocked as it seems to violate Anthropic's Terms of Service restrictions on reverse engineering or duplicating model outputs.",
       "Provider returned an empty response",
+      'unexpected tokens remaining in message header: Some("to=functions.example")',
+      'HarmonyError: unexpected tokens remaining in message header: Some("analysis")',
+      '500: {"message":"unexpected tokens remaining in message header: Some(\\"analysis\\")"}',
+      'unexpected tokens remaining in message header: Some("credit limit, timeout, model not found")',
       "Failed to parse tool call arguments as JSON",
       '400: {"message":"Failed to parse tool call arguments as JSON","code":"tool_use_failed"}',
       "Tool call validation failed: attempted to call tool 'commentary' which was not in request.tools",
+      "tool call validation failed: attempted to call tool 'commentary' which was not in request.tools",
+      "Parsing failed. The model generated output that could not be parsed. Please adjust your prompt. See 'failed_generation' for more details.",
+      '400 {"type":"error","error":{"type":"api_error","message":"Upstream request failed: [api_error] Upstream response was not valid JSON"}}',
+      "Codex error: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request.",
       MODEL_OUTPUT_LIMIT_ERROR,
       "Upstream error from Example: HttpError: HTTP 400: Tool calls cutoff by max_tokens.",
     ])("calls unusable model output what it is: %s", (details) => {
@@ -412,6 +435,7 @@ describe("normalizeRunError", () => {
       '400: {"message":"failed to template request: Unexpected message role.","type":"invalid_request_error"}',
       '400: {"message":"Provider returned error","code":400,"metadata":{"raw":"The `uniqueItems` JSON Schema keyword is not supported."}}',
       "Approved tool requests were not fully replayed",
+      "Internal failure while handling unexpected tokens remaining in message header: unknown",
       '500: {"message":"Internal error"}',
       '503: {"message":"The model is unavailable right now."}',
       '503: {"message":"Unsupported model fixture-model"}',
@@ -800,6 +824,12 @@ describe("the one action that fixes a failed run", () => {
     '400: {"code":"400","message":"Unsupported model fixture-model"}',
     '400: {"error":{"message":"Unknown model: fixture-model"}}',
     '400: {"message":"Unrecognized model fixture-model"}',
+    google({
+      code: 400,
+      message: "This model requires the use of the Computer Use tool.",
+      status: "INVALID_ARGUMENT",
+    }),
+    "Invalid inference request. Check the model's supported parameters and input limits.",
   ])("offers another model when the provider cannot run it: %s", (details) => {
     expect(action(details)).toMatchObject({
       summary: "Your model provider can't run this model.",

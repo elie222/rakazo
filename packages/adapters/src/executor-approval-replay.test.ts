@@ -125,6 +125,17 @@ describe("executor approval replay", () => {
     );
   });
 
+  it("replays an approved deferred built-in through use_tool", () => {
+    const continuation = buildApprovalContinuation(
+      [{ kind: "create_space", request: { name: "Finance" } }],
+      JSON.stringify,
+      { exposedToolNames: new Set(["shell", "find_tool", "use_tool"]) },
+    );
+    expect(continuation).toContain(
+      'use_tool: {"name":"create_space","arguments":{"name":"Finance"}}',
+    );
+  });
+
   it("keeps a direct-tool argument named like the catalog marker in continuation JSON", () => {
     const continuation = buildApprovalContinuation(
       [
@@ -168,6 +179,20 @@ describe("executor approval replay", () => {
       'installed_execute_tool: {"id":"install-A:notes.write","arguments":{"text":"approved exactly"}}',
     );
     expect(afterGrowth).not.toContain("notes.write:");
+  });
+
+  it("keeps the selected connection in a continuation when account tools move into the catalog", () => {
+    const request = boundDirectApprovalRequest(
+      { connectorId: "example", resourceId: "mail", toolName: "send", connectionId: "work" },
+      { text: "approved exactly" },
+      "__rakazoCatalogTool",
+    );
+    const continuation = buildApprovalContinuation(
+      [{ kind: "send_scoped", request }],
+      JSON.stringify,
+      { exposedToolNames: new Set(["example_execute_tool"]) },
+    );
+    expect(continuation).toContain('"id":"mail:work:send"');
   });
 
   it("renders a catalog wrapper continuation when a bound MCP tool is no longer exposed", () => {

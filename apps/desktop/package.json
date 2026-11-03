@@ -1,9 +1,9 @@
 {
   "name": "@rakazo/desktop",
-  "productName": "Atlas Dots",
-  "version": "0.3.6",
+  "productName": "Rakazo",
+  "version": "0.4.0",
   "author": {
-    "name": "Aditya Wakharkar"
+    "name": "Rakazo"
   },
   "license": "Apache-2.0",
   "type": "module",
@@ -28,6 +28,7 @@
   "devDependencies": {
     "@playwright/test": "1.64.1",
     "@rakazo/adapters": "workspace:*",
+    "@rakazo/core": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
     "electron": "45.0.0",
     "electron-builder": "26.15.3",
@@ -61,7 +62,7 @@
       }
     ],
     "extraMetadata": {
-      "name": "atlas-dots",
+      "name": "rakazo",
       "main": "dist/main.js"
     },
     "mac": {
@@ -78,6 +79,10 @@
         {
           "from": "build/speech/rakazo-speech",
           "to": "speech/rakazo-speech"
+        },
+        {
+          "from": "assets/es.lproj",
+          "to": "es.lproj"
         }
       ],
       "target": [
@@ -106,6 +111,9 @@
           "path": "/Applications"
         }
       ]
+    },
+    "nsis": {
+      "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "win": {
       "icon": "assets/icon.ico",

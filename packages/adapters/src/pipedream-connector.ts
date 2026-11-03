@@ -10,6 +10,7 @@ import type {
 import { getLogger } from "@rakazo/logging";
 import { catalogToolPrefix } from "./approval-effect.js";
 import { collectPages, filterCatalog } from "./composio-connector.js";
+import { resolveAccountToolCall, scopeConnectorTools } from "./connector-accounts.js";
 import {
   combineSignals,
   redactConnectorPayload,
@@ -34,8 +35,6 @@ const MCP_ENDPOINT = "https://remote.mcp.pipedream.net/v3";
 const DIRECTORY_TTL_MS = 10 * 60_000;
 const REQUEST_TIMEOUT_MS = 30_000;
 export const MAX_PIPEDREAM_RESPONSE_BYTES = 2 * 1024 * 1024;
-/** Tool argument naming which approved account runs the call when an app has several. */
-const ACCOUNT_ARGUMENT = "connected_account";
 
 export interface PipedreamConnectorConfig {
   clientId: string;
@@ -74,7 +73,7 @@ type PipedreamApp = {
   img_src?: string;
 };
 
-type ApprovedAccount = { id: string; label: string };
+type ApprovedAccount = { id: string; label: string; connectionId: string };
 
 type PipedreamAccount = {
   id: string;
@@ -172,25 +171,36 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     const groups = await Promise.all(
       [...new Set(apps)].map(async (app) => {
         try {
-          const accounts = approvedAccounts(context, app);
-          if (!accounts[0]) throw new Error("no approved account can be identified");
-          const tools = await listRemoteMcpTools({
-            endpoint: MCP_ENDPOINT,
-            headers: this.mcpHeaders(context, app, accounts[0].id, token),
-            signal: context.signal,
-            fetch: this.dependencies.fetch,
-            resolveHostname: this.dependencies.resolveHostname,
-          });
-          return tools.map((tool) => ({
-            ...tool,
-            inputSchema: withAccountChoice(tool.inputSchema, accounts),
-            route: {
-              connectorId: "pipedream",
-              resourceId: app,
-              toolName: tool.name,
-              catalogGroup: app,
-            },
-          }));
+          const accounts = await this.approvedAccounts(context, app);
+          return (
+            await Promise.all(
+              accounts.map(async (account) => {
+                try {
+                  const tools = await listRemoteMcpTools({
+                    endpoint: MCP_ENDPOINT,
+                    headers: this.mcpHeaders(context, app, account.id, token),
+                    signal: context.signal,
+                    fetch: this.dependencies.fetch,
+                    resolveHostname: this.dependencies.resolveHostname,
+                  });
+                  return scopeConnectorTools(tools, {
+                    id: account.connectionId,
+                    connectorId: "pipedream",
+                    externalId: app,
+                    displayName: account.label,
+                    providerRef: account.id,
+                  });
+                } catch (error) {
+                  getLogger().error(
+                    "pipedream account discovery failed",
+                    sanitizeConnectorError(error),
+                    { "connector.app": app, "connection.id": account.connectionId },
+                  );
+                  return [];
+                }
+              }),
+            )
+          ).flat();
         } catch (error) {
           // A single unavailable app must not hide tools from other connections.
           getLogger().error(
@@ -219,6 +229,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     call: ConnectorCall,
     context: AdapterContext,
   ): Promise<{ call: ConnectorCall; tool: ConnectorTool } | undefined> {
+    if (!call.route) return resolveAccountToolCall(call, await this.allTools(context));
     // Wrappers have no resourceId; real tools always do.
     if (call.route?.resourceId || call.route?.toolName !== CATALOG_EXECUTE) return undefined;
     return resolveCatalogCall(call, catalogEntries(await this.allTools(context)));
@@ -244,16 +255,23 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     }
     let token: string | undefined;
     try {
-      const accounts = approvedAccounts(context, app);
-      const { [ACCOUNT_ARGUMENT]: chosen, ...args } = call.args;
-      const account =
-        accounts.length === 1 ? accounts[0] : accounts.find(({ id }) => id === chosen);
-      if (!account) {
+      const accounts = await this.approvedAccounts(context, app);
+      const selected = call.route?.connectionId ?? call.connectionId;
+      const account = selected
+        ? accounts.find(({ connectionId }) => connectionId === selected)
+        : accounts.length === 1
+          ? accounts[0]
+          : undefined;
+      if (
+        !account ||
+        (call.route?.resourceRevision !== undefined && call.route.resourceRevision !== account.id)
+      ) {
         yield {
           type: "error",
-          message: accounts.length
-            ? `Set ${ACCOUNT_ARGUMENT} to one of the accounts connected for ${app}.`
-            : `No connected ${app} account can be identified. Reconnect ${app}.`,
+          message:
+            accounts.length === 0
+              ? `No connected ${app} account can be identified. Reconnect ${app}.`
+              : "The selected connected account is unavailable. Reload the account's tools.",
         };
         return;
       }
@@ -267,7 +285,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
           resolveHostname: this.dependencies.resolveHostname,
         },
         call.route?.toolName ?? call.tool,
-        accounts.length === 1 ? call.args : args,
+        call.args,
       );
       yield {
         type: "result",
@@ -405,6 +423,29 @@ export class PipedreamConnector implements ManagedConnectorProvider {
         ),
       ),
     );
+  }
+
+  /**
+   * Connections made before account pinning store only the app slug. Such a row can still stand
+   * for the user's one remote account for that app; with several it stays unusable until reconnected.
+   */
+  private async approvedAccounts(context: AdapterContext, app: string): Promise<ApprovedAccount[]> {
+    const approved = approvedAccounts(context, app);
+    if (approved.length > 0) return approved;
+    const legacy = context.connectedConnections?.find(
+      (connection) =>
+        connection.connectorId === "pipedream" &&
+        connection.externalId === app &&
+        connection.providerRef?.trim() === app,
+    );
+    if (!legacy) return [];
+    const remote = (await this.accounts(context, app)).filter(
+      (account) =>
+        account.app?.name_slug === app && account.healthy !== false && account.dead !== true,
+    );
+    return remote.length === 1 && remote[0]
+      ? [{ id: remote[0].id, label: legacy.displayName, connectionId: legacy.id }]
+      : [];
   }
 
   /** Pipedream keys connected accounts by this stateless ID; changing it orphans them. */
@@ -559,37 +600,15 @@ export class PipedreamConnector implements ManagedConnectorProvider {
  * account such a row stands for.
  */
 function approvedAccounts(context: AdapterContext, app: string): ApprovedAccount[] {
-  const approved = new Map<string, string>();
+  const approved = new Map<string, ApprovedAccount>();
   for (const connection of context.connectedConnections ?? []) {
     if (connection.connectorId !== "pipedream" || connection.externalId !== app) continue;
     const ref = connection.providerRef?.trim();
-    if (ref && ref !== app && !approved.has(ref)) approved.set(ref, connection.displayName);
+    if (ref && ref !== app && !approved.has(ref)) {
+      approved.set(ref, { id: ref, label: connection.displayName, connectionId: connection.id });
+    }
   }
-  return [...approved].map(([id, label]) => ({ id, label }));
-}
-
-/** With several approved accounts the model must name one; with one there is nothing to choose. */
-function withAccountChoice(
-  schema: Record<string, unknown>,
-  accounts: ApprovedAccount[],
-): Record<string, unknown> {
-  if (accounts.length < 2) return schema;
-  const properties = (schema.properties ?? {}) as Record<string, unknown>;
-  const required = Array.isArray(schema.required) ? schema.required : [];
-  return {
-    ...schema,
-    properties: {
-      ...properties,
-      [ACCOUNT_ARGUMENT]: {
-        type: "string",
-        enum: accounts.map(({ id }) => id),
-        description: `Connected account to use: ${accounts
-          .map(({ id, label }) => `${id} = ${JSON.stringify(label)}`)
-          .join(", ")}`,
-      },
-    },
-    required: [...required, ACCOUNT_ARGUMENT],
-  };
+  return [...approved.values()];
 }
 
 async function readPipedreamBody(response: Response, signal: AbortSignal): Promise<string> {

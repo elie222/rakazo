@@ -1,4 +1,5 @@
 import type { DesktopUpdateState } from "@rakazo/contracts";
+import { t } from "./i18n.js";
 import { reportDesktopError } from "./monitoring.js";
 
 /** Long enough that a cold launch is never competing with the update feed for bandwidth. */
@@ -14,10 +15,10 @@ export interface UpdaterEnvironment {
 
 export function updaterSupport(env: UpdaterEnvironment): { supported: boolean; reason: string } {
   if (env.disabled === true) {
-    return { supported: false, reason: "Automatic updates are turned off for this install." };
+    return { supported: false, reason: t("Automatic updates are turned off for this install.") };
   }
   if (!env.packaged) {
-    return { supported: false, reason: "Automatic updates only run in an installed build." };
+    return { supported: false, reason: t("Automatic updates only run in an installed build.") };
   }
   return { supported: true, reason: "" };
 }
@@ -73,28 +74,28 @@ export function classifyUpdaterFailure(error: unknown): UpdaterFailure {
   if (NO_RELEASES.some((needle) => text.includes(needle))) {
     return {
       kind: "no-releases",
-      message: "No desktop releases are published for this build yet.",
+      message: t("No desktop releases are published for this build yet."),
     };
   }
   if (OFFLINE.some((needle) => text.includes(needle))) {
     return { kind: "offline", message: null };
   }
   if (READ_ONLY.some((needle) => text.includes(needle))) {
-    return { kind: "read-only", message: "Move Rakazo to Applications to install updates." };
+    return { kind: "read-only", message: t("Move Rakazo to Applications to install updates.") };
   }
   // Ahead of signatures: a full disk also leaves ditto unable to read the archive's signature.
   if (DISK_FULL.some((needle) => text.includes(needle))) {
-    return { kind: "disk-full", message: "Free up disk space to install updates." };
+    return { kind: "disk-full", message: t("Free up disk space to install updates.") };
   }
   if (SIGNATURE.some((needle) => text.includes(needle))) {
     return {
       kind: "signature",
-      message: "This update could not be verified. Reinstall Rakazo from a trusted download.",
+      message: t("This update could not be verified. Reinstall Rakazo from a trusted download."),
     };
   }
   return {
     kind: "other",
-    message: "The update could not be completed. Try again later.",
+    message: t("The update could not be completed. Try again later."),
   };
 }
 
@@ -168,7 +169,7 @@ export function reduceUpdateState(
       if (state.phase === "ready" && event.installFailed === true) {
         return {
           ...state,
-          message: failure.message ?? "The update could not be completed. Try again later.",
+          message: failure.message ?? t("The update could not be completed. Try again later."),
         };
       }
       if (failure.kind === "read-only") {
@@ -196,7 +197,7 @@ export function reduceUpdateState(
           ...state,
           phase: "error",
           percent: null,
-          message: "The update could not be completed. Try again later.",
+          message: t("The update could not be completed. Try again later."),
           checkedAt: now,
         };
       }
@@ -205,7 +206,7 @@ export function reduceUpdateState(
           ...state,
           phase: "idle",
           percent: null,
-          message: event.userInitiated ? "Could not reach the update server." : null,
+          message: event.userInitiated ? t("Could not reach the update server.") : null,
           checkedAt: now,
         };
       }

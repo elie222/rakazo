@@ -30,6 +30,7 @@ export * from "./components/ui/input-group.js";
 export * from "./components/ui/input-otp.js";
 export * from "./components/ui/kbd.js";
 export * from "./components/ui/label.js";
+export * from "./components/ui/list-search-input";
 export * from "./components/ui/native-select.js";
 export * from "./components/ui/option-select.js";
 export * from "./components/ui/popover.js";
@@ -53,3 +54,4 @@ export { GroupAvatar, type GroupAvatarMember, type GroupAvatarProps } from "./gr
 export { cn } from "./lib/utils.js";
 export { LogoAvatar } from "./logo-avatar.js";
 export { ModelThinkingOptions } from "./model-thinking-options.js";
+export { SectionHeading } from "./section-heading.js";

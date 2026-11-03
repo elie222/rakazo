@@ -17,6 +17,7 @@ import {
   completeExternalEffect,
   parseCatalogApprovalTarget,
 } from "./approval-effect.js";
+import { USE_TOOL } from "./builtin-tool-bridge.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { uniquifyInstalledToolName } from "./lazy-tool-catalog.js";
 import { runLeaseFor } from "./run-messages.js";
@@ -100,7 +101,10 @@ export function buildApprovalContinuation(
         }
         return `${uniquified ?? effect.kind}: ${formatRequest(bound.args)}`;
       }
-      return `${effect.kind}: ${formatRequest(effect.request)}`;
+      const exposed = options?.exposedToolNames;
+      return exposed && !exposed.has(effect.kind) && exposed.has(USE_TOOL)
+        ? `${USE_TOOL}: ${formatRequest({ name: effect.kind, arguments: effect.request })}`
+        : `${effect.kind}: ${formatRequest(effect.request)}`;
     }),
   ].join("\n");
 }

@@ -32,6 +32,30 @@ beforeEach(() => {
 });
 
 describe("desktop monitoring", () => {
+  it("ignores a closed stdout or stderr pipe but reports other stream failures", async () => {
+    const monitor = await import("./monitoring.js");
+    const listeners = [process.stdout, process.stderr].map((stream) => stream.listeners("error"));
+    monitor.installDesktopEarlyErrorReporting();
+    try {
+      process.stderr.emit("error", Object.assign(new Error("write EPIPE"), { code: "EPIPE" }));
+      const failure = Object.assign(new Error("write EIO"), { code: "EIO" });
+      process.stdout.emit("error", failure);
+      await monitor.configureDesktopMonitoring(
+        config({ dsn: "https://key@errors.example.com/8" }),
+        options,
+      );
+      expect(sdk.captureException).toHaveBeenCalledTimes(1);
+      expect(sdk.captureException).toHaveBeenCalledWith(failure, expect.anything());
+    } finally {
+      for (const [index, stream] of [process.stdout, process.stderr].entries()) {
+        for (const listener of stream.listeners("error")) {
+          if (!listeners[index]!.includes(listener)) stream.off("error", listener as () => void);
+        }
+      }
+      process.removeAllListeners("uncaughtExceptionMonitor");
+    }
+  });
+
   it("reports only from packaged release-workflow builds", async () => {
     const { desktopReportsErrors } = await import("./monitoring.js");
     expect(desktopReportsErrors(true, "1")).toBe(true);

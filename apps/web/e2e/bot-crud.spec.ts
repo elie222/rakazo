@@ -121,6 +121,13 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(settings.getByRole("button", { name: "Export", exact: true })).toBeVisible();
   await expect(settings.locator('label[for$="-model"]')).toHaveClass("sr-only");
   await expect(modelSelect).toBeVisible();
+  const dailyCheckIns = settings.getByRole("switch", {
+    name: "Daily check-ins on unfinished work",
+    exact: true,
+  });
+  await dailyCheckIns.scrollIntoViewIfNeeded();
+  await expect(dailyCheckIns).toBeChecked();
+  await captureScreenshot(page, testInfo, "bot-settings-daily-check-ins");
   await captureScreenshot(page, testInfo, "bot-settings-sections-advanced");
   await rpc(page, "scratchpad/create", {
     botId: deletedBotPath.split("/").at(-1),
@@ -146,7 +153,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await captureScreenshot(page, testInfo, "27c-disabled-builtin-tools");
   await expect(teamComputer).toBeVisible();
   await expect(settings.getByRole("switch", { name: "Read replies aloud" })).toBeVisible();
-  await expect(settings.getByRole("switch", { name: "Manage the bots it creates" })).toBeVisible();
+  await expect(settings.getByRole("switch", { name: "Manage other bots" })).toBeVisible();
   await expect(modelSelect).toBeVisible();
   await expect(modelSelect).toContainText("Space default");
   await captureScreenshot(page, testInfo, "27a-bot-settings-model");

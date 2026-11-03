@@ -1,7 +1,7 @@
 import * as z from "zod";
 import { AgentImportSetupItemSchema } from "./agent-import-setup.js";
-import { botSecretDestinationSchema, LoginFieldLabels } from "./bot-secrets.js";
-import { Id } from "./ids.js";
+import { botSecretDestinationSchema, LoginFieldLabels, OneTimeCodeTarget } from "./bot-secrets.js";
+import { Id, ThinkingLevelSchema } from "./ids.js";
 import { McpTransportSchema } from "./mcp.js";
 
 export const ProductEventType = z.enum([
@@ -94,6 +94,16 @@ const ChartBlock = z
 export const SecretAskPurpose = z.enum(["otp", "password", "api_key"]);
 export type SecretAskPurpose = z.infer<typeof SecretAskPurpose>;
 
+/** The settings a bot can change on itself from chat. */
+export const BotSettingsValuesSchema = z.object({
+  modelProvider: z.string().trim().min(1).max(80).nullable().optional(),
+  modelId: z.string().trim().min(1).max(200).nullable().optional(),
+  thinkingLevel: ThinkingLevelSchema.nullable().optional(),
+  autoSpeak: z.boolean().optional(),
+  voiceId: z.string().max(120).nullable().optional(),
+});
+export type BotSettingsValues = z.infer<typeof BotSettingsValuesSchema>;
+
 export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string() }),
   z.object({
@@ -113,6 +123,10 @@ export const MessageBlock = z.discriminatedUnion("kind", [
         undoVersionId: Id.optional(),
       })
       .optional(),
+    /** A settings change made from chat; undo writes `before` back while `after` still holds. */
+    settingsUpdate: z
+      .object({ botId: Id, before: BotSettingsValuesSchema, after: BotSettingsValuesSchema })
+      .optional(),
     detail: z.string().optional(),
     detailFormat: z.enum(["text", "code"]).optional(),
     input: z.enum(["text", "secret"]).optional(),
@@ -122,6 +136,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     // an ask persisted before an owner toggles the private-HTTP flag still
     // validates on replay.
     credential: botSecretDestinationSchema({ allowPrivateHttpOrigin: true }).optional(),
+    /** A texted or emailed code for this site's page; answered once, never saved. */
+    oneTimeCode: OneTimeCodeTarget.optional(),
     /** The fields a login card asks for, by label; absent means DEFAULT_LOGIN_FIELD_LABELS. */
     loginFields: LoginFieldLabels.optional(),
     /** On a fetch approval, the site an "always" answer allows. */

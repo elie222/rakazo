@@ -13,6 +13,7 @@ import {
 } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation, useSearchParams } from "react-router-dom";
 import { LoadingState } from "./components/ai/primitives";
+import { CallLayout } from "./components/call/CallLayout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { MarkdownLinkPrompt } from "./components/markdown-link-prompt";
 import { PageLoading } from "./components/PageLoading";
@@ -63,6 +64,9 @@ const BoardPage = lazyComponent(() => import("./pages/Board").then((module) => m
 const AdminPluginsPage = lazyComponent(() =>
   import("./pages/AdminPluginsPage").then((module) => module.AdminPluginsPage),
 );
+const AdminAccessPage = lazyComponent(() =>
+  import("./pages/AdminAccessPage").then((module) => module.AdminAccessPage),
+);
 const NavLinkPage = lazyComponent(() =>
   import("./pages/NavLinkPage").then((module) => module.NavLinkPage),
 );
@@ -112,6 +116,7 @@ function SessionApp() {
   const signInDestination =
     next === "/integrations/setup" ||
     next === "/admin/plugins" ||
+    next === "/admin/access" ||
     next.startsWith(`${MCP_OAUTH_CALLBACK_PATH}?`) ||
     next.startsWith(`${SLACK_INSTALL_CALLBACK_PATH}?`)
       ? next
@@ -252,6 +257,12 @@ function SessionApp() {
                 }
               />
               <Route
+                path="/admin/access"
+                element={
+                  user ? <AdminAccessPage /> : <Navigate to="/sign-in?next=/admin/access" replace />
+                }
+              />
+              <Route
                 element={
                   user ? (
                     <SubscriptionGate fallback={<PageLoading />}>
@@ -262,14 +273,16 @@ function SessionApp() {
                   )
                 }
               >
-                <Route path="/onboarding/:step?" element={<OnboardingPage />} />
                 <Route path="/app" element={<ShellPage />} />
                 <Route path="/app/g/:groupId" element={<ShellPage />} />
-                <Route path="/app/artifacts" element={<ArtifactsPage />} />
-                <Route path="/app/artifacts/:artifactId" element={<ArtifactsPage />} />
-                {ticketBoardEnabled ? <Route path="/app/board" element={<BoardPage />} /> : null}
-                <Route path="/app/x/:linkId" element={<NavLinkPage />} />
                 <Route path="/app/:botId" element={<ShellPage />} />
+                <Route element={<CallLayout />}>
+                  <Route path="/onboarding/:step?" element={<OnboardingPage />} />
+                  <Route path="/app/artifacts" element={<ArtifactsPage />} />
+                  <Route path="/app/artifacts/:artifactId" element={<ArtifactsPage />} />
+                  {ticketBoardEnabled ? <Route path="/app/board" element={<BoardPage />} /> : null}
+                  <Route path="/app/x/:linkId" element={<NavLinkPage />} />
+                </Route>
               </Route>
               <Route path="*" element={<NotFoundPage />} />
             </Routes>

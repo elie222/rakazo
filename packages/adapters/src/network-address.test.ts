@@ -21,6 +21,14 @@ describe("pinned dns lookup", () => {
     );
   });
 
+  it("leaves lookups outside a pinned context to the system resolver", async () => {
+    await withPinnedDnsLookup("connectors.example.test", [], async () => undefined);
+    await expect(dns.promises.lookup("127.0.0.1")).resolves.toEqual({
+      address: "127.0.0.1",
+      family: 4,
+    });
+  });
+
   it("does not pin lookups for other hostnames", async () => {
     await withPinnedDnsLookup(
       "connectors.example.test",

@@ -102,6 +102,30 @@ describe("request_secret parameters", () => {
     ).toMatchObject({ connectionId: "abc" });
   });
 
+  it("offers a code request by oneTimeCode alone, and rejects it beside a credential", () => {
+    const schema = requestSecretSchema();
+    expect(
+      parseConnectorToolArgs(schema, {
+        label: "Code",
+        purpose: "otp",
+        oneTimeCode: { origin: "https://login.example.test" },
+      }),
+    ).toMatchObject({ oneTimeCode: { origin: "https://login.example.test" } });
+    for (const extra of [{ credential: sampleCredential }, { connectionId: "conn_1" }]) {
+      expect(() =>
+        parseConnectorToolArgs(schema, {
+          label: "Code",
+          purpose: "otp",
+          oneTimeCode: { origin: "https://login.example.test" },
+          ...extra,
+        }),
+      ).toThrow();
+    }
+    expect(() =>
+      parseConnectorToolArgs(schema, { label: "Code", purpose: "otp", oneTimeCode: {} }),
+    ).toThrow();
+  });
+
   it("rejects connectionId with replace, which belongs only on the credential branch", () => {
     expect(() =>
       parseConnectorToolArgs(requestSecretSchema(), {
@@ -118,9 +142,9 @@ describe("request_secret parameters", () => {
       anyOf?: unknown[];
       oneOf?: unknown[];
     };
-    // Type.Union serializes as anyOf; the model must still see two exclusive shapes.
+    // Type.Union serializes as anyOf; the model must still see three exclusive shapes.
     const variants = converted.anyOf ?? converted.oneOf ?? [];
-    expect(variants.length).toBe(2);
+    expect(variants.length).toBe(3);
   });
 
   it("keeps converted destination variants closed so both destinations cannot match", () => {
@@ -129,7 +153,7 @@ describe("request_secret parameters", () => {
       oneOf?: Array<{ additionalProperties?: unknown }>;
     };
     const variants = converted.anyOf ?? converted.oneOf ?? [];
-    expect(variants).toHaveLength(2);
+    expect(variants).toHaveLength(3);
     for (const variant of variants) {
       expect(variant.additionalProperties).toBe(false);
     }
@@ -153,6 +177,20 @@ describe("request_secret parameters", () => {
 });
 
 describe("prepareRequestSecretArguments", () => {
+  it("keeps a code request's site only", () => {
+    expect(
+      prepareRequestSecretArguments({
+        label: "Code",
+        purpose: "otp",
+        oneTimeCode: { origin: "https://login.example.test/verify?code=123456", code: "123456" },
+      }),
+    ).toEqual({
+      label: "Code",
+      purpose: "otp",
+      oneTimeCode: { origin: "https://login.example.test" },
+    });
+  });
+
   it("keeps credential, which is what makes the value persist", () => {
     expect(
       prepareRequestSecretArguments({

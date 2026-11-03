@@ -1,10 +1,9 @@
 import { randomBytes } from "node:crypto";
 import { ORPCError } from "@orpc/server";
-import { runContinueJob, runJobKey } from "@rakazo/adapter-kit";
+import { runContinueJob } from "@rakazo/adapter-kit";
 import type { getBotSecretMetadata } from "@rakazo/adapters";
 import {
   archiveBot,
-  cancelComputerRunWork,
   checkpointAndStopComputer,
   forgetBotSecret,
   hasActiveComputerControl,
@@ -13,7 +12,7 @@ import {
   pageUrlOrigin,
   revealBotSecret,
   SPACE_VAULT_NOT_IN_USE,
-  screenLeaseIdForRun,
+  stopCancelledGroupRuns,
   storeBotSecret,
   toComputerRef,
   validateBotModelChange,
@@ -51,7 +50,12 @@ import { requireIdentityConfirmation } from "../identity-confirmation.js";
 import type { RouterDeps } from "../router.js";
 import { loadMessagePage } from "../thread-message-pages.js";
 import type { RouterContext } from "./context.js";
-import { computerContext, modelSetup, THREAD_MESSAGE_PAGE_SIZE } from "./shared.js";
+import {
+  computerContext,
+  isRecordNotFound,
+  modelSetup,
+  THREAD_MESSAGE_PAGE_SIZE,
+} from "./shared.js";
 
 /** Surface a Space deletion race as a retryable conflict instead of a generic failure. */
 function mapSpaceLifecycleError(error: unknown): unknown {
@@ -290,6 +294,7 @@ export function botsRoutes(ctx: RouterContext) {
             description: source.description,
             instructions: source.instructions,
             notifyOnFinish: source.notifyOnFinish,
+            dailyCheckIns: source.dailyCheckIns,
             color: source.color,
             avatarSet: resolveBotAvatarSet(source.avatarSet),
             computerMode: source.computer?.scope === "dedicated" ? "dedicated" : "team",
@@ -357,8 +362,12 @@ export function botsRoutes(ctx: RouterContext) {
           spaceId: context.actor.spaceId,
           threadId: existing.thread.id,
           botId: input.botId,
-          emitBotUpdated: botProfileLabelsChanged(input),
+          emitBotUpdated:
+            botProfileLabelsChanged(input) ||
+            input.expectedSettings !== undefined ||
+            input.dailyCheckIns !== undefined,
           expectedInstructions: input.expectedInstructions,
+          expectedSettings: input.expectedSettings,
           data: {
             name: input.name,
             description: input.description,
@@ -382,6 +391,7 @@ export function botsRoutes(ctx: RouterContext) {
             ...(input.crossSpaceCommunication !== undefined
               ? { crossSpaceCommunication: input.crossSpaceCommunication }
               : {}),
+            ...(input.dailyCheckIns !== undefined ? { dailyCheckIns: input.dailyCheckIns } : {}),
             ...(input.fleetManagement !== undefined
               ? { fleetManagement: input.fleetManagement }
               : {}),
@@ -390,6 +400,10 @@ export function botsRoutes(ctx: RouterContext) {
               : {}),
           },
         }).catch((error) => {
+          if (input.expectedSettings && isRecordNotFound(error))
+            throw new ORPCError("CONFLICT", {
+              message: "Settings changed; review the current settings first.",
+            });
           if (!(error instanceof InstructionConflictError)) throw error;
           throw new ORPCError("CONFLICT", { message: error.message });
         });
@@ -624,51 +638,12 @@ export function botsRoutes(ctx: RouterContext) {
           if (!section) throw new IsolationError();
         }
         const updated = await groupRepos.updateGroup(context.actor, input);
-        await Promise.all(
-          updated.cancelledRunIds.map((runId) =>
-            deps.jobs.cancel(runJobKey(runId)).catch(() => undefined),
-          ),
-        );
+        await stopCancelledGroupRuns(deps, context.actor, updated);
         return updated.group;
       }),
       archive: authed.groups.archive.handler(async ({ context, input }) => {
         const archived = await groupRepos.archiveGroup(context.actor, input.groupId);
-        await Promise.all(
-          archived.cancelledRunIds.map((runId) =>
-            deps.jobs.cancel(runJobKey(runId)).catch(() => undefined),
-          ),
-        );
-        await Promise.all(
-          archived.computers.map(async (computer) => {
-            if (!computer.providerRef) return;
-            const adapterContext = {
-              operationId: "stop",
-              traceId: "stop",
-              spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
-              botId: computer.botId,
-              runId: computer.runId,
-              screenLeaseId: screenLeaseIdForRun(
-                { runId: computer.runId, fence: computer.fence },
-                computer.runId,
-              ),
-              cancelRunWork: true,
-              signal: new AbortController().signal,
-            };
-            const ref = toComputerRef(computer);
-            await cancelComputerRunWork(
-              deps.sandbox,
-              ref,
-              computer.id,
-              computer.runId,
-              adapterContext,
-            );
-            await deps.sandbox.releaseScreen?.(ref, adapterContext).catch(() => undefined);
-          }),
-        );
-        // Expire the leases only after teardown: while they were live, no other run could claim
-        // these screens.
-        await groupRepos.releaseArchivedRunLeases(archived.cancelledRunIds);
+        await stopCancelledGroupRuns(deps, context.actor, archived);
         return { ok: true as const };
       }),
       restore: authed.groups.restore.handler(async ({ context, input }) => {
@@ -681,6 +656,7 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       remove: authed.groups.remove.handler(async ({ context, input }) => {
         const removed = await groupRepos.removeGroup(context.actor, input.groupId);
+        await stopCancelledGroupRuns(deps, context.actor, removed);
         const cleanup = await Promise.allSettled(
           removed.artifactStorageKeys.map((storageKey) =>
             deps.artifacts.remove(

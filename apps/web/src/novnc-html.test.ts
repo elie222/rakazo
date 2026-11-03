@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   collectNovncHtml,
   injectNovncStorageShim,
+  isNovncExtensionError,
   isNovncPage,
   MAX_NOVNC_HTML_BYTES,
+  NOVNC_EXTENSION_ERROR,
   novncPageRequestHeaders,
   rewrittenNovncHeaders,
   shouldInjectNovncStorageShim,
@@ -134,6 +136,14 @@ describe("noVNC storage shim gate", () => {
     expect(stopped("moz-extension://abc/content.js")).toBe(true);
     expect(stopped("https://screen.example/core/rfb.js")).toBe(false);
     expect(stopped("")).toBe(false);
+    expect(injectNovncStorageShim("<head>")).toContain(NOVNC_EXTENSION_ERROR.source);
+  });
+
+  it("treats extension URLs as frame errors and leaves page errors alone", () => {
+    expect(isNovncExtensionError("chrome-extension://abc")).toBe(true);
+    expect(isNovncExtensionError("moz-extension://abc")).toBe(true);
+    expect(isNovncExtensionError("")).toBe(false);
+    expect(isNovncExtensionError("https://screens.example/vnc.html")).toBe(false);
   });
 });
 

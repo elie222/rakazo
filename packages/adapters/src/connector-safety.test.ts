@@ -10,12 +10,14 @@ describe("redactConnectorPayload", () => {
         {
           [secret]: `prefix ${secret} suffix`,
           nested: { value: secret },
+          list: [secret, "kept"],
         },
         [secret],
       ),
     ).toEqual({
       "[redacted]": "prefix [redacted] suffix",
       nested: { value: "[redacted]" },
+      list: ["[redacted]", "kept"],
     });
   });
 

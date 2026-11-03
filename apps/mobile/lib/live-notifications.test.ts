@@ -5,8 +5,10 @@ vi.mock("expo-notifications", () => ({
   setNotificationHandler: vi.fn(),
   getPresentedNotificationsAsync: vi.fn(async () => []),
   dismissNotificationAsync: vi.fn(async () => undefined),
+  dismissAllNotificationsAsync: vi.fn(async () => undefined),
 }));
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
+vi.mock("expo-secure-store", () => ({}));
 
 import * as Notifications from "expo-notifications";
 import {
@@ -15,6 +17,7 @@ import {
   dismissThreadNotifications,
   notificationTargetsThread,
   setOpenNotificationThread,
+  stopLiveNotifications,
 } from "./live-notifications";
 
 beforeEach(() => vi.clearAllMocks());
@@ -135,10 +138,24 @@ describe("after a chat's notifications change", () => {
       { request: { identifier: "b", content: { data: { threadId: "thread-2" } } } },
     ] as never);
 
-    await afterChatNotifyChange("", "", "", { threadId: "thread-1", notify: true });
+    await afterChatNotifyChange("", "", "", { botId: "bot-1", threadId: "thread-1", notify: true });
     expect(Notifications.dismissNotificationAsync).not.toHaveBeenCalled();
 
-    await afterChatNotifyChange("", "", "", { threadId: "thread-1", notify: false });
+    await afterChatNotifyChange("", "", "", {
+      botId: "bot-1",
+      threadId: "thread-1",
+      notify: false,
+    });
     expect(vi.mocked(Notifications.dismissNotificationAsync).mock.calls).toEqual([["a"]]);
+  });
+});
+
+describe("when the session ends", () => {
+  it("clears the previous account's delivered notifications", async () => {
+    await stopLiveNotifications();
+    expect(Notifications.dismissAllNotificationsAsync).not.toHaveBeenCalled();
+
+    await stopLiveNotifications(true);
+    expect(Notifications.dismissAllNotificationsAsync).toHaveBeenCalledOnce();
   });
 });

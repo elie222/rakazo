@@ -1,165 +1,63 @@
 ---
-import Button from "../components/Button.astro";
 import CaptionedImage from "../components/CaptionedImage.astro";
 import Footer from "../components/Footer.astro";
 import Header from "../components/Header.astro";
 import RichText from "../components/RichText.astro";
-import VsCard from "../components/VsCard.astro";
 import { githubStarsLabel } from "../github";
 import {
-  COMPARE_NOTE,
-  COMPARE_ROWS,
   GROK_ALTERNATIVE_DESCRIPTION,
   GROK_ALTERNATIVE_FAQ,
   GROK_ALTERNATIVE_H1,
   GROK_ALTERNATIVE_TITLE,
-  GROK_CHAT_FIGURE,
+  GROK_ALTERNATIVES,
+  GROK_HOWTO,
   GROK_INTRO,
   GROK_MODELS_FIGURE,
-  GROK_OTHER_ALTERNATIVES,
-  GROK_OTHER_LEAD,
   GROK_ROUTINE_FIGURE,
-  GROK_SECTIONS,
   GROK_SOURCES,
   GROK_UPDATED,
-  INSTALL_COMMAND,
-  SELF_HOST_AFTER,
-  SELF_HOST_LEAD,
   grokAlternativeStructuredData,
 } from "../grok-alternative";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { ogPublicPath } from "../og-pages";
-import { DOCS_URL, GITHUB_URL, SITE_URL } from "../site";
-import { vsCard } from "../vs-points";
+import { SITE_URL } from "../site";
 
 const starsLabel = await githubStarsLabel();
 const pageUrl = new URL(Astro.url.pathname, SITE_URL).toString();
 const structuredData = grokAlternativeStructuredData(pageUrl);
-const card = vsCard("grok-bot-alternative");
+
+function externalAttrs(href: string) {
+  if (!href.startsWith("http") || href.startsWith(SITE_URL)) return {};
+  return { target: "_blank", rel: "nofollow noopener noreferrer" };
+}
 ---
 
 <BaseLayout
   title={GROK_ALTERNATIVE_TITLE}
   description={GROK_ALTERNATIVE_DESCRIPTION}
+  ogImageAlt={GROK_ALTERNATIVE_H1}
   {structuredData}
   localeAlternates={false}
   ogImage={ogPublicPath("grok-bot-alternative")}
 >
   <div class="container">
     <Header starsLabel={starsLabel} />
-    <main id="main" class="guide">
+    <main id="main" class="privacy-copy guide">
       <h1>{GROK_ALTERNATIVE_H1}</h1>
       <p class="alt-note">Updated {GROK_UPDATED}.</p>
-      {card && <VsCard otherName="Grok Bot" rakazo={card.rakazo} other={card.other} />}
       {GROK_INTRO.map((paragraph) => (
         <p>
           <RichText text={paragraph} />
         </p>
       ))}
-      <CaptionedImage
-        src={GROK_CHAT_FIGURE.webp}
-        avif={GROK_CHAT_FIGURE.avif}
-        width={GROK_CHAT_FIGURE.width}
-        height={GROK_CHAT_FIGURE.height}
-        alt={GROK_CHAT_FIGURE.alt}
-        caption={GROK_CHAT_FIGURE.caption}
-        loading="lazy"
-      />
-      {
-        GROK_SECTIONS.map((section) => (
-          <section>
-            <h2>{section.heading}</h2>
-            {section.paragraphs.map((paragraph) => (
-              <p>
-                <RichText text={paragraph} />
-              </p>
-            ))}
-            {section.heading === "What Rakazo keeps from that shape" && (
-              <CaptionedImage
-                src={GROK_ROUTINE_FIGURE.webp}
-                avif={GROK_ROUTINE_FIGURE.avif}
-                width={GROK_ROUTINE_FIGURE.width}
-                height={GROK_ROUTINE_FIGURE.height}
-                alt={GROK_ROUTINE_FIGURE.alt}
-                caption={GROK_ROUTINE_FIGURE.caption}
-                loading="lazy"
-              />
-            )}
-            {section.heading === "Setup, then the chat" && (
-              <CaptionedImage
-                src={GROK_MODELS_FIGURE.webp}
-                avif={GROK_MODELS_FIGURE.avif}
-                width={GROK_MODELS_FIGURE.width}
-                height={GROK_MODELS_FIGURE.height}
-                alt={GROK_MODELS_FIGURE.alt}
-                caption={GROK_MODELS_FIGURE.caption}
-                loading="lazy"
-              />
-            )}
-          </section>
-        ))
-      }
-
-      <h2>How they compare</h2>
-      <div class="compare-scroll">
-        <table class="compare">
-          <caption class="sr-only">Rakazo compared with Grok Bot</caption>
-          <thead>
-            <tr>
-              <th scope="col">Topic</th>
-              <th scope="col">Rakazo</th>
-              <th scope="col">Grok Bot</th>
-            </tr>
-          </thead>
-          <tbody>
-            {
-              COMPARE_ROWS.map((row) => (
-                <tr>
-                  <th scope="row">{row.topic}</th>
-                  <td>{row.rakazo}</td>
-                  <td>{row.grok}</td>
-                </tr>
-              ))
-            }
-          </tbody>
-        </table>
-      </div>
-      <p>{COMPARE_NOTE}</p>
-      <ul class="source-list">
-        {
-          GROK_SOURCES.map((source) => (
-            <li>
-              <a href={source.href} target="_blank" rel="noreferrer">
-                {source.label}
-              </a>
-            </li>
-          ))
-        }
-      </ul>
-
-      <h2>Self-host Rakazo</h2>
-      <p>{SELF_HOST_LEAD}</p>
-      <pre><code>{INSTALL_COMMAND}</code></pre>
-      {SELF_HOST_AFTER.map((paragraph) => <p>{paragraph}</p>)}
-      <div class="cta-actions">
-        <Button href={DOCS_URL} external>Read the docs</Button>
-        <Button href={GITHUB_URL} variant="secondary" external>View on GitHub</Button>
-      </div>
-
-      <h2>Other alternatives</h2>
-      <p>
-        <RichText text={GROK_OTHER_LEAD} />
-      </p>
       <ul class="other-cards">
         {
-          GROK_OTHER_ALTERNATIVES.filter((item) => "image" in item).map((item) => (
+          GROK_ALTERNATIVES.map((item) => (
             <li class="other-card">
               <a
                 class="other-card__link"
                 href={item.href}
-                {...(item.href.startsWith("http")
-                  ? { target: "_blank", rel: "noreferrer" }
-                  : {})}
+                {...externalAttrs(item.href)}
               >
                 <picture>
                   <source type="image/avif" srcset={item.image.avif} />
@@ -174,6 +72,7 @@ const card = vsCard("grok-bot-alternative");
                 </picture>
                 <span class="other-card__name">{item.label}</span>
               </a>
+              {item.caption && <p class="other-card__caption">{item.caption}</p>}
               <p>
                 <RichText text={item.note} />
               </p>
@@ -181,13 +80,42 @@ const card = vsCard("grok-bot-alternative");
           ))
         }
       </ul>
-      {
-        GROK_OTHER_ALTERNATIVES.filter((item) => !("image" in item)).map((item) => (
-          <p>
-            <a href={item.href}>{item.label}</a> — <RichText text={item.note} />
-          </p>
-        ))
-      }
+      <CaptionedImage
+        src={GROK_ROUTINE_FIGURE.webp}
+        avif={GROK_ROUTINE_FIGURE.avif}
+        width={GROK_ROUTINE_FIGURE.width}
+        height={GROK_ROUTINE_FIGURE.height}
+        alt={GROK_ROUTINE_FIGURE.alt}
+        caption={GROK_ROUTINE_FIGURE.caption}
+        loading="lazy"
+      />
+      <CaptionedImage
+        src={GROK_MODELS_FIGURE.webp}
+        avif={GROK_MODELS_FIGURE.avif}
+        width={GROK_MODELS_FIGURE.width}
+        height={GROK_MODELS_FIGURE.height}
+        alt={GROK_MODELS_FIGURE.alt}
+        caption={GROK_MODELS_FIGURE.caption}
+        loading="lazy"
+      />
+
+      <h2>How to choose</h2>
+      {GROK_HOWTO.map((paragraph) => (
+        <p>
+          <RichText text={paragraph} />
+        </p>
+      ))}
+      <ul class="source-list">
+        {
+          GROK_SOURCES.map((source) => (
+            <li>
+              <a href={source.href} {...externalAttrs(source.href)}>
+                {source.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
 
       <h2 id="faq">FAQ</h2>
       {

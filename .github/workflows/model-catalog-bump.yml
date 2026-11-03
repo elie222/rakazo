@@ -123,7 +123,8 @@ jobs:
           branch="deps/pi-catalog-ai-${NEW_AI}-core-${NEW_CORE}"
           git checkout -B "$branch"
           git commit -m "Bump model catalog packages to pi-ai ${NEW_AI} / pi-agent-core ${NEW_CORE}"
-          if gh pr list --state open --head "$branch" --json number --jq '.[0].number' | grep -q .; then
+          if gh pr list --state open --head "$branch" --json number,isCrossRepository \
+            --jq '.[] | select(.isCrossRepository == false) | .number' | grep -q .; then
             echo "PR already open for $branch; leaving it in place."
             exit 0
           fi
@@ -143,8 +144,8 @@ jobs:
           while read -r pr head; do
             [ "$head" = "$branch" ] && continue
             gh pr close "$pr" --comment "Superseded by the pi-ai ${NEW_AI} / pi-agent-core ${NEW_CORE} catalog bump." || true
-          done < <(gh pr list --state open --json number,headRefName \
-            --jq '.[] | select(.headRefName | startswith("deps/pi-catalog-")) | "\(.number) \(.headRefName)"')
+          done < <(gh pr list --state open --limit 1000 --json number,headRefName,isCrossRepository \
+            --jq '.[] | select(.isCrossRepository == false and (.headRefName | startswith("deps/pi-catalog-"))) | "\(.number) \(.headRefName)"')
           gh pr create --title "Bump model catalog to pi-ai ${NEW_AI} / pi-agent-core ${NEW_CORE}" --body "$(cat <<EOF
           ## Why
 

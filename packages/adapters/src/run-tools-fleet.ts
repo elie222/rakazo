@@ -1,6 +1,7 @@
-import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
+import { BotSettingsValuesSchema } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
 import {
+  commitBotUpdate,
   createSpaceForMember,
   InstructionConflictError,
   InvalidSpaceNameError,
@@ -22,7 +23,16 @@ import {
   updateFleetGroup,
   updateOwnBotFromTool,
 } from "./fleet-tools.js";
+import {
+  listDefaultVoices,
+  prepareOwnBotSettings,
+  readOwnBotSettings,
+} from "./own-bot-settings.js";
 import type { RunContext } from "./run-context.js";
+import {
+  OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR,
+  OWN_INSTRUCTIONS_CHANGED_ERROR,
+} from "./run-context.js";
 import { mayOpenModelStream } from "./run-lifecycle.js";
 import { persistMessageInTransaction, publishMessage } from "./run-messages.js";
 import { fleetPrepareDeps } from "./run-model.js";
@@ -74,11 +84,16 @@ async function commitOwnInstructions(
   input: {
     instructions: string;
     reason: string;
-    previousInstructions: string;
-    proposalRunId?: string;
+    previousInstructions: string | undefined;
   },
 ): Promise<{ ok: true } | { error: string }> {
+  // A checkpoint that predates the baseline leaves the attempt without the text its rewrite
+  // was built from, and an approval proposed back then stored a fresh read instead. Refuse
+  // both rather than guess or overwrite what the rewrite never saw.
+  if (ctx.state.ownInstructionsBaseline === undefined || input.previousInstructions === undefined)
+    return { error: OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR };
   const { deps, run, runId, bot, context } = ctx;
+  const previousInstructions = input.previousInstructions;
   const committed = await deps.prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${run.threadId} FOR UPDATE`;
     await tx.$queryRaw`SELECT id FROM runs WHERE id = ${runId} FOR UPDATE`;
@@ -92,17 +107,12 @@ async function commitOwnInstructions(
         botId: bot.id,
         instructions: input.instructions,
         reason: input.reason,
-        expectedInstructions: input.previousInstructions,
-        proposalRunId: input.proposalRunId,
+        expectedInstructions: previousInstructions,
       });
     } catch (error) {
       if (!(error instanceof InstructionConflictError)) throw error;
-      if (input.proposalRunId)
-        await tx.bot.updateMany({
-          where: { id: bot.id, pendingInstructionsRunId: input.proposalRunId },
-          data: { pendingInstructionsRunId: null },
-        });
-      return { error: error.message };
+      // Re-reading cannot rebase this attempt, so point the model at a fresh run.
+      return { error: OWN_INSTRUCTIONS_CHANGED_ERROR };
     }
     if (!undoVersionId) return null;
     return persistMessageInTransaction(tx, run, "bot", [
@@ -112,7 +122,7 @@ async function commitOwnInstructions(
         status: "answered",
         instructionUpdate: {
           botId: bot.id,
-          before: redactSecrets(input.previousInstructions, ctx.secrets),
+          before: redactSecrets(previousInstructions, ctx.secrets),
           after: input.instructions,
           reason: input.reason,
           undoVersionId,
@@ -125,25 +135,12 @@ async function commitOwnInstructions(
     await deps.events
       .notify(run.threadId, committed.eventSeq, committed.firstResponseRunId)
       .catch((error) => getLogger().error("instruction update realtime notification", error));
+  ctx.state.ownInstructionsBaseline = input.instructions;
   return { ok: true };
 }
 
-/** Instruction proposals, Spaces and the bots this bot manages. */
+/** This bot's own settings, Spaces and the bots this bot manages. */
 export const fleetTools: ToolHandlers = {
-  async propose_instructions_update(ctx, call) {
-    const { name, args, nextApprovedTool, bypassApproval } = call;
-    if ((nextApprovedTool !== name && !bypassApproval) || !call.claimedEffect) {
-      return call.finish({ error: "Instruction updates require human approval." });
-    }
-    return call.finish(
-      await commitOwnInstructions(ctx, {
-        instructions: String(args.instructions),
-        reason: String(args.reason),
-        previousInstructions: String(args.previousInstructions),
-        proposalRunId: ctx.runId,
-      }),
-    );
-  },
   async create_space(ctx, call) {
     const { deps, run } = ctx;
     const { args } = call;
@@ -246,7 +243,7 @@ export const fleetTools: ToolHandlers = {
   async set_child_bot_model(ctx, call) {
     const { deps, run } = ctx;
     const { args } = call;
-    const modelDeps = { ...fleetPrepareDeps(deps, run), events: deps.events };
+    const modelDeps = { ...(await fleetPrepareDeps(deps, run)), events: deps.events };
     return call.finish(await setChildBotModel(modelDeps, ctx.fleetRun, args));
   },
   async create_child_routine(ctx, call) {
@@ -262,30 +259,120 @@ export const fleetTools: ToolHandlers = {
         await updateChildBot({ ...deps, runSecrets: ctx.secrets }, ctx.fleetRun, args),
       );
     }
-    const { instructions, ...profile } = args;
-    if (!argumentGiven(instructions))
-      return call.finish(await updateOwnBotFromTool(deps, run, thread.id, bot, profile, context));
-    const first = String(instructions).trim();
-    if (first.length > BOT_INSTRUCTIONS_MAX_LENGTH)
-      return call.finish({
-        error: `instructions must be at most ${BOT_INSTRUCTIONS_MAX_LENGTH} characters.`,
-      });
-    // The profile goes first, so a rejected field leaves the instructions unset for a retry.
-    const profileGiven = Object.values(profile).some(argumentGiven);
-    const updated = profileGiven
+    // A held change (see prepareOwnBotUpdate) runs only once the owner or Auto Review approves it.
+    if (typeof args.previousInstructions === "string") {
+      if ((call.nextApprovedTool !== call.name && !call.bypassApproval) || !call.claimedEffect)
+        return call.finish({ error: "This instruction change needs the owner's approval." });
+      // A request stored before the baseline kept a fresh read as its expected text. Without
+      // the marker it must not commit, whatever the resumed checkpoint restored.
+      if (args.previousInstructionsFromBaseline !== true)
+        return call.finish({ error: OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR });
+      return call.finish(
+        await commitOwnInstructions(ctx, {
+          instructions: String(args.instructions),
+          reason: String(args.reason),
+          previousInstructions: args.previousInstructions,
+        }),
+      );
+    }
+    const { instructions, model, thinkingLevel, readAloud, voice, ...profile } = args;
+    const modelDeps = await fleetPrepareDeps(deps, run);
+    const live = await deps.prisma.bot.findUniqueOrThrow({
+      where: { id: bot.id },
+      select: {
+        name: true,
+        description: true,
+        instructions: true,
+        color: true,
+        notifyOnFinish: true,
+        dailyCheckIns: true,
+        modelProvider: true,
+        modelId: true,
+        thinkingLevel: true,
+        autoSpeak: true,
+        voiceId: true,
+      },
+    });
+    if (!Object.values(args).some(argumentGiven)) {
+      // A read does not rebase the baseline: the text it returns has not shaped a model
+      // generation yet, and a truncated read would guard on text the model never saw.
+      return call.finish(await readOwnBotSettings(modelDeps, run, live));
+    }
+    const settings = await prepareOwnBotSettings(
+      modelDeps,
+      run,
+      live,
+      { model, thinkingLevel, readAloud, voice },
+      () => listDefaultVoices(deps, run, context),
+    );
+    if ("error" in settings) return call.finish(settings);
+    const before = BotSettingsValuesSchema.parse(
+      Object.fromEntries(
+        Object.keys(settings.data).map((key) => [key, live[key as keyof typeof settings.data]]),
+      ),
+    );
+    // The profile goes first, so a rejected field leaves everything else unchanged for a retry.
+    const updated = Object.values(profile).some(argumentGiven)
       ? await updateOwnBotFromTool(deps, run, thread.id, bot, profile, context)
       : undefined;
     if (updated && "error" in updated) return call.finish(updated);
-    const set = await commitOwnInstructions(ctx, {
-      instructions: first,
-      reason: "Set in chat",
-      previousInstructions: "",
-    });
-    if ("error" in set)
-      return call.finish({
-        error: `${updated ? "Your profile was updated, but you" : "You"} already have instructions; change them with propose_instructions_update.`,
+    if (
+      Object.entries(settings.data).some(
+        ([key, value]) => before[key as keyof typeof before] !== value,
+      )
+    ) {
+      try {
+        await commitBotUpdate({
+          prisma: deps.prisma,
+          notify: (threadId, seq) => deps.events.notify(threadId, seq),
+          spaceId: run.spaceId,
+          threadId: thread.id,
+          botId: bot.id,
+          emitBotUpdated: true,
+          expectedSettings: before,
+          data: settings.data,
+        });
+      } catch (error) {
+        if (!(error && typeof error === "object" && "code" in error && error.code === "P2025"))
+          throw error;
+        return call.finish({ error: "Your settings changed meanwhile; read them and try again." });
+      }
+      await publishMessage(deps, run, "bot", [
+        {
+          kind: "ask",
+          text: "Settings updated",
+          status: "answered",
+          settingsUpdate: { botId: bot.id, before, after: settings.data },
+        },
+      ]).catch((error) => getLogger().error("settings update card", error));
+    }
+    if (argumentGiven(instructions)) {
+      const set = await commitOwnInstructions(ctx, {
+        instructions: String(instructions),
+        reason: "Set in chat",
+        // The text the model worked from, not a fresh read: a change that landed since the
+        // attempt started conflicts instead of being overwritten, and a checkpoint that
+        // predates the baseline makes the commit itself refuse.
+        previousInstructions: ctx.state.ownInstructionsBaseline,
       });
-    return call.finish(updated ?? { ok: true });
+      if ("error" in set)
+        return call.finish({
+          error: `${updated || Object.keys(settings.data).length ? "Your other changes were saved, but your instructions were not: " : ""}${set.error}`,
+        });
+    }
+    return call.finish({
+      ok: true,
+      ...updated,
+      ...(settings.data.modelId !== undefined
+        ? { model: `${settings.data.modelProvider}/${settings.data.modelId}` }
+        : {}),
+      ...(settings.data.thinkingLevel !== undefined
+        ? { thinkingLevel: settings.data.thinkingLevel ?? "default" }
+        : {}),
+      ...(settings.data.autoSpeak !== undefined ? { readAloud: settings.data.autoSpeak } : {}),
+      ...(settings.data.voiceId !== undefined ? { voice: settings.data.voiceId ?? "default" } : {}),
+      ...(argumentGiven(instructions) ? { instructions: "updated" } : {}),
+    });
   },
   archive_bot: archiveBot,
   delete_bot: archiveBot,

@@ -5,19 +5,21 @@ import {
   Command,
   CommandEmpty,
   CommandGroup,
-  CommandInput,
   CommandItem,
   CommandList,
   Input,
+  ListSearchInput,
   Popover,
   PopoverContent,
   PopoverTrigger,
+  SectionHeading,
 } from "@rakazo/ui-web";
 import { ChevronRight, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import { useId, useRef, useState } from "react";
 import type { ModelCredential } from "../../lib/model-auth";
 import { useSpaceRpc } from "../../lib/space-rpc";
+import { useListSearch } from "../../lib/use-list-search";
 import { errorText } from "../../lib/user-error";
 import type { ConnectableProvider } from "./role-model-picker";
 
@@ -47,9 +49,9 @@ export function ProvidersSection({
 }) {
   return (
     <section className="mb-8" data-testid="model-providers">
-      <h3 className="mb-2.5 text-[15px] font-medium text-foreground">
+      <SectionHeading className="mb-2.5">
         <Trans>Providers</Trans>
-      </h3>
+      </SectionHeading>
       <ul className="divide-y divide-border rounded-xl border border-border">
         {[...credentials]
           // Saving a key reorders the account's connections; this list stays put.
@@ -152,9 +154,12 @@ function AddProvider({
   const { t } = useLingui();
   const searchRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const needle = query.trim().toLowerCase();
-  const matching = providers.filter((provider) => provider.name.toLowerCase().includes(needle));
+  const {
+    query,
+    setQuery,
+    showSearch,
+    visible: matching,
+  } = useListSearch(providers, { text: (provider) => provider.name });
   return (
     <Popover
       open={open}
@@ -178,17 +183,25 @@ function AddProvider({
       <PopoverContent
         align="start"
         sideOffset={6}
-        initialFocus={searchRef}
+        initialFocus={showSearch ? searchRef : undefined}
         className="w-[min(360px,var(--available-width))] gap-0 overflow-hidden p-0 motion-reduce:animate-none"
       >
-        <Command label={t`Add provider`} shouldFilter={false} loop>
-          <CommandInput
-            ref={searchRef}
-            value={query}
-            onValueChange={setQuery}
-            aria-label={t`Add provider`}
-            placeholder={t`Search`}
-          />
+        <Command
+          tabIndex={showSearch ? undefined : 0}
+          label={t`Add provider`}
+          shouldFilter={false}
+          loop
+        >
+          {showSearch ? (
+            <ListSearchInput
+              command
+              inputRef={searchRef}
+              query={query}
+              setQuery={setQuery}
+              label={t`Add provider`}
+              placeholder={t`Search`}
+            />
+          ) : null}
           <CommandList className="rk-scroll max-h-80">
             <CommandEmpty>
               <Trans>No results</Trans>

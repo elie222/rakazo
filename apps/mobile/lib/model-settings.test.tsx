@@ -1,15 +1,21 @@
 // @vitest-environment jsdom
 
+import { MAX_MODEL_CONTEXT_WINDOW, MAX_MODEL_MAX_TOKENS } from "@rakazo/contracts";
 import { notifyManager } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
+import { Alert } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ModelConnection from "../app/(settings)/model-connection";
 import Models from "../app/(settings)/models";
 import type { ModelConnectionRequest } from "./model-connection-request";
-import { modelConnectionRequest, openModelConnection } from "./model-connection-request";
+import {
+  MODEL_CONNECT_TIMEOUT_MS,
+  modelConnectionRequest,
+  openModelConnection,
+} from "./model-connection-request";
 import { modelPickerRequest } from "./model-picker-selection";
 import { queryClient } from "./query";
 
@@ -18,13 +24,30 @@ const { push, back, params, rpcCalls, saved } = vi.hoisted(() => ({
   push: vi.fn(),
   back: vi.fn(),
   params: {} as { requestId?: string; spaceId?: string },
-  rpcCalls: [] as [string, unknown, { requestContext?: { headers: object } }?][],
+  rpcCalls: [] as [
+    string,
+    unknown,
+    { requestContext?: { headers: object }; timeoutMs?: number }?,
+  ][],
   saved: {
     baseUrl: "https://models.example.test/v1",
     hasKey: false,
     label: "Fixture",
     held: null as Promise<void> | null,
     failMe: false,
+    apiProtocol: undefined as string | undefined,
+    reasoning: false,
+    thinkingLevel: undefined as string | undefined,
+    bots: [] as {
+      id: string;
+      name: string;
+      modelProvider: string | null;
+      modelId: string | null;
+    }[],
+    failBotList: false,
+    // A failed save either keeps the bot's own model or finds it already cleared elsewhere.
+    failBotUpdates: {} as Record<string, "kept" | "changed elsewhere">,
+    needsModel: false,
   },
 }));
 
@@ -39,7 +62,7 @@ vi.mock("./api", () => ({
   rpc: async (
     procedure: string,
     input?: unknown,
-    options?: { requestContext?: { headers: object } },
+    options?: { requestContext?: { headers: object }; timeoutMs?: number },
   ) => {
     rpcCalls.push([procedure, input, options]);
     if (saved.held) await saved.held;
@@ -50,8 +73,25 @@ vi.mock("./api", () => ({
         spaceId: "space-fixture",
         defaultProvider: "openai-compatible",
         defaultModel: "model-fixture",
+        needsModel: saved.needsModel,
       };
+    if (procedure === "models/probeOpenAiCompatible")
+      return { models: Array.from({ length: 11 }, (_, index) => `found-${index}`) };
     if (procedure === "models/role") return { primary: null, backups: [] };
+    if (procedure === "bots/list") {
+      if (saved.failBotList) throw new Error("offline");
+      return saved.bots;
+    }
+    if (procedure === "bots/update") {
+      const { botId } = input as { botId: string };
+      const failure = saved.failBotUpdates[botId];
+      if (failure !== "kept")
+        saved.bots = saved.bots.map((bot) =>
+          bot.id === botId ? { ...bot, modelProvider: null, modelId: null } : bot,
+        );
+      if (failure) throw new Error("offline");
+      return {};
+    }
     if (procedure === "models/connect") return { id: "credential-new" };
     if (procedure === "models/forRole") return [];
     if (procedure === "models/list")
@@ -77,6 +117,9 @@ vi.mock("./api", () => ({
           hasKey: saved.hasKey,
           headerNames: ["x-session"],
           label: saved.label,
+          ...(saved.apiProtocol ? { apiProtocol: saved.apiProtocol } : {}),
+          ...(saved.reasoning ? { reasoning: true } : {}),
+          ...(saved.thinkingLevel ? { thinkingLevel: saved.thinkingLevel } : {}),
         },
       ];
     return [];
@@ -89,7 +132,34 @@ vi.mock("expo-router", () => ({
   useFocusEffect: (effect: () => (() => void) | undefined) => useEffect(effect, [effect]),
 }));
 vi.mock("@expo/ui/community/menu", () => ({
-  MenuView: ({ children }: { children?: ReactNode }) => createElement("div", {}, children),
+  MenuView: ({
+    actions,
+    onPressAction,
+    title,
+    children,
+  }: {
+    actions: { id: string; title: string; state?: string }[];
+    onPressAction: (event: { nativeEvent: { event: string } }) => void;
+    title: string;
+    children?: ReactNode;
+  }) =>
+    createElement(
+      "div",
+      { "aria-label": title },
+      children,
+      actions.map((action) =>
+        createElement(
+          "button",
+          {
+            key: action.id,
+            type: "button",
+            "aria-pressed": action.state === "on",
+            onClick: () => onPressAction({ nativeEvent: { event: action.id } }),
+          },
+          action.title,
+        ),
+      ),
+    ),
 }));
 vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
@@ -103,11 +173,31 @@ vi.mock("./user-error", () => ({
   errorText: (_: unknown, fallback = "Something went wrong. Try again.") => fallback,
 }));
 vi.mock("./i18n", () => {
-  const t = (text: string) => text;
+  const t = (text: string, values: Record<string, string | number> = {}) =>
+    text.replace(/\{(\w+)\}/g, (match, key: string) => String(values[key] ?? match));
   return { useI18n: () => ({ t }) };
 });
 vi.mock("./message-action-sheet", () => ({ presentMessageActionSheet: vi.fn() }));
-vi.mock("../components/native-switch", () => ({ NativeSwitch: () => null }));
+vi.mock("../components/native-switch", () => ({
+  NativeSwitch: ({
+    accessibilityLabel,
+    value,
+    disabled,
+    onValueChange,
+  }: {
+    accessibilityLabel: string;
+    value: boolean;
+    disabled: boolean;
+    onValueChange: (value: boolean) => void;
+  }) =>
+    createElement("input", {
+      type: "checkbox",
+      "aria-label": accessibilityLabel,
+      checked: value,
+      disabled,
+      onChange: () => onValueChange(!value),
+    }),
+}));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/row-accessories", () => ({ Chevron: () => null, Checkmark: () => null }));
 vi.mock("../components/native-action-button", () => ({
@@ -151,17 +241,20 @@ vi.mock("react-native", () => {
       value,
       onChangeText,
       secureTextEntry,
+      maxLength,
     }: {
       accessibilityLabel?: string;
       placeholder?: string;
       value: string;
       onChangeText: (value: string) => void;
       secureTextEntry?: boolean;
+      maxLength?: number;
     }) =>
       createElement("input", {
         "aria-label": accessibilityLabel,
         placeholder,
         value,
+        maxLength,
         type: secureTextEntry ? "password" : "text",
         onInput: (event: { currentTarget: HTMLInputElement }) =>
           onChangeText(event.currentTarget.value),
@@ -368,8 +461,221 @@ describe("a Space's model override", () => {
     await act(async () => save.click());
     const connect = rpcCalls.find(([procedure]) => procedure === "models/connect");
     expect(connect?.[1]).toMatchObject({ makeDefault: true, scope: "space" });
-    expect(connect?.[2]).toEqual({ requestContext: otherSpace });
+    expect(connect?.[2]).toEqual({
+      requestContext: otherSpace,
+      timeoutMs: MODEL_CONNECT_TIMEOUT_MS,
+    });
   });
+
+  it("moves that Space's bots onto the main model in that Space", async () => {
+    params.spaceId = "space-other";
+    saved.bots = [
+      { id: "bot-own", name: "Archie", modelProvider: "anthropic", modelId: "claude-fixture" },
+    ];
+    try {
+      await remount(async () => {
+        await act(async () => root.render(createElement(Models)));
+      });
+      rpcCalls.length = 0;
+      await switchToSpaceDefault("Switch 1 bot to the space default?");
+      const sent = (procedure: string) => rpcCalls.find(([name]) => name === procedure)?.[2];
+      expect(sent("bots/update")).toEqual({ requestContext: otherSpace });
+      expect(sent("bots/list")).toMatchObject({ requestContext: otherSpace });
+      expect(container.textContent).toContain("1 bot now uses the space default.");
+    } finally {
+      saved.bots = [];
+    }
+  });
+});
+
+async function switchToSpaceDefault(confirmTitle: string) {
+  const button = [...container.querySelectorAll("button")].find(
+    (node) => node.textContent === "Use space default",
+  );
+  await act(async () => button!.click());
+  expect(rpcCalls.some(([procedure]) => procedure === "bots/update")).toBe(false);
+  const [title, , buttons] = vi.mocked(Alert.alert).mock.calls.at(-1)!;
+  expect(title).toBe(confirmTitle);
+  await act(async () => buttons!.find((choice) => choice.text === "Switch")!.onPress!());
+}
+
+it("moves bots off their own model onto the main model, keeping failed ones listed", async () => {
+  const pinned = (id: string, name: string) => ({
+    id,
+    name,
+    modelProvider: "anthropic",
+    modelId: "claude-fixture",
+  });
+  saved.bots = [
+    pinned("bot-archie", "Archie"),
+    pinned("bot-basil", "Basil"),
+    pinned("bot-nova", "Nova"),
+    pinned("bot-inbox", "Inbox"),
+    { id: "bot-default", name: "Scout", modelProvider: null, modelId: null },
+  ];
+  const renderModels = () =>
+    remount(async () => {
+      await act(async () => root.render(createElement(Models)));
+    });
+  try {
+    // An unreadable bot list hides only the bot group.
+    saved.failBotList = true;
+    await renderModels();
+    expect(container.textContent).toContain("Main model");
+    expect(container.textContent).not.toContain("Bot models");
+    expect(container.textContent).not.toContain("Could not load model settings");
+    saved.failBotList = false;
+    // Without a main model there is no default to move bots onto.
+    saved.needsModel = true;
+    await renderModels();
+    expect(container.textContent).toContain("Main model");
+    expect(container.textContent).not.toContain("Archie");
+    saved.needsModel = false;
+    await renderModels();
+    expect(container.textContent).toContain(
+      "4 bots have their own model: Archie, Basil, Nova, Inbox",
+    );
+    expect(container.textContent).not.toContain("Scout");
+
+    saved.failBotUpdates = { "bot-inbox": "kept", "bot-nova": "changed elsewhere" };
+    rpcCalls.length = 0;
+    await switchToSpaceDefault("Switch 4 bots to the space default?");
+    expect(container.textContent).toContain("2 bots now use the space default.");
+    expect(container.textContent).toContain("Could not switch Inbox. Try again.");
+    expect(container.textContent).toContain("1 bot has its own model: Inbox");
+    expect(container.textContent).not.toMatch(/Archie|Basil|Nova/);
+
+    saved.failBotUpdates = {};
+    rpcCalls.length = 0;
+    await switchToSpaceDefault("Switch 1 bot to the space default?");
+    expect(rpcCalls.filter(([procedure]) => procedure === "bots/update")).toEqual([
+      [
+        "bots/update",
+        { botId: "bot-inbox", modelProvider: null, modelId: null, thinkingLevel: null },
+        { requestContext: { headers: { "x-rakazo-space-id": "space-fixture" } } },
+      ],
+    ]);
+    expect(container.textContent).toContain("1 bot now uses the space default.");
+    expect(container.textContent).not.toContain("Could not switch");
+    expect(container.textContent).not.toContain("Use space default");
+  } finally {
+    saved.bots = [];
+    saved.failBotList = false;
+    saved.failBotUpdates = {};
+    saved.needsModel = false;
+  }
+});
+
+const PROTOCOL_LABELS = ["Chat Completions", "Responses", "Anthropic Messages"] as const;
+
+function protocolChoice(label: string) {
+  return [...container.querySelectorAll("button")].find((button) => button.textContent === label)!;
+}
+
+function currentProtocol(): string | undefined {
+  return PROTOCOL_LABELS.find(
+    (label) => protocolChoice(label).getAttribute("aria-pressed") === "true",
+  );
+}
+
+const EFFORT_LABELS = ["Default", "Minimal", "Low", "Medium", "High", "Extra high", "Max"];
+
+/** The reasoning-effort choice the picker marks current, when reasoning is on. */
+function currentEffort(): string | undefined {
+  return EFFORT_LABELS.find(
+    (label) => protocolChoice(label)?.getAttribute("aria-pressed") === "true",
+  );
+}
+
+async function saveConnection() {
+  const save = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Save",
+  )!;
+  await act(async () => save.click());
+}
+
+it("drops the saved model at another endpoint and restores it at the saved one", async () => {
+  await remount(() => renderConnection());
+  await change("OpenAI-compatible server URL", "https://other.example.test/v1");
+  await saveConnection();
+  expect(
+    rpcCalls.some(
+      ([procedure, input]) =>
+        procedure === "models/connect" &&
+        (input as { modelId?: string }).modelId === "model-fixture",
+    ),
+  ).toBe(false);
+  await change("OpenAI-compatible server URL", `${savedEndpoint}/`);
+  await saveConnection();
+  expect(rpcCalls.find(([procedure]) => procedure === "models/connect")?.[1]).toMatchObject({
+    modelId: "model-fixture",
+  });
+});
+
+it("offers the wire protocol on the compatible form and sends the saved choice", async () => {
+  saved.apiProtocol = "anthropic-messages";
+  try {
+    await remount(() => renderConnection());
+    expect(currentProtocol()).toBe("Anthropic Messages");
+    await act(async () => protocolChoice("Responses").click());
+    await saveConnection();
+    expect(rpcCalls.find(([procedure]) => procedure === "models/connect")?.[1]).toMatchObject({
+      provider: "openai-compatible",
+      apiProtocol: "responses",
+    });
+  } finally {
+    saved.apiProtocol = undefined;
+  }
+});
+
+it("keeps the chosen protocol when the endpoint changes", async () => {
+  saved.apiProtocol = "anthropic-messages";
+  try {
+    await remount(() => renderConnection());
+    await change("OpenAI-compatible server URL", "https://other.example.test/v1");
+    expect(currentProtocol()).toBe("Anthropic Messages");
+  } finally {
+    saved.apiProtocol = undefined;
+  }
+});
+
+/** Remounting folds Advanced away again; the effort picker lives inside it. */
+async function remountWithAdvanced(render: () => Promise<void>) {
+  await remount(render);
+  const advanced = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Advanced",
+  );
+  expect(advanced).toBeDefined();
+  await act(async () => advanced!.click());
+}
+
+it("clamps a staged effort when the protocol switch drops the level", async () => {
+  saved.reasoning = true;
+  saved.thinkingLevel = "max";
+  try {
+    await remountWithAdvanced(() => renderConnection());
+    expect(currentEffort()).toBe("Max");
+    await act(async () => protocolChoice("Anthropic Messages").click());
+    expect(currentEffort()).toBe("High");
+    await saveConnection();
+    expect(rpcCalls.find(([procedure]) => procedure === "models/connect")?.[1]).toMatchObject({
+      apiProtocol: "anthropic-messages",
+      thinkingLevel: "high",
+    });
+  } finally {
+    saved.reasoning = false;
+    saved.thinkingLevel = undefined;
+  }
+});
+
+it("offers no protocol choice on a catalog provider's connection", async () => {
+  await remount(() => renderConnection({ provider: "anthropic", credentialId: null }));
+  expect(PROTOCOL_LABELS.some((label) => container.textContent?.includes(label))).toBe(false);
+});
+
+it("lets the limit fields hold every value the server accepts", () => {
+  expect(field("Maximum output tokens")?.maxLength).toBe(String(MAX_MODEL_MAX_TOKENS).length);
+  expect(field("Context limit")?.maxLength).toBe(String(MAX_MODEL_CONTEXT_WINDOW).length);
 });
 
 it("keeps setup help and API key collapsible for generic compatible servers", async () => {
@@ -456,4 +762,27 @@ it("offers a retry when the first load fails, then shows the model lists", async
   } finally {
     saved.failMe = false;
   }
+});
+
+it("searches discovered models without losing the selected default", async () => {
+  expect(field("Search")).toBeNull();
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Find models")!
+      .click(),
+  );
+  expect(field("Search")).not.toBeNull();
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "found-0")!
+      .click(),
+  );
+  await act(async () => field("found-1")!.click());
+  await change("Search", "found-10");
+  expect(container.textContent).not.toContain("found-0");
+  expect(container.textContent).toContain("found-10");
+  await change("Search", "");
+  expect(container.textContent).toContain("found-0");
+  expect(field("found-0")?.checked).toBe(true);
+  expect(field("found-1")?.checked).toBe(true);
 });

@@ -88,7 +88,7 @@ export default function BotProfile() {
             currentApiBase(),
             await loadSessionToken(),
             selectedSpaceId() ?? "",
-            { threadId: bot.threadId, notify },
+            { botId, threadId: bot.threadId, notify },
           );
         } catch {
           // The server save succeeded; device reconciliation can retry later.

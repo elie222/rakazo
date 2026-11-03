@@ -216,11 +216,14 @@ export function mountGithubWebhookRoute(
       return c.json({ ok: true, ignored: true });
     }
 
-    // GitHub always sends X-GitHub-Delivery; without it retries cannot be deduped.
-    const deliveryId = c.req.header("x-github-delivery")?.trim();
-    if (!deliveryId) return unauthorized();
-
-    const payload = parseWebhookPayload(raw, c.req.header("content-type"));
+    const contentType = c.req.header("content-type");
+    // GitHub's default form content type sends the JSON in the `payload` field.
+    const mediaType = contentType?.split(";")[0]?.trim().toLowerCase();
+    const body =
+      mediaType === "application/x-www-form-urlencoded"
+        ? (new URLSearchParams(raw).get("payload") ?? "")
+        : raw;
+    const payload = parseWebhookPayload(body, contentType);
     const githubEvent = githubEventName(c.req.header("x-github-event"));
     const eventPrompt = formatGithubEventPrompt(githubEvent, payload);
 
@@ -229,7 +232,8 @@ export function mountGithubWebhookRoute(
         prompt: eventPrompt,
         routines: githubRoutines,
         source: "github",
-        idempotencyKey: deliveryId,
+        // The signature covers only the body, so key on it: a replay with a fresh delivery id still dedupes.
+        idempotencyKey: raw,
       }),
     );
   });

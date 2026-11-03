@@ -400,7 +400,14 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     const tool = (await handles.connectors.discoverTools(context)).find(
       (candidate) => candidate.route?.connectorId === "pipedream",
     );
-    expect(tool).toMatchObject({ name: "notes.write" });
+    expect(tool).toMatchObject({
+      name: expect.stringMatching(/^notes.write__/),
+      route: {
+        connectionId: started.connectionId,
+        resourceRevision: stored.providerRef,
+        toolName: "notes.write",
+      },
+    });
     const events = [];
     for await (const event of handles.connectors.execute(
       {

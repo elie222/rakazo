@@ -1,4 +1,5 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "Daily check-ins on unfinished work": "Tägliche Rückfragen zu offenen Aufgaben",
   "How other bots see it": "So sehen andere Bots ihn",
   "Share to": "Teilen mit",
   "{count} files": "{count} Dateien",
@@ -62,7 +63,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Search bots": "Bots suchen",
   "{count} messages with {peer}": "{count} Nachrichten mit {peer}",
   "About {label}": "Über {label}",
-  "Manage the bots it creates": "Die von ihm erstellten Bots verwalten",
+  "Manage other bots": "Andere Bots verwalten",
   "Allow cross-space bot communication":
     "Kommunikation zwischen Bots in verschiedenen Spaces erlauben",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
@@ -127,6 +128,8 @@ export const DE_MESSAGES: Record<string, string> = {
     "Das Modell hat eine unbrauchbare Antwort geliefert. Versuche es erneut.",
   "This connection's request limit is too small. Choose another model.":
     "Das Anfragelimit dieser Verbindung ist zu niedrig. Wähle ein anderes Modell.",
+  "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.":
+    "Das Werkzeugergebnis dieses Servers passt nicht ins Modell. Schalte „Werkzeugergebnisse vollständig behalten“ für diesen Server aus, oder wähle ein anderes Modell.",
   "This model's context window is too small. Choose another model.":
     "Das Kontextfenster dieses Modells ist zu klein. Wähle ein anderes Modell.",
   "{provider} took too long to respond. Try again.":
@@ -209,6 +212,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Custom server {host}": "Eigener Server {host}",
   "Don’t have an account?": "Du hast noch kein Konto?",
   Email: "E-Mail",
+  "Did you mean {email}?": "Meintest du {email}?",
   "Forgot password?": "Passwort vergessen?",
   "Loading…": "Wird geladen…",
   Password: "Passwort",
@@ -269,6 +273,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "Genehmige diesen Server, damit dein Agent seine Tools nutzen kann.",
   "Answered: {answer}": "Beantwortet: {answer}",
+  "Only enter a code {host} sent you.": "Gib nur einen Code ein, den {host} dir geschickt hat.",
   Archive: "Archivieren",
   Attach: "Anhängen",
   "Attach file": "Datei anhängen",
@@ -296,6 +301,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not share image": "Bild konnte nicht geteilt werden",
   "Loading image…": "Bild wird geladen…",
   "Open image {name}": "Bild {name} öffnen",
+  "Open {name}": "{name} öffnen",
   "Tap to open": "Zum Öffnen tippen",
   "Could not open message": "Nachricht konnte nicht geöffnet werden",
   "Could not send answer": "Antwort konnte nicht gesendet werden",
@@ -528,6 +534,10 @@ export const DE_MESSAGES: Record<string, string> = {
   "Saved.": "Gespeichert.",
   "Search models": "Modelle suchen",
   "Server URL": "Server-URL",
+  Protocol: "Protokoll",
+  "Chat Completions": "Chat Completions",
+  Responses: "Responses",
+  "Anthropic Messages": "Anthropic Messages",
   "Server found. Enter a model name.": "Server gefunden. Gib einen Modellnamen ein.",
   "Setup help": "Einrichtungshilfe",
   "Show less": "Weniger anzeigen",
@@ -626,18 +636,13 @@ export const DE_MESSAGES: Record<string, string> = {
   "Hear a sample": "Beispiel anhören",
   "Hi, this is how I'll sound when I read replies out loud.":
     "Hallo, so klinge ich, wenn ich Antworten vorlese.",
-  "Free, works offline": "Kostenlos, funktioniert offline",
   "Paste a replacement key": "Ersatzschlüssel einfügen",
   "Paste your API key": "Füge deinen API-Schlüssel ein",
   "Replace key": "Schlüssel ersetzen",
-  "Speak + transcribe": "Sprechen + transkribieren",
-  "Speak only": "Nur sprechen",
   "Speech model": "Sprachmodell",
   "Transcription model": "Transkriptionsmodell",
   Reconnect: "Erneut verbinden",
   "This device": "Dieses Gerät",
-  "Your phone's built-in voice. Free, no account needed":
-    "Die eingebaute Stimme deines Telefons. Kostenlos, kein Konto nötig",
   "Agent messages": "Agent-Nachrichten",
   Appearance: "Erscheinungsbild",
   Archived: "Archiviert",
@@ -681,6 +686,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "New password": "Neues Passwort",
   "Passwords do not match": "Die Passwörter stimmen nicht überein",
   "Allow once": "Einmal erlauben",
+  "Allow in this space": "In diesem Space erlauben",
+  "Allowed in this space": "In diesem Space erlaubt",
   "Always allow": "Immer erlauben",
   "Always allow this tool": "Dieses Tool immer erlauben",
   "Always allow {site}": "{site} immer erlauben",
@@ -923,12 +930,12 @@ export const DE_MESSAGES: Record<string, string> = {
   "Instruction history": "Anweisungsverlauf",
   Instructions: "Anweisungen",
   "Instructions updated": "Anweisungen aktualisiert",
+  "Settings updated": "Einstellungen aktualisiert",
   "Let this bot update its own instructions":
     "Dieser Bot darf seine eigenen Anweisungen aktualisieren",
   Restored: "Wiederhergestellt",
   Undo: "Rückgängig",
   "Update instructions?": "Anweisungen aktualisieren?",
-  "Could not restore instructions": "Anweisungen konnten nicht wiederhergestellt werden",
   "Hide chats": "Chats ausblenden",
   "Show chats": "Chats einblenden",
   "Remove photo": "Foto entfernen",
@@ -989,6 +996,22 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not update billing": "Abrechnung konnte nicht aktualisiert werden",
   Credits: "Guthaben",
   "Available credits": "Verfügbares Guthaben",
+  "Computer hours left": "Verbleibende Computerstunden",
+  "Trials get fewer hours to prevent abuse.":
+    "Testzeiträume erhalten weniger Stunden, um Missbrauch zu verhindern.",
+  "Start plan now": "Plan jetzt starten",
+  "Start your plan now?": "Plan jetzt starten?",
+  "Your trial ends and your card is charged {price} today.":
+    "Dein Testzeitraum endet und deine Karte wird heute mit {price} belastet.",
+  "Your trial ends and your card is charged today.":
+    "Dein Testzeitraum endet und deine Karte wird heute belastet.",
+  "Start plan": "Plan starten",
+  "Switch to yearly": "Zu jährlich wechseln",
+  "Switch to yearly?": "Zu jährlich wechseln?",
+  "Your card is charged {price} today, less the unused part of this month.":
+    "Deine Karte wird heute mit {price} belastet, abzüglich des ungenutzten Teils dieses Monats.",
+  "Your plan becomes {price} / year when your trial ends.":
+    "Nach dem Testzeitraum kostet dein Plan {price} / Jahr.",
   "Monthly credits": "Monatliches Guthaben",
   "Upgrade now": "Jetzt upgraden",
   "Downgrade at renewal": "Bei Verlängerung downgraden",
@@ -1002,6 +1025,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Use Rakazo credits": "Rakazo-Guthaben verwenden",
   "Choose a plan": "Tarif wählen",
   "Change plan": "Tarif ändern",
+  "Current plan": "Aktueller Tarif",
   Plan: "Tarif",
   None: "Keiner",
   "Free trial": "Kostenlose Testphase",
@@ -1026,6 +1050,13 @@ export const DE_MESSAGES: Record<string, string> = {
   "Full access, nothing to pay": "Voller Zugriff, nichts zu zahlen",
   "Day {days}": "Tag {days}",
   "{price} / month begins": "Ab dann {price} / Monat",
+  "Billing period": "Abrechnungszeitraum",
+  "Yearly −{percent}%": "Jährlich −{percent} %",
+  "{days} days free, then {price} / year. Cancel anytime.":
+    "{days} Tage kostenlos, danach {price} / Jahr. Jederzeit kündbar.",
+  "{price} / year": "{price} / Jahr",
+  "{price} / year begins": "Ab dann {price} / Jahr",
+  "{price} / year. Cancel anytime.": "{price} / Jahr. Jederzeit kündbar.",
   "Only the owner of this account can choose a plan.":
     "Nur der Inhaber dieses Kontos kann einen Tarif wählen.",
   Terms: "AGB",
@@ -1124,6 +1155,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Always open {site}": "Immer {site} öffnen",
   "Trusted sites": "Vertrauenswürdige Websites",
   "Run history": "Ausführungsverlauf",
+  "No reply": "Keine Antwort",
   "No runs yet": "Noch keine Ausführungen",
   "Load older runs": "Ältere Ausführungen laden",
   "Could not load run history": "Ausführungsverlauf konnte nicht geladen werden",
@@ -1150,15 +1182,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Add field": "Feld hinzufügen",
   Label: "Bezeichnung",
   "Could not show the credential": "Zugangsdaten konnten nicht angezeigt werden",
-  "Allow rule": "Erlaubnisregel",
-  "Ask rule": "Nachfrageregel",
-  "Block rule": "Sperrregel",
-  "Candidate rule": "Vorgeschlagene Regel",
-  "Could not preview rule": "Regelvorschau fehlgeschlagen",
-  Current: "Aktuell",
-  "No matching rule": "Keine passende Regel",
-  "Test rule": "Regel testen",
-  "Tool name": "Werkzeugname",
   Wallet: "Wallet",
   "Connect {name}": "{name} verbinden",
   "Could not load wallet": "Wallet konnte nicht geladen werden",
@@ -1226,6 +1249,28 @@ export const DE_MESSAGES: Record<string, string> = {
   "1 free month earned": "1 Gratismonat verdient",
   "{count} free months earned": "{count} Gratismonate verdient",
   "Submit a plugin": "Plugin einreichen",
+  Board: "Board",
+  "To do": "Zu erledigen",
+  "In progress": "In Arbeit",
+  "In review": "In Prüfung",
+  Blocked: "Blockiert",
+  "Won't do": "Wird nicht gemacht",
+  "Could not move the ticket": "Ticket konnte nicht verschoben werden",
+  "No tickets yet.": "Noch keine Tickets.",
+  "Bot models": "Bot-Modelle",
+  "1 bot has its own model:": "1 Bot hat ein eigenes Modell:",
+  "{count} bots have their own model:": "{count} Bots haben ein eigenes Modell:",
+  "Use space default": "Space-Standard verwenden",
+  "Switching…": "Wird gewechselt…",
+  "Switch 1 bot to the space default?": "1 Bot auf den Space-Standard umstellen?",
+  "Switch {count} bots to the space default?": "{count} Bots auf den Space-Standard umstellen?",
+  "Their own model is cleared. You can pick one again in each bot.":
+    "Ihr eigenes Modell wird entfernt. Du kannst in jedem Bot wieder eines wählen.",
+  Switch: "Umstellen",
+  "1 bot now uses the space default.": "1 Bot verwendet jetzt den Space-Standard.",
+  "{count} bots now use the space default.": "{count} Bots verwenden jetzt den Space-Standard.",
+  "Could not switch {failedNames}. Try again.":
+    "{failedNames} konnte nicht umgestellt werden. Versuche es erneut.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

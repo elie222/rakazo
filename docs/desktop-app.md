@@ -14,7 +14,7 @@ The first time it opens, the app asks which server to use:
 - **Rakazo Cloud**: sign in to your rakazo.com account.
 - **This computer**: run your own Rakazo locally in Docker. If Docker isn't installed, the app links
   to Docker Desktop, OrbStack and Docker Engine. Everything, including your bots' computers, then
-  runs on your machine.
+  runs on your machine. It is yours alone: once you create your account, it accepts no other.
 - **Existing instance**: connect to a Rakazo server you or your team already run. Enter its
   **Server address** and choose **Check connection**.
 
@@ -35,7 +35,9 @@ files.
   let them work directly on yours. **Computer Access…** in the app menu changes this later, and
   **Revoke Local Computer Access** turns it off.
 - With any server, turn on **Let bots use this computer** in **Settings → General** under
-  **Computers**. Your computer then shows as **Connected** or **Offline** there.
+  **Computers**. Your computer then shows as **Connected** or **Offline** there. Access belongs to
+  the account that turned it on and ends when that account signs out, resets its password or signs
+  out everywhere. Signing back in to the same account restores it without asking again.
 
 Either way, the app asks **Allow bots to use this computer?** before access is granted. See
 [The bot's computer](./computer.md#use-your-own-computer).
@@ -52,7 +54,18 @@ The app checks for updates and downloads them in the background. When one is rea
 
 ## Shortcuts
 
-- Cmd+N (Ctrl+N): create a bot, group or space.
-- Cmd+K (Ctrl+K): jump to any bot.
+Windows and Linux use Ctrl where macOS uses Cmd. The desktop app lists them in its menus.
+
+- Cmd+N: create a bot, group or space.
+- Cmd+K: open the command menu to jump to any bot.
+- Cmd+1 to Cmd+9 (desktop app): open one of the first nine bots in the sidebar.
+- Ctrl+Tab / Ctrl+Shift+Tab (desktop app): switch to the next or previous bot.
+- Cmd/Ctrl+Shift+Down / Cmd/Ctrl+Shift+Up (browser): switch to the next or previous bot.
+- Cmd+[ / Cmd+] (Alt+Left / Alt+Right on Windows and Linux, desktop app): go back or forward.
+- Cmd+F (desktop app): search.
+- Cmd+B: show or hide the sidebar.
+- Cmd+, (desktop app): open Settings.
+- Esc in the message box: stop the bot's reply.
+- Typing anywhere outside a text field starts a message.
 
 The dock icon shows a badge count of unread chats.

@@ -21,6 +21,8 @@ import type {
   BrowserCapabilities,
   BrowserNavigateRequest,
   BrowserNavigateResult,
+  BrowserPurchaseCheckRequest,
+  BrowserPurchaseCheckResult,
   BrowserSnapshotRequest,
   BrowserSnapshotResult,
   CloudAgentCapabilities,
@@ -96,7 +98,7 @@ import type {
 
 export interface SandboxProvider {
   /** True when every running minute is billed, so the active-lifetime cap applies. */
-  billsWhileRunning?(computer: ComputerRef): boolean;
+  billsWhileRunning?(computer: Pick<ComputerRef, "kind">): boolean;
   describe(): AdapterDescriptor<SandboxCapabilities>;
   /** Workspace directory operations for hosts without the standard Unix command tools. */
   workspaceDirectories?(
@@ -246,6 +248,9 @@ export interface ConnectorProvider {
     context: AdapterContext,
   ): Promise<{ call: ConnectorCall; tool: ConnectorTool } | undefined>;
   execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent>;
+  /** Release run-scoped state (open sessions) of a run that ended for good on
+   * this worker. A run that ended elsewhere is bounded by the provider itself. */
+  endRun?(runId: string): void;
 }
 
 export interface ConnectionAuthProvider {
@@ -473,6 +478,19 @@ export interface BillingProvider {
   setMonthlyCredits?(customerId: string, amountCents: number): Promise<void>;
   /** Flat monthly own-key plan: access without credits. */
   createByokCheckout?(input: BillingByokCheckoutRequest): Promise<{ url: string }>;
+  /** Ends the customer's running trial now and bills the first period; a no-op without one. */
+  endTrial?(customerId: string): Promise<void>;
+  /**
+   * Moves the customer's live monthly own-key subscription `subscriptionId` to `amountCents` a
+   * year, charging the difference now less the unused part of the month. A failed payment leaves
+   * the plan unchanged. Returns false without charging when that subscription is no longer an active
+   * or trialing monthly own-key plan, is set to cancel, or monthly credits have started.
+   */
+  switchByokToYearly?(
+    customerId: string,
+    subscriptionId: string,
+    amountCents: number,
+  ): Promise<boolean>;
   /** Ends every live own-key plan at its period end. */
   endByokPlans?(customerId: string): Promise<void>;
   /**
@@ -603,6 +621,15 @@ export interface BrowserProvider {
     request: BrowserActRequest,
     context: AdapterContext,
   ): Promise<BrowserActResult>;
+  /**
+   * Whether these clicks, or a click or key on the screen, would complete a purchase, without acting.
+   * A browser that cannot tell, such as an older computer image, answers none.
+   */
+  purchaseCheck?(
+    computer: ComputerRef,
+    request: BrowserPurchaseCheckRequest,
+    context: AdapterContext,
+  ): Promise<BrowserPurchaseCheckResult>;
 }
 
 /**

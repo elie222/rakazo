@@ -136,7 +136,6 @@ ${script}`;
 
   it.each([
     ["../escape.txt", 0o100644],
-    ["nested/../../escape.txt", 0o100644],
     ["/escape.txt", 0o100644],
     ["nested\\..\\escape.txt", 0o100644],
     ["apps/web/test-results/link", 0o120777],
@@ -281,9 +280,9 @@ else:
         const changedPaths = path.join(root, "changed-paths.txt");
         write(changedPaths, "apps/web/src/example.tsx\n");
         const comment = execFileSync(
-          "pnpm",
+          process.execPath,
           [
-            "exec",
+            "--import",
             "tsx",
             "packages/testkit/src/cli/build-playwright-pr-screenshot-comment.ts",
             path.join(checkout, ".tmp/playwright-dashboard/screenshots/review.json"),

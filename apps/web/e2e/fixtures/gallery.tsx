@@ -236,7 +236,6 @@ const approvals: Scenario = {
         detail: instructionUpdateDiff(
           "Reply in English.",
           "Reply in English. Keep summaries to one paragraph.",
-          "You asked for shorter summaries.",
         ),
         detailFormat: "code",
         actions: [
@@ -257,6 +256,22 @@ const approvals: Scenario = {
           after: "Reply in English. Be brief.",
           reason: "You asked for brevity.",
           undoVersionId: "version-1",
+        },
+      },
+    ]),
+    bot([
+      {
+        kind: "ask",
+        text: "Settings updated",
+        status: "answered",
+        settingsUpdate: {
+          botId: BOT.botId,
+          before: { modelProvider: "anthropic", modelId: "claude-haiku-5.5", thinkingLevel: "low" },
+          after: {
+            modelProvider: "anthropic",
+            modelId: "claude-sonnet-5.5",
+            thinkingLevel: "high",
+          },
         },
       },
     ]),

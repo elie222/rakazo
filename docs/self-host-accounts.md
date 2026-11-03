@@ -17,9 +17,15 @@ server integration credentials, or deployment updates, and cannot read deploymen
 
 There is no app-admin role, first-user privilege, or `ADMINS` list. Workspace owners manage only their own workspace.
 
-`RAKAZO_ADMIN_EMAILS` names accounts, comma-separated, that review plugin submissions and add
-stdio MCP servers ([integrations](self-host-integrations.md)). An account counts only once its
-email is verified. It grants nothing else.
+`RAKAZO_ADMIN_EMAILS` names accounts, comma-separated, that review plugin submissions, add stdio
+MCP servers ([integrations](self-host-integrations.md)), and, on deployments that sell model
+credits, give free access at `/admin/access`. An account counts only once its email is verified.
+It grants nothing else.
+
+A free-access grant names an email and gives up to $1,000 of model credits, up to 12 free own-key
+months, or both. Whoever owns an organization with that verified email receives it the next time they
+open the app, whether they signed up before or after the grant. A grant can be revoked until it is
+received.
 
 ## Email verification and sign-in codes
 
@@ -32,6 +38,8 @@ three attempts. A code can create an account, so it follows the same registratio
 rules as password signup. Signing in with a code to an existing unverified account removes that
 account's password, SSO links and sessions, since nothing proved they belonged to the mailbox
 owner. This is what stops someone who registered another person's address from keeping access.
+A password reset proves the mailbox the same way, so resetting an unverified account's password
+also removes its SSO links, passkeys and paired devices.
 
 Allowlisted signup requires mailbox verification and email delivery, including the first account.
 Without email delivery, use the server-side account bootstrap described below; public signup never marks an address verified or assigns server permissions.
@@ -156,10 +164,13 @@ never register a client secret in the mobile app. Mobile stores the resulting se
 SecureStore, like password sign-in. Native builds need the Expo WebBrowser module.
 
 Provider emails are verified only when `email_verified` is the boolean `true`. False or missing
-claims stay unverified, including on subsequent sign-ins. Sign-in never links accounts by email.
+claims stay unverified, including on subsequent sign-ins, and an unverified claim never changes
+the account's email. Sign-in never links accounts by email.
 If an email belongs to another account, sign in to that existing account and choose **Link SSO**
 in account settings. Linking requires an authenticated session, a verified provider email and
-matching email addresses. The issuer and provider subject identify the linked account thereafter. Changing issuers does
+matching email addresses. With email delivery, an account links SSO only after its email is
+verified. Without it, an unverified account links only from a browser signed in to it, so not
+from the mobile app. The issuer and provider subject identify the linked account thereafter. Changing issuers does
 not reuse an old identity. Old-issuer links remain stored but do not count as linked to the
 current provider, so **Link SSO** becomes available again. Link the new identity from the
 existing signed-in account; authenticated-session, verified-email and matching-email checks
@@ -210,8 +221,17 @@ desktop app uses the system passkey sheet, which only serves the domain the rele
 associated with (`app.rakazo.com`), so it hides passkeys for other servers.
 
 Native apps can use a domain's passkeys only when the domain vouches for them and the app was
-built for that domain (the app's associated domain comes from `EXPO_PUBLIC_API_URL` at build
-time). To let a build use this server's passkeys, set:
+built for that domain. The iOS app's associated domain comes from `EXPO_PUBLIC_API_URL` at build
+time. A macOS desktop build takes it from `RAKAZO_PASSKEY_RP_ID` (default `app.rakazo.com`): set
+it to the same domain for `pnpm build` and for `scripts/passkey-entitlements.ts`, then package with
+electron-builder's `-c.mac.entitlements` set to that script's output and `-c.mac.provisioningProfile`
+set to a profile for your App ID with the Associated Domains capability, as the release workflow
+does. Without both, macOS ignores the association and the app hides passkeys. When Apple's CDN
+cannot reach the server (a private network or a VPN such as Tailscale), also set
+`RAKAZO_PASSKEY_DEVELOPER_MODE=1` for either build: a development-signed app then fetches the
+association file itself, once associated-domains developer mode is on (Settings > Developer on
+iOS, `sudo swcutil developer-mode -e true` on macOS, where the app must also live in
+`/Applications`). To let a build use this server's passkeys, set:
 
 ```bash
 # iOS and the macOS desktop app (dev.rakazo.desktop): <Apple Team ID>.<bundle id>, comma-separated.

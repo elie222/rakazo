@@ -4,6 +4,7 @@ import { ScrollViewMarker } from "react-native-screens/experimental";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ThreadScrollSurface } from "../components/thread-scroll-surface";
 import {
+  threadColumnPadding,
   threadEdgeOptions,
   threadHeaderClearance,
   threadHeaderFloats,
@@ -78,4 +79,23 @@ it.each([64, 96, 116, 120])(
 
 it("preserves Android clearance without a floating header", () => {
   expect(threadHeaderClearance(0)).toEqual({ padding: 8, anchor: 24, minHeight: 0 });
+});
+
+it("pads the chat column inside the screen, including a cutout and a wide gutter", () => {
+  expect(threadColumnPadding({ left: 0, right: 0 }, false)).toEqual({
+    paddingStart: 20,
+    paddingEnd: 20,
+  });
+  expect(threadColumnPadding({ left: 40, right: 8 }, false)).toEqual({
+    paddingStart: 60,
+    paddingEnd: 28,
+  });
+});
+
+it("keeps a physical cutout on its own side when the layout is right to left", () => {
+  // In RTL, start is the right edge and end (where the jump button sits) is the left edge.
+  expect(threadColumnPadding({ left: 40, right: 8 }, true)).toEqual({
+    paddingStart: 28,
+    paddingEnd: 60,
+  });
 });

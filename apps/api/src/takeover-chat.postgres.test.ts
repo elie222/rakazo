@@ -3,14 +3,19 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { AgentRunRequest, JobPublisher } from "@rakazo/adapter-kit";
-import { computerControlExpireJobKey } from "@rakazo/adapter-kit";
+import { computerControlExpireJobKey, runJobKey } from "@rakazo/adapter-kit";
 import {
+  acquireComputerExecutionLease,
+  ComputerBusyError,
+  cancelComputerRunWorkArgv,
   createRunExecutor,
   EncryptedSecretStore,
   FakeBrowserProvider,
   FakeSandboxProvider,
   LocalAgentHomeStore,
   ScriptedAgentRuntime,
+  screenLeaseIdForRun,
+  updateFleetGroup,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import {
@@ -19,7 +24,7 @@ import {
   TAKEOVER_COMPUTER_SKIPPED_STATE,
   TAKEOVER_WAIT_EXPIRE_AFTER_MS,
 } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
+import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   asSystem,
   createDb,
@@ -634,6 +639,105 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     ).toBe(0);
   });
 
+  describe("in a group chat", () => {
+    /** The waiting run belongs to the second member; the first member has nothing to do with it. */
+    async function setupGroup() {
+      const fixture = await setup();
+      const first = await system.bot.create({
+        data: {
+          spaceId: fixture.actor.spaceId,
+          userId: fixture.actor.userId,
+          name: "Bystander",
+          color: "test",
+        },
+      });
+      const group = await system.chatGroup.create({
+        data: {
+          spaceId: fixture.actor.spaceId,
+          userId: fixture.actor.userId,
+          name: "Fixture group",
+          members: { create: [{ botId: first.id }, { botId: fixture.bot.id }] },
+          thread: { create: { spaceId: fixture.actor.spaceId, userId: fixture.actor.userId } },
+        },
+        include: { thread: true },
+      });
+      const threadId = group.thread!.id;
+      await system.task.updateMany({ where: { id: fixture.run.taskId }, data: { threadId } });
+      await system.run.update({ where: { id: fixture.run.id }, data: { threadId } });
+      const card = await system.message.create({
+        data: {
+          threadId,
+          botId: fixture.bot.id,
+          runId: fixture.run.id,
+          seq: 1,
+          role: "bot",
+          blocks: [{ kind: "text", text: "Please enter the code on the screen." }],
+        },
+      });
+      const call = async (path: "send" | "react", json: Record<string, unknown>) => {
+        const { response } = await new RPCHandler(createRouter(fixture.deps)).handle(
+          new Request(`http://127.0.0.1/rpc/threads/${path}`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ json: { groupId: group.id, ...json } }),
+          }),
+          { prefix: "/rpc", context: { actor: fixture.actor } },
+        );
+        return response!;
+      };
+      return { ...fixture, first, threadId, card, call };
+    }
+
+    it.each(["send", "react"] as const)(
+      "hands the screen back to the member that asked for it on a group %s",
+      async (path) => {
+        const group = await setupGroup();
+        const revoke = vi.spyOn(group.sandbox, "setScreenControl");
+        const response = await group.call(
+          path,
+          path === "send"
+            ? { text: "@Fixture the code is 1234.", clientNonce: "group-reply" }
+            : { messageId: group.card.id, reaction: "👍", clientNonce: "group-thumb" },
+        );
+        expect(response.status).toBe(200);
+        expect(await group.control()).toMatchObject({
+          controlHolder: "bot",
+          controlRunId: null,
+          controlBotId: null,
+          controlLeaseId: null,
+        });
+        expect(revoke).toHaveBeenCalledWith(
+          expect.anything(),
+          false,
+          expect.anything(),
+          group.leaseId,
+        );
+        expect(
+          await system.event.findMany({
+            where: { runId: group.run.id, type: "computer.takeover.released" },
+          }),
+        ).toMatchObject([{ payload: { holder: "bot", reason: "done", leaseId: group.leaseId } }]);
+        expect(await system.run.findUniqueOrThrow({ where: { id: group.run.id } })).toMatchObject({
+          status: "queued",
+          checkpoint: "takeover",
+        });
+      },
+    );
+
+    it("keeps the screen when the reply is for a member that is not waiting", async () => {
+      const group = await setupGroup();
+      const before = await group.control();
+      const revoke = vi.spyOn(group.sandbox, "setScreenControl");
+      const response = await group.call("send", {
+        text: "@Bystander how are you?",
+        clientNonce: "group-other-member",
+      });
+      expect(response.status).toBe(200);
+      expect(await group.control()).toEqual(before);
+      expect(revoke).not.toHaveBeenCalled();
+    });
+  });
+
   it("does not release the takeover of a routine run that the reply does not steer", async () => {
     const fixture = await setup("opened", "routine");
     const before = await fixture.control();
@@ -859,6 +963,265 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       }),
     ).toBe(1);
   });
+
+  /** Ada's takeover wait from setup() moves into a group where Ben works too. */
+  async function groupWithWaitingRun() {
+    const { actor, bot: ada, run, computer, sandbox, jobs, deps, control } = await setup();
+    const { spaceId, userId } = actor;
+    const bot = (name: string) =>
+      system.bot.create({
+        data: { spaceId, userId, name, color: "test", computerId: computer.id },
+      });
+    const [ben, cy] = [await bot("Ben"), await bot("Cy")];
+    const group = await system.chatGroup.create({
+      data: {
+        spaceId,
+        userId,
+        name: "Crew",
+        members: { create: [{ botId: ada.id }, { botId: ben.id }, { botId: cy.id }] },
+        thread: { create: { spaceId, userId } },
+      },
+      include: { thread: true },
+    });
+    const threadId = group.thread!.id;
+    await system.task.update({ where: { id: run.taskId }, data: { threadId } });
+    await system.run.update({ where: { id: run.id }, data: { threadId } });
+    const benTask = await system.task.create({
+      data: { spaceId, userId, botId: ben.id, threadId, prompt: "Sign in.", status: "running" },
+    });
+    const benRun = await system.run.create({
+      data: {
+        spaceId,
+        userId,
+        botId: ben.id,
+        threadId,
+        taskId: benTask.id,
+        status: "running",
+        trigger: "user",
+      },
+    });
+    const leaseOf = (botId: string) =>
+      system.computerExecutionLease.findUniqueOrThrow({
+        where: { computerId_botId: { computerId: computer.id, botId } },
+      });
+    const adaLease = await leaseOf(ada.id);
+    const benLease = await system.computerExecutionLease.create({
+      data: {
+        computerId: computer.id,
+        botId: ben.id,
+        runId: benRun.id,
+        fence: 1,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    const removeAda = { groupId: group.id, botIds: [ben.id, cy.id] };
+    const saveFromSettings = async (prismaClient = prisma, route = "update") => {
+      const { response } = await new RPCHandler(
+        createRouter({ ...deps, prisma: prismaClient }),
+      ).handle(
+        new Request(`http://127.0.0.1/rpc/groups/${route}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: route === "update" ? removeAda : { groupId: group.id } }),
+        }),
+        { prefix: "/rpc", context: { actor } },
+      );
+      expect(response?.status).toBe(200);
+    };
+    const saveFromManager = (prismaClient = prisma) =>
+      runAsTenant(actor, () =>
+        updateFleetGroup(
+          { prisma: prismaClient, events: createThreadEvents(prisma), jobs, sandbox },
+          {
+            spaceId,
+            userId,
+            botId: cy.id,
+            groupId: null,
+            threadId: randomUUID(),
+            runId: randomUUID(),
+          },
+          { ...removeAda, expectedBotIds: [ada.id, ben.id, cy.id] },
+        ),
+      );
+    /** The removed bot's next chat gets the computer now, not when the takeover hold ends. */
+    const expectComputerFreed = async () => {
+      await expect(
+        runAsSystem("test lease", () =>
+          acquireComputerExecutionLease(prisma, {
+            computerId: computer.id,
+            runId: randomUUID(),
+            botId: ada.id,
+          }),
+        ),
+      ).resolves.toMatchObject({ fence: 2 });
+      // Ben stays in the group, so his run keeps its computer.
+      expect(await leaseOf(ben.id)).toEqual(benLease);
+    };
+    const groupUpdates = () => system.event.count({ where: { threadId, type: "group.updated" } });
+    return {
+      providerRef: (await control()).providerRef,
+      computer,
+      ada,
+      run,
+      adaLease,
+      jobs,
+      sandbox,
+      saveFromSettings,
+      saveFromManager,
+      expectComputerFreed,
+      groupUpdates,
+    };
+  }
+
+  it.each(["the group settings", "a manager bot"])(
+    "stops and frees the computer of a bot %s removes while it waits for takeover",
+    async (path) => {
+      const fixture = await groupWithWaitingRun();
+      const { ada, run } = fixture;
+      const execute = vi.spyOn(fixture.sandbox, "execute");
+      const releaseScreen = vi.spyOn(fixture.sandbox, "releaseScreen");
+
+      if (path === "the group settings") {
+        // Two saves of the same removal race; only the one that cancels the run tears it down.
+        await Promise.all([fixture.saveFromSettings(), fixture.saveFromSettings()]);
+      } else {
+        await expect(fixture.saveFromManager()).resolves.toMatchObject({ ok: true });
+      }
+
+      expect(vi.mocked(fixture.jobs.cancel).mock.calls).toEqual([[runJobKey(run.id)]]);
+      expect(execute).toHaveBeenCalledWith(
+        expect.objectContaining({ providerRef: fixture.providerRef }),
+        expect.objectContaining({ argv: cancelComputerRunWorkArgv(fixture.computer.id, run.id) }),
+        expect.anything(),
+      );
+      expect(releaseScreen).toHaveBeenCalledTimes(1);
+      expect(releaseScreen).toHaveBeenCalledWith(
+        expect.objectContaining({ providerRef: fixture.providerRef }),
+        expect.objectContaining({
+          spaceId: ada.spaceId,
+          botId: ada.id,
+          runId: run.id,
+          screenLeaseId: screenLeaseIdForRun(fixture.adaLease, run.id),
+          cancelRunWork: true,
+        }),
+      );
+      await fixture.expectComputerFreed();
+    },
+  );
+
+  it("frees the removed bot's computer even when releasing its screen fails", async () => {
+    const fixture = await groupWithWaitingRun();
+    vi.spyOn(fixture.sandbox, "releaseScreen").mockRejectedValue(new Error("provider unavailable"));
+
+    await fixture.saveFromSettings();
+    await fixture.expectComputerFreed();
+  });
+
+  it.each(["update", "archive"])(
+    "tears down a group run that takes its computer while groups/%s is saving",
+    async (route) => {
+      const fixture = await groupWithWaitingRun();
+      const { ada, run, computer } = fixture;
+      // Ada's run is executing and has not taken its computer yet.
+      await system.computerExecutionLease.delete({ where: { id: fixture.adaLease.id } });
+      await system.run.update({
+        where: { id: run.id },
+        data: {
+          status: "running",
+          leaseOwner: "worker",
+          leaseFence: 1,
+          leaseExpiresAt: new Date(Date.now() + 60_000),
+        },
+      });
+      const releaseScreen = vi.spyOn(fixture.sandbox, "releaseScreen");
+      let executorAcquire: unknown;
+
+      await fixture.saveFromSettings(
+        afterFirstRead(prisma, "computerExecutionLease", async () => {
+          executorAcquire = await runAsSystem("test lease", () =>
+            acquireComputerExecutionLease(prisma, {
+              computerId: computer.id,
+              runId: run.id,
+              botId: ada.id,
+              workerId: "worker",
+              runFence: 1,
+            }),
+          ).catch((error: unknown) => error);
+        }),
+        route,
+      );
+
+      // Either the save kept the run off the computer, or it tore that computer down.
+      const tornDown = releaseScreen.mock.calls.some(([, context]) => context.runId === run.id);
+      expect(executorAcquire instanceof ComputerBusyError || tornDown).toBe(true);
+    },
+  );
+
+  it.each(["update", "archive"])(
+    "keeps the failure of a group run that ends while groups/%s is saving",
+    async (route) => {
+      const fixture = await groupWithWaitingRun();
+      const attempt = await system.attempt.create({
+        data: { runId: fixture.run.id, fence: 1, status: "running" },
+      });
+      const run = await system.run.update({
+        where: { id: fixture.run.id },
+        data: { status: "running", leaseOwner: "worker", leaseFence: 1 },
+      });
+      const releaseScreen = vi.spyOn(fixture.sandbox, "releaseScreen");
+
+      // The run fails after the save read it as active and before the save cancels it.
+      await fixture.saveFromSettings(
+        afterFirstRead(prisma, "run", () =>
+          runAsSystem("test worker", () =>
+            createThreadEvents(prisma).finalizeRun({
+              spaceId: run.spaceId,
+              threadId: run.threadId,
+              botId: run.botId,
+              runId: run.id,
+              taskId: run.taskId,
+              attemptId: attempt.id,
+              leaseOwner: "worker",
+              leaseFence: 1,
+              outcome: "failed",
+              error: "The model provider is unavailable.",
+            }),
+          ),
+        ),
+        route,
+      );
+
+      expect(await system.run.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({
+        status: "failed",
+        error: "The model provider is unavailable.",
+      });
+      expect(await system.task.findUniqueOrThrow({ where: { id: run.taskId } })).toMatchObject({
+        status: "failed",
+      });
+      expect(vi.mocked(fixture.jobs.cancel).mock.calls).not.toContainEqual([runJobKey(run.id)]);
+      expect(releaseScreen.mock.calls.some(([, context]) => context.runId === run.id)).toBe(false);
+    },
+  );
+
+  it("still announces a manager bot's group change when freeing the computer fails", async () => {
+    const fixture = await groupWithWaitingRun();
+    const leaseWriteFails = new Proxy(prisma, {
+      get(client, key) {
+        if (key === "computerExecutionLease") {
+          return {
+            updateMany: async () => {
+              throw new Error("database unavailable");
+            },
+          };
+        }
+        const value = Reflect.get(client, key, client);
+        return typeof value === "function" ? value.bind(client) : value;
+      },
+    });
+
+    await fixture.saveFromManager(leaseWriteFails).catch(() => undefined);
+    expect(await fixture.groupUpdates()).toBe(1);
+  });
 });
 
 /** Runs `before` once, right before the first write that hands the screen to the user. */
@@ -882,6 +1245,51 @@ function beforeUserGrant(prisma: PrismaClient, before: () => Promise<unknown>): 
       if (key === "computer") return computer;
       const value = Reflect.get(client, key, client);
       return typeof value === "function" ? value.bind(client) : value;
+    },
+  });
+}
+
+/** Runs `after` once, right after the first transaction reads `model`. */
+function afterFirstRead(
+  prisma: PrismaClient,
+  model: "computerExecutionLease" | "run",
+  after: () => Promise<unknown>,
+): PrismaClient {
+  let pending = true;
+  const hooked = (tx: Prisma.TransactionClient) => {
+    const reads = new Proxy(tx[model], {
+      get(delegate, key) {
+        const value = Reflect.get(delegate, key, delegate);
+        if (key !== "findMany") return typeof value === "function" ? value.bind(delegate) : value;
+        return async (args: unknown) => {
+          const rows = await value.call(delegate, args);
+          if (pending) {
+            pending = false;
+            await after();
+          }
+          return rows;
+        };
+      },
+    });
+    return new Proxy(tx, {
+      get(client, key) {
+        if (key === model) return reads;
+        const value = Reflect.get(client, key, client);
+        return typeof value === "function" ? value.bind(client) : value;
+      },
+    });
+  };
+  return new Proxy(prisma, {
+    get(client, key) {
+      const value = Reflect.get(client, key, client);
+      if (key !== "$transaction") return typeof value === "function" ? value.bind(client) : value;
+      const transaction = value as (input: unknown, options?: unknown) => Promise<unknown>;
+      return (input: unknown, options?: unknown) =>
+        transaction.call(
+          client,
+          typeof input === "function" ? (tx: Prisma.TransactionClient) => input(hooked(tx)) : input,
+          options,
+        );
     },
   });
 }

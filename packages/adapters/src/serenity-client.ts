@@ -7,6 +7,7 @@ import {
   isLocalhostOrLoopbackIp,
   isNonPublicAddress,
 } from "@rakazo/contracts";
+import { cancelResponseBody } from "@rakazo/core";
 import { Agent } from "undici";
 import {
   combineSignals,
@@ -271,6 +272,7 @@ export function createSerenityPrivateLanFetch(
         dispatcher,
       } as RequestInit & { dispatcher: Agent });
       if (response.status >= 300 && response.status < 400) {
+        cancelResponseBody(response);
         throw new Error("Serenity MCP redirects are not permitted; configure the final URL.");
       }
       return response;
@@ -318,6 +320,7 @@ async function withSerenityClient<T>(
       if (pinnedFetch) return assertNotRateLimited(await pinnedFetch(input, init));
       const response = await localFetch(input, { ...init, redirect: "manual" });
       if (response.status >= 300 && response.status < 400) {
+        cancelResponseBody(response);
         throw new Error("Serenity MCP redirects are not permitted; configure the final URL.");
       }
       return assertNotRateLimited(response);

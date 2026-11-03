@@ -13,20 +13,70 @@ import {
   catalogApprovalMatchesLiveRoute,
   catalogApprovalRequest,
   catalogExecuteToolName,
+  catalogIdForRoute,
   catalogToolPrefix,
   claimApprovedEffect,
   claimIntendedEffect,
   completeExternalEffect,
   createApprovedEffectReplayQueue,
   isApprovalPausedResult,
+  isInternalTermination,
+  isTerminatingReplyResult,
   isToolPauseResult,
   replaceCompletedExternalEffectResult,
   resolveDuplicateEffectGate,
   settleUncertainEffect,
+  terminatingToolResult,
   uncertainEffectResult,
 } from "./approval-effect.js";
 
 describe("approved effect replay", () => {
+  it("binds direct and catalog approvals to the selected account", () => {
+    const marker = "__rakazoCatalogTool";
+    const route = {
+      connectorId: "example",
+      resourceId: "mail",
+      toolName: "send",
+      connectionId: "work",
+    };
+    const args = { text: "approved" };
+    const direct = boundDirectApprovalRequest(route, args, marker);
+    const catalog = catalogApprovalRequest(
+      "example_execute_tool",
+      { id: catalogIdForRoute(route), arguments: args },
+      marker,
+      route,
+    );
+    expect(catalogIdForRoute(route)).toBe("mail:work:send");
+    for (const approved of [direct, catalog]) {
+      expect(approvalReplayResourceError("send", false, approved, route, marker)).toBeUndefined();
+      expect(
+        approvalReplayResourceError(
+          "send",
+          false,
+          approved,
+          { ...route, connectionId: "home" },
+          marker,
+        ),
+      ).toBeDefined();
+      expect(
+        approvalReplayResourceError(
+          "send",
+          false,
+          approved,
+          { ...route, connectionId: undefined },
+          marker,
+        ),
+      ).toBeDefined();
+    }
+    const legacy = catalogApprovalRequest(
+      "example_execute_tool",
+      { id: "mail:send", arguments: args },
+      marker,
+    );
+    expect(approvalReplayResourceError("send", false, legacy, route, marker)).toBeDefined();
+  });
+
   it("replays persisted arguments instead of a changed model reconstruction", () => {
     const approved = { title: "Approved title", body: "Approved body" };
     const queue = createApprovedEffectReplayQueue([
@@ -570,4 +620,15 @@ describe("catalog wrapper names", () => {
       ),
     ).toBe(true);
   });
+});
+
+it("keeps termination provenance through internal copies but not connector JSON", () => {
+  const result = terminatingToolResult("Internal refusal", { refused: "owner-settings" });
+  expect(isTerminatingReplyResult(result)).toBe(true);
+  expect(isTerminatingReplyResult({ ...result })).toBe(true);
+  expect(isTerminatingReplyResult(JSON.parse(JSON.stringify(result)))).toBe(false);
+  const pause = approvalPausedToolResult();
+  expect(isInternalTermination({ ...pause })).toBe(true);
+  expect(isInternalTermination(JSON.parse(JSON.stringify(pause)))).toBe(false);
+  expect(isTerminatingReplyResult(pause)).toBe(false);
 });
