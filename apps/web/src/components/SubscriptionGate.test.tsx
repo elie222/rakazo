@@ -101,3 +101,25 @@ it("reloads billing for a newly selected Space", async () => {
   expect(container.textContent).toBe("app");
   act(() => root.unmount());
 });
+
+it("keeps checking billing after a newly selected Space's read fails", async () => {
+  api.me.mockResolvedValue({ billingEnabled: true });
+  api.status.mockResolvedValue({ access: false });
+  const { container, root } = await renderGate(true);
+  expect(container.textContent).toBe("paywall");
+
+  api.status.mockRejectedValueOnce(new Error("offline"));
+  await act(async () => {
+    window.dispatchEvent(new Event("rakazo:space-selected"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(container.textContent).toBe("app");
+
+  api.status.mockResolvedValue({ access: false });
+  await act(async () => {
+    window.dispatchEvent(new Event("focus"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(container.textContent).toBe("paywall");
+  act(() => root.unmount());
+});

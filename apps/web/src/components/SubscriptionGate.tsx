@@ -95,7 +95,10 @@ export function SubscriptionGate({
     };
   }, []);
 
-  const billed = state.kind !== "loading" && state.status !== undefined;
+  // Once billing has answered, checks keep running, even after a later read fails and the gate
+  // drops its status.
+  const [billed, setBilled] = useState(false);
+  if (!billed && state.kind !== "loading" && state.status !== undefined) setBilled(true);
   useEffect(() => {
     if (!billed) return;
     // Checkout can finish in another window (the system browser on desktop), and a free period
