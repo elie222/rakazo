@@ -15,6 +15,7 @@ import { modelCreditBillingEnabled } from "./run-model.js";
 const STRATEGIC_INITIATIVE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const STALE_SCRATCHPAD_ITEM_MS = 12 * 60 * 60 * 1000;
 const MAX_ITEMS_IN_PROMPT = 5;
+const MAX_STALE_ITEMS_SCANNED = 50;
 const MAX_NOTES_CHARS = 220;
 const STRATEGIC_INITIATIVE_SAFE_TOOL_NAMES = new Set(["ask_user", "message_user"]);
 
@@ -123,7 +124,7 @@ export async function reconcileStrategicInitiatives(deps: {
           },
           select: { title: true, notes: true, updatedAt: true },
           orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
-          take: MAX_ITEMS_IN_PROMPT,
+          take: MAX_STALE_ITEMS_SCANNED,
         },
         routines: {
           where: { active: true, crons: { has: ONCE_ROUTINE_CRON } },
@@ -145,9 +146,9 @@ export async function reconcileStrategicInitiatives(deps: {
       if (deps.billingEnabled && !(await spaceHasModelAccess(deps.prisma, bot.spaceId))) continue;
       if (!bot.thread) continue;
       // An item whose notes name a pending follow-up will be woken by that follow-up.
-      const scratchpadItems = bot.scratchpadItems.filter(
-        (item) => !bot.routines.some((routine) => item.notes.includes(routine.id)),
-      );
+      const scratchpadItems = bot.scratchpadItems
+        .filter((item) => !bot.routines.some((routine) => item.notes.includes(routine.id)))
+        .slice(0, MAX_ITEMS_IN_PROMPT);
       if (scratchpadItems.length === 0) continue;
       const runId = await queueStrategicInitiativeRun(deps, { ...bot, scratchpadItems }, deps.now);
       if (!runId) continue;

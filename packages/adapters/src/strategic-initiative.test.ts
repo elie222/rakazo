@@ -158,7 +158,10 @@ describe("reconcileStrategicInitiatives", () => {
       bots: [
         {
           ...bot,
-          scratchpadItems: [covered, { title: "Book venue", notes: "", updatedAt: stale }],
+          scratchpadItems: [
+            ...Array.from({ length: 5 }, () => covered),
+            { title: "Book venue", notes: "", updatedAt: stale },
+          ],
         },
       ],
     });
