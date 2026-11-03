@@ -228,13 +228,6 @@ export function secureFetch(
             ? input.signal
             : undefined,
     } satisfies RequestInit;
-    const response = localHttp
-      ? await (network.fetch ?? globalThis.fetch)(url, requestInit)
-      : await safeRemoteFetch(url, requestInit);
-    if (response.status >= 300 && response.status < 400) {
-      cancelResponseBody(response);
-      throw new Error("MCP redirects are not permitted; configure the final HTTPS URL explicitly");
-    }
     return limitMcpResponseBody(await safeRemoteFetch(url, requestInit), headers);
   };
   const result = request as SafeRemoteFetch;
