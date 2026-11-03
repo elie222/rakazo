@@ -1,4 +1,5 @@
 ---
+import { ANDROID_APP_STORE_URL } from "@rakazo/contracts/client-build";
 import {
   DEFAULT_LOCALE,
   LOCALE_HREFLANG,
@@ -13,7 +14,6 @@ import { HUB_CARDS } from "../alternatives";
 import { getHomeCopy } from "../i18n/home";
 import type { HomeCopy } from "../i18n/home";
 import {
-  ANDROID_APK_URL,
   CHANGELOG_URL,
   GITHUB_URL,
   INBOX_ZERO_URL,
@@ -58,7 +58,7 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
     heading: linkLabels.product,
     links: [
       { href: IOS_APP_URL, label: linkLabels.iosApp, external: true },
-      { href: ANDROID_APK_URL, label: linkLabels.androidApp },
+      { href: ANDROID_APP_STORE_URL, label: linkLabels.androidApp },
       { href: SELF_HOST_GUIDE_PATH, label: linkLabels.docs },
       { href: PLUGIN_SUBMIT_PATH, label: linkLabels.submitPlugin },
       { href: CHANGELOG_URL, label: linkLabels.changelog, external: true },

@@ -161,15 +161,13 @@ it("omits Board when unavailable", async () => {
   );
 });
 
-it("offers the existing Android download on Android", async () => {
+it("offers Google Play on Android", async () => {
   vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Android");
   await render();
   const mobile = [...document.querySelectorAll("a")].find(
     (link) => link.textContent === "Get the mobile app",
   )!;
-  expect(mobile.href).toBe(
-    "https://github.com/elie222/rakazo/releases/download/android/rakazo.apk",
-  );
+  expect(mobile.href).toBe("https://play.google.com/store/apps/details?id=com.rakazo.app");
 });
 
 it("falls back when app artwork fails and accepts replacement artwork", async () => {
