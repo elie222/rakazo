@@ -116,18 +116,21 @@ export function ActivityList({
         : [],
     });
   const botRow = (bot: Bot) => (
-    <button
+    <Button
+      variant="ghost"
       key={bot.id}
       type="button"
       onClick={() => onOpenBot?.(bot)}
-      className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left hover:bg-accent"
+      className="h-auto w-full justify-start gap-3 px-2.5 py-2 text-left"
     >
       <BotAvatar identity={bot.id} color={bot.color} avatarSet={bot.avatarSet} size={28} />
       <span className="min-w-0">
         <span className="block truncate text-sm font-medium">{bot.name}</span>
-        <span className="block truncate text-xs text-muted-foreground">{bot.preview}</span>
+        <span className="block truncate text-xs font-normal text-muted-foreground">
+          {bot.preview}
+        </span>
       </span>
-    </button>
+    </Button>
   );
   const filtersOn = activityFiltersActive(filters);
   const hasAnyRuns = activeRuns.length > 0 || recentRuns.length > 0;
@@ -194,20 +197,21 @@ export function ActivityList({
             <Trans>Unread</Trans>
           </SectionHeading>
           {unreadGroups.map((group) => (
-            <button
+            <Button
+              variant="ghost"
               key={group.id}
               type="button"
               onClick={() => onOpenGroup?.(group)}
-              className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left hover:bg-accent"
+              className="h-auto w-full justify-start gap-3 px-2.5 py-2 text-left"
             >
               <GroupAvatar members={group.members} size={28} />
               <span className="min-w-0">
                 <span className="block truncate text-sm font-medium">{group.name}</span>
-                <span className="block truncate text-xs text-muted-foreground">
+                <span className="block truncate text-xs font-normal text-muted-foreground">
                   {group.preview}
                 </span>
               </span>
-            </button>
+            </Button>
           ))}
           {unreadBots.map(botRow)}
         </section>

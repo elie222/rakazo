@@ -224,7 +224,7 @@ describePostgres("bounded latest bot roster runs (PostgreSQL)", () => {
       await prisma.thread.update({ where: { id: bot.threadId }, data: { unread: true } });
       for (const [index, role] of (["user", "bot"] as const).entries()) {
         const text = role === "user" ? "External owner message" : "Agent response";
-        await prisma.message.create({
+        const message = await prisma.message.create({
           data: {
             threadId: bot.threadId,
             seq: index + 1,
@@ -237,6 +237,7 @@ describePostgres("bounded latest bot roster runs (PostgreSQL)", () => {
           (entry) => entry.id === bot.id,
         )!;
         expect(current.previewRole).toBe(role);
+        expect(current.previewMessageId).toBe(message.id);
         expect(current.preview).toBe(text);
         expect(current.unread).toBe(true);
         expect(current.activeRunId).toBeNull();

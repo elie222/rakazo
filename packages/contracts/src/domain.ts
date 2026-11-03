@@ -117,6 +117,7 @@ export const BotSchema = z.object({
   threadId: Id,
   preview: z.string(),
   previewRole: MessageRole.nullable().optional(),
+  previewMessageId: Id.nullable().optional(),
   status: z.string(),
   runErrorId: Id.nullable().default(null),
   /** Distinguishes group work from the bot's private conversation. */

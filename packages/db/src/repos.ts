@@ -119,6 +119,7 @@ function mapBot(
   activeRunThreadId: string | null = null,
   activeRunId: string | null = null,
   previewRole: Bot["previewRole"] = null,
+  previewMessageId: string | null = null,
 ): Bot {
   if (!bot.thread) {
     throw new IsolationError("Bot is missing its thread");
@@ -143,6 +144,7 @@ function mapBot(
     threadId: bot.thread.id,
     preview,
     previewRole,
+    previewMessageId,
     status,
     runErrorId,
     activeRunThreadId,
@@ -454,6 +456,7 @@ export function createRepos(
           const updatedAt = rosterUpdatedAt(messages[0], bot.updatedAt);
           let preview = "";
           let previewRole: Bot["previewRole"] = null;
+          let previewMessageId: string | null = null;
           for (let attempt = 0; attempt < 5; attempt++) {
             const windowRunIds = [
               ...new Set(messages.flatMap((message) => (message.runId ? [message.runId] : []))),
@@ -477,6 +480,7 @@ export function createRepos(
               preview = previewFromBlocks(message.blocks);
               if (preview) {
                 previewRole = MessageRole.safeParse(message.role).data ?? null;
+                previewMessageId = message.id;
                 break;
               }
             }
@@ -505,6 +509,7 @@ export function createRepos(
             activeRun?.threadId ?? null,
             activeRun?.id ?? null,
             previewRole,
+            previewMessageId,
           );
         }),
       );

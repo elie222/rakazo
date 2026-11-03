@@ -32,11 +32,14 @@ export function useBrowserNotifications(
     (pending: PendingBrowserNotification): boolean => {
       const currentBot = botsRef.current.find((bot) => bot.id === pending.botId);
       if (!currentBot || typeof Notification === "undefined") return true;
-      const interruptionKey =
-        pending.event.runId && pending.event.type !== "thread.message.created"
-          ? `interruption:${pending.event.threadId}:${pending.event.runId}:${pending.event.type}`
-          : undefined;
-      if (interruptionKey && notifiedBrowserEvents.current.has(interruptionKey)) {
+      const notificationKey =
+        pending.event.type === "thread.message.created" &&
+        typeof pending.event.payload.messageId === "string"
+          ? `message:${pending.event.threadId}:${pending.event.payload.messageId}`
+          : pending.event.runId && pending.event.type !== "thread.message.created"
+            ? `interruption:${pending.event.threadId}:${pending.event.runId}:${pending.event.type}`
+            : undefined;
+      if (notificationKey && notifiedBrowserEvents.current.has(notificationKey)) {
         notifiedBrowserEvents.current.add(pending.event.id);
         return true;
       }
@@ -66,8 +69,8 @@ export function useBrowserNotifications(
           },
         },
       );
-      if (result === "delivered" && interruptionKey)
-        notifiedBrowserEvents.current.add(interruptionKey);
+      if (result === "delivered" && notificationKey)
+        notifiedBrowserEvents.current.add(notificationKey);
       return result !== "pending";
     },
     [openBotId],
@@ -78,7 +81,9 @@ export function useBrowserNotifications(
     if (!previous || previous.spaceId !== spaceId || !previous.bots.length) return;
     for (const bot of bots) {
       const before = previous.bots.find((entry) => entry.id === bot.id);
-      if (!before || bot.id === openBotId || !bot.notifyOnFinish) continue;
+      if (!before || !bot.notifyOnFinish) continue;
+      if (bot.id === openBotId && document.visibilityState === "visible" && document.hasFocus())
+        continue;
       if (
         notificationAttention(before.status, before.unread, Boolean(before.runErrorId)) ===
           "needs_attention" &&
@@ -96,10 +101,18 @@ export function useBrowserNotifications(
         (!bot.activeRunThreadId || bot.activeRunThreadId === bot.threadId) &&
         (before.status !== bot.status || before.runErrorId !== bot.runErrorId);
       const replied =
-        attention === "unread" && bot.previewRole === "bot" && bot.preview !== before.preview;
+        attention === "unread" &&
+        bot.previewRole === "bot" &&
+        (bot.preview !== before.preview ||
+          (before.previewMessageId &&
+            bot.previewMessageId &&
+            bot.previewMessageId !== before.previewMessageId));
       if (!interrupted && !replied) continue;
       const event = {
-        id: `roster:${bot.threadId}:${bot.updatedAt}:${bot.status}`,
+        id:
+          replied && bot.previewMessageId
+            ? `roster-message:${bot.threadId}:${bot.previewMessageId}`
+            : `roster:${bot.threadId}:${bot.updatedAt}:${bot.status}`,
         type: interrupted
           ? bot.status === "failed" || bot.runErrorId
             ? ("run.failed" as const)
@@ -114,7 +127,13 @@ export function useBrowserNotifications(
           : undefined,
         threadId: bot.threadId,
         botId: bot.id,
-        payload: replied ? { role: "bot", blocks: [{ kind: "text", text: bot.preview }] } : {},
+        payload: replied
+          ? {
+              messageId: bot.previewMessageId,
+              role: "bot",
+              blocks: [{ kind: "text", text: bot.preview }],
+            }
+          : {},
       };
       const pending = {
         event,

@@ -375,3 +375,150 @@ it("coalesces a queued reply into the later actionable interruption for the same
     await act(async () => root.unmount());
   }
 });
+
+it.each(["hidden", "blurred", "focused"] as const)(
+  "falls back to roster changes for the open chat when %s without a ready stream",
+  async (state) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const show = vi.fn();
+    vi.stubGlobal(
+      "Notification",
+      class {
+        static permission = "granted";
+        constructor(title: string, options: NotificationOptions) {
+          show(title, options);
+        }
+      },
+    );
+    Object.defineProperty(document, "visibilityState", {
+      value: state === "hidden" ? "hidden" : "visible",
+      configurable: true,
+    });
+    vi.spyOn(document, "hasFocus").mockReturnValue(state !== "blurred");
+    const bot = {
+      id: "agent",
+      threadId: "thread",
+      name: "Marketing",
+      status: "running",
+      notifyOnFinish: true,
+      unread: true,
+      previewRole: "bot",
+      preview: "Old reply",
+      activeRunId: "run",
+    } as Bot;
+    function Harness({ bots }: { bots: Bot[] }) {
+      const ref = useRef(bots);
+      ref.current = bots;
+      useBrowserNotifications(ref, bots, "agent", "space");
+      return null;
+    }
+    const root = createRoot(document.createElement("div"));
+    try {
+      await act(async () => root.render(<Harness bots={[bot]} />));
+      await act(async () =>
+        root.render(<Harness bots={[{ ...bot, status: "waiting_input", updatedAt: "ask" }]} />),
+      );
+      expect(show).toHaveBeenCalledTimes(state === "focused" ? 0 : 1);
+      await act(async () =>
+        root.render(
+          <Harness
+            bots={[{ ...bot, status: "idle", runErrorId: "failed-run", updatedAt: "failed" }]}
+          />,
+        ),
+      );
+      expect(show).toHaveBeenCalledTimes(state === "focused" ? 0 : 2);
+      await act(async () =>
+        root.render(
+          <Harness
+            bots={[
+              {
+                ...bot,
+                status: "idle",
+                runErrorId: null,
+                preview: "Reply ready",
+                updatedAt: "reply",
+              },
+            ]}
+          />,
+        ),
+      );
+      expect(show).toHaveBeenCalledTimes(state === "focused" ? 0 : 3);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  },
+);
+
+it("deduplicates an open hidden chat's reply by message identity and allows repeated reply text", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const show = vi.fn();
+  vi.stubGlobal(
+    "Notification",
+    class {
+      static permission = "granted";
+      constructor(title: string, options: NotificationOptions) {
+        show(title, options);
+      }
+    },
+  );
+  Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+  const bot = {
+    id: "agent",
+    threadId: "thread",
+    name: "Marketing",
+    status: "idle",
+    notifyOnFinish: true,
+    unread: true,
+    previewRole: "bot",
+    preview: "Old",
+    previewMessageId: "old",
+  } as Bot;
+  let controls!: ReturnType<typeof useBrowserNotifications>;
+  function Harness({ bots }: { bots: Bot[] }) {
+    const ref = useRef(bots);
+    ref.current = bots;
+    controls = useBrowserNotifications(ref, bots, "agent", "space");
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root.render(<Harness bots={[bot]} />));
+    await act(async () =>
+      controls.notifyBrowserForEvent(
+        {
+          id: "stream",
+          type: "thread.message.created",
+          threadId: "thread",
+          botId: "agent",
+          seq: 1,
+          payload: { messageId: "new", role: "bot", blocks: [{ kind: "text", text: "Ready" }] },
+        },
+        "thread",
+        0,
+        true,
+        "Marketing",
+        true,
+        false,
+      ),
+    );
+    expect(show).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      root.render(
+        <Harness
+          bots={[{ ...bot, preview: "Ready", previewMessageId: "new", updatedAt: "same" }]}
+        />,
+      ),
+    );
+    expect(show).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      root.render(
+        <Harness
+          bots={[{ ...bot, preview: "Ready", previewMessageId: "later", updatedAt: "same" }]}
+        />,
+      ),
+    );
+    expect(show).toHaveBeenCalledTimes(2);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
