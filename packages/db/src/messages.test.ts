@@ -3,6 +3,7 @@ import type { Prisma, PrismaClient } from "./client.js";
 import {
   createThreadMessage,
   createThreadMessageInTransaction,
+  loadRunHistoryMessages,
   RunHistoryWriteError,
 } from "./messages.js";
 
@@ -89,5 +90,58 @@ describe("createThreadMessage", () => {
       }),
     ).rejects.toThrow("unique constraint");
     expect(run).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("loadRunHistoryMessages", () => {
+  it("bounds user-triggered history at its source message", async () => {
+    const findFirst = vi.fn().mockResolvedValue({ seq: 12 });
+    const findMany = vi.fn().mockResolvedValue([]);
+    const prisma = { message: { findFirst, findMany } } as unknown as PrismaClient;
+
+    await loadRunHistoryMessages(
+      prisma,
+      {
+        id: "run-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        sourceMessageId: "message-12",
+        trigger: "user",
+      },
+      40,
+    );
+
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { id: "message-12", threadId: "thread-1", role: "user" },
+      select: { seq: true },
+    });
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ threadId: "thread-1", seq: { lte: 12 } }),
+      }),
+    );
+  });
+
+  it("does not source-bound scheduled history", async () => {
+    const findFirst = vi.fn();
+    const findMany = vi.fn().mockResolvedValue([]);
+    const prisma = { message: { findFirst, findMany } } as unknown as PrismaClient;
+
+    await loadRunHistoryMessages(
+      prisma,
+      {
+        id: "run-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        sourceMessageId: null,
+        trigger: "routine",
+      },
+      40,
+    );
+
+    expect(findFirst).not.toHaveBeenCalled();
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { threadId: "thread-1" } }),
+    );
   });
 });

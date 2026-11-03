@@ -7,15 +7,31 @@ import { withTransactionRetry } from "./transaction-retry.js";
  * `steeringMessages` is non-empty for a message still waiting for its own run, which the caller
  * leaves out of this run's history.
  */
-export function loadRunHistoryMessages(
+const SOURCE_BOUNDED_RUN_TRIGGERS = new Set(["user", "follow_up", "messaging"]);
+
+export async function loadRunHistoryMessages(
   prisma: PrismaClient,
-  run: { id: string; threadId: string; botId: string },
+  run: {
+    id: string;
+    threadId: string;
+    botId: string;
+    sourceMessageId: string | null;
+    trigger: string;
+  },
   limit: number,
   channelId?: string,
 ) {
+  const sourceMessage =
+    SOURCE_BOUNDED_RUN_TRIGGERS.has(run.trigger) && run.sourceMessageId
+      ? await prisma.message.findFirst({
+          where: { id: run.sourceMessageId, threadId: run.threadId, role: "user" },
+          select: { seq: true },
+        })
+      : null;
   return prisma.message.findMany({
     where: {
       threadId: run.threadId,
+      ...(sourceMessage ? { seq: { lte: sourceMessage.seq } } : {}),
       ...(channelId
         ? {
             OR: [
