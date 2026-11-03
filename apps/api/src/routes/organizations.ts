@@ -33,8 +33,9 @@ export function organizationsRoutes(ctx: RouterContext) {
               name: input.name,
             });
           } catch (error) {
-            if (error instanceof OrganizationLimitError || error instanceof InvalidSpaceNameError)
+            if (error instanceof OrganizationLimitError)
               throw new ORPCError("BAD_REQUEST", { message: error.message });
+            if (error instanceof InvalidSpaceNameError) throw invalidOrganizationName();
             throw error;
           }
           await recordAuditEvent({
@@ -56,8 +57,7 @@ export function organizationsRoutes(ctx: RouterContext) {
               name: input.name,
             });
           } catch (error) {
-            if (error instanceof InvalidSpaceNameError)
-              throw new ORPCError("BAD_REQUEST", { message: error.message });
+            if (error instanceof InvalidSpaceNameError) throw invalidOrganizationName();
             throw error;
           }
           await recordAuditEvent({
@@ -107,4 +107,10 @@ export function organizationsRoutes(ctx: RouterContext) {
       ),
     },
   };
+}
+
+function invalidOrganizationName() {
+  return new ORPCError("BAD_REQUEST", {
+    message: "Organization name must be readable and between 1 and 60 characters",
+  });
 }

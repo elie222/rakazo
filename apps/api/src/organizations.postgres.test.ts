@@ -281,6 +281,16 @@ describePostgres("organizations (PostgreSQL)", () => {
     expect(await system.organization.findUnique({ where: { id: theirs.id } })).toMatchObject({
       name: "Theirs",
     });
+    const nameError = {
+      code: "BAD_REQUEST",
+      message: "Organization name must be readable and between 1 and 60 characters",
+    };
+    await expect(client(ada).organizations.create({ name: "!!!" })).rejects.toMatchObject(
+      nameError,
+    );
+    await expect(
+      client(grace).organizations.rename({ organizationId: theirs.id, name: "!!!" }),
+    ).rejects.toMatchObject(nameError);
 
     await expect(
       client(grace).organizations.rename({ organizationId: theirs.id, name: "Side" }),
