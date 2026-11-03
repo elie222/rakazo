@@ -1,4 +1,5 @@
-import type { IntegrationCatalogResult } from "@rakazo/contracts";
+import type { IntegrationCatalogResult, McpServer } from "@rakazo/contracts";
+import { newClientId } from "./client-id.js";
 
 export type SignInMcpServer = { name: string; endpoint: string };
 
@@ -14,4 +15,29 @@ export function signInMcpServers(results: readonly IntegrationCatalogResult[]): 
     }
   }
   return [...servers.values()];
+}
+
+/** The server already added for this endpoint, or a new one for it. */
+export async function findOrAddMcpServer(
+  server: SignInMcpServer,
+  rpc: {
+    list: () => Promise<McpServer[]>;
+    create: (input: {
+      slug: string;
+      name: string;
+      transport: "streamable_http";
+      endpoint: string;
+    }) => Promise<McpServer>;
+  },
+): Promise<McpServer> {
+  const existing = (await rpc.list()).find((row) => row.endpoint === server.endpoint);
+  return (
+    existing ??
+    rpc.create({
+      slug: `integration-${newClientId().slice(0, 8)}`,
+      name: server.name,
+      transport: "streamable_http",
+      endpoint: server.endpoint,
+    })
+  );
 }

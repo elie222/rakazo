@@ -1,6 +1,10 @@
-import type { IntegrationCatalogResult, IntegrationCatalogSurface } from "@rakazo/contracts";
-import { describe, expect, it } from "vitest";
-import { signInMcpServers } from "./integration-catalog.js";
+import type {
+  IntegrationCatalogResult,
+  IntegrationCatalogSurface,
+  McpServer,
+} from "@rakazo/contracts";
+import { describe, expect, it, vi } from "vitest";
+import { findOrAddMcpServer, signInMcpServers } from "./integration-catalog.js";
 
 function result(
   name: string,
@@ -72,5 +76,32 @@ describe("signInMcpServers", () => {
     expect(
       signInMcpServers([result("Tracker", [surface]), result("Tracker app", [surface])]),
     ).toEqual([{ name: "Tracker", endpoint: "https://mcp.tracker.example/mcp" }]);
+  });
+});
+
+describe("findOrAddMcpServer", () => {
+  const tracker = { name: "Tracker", endpoint: "https://mcp.tracker.example/mcp" };
+
+  it("reuses the server already added for the endpoint", async () => {
+    const saved = { id: "saved", endpoint: tracker.endpoint } as McpServer;
+    const create = vi.fn();
+
+    await expect(findOrAddMcpServer(tracker, { list: async () => [saved], create })).resolves.toBe(
+      saved,
+    );
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("adds a remote server for a new endpoint", async () => {
+    const create = vi.fn(async () => ({ id: "new" }) as McpServer);
+
+    await findOrAddMcpServer(tracker, { list: async () => [], create });
+
+    expect(create).toHaveBeenCalledWith({
+      slug: expect.stringMatching(/^integration-[a-z0-9-]{8}$/),
+      name: "Tracker",
+      transport: "streamable_http",
+      endpoint: tracker.endpoint,
+    });
   });
 });

@@ -1,4 +1,4 @@
-import { newClientId } from "@rakazo/core";
+import { findOrAddMcpServer } from "@rakazo/core";
 import { MCP_OAUTH_CHANNEL } from "./mcp-oauth-channel";
 import { rpc } from "./rpc";
 
@@ -71,17 +71,10 @@ export async function connectMcpEndpoint(input: {
   endpoint: string;
   botId?: string;
 }): Promise<McpOauthResult> {
-  const existing = (await rpc.mcp.servers.list()).find(
-    (server) => server.endpoint === input.endpoint,
-  );
-  const server =
-    existing ??
-    (await rpc.mcp.servers.create({
-      slug: `integration-${newClientId().slice(0, 8)}`,
-      name: input.name,
-      transport: "streamable_http",
-      endpoint: input.endpoint,
-    }));
+  const server = await findOrAddMcpServer(input, {
+    list: () => rpc.mcp.servers.list(),
+    create: (config) => rpc.mcp.servers.create(config),
+  });
   const result = await connectMcpOauth(server.id);
   if (result !== "cancelled" && input.botId)
     await rpc.mcp.assignments.approve({ botId: input.botId, serverId: server.id });
