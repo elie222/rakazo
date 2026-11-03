@@ -44,8 +44,8 @@ Bot 可以把一台现有的[无影云电脑](https://www.aliyun.com/product/ecs
 连接信息用部署的 `ENCRYPTION_KEY` 加密保存，AccessKey Secret 和 MCP Token 保存后不会再显示。
 以后只想改其他字段时，密钥字段留空即可，会继续使用已保存的值。换了 MCP 网关地址时，需要重新填写所有密钥。URL 和 Token 分别填写；网关必须使用 HTTPS 和公网地址。
 
-选择 **Deployment default** 会让新电脑回到 `SANDBOX_PROVIDER` 指定的沙箱。已保存的无影连接会保留，
-已经在无影上的电脑可以继续使用，下次启动时会换到默认沙箱。
+选择 **Deployment default** 会让新电脑回到 `SANDBOX_PROVIDER` 指定的沙箱，并删除已保存的无影连接；
+还在无影上的电脑下次用到时会在默认沙箱上重新启动。
 
 ### 每个账号用自己的云电脑
 

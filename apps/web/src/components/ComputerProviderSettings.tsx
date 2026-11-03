@@ -82,7 +82,11 @@ export function ComputerProviderSettings({
   }, [scope, t]);
 
   if (!draft || !settings) {
-    return error ? <p className="mt-3 text-[13px] text-destructive">{error}</p> : null;
+    return error ? (
+      <p role="alert" className="mt-3 text-[13px] text-destructive">
+        {error}
+      </p>
+    ) : null;
   }
 
   const set = (patch: Partial<Draft>) => {

@@ -284,13 +284,22 @@ export class ConfiguredSandbox implements SandboxProvider {
     if (!descriptor && (this.primary.ownsReference?.(computer) ?? true)) return this.primary;
     // Only a provider an account can choose for itself ever runs that account's computers.
     const perAccount = descriptor?.capabilities.perAccount;
-    const own = perAccount ? await this.ownSettings(computer.botId, fresh) : null;
+    // While the secret store cannot be read, route on what was last read and never call the
+    // computer gone: the store failing is not evidence the connection was removed.
+    let unreadable: unknown;
+    const own = perAccount
+      ? await this.ownSettings(computer.botId, fresh).catch((error: unknown) => {
+          unreadable = error;
+          return null;
+        })
+      : null;
     if (own?.provider === computer.kind) {
       const provider = await this.providerFor(own, computer.botId);
       if (provider.ownsReference?.(computer) ?? true) return provider;
     }
-    if (fresh) await this.reload();
-    else await this.current();
+    await (fresh ? this.reload() : this.current()).catch((error: unknown) => {
+      unreadable = error;
+    });
     const saved = computerSettingsForProvider(this.selection.settings, computer.kind);
     if (saved) {
       const provider = await this.providerFor(saved, "deployment");
@@ -300,6 +309,7 @@ export class ConfiguredSandbox implements SandboxProvider {
       (await this.primary.provisionKind?.(computer.botId)) ?? this.primary.describe().id;
     if (computer.kind === primaryKind && (this.primary.ownsReference?.(computer) ?? true))
       return this.primary;
+    if (unreadable) throw unreadable;
     // Another instance may have saved the connection since these settings were read.
     if (!fresh) return this.route(computer, true);
     // No connection reaches it any more, so it is gone: Reset and deletion can clear it and the

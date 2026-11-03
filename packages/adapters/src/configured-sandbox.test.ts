@@ -395,3 +395,30 @@ it("describes where a computer will start before it has started there", async ()
     sandbox.environment({ id: "new", botId: "new", kind: "desktop", providerRef: "" }, ctx),
   ).resolves.toEqual(environment);
 });
+
+it("keeps routing on the last settings read while the store is unreadable, never calling a computer gone", async () => {
+  let fail = false;
+  const desktop = new TestDesktop();
+  const sandbox = new ConfiguredSandbox(
+    new FakeSandboxProvider(),
+    async () => {
+      if (fail) throw new Error("secret store unavailable");
+      return { provider: "desktop", settings };
+    },
+    { createProvider: async () => desktop.provider() },
+  );
+  await sandbox.refresh();
+  const computer = await sandbox.provision({ botId: "a", homePath: "/h" }, ctx);
+  fail = true;
+  vi.useFakeTimers({ now: Date.now() + 10_000 });
+  try {
+    desktop.calls.length = 0;
+    await sandbox.listFiles(computer, "", ctx);
+    expect(desktop.calls).toContain("listFiles");
+    await expect(sandbox.prepare({ ...computer, providerRef: "ecd-unknown" }, ctx)).rejects.toThrow(
+      "secret store unavailable",
+    );
+  } finally {
+    vi.useRealTimers();
+  }
+});

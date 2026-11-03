@@ -88,10 +88,9 @@ async function checkedSettings(
       if (field.kind === "url" && values[field.key])
         await assertSafeWebUrl(values[field.key]!, deps.resolveHostname, signal);
     }
-    const connections =
-      !account && previous
-        ? { ...previous.connections, [previous.provider]: previous.values }
-        : undefined;
+    // Only the connection being left stays, for computers still on it; older ones are dropped.
+    const connections: Record<string, Record<string, string>> | undefined =
+      !account && previous ? { [previous.provider]: previous.values } : undefined;
     if (connections) delete connections[input.provider];
     const settings = {
       provider: input.provider,
@@ -157,18 +156,29 @@ export async function updateComputerProviderSettings(
     throw new ORPCError("BAD_REQUEST", { message: "This deployment cannot use computer settings" });
   const existing = await loadComputerProviderSelection(deps.prisma, deps.secrets);
   if (input.provider === "default") {
-    // Keep the connection for computers already using it.
-    await runAsSystem("an admin keeps computers on the deployment provider", () =>
-      deps.prisma.deploymentSettings.upsert({
-        where: { id: "default" },
-        create: { id: "default", computerProvider: null },
-        update: { computerProvider: null },
+    // Going back removes the saved keys; computers still on them restart on the default.
+    const removed = await runAsSystem("an admin keeps computers on the deployment provider", () =>
+      deps.prisma.$transaction(async (tx) => {
+        const current = await tx.deploymentSettings.findUnique({
+          where: { id: "default" },
+          select: { computerProviderCipher: true },
+        });
+        await tx.deploymentSettings.upsert({
+          where: { id: "default" },
+          create: { id: "default", computerProvider: null, computerProviderCipher: null },
+          update: { computerProvider: null, computerProviderCipher: null },
+        });
+        return current?.computerProviderCipher;
       }),
     );
+    if (removed)
+      await deps.secrets
+        .delete(removed, DEPLOYMENT_COMPUTER_PROVIDER_RECORD)
+        .catch(() => undefined);
     await refreshComputerProvider(deps.sandbox);
     return view(
       "default",
-      existing.settings,
+      null,
       deps.env.sandboxProvider,
       false,
       routesBySettings(deps.env.sandboxProvider),
@@ -220,13 +230,11 @@ export async function updateComputerProviderSettings(
 
 /** Where computers run while an account keeps the deployment default. */
 async function deploymentProvider(deps: ComputerProviderConfigDeps) {
-  const settings = await runAsSystem("read the deployment's computer provider", () =>
-    deps.prisma.deploymentSettings.findUnique({
-      where: { id: "default" },
-      select: { computerProvider: true, computerProviderCipher: true },
-    }),
-  );
-  return effectiveSandboxProvider(settings, deps.env.sandboxProvider);
+  // Only a saved connection that still reads counts; otherwise computers use the environment's.
+  const selection = await loadComputerProviderSelection(deps.prisma, deps.secrets);
+  if (!routesBySettings(deps.env.sandboxProvider) || selection.provider === "default")
+    return deps.env.sandboxProvider;
+  return selection.provider;
 }
 
 /** Account computer settings. */

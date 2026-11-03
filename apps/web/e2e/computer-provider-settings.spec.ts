@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { computerProviderDescriptors } from "../../../packages/adapters/src/fake-computer-settings.test-support";
@@ -17,7 +18,7 @@ async function adminComputers(route: Route) {
 test("an admin selects a computer provider and sees its fields", async ({ page }, testInfo) => {
   await signup(
     page,
-    `computer-settings-${Date.now()}@rakazo.test`,
+    `computer-settings-${randomUUID()}@rakazo.test`,
     "password12",
     "Computer settings",
   );

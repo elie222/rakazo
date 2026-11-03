@@ -54,9 +54,9 @@ token are never shown again. To change other fields later, leave the secret fiel
 keep their saved values. A new MCP gateway URL needs all credentials entered again. Paste the URL
 and token into their separate fields. The gateway must use HTTPS and a public address.
 
-Choosing **Deployment default** sends new computers back to `SANDBOX_PROVIDER`. The saved Wuying
-connection stays, so computers already on Wuying keep working; each moves to the default the next
-time it starts.
+Choosing **Deployment default** sends new computers back to `SANDBOX_PROVIDER` and deletes the
+saved Wuying connection, so computers still on Wuying start again on the default the next time
+they are used.
 
 ### Each account's own desktop
 

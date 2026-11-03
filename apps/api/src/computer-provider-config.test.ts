@@ -177,7 +177,7 @@ describe("computer provider settings", () => {
     expect(state.settings).toBeNull();
   });
 
-  it("switches back without dropping the saved connection", async () => {
+  it("removes the saved keys when switching back to the default", async () => {
     const { deps, state } = makeDeps();
     await updateComputerProviderSettings(deps, actor, {
       provider: "desktop",
@@ -190,7 +190,8 @@ describe("computer provider settings", () => {
     expect(back.provider).toBe("default");
     expect(back.values).toEqual({});
     expect(state.settings?.computerProvider).toBeNull();
-    expect(state.secrets.size).toBe(1);
+    expect(state.settings?.computerProviderCipher).toBeNull();
+    expect(state.secrets.size).toBe(0);
   });
 
   it("reports the selected provider as the sandbox only with a saved connection", () => {
