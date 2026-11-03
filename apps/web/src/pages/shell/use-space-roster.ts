@@ -380,6 +380,14 @@ export function useSpaceBootstrap({
           markOnce("rk:renderer:bots-response");
           markOnce("rk:renderer:thread-response");
         }
+        // Checked before the roster gate: a refresh that landed first may already have moved away.
+        const linked = groupId
+          ? undefined
+          : linkedBotRoute(bootstrap, botId, window.location.search);
+        if (linked) {
+          openSpaceChat.current(linked.spaceId, linked.path);
+          return;
+        }
         if (!applyBotLists) return;
         // A shell that reopened from cache is already on a chat; it moves only if that chat is gone.
         if (
@@ -388,13 +396,6 @@ export function useSpaceBootstrap({
             ? groupList.some((group) => group.id === routeGroupId.current)
             : bootstrap.bots.some((bot) => bot.id === routeBotId.current))
         ) {
-          return;
-        }
-        const linked = groupId
-          ? undefined
-          : linkedBotRoute(bootstrap, botId, window.location.search);
-        if (linked) {
-          openSpaceChat.current(linked.spaceId, linked.path);
           return;
         }
         if (

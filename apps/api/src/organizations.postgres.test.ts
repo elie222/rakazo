@@ -256,6 +256,12 @@ describePostgres("organizations (PostgreSQL)", () => {
     await expect(
       client(ada).organizations.rename({ organizationId: team.id, name: "Mine" }),
     ).rejects.toBeInstanceOf(Error);
+
+    const owner = await client(grace).organizations.list();
+    expect(owner.organizations.find((org) => org.id === team.id)?.canManage).toBe(false);
+    await expect(
+      client(grace).organizations.rename({ organizationId: team.id, name: "Ours" }),
+    ).rejects.toBeInstanceOf(Error);
   });
 
   it("lets only the owner rename or delete an organization, and never their last one", async () => {

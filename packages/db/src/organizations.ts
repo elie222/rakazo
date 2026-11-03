@@ -88,6 +88,7 @@ export async function listMemberOrganizations(
         name: true,
         spaces: { where: { isDefault: true }, select: { id: true }, take: 1 },
         members: { where: { userId: actor.userId }, select: { role: true }, take: 1 },
+        _count: { select: { members: true } },
       },
     }),
     prisma.spaceMember.findMany({
@@ -103,7 +104,10 @@ export async function listMemberOrganizations(
       id: organization.id,
       name: organization.name,
       defaultSpaceId: organization.spaces[0]!.id,
-      canManage: organization.members.some((member) => member.role.includes("owner")),
+      // Phase one manages only organizations their owner has to themselves.
+      canManage:
+        organization._count.members === 1 &&
+        organization.members.some((member) => member.role.includes("owner")),
       spaceIds: memberships
         .filter((membership) => membership.organizationId === organization.id)
         .map((membership) => membership.spaceId),
@@ -119,7 +123,7 @@ export async function renameOrganization(
   const { count } = await prisma.organization.updateMany({
     where: {
       id: input.organizationId,
-      members: { some: { userId: input.userId, role: OWNER } },
+      members: { some: { userId: input.userId, role: OWNER }, every: { userId: input.userId } },
       ...LIVE,
     },
     data: { name },
