@@ -391,18 +391,21 @@ describe("remote computer access", () => {
     expect(clients[1]!.closed).toBe(true);
   });
 
-  it("ties a saved pairing to the sign-in once, waiting for one when signed out", async () => {
+  it("ties a saved pairing to the sign-in once, retrying until the server ties it", async () => {
     await savePairedDevice(
       userData,
       origin,
       { token: "saved-token", deviceId: "d1", userId: null },
       cipher,
     );
-    let signedIn = false;
+    const statuses = [401, 403, 500];
+    let release: () => void = () => undefined;
     const { access, requests } = setup({
       fetch: async (url, init) => {
         requests.push({ url, init });
-        return new Response(null, { status: signedIn ? 204 : 401 });
+        // The first request is still out when the window signs in.
+        if (requests.length === 1) await new Promise<void>((resolve) => (release = resolve));
+        return new Response(null, { status: statuses.shift() ?? 204 });
       },
     });
     await access.select(origin);
@@ -415,12 +418,18 @@ describe("remote computer access", () => {
         headers: { authorization: "Bearer saved-token" },
       },
     });
-
-    signedIn = true;
     await access.pair();
+    release();
     await vi.waitFor(() => expect(requests).toHaveLength(2));
+
     await access.pair();
-    expect(requests).toHaveLength(2);
+    await vi.waitFor(() => expect(requests).toHaveLength(3));
+    await access.pair();
+    await vi.waitFor(() => expect(requests).toHaveLength(4));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await access.pair();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(requests).toHaveLength(4);
   });
 
   it("forgets a revoked token and stays unpaired until turned back on", async () => {

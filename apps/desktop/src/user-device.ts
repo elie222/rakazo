@@ -164,6 +164,7 @@ export function createUserDeviceAccess(deps: {
   const pairings = new Map<string, Promise<void>>();
   /** Saved tokens not yet tied to a sign-in this launch; pairings from before that was recorded. */
   const untied = new Map<string, string>();
+  const tying = new Map<string, { again: boolean }>();
   /** A revoked token's file deletion, which a new pairing's save must follow. */
   const removals = new Map<string, Promise<void>>();
 
@@ -262,13 +263,35 @@ export function createUserDeviceAccess(deps: {
     return pairOnce(origin);
   }
 
-  /** Signed out, it waits for the next sign-in; already tied, the server leaves it alone. */
+  /**
+   * Retries on each sign-in until the server ties it; already tied, the server leaves it alone.
+   * A sign-in during a request asks again once that request ends.
+   */
   async function tieToSignIn(origin: string) {
-    const token = untied.get(origin);
-    const device = paired.get(origin);
-    if (!token || !device) return;
-    untied.delete(origin);
-    let tied = false;
+    const running = tying.get(origin);
+    if (running) {
+      running.again = true;
+      return;
+    }
+    const state = { again: false };
+    tying.set(origin, state);
+    try {
+      for (;;) {
+        const token = untied.get(origin);
+        if (!token) return;
+        state.again = false;
+        if (await requestTie(origin, token)) {
+          if (untied.get(origin) === token) untied.delete(origin);
+          return;
+        }
+        if (!state.again) return;
+      }
+    } finally {
+      tying.delete(origin);
+    }
+  }
+
+  async function requestTie(origin: string, token: string) {
     try {
       const response = await deps.fetch(new URL(USER_DEVICE_SESSION_PATH, origin).href, {
         method: "POST",
@@ -278,11 +301,10 @@ export function createUserDeviceAccess(deps: {
         signal: AbortSignal.timeout(10_000),
       });
       await response.body?.cancel();
-      tied = response.status !== 401;
+      return response.status === 204;
     } catch {
-      /* Tried again on the next sign-in or launch. */
+      return false;
     }
-    if (!tied && paired.get(origin) === device) untied.set(origin, token);
   }
 
   function pairOnce(origin: string) {
