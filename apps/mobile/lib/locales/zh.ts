@@ -186,6 +186,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Ask the server owner to configure this provider.": "请联系服务器所有者配置此服务。",
   "Client ID": "客户端 ID",
   "Client secret": "客户端密钥",
+  "Redirect URI": "重定向 URI",
   "Connect apps": "连接应用",
   Continue: "继续",
   "Could not verify or save these credentials": "无法验证或保存这些凭据",

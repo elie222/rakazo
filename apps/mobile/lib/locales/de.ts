@@ -608,6 +608,7 @@ export const DE_MESSAGES: Record<string, string> = {
     "Der Serverbetreiber muss diesen Anbieter einrichten.",
   "Client ID": "Client-ID",
   "Client secret": "Client-Secret",
+  "Redirect URI": "Weiterleitungs-URI",
   Connected: "Verbunden",
   Continue: "Weiter",
   "Could not load integrations": "Integrationen konnten nicht geladen werden",

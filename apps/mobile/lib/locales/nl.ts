@@ -601,6 +601,7 @@ export const NL_MESSAGES: Record<string, string> = {
     "Vraag de servereigenaar om deze aanbieder te configureren.",
   "Client ID": "Client-ID",
   "Client secret": "Clientsecret",
+  "Redirect URI": "Omleidings-URI",
   Connected: "Gekoppeld",
   Continue: "Doorgaan",
   "Could not load integrations": "Integraties laden mislukt",

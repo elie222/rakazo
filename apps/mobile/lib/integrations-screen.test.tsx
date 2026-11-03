@@ -935,3 +935,60 @@ it("finds a server on integrations.sh and connects it by signing in", async () =
   );
   expect(signInToMcpServer).toHaveBeenCalledWith("tracker-server");
 });
+
+it("saves a client ID for a server that cannot register Rakazo, then signs in", async () => {
+  const server = {
+    id: "client",
+    slug: "client-server",
+    name: "Client server",
+    description: "",
+    transport: "streamable_http",
+    endpoint: "https://mcp.client.example/mcp",
+    headerKeys: ["x-team"],
+    enabled: true,
+    hasSecret: true,
+    oauthClientId: null,
+    health: { status: "error", code: MCP_OAUTH_CLIENT_REQUIRED },
+  };
+  const fallback = state.rpc.getMockImplementation();
+  state.rpc.mockImplementation((proc: string, args: unknown) => {
+    if (proc === "mcp/servers/list") return Promise.resolve([server]);
+    if (proc === "integrationSetup/get")
+      return Promise.resolve({ webUrl: "https://rakazo.example.test/integrations/setup" });
+    if (proc === "mcp/servers/update") return Promise.resolve(server);
+    return fallback?.(proc, args);
+  });
+  await render();
+  const form = container.querySelector('[data-testid="mcp-oauth-client-form"]');
+  expect(form?.textContent).toContain("https://rakazo.example.test/mcp/oauth/callback");
+  const type = async (placeholder: string, value: string) => {
+    const input = form?.querySelector(`input[placeholder="${placeholder}"]`) as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  await type("Client ID", " client-1 ");
+  await type("Client secret", "secret-1");
+
+  await act(async () =>
+    [...(form?.querySelectorAll("button") ?? [])]
+      .find((node) => node.textContent === "Sign in")
+      ?.click(),
+  );
+
+  expect(state.rpc).toHaveBeenCalledWith("mcp/servers/update", {
+    id: "client",
+    config: {
+      slug: "client-server",
+      name: "Client server",
+      description: "",
+      enabled: true,
+      transport: "streamable_http",
+      endpoint: "https://mcp.client.example/mcp",
+      headers: { "x-team": "" },
+      oauthClient: { clientId: "client-1", clientSecret: "secret-1" },
+    },
+  });
+  expect(signInToMcpServer).toHaveBeenCalledWith("client");
+});

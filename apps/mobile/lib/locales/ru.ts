@@ -172,6 +172,7 @@ export const RU_MESSAGES: Record<string, string> = {
     "Попросите владельца сервера настроить этого провайдера.",
   "Client ID": "ID клиента",
   "Client secret": "Секрет клиента",
+  "Redirect URI": "URI перенаправления",
   Continue: "Продолжить",
   "Continue in Background": "Продолжить в фоне",
   "Could not complete action": "Не удалось выполнить действие",

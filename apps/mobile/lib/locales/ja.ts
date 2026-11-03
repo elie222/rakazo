@@ -590,6 +590,7 @@ export const JA_MESSAGES: Record<string, string> = {
     "このプロバイダーの設定をサーバーのオーナーに依頼してください。",
   "Client ID": "クライアントID",
   "Client secret": "クライアントシークレット",
+  "Redirect URI": "リダイレクトURI",
   Connected: "接続済み",
   Continue: "続行",
   "Could not load integrations": "連携を読み込めませんでした",

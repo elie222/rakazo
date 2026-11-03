@@ -45,6 +45,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ConnectorIcon } from "../../components/connector-icon";
 import { IntegrationCatalogSearch } from "../../components/integration-catalog-search";
+import { McpOAuthClientForm } from "../../components/mcp-oauth-client-form";
 import { MenuPicker } from "../../components/menu-picker";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSymbol } from "../../components/native-symbol";
@@ -79,6 +80,10 @@ import {
 } from "../../lib/plugin-marketplace";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
+
+function needsOAuthClient(server: McpServer): boolean {
+  return server.health.code === MCP_OAUTH_CLIENT_REQUIRED && !server.oauthClientId;
+}
 
 type SourceAuth = "none" | "bearer" | "header" | "oauth";
 type SourceKind = "treg" | "executor" | "mcp" | "api" | "graphql";
@@ -513,7 +518,7 @@ export default function Integrations() {
   function serverStatus(server: McpServer) {
     return !server.enabled
       ? t("Disabled")
-      : server.health.code === MCP_OAUTH_CLIENT_REQUIRED && !server.oauthClientId
+      : needsOAuthClient(server)
         ? t("Needs an OAuth client ID")
         : server.oauthStatus === "reconnect"
           ? t("OAuth expired")
@@ -558,7 +563,7 @@ export default function Integrations() {
 
   /** What this account already has: apps it can reach, then skills it follows. */
   function renderSavedServer(server: McpServer) {
-    return (
+    const row = (
       <View key={server.id} testID="registered-mcp-server" style={styles.row}>
         <ConnectorIcon name={server.name} size={LOGO_SIZE} />
         <Text numberOfLines={1} style={[styles.title, styles.grow]}>
@@ -574,6 +579,13 @@ export default function Integrations() {
             prominence="secondary"
           />
         ) : null}
+      </View>
+    );
+    if (!server.enabled || !needsOAuthClient(server)) return row;
+    return (
+      <View key={server.id} style={styles.catalogStack}>
+        {row}
+        <McpOAuthClientForm server={server} onSaved={retryRefresh} />
       </View>
     );
   }
