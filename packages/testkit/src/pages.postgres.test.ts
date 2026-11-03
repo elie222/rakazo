@@ -5,6 +5,7 @@ import path from "node:path";
 import { EncryptedSecretStore } from "@rakazo/adapters";
 import type { PageDetail, PageSummary, ThreadSnapshot } from "@rakazo/contracts";
 import { SHARED_PAGE_PATH_PREFIX } from "@rakazo/contracts";
+import { deletePageShareSecrets } from "@rakazo/db";
 import { pageViewerCode } from "@rakazo/page-kit/compile";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { BotIntroHarness } from "./discard-bot-intro.js";
@@ -566,6 +567,60 @@ describePages("pages", () => {
     await rpc(app, cookie, "groups/remove", { groupId: group.id });
     expect(await db().page.count({ where: { id: pageId } })).toBe(0);
     expect(await secrets()).toBe(0);
+  });
+
+  it("hands cleanup the link a swap commits while its pages' links are being deleted", async () => {
+    const cookie = await signup(app, `pages-swap-delete-${stamp}@rakazo.test`, "Swap Owner");
+    const owner = await rpc<{ userId: string; spaceId: string }>(app, cookie, "me");
+    const sealed = (ciphertext: string) =>
+      db().secret.create({
+        data: { userId: owner.userId, spaceId: owner.spaceId, kind: "page_share", ciphertext },
+      });
+    const first = await sealed("sealed-first");
+    const { id: pageId } = await db().page.create({
+      data: {
+        spaceId: owner.spaceId,
+        userId: owner.userId,
+        title: "Swapped",
+        visibility: "link",
+        shareTokenHash: "first-hash",
+        shareSecretId: first.id,
+        versions: {
+          create: {
+            version: 1,
+            title: "Swapped",
+            source: page("S"),
+            code: pageViewerCode(page("S")),
+          },
+        },
+      },
+    });
+    // A swap has moved the page to a new secret but not committed when the delete starts.
+    const { deleting, nextId } = await holdingPageRow(pageId, async (waitFor, tx) => {
+      const next = await tx.secret.create({
+        data: {
+          userId: owner.userId,
+          spaceId: owner.spaceId,
+          kind: "page_share",
+          ciphertext: "sealed-next",
+        },
+      });
+      await tx.page.update({
+        where: { id: pageId },
+        data: { shareSecretId: next.id, shareTokenHash: "next-hash" },
+      });
+      const deleting = db().$transaction((other) => deletePageShareSecrets(other, { id: pageId }));
+      await waitFor(1);
+      await tx.secret.delete({ where: { id: first.id } });
+      return { deleting, nextId: next.id };
+    });
+    expect((await deleting).map((secret) => secret.ciphertext)).toEqual(["sealed-next"]);
+    expect(await db().secret.count({ where: { id: { in: [first.id, nextId] } } })).toBe(0);
+    expect(await db().page.findUniqueOrThrow({ where: { id: pageId } })).toMatchObject({
+      visibility: "private",
+      shareTokenHash: null,
+      shareSecretId: null,
+    });
   });
 
   it("deletes a deleted bot's own pages and their links, and leaves its group's pages", async () => {

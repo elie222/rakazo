@@ -13,8 +13,16 @@ export async function deletePageShareSecrets(
   tx: Prisma.TransactionClient,
   pages: Prisma.PageWhereInput,
 ): Promise<PageShareSecret[]> {
-  const where = { pageShare: { is: pages } };
-  const secrets = await tx.secret.findMany({ where, select: { id: true, ciphertext: true } });
-  await tx.secret.deleteMany({ where });
+  // Ends the links and locks the pages, so a link swap committing meanwhile is read here, and one
+  // still to come waits and then finds its page gone, rather than slipping between read and delete.
+  await tx.page.updateMany({
+    where: pages,
+    data: { visibility: "private", shareTokenHash: null },
+  });
+  const secrets = await tx.secret.findMany({
+    where: { pageShare: { is: pages } },
+    select: { id: true, ciphertext: true },
+  });
+  await tx.secret.deleteMany({ where: { id: { in: secrets.map((secret) => secret.id) } } });
   return secrets;
 }
