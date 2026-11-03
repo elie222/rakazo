@@ -3,17 +3,18 @@ import type { SpaceMember, SpaceMembers } from "@rakazo/contracts";
 import { accountDisplay } from "@rakazo/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Platform, ScrollView, Share, Text } from "react-native";
+import { ActivityIndicator, Alert, Platform, ScrollView, Share, StyleSheet, Text } from "react-native";
 import { SettingsGroup, SettingsRow } from "../components/settings-group";
 import { cancelHeaderOptions, trailingHeaderOptions } from "../components/sheet-header";
 import { rpc, selectedSpaceId, selectSpace } from "../lib/api";
 import { useI18n } from "../lib/i18n";
-import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
+import { mobileTokens } from "../lib/appearance";
+import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { errorText } from "../lib/user-error";
 
 export default function SpaceMembersScreen() {
   const { t } = useI18n();
-  const tokens = useMobileTokens();
+  const styles = useThemedStyles(createStyles);
   const appearance = useResolvedAppearance();
   const router = useRouter();
   const { spaceId, name } = useLocalSearchParams<{ spaceId: string; name?: string }>();
@@ -108,10 +109,10 @@ export default function SpaceMembersScreen() {
       />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
-        style={{ flex: 1, backgroundColor: native.groupedPage }}
-        contentContainerStyle={{ padding: 20, gap: 28 }}
+        style={styles.screen}
+        contentContainerStyle={styles.content}
       >
-        {error ? <Text style={{ color: tokens.destructive }}>{error}</Text> : null}
+        {error ? <Text style={styles.error}>{error}</Text> : null}
         {!members && !error ? <ActivityIndicator /> : null}
         {members ? (
           <SettingsGroup
@@ -180,4 +181,12 @@ export default function SpaceMembersScreen() {
       </ScrollView>
     </>
   );
+}
+
+function createStyles() {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: native.groupedPage },
+    content: { padding: 20, gap: 28 },
+    error: { color: mobileTokens().destructive },
+  });
 }

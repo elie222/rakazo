@@ -1,4 +1,5 @@
 import { ONCE_ROUTINE_CRON } from "@rakazo/core";
+import { Prisma } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cancelScheduleFromTool,
@@ -1036,6 +1037,26 @@ describe("updateScheduleFromTool", () => {
     },
   );
 
+  it("takes over another member's schedule and restarts its watch baseline", async () => {
+    const { findFirst, updateMany, update } = setup();
+    await expect(update({ userId: "user-2", prompt: "Order less" })).resolves.toMatchObject({
+      ok: true,
+    });
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { spaceId: "ws-1", botId: "bot-1", id: "routine-1", bot: { archivedAt: null } },
+    });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: {
+        spaceId: "ws-1",
+        botId: "bot-1",
+        userId: "user-1",
+        id: "routine-1",
+        bot: { archivedAt: null },
+      },
+      data: { userId: "user-2", watchState: Prisma.DbNull, prompt: "Order less" },
+    });
+  });
+
   it("edits the prompt in place and keeps the timing", async () => {
     const { updateMany, enqueue, append, update } = setup();
     const prompt = "Order the usual; if cheddar is out of stock, skip it";
@@ -1207,7 +1228,6 @@ describe("updateScheduleFromTool", () => {
       where: {
         spaceId: "ws-1",
         botId: "bot-1",
-        userId: "user-1",
         threadId: "group-thread-1",
         id: "routine-1",
         bot: { archivedAt: null },

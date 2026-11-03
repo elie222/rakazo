@@ -301,17 +301,25 @@ export async function leaveSpace(prisma: PrismaClient, input: SpaceRef): Promise
 export async function prepareAccountDeletion(
   prisma: PrismaClient,
   userId: string,
-): Promise<{ ownedOrganizationIds: string[] }> {
+): Promise<{
+  ownedOrganizationIds: string[];
+  departures: Array<SpaceDeparture & { spaceId: string }>;
+}> {
+  const ownedOrganizationIds = await personalOrganizationIds(prisma, userId);
+  const owned = new Set(ownedOrganizationIds);
   const memberships = await prisma.spaceMember.findMany({
     where: { userId },
-    select: { spaceId: true, role: true, member: { select: { role: true } } },
+    select: { spaceId: true, role: true, space: { select: { organizationId: true } } },
   });
+  const departures: Array<SpaceDeparture & { spaceId: string }> = [];
   for (const membership of memberships) {
-    // A Space they own has nobody to hand it to; it goes with the account.
-    if (isOwnerRole(membership.member.role) || isOwnerRole(membership.role)) continue;
-    await departSpace(prisma, { spaceId: membership.spaceId, userId });
+    // A Space they own, or one in an organization that goes with the account, has nobody to
+    // hand it to. An organization with another owner stays, so its Spaces get their content.
+    if (isOwnerRole(membership.role) || owned.has(membership.space.organizationId)) continue;
+    const { spaceId } = membership;
+    departures.push({ spaceId, ...(await departSpace(prisma, { spaceId, userId })) });
   }
-  return { ownedOrganizationIds: await personalOrganizationIds(prisma, userId) };
+  return { ownedOrganizationIds, departures };
 }
 
 /**

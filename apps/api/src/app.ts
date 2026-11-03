@@ -582,7 +582,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     beforeDeleteUser: async (userId) => {
       // First, so a provider failure aborts deletion before anything is destroyed.
       await billing?.cancelForDeletedUser(userId);
-      await deleteAccountContent(
+      const { departedOrganizationIds } = await deleteAccountContent(
         {
           prisma,
           sandbox,
@@ -595,6 +595,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         },
         userId,
       );
+      // Seat counts follow membership; a provider hiccup must not undo the deletion.
+      for (const organizationId of departedOrganizationIds) {
+        void billing?.syncSeats(organizationId).catch((error) => {
+          getLogger().error("billing seat sync failed", error);
+        });
+      }
       await removePiUserSessions(env.dataDir, userId);
       await pushTokens
         .remove(userId)

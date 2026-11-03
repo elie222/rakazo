@@ -77,7 +77,11 @@ async function afterSpaceDeparture(
       }),
     ),
   );
-  await stopCancelledGroupRuns(deps, actor, departure);
+  // The departure is committed; a teardown failure is logged rather than reported as a failed
+  // leave. Expired leases free the screens anyway.
+  await stopCancelledGroupRuns(deps, actor, departure).catch((error) => {
+    getLogger().error("space departure run teardown", error);
+  });
   // The job reconciler retries a failed enqueue: the runs are already queued.
   await Promise.all(
     departure.continuationRunIds.map((runId) =>

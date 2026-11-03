@@ -14,7 +14,8 @@ import {
   wallClock,
   zonedDateTime,
 } from "@rakazo/core";
-import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
+import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { Prisma } from "@rakazo/db";
 
 import { localDateTime } from "./current-time.js";
 import { validateRoutineWatch } from "./routine-watch.js";
@@ -524,7 +525,6 @@ export async function updateScheduleFromTool(
   const scope = {
     spaceId: input.spaceId,
     botId: input.botId,
-    userId: input.userId,
     ...(input.scopeThreadId ? { threadId: input.scopeThreadId } : {}),
   };
   const existing = await deps.prisma.routine.findFirst({
@@ -605,11 +605,17 @@ export async function updateScheduleFromTool(
   const { count } = await deps.prisma.routine.updateMany({
     where: {
       ...scope,
+      userId: existing.userId,
       id: existing.id,
       bot: { archivedAt: null },
       ...(timingChanged ? { active: existing.active, nextRunAt: existing.nextRunAt } : {}),
     },
     data: {
+      // A routine runs with its owner's accounts, so whoever edits it takes it over, and a watch
+      // starts a fresh baseline from the new owner's accounts.
+      ...(existing.userId === input.userId
+        ? {}
+        : { userId: input.userId, watchState: Prisma.DbNull }),
       ...(name === undefined ? {} : { name }),
       ...(prompt === undefined ? {} : { prompt }),
       ...(timingChanged ? { crons, timezone, active, nextRunAt } : {}),

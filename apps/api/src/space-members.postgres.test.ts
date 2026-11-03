@@ -658,8 +658,9 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     });
 
     // The invitee deletes their account first: their bot stays in the shared Space.
-    await expect(prepareAccountDeletion(prisma, invitee.id)).resolves.toEqual({
+    await expect(prepareAccountDeletion(prisma, invitee.id)).resolves.toMatchObject({
       ownedOrganizationIds: [invitee.organizationId],
+      departures: [expect.objectContaining({ spaceId: home })],
     });
     await expect(system.bot.findUniqueOrThrow({ where: { id: bot.id } })).resolves.toMatchObject({
       userId: owner.id,
@@ -676,5 +677,28 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     ).resolves.toBe(0);
     // The other member keeps their own Space.
     await expect(system.space.findUnique({ where: { id: other.spaceId } })).resolves.not.toBeNull();
+  });
+
+  it("hands a co-owner's content over when the organization outlives their account", async () => {
+    const owner = await person("owner");
+    const coOwner = await person("co-owner");
+    const home = await sharedSpace(owner, "Home");
+    await call(coOwner.actor, "spaces/invites/accept", { token: await invite(owner, home) });
+    // An owner of the organization, but only a member of this Space.
+    await system.member.updateMany({
+      where: { organizationId: owner.organizationId, userId: coOwner.id },
+      data: { role: "owner" },
+    });
+    const bot = await system.bot.create({
+      data: { spaceId: home, userId: coOwner.id, name: "Planner", color: "test" },
+    });
+
+    const { ownedOrganizationIds, departures } = await prepareAccountDeletion(prisma, coOwner.id);
+
+    expect(ownedOrganizationIds).not.toContain(owner.organizationId);
+    expect(departures.map((departure) => departure.spaceId)).toEqual([home]);
+    await expect(system.bot.findUniqueOrThrow({ where: { id: bot.id } })).resolves.toMatchObject({
+      userId: owner.id,
+    });
   });
 });
