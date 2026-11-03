@@ -15,7 +15,11 @@ import type {
   AiRecipient,
   SettingsScope,
 } from "@rakazo/contracts";
-import { AI_DISCLOSURE_VERSION, AI_PRIVACY_URL } from "@rakazo/contracts";
+import {
+  AI_DISCLOSURE_VERSION,
+  AI_PRIVACY_URL,
+  ComputerModelSelectionSchema,
+} from "@rakazo/contracts";
 import {
   findDefaultVoiceCredential,
   findModelCredential,
@@ -67,7 +71,12 @@ export async function aiConsentStatus(
               archivedAt: null,
               ...(botIds ? { id: { in: botIds } } : {}),
             },
-            select: { modelProvider: true, modelId: true, thinkingLevel: true },
+            select: {
+              modelProvider: true,
+              modelId: true,
+              thinkingLevel: true,
+              computerModel: true,
+            },
           })
         : [],
       // An active routine with its own model is another recipient for this bot.
@@ -162,6 +171,37 @@ export async function aiConsentStatus(
       }),
     );
     selected.push(...roleModels.filter((model) => model !== null));
+    // A computer-use model receives screenshots and the conversation while the bot works.
+    const spaceComputerDefaults = await deps.prisma.spaceModelPreference.findMany({
+      where: { userId: actor.userId, spaceId: actor.spaceId, computerModelId: { not: null } },
+      include: { credential: true },
+    });
+    const computerTargets = [
+      ...[...preferences, ...spaceComputerDefaults].flatMap((preference) =>
+        preference.computerModelId
+          ? [
+              {
+                provider: preference.computerProvider ?? preference.credential.provider,
+                modelId: preference.computerModelId,
+                credentialId: preference.computerCredentialId ?? preference.credentialId,
+              },
+            ]
+          : [],
+      ),
+      ...bots.flatMap((bot) => {
+        const choice = ComputerModelSelectionSchema.safeParse(bot.computerModel ?? null).data;
+        return choice?.mode === "model" ? [choice] : [];
+      }),
+    ];
+    const computerModels = await Promise.all(
+      computerTargets.map(async (choice) => {
+        const credential = await findModelCredentialById(deps.prisma, actor, choice.credentialId);
+        return credential
+          ? { provider: choice.provider, id: choice.modelId, credential, thinkingLevel: null }
+          : null;
+      }),
+    );
+    selected.push(...computerModels.filter((model) => model !== null));
     if (deps.env.teamChatJudgeProvider && deps.env.teamChatJudgeModel) {
       selected.push({
         provider: deps.env.teamChatJudgeProvider,

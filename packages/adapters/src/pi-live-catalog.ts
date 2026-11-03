@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { SecretStore } from "@rakazo/adapter-kit";
-import { canonicalPiProviderId } from "@rakazo/contracts";
+import { ComputerModelSelectionSchema, canonicalPiProviderId } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import type { ModelCredentialAuthKind } from "./pi-catalog-availability.js";
 import { LiveCatalogCache, liveModelCatalogEnabled } from "./pi-live-cache.js";
@@ -290,10 +290,21 @@ export async function savedCatalogSelections(
   const [preferences, bots, routines, accountRoles, spaceRoles, settings] = await Promise.all([
     prisma.userModelPreference.findMany({
       where: { userId },
-      select: { modelId: true, credential: { select: { provider: true } } },
+      select: {
+        modelId: true,
+        computerProvider: true,
+        computerModelId: true,
+        credential: { select: { provider: true } },
+      },
     }),
-    prisma.bot.findMany({ where: { userId }, select: { modelProvider: true, modelId: true } }),
-    prisma.routine.findMany({ where: { userId }, select: { modelProvider: true, modelId: true } }),
+    prisma.bot.findMany({
+      where: { userId },
+      select: { modelProvider: true, modelId: true, computerModel: true },
+    }),
+    prisma.routine.findMany({
+      where: { userId },
+      select: { modelProvider: true, modelId: true },
+    }),
     prisma.userModelRoleChoice.findMany({
       where: { userId },
       select: { provider: true, modelId: true },
@@ -307,7 +318,24 @@ export async function savedCatalogSelections(
       select: { defaultModelProvider: true, defaultModelId: true },
     }),
   ]);
+  const computerChoices = [
+    // Computer-use choices are saved models too, so their entries must not drop out either.
+    ...preferences.flatMap((p) =>
+      p.computerModelId
+        ? [
+            `${canonicalPiProviderId(p.computerProvider ?? p.credential.provider)}:${p.computerModelId}`,
+          ]
+        : [],
+    ),
+    ...bots.flatMap((bot) => {
+      const choice = ComputerModelSelectionSchema.safeParse(bot.computerModel ?? null).data;
+      return choice?.mode === "model"
+        ? [`${canonicalPiProviderId(choice.provider)}:${choice.modelId}`]
+        : [];
+    }),
+  ];
   return new Set([
+    ...computerChoices,
     ...preferences.map((p) => `${canonicalPiProviderId(p.credential.provider)}:${p.modelId}`),
     ...bots.map(
       (p) => `${p.modelProvider ? canonicalPiProviderId(p.modelProvider) : ""}:${p.modelId}`,

@@ -37,9 +37,9 @@ prevent entering the configured computer target.
 Approval and takeover checkpoints pin **both** role identities and their authentication
 types. Resume resolves those exact accounts before inference, even if current settings
 changed. Provider-tagged history stays intact in checkpoints; Pi's provider serializers
-translate foreign reasoning and tool/result IDs rather than forwarding incompatible
-Claude signatures or OpenAI encrypted reasoning. Offline role-switch and wire-format
-regressions cover Claude/Codex in both directions without contacting providers.
+translate foreign reasoning and tool/result IDs rather than forwarding another
+provider's signed or encrypted reasoning. Offline role-switch and wire-format
+regressions cover switching between providers in both directions without contacting them.
 
 ## Computer contract
 

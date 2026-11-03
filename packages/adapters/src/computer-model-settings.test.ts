@@ -30,6 +30,18 @@ describe("computer model settings resolution", () => {
     expect(await resolveComputerRunModel(deps, scope, main, { mode: "main" })).toBeUndefined();
     expect(deps.resolve).not.toHaveBeenCalled();
   });
+  it("leaves a hosted main model without a computer model, since a pause could not resume it", async () => {
+    const deps = setup();
+    const hosted = { ...main, connectionId: undefined };
+    const choice = {
+      mode: "model",
+      provider: "anthropic",
+      modelId: "claude-sonnet-4-5",
+      credentialId: "claude",
+    };
+    expect(await resolveComputerRunModel(deps, scope, hosted, choice)).toBeUndefined();
+    expect(deps.resolve).not.toHaveBeenCalled();
+  });
   it("uses only the active connection's provider preference and medium effort", async () => {
     const deps = setup({ computerModelId: "gpt-4o-mini", computerThinkingLevel: null });
     expect(await resolveComputerRunModel(deps, scope, main, null)).toMatchObject({

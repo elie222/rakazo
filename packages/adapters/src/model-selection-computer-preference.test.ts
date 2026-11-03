@@ -49,7 +49,7 @@ it.each([false, true])(
               type: "oauth",
               access: "synthetic-access",
               refresh: "synthetic-refresh",
-              expires: Date.now() + 60000,
+              expires: 4_102_444_800_000,
             }),
     };
     const auth = await modelCredentialAuthKindsForSpace(prisma, store, {

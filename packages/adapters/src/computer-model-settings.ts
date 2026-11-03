@@ -21,10 +21,10 @@ export async function resolveComputerRunModel(
   override: unknown,
 ): Promise<AgentRunModel | undefined> {
   const selection = ComputerModelSelectionSchema.parse(override ?? null);
-  if (selection?.mode === "main") return undefined;
+  // A paused turn pins both identities by connection, so a hosted main model cannot switch.
+  if (selection?.mode === "main" || !main.connectionId) return undefined;
   let choice: ComputerModelSelection = selection;
   if (!choice) {
-    if (!main.connectionId) return undefined;
     const target = await settingsTarget(deps.prisma, scope, "models");
     const preference =
       target === "space"

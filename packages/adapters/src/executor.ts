@@ -1235,16 +1235,24 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           thinkingLevel: thinkingLevel ?? resolved.thinkingLevel ?? null,
         };
         // Saved identities win on resume, including when the bot/default was cleared meanwhile.
+        // Only runs that can drive a screen need it, and a target that has since gone away must
+        // not fail runs that never reach computer mode; settings show it as unavailable.
         const computerModel =
           pinnedComputerModels?.computer ??
-          (scripted || checkpointModelResolver
+          (scripted || checkpointModelResolver || !graphical
             ? undefined
             : await resolveComputerRunModel(
                 { prisma: deps.prisma, resolve: resolveCheckpointModel },
                 { userId: run.userId, spaceId: run.spaceId },
                 mainRunModel,
                 bot.computerModel,
-              ));
+              ).catch((error: unknown) => {
+                getLogger().warn("computer_model.unavailable", {
+                  "run.id": run.id,
+                  "error.message": error instanceof Error ? error.message : String(error),
+                });
+                return undefined;
+              }));
         const sourceMessage =
           (run.trigger === "user" || run.trigger === "follow_up") && run.sourceMessageId
             ? await deps.prisma.message.findUnique({
