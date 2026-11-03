@@ -1,4 +1,5 @@
-import { MOBILE_MCP_OAUTH_CALLBACK_URL } from "@rakazo/contracts";
+import type { McpServer } from "@rakazo/contracts";
+import { MCP_OAUTH_CLIENT_REQUIRED, MOBILE_MCP_OAUTH_CALLBACK_URL } from "@rakazo/contracts";
 import { rpc } from "./api";
 import { t } from "./i18n";
 
@@ -29,4 +30,9 @@ export async function signInToMcpServer(serverId: string): Promise<McpSignIn> {
   if (!code) throw new Error(params.get("error_description") || t("Could not continue"));
   await rpc("mcp/oauth/complete", { sessionId: started.sessionId, code, state: started.sessionId });
   return "connected";
+}
+
+/** The server's sign-in provider cannot register Rakazo, and no client is saved yet. */
+export function needsOAuthClient(server: McpServer): boolean {
+  return server.health.code === MCP_OAUTH_CLIENT_REQUIRED && !server.oauthClientId;
 }

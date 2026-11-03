@@ -7,11 +7,7 @@ import type {
   PluginMarketplaceEntry,
   RpcOutput,
 } from "@rakazo/contracts";
-import {
-  CONNECTION_LABEL_MAX_LENGTH,
-  MCP_OAUTH_CLIENT_REQUIRED,
-  SUBMIT_PLUGIN_URL,
-} from "@rakazo/contracts";
+import { CONNECTION_LABEL_MAX_LENGTH, SUBMIT_PLUGIN_URL } from "@rakazo/contracts";
 import type { PluginCategory } from "@rakazo/core";
 import {
   buildFeaturedConnectorTiles,
@@ -63,7 +59,7 @@ import {
   writeIntegrationsCache,
 } from "../../lib/integrations-cache";
 import { loadLastBotId } from "../../lib/last-bot";
-import { signInToMcpServer } from "../../lib/mcp-oauth";
+import { needsOAuthClient, signInToMcpServer } from "../../lib/mcp-oauth";
 import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
 import type { PluginParams } from "../../lib/plugin-marketplace";
@@ -80,10 +76,6 @@ import {
 } from "../../lib/plugin-marketplace";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
-
-function needsOAuthClient(server: McpServer): boolean {
-  return server.health.code === MCP_OAUTH_CLIENT_REQUIRED && !server.oauthClientId;
-}
 
 type SourceAuth = "none" | "bearer" | "header" | "oauth";
 type SourceKind = "treg" | "executor" | "mcp" | "api" | "graphql";
