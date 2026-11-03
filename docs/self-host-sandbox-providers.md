@@ -131,7 +131,8 @@ home as one tar archive. Screens use the image's desktop gateway on the pod IP, 
 worker and the web screen proxy must be able to reach pods in that namespace on port `6080` and the
 display ports from `6100` upward. Pods are ephemeral: the
 saved workspace is the persistence boundary, as with the remote providers. Kubernetes computers do
-not bill while running, so `COMPUTER_MAX_ACTIVE_MS` does not apply to them.
+not bill while running, so `COMPUTER_MAX_ACTIVE_MS` does not apply to them;
+`COMPUTER_MAX_ACTIVE_UNBILLED_MS` caps them when set.
 
 ### Mounted home (optional)
 
@@ -235,8 +236,10 @@ Claude Code, OpenCode) wrote its session within the last `SANDBOX_IDLE_MS`. An a
 at its prompt writes nothing, so it does not hold the computer. `0` turns the cap off.
 That exception lifts only the uptime cap; idle suspension after `SANDBOX_IDLE_MS` still
 applies once nothing holds the computer.
-Docker and this-Mac computers are never capped. The next use resumes it. Asking for
-takeover restarts the idle timer, and on providers that do not bill while running the run
+Docker and Kubernetes computers are capped only when `COMPUTER_MAX_ACTIVE_UNBILLED_MS` is set
+(off by default; minimum 60000), with the same exceptions, so an abandoned background command
+cannot keep one running for days. This-Mac computers are never capped. The next use resumes it.
+Asking for takeover restarts the idle timer, and on providers that do not bill while running the run
 also holds the computer for 30 minutes after asking, so the user can answer the push on
 the same open page.
 

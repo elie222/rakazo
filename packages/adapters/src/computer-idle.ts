@@ -336,6 +336,16 @@ export function computerMaxActiveMs(): number {
     : DEFAULT_COMPUTER_MAX_ACTIVE_MS;
 }
 
+/**
+ * Uptime cap for providers that do not bill while running, so one abandoned background command
+ * cannot hold a self-hosted computer and its memory for days. COMPUTER_MAX_ACTIVE_UNBILLED_MS
+ * configures it; unset, 0, or an invalid value leaves it off.
+ */
+export function unbilledComputerMaxActiveMs(): number {
+  const raw = Number(process.env.COMPUTER_MAX_ACTIVE_UNBILLED_MS?.trim() || 0);
+  return Number.isFinite(raw) && raw >= 60_000 ? raw : 0;
+}
+
 export function computerIdleSleepEnabled(): boolean {
   return process.env.SANDBOX_IDLE_MS?.trim() !== "0";
 }
@@ -370,13 +380,13 @@ function activeLimitReached(
   ref: ComputerRef,
   runningSince: Date | null | undefined,
 ): boolean {
-  const limit = computerMaxActiveMs();
-  return (
-    limit > 0 &&
-    sandbox.billsWhileRunning?.(ref) === true &&
-    runningSince != null &&
-    Date.now() - runningSince.getTime() >= limit
-  );
+  // Electron owns a native computer's lifetime.
+  if (ref.kind === "desktop") return false;
+  const limit =
+    sandbox.billsWhileRunning?.(ref) === true
+      ? computerMaxActiveMs()
+      : unbilledComputerMaxActiveMs();
+  return limit > 0 && runningSince != null && Date.now() - runningSince.getTime() >= limit;
 }
 
 export async function touchRunningComputer(
