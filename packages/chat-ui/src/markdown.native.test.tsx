@@ -931,6 +931,8 @@ describe("native markdown lists", () => {
     expect(html).toContain("Draft the announcement");
     expect(html.match(/data-accessibility-role="checkbox"/g)).toHaveLength(2);
     expect(html.match(/✓/g)).toHaveLength(1);
+    // Each task is one accessible element that reads its text with its state.
+    expect(html).toMatch(/accessible=""[^>]*accessibilityLabel="Draft the announcement"/);
     // The plain item keeps its bullet.
     expect(bulletDots(html)).toHaveLength(1);
   });

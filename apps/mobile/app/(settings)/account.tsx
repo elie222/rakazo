@@ -206,9 +206,6 @@ export default function Account() {
     void rpc("usage/summary")
       .then(setUsage)
       .catch(() => undefined);
-    void rpc("messaging/status")
-      .then((status) => setMessagingEnabled(status.enabled))
-      .catch(() => undefined);
     if (Platform.OS === "android") {
       void getLiveNotificationSettings()
         .then(setNotifications)
@@ -278,6 +275,21 @@ export default function Account() {
   useFocusEffect(
     useCallback(() => {
       void loadTrustedLinkSites().catch(() => undefined);
+    }, []),
+  );
+
+  // Checked on every visit, so a failed check never hides Messaging for good.
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      void rpc("messaging/status")
+        .then((status) => {
+          if (active) setMessagingEnabled(status.enabled);
+        })
+        .catch(() => undefined);
+      return () => {
+        active = false;
+      };
     }, []),
   );
 

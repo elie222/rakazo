@@ -201,7 +201,10 @@ async function describeFailure(work: string) {
   await walk(work, async (file) => {
     const name = path.basename(file);
     if (name === "commands.json") {
-      const commands = JSON.parse(await readFile(file, "utf8")) as {
+      // A crashed run can leave this file cut short; the screenshot still helps.
+      const commands = (await readFile(file, "utf8")
+        .then(JSON.parse)
+        .catch(() => [])) as {
         command: Record<string, unknown>;
         metadata?: { status?: string; error?: { message?: string } };
       }[];

@@ -994,7 +994,10 @@ function listItemRule(
       <View
         key={node.key}
         style={row}
+        // One element, so VoiceOver reads the item with its checkbox state.
+        accessible
         accessibilityRole="checkbox"
+        accessibilityLabel={cellPlainText(node).trim()}
         accessibilityState={{ checked: task === "done" }}
       >
         <View style={[layout.bulletMarker, direction ? layout.taskAfter : layout.taskBefore]}>
