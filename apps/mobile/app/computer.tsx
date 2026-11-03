@@ -83,6 +83,7 @@ export default function Computer() {
   const name = displayName(nameParam, t("Bot"));
   const foreground = useAppForeground();
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
+  const [cleaningUp, setCleaningUp] = useState(false);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [screenError, setScreenError] = useState<string | null>(null);
   const [screenOriginError, setScreenOriginError] = useState(false);
@@ -382,6 +383,23 @@ export default function Computer() {
     }
   }
 
+  function dismissDiskWarning() {
+    setComputer((current) => current && { ...current, diskFullPercent: undefined });
+    void rpc("computer/dismissDiskWarning", { botId: botId ?? "" }).catch(() => undefined);
+  }
+
+  async function cleanUpDisk() {
+    setCleaningUp(true);
+    try {
+      await rpc("threads/send", { botId: botId ?? "", intent: "free_disk_space" });
+      dismissDiskWarning();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setCleaningUp(false);
+    }
+  }
+
   async function releaseComputer(reason?: ComputerReleaseReason) {
     if (!botId || !refreshController.isActive()) return;
     const action = refreshController.beginAction();
@@ -585,6 +603,33 @@ export default function Computer() {
           />
         )}
       </View>
+      {computer?.diskFullPercent !== undefined ? (
+        <View
+          style={{
+            marginTop: 16,
+            flexDirection: stacked ? "column" : "row",
+            alignItems: stacked ? "flex-start" : "center",
+            gap: 12,
+          }}
+        >
+          <Text
+            style={{ color: tokens.warning, ...(stacked ? { alignSelf: "stretch" } : { flex: 1 }) }}
+          >
+            {t("Computer is {percent}% full", { percent: computer.diskFullPercent })}
+          </Text>
+          <NativeActionButton
+            label={t("Dismiss")}
+            prominence="plain"
+            onPress={dismissDiskWarning}
+          />
+          <NativeActionButton
+            label={t("Clean up")}
+            prominence="secondary"
+            busy={cleaningUp}
+            onPress={() => void cleanUpDisk()}
+          />
+        </View>
+      ) : null}
       {computer ? (
         <ComputerMaintenanceActions
           botId={botId ?? ""}

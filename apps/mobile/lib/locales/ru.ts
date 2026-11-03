@@ -707,6 +707,8 @@ export const RU_MESSAGES: Record<string, string> = {
   Stop: "Остановить",
   Submit: "Отправить",
   "Take control": "Взять управление",
+  "Clean up": "Очистить",
+  "Computer is {percent}% full": "Компьютер заполнен на {percent}%",
   "Tap + to create a bot": "Нажмите +, чтобы создать бота",
   Team: "Команда",
   "Team Computer": "Командный компьютер",

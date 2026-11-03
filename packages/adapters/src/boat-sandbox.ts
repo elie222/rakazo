@@ -62,7 +62,7 @@ import { withAbort } from "./web-ssrf.js";
 import { readWorkspaceArchive } from "./workspace-archive.js";
 import {
   shouldSkipPortableWorkspaceFile,
-  workspaceSaveFindExpression,
+  workspaceSaveFindCommand,
 } from "./workspace-save-policy.js";
 
 const DISPLAY_START = 20;
@@ -1739,7 +1739,7 @@ const BOAT_LISTING_UNREADABLE = 3;
  * finish writing, fails the listing.
  */
 function boatListingWalk(
-  findArguments: string,
+  find: string,
   skippable: string[] = [],
   format = BOAT_LISTING_FORMAT,
 ): string {
@@ -1747,7 +1747,7 @@ function boatListingWalk(
     .map((error) => `-e ${shellQuote(`${error}$`)}`)
     .join(" ");
   return [
-    `errors=$(find ${findArguments} -printf '${format}' 2>&1 >&3 3>&-)`,
+    `errors=$(${find} -printf '${format}' 2>&1 >&3 3>&-)`,
     "status=$?",
     'if [ "$status" -eq 1 ]; then',
     `  if ! printf '%s\\n' "$errors" | grep -qv ${tolerated}; then status=0;`,
@@ -1769,7 +1769,7 @@ function listBoatFilesCommand(directory: string): string {
     "{",
     "exec 3>&1",
     // A link that loops is left out, like a broken one.
-    boatListingWalk('-L "$directory" -mindepth 1 -maxdepth 1 \\( -type f -o -type d \\)', [
+    boatListingWalk('find -L "$directory" -mindepth 1 -maxdepth 1 \\( -type f -o -type d \\)', [
       "Too many levels of symbolic links",
     ]),
     "} | base64 -w0",
@@ -1818,7 +1818,7 @@ export function archiveBoatWorkspaceCommand(
     "(",
     boatListingWalk(
       // Excluded home content is neither counted toward the limits nor read.
-      `. ${workspaceSaveFindExpression()} -fprintf "$archive.sizes" '%s\\n'`,
+      `${workspaceSaveFindCommand()} -fprintf "$archive.sizes" '%s\\n'`,
       [],
       "%p\\0",
     ),

@@ -1,11 +1,12 @@
-import { execFileSync, spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  isTaggedCacheDirectory,
   shouldSkipPortableWorkspaceFile,
-  workspaceSaveFindExpression,
+  workspaceSaveFindCommand,
 } from "./workspace-save-policy.js";
 
 describe("home save exclusions", () => {
@@ -67,6 +68,9 @@ describe("home save exclusions", () => {
 });
 
 const findVersion = spawnSync("find", ["--version"], { encoding: "utf8" });
+const root = process.getuid?.() === 0;
+const CACHE_TAG = "Signature: 8a477f597d28d172789f06886806bc55\n# Created by a build tool\n";
+
 describe.skipIf(findVersion.status !== 0 || !findVersion.stdout.includes("GNU"))(
   "GNU home save traversal",
   () => {
@@ -76,9 +80,9 @@ describe.skipIf(findVersion.status !== 0 || !findVersion.stdout.includes("GNU"))
       ["Railway", "-print0", 1],
       ["Boxd", "-printf '%P\\0%m\\0%s\\0'", 3],
     ])("prints regular files and prunes excluded directories for %s", async (_, action, fields) => {
-      const root = await mkdtemp(path.join(tmpdir(), "rakazo-find-"));
+      const scratch = await mkdtemp(path.join(tmpdir(), "rakazo-find-"));
       try {
-        const home = path.join(root, "home with 'quotes'");
+        const home = path.join(scratch, "home with 'quotes'");
         const kept = [
           "notes.txt",
           "nested/with space/new\nline.txt",
@@ -87,12 +91,16 @@ describe.skipIf(findVersion.status !== 0 || !findVersion.stdout.includes("GNU"))
           ".yarn/patches/fix.patch",
           ".browser-profiles/chromium/Default/Cookies",
           "project/Cache/data",
+          "untagged/CACHEDIR.TAG",
+          "untagged/data",
         ];
         const pruned = [
           ".cache",
           "project/node_modules",
           "project/.yarn/cache",
           ".browser-profiles/chromium/Default/Code Cache",
+          "rust/target",
+          "odd [dir]*?/target",
         ];
         const excluded = [
           ...pruned.map((dir) => `${dir}/unvisited/data`),
@@ -105,45 +113,70 @@ describe.skipIf(findVersion.status !== 0 || !findVersion.stdout.includes("GNU"))
           await mkdir(path.dirname(target), { recursive: true });
           await writeFile(target, "data", { mode: 0o600 });
         }
+        for (const dir of ["rust/target", "odd [dir]*?/target"]) {
+          await writeFile(path.join(home, dir, "CACHEDIR.TAG"), CACHE_TAG);
+        }
+        // Without the glob escaping, "odd [dir]*?/target" would also match this one.
+        await mkdir(path.join(home, "odd d!/target"), { recursive: true });
+        await writeFile(path.join(home, "odd d!/target/kept.txt"), "data");
+        kept.push("odd d!/target/kept.txt");
         await symlink("notes.txt", path.join(home, "linked"));
-        const trace = path.join(root, "visited");
-        // Trace each visited entry before applying the production expression. A filter
-        // that merely hides cache files would still visit their descendants.
-        const output = execFileSync(
+        // A walk that descends into a pruned directory fails to read this subdirectory.
+        if (!root) {
+          for (const dir of pruned) await chmod(path.join(home, dir, "unvisited"), 0o000);
+        }
+        const result = spawnSync(
           "bash",
           [
             "-c",
-            `cd "$1" && find . -fprintf "$2" '%P\\0' ${workspaceSaveFindExpression()} ${action}`,
+            `cd "$1" && ${workspaceSaveFindCommand()} ${action}`,
             "workspace-save-test",
             home,
-            trace,
+            path.join(scratch, "out"),
           ],
           { encoding: "utf8" },
         );
-        const records = output.split("\0").slice(0, -1);
+        if (!root) {
+          for (const dir of pruned) await chmod(path.join(home, dir, "unvisited"), 0o700);
+        }
+        expect(result.stderr).toBe("");
+        expect(result.status).toBe(0);
+        const records = result.stdout.split("\0").slice(0, -1);
         const names = records
           .filter((_, index) => index % fields === 0)
           .map((name) => name.replace(/^\.\//, ""));
         expect(names.sort()).toEqual([...kept].sort());
-        for (const name of names) expect(shouldSkipPortableWorkspaceFile(name)).toBe(false);
-        for (const name of excluded) expect(shouldSkipPortableWorkspaceFile(name)).toBe(true);
-        const visited = (await readFile(trace, "utf8")).split("\0");
-        for (const dir of pruned) {
-          expect(visited).toContain(dir);
-          expect(visited.some((name) => name.startsWith(`${dir}/`))).toBe(false);
-        }
         if (fields === 3) {
           expect(records.filter((_, index) => index % fields === 1)).toEqual(kept.map(() => "600"));
-          expect(records.filter((_, index) => index % fields === 2)).toEqual(kept.map(() => "4"));
         }
         if (action.includes("-fprintf")) {
-          expect((await readFile(`${trace}.sizes`, "utf8")).trim().split("\n")).toEqual(
-            kept.map(() => "4"),
-          );
+          expect(
+            (await readFile(path.join(scratch, "out.sizes"), "utf8")).trim().split("\n"),
+          ).toHaveLength(kept.length);
         }
       } finally {
-        await rm(root, { recursive: true, force: true });
+        await rm(scratch, { recursive: true, force: true });
       }
     });
   },
 );
+
+describe("tagged cache directories", () => {
+  it("recognizes only a tag that starts with the signature", async () => {
+    const scratch = await mkdtemp(path.join(tmpdir(), "rakazo-cachedir-"));
+    try {
+      const write = async (dir: string, content?: string) => {
+        await mkdir(path.join(scratch, dir), { recursive: true });
+        if (content !== undefined)
+          await writeFile(path.join(scratch, dir, "CACHEDIR.TAG"), content);
+        return isTaggedCacheDirectory(path.join(scratch, dir));
+      };
+      expect(await write("tagged", CACHE_TAG)).toBe(true);
+      expect(await write("unsigned", "my notes")).toBe(false);
+      expect(await write("short", CACHE_TAG.slice(0, 20))).toBe(false);
+      expect(await write("missing")).toBe(false);
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  });
+});

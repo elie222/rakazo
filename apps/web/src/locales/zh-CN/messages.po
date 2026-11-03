@@ -1333,6 +1333,10 @@ msgstr "选择如何使用 Rakazo"
 msgid "Claude subscription"
 msgstr "Claude 订阅"
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Clean up"
+msgstr "清理"
+
 #: src/components/AskCard.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
@@ -1510,6 +1514,10 @@ msgstr "电脑启动失败"
 #: src/components/ModelCredits.tsx
 msgid "Computer hours left"
 msgstr "剩余电脑时长"
+
+#: src/pages/shell/computer-panel.tsx
+msgid "Computer is {percent}% full"
+msgstr "电脑已用 {percent}% 空间"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"
@@ -2623,6 +2631,7 @@ msgstr "正在断开…"
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/PasskeyOffer.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
+#: src/pages/shell/computer-panel.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Dismiss"
 msgstr "忽略"

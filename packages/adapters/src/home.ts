@@ -21,7 +21,10 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import type { AdapterContext, AgentHomeStore, PortableFile } from "@rakazo/adapter-kit";
 import { fileHandlePath } from "./file-handle-path.js";
-import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
+import {
+  isTaggedCacheDirectory,
+  shouldSkipPortableWorkspaceFile,
+} from "./workspace-save-policy.js";
 
 const STAGING_PREFIX = "rakazo-workspace-";
 /** Staging directories in use are touched this often, so other processes can tell them apart. */
@@ -653,7 +656,8 @@ async function copyDir(
       shouldSkipPortableWorkspaceFile(
         path.relative(root, path.join(current, entry.name)).split(path.sep).join("/"),
         info.isDirectory(),
-      )
+      ) ||
+      (info.isDirectory() && (await isTaggedCacheDirectory(from)))
     )
       continue;
     if (info.isDirectory()) await copyDir(from, to, root, visited);
@@ -680,6 +684,7 @@ async function* walkFiles(
     const info = await stat(full);
     if (shouldSkipPortableWorkspaceFile(portablePath, info.isDirectory())) continue;
     if (info.isDirectory()) {
+      if (await isTaggedCacheDirectory(full)) continue;
       yield* walkFiles(root, full, skipHidden, portablePath, visited);
     } else if (info.isFile()) {
       const { content, mode } = await readTraversalFile(root, full, skipHidden);
@@ -693,7 +698,10 @@ async function removeExcludedStagedEntries(root: string, directory = root) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const full = path.join(directory, entry.name);
     const relative = path.relative(root, full).split(path.sep).join("/");
-    if (shouldSkipPortableWorkspaceFile(relative, entry.isDirectory())) {
+    if (
+      shouldSkipPortableWorkspaceFile(relative, entry.isDirectory()) ||
+      (entry.isDirectory() && (await isTaggedCacheDirectory(full)))
+    ) {
       await rm(full, { recursive: true, force: true });
     } else if (entry.isDirectory()) {
       await removeExcludedStagedEntries(root, full);

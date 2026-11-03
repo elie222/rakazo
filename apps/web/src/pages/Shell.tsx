@@ -290,6 +290,11 @@ function SpaceShell() {
   activeGroupId.current = groupId;
   const computerState = useComputerState({ rpc, panel, activeId: active?.id, activeBotId });
   const { computer, computerOpen, setComputerOpen, booting, commitComputer } = computerState;
+  const dismissDiskWarning = (botId: string) => {
+    const current = computerState.computerRef.current;
+    if (current?.botId === botId) commitComputer({ ...current, diskFullPercent: undefined });
+    void rpc.computer.dismissDiskWarning({ botId }).catch(() => undefined);
+  };
   useReportedUiLocale(rpc, bootstrapMe?.locale);
   const cycleBots = useMemo(
     () => groupBotsForSidebar(bots, botSections).flatMap((group) => group.bots),
@@ -1181,6 +1186,17 @@ function SpaceShell() {
               onRecoveryDismissed={computerControls.releaseComputerRecovery}
               onOpenComputerSettings={() => openSettings("computer")}
               onOpen={() => void openComputer()}
+              onCleanUpDisk={() => {
+                const botId = active.id;
+                void rpc.threads
+                  .send({ botId, clientNonce: crypto.randomUUID(), intent: "free_disk_space" })
+                  .then(() => {
+                    dismissDiskWarning(botId);
+                    void refreshThread(botId);
+                  })
+                  .catch(() => undefined);
+              }}
+              onDismissDiskWarning={() => dismissDiskWarning(active.id)}
             />
           ) : null
         }

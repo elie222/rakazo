@@ -39,7 +39,7 @@ import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { readBodyCapped } from "./web-ssrf.js";
 import {
   shouldSkipPortableWorkspaceFile,
-  workspaceSaveFindExpression,
+  workspaceSaveFindCommand,
 } from "./workspace-save-policy.js";
 
 const DISPLAY_START = 1;
@@ -339,7 +339,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
       [
         "set -euo pipefail",
         `cd ${shellQuote(WORKSPACE)}`,
-        `find . ${workspaceSaveFindExpression()} -print0 | while IFS= read -r -d "" entry; do`,
+        `${workspaceSaveFindCommand()} -print0 | while IFS= read -r -d "" entry; do`,
         '  if [ -x "$entry" ]; then mode=700; else mode=600; fi',
         `  printf '%s\\0%s\\0%s\\0' "\${entry#./}" "$mode" "$(wc -c < "$entry")"`,
         "done",

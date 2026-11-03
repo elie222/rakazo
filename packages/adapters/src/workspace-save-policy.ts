@@ -1,3 +1,5 @@
+import { open } from "node:fs/promises";
+import path from "node:path";
 import type { WorkspaceExportLimits } from "@rakazo/adapter-kit";
 import { shellQuote } from "@rakazo/core/node/desktop-runtime";
 
@@ -82,11 +84,55 @@ export function shouldSkipPortableWorkspaceFile(relative: string, isDirectory = 
   );
 }
 
-/** Run find from the home with `.`; excluded directories are never descended into. */
-export function workspaceSaveFindExpression(): string {
-  const expressions = exclusions.map(({ pattern, kind }) => {
-    const type = kind === "directory" ? "-type d " : kind === "file" ? "-type f " : "";
-    return `\\( ${type}-regex ${shellQuote(`./${pattern}`)} \\)`;
-  });
-  return `-regextype posix-extended \\( ${expressions.join(" -o ")} \\) -prune -o -type f`;
+/** Cache Directory Tagging (bford.info/cachedir): build tools mark rebuildable output this way. */
+const CACHE_DIRECTORY_TAG = "CACHEDIR.TAG";
+const CACHE_DIRECTORY_SIGNATURE = "Signature: 8a477f597d28d172789f06886806bc55";
+
+/** True when `directory` holds a cache directory tag; a save leaves the whole directory out. */
+export async function isTaggedCacheDirectory(directory: string): Promise<boolean> {
+  const handle = await open(path.join(directory, CACHE_DIRECTORY_TAG)).catch(() => null);
+  if (!handle) return false;
+  try {
+    const expected = Buffer.from(CACHE_DIRECTORY_SIGNATURE);
+    const { buffer, bytesRead } = await handle.read(
+      Buffer.alloc(expected.length),
+      0,
+      expected.length,
+      0,
+    );
+    return bytesRead === expected.length && buffer.equals(expected);
+  } catch {
+    return false;
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+}
+
+/**
+ * A shell command run from the home that walks the files a save keeps; append find actions such
+ * as `-printf '%P\\0'`. Excluded directories are never descended into. Tagged cache directories
+ * are found by a first walk, since one find cannot prune on a file inside the directory without
+ * starting a process per directory; the second walk reads the directory entries the first cached.
+ */
+export function workspaceSaveFindCommand(): string {
+  const excluded = exclusions
+    .map(({ pattern, kind }) => {
+      const type = kind === "directory" ? "-type d " : kind === "file" ? "-type f " : "";
+      return `\\( ${type}-regex ${shellQuote(`./${pattern}`)} \\)`;
+    })
+    .join(" -o ");
+  const find = "find . -regextype posix-extended";
+  const script = [
+    // A name with a newline cannot be listed one per line, so its directory is kept.
+    `tags=$(${find} \\( ${excluded} \\) -prune -o -name ${CACHE_DIRECTORY_TAG} -type f ! -path '*\n*' -exec grep -ls ${shellQuote(`^${CACHE_DIRECTORY_SIGNATURE}`)} {} + | sed -e 's|/${CACHE_DIRECTORY_TAG.replace(".", "\\.")}$||' -e 's/[][*?\\\\]/\\\\&/g')`,
+    "n=$#",
+    "IFS='\n'",
+    "set -f",
+    'for dir in $tags; do set -- "$@" -o -path "$dir"; done',
+    'set -- "$@" \\) \\) -prune -o -type f',
+    // Moves the caller's actions after the pruned directories.
+    'while [ "$n" -gt 0 ]; do set -- "$@" "$1"; shift; n=$((n - 1)); done',
+    `exec ${find} \\( ${excluded} -o -type d \\( -false "$@"`,
+  ].join("\n");
+  return `sh -c ${shellQuote(script)} workspace-save`;
 }

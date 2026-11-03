@@ -472,6 +472,8 @@ export const JA_MESSAGES: Record<string, string> = {
   Release: "操作を戻す",
   Skip: "スキップ",
   "Take control": "操作を引き継ぐ",
+  "Clean up": "整理する",
+  "Computer is {percent}% full": "コンピューターのディスクが {percent}% 使用中",
   "You have control": "あなたが操作中",
   "Active model": "使用中のモデル",
   "Authorization code": "認証コード",

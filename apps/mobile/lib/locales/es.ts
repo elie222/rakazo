@@ -466,6 +466,8 @@ export const ES_MESSAGES: Record<string, string> = {
   Release: "Ceder el control",
   Skip: "Omitir",
   "Take control": "Tomar el control",
+  "Clean up": "Liberar espacio",
+  "Computer is {percent}% full": "El ordenador está al {percent} % de su capacidad",
   "You have control": "Tienes el control",
   "Active model": "Modelo activo",
   "Authorization code": "Código de autorización",

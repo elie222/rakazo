@@ -27,6 +27,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import { activeCodingAgent } from "./coding-agent-activity.js";
 import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
+import { measureComputerDisk } from "./computer-disk.js";
 import { screenLeaseIdForRun, toComputerRef } from "./computer-lifecycle.js";
 import { BrowserStillRunningError } from "./computer-screens.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
@@ -545,6 +546,8 @@ export async function sleepComputerIfIdle(
     updatedAt: checkpointedAt,
   };
 
+  // Read beside the save so the warning and the next run's note show what the last run left.
+  const disk = measureComputerDisk(deps.sandbox, ref, ctx);
   let damaged = false;
   try {
     const revision = await checkpointComputerWorkspace(
@@ -674,6 +677,7 @@ export async function sleepComputerIfIdle(
   const suspended = await deps.prisma.computer.updateMany({
     where: suspensionClaim,
     data: {
+      ...(await disk),
       state: "suspended",
       runningSince: null,
       controlHolder: "none",

@@ -88,6 +88,11 @@ export function takeoverReleaser(deps: RouterDeps, actor: Actor, target: ThreadT
   };
 }
 
+const INTENT_MESSAGES = {
+  free_disk_space:
+    "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need.",
+};
+
 export function threadsRoutes(ctx: RouterContext) {
   const { deps, authed, callsEnabled, codexCatalog, repos, agentSkills } = ctx;
   /** The bot a reaction can wake: the thread's bot, or in a group the bot that wrote the message. */
@@ -102,9 +107,14 @@ export function threadsRoutes(ctx: RouterContext) {
         )?.botId ?? target.memberBotIds[0]!);
   const send = async (
     actor: Actor,
-    input: Parameters<typeof sendThreadMessage>[3] & { botId?: string; groupId?: string },
+    request: Parameters<typeof sendThreadMessage>[3] & {
+      botId?: string;
+      groupId?: string;
+      intent?: keyof typeof INTENT_MESSAGES;
+    },
     startRoutines?: Parameters<typeof sendThreadMessage>[5],
   ) => {
+    const input = request.intent ? { ...request, text: INTENT_MESSAGES[request.intent] } : request;
     const setup = await modelSetup(deps, actor);
     const target = await resolveThreadTarget(deps.prisma, actor, input);
     // A bot with its own runnable model needs no main model.

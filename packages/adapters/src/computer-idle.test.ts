@@ -348,6 +348,8 @@ describe("sandbox idle", () => {
         updatedAt: expect.any(Date),
       },
       data: {
+        diskUsedBytes: 91n * 1024n,
+        diskFreeBytes: 9n * 1024n,
         state: "suspended",
         runningSince: null,
         controlHolder: "none",
@@ -2032,6 +2034,14 @@ function idleHarness(
       options.billsWhileRunning === undefined ? undefined : vi.fn(() => options.billsWhileRunning),
     execute: vi.fn(async function* (_computer: unknown, request: { argv: string[] }) {
       if (options.probeError) throw options.probeError;
+      if (request.argv[0] === "df") {
+        yield {
+          type: "stdout",
+          data: "Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/vda1 100 91 9 91% /home\n",
+        } as const;
+        yield { type: "exit", code: 0 } as const;
+        return;
+      }
       if (request.argv[3] === "rakazo-coding-agent-probe") {
         if (options.codingAgent)
           yield { type: "stdout", data: `${options.codingAgent}\n` } as const;

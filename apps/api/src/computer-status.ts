@@ -1,4 +1,9 @@
-import { computerSupportsTerminal, computerSupportsUpdate } from "@rakazo/adapters";
+import {
+  computerSupportsTerminal,
+  computerSupportsUpdate,
+  DISK_WARNING_PERCENT,
+  diskUsedPercent,
+} from "@rakazo/adapters";
 import type { ComputerStatus } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, computerScreenSize } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
@@ -60,6 +65,9 @@ export function toComputerStatus(
     controlRunId?: string | null;
     homeRevision: string;
     maintenanceId?: string | null;
+    diskUsedBytes?: bigint | null;
+    diskFreeBytes?: bigint | null;
+    diskDismissedPercent?: number | null;
   } | null,
   busyBotName: string | null = null,
 ): ComputerStatus {
@@ -81,6 +89,11 @@ export function toComputerStatus(
               ? computer.state
               : "stopped";
   const screen = computerScreenSize(computer?.kind);
+  const diskPercent = computer ? diskUsedPercent(computer) : null;
+  const diskFull =
+    diskPercent !== null &&
+    diskPercent >= DISK_WARNING_PERCENT &&
+    diskPercent > (computer?.diskDismissedPercent ?? 0);
   return {
     botId,
     mode: computer?.scope === "dedicated" ? "dedicated" : "team",
@@ -96,5 +109,6 @@ export function toComputerStatus(
     busyBotName,
     canUpdate: computerSupportsUpdate(kind),
     terminalAvailable: computerSupportsTerminal(kind),
+    ...(diskFull ? { diskFullPercent: diskPercent } : {}),
   };
 }

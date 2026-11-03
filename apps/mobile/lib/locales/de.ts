@@ -490,6 +490,8 @@ export const DE_MESSAGES: Record<string, string> = {
   Release: "Freigeben",
   Skip: "Überspringen",
   "Take control": "Kontrolle übernehmen",
+  "Clean up": "Aufräumen",
+  "Computer is {percent}% full": "Computer ist zu {percent} % voll",
   "You have control": "Du hast die Kontrolle",
   "Active model": "Aktives Modell",
   "Authorization code": "Autorisierungscode",

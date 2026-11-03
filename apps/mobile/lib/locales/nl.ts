@@ -483,6 +483,8 @@ export const NL_MESSAGES: Record<string, string> = {
   Release: "Vrijgeven",
   Skip: "Overslaan",
   "Take control": "Controle overnemen",
+  "Clean up": "Opruimen",
+  "Computer is {percent}% full": "Computer is voor {percent}% vol",
   "You have control": "Jij hebt de controle",
   "Active model": "Actief model",
   "Authorization code": "Autorisatiecode",

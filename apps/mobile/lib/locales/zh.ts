@@ -694,6 +694,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   Stop: "停止",
   Submit: "提交",
   "Take control": "接管控制",
+  "Clean up": "清理",
+  "Computer is {percent}% full": "电脑已用 {percent}% 空间",
   "Tap + to create a bot": "点按 + 创建 Bot",
   Team: "团队",
   "Team Computer": "团队电脑",
