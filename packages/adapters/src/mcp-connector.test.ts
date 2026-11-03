@@ -14,6 +14,7 @@ import { InfisicalSecretStore } from "./infisical-secret-store.js";
 import { InstalledConnectorProvider } from "./installed-connectors.js";
 import { IntegrationProviderSettings } from "./integration-provider-settings.js";
 import { DIRECT_TOOL_LIMIT } from "./lazy-tool-catalog.js";
+import { MCP_CLOSE_TIMEOUT_MS } from "./mcp-close.js";
 import { allowlistDrift, McpConnector } from "./mcp-connector.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import { StoredMcpOAuthProvider } from "./mcp-oauth.js";
@@ -148,6 +149,71 @@ function mcpFetch(
 }
 
 describe("MCP connector session cache", () => {
+  it.each([
+    "revision",
+    "discovery failure",
+    "call failure",
+    "expired listing",
+    "expired call",
+  ] as const)("does not let a stuck close block %s or the next session", async (scenario) => {
+    vi.useFakeTimers();
+    const state = { failNext: false, initializations: 0, sessionNotFound: 0 };
+    vi.stubGlobal("fetch", mcpFetch(state));
+    const assignment = { ...ASSIGNMENT, server: { ...SERVER } };
+    const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
+      botMcpServer: {
+        findMany: vi.fn(async () => [assignment]),
+        findFirst: vi.fn(async () => assignment),
+      },
+    };
+    const context = {
+      spaceId: "w1",
+      userId: "u1",
+      botId: "bot-1",
+      signal: new AbortController().signal,
+    } as never;
+    const connector = new McpConnector(prisma as never, {} as never, { network: TEST_NETWORK });
+    const execute = async () => {
+      const events: unknown[] = [];
+      for await (const event of connector.execute(
+        {
+          tool: "mcp__demo__echo",
+          args: {},
+          route: { connectorId: "mcp", resourceId: SERVER.id, toolName: "echo" },
+        } as never,
+        context,
+      ))
+        events.push(event);
+      return events;
+    };
+    let close: ReturnType<typeof vi.spyOn> | undefined;
+    try {
+      expect(await connector.discoverTools(context)).toMatchObject([{ name: "mcp__demo__echo" }]);
+      close = vi
+        .spyOn(McpSession.prototype, "close")
+        .mockImplementationOnce(() => new Promise(() => {}));
+      if (scenario === "revision") assignment.server.revision += 1;
+      else if (scenario.startsWith("expired")) state.sessionNotFound = 1;
+      else state.failNext = true;
+      const result = scenario.includes("call") ? execute() : connector.discoverTools(context);
+      await vi.advanceTimersByTimeAsync(MCP_CLOSE_TIMEOUT_MS);
+      if (scenario === "call failure") expect(await result).toMatchObject([{ type: "error" }]);
+      else if (scenario === "discovery failure") expect(await result).toEqual(unavailableOnly());
+      else if (scenario === "expired call")
+        expect(await result).toMatchObject([{ type: "result" }]);
+      else expect(await result).toMatchObject([{ name: "mcp__demo__echo" }]);
+      expect(close).toHaveBeenCalled();
+      state.failNext = false;
+      expect(await execute()).toMatchObject([{ type: "result" }]);
+      expect(state.initializations).toBe(2);
+    } finally {
+      close?.mockRestore();
+      await connector.close();
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps sessions across unchanged TTL reads and reconnects on observed rotation", async () => {
     vi.useFakeTimers();
     const fake = infisicalFake();
