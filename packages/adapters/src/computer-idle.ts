@@ -336,6 +336,16 @@ export function computerMaxActiveMs(): number {
     : DEFAULT_COMPUTER_MAX_ACTIVE_MS;
 }
 
+/**
+ * Uptime cap for providers that do not bill while running, so one abandoned background command
+ * cannot hold a self-hosted computer and its memory for days. COMPUTER_MAX_ACTIVE_UNBILLED_MS
+ * configures it; unset, 0, or an invalid value leaves it off.
+ */
+export function unbilledComputerMaxActiveMs(): number {
+  const raw = Number(process.env.COMPUTER_MAX_ACTIVE_UNBILLED_MS?.trim() || 0);
+  return Number.isFinite(raw) && raw >= 60_000 ? raw : 0;
+}
+
 export function computerIdleSleepEnabled(): boolean {
   return process.env.SANDBOX_IDLE_MS?.trim() !== "0";
 }
@@ -370,13 +380,13 @@ function activeLimitReached(
   ref: ComputerRef,
   runningSince: Date | null | undefined,
 ): boolean {
-  const limit = computerMaxActiveMs();
-  return (
-    limit > 0 &&
-    sandbox.billsWhileRunning?.(ref) === true &&
-    runningSince != null &&
-    Date.now() - runningSince.getTime() >= limit
-  );
+  // Electron owns a native computer's lifetime.
+  if (ref.kind === "desktop") return false;
+  const limit =
+    sandbox.billsWhileRunning?.(ref) === true
+      ? computerMaxActiveMs()
+      : unbilledComputerMaxActiveMs();
+  return limit > 0 && runningSince != null && Date.now() - runningSince.getTime() >= limit;
 }
 
 export async function touchRunningComputer(
@@ -1046,23 +1056,33 @@ async function hasActiveBackgroundWork(
       return !isSandboxGoneError(error) && !isSandboxDamagedError(error);
     }
   }
-  let exitCode: number | undefined;
-  let stdout = "";
   try {
-    for await (const event of sandbox.execute(
-      computer,
-      {
-        argv: ["bash", "-c", BACKGROUND_WORK_PROBE, "rakazo-background-probe", computerId],
-        timeoutMs: 10_000,
-      },
-      context,
-    )) {
-      if (event.type === "stdout") stdout += event.data;
-      if (event.type === "exit") exitCode = event.code;
-    }
+    return (await probeBackgroundWork(sandbox, computer, computerId, context)) !== "idle";
   } catch (error) {
     return !isSandboxGoneError(error) && !isSandboxDamagedError(error);
   }
+}
+
+/** The Linux marker probe, for providers without their own inspectBackgroundWork. */
+export async function probeBackgroundWork(
+  sandbox: Pick<SandboxProvider, "execute">,
+  computer: ComputerRef,
+  computerId: string,
+  context: AdapterContext,
+): Promise<"active" | "idle"> {
+  let exitCode: number | undefined;
+  let stdout = "";
+  for await (const event of sandbox.execute(
+    computer,
+    {
+      argv: ["bash", "-c", BACKGROUND_WORK_PROBE, "rakazo-background-probe", computerId],
+      timeoutMs: 10_000,
+    },
+    context,
+  )) {
+    if (event.type === "stdout") stdout += event.data;
+    if (event.type === "exit") exitCode = event.code;
+  }
   // Only the probe's explicit idle result permits suspension; unsupported or failed probes retry.
-  return exitCode !== 1 || stdout.trim() !== BACKGROUND_WORK_IDLE_SENTINEL;
+  return exitCode === 1 && stdout.trim() === BACKGROUND_WORK_IDLE_SENTINEL ? "idle" : "active";
 }

@@ -245,13 +245,17 @@ function createDeps(
           ).length,
       ),
       findFirst: vi.fn(
-        async ({ where }: { where: { identityId: string; kind: string; status: string } }) =>
+        async ({
+          where,
+        }: {
+          where: { identityId: string; kind: string; status: { in: string[] } };
+        }) =>
           outboundRows
             .filter(
               (row) =>
                 row.identityId === where.identityId &&
                 row.kind === where.kind &&
-                (row.status ?? "pending") === where.status,
+                where.status.in.includes((row.status as string | undefined) ?? "pending"),
             )
             .toSorted(
               (a, b) => (b.createdAt as Date).getTime() - (a.createdAt as Date).getTime(),
@@ -1449,6 +1453,19 @@ describe("createMessagingInboundHandler owner commands", () => {
     });
     sentPrompt(deps, "reply:msg-7:0", 120_000);
     sentPrompt(deps, "invite:ch-1:mi-1", 60_000, "pending");
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "YES" });
+
+    expect(deps.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
+    expect(deps.sendUserMessage).toHaveBeenCalled();
+  });
+
+  it("treats YES as a reply once the bot has answered, even before that answer is sent", async () => {
+    const deps = createDeps({
+      invitedMember: { id: "cm-1", channelId: "ch-1", status: "invited", identityId: "mi-1" },
+    });
+    sentPrompt(deps, "invite:ch-1:mi-1", 120_000);
+    sentPrompt(deps, "reply:msg-7:0", 60_000, "pending");
     const handle = createMessagingInboundHandler(deps);
     await handle({ ...dmEvent, content: "YES" });
 

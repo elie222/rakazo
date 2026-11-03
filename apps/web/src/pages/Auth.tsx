@@ -16,6 +16,7 @@ import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import { clearSpaceSelection } from "../lib/rpc";
 import { runSsoFlow } from "../lib/sso-flow";
 import { authErrorText, credentialIssueText } from "../lib/user-error";
+import { WindowChrome } from "./WindowChrome";
 
 type AuthMode = "in" | "up" | "forgot";
 
@@ -550,17 +551,25 @@ export function AuthFrame({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-full items-center justify-center bg-background px-6 py-16 text-foreground">
-      <form onSubmit={onSubmit} className="flex w-[460px] flex-col items-center">
-        <div className="flex h-[74px] w-[74px] items-center justify-center gap-[11px] rounded-full bg-muted">
-          <span className="h-5 w-[9px] rounded-full bg-primary" />
-          <span className="h-5 w-[9px] rounded-full bg-primary" />
-        </div>
-        <h1 aria-live="polite" className="mb-9 mt-7 text-4xl font-medium tracking-tight">
-          {title}
-        </h1>
-        {children}
-      </form>
+    <div
+      className="flex min-h-full flex-col bg-background text-foreground"
+      data-rakazo-surface="auth"
+    >
+      <div className="app-drag flex gap-2 px-5 py-[18px]">
+        <WindowChrome />
+      </div>
+      <div className="flex flex-1 items-center justify-center px-6 pb-16">
+        <form onSubmit={onSubmit} className="flex w-full max-w-[460px] flex-col items-center">
+          <div className="flex h-[74px] w-[74px] items-center justify-center gap-[11px] rounded-full bg-muted">
+            <span className="h-5 w-[9px] rounded-full bg-primary" />
+            <span className="h-5 w-[9px] rounded-full bg-primary" />
+          </div>
+          <h1 aria-live="polite" className="mb-9 mt-7 text-4xl font-medium tracking-tight">
+            {title}
+          </h1>
+          {children}
+        </form>
+      </div>
     </div>
   );
 }

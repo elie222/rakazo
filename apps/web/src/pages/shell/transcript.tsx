@@ -38,7 +38,7 @@ import { ActiveBotGlyph } from "../../components/ai/CollaborationMarker";
 import { VoiceChatCard } from "../../components/call/VoiceChatCard";
 import type { ArtifactTarget } from "../../lib/artifact-open";
 import { projectPageCards } from "../../lib/page-cards";
-import { quoteDraftForSelection } from "../../lib/quote-selection";
+import { lastSelectedText, quoteDraftForSelection } from "../../lib/quote-selection";
 import { messageHasVisibleBlocks } from "../../lib/tool-activity-view";
 import { TRANSCRIPT_CONTENT_PADDING } from "../../lib/transcript-layout";
 import { transcriptIsNearEnd, transcriptMovedDown } from "../../lib/transcript-scroll";
@@ -245,7 +245,7 @@ export const Transcript = memo(function Transcript({
         "[data-quote-message-id]",
       ) ?? null;
     const startContent = contentOf(range.startContainer);
-    const endContent = contentOf(range.endContainer);
+    const endContent = contentOf(lastSelectedText(range));
     // selection.toString() serializes the whole range (a Ctrl+A transcript is
     // unbounded), so it only runs once both endpoints sit in one message.
     const draft = quoteDraftForSelection(

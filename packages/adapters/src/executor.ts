@@ -1042,7 +1042,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           },
           () => runAbortController?.abort(),
         );
-        const computerKind = (await deps.sandbox.provisionKind?.()) ?? storedComputer.kind;
+        const computerKind =
+          (await deps.sandbox.provisionKind?.(storedComputer.homeKey)) ?? storedComputer.kind;
         const workspaceCheckpoint = createRunWorkspaceCheckpoint(
           async () => {
             if (!runComputer.ready) return;
@@ -1416,6 +1417,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           },
           computer: {
             stored: storedComputer,
+            kind: computerKind,
             mode: computerMode,
             lease: computerLease,
             lazy: runComputer,

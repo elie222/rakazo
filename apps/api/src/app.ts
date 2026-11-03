@@ -179,7 +179,7 @@ import { mountMessagingWebhookRoutes } from "./messaging-webhook.js";
 import { monitoringRoutes } from "./monitoring.js";
 import { pluginSubmissionRoutes } from "./plugin-submissions.js";
 import { sendReferralEmails, startReferralEmails } from "./referral-email.js";
-import { mountApiRequestBodyLimits } from "./request-body-limit.js";
+import { mountApiRequestBodyLimits, rpcBodyLimit } from "./request-body-limit.js";
 import { createRouter } from "./router.js";
 import { mountScreenTarget } from "./screen-proxy.js";
 import { mountScriptAssets } from "./script-assets.js";
@@ -404,6 +404,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       boatApiUrl: env.boatApiUrl,
       dataDir: env.dataDir,
       prisma,
+      secrets,
     }));
   const mcpOAuth = new McpOAuthBroker(
     prisma,
@@ -914,7 +915,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     }),
   );
   app.route("/", marketingEmailRoutes(prisma, env.authSecret));
-  mountApiRequestBodyLimits(app, env.maxUploadSizeBytes);
+  mountApiRequestBodyLimits(app);
   mountScreenTarget(app, prisma, env.screenProxySecret);
   mountScriptAssets(app);
   mountSharedPages(app, prisma, requestClientIp);
@@ -982,9 +983,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       minimums: env.minimumClientBuilds ?? {},
     }),
   );
+  const limitRpcBody = rpcBodyLimit(env.maxUploadSizeBytes);
   app.use("/rpc/*", async (c, next) => {
     const session = await requestSession(c.req.raw);
     const actor = session?.actor ?? null;
+    const tooLarge = await limitRpcBody(c, actor !== null);
+    if (tooLarge) return tooLarge;
     if (actor) {
       enrichLogContext({ "user.id": actor.userId, "space.id": actor.spaceId });
     }

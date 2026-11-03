@@ -16,8 +16,8 @@ function fakeChild() {
 
 type FakeChild = ReturnType<typeof fakeChild>;
 
-function setup() {
-  const frame = { url: "https://app.example.com/app/bot" };
+function setup(url = "https://app.example.com") {
+  const frame = { url: `${url}/app/bot` };
   const contents = Object.assign(new EventEmitter(), {
     mainFrame: frame,
     isDestroyed: () => false,
@@ -29,7 +29,7 @@ function setup() {
   } as IpcMainInvokeEvent;
   const target = {
     webContents: contents as unknown as WebContents,
-    url: "https://app.example.com",
+    url,
   };
   const children: FakeChild[] = [];
   const spawn = vi.fn((_language: string) => {
@@ -48,6 +48,28 @@ function setup() {
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 describe("desktop system speech", () => {
+  it.each([
+    "http://192.168.1.20:3100",
+    "http://10.0.0.20:3100",
+    "http://[fd00::20]:3100",
+    "http://server.local:3100",
+  ])("refuses native recognition for an insecure remote page: %s", (url) => {
+    const { event, speech, spawn } = setup(url);
+    expect(speech.start(event, "en-US", 1)).toBe(false);
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it.each(["https://app.example.com", "http://127.0.0.1:5173", "http://localhost:5173"])(
+    "preserves native recognition for a secure page: %s",
+    (url) => {
+      const { event, speech, spawn, children } = setup(url);
+      expect(speech.start(event, "en-US", 1)).toBe(true);
+      expect(spawn).toHaveBeenCalledOnce();
+      speech.abort(event, 1);
+      expect(children[0]!.kill).toHaveBeenCalledOnce();
+    },
+  );
+
   it("forwards the recognizer's results, known errors and end for the page's session", async () => {
     const { event, speech, spawn, children, sent } = setup();
     expect(speech.start(event, "es-CL", 7)).toBe(true);

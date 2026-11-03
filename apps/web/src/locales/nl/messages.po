@@ -444,6 +444,14 @@ msgstr ""
 msgid "About {label}"
 msgstr "Over {label}"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key ID"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key secret"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Access token (optional)"
 msgstr "Toegangstoken (optioneel)"
@@ -796,6 +804,7 @@ msgid "Anyone with the link"
 msgstr "Iedereen met de link"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/lib/localized-provider-hint.ts
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/model-settings/compatible-key-field.tsx
@@ -816,6 +825,14 @@ msgstr "API-sleutelheader"
 #: src/pages/shell/agent-import.tsx
 msgid "API keys"
 msgstr "API-sleutels"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API URL"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
@@ -2013,6 +2030,10 @@ msgstr "Facturatie laden mislukt"
 msgid "Could not load bots. Reload to try again."
 msgstr "Bots laden mislukt. Herlaad om het opnieuw te proberen."
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not load computer settings"
+msgstr ""
+
 #: src/components/VaultSettings.tsx
 msgid "Could not load credentials."
 msgstr "Gegevens laden mislukt."
@@ -2182,6 +2203,10 @@ msgstr "Opslaan mislukt"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
 msgstr "Auto Review opslaan mislukt"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not save computer settings"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "Could not save group"
@@ -2593,6 +2618,11 @@ msgstr "Geweigerd"
 msgid "Deny"
 msgstr "Weigeren"
 
+#. placeholder {0}: settings.defaultProvider
+#: src/components/ComputerProviderSettings.tsx
+msgid "Deployment default ({0})"
+msgstr ""
+
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Description"
@@ -2605,6 +2635,10 @@ msgstr ""
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop app"
 msgstr "Desktopapp"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Desktop ID"
+msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop update"
@@ -2818,6 +2852,10 @@ msgstr "E-mailverificatie vereist"
 msgid "Enable {0}"
 msgstr "{0} inschakelen"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "End user ID"
+msgstr ""
+
 #: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr "Eindigt op {day}"
@@ -2852,6 +2890,10 @@ msgstr "Voer een geheel getal van 1 tot 1000 in voor de afbeeldingslimiet."
 #: src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
 msgstr "Voer een API-sleutel in voordat je test."
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Environment ID"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
@@ -3123,6 +3165,14 @@ msgstr "Volledig scherm"
 #: src/pages/Onboarding.tsx
 msgid "Gateway ID"
 msgstr "Gateway-ID"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway URL"
+msgstr ""
 
 #: src/pages/settings-nav.ts
 #: src/pages/SettingsOverlay.tsx
@@ -3991,6 +4041,10 @@ msgstr "Dempen"
 msgid "Muted"
 msgstr "Gedempt"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "My computers"
+msgstr ""
+
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -4064,6 +4118,10 @@ msgstr "Nieuw"
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "New bot"
 msgstr "Nieuwe bot"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "New computers run on"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"
@@ -4451,6 +4509,10 @@ msgstr "Optionele headerwaarde"
 #: src/pages/Onboarding.tsx
 msgid "Or paste an API key"
 msgstr "Of plak een API-sleutel"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Organization"
+msgstr ""
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
@@ -4915,6 +4977,10 @@ msgstr "Scherm vernieuwen"
 msgid "Refreshing…"
 msgstr "Bezig met vernieuwen…"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Region"
+msgstr ""
+
 #: src/lib/user-error.ts
 msgid "Registration is closed"
 msgstr "Registratie is gesloten"
@@ -5201,6 +5267,10 @@ msgstr "Intrekken"
 msgid "Revoked"
 msgstr ""
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Root filesystem"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Rotate key"
 msgstr "Sleutel roteren"
@@ -5276,6 +5346,7 @@ msgid "Saturday"
 msgstr "zaterdag"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5310,6 +5381,7 @@ msgid "Save to Vault"
 msgstr "Opslaan in kluis"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Saved"
@@ -5535,6 +5607,7 @@ msgstr "Instellen voltooid"
 msgid "Setup help"
 msgstr "Installatiehulp"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Shape"
 msgstr "Vorm"
@@ -5616,7 +5689,6 @@ msgstr "Dichtheid van de zijbalk"
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign in"
 msgstr "Aanmelden"
 
@@ -5652,7 +5724,6 @@ msgid "Sign in with the subscription, or test the API key instead."
 msgstr "Meld je aan met het abonnement of test in plaats daarvan de API-sleutel."
 
 #: src/pages/Auth.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign up"
 msgstr "Registreren"
 
@@ -5968,6 +6039,10 @@ msgstr "Tabel"
 msgid "Take control"
 msgstr "Controle overnemen"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Target"
+msgstr ""
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "Een taak aanleren"
@@ -5987,6 +6062,10 @@ msgstr "Teamcomputer"
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
 msgstr "Teams-bericht"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Template"
+msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
@@ -6861,10 +6940,6 @@ msgstr ""
 #: src/components/ModelCredits.tsx
 msgid "Your subscription or API key"
 msgstr ""
-
-#: src/pages/Welcome.tsx
-msgid "Your team of always-on agents<0/>that you can give real work to."
-msgstr "Je team van altijd actieve agents<0/>dat je echt werk kunt geven."
 
 #: src/components/ModelCredits.tsx
 msgid "Your trial ends and your card is charged {price} today."

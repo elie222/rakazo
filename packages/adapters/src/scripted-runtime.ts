@@ -496,7 +496,6 @@ code-b
         ask: hasChoices
           ? {
               text: "Which city should I use?",
-              detail: "Tap one option.",
               actions: [
                 { id: "choice-1", label: "Berlin" },
                 { id: "choice-2", label: "Seoul" },

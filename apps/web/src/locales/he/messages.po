@@ -444,6 +444,14 @@ msgstr ""
 msgid "About {label}"
 msgstr "על {label}"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key ID"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key secret"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Access token (optional)"
 msgstr "טוקן גישה (אופציונלי)"
@@ -796,6 +804,7 @@ msgid "Anyone with the link"
 msgstr "כל מי שיש לו את הקישור"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/lib/localized-provider-hint.ts
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/model-settings/compatible-key-field.tsx
@@ -816,6 +825,14 @@ msgstr "header של מפתח API"
 #: src/pages/shell/agent-import.tsx
 msgid "API keys"
 msgstr "מפתחות API"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API URL"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
@@ -2013,6 +2030,10 @@ msgstr "לא ניתן לטעון את החיוב"
 msgid "Could not load bots. Reload to try again."
 msgstr "לא ניתן לטעון את הבוטים. יש לטעון מחדש כדי לנסות שוב."
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not load computer settings"
+msgstr ""
+
 #: src/components/VaultSettings.tsx
 msgid "Could not load credentials."
 msgstr "לא ניתן לטעון את פרטי הגישה."
@@ -2182,6 +2203,10 @@ msgstr "השמירה נכשלה"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
 msgstr "לא ניתן לשמור את Auto Review"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not save computer settings"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "Could not save group"
@@ -2593,6 +2618,11 @@ msgstr "נדחה"
 msgid "Deny"
 msgstr "דחייה"
 
+#. placeholder {0}: settings.defaultProvider
+#: src/components/ComputerProviderSettings.tsx
+msgid "Deployment default ({0})"
+msgstr ""
+
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Description"
@@ -2605,6 +2635,10 @@ msgstr ""
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop app"
 msgstr "אפליקציית הדסקטופ"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Desktop ID"
+msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop update"
@@ -2818,6 +2852,10 @@ msgstr "נדרש אימות אימייל"
 msgid "Enable {0}"
 msgstr "הפעלת {0}"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "End user ID"
+msgstr ""
+
 #: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr "מסתיים ב-{day}"
@@ -2852,6 +2890,10 @@ msgstr "יש להזין מספר שלם בין 1 ל-1000 עבור מגבלת ה�
 #: src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
 msgstr "יש להזין מפתח API לפני הבדיקה."
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Environment ID"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
@@ -3123,6 +3165,14 @@ msgstr "מסך מלא"
 #: src/pages/Onboarding.tsx
 msgid "Gateway ID"
 msgstr "Gateway ID"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway URL"
+msgstr ""
 
 #: src/pages/settings-nav.ts
 #: src/pages/SettingsOverlay.tsx
@@ -3991,6 +4041,10 @@ msgstr "השתקה"
 msgid "Muted"
 msgstr ""
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "My computers"
+msgstr ""
+
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -4064,6 +4118,10 @@ msgstr ""
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "New bot"
 msgstr "בוט חדש"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "New computers run on"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"
@@ -4451,6 +4509,10 @@ msgstr "ערך header אופציונלי"
 #: src/pages/Onboarding.tsx
 msgid "Or paste an API key"
 msgstr "או הדבקת מפתח API"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Organization"
+msgstr ""
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
@@ -4915,6 +4977,10 @@ msgstr "רענון התצוגה"
 msgid "Refreshing…"
 msgstr "מרענן…"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Region"
+msgstr ""
+
 #: src/lib/user-error.ts
 msgid "Registration is closed"
 msgstr "ההרשמה סגורה"
@@ -5201,6 +5267,10 @@ msgstr "ביטול הרשאה"
 msgid "Revoked"
 msgstr ""
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Root filesystem"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Rotate key"
 msgstr "החלפת מפתח"
@@ -5276,6 +5346,7 @@ msgid "Saturday"
 msgstr "שבת"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5310,6 +5381,7 @@ msgid "Save to Vault"
 msgstr "שמירה בכספת"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Saved"
@@ -5535,6 +5607,7 @@ msgstr "ההגדרה הושלמה"
 msgid "Setup help"
 msgstr "עזרה בהגדרה"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Shape"
 msgstr "צורה"
@@ -5616,7 +5689,6 @@ msgstr "צפיפות סרגל הצד"
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign in"
 msgstr "התחברות"
 
@@ -5652,7 +5724,6 @@ msgid "Sign in with the subscription, or test the API key instead."
 msgstr "אפשר להתחבר עם המנוי, או לבדוק את מפתח ה-API במקום."
 
 #: src/pages/Auth.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign up"
 msgstr "הרשמה"
 
@@ -5968,6 +6039,10 @@ msgstr "טבלה"
 msgid "Take control"
 msgstr "השתלטות"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Target"
+msgstr ""
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "לימוד משימה"
@@ -5987,6 +6062,10 @@ msgstr "מחשב הצוות"
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
 msgstr "הודעת Teams"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Template"
+msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
@@ -6861,10 +6940,6 @@ msgstr ""
 #: src/components/ModelCredits.tsx
 msgid "Your subscription or API key"
 msgstr ""
-
-#: src/pages/Welcome.tsx
-msgid "Your team of always-on agents<0/>that you can give real work to."
-msgstr "צוות של סוכנים שזמינים תמיד<0/>שאפשר להטיל עליהם עבודה אמיתית."
 
 #: src/components/ModelCredits.tsx
 msgid "Your trial ends and your card is charged {price} today."

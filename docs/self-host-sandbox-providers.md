@@ -17,6 +17,18 @@ Published-images [Compose](../infra/compose/docker-compose.images.yml) defaults 
 It always starts the supervisor and requires `SANDBOX_SUPERVISOR_TOKEN`, including for `none`
 and remote providers. This stack credential does not replace a remote provider's API key.
 
+## Settings configuration
+
+Admins can choose **Settings → Computer → New computers run on** and save a supported provider's fields.
+The API supplies the provider's field descriptors and validates values server-side. Credentials are encrypted in the secret store and
+never returned; a blank secret field keeps its saved value for the same provider and destination.
+Changing a URL requires credentials again. **Deployment default** uses `SANDBOX_PROVIDER`.
+Docker, Kubernetes, desktop, fake, and none remain environment-only. Settings overrides are disabled
+for desktop and fake deployments.
+
+The account form offers only providers that declare support for account-owned computers.
+Team Computers follow their owner's account choice; Private Computers use the deployment choice. See [Wuying setup](./wuying-computers.md) for that adapter's fields and requirements.
+
 ## Choosing a provider
 
 The Electron desktop app is a client of the same API. Docker remains the default. For an app-managed local instance, the local operator can choose **Use this Mac** (macOS) or **Use this computer** (Windows/Linux). After native confirmation, an authenticated bridge sends commands from the Docker backend to Electron, where they run under your OS account. **Computer Access…** in the app menu changes the choice; **Revoke Local Computer Access** immediately disconnects active operations and revokes the saved permission. Local execution requires the desktop app to remain running. Connecting to an existing remote instance does not grant it access to your computer. Browser and mobile clients use the deployment’s configured computer; they do not expose their own host. `SANDBOX_PROVIDER=desktop` is a separate, development-only configuration for backends running directly on the intended host.
@@ -131,7 +143,8 @@ home as one tar archive. Screens use the image's desktop gateway on the pod IP, 
 worker and the web screen proxy must be able to reach pods in that namespace on port `6080` and the
 display ports from `6100` upward. Pods are ephemeral: the
 saved workspace is the persistence boundary, as with the remote providers. Kubernetes computers do
-not bill while running, so `COMPUTER_MAX_ACTIVE_MS` does not apply to them.
+not bill while running, so `COMPUTER_MAX_ACTIVE_MS` does not apply to them;
+`COMPUTER_MAX_ACTIVE_UNBILLED_MS` caps them when set.
 
 ### Mounted home (optional)
 
@@ -169,11 +182,13 @@ private ranges, is recommended.
 
 ## `wuying`
 
-Bot computers run on one existing Wuying (无影) cloud computer. Each computer's home is a folder
+Bot computers run on one existing Wuying (无影) cloud computer. An admin can also set this up in
+**Settings → Computer** instead of these variables; see [Wuying cloud computers](./wuying-computers.md)
+for the full setup. Each computer's home is a folder
 under the desktop user's profile (`%USERPROFILE%\rakazo\<home>`), and the desktop's own disk
 keeps it between stops, so nothing is copied in or out. Commands run in PowerShell; files,
-screenshots and input go through the desktop's MCP gateway. Stopping the computer powers the
-desktop off; deleting it removes only its home folder, never the desktop.
+screenshots and input go through the desktop's MCP gateway. Stopping the last computer on it
+powers the desktop off; deleting one removes only its home folder, never the desktop.
 
 | Variable | Notes |
 | --- | --- |
@@ -183,7 +198,7 @@ desktop off; deleting it removes only its home folder, never the desktop.
 | `WUYING_END_USER_ID` | Screen logins are issued for this user |
 | `WUYING_MCP_URL` / `WUYING_MCP_TOKEN` | The desktop's MCP gateway and its bearer token |
 
-The web and Electron screen is drawn by the Wuying Web SDK in `/wuying/screen.html`, served by
+The web and Electron screen is drawn by the Wuying Web SDK in `/computer-screen/screen.html`, served by
 the web app. Mobile rejects the custom screen URL and does not embed this SDK. The
 SDK is not committed; fetch the pinned release before building the web app:
 
@@ -192,7 +207,7 @@ node scripts/wuying-web-sdk.mjs
 ```
 
 The SDK runs in an opaque-origin sandboxed frame with an in-memory storage shim and a no-op
-cookie accessor in both its launcher and nested runtime. A CSP scoped to `/wuying/` permits
+cookie accessor in both its launcher and nested runtime. A CSP scoped to `/computer-screen/` permits
 the vendor hosts, blob workers and WebAssembly compilation. The one-time login code stays
 only in the URL fragment, outside HTTP requests and Referer.
 
@@ -235,8 +250,11 @@ Claude Code, OpenCode) wrote its session within the last `SANDBOX_IDLE_MS`. An a
 at its prompt writes nothing, so it does not hold the computer. `0` turns the cap off.
 That exception lifts only the uptime cap; idle suspension after `SANDBOX_IDLE_MS` still
 applies once nothing holds the computer.
-Docker and this-Mac computers are never capped. The next use resumes it. Asking for
-takeover restarts the idle timer, and on providers that do not bill while running the run
+Docker and Kubernetes computers are capped only when `COMPUTER_MAX_ACTIVE_UNBILLED_MS` is set
+(off by default; minimum 60000), with the same exceptions, so an abandoned background command
+cannot keep one running for days. Like every cap, it needs idle sleep on: `SANDBOX_IDLE_MS=0`
+turns it off too. This-Mac computers are never capped. The next use resumes it.
+Asking for takeover restarts the idle timer, and on providers that do not bill while running the run
 also holds the computer for 30 minutes after asking, so the user can answer the push on
 the same open page.
 

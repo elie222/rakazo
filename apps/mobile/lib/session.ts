@@ -6,6 +6,7 @@ import {
 } from "./artifact-cache-session";
 import { stopLiveNotifications } from "./live-notifications";
 import { clearNetworkCache } from "./network-cache";
+import { rememberSignedIn } from "./returning-user";
 import { clearFailedSends } from "./thread-feedback";
 
 const SESSION_KEY = "rakazo.session_token";
@@ -165,6 +166,8 @@ export async function saveSessionToken(token: string) {
   sessionInvalidated = true;
   sessionFallback = undefined;
   const clearingScope = invalidateSessionCaches();
+  // Marked before the token lands, so an account deletion that clears it afterwards also clears the mark.
+  await rememberSignedIn();
   await enqueueScopeWrite(() => SecureStore.setItemAsync(SESSION_KEY, token));
   await clearingScope;
   if (generation !== sessionGeneration) return;

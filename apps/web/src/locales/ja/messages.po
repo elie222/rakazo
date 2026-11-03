@@ -444,6 +444,14 @@ msgstr ""
 msgid "About {label}"
 msgstr "{label}について"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key ID"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key secret"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Access token (optional)"
 msgstr "アクセストークン（任意）"
@@ -796,6 +804,7 @@ msgid "Anyone with the link"
 msgstr "リンクを知っている全員"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/lib/localized-provider-hint.ts
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/model-settings/compatible-key-field.tsx
@@ -816,6 +825,14 @@ msgstr "APIキーのヘッダー"
 #: src/pages/shell/agent-import.tsx
 msgid "API keys"
 msgstr "APIキー"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API URL"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
@@ -2013,6 +2030,10 @@ msgstr "請求情報を読み込めませんでした"
 msgid "Could not load bots. Reload to try again."
 msgstr "ボットを読み込めませんでした。再読み込みしてもう一度お試しください。"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not load computer settings"
+msgstr ""
+
 #: src/components/VaultSettings.tsx
 msgid "Could not load credentials."
 msgstr "認証情報を読み込めませんでした。"
@@ -2182,6 +2203,10 @@ msgstr "保存できませんでした"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
 msgstr "自動レビューを保存できませんでした"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not save computer settings"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "Could not save group"
@@ -2593,6 +2618,11 @@ msgstr "拒否済み"
 msgid "Deny"
 msgstr "拒否"
 
+#. placeholder {0}: settings.defaultProvider
+#: src/components/ComputerProviderSettings.tsx
+msgid "Deployment default ({0})"
+msgstr ""
+
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Description"
@@ -2605,6 +2635,10 @@ msgstr ""
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop app"
 msgstr "デスクトップアプリ"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Desktop ID"
+msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop update"
@@ -2818,6 +2852,10 @@ msgstr "メールアドレスの確認が必要です"
 msgid "Enable {0}"
 msgstr "{0}を有効にする"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "End user ID"
+msgstr ""
+
 #: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr "{day}に終了"
@@ -2852,6 +2890,10 @@ msgstr "画像の上限には1〜1000の整数を入力してください。"
 #: src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
 msgstr "テストする前にAPIキーを入力してください。"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Environment ID"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
@@ -3123,6 +3165,14 @@ msgstr "フルスクリーン"
 #: src/pages/Onboarding.tsx
 msgid "Gateway ID"
 msgstr "ゲートウェイID"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway URL"
+msgstr ""
 
 #: src/pages/settings-nav.ts
 #: src/pages/SettingsOverlay.tsx
@@ -3991,6 +4041,10 @@ msgstr "ミュート"
 msgid "Muted"
 msgstr "ミュート中"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "My computers"
+msgstr ""
+
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -4064,6 +4118,10 @@ msgstr "新規"
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "New bot"
 msgstr "新しいボット"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "New computers run on"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"
@@ -4451,6 +4509,10 @@ msgstr "ヘッダー値（任意）"
 #: src/pages/Onboarding.tsx
 msgid "Or paste an API key"
 msgstr "またはAPIキーを貼り付け"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Organization"
+msgstr ""
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
@@ -4915,6 +4977,10 @@ msgstr "表示を更新"
 msgid "Refreshing…"
 msgstr "更新中…"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Region"
+msgstr ""
+
 #: src/lib/user-error.ts
 msgid "Registration is closed"
 msgstr "新規登録は締め切られています"
@@ -5201,6 +5267,10 @@ msgstr "取り消す"
 msgid "Revoked"
 msgstr ""
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Root filesystem"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Rotate key"
 msgstr "キーをローテーション"
@@ -5276,6 +5346,7 @@ msgid "Saturday"
 msgstr "土曜日"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5310,6 +5381,7 @@ msgid "Save to Vault"
 msgstr "保管庫に保存"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Saved"
@@ -5535,6 +5607,7 @@ msgstr "セットアップ完了"
 msgid "Setup help"
 msgstr "設定ヘルプ"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Shape"
 msgstr "形"
@@ -5616,7 +5689,6 @@ msgstr "サイドバーの密度"
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign in"
 msgstr "ログイン"
 
@@ -5652,7 +5724,6 @@ msgid "Sign in with the subscription, or test the API key instead."
 msgstr "サブスクリプションでログインするか、代わりにAPIキーをテストしてください。"
 
 #: src/pages/Auth.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign up"
 msgstr "新規登録"
 
@@ -5968,6 +6039,10 @@ msgstr "テーブル"
 msgid "Take control"
 msgstr "操作を引き継ぐ"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Target"
+msgstr ""
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "タスクを教える"
@@ -5987,6 +6062,10 @@ msgstr "チームのコンピューター"
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
 msgstr "Teamsメッセージ"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Template"
+msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
@@ -6861,10 +6940,6 @@ msgstr ""
 #: src/components/ModelCredits.tsx
 msgid "Your subscription or API key"
 msgstr "自分のサブスクリプションまたはAPIキー"
-
-#: src/pages/Welcome.tsx
-msgid "Your team of always-on agents<0/>that you can give real work to."
-msgstr "実際の仕事を任せられる、<0/>常時稼働のエージェントチーム。"
 
 #: src/components/ModelCredits.tsx
 msgid "Your trial ends and your card is charged {price} today."
