@@ -582,6 +582,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Remove {name}": "{name} verwijderen",
   "Removing…": "Bezig met verwijderen…",
   "Search apps": "Apps zoeken",
+  "Search integrations.sh": "Zoeken op integrations.sh",
   "Show more": "Meer tonen",
   Tools: "Tools",
   "Treg token": "Treg-token",

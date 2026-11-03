@@ -559,6 +559,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Remove {name}": "Quitar {name}",
   "Removing…": "Quitando…",
   "Search apps": "Buscar apps",
+  "Search integrations.sh": "Buscar en integrations.sh",
   "Show more": "Mostrar más",
   Tools: "Herramientas",
   "Treg token": "Token de Treg",

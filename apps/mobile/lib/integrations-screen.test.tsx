@@ -871,3 +871,67 @@ it("registers an OAuth MCP server, signs in, and reads the servers again", async
     state.rpc.mock.calls.filter(([proc]) => proc === "mcp/servers/list").length,
   ).toBeGreaterThan(initialReads);
 });
+
+it("finds a server on integrations.sh and connects it by signing in", async () => {
+  const fallback = state.rpc.getMockImplementation();
+  state.rpc.mockImplementation((proc: string, args: unknown) => {
+    if (proc === "capabilities/catalogSearch")
+      return Promise.resolve({
+        enabled: true,
+        results: [
+          {
+            domain: "tracker.example",
+            name: "Tracker",
+            description: "",
+            pageUrl: null,
+            surfaces: [
+              {
+                kind: "mcp",
+                slug: "tracker",
+                source: "https://mcp.tracker.example/mcp",
+                auth: { type: "oauth", headerName: null, note: null },
+              },
+              {
+                kind: "mcp",
+                slug: "tracker-key",
+                source: "https://mcp.tracker.example/keyed",
+                auth: { type: "header", headerName: "x-api-key", note: null },
+              },
+            ],
+          },
+        ],
+      });
+    if (proc === "mcp/servers/create")
+      return Promise.resolve({ id: "tracker-server", name: "Tracker", enabled: true });
+    return fallback?.(proc, args);
+  });
+  await render();
+  await act(async () => resolveCatalog([item]));
+  const search = container.querySelector('input[placeholder="Search apps"]') as HTMLInputElement;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+      search,
+      "tracker",
+    );
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const button = (label: string) =>
+    [...container.querySelectorAll("button")].find((node) => node.textContent === label);
+
+  await act(async () => button("Search integrations.sh")?.click());
+
+  expect(state.rpc).toHaveBeenCalledWith("capabilities/catalogSearch", {
+    query: "tracker",
+    usePublicCatalog: true,
+  });
+  const results = container.querySelector('[data-testid="integration-catalog-search"]');
+  expect(results?.textContent).toBe("TTrackerSign in");
+
+  await act(async () => button("Sign in")?.click());
+
+  expect(state.rpc).toHaveBeenCalledWith(
+    "mcp/servers/create",
+    expect.objectContaining({ name: "Tracker", endpoint: "https://mcp.tracker.example/mcp" }),
+  );
+  expect(signInToMcpServer).toHaveBeenCalledWith("tracker-server");
+});

@@ -44,6 +44,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ConnectorIcon } from "../../components/connector-icon";
+import { IntegrationCatalogSearch } from "../../components/integration-catalog-search";
 import { MenuPicker } from "../../components/menu-picker";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSymbol } from "../../components/native-symbol";
@@ -1488,6 +1489,9 @@ export default function Integrations() {
                   />
                 ) : null}
 
+                {!category ? (
+                  <IntegrationCatalogSearch query={query} onConnected={() => retryRefresh()} />
+                ) : null}
                 {renderPlugins()}
                 {pluginsState !== "loading" ? (
                   <NativeActionButton

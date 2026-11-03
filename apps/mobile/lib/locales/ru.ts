@@ -654,6 +654,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Scheduled tasks": "Запланированные задачи",
   Search: "Поиск",
   "Search apps": "Поиск приложений",
+  "Search integrations.sh": "Искать на integrations.sh",
   "Search models": "Поиск моделей",
   "Search conversations, files, and routines": "Поиск диалогов, файлов и задач",
   Searching: "Поиск",
