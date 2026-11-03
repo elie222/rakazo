@@ -67,6 +67,7 @@ import { getToolActivityEnabled, subscribeToolActivity } from "../lib/tool-activ
 import type { AppearancePreference } from "../lib/ui-appearance";
 import { getUiAppearancePreference, setUiAppearance } from "../lib/ui-appearance";
 import { useDesktopBadge } from "../lib/use-desktop-badge";
+import { errorText } from "../lib/user-error";
 import { HostComputerPrompt } from "./HostComputerPrompt";
 import { RoutineList } from "./RoutineEditor";
 import { useSettingsNavItems } from "./settings-nav";
@@ -290,6 +291,7 @@ function SpaceShell() {
   activeGroupId.current = groupId;
   const computerState = useComputerState({ rpc, panel, activeId: active?.id, activeBotId });
   const { computer, computerOpen, setComputerOpen, booting, commitComputer } = computerState;
+  const [cleaningUpDisk, setCleaningUpDisk] = useState(false);
   const dismissDiskWarning = (botId: string) => {
     const current = computerState.computerRef.current;
     if (current?.botId === botId) commitComputer({ ...current, diskFullPercent: undefined });
@@ -1186,15 +1188,18 @@ function SpaceShell() {
               onRecoveryDismissed={computerControls.releaseComputerRecovery}
               onOpenComputerSettings={() => openSettings("computer")}
               onOpen={() => void openComputer()}
+              cleaningUpDisk={cleaningUpDisk}
               onCleanUpDisk={() => {
                 const botId = active.id;
+                setCleaningUpDisk(true);
                 void rpc.threads
                   .send({ botId, clientNonce: crypto.randomUUID(), intent: "free_disk_space" })
                   .then(() => {
                     dismissDiskWarning(botId);
                     void refreshThread(botId);
                   })
-                  .catch(() => undefined);
+                  .catch((error: unknown) => composer.setSendError(errorText(error)))
+                  .finally(() => setCleaningUpDisk(false));
               }}
               onDismissDiskWarning={() => dismissDiskWarning(active.id)}
             />

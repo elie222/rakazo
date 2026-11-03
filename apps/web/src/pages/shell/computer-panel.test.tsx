@@ -54,7 +54,7 @@ function computer(state: ComputerStatus["state"]): ComputerStatus {
 async function render(
   status: ComputerStatus | null,
   onOpen = vi.fn(),
-  disk?: { onCleanUpDisk: () => void; onDismissDiskWarning: () => void },
+  disk?: { cleaningUpDisk?: boolean; onCleanUpDisk: () => void; onDismissDiskWarning: () => void },
 ) {
   await act(async () => {
     root.render(
@@ -127,6 +127,15 @@ it.each([computer("running"), computer("suspended")])(
     expect(disk.onDismissDiskWarning).toHaveBeenCalledOnce();
   },
 );
+
+it("holds Clean up while a clean up is being sent", async () => {
+  const disk = { cleaningUpDisk: true, onCleanUpDisk: vi.fn(), onDismissDiskWarning: vi.fn() };
+  await render({ ...computer("running"), diskFullPercent: 93 }, vi.fn(), disk);
+  const [cleanUp] =
+    container.querySelector('[data-testid="computer-disk-warning"]')?.querySelectorAll("button") ??
+    [];
+  expect(cleanUp?.hasAttribute("disabled")).toBe(true);
+});
 
 it("shows no disk warning while the disk has room", async () => {
   await render(computer("running"), vi.fn(), {

@@ -50,6 +50,14 @@ export function parseDf(output: string): ComputerDisk | undefined {
   return { diskUsedBytes: BigInt(used!) * 1024n, diskFreeBytes: BigInt(free!) * 1024n };
 }
 
+/** A measurement to store; once the disk has room again, a hidden warning can return. */
+export function diskUpdate(disk: ComputerDisk) {
+  const percent = diskUsedPercent(disk);
+  return percent !== null && percent < DISK_WARNING_PERCENT
+    ? { ...disk, diskDismissedPercent: null }
+    : disk;
+}
+
 /** Measures in the background, so neither a slow command nor a failure holds anything up. */
 export function recordComputerDisk(
   deps: { prisma: PrismaClient; sandbox: SandboxProvider },
@@ -59,7 +67,13 @@ export function recordComputerDisk(
 ): void {
   void measureComputerDisk(deps.sandbox, computer, context)
     .then(async (disk) => {
-      if (disk) await deps.prisma.computer.updateMany({ where: { id: computerId }, data: disk });
+      if (!disk) return;
+      // Only while the same machine still runs: a late result must not touch a sleep claim or
+      // describe a replacement.
+      await deps.prisma.computer.updateMany({
+        where: { id: computerId, state: "running", providerRef: computer.providerRef },
+        data: diskUpdate(disk),
+      });
     })
     .catch((error: unknown) => getLogger().warn("computer.disk_record_failed", { error }));
 }

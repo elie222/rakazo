@@ -1,3 +1,4 @@
+import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import path from "node:path";
 import type { WorkspaceExportLimits } from "@rakazo/adapter-kit";
@@ -87,10 +88,15 @@ export function shouldSkipPortableWorkspaceFile(relative: string, isDirectory = 
 /** Cache Directory Tagging (bford.info/cachedir): build tools mark rebuildable output this way. */
 const CACHE_DIRECTORY_TAG = "CACHEDIR.TAG";
 const CACHE_DIRECTORY_SIGNATURE = "Signature: 8a477f597d28d172789f06886806bc55";
+const MAX_PRUNED_CACHE_DIRECTORIES = 1000;
 
 /** True when `directory` holds a cache directory tag; a save leaves the whole directory out. */
 export async function isTaggedCacheDirectory(directory: string): Promise<boolean> {
-  const handle = await open(path.join(directory, CACHE_DIRECTORY_TAG)).catch(() => null);
+  // Like find's -type f: a symlinked tag is not followed and a pipe named like one cannot block.
+  const handle = await open(
+    path.join(directory, CACHE_DIRECTORY_TAG),
+    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+  ).catch(() => null);
   if (!handle) return false;
   try {
     const expected = Buffer.from(CACHE_DIRECTORY_SIGNATURE);
@@ -124,8 +130,10 @@ export function workspaceSaveFindCommand(): string {
   const find = "find . -regextype posix-extended";
   const script = [
     // Errors only cost a missed tag, which saves that directory; the second walk reports them.
-    // A name with a newline cannot be listed one per line, so its directory is kept.
-    `tags=$(${find} \\( ${excluded} \\) -prune -o -name ${CACHE_DIRECTORY_TAG} -type f ! -path '*\n*' -exec grep -ls ${shellQuote(`^${CACHE_DIRECTORY_SIGNATURE}`)} {} + 2>/dev/null | sed -e 's|/${CACHE_DIRECTORY_TAG.replace(".", "\\.")}$||' -e 's/[][*?\\\\]/\\\\&/g')`,
+    // A name with a newline cannot be listed one per line, so its directory is kept. The home
+    // itself is never pruned, and past the cap the remaining tagged directories are kept so the
+    // final find's arguments stay bounded.
+    `tags=$(${find} \\( ${excluded} \\) -prune -o -name ${CACHE_DIRECTORY_TAG} -type f ! -path ./${CACHE_DIRECTORY_TAG} ! -path '*\n*' -exec grep -ls ${shellQuote(`^${CACHE_DIRECTORY_SIGNATURE}`)} {} + 2>/dev/null | head -n ${MAX_PRUNED_CACHE_DIRECTORIES} | sed -e 's|/${CACHE_DIRECTORY_TAG.replace(".", "\\.")}$||' -e 's/[][*?\\\\]/\\\\&/g')`,
     "n=$#",
     "IFS='\n'",
     "set -f",

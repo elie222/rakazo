@@ -4,12 +4,15 @@ import type {
   ProcessEvent,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { describe, expect, it } from "vitest";
+import type { PrismaClient } from "@rakazo/db";
+import { describe, expect, it, vi } from "vitest";
 import {
   diskNoteInstruction,
+  diskUpdate,
   diskUsedPercent,
   measureComputerDisk,
   parseDf,
+  recordComputerDisk,
 } from "./computer-disk.js";
 
 const DF = `Filesystem     1024-blocks     Used Available Capacity Mounted on
@@ -77,5 +80,31 @@ describe("computer disk", () => {
     expect(
       diskNoteInstruction({ diskUsedBytes: 80n * GiB, diskFreeBytes: 500_000_000n }),
     ).toContain("100% full (500 MB free)");
+  });
+
+  it("re-arms a hidden warning once the disk has room again", () => {
+    const full = { diskUsedBytes: 91n * GiB, diskFreeBytes: 9n * GiB };
+    const roomy = { diskUsedBytes: 60n * GiB, diskFreeBytes: 40n * GiB };
+    expect(diskUpdate(full)).toEqual(full);
+    expect(diskUpdate(roomy)).toEqual({ ...roomy, diskDismissedPercent: null });
+  });
+
+  it("records only onto the same machine while it still runs", async () => {
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const linux = sandbox([
+      { type: "stdout", data: DF },
+      { type: "exit", code: 0 },
+    ]);
+    recordComputerDisk(
+      { prisma: { computer: { updateMany } } as unknown as PrismaClient, sandbox: linux.provider },
+      "c",
+      { id: "c", botId: "b", providerRef: "p", kind: "docker" },
+      context,
+    );
+    await vi.waitFor(() => expect(updateMany).toHaveBeenCalledOnce());
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: "c", state: "running", providerRef: "p" },
+      data: parseDf(DF),
+    });
   });
 });

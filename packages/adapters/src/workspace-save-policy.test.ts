@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -93,6 +93,8 @@ describe.skipIf(findVersion.status !== 0 || !findVersion.stdout.includes("GNU"))
           "project/Cache/data",
           "untagged/CACHEDIR.TAG",
           "untagged/data",
+          // A tag in the home itself never prunes the home.
+          "CACHEDIR.TAG",
         ];
         const pruned = [
           ".cache",
@@ -111,7 +113,7 @@ describe.skipIf(findVersion.status !== 0 || !findVersion.stdout.includes("GNU"))
         for (const name of [...kept, ...excluded]) {
           const target = path.join(home, name);
           await mkdir(path.dirname(target), { recursive: true });
-          await writeFile(target, "data", { mode: 0o600 });
+          await writeFile(target, name === "CACHEDIR.TAG" ? CACHE_TAG : "data", { mode: 0o600 });
         }
         for (const dir of ["rust/target", "odd [dir]*?/target"]) {
           await writeFile(path.join(home, dir, "CACHEDIR.TAG"), CACHE_TAG);
@@ -161,6 +163,38 @@ describe.skipIf(findVersion.status !== 0 || !findVersion.stdout.includes("GNU"))
   },
 );
 
+describe.skipIf(findVersion.status !== 0 || !findVersion.stdout.includes("GNU"))(
+  "GNU home save traversal with many tags",
+  () => {
+    it("keeps the arguments bounded and saves the tagged directories past the cap", async () => {
+      const home = await mkdtemp(path.join(tmpdir(), "rakazo-find-many-"));
+      try {
+        // Long names put the uncapped argument list past Linux's 2 MiB limit.
+        const segment = "d".repeat(200);
+        const count = 12_000;
+        execFileSync("bash", [
+          "-c",
+          `cd "$1" && for i in $(seq ${count}); do mkdir -p "$i/${segment}/${segment}" && printf '%s' "$2" > "$i/${segment}/${segment}/CACHEDIR.TAG" && touch "$i/${segment}/${segment}/data"; done`,
+          "make-tags",
+          home,
+          CACHE_TAG,
+        ]);
+        const result = spawnSync(
+          "bash",
+          ["-c", `cd "$1" && ${workspaceSaveFindCommand()} -print`, "many-tags", home],
+          { encoding: "utf8", maxBuffer: 64 * 1024 ** 2 },
+        );
+        expect(result.stderr).toBe("");
+        expect(result.status).toBe(0);
+        const listed = result.stdout.trim().split("\n");
+        expect(listed.filter((name) => name.endsWith("/data"))).toHaveLength(count - 1000);
+      } finally {
+        await rm(home, { recursive: true, force: true });
+      }
+    }, 60_000);
+  },
+);
+
 describe("tagged cache directories", () => {
   it("recognizes only a tag that starts with the signature", async () => {
     const scratch = await mkdtemp(path.join(tmpdir(), "rakazo-cachedir-"));
@@ -175,6 +209,17 @@ describe("tagged cache directories", () => {
       expect(await write("unsigned", "my notes")).toBe(false);
       expect(await write("short", CACHE_TAG.slice(0, 20))).toBe(false);
       expect(await write("missing")).toBe(false);
+      await mkdir(path.join(scratch, "linked"));
+      await symlink(
+        path.join(scratch, "tagged", "CACHEDIR.TAG"),
+        path.join(scratch, "linked", "CACHEDIR.TAG"),
+      );
+      expect(await isTaggedCacheDirectory(path.join(scratch, "linked"))).toBe(false);
+      if (process.platform !== "win32") {
+        await mkdir(path.join(scratch, "pipe"));
+        execFileSync("mkfifo", [path.join(scratch, "pipe", "CACHEDIR.TAG")]);
+        expect(await isTaggedCacheDirectory(path.join(scratch, "pipe"))).toBe(false);
+      }
     } finally {
       await rm(scratch, { recursive: true, force: true });
     }

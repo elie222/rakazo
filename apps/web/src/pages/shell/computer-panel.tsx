@@ -26,11 +26,13 @@ type ComputerPanelProps = {
   onRecoveryDismissed: () => void;
   onOpenComputerSettings?: () => void;
   onOpen: () => void;
+  cleaningUpDisk?: boolean;
   onCleanUpDisk?: () => void;
   onDismissDiskWarning?: () => void;
 };
 
 export function ComputerPanel({
+  cleaningUpDisk,
   onCleanUpDisk,
   onDismissDiskWarning,
   ...props
@@ -50,7 +52,7 @@ export function ComputerPanel({
         <span className="min-w-0 flex-1">
           <Trans>Computer is {percent}% full</Trans>
         </span>
-        <Button variant="secondary" size="sm" onClick={onCleanUpDisk}>
+        <Button variant="secondary" size="sm" disabled={cleaningUpDisk} onClick={onCleanUpDisk}>
           <Trans>Clean up</Trans>
         </Button>
         <Button
@@ -83,7 +85,7 @@ function ComputerPreview({
   onRecoveryDismissed,
   onOpenComputerSettings,
   onOpen,
-}: Omit<ComputerPanelProps, "onCleanUpDisk" | "onDismissDiskWarning">) {
+}: Omit<ComputerPanelProps, "cleaningUpDisk" | "onCleanUpDisk" | "onDismissDiskWarning">) {
   // A clickable preview invites a boot that costs money, so an idle computer only wakes from its button.
   const idle =
     !computerOpen &&
