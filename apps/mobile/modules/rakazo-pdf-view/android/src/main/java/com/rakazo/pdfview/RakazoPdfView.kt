@@ -50,6 +50,8 @@ class RakazoPdfView(context: Context, appContext: AppContext) : ExpoView(context
   private var aspect: List<Float> = emptyList()
   private var uri: String? = null
   private var generation = 0
+  // The width the cached bitmaps were drawn at; a resize redraws them sharp.
+  private var cacheWidth = 0
 
   init {
     addView(pages, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
@@ -107,15 +109,23 @@ class RakazoPdfView(context: Context, appContext: AppContext) : ExpoView(context
     worker.execute {
       val page = renderer ?: return@execute
       if (current != generation || index >= page.pageCount) return@execute
-      val bitmap = page.openPage(index).use { opened ->
-        val height = (width * aspect[index]).toInt().coerceAtLeast(1)
-        Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
-          it.eraseColor(Color.WHITE)
-          opened.render(it, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+      // A very tall page draws at a lower resolution instead of exhausting memory; a page
+      // PdfRenderer cannot draw stays blank instead of crashing the app.
+      val drawWidth = minOf(width, Math.sqrt(MAX_PIXELS / aspect[index].toDouble()).toInt())
+        .coerceAtLeast(1)
+      val bitmap = try {
+        page.openPage(index).use { opened ->
+          val height = (drawWidth * aspect[index]).toInt().coerceAtLeast(1)
+          Bitmap.createBitmap(drawWidth, height, Bitmap.Config.ARGB_8888).also {
+            it.eraseColor(Color.WHITE)
+            opened.render(it, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+          }
         }
+      } catch (_: Throwable) {
+        return@execute
       }
       main.post {
-        if (current != generation) return@post
+        if (current != generation || width != cacheWidth) return@post
         bitmaps.put(index, bitmap)
         if (image.tag == index) image.setImageBitmap(bitmap)
       }
@@ -135,6 +145,10 @@ class RakazoPdfView(context: Context, appContext: AppContext) : ExpoView(context
         setBackgroundColor(Color.WHITE)
       }
       val width = parent.width.coerceAtLeast(1)
+      if (width != cacheWidth) {
+        bitmaps.evictAll()
+        cacheWidth = width
+      }
       image.layoutParams = ViewGroup.LayoutParams(width, (width * aspect[position]).toInt())
       image.tag = position
       val cached = bitmaps.get(position)
@@ -144,3 +158,5 @@ class RakazoPdfView(context: Context, appContext: AppContext) : ExpoView(context
     }
   }
 }
+
+private const val MAX_PIXELS = 16_000_000.0

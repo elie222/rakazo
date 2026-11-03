@@ -45,20 +45,14 @@ async function main() {
     : catalog;
 
   const serverUrl = requiredEnv("DATABASE_URL");
-  const externalApi = process.env.RAKAZO_API_URL?.trim().replace(/\/$/, "");
-  // The seeder writes encrypted messages, so it must share the API's keys. A local API
-  // starts with these; an external one needs its own values exported here.
-  if (!externalApi) {
-    process.env.BETTER_AUTH_SECRET = "ios-screenshot-auth-secret-32-chars";
-    process.env.ENCRYPTION_KEY = "ios-screenshot-encryption-key-32-chars";
-    process.env.SCREEN_PROXY_SECRET = "ios-screenshot-screen-secret-32-chars";
-  }
-  const email = process.env.RAKAZO_SCREENSHOT_EMAIL?.trim() || "ios-screenshots@example.test";
-  const emptyEmail =
-    process.env.RAKAZO_SCREENSHOT_EMPTY_EMAIL?.trim() || "ios-screenshots-empty@example.test";
-  const freeEmail =
-    process.env.RAKAZO_SCREENSHOT_FREE_EMAIL?.trim() || "ios-screenshots-free@example.test";
-  const password = externalApi ? requiredEnv("RAKAZO_SCREENSHOT_PASSWORD") : LOCAL_PASSWORD;
+  // The seeder writes encrypted messages, so it shares the local API's keys.
+  process.env.BETTER_AUTH_SECRET = "ios-screenshot-auth-secret-32-chars";
+  process.env.ENCRYPTION_KEY = "ios-screenshot-encryption-key-32-chars";
+  process.env.SCREEN_PROXY_SECRET = "ios-screenshot-screen-secret-32-chars";
+  const email = "ios-screenshots@example.test";
+  const emptyEmail = "ios-screenshots-empty@example.test";
+  const freeEmail = "ios-screenshots-free@example.test";
+  const password = LOCAL_PASSWORD;
   const outDir = path.resolve(
     process.env.IOS_SCREENSHOT_OUT || path.join(ROOT, "test-report", "ios-screenshots"),
   );
@@ -68,16 +62,13 @@ async function main() {
   if (requested.length === 0) await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
 
-  const backend = externalApi
-    ? undefined
-    : await startIosScreenshotBackend({
-        root: ROOT,
-        serverUrl,
-        port: LOCAL_API_PORT,
-        dataDir: path.join(ROOT, ".tmp", "ios-screenshots-data"),
-      });
-  const apiUrl = externalApi ?? backend!.apiUrl;
-  const databaseUrl = backend?.databaseUrl ?? serverUrl;
+  const backend = await startIosScreenshotBackend({
+    root: ROOT,
+    serverUrl,
+    port: LOCAL_API_PORT,
+    dataDir: path.join(ROOT, ".tmp", "ios-screenshots-data"),
+  });
+  const { apiUrl, databaseUrl } = backend;
   const metro = await startMetro(apiUrl, outDir);
   try {
     await firstLaunch(udid, outDir);
@@ -88,7 +79,7 @@ async function main() {
       emptyEmail,
       freeEmail,
       password,
-      completeCheckout: backend?.completeCheckout,
+      completeCheckout: backend.completeCheckout,
     });
     await captureSections({
       sections,
@@ -116,7 +107,7 @@ async function main() {
     });
   } finally {
     metro.stop();
-    await backend?.stop();
+    await backend.stop();
   }
 }
 
@@ -284,13 +275,22 @@ async function startMetro(apiUrl: string, outDir: string): Promise<{ stop: () =>
       detached: true,
     },
   );
+  // Ctrl-C reaches only this process's group, so stop Metro's group before exiting.
+  const interrupted = () => {
+    stop();
+    process.exit(130);
+  };
   const stop = () => {
+    process.off("SIGINT", interrupted);
+    process.off("SIGTERM", interrupted);
     try {
       if (child.pid) process.kill(-child.pid, "SIGTERM");
     } catch {
       // Already gone.
     }
   };
+  process.once("SIGINT", interrupted);
+  process.once("SIGTERM", interrupted);
   child.stdout?.pipe(log);
   child.stderr?.pipe(log);
   const deadline = Date.now() + 120_000;

@@ -40,7 +40,7 @@ export async function startIosScreenshotBackend(input: {
     COMPOSIO_API_KEY: "",
     BETTER_AUTH_URL: apiUrl,
     WEB_ORIGIN: "http://127.0.0.1:5180",
-    API_HOST: "0.0.0.0",
+    API_HOST: "127.0.0.1",
     API_PORT: String(input.port),
     API_URL: apiUrl,
     DATA_DIR: input.dataDir,
@@ -62,7 +62,7 @@ export async function startIosScreenshotBackend(input: {
   const handles = await createApp({
     databaseUrl,
     dataDir: input.dataDir,
-    apiHost: "0.0.0.0",
+    apiHost: "127.0.0.1",
     apiUrl,
     composio: new ComposioConnector({ client: new FakeComposioClient() }),
     email: new EmailEmulator(),
@@ -77,7 +77,8 @@ export async function startIosScreenshotBackend(input: {
   });
   const server = serve({
     fetch: handles.app.fetch,
-    hostname: "0.0.0.0",
+    // Loopback only: the simulator shares it, and the fixture password is public.
+    hostname: "127.0.0.1",
     port: input.port,
   }) as Server;
   await waitForHealth(`${apiUrl}/health`);

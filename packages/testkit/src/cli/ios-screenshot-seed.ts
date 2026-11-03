@@ -69,7 +69,7 @@ export async function seedIosScreenshotFixture(input: {
   freeEmail: string;
   password: string;
   /** Present when the API bills: the main user then pays for Pro, the empty one is on a trial. */
-  completeCheckout?: CompleteCheckout;
+  completeCheckout: CompleteCheckout;
 }): Promise<IosScreenshotFixture> {
   const populated = await ensureUser(input.apiUrl, input.email, input.password, "Screenshot User");
   const empty = await ensureUser(input.apiUrl, input.emptyEmail, input.password, "Empty User");
@@ -230,11 +230,9 @@ export async function seedIosScreenshotFixture(input: {
     });
     await ensureText(db.prisma, group.threadId, "bot", writer.id, GROUP_READY);
     await ensureTickets(db.prisma, me.spaceId, me.userId, [researcher.id, writer.id]);
-    if (input.completeCheckout) {
-      const plan = { apiUrl: input.apiUrl, prisma: db.prisma, complete: input.completeCheckout };
-      await ensurePlan({ ...plan, headers: populated.headers, userId: me.userId, trial: false });
-      await ensurePlan({ ...plan, headers: empty.headers, userId: emptyMe.userId, trial: true });
-    }
+    const plan = { apiUrl: input.apiUrl, prisma: db.prisma, complete: input.completeCheckout };
+    await ensurePlan({ ...plan, headers: populated.headers, userId: me.userId, trial: false });
+    await ensurePlan({ ...plan, headers: empty.headers, userId: emptyMe.userId, trial: true });
     for (const userId of [me.userId, emptyMe.userId]) {
       // Hosted sign-ups answer a survey first; the free user's flow shows it.
       await db.prisma.signupSurvey.upsert({

@@ -935,6 +935,16 @@ describe("native markdown lists", () => {
     expect(bulletDots(html)).toHaveLength(1);
   });
 
+  it("keeps escaped [x] and [ ] as literal text", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"- \\[x\\] done literally\n- \\[ \\] open literally"}</ChatMarkdown>,
+    );
+    expect(html).toContain("[x] done literally");
+    expect(html).toContain("[ ] open literally");
+    expect(html).not.toContain('data-accessibility-role="checkbox"');
+    expect(bulletDots(html)).toHaveLength(2);
+  });
+
   it("draws the bullet dot in the list-marker colour", () => {
     const markerColor = "#7A7A80";
     const create = vi

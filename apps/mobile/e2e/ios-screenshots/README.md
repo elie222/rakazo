@@ -34,12 +34,6 @@ pnpm ios:screenshots -- --section settings --section billing
 A failed section prints the Maestro step that failed and the path of the last
 screenshot it took.
 
-To capture against an API you already run, set `RAKAZO_API_URL`,
-`RAKAZO_SCREENSHOT_PASSWORD`, and that API's `BETTER_AUTH_SECRET` and
-`ENCRYPTION_KEY` (the seeder writes encrypted messages the API must read), and
-point `DATABASE_URL` at its database. Billing, wallet, and board appear only if
-that API enables them.
-
 ## Add a screen
 
 Write a flow under `flows/`, or add steps to an existing one, and list the route

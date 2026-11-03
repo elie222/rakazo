@@ -126,8 +126,9 @@ function markTaskListItems(parser: typeof markdownParser) {
       )
         continue;
       const first = inline.children?.[0];
-      const match = first?.type === "text" ? TASK_MARKER.exec(first.content) : null;
-      if (!first || !match) continue;
+      // Read the source, so an escaped `\[x\]` stays literal text.
+      const match = TASK_MARKER.exec(inline.content);
+      if (first?.type !== "text" || !match || !TASK_MARKER.test(first.content)) continue;
       first.content = first.content.slice(match[0].length);
       inline.content = inline.content.replace(TASK_MARKER, "");
       item.attrSet("data-task", match[1] === " " ? "open" : "done");

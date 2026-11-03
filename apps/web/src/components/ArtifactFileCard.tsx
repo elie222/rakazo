@@ -182,6 +182,7 @@ function FilePreview({
       cancelled = true;
     };
   }, [artifactId, targetBotId, targetGroupId, mimeType, t]);
+  const kind = artifactPreviewKind(mimeType);
 
   return (
     <>
@@ -234,13 +235,13 @@ function FilePreview({
           <div className="m-5 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive">
             {state.message}
           </div>
-        ) : mimeType === "text/html" && state.text !== undefined ? (
+        ) : kind === "html" && state.text !== undefined ? (
           <SandboxedHtmlViewer html={state.text} title={name} />
         ) : mimeType === "video/mp4" ? (
           <VideoPreview bytes={state.bytes} name={name} />
-        ) : mimeType === "application/pdf" ? (
+        ) : kind === "pdf" ? (
           <PdfViewer bytes={state.bytes} title={name} />
-        ) : state.text !== undefined && artifactPreviewKind(mimeType) === "text" ? (
+        ) : state.text !== undefined && kind === "text" ? (
           <pre className="px-8 py-10 font-mono text-[13px] leading-6 whitespace-pre-wrap break-words text-foreground sm:px-12 sm:py-12">
             {state.text}
           </pre>
