@@ -232,6 +232,7 @@ vi.mock("./passkey", () => ({
   renamePasskey: vi.fn(),
 }));
 vi.mock("./push", () => ({ registerPushToken: vi.fn() }));
+vi.mock("./returning-user", () => ({ forgetSignedIn: vi.fn() }));
 vi.mock("./queued-save", () => ({ createQueuedSave: () => ({ save: vi.fn() }) }));
 vi.mock("./remote-images-preference", () => ({
   getCachedRemoteImagesEnabled: () => true,
