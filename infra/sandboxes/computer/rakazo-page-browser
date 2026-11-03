@@ -2006,6 +2006,11 @@ PURCHASE_HELPERS = r"""
       const focused = typingIn ? shownPurchase("card_form", submit ? wordsOf(submit)[0] || "" : "")
         : active && active !== document.body ? purchaseOf(pressedControl(active) || active, frame) : null;
       if (focused) return { purchase: focused, frames: hasFrames() };
+      // Enter in a field submits only that field's form.
+      if (active?.matches?.("input, textarea, select")) {
+        const own = active.form && [...active.form.elements].find((el) => submittedForm(el) === active.form);
+        return { purchase: own ? purchaseOf(own, frame) : null, frames: hasFrames() };
+      }
       const final = [...document.querySelectorAll("button, input, a, [role=button]")].find((el) =>
         pressable(el) && visible(el) && !el.matches(":disabled") && isFinalStep(wordsOf(el), el));
       const shown = Boolean(frame || pageCards().length || final);
@@ -2175,7 +2180,8 @@ class Purchases:
                     "objectId": resolved["object"]["objectId"], "returnByValue": True,
                     "functionDeclaration": "function () { return window.__rakazoPurchase.purchaseOfNode(this, false); }",
                 }, session_id=session))
-                return ("buy", value) if isinstance(value, dict) else ("none", None)
+                # Nothing paying in the frame itself: the page around it may still be the checkout.
+                return ("buy", value) if isinstance(value, dict) else ("unknown", None)
             if not is_frame:
                 return "unknown", None
             # A frame of another process: its own session answers, for the spot as that frame's page sees it.

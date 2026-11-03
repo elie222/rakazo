@@ -338,6 +338,14 @@ describe("purchase detection in the page helper", () => {
     expect(intent("B\u200buy now")?.reason).toBe("final_step");
   });
 
+  it("asks nothing for Enter in a search box on a page that also shows Buy now", () => {
+    const { win, helper } = page(
+      `<form><input aria-label="Search" id="q"><button>Search</button></form><button>Buy now</button>`,
+    );
+    (win.document.getElementById("q") as HTMLInputElement).focus();
+    expect(helper.paymentPage(false, true).purchase).toBeNull();
+  });
+
   it("counts a disabled control as no purchase", () => {
     const { helper, win } = page(`<button id="b">Pay now</button>`);
     const button = win.document.getElementById("b")!;
