@@ -68,9 +68,7 @@ vi.mock("./api", () => ({
   currentApiBase: () => "https://api.example.test",
   loadSessionToken: async () => "token",
   selectedSpaceId: () => "space-a",
-  captureApiRequestContext: async () => ({ headers: {} }),
   rpc: async (procedure: string, input?: unknown) => {
-    if (procedure === "models/computer") return { selection: null, options: [] };
     if (
       [
         "bots/update",

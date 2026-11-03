@@ -281,6 +281,8 @@ model BillingAccount {
   cancellationReason  String?
   cancellationComment String?
   subscribedAt        DateTime?
+  /// When a subscription was first seen active, so a trial that never paid is not a paid plan.
+  paidAt              DateTime?
   syncedAt            DateTime?
   checkoutLeaseId     String?
   checkoutLeaseExpiresAt DateTime?
@@ -687,12 +689,6 @@ model SpaceModelPreference {
   credential   UserModelCredential @relation(fields: [credentialId, userId], references: [id, userId], onDelete: Cascade)
   modelId      String?
   thinkingLevel String?
-  // Explicit target identity; null pins retain the legacy source-connection default.
-  // No target FK: a deleted connection must stay visible as unavailable, not silently inherit.
-  computerProvider String?
-  computerCredentialId String?
-  computerModelId String?
-  computerThinkingLevel String?
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
 
@@ -756,7 +752,6 @@ model Bot {
   modelProvider     String?
   modelId           String?
   thinkingLevel     String?
-  computerModel     Json?
   disabledBuiltinTools String[] @default([])
   webhookSecretId   String?
   teamChatAmbientEnabled Boolean @default(false)
@@ -1017,7 +1012,7 @@ model Run {
   @@index([trigger, status, messagingMirroredAt, updatedAt])
   @@index([trigger, status, teamChatMirroredAt, updatedAt])
   @@index([spaceId, botId])
-  @@index([botId])
+  @@index([botId, createdAt])
   @@index([taskId])
   @@index([sourceMessageId])
   @@index([threadId, status, createdAt])
@@ -1472,15 +1467,37 @@ model Computer {
   screenUrl               String?
   /// When the computer last started running; bounds how long it can stay up in one stretch.
   runningSince            DateTime?
+  /// The home's disk as the computer last reported it; null where it was never measured.
+  diskUsedBytes           BigInt?
+  diskFreeBytes           BigInt?
+  /// How full the disk was when the user hid its warning; the warning returns once it is fuller.
+  diskDismissedPercent    Int?
   createdAt               DateTime                 @default(now())
   updatedAt               DateTime                 @updatedAt
   bots                    Bot[]
   executionLeases         ComputerExecutionLease[]
   maintenanceId           String?
   updates                 ComputerUpdate[]
+  homeDeletionNotice      HomeDeletionNotice?
 
   @@index([spaceId, scope])
   @@map("computers")
+}
+
+/// Hosted billing only: a stopped computer whose saved home is due for deletion after its plan
+/// ended or it went unused. `claimId` leases the row to one process while it emails.
+model HomeDeletionNotice {
+  computerId     String    @id
+  computer       Computer  @relation(fields: [computerId], references: [id], onDelete: Cascade)
+  claimId        String?
+  claimExpiresAt DateTime?
+  /// When the owner was emailed; null until then, and nothing is deleted before it.
+  warnedAt       DateTime?
+  /// The deletion date the email gave.
+  deleteAfter    DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@map("home_deletion_notices")
 }
 
 /// One stretch a computer ran at its provider, from `computers.runningSince` until it stopped,
@@ -2223,13 +2240,6 @@ model UserModelRoleChoice {
 
 /// A connection's own model and effort, which belong to the connection in every Space.
 model UserModelPreference {
-  hasMainPreference Boolean @default(true)
-  // Explicit target identity; null pins retain the legacy source-connection default.
-  // No target FK: a deleted connection must stay visible as unavailable, not silently inherit.
-  computerProvider String?
-  computerCredentialId String?
-  computerModelId String?
-  computerThinkingLevel String?
   userId        String
   user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   credentialId  String

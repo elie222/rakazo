@@ -603,6 +603,10 @@ msgstr "パスキーを追加"
 msgid "Add provider"
 msgstr "プロバイダーを追加"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Add rule"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Add server"
 msgstr "サーバーを追加"
@@ -1368,6 +1372,10 @@ msgstr "Rakazoの使い方を選択"
 msgid "Claude subscription"
 msgstr "Claudeサブスクリプション"
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Clean up"
+msgstr "整理する"
+
 #: src/components/AskCard.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
@@ -1550,6 +1558,10 @@ msgstr "コンピューターの起動に失敗しました"
 msgid "Computer hours left"
 msgstr "コンピューターの残り時間"
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Computer is {percent}% full"
+msgstr "コンピューターのディスクが {percent}% 使用中"
+
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"
 msgstr "コンピューターはスリープ中です"
@@ -1562,15 +1574,6 @@ msgstr "コンピューターはスリープ中です。開くと起動します
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "コンピューターは停止しています"
-
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Computer thinking"
-msgstr "コンピューター操作の思考レベル"
-
-#: src/pages/model-settings/computer-model-settings.tsx
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Computer-use model"
-msgstr "コンピューター操作モデル"
 
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1768,7 +1771,6 @@ msgstr ""
 msgid "Copied"
 msgstr "コピーしました"
 
-#: src/components/InviteDialog.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1788,6 +1790,7 @@ msgstr "コードをコピー"
 msgid "Copy diagram source"
 msgstr "ダイアグラムのソースをコピー"
 
+#: src/components/InviteDialog.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
 msgid "Copy link"
@@ -2056,7 +2059,6 @@ msgstr "連携を読み込めませんでした"
 msgid "Could not load MCP servers"
 msgstr "MCPサーバーを読み込めませんでした"
 
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "モデル設定を読み込めませんでした"
@@ -2525,9 +2527,7 @@ msgstr "拒否"
 msgid "Default"
 msgstr "デフォルト"
 
-#. placeholder {0}: thinkingLevelLabel("medium")
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
@@ -2728,6 +2728,7 @@ msgstr "切断中…"
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/PasskeyOffer.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
+#: src/pages/shell/computer-panel.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Dismiss"
 msgstr "閉じる"
@@ -3191,10 +3192,6 @@ msgstr ""
 msgid "General"
 msgstr "一般"
 
-#: src/components/InviteDialog.tsx
-msgid "Get a free month for each friend who starts a trial."
-msgstr "友だちがトライアルを開始するたびに、1か月無料になります。"
-
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
 msgstr "モバイルアプリを入手"
@@ -3206,6 +3203,10 @@ msgstr "準備中"
 #: src/pages/RoutineEditor.tsx
 msgid "Git event"
 msgstr "Gitイベント"
+
+#: src/components/InviteDialog.tsx
+msgid "Give a friend {weeks} weeks free"
+msgstr "友だちに{weeks}週間無料をプレゼント"
 
 #: src/pages/NotFound.tsx
 msgid "Go home"
@@ -3497,7 +3498,10 @@ msgstr "間隔の単位"
 msgid "Invalid code"
 msgstr "無効なコード"
 
-#: src/components/InviteDialog.tsx
+#: src/pages/shell/chat-header.tsx
+msgid "Invite a friend"
+msgstr "友だちを招待"
+
 #: src/components/SidebarFooter.tsx
 msgid "Invite friends"
 msgstr "友だちを招待"
@@ -3674,7 +3678,6 @@ msgstr "音声プロバイダーを読み込み中…"
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -4101,6 +4104,10 @@ msgid "Needs an OAuth client ID"
 msgstr "OAuth クライアント ID が必要です"
 
 #: src/pages/ActivityList.tsx
+msgid "Needs attention"
+msgstr "要対応"
+
+#: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "入力が必要"
 
@@ -4352,10 +4359,6 @@ msgstr "記憶はまだありません"
 #: src/pages/shell/bot-panel.tsx
 msgid "Notifications"
 msgstr "通知"
-
-#: src/pages/ActivityList.tsx
-msgid "Now"
-msgstr "現在"
 
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth authorization was cancelled."
@@ -5138,6 +5141,10 @@ msgstr "キーを置き換え"
 msgid "Replace value"
 msgstr "値を置き換え"
 
+#: src/components/AskCard.tsx
+msgid "Replaces the login saved for {replacedSite}"
+msgstr "{replacedSite} に保存されたログインを置き換えます"
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
 msgstr "返信対象"
@@ -5241,7 +5248,6 @@ msgstr "ワークスペースを復元中"
 #: src/components/PasskeySettings.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
@@ -5355,14 +5361,11 @@ msgstr ""
 msgid "Same as {botName}"
 msgstr "{botName}と同じ"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Same as main model"
-msgstr "メインモデルと同じ"
-
 #: src/lib/cron.ts
 msgid "Saturday"
 msgstr "土曜日"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/AskCard.tsx
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
@@ -6185,8 +6188,11 @@ msgstr "ファイルまたは選択内容が一致しなくなりました。も
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr "保存された設定を読み取れません。削除してから再度追加してください。"
 
+#: src/components/InviteDialog.tsx
+msgid "They get {weeks} weeks free."
+msgstr "友だちは{weeks}週間無料で使えます。"
+
 #: src/components/call/CallCard.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -6408,6 +6414,7 @@ msgstr "ツールの引数はJSONオブジェクトである必要がありま�
 msgid "Tool arguments must be JSON"
 msgstr "ツールの引数はJSONである必要があります"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "ツール名"
@@ -6495,10 +6502,6 @@ msgstr "回答を入力"
 msgid "Unassigned"
 msgstr "未割り当て"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Unavailable"
-msgstr "利用できません"
-
 #: src/components/AskCard.tsx
 msgid "Undo"
 msgstr "元に戻す"
@@ -6519,6 +6522,10 @@ msgstr "ミュート解除"
 #: src/pages/BotContextMenu.tsx
 msgid "Unpin"
 msgstr "ピン留めを解除"
+
+#: src/pages/ActivityList.tsx
+msgid "Unread"
+msgstr "未読"
 
 #. placeholder {0}: pending.file.name
 #: src/pages/shell/use-composer-actions.ts
@@ -6645,10 +6652,6 @@ msgstr "自分のサブスクリプションまたはAPIキーを使用"
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
 msgstr "パスワードには保護された入力を使用してください。"
-
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Use provider default"
-msgstr "プロバイダーの既定値を使用"
 
 #: src/components/ModelCredits.tsx
 msgid "Use Rakazo credits"
@@ -6863,6 +6866,10 @@ msgstr "対応しない"
 msgid "Work"
 msgstr "仕事"
 
+#: src/pages/ActivityList.tsx
+msgid "Working"
+msgstr "作業中"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Working instructions"
 msgstr "作業の指示"
@@ -6916,6 +6923,10 @@ msgstr "このウィンドウを閉じても構いません。"
 msgid "You declined"
 msgstr "辞退しました"
 
+#: src/components/InviteDialog.tsx
+msgid "You get a free month when they start their trial with a new card."
+msgstr "友だちが新しいカードでトライアルを始めると、あなたは1か月無料になります。"
+
 #: src/pages/shell/computer-overlay.tsx
 msgid "You have control"
 msgstr "あなたが操作中"
@@ -6928,6 +6939,10 @@ msgstr "お使いのAnthropic"
 #: src/components/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "本日カードに{annualPrice}が請求されます（今月の未使用分を差し引きます）。"
+
+#: src/pages/Shell.tsx
+msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
+msgstr "コンピューターのディスクがほぼいっぱいです。不要になったビルド出力やキャッシュを削除して空き容量を確保してください。"
 
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"

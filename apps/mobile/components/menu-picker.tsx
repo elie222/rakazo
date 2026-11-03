@@ -1,4 +1,3 @@
-import type { MenuAction } from "@expo/ui/community/menu";
 import { MenuView } from "@expo/ui/community/menu";
 import type { ReactElement } from "react";
 import { cloneElement, useState } from "react";
@@ -8,8 +7,7 @@ import { native, useMobileTokens, useResolvedAppearance, useThemedStyles } from 
 import { NativeSymbol } from "./native-symbol";
 import { Chevron } from "./row-accessories";
 
-/** Choices sharing a `group` open as one submenu titled by it. */
-export type MenuPickerChoice = { key: string; label: string; group?: string };
+export type MenuPickerChoice = { key: string; label: string };
 
 /** Native choice menu shared by rows with different layouts. */
 export function MenuPickerMenu({
@@ -39,7 +37,13 @@ export function MenuPickerMenu({
     >
       <MenuView
         style={menuStyles.fullWidth}
-        actions={menuActions(choices, value, disabled)}
+        actions={choices.map((choice) => ({
+          // MenuView reports an empty id as the title, so prefix keys to keep "" distinct.
+          id: `choice:${choice.key}`,
+          title: choice.label,
+          state: choice.key === value ? "on" : "off",
+          attributes: { disabled },
+        }))}
         colorScheme={colorScheme}
         onPressAction={(event) => {
           const id = event.nativeEvent.event;
@@ -51,32 +55,6 @@ export function MenuPickerMenu({
       </MenuView>
     </View>
   );
-}
-
-function menuActions(choices: readonly MenuPickerChoice[], value: string, disabled: boolean) {
-  const actions: MenuAction[] = [];
-  const groups = new Map<string, MenuAction[]>();
-  for (const choice of choices) {
-    const action: MenuAction = {
-      // MenuView reports an empty id as the title, so prefix keys to keep "" distinct.
-      id: `choice:${choice.key}`,
-      title: choice.label,
-      state: choice.key === value ? "on" : "off",
-      attributes: { disabled },
-    };
-    if (!choice.group) {
-      actions.push(action);
-      continue;
-    }
-    let group = groups.get(choice.group);
-    if (!group) {
-      group = [];
-      groups.set(choice.group, group);
-      actions.push({ id: `group:${choice.group}`, title: choice.group, subactions: group });
-    }
-    group.push(action);
-  }
-  return actions;
 }
 
 const menuStyles = StyleSheet.create({
@@ -96,11 +74,8 @@ export function MenuPicker({
   divider = false,
   plain = false,
   showLabel = true,
-  menuTitle = label,
 }: {
   label: string;
-  /** The open menu's heading, when the row's label names something narrower. */
-  menuTitle?: string;
   choices: readonly MenuPickerChoice[];
   value: string;
   onChange: (key: string) => void;
@@ -160,7 +135,7 @@ export function MenuPicker({
     );
   }
   const menu = (
-    <MenuPickerMenu choices={choices} label={menuTitle} onChange={onChange} value={value}>
+    <MenuPickerMenu choices={choices} label={label} onChange={onChange} value={value}>
       <View {...row} style={rowStyle}>
         {content}
       </View>
@@ -183,7 +158,6 @@ function createStyles() {
       borderTopColor: native.separator,
     },
     label: {
-      flexShrink: 1,
       color: native.label,
       fontSize: 16,
     },

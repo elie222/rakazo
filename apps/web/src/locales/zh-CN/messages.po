@@ -603,6 +603,10 @@ msgstr "添加通行密钥"
 msgid "Add provider"
 msgstr "添加提供方"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Add rule"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Add server"
 msgstr "添加服务器"
@@ -1368,6 +1372,10 @@ msgstr "选择如何使用 Rakazo"
 msgid "Claude subscription"
 msgstr "Claude 订阅"
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Clean up"
+msgstr "清理"
+
 #: src/components/AskCard.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
@@ -1550,6 +1558,10 @@ msgstr "电脑启动失败"
 msgid "Computer hours left"
 msgstr "剩余电脑时长"
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Computer is {percent}% full"
+msgstr "电脑已用 {percent}% 空间"
+
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"
 msgstr "电脑已休眠"
@@ -1562,15 +1574,6 @@ msgstr "电脑已休眠。打开就能唤醒。"
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "电脑已停止"
-
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Computer thinking"
-msgstr "电脑操作思考强度"
-
-#: src/pages/model-settings/computer-model-settings.tsx
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Computer-use model"
-msgstr "电脑操作模型"
 
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1768,7 +1771,6 @@ msgstr "对话"
 msgid "Copied"
 msgstr "已复制"
 
-#: src/components/InviteDialog.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1788,6 +1790,7 @@ msgstr "复制代码"
 msgid "Copy diagram source"
 msgstr "复制图表源代码"
 
+#: src/components/InviteDialog.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
 msgid "Copy link"
@@ -2056,7 +2059,6 @@ msgstr "无法加载集成"
 msgid "Could not load MCP servers"
 msgstr "无法加载 MCP 服务器"
 
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "无法加载模型设置"
@@ -2525,9 +2527,7 @@ msgstr "拒绝"
 msgid "Default"
 msgstr "默认"
 
-#. placeholder {0}: thinkingLevelLabel("medium")
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
@@ -2728,6 +2728,7 @@ msgstr "正在断开…"
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/PasskeyOffer.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
+#: src/pages/shell/computer-panel.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Dismiss"
 msgstr "忽略"
@@ -3191,10 +3192,6 @@ msgstr ""
 msgid "General"
 msgstr "通用"
 
-#: src/components/InviteDialog.tsx
-msgid "Get a free month for each friend who starts a trial."
-msgstr "每有一位朋友开始试用，你就能获得一个月免费。"
-
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
 msgstr "获取移动应用"
@@ -3206,6 +3203,10 @@ msgstr "正在准备"
 #: src/pages/RoutineEditor.tsx
 msgid "Git event"
 msgstr "Git 事件"
+
+#: src/components/InviteDialog.tsx
+msgid "Give a friend {weeks} weeks free"
+msgstr "送朋友 {weeks} 周免费"
 
 #: src/pages/NotFound.tsx
 msgid "Go home"
@@ -3497,7 +3498,10 @@ msgstr "间隔单位"
 msgid "Invalid code"
 msgstr "验证码无效"
 
-#: src/components/InviteDialog.tsx
+#: src/pages/shell/chat-header.tsx
+msgid "Invite a friend"
+msgstr "邀请朋友"
+
 #: src/components/SidebarFooter.tsx
 msgid "Invite friends"
 msgstr "邀请朋友"
@@ -3674,7 +3678,6 @@ msgstr "正在加载语音提供方…"
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -4101,6 +4104,10 @@ msgid "Needs an OAuth client ID"
 msgstr "需要 OAuth 客户端 ID"
 
 #: src/pages/ActivityList.tsx
+msgid "Needs attention"
+msgstr "需要处理"
+
+#: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "需要输入"
 
@@ -4352,10 +4359,6 @@ msgstr "暂无记忆"
 #: src/pages/shell/bot-panel.tsx
 msgid "Notifications"
 msgstr "通知"
-
-#: src/pages/ActivityList.tsx
-msgid "Now"
-msgstr "现在"
 
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth authorization was cancelled."
@@ -5138,6 +5141,10 @@ msgstr "替换密钥"
 msgid "Replace value"
 msgstr "替换值"
 
+#: src/components/AskCard.tsx
+msgid "Replaces the login saved for {replacedSite}"
+msgstr "替换为 {replacedSite} 保存的登录信息"
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
 msgstr "回复对象"
@@ -5241,7 +5248,6 @@ msgstr "正在恢复工作区"
 #: src/components/PasskeySettings.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
@@ -5355,14 +5361,11 @@ msgstr "销售与 CRM"
 msgid "Same as {botName}"
 msgstr "与 {botName} 相同"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Same as main model"
-msgstr "与主模型相同"
-
 #: src/lib/cron.ts
 msgid "Saturday"
 msgstr "周六"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/AskCard.tsx
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
@@ -6185,8 +6188,11 @@ msgstr "这些文件或选择已不再匹配。请重新选择文件。"
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr "这些已保存的设置读不出来。请移除后再添加一次。"
 
+#: src/components/InviteDialog.tsx
+msgid "They get {weeks} weeks free."
+msgstr "对方可免费使用 {weeks} 周。"
+
 #: src/components/call/CallCard.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -6408,6 +6414,7 @@ msgstr "工具参数必须是 JSON 对象"
 msgid "Tool arguments must be JSON"
 msgstr "工具参数必须是 JSON"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "工具名称"
@@ -6495,10 +6502,6 @@ msgstr "输入你的回答"
 msgid "Unassigned"
 msgstr "未分配"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Unavailable"
-msgstr "不可用"
-
 #: src/components/AskCard.tsx
 msgid "Undo"
 msgstr "撤销"
@@ -6519,6 +6522,10 @@ msgstr "取消静音"
 #: src/pages/BotContextMenu.tsx
 msgid "Unpin"
 msgstr "取消置顶"
+
+#: src/pages/ActivityList.tsx
+msgid "Unread"
+msgstr "未读"
 
 #. placeholder {0}: pending.file.name
 #: src/pages/shell/use-composer-actions.ts
@@ -6645,10 +6652,6 @@ msgstr "使用我的订阅或 API 密钥"
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
 msgstr "输入密码时请用受保护输入。"
-
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Use provider default"
-msgstr "使用提供商默认模型"
 
 #: src/components/ModelCredits.tsx
 msgid "Use Rakazo credits"
@@ -6863,6 +6866,10 @@ msgstr "不做"
 msgid "Work"
 msgstr "工作"
 
+#: src/pages/ActivityList.tsx
+msgid "Working"
+msgstr "工作中"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Working instructions"
 msgstr "工作指令"
@@ -6916,6 +6923,10 @@ msgstr "可以关闭此窗口。"
 msgid "You declined"
 msgstr "你已拒接"
 
+#: src/components/InviteDialog.tsx
+msgid "You get a free month when they start their trial with a new card."
+msgstr "对方用新卡开始试用后，你将获得一个月免费。"
+
 #: src/pages/shell/computer-overlay.tsx
 msgid "You have control"
 msgstr "你已接管"
@@ -6928,6 +6939,10 @@ msgstr "你的 Anthropic"
 #: src/components/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "今天将从你的卡中扣款 {annualPrice}，并抵扣本月未使用的部分。"
+
+#: src/pages/Shell.tsx
+msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
+msgstr "电脑的磁盘快满了。请删除不再需要的构建输出和缓存，以释放空间。"
 
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"

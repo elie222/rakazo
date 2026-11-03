@@ -20,7 +20,7 @@ describe("findModelCredential", () => {
     await findModelCredential(prisma, { userId: "user" }, "xai");
 
     expect(preferenceFindFirst).toHaveBeenCalledWith({
-      where: { userId: "user", hasMainPreference: true, credential: { provider: "xai" } },
+      where: { userId: "user", credential: { provider: "xai" } },
       include: { credential: true },
       orderBy: [{ updatedAt: "desc" }, { credentialId: "desc" }],
     });
@@ -59,7 +59,6 @@ describe("findModelCredential", () => {
       where: {
         userId: "user",
         modelId: "other-model",
-        hasMainPreference: true,
         credential: { provider: "openai-compatible" },
       },
       include: { credential: true },
@@ -276,7 +275,7 @@ describe("saveModelPreference", () => {
       expect(upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           create: expect.objectContaining({ modelId: null }),
-          update: { modelId: null, thinkingLevel: null, hasMainPreference: true },
+          update: { modelId: null, thinkingLevel: null },
         }),
       );
     },

@@ -603,6 +603,10 @@ msgstr "Add passkey"
 msgid "Add provider"
 msgstr "Add provider"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Add rule"
+msgstr "Add rule"
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Add server"
 msgstr "Add server"
@@ -1368,6 +1372,10 @@ msgstr "Choose how to use Rakazo"
 msgid "Claude subscription"
 msgstr "Claude subscription"
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Clean up"
+msgstr "Clean up"
+
 #: src/components/AskCard.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
@@ -1550,6 +1558,10 @@ msgstr "Computer failed to boot"
 msgid "Computer hours left"
 msgstr "Computer hours left"
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Computer is {percent}% full"
+msgstr "Computer is {percent}% full"
+
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"
 msgstr "Computer is asleep"
@@ -1562,15 +1574,6 @@ msgstr "Computer is asleep. Open it to wake."
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "Computer is stopped"
-
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Computer thinking"
-msgstr "Computer thinking"
-
-#: src/pages/model-settings/computer-model-settings.tsx
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Computer-use model"
-msgstr "Computer-use model"
 
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1768,7 +1771,6 @@ msgstr "Conversations"
 msgid "Copied"
 msgstr "Copied"
 
-#: src/components/InviteDialog.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1788,6 +1790,7 @@ msgstr "Copy code"
 msgid "Copy diagram source"
 msgstr "Copy diagram source"
 
+#: src/components/InviteDialog.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
 msgid "Copy link"
@@ -2056,7 +2059,6 @@ msgstr "Could not load integrations"
 msgid "Could not load MCP servers"
 msgstr "Could not load MCP servers"
 
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "Could not load model settings"
@@ -2525,9 +2527,7 @@ msgstr "Decline"
 msgid "Default"
 msgstr "Default"
 
-#. placeholder {0}: thinkingLevelLabel("medium")
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
@@ -2728,6 +2728,7 @@ msgstr "Disconnecting…"
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/PasskeyOffer.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
+#: src/pages/shell/computer-panel.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Dismiss"
 msgstr "Dismiss"
@@ -3191,10 +3192,6 @@ msgstr "Gateway URL"
 msgid "General"
 msgstr "General"
 
-#: src/components/InviteDialog.tsx
-msgid "Get a free month for each friend who starts a trial."
-msgstr "Get a free month for each friend who starts a trial."
-
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
 msgstr "Get the mobile app"
@@ -3206,6 +3203,10 @@ msgstr "Getting ready"
 #: src/pages/RoutineEditor.tsx
 msgid "Git event"
 msgstr "Git event"
+
+#: src/components/InviteDialog.tsx
+msgid "Give a friend {weeks} weeks free"
+msgstr "Give a friend {weeks} weeks free"
 
 #: src/pages/NotFound.tsx
 msgid "Go home"
@@ -3497,7 +3498,10 @@ msgstr "Interval unit"
 msgid "Invalid code"
 msgstr "Invalid code"
 
-#: src/components/InviteDialog.tsx
+#: src/pages/shell/chat-header.tsx
+msgid "Invite a friend"
+msgstr "Invite a friend"
+
 #: src/components/SidebarFooter.tsx
 msgid "Invite friends"
 msgstr "Invite friends"
@@ -3674,7 +3678,6 @@ msgstr "Loading voice providers…"
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -4101,6 +4104,10 @@ msgid "Needs an OAuth client ID"
 msgstr "Needs an OAuth client ID"
 
 #: src/pages/ActivityList.tsx
+msgid "Needs attention"
+msgstr "Needs attention"
+
+#: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "Needs input"
 
@@ -4352,10 +4359,6 @@ msgstr "Nothing remembered yet"
 #: src/pages/shell/bot-panel.tsx
 msgid "Notifications"
 msgstr "Notifications"
-
-#: src/pages/ActivityList.tsx
-msgid "Now"
-msgstr "Now"
 
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth authorization was cancelled."
@@ -5138,6 +5141,10 @@ msgstr "Replace key"
 msgid "Replace value"
 msgstr "Replace value"
 
+#: src/components/AskCard.tsx
+msgid "Replaces the login saved for {replacedSite}"
+msgstr "Replaces the login saved for {replacedSite}"
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
 msgstr "Replies to"
@@ -5241,7 +5248,6 @@ msgstr "Restoring your workspace"
 #: src/components/PasskeySettings.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
@@ -5355,14 +5361,11 @@ msgstr "Sales & CRM"
 msgid "Same as {botName}"
 msgstr "Same as {botName}"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Same as main model"
-msgstr "Same as main model"
-
 #: src/lib/cron.ts
 msgid "Saturday"
 msgstr "Saturday"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/AskCard.tsx
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
@@ -6185,8 +6188,11 @@ msgstr "These files or choices no longer match. Choose the files again."
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr "These saved settings can't be read. Remove it and add it again."
 
+#: src/components/InviteDialog.tsx
+msgid "They get {weeks} weeks free."
+msgstr "They get {weeks} weeks free."
+
 #: src/components/call/CallCard.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -6408,6 +6414,7 @@ msgstr "Tool arguments must be a JSON object"
 msgid "Tool arguments must be JSON"
 msgstr "Tool arguments must be JSON"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "Tool name"
@@ -6495,10 +6502,6 @@ msgstr "Type your answer"
 msgid "Unassigned"
 msgstr "Unassigned"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Unavailable"
-msgstr "Unavailable"
-
 #: src/components/AskCard.tsx
 msgid "Undo"
 msgstr "Undo"
@@ -6519,6 +6522,10 @@ msgstr "Unmute"
 #: src/pages/BotContextMenu.tsx
 msgid "Unpin"
 msgstr "Unpin"
+
+#: src/pages/ActivityList.tsx
+msgid "Unread"
+msgstr "Unread"
 
 #. placeholder {0}: pending.file.name
 #: src/pages/shell/use-composer-actions.ts
@@ -6645,10 +6652,6 @@ msgstr "Use my subscription or API key"
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
 msgstr "Use Protected input for passwords."
-
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Use provider default"
-msgstr "Use provider default"
 
 #: src/components/ModelCredits.tsx
 msgid "Use Rakazo credits"
@@ -6863,6 +6866,10 @@ msgstr "Won't do"
 msgid "Work"
 msgstr "Work"
 
+#: src/pages/ActivityList.tsx
+msgid "Working"
+msgstr "Working"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Working instructions"
 msgstr "Working instructions"
@@ -6916,6 +6923,10 @@ msgstr "You can close this window."
 msgid "You declined"
 msgstr "You declined"
 
+#: src/components/InviteDialog.tsx
+msgid "You get a free month when they start their trial with a new card."
+msgstr "You get a free month when they start their trial with a new card."
+
 #: src/pages/shell/computer-overlay.tsx
 msgid "You have control"
 msgstr "You have control"
@@ -6928,6 +6939,10 @@ msgstr "Your Anthropic"
 #: src/components/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "Your card is charged {annualPrice} today, less the unused part of this month."
+
+#: src/pages/Shell.tsx
+msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
+msgstr "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
 
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"

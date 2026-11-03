@@ -15,7 +15,6 @@ function setup() {
     env: { agentRuntime: "scripted" },
     prisma: {
       userModelPreference: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
-      spaceModelPreference: { findMany: vi.fn(async () => []) },
       spaceSettingOverride: { findUnique: vi.fn(async () => null) },
       userModelRoleChoice: { findMany: vi.fn(async () => []) },
       spaceModelRoleChoice: { findMany: vi.fn(async () => []) },
@@ -68,37 +67,6 @@ describe("consent grants", () => {
         }),
       }),
     );
-  });
-  it("discloses a bot's computer-use model provider", async () => {
-    const { deps, actor } = setup();
-    deps.env.agentRuntime = "pi";
-    vi.mocked(deps.prisma.bot.findMany).mockResolvedValue([
-      {
-        modelProvider: null,
-        modelId: null,
-        thinkingLevel: null,
-        computerModel: {
-          mode: "model",
-          provider: "anthropic",
-          modelId: "claude-sonnet-4-5",
-          credentialId: "computer-connection",
-        },
-      },
-    ] as never);
-    Object.assign(deps.prisma.userModelCredential, {
-      findFirst: vi.fn(async ({ where }: { where: { id: string } }) =>
-        where.id === "computer-connection"
-          ? {
-              id: where.id,
-              provider: "anthropic",
-              secretId: "computer-secret",
-              userPreferences: [],
-            }
-          : null,
-      ),
-    });
-    const status = await aiConsentStatus(deps, actor, { botId: "bot", uses: ["model"] });
-    expect(status.recipients.map((recipient) => recipient.name)).toContain("Anthropic");
   });
   it("includes an inactive routine only when the check is for that routine", async () => {
     const { deps, actor } = setup();

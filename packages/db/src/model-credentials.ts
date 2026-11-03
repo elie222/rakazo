@@ -32,13 +32,8 @@ export function saveModelPreference(
       credentialId,
       modelId: persistedModelId,
       thinkingLevel: thinkingLevel ?? null,
-      hasMainPreference: true,
     },
-    update: {
-      modelId: persistedModelId,
-      thinkingLevel: thinkingLevel ?? null,
-      hasMainPreference: true,
-    },
+    update: { modelId: persistedModelId, thinkingLevel: thinkingLevel ?? null },
   });
 }
 
@@ -83,7 +78,6 @@ type OrderedCredential = {
 };
 
 type OrderedPreference<C extends OrderedCredential> = {
-  hasMainPreference?: boolean;
   modelId: string | null;
   thinkingLevel: string | null;
   updatedAt: Date;
@@ -141,9 +135,8 @@ export function chooseModelCredential<C extends OrderedCredential>(input: {
   const preferences = input.preferences
     .filter(
       (preference) =>
-        preference.hasMainPreference !== false &&
         canonicalPiProviderId(preference.credential.provider) ===
-          canonicalPiProviderId(input.provider),
+        canonicalPiProviderId(input.provider),
     )
     .sort(compareOrderedPreference);
   if (requestedModelId) {
@@ -185,9 +178,8 @@ export function defaultModelCredentialCandidates<C extends OrderedCredential>(in
   const preferences = input.preferences
     .filter(
       (preference) =>
-        preference.hasMainPreference !== false &&
         canonicalPiProviderId(preference.credential.provider) ===
-          canonicalPiProviderId(input.provider),
+        canonicalPiProviderId(input.provider),
     )
     .sort(compareOrderedPreference);
   const credentials = input.credentials
@@ -280,7 +272,6 @@ export async function findModelCredential(
       where: {
         userId: scope.userId,
         modelId: requestedModelId,
-        hasMainPreference: true,
         credential: { provider: modelCredentialProviderFilter(provider) },
       },
       include: { credential: true },
@@ -295,7 +286,6 @@ export async function findModelCredential(
   const preference = await prisma.userModelPreference.findFirst({
     where: {
       userId: scope.userId,
-      hasMainPreference: true,
       credential: { provider: modelCredentialProviderFilter(provider) },
     },
     include: { credential: true },

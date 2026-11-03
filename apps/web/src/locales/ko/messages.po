@@ -603,6 +603,10 @@ msgstr "패스키 추가"
 msgid "Add provider"
 msgstr "서비스 추가"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Add rule"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Add server"
 msgstr "서버 추가"
@@ -1368,6 +1372,10 @@ msgstr ""
 msgid "Claude subscription"
 msgstr ""
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Clean up"
+msgstr "정리하기"
+
 #: src/components/AskCard.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
@@ -1550,6 +1558,10 @@ msgstr "컴퓨터를 시작하지 못했습니다"
 msgid "Computer hours left"
 msgstr "남은 컴퓨터 시간"
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Computer is {percent}% full"
+msgstr "컴퓨터 용량이 {percent}% 찼습니다"
+
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"
 msgstr "컴퓨터가 절전 상태입니다"
@@ -1562,15 +1574,6 @@ msgstr "컴퓨터가 절전 상태입니다. 열어 깨우세요."
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "컴퓨터가 중지됨"
-
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Computer thinking"
-msgstr "컴퓨터 사용 추론"
-
-#: src/pages/model-settings/computer-model-settings.tsx
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Computer-use model"
-msgstr "컴퓨터 사용 모델"
 
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1768,7 +1771,6 @@ msgstr ""
 msgid "Copied"
 msgstr "복사됨"
 
-#: src/components/InviteDialog.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1788,6 +1790,7 @@ msgstr "코드 복사"
 msgid "Copy diagram source"
 msgstr "다이어그램 소스 복사"
 
+#: src/components/InviteDialog.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
 msgid "Copy link"
@@ -2056,7 +2059,6 @@ msgstr "연동 목록을 불러오지 못했습니다."
 msgid "Could not load MCP servers"
 msgstr "MCP 서버 목록을 불러오지 못했습니다."
 
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "AI 모델 설정을 불러오지 못했습니다."
@@ -2525,9 +2527,7 @@ msgstr "거절"
 msgid "Default"
 msgstr "기본값"
 
-#. placeholder {0}: thinkingLevelLabel("medium")
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
@@ -2728,6 +2728,7 @@ msgstr "연결 해제 중…"
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/PasskeyOffer.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
+#: src/pages/shell/computer-panel.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Dismiss"
 msgstr "닫기"
@@ -3191,10 +3192,6 @@ msgstr ""
 msgid "General"
 msgstr "일반"
 
-#: src/components/InviteDialog.tsx
-msgid "Get a free month for each friend who starts a trial."
-msgstr "친구가 체험을 시작할 때마다 한 달 무료 혜택을 받으세요."
-
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
 msgstr "모바일 앱 다운로드"
@@ -3206,6 +3203,10 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "Git event"
 msgstr "Git 이벤트"
+
+#: src/components/InviteDialog.tsx
+msgid "Give a friend {weeks} weeks free"
+msgstr "친구에게 {weeks}주 무료 선물하기"
 
 #: src/pages/NotFound.tsx
 msgid "Go home"
@@ -3497,7 +3498,10 @@ msgstr "간격 단위"
 msgid "Invalid code"
 msgstr "잘못된 코드"
 
-#: src/components/InviteDialog.tsx
+#: src/pages/shell/chat-header.tsx
+msgid "Invite a friend"
+msgstr "친구 초대"
+
 #: src/components/SidebarFooter.tsx
 msgid "Invite friends"
 msgstr "친구 초대"
@@ -3674,7 +3678,6 @@ msgstr "음성 서비스를 불러오는 중…"
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -4101,6 +4104,10 @@ msgid "Needs an OAuth client ID"
 msgstr "OAuth 클라이언트 ID가 필요합니다"
 
 #: src/pages/ActivityList.tsx
+msgid "Needs attention"
+msgstr "확인 필요"
+
+#: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "입력 필요"
 
@@ -4352,10 +4359,6 @@ msgstr "아직 기억한 내용이 없습니다"
 #: src/pages/shell/bot-panel.tsx
 msgid "Notifications"
 msgstr "알림"
-
-#: src/pages/ActivityList.tsx
-msgid "Now"
-msgstr "지금"
 
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth authorization was cancelled."
@@ -5138,6 +5141,10 @@ msgstr "키 교체"
 msgid "Replace value"
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "Replaces the login saved for {replacedSite}"
+msgstr "{replacedSite}에 저장된 로그인을 대체합니다"
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
 msgstr "응답 대상"
@@ -5241,7 +5248,6 @@ msgstr ""
 #: src/components/PasskeySettings.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
@@ -5355,14 +5361,11 @@ msgstr ""
 msgid "Same as {botName}"
 msgstr "{botName}와(과) 동일"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Same as main model"
-msgstr "기본 모델과 동일"
-
 #: src/lib/cron.ts
 msgid "Saturday"
 msgstr "토요일"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/AskCard.tsx
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
@@ -6185,8 +6188,11 @@ msgstr "파일이나 선택이 더 이상 맞지 않습니다. 파일을 다시 
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr ""
 
+#: src/components/InviteDialog.tsx
+msgid "They get {weeks} weeks free."
+msgstr "친구는 {weeks}주 동안 무료로 사용해요."
+
 #: src/components/call/CallCard.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -6408,6 +6414,7 @@ msgstr "도구 인수는 JSON 객체여야 합니다"
 msgid "Tool arguments must be JSON"
 msgstr "도구 인수는 JSON이어야 합니다"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "도구 이름"
@@ -6495,10 +6502,6 @@ msgstr "답변을 입력하세요"
 msgid "Unassigned"
 msgstr "섹션 없음"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Unavailable"
-msgstr "사용할 수 없음"
-
 #: src/components/AskCard.tsx
 msgid "Undo"
 msgstr "실행 취소"
@@ -6519,6 +6522,10 @@ msgstr "음소거 해제"
 #: src/pages/BotContextMenu.tsx
 msgid "Unpin"
 msgstr "고정 해제"
+
+#: src/pages/ActivityList.tsx
+msgid "Unread"
+msgstr "읽지 않음"
 
 #. placeholder {0}: pending.file.name
 #: src/pages/shell/use-composer-actions.ts
@@ -6645,10 +6652,6 @@ msgstr ""
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
 msgstr ""
-
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Use provider default"
-msgstr "제공업체 기본값 사용"
 
 #: src/components/ModelCredits.tsx
 msgid "Use Rakazo credits"
@@ -6863,6 +6866,10 @@ msgstr ""
 msgid "Work"
 msgstr ""
 
+#: src/pages/ActivityList.tsx
+msgid "Working"
+msgstr "작업 중"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Working instructions"
 msgstr "작업 지침"
@@ -6916,6 +6923,10 @@ msgstr "이 창을 닫아도 됩니다."
 msgid "You declined"
 msgstr ""
 
+#: src/components/InviteDialog.tsx
+msgid "You get a free month when they start their trial with a new card."
+msgstr "친구가 새 카드로 체험을 시작하면 나는 한 달 무료를 받아요."
+
 #: src/pages/shell/computer-overlay.tsx
 msgid "You have control"
 msgstr "직접 조작 중"
@@ -6928,6 +6939,10 @@ msgstr "사용 중인 Anthropic"
 #: src/components/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "오늘 카드에서 {annualPrice}이 결제되며, 이번 달 사용하지 않은 금액은 차감됩니다."
+
+#: src/pages/Shell.tsx
+msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
+msgstr "컴퓨터 디스크가 거의 가득 찼습니다. 더 이상 필요 없는 빌드 출력과 캐시를 삭제해 공간을 확보하세요."
 
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"

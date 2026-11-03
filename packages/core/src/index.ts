@@ -1,4 +1,5 @@
 export * from "./action-approval.js";
+export * from "./activity-sections.js";
 export * from "./agent-import/index.js";
 export * from "./agent-skill.js";
 export * from "./ai-consent.js";
@@ -28,7 +29,6 @@ export * from "./composer-mention-bindings.js";
 export * from "./composer-mention-picker.js";
 export * from "./composer-mentions.js";
 export * from "./composer-slash.js";
-export * from "./computer-model-settings.js";
 export * from "./computer-updates.js";
 export * from "./connection-catalog.js";
 export * from "./cron.js";

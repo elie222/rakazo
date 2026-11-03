@@ -1,9 +1,6 @@
 export const NL_MESSAGES: Record<string, string> = {
-  Unavailable: "Niet beschikbaar",
-  "Computer thinking": "Denkniveau voor computergebruik",
-  "Computer-use model": "Model voor computergebruik",
-  "Same as main model": "Zelfde als hoofdmodel",
-  "Use provider default": "Standaard van provider gebruiken",
+  "Add rule": "Regel toevoegen",
+  "Tool name": "Toolnaam",
   "Daily check-ins on unfinished work": "Dagelijks navragen over onafgemaakt werk",
   "Pages this group builds for you appear here.":
     "Pagina's die deze groep voor je maakt, verschijnen hier.",
@@ -277,7 +274,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "No matching bots": "Geen overeenkomende bots",
   "No messages yet": "Nog geen berichten",
   "No results": "Geen resultaten",
-  Now: "Nu",
   Personal: "Persoonlijk",
   Recent: "Recent",
   Search: "Zoeken",
@@ -518,6 +514,10 @@ export const NL_MESSAGES: Record<string, string> = {
   Release: "Vrijgeven",
   Skip: "Overslaan",
   "Take control": "Controle overnemen",
+  "Clean up": "Opruimen",
+  "Computer is {percent}% full": "Computer is voor {percent}% vol",
+  "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need.":
+    "De schijf van je computer is bijna vol. Maak ruimte vrij door build-uitvoer en caches te verwijderen die je niet meer nodig hebt.",
   "You have control": "Jij hebt de controle",
   "Active model": "Actief model",
   "Authorization code": "Autorisatiecode",
@@ -694,6 +694,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Live working status": "Live werkstatus",
   More: "Meer",
   "Needs attention": "Heeft aandacht nodig",
+  Unread: "Ongelezen",
   "Notification settings": "Meldingsinstellingen",
   "Get notified when this Bot finishes or needs input":
     "Ontvang een melding wanneer deze bot klaar is of invoer nodig heeft",
@@ -723,6 +724,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Always allow": "Altijd toestaan",
   "Always allow this tool": "Deze tool altijd toestaan",
   "Always allow {site}": "{site} altijd toestaan",
+  "Replaces the login saved for {site}": "Vervangt de opgeslagen login voor {site}",
   "Could not submit answer": "Antwoord insturen mislukt",
   Deny: "Weigeren",
   "Please try again.": "Probeer het opnieuw.",
@@ -1269,6 +1271,12 @@ export const NL_MESSAGES: Record<string, string> = {
   "Invite friends": "Vrienden uitnodigen",
   "Get a free month for each friend who starts a trial.":
     "Krijg een gratis maand voor elke vriend die een proefperiode start.",
+  "Invite a friend": "Nodig een vriend uit",
+  "Give a friend {weeks} weeks free": "Geef een vriend {weeks} weken gratis",
+  "They get {weeks} weeks free.": "Zij krijgen {weeks} weken gratis.",
+  "You get a free month when they start their trial with a new card.":
+    "Jij krijgt een gratis maand zodra zij hun proefperiode met een nieuwe kaart starten.",
+  "Share link": "Link delen",
   "1 free month earned": "1 gratis maand verdiend",
   "{count} free months earned": "{count} gratis maanden verdiend",
   "Submit a plugin": "Plugin indienen",

@@ -22,7 +22,6 @@ import { Alert, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } fr
 import { BotAvatar } from "../components/bot-avatar";
 import { BotContextCards } from "../components/bot-context-cards";
 import { ComputerModePicker } from "../components/computer-mode-picker";
-import { ComputerModelSettings } from "../components/computer-model-settings";
 import { glassHeaderOptions } from "../components/glass-title";
 import { GrowingTextInput } from "../components/growing-text-input";
 import type { MenuPickerChoice } from "../components/menu-picker";
@@ -44,6 +43,7 @@ import {
 import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/bot-voices";
 import { chatModelPickerChoices } from "../lib/chat-model";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computer";
+import { notifyConversationCleared } from "../lib/conversation-cleared";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { useI18n } from "../lib/i18n";
 import { afterChatNotifyChange } from "../lib/live-notifications";
@@ -635,17 +635,6 @@ export default function BotSettingsScreen() {
               </Text>
             ) : null}
 
-            {me && bot ? (
-              <SettingsGroup label={t("Computer-use model")}>
-                <ComputerModelSettings
-                  key={`${bot.id}:${bot.modelProvider}:${bot.modelId}`}
-                  target={{ kind: "bot", botId: bot.id }}
-                  userId={me.userId}
-                  spaceId={me.spaceId}
-                  refreshKey={JSON.stringify(credentials)}
-                />
-              </SettingsGroup>
-            ) : null}
             <SettingsGroup label={t("Computer")}>
               <ComputerModePicker plain value={computerMode} onChange={setComputerMode} />
             </SettingsGroup>
@@ -839,6 +828,7 @@ export default function BotSettingsScreen() {
                       style: "destructive",
                       onPress: () => {
                         void rpc("threads/clear", { botId })
+                          .then(() => notifyConversationCleared(botId))
                           .then(() => router.back())
                           .catch((err) => setError(errorText(err)));
                       },

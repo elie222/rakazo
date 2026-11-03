@@ -44,11 +44,6 @@ import {
   VaultRevealInput,
 } from "./bot-secrets.js";
 import {
-  ComputerModelSelectionSchema,
-  ComputerModelTargetSchema,
-  ComputerModelViewSchema,
-} from "./computer-model.js";
-import {
   AccessGrantInputSchema,
   AccessGrantSchema,
   AccountItemSchema,
@@ -280,7 +275,10 @@ export const appContract = {
   health: oc.output(z.object({ ok: z.literal(true), version: z.string() })),
   me: oc.output(MeSchema),
   billing: {
-    status: oc.output(BillingStatusSchema),
+    /** Claims an invite code first when one is sent, so the status already reflects it. */
+    status: oc
+      .input(z.object({ referralCode: z.string().min(1).max(64).optional() }).optional())
+      .output(BillingStatusSchema),
     /** Re-reads the subscription from the provider, e.g. right after a mobile checkout. */
     refresh: oc.output(BillingStatusSchema),
     selectFunding: oc
@@ -405,18 +403,6 @@ export const appContract = {
     apply: oc.input(ServerUpdateRequestSchema).output(ServerUpdateRunSchema),
   },
   models: {
-    computer: oc
-      .input(z.object({ target: ComputerModelTargetSchema, expectedUserId: Id.optional() }))
-      .output(ComputerModelViewSchema),
-    setComputer: oc
-      .input(
-        z.object({
-          target: ComputerModelTargetSchema,
-          selection: ComputerModelSelectionSchema,
-          expectedUserId: Id.optional(),
-        }),
-      )
-      .output(ComputerModelViewSchema),
     forRole: oc
       .input(z.object({ role: ModelRoleSchema, expectedUserId: Id.optional() }))
       .output(z.array(ModelCatalogEntrySchema)),
@@ -726,6 +712,7 @@ export const appContract = {
       .input(z.object({ id: Id, workersStopped: z.literal(true) }))
       .output(z.object({ ok: z.literal(true) })),
     dismissUpdate: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
+    dismissDiskWarning: oc.input(botId).output(z.object({ ok: z.literal(true) })),
     takeover: oc.input(botId).output(z.object({ leaseId: Id, expiresAt: z.string() })),
     release: oc
       .input(
@@ -1210,9 +1197,9 @@ export const appContract = {
     set: oc
       .input(
         settingsScopeInput.extend({
-          effect: z.enum(["always_allow", "deny"]),
+          effect: z.enum(["always_allow", "require_approval", "deny"]),
           matchKind: z.enum(["tool", "connector", "site"]),
-          matchValue: z.string().min(1),
+          matchValue: z.string().trim().min(1),
         }),
       )
       .output(ActionApprovalRuleSchema),

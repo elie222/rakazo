@@ -78,7 +78,6 @@ vi.mock("./api", () => ({
     if (procedure === "models/probeOpenAiCompatible")
       return { models: Array.from({ length: 11 }, (_, index) => `found-${index}`) };
     if (procedure === "models/role") return { primary: null, backups: [] };
-    if (procedure === "models/computer") return { selection: null, options: [] };
     if (procedure === "bots/list") {
       if (saved.failBotList) throw new Error("offline");
       return saved.bots;

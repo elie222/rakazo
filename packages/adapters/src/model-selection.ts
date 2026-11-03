@@ -157,7 +157,6 @@ export async function modelCredentialAuthKindsForSpace(
     prisma.userModelPreference.findMany({
       where: { userId: scope.userId },
       select: {
-        hasMainPreference: true,
         modelId: true,
         thinkingLevel: true,
         updatedAt: true,
@@ -376,36 +375,25 @@ export async function prepareStoredModelAuth(
   if (secret.status === "unreadable") {
     return { ref: secret.ciphertext, auth: { status: "unreadable" } };
   }
-  return {
-    ref: secret.ciphertext,
-    auth: await modelAuthFromPlaintext(secret.plaintext, userId, provider, modelId, live, liveOpts),
-  };
-}
-
-/** The same check as `prepareStoredModelAuth` on a secret already loaded once. */
-export async function modelAuthFromPlaintext(
-  plaintext: string,
-  userId: string,
-  provider: string,
-  modelId: string,
-  live?: CodexLiveCatalog,
-  liveOpts?: CodexLiveReadOptions,
-): Promise<StoredModelAuthRead> {
+  const { plaintext } = secret;
   let message: string | undefined;
   try {
     message = validateModelAuthAvailability(provider, modelId, plaintext);
   } catch {
     // A secret that decrypts but does not parse is as unreadable as a corrupt one.
-    return { status: "unreadable" };
+    return { ref: secret.ciphertext, auth: { status: "unreadable" } };
   }
   // validateModelAuthAvailability already parsed the secret without throwing.
   if (
     message &&
     (await codexLiveListsModel(live, userId, parseModelSecret(plaintext), modelId, liveOpts))
   ) {
-    return { status: "ready" };
+    return { ref: secret.ciphertext, auth: { status: "ready" } };
   }
-  return message ? { status: "rejected", message } : { status: "ready" };
+  return {
+    ref: secret.ciphertext,
+    auth: message ? { status: "rejected", message } : { status: "ready" },
+  };
 }
 
 export async function readStoredModelAuth(

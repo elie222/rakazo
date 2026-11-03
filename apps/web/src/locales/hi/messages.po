@@ -603,6 +603,10 @@ msgstr "पासकी जोड़ें"
 msgid "Add provider"
 msgstr "प्रोवाइडर जोड़ें"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Add rule"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Add server"
 msgstr "सर्वर जोड़ें"
@@ -1368,6 +1372,10 @@ msgstr ""
 msgid "Claude subscription"
 msgstr ""
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Clean up"
+msgstr "साफ़ करें"
+
 #: src/components/AskCard.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
@@ -1550,6 +1558,10 @@ msgstr "कंप्यूटर शुरू नहीं हो सका"
 msgid "Computer hours left"
 msgstr "कंप्यूटर के बचे घंटे"
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Computer is {percent}% full"
+msgstr "कंप्यूटर {percent}% भर गया है"
+
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"
 msgstr "कंप्यूटर निष्क्रिय है"
@@ -1562,15 +1574,6 @@ msgstr ""
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "कंप्यूटर रुका हुआ है"
-
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Computer thinking"
-msgstr "कंप्यूटर उपयोग का तर्क स्तर"
-
-#: src/pages/model-settings/computer-model-settings.tsx
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Computer-use model"
-msgstr "कंप्यूटर उपयोग मॉडल"
 
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1768,7 +1771,6 @@ msgstr ""
 msgid "Copied"
 msgstr "कॉपी किया गया"
 
-#: src/components/InviteDialog.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1788,6 +1790,7 @@ msgstr "कोड कॉपी करें"
 msgid "Copy diagram source"
 msgstr "डायग्राम स्रोत कॉपी करें"
 
+#: src/components/InviteDialog.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
 msgid "Copy link"
@@ -2056,7 +2059,6 @@ msgstr "इंटीग्रेशन लोड नहीं हो सके"
 msgid "Could not load MCP servers"
 msgstr "MCP सर्वर लोड नहीं हो सके"
 
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "मॉडल सेटिंग्स लोड नहीं हो सकीं"
@@ -2525,9 +2527,7 @@ msgstr "अस्वीकार करें"
 msgid "Default"
 msgstr "डिफ़ॉल्ट"
 
-#. placeholder {0}: thinkingLevelLabel("medium")
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
@@ -2728,6 +2728,7 @@ msgstr "डिस्कनेक्ट हो रहा है…"
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/PasskeyOffer.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
+#: src/pages/shell/computer-panel.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Dismiss"
 msgstr "खारिज करें"
@@ -3191,10 +3192,6 @@ msgstr ""
 msgid "General"
 msgstr "सामान्य"
 
-#: src/components/InviteDialog.tsx
-msgid "Get a free month for each friend who starts a trial."
-msgstr "ट्रायल शुरू करने वाले हर दोस्त के लिए एक महीना मुफ़्त पाएँ।"
-
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
 msgstr "मोबाइल ऐप पाएँ"
@@ -3206,6 +3203,10 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "Git event"
 msgstr ""
+
+#: src/components/InviteDialog.tsx
+msgid "Give a friend {weeks} weeks free"
+msgstr "किसी दोस्त को {weeks} हफ़्ते मुफ़्त दें"
 
 #: src/pages/NotFound.tsx
 msgid "Go home"
@@ -3497,7 +3498,10 @@ msgstr "अंतराल इकाई"
 msgid "Invalid code"
 msgstr "अमान्य कोड"
 
-#: src/components/InviteDialog.tsx
+#: src/pages/shell/chat-header.tsx
+msgid "Invite a friend"
+msgstr "किसी दोस्त को आमंत्रित करें"
+
 #: src/components/SidebarFooter.tsx
 msgid "Invite friends"
 msgstr "दोस्तों को आमंत्रित करें"
@@ -3674,7 +3678,6 @@ msgstr "आवाज़ प्रोवाइडर्स लोड हो र�
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -4101,6 +4104,10 @@ msgid "Needs an OAuth client ID"
 msgstr "OAuth क्लाइंट ID चाहिए"
 
 #: src/pages/ActivityList.tsx
+msgid "Needs attention"
+msgstr "ध्यान देने की ज़रूरत"
+
+#: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "इनपुट चाहिए"
 
@@ -4352,10 +4359,6 @@ msgstr "अभी तक कुछ याद नहीं किया गया
 #: src/pages/shell/bot-panel.tsx
 msgid "Notifications"
 msgstr "सूचनाएं"
-
-#: src/pages/ActivityList.tsx
-msgid "Now"
-msgstr "अभी"
 
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth authorization was cancelled."
@@ -5138,6 +5141,10 @@ msgstr "कुंजी बदलें"
 msgid "Replace value"
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "Replaces the login saved for {replacedSite}"
+msgstr "{replacedSite} के लिए सहेजे गए लॉगिन को बदलता है"
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
 msgstr "जवाब देता है"
@@ -5241,7 +5248,6 @@ msgstr ""
 #: src/components/PasskeySettings.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
@@ -5355,14 +5361,11 @@ msgstr ""
 msgid "Same as {botName}"
 msgstr "{botName} जैसा"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Same as main model"
-msgstr "मुख्य मॉडल जैसा"
-
 #: src/lib/cron.ts
 msgid "Saturday"
 msgstr "शनिवार"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/AskCard.tsx
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
@@ -6185,8 +6188,11 @@ msgstr "ये फ़ाइलें या विकल्प अब मेल 
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr ""
 
+#: src/components/InviteDialog.tsx
+msgid "They get {weeks} weeks free."
+msgstr "उन्हें {weeks} हफ़्ते मुफ़्त मिलते हैं।"
+
 #: src/components/call/CallCard.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -6408,6 +6414,7 @@ msgstr "टूल आर्ग्युमेंट JSON ऑब्जेक्�
 msgid "Tool arguments must be JSON"
 msgstr "टूल आर्ग्युमेंट JSON होने चाहिए"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "टूल का नाम"
@@ -6495,10 +6502,6 @@ msgstr "अपना उत्तर लिखें"
 msgid "Unassigned"
 msgstr "असाइन नहीं किया गया"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Unavailable"
-msgstr "उपलब्ध नहीं"
-
 #: src/components/AskCard.tsx
 msgid "Undo"
 msgstr "पूर्ववत करें"
@@ -6519,6 +6522,10 @@ msgstr "अनम्यूट करें"
 #: src/pages/BotContextMenu.tsx
 msgid "Unpin"
 msgstr "पिन हटाएं"
+
+#: src/pages/ActivityList.tsx
+msgid "Unread"
+msgstr "अपठित"
 
 #. placeholder {0}: pending.file.name
 #: src/pages/shell/use-composer-actions.ts
@@ -6645,10 +6652,6 @@ msgstr ""
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
 msgstr ""
-
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Use provider default"
-msgstr "प्रदाता का डिफ़ॉल्ट इस्तेमाल करें"
 
 #: src/components/ModelCredits.tsx
 msgid "Use Rakazo credits"
@@ -6863,6 +6866,10 @@ msgstr ""
 msgid "Work"
 msgstr ""
 
+#: src/pages/ActivityList.tsx
+msgid "Working"
+msgstr "काम जारी"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Working instructions"
 msgstr "काम के निर्देश"
@@ -6916,6 +6923,10 @@ msgstr "आप यह विंडो बंद कर सकते हैं।
 msgid "You declined"
 msgstr "आपने कॉल अस्वीकार की"
 
+#: src/components/InviteDialog.tsx
+msgid "You get a free month when they start their trial with a new card."
+msgstr "जब वे नए कार्ड से अपना ट्रायल शुरू करते हैं, तो आपको एक महीना मुफ़्त मिलता है।"
+
 #: src/pages/shell/computer-overlay.tsx
 msgid "You have control"
 msgstr "नियंत्रण आपके पास है"
@@ -6928,6 +6939,10 @@ msgstr "आपका Anthropic"
 #: src/components/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "आज आपके कार्ड से {annualPrice} लिए जाएंगे, इस महीने के बचे हुए हिस्से को घटाकर।"
+
+#: src/pages/Shell.tsx
+msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
+msgstr "आपके कंप्यूटर की डिस्क लगभग भर गई है। जिन बिल्ड आउटपुट और कैश की अब ज़रूरत नहीं है, उन्हें हटाकर जगह खाली करें।"
 
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"

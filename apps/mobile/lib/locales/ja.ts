@@ -1,9 +1,6 @@
 export const JA_MESSAGES: Record<string, string> = {
-  Unavailable: "利用できません",
-  "Computer thinking": "コンピューター操作の思考レベル",
-  "Computer-use model": "コンピューター操作モデル",
-  "Same as main model": "メインモデルと同じ",
-  "Use provider default": "プロバイダーの既定値を使用",
+  "Add rule": "ルールを追加",
+  "Tool name": "ツール名",
   "Daily check-ins on unfinished work": "未完了の作業を毎日確認",
   "Pages this group builds for you appear here.":
     "このグループが作成したページがここに表示されます。",
@@ -263,7 +260,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "No matching bots": "一致するボットはありません",
   "No messages yet": "まだメッセージはありません",
   "No results": "結果はありません",
-  Now: "たった今",
   Personal: "個人",
   Recent: "最近",
   Search: "検索",
@@ -506,6 +502,10 @@ export const JA_MESSAGES: Record<string, string> = {
   Release: "操作を戻す",
   Skip: "スキップ",
   "Take control": "操作を引き継ぐ",
+  "Clean up": "整理する",
+  "Computer is {percent}% full": "コンピューターのディスクが {percent}% 使用中",
+  "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need.":
+    "コンピューターのディスクがほぼいっぱいです。不要になったビルド出力やキャッシュを削除して空き容量を確保してください。",
   "You have control": "あなたが操作中",
   "Active model": "使用中のモデル",
   "Authorization code": "認証コード",
@@ -681,6 +681,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Live working status": "作業状況をライブ表示",
   More: "その他",
   "Needs attention": "要対応",
+  Unread: "未読",
   "Notification settings": "通知設定",
   "Get notified when this Bot finishes or needs input":
     "このボットが完了したときや入力が必要なときに通知を受け取る",
@@ -710,6 +711,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Always allow": "常に許可",
   "Always allow this tool": "このツールを常に許可",
   "Always allow {site}": "{site} を常に許可",
+  "Replaces the login saved for {site}": "{site} に保存されたログインを置き換えます",
   "Could not submit answer": "回答を送信できませんでした",
   Deny: "拒否",
   "Please try again.": "もう一度お試しください。",
@@ -1300,6 +1302,12 @@ export const JA_MESSAGES: Record<string, string> = {
   "Invite friends": "友だちを招待",
   "Get a free month for each friend who starts a trial.":
     "友だちがトライアルを開始するたびに、1か月無料になります。",
+  "Invite a friend": "友だちを招待",
+  "Give a friend {weeks} weeks free": "友だちに{weeks}週間無料をプレゼント",
+  "They get {weeks} weeks free.": "友だちは{weeks}週間無料で使えます。",
+  "You get a free month when they start their trial with a new card.":
+    "友だちが新しいカードでトライアルを始めると、あなたは1か月無料になります。",
+  "Share link": "リンクを共有",
   "1 free month earned": "1か月分の無料期間を獲得",
   "{count} free months earned": "{count}か月分の無料期間を獲得",
   "Submit a plugin": "プラグインを申請",
