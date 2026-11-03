@@ -336,6 +336,34 @@ describe("computer screen", () => {
     expect(window?.textContent).toContain("Retry screen");
   });
 
+  it("keeps an unreachable screen's error while later reads rotate its token", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    respond(botWorking);
+    const original = rpc.getMockImplementation()!;
+    const expiresAt = Date.now() + 60 * 60_000;
+    let token = 0;
+    rpc.mockImplementation(async (method: string, ...args: unknown[]) => {
+      if (method !== "computer/screenUrl") return original(method, ...args);
+      token += 1;
+      return { url: `http://127.0.0.1:5180/novnc/session/view/${expiresAt}.t${token}/embed.html` };
+    });
+    const view = await render();
+    act(() => screens.error?.());
+    expect(view.textContent).toContain("Could not load the desktop.");
+    const mounted = screens.mounts;
+    const reads = calls("computer/screenUrl").length;
+    for (let poll = 0; poll < 5; poll += 1) {
+      await act(async () => vi.advanceTimersByTimeAsync(2_000));
+      await settle();
+    }
+    // The failed URL is read again once, and that fresh token alone does not reload the page.
+    expect(calls("computer/screenUrl").length).toBe(reads + 1);
+    expect(screens.mounts).toBe(mounted);
+    expect(view.textContent).toContain("Could not load the desktop.");
+    expect(view.textContent).toContain("Retry screen");
+    vi.useRealTimers();
+  });
+
   it("shows a fixed screen failure when the page stalls", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     respond(botWorking);

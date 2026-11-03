@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
+import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type {
   AdapterContext,
   CommandRequest,
@@ -23,25 +25,50 @@ import {
   SandboxUnresponsiveError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { abortableDelay, boundedSandboxCommandTimeoutMs, isRetryableError } from "@rakazo/core";
 import { boundedComputerActions, computerObservation } from "./computer-support.js";
 import { normalizeDesktopWorkspacePath } from "./desktop-sandbox-paths.js";
 import { McpSession } from "./mcp-transport.js";
+import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 import type { WuyingControlPlane } from "./wuying-openapi.js";
 import { WuyingOpenApi } from "./wuying-openapi.js";
 
 /** The tool namespace the desktop's MCP gateway serves its native system tools under. */
 const SYSTEM_TOOLS = "wuying-system-tool__";
+const GATEWAY_RECONNECT_MS = 500;
+// Only reads can be replayed after a lost response; commands and input may have already run.
+const RECONNECTABLE_TOOLS = new Set([
+  "env_get",
+  "fs_info",
+  "fs_list",
+  "fs_read",
+  "screen_capture",
+  "cursor_position",
+  "window_active",
+  "window_list",
+]);
+
+function gatewayCanReconnect(error: unknown) {
+  if (error instanceof StreamableHTTPError)
+    return error.code === 404 || isRetryableError({ status: error.code });
+  if (error instanceof McpError)
+    return error.code === ErrorCode.ConnectionClosed || error.code === ErrorCode.RequestTimeout;
+  return error instanceof TypeError;
+}
+
 const START_TIMEOUT_MS = 180_000;
 const STOP_TIMEOUT_MS = 120_000;
 const POLL_MS = 3_000;
 // The gateway's response budget: reads of at most 32 KiB, command output of at most 16 KiB and
-// commands of at most one minute per call.
+// commands of at most one minute per call. A foreground command stops short of that minute, so
+// the gateway's own timeout answers before the MCP client's 60-second one closes the connection.
 const READ_CHUNK_BYTES = 32 * 1024;
 const MAX_FILE_BYTES = 16 * 1024 * 1024;
 const LIST_LIMIT = 1_000;
+// Windows command lines stop at 32,767 characters, including the program and other arguments.
+const MAX_ENCODED_COMMAND_CHARS = 30_000;
 const OUTPUT_LIMIT = 16 * 1024;
-const MAX_COMMAND_MS = 60_000;
+const MAX_COMMAND_MS = 50_000;
 const RUN_POLL_MS = 1_000;
 /** Output a background command may stream per stream before the rest is dropped. */
 const MAX_STREAM_BYTES = 8 * 1024 * 1024;
@@ -79,6 +106,8 @@ export interface WuyingSandboxOptions {
   endUserId: string;
   mcpUrl: string;
   mcpToken: string;
+  /** Whether another running computer still uses this desktop. */
+  referenceInUse?: (computer: ComputerRef) => Promise<boolean>;
 }
 
 export function describeWuyingSandbox() {
@@ -104,21 +133,7 @@ export class WuyingMcpTools implements WuyingDesktopTools {
   constructor(private readonly options: { url: string; token: string }) {}
 
   async call(tool: string, args: Record<string, unknown>, signal: AbortSignal) {
-    let session: McpSession;
-    try {
-      session = await this.connect(signal);
-    } catch {
-      if (signal.aborted) throw signal.reason;
-      throw new SandboxUnresponsiveError("The computer gateway could not be reached");
-    }
-    let result: Awaited<ReturnType<McpSession["callTool"]>>;
-    try {
-      result = await session.callTool(`${SYSTEM_TOOLS}${tool}`, args, { signal });
-    } catch {
-      if (signal.aborted) throw signal.reason;
-      this.reset(session);
-      throw new SandboxUnresponsiveError(`The computer did not answer ${tool}`);
-    }
+    const result = await this.request(tool, args, signal);
     const content = Array.isArray(result.content) ? result.content : [];
     const text = content
       .flatMap((item) => (item.type === "text" ? [item.text] : []))
@@ -141,6 +156,36 @@ export class WuyingMcpTools implements WuyingDesktopTools {
     };
   }
 
+  private async request(tool: string, args: Record<string, unknown>, signal: AbortSignal) {
+    for (let attempt = 0; ; attempt++) {
+      signal.throwIfAborted();
+      const pending = this.connect(signal);
+      let session: McpSession | undefined;
+      try {
+        session = await pending;
+        return await session.callTool(`${SYSTEM_TOOLS}${tool}`, args, { signal });
+      } catch (error) {
+        const broken = gatewayCanReconnect(error);
+        // Every bot's calls share the connection, so one cancelled or refused call keeps it.
+        if (session && broken) {
+          // Another failed call may have already replaced this connection.
+          if (this.session === pending) this.session = undefined;
+          void session.close();
+        }
+        signal.throwIfAborted();
+        if (attempt === 0 && (!session || RECONNECTABLE_TOOLS.has(tool)) && broken) {
+          await abortableDelay(GATEWAY_RECONNECT_MS, signal);
+          continue;
+        }
+        throw new SandboxUnresponsiveError(
+          session
+            ? `The computer did not answer ${tool}`
+            : "The computer gateway could not be reached",
+        );
+      }
+    }
+  }
+
   private connect(signal: AbortSignal) {
     this.session ??= (async () => {
       const session = new McpSession({ name: "rakazo-wuying" });
@@ -156,11 +201,6 @@ export class WuyingMcpTools implements WuyingDesktopTools {
       if (this.session === pending) this.session = undefined;
     });
     return pending;
-  }
-
-  private reset(session: McpSession) {
-    void session.close();
-    this.session = undefined;
   }
 }
 
@@ -278,9 +318,9 @@ export function windowsKeyChord(
   return { sendKeys: `${held.map((modifier) => modifier.sendKeys).join("")}${code}` };
 }
 
-/** A PowerShell single-quoted string literal. */
-function psLiteral(value: string) {
-  return `'${value.replace(/'/g, "''")}'`;
+/** A PowerShell single-quoted string literal. PowerShell also closes one on curly single quotes. */
+export function psLiteral(value: string) {
+  return `'${value.replace(/['\u2018\u2019\u201A\u201B]/g, "$&$&")}'`;
 }
 
 /** Runs a UTF-8 script file without the execution policy that gates `-File`. */
@@ -349,7 +389,10 @@ export class WuyingSandboxProvider implements SandboxProvider {
   private readonly runApps = new Map<string, Set<string>>();
 
   constructor(
-    private readonly options: Pick<WuyingSandboxOptions, "desktopId" | "endUserId"> & {
+    private readonly options: Pick<
+      WuyingSandboxOptions,
+      "desktopId" | "endUserId" | "referenceInUse"
+    > & {
       regionId: string;
     },
     private readonly control: WuyingControlPlane,
@@ -359,7 +402,12 @@ export class WuyingSandboxProvider implements SandboxProvider {
   static fromOptions(options: WuyingSandboxOptions) {
     const regionId = options.regionId?.trim() || "cn-hangzhou";
     return new WuyingSandboxProvider(
-      { desktopId: options.desktopId, endUserId: options.endUserId, regionId },
+      {
+        desktopId: options.desktopId,
+        endUserId: options.endUserId,
+        regionId,
+        referenceInUse: options.referenceInUse,
+      },
       new WuyingOpenApi({
         accessKeyId: options.accessKeyId,
         accessKeySecret: options.accessKeySecret,
@@ -418,6 +466,10 @@ export class WuyingSandboxProvider implements SandboxProvider {
           .catch(() => undefined),
       ),
     );
+  }
+
+  ownsReference(computer: Pick<ComputerRef, "kind" | "providerRef">) {
+    return computer.kind === "wuying" && computer.providerRef === this.options.desktopId;
   }
 
   async isRunning(computer: ComputerRef, context: AdapterContext) {
@@ -554,14 +606,31 @@ export class WuyingSandboxProvider implements SandboxProvider {
     await this.mkdirs(dir, signal);
     let { program, args } = command;
     const script = args.indexOf("-Command");
-    // A PowerShell command goes through a file, so no quoting can change what it says.
     if (/^(powershell|pwsh)(\.exe)?$/i.test(program) && script >= 0 && script + 1 < args.length) {
-      await this.tools.call(
-        "fs_write",
-        { path: `${dir}\\command.ps1`, data: args[script + 1], encoding: "utf8", overwrite: true },
-        signal,
-      );
-      args = [...args.slice(0, script + 1), psRunFile(`${dir}\\command.ps1`)];
+      // Encoded, the command needs no quoting and keeps the exit code -Command gives it in the
+      // foreground. Only one too long for a command line goes through a file, which loses that.
+      const encoded = Buffer.from(args[script + 1] ?? "", "utf16le").toString("base64");
+      const encodedArgs = [
+        ...args.slice(0, script),
+        "-EncodedCommand",
+        encoded,
+        ...args.slice(script + 2),
+      ];
+      if ([program, ...encodedArgs].join(" ").length <= MAX_ENCODED_COMMAND_CHARS) {
+        args = encodedArgs;
+      } else {
+        await this.tools.call(
+          "fs_write",
+          {
+            path: `${dir}\\command.ps1`,
+            data: args[script + 1],
+            encoding: "utf8",
+            overwrite: true,
+          },
+          signal,
+        );
+        args = [...args.slice(0, script + 1), psRunFile(`${dir}\\command.ps1`)];
+      }
     }
     await this.tools.call(
       "fs_write",
@@ -894,14 +963,26 @@ export class WuyingSandboxProvider implements SandboxProvider {
   ): AsyncIterable<PortableFile> {
     const files: ComputerFileEntry[] = [];
     let bytes = 0;
+    const executables = await this.executables(computer, context.signal);
     const walk = async (relative: string) => {
-      for (const entry of await this.listFiles(computer, relative, context)) {
-        if (entry.kind === "dir") {
-          await walk(entry.path);
+      const directory = await this.target(computer, relative, context.signal);
+      const entries = await this.list(
+        directory,
+        context.signal,
+        () => new WorkspaceTooLargeError("files"),
+      );
+      for (const { name, kind, size } of entries) {
+        if (!relative && name === EXECUTABLES_FILE) continue;
+        const path = relative ? `${relative}/${name}` : name;
+        // The same caches and dependency folders every other computer leaves out of a save.
+        if (shouldSkipPortableWorkspaceFile(path, kind === "dir")) continue;
+        if (kind === "dir") {
+          await walk(path);
           continue;
         }
-        bytes += entry.size;
-        files.push(entry);
+        if (size > MAX_FILE_BYTES) throw new WorkspaceTooLargeError("bytes");
+        bytes += size;
+        files.push({ path, kind, size, ...(executables.has(path) ? { executable: true } : {}) });
         if (limits && bytes > limits.maxBytes) throw new WorkspaceTooLargeError("bytes");
         if (limits && files.length > limits.maxFiles) throw new WorkspaceTooLargeError("files");
       }
@@ -928,13 +1009,20 @@ export class WuyingSandboxProvider implements SandboxProvider {
     throw new Error("Snapshots are not available on Wuying computers");
   }
 
+  /** Computers share the desktop, so it powers off only when the last one stops. */
   async stop(computer: ComputerRef, context: AdapterContext) {
     if (computer.providerRef !== this.options.desktopId) return;
+    if (await this.options.referenceInUse?.(computer)) return;
     const status = await this.control.desktopStatus(this.options.desktopId, context.signal);
     if (status === "Stopped" || status === null) return;
     if (status !== "Stopping")
       await this.control.stopDesktop(this.options.desktopId, context.signal);
     await this.waitFor("Stopped", STOP_TIMEOUT_MS, context.signal);
+    // A computer that started on the desktop while it powered off needs it back on.
+    if (await this.options.referenceInUse?.(computer)) {
+      await this.control.startDesktop(this.options.desktopId, context.signal);
+      await this.waitFor("Running", START_TIMEOUT_MS, context.signal);
+    }
   }
 
   /** The desktop belongs to the account, so only this computer's home folder is removed. */
@@ -1029,7 +1117,11 @@ export class WuyingSandboxProvider implements SandboxProvider {
     }
   }
 
-  private async list(directory: string, signal: AbortSignal) {
+  private async list(
+    directory: string,
+    signal: AbortSignal,
+    overflow = () => new Error(`computer folder has more than ${LIST_LIMIT} entries`),
+  ) {
     const { data } = await this.tools.call(
       "fs_list",
       { path: directory, limit: LIST_LIMIT },
@@ -1039,7 +1131,7 @@ export class WuyingSandboxProvider implements SandboxProvider {
       entries?: { kind?: string; path?: string; size?: number }[];
       truncated?: boolean;
     };
-    if (listing.truncated) throw new Error(`computer folder has more than ${LIST_LIMIT} entries`);
+    if (listing.truncated) throw overflow();
     return (listing.entries ?? []).flatMap((entry) => {
       const name = entry.path?.split("\\").pop();
       if (!name || entry.kind === "symlink") return [];

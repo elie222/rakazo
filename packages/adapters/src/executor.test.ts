@@ -1905,6 +1905,8 @@ describe("createRunExecutor", () => {
     expect(tools.some((tool) => tool.startsWith("scratchpad_"))).toBe(false);
     expect(tools).not.toContain("board_tickets");
     expect(tools.some((tool) => tool.startsWith("ticket_"))).toBe(false);
+    expect(tools.some((tool) => tool.startsWith("schedule_"))).toBe(false);
+    expect(tools.some((tool) => tool.startsWith("skill_"))).toBe(false);
     expect(tools).toContain("web_fetch");
   });
 

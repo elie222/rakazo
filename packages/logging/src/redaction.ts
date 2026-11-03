@@ -74,8 +74,12 @@ const SECRET_ASSIGNMENT =
 // Quoted keys follow the structured-binding rule: any key containing a secret name.
 const JSON_SECRET_FIELD =
   /"(?=[A-Za-z0-9_-]*(?:password|passwd|secret|token|authorization|apikey|api_key|api-key|email|cookie|credential))([A-Za-z0-9_-]+)"\s*:\s*"(?:\\.|[^"\\])*"/gi;
-const BARE_SECRET =
-  /\b(?:sk-(?:or-v1-)?[A-Za-z0-9_-]{8,}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|(?:ak_|ck_)[A-Za-z0-9]+)\b/g;
+const BARE_SECRET = /\b(?:sk-(?:or-v1-)?[A-Za-z0-9_-]{8,}|(?:ak_|ck_)[A-Za-z0-9]+)\b/g;
+// Consume failed JWT headers once; keys within a failed header still need redaction.
+const BARE_SECRET_CANDIDATE = new RegExp(
+  `${BARE_SECRET.source}|\\beyJ[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+)?\\b`,
+  "g",
+);
 // Profile paths leak the account name; leave later drive prefixes available for independent redaction.
 const WINDOWS_PROFILE = /[A-Z]:[\\/]Users[\\/](?:(?![A-Z]:[\\/])[^\\/\r\n])+/gi;
 const POSIX_PROFILE = /(?:\/Users\/|\/home\/)[^/\s]+/g;
@@ -91,7 +95,11 @@ export function redactSensitiveText(text: string): string {
     .replace(JSON_SECRET_FIELD, `"$1":"${REDACTED}"`)
     .replace(BEARER, `Bearer ${REDACTED}`)
     .replace(SECRET_ASSIGNMENT, (_match, key: string) => `${key}=${REDACTED}`)
-    .replace(BARE_SECRET, REDACTED)
+    .replace(BARE_SECRET_CANDIDATE, (candidate) =>
+      candidate.startsWith("eyJ") && !candidate.includes(".")
+        ? candidate.replace(BARE_SECRET, REDACTED)
+        : REDACTED,
+    )
     .replace(WINDOWS_PROFILE, "[user]")
     .replace(POSIX_PROFILE, "/[user]");
 }

@@ -11,6 +11,8 @@ import type { DesktopStackProbeResponse } from "@rakazo/contracts";
 import { buildIdAt } from "@rakazo/contracts/client-build";
 import {
   appContentSecurityPolicy,
+  COMPUTER_SCREEN_PREFIX,
+  COMPUTER_SCREEN_RUNTIME_PATH,
   CSP_REPORTING_ENDPOINTS,
   contentSecurityPolicyFor,
   parseContentSecuritySources,
@@ -25,6 +27,8 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import type { PreviewServer, ViteDevServer } from "vite";
 import { defineConfig, loadEnv } from "vite";
+import { wuyingScreenAssets } from "../../packages/adapters/src/wuying-screen-assets.ts";
+import { wuyingScreenPolicy } from "../../packages/adapters/src/wuying-screen-policy.ts";
 import { resolveScreenProxySecret } from "../../packages/core/src/secrets-guard.ts";
 import { createServiceLogger } from "../../packages/logging/src/env.ts";
 import { apiProxy } from "./src/api-proxy.js";
@@ -531,11 +535,41 @@ export default defineConfig(({ command, mode }) => {
       tailwindcss(),
       rakazoPwa(buildId),
       {
-        // Production only: the dev server injects inline scripts for React Refresh.
+        // Dev keeps React Refresh unrestricted in app pages; screen documents always use CSP.
         name: "rakazo-content-security-policy",
+        generateBundle() {
+          for (const [pathname, asset] of Object.entries(wuyingScreenAssets)) {
+            this.emitFile({ type: "asset", fileName: pathname.slice(1), source: asset.source });
+          }
+        },
+        configureServer(server) {
+          server.middlewares.use((req, res, next) => {
+            const pathname = req.url?.split("?", 1)[0] ?? "/";
+            if (pathname.startsWith(COMPUTER_SCREEN_PREFIX)) {
+              res.setHeader(
+                "content-security-policy",
+                contentSecurityPolicyFor(pathname, appPolicy, wuyingScreenPolicy)!,
+              );
+              if (pathname !== COMPUTER_SCREEN_RUNTIME_PATH)
+                res.setHeader("x-frame-options", "SAMEORIGIN");
+            }
+            const asset = Object.hasOwn(wuyingScreenAssets, pathname)
+              ? wuyingScreenAssets[pathname]
+              : undefined;
+            if (asset) {
+              res.setHeader("content-type", asset.type);
+              res.end(asset.source);
+              return;
+            }
+            next();
+          });
+        },
         configurePreviewServer(server) {
           server.middlewares.use((req, res, next) => {
-            const policy = contentSecurityPolicyFor(req.url?.split("?", 1)[0] ?? "/", appPolicy);
+            const pathname = req.url?.split("?", 1)[0] ?? "/";
+            if (pathname !== COMPUTER_SCREEN_RUNTIME_PATH)
+              res.setHeader("x-frame-options", "SAMEORIGIN");
+            const policy = contentSecurityPolicyFor(pathname, appPolicy, wuyingScreenPolicy);
             if (policy) {
               res.setHeader("content-security-policy", policy);
               res.setHeader("reporting-endpoints", CSP_REPORTING_ENDPOINTS);

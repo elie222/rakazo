@@ -45,8 +45,12 @@ const messageHash = (message: Message) =>
     .digest("hex");
 /** A rebuild breaks the cached prefix, so it must drop at least this much stale content (estimated). */
 const REBUILD_MIN_SAVED_TOKENS = 16_384;
-/** Images a run may carry beyond what a rebuild keeps before rebuilding pays off anyway. */
-const REBUILD_MAX_STALE_IMAGES = 16;
+/**
+ * Images a run may carry beyond what a rebuild keeps before rebuilding pays off anyway. Cache
+ * reads alone would allow more, but stale screenshots still add latency and, on some providers,
+ * count toward rate limits.
+ */
+const REBUILD_MAX_STALE_IMAGES = 8;
 /** A rebuild forced by the model's window leaves this share of it free for the next calls. */
 const REBUILD_HEADROOM = 0.25;
 export interface Size {

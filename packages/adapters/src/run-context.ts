@@ -202,6 +202,8 @@ export interface RunState {
 
 export interface RunComputerContext {
   stored: Computer;
+  /** Where the computer starts this run, which can differ from `stored` before it provisions. */
+  kind?: string;
   mode: ComputerMode;
   lease: ComputerExecutionLease | null;
   lazy: ReturnType<typeof lazyRunComputer>;

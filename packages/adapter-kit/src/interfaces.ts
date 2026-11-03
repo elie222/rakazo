@@ -97,6 +97,8 @@ import type {
 } from "./types.js";
 
 export interface SandboxProvider {
+  /** Providers tied to one external desktop reject references belonging to another connection. */
+  ownsReference?(computer: Pick<ComputerRef, "kind" | "providerRef">): boolean;
   /** True when every running minute is billed, so the active-lifetime cap applies. */
   billsWhileRunning?(computer: Pick<ComputerRef, "kind">): boolean;
   describe(): AdapterDescriptor<SandboxCapabilities>;
@@ -135,9 +137,10 @@ export interface SandboxProvider {
   ): Promise<ComputerRef>;
   /**
    * The kind provision() would return now, without starting anything. Only providers that
-   * choose between kinds at provision time implement it.
+   * choose between kinds at provision time implement it. `homeKey` names the computer when the
+   * choice can depend on whose it is.
    */
-  provisionKind?(): Promise<ComputerRef["kind"]>;
+  provisionKind?(homeKey?: string): Promise<ComputerRef["kind"]>;
   /**
    * Read-only probe that never starts or resumes anything. Resolves true only when the provider
    * reports this exact reference running, and false only when it reports it not running or gone;

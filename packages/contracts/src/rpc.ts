@@ -71,6 +71,8 @@ import {
   CapabilityInstallSchema,
   CONNECTION_LABEL_MAX_LENGTH,
   ComputerModeSchema,
+  ComputerProviderSettingsSchema,
+  ComputerProviderUpdateSchema,
   ComputerReleaseReasonSchema,
   ComputerStatusSchema,
   ComputerUpdateSchema,
@@ -359,6 +361,16 @@ export const appContract = {
         }),
       )
       .output(DeploymentSettingsSchema),
+  },
+  /** Admin choice of where new computers run, with that provider's connection settings. */
+  computerProvider: {
+    get: oc.output(ComputerProviderSettingsSchema),
+    update: oc.input(ComputerProviderUpdateSchema).output(ComputerProviderSettingsSchema),
+    /** The signed-in account's provider for Team Computers, over the default. */
+    account: {
+      get: oc.output(ComputerProviderSettingsSchema),
+      update: oc.input(ComputerProviderUpdateSchema).output(ComputerProviderSettingsSchema),
+    },
   },
   /** Deployment-owner view of the append-only security event log, newest first. */
   security: {

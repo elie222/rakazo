@@ -444,6 +444,14 @@ msgstr ""
 msgid "About {label}"
 msgstr "关于{label}"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key ID"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key secret"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Access token (optional)"
 msgstr "访问令牌（可选）"
@@ -791,6 +799,7 @@ msgid "Any model, with your own key"
 msgstr "任意模型，使用你自己的密钥"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/lib/localized-provider-hint.ts
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/model-settings/compatible-key-field.tsx
@@ -811,6 +820,14 @@ msgstr "API 密钥请求头"
 #: src/pages/shell/agent-import.tsx
 msgid "API keys"
 msgstr "API 密钥"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API URL"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
@@ -1976,6 +1993,10 @@ msgstr "无法加载账单"
 msgid "Could not load bots. Reload to try again."
 msgstr "无法加载 Bot。请重新加载后再试。"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not load computer settings"
+msgstr ""
+
 #: src/components/VaultSettings.tsx
 msgid "Could not load credentials."
 msgstr "无法加载凭据。"
@@ -2136,6 +2157,10 @@ msgstr "无法保存"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
 msgstr "无法保存自动审核"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not save computer settings"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "Could not save group"
@@ -2534,6 +2559,11 @@ msgstr "已拒绝"
 msgid "Deny"
 msgstr "拒绝"
 
+#. placeholder {0}: settings.defaultProvider
+#: src/components/ComputerProviderSettings.tsx
+msgid "Deployment default ({0})"
+msgstr ""
+
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Description"
@@ -2546,6 +2576,10 @@ msgstr "设计"
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop app"
 msgstr "桌面应用"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Desktop ID"
+msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop update"
@@ -2755,6 +2789,10 @@ msgstr "需要验证邮箱"
 msgid "Enable {0}"
 msgstr "启用 {0}"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "End user ID"
+msgstr ""
+
 #: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr "将于 {day} 结束"
@@ -2789,6 +2827,10 @@ msgstr "请输入 1 到 1000 之间的整数作为图像限制。"
 #: src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
 msgstr "测试前请输入 API 密钥。"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Environment ID"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
@@ -3056,6 +3098,14 @@ msgstr "全屏"
 #: src/pages/Onboarding.tsx
 msgid "Gateway ID"
 msgstr "网关 ID"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway URL"
+msgstr ""
 
 #: src/pages/settings-nav.ts
 #: src/pages/SettingsOverlay.tsx
@@ -3911,6 +3961,10 @@ msgstr "静音"
 msgid "Muted"
 msgstr "已静音"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "My computers"
+msgstr ""
+
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -3984,6 +4038,10 @@ msgstr "新消息"
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "New bot"
 msgstr "新建 Bot"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "New computers run on"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"
@@ -4345,6 +4403,10 @@ msgstr "可选请求头值"
 #: src/pages/Onboarding.tsx
 msgid "Or paste an API key"
 msgstr "或粘贴 API 密钥"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Organization"
+msgstr ""
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
@@ -4758,6 +4820,10 @@ msgstr "刷新画面"
 msgid "Refreshing…"
 msgstr "正在刷新…"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Region"
+msgstr ""
+
 #: src/lib/user-error.ts
 msgid "Registration is closed"
 msgstr "注册已关闭"
@@ -5042,6 +5108,10 @@ msgstr "撤销"
 msgid "Revoked"
 msgstr ""
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Root filesystem"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Rotate key"
 msgstr "轮换密钥"
@@ -5117,6 +5187,7 @@ msgid "Saturday"
 msgstr "周六"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5151,6 +5222,7 @@ msgid "Save to Vault"
 msgstr "保存到保管库"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Saved"
@@ -5376,6 +5448,7 @@ msgstr "设置完成"
 msgid "Setup help"
 msgstr "设置帮助"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Shape"
 msgstr "形状"
@@ -5792,6 +5865,10 @@ msgstr "表格"
 msgid "Take control"
 msgstr "接管控制权"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Target"
+msgstr ""
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "示范任务"
@@ -5811,6 +5888,10 @@ msgstr "团队电脑"
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
 msgstr "Teams 消息"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Template"
+msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"

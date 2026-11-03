@@ -403,6 +403,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       boatApiUrl: env.boatApiUrl,
       dataDir: env.dataDir,
       prisma,
+      secrets,
     }));
   const mcpOAuth = new McpOAuthBroker(
     prisma,
@@ -1054,6 +1055,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       prisma,
       events,
       jobs,
+      sandbox,
       provision: (request, policyEnv) => provisionMessagingIdentity(prisma, request, policyEnv),
       openSignup: env.messagingOpenSignup,
       signupPolicy: {

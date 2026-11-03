@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ToolRequest } from "./run-tool-request.js";
 import { prepareToolRequest } from "./run-tool-request.js";
 
@@ -72,4 +72,54 @@ describe("prepareToolRequest: update_bot owner settings after outside content", 
       await expect(prepareToolRequest(ctx as never, request())).resolves.toBeUndefined();
     }
   });
+});
+
+describe("private task tools after shared-channel messages", () => {
+  it.each([
+    "schedule_create",
+    "schedule_list",
+    "schedule_update",
+    "schedule_cancel",
+    "skill_read",
+    "skill_create",
+    "skill_update",
+    "skill_delete",
+  ])("refuses %s for original and claimed shared-channel messages", async (name) => {
+    for (const originalChannel of [true, false]) {
+      const ctx = {
+        deps: {
+          prisma: { steeringMessage: { findFirst: vi.fn(async () => ({ id: "claimed" })) } },
+        },
+        run: {},
+        bot: {},
+        runId: "run-1",
+        source: { messagingChannelRun: originalChannel },
+      };
+      const request = { name, args: {}, executionId: "call-1" } as ToolRequest;
+      await expect(prepareToolRequest(ctx as never, request)).resolves.toEqual({
+        error: "This tool is unavailable after a shared-channel message.",
+      });
+    }
+  });
+
+  it.each(["user", "bot_message", "webhook"])(
+    "keeps %s task tools available without a channel message",
+    async (trigger) => {
+      const ctx = {
+        deps: { prisma: { steeringMessage: { findFirst: async () => null } } },
+        run: { trigger },
+        bot: {},
+        runId: "run-1",
+        source: { messagingChannelRun: false },
+      };
+      for (const name of ["schedule_update", "skill_read"]) {
+        await expect(
+          prepareToolRequest(
+            ctx as never,
+            { name, args: {}, executionId: "call-1" } as ToolRequest,
+          ),
+        ).resolves.toBeUndefined();
+      }
+    },
+  );
 });
