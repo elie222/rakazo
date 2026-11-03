@@ -101,11 +101,6 @@ msgstr "{0} {unitLabel}"
 msgid "{0} connection"
 msgstr "{0} verbinding"
 
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} default"
-msgstr "{0} standaard"
-
 #. placeholder {0}: parts.amount
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} GB"
@@ -150,11 +145,6 @@ msgstr "{0} rollup-uren"
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} TB"
 msgstr "{0} TB"
-
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} will still respond to direct mentions."
-msgstr "{0} reageert nog steeds op directe vermeldingen."
 
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
@@ -962,10 +952,6 @@ msgstr "Auto"
 msgid "Automated senders"
 msgstr "Geautomatiseerde afzenders"
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Automated senders will appear after they post here."
-msgstr "Geautomatiseerde afzenders verschijnen zodra ze hier iets plaatsen."
-
 #: src/pages/RoutineEditor.tsx
 msgid "Available after the routine is saved"
 msgstr "Beschikbaar zodra de routine is opgeslagen"
@@ -1584,6 +1570,7 @@ msgstr "Bevestig dat de URL vanuit deze browsersessie bereikbaar is en test daar
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
+#: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connect"
 msgstr "Verbinden"
@@ -2772,10 +2759,6 @@ msgstr "{0} inschakelen"
 msgid "Ends {day}"
 msgstr "Eindigt op {day}"
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Engage when... Ignore..."
-msgstr "Reageren wanneer... Negeren..."
-
 #: src/components/GitHubStarPrompt.tsx
 msgid "Enjoying Rakazo?"
 msgstr ""
@@ -2864,6 +2847,10 @@ msgstr "Elk uur"
 #: src/lib/cron.ts
 msgid "Every hour at :{0}"
 msgstr "Elk uur om :{0}"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Every message"
+msgstr "Elk bericht"
 
 #: src/lib/cron.ts
 msgid "Every Monday"
@@ -3348,6 +3335,10 @@ msgstr "Instructies {position}"
 msgid "Instructions are too long. Untick some files."
 msgstr "De instructies zijn te lang. Vink een paar bestanden uit."
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Instructions for this room"
+msgstr "Instructies voor deze ruimte"
+
 #: src/components/AskCard.tsx
 msgid "Instructions updated"
 msgstr "Instructies bijgewerkt"
@@ -3482,12 +3473,7 @@ msgstr "SSO koppelen"
 msgid "List view"
 msgstr "Lijstweergave"
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Listen"
-msgstr "Luisteren"
-
 #: src/components/call/CallCard.tsx
-#: src/pages/ExternalConversationSettings.tsx
 msgid "Listening"
 msgstr "Luistert"
 
@@ -4914,6 +4900,10 @@ msgstr "Sleutel vervangen"
 msgid "Replace value"
 msgstr "Waarde vervangen"
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Replies to"
+msgstr "Reageert op"
+
 #: src/pages/shell/message-hover-actions.tsx
 #: src/pages/shell/quote-selection-button.tsx
 msgid "Reply"
@@ -4941,6 +4931,7 @@ msgid "Research & writing"
 msgstr "Onderzoek & schrijven"
 
 #: src/components/ComputerMaintenanceActions.tsx
+#: src/pages/ExternalConversationSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Reset"
 msgstr "Opnieuw instellen"
@@ -5051,10 +5042,6 @@ msgstr "Intrekken"
 msgid "Revoked"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Room guidance"
-msgstr "Ruimte-instructies"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Rotate key"
 msgstr "Sleutel roteren"
@@ -5120,6 +5107,10 @@ msgstr "Draait wanneer deze bot een geverifieerd bericht van deze aanbieder ontv
 #: src/pages/PluginsOverlay.tsx
 msgid "Sales & CRM"
 msgstr ""
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Same as {botName}"
+msgstr "Zelfde als {botName}"
 
 #: src/lib/cron.ts
 msgid "Saturday"
@@ -6327,10 +6318,6 @@ msgstr "Een gevonden model gebruiken"
 #: src/lib/model-connection-preflight.ts
 msgid "Use Connect to verify the key."
 msgstr "Gebruik Verbinden om de sleutel te verifiëren."
-
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Use default guidance"
-msgstr "Standaardrichtlijnen gebruiken"
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Use defaults"

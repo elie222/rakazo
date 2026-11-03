@@ -101,11 +101,6 @@ msgstr "{0} {unitLabel}"
 msgid "{0} connection"
 msgstr "{0} कनेक्शन"
 
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} default"
-msgstr ""
-
 #. placeholder {0}: parts.amount
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} GB"
@@ -150,11 +145,6 @@ msgstr ""
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} TB"
 msgstr "{0} TB"
-
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} will still respond to direct mentions."
-msgstr ""
 
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
@@ -962,10 +952,6 @@ msgstr "ऑटो"
 msgid "Automated senders"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Automated senders will appear after they post here."
-msgstr ""
-
 #: src/pages/RoutineEditor.tsx
 msgid "Available after the routine is saved"
 msgstr ""
@@ -1584,6 +1570,7 @@ msgstr "पुष्टि करें कि यह URL इस ब्राउ
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
+#: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connect"
 msgstr "कनेक्ट करें"
@@ -2772,10 +2759,6 @@ msgstr "{0} सक्षम करें"
 msgid "Ends {day}"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Engage when... Ignore..."
-msgstr ""
-
 #: src/components/GitHubStarPrompt.tsx
 msgid "Enjoying Rakazo?"
 msgstr ""
@@ -2864,6 +2847,10 @@ msgstr "हर घंटे"
 #: src/lib/cron.ts
 msgid "Every hour at :{0}"
 msgstr "हर घंटे :{0} मिनट पर"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Every message"
+msgstr "हर संदेश"
 
 #: src/lib/cron.ts
 msgid "Every Monday"
@@ -3348,6 +3335,10 @@ msgstr "निर्देश {position}"
 msgid "Instructions are too long. Untick some files."
 msgstr "निर्देश बहुत लंबे हैं। कुछ फ़ाइलों से टिक हटाएँ।"
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Instructions for this room"
+msgstr "इस रूम के लिए निर्देश"
+
 #: src/components/AskCard.tsx
 msgid "Instructions updated"
 msgstr "निर्देश अपडेट किए गए"
@@ -3482,12 +3473,7 @@ msgstr "SSO लिंक करें"
 msgid "List view"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Listen"
-msgstr ""
-
 #: src/components/call/CallCard.tsx
-#: src/pages/ExternalConversationSettings.tsx
 msgid "Listening"
 msgstr "सुन रहा है"
 
@@ -4914,6 +4900,10 @@ msgstr "कुंजी बदलें"
 msgid "Replace value"
 msgstr ""
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Replies to"
+msgstr "जवाब देता है"
+
 #: src/pages/shell/message-hover-actions.tsx
 #: src/pages/shell/quote-selection-button.tsx
 msgid "Reply"
@@ -4941,6 +4931,7 @@ msgid "Research & writing"
 msgstr ""
 
 #: src/components/ComputerMaintenanceActions.tsx
+#: src/pages/ExternalConversationSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Reset"
 msgstr "रीसेट करें"
@@ -5051,10 +5042,6 @@ msgstr ""
 msgid "Revoked"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Room guidance"
-msgstr ""
-
 #: src/pages/RoutineEditor.tsx
 msgid "Rotate key"
 msgstr ""
@@ -5120,6 +5107,10 @@ msgstr ""
 #: src/pages/PluginsOverlay.tsx
 msgid "Sales & CRM"
 msgstr ""
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Same as {botName}"
+msgstr "{botName} जैसा"
 
 #: src/lib/cron.ts
 msgid "Saturday"
@@ -6327,10 +6318,6 @@ msgstr "मिला हुआ मॉडल उपयोग करें"
 #: src/lib/model-connection-preflight.ts
 msgid "Use Connect to verify the key."
 msgstr "कुंजी जाँचने के लिए कनेक्ट करें का उपयोग करें।"
-
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Use default guidance"
-msgstr ""
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Use defaults"

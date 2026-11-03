@@ -1,9 +1,9 @@
 import type { Me, PaymentWalletStatus } from "@rakazo/contracts";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
-import { Alert, AppState, Linking, ScrollView, StyleSheet, View } from "react-native";
+import { Alert, AppState, Linking, ScrollView, StyleSheet } from "react-native";
 import { LoadFailure } from "../../components/load-failure";
-import { SettingsGroup, SettingsRow } from "../../components/settings-group";
+import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
 import { rpc } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { useSideInsets } from "../../lib/side-insets";
@@ -18,6 +18,7 @@ type Provider = NonNullable<Me["paymentWalletProvider"]>;
 export default function WalletSettings() {
   const { t } = useI18n();
   const sideInsets = useSideInsets();
+  const stacked = useStackedSettings();
   const [provider, setProvider] = useState<Provider | null>(null);
   const [status, setStatus] = useState<PaymentWalletStatus | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -87,12 +88,12 @@ export default function WalletSettings() {
   const disconnect = () => void act(() => rpc("paymentWallet/disconnect"));
 
   return (
-    <ScrollView style={sideInsets} contentInsetAdjustmentBehavior="automatic">
-      {loadError && !status ? (
-        <View style={styles.failure}>
-          <LoadFailure message={loadError} onRetry={reload} />
-        </View>
-      ) : null}
+    <ScrollView
+      style={sideInsets}
+      contentContainerStyle={[styles.content, stacked && styles.compactContent]}
+      contentInsetAdjustmentBehavior="automatic"
+    >
+      {loadError && !status ? <LoadFailure message={loadError} onRetry={reload} /> : null}
       {provider && status ? (
         <SettingsGroup>
           {status.status === "disconnected" ? (
@@ -144,4 +145,7 @@ export default function WalletSettings() {
   );
 }
 
-const styles = StyleSheet.create({ failure: { padding: 16 } });
+const styles = StyleSheet.create({
+  content: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 32 },
+  compactContent: { paddingHorizontal: 8 },
+});

@@ -9,6 +9,7 @@ import TeamConversationSettings from "../app/(settings)/team-conversation";
 import { rpc } from "./api";
 
 const back = vi.fn();
+const navigation = vi.hoisted(() => ({ options: {} as Record<string, unknown> }));
 vi.mock("./api", () => ({ rpc: vi.fn() }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({
@@ -25,35 +26,20 @@ vi.mock("./i18n", () => ({
       message.replace(/\{(\w+)\}/g, (_, key: string) => values[key] ?? ""),
   }),
 }));
+vi.mock("../lib/native-controls", () => ({ iosAtLeast: () => false }));
 vi.mock("expo-router", () => ({
-  Stack: { Screen: () => null },
+  useNavigation: () => ({
+    setOptions: (options: Record<string, unknown>) => Object.assign(navigation.options, options),
+  }),
   useLocalSearchParams: () => ({ conversationId: "room-1" }),
   useRouter: () => ({ back }),
 }));
-vi.mock("../components/glass-title", () => ({ glassHeaderOptions: () => ({}) }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) => (
     <button type="button" onClick={onPress}>
       {label}
     </button>
-  ),
-}));
-vi.mock("../components/native-segmented-control", () => ({
-  NativeSegmentedControl: ({
-    options,
-    onChange,
-  }: {
-    options: { value: string; label: string }[];
-    onChange: (value: string) => void;
-  }) => (
-    <>
-      {options.map((option) => (
-        <button key={option.value} type="button" onClick={() => onChange(option.value)}>
-          {option.label}
-        </button>
-      ))}
-    </>
   ),
 }));
 vi.mock("../components/settings-group", () => ({
@@ -63,9 +49,17 @@ vi.mock("../components/settings-group", () => ({
       {footer}
     </section>
   ),
-  SettingsRow: ({ title, trailing }: { title: string; trailing?: ReactNode }) => (
-    <div>
-      {title}
+  SettingsRow: ({
+    title,
+    value,
+    trailing,
+  }: {
+    title: string;
+    value?: string;
+    trailing?: ReactNode;
+  }) => (
+    <div data-row>
+      {value === undefined ? title : `${title}: ${value}`}
       {trailing}
     </div>
   ),
@@ -75,12 +69,15 @@ vi.mock("../components/menu-picker", () => ({
     label,
     choices,
     onChange,
+    children,
   }: {
     label: string;
     choices: { key: string; label: string }[];
     onChange: (key: string) => void;
+    children?: ReactNode;
   }) => (
     <>
+      {children}
       {choices.map((choice) => (
         <button key={choice.key} type="button" onClick={() => onChange(choice.key)}>
           {`${label}: ${choice.label}`}
@@ -98,14 +95,17 @@ vi.mock("react-native", () => {
     TextInput: ({
       accessibilityLabel,
       value,
+      placeholder,
       onChangeText,
     }: {
       accessibilityLabel?: string;
       value?: string;
+      placeholder?: string;
       onChangeText?: (text: string) => void;
     }) => (
       <input
         aria-label={accessibilityLabel}
+        placeholder={placeholder}
         value={value ?? ""}
         onChange={(event) => onChangeText?.(event.target.value)}
       />
@@ -121,7 +121,14 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.mocked(rpc).mockImplementation((async (path: string) => {
     if (path === "bots/list") {
-      return [{ id: "bot-1", name: "Chief", teamChatAmbientEnabled: false, teamChatRules: "" }];
+      return [
+        {
+          id: "bot-1",
+          name: "Chief",
+          teamChatAmbientEnabled: false,
+          teamChatRules: "Answer launch questions.",
+        },
+      ];
     }
     if (path === "spaces/list") {
       return {
@@ -149,9 +156,19 @@ beforeEach(() => {
 
 afterEach(async () => {
   await act(async () => root.unmount());
+  navigation.options = {};
   vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
+
+async function save() {
+  const headerRight = navigation.options.headerRight as () => ReactNode;
+  const header = container.appendChild(document.createElement("header"));
+  const headerRoot = createRoot(header);
+  await act(async () => headerRoot.render(headerRight()));
+  await click("Save");
+  await act(async () => headerRoot.unmount());
+}
 
 async function click(label: string) {
   const found = [...container.querySelectorAll("button")].find(
@@ -161,14 +178,47 @@ async function click(label: string) {
   await act(async () => found.click());
 }
 
-it("saves listening and sender handling for the room, then goes back", async () => {
-  await act(async () => root.render(<TeamConversationSettings />));
-  expect(container.textContent).toContain("Chief will still respond to direct mentions.");
+function rows() {
+  return [...container.querySelectorAll("[data-row]")].map((row) => row.textContent);
+}
 
-  await click("Listen");
-  expect(container.textContent).not.toContain("will still respond to direct mentions.");
+it("shows the bot's reply mode and rules until the room overrides them, then saves", async () => {
+  await act(async () => root.render(<TeamConversationSettings />));
+  expect(rows()).toContain("Replies to: Mentions only");
+  const rules = container.querySelector<HTMLInputElement>(
+    'input[aria-label="Instructions for this room"]',
+  );
+  if (!rules) throw new Error("Missing rules field");
+  expect(rules.value).toBe("");
+  expect(rules.placeholder).toBe("Answer launch questions.");
+  expect(container.textContent).not.toContain("Reset");
+
+  await click("Replies to: Every message");
+  expect(rows()).toContain("Replies to: Every message");
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+      rules,
+      "Only release questions.",
+    );
+    rules.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  // Emptying the field follows the bot again, so there is nothing to reset.
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(rules, "");
+    rules.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(container.textContent).not.toContain("Reset");
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+      rules,
+      "Only release questions.",
+    );
+    rules.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("Reset");
+  expect(rules.value).toBe("");
   await click("GitHub: Group updates");
-  await click("Save");
+  await save();
 
   expect(rpc).toHaveBeenCalledWith("externalConversations/updatePolicy", {
     externalConversationId: "room-1",
@@ -177,6 +227,11 @@ it("saves listening and sender handling for the room, then goes back", async () 
     automatedSenderPolicies: { B_GITHUB: { name: "GitHub", mode: "rollup", rollupHours: 6 } },
   });
   expect(back).toHaveBeenCalled();
+});
+
+it("offers the inherited choice by the bot's name", async () => {
+  await act(async () => root.render(<TeamConversationSettings />));
+  expect(container.textContent).toContain("Replies to: Same as Chief");
 });
 
 it("saves typed hours while the field still has focus", async () => {
@@ -190,7 +245,7 @@ it("saves typed hours while the field still has focus", async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(hours, "12");
     hours.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  await click("Save");
+  await save();
   expect(rpc).toHaveBeenCalledWith(
     "externalConversations/updatePolicy",
     expect.objectContaining({
@@ -205,11 +260,11 @@ it("offers a retry when the room fails to load, then shows its settings", async 
     throw new Error("offline");
   }) as never);
   await act(async () => root.render(<TeamConversationSettings />));
-  expect(container.textContent).not.toContain("Chief default");
+  expect(container.textContent).not.toContain("Replies to");
   expect(container.textContent).toContain("Something went wrong. Try again.");
 
   await click("Retry");
   expect(vi.mocked(rpc).getMockImplementation()).toBe(load);
-  expect(container.textContent).toContain("Chief default");
+  expect(container.textContent).toContain("Replies to");
   expect(container.textContent).not.toContain("Something went wrong. Try again.");
 });

@@ -658,7 +658,7 @@ describe("routines screen", () => {
     expect(container.querySelector("button")).toBeNull();
   });
 
-  it("offers Try Again after a failed read and its retry, and reloads", async () => {
+  it("offers Try again after a failed read and its retry, and reloads", async () => {
     vi.useFakeTimers();
     let fail = true;
     profileRpc(async () => {
@@ -668,10 +668,10 @@ describe("routines screen", () => {
     await render(createElement(RoutinesScreen));
     expect(container.querySelector("progress")).toBeTruthy();
     await act(async () => vi.advanceTimersByTimeAsync(ROUTINES_RETRY_MS));
-    expect(container.textContent).toBe("Could not load routinesTry Again");
+    expect(container.textContent).toBe("Could not load routinesTry again");
 
     fail = false;
-    await act(async () => button("Try Again").click());
+    await act(async () => button("Try again").click());
     expect(rowFor("Morning digest, On")).toBeTruthy();
   });
 
@@ -1178,7 +1178,7 @@ describe("routine detail", () => {
     await render(createElement(RoutineDetail));
     expect(container.textContent).toContain("Could not load run history");
     history.mockImplementation(async () => ({ runs: [], nextCursor: null }) as never);
-    await act(async () => button("Try Again").click());
+    await act(async () => button("Try again").click());
     expect(container.textContent).toContain("No runs yet");
   });
 

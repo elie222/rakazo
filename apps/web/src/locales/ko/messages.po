@@ -101,11 +101,6 @@ msgstr "{0} {unitLabel}"
 msgid "{0} connection"
 msgstr "{0} 연결"
 
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} default"
-msgstr ""
-
 #. placeholder {0}: parts.amount
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} GB"
@@ -150,11 +145,6 @@ msgstr ""
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} TB"
 msgstr "{0} TB"
-
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} will still respond to direct mentions."
-msgstr ""
 
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
@@ -962,10 +952,6 @@ msgstr "자동"
 msgid "Automated senders"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Automated senders will appear after they post here."
-msgstr ""
-
 #: src/pages/RoutineEditor.tsx
 msgid "Available after the routine is saved"
 msgstr "루틴을 저장한 후 사용할 수 있습니다"
@@ -1584,6 +1570,7 @@ msgstr "이 브라우저 세션에서 URL에 연결할 수 있는지 확인한 �
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
+#: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connect"
 msgstr "연결"
@@ -2772,10 +2759,6 @@ msgstr "{0} 활성화"
 msgid "Ends {day}"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Engage when... Ignore..."
-msgstr ""
-
 #: src/components/GitHubStarPrompt.tsx
 msgid "Enjoying Rakazo?"
 msgstr ""
@@ -2864,6 +2847,10 @@ msgstr "매시간"
 #: src/lib/cron.ts
 msgid "Every hour at :{0}"
 msgstr "매시간 {0}분"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Every message"
+msgstr "모든 메시지"
 
 #: src/lib/cron.ts
 msgid "Every Monday"
@@ -3348,6 +3335,10 @@ msgstr "지침 {position}"
 msgid "Instructions are too long. Untick some files."
 msgstr "지침이 너무 깁니다. 일부 파일의 선택을 해제하세요."
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Instructions for this room"
+msgstr "이 방을 위한 지침"
+
 #: src/components/AskCard.tsx
 msgid "Instructions updated"
 msgstr "지침 업데이트됨"
@@ -3482,12 +3473,7 @@ msgstr "SSO 연결"
 msgid "List view"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Listen"
-msgstr ""
-
 #: src/components/call/CallCard.tsx
-#: src/pages/ExternalConversationSettings.tsx
 msgid "Listening"
 msgstr ""
 
@@ -4914,6 +4900,10 @@ msgstr "키 교체"
 msgid "Replace value"
 msgstr ""
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Replies to"
+msgstr "응답 대상"
+
 #: src/pages/shell/message-hover-actions.tsx
 #: src/pages/shell/quote-selection-button.tsx
 msgid "Reply"
@@ -4941,6 +4931,7 @@ msgid "Research & writing"
 msgstr ""
 
 #: src/components/ComputerMaintenanceActions.tsx
+#: src/pages/ExternalConversationSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Reset"
 msgstr "재설정"
@@ -5051,10 +5042,6 @@ msgstr "연결 해제"
 msgid "Revoked"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Room guidance"
-msgstr ""
-
 #: src/pages/RoutineEditor.tsx
 msgid "Rotate key"
 msgstr "key 교체"
@@ -5120,6 +5107,10 @@ msgstr ""
 #: src/pages/PluginsOverlay.tsx
 msgid "Sales & CRM"
 msgstr ""
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Same as {botName}"
+msgstr "{botName}와(과) 동일"
 
 #: src/lib/cron.ts
 msgid "Saturday"
@@ -6327,10 +6318,6 @@ msgstr "찾은 모델 중에서 선택"
 #: src/lib/model-connection-preflight.ts
 msgid "Use Connect to verify the key."
 msgstr "키를 확인하려면 연결을 사용하세요."
-
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Use default guidance"
-msgstr ""
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Use defaults"
