@@ -12,8 +12,7 @@ const UNUSED_DAYS = 90;
 const WARNING_DAYS = 7;
 const CLAIM_MS = 15 * 60 * 1000;
 const BATCH = 500;
-/** A computer is only cleared while nothing runs on it. */
-/** Nothing is running in these; a failed start leaves `error`, which nothing else moves on from. */
+/** Cleared only while nothing runs on it; a failed start leaves `error`, which nothing moves on. */
 const IDLE_STATES = ["stopped", "suspended", "error"];
 const NO_CREDITS = { mode: null, balanceMicros: 0n, byokFreeUntil: null };
 
@@ -66,10 +65,10 @@ interface HomeRetentionDeps {
 }
 
 /**
- * Deletes stored homes that are past retention, emailing each organization's owner a week first. Every API
- * instance may run it: a claim keeps each email to one process, and eligibility is read again
- * right before each email and inside the deletion's transaction, so resubscribing or using a
- * bot in the meantime cancels it.
+ * Deletes stored homes that are past retention, emailing each organization's owner a week
+ * first. Every API instance may run it: a claim keeps each email to one process, and eligibility
+ * is read again right before each email and inside the deletion's transaction, so resubscribing
+ * or using a bot in the meantime cancels it.
  *
  * Deleting clears the computer's pointer to its stored home and the key that decrypts it; the
  * worker's storage sweep then removes the unowned objects. The computer row and its provider
