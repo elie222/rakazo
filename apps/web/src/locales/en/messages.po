@@ -4103,11 +4103,6 @@ msgstr "Needs an answer"
 msgid "Needs an OAuth client ID"
 msgstr "Needs an OAuth client ID"
 
-#. js-lingui-explicit-id
-#: src/lib/browser-notifications.ts
-msgid "Needs attention"
-msgstr "Needs attention"
-
 #: src/pages/ActivityList.tsx
 msgid "Needs attention"
 msgstr "Needs attention"
