@@ -30,8 +30,9 @@ import {
   SpaceDeletionInProgressError,
 } from "@rakazo/db";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryObjectStorage } from "../../../packages/adapters/src/object-storage.test-support.ts";
+import { MemoryObjectStorage } from "../../../packages/adapters/src/object-storage.test-support.js";
 import { deleteAccountContent } from "./account-deletion.js";
+import type { SpaceDeletionDeps } from "./space-deletion.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =
@@ -56,10 +57,11 @@ describePostgres("account deletion on bot computers (PostgreSQL)", () => {
     userId: "test",
     signal: new AbortController().signal,
   };
-  const deleteAccount = (userId: string) =>
+  const deleteAccount = (userId: string, secrets?: SpaceDeletionDeps["secrets"]) =>
     runAsSystem("account deletion test", () =>
       deleteAccountContent(
         {
+          ...(secrets ? { secrets } : {}),
           prisma,
           sandbox: sandbox as unknown as SandboxProvider,
           home,
@@ -289,6 +291,37 @@ describePostgres("account deletion on bot computers (PostgreSQL)", () => {
     await home.sweep();
     expect(new Set([...storage.objects.keys()].map((key) => key.split("/")[1]))).toEqual(
       new Set([legacyStorage]),
+    );
+  });
+
+  it("deletes the sealed link tokens of the account's pages with its spaces, and only those", async () => {
+    const sharedPage = async (spaceId: string, userId: string, name: string) => {
+      const secret = await system.secret.create({
+        data: { userId, spaceId, kind: "page_share", ciphertext: `ref-${name}-${suffix}` },
+      });
+      await system.page.create({
+        data: { spaceId, userId, title: name, visibility: "link", shareSecretId: secret.id },
+      });
+      return secret.id;
+    };
+    const leaving = [
+      await sharedPage(ids.personalSpace, ids.leaver, "personal"),
+      await sharedPage(ids.soloSpace, ids.leaver, "solo"),
+      await sharedPage(ids.sharedSpace, ids.leaver, "member"),
+    ];
+    const staying = await sharedPage(ids.sharedSpace, ids.stayer, "stayer");
+    const secrets = { delete: vi.fn(async (_ref: string) => {}) };
+
+    // The account's rows are still there: only the deletion of its content took the tokens.
+    await deleteAccount(ids.leaver, secrets);
+    expect(await system.user.count({ where: { id: ids.leaver } })).toBe(1);
+    expect(
+      (await system.secret.findMany({ where: { id: { in: [...leaving, staying] } } })).map(
+        (secret) => secret.id,
+      ),
+    ).toEqual([staying]);
+    expect(secrets.delete.mock.calls.map(([ref]) => ref).sort()).toEqual(
+      ["member", "personal", "solo"].map((name) => `ref-${name}-${suffix}`),
     );
   });
 

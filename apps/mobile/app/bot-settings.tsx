@@ -18,22 +18,12 @@ import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-rou
 import type { Voice } from "expo-speech";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ColorValue } from "react-native";
-import {
-  Alert,
-  Modal,
-  Pressable,
-  ScrollView,
-  Share,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Alert, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { BotContextCards } from "../components/bot-context-cards";
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import { glassHeaderOptions } from "../components/glass-title";
+import { GrowingTextInput } from "../components/growing-text-input";
 import type { MenuPickerChoice } from "../components/menu-picker";
 import { MenuPicker, MenuPickerMenu } from "../components/menu-picker";
 import { NativeActionButton } from "../components/native-action-button";
@@ -42,7 +32,7 @@ import { NativeSymbol } from "../components/native-symbol";
 import { ProfileEditDialog } from "../components/profile-edit-dialog";
 import { Chevron } from "../components/row-accessories";
 import type { MobileMe, MobileModel, MobileModelCredential } from "../lib/api";
-import { rpc } from "../lib/api";
+import { currentApiBase, loadSessionToken, rpc, selectedSpaceId } from "../lib/api";
 import {
   avatarColor,
   avatarShape,
@@ -53,8 +43,10 @@ import {
 import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/bot-voices";
 import { chatModelPickerChoices } from "../lib/chat-model";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computer";
+import { notifyConversationCleared } from "../lib/conversation-cleared";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { useI18n } from "../lib/i18n";
+import { afterChatNotifyChange } from "../lib/live-notifications";
 import { native, useMobileTokens } from "../lib/native";
 import { createQueuedSave } from "../lib/queued-save";
 import { useSideInsets } from "../lib/side-insets";
@@ -75,6 +67,7 @@ export default function BotSettingsScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const modelY = useRef(0);
   const [bot, setBot] = useState<Bot | null>(null);
+  const threadId = useRef<string | undefined>(undefined);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [instructions, setInstructions] = useState("");
@@ -87,8 +80,9 @@ export default function BotSettingsScreen() {
   const [thinkingLevel, setThinkingLevel] = useState("");
   const [notifyOnFinish, setNotifyOnFinish] = useState(true);
   const [autoSpeak, setAutoSpeak] = useState(false);
-  const [crossSpaceCommunication, setCrossSpaceCommunication] = useState(false);
-  const [fleetManagement, setFleetManagement] = useState(false);
+  const [dailyCheckIns, setDailyCheckIns] = useState(true);
+  const [crossSpaceCommunication, setCrossSpaceCommunication] = useState(true);
+  const [fleetManagement, setFleetManagement] = useState(true);
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
   const [me, setMe] = useState<MobileMe | null>(null);
@@ -114,6 +108,17 @@ export default function BotSettingsScreen() {
       }),
     [botId, t],
   );
+  const dailyCheckInsSave = useMemo(
+    () =>
+      createQueuedSave<boolean>(true, {
+        save: async (value) => {
+          await rpc("bots/update", { botId, dailyCheckIns: value });
+        },
+        onChange: setDailyCheckIns,
+        onError: (err) => setError(errorText(err, t("Could not save bot"))),
+      }),
+    [botId, t],
+  );
 
   const fleetSave = useMemo(
     () =>
@@ -131,9 +136,22 @@ export default function BotSettingsScreen() {
     () =>
       createQueuedSave<boolean>(true, {
         save: async (notifyOnFinish) => {
-          await rpc("bots/update", { botId, notifyOnFinish });
+          const next = await rpc("bots/update", { botId, notifyOnFinish });
+          threadId.current = next.threadId;
         },
         onChange: setNotifyOnFinish,
+        onSaved: async (notify) => {
+          try {
+            await afterChatNotifyChange(
+              currentApiBase(),
+              await loadSessionToken(),
+              selectedSpaceId() ?? "",
+              { botId, threadId: threadId.current, notify },
+            );
+          } catch {
+            // The server save succeeded; device reconciliation can retry later.
+          }
+        },
         onError: (err) => setError(errorText(err)),
       }),
     [botId],
@@ -157,6 +175,7 @@ export default function BotSettingsScreen() {
     if (!botId) return;
     void rpc("bots/get", { botId })
       .then((next) => {
+        threadId.current = next.threadId;
         setBot(next);
         setName(next.name);
         nameSave.reset(next.name);
@@ -174,13 +193,15 @@ export default function BotSettingsScreen() {
         setThinkingLevel(next.thinkingLevel ?? "");
         setAutoSpeak(next.autoSpeak);
         setNotifyOnFinish(next.notifyOnFinish ?? true);
-        setCrossSpaceCommunication(next.crossSpaceCommunication ?? false);
-        crossSpaceSave.reset(next.crossSpaceCommunication ?? false);
+        setDailyCheckIns(next.dailyCheckIns ?? true);
+        dailyCheckInsSave.reset(next.dailyCheckIns ?? true);
+        setCrossSpaceCommunication(next.crossSpaceCommunication ?? true);
+        crossSpaceSave.reset(next.crossSpaceCommunication ?? true);
         setFleetManagement(next.fleetManagement);
         fleetSave.reset(next.fleetManagement);
       })
       .catch((err) => setError(errorText(err, t("Could not load bot"))));
-  }, [botId, crossSpaceSave, fleetSave, notifySave, nameSave]);
+  }, [botId, dailyCheckInsSave, crossSpaceSave, fleetSave, notifySave, nameSave]);
 
   useEffect(() => {
     void Promise.all([rpc("me"), rpc("models/list"), rpc("models/credentials")])
@@ -409,6 +430,7 @@ export default function BotSettingsScreen() {
         setBot((prev) => (prev ? { ...prev, ...saved, ...updated } : prev));
       }
       await Promise.all([
+        dailyCheckInsSave.flush(),
         crossSpaceSave.flush(),
         fleetSave.flush(),
         notifySave.flush(),
@@ -645,6 +667,20 @@ export default function BotSettingsScreen() {
             <SettingsGroup label={t("Permissions")}>
               <View style={styles.row}>
                 <Text style={[styles.rowLabel, { color: tokens.foreground }]}>
+                  {t("Daily check-ins on unfinished work")}
+                </Text>
+                <NativeSwitch
+                  accessibilityLabel={t("Daily check-ins on unfinished work")}
+                  value={dailyCheckIns}
+                  onValueChange={(value) => {
+                    if (!botId) return;
+                    setError(null);
+                    dailyCheckInsSave.update(value);
+                  }}
+                />
+              </View>
+              <View style={styles.row}>
+                <Text style={[styles.rowLabel, { color: tokens.foreground }]}>
                   {t("Allow cross-space bot communication")}
                 </Text>
                 <NativeSwitch
@@ -659,10 +695,10 @@ export default function BotSettingsScreen() {
               </View>
               <View style={styles.row}>
                 <Text style={[styles.rowLabel, { color: tokens.foreground }]}>
-                  {t("Manage the bots it creates")}
+                  {t("Manage other bots")}
                 </Text>
                 <NativeSwitch
-                  accessibilityLabel={t("Manage the bots it creates")}
+                  accessibilityLabel={t("Manage other bots")}
                   onValueChange={(value) => {
                     if (!botId) return;
                     setError(null);
@@ -792,6 +828,7 @@ export default function BotSettingsScreen() {
                       style: "destructive",
                       onPress: () => {
                         void rpc("threads/clear", { botId })
+                          .then(() => notifyConversationCleared(botId))
                           .then(() => router.back())
                           .catch((err) => setError(errorText(err)));
                       },
@@ -965,13 +1002,6 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     flexShrink: 1,
   },
-  multilineField: {
-    minHeight: 98,
-    fontSize: 14,
-    lineHeight: 22,
-    padding: 16,
-    textAlignVertical: "top",
-  },
   row: {
     minHeight: 44,
     flexDirection: "row",
@@ -996,61 +1026,6 @@ function SettingsGroup({ label, children }: { label: string; children: ReactNode
       <View style={{ padding: 16, gap: 12, borderRadius: 12, backgroundColor: native.fill }}>
         {children}
       </View>
-    </View>
-  );
-}
-
-/** A noninteractive text copy gives loaded and edited content its full intrinsic height. */
-function GrowingTextInput({
-  label,
-  value,
-  onChangeText,
-  maxLength,
-  placeholder,
-  backgroundColor,
-  inset = 16,
-}: {
-  label: string;
-  value: string;
-  onChangeText: (value: string) => void;
-  maxLength: number;
-  placeholder?: string;
-  backgroundColor?: ColorValue;
-  inset?: number;
-}) {
-  const tokens = useMobileTokens();
-  return (
-    <View style={{ borderRadius: 11, backgroundColor }}>
-      <Text
-        accessible={false}
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-        style={[styles.multilineField, { padding: inset, opacity: 0 }]}
-      >
-        {`${value || placeholder || ""}\u200b`}
-      </Text>
-      <TextInput
-        accessibilityLabel={label}
-        value={value}
-        onChangeText={onChangeText}
-        maxLength={maxLength}
-        placeholder={placeholder}
-        placeholderTextColor={tokens.mutedForeground}
-        multiline
-        scrollEnabled={false}
-        style={[
-          styles.multilineField,
-          {
-            color: tokens.foreground,
-            padding: inset,
-            position: "absolute",
-            top: 0,
-            bottom: 0,
-            left: 0,
-            right: 0,
-          },
-        ]}
-      />
     </View>
   );
 }

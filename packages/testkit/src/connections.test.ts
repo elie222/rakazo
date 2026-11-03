@@ -10,12 +10,12 @@ import {
   ThirdPartyConnectorEmulator,
 } from "@rakazo/adapters";
 import type { createApp } from "@rakazo/api/app";
-import { getModelRole, runAsSystem, runAsTenant, updateModelRole } from "@rakazo/db";
+import { appliedModelRole, runAsSystem, runAsTenant, updateModelRole } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { sessionCookieHeader } from "./index.js";
 import { asSystem } from "./system-db.js";
 
-type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
+type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
 type AppHandles = Awaited<ReturnType<typeof createApp>>;
 type Actor = { spaceId: string; userId: string };
 
@@ -91,7 +91,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     const replace = (actor: Actor, backups: typeof first) =>
       runAsTenant(actor, () => updateModelRole(handles.prisma, actor, "main", { backups }));
     const backups = async (actor: Actor) =>
-      (await runAsTenant(actor, () => getModelRole(handles.prisma, actor, "main"))).backups;
+      (await runAsTenant(actor, () => appliedModelRole(handles.prisma, actor, "main"))).backups;
     await replace(other, first);
     await Promise.all([replace(owner, first), replace(owner, second)]);
     expect([first, second]).toContainEqual(await backups(owner));
@@ -376,6 +376,10 @@ describeWithDatabase("Composio catalog reconciliation", () => {
         connectionId: started.connectionId,
       }),
     ).resolves.toMatchObject({ status: "connected" });
+    const stored = await asSystem(handles.prisma).connection.findUniqueOrThrow({
+      where: { id: started.connectionId },
+    });
+    expect(stored.providerRef).toBe("account-linear");
 
     const context = {
       operationId: "pipedream-product-test",
@@ -389,13 +393,21 @@ describeWithDatabase("Composio catalog reconciliation", () => {
           connectorId: "pipedream",
           externalId: "linear",
           displayName: "Linear",
+          providerRef: stored.providerRef ?? undefined,
         },
       ],
     };
     const tool = (await handles.connectors.discoverTools(context)).find(
       (candidate) => candidate.route?.connectorId === "pipedream",
     );
-    expect(tool).toMatchObject({ name: "notes.write" });
+    expect(tool).toMatchObject({
+      name: expect.stringMatching(/^notes.write__/),
+      route: {
+        connectionId: started.connectionId,
+        resourceRevision: stored.providerRef,
+        toolName: "notes.write",
+      },
+    });
     const events = [];
     for await (const event of handles.connectors.execute(
       {

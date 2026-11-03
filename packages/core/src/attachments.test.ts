@@ -1,18 +1,33 @@
 import { describe, expect, it } from "vitest";
 import {
   AttachmentValidationError,
+  artifactTypeLabel,
   attachmentExtensionForMimeType,
   attachmentsForBot,
-  authorLabelledText,
   blocksToAgentHistoryText,
   decodeAttachmentBase64,
   inferAttachmentMimeType,
+  normalizeVoiceTranscript,
   promptTextForAttachments,
   userTurnMessageForRun,
   validateAttachmentMimeType,
 } from "./attachments.js";
 
 describe("attachment helpers", () => {
+  it.each([
+    ["xls", "application/vnd.ms-excel"],
+    ["xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+  ])("accepts and preserves %s spreadsheet attachments", (extension, mimeType) => {
+    for (const reported of [undefined, "", mimeType, "application/octet-stream"]) {
+      expect(inferAttachmentMimeType(`statement.${extension}`, reported)).toBe(mimeType);
+      expect(inferAttachmentMimeType(`STATEMENT.${extension.toUpperCase()}`, reported)).toBe(
+        mimeType,
+      );
+    }
+    expect(attachmentExtensionForMimeType(mimeType)).toBe(`.${extension}`);
+    expect(() => validateAttachmentMimeType(mimeType)).not.toThrow();
+  });
+
   it.each([
     ["mp3", "audio/mpeg"],
     ["wav", "audio/wav"],
@@ -102,8 +117,29 @@ describe("attachment helpers", () => {
           name: "brief.pdf",
           size: 99,
         },
+        { kind: "page", pageId: "p1", version: 3, title: "Signups" },
       ]),
-    ).toBe("hello\n[image: shot.png]\n[file: brief.pdf (application/pdf, 99 bytes)]");
+    ).toBe(
+      "hello\n[image: shot.png]\n[file: brief.pdf (application/pdf, 99 bytes)]\n[page: Signups (pageId p1, version 3)]",
+    );
+  });
+
+  it("appends a voice note transcript after the file note", () => {
+    expect(
+      promptTextForAttachments("listen to this", [
+        { name: "voice.oga", mimeType: "audio/ogg", size: 10, transcript: "hello there" },
+      ]),
+    ).toBe(
+      'listen to this\n\nUser attached file "voice.oga" (audio/ogg, 10 bytes).' +
+        "\n[voice note transcript: hello there]",
+    );
+  });
+
+  it("normalizes and bounds a voice note transcript", () => {
+    expect(normalizeVoiceTranscript("a\u007fb\u0085c\u009fd\te\nf")).toBe("abcd\te\nf");
+    expect(normalizeVoiceTranscript(" \u0080 ")).toBe("");
+    expect(normalizeVoiceTranscript(" \r\u0000 ")).toBe("");
+    expect(normalizeVoiceTranscript("a".repeat(8000))).toHaveLength(4000);
   });
 
   it("infers attachment mime types from extensions", () => {
@@ -112,6 +148,18 @@ describe("attachment helpers", () => {
     expect(inferAttachmentMimeType("notes.md", "")).toBe("text/markdown");
     expect(inferAttachmentMimeType("notes.markdown", "text/plain")).toBe("text/markdown");
     expect(inferAttachmentMimeType("notes.md", "application/pdf")).toBe("application/pdf");
+  });
+
+  it("keeps a CSV a CSV when Windows reports it as an Excel file", () => {
+    expect(inferAttachmentMimeType("sales.csv", "application/vnd.ms-excel")).toBe("text/csv");
+    expect(inferAttachmentMimeType("SALES.CSV", "application/vnd.ms-excel")).toBe("text/csv");
+    expect(inferAttachmentMimeType("sales.xls", "application/vnd.ms-excel")).toBe(
+      "application/vnd.ms-excel",
+    );
+    expect(inferAttachmentMimeType("statement", "application/vnd.ms-excel")).toBe(
+      "application/vnd.ms-excel",
+    );
+    expect(inferAttachmentMimeType("sales.csv", "application/pdf")).toBe("application/pdf");
   });
 
   it.each([
@@ -198,7 +246,6 @@ describe("peer message history", () => {
         },
       ]),
     ).toBe("[from Ana] dinner at 8?");
-    expect(authorLabelledText("Bea", "book it")).toBe("[from Bea] book it");
   });
 });
 
@@ -226,5 +273,21 @@ describe("ask history", () => {
         { kind: "ask", text: "API key", input: "secret", status: "answered", answer: "" },
       ]),
     ).toBe("API key");
+  });
+});
+
+describe("artifactTypeLabel", () => {
+  it("reads like the file's extension", () => {
+    expect(artifactTypeLabel("text/plain")).toBe("TXT");
+    expect(artifactTypeLabel("text/markdown")).toBe("MD");
+    expect(artifactTypeLabel("application/pdf")).toBe("PDF");
+    expect(artifactTypeLabel("image/png")).toBe("PNG");
+    expect(
+      artifactTypeLabel("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+    ).toBe("XLSX");
+  });
+
+  it("falls back to the subtype for a type without a known extension", () => {
+    expect(artifactTypeLabel("application/x-custom")).toBe("X-CUST");
   });
 });

@@ -10,6 +10,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { LocalAgentHomeStore } from "@rakazo/adapters";
 import type { AccountExportRecord, Actor } from "@rakazo/contracts";
+import { PAGE_SOURCE_MAX_BYTES } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -29,7 +30,6 @@ function sourceRecords(): AccountExportRecord[] {
       type: "bot",
       id: "src-bot-child",
       name: "Scout",
-      title: "Researcher",
       description: "Finds things",
       instructions: "Be brief.",
       color: "#3EC5A8",
@@ -51,6 +51,7 @@ function sourceRecords(): AccountExportRecord[] {
       teamChatAmbientEnabled: false,
       teamChatRules: "",
       crossSpaceCommunication: false,
+      dailyCheckIns: false,
       fleetManagement: false,
       createdAt: at,
     },
@@ -58,7 +59,6 @@ function sourceRecords(): AccountExportRecord[] {
       type: "bot",
       id: "src-bot-parent",
       name: "Chief",
-      title: "",
       description: "",
       instructions: "",
       color: "#F5A03C",
@@ -79,6 +79,7 @@ function sourceRecords(): AccountExportRecord[] {
       teamChatAmbientEnabled: false,
       teamChatRules: "",
       crossSpaceCommunication: false,
+      dailyCheckIns: false,
       fleetManagement: true,
       createdAt: at,
     },
@@ -418,6 +419,8 @@ describePostgres("account import (PostgreSQL)", () => {
     expect(child.parentBotId).toBe(parent.id);
     expect(child.pinned).toBe(true);
     expect(child.fleetManagement).toBe(false);
+    expect(child.dailyCheckIns).toBe(false);
+    expect(parent.dailyCheckIns).toBe(false);
     expect(child.disabledBuiltinTools).toEqual(["browser"]);
     const section = await system.botSection.findFirstOrThrow({ where: { spaceId } });
     expect(child.sectionId).toBe(section.id);
@@ -544,6 +547,156 @@ describePostgres("account import (PostgreSQL)", () => {
     );
     expect(await system.artifact.count({ where: { spaceId: result.spaces[0]!.id } })).toBe(0);
     expect(stored.size).toBe(blobs);
+  });
+
+  it("imports page source up to the save limit and refuses more, leaving nothing behind", async () => {
+    const withPage = (source: string): AccountExportRecord[] => [
+      ...sourceRecords(),
+      {
+        type: "page",
+        id: "src-page",
+        botId: "src-bot-child",
+        groupId: null,
+        title: "Plan",
+        pinnedAt: null,
+        currentVersion: 1,
+        createdAt: at,
+        updatedAt: at,
+      },
+      {
+        type: "page_version",
+        id: "src-page-v1",
+        pageId: "src-page",
+        version: 1,
+        title: "Plan",
+        source,
+        createdAt: at,
+      },
+    ];
+    const head = `export default () => <Page title="Plan" />;\n`;
+    const comment = (fill: string, count: number) => `${head}/*${fill.repeat(count)}*/`;
+    const atLimit = comment("x", PAGE_SOURCE_MAX_BYTES - 4 - head.length);
+    const result = await runImport(archive(withPage(atLimit)));
+    const saved = await system.pageVersion.findFirstOrThrow({
+      where: { page: { spaceId: result.spaces[0]!.id } },
+      select: { source: true, code: true },
+    });
+    expect(saved.source).toBe(atLimit);
+    expect(saved.code).not.toBe("");
+
+    // Over by bytes though not by characters, and far over: neither reaches the compiler.
+    const before = await ownedSpaceIds();
+    for (const over of [
+      comment("é", PAGE_SOURCE_MAX_BYTES / 2 - 1),
+      comment("x", PAGE_SOURCE_MAX_BYTES * 4),
+    ]) {
+      await expect(runImport(archive(withPage(over)))).rejects.toBeInstanceOf(AccountImportError);
+      expect(await ownedSpaceIds()).toEqual(before);
+    }
+  });
+
+  const pageRecords = (
+    versions: number[],
+    {
+      currentVersion = 1,
+      title = "Plan",
+      source = (version: number) => `export default () => <Page title="Draft ${version}" />;`,
+    }: { currentVersion?: number; title?: string; source?: (version: number) => string } = {},
+  ): AccountExportRecord[] => [
+    ...sourceRecords(),
+    {
+      type: "page",
+      id: "src-page",
+      botId: null,
+      groupId: null,
+      title,
+      pinnedAt: null,
+      currentVersion,
+      createdAt: at,
+      updatedAt: at,
+    },
+    ...versions.map((version) => ({
+      type: "page_version" as const,
+      id: `src-page-v${version}`,
+      pageId: "src-page",
+      version,
+      title,
+      source: source(version),
+      createdAt: at,
+    })),
+  ];
+  const importedPage = async (records: AccountExportRecord[]) => {
+    const result = await runImport(archive(records));
+    return system.page.findFirstOrThrow({
+      where: { spaceId: result.spaces[0]!.id },
+      select: {
+        title: true,
+        currentVersion: true,
+        versions: { orderBy: { version: "asc" }, select: { version: true, title: true } },
+      },
+    });
+  };
+
+  it("keeps every version of a page and opens it on the newest, whatever its header says", async () => {
+    // A version past the header keeps its place, and the next save takes the number after it.
+    expect(await importedPage(pageRecords([1, 2], { currentVersion: 1 }))).toMatchObject({
+      currentVersion: 2,
+      versions: [{ version: 1 }, { version: 2 }],
+    });
+    // A header naming a version the archive lacks opens on the newest one it has.
+    expect(await importedPage(pageRecords([1], { currentVersion: 2 }))).toMatchObject({
+      currentVersion: 1,
+      versions: [{ version: 1 }],
+    });
+  });
+
+  it("imports a version today's check refuses, so it opens on its own error", async () => {
+    const result = await runImport(
+      archive(
+        pageRecords([1, 2], {
+          source: (version) =>
+            version === 1 ? "<Page" : "const App = () => <Card />;\nexport default App;\n",
+        }),
+      ),
+    );
+    const versions = await system.pageVersion.findMany({
+      where: { page: { spaceId: result.spaces[0]!.id } },
+      orderBy: { version: "asc" },
+      select: { version: true, code: true },
+    });
+    expect(versions.map((version) => version.version)).toEqual([1, 2]);
+    expect(versions[0]!.code).toMatch(/^throw new Error\(/);
+    expect(versions[1]!.code).toContain("Card");
+  });
+
+  it("refuses a page with no version, a version of something that is not a page or a repeated version, leaving nothing behind", async () => {
+    const before = await ownedSpaceIds();
+    for (const records of [
+      pageRecords([]),
+      // A version naming a bot, not a page.
+      pageRecords([1]).map((record) =>
+        record.type === "page_version" ? { ...record, pageId: "src-bot-child" } : record,
+      ),
+      // The same version twice, under different ids.
+      pageRecords([1, 1]).map((record, index) =>
+        record.type === "page_version" ? { ...record, id: `src-page-copy-${index}` } : record,
+      ),
+    ]) {
+      await expect(runImport(archive(records))).rejects.toBeInstanceOf(AccountImportError);
+      expect(await ownedSpaceIds()).toEqual(before);
+    }
+  });
+
+  it("folds an imported page title to one line as a save does, and refuses a blank one", async () => {
+    expect(await importedPage(pageRecords([1], { title: "  Q3\n\tplan\u2028 " }))).toMatchObject({
+      title: "Q3 plan",
+      versions: [{ version: 1, title: "Q3 plan" }],
+    });
+    const before = await ownedSpaceIds();
+    await expect(runImport(archive(pageRecords([1], { title: " \n " })))).rejects.toBeInstanceOf(
+      AccountImportError,
+    );
+    expect(await ownedSpaceIds()).toEqual(before);
   });
 
   it("removes every space it created when a later space fails", async () => {

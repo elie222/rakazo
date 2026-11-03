@@ -269,3 +269,15 @@ describe("image attachment preparation", () => {
     });
   });
 });
+
+it("uses the configured photo count before reading or preparing extra photos", async () => {
+  state.assets = Array.from({ length: 9 }, (_, i) => ({
+    ...state.asset,
+    uri: `file:///fake/${i}.jpg`,
+    fileName: `${i}.jpg`,
+  }));
+  const result = await pickFromLibrary(0, 50 * 1024 * 1024, 8);
+  expect(result.attachments).toHaveLength(8);
+  expect(result.skipped).toEqual([{ name: "8.jpg", reason: "max 8 attachments" }]);
+  expect(state.base64).toHaveBeenCalledTimes(8);
+});

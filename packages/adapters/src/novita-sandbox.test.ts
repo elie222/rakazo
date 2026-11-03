@@ -339,6 +339,23 @@ describe("Novita adapter over the SDK emulator", () => {
     expect(emulator.computers.get(computer.id)!.state).toBe("paused");
   });
 
+  it("reports a computer running only while it runs, without resuming it", async () => {
+    const { emulator, provider, computer } = await emulated();
+    expect(await provider.isRunning(computer, ctx)).toBe(true);
+    expect(await provider.isRunning({ ...computer, kind: "e2b" }, ctx)).toBe(false);
+    const outage = new Error("502: bad gateway");
+    vi.spyOn(emulator.sandbox, "getInfo").mockRejectedValueOnce(outage);
+    await expect(provider.isRunning(computer, ctx)).rejects.toBe(outage);
+    await provider.stop(computer, ctx);
+
+    const restarted = emulatedNovita(emulator).provider();
+    expect(await restarted.isRunning(computer, ctx)).toBe(false);
+    expect(emulator.computers.get(computer.id)!.state).toBe("paused");
+    emulator.computers.delete(computer.id);
+    expect(await restarted.isRunning(computer, ctx)).toBe(false);
+    expect(emulator.requests.filter((entry) => entry.startsWith("connect"))).toEqual([]);
+  });
+
   it("deletes a paused computer without resuming it", async () => {
     const { emulator, provider, computer } = await emulated();
     await provider.stop(computer, ctx);

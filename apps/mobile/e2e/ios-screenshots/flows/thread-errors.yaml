@@ -9,11 +9,15 @@ name: Thread error recovery
 - extendedWaitUntil:
     visible: ".*weekly limit.*"
     timeout: 20000
-- assertVisible: "Add Model"
+- assertVisible: "Add model"
 - assertNotVisible: "Change model"
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 01-limit-banner
 - tapOn: "Details"
 - extendedWaitUntil:
     visible: ".*reply stopped at its key's weekly limit.*"
     timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 02-limit-details

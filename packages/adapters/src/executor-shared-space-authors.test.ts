@@ -32,6 +32,7 @@ function historyMessages(authors: boolean) {
     runId: `run-${seq}`,
     blocks,
     ...(authors ? { authorUserId } : {}),
+    steeringMessages: [],
     replyToMessageId: null,
     replyQuote: null,
     replyTo: null,
@@ -199,8 +200,9 @@ async function runInSpace(space: Space, options: RunOptions = {}) {
   return { request, users, agentSkillQuery: prisma.agentSkill.findMany };
 }
 
-function historyContent(request: AgentRunRequest, id: string) {
-  return request.history.find((entry) => entry.id === id)?.content;
+function historyEntry(request: AgentRunRequest, id: string) {
+  const entry = request.history.find((item) => item.id === id);
+  return entry && { speaker: entry.speaker, content: entry.content };
 }
 
 describe("message authors in the prompt", () => {
@@ -219,30 +221,43 @@ describe("message authors in the prompt", () => {
     expect(personal.request.prompt).toBe(before.request.prompt);
     expect(personal.request.history).toEqual(before.request.history);
     expect(personal.users).not.toHaveBeenCalled();
-    expect(personal.request.prompt).not.toContain("[from ");
+    expect(personal.request.promptSpeaker).toBeUndefined();
     expect(personal.request.prompt).not.toContain("This space is shared");
-    expect(historyContent(personal.request, "earlier")).toBe("Find us a restaurant");
+    expect(historyEntry(personal.request, "earlier")).toEqual({
+      speaker: undefined,
+      content: "Find us a restaurant",
+    });
   });
 
   it("names who wrote each line in a shared space", async () => {
     const { request, users } = await runInSpace({ members: 2, authors: true });
 
     expect(users).toHaveBeenCalledTimes(1);
-    expect(request.prompt.startsWith("[from Bea] Book the table")).toBe(true);
-    expect(historyContent(request, "earlier")).toBe("[from Ana] Find us a restaurant");
-    expect(historyContent(request, "reply")).toBe("Which night?");
-    // Group-chat lines keep their own sender and are not labelled twice.
-    expect(historyContent(request, "group")).toBe("[from Ana] Hi all");
+    expect(request.promptSpeaker).toBe("Bea");
+    expect(request.prompt.startsWith("Book the table")).toBe(true);
+    expect(historyEntry(request, "earlier")).toEqual({
+      speaker: "Ana",
+      content: "Find us a restaurant",
+    });
+    expect(historyEntry(request, "reply")).toEqual({ speaker: undefined, content: "Which night?" });
+    // A messaging group's line names its own sender; its stored author only connected the chat.
+    expect(historyEntry(request, "group")).toEqual({
+      speaker: "User",
+      content: "[from Ana] Hi all",
+    });
     expect(request.prompt).toContain(
-      "This space is shared by Ana, Bea. Everyone in it can read this chat and your memory. This turn uses Bea's connected accounts.",
+      'This space is shared by Ana, Bea. Everyone in it can read this chat and your memory. Their messages start with their name, like "[Name]:". This turn uses Bea\'s connected accounts.',
     );
   });
 
-  it("leaves lines without a known author unlabelled", async () => {
+  it("labels a line without a known author as User", async () => {
     const { request } = await runInSpace({ members: 2, authors: false });
 
-    expect(request.prompt.startsWith("Book the table")).toBe(true);
-    expect(historyContent(request, "earlier")).toBe("Find us a restaurant");
+    expect(request.promptSpeaker).toBe("Bea");
+    expect(historyEntry(request, "earlier")).toEqual({
+      speaker: "User",
+      content: "Find us a restaurant",
+    });
   });
 });
 

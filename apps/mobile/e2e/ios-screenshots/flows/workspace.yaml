@@ -1,0 +1,61 @@
+appId: com.rakazo.app
+name: Workspace
+---
+- runFlow:
+    file: ../subflows/sign-in.yaml
+    env:
+      RAKAZO_ACTIVE_EMAIL: ${RAKAZO_SCREENSHOT_EMAIL}
+- openLink: "rakazo:///board"
+- extendedWaitUntil:
+    visible: ".*Draft the launch announcement.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 01-board
+- openLink: "rakazo:///approvals"
+- extendedWaitUntil:
+    visible: ".*example.com.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 02-approval-rules
+- openLink: "rakazo:///vault"
+- extendedWaitUntil:
+    visible: ".*deploy_token.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 03-vault
+- tapOn: ".*help-desk.*"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 04-vault-actions
+- tapOn: "Remove"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 05-vault-remove
+- tapOn: "Cancel"
+- tapOn: "Add credential"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 06-vault-add
+- tapOn: "Bearer token"
+- tapOn: "Website login"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 07-vault-add-login
+- tapOn: "Cancel"
+- openLink: "rakazo:///archived-bots"
+- extendedWaitUntil:
+    visible: ".*Archived fixture.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 08-archived-bots
+- openLink: "rakazo:///space?spaceId=${RAKAZO_SCREENSHOT_TEAM_SPACE_ID}"
+- extendedWaitUntil:
+    visible: ".*Customize.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 09-space-settings

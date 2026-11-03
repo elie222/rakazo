@@ -1,4 +1,5 @@
 ---
+import { ANDROID_APP_STORE_URL } from "@rakazo/contracts/client-build";
 import {
   DEFAULT_LOCALE,
   LOCALE_HREFLANG,
@@ -13,11 +14,11 @@ import { HUB_CARDS } from "../alternatives";
 import { getHomeCopy } from "../i18n/home";
 import type { HomeCopy } from "../i18n/home";
 import {
-  ANDROID_APK_URL,
   CHANGELOG_URL,
   GITHUB_URL,
   INBOX_ZERO_URL,
   IOS_APP_URL,
+  PLUGIN_SUBMIT_PATH,
   SELF_HOST_GUIDE_PATH,
 } from "../site";
 import Logo from "./Logo.astro";
@@ -57,8 +58,9 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
     heading: linkLabels.product,
     links: [
       { href: IOS_APP_URL, label: linkLabels.iosApp, external: true },
-      { href: ANDROID_APK_URL, label: linkLabels.androidApp },
+      { href: ANDROID_APP_STORE_URL, label: linkLabels.androidApp },
       { href: SELF_HOST_GUIDE_PATH, label: linkLabels.docs },
+      { href: PLUGIN_SUBMIT_PATH, label: linkLabels.submitPlugin },
       { href: CHANGELOG_URL, label: linkLabels.changelog, external: true },
       { href: GITHUB_URL, label: "GitHub", external: true },
     ],
@@ -75,6 +77,7 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
     links: [
       { href: "/blog/", label: linkLabels.blog },
       { href: "/about/", label: linkLabels.about },
+      { href: "/brand/", label: linkLabels.brand },
       { href: "/support/", label: linkLabels.support },
       { href: "/privacy/", label: linkLabels.privacy },
       { href: "/terms/", label: linkLabels.terms },

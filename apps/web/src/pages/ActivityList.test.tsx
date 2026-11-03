@@ -20,19 +20,41 @@ vi.mock("@lingui/react/macro", () => {
 vi.mock("@rakazo/ui-web", () => {
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
+    BotAvatar: ({ identity }: { identity: string }) => <i data-avatar={identity} />,
     Button: (props: ComponentProps<"button">) => <button type="button" {...props} />,
-    Collapsible: Container,
+    Collapsible: ({ open, children }: { open?: boolean; children?: ReactNode }) => (
+      <div data-open={open === undefined ? undefined : String(open)}>{children}</div>
+    ),
     CollapsibleContent: Container,
+    CollapsibleTrigger: ({ children }: { children?: ReactNode }) => (
+      <button type="button">{children}</button>
+    ),
+    GroupAvatar: () => <i data-avatar="group" />,
     Input: () => null,
     Label: Container,
     NativeSelect: () => null,
     NativeSelectOption: () => null,
+    SectionHeading: ({ children }: { children: ReactNode }) => <h3>{children}</h3>,
     Spinner: (props: ComponentProps<"svg">) => <svg role="status" {...props} />,
   };
 });
 
 import { emptyActivityFilters } from "../lib/activity-list-filters";
 import { ActivityList } from "./ActivityList";
+
+const listProps = {
+  bots: [],
+  groups: [],
+  toggledSections: new Set<string>(),
+  onToggleSection: () => undefined,
+  onOpenRun: () => undefined,
+  onOpenBot: () => undefined,
+  onOpenGroup: () => undefined,
+  filters: emptyActivityFilters(),
+  onFiltersChange: () => undefined,
+  filtersExpanded: false,
+  filtersId: "filters",
+};
 
 const run = {
   runId: "run-1",
@@ -55,13 +77,7 @@ it("reopens with cached runs and refreshes them in the background", async () => 
     await act(async () => {
       root.render(
         <QueryClientProvider client={client}>
-          <ActivityList
-            onOpenRun={() => undefined}
-            filters={emptyActivityFilters()}
-            onFiltersChange={() => undefined}
-            filtersExpanded={false}
-            filtersId="filters"
-          />
+          <ActivityList {...listProps} />
         </QueryClientProvider>,
       );
     });
@@ -81,6 +97,72 @@ it("reopens with cached runs and refreshes them in the background", async () => 
     await act(async () => second.unmount());
   } finally {
     container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("groups attention, work and unread chats under folding headers", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  runs.list.mockImplementation(async ({ filter }: { filter: string }) => ({
+    runs:
+      filter === "active"
+        ? [
+            {
+              ...run,
+              runId: "ask",
+              botId: "marketing",
+              botName: "Marketing",
+              status: "waiting_input",
+            },
+            { ...run, runId: "work", botId: "research", botName: "Research", status: "running" },
+          ]
+        : [],
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const openBot = vi.fn();
+  const writer = {
+    id: "writer",
+    name: "Writer",
+    status: "completed",
+    unread: true,
+    preview: "Draft ready",
+    color: "orange",
+    updatedAt: new Date().toISOString(),
+  };
+  try {
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ActivityList
+            {...listProps}
+            bots={[writer as never]}
+            toggledSections={new Set(["activity:unread"])}
+            onOpenBot={openBot}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    await vi.waitFor(() => expect(container.textContent).toContain("Marketing"));
+    const section = (name: string) => container.querySelector(`section[aria-label="${name}"]`)!;
+    expect(section("Needs attention").textContent).toContain("Marketing");
+    expect(section("Working").textContent).toContain("Research");
+    expect(section("Unread").textContent).toContain("Writer");
+    expect(container.querySelector('section[aria-label="Recent"]')).toBeNull();
+    expect(section("Needs attention").querySelector("[data-open]")!.getAttribute("data-open")).toBe(
+      "true",
+    );
+    expect(section("Working").querySelector("[data-open]")!.getAttribute("data-open")).toBe(
+      "false",
+    );
+    expect(section("Unread").querySelector("[data-open]")!.getAttribute("data-open")).toBe("true");
+    expect(container.textContent).not.toContain("Needs input");
+    await act(async () => section("Unread").querySelectorAll("button")[1]!.click());
+    expect(openBot).toHaveBeenCalledWith(expect.objectContaining({ id: "writer" }));
+  } finally {
+    await act(async () => root.unmount());
+    client.clear();
     vi.unstubAllGlobals();
   }
 });

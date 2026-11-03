@@ -1,11 +1,16 @@
 import { strict as assert } from "node:assert";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { setFlagsFromString } from "node:v8";
+import { runInNewContext } from "node:vm";
+import { Agent } from "undici";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MCP_CLOSE_TIMEOUT_MS } from "./mcp-close.js";
 import { StoredMcpOAuthProvider } from "./mcp-oauth.js";
 import {
   McpSession,
   McpStdioLaunchError,
+  mcpStdioRefusal,
   secureFetch,
   validateUrl,
   withEndpointOriginFallback,
@@ -29,6 +34,136 @@ function logicalHref(input: string | URL | Request, init?: RequestInit): string 
 }
 
 describe("MCP transport seam", () => {
+  it.each(["init", "request"] as const)(
+    "keeps the %s abort signal connected after GC while an SSE body is open",
+    async (kind) => {
+      setFlagsFromString("--expose-gc");
+      const gc = runInNewContext("gc") as () => void;
+      setFlagsFromString("--no-expose-gc");
+      const controller = new AbortController();
+      let forwarded: AbortSignal | null | undefined;
+      const fetch = secureFetch(
+        new URL("https://mcp.example.test/mcp"),
+        {},
+        {},
+        {
+          ...TEST_NETWORK,
+          fetch: async (_input, init) => {
+            forwarded = init?.signal;
+            return new Response(
+              new ReadableStream({
+                start(stream) {
+                  init?.signal?.addEventListener("abort", () => stream.error(init.signal?.reason), {
+                    once: true,
+                  });
+                },
+              }),
+              { headers: { "content-type": "text/event-stream" } },
+            );
+          },
+        },
+      );
+      // Drop every Request before GC; retain only the caller's controller and body.
+      const response = await (async () => {
+        const init = { signal: controller.signal, headers: { accept: "text/event-stream" } };
+        return kind === "init"
+          ? fetch("https://mcp.example.test/mcp", init)
+          : fetch(new Request("https://mcp.example.test/mcp", init));
+      })();
+      const reading = response
+        .body!.getReader()
+        .read()
+        .catch((error: unknown) => error);
+      try {
+        for (let i = 0; i < 10; i += 1) {
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          gc();
+        }
+        controller.abort(new Error("session closed"));
+        expect(forwarded?.aborted).toBe(true);
+        expect(await reading).toEqual(new Error("session closed"));
+      } finally {
+        await fetch.close();
+      }
+    },
+  );
+
+  it("honors an explicit signal override, including null, for a Request input", async () => {
+    const original = new AbortController();
+    const override = new AbortController();
+    const seen: Array<AbortSignal | null | undefined> = [];
+    const fetch = secureFetch(
+      new URL("https://mcp.example.test/mcp"),
+      {},
+      {},
+      {
+        ...TEST_NETWORK,
+        fetch: async (_input, init) => {
+          seen.push(init?.signal);
+          return new Response(null);
+        },
+      },
+    );
+    try {
+      const request = new Request("https://mcp.example.test/mcp", { signal: original.signal });
+      await fetch(request, { signal: override.signal });
+      await fetch(request, { signal: null });
+      expect(seen).toEqual([override.signal, null]);
+    } finally {
+      await fetch.close();
+    }
+  });
+
+  it("bounds both SDK and dispatcher close, and observes a late cleanup rejection", async () => {
+    const session = new McpSession();
+    await session.connectRemote({
+      url: "https://mcp.example.test/mcp",
+      network: {
+        ...TEST_NETWORK,
+        fetch: async (input, init) => {
+          const message = await new Request(input, init).json();
+          if (message.method !== "initialize") return new Response(null, { status: 202 });
+          return Response.json({
+            jsonrpc: "2.0",
+            id: message.id,
+            result: {
+              protocolVersion: "2025-11-25",
+              capabilities: {},
+              serverInfo: { name: "test", version: "1" },
+            },
+          });
+        },
+      },
+    });
+    vi.useFakeTimers();
+    const clientClose = vi
+      .spyOn(session.client, "close")
+      .mockImplementation(() => new Promise(() => {}));
+    let rejectClose: ((error: Error) => void) | undefined;
+    const dispatcherClose = vi.spyOn(Agent.prototype, "close").mockImplementation(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectClose = reject;
+        }),
+    );
+    try {
+      const closing = session.close();
+      await vi.advanceTimersByTimeAsync(MCP_CLOSE_TIMEOUT_MS);
+      expect(clientClose).toHaveBeenCalledOnce();
+      expect(dispatcherClose).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(MCP_CLOSE_TIMEOUT_MS);
+      await closing;
+      rejectClose!(new Error("late close failure"));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      clientClose.mockRestore();
+      dispatcherClose.mockRestore();
+      vi.useRealTimers();
+      await session.close();
+    }
+  });
+
   it("rejects unsafe URLs and oversized URLs before network access", () => {
     expect(() => validateUrl("http://remote.example/mcp")).toThrow("HTTPS");
     expect(() => validateUrl("https://user:pass@example.com/mcp")).toThrow("credentials");
@@ -86,6 +221,9 @@ describe("MCP transport seam", () => {
         installedBin: { binPath: process.execPath },
       }),
     ).rejects.toThrow("not installed by Rakazo");
+    await expect(
+      session.connectStdio({ command: "npx", args: ["-c", "echo hi"], allowedCommands: ["npx"] }),
+    ).rejects.toThrow("npx only launches");
     // The launcher itself must still be allowlisted.
     await expect(
       session.connectStdio({
@@ -95,6 +233,39 @@ describe("MCP transport seam", () => {
       }),
     ).rejects.toThrow("allowlist");
     await session.close();
+  });
+
+  const RUNNERS = [
+    "bunx",
+    "pnpx",
+    "uvx",
+    "pipx",
+    "/usr/local/bin/pnpm",
+    "npm",
+    "yarn",
+    "bun",
+    "deno",
+    "uv",
+    "pnpm.cmd",
+    "BUNX.exe",
+  ];
+
+  it.each(RUNNERS)("refuses package runner %s even when allowlisted", async (command) => {
+    expect(mcpStdioRefusal(command, { stdioEnabled: true, allowedCommands: [command] })).toBe(
+      "Only npx can launch packages here",
+    );
+    const session = new McpSession();
+    await expect(
+      session.connectStdio({ command, args: ["dlx", "pkg"], allowedCommands: [command] }),
+    ).rejects.toThrow("Only npx can launch packages here");
+    await session.close();
+  });
+
+  it("still allows npx and plain allowlisted binaries", () => {
+    const policy = { stdioEnabled: true, allowedCommands: ["npx", "/opt/mcp/server", "node"] };
+    expect(mcpStdioRefusal("npx", policy)).toBeUndefined();
+    expect(mcpStdioRefusal("/opt/mcp/server", policy)).toBeUndefined();
+    expect(mcpStdioRefusal("node", policy)).toBeUndefined();
   });
 
   it("rejects remote endpoints that resolve to a private address", async () => {
@@ -297,6 +468,32 @@ describe("MCP transport seam", () => {
     },
   );
 
+  it("releases the body of a refused local redirect", async () => {
+    let cancels = 0;
+    const body = new ReadableStream({
+      cancel() {
+        cancels += 1;
+      },
+    });
+    const fetchImpl = vi.fn(
+      async () => new Response(body, { status: 302, headers: { location: "http://10.9.9.9/" } }),
+    );
+    const safeFetch = secureFetch(
+      new URL("http://localhost:8123/mcp"),
+      { allowHttpLocalhost: true, allowPrivateEndpoint: true },
+      {},
+      { fetch: fetchImpl, resolveHostname: vi.fn() },
+    );
+    try {
+      await expect(safeFetch("http://localhost:8123/mcp")).rejects.toThrow(
+        "MCP redirects are not permitted",
+      );
+      expect(cancels).toBe(1);
+    } finally {
+      await safeFetch.close();
+    }
+  });
+
   it.each(["localhost", "127.0.0.1", "[::1]"])(
     "refuses HTTP %s without the private-endpoint escape even when the hostname is local",
     async (host) => {
@@ -460,7 +657,15 @@ describe("MCP transport seam", () => {
       access_token: "fresh-access",
       refresh_token: "rotated-refresh",
     });
-    expect(persisted).toHaveLength(1);
+    // The SDK records the issuer on the stored client first, then the rotation lands once.
+    expect(persisted).toMatchObject([
+      { oauth: { clientInformation: { issuer: "https://auth.example.test" } } },
+      {
+        oauth: {
+          tokens: { refresh_token: "rotated-refresh", issuer: "https://auth.example.test" },
+        },
+      },
+    ]);
     await session.close();
   });
 

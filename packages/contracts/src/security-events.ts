@@ -19,6 +19,7 @@ export const SECURITY_EVENT_TYPES = [
   "credential.deleted",
   "credential.revealed",
   "device.paired",
+  "device.tied",
   "device.revoked",
   "deployment.settings.changed",
   "approval.decided",

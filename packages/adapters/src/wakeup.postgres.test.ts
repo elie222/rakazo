@@ -189,7 +189,7 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
     }
   });
 
-  it("delivers outgoing messages one drain at a time", async () => {
+  it("runs outgoing message drains in parallel", async () => {
     const publisher = new GraphileJobPublisher(testPool());
     const host = createReservedGraphileJobWorkerHost(testPool(), { pollInterval: 25 });
     const release = deferred();
@@ -205,11 +205,12 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
       );
       await publisher.enqueue(messagingDeliverJob("run-first"));
       await waitFor(() => expect(draining).toEqual(["run-first"]));
+      // The second drain starts while the first is still sending: one slow
+      // conversation must not hold back the rest of the outbox. Order inside a
+      // conversation is kept by the drain's claim, not by a shared queue.
       await publisher.enqueue(messagingDeliverJob("run-second"));
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      expect(draining).toEqual(["run-first"]);
-      release.resolve();
       await waitFor(() => expect(draining).toEqual(["run-first", "run-second"]));
+      release.resolve();
     } finally {
       release.resolve();
       await host.stop();
@@ -361,9 +362,62 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
       release.resolve();
       await stopping;
       expect(completed).toBe(true);
+      // The completion is written before stop returns, so the worker can exit right after.
+      const { rowCount } = await testPool().query(
+        "select 1 from graphile_worker._private_jobs where payload->>'runId' = 'graceful-stop' or payload->'payload'->>'runId' = 'graceful-stop'",
+      );
+      expect(rowCount).toBe(0);
     } finally {
       release.resolve();
       await host.stop();
+      await publisher.close();
+    }
+  });
+
+  it("hands a job still running at the drain deadline back for another worker to retry", async () => {
+    const publisher = new GraphileJobPublisher(testPool());
+    const host = new GraphileJobWorkerHost(testPool(), {
+      concurrency: 1,
+      pollInterval: 25,
+      drainTimeoutMs: 200,
+    });
+    const entered = deferred();
+    const hung = deferred();
+    const target = handlers({
+      "computer.sleep": async () => {
+        entered.resolve();
+        await hung.promise;
+      },
+    });
+    const key = "computer.sleep:drain-deadline";
+
+    try {
+      await host.start(target);
+      await publisher.enqueue({
+        name: "computer.sleep",
+        payload: { computerId: "drain-deadline" },
+        replaceKey: key,
+      });
+      await entered.promise;
+      await host.stop();
+
+      const { rows } = await testPool().query<{
+        locked_at: Date | null;
+        last_error: string | null;
+        attempts: number;
+        max_attempts: number;
+      }>(
+        "select locked_at, last_error, attempts, max_attempts from graphile_worker._private_jobs where key = $1",
+        [key],
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.locked_at).toBeNull();
+      expect(rows[0]!.last_error).toBeTruthy();
+      expect(rows[0]!.attempts).toBeLessThan(rows[0]!.max_attempts);
+    } finally {
+      hung.resolve();
+      await host.stop();
+      await testPool().query("select graphile_worker.remove_job($1::text)", [key]);
       await publisher.close();
     }
   });

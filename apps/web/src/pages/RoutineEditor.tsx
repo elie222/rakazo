@@ -36,6 +36,7 @@ import {
   Switch,
   Textarea,
 } from "@rakazo/ui-web";
+import { useQuery } from "@tanstack/react-query";
 import {
   ChevronLeft,
   Clock,
@@ -56,6 +57,7 @@ import {
   parseModelOptionKey,
   thinkingLevelLabel,
 } from "../lib/model-catalog";
+import { useSpaceQueries } from "../lib/query";
 import { rpc } from "../lib/rpc";
 import { RoutineRunHistory } from "./RoutineRunHistory";
 import { RoutineSchedule } from "./RoutineSchedule";
@@ -85,13 +87,6 @@ const SCHEDULE_PRESETS: CronFreq[] = [
   "Interval",
   "Advanced",
 ];
-
-const COMING_SOON = [
-  { id: "teams", label: () => t`Teams message` },
-  { id: "linear", label: () => t`Linear issue` },
-  { id: "sentry", label: () => t`Sentry alert` },
-  { id: "pagerduty", label: () => t`PagerDuty incident` },
-] as const;
 
 export type RoutineDraftState = {
   name: string;
@@ -239,28 +234,48 @@ export function routineTriggerSummary(
   return parts.length > 0 ? parts.join(", ") : t`No trigger`;
 }
 
-export function RoutineListHeader({ onCreate }: { onCreate: () => void }) {
+export function RoutineList({
+  routines,
+  runningRoutineId,
+  onCreate,
+  onEdit,
+  onStop,
+}: {
+  routines: Routine[];
+  runningRoutineId?: string;
+  onCreate: () => void;
+  onEdit: (routine: Routine) => void;
+  onStop: () => void;
+}) {
   const { t } = useLingui();
   return (
-    <div className="mt-[30px] mb-3 flex items-center justify-between gap-3">
-      <div className="text-sm text-muted-foreground">
-        <Trans>Routines</Trans>
+    <div>
+      <div className="mb-2 flex justify-end">
+        <Button
+          variant="secondary"
+          size="icon-sm"
+          data-testid="routine-create-button"
+          aria-label={t`Create Routine`}
+          title={t`Create Routine`}
+          onClick={onCreate}
+        >
+          <Plus strokeWidth={1.9} />
+        </Button>
       </div>
-      <Button
-        variant="secondary"
-        size="icon-sm"
-        data-testid="routine-create-button"
-        aria-label={t`Create Routine`}
-        title={t`Create Routine`}
-        onClick={onCreate}
-      >
-        <Plus strokeWidth={1.9} />
-      </Button>
+      {routines.map((routine) => (
+        <RoutineListRow
+          key={routine.id}
+          routine={routine}
+          running={runningRoutineId === routine.id}
+          onOpen={() => onEdit(routine)}
+          onStop={onStop}
+        />
+      ))}
     </div>
   );
 }
 
-export function RoutineListRow({
+function RoutineListRow({
   routine,
   running,
   onOpen,
@@ -354,6 +369,18 @@ export function RoutineEditor({
 }) {
   const { t } = useLingui();
   const fieldId = useId();
+  const queries = useSpaceQueries();
+  const scheduleStatus = useQuery({
+    ...queries.routines.list.queryOptions({ input: { botId: editing?.botId ?? "" } }),
+    enabled: editing !== null && draft.active,
+    refetchInterval: 15_000,
+    select: (routines) => routines.find((routine) => routine.id === editing?.id) ?? null,
+  });
+  const scheduleDelayed =
+    !scheduleStatus.isError &&
+    (scheduleStatus.data === undefined
+      ? editing?.scheduleDelayed
+      : scheduleStatus.data?.scheduleDelayed);
   const [credentials, setCredentials] = useState<ModelCredential[]>([]);
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
   useEffect(() => {
@@ -466,6 +493,12 @@ export function RoutineEditor({
           </Button>
         </div>
       </div>
+
+      {draft.active && scheduleDelayed ? (
+        <p role="status" className="mb-5 text-sm text-warning">
+          <Trans>Schedule delayed</Trans>
+        </p>
+      ) : null}
 
       <label htmlFor={`${fieldId}-name`} className="block text-sm text-muted-foreground">
         <Trans>Name</Trans>
@@ -688,23 +721,6 @@ export function RoutineEditor({
                 </span>
               ) : null}
             </span>
-
-            {COMING_SOON.map((item) => (
-              <span
-                key={item.id}
-                className="block"
-                title={item.id === "teams" ? t`Teams not enabled` : t`Coming soon`}
-              >
-                <DropdownMenuItem disabled>
-                  <span
-                    aria-hidden
-                    className="inline-block size-3.5 rounded-[4px]"
-                    style={{ background: comingSoonColor(item.id), opacity: 0.55 }}
-                  />
-                  {item.label()}
-                </DropdownMenuItem>
-              </span>
-            ))}
 
             <DropdownMenuItem
               disabled={Boolean(draft.watch) || draft.schedules.length > 0}
@@ -1036,18 +1052,5 @@ function schedulePresetLabel(freq: CronFreq): string {
       return t`Advanced...`;
     default:
       return freq;
-  }
-}
-
-function comingSoonColor(id: string): string {
-  switch (id) {
-    case "teams":
-      return "#6264A7";
-    case "linear":
-      return "#5E6AD2";
-    case "sentry":
-      return "#A467FD";
-    default:
-      return "#06AC38";
   }
 }

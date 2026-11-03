@@ -523,7 +523,8 @@ export function zonedDateTime(value: string, timezone = "UTC"): Date | null {
     return null;
   }
   if (wall[8]) {
-    const instant = new Date(text);
+    // Date only parses an offset with minutes; ISO 8601 also allows hours alone (+05).
+    const instant = new Date(/^[+-]\d{2}$/.test(wall[8]) ? `${text}:00` : text);
     return Number.isFinite(instant.getTime()) ? instant : null;
   }
   const local = new CronDate(new Date(), validTimezoneOrUtc(timezone));
@@ -561,6 +562,25 @@ function parseClock(time: string): { hour: number; minute: number } {
   if (/pm/i.test(time) && hour < 12) hour += 12;
   if (/am/i.test(time) && hour === 12) hour = 0;
   return { hour, minute };
+}
+
+/**
+ * A schedule time ("9:00 PM") the way `locale` writes clock times ("21:00"). Presets keep
+ * the English form as their value.
+ */
+export function localizedClock(time: string, locale: string): string {
+  if (!/^\d{1,2}:\d{2}(?:\s[AP]M)?$/i.test(time)) return time;
+  const { hour, minute } = parseClock(time);
+  const rawHour = Number(time.split(":")[0]);
+  if (minute > 59 || hour > 23 || (/[AP]M/i.test(time) && (rawHour < 1 || rawHour > 12)))
+    return time;
+  try {
+    return new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }).format(
+      new Date(2000, 0, 1, hour, minute),
+    );
+  } catch {
+    return time;
+  }
 }
 
 function formatClock(hour: number, minute: number): string {

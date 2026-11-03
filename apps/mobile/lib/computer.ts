@@ -56,6 +56,15 @@ export function embeddableScreenUrl(url: string | null, apiBase: string): string
     const parsed = new URL(url);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
     const api = new URL(apiBase);
+    // A deployment behind one HTTPS origin proxies /novnc/ there, like the web client relies on,
+    // even when WEB_ORIGIN still names an address this device cannot reach.
+    if (
+      api.protocol === "https:" &&
+      isProxiedScreenPage(url) &&
+      (parsed.protocol === "http:" || isPrivateNetworkHost(parsed.hostname))
+    ) {
+      return `${api.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
     if (isLocalhostOrLoopbackIp(parsed.hostname) && !isLocalhostOrLoopbackIp(api.hostname)) {
       parsed.hostname = api.hostname;
     }
@@ -239,8 +248,22 @@ export function isProxiedScreenPage(url: string): boolean {
 }
 
 /** Whether a WebView message came from the screen's own page, not a page it navigated to. */
-export function fromScreenPage(pageUrl: string | undefined, screenUrl: string): boolean {
+export function fromScreenPage(
+  pageUrl: string | undefined,
+  screenUrl: string,
+  loadedPageUrl?: string | null,
+): boolean {
   try {
+    // Android WebMessageListener reports the sender's origin, which is "null" for the
+    // sandboxed screen. Accept its advisory state only while the native navigation
+    // event identifies the exact authorized screen page; other pages stay rejected.
+    if (pageUrl === "null") {
+      return (
+        isProxiedScreenPage(screenUrl) &&
+        Boolean(loadedPageUrl) &&
+        new URL(loadedPageUrl!).href === new URL(screenUrl).href
+      );
+    }
     return Boolean(pageUrl) && new URL(pageUrl!).origin === new URL(screenUrl).origin;
   } catch {
     return false;

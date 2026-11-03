@@ -1110,6 +1110,31 @@ describe("CreateOS sandbox lifecycle", () => {
     expect(plane.calls).not.toContain("POST /v1/sandboxes/sbx-1/resume");
   });
 
+  it.each<{ status?: SandboxStatus; running: boolean }>([
+    { status: "running", running: true },
+    { status: "pausing", running: false },
+    { status: "paused", running: false },
+    { status: "error", running: false },
+    { status: undefined, running: false },
+  ])("reports a $status sandbox running: $running", async ({ status, running }) => {
+    const plane = createosControlPlane({ status });
+    await expect(plane.provider().isRunning(computer, context)).resolves.toBe(running);
+    await expect(plane.provider().isRunning({ ...computer, kind: "e2b" }, context)).resolves.toBe(
+      false,
+    );
+    expect(plane.calls.filter((call) => !call.startsWith("GET "))).toEqual([]);
+  });
+
+  it("does not guess whether a sandbox runs while the control plane is unavailable", async () => {
+    const provider = new CreateOSSandboxProvider({
+      apiKey: "test-key",
+      fetch: (async () => errorResponse(503, "unavailable")) as typeof fetch,
+    });
+    const error = await rejection(provider.isRunning(computer, context));
+    expect(error).toMatchObject({ name: "CreateOSHttpError", status: 503 });
+    expect(isSandboxGoneError(error)).toBe(false);
+  });
+
   it("reuses a running sandbox when the auto-pause update fails", async () => {
     const plane = createosControlPlane({ status: "running" });
     const fetchImpl = (async (input: URL | RequestInfo, init?: RequestInit) =>

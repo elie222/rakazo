@@ -3,7 +3,6 @@ import { ORPCError } from "@orpc/server";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import type { PluginMcpServerEntry, PluginRepoFetcher } from "@rakazo/adapters";
 import {
-  BUILTIN_AGENT_SKILLS,
   buildMcpCredentialBlob,
   persistPreparedSecret,
   pluginPreviewDto,
@@ -93,17 +92,6 @@ function withPreparedServers<T>(
     );
   }
   return prepare(0);
-}
-
-const BUILTIN_SKILL_NAMES = new Set(BUILTIN_AGENT_SKILLS.map((skill) => skill.name.toLowerCase()));
-
-export function hasBuiltinSkillName(skills: ReadonlyArray<{ name: string }>): boolean {
-  return skills.some((skill) => BUILTIN_SKILL_NAMES.has(skill.name.toLowerCase()));
-}
-
-function assertNoBuiltinSkillNames(plugin: LoadedPlugin) {
-  if (hasBuiltinSkillName(plugin.skills))
-    throw new ORPCError("CONFLICT", { message: "Plugin skill conflicts with a built-in skill" });
 }
 
 /** Where an install's skills and connectors live: wherever the install itself is available. */
@@ -301,7 +289,6 @@ export async function installPlugin(
       message: "Plugin has no supported skills or MCP servers",
     });
   }
-  if (parts.includes("skills")) assertNoBuiltinSkillNames(plugin);
   const servers = parts.includes("connector") ? plugin.mcpServers : [];
   return withPreparedServers(deps, actor, servers, signal, async (prepared) => {
     const source = plugin.source.gitUrl + (plugin.source.subdir ? `#${plugin.source.subdir}` : "");
@@ -390,7 +377,6 @@ export async function setPluginParts(
     ? await loadPlugin(deps, pinnedSource(existing), existing.digest, signal)
     : null;
   const added = plugin ? availableParts(plugin, adding) : [];
-  if (plugin && added.includes("skills")) assertNoBuiltinSkillNames(plugin);
   const parts = [...current.filter((part) => !removing.includes(part)), ...added];
   if (!parts.length) return null;
   const servers = plugin && added.includes("connector") ? plugin.mcpServers : [];
@@ -426,6 +412,8 @@ export async function setPluginParts(
           data: {
             config: {
               ...(install.config as Record<string, unknown>),
+              // Re-read at the pinned commit, so the saved preview matches what is installed now.
+              ...(plugin ? pluginPreviewDto(plugin) : {}),
               parts,
             } as Prisma.InputJsonValue,
           },

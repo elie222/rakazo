@@ -25,6 +25,15 @@ test("sidebar search opens from its icon and closes without moving chats mid-cli
   expect((await chief.boundingBox())?.y).toBe(before?.y);
 
   await search.fill("no roster matches");
+  const originalSearch = (await search.elementHandle())!;
+  // These synthetic keyboard events exercise the browser event flags; they do not start an OS IME.
+  for (const composition of [{ isComposing: true }, { keyCode: 229 }]) {
+    await search.dispatchEvent("keydown", { key: "Escape", ...composition });
+    await expect(search).toBeVisible();
+    expect(await originalSearch.evaluate((element) => element.isConnected)).toBe(true);
+    await expect(search).toHaveValue("no roster matches");
+  }
+  await captureScreenshot(page, testInfo, "sidebar-search-composing-escape");
   await search.press("Escape");
   await expect(search).toHaveCount(0);
   await expect(trigger).toHaveAttribute("aria-pressed", "false");
@@ -34,4 +43,48 @@ test("sidebar search opens from its icon and closes without moving chats mid-cli
   await search.fill("kept");
   await trigger.click();
   await expect(search).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
+  const runSearch = sidebar.getByRole("textbox", { name: "Search runs", exact: true });
+  await runSearch.fill("kept activity search");
+  const originalRunSearch = (await runSearch.elementHandle())!;
+  for (const composition of [{ isComposing: true }, { keyCode: 229 }]) {
+    await runSearch.dispatchEvent("keydown", { key: "Escape", ...composition });
+    await expect(runSearch).toBeVisible();
+    expect(await originalRunSearch.evaluate((element) => element.isConnected)).toBe(true);
+    await expect(runSearch).toHaveValue("kept activity search");
+  }
+  await runSearch.press("Escape");
+  await expect(runSearch).toBeVisible();
+  await expect(runSearch).toHaveValue("");
+});
+
+test("a failed space search says so instead of No results", async ({ page }, testInfo) => {
+  await signup(
+    page,
+    `sidebar-search-failed-${Date.now()}@rakazo.test`,
+    "password12",
+    "Search Fail",
+  );
+  await completeOnboarding(page);
+  let failSearch = true;
+  await page.route("**/rpc/search/query", (route) =>
+    failSearch ? route.fulfill({ status: 502 }) : route.fallback(),
+  );
+  const sidebar = page.locator("aside").first();
+  await sidebar.getByTestId("sidebar-search-trigger").click();
+  const search = sidebar.getByRole("textbox", { name: "Search", exact: true });
+  await search.fill("quarterly notes");
+
+  const failure = sidebar.getByRole("alert");
+  await expect(failure).toHaveText("Could not reach the server");
+  await expect(sidebar.getByText("No results", { exact: true })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "sidebar-search-failed");
+
+  failSearch = false;
+  const retried = page.waitForRequest("**/rpc/search/query");
+  await sidebar.getByRole("button", { name: "Try again", exact: true }).click();
+  expect((await retried).postData()).toContain("quarterly notes");
+  await expect(sidebar.getByText("No results", { exact: true })).toBeVisible();
+  await expect(failure).toHaveCount(0);
 });

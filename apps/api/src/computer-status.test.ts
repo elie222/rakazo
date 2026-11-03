@@ -1,3 +1,4 @@
+import { ComputerStatusSchema } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { executionBlocksUserTakeover, toComputerStatus } from "./computer-status.js";
 
@@ -12,6 +13,24 @@ describe("toComputerStatus", () => {
         homeRevision: "saved",
       }),
     ).toMatchObject({ state: "error", screenAvailable: false });
+  });
+  it("warns at 90% full until the user hides it, and again once the disk fills further", () => {
+    const computer = {
+      kind: "docker",
+      state: "running",
+      scope: "team",
+      controlHolder: "none",
+      homeRevision: "saved",
+      diskUsedBytes: 91n,
+      diskFreeBytes: 9n,
+    };
+    const status = (changes: object) => toComputerStatus("bot", { ...computer, ...changes });
+    expect(status({}).diskFullPercent).toBe(91);
+    expect(ComputerStatusSchema.parse(status({})).diskFullPercent).toBe(91);
+    expect(status({ diskUsedBytes: 89n, diskFreeBytes: 11n }).diskFullPercent).toBeUndefined();
+    expect(status({ diskDismissedPercent: 91 }).diskFullPercent).toBeUndefined();
+    expect(status({ diskDismissedPercent: 90 }).diskFullPercent).toBe(91);
+    expect(status({ diskUsedBytes: null }).diskFullPercent).toBeUndefined();
   });
   it("only marks control that is bound to a waiting run as a requested takeover", () => {
     const computer = {
@@ -40,6 +59,37 @@ describe("toComputerStatus", () => {
     };
     expect(toComputerStatus("bot-1", computer).busyBotName).toBeNull();
     expect(toComputerStatus("bot-1", computer, "Writer").busyBotName).toBe("Writer");
+  });
+
+  it("sandbox-none-computer-status", () => {
+    const stopped = toComputerStatus("bot-1", {
+      kind: "none",
+      state: "stopped",
+      scope: "team",
+      controlHolder: "none",
+      homeRevision: "empty",
+    });
+    expect(ComputerStatusSchema.parse(stopped)).toMatchObject({
+      kind: "none",
+      state: "stopped",
+      canUpdate: false,
+      terminalAvailable: false,
+      screenAvailable: false,
+    });
+
+    const running = toComputerStatus("bot-1", {
+      kind: "none",
+      state: "running",
+      scope: "team",
+      controlHolder: "none",
+      homeRevision: "empty",
+    });
+    expect(ComputerStatusSchema.parse(running)).toMatchObject({
+      state: "stopped",
+      canUpdate: false,
+      terminalAvailable: false,
+      screenAvailable: false,
+    });
   });
 
   it("hides update on desktop computers", () => {

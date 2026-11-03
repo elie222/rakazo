@@ -98,7 +98,7 @@ describe("structured results through real Pi context selection", () => {
           };
         },
       };
-      let finalText = "";
+      let finalText: string | undefined = "";
       for await (const event of new PiAgentRuntime().run(request))
         if (event.type === "done") finalText = event.text;
       server.assertComplete();
@@ -178,7 +178,7 @@ describe("structured results through real Pi context selection", () => {
             };
           },
         };
-        let finalText = "";
+        let finalText: string | undefined = "";
         for await (const event of new PiAgentRuntime({
           onContextDecision: (decision) => decisions.push(decision),
         }).run(request)) {

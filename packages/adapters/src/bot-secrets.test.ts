@@ -6,15 +6,25 @@ import * as Logging from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   credentialArgument,
+  encodeRunCode,
   encodeRunLogin,
+  forgetBotSecret,
+  listBotSecrets,
   loadLoginPasswordRedactions,
+  loadRunCodeRedactions,
   loadRunLoginRedactions,
   normalizeSecretDestination,
+  oneTimeCodeArgument,
+  oneTimeCodeRedactions,
+  prepareBotSecret,
   requestWithBotSecret,
+  resolveCodeFill,
   resolveLoginFill,
   resolveRequestSecretDestination,
   sameSecretDestination,
+  storeBotSecret,
 } from "./bot-secrets.js";
+import { fakeDatabase } from "./bot-secrets.test-support.js";
 import { EncryptedSecretStore } from "./secrets.js";
 
 afterEach(() => {
@@ -391,7 +401,8 @@ describe("resolveRequestSecretDestination", () => {
     expect(
       resolveRequestSecretDestination({ label: "Code", purpose: "otp", connectionId: "null" }),
     ).toEqual({
-      error: "Provide either a reusable credential destination or a connectionId.",
+      error:
+        "Provide either a reusable credential destination, a connectionId, or oneTimeCode for a code the page asked for.",
     });
   });
 
@@ -1186,5 +1197,369 @@ describe("logins kept for one run", () => {
     const redacted = redactSecrets(forms.join("\n"), redactions);
     for (const form of forms) expect(redacted).not.toContain(form);
     expect(await loadRunLoginRedactions(prisma, secretStore, scope, "run-2")).toEqual([]);
+  });
+});
+
+describe("a one-time code request", () => {
+  it("takes only the HTTPS origin of the page that asked, without its path or query", () => {
+    const asked = oneTimeCodeArgument({ origin: "https://login.example.test/verify?code=123456" });
+    expect(asked).toEqual({ origin: "https://login.example.test" });
+    expect(resolveRequestSecretDestination({ oneTimeCode: asked })).toEqual({
+      oneTimeCodeOrigin: "https://login.example.test",
+    });
+    // Userinfo never reaches the card or the stored request.
+    expect(oneTimeCodeArgument({ origin: "https://user:fake-pass@example.test" })).toEqual({
+      origin: "https://example.test",
+    });
+  });
+
+  it("tells the bot why an HTTP page is refused, so it can tell the user", () => {
+    for (const origin of ["http://login.example.test", "http://192.168.1.20"]) {
+      expect(
+        resolveRequestSecretDestination({ oneTimeCode: oneTimeCodeArgument({ origin }) }),
+      ).toEqual({
+        error:
+          "Codes can only be typed on HTTPS pages, and this page isn't HTTPS. Ask the user to take over and tell them that is why.",
+      });
+    }
+  });
+
+  it.each([{ origin: "" }, {}, "https://login.example.test", { origin: "ftp://example.test" }])(
+    "refuses %j, which cannot be a page a code is typed into",
+    (value) => {
+      expect(resolveRequestSecretDestination({ oneTimeCode: oneTimeCodeArgument(value) })).toEqual({
+        error: "oneTimeCode needs the HTTPS origin of the page that asked for the code.",
+      });
+    },
+  );
+
+  it("refuses a private-LAN HTTP origin even when the owner allows it for credentials", () => {
+    vi.stubEnv("RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP", "1");
+    expect(
+      resolveRequestSecretDestination({
+        oneTimeCode: oneTimeCodeArgument({ origin: "http://192.168.1.20" }),
+      }),
+    ).toMatchObject({ error: expect.any(String) });
+  });
+});
+
+describe("a code's redactions", () => {
+  const hidden = (text: string, code = "123456") =>
+    redactSecrets(text, oneTimeCodeRedactions(code));
+
+  it("hide a code a page draws one character at a time, with spaces or dashes, or in groups", () => {
+    // An innerText-style read of an input-otp widget: one slot per line.
+    for (const shown of [
+      "123456",
+      "1\n2\n3\n4\n5\n6",
+      "1\r\n2\r\n3\r\n4\r\n5\r\n6",
+      "1 2 3 4 5 6",
+      "1\t2\t3\t4\t5\t6",
+      "1-2-3-4-5-6",
+      "1 - 2 - 3 - 4 - 5 - 6",
+      "123 456",
+      "123-456",
+      "123 - 456",
+    ]) {
+      expect(hidden(`Enter code:\n${shown}\nResend`)).toBe("Enter code:\n[redacted]\nResend");
+    }
+  });
+
+  it("hide a code written with dashes both as sent and without them", () => {
+    expect(hidden("12-34-56", "12-34-56")).toBe("[redacted]");
+    expect(hidden("123456", "12-34-56")).toBe("[redacted]");
+    expect(hidden("1 2 3 4 5 6", "12-34-56")).toBe("[redacted]");
+  });
+
+  it("never include a form too short to be told from ordinary text", () => {
+    for (const code of ["1234", "123-456", "ab12-cd34"]) {
+      expect(oneTimeCodeRedactions(code).filter((form) => form.length < 4)).toEqual([]);
+    }
+  });
+
+  it("hide a code with letters that the page shows in another case", () => {
+    expect(hidden("Code AB12CD", "ab12cd")).toBe("Code [redacted]");
+    expect(hidden("a b 1 2 c d", "AB12CD")).toBe("[redacted]");
+  });
+
+  it("leave a short number alone when it stands bare, but hide it drawn per digit", () => {
+    expect(hidden("Paid 1000 in 2026", "2026")).toBe("Paid 1000 in 2026");
+    expect(hidden("2\n0\n2\n6", "2026")).toBe("[redacted]");
+    expect(hidden("Code ab12", "ab12")).toBe("Code [redacted]");
+  });
+
+  it("leave unrelated digits alone", () => {
+    expect(hidden("Order 98765 shipped on 12/34")).toBe("Order 98765 shipped on 12/34");
+  });
+});
+
+describe("resolveCodeFill", () => {
+  const codeScope = { userId: "user-1", spaceId: "space-1" };
+
+  async function codeFixture(origin = "https://login.example.test", runId = "run-1") {
+    const stored = await secretStore.put(
+      encodeRunCode(origin, "123456"),
+      { ...codeScope, operationId: runId, traceId: runId, signal: new AbortController().signal },
+      { ephemeral: true },
+    );
+    const rows: Array<Record<string, unknown>> = [
+      { ...codeScope, ...stored, kind: `run-code:${runId}` },
+    ];
+    const matches = (row: Record<string, unknown>, where: Record<string, unknown>) =>
+      Object.entries(where).every(([key, value]) =>
+        value && typeof value === "object" && "in" in value
+          ? (value.in as unknown[]).includes(row[key])
+          : row[key] === value,
+      );
+    const prisma = {
+      secret: {
+        findFirst: vi.fn(async ({ where }) => rows.find((row) => matches(row, where)) ?? null),
+        findMany: vi.fn(async ({ where }) => rows.filter((row) => matches(row, where))),
+        updateMany: vi.fn(async ({ where, data }) => {
+          const found = rows.filter((row) => matches(row, where));
+          for (const row of found) Object.assign(row, data);
+          return { count: found.length };
+        }),
+      },
+    } as unknown as PrismaClient;
+    return { prisma, rows };
+  }
+
+  it("gives the code with its site and every form to hide, without taking it", async () => {
+    const { prisma, rows } = await codeFixture();
+    const fill = await resolveCodeFill({ prisma, secretStore, scope: codeScope, runId: "run-1" });
+    if ("error" in fill) throw new Error(fill.error);
+    expect(fill).toMatchObject({ text: "123456", origin: "https://login.example.test" });
+    expect(fill.redactions).toEqual(expect.arrayContaining(["123456", "1\n2\n3\n4\n5\n6"]));
+    expect(rows[0]).toMatchObject({ kind: "run-code:run-1" });
+  });
+
+  it("lets one of two fills take the code, and keeps it as a spent row", async () => {
+    const { prisma, rows } = await codeFixture();
+    const input = { prisma, secretStore, scope: codeScope, runId: "run-1" };
+    const [first, second] = await Promise.all([resolveCodeFill(input), resolveCodeFill(input)]);
+    if ("error" in first || "error" in second) throw new Error("both fills should resolve");
+    const claims = await Promise.all([first.claim(), second.claim()]);
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    expect(rows).toMatchObject([{ kind: "run-code-spent:run-1" }]);
+    expect(await resolveCodeFill(input)).toEqual({
+      error:
+        "No code is waiting. Use request_secret with oneTimeCode to ask the user for it first.",
+    });
+  });
+
+  it("gives a refused code back for another try", async () => {
+    const { prisma, rows } = await codeFixture();
+    const input = { prisma, secretStore, scope: codeScope, runId: "run-1" };
+    const fill = await resolveCodeFill(input);
+    if ("error" in fill) throw new Error(fill.error);
+    expect(await fill.claim()).toBe(true);
+    await fill.restore();
+    expect(rows).toMatchObject([{ kind: "run-code:run-1" }]);
+    expect(await resolveCodeFill(input)).toMatchObject({ text: "123456" });
+  });
+
+  it("keeps hiding a spent code, and a waiting one, from the start of a later attempt", async () => {
+    const { prisma } = await codeFixture();
+    const input = { prisma, secretStore, scope: codeScope, runId: "run-1" };
+    expect(await loadRunCodeRedactions(prisma, secretStore, codeScope, "run-1")).toEqual(
+      expect.arrayContaining(["123456", "1\n2\n3\n4\n5\n6"]),
+    );
+    const fill = await resolveCodeFill(input);
+    if ("error" in fill) throw new Error(fill.error);
+    await fill.claim();
+    expect(await loadRunCodeRedactions(prisma, secretStore, codeScope, "run-1")).toContain(
+      "123456",
+    );
+    expect(await loadRunCodeRedactions(prisma, secretStore, codeScope, "run-2")).toEqual([]);
+  });
+
+  it("never gives another run's code", async () => {
+    const { prisma } = await codeFixture(undefined, "run-0");
+    expect(
+      await resolveCodeFill({ prisma, secretStore, scope: codeScope, runId: "run-1" }),
+    ).toMatchObject({ error: expect.stringContaining("No code is waiting") });
+  });
+
+  it("refuses a code kept for a plain-HTTP site, with the reason", async () => {
+    const { prisma, rows } = await codeFixture("http://login.example.test");
+    expect(
+      await resolveCodeFill({ prisma, secretStore, scope: codeScope, runId: "run-1" }),
+    ).toEqual({ error: expect.stringContaining("Ask the user to take over and tell them") });
+    expect(rows).toMatchObject([{ kind: "run-code:run-1" }]);
+  });
+
+  it("refuses a code it cannot read, logging only the error name", async () => {
+    const { prisma, rows } = await codeFixture();
+    rows[0]!.ciphertext = "not-a-ciphertext";
+    const warn = vi.fn();
+    const logger = vi.spyOn(Logging, "getLogger").mockReturnValue({ warn } as never);
+    try {
+      expect(
+        await resolveCodeFill({ prisma, secretStore, scope: codeScope, runId: "run-1" }),
+      ).toEqual({ error: "This code could not be loaded." });
+      expect(warn).toHaveBeenCalledWith(expect.any(String), { errorName: expect.any(String) });
+    } finally {
+      logger.mockRestore();
+    }
+  });
+});
+
+describe("replacing a saved login's site", () => {
+  const WWW = "https://www.example.test";
+  const LOGIN = "https://login.example.test";
+  const REFUSED = "Remove the existing credential before changing its destination";
+  const login = (origin: string): BotSecretDestination => ({
+    name: "site_login",
+    origin,
+    auth: { type: "login" },
+  });
+  const typed = (password: string) =>
+    encodeLoginSecret({
+      fields: [
+        { label: "Username", value: "fake-user", hidden: false },
+        { label: "Password", value: password, hidden: true },
+      ],
+    });
+
+  async function save(db: ReturnType<typeof fakeDatabase>, destination = login(WWW)) {
+    await storeBotSecret({
+      prisma: db.prisma,
+      secretStore,
+      scope,
+      destination,
+      plaintext: destination.auth.type === "login" ? typed("fake-password-www") : "fake-token-1",
+    });
+    return { ...db.rows().find((row) => row.name === destination.name)! };
+  }
+
+  function prepare(
+    db: ReturnType<typeof fakeDatabase>,
+    destination: BotSecretDestination,
+    password: string,
+    options: { replaces?: string; createOnly?: boolean } = {},
+  ) {
+    return prepareBotSecret({
+      prisma: db.prisma,
+      secretStore,
+      scope,
+      destination,
+      plaintext: destination.auth.type === "login" ? typed(password) : password,
+      ...options,
+    });
+  }
+
+  const commit = (
+    db: ReturnType<typeof fakeDatabase>,
+    prepared: Awaited<ReturnType<typeof prepareBotSecret>>,
+  ) => db.prisma.$transaction((tx) => prepared.store(tx));
+
+  it("moves the one saved row to the new site with the value typed for it", async () => {
+    const db = fakeDatabase();
+    const before = await save(db);
+    await commit(
+      db,
+      await prepare(db, login(LOGIN), "fake-password-login", { replaces: before.id }),
+    );
+    expect(db.rows()).toHaveLength(1);
+    const [row] = db.rows();
+    expect(row).toMatchObject({ id: before.id, name: "site_login", origin: LOGIN });
+    expect(row!.ciphertext).not.toBe(before.ciphertext);
+    expect(await secretStore.load(row!.ciphertext, row!.id)).toBe(typed("fake-password-login"));
+    expect(JSON.stringify(db.rows())).not.toContain(WWW);
+    // Origin and value are one write, so no state has one without the other.
+    expect(db.prisma.vaultCredential.update).toHaveBeenLastCalledWith({
+      where: { id: before.id },
+      data: { origin: LOGIN, ciphertext: row!.ciphertext },
+    });
+    // Every bot of the member lists it for the new site, and fills take their site from the row.
+    const otherBot = { ...scope, botId: "bot-2" };
+    expect(await listBotSecrets(db.prisma, otherBot)).toEqual([
+      expect.objectContaining(login(LOGIN)),
+    ]);
+    expect(
+      await resolveLoginFill({
+        prisma: db.prisma,
+        secretStore,
+        scope: otherBot,
+        runId: "run-1",
+        name: "site_login",
+        field: "Password",
+      }),
+    ).toMatchObject({ text: "fake-password-login", origin: LOGIN });
+  });
+
+  it("keeps refusing another site to every save that isn't a card replacing that login", async () => {
+    const db = fakeDatabase();
+    const before = await save(db);
+    await expect(
+      storeBotSecret({
+        prisma: db.prisma,
+        secretStore,
+        scope,
+        destination: login(LOGIN),
+        plaintext: typed("fake-password-login"),
+      }),
+    ).rejects.toThrow(REFUSED);
+    await expect(
+      prepare(db, login(LOGIN), "fake-password-login", { replaces: before.id, createOnly: true }),
+    ).rejects.toThrow("A credential with this name is already saved");
+    // A card that replaces another login, or none, including one given the old site.
+    for (const replaces of ["other-login", WWW, undefined]) {
+      await expect(prepare(db, login(LOGIN), "fake-password-login", { replaces })).rejects.toThrow(
+        REFUSED,
+      );
+    }
+    expect(db.rows()).toEqual([before]);
+  });
+
+  it("moves only a login, only to another HTTPS login", async () => {
+    vi.stubEnv("RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP", "1");
+    const db = fakeDatabase();
+    const token = await save(db, { name: "api", origin: WWW, auth: { type: "bearer" } });
+    const saved = await save(db);
+    const attempts: Array<[BotSecretDestination, string]> = [
+      [{ name: "api", origin: LOGIN, auth: { type: "bearer" } }, token.id],
+      [{ name: "api", origin: LOGIN, auth: { type: "login" } }, token.id],
+      [{ name: "api", origin: "http://192.168.1.20", auth: { type: "bearer" } }, token.id],
+      [{ name: "site_login", origin: LOGIN, auth: { type: "bearer" } }, saved.id],
+    ];
+    for (const [destination, replaces] of attempts) {
+      await expect(prepare(db, destination, "fake-value-2", { replaces })).rejects.toThrow(REFUSED);
+    }
+    expect(db.rows()).toEqual([token, saved]);
+  });
+
+  it("won't let a card replace a login saved after it was opened", async () => {
+    // Opened when nothing was saved under the name; a login for www is saved meanwhile.
+    const db = fakeDatabase();
+    const opened = await prepare(db, login(LOGIN), "fake-password-login");
+    const before = await save(db);
+    await expect(commit(db, opened)).rejects.toThrow(REFUSED);
+    // Opened to replace a login that was then removed and saved again, as another row.
+    const replacing = await prepare(db, login(LOGIN), "fake-password-login", {
+      replaces: before.id,
+    });
+    await forgetBotSecret(db.prisma, scope, "site_login");
+    const again = await save(db);
+    expect(again.id).not.toBe(before.id);
+    await expect(commit(db, replacing)).rejects.toThrow(REFUSED);
+    expect(db.rows()).toEqual([again]);
+  });
+
+  it("keeps the site and value of the last of two cards replacing the same login", async () => {
+    const db = fakeDatabase();
+    const before = await save(db);
+    const toLogin = await prepare(db, login(LOGIN), "fake-password-login", {
+      replaces: before.id,
+    });
+    const toOther = await prepare(db, login("https://other.example.test"), "fake-password-other", {
+      replaces: before.id,
+    });
+    await Promise.all([commit(db, toLogin), commit(db, toOther)]);
+    expect(db.rows()).toHaveLength(1);
+    const [row] = db.rows();
+    expect(row).toMatchObject({ id: before.id, origin: "https://other.example.test" });
+    expect(await secretStore.load(row!.ciphertext, row!.id)).toBe(typed("fake-password-other"));
   });
 });

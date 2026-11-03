@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { BillingSubscriptionSnapshot } from "@rakazo/adapter-kit";
 import { BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
 import type { BillingAccount, PrismaClient } from "./client.js";
@@ -28,6 +29,20 @@ export function hasModelAccess(
 /** The free period's end while it is still running. */
 export function byokFreeUntil(credits: { byokFreeUntil: Date | null }, now = new Date()) {
   return credits.byokFreeUntil && credits.byokFreeUntil > now ? credits.byokFreeUntil : null;
+}
+
+export const FREE_MONTH_DAYS = 30;
+
+/** One statement, so concurrent grants each add their days. */
+export function extendByokFreePeriod(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+  days: number,
+) {
+  return tx.$executeRaw`
+    UPDATE model_credit_accounts
+    SET "byokFreeUntil" = GREATEST(COALESCE("byokFreeUntil", now()), now()) + make_interval(days => ${days}::int)
+    WHERE "organizationId" = ${organizationId}`;
 }
 
 export async function spaceHasModelAccess(prisma: PrismaClient, spaceId: string) {
@@ -93,20 +108,57 @@ export async function replaceBillingCustomer(
     data: {
       customerId: input.customerId,
       creditAmountCents: null,
+      byokPriceCents: null,
+      byokInterval: null,
       subscriptionId: null,
       subscriptionItemId: null,
       priceId: null,
       status: null,
       seats: null,
       trialEndsAt: null,
+      currentPeriodStartsAt: null,
       currentPeriodEndsAt: null,
       cancelAtPeriodEnd: false,
       endedAt: null,
+      cancellationReason: null,
+      cancellationComment: null,
       syncedAt: null,
     },
   });
   return prisma.billingAccount.findUniqueOrThrow({
     where: { organizationId: input.organizationId },
+  });
+}
+
+/**
+ * Claims the organization's checkout lease, coordinating API instances without holding a
+ * connection over provider calls. Returns the lease id, or null while another request holds it.
+ */
+export async function claimCheckoutLease(
+  prisma: PrismaClient,
+  organizationId: string,
+  ttlMs: number,
+): Promise<string | null> {
+  const leaseId = randomUUID();
+  const now = new Date();
+  const { count } = await prisma.billingAccount.updateMany({
+    where: {
+      organizationId,
+      OR: [{ checkoutLeaseExpiresAt: null }, { checkoutLeaseExpiresAt: { lte: now } }],
+    },
+    data: { checkoutLeaseId: leaseId, checkoutLeaseExpiresAt: new Date(now.getTime() + ttlMs) },
+  });
+  return count > 0 ? leaseId : null;
+}
+
+export async function releaseCheckoutLease(
+  prisma: PrismaClient,
+  organizationId: string,
+  leaseId: string,
+): Promise<void> {
+  await prisma.billingAccount.updateMany({
+    where: { organizationId, checkoutLeaseId: leaseId },
+    data: { checkoutLeaseId: null, checkoutLeaseExpiresAt: null },
   });
 }
 
@@ -134,15 +186,20 @@ export async function syncBillingSnapshot(
     where: { customerId, OR: [{ syncedAt: null }, { syncedAt: { lt: startedAt } }] },
     data: {
       creditAmountCents: snapshot?.creditAmountCents ?? null,
+      byokPriceCents: snapshot?.byokPriceCents ?? null,
+      byokInterval: snapshot?.byokInterval ?? null,
       subscriptionId: snapshot?.subscriptionId ?? null,
       subscriptionItemId: snapshot?.subscriptionItemId ?? null,
       priceId: snapshot?.priceId ?? null,
       status: snapshot?.status ?? null,
       seats: snapshot?.seats ?? null,
       trialEndsAt: snapshot?.trialEndsAt ?? null,
+      currentPeriodStartsAt: snapshot?.currentPeriodStartsAt ?? null,
       currentPeriodEndsAt: snapshot?.currentPeriodEndsAt ?? null,
       cancelAtPeriodEnd: snapshot?.cancelAtPeriodEnd ?? false,
       endedAt: snapshot?.endedAt ?? null,
+      cancellationReason: snapshot?.cancellationReason ?? null,
+      cancellationComment: snapshot?.cancellationComment ?? null,
       syncedAt: startedAt,
     },
   });
@@ -150,6 +207,12 @@ export async function syncBillingSnapshot(
     await prisma.billingAccount.updateMany({
       where: { customerId, subscribedAt: null },
       data: { subscribedAt: startedAt },
+    });
+  }
+  if (snapshot?.status === "active") {
+    await prisma.billingAccount.updateMany({
+      where: { customerId, paidAt: null },
+      data: { paidAt: startedAt },
     });
   }
   if (written.count > 0) return true;

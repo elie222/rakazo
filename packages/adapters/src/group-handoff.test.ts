@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@rakazo/db";
+import { RunHistoryWriteError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { handoffToGroupBot, loadBotGroupDirectory } from "./group-handoff.js";
 
@@ -97,6 +98,26 @@ describe("group handoff ownership", () => {
     expect(runCreate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ trigger: "follow_up" }) }),
     );
+  });
+
+  it("does not hand off from an attempt a newer claim superseded", async () => {
+    const { deps, runCreate, tx } = harness([{ kind: "text", text: "user request" }]);
+    tx.run.findUnique.mockResolvedValue({
+      status: "running",
+      leaseOwner: "worker-2",
+      leaseFence: 2,
+    } as never);
+
+    await expect(
+      handoffToGroupBot(
+        { ...deps, runLease: { runId: run.id, owner: "worker-1", fence: 1 } } as never,
+        run,
+        "group-1",
+        { bot_id: "bot-b", message: "Do the distinct next stage" },
+      ),
+    ).rejects.toBeInstanceOf(RunHistoryWriteError);
+    expect(runCreate).not.toHaveBeenCalled();
+    expect(deps.jobs.enqueue).not.toHaveBeenCalled();
   });
 
   it("refuses to bounce a handed-off stage straight back to its sender", async () => {

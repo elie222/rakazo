@@ -2,6 +2,7 @@ import type { AdapterContext, ConnectorCall } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import type { Evidence } from "./cases.js";
+import { EMPTY_SETTINGS } from "./cases.js";
 import { EvalServices } from "./services.js";
 import type { RoutineEvidence } from "./silence.js";
 import { SILENCE_EVAL_CASES } from "./silence.js";
@@ -31,6 +32,10 @@ function evidence(run: Partial<RoutineEvidence> = {}): Evidence {
     pendingApproval: null,
     priorMemory: "",
     toolNames: [],
+    toolCalls: [],
+    finalStep: 1,
+    settings: EMPTY_SETTINGS,
+    settingsBefore: EMPTY_SETTINGS,
     messaging: { originThreadId: null, outbound: [] },
     routineRuns: [routineRun],
   };

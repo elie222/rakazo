@@ -9,8 +9,8 @@ import {
   composerSelectedMentions,
   mentionChipKey,
   newClientId,
-  removeBoundComposerMention,
   replyAttachment,
+  resolveComposerMentionEdit,
   resolveMentionPickerKey,
   SLASH_ACTIONS,
   serializeComposerPrompt,
@@ -19,13 +19,24 @@ import {
 } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { ArrowUp, Box, Paperclip, Plus, Settings, Square, X } from "lucide-react";
-import type { ClipboardEvent, DragEvent, RefObject } from "react";
-import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ClipboardEvent, ComponentProps, DragEvent, RefObject } from "react";
+import {
+  memo,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { createPortal } from "react-dom";
 import {
   HoldToTalkControls,
   HoldToTalkStrip,
   useHoldToTalk,
 } from "../../components/composer/HoldToTalk";
+import { recordMessageSent } from "../../components/GitHubStarPrompt";
 import type { ArtifactTarget } from "../../lib/artifact-open";
 import { attachmentPickerAccept } from "../../lib/attachment-picker-accept";
 import { useCallSession } from "../../lib/call-session";
@@ -37,6 +48,7 @@ import {
   subscribeComposerDraftAccepted,
   writeComposerDraft,
 } from "../../lib/composer-draft";
+import { usePageSession } from "../../lib/pages";
 import { isFileDrag, isFilePaste } from "../../lib/pending-attachments";
 import { ComposerReplyPreview } from "./chat-context";
 import type { PendingAttachment } from "./chat-shared";
@@ -44,14 +56,15 @@ import { previewMessageText } from "./chat-shared";
 import { ComposerError } from "./composer-error";
 import {
   ComposerChip,
-  MentionChipIcon,
+  ComposerMentionHighlights,
   MentionOptionIcon,
   slashActionLabel,
 } from "./composer-mentions";
 import { useComposerLayout } from "./use-composer-layout";
 
 const ATTACHMENT_ACCEPT = attachmentPickerAccept(navigator.userAgent);
-export const Composer = memo(function Composer({
+const COMPOSER_TEXT = "rk-scroll whitespace-pre-wrap break-words px-0.5 py-0.5 text-body1";
+const ComposerBody = memo(function Composer({
   artifactTarget,
   activeName,
   running,
@@ -85,6 +98,7 @@ export const Composer = memo(function Composer({
   onSlashAction,
   draftKey,
   enterToSend,
+  docked = false,
 }: {
   activeName?: string;
   running: boolean;
@@ -125,6 +139,8 @@ export const Composer = memo(function Composer({
   onSlashAction?: (action: SlashActionId) => void;
   draftKey: string;
   enterToSend: boolean;
+  /** Floating over an open page instead of sitting under the chat. */
+  docked?: boolean;
 }) {
   const { t } = useLingui();
   const [composition, setComposition] = useState(() => ({
@@ -177,6 +193,7 @@ export const Composer = memo(function Composer({
       void onSend(text, [], newClientId())
         .then((accepted) => {
           if (accepted === false) appendDictation(text);
+          else recordMessageSent();
         })
         .catch(() => appendDictation(text));
     },
@@ -207,12 +224,13 @@ export const Composer = memo(function Composer({
   }, [replyId, quote, onDraftEdited]);
   const {
     textareaRef,
+    mirrorRef,
     attachButtonRef,
     composerActionsRef,
     composerBarRef,
     composerFieldRef,
     expanded,
-  } = useComposerLayout(draft, selectedSkill !== null || selectedMentions.length > 0);
+  } = useComposerLayout(draft, selectedSkill !== null);
   const pendingCaret = useRef<ComposerMentionRange | null>(null);
   const completedSelection = useRef<number | null>(null);
   useLayoutEffect(() => {
@@ -223,6 +241,23 @@ export const Composer = memo(function Composer({
     textareaRef.current?.setSelectionRange(selection.start, selection.end);
     textareaRef.current?.focus();
   });
+  // A reply button on the open page adds its text here for the user to send, about that page
+  // rather than a message picked before it.
+  const pageSession = usePageSession();
+  const clearReply = useRef(onClearReply);
+  clearReply.current = onClearReply;
+  useEffect(
+    () =>
+      pageSession?.subscribeReply((text) => {
+        clearReply.current?.();
+        const current = compositionRef.current.text;
+        editSelections.current = [{ start: current.length, end: current.length }];
+        const next = current.trim() ? `${current.trimEnd()} ${text}` : text;
+        updateDraft(next);
+        pendingCaret.current = { start: next.length, end: next.length };
+      }),
+    [pageSession, draftKey],
+  );
   const [replyAnnouncement, setReplyAnnouncement] = useState("");
   // What the live region currently holds — a send disarming the reply clears
   // "reply" text, while an explicit cancel must keep "Reply cancelled".
@@ -262,10 +297,7 @@ export const Composer = memo(function Composer({
     };
   }, []);
   const canSend =
-    draft.trim().length > 0 ||
-    selectedSkill !== null ||
-    selectedMentions.length > 0 ||
-    pendingAttachments.length > 0;
+    draft.trim().length > 0 || selectedSkill !== null || pendingAttachments.length > 0;
 
   function markEdited() {
     onDraftEdited?.();
@@ -290,16 +322,37 @@ export const Composer = memo(function Composer({
 
   const knownMentions = [...(mentionTargets ?? []), ...selectedMentions];
 
-  function updateDraft(value: string, caret = value.length, end = caret) {
+  function updateDraft(
+    nativeValue: string,
+    nativeCaret = nativeValue.length,
+    nativeEnd = nativeCaret,
+    composing = false,
+  ) {
     markEdited();
     const current = compositionRef.current;
-    const bindings = updateComposerMentionBindings(current.text, value, current.bindings, {
+    const hints = {
       before: editSelections.current,
-      after: { start: caret, end },
-    });
-    commitComposition({ text: value, bindings });
+      after: { start: nativeCaret, end: nativeEnd },
+    };
+    const edit = composing
+      ? {
+          text: nativeValue,
+          bindings: updateComposerMentionBindings(
+            current.text,
+            nativeValue,
+            current.bindings,
+            hints,
+          ),
+          caret: null,
+        }
+      : resolveComposerMentionEdit(current.text, nativeValue, current.bindings, hints);
+    const value = edit.text;
+    const caret = edit.caret ?? nativeCaret;
+    const end = edit.caret ?? nativeEnd;
+    if (edit.caret !== null) pendingCaret.current = { start: caret, end };
+    commitComposition({ text: value, bindings: edit.bindings });
     setMentionQuery(
-      composerMentionQuery(value, caret, end, knownMentions, bindings)?.query ?? null,
+      composerMentionQuery(value, caret, end, knownMentions, edit.bindings)?.query ?? null,
     );
     // `/` only at the start of the draft so forced skills expand (`Use skill:` / `/Name` prefix).
     const slashMatch = selectedSkill === null ? /^\/([^\n]*)$/.exec(value) : null;
@@ -328,18 +381,6 @@ export const Composer = memo(function Composer({
     pendingCaret.current = { start: completion.caret, end: completion.caret };
   }
 
-  function removeMention(mention: ComposerMention) {
-    const field = textareaRef.current;
-    const removed = removeBoundComposerMention(draft, mentionBindings, mention, {
-      start: field?.selectionStart ?? draft.length,
-      end: field?.selectionEnd ?? draft.length,
-    });
-    markEdited();
-    commitComposition({ text: removed.text, bindings: removed.bindings });
-    setMentionQuery(null);
-    pendingCaret.current = removed.selection;
-  }
-
   function insertSkill(skill: AgentSkillCatalogEntry) {
     markEdited();
     setSelectedSkill(skill);
@@ -354,13 +395,9 @@ export const Composer = memo(function Composer({
     onSlashAction?.(action);
   }
 
-  function removeLastChip() {
+  function removeSkill() {
     markEdited();
-    if (selectedMentions.length > 0) {
-      removeMention(selectedMentions[selectedMentions.length - 1]!);
-      return;
-    }
-    if (selectedSkill) setSelectedSkill(null);
+    setSelectedSkill(null);
   }
 
   const mentionOptions = useMemo(() => {
@@ -430,7 +467,10 @@ export const Composer = memo(function Composer({
           ? onSend(text, mentions, clientNonce, imageHandling)
           : onSend(text, mentions, clientNonce))) !== false;
       settleComposerDraftSubmission(draftKey, submission, accepted);
-      if (accepted) return;
+      if (accepted) {
+        recordMessageSent();
+        return;
+      }
     } catch {
       settleComposerDraftSubmission(draftKey, submission, false);
       // A rejected callback leaves acceptance unknown; do not restore a possible send.
@@ -508,8 +548,7 @@ export const Composer = memo(function Composer({
     });
   }
 
-  const showComposerPlaceholder =
-    draft.length === 0 && selectedSkill === null && selectedMentions.length === 0;
+  const showComposerPlaceholder = draft.length === 0 && selectedSkill === null;
 
   const replyName = replyTarget ? (replyTargetName ?? previewMessageText(replyTarget)) : "";
   const replyNameRef = useRef(replyName);
@@ -559,7 +598,7 @@ export const Composer = memo(function Composer({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`relative z-30 m-0 min-w-0 border-0 px-3 pb-4 pt-0 md:px-[max(1.5rem,calc((100%_-_60rem)/2))] md:pb-6 [&>*]:pointer-events-auto ${fileDragActive ? "pointer-events-auto" : "pointer-events-none"} ${
+      className={`relative z-30 m-0 min-w-0 border-0 ${docked ? "p-0" : "px-3 pb-4 pt-0 md:px-[max(1.5rem,calc((100%_-_60rem)/2))] md:pb-6"} [&>*]:pointer-events-auto ${fileDragActive ? "pointer-events-auto" : "pointer-events-none"} ${
         draggingFiles ? "rounded-[14px] ring-2 ring-inset ring-ring" : ""
       }`}
     >
@@ -656,7 +695,7 @@ export const Composer = memo(function Composer({
                 onClick={() => insertMention(mention)}
                 // Opening the list under a stationary pointer must not steal the keyboard highlight.
                 onMouseMove={() => setMentionHighlightKey(mentionChipKey(mention))}
-                className={`flex w-full items-start gap-3 px-4 py-2.5 text-start hover:bg-accent ${
+                className={`flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-accent ${
                   highlighted ? "bg-accent" : ""
                 }`}
               >
@@ -687,9 +726,9 @@ export const Composer = memo(function Composer({
               type="button"
               aria-label={t`Skill ${skill.name}`}
               onClick={() => insertSkill(skill)}
-              className="flex w-full items-start gap-3 px-4 py-2.5 text-start hover:bg-accent"
+              className="flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-accent"
             >
-              <Box size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-muted-foreground" />
+              <Box size={16} strokeWidth={1.7} className="shrink-0 text-muted-foreground" />
               <span className="min-w-0">
                 <span dir="auto" className="block text-[14px] text-foreground">
                   {skill.name}
@@ -721,8 +760,14 @@ export const Composer = memo(function Composer({
         ref={composerBarRef}
         data-testid="composer-bar"
         data-expanded={expanded}
-        className={`grid grid-cols-[auto_minmax(0,1fr)_auto] content-end items-center rounded-[26px] border border-border bg-background pe-2.5 ps-3 transition-colors focus-within:border-input ${
-          expanded ? "gap-x-2 gap-y-2 pb-[9px] pt-3" : "gap-x-3.5 py-[9px]"
+        className={`grid grid-cols-[auto_minmax(0,1fr)_auto] content-end items-center rounded-[26px] border border-border pe-2.5 ps-3 transition-colors focus-within:border-input ${
+          docked ? "bg-card" : "bg-background"
+        } ${
+          expanded
+            ? "gap-x-2 gap-y-2 pb-[9px] pt-3"
+            : docked
+              ? "gap-x-3 py-[5px] ps-2 pe-2"
+              : "gap-x-3.5 py-[9px]"
         }`}
       >
         <input
@@ -748,6 +793,7 @@ export const Composer = memo(function Composer({
         </Button>
         <div
           ref={composerFieldRef}
+          data-testid="composer-field"
           className={`flex min-w-0 flex-wrap items-end gap-1.5 ${
             expanded ? "col-span-3 row-start-1 px-1.5" : "col-start-2"
           }`}
@@ -760,124 +806,137 @@ export const Composer = memo(function Composer({
               }
               label={selectedSkill.name}
               removeLabel={t`Remove skill ${selectedSkill.name}`}
-              onRemove={() => {
-                markEdited();
-                setSelectedSkill(null);
-              }}
+              onRemove={removeSkill}
             />
           ) : null}
-          {selectedMentions.map((mention) => (
-            <ComposerChip
-              key={mentionChipKey(mention)}
-              data-testid="mention-chip"
-              data-mention-kind={mention.kind}
-              icon={<MentionChipIcon mention={mention} />}
-              label={mention.name}
-              removeLabel={t`Remove mention ${mention.name}`}
-              onRemove={() => removeMention(mention)}
-            />
-          ))}
           <HoldToTalkStrip talk={talk} />
-          <textarea
-            ref={textareaRef}
-            hidden={talk.recording !== null}
-            value={draft}
-            onChange={(event) => {
-              completedSelection.current = null;
-              updateDraft(
-                event.target.value,
-                event.target.selectionStart,
-                event.target.selectionEnd,
-              );
-            }}
-            onBeforeInput={(event) => rememberSelection(event.currentTarget)}
-            onSelect={(event) => {
-              const field = event.currentTarget;
-              if (pendingCaret.current !== null) return;
-              rememberSelection(field);
-              if (
-                completedSelection.current === field.selectionStart &&
-                field.selectionStart === field.selectionEnd
-              )
-                return;
-              completedSelection.current = null;
-              setMentionQuery(
-                composerMentionQuery(
-                  field.value,
-                  field.selectionStart,
-                  field.selectionEnd,
-                  knownMentions,
-                  mentionBindings,
-                )?.query ?? null,
-              );
-            }}
-            onPaste={handlePaste}
-            onKeyDown={(event) => {
-              rememberSelection(event.currentTarget);
-              if (
-                event.key === "Backspace" &&
-                draft.length === 0 &&
-                (selectedSkill !== null || selectedMentions.length > 0)
-              ) {
-                event.preventDefault();
-                removeLastChip();
-                return;
+          <div className="relative min-w-[8rem] flex-1" hidden={talk.recording !== null}>
+            <textarea
+              ref={textareaRef}
+              value={draft}
+              onChange={(event) => {
+                completedSelection.current = null;
+                updateDraft(
+                  event.target.value,
+                  event.target.selectionStart,
+                  event.target.selectionEnd,
+                  (event.nativeEvent as InputEvent).isComposing,
+                );
+              }}
+              onBeforeInput={(event) => rememberSelection(event.currentTarget)}
+              onSelect={(event) => {
+                const field = event.currentTarget;
+                if (pendingCaret.current !== null) return;
+                rememberSelection(field);
+                if (
+                  completedSelection.current === field.selectionStart &&
+                  field.selectionStart === field.selectionEnd
+                )
+                  return;
+                completedSelection.current = null;
+                setMentionQuery(
+                  composerMentionQuery(
+                    field.value,
+                    field.selectionStart,
+                    field.selectionEnd,
+                    knownMentions,
+                    mentionBindings,
+                  )?.query ?? null,
+                );
+              }}
+              onPaste={handlePaste}
+              onKeyDown={(event) => {
+                rememberSelection(event.currentTarget);
+                if (event.key === "Backspace" && draft.length === 0 && selectedSkill !== null) {
+                  event.preventDefault();
+                  removeSkill();
+                  return;
+                }
+                const action = resolveMentionPickerKey({
+                  key: event.key,
+                  shiftKey: event.shiftKey,
+                  ctrlKey: event.ctrlKey,
+                  metaKey: event.metaKey,
+                  enterToSend,
+                  isComposing: event.nativeEvent.isComposing || event.keyCode === 229,
+                  optionCount: mentionOptions.length,
+                  highlightedIndex: activeMentionIndex,
+                });
+                if (action.type === "complete") {
+                  const mention = mentionOptions[action.index];
+                  if (!mention) return;
+                  event.preventDefault();
+                  insertMention(mention);
+                  return;
+                }
+                if (action.type === "move") {
+                  event.preventDefault();
+                  setMentionHighlightKey(mentionChipKey(mentionOptions[action.index]!));
+                  return;
+                }
+                if (action.type === "dismiss") {
+                  event.preventDefault();
+                  completedSelection.current = event.currentTarget.selectionStart;
+                  setMentionQuery(null);
+                  setMentionHighlightKey(null);
+                  return;
+                }
+                if (action.type === "send") {
+                  event.preventDefault();
+                  void send();
+                  return;
+                }
+                if (
+                  event.key !== "Escape" ||
+                  event.repeat ||
+                  event.nativeEvent.isComposing ||
+                  event.keyCode === 229 ||
+                  event.shiftKey ||
+                  event.ctrlKey ||
+                  event.metaKey ||
+                  event.altKey
+                )
+                  return;
+                // An open picker closes first; a held Escape never goes on to stop the reply.
+                if (showSlashPicker) {
+                  event.preventDefault();
+                  setSlashQuery(null);
+                  return;
+                }
+                if (running && !sending && !talk.recording?.locked) {
+                  event.preventDefault();
+                  void onStop();
+                }
+              }}
+              disabled={disabled}
+              placeholder={
+                showComposerPlaceholder
+                  ? activeName
+                    ? t`Message ${activeName}`
+                    : t`Message…`
+                  : undefined
               }
-              const action = resolveMentionPickerKey({
-                key: event.key,
-                shiftKey: event.shiftKey,
-                ctrlKey: event.ctrlKey,
-                metaKey: event.metaKey,
-                enterToSend,
-                isComposing: event.nativeEvent.isComposing || event.keyCode === 229,
-                optionCount: mentionOptions.length,
-                highlightedIndex: activeMentionIndex,
-              });
-              if (action.type === "complete") {
-                const mention = mentionOptions[action.index];
-                if (!mention) return;
-                event.preventDefault();
-                insertMention(mention);
-                return;
-              }
-              if (action.type === "move") {
-                event.preventDefault();
-                setMentionHighlightKey(mentionChipKey(mentionOptions[action.index]!));
-                return;
-              }
-              if (action.type === "dismiss") {
-                event.preventDefault();
-                completedSelection.current = event.currentTarget.selectionStart;
-                setMentionQuery(null);
-                setMentionHighlightKey(null);
-                return;
-              }
-              if (action.type === "send") {
-                event.preventDefault();
-                void send();
-              }
-            }}
-            disabled={disabled}
-            placeholder={
-              showComposerPlaceholder
-                ? activeName
-                  ? t`Message ${activeName}`
-                  : t`Message…`
-                : undefined
-            }
-            aria-label={activeName ? t`Message ${activeName}` : t`Message`}
-            role="combobox"
-            aria-autocomplete="list"
-            aria-haspopup="listbox"
-            aria-expanded={mentionPickerOpen}
-            aria-controls={mentionPickerOpen ? mentionListboxId : undefined}
-            aria-activedescendant={activeMentionOptionId}
-            name="chat-message"
-            autoComplete="off"
-            dir="auto"
-            rows={1}
-            className="rk-scroll max-h-25 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-body1 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-40"
-          />
+              aria-label={activeName ? t`Message ${activeName}` : t`Message`}
+              role="combobox"
+              aria-autocomplete="list"
+              aria-haspopup="listbox"
+              aria-expanded={mentionPickerOpen}
+              aria-controls={mentionPickerOpen ? mentionListboxId : undefined}
+              aria-activedescendant={activeMentionOptionId}
+              name="chat-message"
+              autoComplete="off"
+              dir="auto"
+              rows={1}
+              className={`${COMPOSER_TEXT} block max-h-25 min-h-[24px] w-full resize-none overflow-y-auto bg-transparent text-transparent caret-foreground outline-none placeholder:text-muted-foreground selection:bg-ring/30 selection:text-transparent disabled:opacity-40 forced-colors:text-[CanvasText]`}
+            />
+            <ComposerMentionHighlights
+              ref={mirrorRef}
+              text={draft}
+              bindings={mentionBindings}
+              targets={mentionTargets ?? []}
+              className={`${COMPOSER_TEXT} pointer-events-none absolute inset-0 overflow-y-hidden text-foreground [unicode-bidi:plaintext] forced-colors:hidden ${disabled ? "opacity-40" : ""}`}
+            />
+          </div>
         </div>
         <div
           ref={composerActionsRef}
@@ -933,3 +992,35 @@ export const Composer = memo(function Composer({
     </fieldset>
   );
 });
+
+const noDockState = { node: null, page: null };
+const noDock = { subscribe: () => () => {}, get: () => noDockState };
+
+/**
+ * The chat's composer, floated over the open page while one is open. It stays one mount: its
+ * element moves between the chat and the page, so a draft's chips, focus and dictation carry over.
+ */
+export function Composer(props: Omit<ComponentProps<typeof ComposerBody>, "docked">) {
+  const dock = usePageSession()?.dock ?? noDock;
+  const { node: dockNode } = useSyncExternalStore(dock.subscribe, dock.get);
+  const [host] = useState(() => {
+    const element = document.createElement("div");
+    element.style.display = "contents";
+    return element;
+  });
+  const slot = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const target = dockNode ?? slot.current;
+    if (!target || host.parentNode === target) return;
+    const focused = host.contains(document.activeElement) ? document.activeElement : null;
+    target.append(host);
+    if (focused instanceof HTMLElement) focused.focus({ preventScroll: true });
+  }, [dockNode, host]);
+  useEffect(() => () => host.remove(), [host]);
+  return (
+    <>
+      <div ref={slot} className="contents" />
+      {createPortal(<ComposerBody {...props} docked={dockNode !== null} />, host)}
+    </>
+  );
+}

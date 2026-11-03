@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createDb,
   installSaturationReport,
+  isPoolCheckoutTimeout,
   isTooManyDatabaseConnections,
   parsePositiveInteger,
   retryOnTooManyConnections,
@@ -67,6 +68,16 @@ describe("parsePositiveInteger", () => {
     expect(parsePositiveInteger("0", 8)).toBe(8);
     expect(parsePositiveInteger("nope", 8)).toBe(8);
     expect(parsePositiveInteger("6", 8)).toBe(6);
+  });
+});
+
+describe("isPoolCheckoutTimeout", () => {
+  it("matches only pg-pool's checkout timeout", () => {
+    expect(isPoolCheckoutTimeout(new Error("timeout exceeded when trying to connect"))).toBe(true);
+    expect(
+      isPoolCheckoutTimeout(new Error("Connection terminated due to connection timeout")),
+    ).toBe(false);
+    expect(isPoolCheckoutTimeout(undefined)).toBe(false);
   });
 });
 

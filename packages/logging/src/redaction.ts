@@ -67,23 +67,45 @@ export function redactBindings(bindings: Record<string, unknown>): Record<string
 // Consume a failed local-part candidate once instead of retrying at every dot or hyphen.
 const EMAIL_CANDIDATE = /\b[A-Z0-9._%+-]+(?:@[A-Z0-9.-]+\.[A-Z]{2,}\b)?/gi;
 const BEARER = /\bBearer\s+[^\s"',;&]+/gi;
+// The lookahead admits only words that contain a secret name, so a long word is scanned once
+// rather than once per name inside it. A credential after an auth scheme goes with its scheme.
 const SECRET_ASSIGNMENT =
-  /\b([A-Za-z0-9_]*(?:password|secret|token|authorization|apikey|api_key)[A-Za-z0-9_]*)\s*[:=]\s*\S+/gi;
+  /\b(?=[A-Za-z0-9_]*(?:password|secret|token|authorization|apikey|api_key|api-key))([A-Za-z0-9_]+|api-key)\s*[:=]\s*(?:(?:basic|bearer|digest|token)\s+)?\S+/gi;
+// Quoted keys follow the structured-binding rule: any key containing a secret name.
 const JSON_SECRET_FIELD =
-  /"(password|passwd|secret|token|authorization|apikey|api_key|accesstoken|refreshtoken|email|cookie)"\s*:\s*"(?:\\.|[^"\\])*"/gi;
-const BARE_SECRET =
-  /\b(?:sk-(?:or-v1-)?[A-Za-z0-9_-]{8,}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|(?:ak_|ck_)[A-Za-z0-9]+)\b/g;
+  /"(?=[A-Za-z0-9_-]*(?:password|passwd|secret|token|authorization|apikey|api_key|api-key|email|cookie|credential))([A-Za-z0-9_-]+)"\s*:\s*"(?:\\.|[^"\\])*"/gi;
+const BARE_SECRET = /\b(?:sk-(?:or-v1-)?[A-Za-z0-9_-]{8,}|(?:ak_|ck_)[A-Za-z0-9]+)\b/g;
+// Consume failed JWT headers once; keys within a failed header still need redaction.
+const BARE_SECRET_CANDIDATE = new RegExp(
+  `${BARE_SECRET.source}|\\beyJ[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+)?\\b`,
+  "g",
+);
 // Profile paths leak the account name; leave later drive prefixes available for independent redaction.
 const WINDOWS_PROFILE = /[A-Z]:[\\/]Users[\\/](?:(?![A-Z]:[\\/])[^\\/\r\n])+/gi;
 const POSIX_PROFILE = /(?:\/Users\/|\/home\/)[^/\s]+/g;
 
+// A shared page's link is its only credential, in the API path and in the web page path, alone
+// or anywhere in text after an origin or a separator. The lookbehind runs only after a link path
+// matched and stops at the previous slash, so the scan stays linear.
+const PAGE_SHARE_LINK =
+  /(\/(?:api\/v1\/pages\/shared|p)\/)(?<=(?:^|[\s"'`(<=,;[{]|:\/\/[^/\s]*)\/(?:api\/v1\/pages\/shared|p)\/)[^/?#\s"'`<>()[\]{},;:]+/gi;
+// An unfinished quoted value consumes the rest of the text as well.
+const INVALID_HEADER_VALUE =
+  /Headers\.append: (\\?")[\s\S]*?(?:\1 is an invalid header value\.|$)/g;
+
 export function redactSensitiveText(text: string): string {
   return text
+    .replace(PAGE_SHARE_LINK, `$1${REDACTED}`)
+    .replace(INVALID_HEADER_VALUE, `Headers.append: $1${REDACTED}$1 is an invalid header value.`)
     .replace(EMAIL_CANDIDATE, (candidate) => (candidate.includes("@") ? REDACTED : candidate))
     .replace(JSON_SECRET_FIELD, `"$1":"${REDACTED}"`)
     .replace(BEARER, `Bearer ${REDACTED}`)
     .replace(SECRET_ASSIGNMENT, (_match, key: string) => `${key}=${REDACTED}`)
-    .replace(BARE_SECRET, REDACTED)
+    .replace(BARE_SECRET_CANDIDATE, (candidate) =>
+      candidate.startsWith("eyJ") && !candidate.includes(".")
+        ? candidate.replace(BARE_SECRET, REDACTED)
+        : REDACTED,
+    )
     .replace(WINDOWS_PROFILE, "[user]")
     .replace(POSIX_PROFILE, "/[user]");
 }

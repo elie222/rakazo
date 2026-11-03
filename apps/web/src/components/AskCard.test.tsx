@@ -16,7 +16,8 @@ vi.mock("@lingui/react/macro", () => ({
 vi.mock("@rakazo/chat-ui/web", () => ({
   ChatMarkdown: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
-vi.mock("../lib/rpc", () => ({ rpc: {} }));
+const rpc = vi.hoisted(() => ({ bots: { update: vi.fn(async () => ({})) } }));
+vi.mock("../lib/rpc", () => ({ rpc }));
 
 import { ChoiceCard } from "../pages/shell/message-cards";
 import type { AskBlock } from "./AskCard";
@@ -371,28 +372,31 @@ it("sizes approval buttons like the other card buttons", async () => {
   }
 });
 
-it("says a user's-computer approval allows the rest of the chat", async () => {
-  const block: AskBlock = {
-    kind: "ask",
-    approvalEffectId: "effect-1",
-    text: "Run on your computer?",
-    status: "pending",
-    actions: [
-      { id: "allow", label: "Allow for this chat" },
-      { id: "deny", label: "Deny" },
-    ],
-  };
-  await render({ ...block, detail: "hostname", detailFormat: "code" });
-  const detail = container.querySelector('[data-testid="ask-detail"]');
-  expect(detail?.textContent).toBe("hostname");
-  // The card is muted, so the command sits on the page background to read as a snippet.
-  expect(detail?.classList.contains("bg-background")).toBe(true);
-  expect(detail?.classList.contains("bg-muted")).toBe(false);
-  expect(button("Allow for this chat")).toBeTruthy();
-  expect(button("Allow once")).toBeUndefined();
-  await render({ ...block, status: "answered", answer: "allow" });
-  expect(container.textContent).toContain("Allowed for this chat");
-});
+it.each(["Allow in this space", "Allow for this chat"])(
+  "says a user's-computer approval labelled %s allows the whole space",
+  async (label) => {
+    const block: AskBlock = {
+      kind: "ask",
+      approvalEffectId: "effect-1",
+      text: "Run on your computer?",
+      status: "pending",
+      actions: [
+        { id: "allow", label },
+        { id: "deny", label: "Deny" },
+      ],
+    };
+    await render({ ...block, detail: "hostname", detailFormat: "code" });
+    const detail = container.querySelector('[data-testid="ask-detail"]');
+    expect(detail?.textContent).toBe("hostname");
+    // The card is muted, so the command sits on the page background to read as a snippet.
+    expect(detail?.classList.contains("bg-background")).toBe(true);
+    expect(detail?.classList.contains("bg-muted")).toBe(false);
+    expect(button("Allow in this space")).toBeTruthy();
+    expect(button("Allow once")).toBeUndefined();
+    await render({ ...block, status: "answered", answer: "allow" });
+    expect(container.textContent).toContain("Allowed in this space");
+  },
+);
 
 it("gives onboarding choices the same lettered rows as questions", async () => {
   await act(async () =>
@@ -571,4 +575,120 @@ it("dims the options a typed answer did not match", async () => {
   });
   expect(container.querySelector('[data-testid="ask-answer"]')).toBeNull();
   expect(button("ASeoul")!.getAttribute("aria-pressed")).toBe("true");
+});
+
+it("undoes a settings change from chat while it still holds", async () => {
+  await render({
+    kind: "ask",
+    text: "Settings updated",
+    status: "answered",
+    settingsUpdate: {
+      botId: "bot-1",
+      before: { modelProvider: null, modelId: null, thinkingLevel: null },
+      after: { modelProvider: "google", modelId: "gemini-3.8-flash", thinkingLevel: "high" },
+    },
+  });
+  expect(container.textContent).toContain("Settings updated");
+  await act(async () => button("Undo")?.click());
+  expect(rpc.bots.update).toHaveBeenCalledWith({
+    botId: "bot-1",
+    modelProvider: null,
+    modelId: null,
+    thinkingLevel: null,
+    expectedSettings: {
+      modelProvider: "google",
+      modelId: "gemini-3.8-flash",
+      thinkingLevel: "high",
+    },
+  });
+  expect(button("Restored")?.disabled).toBe(true);
+});
+
+const codeCard: AskBlock = {
+  kind: "ask",
+  text: "Enter the code",
+  input: "secret",
+  purpose: "otp",
+  oneTimeCode: { origin: "https://login.example.test" },
+  status: "pending",
+};
+
+it("asks for a one-time code in a masked field, with the site and no Save to Vault", async () => {
+  const onAnswer = vi.fn(async () => undefined);
+  await render(codeCard, undefined, onAnswer);
+  const input = container.querySelector<HTMLInputElement>('input[aria-label="Code"]')!;
+  expect(input.type).toBe("password");
+  expect(input.autocomplete).toBe("one-time-code");
+  expect(container.textContent).toContain("Only enter a code login.example.test sent you.");
+  expect(container.querySelector('[role="switch"]')).toBeNull();
+  expect(button("Save")).toBeUndefined();
+  await type("Code", "12");
+  expect(button("Continue")!.disabled).toBe(true);
+  await type("Code", "123 456");
+  await act(async () => button("Continue")!.click());
+  expect(onAnswer).toHaveBeenCalledWith("123 456", undefined);
+});
+
+it("leaves a one-time code to the run's user, and reads Sent once answered", async () => {
+  await act(async () =>
+    root.render(
+      <AskCard
+        block={codeCard}
+        canAnswer
+        canDismiss={false}
+        onAnswer={async () => {}}
+        onDismiss={async () => {}}
+      />,
+    ),
+  );
+  expect(container.querySelector("input")).toBeNull();
+  expect(container.querySelectorAll("button")).toHaveLength(0);
+  expect(container.textContent).toContain("Only enter a code login.example.test sent you.");
+  await render({ ...codeCard, status: "answered", answer: "" });
+  expect(container.textContent).toContain("Sent");
+  expect(container.textContent).not.toContain("Saved");
+});
+
+it("shows the bot's label on a code card as plain text beneath the site's own title", async () => {
+  await render({
+    ...codeCard,
+    text: "Code for login.example.test",
+    detail: "Your **bank** [link](https://evil.example)",
+  });
+  const detail = [...container.querySelectorAll("div")].find((node) =>
+    node.textContent?.startsWith("Your **bank**"),
+  );
+  expect(detail?.textContent).toBe("Your **bank** [link](https://evil.example)");
+  expect(detail?.querySelector("a, strong")).toBeNull();
+  // Other secret cards keep hiding a detail they do not use.
+  await render({ ...secretCard, detail: "hidden detail" });
+  expect(container.textContent).not.toContain("hidden detail");
+});
+
+it("keeps one-time-code autofill off the other secret cards", async () => {
+  await render(secretCard);
+  expect(container.querySelector<HTMLInputElement>("input")!.autocomplete).toBe("off");
+});
+
+it("shows the site a replace card moves the login from only to the person answering it", async () => {
+  const replaced = "https://www.example.test";
+  const render = (canDismiss: boolean, status: AskBlock["status"] = "pending") =>
+    act(async () =>
+      root.render(
+        <AskCard
+          block={{ ...loginCard, status, replaces: { id: "saved-login-1", origin: replaced } }}
+          canAnswer
+          canDismiss={canDismiss}
+          onAnswer={async () => {}}
+          onDismiss={async () => {}}
+        />,
+      ),
+    );
+
+  await render(true);
+  expect(container.textContent).toContain(`Replaces the login saved for ${replaced}`);
+  await render(false);
+  expect(container.textContent).not.toContain(replaced);
+  await render(true, "answered");
+  expect(container.textContent).not.toContain(replaced);
 });

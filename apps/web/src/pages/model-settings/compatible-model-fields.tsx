@@ -1,19 +1,21 @@
-import { Trans, useLingui } from "@lingui/react/macro";
+import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { ThinkingLevel } from "@rakazo/contracts";
 import { isOllamaCloudBaseUrl } from "@rakazo/contracts";
-import { toggleEnabledModelId } from "@rakazo/core";
+import { compatibleThinkingLevels, toggleEnabledModelId } from "@rakazo/core";
 import {
   Button,
   Checkbox,
   Disclosure,
   Input,
   Label,
+  ListSearchInput,
   ModelThinkingOptions,
   NativeSelect,
   NativeSelectOption,
 } from "@rakazo/ui-web";
 import { ModelPreflightFeedback } from "../../components/ModelConnectionPreflightNotice";
 import { ModelHeadersEditor } from "../../components/ModelHeadersEditor";
+import { useListSearch } from "../../lib/use-list-search";
 
 import type { ModelSettingsState } from "./use-model-settings";
 
@@ -23,6 +25,7 @@ export function CompatibleModelFields({
   setHeaderRows,
   savedHeaderEndpointMatches,
   credential,
+  apiProtocol,
   baseUrl,
   busy,
   cancelOAuthAttempt,
@@ -54,6 +57,7 @@ export function CompatibleModelFields({
   stageCompatibleModelId,
   supportsImages,
   thinkingLevel,
+  updateApiProtocol,
   updateBaseUrl,
 }: Pick<
   ModelSettingsState,
@@ -62,6 +66,7 @@ export function CompatibleModelFields({
   | "setHeaderRows"
   | "savedHeaderEndpointMatches"
   | "credential"
+  | "apiProtocol"
   | "baseUrl"
   | "busy"
   | "cancelOAuthAttempt"
@@ -93,9 +98,30 @@ export function CompatibleModelFields({
   | "stageCompatibleModelId"
   | "supportsImages"
   | "thinkingLevel"
+  | "updateApiProtocol"
   | "updateBaseUrl"
 >) {
   const { t } = useLingui();
+  const thinkingLevelLabels = {
+    minimal: t`Minimal`,
+    low: t`Low`,
+    medium: t`Medium`,
+    high: t`High`,
+    xhigh: t`Extra high`,
+    max: t`Max`,
+  } as const;
+  const {
+    query,
+    setQuery,
+    showSearch,
+    visible: visibleRows,
+    hiddenSelectedCount,
+  } = useListSearch(compatibleRows, {
+    text: (id) => id,
+    id: (id) => id,
+    selectedIds: [modelId, ...enabledModelIds],
+  });
+  const hasSearchQuery = query.trim().length > 0;
   return (
     <div className="block text-[13.5px] text-muted-foreground">
       <label className="block" htmlFor="model-base-url">
@@ -131,6 +157,34 @@ export function CompatibleModelFields({
           </p>
         </Disclosure>
       ) : null}
+      <div className="mt-4 block">
+        <label className="block" htmlFor="model-protocol">
+          <Trans>Protocol</Trans>
+          <NativeSelect
+            id="model-protocol"
+            className="mt-2 w-full text-foreground"
+            value={apiProtocol}
+            disabled={busy}
+            onChange={(event) => {
+              selectionRevisionRef.current += 1;
+              updateApiProtocol(event.target.value as ModelSettingsState["apiProtocol"]);
+              setError(null);
+              setNotice(null);
+            }}
+            aria-label={t`Protocol`}
+          >
+            <NativeSelectOption value="chat-completions">
+              <Trans>Chat Completions</Trans>
+            </NativeSelectOption>
+            <NativeSelectOption value="responses">
+              <Trans>Responses</Trans>
+            </NativeSelectOption>
+            <NativeSelectOption value="anthropic-messages">
+              <Trans>Anthropic Messages</Trans>
+            </NativeSelectOption>
+          </NativeSelect>
+        </label>
+      </div>
       {preflightTarget === "compatible" ? (
         <ModelPreflightFeedback success={null} failure={preflightFailure} />
       ) : null}
@@ -177,9 +231,26 @@ export function CompatibleModelFields({
             className="mt-2 h-10 text-foreground"
           />
         )}
-        {compatibleRows.length ? (
-          <div className="mt-3 grid gap-2">
-            {compatibleRows.map((id) => (
+        {compatibleRows.length || hasSearchQuery ? (
+          <div className="mt-3 grid gap-2" data-testid="compatible-model-rows">
+            {showSearch ? (
+              <ListSearchInput
+                query={query}
+                setQuery={setQuery}
+                label={t`Search models`}
+                placeholder={t`Search`}
+              />
+            ) : null}
+            {hiddenSelectedCount > 0 ? (
+              <p className="text-[13px] leading-[1.5] text-muted-foreground">
+                <Plural
+                  value={hiddenSelectedCount}
+                  one="# selected model is hidden by your search."
+                  other="# selected models are hidden by your search."
+                />
+              </p>
+            ) : null}
+            {visibleRows.map((id) => (
               <Label key={id} className="font-normal text-foreground">
                 <Checkbox
                   checked={id === modelId || enabledModelIds.includes(id)}
@@ -193,6 +264,11 @@ export function CompatibleModelFields({
                 <span className="min-w-0 break-all">{id}</span>
               </Label>
             ))}
+            {visibleRows.length ? null : (
+              <p>
+                <Trans>No matching models</Trans>
+              </p>
+            )}
           </div>
         ) : null}
         {probeModels.length && !compatibleRows.includes(modelId) ? (
@@ -226,14 +302,10 @@ export function CompatibleModelFields({
           setThinkingLevel(value as ThinkingLevel | null);
           setNotice(null);
         }}
-        thinkingLevelOptions={[
-          { value: "minimal", label: t`Minimal` },
-          { value: "low", label: t`Low` },
-          { value: "medium", label: t`Medium` },
-          { value: "high", label: t`High` },
-          { value: "xhigh", label: t`Extra high` },
-          { value: "max", label: t`Max` },
-        ]}
+        thinkingLevelOptions={compatibleThinkingLevels(apiProtocol).map((level) => ({
+          value: level,
+          label: thinkingLevelLabels[level],
+        }))}
         thinkingLevelLabel={t`Reasoning effort`}
         thinkingLevelDefaultLabel={t`Default`}
         maxTokens={maxTokens}

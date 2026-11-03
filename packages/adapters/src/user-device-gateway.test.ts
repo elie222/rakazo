@@ -30,6 +30,7 @@ interface DeviceRow {
   name: string;
   platform: string;
   tokenHash: string;
+  createdAt?: Date;
   revokedAt: Date | null;
   lastSeenAt: Date | null;
 }
@@ -101,6 +102,11 @@ function fakePrisma() {
         return { ...row, device: { name: device.name, platform: device.platform } };
       },
     },
+    // Every test user is signed in.
+    session: {
+      findMany: async ({ where }: { where: { userId: { in: string[] } } }) =>
+        where.userId.in.map((userId) => ({ userId })),
+    },
     $transaction: (run: (tx: unknown) => Promise<unknown>) => run(prisma),
   };
   return { prisma: prisma as unknown as PrismaClient, deviceRows: devices, connections };
@@ -151,6 +157,7 @@ function setup() {
   db.deviceRows.set(device.id, {
     ...device,
     tokenHash: hashUserDeviceToken("a".repeat(64)),
+    createdAt: new Date(0),
     revokedAt: null,
     lastSeenAt: null,
   });
@@ -256,8 +263,8 @@ describe("user device gateway in the holding process", () => {
     await hub.attach(device, new FakeSocket());
     connections.get(device.id)!.heartbeatAt = new Date(Date.now() - 10 * 60_000);
     await expect(devices.connected("user-1")).resolves.toBeNull();
-    await expect(devices.hasDevice("user-1")).resolves.toBe(true);
-    await expect(devices.hasDevice("user-2")).resolves.toBe(false);
+    await expect(devices.pairedSince("user-1")).resolves.toEqual(new Date(0));
+    await expect(devices.pairedSince("user-2")).resolves.toBeNull();
   });
 
   it("fails an in-flight request when the device disconnects and never resends it", async () => {
@@ -500,6 +507,39 @@ describe("device socket upgrade", () => {
   });
 
   /** Serves the hub and sends a raw upgrade, keeping the server's end of the socket. */
+  it("says when a refused device's sign-in ended, and only then", async () => {
+    const { hub, deviceRows } = setup();
+    const server = createServer();
+    server.on("upgrade", hub.handleUpgrade);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const base = `ws://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const refusal = () =>
+      new Promise<string | undefined>((resolve) => {
+        const ws = new WebSocket(`${base}${USER_DEVICE_CONNECT_PATH}`, {
+          headers: { authorization: `Bearer ${"a".repeat(64)}` },
+        });
+        ws.on("unexpected-response", (_request, response) =>
+          resolve(String(response.headers["x-rakazo-device-revoked"] ?? "none")),
+        );
+        ws.on("open", () => {
+          ws.close();
+          resolve(undefined);
+        });
+        ws.on("error", () => undefined);
+      });
+    try {
+      const row = deviceRows.get(device.id)! as { revokedAt?: Date | null; revokedBy?: string };
+      row.revokedAt = new Date();
+      row.revokedBy = "session";
+      expect(await refusal()).toBe("session-ended");
+      row.revokedBy = "owner";
+      expect(await refusal()).toBe("none");
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   async function rawUpgrade(hub: UserDeviceHub, path: string, token: string) {
     const server = createServer((_request, response) => response.end("ok"));
     let serverSide!: { socket: Duplex; closed: Promise<void> };
@@ -551,7 +591,8 @@ describe("device socket upgrade", () => {
   it("abandons the upgrade when the client resets while its token is checked", async () => {
     const { hub, prisma, deviceRows, devices } = setup();
     const warn = vi.spyOn(getLogger(), "warn");
-    const authenticate = vi.spyOn(hub, "authenticate");
+    // The upgrade authenticates through the lookup that also says why a token was refused.
+    const authenticate = vi.spyOn(hub as unknown as { lookup: () => Promise<unknown> }, "lookup");
     let release = () => {};
     const lookup = vi.spyOn(prisma.userDevice, "findUnique").mockImplementationOnce(
       (() =>
@@ -571,7 +612,9 @@ describe("device socket upgrade", () => {
       await closed;
       expect(warn).toHaveBeenCalledWith(...upgradeSocketError);
       release();
-      await expect(authenticate.mock.results[0]!.value).resolves.toMatchObject({ id: device.id });
+      await expect(authenticate.mock.results[0]!.value).resolves.toMatchObject({
+        device: { id: device.id },
+      });
       expect(await devices.connected("user-1")).toBeNull();
       expect((await fetch(`http://127.0.0.1:${port}/`)).status).toBe(200);
     } finally {

@@ -18,6 +18,7 @@ import { aiConsentCoalesceKey, captureApiRequestContext, rpc } from "./api";
 import { voiceForBot } from "./bot-voices";
 import { loadDeviceVoiceEnabled } from "./device-voice";
 import { t } from "./i18n";
+import { fetchServer } from "./server-headers";
 import { errorText, voiceAccountErrorText } from "./user-error";
 
 /** Who is speaking, for the dock: it is mounted outside any one thread's bot list. */
@@ -31,6 +32,7 @@ export function createSpeechOwner(): SpeechOwner {
 }
 
 type SpeechOptions = {
+  requestContext?: ApiRequestContext;
   /** Which copy of the voice settings to use; omitted means whichever applies in the space. */
   scope?: SettingsScope;
   voiceId?: string;
@@ -210,7 +212,7 @@ async function speakPrepared(text: string, opts: SpeechOptions, epoch: number): 
       if (!spoken && playback.status !== "idle") setPlayback(IDLE_PLAYBACK, null);
       return spoken;
     }
-    const requestContext = await captureApiRequestContext();
+    const requestContext = opts.requestContext ?? (await captureApiRequestContext());
     if (!isCurrentSpeech(epoch)) return false;
     const prepared = await rpc(
       "voice/prepare",
@@ -272,7 +274,7 @@ async function speakPrepared(text: string, opts: SpeechOptions, epoch: number): 
         const rendered = await current;
         if ("error" in rendered) throw rendered.error;
         if (session.isStopped || !isCurrentSpeech(epoch)) break;
-        await playMpeg(rendered.audio, session);
+        await playSpeechClip(rendered.audio, session);
       }
       finished = !session.isStopped && isCurrentSpeech(epoch);
     } finally {
@@ -426,21 +428,25 @@ async function renderUtterance(
   const deadline = requestDeadline(VOICE_RESPONSE_TIMEOUT_MS, "Voice request timed out.");
   try {
     const res = await withAbort(
-      fetch(`${requestContext.apiBase}/api/voice/speak`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          origin: "rakazo://",
-          ...requestContext.headers,
+      fetchServer(
+        `${requestContext.apiBase}/api/voice/speak`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            origin: "rakazo://",
+            ...requestContext.headers,
+          },
+          body: JSON.stringify({
+            text,
+            voiceId: opts.voiceId,
+            botId: opts.botId,
+            scope: opts.scope,
+          }),
+          signal: deadline.signal,
         },
-        body: JSON.stringify({
-          text,
-          voiceId: opts.voiceId,
-          botId: opts.botId,
-          scope: opts.scope,
-        }),
-        signal: deadline.signal,
-      }),
+        requestContext.apiBase,
+      ),
       deadline.signal,
       "Voice request aborted.",
     ).catch((error: unknown) => {
@@ -460,7 +466,7 @@ async function renderUtterance(
   }
 }
 
-// Hosted (MP3) playback shares one HostedSession across a speakText call's utterances, so
+// Hosted playback shares one HostedSession across a speakText call's utterances, so
 // Pause/Resume/Stop keep working across the gap between them.
 
 let hostedSpeechSession = 0;
@@ -511,7 +517,15 @@ class HostedSession {
   }
 }
 
-export async function playMpeg(bytes: Uint8Array, session?: HostedSession): Promise<void> {
+/** Hosted voices send MP3; a server that renders speech itself (macOS) sends WAV. */
+export function speechClipType(bytes: Uint8Array): { mimeType: string; extension: string } {
+  const ascii = (start: number, end: number) => String.fromCharCode(...bytes.subarray(start, end));
+  return ascii(0, 4) === "RIFF" && ascii(8, 12) === "WAVE"
+    ? { mimeType: "audio/wav", extension: "wav" }
+    : { mimeType: "audio/mpeg", extension: "mp3" };
+}
+
+export async function playSpeechClip(bytes: Uint8Array, session?: HostedSession): Promise<void> {
   const AudioCtor = (globalThis as { Audio?: typeof Audio }).Audio;
   if (typeof AudioCtor === "function") {
     await playWithHtmlAudio(AudioCtor, bytes, session);
@@ -526,7 +540,7 @@ async function playWithHtmlAudio(
   session?: HostedSession,
 ): Promise<void> {
   if (session?.isStopped) return;
-  const blob = new Blob([new Uint8Array(bytes)], { type: "audio/mpeg" });
+  const blob = new Blob([new Uint8Array(bytes)], { type: speechClipType(bytes).mimeType });
   const url = URL.createObjectURL(blob);
   try {
     const audio = new AudioCtor(url);
@@ -578,7 +592,10 @@ async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): 
     interruptionMode: "mixWithOthers",
     shouldPlayInBackground: playsInBackground,
   });
-  const file = new File(Paths.cache, `rakazo-voice-${Date.now()}.mp3`);
+  const file = new File(
+    Paths.cache,
+    `rakazo-voice-${Date.now()}.${speechClipType(bytes).extension}`,
+  );
   file.create({ overwrite: true });
   file.write(bytesToBase64(bytes), { encoding: "base64" });
   const player = createAudioPlayer({ uri: file.uri });

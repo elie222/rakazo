@@ -34,7 +34,8 @@ import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./pi-openai-compatible-provider.j
 import { assistantText, messageHasToolCall, sanitizeProviderError } from "./pi-runtime-errors.js";
 import {
   effectiveOutputReserve,
-  MODEL_STREAM_TIMEOUT_MS,
+  modelStreamTimeoutMs,
+  operatorMaxTokens,
   resolveCompletionMaxTokens,
 } from "./pi-runtime-limits.js";
 import type { RuntimeModelTarget } from "./pi-runtime-models.js";
@@ -231,7 +232,6 @@ function fallbackIncompatibility(
   candidate: RuntimeModelTarget,
   context: TranscriptContext,
   options: ModelsSimpleStreamOptions | undefined,
-  requestedThinkingLevel: AgentRunRequest["model"]["thinkingLevel"],
   tools: readonly ConnectorTool[],
 ): string | undefined {
   // The backup's own context policy prunes on its first call; judge what it would send. Too
@@ -253,6 +253,7 @@ function fallbackIncompatibility(
     options?.maxTokens,
     candidate.model.reasoning,
     candidate.model.contextWindow,
+    operatorMaxTokens(candidate.model),
   );
   // Token counts are estimates and can differ by provider/tokenizer. Reserve a
   // small input-relative margin, not a fixed 4096 tokens that would exclude
@@ -273,12 +274,10 @@ function fallbackIncompatibility(
   ) {
     return "The request exceeds the backup model's image limit.";
   }
-  const reasoningLevel = options?.reasoning ?? requestedThinkingLevel;
-  const requiresReasoning =
-    (reasoningLevel !== undefined && reasoningLevel !== null && reasoningLevel !== "off") ||
-    (candidate.config.thinkingLevel !== undefined &&
-      candidate.config.thinkingLevel !== null &&
-      candidate.config.thinkingLevel !== "off");
+  // The primary's thinking level does not count: a backup without reasoning runs with thinking off.
+  const requiresReasoning = Boolean(
+    candidate.config.thinkingLevel && candidate.config.thinkingLevel !== "off",
+  );
   return requiresReasoning && !candidate.model.reasoning
     ? "The backup model does not support the requested thinking level."
     : undefined;
@@ -401,7 +400,6 @@ export function fallbackAwareModelStream(
           candidate,
           requestContext(true),
           options,
-          state.request.model.thinkingLevel,
           state.request.tools,
         );
         if (incompatibility) {
@@ -424,7 +422,7 @@ export function fallbackAwareModelStream(
     // Bound same-model retries. Explicit backups retain their per-model header
     // timeout: a post-header idle watchdog can already exceed that timeout.
     let startedAt = Date.now();
-    const timeoutMs = options?.timeoutMs ?? MODEL_STREAM_TIMEOUT_MS;
+    const timeoutMs = options?.timeoutMs ?? modelStreamTimeoutMs();
     let firstRetryableError: Extract<AssistantMessageEvent, { type: "error" }> | undefined;
     // Set once this call has been repeated after spending its output budget on nothing visible.
     let lengthRecovered = false;
@@ -477,6 +475,7 @@ export function fallbackAwareModelStream(
         attemptOptions.maxTokens,
         sentTarget.model.reasoning,
         sentTarget.model.contextWindow,
+        operatorMaxTokens(sentTarget.model),
       );
       try {
         const apiKey = target.credentials?.accessToken ?? target.apiKey;

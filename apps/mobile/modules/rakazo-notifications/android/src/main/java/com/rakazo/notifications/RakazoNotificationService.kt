@@ -31,6 +31,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -42,20 +43,6 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
 
-private data class RunRecord(
-  val runId: String,
-  val spaceId: String,
-  val botId: String,
-  val botName: String,
-  val groupId: String?,
-  val groupName: String?,
-  val threadId: String,
-  val status: String,
-  val prompt: String,
-  val trigger: String,
-  val notificationsEnabled: Boolean,
-)
-
 private class ApiException(val status: Int) : IOException()
 
 class RakazoNotificationService : Service() {
@@ -63,6 +50,7 @@ class RakazoNotificationService : Service() {
   private lateinit var manager: NotificationManager
   private var pollJob: Job? = null
   private val knownCompleted = mutableSetOf<String>()
+  private val completions = PollCompletions(knownCompleted)
   private val alertedAttention = mutableSetOf<String>()
   private var historySpaceId: String? = null
   private val tokenCache = PollTokenCache()
@@ -84,6 +72,14 @@ class RakazoNotificationService : Service() {
     createChannels(localizedContext(NotificationStorage(this).locale))
     val generation = synchronized(sessionLock) {
       if (intent?.getBooleanExtra(EXTRA_RESET_TOKEN, false) == true) tokenCache.reset()
+      intent?.getStringExtra(EXTRA_MUTED_BOT_ID)?.let { botId ->
+        // Only a seeded poll can hold pending replies, and a discard always changes the
+        // seen set, so the mute persists here instead of waiting for the next poll.
+        completions.muteBot(botId) {
+          val stored = getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).getString(SEEN_RUNS_SPACE_ID, null)
+          if (ownsStoredHistory(stored, historySpaceId)) persistCompleted(seeded = true)
+        }
+      }
       sessionGeneration.incrementAndGet().also {
         if (intent?.action == ACTION_THREAD_CHANGED && (openBotId != null || openThreadId != null)) {
           clearLive()
@@ -126,20 +122,20 @@ class RakazoNotificationService : Service() {
         stopIfCurrent(generation)
         return
       }
-      val seeded = prepareHistorySpace(generation, storage.spaceId) ?: return
+      val seeded = prepareHistorySpace(generation, storage.endpoint, storage.spaceId, token) ?: return
       val copyContext = localizedContext(storage.locale)
       var recentPageBusy = true
       try {
         if (generation != sessionGeneration.get()) return
         val avatarStyle = selectedAvatarStyle
-          ?: avatarStyle(storage.endpoint, token, storage.spaceId)
+          ?: avatarStyle(storage.endpoint, token, storage.spaceId, storage.headers)
             .also { selectedAvatarStyle = it }
         if (generation != sessionGeneration.get()) return
-        val active = runs(storage.endpoint, token, storage.spaceId, "active")
+        val active = runs(storage.endpoint, token, storage.spaceId, storage.headers, "active")
         val working = active.filter(::isWorking).filter { it.notificationsEnabled }
         if (generation != sessionGeneration.get()) return
-        val recent = runs(storage.endpoint, token, storage.spaceId, "recent")
-        val replyLookups = mutableListOf<Pair<RunRecord, Boolean>>()
+        val recent = runs(storage.endpoint, token, storage.spaceId, storage.headers, "recent")
+        var replyLookups = emptyList<RunRecord>()
         val immediate = mutableListOf<Pair<RunRecord, NotificationCopy>>()
         if (!runIfCurrent(generation) {
             recentPageBusy = recent.size >= RECENT_LIMIT && recent.any { it.runId !in knownCompleted }
@@ -147,30 +143,10 @@ class RakazoNotificationService : Service() {
             if (visibleWorking.isEmpty()) clearLive() else {
               showLive(visibleWorking, avatarStyle, copyContext)
             }
-            if (!seeded) {
-              knownCompleted += recent.map { it.runId }
-            } else {
-              recent.asReversed().filter { knownCompleted.add(it.runId) }.forEach { run ->
-                when {
-                  !run.notificationsEnabled || isOpenThread(run) -> Unit
-                  run.status == "failed" && settings.needsAttention ->
-                    immediate += run to attentionCopy(copyContext, run)
-                  run.status != "completed" -> Unit
-                  run.trigger == "routine" && settings.scheduledTasks ->
-                    replyLookups += run to true
-                  run.trigger != "routine" && settings.messages ->
-                    replyLookups += run to false
-                }
-              }
+            replyLookups = completions.prepare(recent, seeded, settings, ::isOpenThread) { run ->
+              immediate += run to attentionCopy(copyContext, run)
             }
-            knownCompleted.retainAll(recent.map { it.runId }.toSet())
-            val nextSeen = knownCompleted.toSet()
-            historyWrites.persistIfChanged(seeded, nextSeen) { seen ->
-              getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).edit()
-                .putStringSet(SEEN_RUNS, seen)
-                .putBoolean(SEEN_RUNS_SEEDED, true)
-                .apply()
-            }
+            persistCompleted(seeded)
             if (settings.needsAttention) {
               active.filter { it.status == "waiting_input" || it.status == "waiting_takeover" }
                 .filter { it.notificationsEnabled }
@@ -183,26 +159,35 @@ class RakazoNotificationService : Service() {
         ) {
           return
         }
-        for ((run, scheduled) in replyLookups) {
+        for (run in replyLookups) {
           if (generation != sessionGeneration.get()) return
           val reply = runCatching {
-            latestReply(storage.endpoint, token, storage.spaceId, run)
+            latestReply(storage.endpoint, token, storage.spaceId, storage.headers, run)
           }.getOrDefault("")
-          if (reply == null) continue
           if (!runIfCurrent(generation) {
-              post(
-                run,
-                NotificationCopy(
-                  title = when {
-                    scheduled -> copyContext.getString(R.string.rakazo_scheduled_title, run.botName)
-                    run.groupName != null ->
-                      copyContext.getString(R.string.rakazo_replied_group, run.botName, run.groupName)
-                    else -> copyContext.getString(R.string.rakazo_replied, run.botName)
-                  },
-                  body = reply.ifBlank { run.prompt },
-                  channel = if (scheduled) Channels.SCHEDULED else Channels.MESSAGES,
-                ),
-              )
+              completions.complete(run, alreadyPosted = {
+                manager.activeNotifications.any {
+                  it.notification.extras.getString(EXTRA_RUN_ID) == run.runId
+                }
+              }) {
+                if (reply != null) {
+                  post(
+                    run,
+                    NotificationCopy(
+                      title = when {
+                        run.trigger == "routine" ->
+                          copyContext.getString(R.string.rakazo_scheduled_title, run.botName)
+                        run.groupName != null ->
+                          copyContext.getString(R.string.rakazo_replied_group, run.botName, run.groupName)
+                        else -> copyContext.getString(R.string.rakazo_replied, run.botName)
+                      },
+                      body = reply.ifBlank { run.prompt },
+                      channel = if (run.trigger == "routine") Channels.SCHEDULED else Channels.MESSAGES,
+                    ),
+                  )
+                }
+              }
+              persistCompleted(true)
             }
           ) {
             return
@@ -243,9 +228,19 @@ class RakazoNotificationService : Service() {
     }
   }
 
-  private fun prepareHistorySpace(generation: Long, spaceId: String): Boolean? =
+  private fun persistCompleted(seeded: Boolean) {
+    historyWrites.persistIfChanged(seeded, knownCompleted) { seen ->
+      getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).edit()
+        .putStringSet(SEEN_RUNS, seen)
+        .putBoolean(SEEN_RUNS_SEEDED, true)
+        .apply()
+    }
+  }
+
+  private fun prepareHistorySpace(generation: Long, endpoint: String, spaceId: String, token: String): Boolean? =
     synchronized(sessionLock) {
       if (generation != sessionGeneration.get()) return null
+      completions.useSession(endpoint, spaceId, token, sessionEpoch)
       val state = getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE)
       if (historySpaceId != spaceId) {
         knownCompleted.clear()
@@ -274,6 +269,7 @@ class RakazoNotificationService : Service() {
       .setStyle(Notification.BigTextStyle().bigText(copy.body))
       .setContentIntent(openApp(run))
       .addExtras(Bundle().apply {
+        if (run.status == "completed") putString(EXTRA_RUN_ID, run.runId)
         putString("rakazo.spaceId", run.spaceId)
         putString("rakazo.botId", run.botId)
         putString("rakazo.threadId", run.threadId)
@@ -432,20 +428,24 @@ class RakazoNotificationService : Service() {
     private const val PROMOTED_ONGOING_EXTRA = "android.requestPromotedOngoing"
     private const val RECENT_LIMIT = 20 // Keep in sync with apps/api/src/runs.ts.
     private const val EXTRA_RESET_TOKEN = "com.rakazo.notifications.RESET_TOKEN"
+    private const val EXTRA_MUTED_BOT_ID = "com.rakazo.notifications.MUTED_BOT_ID"
     private const val STATE_PREFERENCES = "com.rakazo.notification_state"
     private const val SEEN_RUNS = "seen_runs"
     private const val SEEN_RUNS_SEEDED = "seen_runs_seeded"
     private const val SEEN_RUNS_SPACE_ID = "seen_runs_space_id"
+    private const val EXTRA_RUN_ID = "rakazo.runId"
     private const val THREAD_NOTIFICATION_IDS = "thread_notification_ids"
     private val sessionLock = Any()
     private val sessionGeneration = AtomicLong()
+    private var sessionEpoch = 0L
     private var openBotId: String? = null
     private var openThreadId: String? = null
 
-    fun start(context: Context, resetToken: Boolean = true, action: String? = null) {
+    fun start(context: Context, resetToken: Boolean = true, action: String? = null, mutedBotId: String? = null) {
       val intent = Intent(context, RakazoNotificationService::class.java)
         .putExtra(EXTRA_RESET_TOKEN, resetToken)
       if (action != null) intent.action = action
+      if (mutedBotId != null) intent.putExtra(EXTRA_MUTED_BOT_ID, mutedBotId)
       runCatching { context.startService(intent) }
         .onFailure { error -> Log.w(TAG, "Could not start notification poller", error) }
     }
@@ -468,6 +468,7 @@ class RakazoNotificationService : Service() {
     fun clearSession(context: Context) {
       synchronized(sessionLock) {
         sessionGeneration.incrementAndGet()
+        sessionEpoch++
         openBotId = null
         openThreadId = null
         stop(context)
@@ -505,8 +506,14 @@ private object Channels {
   const val ATTENTION = "rakazo_attention"
 }
 
-private fun runs(endpoint: String, token: String, spaceId: String, filter: String): List<RunRecord> {
-  val root = rpc(endpoint, token, spaceId, "runs/list", JSONObject().put("filter", filter))
+private fun runs(
+  endpoint: String,
+  token: String,
+  spaceId: String,
+  headers: String,
+  filter: String,
+): List<RunRecord> {
+  val root = rpc(endpoint, token, spaceId, headers, "runs/list", JSONObject().put("filter", filter))
   val rows = root.optJSONArray("runs") ?: throw IOException("Invalid activity response")
   return List(rows.length()) { index ->
     val row = rows.optJSONObject(index) ?: throw IOException("Invalid activity response")
@@ -529,14 +536,20 @@ private fun runs(endpoint: String, token: String, spaceId: String, filter: Strin
 private fun isWorking(run: RunRecord): Boolean =
   run.status == "queued" || run.status == "leased" || run.status == "running"
 
-private fun avatarStyle(endpoint: String, token: String, spaceId: String): String =
-  rpc(endpoint, token, spaceId, "me", JSONObject()).optString("avatarStyle", "organic")
+private fun avatarStyle(endpoint: String, token: String, spaceId: String, headers: String): String =
+  rpc(endpoint, token, spaceId, headers, "me", JSONObject()).optString("avatarStyle", "organic")
 
-private fun latestReply(endpoint: String, token: String, spaceId: String, run: RunRecord): String? {
+private fun latestReply(
+  endpoint: String,
+  token: String,
+  spaceId: String,
+  headers: String,
+  run: RunRecord,
+): String? {
   val target = JSONObject().apply {
     if (run.groupId != null) put("groupId", run.groupId) else put("botId", run.botId)
   }
-  val root = rpc(endpoint, token, spaceId, "threads/get", target)
+  val root = rpc(endpoint, token, spaceId, headers, "threads/get", target)
   val messages = root.optJSONArray("messages") ?: return ""
   for (messageIndex in messages.length() - 1 downTo 0) {
     val message = messages.optJSONObject(messageIndex) ?: continue
@@ -1004,6 +1017,7 @@ private fun rpc(
   endpoint: String,
   token: String,
   spaceId: String,
+  headers: String,
   procedure: String,
   input: JSONObject,
 ): JSONObject {
@@ -1014,6 +1028,10 @@ private fun rpc(
     connection.connectTimeout = 8_000
     connection.readTimeout = 15_000
     connection.doOutput = true
+    // An access proxy in front of the server answers a refused request with a redirect to its login
+    // page; following it would read that page as the server's answer.
+    connection.instanceFollowRedirects = false
+    serverHeaders(headers).forEach { (name, value) -> connection.setRequestProperty(name, value) }
     connection.setRequestProperty("Content-Type", "application/json")
     connection.setRequestProperty("Origin", "rakazo://")
     connection.setRequestProperty("Authorization", "Bearer $token")
@@ -1026,10 +1044,28 @@ private fun rpc(
     val status = connection.responseCode
     if (status !in 200..299) throw ApiException(status)
     val body = connection.inputStream.bufferedReader().use { it.readText() }
-    JSONObject(body).optJSONObject("json") ?: throw IOException("Invalid server response")
+    val root = try {
+      JSONObject(body)
+    } catch (_: JSONException) {
+      throw IOException("Invalid server response")
+    }
+    root.optJSONObject("json") ?: throw IOException("Invalid server response")
   } finally {
     connection.disconnect()
   }
+}
+
+/** The saved headers; a value that is not a JSON object of strings sends none. */
+private fun serverHeaders(headers: String): Map<String, String> {
+  if (headers.isBlank()) return emptyMap()
+  val root = try {
+    JSONObject(headers)
+  } catch (_: JSONException) {
+    return emptyMap()
+  }
+  return root.keys().asSequence().mapNotNull { name ->
+    (root.opt(name) as? String)?.let { name to it }
+  }.toMap()
 }
 
 private fun JSONObject.requiredString(name: String): String =

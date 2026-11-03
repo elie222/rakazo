@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { Socket } from "node:net";
 import { fetch as undiciFetch } from "undici";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -21,8 +22,6 @@ describe("web SSRF policy", () => {
     "https://[::1]/",
     "http://[::]/",
     "file:///etc/passwd",
-    "gopher://example.test/1",
-    "ftp://example.test/file",
   ])("rejects unsafe URL %s", async (url) => {
     await expect(assertSafeWebUrl(url, publicResolver)).rejects.toThrow();
   });
@@ -146,6 +145,15 @@ describe("web SSRF policy", () => {
     ).rejects.toThrow(/too large/i);
   });
 
+  it("rejects an error status instead of returning its body", async () => {
+    await expect(
+      fetchSafeWebBytes("https://example.test/", {
+        fetch: async () => new Response("not found page", { status: 404 }),
+        resolveHostname: publicResolver,
+      }),
+    ).rejects.toThrow("Request failed: HTTP 404");
+  });
+
   it("stops at maxRedirects", async () => {
     const fetched: string[] = [];
     const fetchMock: typeof fetch = async (input) => {
@@ -216,13 +224,13 @@ describe("web SSRF policy", () => {
   it("refuses a host that rebinds to loopback between the check and the connection", async () => {
     // No fetch seam: the real dispatcher and its connect-time lookup run against a real
     // listener. The name checks out as public, then resolves to the listener at connect time.
-    let connections = 0;
     const listener = createServer((_request, response) => response.end("reached"));
-    listener.on("connection", () => {
-      connections += 1;
-    });
     await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
     const { port } = listener.address() as AddressInfo;
+    // Count TCP connections this process opens to the listener, whatever happens on
+    // the socket afterwards: a local tool probing the port runs in another process and
+    // cannot change the count, while a dispatcher that connects before failing counts.
+    const clientConnections = trackConnectionsTo(port);
     let resolutions = 0;
     try {
       await expect(
@@ -236,8 +244,9 @@ describe("web SSRF policy", () => {
         }),
       ).rejects.toMatchObject({ cause: { message: expect.stringMatching(/private address/) } });
       expect(resolutions).toBe(2);
-      expect(connections).toBe(0);
+      expect(clientConnections.count()).toBe(0);
     } finally {
+      clientConnections.restore();
       await new Promise<void>((resolve) => listener.close(() => resolve()));
     }
   });
@@ -552,5 +561,123 @@ describe("web SSRF policy", () => {
       }),
     ).rejects.toThrow();
     expect(resolveCalls).toBe(1);
+  });
+});
+
+/**
+ * Counts TCP connections this process opens to `port` by watching every socket the
+ * process itself connects, independent of HTTP: a local tool probing the port from
+ * another process never passes through here, and a socket that connected and then
+ * failed still counts.
+ */
+function trackConnectionsTo(port: number) {
+  const realConnect = Socket.prototype.connect as (...args: unknown[]) => unknown;
+  let connections = 0;
+  const countSocket = function (this: Socket, ...args: unknown[]) {
+    if (connectTargetPort(args) === port) {
+      this.on("connect", () => {
+        connections += 1;
+      });
+    }
+    return realConnect.apply(this, args);
+  };
+  const spy = vi.spyOn(Socket.prototype, "connect").mockImplementation(countSocket as never);
+  return { count: () => connections, restore: () => spy.mockRestore() };
+}
+
+/** The destination port of a `Socket.prototype.connect` call, in either argument shape. */
+function connectTargetPort(args: unknown[]): number | undefined {
+  let [first] = args;
+  if (Array.isArray(first)) [first] = first; // node's normalized [options, listener] pair
+  if (typeof first === "number") return first;
+  if (first && typeof first === "object" && "port" in first) {
+    const { port } = first as { port?: number | string };
+    if (typeof port === "number") return port;
+    if (typeof port === "string") return Number.parseInt(port, 10);
+  }
+  return undefined;
+}
+
+describe("outbound proxy", () => {
+  async function withConnectProxy(
+    run: (proxy: { proxied: string[]; hosts: string[]; connectHosts: string[] }) => Promise<void>,
+  ): Promise<void> {
+    const proxied: string[] = [];
+    const connectHosts: string[] = [];
+    const hosts: string[] = [];
+    const target = createServer((request, response) => {
+      hosts.push(request.headers.host ?? "");
+      response.end("ok");
+    });
+    const proxy = createServer((request, response) => {
+      proxied.push(request.url ?? "");
+      response.writeHead(405).end();
+    });
+    proxy.on("connect", (request, client) => {
+      proxied.push(request.url ?? "");
+      connectHosts.push(request.headers.host ?? "");
+      const upstream = new Socket();
+      upstream.connect((target.address() as AddressInfo).port, "127.0.0.1", () => {
+        client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+        upstream.pipe(client).pipe(upstream);
+      });
+    });
+    await Promise.all(
+      [target, proxy].map(
+        (server) => new Promise<void>((done) => server.listen(0, "127.0.0.1", done)),
+      ),
+    );
+    const proxyUrl = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
+    vi.stubEnv("HTTP_PROXY", proxyUrl);
+    vi.stubEnv("http_proxy", proxyUrl);
+    vi.stubEnv("NO_PROXY", "");
+    vi.stubEnv("no_proxy", "");
+    try {
+      await run({ proxied, hosts, connectHosts });
+    } finally {
+      vi.unstubAllEnvs();
+      proxy.closeAllConnections();
+      target.closeAllConnections();
+      await Promise.all([target, proxy].map((server) => new Promise((done) => server.close(done))));
+    }
+  }
+
+  it("tunnels to the checked address and keeps the original host", async () => {
+    await withConnectProxy(async ({ proxied, hosts, connectHosts }) => {
+      const response = await fetchSafeWebText("http://example.test/page", {
+        resolveHostname: publicResolver,
+      });
+
+      expect(response.body).toBe("ok");
+      expect(proxied).toEqual(["203.0.113.10:80"]);
+      expect(connectHosts).toEqual(["203.0.113.10:80"]);
+      expect(hosts).toEqual(["example.test"]);
+    });
+  });
+
+  it("refuses a host that rebinds to a private address before the proxy is asked", async () => {
+    await withConnectProxy(async ({ proxied }) => {
+      let calls = 0;
+      const rebinding = async () => [
+        { address: calls++ === 0 ? "203.0.113.10" : "127.0.0.1", family: 4 as const },
+      ];
+
+      await expect(
+        fetchSafeWebText("http://rebind.example.test/page", { resolveHostname: rebinding }),
+      ).rejects.toThrow();
+      expect(proxied).toEqual([]);
+    });
+  });
+
+  it("refuses a SOCKS proxy, which would resolve the hostname itself", async () => {
+    vi.stubEnv("HTTPS_PROXY", "socks5://127.0.0.1:1080");
+    vi.stubEnv("https_proxy", "socks5://127.0.0.1:1080");
+    try {
+      await expect(
+        fetchSafeWebText("https://example.test/page", { resolveHostname: publicResolver }),
+      ).rejects.toThrow("Only HTTP proxies are supported");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

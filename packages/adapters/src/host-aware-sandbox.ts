@@ -10,13 +10,22 @@ import type {
   ProcessEvent,
   SandboxProvider,
   ScreenRequest,
+  SecretStore,
   TerminalRequest,
   WorkspaceDirectoryRequest,
   WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
+import { runAsSystem } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { cancelComputerRunWork } from "./computer-idle.js";
+import { computerProviderDescriptor } from "./computer-provider-registry.js";
 import { manageComputerWorkspaceDirectories } from "./computer-workspace.js";
+import {
+  ConfiguredSandbox,
+  loadComputerOwnerSettings,
+  loadComputerProviderSelection,
+} from "./configured-sandbox.js";
 import { assertHostCommandsAllowed, DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { HostComputerSandbox } from "./host-computer-sandbox.js";
 import type { SandboxProviderOptions } from "./sandbox-factory.js";
@@ -27,10 +36,42 @@ export function sandboxKindForBot(envKind: string, computerHost: string | null |
   return envKind;
 }
 
-export function createRunSandbox(
+export async function createRunSandbox(
+  kind: string,
+  opts: SandboxProviderOptions & {
+    prisma?: PrismaClient;
+    secrets?: Pick<SecretStore, "load" | "onChange">;
+  },
+): Promise<SandboxProvider> {
+  const base = await createBaseRunSandbox(kind, opts);
+  // With the database at hand, Settings can send computers elsewhere: an admin's choice for
+  // everyone, or an account's own provider.
+  if (!opts.prisma || !opts.secrets || kind === "desktop" || kind === "fake") return base;
+  const { prisma, secrets } = opts;
+  const configured = new ConfiguredSandbox(
+    base,
+    () => loadComputerProviderSelection(prisma, secrets, true),
+    {
+      onSecretChange: secrets.onChange?.bind(secrets),
+      loadOwn: (homeKey) => loadComputerOwnerSettings(prisma, secrets, homeKey, true),
+      createProvider: (settings) =>
+        createBaseRunSandbox(settings.provider, {
+          ...opts,
+          ...computerProviderDescriptor(settings.provider).verify(settings.values),
+        }),
+    },
+  );
+  // Startup never waits on the secret store or a saved provider: routing rereads them on first use.
+  await configured
+    .refresh()
+    .catch((error) => getLogger().warn("computer_provider.load_failed", { error }));
+  return configured;
+}
+
+async function createBaseRunSandbox(
   kind: string,
   opts: SandboxProviderOptions & { prisma?: PrismaClient },
-): SandboxProvider {
+): Promise<SandboxProvider> {
   if (kind === "desktop") {
     assertHostCommandsAllowed();
     return new DesktopSandboxProvider({
@@ -38,8 +79,23 @@ export function createRunSandbox(
       hostRoots: [homedir()],
     });
   }
-  const primary = createSandboxProvider(kind, {
+  const prisma = opts.prisma;
+  const primary = await createSandboxProvider(kind, {
     ...opts,
+    referenceInUse: prisma
+      ? async (computer) =>
+          (await runAsSystem("check whether another computer shares a provider resource", () =>
+            prisma.computer.count({
+              where: {
+                kind: computer.kind,
+                providerRef: computer.providerRef,
+                homeKey: { not: computer.botId },
+                // One still saving its workspace needs the desktop until it finishes.
+                state: { in: ["booting", "running", "suspending"] },
+              },
+            }),
+          )) > 0
+      : opts.referenceInUse,
     onUnsafeStop: opts.prisma
       ? async (providerRef) => {
           const quarantined = await opts.prisma!.computer.updateMany({
@@ -97,11 +153,15 @@ export class HostAwareSandbox implements SandboxProvider {
     }
   }
 
+  ownsReference(computer: Pick<ComputerRef, "kind" | "providerRef">) {
+    return this.route(computer).ownsReference?.(computer) ?? true;
+  }
+
   describe() {
     return this.isolated.describe();
   }
 
-  private route(computer: ComputerRef) {
+  private route(computer: Pick<ComputerRef, "kind">) {
     return computer.kind === "desktop" ? this.host : this.isolated;
   }
 
@@ -233,7 +293,7 @@ export class HostAwareSandbox implements SandboxProvider {
     return this.route(computer).snapshot(computer, context);
   }
 
-  billsWhileRunning(computer: ComputerRef): boolean {
+  billsWhileRunning(computer: Pick<ComputerRef, "kind">): boolean {
     return this.route(computer).billsWhileRunning?.(computer) ?? false;
   }
 

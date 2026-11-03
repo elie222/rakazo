@@ -7,7 +7,7 @@ import {
   computerHomeKey,
   createDb,
   ensureComputerRecord,
-  installSecurityEventStore,
+  installAuditEventStore,
   prepareAccountDeletion,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -113,7 +113,7 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     db = createDb(process.env.DATABASE_URL!);
     prisma = db.prisma;
     system = asSystem(prisma);
-    installSecurityEventStore(prisma);
+    installAuditEventStore(prisma);
     const deps = {
       prisma,
       billing: { syncSeats },
@@ -209,11 +209,11 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
       }),
     ).resolves.toBeNull();
 
-    const events = await system.securityEvent.findMany({
+    const events = await system.auditEvent.findMany({
       where: { spaceId: home },
-      select: { type: true, metadata: true },
+      select: { action: true, metadata: true },
     });
-    expect(events.map((event) => event.type).sort()).toEqual([
+    expect(events.map((event) => event.action).sort()).toEqual([
       "space.invite.created",
       "space.member.joined",
     ]);
@@ -468,7 +468,7 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
       system.connection.findUnique({ where: { id: ownConnection.id } }),
     ).resolves.not.toBeNull();
     await expect(
-      system.securityEvent.count({ where: { spaceId: home, type: "space.member.removed" } }),
+      system.auditEvent.count({ where: { spaceId: home, action: "space.member.removed" } }),
     ).resolves.toBe(1);
   });
 

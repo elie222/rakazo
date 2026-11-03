@@ -20,6 +20,11 @@
       "development": "./src/network-host.ts",
       "default": "./src/network-host.ts"
     },
+    "./user-devices": {
+      "types": "./src/user-devices.ts",
+      "development": "./src/user-devices.ts",
+      "default": "./src/user-devices.ts"
+    },
     "./content-security-policy": {
       "types": "./src/content-security-policy.ts",
       "development": "./src/content-security-policy.ts",

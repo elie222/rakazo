@@ -164,6 +164,7 @@ export function SettingsOverlays({
           onSectionChange={(section) => setOverlay({ ...overlay, section })}
           billingEnabled={bootstrapMe?.billingEnabled === true}
           sandboxProvider={bootstrapMe?.sandboxProvider}
+          canConfigureComputers={bootstrapMe?.isAdmin === true}
           onSandboxProviderChange={(sandboxProvider) =>
             setBootstrapMe((prev) => (prev ? { ...prev, sandboxProvider } : prev))
           }

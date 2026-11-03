@@ -1,4 +1,9 @@
-import { computerSupportsTerminal, computerSupportsUpdate } from "@rakazo/adapters";
+import {
+  computerSupportsTerminal,
+  computerSupportsUpdate,
+  DISK_WARNING_PERCENT,
+  diskUsedPercent,
+} from "@rakazo/adapters";
 import type { ComputerStatus } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, computerScreenSize } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
@@ -60,24 +65,35 @@ export function toComputerStatus(
     controlRunId?: string | null;
     homeRevision: string;
     maintenanceId?: string | null;
+    diskUsedBytes?: bigint | null;
+    diskFreeBytes?: bigint | null;
+    diskDismissedPercent?: number | null;
   } | null,
   busyBotName: string | null = null,
 ): ComputerStatus {
-  const state = computer?.maintenanceId
-    ? "booting"
-    : computer?.state === "quarantined"
-      ? "error"
-      : computer?.state === "suspending"
-        ? "running"
-        : computer?.state === "stopped" ||
-            computer?.state === "booting" ||
-            computer?.state === "running" ||
-            computer?.state === "suspended" ||
-            computer?.state === "error"
-          ? computer.state
-          : "stopped";
-  const screen = computerScreenSize(computer?.kind);
   const kind = (computer?.kind ?? "fake") as ComputerStatus["kind"];
+  const state =
+    kind === "none"
+      ? "stopped"
+      : computer?.maintenanceId
+        ? "booting"
+        : computer?.state === "quarantined"
+          ? "error"
+          : computer?.state === "suspending"
+            ? "running"
+            : computer?.state === "stopped" ||
+                computer?.state === "booting" ||
+                computer?.state === "running" ||
+                computer?.state === "suspended" ||
+                computer?.state === "error"
+              ? computer.state
+              : "stopped";
+  const screen = computerScreenSize(computer?.kind);
+  const diskPercent = computer ? diskUsedPercent(computer) : null;
+  const diskFull =
+    diskPercent !== null &&
+    diskPercent >= DISK_WARNING_PERCENT &&
+    diskPercent > (computer?.diskDismissedPercent ?? 0);
   return {
     botId,
     mode: computer?.scope === "dedicated" ? "dedicated" : "team",
@@ -93,5 +109,6 @@ export function toComputerStatus(
     busyBotName,
     canUpdate: computerSupportsUpdate(kind),
     terminalAvailable: computerSupportsTerminal(kind),
+    ...(diskFull ? { diskFullPercent: diskPercent } : {}),
   };
 }

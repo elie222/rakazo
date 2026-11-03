@@ -1,4 +1,9 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.js";
 import type { PluginRepoFile } from "./plugin-connectors.js";
 import {
   classifyPluginFiles,
@@ -165,6 +170,76 @@ describe("portable plugin parser", () => {
     expect(preview.skipped).toContainEqual(
       expect.objectContaining({ kind: "skill_invalid", name: `commands/${"x".repeat(81)}.md` }),
     );
+  });
+  it("leaves out skills that repeat a built-in one, without marking the plugin partial", () => {
+    const preview = parse([
+      ...files(),
+      {
+        path: "skills/interrogate/SKILL.md",
+        content: "---\nname: Interrogate\ndescription: Review a diff\n---\n\nReview it.\n",
+      },
+      { path: "commands/INTERROGATE.md", content: "Review the diff" },
+      { path: "commands/ interrogate.md", content: "Review the diff" },
+    ]);
+    expect(preview.skills.map((s) => s.name)).toEqual(["example-skill"]);
+    expect(preview.skipped).toEqual([]);
+    expect(preview.builtinNames).toEqual(["Interrogate", " interrogate"]);
+  });
+  it("saves a preview that clients released before the built-in skip still read", () => {
+    // PluginPreviewSchema as released, which installed clients parse saved plugin installs with.
+    const released = z.object({
+      format: z.enum(["agent-plugins", "cursor", "grok"]),
+      name: z.string(),
+      version: z.string().nullable(),
+      description: z.string(),
+      author: z.string().nullable(),
+      homepage: z.string().nullable(),
+      repository: z.string().nullable(),
+      license: z.string().nullable(),
+      keywords: z.array(z.string()),
+      resolvedSha: z.string().regex(/^[a-f0-9]{40}$/),
+      pinnedSource: z.string().optional(),
+      installedSource: z.string().optional(),
+      digest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+      skills: z.array(
+        z.object({
+          name: z.string(),
+          description: z.string(),
+          files: z.array(z.string()).optional(),
+        }),
+      ),
+      mcpServers: z.array(
+        z.object({
+          name: z.string(),
+          transport: z.enum(["streamable_http", "sse"]),
+          endpoint: z.string(),
+          staticHeaderKeys: z.array(z.string()),
+        }),
+      ),
+      skipped: z.array(
+        z.object({
+          kind: z.enum([
+            "mcp_stdio",
+            "mcp_invalid",
+            "skill_invalid",
+            "editor_only",
+            "unsupported_transport",
+            "unsupported_field",
+          ]),
+          name: z.string(),
+          reason: z.string(),
+        }),
+      ),
+    });
+    const preview = parse([
+      ...files(),
+      { path: "commands/interrogate.md", content: "Review the diff" },
+    ]);
+    const saved = JSON.parse(JSON.stringify(pluginPreviewDto(preview)));
+    const read = released.safeParse(saved);
+    expect(read.success).toBe(true);
+    expect(read.data?.skills.map((s) => s.name)).toEqual(["example-skill"]);
+    expect(saved.builtinNames).toEqual(["interrogate"]);
   });
   it("tells from a file list whether every part installs", () => {
     const remote = JSON.stringify({
@@ -448,5 +523,27 @@ describe("GitHub acquisition", () => {
     });
     expect(preview.source.subdir).toBe("one");
     expect(preview.skills).toHaveLength(1);
+  });
+});
+
+describe("example plugins", () => {
+  // Both documented examples must parse completely without contacting their MCP endpoints.
+  it.each([
+    { name: "hello-world", skills: ["say-hello"], servers: [] },
+    { name: "mcp-server", skills: ["search-docs"], servers: ["docs"] },
+  ])("loads $name completely", ({ name, skills, servers }) => {
+    const root = fileURLToPath(new URL(`../../../examples/plugins/${name}`, import.meta.url));
+    const files = readdirSync(root, { recursive: true, withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => {
+        const path = join(entry.parentPath, entry.name);
+        return { path: relative(root, path), content: readFileSync(path, "utf8") };
+      });
+    const plugin = parsePluginDirectory({ files, resolvedSha: SHA });
+    expect(plugin).toMatchObject({ format: "agent-plugins", name, skipped: [] });
+    expect(plugin.skills.map((s) => s.name)).toEqual(skills);
+    expect(plugin.mcpServers.map((s) => s.name)).toEqual(servers);
+    const builtins = BUILTIN_AGENT_SKILLS.map((s) => s.name.toLowerCase());
+    expect(plugin.skills.some((s) => builtins.includes(s.name))).toBe(false);
   });
 });

@@ -3,7 +3,7 @@ import { getLogger, redactSensitiveText } from "@rakazo/logging";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { readBoundedBody } from "./http-body.js";
-import { windowCounter } from "./window-counter.js";
+import { throttleKey, windowCounter } from "./window-counter.js";
 
 /**
  * Content-Security-Policy violation reports. Browsers post them without credentials, so the
@@ -130,7 +130,7 @@ export function cspReportRoutes(
   app.post(CSP_REPORT_PATH, async (c) => {
     const type = c.req.header("content-type")?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
     if (!REPORT_TYPES.includes(type)) return c.body(null, 415);
-    if (requests(`ip:${clientIp(c) ?? "unknown"}`) > REQUESTS_PER_WINDOW) {
+    if (requests(throttleKey(clientIp(c))) > REQUESTS_PER_WINDOW) {
       return c.body(null, 429, { "retry-after": String(WINDOW_MS / 1000) });
     }
     const text = await readBoundedBody(c.req.raw, MAX_CSP_REPORT_BYTES);

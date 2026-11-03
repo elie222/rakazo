@@ -206,35 +206,100 @@ export function composerMentionsForPrompt(
   });
 }
 
-/** Remove one target's occurrences and transform both selection endpoints. */
-export function removeBoundComposerMention(
+export type ComposerMentionSegment = { text: string; binding?: ComposerMentionBinding };
+
+export function composerMentionSegments(
   text: string,
   bindings: readonly ComposerMentionBinding[],
-  target: Pick<ComposerMention, "kind" | "id">,
-  selection: ComposerMentionRange,
-) {
-  const removed = bindings
-    .filter((binding) => mentionChipKey(binding.mention) === mentionChipKey(target))
-    .sort((a, b) => a.start - b.start);
-  let next = text;
-  for (const range of [...removed].reverse())
-    next = next.slice(0, range.start) + next.slice(range.end);
-  const position = (value: number) => {
-    let result = value;
-    for (const range of removed) {
-      if (value <= range.start) break;
-      result -= Math.min(value, range.end) - range.start;
-      if (value < range.end) break;
-    }
-    return Math.max(0, Math.min(next.length, result));
-  };
-  const retained = bindings
-    .filter((binding) => mentionChipKey(binding.mention) !== mentionChipKey(target))
-    .map((binding) => ({ ...binding, start: position(binding.start), end: position(binding.end) }))
-    .filter((binding) => validBinding(next, binding));
+): ComposerMentionSegment[] {
+  const segments: ComposerMentionSegment[] = [];
+  let index = 0;
+  for (const binding of bindings) {
+    if (binding.start < index) continue;
+    if (binding.start > index) segments.push({ text: text.slice(index, binding.start) });
+    segments.push({ text: text.slice(binding.start, binding.end), binding });
+    index = binding.end;
+  }
+  if (index < text.length) segments.push({ text: text.slice(index) });
+  return segments;
+}
+
+export function composerMentionDeletionRange(
+  bindings: readonly ComposerMentionBinding[],
+  range: ComposerMentionRange,
+): ComposerMentionRange | null {
+  let { start, end } = range;
+  for (const binding of bindings) {
+    if (binding.start >= range.end || binding.end <= range.start) continue;
+    start = Math.min(start, binding.start);
+    end = Math.max(end, binding.end);
+  }
+  return start === range.start && end === range.end ? null : { start, end };
+}
+
+export function resolveComposerMentionEdit(
+  previous: string,
+  next: string,
+  bindings: readonly ComposerMentionBinding[],
+  hints: ComposerMentionEditHints = {},
+): { text: string; bindings: ComposerMentionBinding[]; caret: number | null } {
+  const edit = next.length < previous.length ? editBetween(previous, next, hints) : null;
+  const mention =
+    edit?.length === 0
+      ? composerMentionDeletionRange(bindings, { start: edit.start, end: edit.end })
+      : null;
+  if (!mention)
+    return {
+      text: next,
+      bindings: updateComposerMentionBindings(previous, next, bindings, hints),
+      caret: null,
+    };
+  const text = previous.slice(0, mention.start) + previous.slice(mention.end);
   return {
-    text: next,
-    bindings: retained,
-    selection: { start: position(selection.start), end: position(selection.end) },
+    text,
+    bindings: mapEdit(bindings, mention.start, mention.end, 0, text),
+    caret: mention.start,
+  };
+}
+
+/**
+ * Two-step delete for the mobile composer. A backspace right after a mention, or right after the
+ * space that follows it, keeps the text and selects the mention; the next one removes it together
+ * with that space. `selected` is the start of the mention that is currently selected, if any.
+ */
+export function resolveComposerMentionBackspace(
+  previous: string,
+  next: string,
+  bindings: readonly ComposerMentionBinding[],
+  hints: ComposerMentionEditHints,
+  selected: number | null,
+): {
+  text: string;
+  bindings: ComposerMentionBinding[];
+  caret: number;
+  selected: number | null;
+} | null {
+  if (next.length !== previous.length - 1) return null;
+  const edit = editBetween(previous, next, hints);
+  if (edit.length !== 0 || edit.end - edit.start !== 1) return null;
+  // A forward delete removes the character after the caret; only a backspace selects a mention.
+  if (!hints.before?.some((caret) => caret.start === caret.end && caret.start === edit.end))
+    return null;
+  const binding = bindings.find(
+    (candidate) =>
+      edit.end === candidate.end ||
+      (edit.end === candidate.end + 1 && previous[candidate.end] === " "),
+  );
+  if (!binding) return null;
+  if (selected !== binding.start) {
+    return { text: previous, bindings: [...bindings], caret: edit.end, selected: binding.start };
+  }
+  const end = previous[binding.end] === " " ? binding.end + 1 : binding.end;
+  const text = previous.slice(0, binding.start) + previous.slice(end);
+  return {
+    text,
+    bindings: mapEdit(bindings, binding.start, end, 0, text),
+    caret: binding.start,
+    selected: null,
   };
 }

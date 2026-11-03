@@ -36,6 +36,7 @@ vi.mock("../components/load-failure", () => ({
   LoadFailure: ({ message }: { message: string }) => <p role="alert">{message}</p>,
 }));
 vi.mock("../components/settings-group", () => ({
+  useStackedSettings: () => false,
   SettingsGroup: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   SettingsRow: ({
     title,

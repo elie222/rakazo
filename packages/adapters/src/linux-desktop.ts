@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type {
   AdapterContext,
+  CommandRequest,
   ComputerAction,
   ComputerActionRequest,
   ComputerInput,
   ComputerRef,
+  PageBrowserCommand,
+  PageBrowserResult,
   ScreenRequest,
   ScreenSession,
   TerminalRequest,
@@ -12,6 +15,7 @@ import type {
 import type { DesktopEnvironment } from "@rakazo/core/node/desktop-runtime";
 import {
   BROWSER_APPLICATIONS,
+  BROWSER_STILL_RUNNING_EXIT,
   browserLauncherPath,
   browserProfilePathForScreen,
   desktopControlCommand,
@@ -19,11 +23,13 @@ import {
   desktopUrl,
   managedDesktopCommand,
   releaseDesktopCommand,
+  screenDisplayArgv,
   screenPorts,
   shellQuote,
   stopAllDesktopBrowsersCommand,
 } from "@rakazo/core/node/desktop-runtime";
 import {
+  BrowserStillRunningError,
   BrowserStoppedReleaseError,
   ComputerScreenUnavailableError,
   screenSessionKey,
@@ -49,6 +55,40 @@ export interface LinuxDesktopHost {
     context: AdapterContext,
   ): Promise<{ code: number; stdout: string; stderr?: string }>;
   screenUrl(computer: ComputerRef, port: number, context: AdapterContext): Promise<string>;
+  /**
+   * Runs a command with `input` on its stdin, never in its command line, which other processes
+   * and the provider's logs can read. Providers with the page browser installed implement it.
+   */
+  runWithInput?(
+    computer: ComputerRef,
+    command: string,
+    input: string,
+    timeoutMs: number,
+    context: AdapterContext,
+  ): Promise<{ code: number; stdout: string }>;
+}
+
+/** The supervisor's limit on one page-browser call, which the helper's own waits fit inside. */
+const PAGE_BROWSER_TIMEOUT_MS = 25_000;
+const PAGE_BROWSER_MAX_OUTPUT = 512 * 1024;
+
+/** Point a bot's commands at its own screen, as Docker computers do, unless the caller chose a display. */
+export function onBotScreen(
+  request: CommandRequest,
+  context: AdapterContext,
+  displayStart: number,
+): CommandRequest {
+  if (
+    !context.botId ||
+    !request.argv.length ||
+    Object.hasOwn(request.env ?? {}, "DISPLAY") ||
+    request.unsetEnv?.includes("DISPLAY")
+  )
+    return request;
+  return {
+    ...request,
+    argv: screenDisplayArgv(request.argv, screenSessionKey(context), displayStart),
+  };
 }
 
 /** Provider SDKs supply only command execution, workspace paths, and protected port URLs. */
@@ -59,7 +99,14 @@ export class LinuxDesktop {
     context.signal.throwIfAborted();
     const result = await this.host.run(computer, command, context);
     if (result.code === 75) throw new ComputerScreenUnavailableError();
-    if (result.code !== 0) throw new Error(result.stderr || "computer desktop operation failed");
+    if (result.code === BROWSER_STILL_RUNNING_EXIT) throw new BrowserStillRunningError();
+    if (result.code !== 0) {
+      if (result.stderr?.trim()) throw new Error(result.stderr);
+      const output = result.stdout.trim().split("\n").at(-1)?.slice(0, 300);
+      throw new Error("computer desktop operation failed", {
+        cause: new Error(output ? `exit ${result.code}: ${output}` : `exit ${result.code}`),
+      });
+    }
     return result.stdout;
   }
 
@@ -198,6 +245,44 @@ export class LinuxDesktop {
     };
   }
 
+  /** The page tools on this screen's Chrome, through the computer image's helper. */
+  async pageBrowser(
+    computer: ComputerRef,
+    request: PageBrowserCommand,
+    context: AdapterContext,
+  ): Promise<PageBrowserResult> {
+    if (!this.host.runWithInput) throw new Error("This computer has no page browser.");
+    const { layout, env } = await this.ensure(computer, context);
+    const result = await this.host.runWithInput(
+      computer,
+      [
+        `DISPLAY=${layout.display}`,
+        `RAKAZO_CDP_PORT=${layout.debugPort}`,
+        // Uploads are confined to the bot's home, which is the workspace here.
+        `HOME=${shellQuote(env.workspaceDir)}`,
+        "RAKAZO_BROWSER_ARGS_STDIN=1",
+        "/usr/local/bin/rakazo-page-browser",
+        request.command,
+      ].join(" "),
+      // Origin-bound fills carry saved logins and cards.
+      `${JSON.stringify(request)}\n`,
+      PAGE_BROWSER_TIMEOUT_MS,
+      context,
+    );
+    if (result.code === 124) {
+      throw new Error(
+        `Page browser timed out; the page may be busy or blocked by a dialog. ${
+          request.command === "act"
+            ? "Inspect the screen before continuing."
+            : "Retry once before using other tools."
+        }`,
+      );
+    }
+    if (result.code !== 0 || Buffer.byteLength(result.stdout) > PAGE_BROWSER_MAX_OUTPUT)
+      throw new Error("Page browser unavailable or interrupted");
+    return JSON.parse(result.stdout) as PageBrowserResult;
+  }
+
   async stopBrowsers(computer: ComputerRef, context: AdapterContext) {
     const env = await this.host.environment(computer, context);
     await this.run(computer, stopAllDesktopBrowsersCommand(env), context);
@@ -269,8 +354,8 @@ function isChromiumBrowser(application: string) {
 
 // Same 0.2s quick-failure window as rakazo-focus-or-launch. A GUI that stays
 // up is success; an immediate non-zero exit fails the focus before the old
-// window is raised.
-const FOCUS_URI_PROBE = [
+// window is raised or a new one is awaited.
+const FOCUS_LAUNCH_PROBE = [
   "import subprocess,sys",
   "try:",
   " code=subprocess.Popen(sys.argv[1:],start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).wait(timeout=0.2)",
@@ -293,15 +378,12 @@ function focusOrLaunchActionCommand(
   const binary = (action.application.split("/").pop() ?? "").replaceAll(/[^A-Za-z0-9_-]/g, "");
   const quotedApp = shellQuote(action.application);
   const quotedArg = action.uri === undefined ? "" : ` ${shellQuote(action.uri)}`;
-  const foreground = browser
+  // Like rakazo-focus-or-launch, the launch never adopts the app's lifetime: a GUI that stays
+  // up must not hold the command open, and one that exits at once with an error still fails.
+  const launch = browser
     ? `nohup ${browserLauncherPath(layout.displayNumber)} ${shellQuote(action.uri ?? "about:blank")} </dev/null >/tmp/rakazo/browser-open-${layout.displayNumber}.log 2>&1 &`
-    : `DISPLAY=${layout.display} ${quotedApp}${quotedArg}`;
-  // A GUI that stays in the foreground must not delay wmctrl -ia. A non-browser
-  // URI still has to surface a launcher that exits immediately.
-  const background = browser
-    ? foreground
-    : `DISPLAY=${layout.display} python3 -c ${shellQuote(FOCUS_URI_PROBE)} ${quotedApp}${quotedArg} || exit $?`;
-  if (!browser && !binary) return foreground;
+    : `DISPLAY=${layout.display} python3 -c ${shellQuote(FOCUS_LAUNCH_PROBE)} ${quotedApp}${quotedArg} || exit $?`;
+  if (!browser && !binary) return launch;
   const classCase = browser ? CHROME_WM_CLASSES : binary.toLowerCase();
   return [
     "wid=",
@@ -343,10 +425,10 @@ function focusOrLaunchActionCommand(
     "RAKAZO_WINDOWS",
     'if [ -z "$wid" ] && [ "$saw_profile" -eq 0 ]; then wid=$fallback; fi',
     'if [ -n "$wid" ]; then',
-    ...(action.uri !== undefined ? [`  ${background}`] : []),
+    ...(action.uri !== undefined ? [`  ${launch}`] : []),
     `  DISPLAY=${layout.display} wmctrl -ia "$wid"`,
     "else",
-    `  ${foreground}`,
+    `  ${launch}`,
     "fi",
   ].join("\n");
 }
@@ -362,12 +444,16 @@ const FIND_MISSING_DESKTOP_TOOLS = [
 
 /**
  * Same as infra/sandboxes/computer/browser-policy.json. Rakazo keeps credentials itself, so
- * the browser's save-password, address, and card prompts only cover the page.
+ * the browser's save-password, address, and card prompts only cover the page. Pop-ups open: a
+ * page that opens a report once it has made it is past the click's user activation, and the
+ * pop-up blocker would drop it without a sign the page tools can see. Only the hosted sandboxes
+ * that are the bot's own computer are prepared with it, never the person's own computer.
  */
 export const BROWSER_POLICY = JSON.stringify({
   PasswordManagerEnabled: false,
   AutofillAddressEnabled: false,
   AutofillCreditCardEnabled: false,
+  DefaultPopupsSetting: 1,
 });
 
 /** Managed policy directories for Chromium, Ubuntu's Chromium, Google Chrome, and Brave. */
@@ -403,6 +489,17 @@ export const PREPARE_LINUX_DESKTOP = [
   // A sandbox without root keeps working; its browser just shows the prompts.
   '  printf \'%s\\n\' "$policy" | $root sh -c \'mkdir -p "$1" && cat > "$1/rakazo-browser.json"\' sh "$dir" || echo "could not set browser policy in $dir" >&2',
   "done",
+].join("\n");
+
+/** Installs Google Chrome on images that ship without a browser. */
+export const INSTALL_LINUX_BROWSER = [
+  "if ! command -v google-chrome >/dev/null && ! command -v chromium >/dev/null; then",
+  '  if [ "$(id -u)" -eq 0 ]; then root=""; else root="sudo -n"; fi',
+  "  package=$(mktemp /tmp/rakazo-chrome-XXXXXX.deb)",
+  "  trap 'rm -f \"$package\"' EXIT",
+  '  curl -fsSL https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -o "$package"',
+  '  $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$package"',
+  "fi",
 ].join("\n");
 
 /** Fails unless every desktop tool is installed and a virtual display answers. */

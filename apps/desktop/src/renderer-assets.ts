@@ -1,5 +1,7 @@
 import path from "node:path";
+import { wuyingScreenPolicy } from "@rakazo/adapters/wuying-screen-policy";
 import {
+  COMPUTER_SCREEN_RUNTIME_PATH,
   CSP_REPORTING_ENDPOINTS,
   contentSecurityPolicyFor,
 } from "@rakazo/contracts/content-security-policy";
@@ -64,7 +66,13 @@ export function bundledRendererHeaders(file: string, requestUrl: string): Header
     "content-type": contentType(file),
     "x-content-type-options": "nosniff",
   });
-  const policy = contentSecurityPolicyFor(new URL(requestUrl).pathname);
+  if (new URL(requestUrl).pathname !== COMPUTER_SCREEN_RUNTIME_PATH)
+    headers.set("x-frame-options", "SAMEORIGIN");
+  const policy = contentSecurityPolicyFor(
+    new URL(requestUrl).pathname,
+    undefined,
+    wuyingScreenPolicy,
+  );
   if (policy) {
     headers.set("content-security-policy", policy);
     // Reports go to /api on this origin, which is forwarded to the API like every other call.
@@ -85,9 +93,17 @@ export function forwardedRendererRequestInit(request: Request, webOrigin: string
     credentials: "include",
   };
   if (new URL(request.url).origin !== webOrigin) return init;
+  // OAuth popups and sandboxed previews share this session, so only app pages get the app origin.
+  if (!fromAppPage(request, webOrigin)) return init;
   const headers = new Headers(request.headers);
   headers.set("origin", webOrigin);
   return { ...init, headers };
+}
+
+function fromAppPage(request: Request, webOrigin: string) {
+  const origin = request.headers.get("origin");
+  if (origin !== null) return origin === webOrigin;
+  return URL.parse(request.referrer)?.origin === webOrigin;
 }
 
 function matchesPrefix(pathname: string, prefix: string) {

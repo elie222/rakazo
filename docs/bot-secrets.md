@@ -63,7 +63,7 @@ A command variable is redacted from command output in its plain, base64 and URL-
 
 **The bot's shell reads this value.** A command variable is a convenience for the bot, not a boundary against it: the shell command the bot runs, and the code that command starts, can print, encode or send the value. Redaction stops it appearing in a result the model reads; it does not stop a permitted bot, or anything the bot runs, from using it. There is no secrecy from the bot that was given the credential, so treat a command variable as shared with that bot and save only values you would let it use unattended, scoped to what it needs.
 
-Command variables are managed with the same Credentials section as other reusable credentials: web and the Electron-hosted web UI can add, replace and remove one. Mobile has no credentials settings screen, but the request card a bot opens in a thread shows a command variable's variable name in place of a site, so a bot can obtain a command variable value on the phone; listing, adding, replacing and removing one is web and desktop only.
+Command variables are managed in the same Vault as other reusable credentials. The request card a bot opens in a thread shows a command variable's variable name in place of a site.
 
 ## Saved website logins
 
@@ -106,17 +106,16 @@ Logins saved before fields existed read as a visible Username and a hidden Passw
 
 ## Managing saved credentials
 
-Owners can read back what is saved without asking the bot. In the web app, open a bot's settings,
-expand **Advanced**, and use the **Credentials** section. It lists each credential's name, origin
-and authentication type and never its value. From there you can add a credential, replace its value
-on the same destination, or remove one after confirming. Remove deletes the saved value immediately.
-The Electron desktop app hosts the same web UI, so it has the same section.
+Owners can manage what is saved without asking the bot. Open **Settings → Vault** on web, the
+desktop app or mobile. It lists each credential's name, origin and authentication type. From there
+you can show a value, replace it on the same destination, or remove one after confirming. Remove
+deletes the saved value immediately. Asking the bot to `forget_secret` a name only removes it; it
+does not list or replace one.
 
-Mobile does not host that web settings shell, so it has no credential management screen.
-The thread credential card still works on the phone, including website logins, and that is how a
-bot obtains a value there. Listing, replacing, and removing saved credentials stays on the web
-section. Asking the bot to `forget_secret` a name only removes it; it does not list or replace one.
+A sign-in without a password, such as an ID number and phone number, uses the same login card. CAPTCHA and passkeys still use `request_takeover`, as does any sign-in you prefer to do yourself.
 
-A sign-in without a password, such as an ID number and phone number, uses the same login card. Texted or emailed one-time codes, CAPTCHA and passkeys still use `request_takeover`, so a code is typed on the live screen rather than saved, as is any sign-in you prefer to do yourself.
+### One-time codes
+
+When a site texts or emails you a code, the bot calls `request_secret` with `oneTimeCode: { "origin": "https://www.example.com" }` and shows a card, titled "Code for" that site's host, for the code. Only the person the run belongs to can answer it. The code is 4 to 12 characters, letters and digits in groups joined by single dashes, spaces dropped; anything else is refused. It is kept encrypted for that run only, never saved to the vault, and the bot never sees it: it types it with `browser_act` `fill_code` into one field on the page. Like a login fill, the page browser types it only while the page is on that exact HTTPS origin, and only into a text, email or tel input that looks like a code box (it says so, takes digits, is named or labelled like a code, or holds 4 to 12 characters). The field is drawn as dots, and so is the slot widget around it that shows the digits, and its value stays out of snapshots; slots drawn more than 50 ms late, more than three levels up, or after the page remounted them may still show in a later screenshot, and the masking may also cover a container that shows the same characters elsewhere. Dashes are dropped for a numeric box. A code is used once: it is claimed just before the page is asked, so two fills never both get it, and a fill the page refused gives it back. After a fill the page took, the code is kept only so the run goes on hiding it, in the forms a page might draw it (one digit per line, spaced, or dashed), and it is deleted when the run ends. A wrong or expired code needs a new request, which shows a new card. A code box that refuses the fill, such as one input per digit, a password-type or number-type input, or a field in a frame from another site, falls back to `request_takeover`. The code-box check is broad on purpose: another field on the same site named like a code, such as a promo or postal code, qualifies too. This needs a computer image that includes the code fill; an older image reads the fill as a password and types only into password-type inputs on that origin, so it falls back to `request_takeover` for a code box.
 
 The value is typed into a real browser on the bot's computer. Anything that can read that browser, including the bot's own shell commands through the page or its debugging port, could read a filled field. Keeping the value out of model input stops accidental disclosure, not a bot that sets out to extract it. Save logins only for accounts you would let the bot use unattended.

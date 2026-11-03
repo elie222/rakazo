@@ -1,6 +1,6 @@
 import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, openBotPanelTab, signup } from "./helpers";
 
 async function patchJson(route: Route, patch: (body: { json?: Record<string, unknown> }) => void) {
   const response = await route.fetch();
@@ -56,7 +56,7 @@ test("unavailable computers explain setup and open computer settings", async ({
   );
   await page.reload();
 
-  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  await openBotPanelTab(page, "Computer");
   const preview = page.getByTestId("computer-preview");
   const hint = preview.getByTestId("computers-unavailable-hint");
   await expect(hint).toBeVisible();

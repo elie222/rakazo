@@ -5,13 +5,13 @@
 [![GitHub stars](https://img.shields.io/github/stars/elie222/rakazo?labelColor=black&style=for-the-badge&color=2563EB)](https://github.com/elie222/rakazo/stargazers)
 [![Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?labelColor=black&style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/RWwKa2Sn7h)
 [![Download on the App Store](https://img.shields.io/badge/App%20Store-Download%20for%20iPhone-black?labelColor=black&style=for-the-badge&logo=apple&logoColor=white)](https://apps.apple.com/app/rakazo/id6801531099)
-[![Download the Android APK](https://img.shields.io/badge/Android-Download%20APK-black?labelColor=black&style=for-the-badge&logo=android&logoColor=white)](https://github.com/elie222/rakazo/releases/download/android/rakazo.apk)
+[![Get Android on Google Play](https://img.shields.io/badge/Google%20Play-Get%20the%20app-black?labelColor=black&style=for-the-badge&logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=com.rakazo.app)
 
 ![Rakazo — AI teammates you actually own](./docs/readme-hero.png)
 
 Rakazo is an open source AI agent for persistent teammates, and a self-hosted AI assistant you
 can run on your own machine. It is available on the web, as an Electron desktop app, and on
-[iPhone](https://apps.apple.com/app/rakazo/id6801531099) and [Android](https://github.com/elie222/rakazo/releases/download/android/rakazo.apk). Bring your own model
+[iPhone](https://apps.apple.com/app/rakazo/id6801531099) and [Android](https://play.google.com/store/apps/details?id=com.rakazo.app). Bring your own model
 and computer provider, or run the complete stack locally.
 
 It is an open source, self-hosted alternative to Grok Bot, Meta Muse, OpenAI Dots, Instinct,
@@ -22,7 +22,7 @@ Rakazo is in beta. Learn more at [rakazo.com](https://rakazo.com).
 ## Features
 
 - Persistent bots with their own conversations, memory, routines, and history
-- Voice mode: speak replies, dictate, and call a bot. Bring your own ElevenLabs, OpenAI, Cartesia, or Fish Audio key
+- Voice mode: speak replies, dictate, and call a bot. Bring your own ElevenLabs, OpenAI, Cartesia, or Fish Audio key, or use a Mac server's installed voices
 - Shared Team Computers and isolated Private computers
 - Browser, terminal, file, and graphical desktop access
 - Bots that can delegate to peer bots or short-lived subagents
@@ -70,7 +70,7 @@ The installer downloads the Compose files, creates `.env` with random secrets, a
 It preserves an existing `.env` when rerun.
 
 Open [http://127.0.0.1:5173](http://127.0.0.1:5173), create an account, and connect a model.
-Local Docker computers are on by default. Optional remote providers: `e2b`, `novita`, `daytona`, `createos`, `boat`, or `railway`
+Local Docker computers are on by default. Optional remote providers: `e2b`, `novita`, `daytona`, `createos`, `boat`, `boxd`, or `railway`
 with the matching API key.
 
 Default image tag is `edge` (main builds, `linux/amd64` + `linux/arm64`). Details and tags:
@@ -94,7 +94,7 @@ bash install-images.sh --prepare-only
 bash install-images.sh
 ```
 
-Put HTTPS in front of port 5173; [docs/self-host.md](./docs/self-host.md#public-single-vm-deployment)
+Put HTTPS in front of port 5173; [docs/self-host-production.md](./docs/self-host-production.md#public-single-vm-deployment)
 covers the Caddy setup and host hardening. In the desktop app choose **Existing instance** and enter
 the `https://` address.
 
@@ -114,7 +114,7 @@ cp .env.example .env
 Set `POSTGRES_PASSWORD` and `POSTGRES_APP_PASSWORD` to two values from `openssl rand -hex 16`,
 then put them in `DATABASE_MIGRATION_URL` and `DATABASE_URL`. The app connects as its own
 `rakazo_app` login, which row-level security applies to; migrations run as the owner
-([database roles](docs/self-host.md#database-roles)). Set `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` to
+([database roles](docs/self-host-configuration.md#database-roles)). Set `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` to
 independent long random values. Docker sandboxes also need a dedicated
 `SANDBOX_SUPERVISOR_TOKEN`. You can also set `OPENROUTER_API_KEY`, or connect a supported
 model provider during onboarding.
@@ -166,7 +166,8 @@ Open the printed URL ([http://127.0.0.1:5173](http://127.0.0.1:5173) by default)
 your first bot.
 
 For deployment, provider selection, backups, and upgrades, see the
-[self-hosting guide](./docs/self-host.md).
+[self-hosting guide](./docs/self-host.md), [production deployment](./docs/self-host-production.md),
+[backup and restore](./docs/self-host-backups.md), and [upgrading](./docs/self-host-upgrading.md).
 
 To use CreateOS, set `SANDBOX_PROVIDER=createos` and `CREATEOS_SANDBOX_API_KEY`.
 Optional `CREATEOS_SANDBOX_BASE_URL`, `CREATEOS_SANDBOX_SHAPE`, and
@@ -271,12 +272,25 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the development workflow and test m
 ## Documentation
 
 - [Self-hosting](./docs/self-host.md)
+- [Self-host configuration](./docs/self-host-configuration.md)
 - [Self-host secrets](./docs/self-host-secrets.md)
+- [Sign-in and accounts](./docs/self-host-accounts.md)
+- [Models](./docs/self-host-models.md)
+- [Tools and integrations](./docs/self-host-integrations.md)
+- [Computer providers](./docs/self-host-sandbox-providers.md)
+- [Docker computers](./docs/self-host-docker-computers.md)
+- [Storage and encryption](./docs/self-host-storage.md)
+- [Production deployment](./docs/self-host-production.md)
+- [Backup and restore](./docs/self-host-backups.md)
+- [Upgrading](./docs/self-host-upgrading.md)
+- [Logs and monitoring](./docs/self-host-observability.md)
+- [Apps and clients](./docs/self-host-clients.md)
+- [Billing](./docs/self-host-billing.md)
 - [Computer runtime and isolation](./docs/computer-runtime.md)
 - [Desktop releases](./docs/desktop-release.md)
 - [Mobile releases](./docs/mobile-release.md)
 - [Performance testing](./docs/performance.md)
-- [Manage the bots it creates](./docs/fleet-management.md)
+- [Bots that manage bots](./docs/fleet-management.md)
 
 ## How Rakazo compares
 

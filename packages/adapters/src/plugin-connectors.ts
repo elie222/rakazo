@@ -3,8 +3,9 @@
 import { createHash } from "node:crypto";
 import type { PluginPreview } from "@rakazo/contracts";
 import { McpServerConfigInput } from "@rakazo/contracts";
-import { buildSkillMd, parseSkillMd } from "@rakazo/core";
+import { buildSkillMd, findSkillByName, parseSkillMd } from "@rakazo/core";
 import { z } from "zod";
+import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.js";
 import { assertNoSensitiveQuery } from "./connector-http.js";
 import { fetchSafeWebText } from "./web-ssrf.js";
 
@@ -53,6 +54,8 @@ export type ParsedPlugin = {
   skills: PluginSkillEntry[];
   mcpServers: PluginMcpServerEntry[];
   skipped: PluginSkippedEntry[];
+  /** Skills left out because a built-in skill has the same name. */
+  builtinNames: string[];
 };
 
 /** Fetched component files; other paths are only listed. */
@@ -551,11 +554,18 @@ export function parsePluginDirectory(input: {
         reason: "Links and submodules are not supported",
       });
   const names = new Set<string>();
-  const skills = [
+  const skills: PluginSkillEntry[] = [];
+  const builtinNames: string[] = [];
+  for (const skill of [
     ...collectSkills(files, skipped, names),
     ...collectAgents(files, skipped, names),
     ...collectCommands(files, names, skipped),
-  ].sort((a, b) => a.name.localeCompare(b.name));
+  ]) {
+    // A skill named like a built-in one repeats it; every user already has the built-in.
+    if (findSkillByName(BUILTIN_AGENT_SKILLS, skill.name)) builtinNames.push(skill.name);
+    else skills.push(skill);
+  }
+  skills.sort((a, b) => a.name.localeCompare(b.name));
   const canonical = [...files.entries()].sort(([a], [b]) => a.localeCompare(b));
   return {
     format,
@@ -572,6 +582,7 @@ export function parsePluginDirectory(input: {
     skills,
     mcpServers: collectMcpServers(files, typeof schema === "string" ? schema : undefined, skipped),
     skipped,
+    builtinNames,
   };
 }
 
@@ -685,6 +696,7 @@ export function pluginPreviewDto(plugin: ParsedPlugin): PluginPreview {
     resolvedSha: plugin.resolvedSha,
     digest: plugin.digest,
     skipped: plugin.skipped,
+    builtinNames: plugin.builtinNames,
     skills: plugin.skills.map(({ name, description, files }) => ({
       name,
       description,

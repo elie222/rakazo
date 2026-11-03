@@ -9,6 +9,7 @@ import type {
 import {
   canonicalPiProviderId,
   DEFAULT_NEW_BOT_AVATAR_SET,
+  disabledBuiltinToolSet,
   InstructionVersionSchema,
   initialBotMemory,
   resolveBotAvatarSet,
@@ -104,6 +105,7 @@ function mapBot(
     teamChatAmbientEnabled?: boolean;
     teamChatRules?: string;
     crossSpaceCommunication?: boolean;
+    dailyCheckIns?: boolean;
     fleetManagement?: boolean;
     disabledBuiltinTools?: string[];
     webhookSecretId?: string | null;
@@ -149,9 +151,11 @@ function mapBot(
     thinkingLevel: (bot.thinkingLevel as Bot["thinkingLevel"]) ?? null,
     teamChatAmbientEnabled: bot.teamChatAmbientEnabled ?? false,
     teamChatRules: bot.teamChatRules ?? "",
-    crossSpaceCommunication: bot.crossSpaceCommunication ?? false,
-    fleetManagement: bot.fleetManagement ?? false,
-    disabledBuiltinTools: bot.disabledBuiltinTools ?? [],
+    crossSpaceCommunication: bot.crossSpaceCommunication ?? true,
+    dailyCheckIns: bot.dailyCheckIns ?? true,
+    fleetManagement: bot.fleetManagement ?? true,
+    // Stored lists may name a tool that no longer exists; settings resend what they read.
+    disabledBuiltinTools: [...disabledBuiltinToolSet(bot.disabledBuiltinTools)],
     webhookConfigured: Boolean(bot.webhookSecretId),
     spawnKey: bot.spawnKey ?? null,
     incomingCall,
@@ -505,6 +509,7 @@ export function createRepos(
         description: string;
         instructions: string;
         notifyOnFinish: boolean;
+        dailyCheckIns?: boolean;
         fleetManagement?: boolean;
         color?: string;
         avatarSet?: BotAvatarSet;
@@ -594,6 +599,7 @@ export function createRepos(
               description: input.description,
               instructions: input.instructions,
               notifyOnFinish: input.notifyOnFinish,
+              dailyCheckIns: input.dailyCheckIns,
               fleetManagement: input.fleetManagement,
               color: avatar.color,
               avatarSet,

@@ -245,7 +245,7 @@ test("chat composer controls are vertically centered", async ({ page }, testInfo
   await expect
     .poll(() =>
       bar.evaluate((composerBar) => {
-        const field = composerBar.querySelector("textarea")?.parentElement ?? null;
+        const field = composerBar.querySelector('[data-testid="composer-field"]');
         return [composerBar, field].every(
           (element) =>
             element?.getAnimations().every((animation) => animation.playState !== "running") ??

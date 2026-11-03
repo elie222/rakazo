@@ -16,10 +16,6 @@ export const VS_CARDS: Record<string, VsPoints> = {
     rakazo: ["You host it", "Any supported model", "Apache-2.0"],
     other: ["OpenAI hosts it", "Eligible ChatGPT plans", "Not open source"],
   },
-  "grok-bot-alternative": {
-    rakazo: ["You host it", "You bring the model", "Apache-2.0"],
-    other: ["xAI hosts it", "Paid Cursor and SuperGrok", "No source to run"],
-  },
   "openclaw-alternative": {
     rakazo: ["Chat in the Rakazo app", "Docker installer, then chat", "Apache-2.0"],
     other: ["Gateway for chat apps", "CLI, onboarding, config file", "MIT"],

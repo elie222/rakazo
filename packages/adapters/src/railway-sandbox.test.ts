@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
+import { screenDisplayArgv, shellQuote } from "@rakazo/core/node/desktop-runtime";
 import type { RailwayGraphQLErrorItem, SandboxInfo } from "railway";
 import {
   RailwayGraphQLError,
@@ -766,13 +767,18 @@ describe("Railway computers", () => {
     );
     sandbox.exec.mockImplementation(async (command: string) => {
       if (
-        command.includes("find . -type f -print0") ||
+        command.includes("find . -regextype") ||
         command.startsWith("'echo'") ||
         command.startsWith("chmod ")
       ) {
         const result = await promisify(execFile)("bash", [
           "-c",
-          command.replaceAll("/home/rakazo", directory),
+          command
+            .replaceAll("/home/rakazo", directory)
+            .replaceAll(
+              "find . -regextype posix-extended",
+              process.platform === "darwin" ? "find -E ." : "find . -regextype posix-extended",
+            ),
         ]);
         return { ...result, exitCode: 0 };
       }
@@ -846,9 +852,25 @@ describe("Railway computers", () => {
       "'echo' 'a; touch /tmp/unwanted'",
       expect.objectContaining({
         cwd: "/home/rakazo/notes",
-        env: { FAKE_TOKEN: "fake-secret" },
+        env: expect.objectContaining({
+          FAKE_TOKEN: "fake-secret",
+          UV_CACHE_DIR: "/tmp/rakazo-cache/uv",
+        }),
         timeoutSec: 5,
       }),
+    );
+  });
+
+  it("runs a bot's commands on that bot's own screen", async () => {
+    sandbox.exec.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0, timedOut: false });
+    for await (const _event of provider.execute(
+      computer,
+      { argv: ["ffmpeg", "out.mp4"] },
+      { ...ctx, botId: "becky" },
+    ));
+    expect(sandbox.exec).toHaveBeenCalledWith(
+      screenDisplayArgv(["ffmpeg", "out.mp4"], "becky", 1).map(shellQuote).join(" "),
+      expect.anything(),
     );
   });
 
@@ -936,12 +958,28 @@ describe("Railway computers", () => {
       const content = Uint8Array.from([0, 255, 128]);
       await writeFile(path.join(directory, "bin/tool"), content, { mode: 0o700 });
       await writeFile(path.join(directory, "note"), "saved", { mode: 0o600 });
+      for (const name of [
+        "project/node_modules/pkg/data",
+        ".cache/uv/data",
+        ".yarn/cache/pkg",
+        "core.123",
+        "run.log",
+      ]) {
+        await mkdir(path.dirname(path.join(directory, name)), { recursive: true });
+        await writeFile(path.join(directory, name), "excluded");
+      }
+
       await symlink("bin", path.join(directory, "linked-bin"));
       await promisify(execFile)("mkfifo", [path.join(directory, "pipe")]);
       sandbox.exec.mockImplementation(async (command: string) => {
         const result = await promisify(execFile)("bash", [
           "-c",
-          command.replaceAll("/home/rakazo", directory),
+          command
+            .replaceAll("/home/rakazo", directory)
+            .replaceAll(
+              "find . -regextype posix-extended",
+              process.platform === "darwin" ? "find -E ." : "find . -regextype posix-extended",
+            ),
         ]);
         return { ...result, exitCode: 0, timedOut: false };
       });

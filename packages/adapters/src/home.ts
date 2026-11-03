@@ -21,6 +21,10 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import type { AdapterContext, AgentHomeStore, PortableFile } from "@rakazo/adapter-kit";
 import { fileHandlePath } from "./file-handle-path.js";
+import {
+  isTaggedCacheDirectory,
+  shouldSkipPortableWorkspaceFile,
+} from "./workspace-save-policy.js";
 
 const STAGING_PREFIX = "rakazo-workspace-";
 /** Staging directories in use are touched this often, so other processes can tell them apart. */
@@ -70,6 +74,7 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     return this.withBotWrite(botId, async () => {
       await this.replaceHome(botId, async (staging) => {
         if (!staged) return copyDir(src, staging);
+        await removeExcludedStagedEntries(src);
         await rm(staging, { recursive: true, force: true });
         await rename(src, staging);
       });
@@ -92,7 +97,7 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     const stopHeartbeat = keepFresh(staging);
     try {
       await fill(staging);
-      await rm(previous, { recursive: true, force: true });
+      await removeTree(previous);
       if (await pathExists(dest)) await rename(dest, previous);
       try {
         await rename(staging, dest);
@@ -102,7 +107,7 @@ export class LocalAgentHomeStore implements AgentHomeStore {
         }
         throw error;
       }
-      await rm(previous, { recursive: true, force: true });
+      await removeTree(previous);
     } finally {
       stopHeartbeat();
       await rm(staging, { recursive: true, force: true });
@@ -178,9 +183,10 @@ export class LocalAgentHomeStore implements AgentHomeStore {
   ): Promise<string> {
     await this.waitForBotWrite(botId);
     await this.recoverInterruptedCommit(botId);
-    const full = await containedExistingPath(this.botDir(botId), filePath);
+    const { root, full } = await containedExistingPath(this.botDir(botId), filePath);
     const handle = await open(full, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
+      assertContained(root, await fileHandlePath(handle.fd));
       if (options?.maxBytes !== undefined) {
         const info = await handle.stat();
         if (info.size > options.maxBytes) {
@@ -262,9 +268,26 @@ export class LocalAgentHomeStore implements AgentHomeStore {
   protected async removeCopy(botId: string) {
     const dir = this.botDir(botId);
     // The previous copy first, or a read in between would restore it as the home.
-    await rm(`${dir}.previous`, { recursive: true, force: true });
-    await rm(dir, { recursive: true, force: true });
+    await removeTree(`${dir}.previous`);
+    await removeTree(dir);
     await rm(this.revisionFile(botId), { force: true });
+    await rm(this.downloadedFile(botId), { force: true });
+  }
+
+  /**
+   * Records that this host's copy came from object storage. A file beside the revision marker,
+   * rather than a change to its contents, so a previous release reading the marker keeps working.
+   */
+  protected async markDownloaded(botId: string) {
+    await mkdir(path.join(this.root, "home-downloads"), { recursive: true });
+    await writeFile(this.downloadedFile(botId), "");
+  }
+
+  protected async isDownloaded(botId: string): Promise<boolean> {
+    return stat(this.downloadedFile(botId)).then(
+      () => true,
+      () => false,
+    );
   }
 
   protected async touchRevision(botId: string) {
@@ -283,7 +306,14 @@ export class LocalAgentHomeStore implements AgentHomeStore {
   protected async writeRevision(botId: string, revision = newRevision()) {
     const directory = path.join(this.root, "home-revisions");
     await mkdir(directory, { recursive: true });
-    await writeFile(this.revisionFile(botId), revision, "utf8");
+    const file = this.revisionFile(botId);
+    const temporary = `${file}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporary, revision, "utf8");
+      await rename(temporary, file);
+    } finally {
+      await rm(temporary, { force: true });
+    }
     return revision;
   }
 
@@ -292,6 +322,10 @@ export class LocalAgentHomeStore implements AgentHomeStore {
       if (isMissing(error)) return undefined;
       throw error;
     });
+  }
+
+  private downloadedFile(botId: string) {
+    return path.join(this.root, "home-downloads", path.basename(this.botDir(botId)));
   }
 
   private revisionFile(botId: string) {
@@ -336,7 +370,7 @@ export function resolveAgentHomePath(home: AgentHomeStore, homeKey: string, data
 /** Deletes the home of a deleted computer from this host. */
 export async function removeAgentHome(home: AgentHomeStore, homeKey: string, dataDir = "./data") {
   if (home instanceof LocalAgentHomeStore) return home.remove(homeKey);
-  await rm(resolveAgentHomePath(home, homeKey, dataDir), { recursive: true, force: true });
+  await removeTree(resolveAgentHomePath(home, homeKey, dataDir));
 }
 
 /**
@@ -371,8 +405,10 @@ function safeJoin(root: string, rel: string) {
 
 async function containedExistingPath(root: string, rel: string) {
   await mkdir(root, { recursive: true });
-  const candidate = safeJoin(root, rel);
-  return containedTarget(root, candidate);
+  const resolvedRoot = await realpath(root);
+  const full = await realpath(safeJoin(resolvedRoot, rel));
+  assertContained(resolvedRoot, full);
+  return { root: resolvedRoot, full };
 }
 
 async function containedWritePath(root: string, rel: string) {
@@ -401,7 +437,12 @@ async function ensureContainedDirectory(root: string, candidate: string) {
       current = await realpath(next);
     } catch (error) {
       if (!isMissing(error)) throw error;
-      await mkdir(next);
+      // A concurrent request can make the folder first; a dangling link still fails realpath.
+      await mkdir(next).catch((failure: unknown) => {
+        if (!(failure instanceof Error && "code" in failure && failure.code === "EEXIST")) {
+          throw failure;
+        }
+      });
       current = await realpath(next);
     }
     assertContained(resolvedRoot, current);
@@ -463,8 +504,43 @@ async function removeContainedDirectory(root: string, parent: string, name: stri
   ) {
     throw new Error("folder escapes the team home");
   }
-  await rm(resolvedTarget, { recursive: true, force: true });
+  await removeTree(resolvedTarget);
   return true;
+}
+
+/**
+ * Deletes a directory tree, including read-only directories its owner can change, such as Go's
+ * module cache: those without owner write get full owner access. Only directories whose opened
+ * handle is still inside the tree are changed; a parent swapped for a link during the walk stops it.
+ */
+async function removeTree(target: string) {
+  try {
+    await rm(target, { recursive: true, force: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EACCES") throw error;
+    await makeWritable(target);
+    await rm(target, { recursive: true, force: true });
+  }
+}
+
+async function makeWritable(directory: string, root?: string) {
+  const handle = await open(
+    directory,
+    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+  );
+  let tree = root;
+  try {
+    const opened = await fileHandlePath(handle.fd);
+    tree ??= opened;
+    assertContained(tree, opened);
+    const { mode } = await handle.stat();
+    if (!(mode & 0o200)) await handle.chmod((mode & 0o7777) | 0o700);
+  } finally {
+    await handle.close();
+  }
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (entry.isDirectory()) await makeWritable(path.join(directory, entry.name), tree);
+  }
 }
 
 function isMissing(error: unknown): error is NodeJS.ErrnoException {
@@ -600,6 +676,14 @@ async function copyDir(
     if (!from) continue;
     const to = path.join(dest, entry.name);
     const info = await stat(from);
+    if (
+      shouldSkipPortableWorkspaceFile(
+        path.relative(root, path.join(current, entry.name)).split(path.sep).join("/"),
+        info.isDirectory(),
+      ) ||
+      (info.isDirectory() && (await isTaggedCacheDirectory(from)))
+    )
+      continue;
     if (info.isDirectory()) await copyDir(from, to, root, visited);
     else if (info.isFile()) await copyTraversalFile(root, from, to);
   }
@@ -622,11 +706,29 @@ async function* walkFiles(
     const full = await exportTarget(root, path.join(resolvedCurrent, entry.name), skipHidden);
     if (!full) continue;
     const info = await stat(full);
+    if (shouldSkipPortableWorkspaceFile(portablePath, info.isDirectory())) continue;
     if (info.isDirectory()) {
+      if (await isTaggedCacheDirectory(full)) continue;
       yield* walkFiles(root, full, skipHidden, portablePath, visited);
     } else if (info.isFile()) {
       const { content, mode } = await readTraversalFile(root, full, skipHidden);
       yield { path: portablePath, content, executable: Boolean(mode & 0o100) };
+    }
+  }
+}
+
+/** Only private save staging is pruned; mounted homes are never cleaned by a save. */
+async function removeExcludedStagedEntries(root: string, directory = root) {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const full = path.join(directory, entry.name);
+    const relative = path.relative(root, full).split(path.sep).join("/");
+    if (
+      shouldSkipPortableWorkspaceFile(relative, entry.isDirectory()) ||
+      (entry.isDirectory() && (await isTaggedCacheDirectory(full)))
+    ) {
+      await rm(full, { recursive: true, force: true });
+    } else if (entry.isDirectory()) {
+      await removeExcludedStagedEntries(root, full);
     }
   }
 }

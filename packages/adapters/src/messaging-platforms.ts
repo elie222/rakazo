@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import { createSlackAdapter } from "@chat-adapter/slack";
+import type { TelegramAdapter } from "@chat-adapter/telegram";
 import {
   createTelegramAdapter,
   escapeMarkdownV2,
@@ -18,8 +20,10 @@ import { ConsoleLogger, convertEmojiPlaceholders, markdownToPlainText } from "ch
 import { createSendblueAdapter } from "chat-adapter-sendblue";
 import type { ClientOptions as SendblueClientOptions } from "sendblue";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
+import { boundInboundMarkdown } from "./chat-sdk-surface.js";
 import { LazyLarkAdapter } from "./lark/lazy-adapter.js";
 import { Domain } from "./lark/thread-id.js";
+import { LazyPhotonAdapter } from "./photon/lazy-adapter.js";
 import { isVitestRuntime } from "./test-runtime.js";
 
 /**
@@ -48,6 +52,11 @@ export interface MessagingEnvironmentValues {
   larkVerificationToken?: string | undefined;
   larkEncryptKey?: string | undefined;
   larkDomain?: string | undefined;
+  photonProjectId?: string | undefined;
+  photonProjectSecret?: string | undefined;
+  photonWebhookSecret?: string | undefined;
+  /** Extra named Photon projects (PHOTON_PROJECT_ID_<NAME>), each with its own number. */
+  photonProjects?: PhotonProjectCredentials[] | undefined;
 }
 
 export function messagingEnvFromProcess(
@@ -76,6 +85,10 @@ export function messagingEnvFromProcess(
     larkVerificationToken: clean(env.LARK_VERIFICATION_TOKEN),
     larkEncryptKey: clean(env.LARK_ENCRYPT_KEY),
     larkDomain: clean(env.LARK_DOMAIN),
+    photonProjectId: clean(env.PHOTON_PROJECT_ID),
+    photonProjectSecret: clean(env.PHOTON_PROJECT_SECRET),
+    photonWebhookSecret: clean(env.PHOTON_WEBHOOK_SECRET),
+    photonProjects: photonProjectsFromEnv(env),
   };
 }
 
@@ -110,6 +123,41 @@ export function telegramBotsFromEnv(
   }
   bots.sort((a, b) => a.name.localeCompare(b.name));
   return bots;
+}
+
+/** One extra Photon project, mounted as provider `photon-<name>`. */
+export interface PhotonProjectCredentials {
+  name: string;
+  projectId: string;
+  projectSecret: string;
+  webhookSecret?: string | undefined;
+}
+
+const PHOTON_NAMED_PROJECT = /^PHOTON_PROJECT_ID_([A-Z0-9]+)$/;
+
+/**
+ * Extra Photon projects from PHOTON_PROJECT_ID_<NAME> plus
+ * PHOTON_PROJECT_SECRET_<NAME> (and optionally PHOTON_WEBHOOK_SECRET_<NAME>).
+ * Photon gives each person a different number in each project, so one person
+ * can link a different Rakazo bot to each, as with named Telegram bots.
+ * <NAME> is letters and digits only and becomes the provider id
+ * `photon-<name>` (lowercased), which also names its webhook route.
+ */
+export function photonProjectsFromEnv(
+  env: Record<string, string | undefined>,
+): PhotonProjectCredentials[] {
+  const projects: PhotonProjectCredentials[] = [];
+  for (const [key, value] of Object.entries(env)) {
+    const suffix = PHOTON_NAMED_PROJECT.exec(key)?.[1];
+    if (!suffix) continue;
+    const projectId = value?.trim();
+    const projectSecret = env[`PHOTON_PROJECT_SECRET_${suffix}`]?.trim();
+    if (!projectId || !projectSecret) continue;
+    const webhookSecret = env[`PHOTON_WEBHOOK_SECRET_${suffix}`]?.trim() || undefined;
+    projects.push({ name: suffix.toLowerCase(), projectId, projectSecret, webhookSecret });
+  }
+  projects.sort((a, b) => a.name.localeCompare(b.name));
+  return projects;
 }
 
 /**
@@ -192,6 +240,7 @@ export function messagingPlatformsFromEnv(
         timeout: MESSAGING_SEND_TIMEOUT_MS,
       },
     });
+    boundInboundMarkdown(adapter);
     // Slack's reactions.add fails with already_reacted when a replayed inbound reacts twice.
     const addReaction = adapter.addReaction.bind(adapter);
     Object.assign(adapter, {
@@ -236,17 +285,12 @@ export function messagingPlatformsFromEnv(
   // webhook posts, so a forged update could reach inbound processing.
   if (env.telegramBotToken && env.telegramWebhookSecret) {
     telegramTokens.add(env.telegramBotToken.trim());
+    const adapter = telegramAdapter(env.telegramBotToken, env.telegramWebhookSecret, options);
     platforms.push({
       provider: "telegram",
-      capabilities: { direct: true, groups: false, receipt: null, files: true },
-      // Auto mode long-polls when no webhook is registered, for deployments
-      // without a public HTTPS endpoint. Only the API process may poll: it
-      // owns the inbound sink, and Telegram allows one getUpdates per bot.
-      adapter: createTelegramAdapter({
-        botToken: env.telegramBotToken,
-        secretToken: env.telegramWebhookSecret,
-        mode: options.pollInboundMessages ? "auto" : "webhook",
-      }),
+      capabilities: { direct: true, groups: true, receipt: null, files: true },
+      ...withTelegramRedelivery(adapter),
+      ...telegramGroupHooks(adapter),
       isPermanentSendError: isTelegramBlocked,
     });
   }
@@ -262,15 +306,13 @@ export function messagingPlatformsFromEnv(
       continue;
     }
     telegramTokens.add(bot.botToken.trim());
+    const adapter = telegramAdapter(bot.botToken, bot.webhookSecret, options);
     platforms.push({
       provider: `telegram-${bot.name}`,
       adapterName: "telegram",
-      capabilities: { direct: true, groups: false, receipt: null, files: true },
-      adapter: createTelegramAdapter({
-        botToken: bot.botToken,
-        secretToken: bot.webhookSecret,
-        mode: options.pollInboundMessages ? "auto" : "webhook",
-      }),
+      capabilities: { direct: true, groups: true, receipt: null, files: true },
+      ...withTelegramRedelivery(adapter),
+      ...telegramGroupHooks(adapter),
       isPermanentSendError: isTelegramBlocked,
     });
   }
@@ -292,6 +334,46 @@ export function messagingPlatformsFromEnv(
         // Explicit defaults prevent the adapter from rereading untrimmed process.env values.
         encryptKey: env.larkEncryptKey ?? "",
         domain: env.larkDomain?.toLowerCase() === "lark" ? Domain.Lark : Domain.Feishu,
+      }),
+    });
+  }
+
+  // iMessage through Photon (Spectrum Cloud). Without a webhook secret the
+  // API process consumes Spectrum's outbound gRPC stream, so no public URL is
+  // needed; other processes only send. With one, Spectrum posts signed
+  // webhooks to /api/v1/messaging/webhook/photon and nothing streams.
+  const photonProjects: (PhotonProjectCredentials & { provider: string })[] = [];
+  if (env.photonProjectId && env.photonProjectSecret) {
+    photonProjects.push({
+      provider: "photon",
+      name: "",
+      projectId: env.photonProjectId,
+      projectSecret: env.photonProjectSecret,
+      webhookSecret: env.photonWebhookSecret,
+    });
+  }
+  for (const project of env.photonProjects ?? []) {
+    photonProjects.push({ ...project, provider: `photon-${project.name}` });
+  }
+  // Two providers on one project would both consume its single stream.
+  const photonIds = new Set<string>();
+  for (const project of photonProjects) {
+    if (photonIds.has(project.projectId)) {
+      getLogger().warn("skipping Photon project that reuses another provider's project", {
+        provider: project.provider,
+      });
+      continue;
+    }
+    photonIds.add(project.projectId);
+    platforms.push({
+      provider: project.provider,
+      adapterName: "imessage",
+      capabilities: { direct: true, groups: false, receipt: "typing" },
+      adapter: new LazyPhotonAdapter({
+        projectId: project.projectId,
+        projectSecret: project.projectSecret,
+        webhookSecret: project.webhookSecret,
+        pollInboundMessages: options.pollInboundMessages ?? false,
       }),
     });
   }
@@ -336,6 +418,21 @@ const WHATSAPP_REENGAGEMENT_REQUIRED = 131047;
 
 /** WhatsApp and Telegram both cap a text message at 4096 UTF-16 units. */
 const MESSAGE_PART_LIMIT = 4096;
+
+/**
+ * The key the Telegram adapter claims each webhook update under (chat-adapter
+ * 4.43), released when processing fails so Telegram's retry is processed. The
+ * redelivery test fails if an SDK upgrade moves it.
+ */
+function withTelegramRedelivery(adapter: TelegramAdapter) {
+  return {
+    adapter,
+    redeliveryKeys: (payload: unknown) => {
+      const scope = createHash("sha256").update(adapter.botUserId!).digest("hex");
+      return [`${adapter.name}:webhook-update:${scope}:${asRecord(payload)?.update_id}`];
+    },
+  };
+}
 
 /** Split before enqueueing so retries only resend the parts that failed. */
 export function splitOutboundBody(provider: string, body: string): string[] {
@@ -464,6 +561,64 @@ function slackRedeliveryKeys(payload: unknown): string[] {
 /** Telegram 403 (Chat SDK PermissionError): the user blocked the bot. */
 function isTelegramBlocked(error: unknown): boolean {
   return error instanceof Error && error.name === "PermissionError";
+}
+
+function telegramAdapter(
+  botToken: string,
+  secretToken: string,
+  options: { pollInboundMessages?: boolean },
+) {
+  return createTelegramAdapter({
+    botToken,
+    secretToken,
+    // Auto mode long-polls when no webhook is registered, for deployments
+    // without a public HTTPS endpoint. Only the API process may poll: it
+    // owns the inbound sink, and Telegram allows one getUpdates per bot.
+    mode: options.pollInboundMessages ? "auto" : "webhook",
+  });
+}
+
+/**
+ * Group facts shared by every Telegram bot mount. Telegram names no roster,
+ * so `participants` stays unset: channel members accumulate from the senders
+ * seen, and a rosterless event never sweeps anyone out. Departures arrive one
+ * service message at a time instead.
+ */
+function telegramGroupHooks(adapter: { readonly botUserId?: string }) {
+  return {
+    channelName: (raw: unknown) =>
+      stringField(asRecord(asRecord(raw)?.chat) ?? {}, "title") ?? null,
+    acceptsGroup: (raw: unknown) => asRecord(asRecord(raw)?.chat)?.type !== "channel",
+    normalizeThreadId: telegramGroupThreadId,
+    departures: (raw: unknown) => telegramDepartures(raw, adapter),
+  };
+}
+
+/**
+ * A `left_chat_member` service message names who left or was removed. When
+ * that member is this mount's own bot, the whole channel ends: Telegram
+ * delivers nothing from a chat the bot is no longer in.
+ */
+function telegramDepartures(
+  raw: unknown,
+  adapter: { readonly botUserId?: string },
+): { addresses: string[]; botLeft: boolean } | undefined {
+  const id = asRecord(asRecord(raw)?.left_chat_member)?.id;
+  if (typeof id !== "number" && typeof id !== "string") return undefined;
+  return adapter.botUserId === String(id)
+    ? { addresses: [], botLeft: true }
+    : { addresses: [String(id)], botLeft: false };
+}
+
+/**
+ * A forum topic (`is_topic_message`) is its own conversation; a plain reply's
+ * message thread id is not, so it collapses onto the group. Business thread
+ * ids (`telegram:biz:<id>:<chat>`) have four segments and pass through.
+ */
+function telegramGroupThreadId(threadId: string, raw: unknown): string {
+  if (asRecord(raw)?.is_topic_message === true) return threadId;
+  const parts = threadId.split(":");
+  return parts.length === 3 && parts[0] === "telegram" ? `${parts[0]}:${parts[1]}` : threadId;
 }
 
 /** Pull Slack team-room fields the Chat SDK does not expose on Message. */

@@ -15,6 +15,11 @@ it("marks the reply to a finished shell as a new assistant message", async () =>
   let calls = 0;
   const server = createServer((request, response) => {
     request.resume();
+    // Local tools can probe any listening loopback port; only model calls are counted.
+    if (request.method !== "POST" || request.url !== "/v1/chat/completions") {
+      response.writeHead(404).end();
+      return;
+    }
     calls += 1;
     response.writeHead(200, { "content-type": "text/event-stream" });
     const body =

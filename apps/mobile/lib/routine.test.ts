@@ -28,6 +28,16 @@ function routine(partial: Partial<Routine>): Routine {
 }
 
 describe("routineStatusLine", () => {
+  it("uses the server's delay status, without diagnosing worker health", () => {
+    expect(routineStatusLine(routine({ scheduleDelayed: true }))).toBe("Schedule delayed, UTC");
+    expect(routineStatusLine(routine({ active: false, scheduleDelayed: true }))).toBe(
+      "Paused, UTC",
+    );
+    expect(routineRowDetail(routine({ scheduleDelayed: true }), "UTC")).toBe("Schedule delayed");
+    expect(routineRowDetail(routine({ active: false, scheduleDelayed: true }), "UTC")).toBe(
+      "Paused",
+    );
+  });
   it("names a change trigger", () => {
     expect(
       routineStatusLine(

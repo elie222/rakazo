@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contrastRatio } from "./bot-avatar-colors.js";
+import { BOT_AVATAR_COLORS } from "./bot-avatar-colors.js";
 import { seededLogoAvatarColor } from "./logo-avatar-traits.js";
 
 describe("seeded logo colours", () => {
@@ -13,12 +13,11 @@ describe("seeded logo colours", () => {
     }
   });
 
-  it("provides fresh hues across a fleet with contrast headroom for the shaded face", () => {
-    const colors = Array.from({ length: 1000 }, (_, index) =>
-      seededLogoAvatarColor(`bot-${index}`),
+  it("only picks colours from the shared palette, and all of them across a fleet", () => {
+    const colors = new Set(
+      Array.from({ length: 1000 }, (_, index) => seededLogoAvatarColor(`bot-${index}`)),
     );
-    expect(new Set(colors).size).toBeGreaterThan(990);
-    for (const color of colors) expect(contrastRatio(color, "#141414")).toBeGreaterThanOrEqual(7);
+    expect(colors).toEqual(new Set(BOT_AVATAR_COLORS));
   });
 
   it("preserves a saved colour and leaves seeded motion parameters unchanged", () => {

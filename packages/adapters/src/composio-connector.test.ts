@@ -27,7 +27,11 @@ import { DestinationEmulator } from "./destination-emulator.js";
 const composioSdkState = vi.hoisted(() => ({
   created: [] as Array<{ userId: string; config: Record<string, unknown> }>,
   directoryFails: false,
-  executions: [] as Array<{ tool: string; args: Record<string, unknown> }>,
+  executions: [] as Array<{
+    tool: string;
+    args: Record<string, unknown>;
+    options?: { account?: string };
+  }>,
   executeResult: null as null | { data: Record<string, unknown>; error: string | null },
   failTools: null as null | string[],
   logIds: null as null | string[],
@@ -49,6 +53,7 @@ const composioSdkState = vi.hoisted(() => ({
       execute?: (
         tool: string,
         args: Record<string, unknown>,
+        options?: { account?: string },
       ) => Promise<{
         data: Record<string, unknown>;
         error: string | null;
@@ -119,8 +124,12 @@ vi.mock("@composio/core", () => ({
                 },
               ]
             : [],
-        execute: async (tool: string, args: Record<string, unknown>) => {
-          composioSdkState.executions.push({ tool, args });
+        execute: async (
+          tool: string,
+          args: Record<string, unknown>,
+          options?: { account?: string },
+        ) => {
+          composioSdkState.executions.push(options ? { tool, args, options } : { tool, args });
           const failed = composioSdkState.failTools?.includes(tool) ?? false;
           return {
             ...(failed
@@ -685,6 +694,70 @@ describe("composio tool mapping", () => {
       ]);
     },
   );
+
+  it.each([
+    { label: "an unpinned account", account: "ca-other", executed: [] },
+    {
+      label: "a pinned account",
+      account: "ca-work",
+      executed: [
+        {
+          tool: "DROPBOX_LIST_FILES_IN_FOLDER",
+          args: { path: "/Invoices" },
+          options: { account: "ca-work" },
+        },
+      ],
+    },
+  ])("runs a nested Dropbox listing only on $label", async ({ account, executed }) => {
+    composioSdkState.created.length = 0;
+    composioSdkState.executions.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+    const restore = stubActiveAccounts(["ca-work"]);
+
+    const events: ConnectorEvent[] = [];
+    try {
+      const connector = new ComposioConnector();
+      for await (const event of connector.execute(
+        {
+          tool: "COMPOSIO_MULTI_EXECUTE_TOOL",
+          args: {
+            tools: [
+              {
+                tool_slug: "DROPBOX_LIST_FILES_IN_FOLDER",
+                arguments: { path: "/Invoices" },
+                account,
+              },
+            ],
+          },
+          executionId: "composio-dropbox-account",
+        },
+        {
+          operationId: "composio-dropbox-account",
+          traceId: "composio-dropbox-account",
+          spaceId: "workspace",
+          userId: "user-1",
+          signal: new AbortController().signal,
+          connectedConnections: [
+            {
+              id: "connection-dropbox",
+              connectorId: "composio",
+              externalId: "dropbox",
+              displayName: "Dropbox",
+              providerRef: "ca-work",
+            },
+          ],
+        },
+      )) {
+        events.push(event);
+      }
+    } finally {
+      restore();
+    }
+
+    expect(composioSdkState.executions).toEqual(executed);
+    expect(events.at(-1)?.type).toBe(executed.length > 0 ? "result" : "error");
+  });
 
   it("keeps mixed multi-execute calls in their original order", () => {
     const createFolder = { tool_slug: "DROPBOX_CREATE_FOLDER", arguments: { path: "/Invoices" } };

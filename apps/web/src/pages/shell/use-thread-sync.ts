@@ -4,6 +4,7 @@ import type {
   ComputerStatus,
   Group,
   ProductEvent,
+  RoutineHistory,
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import {
@@ -20,6 +21,7 @@ import {
   openLogoAvatarActivityFeed,
   webLogoAvatarActivity,
 } from "../../lib/logo-avatar-activity.js";
+import { relistPagesForBlocks } from "../../lib/page-actions";
 import { markOnce } from "../../lib/performance";
 import type { SpaceQueries } from "../../lib/query";
 import { queryClient } from "../../lib/query";
@@ -243,6 +245,18 @@ export function useThreadSync({
     return snap;
   }
 
+  /** An open run history that already lists the finished run shows its outcome without its poll. */
+  function refreshRoutineHistory(runId: string | null | undefined) {
+    if (!runId) return;
+    void queryClient.invalidateQueries({
+      queryKey: queries.routines.history.key(),
+      predicate: (query) =>
+        (query.state.data as { pages?: RoutineHistory[] } | undefined)?.pages?.some((page) =>
+          page.runs.some((run) => run.id === runId),
+        ) ?? false,
+    });
+  }
+
   async function loadOlderMessages() {
     const targetBotId = inGroup ? undefined : active?.id;
     const targetGroupId = inGroup ? groupId : undefined;
@@ -362,6 +376,7 @@ export function useThreadSync({
         }
         if (event.type === "thread.message.created") {
           const blocks = (event.payload.blocks as Array<{ kind?: string }>) ?? [];
+          relistPagesForBlocks(queries, queryClient, blocks);
           if (blocks.some((block) => block.kind === "child_bot")) {
             void sidebarRefresh.invalidate().catch(() => undefined);
           }
@@ -377,6 +392,7 @@ export function useThreadSync({
         } else if (isComputerStatusEvent(event)) {
           void refreshComputerScreen(active.id).catch(() => undefined);
         }
+        if (isRunTerminalEvent(event)) refreshRoutineHistory(event.runId);
       },
     });
     return () => {
@@ -443,6 +459,13 @@ export function useThreadSync({
         if (event.type === "thread.message.created" && event.payload.role === "bot") {
           markGroupReadOnReply(groupId);
         }
+        if (event.type === "thread.message.created") {
+          relistPagesForBlocks(
+            queries,
+            queryClient,
+            (event.payload.blocks as Array<{ kind?: string }>) ?? [],
+          );
+        }
         if (
           event.type === "run.started" ||
           event.type === "bot.updated" ||
@@ -455,6 +478,7 @@ export function useThreadSync({
           // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
           void snapshotRefresh.invalidate().catch(() => undefined);
         }
+        if (isRunTerminalEvent(event)) refreshRoutineHistory(event.runId);
       },
     });
     return () => {

@@ -24,6 +24,7 @@ function service(getPrice: BillingProvider["getPrice"], role = "owner") {
   const provider = {
     describe: () => ({ capabilities: { trials: true, portal: true } }),
     getPrice: vi.fn(getPrice),
+    endTrial: vi.fn(),
   } as unknown as BillingProvider;
   return {
     provider,
@@ -46,9 +47,56 @@ describe("billing status", () => {
     await expect(billing.status(actor)).resolves.toMatchObject({ price: null, access: false });
   });
 
-  it("refuses checkout and portal for non-owners", async () => {
-    const { billing } = service(async () => price, "member");
+  it("refuses checkout, portal, and ending the trial for non-owners", async () => {
+    const { billing, provider } = service(async () => price, "member");
     await expect(billing.checkout(actor)).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(billing.portal(actor)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(billing.endTrial(actor)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(provider.endTrial).not.toHaveBeenCalled();
+  });
+});
+
+describe("model credit checkout", () => {
+  it("calls the provider without holding a database transaction", async () => {
+    let openTransactions = 0;
+    const account = { organizationId: "org-1", customerId: "cus-1" };
+    const prisma = {
+      space: { findUnique: vi.fn().mockResolvedValue({ organizationId: "org-1" }) },
+      member: { findUnique: vi.fn().mockResolvedValue({ role: "owner" }) },
+      billingAccount: {
+        findUnique: vi.fn().mockResolvedValue(account),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      modelCreditAccount: {
+        upsert: vi.fn().mockResolvedValue({ organizationId: "org-1" }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => {
+        openTransactions++;
+        try {
+          return await run(prisma);
+        } finally {
+          openTransactions--;
+        }
+      }),
+    };
+    const provider = {
+      describe: () => ({ capabilities: { modelCredits: true } }),
+      createCreditCheckout: vi.fn(async () => {
+        expect(openTransactions).toBe(0);
+        return { url: "https://checkout.example.com" };
+      }),
+    } as unknown as BillingProvider;
+    const billing = createBillingService({
+      prisma: prisma as unknown as PrismaClient,
+      provider,
+      webOrigin: "https://app.example.com",
+    });
+    for (const monthly of [true, false]) {
+      await expect(billing.purchaseCredits(actor, { amountCents: 1000, monthly })).resolves.toEqual(
+        { url: "https://checkout.example.com" },
+      );
+    }
+    expect(provider.createCreditCheckout).toHaveBeenCalledTimes(2);
   });
 });

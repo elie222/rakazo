@@ -115,9 +115,10 @@ describe("controls read back from a snapshot tree", () => {
     ];
     const tree = [
       "Some page text",
-      ...names.map(
-        (name, index) =>
-          `- ${index % 2 ? "link" : "file upload"} ${JSON.stringify(name)} [e${index + 7}] value="x"`,
+      ...names.map((name, index) =>
+        index % 2
+          ? `${index % 3 ? "" : "  "}- link ${JSON.stringify(name)} [ref=e${index + 7}]: x`
+          : `- checkbox ${JSON.stringify(name)} [${index % 4 ? "checked=false, ref=" : ""}e${index + 7}]`,
       ),
       "- not a control line",
     ].join("\n");

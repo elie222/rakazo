@@ -1,7 +1,7 @@
 {
   "name": "@rakazo/desktop",
   "productName": "Rakazo",
-  "version": "0.3.6",
+  "version": "0.5.0",
   "author": {
     "name": "Rakazo"
   },
@@ -10,10 +10,10 @@
   "main": "dist/main.js",
   "scripts": {
     "dev": "pnpm build && electron .",
-    "build": "node scripts/build.mjs && node scripts/copy-static.mjs",
+    "build": "node scripts/build.mjs && node scripts/copy-static.mjs && node scripts/build-speech.mjs",
     "pack": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --mac --win --linux",
     "pack:dir": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --dir",
-    "check": "tsc --noEmit -p tsconfig.json",
+    "check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.jsdom.json",
     "test": "vitest run --root ../.. apps/desktop/src",
     "test:e2e": "pnpm build && playwright test --config e2e/playwright.config.ts",
     "release": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --publish never"
@@ -28,6 +28,7 @@
   "devDependencies": {
     "@playwright/test": "1.64.1",
     "@rakazo/adapters": "workspace:*",
+    "@rakazo/core": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
     "electron": "45.0.0",
     "electron-builder": "26.15.3",
@@ -71,8 +72,19 @@
       "entitlements": "assets/entitlements.mac.plist",
       "entitlementsInherit": "assets/entitlements.mac.plist",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "Rakazo uses the microphone for dictation and voice calls with your bots."
+        "NSMicrophoneUsageDescription": "Rakazo uses the microphone for dictation and voice calls with your bots.",
+        "NSSpeechRecognitionUsageDescription": "Rakazo turns what you say into text for dictation and voice calls with your bots."
       },
+      "extraResources": [
+        {
+          "from": "build/speech/rakazo-speech",
+          "to": "speech/rakazo-speech"
+        },
+        {
+          "from": "assets/es.lproj",
+          "to": "es.lproj"
+        }
+      ],
       "target": [
         "dmg",
         "zip"
@@ -99,6 +111,9 @@
           "path": "/Applications"
         }
       ]
+    },
+    "nsis": {
+      "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "win": {
       "icon": "assets/icon.ico",

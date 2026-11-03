@@ -11,12 +11,13 @@ const input: AppendEventInput = {
   runId: "run-1",
   type: "thread.meta",
   payload: { activity: { thinking: true } },
-  activityLease: { owner: "worker-1", fence: 2 },
+  lease: { owner: "worker-1", fence: 2 },
 };
 function fixture(status = "running", leaseOwner = "worker-1", leaseFence = 2) {
   const row = { status, leaseOwner, leaseFence };
   const tx = {
     thread: { update: vi.fn(async () => ({ nextEventSeq: 2 })) },
+    $queryRaw: vi.fn(async () => []),
     run: { findUnique: vi.fn(async () => row) },
     event: { create: vi.fn(async ({ data }) => data) },
   };
@@ -63,9 +64,7 @@ describe("transient thread activity writes", () => {
         payload: { activity: { thinking: true, text: "private fixture reasoning" } },
       }),
     ).rejects.toThrow();
-    await expect(f.append({ ...input, activityLease: undefined })).rejects.toThrow(
-      RunHistoryWriteError,
-    );
+    await expect(f.append({ ...input, lease: undefined })).rejects.toThrow(RunHistoryWriteError);
     await expect(f.append({ ...input, runId: undefined })).rejects.toThrow(RunHistoryWriteError);
     expect(f.tx.event.create).not.toHaveBeenCalled();
   });
@@ -85,7 +84,7 @@ it("retains normal metadata semantics without an activity fence", async () => {
   const f = fixture();
   const notice = {
     ...input,
-    activityLease: undefined,
+    lease: undefined,
     payload: { notice: "stuck", state: "pending" },
   };
   await f.append(notice);

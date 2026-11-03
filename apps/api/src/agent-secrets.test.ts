@@ -103,11 +103,26 @@ describe("agent secrets on the vault", () => {
   });
 
   it("rejects non-owners", async () => {
-    const { deps } = fixture("member");
+    const { deps, rows } = fixture("member");
+    rows.push({
+      id: "acme",
+      userId: "user-1",
+      spaceId: null,
+      name: "acme_token",
+      origin: "",
+      auth: { type: "command" },
+      ciphertext: "unused",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
     await expect(listAgentSecrets(deps, actor)).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(
       putAgentSecret(deps, actor, { name: "ACME_TOKEN", value: "fake" }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(deleteAgentSecret(deps, actor, "acme_token")).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    expect(rows).toHaveLength(1);
   });
 
   it("updates a variable through the vault name that exports it", async () => {
@@ -130,6 +145,26 @@ describe("agent secrets on the vault", () => {
     );
     expect(rows.map((row) => row.name)).toEqual(["netbird-setup-key"]);
     expect(rows[0]!.ciphertext).not.toBe("unused");
+  });
+
+  it("refuses a variable named like a saved login, leaving the login as it was", async () => {
+    const { deps, rows } = fixture();
+    const login = {
+      id: "login",
+      userId: "user-1",
+      spaceId: null,
+      name: "acme_token",
+      origin: "https://login.example.test",
+      auth: { type: "login" },
+      ciphertext: "unused",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    rows.push({ ...login });
+    await expect(
+      putAgentSecret(deps, actor, { name: "ACME_TOKEN", value: "fake" }),
+    ).rejects.toThrow("Remove the existing credential before changing its destination");
+    expect(rows).toEqual([login]);
   });
 
   it("refuses a variable that starts with an underscore", async () => {

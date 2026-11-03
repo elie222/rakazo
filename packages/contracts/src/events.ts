@@ -1,8 +1,9 @@
 import * as z from "zod";
 import { AgentImportSetupItemSchema } from "./agent-import-setup.js";
-import { botSecretDestinationSchema, LoginFieldLabels } from "./bot-secrets.js";
-import { Id } from "./ids.js";
+import { botSecretDestinationSchema, LoginFieldLabels, OneTimeCodeTarget } from "./bot-secrets.js";
+import { Id, ThinkingLevelSchema } from "./ids.js";
 import { McpTransportSchema } from "./mcp.js";
+import { PAGE_TITLE_MAX_LENGTH } from "./pages.js";
 
 export const ProductEventType = z.enum([
   "thread.message.created",
@@ -94,6 +95,16 @@ const ChartBlock = z
 export const SecretAskPurpose = z.enum(["otp", "password", "api_key"]);
 export type SecretAskPurpose = z.infer<typeof SecretAskPurpose>;
 
+/** The settings a bot can change on itself from chat. */
+export const BotSettingsValuesSchema = z.object({
+  modelProvider: z.string().trim().min(1).max(80).nullable().optional(),
+  modelId: z.string().trim().min(1).max(200).nullable().optional(),
+  thinkingLevel: ThinkingLevelSchema.nullable().optional(),
+  autoSpeak: z.boolean().optional(),
+  voiceId: z.string().max(120).nullable().optional(),
+});
+export type BotSettingsValues = z.infer<typeof BotSettingsValuesSchema>;
+
 export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string() }),
   z.object({
@@ -113,6 +124,10 @@ export const MessageBlock = z.discriminatedUnion("kind", [
         undoVersionId: Id.optional(),
       })
       .optional(),
+    /** A settings change made from chat; undo writes `before` back while `after` still holds. */
+    settingsUpdate: z
+      .object({ botId: Id, before: BotSettingsValuesSchema, after: BotSettingsValuesSchema })
+      .optional(),
     detail: z.string().optional(),
     detailFormat: z.enum(["text", "code"]).optional(),
     input: z.enum(["text", "secret"]).optional(),
@@ -122,6 +137,10 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     // an ask persisted before an owner toggles the private-HTTP flag still
     // validates on replay.
     credential: botSecretDestinationSchema({ allowPrivateHttpOrigin: true }).optional(),
+    /** A texted or emailed code for this site's page; answered once, never saved. */
+    oneTimeCode: OneTimeCodeTarget.optional(),
+    /** On a login card, the saved login this card replaces and the site it is saved for. */
+    replaces: z.object({ id: z.string().max(64), origin: z.string().max(2048) }).optional(),
     /** The fields a login card asks for, by label; absent means DEFAULT_LOGIN_FIELD_LABELS. */
     loginFields: LoginFieldLabels.optional(),
     /** On a fetch approval, the site an "always" answer allows. */
@@ -293,6 +312,13 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     size: z.number().int().nonnegative(),
   }),
   z.object({
+    /** A page the bot saved. Title and version are as sent; read the page for its latest. */
+    kind: z.literal("page"),
+    pageId: Id,
+    version: z.number().int().positive(),
+    title: z.string().max(PAGE_TITLE_MAX_LENGTH),
+  }),
+  z.object({
     kind: z.literal("handoff"),
     fromBotId: Id,
     toBotId: Id,
@@ -417,6 +443,8 @@ export type MessageAuthor = z.infer<typeof MessageAuthorSchema>;
 
 export const ReplyPreviewSchema = z.object({
   role: MessageRole,
+  /** The parent is a page card. */
+  page: z.literal(true).optional(),
   botId: Id.optional(),
   author: MessageAuthorSchema.optional(),
   text: z.string(),

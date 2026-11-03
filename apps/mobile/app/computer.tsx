@@ -83,6 +83,7 @@ export default function Computer() {
   const name = displayName(nameParam, t("Bot"));
   const foreground = useAppForeground();
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
+  const [cleaningUp, setCleaningUp] = useState(false);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [screenError, setScreenError] = useState<string | null>(null);
   const [screenOriginError, setScreenOriginError] = useState(false);
@@ -109,7 +110,14 @@ export default function Computer() {
   const [screenReload, setScreenReload] = useState(0);
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl, currentApiBase());
-  useEffect(() => setScreenError(null), [embeddedScreenUrl]);
+  // Every screen URL read rotates its token, so only a different stream earns a fresh load.
+  // Clearing on a rotated token reloaded a screen this device cannot reach every few seconds,
+  // and each reload blanked the preview in place of the error.
+  const embeddedScreenStream = embeddedScreenUrl ? screenStreamKey(embeddedScreenUrl) : null;
+  useEffect(() => setScreenError(null), [embeddedScreenStream]);
+  // Without a WebView a dropped URL never fails on its own, so say so instead of a dead preview.
+  const unreachableScreen =
+    computer?.state === "running" && Boolean(screenUrl) && !embeddedScreenUrl;
 
   const hasControl = computer?.controlHolder === "user" && computer.controlBotId === botId;
   // Propped open like a laptop, the desktop stays above the fold and the keys go below it.
@@ -379,6 +387,28 @@ export default function Computer() {
     }
   }
 
+  function dismissDiskWarning() {
+    setComputer((current) => current && { ...current, diskFullPercent: undefined });
+    void rpc("computer/dismissDiskWarning", { botId: botId ?? "" }).catch(() => undefined);
+  }
+
+  async function cleanUpDisk() {
+    setCleaningUp(true);
+    try {
+      await rpc("threads/send", {
+        botId: botId ?? "",
+        text: t(
+          "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need.",
+        ),
+      });
+      dismissDiskWarning();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setCleaningUp(false);
+    }
+  }
+
   async function releaseComputer(reason?: ComputerReleaseReason) {
     if (!botId || !refreshController.isActive()) return;
     const action = refreshController.beginAction();
@@ -436,11 +466,16 @@ export default function Computer() {
     />
   ) : null;
   const placeholder =
-    screenError ?? previewPlaceholder(computer?.state, booting, name, computer?.mode);
+    screenError ??
+    (unreachableScreen
+      ? t("Could not load the desktop. This device cannot reach the screen URL.")
+      : previewPlaceholder(computer?.state, booting, name, computer?.mode));
   // Booting shows in the preview; the header and Back stay, and leaving lets the boot finish.
   const bootPending = booting || computer?.state === "booting";
   const canRetry = !bootPending && (bootFailed || computer?.state === "error");
-  const screenRetry = computer?.state === "running" && screenOriginError && Boolean(screenError);
+  const screenRetry =
+    unreachableScreen ||
+    (computer?.state === "running" && screenOriginError && Boolean(screenError));
   const retryScreenAction = screenRetry ? (
     <NativeActionButton
       style={{ marginBottom: 16 }}
@@ -577,6 +612,33 @@ export default function Computer() {
           />
         )}
       </View>
+      {computer?.diskFullPercent !== undefined ? (
+        <View
+          style={{
+            marginTop: 16,
+            flexDirection: stacked ? "column" : "row",
+            alignItems: stacked ? "flex-start" : "center",
+            gap: 12,
+          }}
+        >
+          <Text
+            style={{ color: tokens.warning, ...(stacked ? { alignSelf: "stretch" } : { flex: 1 }) }}
+          >
+            {t("Computer is {percent}% full", { percent: computer.diskFullPercent })}
+          </Text>
+          <NativeActionButton
+            label={t("Dismiss")}
+            prominence="plain"
+            onPress={dismissDiskWarning}
+          />
+          <NativeActionButton
+            label={t("Clean up")}
+            prominence="secondary"
+            busy={cleaningUp}
+            onPress={() => void cleanUpDisk()}
+          />
+        </View>
+      ) : null}
       {computer ? (
         <ComputerMaintenanceActions
           botId={botId ?? ""}
@@ -796,6 +858,7 @@ function ScreenWebView({
   const sourceUrl = useRef(url);
   sourceUrl.current = retainScreenSource(sourceUrl.current, url);
   const loadedSource = sourceUrl.current;
+  const loadedPageUrl = useRef<string | null>(null);
   const reportStarted = useRef(false);
   const reportCallback = useRef(onScreenState);
   reportCallback.current = onScreenState;
@@ -822,7 +885,11 @@ function ScreenWebView({
         nativeKeyboard && keyboardSession ? computerKeyboardReadyProbe(keyboardSession) : undefined
       }
       onMessage={(event) => {
-        const state = fromScreenPage(event.nativeEvent.url, sourceUrl.current)
+        const state = fromScreenPage(
+          event.nativeEvent.url,
+          sourceUrl.current,
+          loadedPageUrl.current,
+        )
           ? screenPageState(event.nativeEvent.data)
           : null;
         if (state) {
@@ -830,7 +897,10 @@ function ScreenWebView({
           onScreenState?.(state);
         } else if (nativeKeyboard) onKeyboardMessage?.(event.nativeEvent.data);
       }}
-      onLoadStart={onLoadStart}
+      onLoadStart={(event) => {
+        loadedPageUrl.current = event?.nativeEvent?.url ?? null;
+        onLoadStart?.();
+      }}
       style={{ flex: 1, backgroundColor: tokens.background }}
       pointerEvents={interactive ? "auto" : "none"}
       // A view-only screen is a picture: keep its page, including the hidden keyboard field,

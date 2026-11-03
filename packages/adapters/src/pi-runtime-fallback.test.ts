@@ -221,7 +221,10 @@ beforeEach(() => {
   providerState.delay.mockReset().mockResolvedValue(undefined);
 });
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
 
 describe("Pi runtime transient model retries", () => {
   it("recovers one empty idle stream after the header retry budget expires", async () => {
@@ -405,6 +408,26 @@ describe("Pi runtime transient model retries", () => {
       expect(providerState.delay).not.toHaveBeenCalled();
     },
   );
+
+  it("retries within the configured request budget", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("MODEL_STREAM_TIMEOUT_MS", "240000");
+    const pending = new AssistantMessageEventStream();
+    providerState.stream
+      .mockReturnValueOnce(pending)
+      .mockImplementation(() =>
+        stream(primary, message(primary, [{ type: "text", text: "Recovered." }], "stop")),
+      );
+    const outcome = run(request());
+    await vi.advanceTimersByTimeAsync(MODEL_STREAM_TIMEOUT_MS);
+    const failure = message(primary, [], "error", "Request timed out.");
+    pending.push({ type: "error", reason: "error", error: failure });
+    pending.end(failure);
+    expect(await outcome).toContainEqual({ type: "text", text: "Recovered." });
+    expect(providerState.stream.mock.calls[1]?.[2].timeoutMs).toBe(
+      240_000 - MODEL_STREAM_TIMEOUT_MS,
+    );
+  });
 
   it("bounds repeated early timeouts by elapsed request budget", async () => {
     vi.useFakeTimers();
@@ -1750,10 +1773,9 @@ describe("Pi runtime ordered model fallback", () => {
       { provider: backupA.provider, id: backupA.id },
       { provider: backupB.provider, id: backupB.id },
     ]);
-    input.model.thinkingLevel = "low";
     input.resolveFallbackModel = async (provider, id) => {
       if (provider === backupB.provider) throw new Error("fake-private-credential-diagnostic");
-      return { provider, id, apiKey: "fake-backup-key" };
+      return { provider, id, apiKey: "fake-backup-key", thinkingLevel: "low" };
     };
     providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
       stream(target, message(target, [], "error", "429 quota exhausted")),
@@ -1960,23 +1982,20 @@ describe("Pi runtime ordered model fallback", () => {
     ).toEqual([primary.provider, smallContextBackup.provider]);
   });
 
-  it("skips backups without the primary turn's reasoning capability", async () => {
+  it("runs a backup without reasoning with thinking off when the primary thinks", async () => {
     const reasoningPrimary = { ...primary, reasoning: true };
     const textOnlyBackup = { ...backupA, reasoning: false };
-    const reasoningBackup = { ...backupB, reasoning: true };
     providerState.models.set(`${primary.provider}/${primary.id}`, reasoningPrimary);
     providerState.models.set(`${backupA.provider}/${backupA.id}`, textOnlyBackup);
-    providerState.models.set(`${backupB.provider}/${backupB.id}`, reasoningBackup);
     const input = request([
       { provider: backupA.provider, id: backupA.id, apiKey: "text-only-key" },
-      { provider: backupB.provider, id: backupB.id, apiKey: "reasoning-key" },
     ]);
     input.model.reasoning = true;
     input.model.thinkingLevel = "high";
     providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
       target.provider === primary.provider
         ? stream(target, message(target, [], "error", "429 rate_limit_error"))
-        : stream(target, message(target, [{ type: "text", text: "reasoned" }], "stop")),
+        : stream(target, message(target, [{ type: "text", text: "backup answer" }], "stop")),
     );
 
     await run(input);
@@ -1985,7 +2004,8 @@ describe("Pi runtime ordered model fallback", () => {
       providerState.stream.mock.calls.map(
         ([target]) => (target as Model<"openai-completions">).provider,
       ),
-    ).toEqual([primary.provider, backupB.provider]);
+    ).toEqual([primary.provider, backupA.provider]);
+    expect(providerState.stream.mock.calls[1]?.[2]).toMatchObject({ reasoning: undefined });
   });
 
   it.each([...IMAGE_RETURNING_COMPUTER_TOOLS, "write_effect"])(

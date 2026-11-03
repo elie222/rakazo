@@ -92,7 +92,7 @@ function recordingDeps(skill: ReturnType<typeof skillRow>) {
         },
       },
       events: { append: vi.fn(), notify: vi.fn(), finalizeComputerControlRelease: vi.fn() },
-      jobs: { enqueue: vi.fn(), cancel: vi.fn() },
+      jobs: { enqueue: vi.fn().mockResolvedValue(undefined), cancel: vi.fn() },
       sandbox: { observe: vi.fn(), setScreenControl: vi.fn(), sendInput: vi.fn(), act: vi.fn() },
       home: {},
       dataDir: "/tmp",

@@ -8,9 +8,10 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { Actor, MessagingInstallationSummary } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { requireMembership, runAsSystem } from "@rakazo/db";
+import { IsolationError, requireMembership, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { credentialDigest } from "./credential-digest.js";
+import { installationSenderAddress } from "./installed-messaging-surface.js";
 
 /** OAuth state is short-lived, single-use and tied to a user, space and bot. */
 export class MessagingInstallations implements MessagingInstallationStore {
@@ -29,7 +30,7 @@ export class MessagingInstallations implements MessagingInstallationStore {
           select: { id: true, spaceId: true },
         })
       : await this.defaultBot(actor.userId);
-    if (!bot) throw new Error("Bot not found");
+    if (!bot) throw new IsolationError("Bot not found");
     const state = randomBytes(32).toString("base64url");
     await runAsSystem("start messaging workspace installation", async () => {
       await this.prisma.messagingInstallSession.deleteMany({
@@ -60,7 +61,8 @@ export class MessagingInstallations implements MessagingInstallationStore {
     });
   }
 
-  async complete(state: string, code: string): Promise<void> {
+  /** Only the user who started it may finish, so a forwarded authorize link cannot attach their workspace. */
+  async complete(actor: Actor, state: string, code: string): Promise<void> {
     if (!/^[A-Za-z0-9_-]{43}$/.test(state) || !code || code.length > 4096)
       throw new Error("Invalid authorization");
     await runAsSystem("complete messaging workspace installation", async () => {
@@ -69,6 +71,7 @@ export class MessagingInstallations implements MessagingInstallationStore {
       });
       if (
         !session ||
+        session.userId !== actor.userId ||
         session.provider !== this.provider.provider ||
         session.expiresAt <= new Date()
       )
@@ -104,6 +107,9 @@ export class MessagingInstallations implements MessagingInstallationStore {
         throw new Error("Workspace is already connected");
       }
       const id = existing?.id ?? randomBytes(16).toString("hex");
+      const ownerAddress = external.ownerId
+        ? installationSenderAddress(external.workspaceId, external.ownerId)
+        : null;
       const previousCiphertext = existing?.ciphertext;
       const sealed = await this.secrets.put(
         external.credential,
@@ -127,7 +133,11 @@ export class MessagingInstallations implements MessagingInstallationStore {
               botId: session.botId,
               ciphertext: previousCiphertext,
             },
-            data: { ciphertext: sealed.ciphertext, workspaceName: external.workspaceName },
+            data: {
+              ciphertext: sealed.ciphertext,
+              workspaceName: external.workspaceName,
+              ownerAddress,
+            },
           });
           if (updated.count !== 1) throw new Error("Workspace connection changed; try again");
         } else {
@@ -142,6 +152,7 @@ export class MessagingInstallations implements MessagingInstallationStore {
               userId: session.userId,
               botId: session.botId,
               ciphertext: sealed.ciphertext,
+              ownerAddress,
             },
           });
         }

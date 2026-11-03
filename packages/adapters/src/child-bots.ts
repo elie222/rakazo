@@ -5,6 +5,7 @@ import type {
   ComputerRef,
   JobPublisher,
   SandboxProvider,
+  SecretStore,
 } from "@rakazo/adapter-kit";
 import { routineJobKey, runContinueJob, runJobKey } from "@rakazo/adapter-kit";
 import type { Actor, Bot, ComputerMode } from "@rakazo/contracts";
@@ -21,6 +22,7 @@ import {
   computerScopeKey,
   createRepos,
   createThreadMessageInTransaction,
+  deletePageShareSecrets,
   expireComputerExecutionLeases,
   legacyTeamHomeKey,
   recordComputerRunEnd,
@@ -37,6 +39,7 @@ import {
   withCleanupDeadline,
 } from "./computer-workspace.js";
 import { removeAgentHome, removeAgentHomeFolders } from "./home.js";
+import { forgetPageShareSecrets } from "./page-share-secrets.js";
 import { removePiBotSessions } from "./pi-session.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 
@@ -210,6 +213,8 @@ type BotLifecycleDeps = {
   jobs: JobPublisher;
   dataDir?: string;
   artifacts?: ArtifactStore;
+  /** Removes deleted page links' sealed tokens from a remote secret store. */
+  secretStore?: Pick<SecretStore, "delete">;
   messagingInstallations?: {
     removeForBot(bot: { id: string; spaceId: string; userId: string }): Promise<void>;
   };
@@ -436,6 +441,10 @@ export async function destroyBot(
       await tx.artifact.deleteMany({
         where: { botId: bot.id, groupId: null, spaceId: bot.spaceId },
       });
+      // Like its files, the bot's own pages and their links go with it; group pages stay.
+      const botPages = { botId: bot.id, groupId: null, spaceId: bot.spaceId };
+      const pageShareSecrets = await deletePageShareSecrets(tx, botPages);
+      await tx.page.deleteMany({ where: botPages });
       const groupCleanup = await detachBotFromGroups(tx, bot.id);
       await tx.computerExecutionLease.deleteMany({ where: { botId: bot.id } });
       await tx.computer.updateMany({
@@ -478,6 +487,7 @@ export async function destroyBot(
           ...groupCleanup.artifactKeys,
         ],
         cancelledGroupRuns: groupCleanup.cancelledRuns,
+        pageShareSecrets: [...pageShareSecrets, ...groupCleanup.pageShareSecrets],
       };
     }),
   );
@@ -517,6 +527,7 @@ export async function destroyBot(
   if (artifactStore) {
     await removeStoredArtifacts(artifactStore, deletion.artifactKeys, context);
   }
+  if (deps.secretStore) await forgetPageShareSecrets(deps.secretStore, deletion.pageShareSecrets);
 }
 
 async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) {
@@ -570,10 +581,9 @@ async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) 
         },
       })
     : [];
-  if (activeRuns.length) {
-    const now = new Date();
-    const runIds = activeRuns.map((run) => run.id);
-    await cancelRunsInTransaction(tx, activeRuns, now);
+  const cancelledRuns = await cancelRunsInTransaction(tx, activeRuns, new Date());
+  if (cancelledRuns.length) {
+    const runIds = cancelledRuns.map((run) => run.id);
     await expireComputerExecutionLeases(tx, { runId: { in: runIds } });
     await tx.computer.updateMany({
       where: { executionRunId: { in: runIds } },
@@ -593,12 +603,16 @@ async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) 
         select: { storageKey: true },
       })
     : [];
+  const pageShareSecrets = dissolvedGroupIds.length
+    ? await deletePageShareSecrets(tx, { groupId: { in: dissolvedGroupIds } })
+    : [];
   if (dissolvedGroupIds.length) {
     await tx.chatGroup.deleteMany({ where: { id: { in: dissolvedGroupIds } } });
   }
   return {
     artifactKeys: groupArtifacts.map((artifact) => artifact.storageKey),
-    cancelledRuns: activeRuns.map((run) => ({
+    pageShareSecrets,
+    cancelledRuns: cancelledRuns.map((run) => ({
       id: run.id,
       botId: run.botId,
       computer: run.bot.computer,

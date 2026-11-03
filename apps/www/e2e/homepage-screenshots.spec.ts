@@ -91,3 +91,10 @@ test.describe("on an iPhone", () => {
     await captureScreenshot(page, testInfo, "06-marketing-demo-onboarding-iphone");
   });
 });
+
+test("plugin pages screenshots", async ({ page }, testInfo) => {
+  await page.goto("/plugins/submit/");
+  await captureScreenshot(page, testInfo, "07-marketing-plugin-submit");
+  await page.goto("/docs/build-a-plugin/");
+  await captureScreenshot(page, testInfo, "08-marketing-docs-build-a-plugin");
+});

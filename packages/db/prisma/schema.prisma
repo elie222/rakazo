@@ -23,6 +23,7 @@ model AiDataConsent {
 
 model User {
   aiDataConsents AiDataConsent[]
+  pages          Page[]
   id                          String                       @id
   name                        String
   email                       String
@@ -33,11 +34,15 @@ model User {
   avatarStyle                 String                       @default("organic")
   /// IANA timezone such as "Pacific/Auckland". Null until set; bots then get UTC only.
   timezone                    String?
+  /// The app language last chosen, such as "es" or "pt-BR". Null until an app reports it;
+  /// emails then follow the language of the browser that asked for them.
+  locale                      String?
   marketingEmailOptOutAt      DateTime?
   sessions                    Session[]
   accounts                    Account[]
   passkeys                    Passkey[]
   members                     Member[]
+  accessGrants                AccessGrant[]
   invitations                 Invitation[]
   modelCredentials            UserModelCredential[]
   voiceCredentials            UserVoiceCredential[]
@@ -60,7 +65,9 @@ model User {
   createdTickets              Ticket[]                     @relation("TicketCreatorUser")
   ticketComments              TicketComment[]              @relation("TicketCommentAuthorUser")
   pushToken                   PushToken?
+  callPushDevices             CallPushDevice[]
   trustedLinkSites            TrustedLinkSite[]
+  feedbackReports             FeedbackReport[]
   emailSends                  EmailSend[]
   signupSurvey                SignupSurvey?
   computerRuns                ComputerRun[]
@@ -115,6 +122,21 @@ model PushToken {
   @@map("push_tokens")
 }
 
+/// Encrypted call registrations per installation. Legacy message push remains compatible.
+model CallPushDevice {
+  id String @id
+  expoTokenDigest String? @unique
+  voipTokenDigest String? @unique
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId String
+  ciphertext String
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, sessionId])
+  @@map("call_push_devices")
+}
+
 model EmailSend {
   userId String
   user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -132,9 +154,13 @@ model UserDevice {
   name        String
   platform    String
   tokenHash   String                 @unique
+  /// The session that paired it. Ending that session revokes the device.
+  sessionId   String?
   createdAt   DateTime               @default(now())
   lastSeenAt  DateTime?
   revokedAt   DateTime?
+  /// Who revoked it: "owner", "device" or "session" (its sign-in ended). Null when unknown.
+  revokedBy   String?
   connections UserDeviceConnection[]
 
   @@index([userId, revokedAt])
@@ -240,17 +266,27 @@ model BillingAccount {
   organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   customerId          String       @unique
   creditAmountCents   Int?
+  byokPriceCents      Int?
+  /// "month" or "year": how often byokPriceCents bills.
+  byokInterval        String?
   subscriptionId      String?
   subscriptionItemId  String?
   priceId             String?
   status              String?
   seats               Int?
   trialEndsAt         DateTime?
+  currentPeriodStartsAt DateTime?
   currentPeriodEndsAt DateTime?
   cancelAtPeriodEnd   Boolean      @default(false)
   endedAt             DateTime?
+  cancellationReason  String?
+  cancellationComment String?
   subscribedAt        DateTime?
+  /// When a subscription was first seen active, so a trial that never paid is not a paid plan.
+  paidAt              DateTime?
   syncedAt            DateTime?
+  checkoutLeaseId     String?
+  checkoutLeaseExpiresAt DateTime?
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
 
@@ -279,18 +315,39 @@ model Referral {
   @@map("referrals")
 }
 
+model AccessGrant {
+  id             String    @id @default(cuid())
+  email          String
+  creditCents    Int       @default(0)
+  freeMonths     Int       @default(0)
+  createdById    String?
+  createdBy      User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  organizationId String?
+  appliedAt      DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([email])
+  @@index([createdAt])
+  @@map("access_grants")
+}
+
 model PluginSubmission {
   id           String    @id @default(cuid())
   email        String
   name         String
   website      String?
-  logo         String
-  source       String
+  logo         String?
+  /// The integration page slug this claims; claims have no source or testing.
+  claim        String?
+  /// Hash of the emailed link that moves an unconfirmed claim into review.
+  confirmToken     String?   @unique
+  confirmExpiresAt DateTime?
+  source       String?
   description  String
-  testing      String
+  testing      String?
   status       String    @default("pending")
   reason       String?
-  // Set on approval.
   pinnedSource String?
   hasConnector Boolean   @default(false)
   skillCount   Int       @default(0)
@@ -300,6 +357,7 @@ model PluginSubmission {
 
   @@index([status, createdAt])
   @@index([source])
+  @@index([claim, status])
   @@map("plugin_submissions")
 }
 
@@ -382,6 +440,7 @@ model Space {
   agentHomes                  AgentHome[]
   browserProfiles             BrowserProfile[]
   artifacts                   Artifact[]
+  pages                       Page[]
   notificationPreferences     NotificationPreference[]
   computers                   Computer[]
   computerRuns                ComputerRun[]
@@ -390,6 +449,7 @@ model Space {
   mcpOAuthSessions            McpOAuthSession[]
   modelOAuthSessions          ModelOAuthSession[]
   purchases                   Purchase[]
+  feedbackReports             FeedbackReport[]
   botMcpServers              BotMcpServer[]
   messagingIdentities         MessagingIdentity[]
   actionApprovalRules         ActionApprovalRule[]
@@ -500,6 +560,10 @@ model DeploymentSettings {
   defaultModelId                  String?
   deploymentModelCredentialCipher String?
   computerHost                    String?
+  /// Provider id for new computers chosen in Settings; null keeps SANDBOX_PROVIDER.
+  computerProvider                String?
+  /// That provider's encrypted connection settings, owned by the deployment rather than a user.
+  computerProviderCipher          String?
   createdAt                       DateTime @default(now())
   updatedAt                       DateTime @updatedAt
 
@@ -526,6 +590,45 @@ model SecurityEvent {
   @@map("security_events")
 }
 
+/// The organization's record of who did what. No foreign keys, so deleting a space, chat,
+/// run, bot, or account keeps its history; ids dangle and the labels are copied at write time.
+/// Append-only: retention pruning is the only delete. Never stores message content or secrets.
+model AuditEvent {
+  id             String   @id @default(cuid())
+  organizationId String
+  spaceId        String?
+  spaceName      String?
+  actorType      String
+  actorId        String?
+  actorLabel     String?
+  action         String
+  targetType     String?
+  targetId       String?
+  targetLabel    String?
+  outcome        String
+  runId          String?
+  threadId       String?
+  ip             String?
+  userAgent      String?
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([createdAt])
+  @@map("audit_events")
+}
+
+model AuditEventForwarding {
+  id            String    @id @default("default")
+  lastCreatedAt DateTime?
+  lastEventId   String?
+  failures      Int       @default(0)
+  nextAttemptAt DateTime?
+  updatedAt     DateTime  @updatedAt
+
+  @@map("audit_event_forwarding")
+}
+
 model UserModelCredential {
   id          String                 @id @default(cuid())
   userId      String
@@ -544,6 +647,27 @@ model UserModelCredential {
   @@unique([id, userId])
   @@index([userId, provider, updatedAt])
   @@map("user_model_credentials")
+}
+
+/// A problem or suggestion a user asked their bot to send to the people who run this server.
+/// The ids point at where it happened; the description is written to leave out personal details.
+model FeedbackReport {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spaceId     String
+  space       Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  botId       String
+  threadId    String
+  runId       String
+  /// "bug" or "feedback".
+  kind        String
+  description String
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("feedback_reports")
 }
 
 /// A site one user opens from chat links without the external-link prompt, in every space.
@@ -624,7 +748,6 @@ model Bot {
   description       String            @default("")
   instructions      String            @default("")
   instructionHistory Json @default("[]")
-  pendingInstructionsRunId String?
   color             String
   avatarSet         String            @default("organic")
   notifyOnFinish    Boolean           @default(true)
@@ -653,7 +776,8 @@ model Bot {
   webhookSecretId   String?
   teamChatAmbientEnabled Boolean @default(false)
   teamChatRules          String  @default("")
-  crossSpaceCommunication Boolean @default(false)
+  crossSpaceCommunication Boolean @default(true)
+  dailyCheckIns Boolean @default(true)
   fleetManagement        Boolean @default(true)
   routines          Routine[]
   scratchpadItems   ScratchpadItem[]
@@ -662,6 +786,7 @@ model Bot {
   agentHome         AgentHome?
   browserProfile    BrowserProfile?
   artifacts         Artifact[]
+  pages             Page[]
   tasks             Task[]
   runs              Run[]
   steeringMessages  SteeringMessage[]
@@ -731,6 +856,7 @@ model ChatGroup {
   members    ChatGroupMember[]
   thread     Thread?
   artifacts  Artifact[]
+  pages      Page[]
 
   @@index([spaceId, userId, archivedAt, pinned, updatedAt])
   @@index([sectionId])
@@ -767,6 +893,8 @@ model Thread {
   historyCompactedUpToSeq     Int?
   historyCompactionSummary    String?    @db.Text
   historyCompactionGeneration Int        @default(0)
+  /// After a summary came back over the size limit, compaction waits until nextMessageSeq reaches this.
+  historyCompactionRetryAfterSeq Int?
   unread                      Boolean    @default(false)
   /// Highest message seq the user has read; the "New" divider goes after it. -1 = none read.
   lastReadSeq                 Int        @default(-1)
@@ -777,6 +905,7 @@ model Thread {
   routines                    Routine[]
 
   @@index([spaceId])
+  @@index([spaceId, userId])
   @@map("threads")
 }
 
@@ -886,6 +1015,8 @@ model Run {
   // Server-side first visible output, preserved across attempts and resumes.
   firstResponseAt      DateTime?
   startedAt            DateTime?
+  // The occurrence a recurring timer run was due at, recorded at its first start only when it started late.
+  lateSince            DateTime?
   completedAt          DateTime?
   botOutcomeReturnedAt DateTime?
   messagingMirroredAt  DateTime?
@@ -904,10 +1035,11 @@ model Run {
   @@index([trigger, status, messagingMirroredAt, updatedAt])
   @@index([trigger, status, teamChatMirroredAt, updatedAt])
   @@index([spaceId, botId])
-  @@index([botId])
+  @@index([botId, createdAt])
   @@index([taskId])
   @@index([sourceMessageId])
   @@index([threadId, status, createdAt])
+  @@index([threadId, createdAt, id])
   // Partial index runs_recent_activity_idx (recent foreground activity) is created in SQL.
   // Partial index runs_bot_outcome_pending_idx (unreturned bot-message outcomes) is created in SQL.
   @@index([routineId])
@@ -1064,6 +1196,7 @@ model ExternalEffect {
 
   @@unique([idempotencyKey])
   @@index([runId, status])
+  @@index([spaceId, kind, status])
   @@map("external_effects")
 }
 
@@ -1120,6 +1253,7 @@ model ScratchpadItem {
 
   @@index([spaceId, botId, status])
   @@index([spaceId, botId, updatedAt])
+  @@index([botId, status, updatedAt, id])
   @@map("scratchpad_items")
 }
 
@@ -1148,7 +1282,6 @@ model TaughtSkill {
   @@map("taught_skills")
 }
 
-/// An agent import, read by its setup checklist and by a retried create.
 model AgentImport {
   id            String   @id @default(cuid())
   spaceId       String
@@ -1183,7 +1316,6 @@ model AgentSkill {
   files       Json?
   /// user | builtin | plugin — only user skills are writable via API/tools.
   source      String   @default("user")
-  /// Plugin install that created this skill (source = "plugin").
   installId   String?
   install     CapabilityInstall? @relation(fields: [installId], references: [id], onDelete: Cascade)
   /// Available in every space of its owner, including later ones; otherwise in spaceId and availableIn.
@@ -1334,6 +1466,9 @@ model Computer {
   /// When a damaged system last made Rakazo stop and start the computer by itself. Tried once
   /// until a later save shows the computer works again.
   autoRecoveredAt         DateTime?
+  /// The machine at `providerRef` came from a start whose restore never finished, so it holds no
+  /// full copy of the saved home: nothing is saved from it, and the next start restores it.
+  restorePending          Boolean                  @default(false)
   /// Object storage only: random id naming the home's objects, its data key (wrapped by the
   /// space key) and the revision stored there. Deleting the computer deletes the key.
   homeStorageId           String?                  @unique
@@ -1355,15 +1490,37 @@ model Computer {
   screenUrl               String?
   /// When the computer last started running; bounds how long it can stay up in one stretch.
   runningSince            DateTime?
+  /// The home's disk as the computer last reported it; null where it was never measured.
+  diskUsedBytes           BigInt?
+  diskFreeBytes           BigInt?
+  /// How full the disk was when the user hid its warning; the warning returns once it is fuller.
+  diskDismissedPercent    Int?
   createdAt               DateTime                 @default(now())
   updatedAt               DateTime                 @updatedAt
   bots                    Bot[]
   executionLeases         ComputerExecutionLease[]
   maintenanceId           String?
   updates                 ComputerUpdate[]
+  homeDeletionNotice      HomeDeletionNotice?
 
   @@index([spaceId, scope])
   @@map("computers")
+}
+
+/// Hosted billing only: a stopped computer whose saved home is due for deletion after its plan
+/// ended or it went unused. `claimId` leases the row to one process while it emails.
+model HomeDeletionNotice {
+  computerId     String    @id
+  computer       Computer  @relation(fields: [computerId], references: [id], onDelete: Cascade)
+  claimId        String?
+  claimExpiresAt DateTime?
+  /// When the owner was emailed; null until then, and nothing is deleted before it.
+  warnedAt       DateTime?
+  /// The deletion date the email gave.
+  deleteAfter    DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@map("home_deletion_notices")
 }
 
 /// One stretch a computer ran at its provider, from `computers.runningSince` until it stopped,
@@ -1378,7 +1535,6 @@ model ComputerRun {
   space      Space?    @relation(fields: [spaceId], references: [id], onDelete: SetNull)
   userId     String?
   user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-  /// The provider kind, such as docker or e2b.
   kind       String
   /// The provider's id for the sandbox, to match runs with the provider's own usage and billing.
   providerRef String?
@@ -1387,6 +1543,8 @@ model ComputerRun {
   endedAt    DateTime?
   /// How it ended; see `ComputerRunEnd` in packages/db/src/computer-runs.ts.
   endReason  String?
+  /// When Rakazo last saw this stretch running: at its start and at each idle check.
+  lastSeenAt DateTime?
 
   @@unique([computerId, startedAt])
   @@index([spaceId, userId, startedAt])
@@ -1444,6 +1602,52 @@ model Artifact {
   @@index([rootArtifactId])
   // artifacts_family_version_key is raw SQL: Prisma cannot express COALESCE indexes.
   @@map("artifacts")
+}
+
+/// A page a bot built: a report, dashboard or tracker the user opens from chat and can share.
+model Page {
+  id             String        @id @default(cuid())
+  spaceId        String
+  space          Space         @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  botId          String?
+  bot            Bot?          @relation(fields: [botId], references: [id], onDelete: SetNull)
+  groupId        String?
+  group          ChatGroup?    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  title          String
+  visibility     String        @default("private")
+  /// sha256 of the link token; the public read looks pages up by it.
+  shareTokenHash String?       @unique
+  /// The link token itself, sealed in the secret store so the owner can copy the link again.
+  shareSecretId  String?       @unique
+  shareSecret    Secret?       @relation(fields: [shareSecretId], references: [id], onDelete: SetNull)
+  pinnedAt       DateTime?
+  currentVersion Int           @default(1)
+  createdAt      DateTime      @default(now())
+  /// Set when the page's content or title changes; pinning or sharing it is not an update.
+  updatedAt      DateTime      @default(now())
+  versions       PageVersion[]
+
+  @@index([spaceId, userId, updatedAt])
+  @@index([botId])
+  @@index([groupId])
+  @@map("pages")
+}
+
+model PageVersion {
+  id        String   @id @default(cuid())
+  pageId    String
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  version   Int
+  title     String
+  source    String
+  /// The source compiled for the viewer when it was saved, so reads never run the compiler.
+  code      String
+  createdAt DateTime @default(now())
+
+  @@unique([pageId, version])
+  @@map("page_versions")
 }
 
 model UsageRecord {
@@ -1527,6 +1731,7 @@ model Secret {
   mcpServers        McpServer[]
   spaceMemoryConfig SpaceMemoryConfig?
   agentSecret       AgentSecret?
+  pageShare         Page?
 
   @@index([userId, spaceId])
   @@map("secrets")
@@ -1544,16 +1749,19 @@ model McpServer {
   transport     String
   endpoint      String?
   command       String?
+  /// Legacy plaintext; arguments now live in the encrypted secret, and `hasArgs` marks them.
   args          Json              @default("[]")
+  hasArgs       Boolean           @default(false)
   env           Json              @default("{}")
   files         Json              @default("{}")
   headers       Json              @default("{}")
   secretId      String?
   secret        Secret?           @relation(fields: [secretId], references: [id], onDelete: SetNull)
-  /// Plugin install that created this server, if any.
   installId     String?
   install       CapabilityInstall? @relation(fields: [installId], references: [id], onDelete: Cascade)
   enabled       Boolean           @default(true)
+  /// Tool results from this server stay whole. A result that cannot fit fails the turn.
+  verbatimResults Boolean         @default(false)
   revision      Int               @default(1)
   /// Last launch/discovery outcome: unknown | installing | ok | error.
   healthStatus    String          @default("unknown")
@@ -1567,6 +1775,8 @@ model McpServer {
   /// Available in every space of its owner, including later ones; otherwise in spaceId and availableIn.
   allSpaces     Boolean           @default(false)
   availableIn   McpServerSpace[]
+  /// Every agent of its owner can use it; otherwise only agents with an assignment.
+  allBots       Boolean           @default(false)
 
   @@unique([spaceId, userId, slug])
   @@index([spaceId, userId])
@@ -1656,7 +1866,6 @@ model MessagingIdentity {
 model MessagingChannel {
   id            String              @id @default(cuid())
   provider      String
-  /// Opaque provider thread id of the group conversation.
   threadId      String              @unique
   name          String?
   introPostedAt DateTime?
@@ -2085,7 +2294,6 @@ model UserVoicePreference {
   @@map("user_voice_preferences")
 }
 
-/// The member's account-wide action approval rules.
 model UserActionApprovalRule {
   id         String   @id @default(cuid())
   userId     String
@@ -2099,7 +2307,6 @@ model UserActionApprovalRule {
   @@map("user_action_approval_rules")
 }
 
-/// The member's account-wide auto review and skip-approvals choice.
 model UserActionAutoReviewPreference {
   userId        String   @id
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -2123,6 +2330,8 @@ model MessagingInstallation {
   botId String
   bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
   ciphertext String
+  /// Sender address of the person who installed it, as inbound messages carry it.
+  ownerAddress String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@unique([provider, workspaceId])
@@ -2145,7 +2354,6 @@ model MessagingInstallSession {
   @@map("messaging_install_sessions")
 }
 
-/// A further space an account-owned skill is available in, beyond the one it was added in.
 model AgentSkillSpace {
   skillId String
   skill   AgentSkill @relation(fields: [skillId], references: [id], onDelete: Cascade)
@@ -2158,7 +2366,6 @@ model AgentSkillSpace {
   @@map("agent_skill_spaces")
 }
 
-/// A further space an account-owned MCP server is available in, beyond the one it was added in.
 model McpServerSpace {
   serverId String
   server   McpServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
@@ -2171,7 +2378,6 @@ model McpServerSpace {
   @@map("mcp_server_spaces")
 }
 
-/// A further space an account-owned plugin or tool source is available in, beyond the one it was added in.
 model CapabilityInstallSpace {
   installId String
   install   CapabilityInstall @relation(fields: [installId], references: [id], onDelete: Cascade)

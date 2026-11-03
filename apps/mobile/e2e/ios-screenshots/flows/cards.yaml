@@ -1,0 +1,38 @@
+appId: com.rakazo.app
+name: Request cards
+---
+- runFlow:
+    file: ../subflows/sign-in.yaml
+    env:
+      RAKAZO_ACTIVE_EMAIL: ${RAKAZO_SCREENSHOT_EMAIL}
+- openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_CARDS_BOT_ID}&name=Support"
+- extendedWaitUntil:
+    visible: ".*api.example.test.*"
+    timeout: 20000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 01-api-key
+- scrollUntilVisible:
+    element: ".*Which tone should replies use.*"
+    direction: UP
+    timeout: 15000
+    visibilityPercentage: 100
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 02-choice-and-computer
+- scrollUntilVisible:
+    element: ".*Sign in to the help desk.*"
+    direction: UP
+    timeout: 15000
+    visibilityPercentage: 100
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 03-answered-requests
+- scrollUntilVisible:
+    element: ".*Gmail.*"
+    direction: UP
+    timeout: 15000
+    visibilityPercentage: 100
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 04-app-connect

@@ -8,7 +8,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { dispatchBackgroundJob } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import { isTooManyDatabaseConnections, runAsSystem } from "@rakazo/db";
+import { isPoolCheckoutTimeout, isTooManyDatabaseConnections, runAsSystem } from "@rakazo/db";
 import { getLogger, runCorrelatedJob, unwrapJobPayload, wrapJobPayload } from "@rakazo/logging";
 import type { Runner, WorkerUtils } from "graphile-worker";
 import { makeWorkerUtils, run } from "graphile-worker";
@@ -70,9 +70,6 @@ export class GraphileJobPublisher implements JobPublisher {
       jobKey: job.replaceKey,
       maxAttempts: job.maxAttempts,
       ...(jobKeyMode ? { jobKeyMode } : {}),
-      // Each delivery drains the whole outbox, and a reply still being sent does not hold
-      // back the next reply to the same conversation, so drains run one at a time.
-      ...(job.name === "messaging.deliver" ? { queueName: "messaging.deliver" } : {}),
     });
     if (
       task === INTERACTIVE_RUN_TASK &&
@@ -178,6 +175,35 @@ export function databaseCapacityBackoffMs(attempt: number): number {
   return Math.min(30_000, 200 * 2 ** Math.min(attempt, 8));
 }
 
+/**
+ * Saturation a relaunch rides out. A job's completion that cannot get a connection for long
+ * enough stops the runner with pg-pool's checkout timeout, which the worker process otherwise
+ * ignores, so it would stay up without one.
+ */
+function isDatabaseSaturated(error: unknown): boolean {
+  return isTooManyDatabaseConnections(error) || isPoolCheckoutTimeout(error);
+}
+
+function abandonment() {
+  let abandon!: () => void;
+  const promise = new Promise<never>((_resolve, reject) => {
+    abandon = () => reject(new Error("The worker stopped before this job finished"));
+  });
+  promise.catch(() => undefined);
+  return { promise, abandon };
+}
+
+/**
+ * How long a stopping worker lets its running jobs finish. The slowest job is a computer sleep that
+ * saves the home; on Boat its own timeouts (a 9-minute archive, then a 30-minute download) fit
+ * inside. Other providers bound each request but not a whole save, so a longer one is cut off as
+ * if the worker had crashed: its suspend claim keeps the retried job from starting a second save,
+ * and the idle sweep sleeps the computer once the claim is ABANDONED_SUSPEND_CLAIM_MS old. Stays
+ * below the worker's stop_grace_period in Compose, and below that claim age so the sweep never
+ * replaces a sleep that is still draining.
+ */
+export const JOB_DRAIN_TIMEOUT_MS = 45 * 60_000;
+
 export class GraphileJobWorkerHost implements JobWorkerHost {
   private runner: Runner | undefined;
   private handlers: BackgroundJobHandlers | undefined;
@@ -185,19 +211,23 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
   private superviseTask: Promise<void> | undefined;
   private wakeSleep: (() => void) | undefined;
   private readonly executions = new RunExecutionHost();
+  private readonly running = new Set<{ name: BackgroundJobName }>();
+  /** Rejects once the drain deadline passes, failing every job still running. */
+  private abandoned = abandonment();
 
   constructor(
     private readonly pgPool: Pool,
     private readonly options: {
       concurrency?: number;
       pollInterval?: number;
-      noHandleSignals?: boolean;
       /** Fetch due jobs in batches so idle slots share one poll instead of each polling. */
       localQueueSize?: number;
       /** Omit for a worker that handles every task (tests and embedded hosts). */
       workload?: Workload;
       /** Test seam: delay between 53300 restart attempts. */
       sleep?: (ms: number) => Promise<void>;
+      /** Test seam for JOB_DRAIN_TIMEOUT_MS. */
+      drainTimeoutMs?: number;
     } = {},
   ) {}
 
@@ -205,6 +235,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
     if (this.runner || this.superviseTask) return;
     this.stopping = false;
     this.executions.start();
+    this.abandoned = abandonment();
     this.handlers = handlers;
     await this.launchRunner();
     // run() resolves once the runner is up; runner.promise can still reject later
@@ -213,21 +244,46 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
     this.superviseTask = this.supervise();
   }
 
+  /**
+   * Graphile stops claiming jobs and waits for the running ones to finish. Killing the process
+   * instead would leave each one locked for Graphile's four hours before anything retries it.
+   * Past the deadline a job is hung: it fails, which unlocks it with the usual backoff, so another
+   * worker retries it within seconds. A handed-off run that outlives it is left to the
+   * reconciler, as after a crash.
+   */
   async stop(): Promise<void> {
     this.stopping = true;
     this.wakeSleep?.();
     const draining = this.executions.stop();
+    const started = Date.now();
+    const busy = this.running.size > 0 || this.executions.activeCount > 0;
+    if (busy) getLogger().info("jobs.draining", this.runningBindings());
+    const deadline = setTimeout(() => {
+      getLogger().warn("jobs.drain_timed_out", this.runningBindings());
+      this.abandoned.abandon();
+    }, this.options.drainTimeoutMs ?? JOB_DRAIN_TIMEOUT_MS);
     try {
       await this.runner?.stop();
     } finally {
       // The queue has stopped accepting deliveries. Handed-off runs still own
       // leases and must finish before their database and providers are closed.
-      await draining;
+      await Promise.race([draining, this.abandoned.promise.catch(() => undefined)]);
+      clearTimeout(deadline);
       await this.superviseTask?.catch(() => undefined);
       this.runner = undefined;
       this.superviseTask = undefined;
       this.handlers = undefined;
     }
+    if (busy) getLogger().info("jobs.drained", { "jobs.drain_ms": Date.now() - started });
+  }
+
+  private runningBindings() {
+    const names = [...this.running].map((job) => job.name);
+    return {
+      "jobs.running": names.length,
+      "jobs.types": [...new Set(names)].sort().join(","),
+      "runs.active": this.executions.activeCount,
+    };
   }
 
   private async launchRunner(): Promise<void> {
@@ -251,8 +307,16 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
                 correlation: unpacked.correlation,
                 run: () => dispatchJob(handlers, name, unpacked.payload, execution),
               });
-            if (name === "run.continue") await this.executions.execute(execute);
-            else await execute();
+            const job = { name };
+            this.running.add(job);
+            try {
+              const work = name === "run.continue" ? this.executions.execute(execute) : execute();
+              // An abandoned job may still settle; the process exits soon after.
+              work.catch(() => undefined);
+              await Promise.race([work, this.abandoned.promise]);
+            } finally {
+              this.running.delete(job);
+            }
           },
         ]),
     );
@@ -261,11 +325,21 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       pgPool: this.pgPool,
       concurrency: this.options.concurrency ?? 4,
       pollInterval: this.options.pollInterval ?? 500,
-      noHandleSignals: this.options.noHandleSignals,
+      // Graphile kills the process by re-raising SIGTERM once its own jobs stop, before the
+      // host's shutdown has handed back the runs it executes outside Graphile.
+      noHandleSignals: true,
       taskList,
-      ...(this.options.localQueueSize
-        ? { preset: { worker: { localQueue: { size: this.options.localQueueSize } } } }
-        : {}),
+      preset: {
+        worker: {
+          // Batched, Graphile's shutdown waits for these writes; unbatched, it fires them and
+          // returns, so a worker exiting right after could leave its jobs locked for hours.
+          completeJobBatchDelay: 0,
+          failJobBatchDelay: 0,
+          ...(this.options.localQueueSize
+            ? { localQueue: { size: this.options.localQueueSize } }
+            : {}),
+        },
+      },
     });
     runner.events.on("job:failed", ({ job, error }) => {
       recordHistoryCompactAttemptsExhausted(job, error);
@@ -305,7 +379,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       } catch (error) {
         if (this.stopping) return;
         if (this.runner === runner) this.runner = undefined;
-        if (!isTooManyDatabaseConnections(error)) throw error;
+        if (!isDatabaseSaturated(error)) throw error;
         // Back off after every lifecycle 53300 (runner death or failed relaunch),
         // not only when launchRunner rejects — otherwise a runner that starts then
         // dies again under saturation reconnects with no delay.
@@ -318,7 +392,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
             if (this.stopping || !this.runner) return;
             break;
           } catch (startError) {
-            if (!isTooManyDatabaseConnections(startError)) throw startError;
+            if (!isDatabaseSaturated(startError)) throw startError;
           }
         }
       }
@@ -337,7 +411,7 @@ const MAINTENANCE_LOCAL_QUEUE_SIZE = 10;
 /** Long agent turns cannot occupy the capacity reserved for other workloads. */
 export function createReservedGraphileJobWorkerHost(
   pool: Pool,
-  options: { concurrency?: number; pollInterval?: number; noHandleSignals?: boolean } = {},
+  options: { concurrency?: number; pollInterval?: number } = {},
 ): JobWorkerHost {
   const hosts = (["interactive", "background", "maintenance"] as const).map(
     (workload) =>

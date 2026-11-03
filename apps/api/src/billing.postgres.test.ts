@@ -1,9 +1,15 @@
+import type { ProductAnalytics } from "@rakazo/adapter-kit";
 import { BillingEmulator } from "@rakazo/adapters";
-import type { Actor } from "@rakazo/contracts";
+import type { Actor, AnalyticsEvent } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { billingAccountForOrganization, createBillingAccount, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { BILLING_RETURN_PATH, createBillingService, TRIAL_DAYS } from "./billing.js";
+import {
+  BILLING_RETURN_PATH,
+  createBillingService,
+  INVITED_TRIAL_DAYS,
+  TRIAL_DAYS,
+} from "./billing.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =
@@ -24,6 +30,11 @@ describePostgres("billing service (PostgreSQL)", () => {
   };
   const member: Actor = { ...owner, userId: memberId, email: `${memberId}@rakazo.test` };
   const emulator = new BillingEmulator();
+  const events: Array<[string, AnalyticsEvent]> = [];
+  const analytics: ProductAnalytics = {
+    capture: (userId, event) => events.push([userId, event]),
+    flush: async () => {},
+  };
   let prisma: PrismaClient;
   let close: () => Promise<void>;
   let billing: ReturnType<typeof createBillingService>;
@@ -35,7 +46,7 @@ describePostgres("billing service (PostgreSQL)", () => {
       await db.prisma.$disconnect();
       await db.pool.end();
     };
-    billing = createBillingService({ prisma, provider: emulator, webOrigin });
+    billing = createBillingService({ prisma, provider: emulator, webOrigin, analytics });
     const createdAt = new Date();
     for (const id of [ownerId, memberId]) {
       await prisma.user.create({
@@ -135,6 +146,38 @@ describePostgres("billing service (PostgreSQL)", () => {
     expect(account?.seats).toBe(2);
   });
 
+  it("stores the cancellation answer and reports it to the owner once", async () => {
+    const { customerId } = (await billingAccountForOrganization(prisma, organizationId))!;
+    const subscription = emulator.subscriptions.find((s) => s.customerId === customerId)!;
+    Object.assign(subscription, {
+      cancelAtPeriodEnd: true,
+      cancellationReason: "missing_features",
+      cancellationComment: "Needs a calendar",
+    });
+    await billing.sync(customerId);
+    await billing.sync(customerId);
+    await expect(billingAccountForOrganization(prisma, organizationId)).resolves.toMatchObject({
+      cancellationReason: "missing_features",
+      cancellationComment: "Needs a calendar",
+    });
+    expect(events).toEqual([
+      [
+        ownerId,
+        { name: "subscription_cancel_feedback", reason: "missing_features", commented: true },
+      ],
+    ]);
+    Object.assign(subscription, {
+      cancelAtPeriodEnd: false,
+      cancellationReason: undefined,
+      cancellationComment: undefined,
+    });
+    await billing.sync(customerId);
+    await expect(billingAccountForOrganization(prisma, organizationId)).resolves.toMatchObject({
+      cancellationReason: null,
+      cancellationComment: null,
+    });
+  });
+
   it("does not offer a second trial after the subscription ends", async () => {
     const { customerId } = (await billingAccountForOrganization(prisma, organizationId))!;
     emulator.setStatus(customerId, "canceled");
@@ -215,6 +258,35 @@ describePostgres("billing service (PostgreSQL)", () => {
       expect(accounts[0]!.customerId).toBe(accounts[1]!.customerId);
     } finally {
       await prisma.organization.deleteMany({ where: { id: raced } });
+    }
+  });
+
+  it("gives an invited organization a longer first trial", async () => {
+    const invited = `${organizationId}-invited`;
+    const referrer = `${organizationId}-referrer`;
+    const createdAt = new Date();
+    for (const id of [invited, referrer])
+      await prisma.organization.create({ data: { id, name: id, slug: id, createdAt } });
+    try {
+      await prisma.space.create({
+        data: { id: invited, organizationId: invited, name: "General", isDefault: true },
+      });
+      await prisma.member.create({
+        data: { id: invited, organizationId: invited, userId: ownerId, role: "owner", createdAt },
+      });
+      await prisma.referralCode.create({
+        data: { organizationId: referrer, code: `ref-${suffix}` },
+      });
+      const actor = { ...owner, spaceId: invited };
+      await billing.claimReferral(actor, `ref-${suffix}`);
+      await expect(billing.status(actor)).resolves.toMatchObject({
+        trialDays: INVITED_TRIAL_DAYS,
+      });
+      await billing.checkout(actor);
+      const account = await billingAccountForOrganization(prisma, invited);
+      expect(emulator.checkouts.get(account!.customerId)?.trialDays).toBe(INVITED_TRIAL_DAYS);
+    } finally {
+      await prisma.organization.deleteMany({ where: { id: { in: [invited, referrer] } } });
     }
   });
 });

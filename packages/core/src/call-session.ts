@@ -21,14 +21,17 @@ export function createCallSendTracker() {
         if (sends.size === 0) pending.delete(callId);
       };
     },
-    /** Runs `close` now, or once `callId`'s in-flight sends settle. Failures are dropped. */
-    closeAfterSends(callId: string, close: () => Promise<unknown>): void {
+    /**
+     * Runs `close` now, or once `callId`'s in-flight sends settle. Failures are dropped; the
+     * returned promise settles when `close` does.
+     */
+    closeAfterSends(callId: string, close: () => Promise<unknown>): Promise<void> {
       const sends = [...(pending.get(callId) ?? [])];
-      if (sends.length === 0) void close().catch(() => undefined);
-      else
-        void Promise.allSettled(sends)
-          .then(close)
-          .catch(() => undefined);
+      const closed = sends.length === 0 ? close() : Promise.allSettled(sends).then(close);
+      return closed.then(
+        () => undefined,
+        () => undefined,
+      );
     },
   };
 }

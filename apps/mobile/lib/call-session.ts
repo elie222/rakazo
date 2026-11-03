@@ -13,14 +13,14 @@ import {
   isRetryableError,
   latestSpokenCallReply,
   newClientId,
+  recognitionLocaleTag,
   retryDelayMs,
-  speechLocaleTag,
   spokenMemory,
 } from "@rakazo/core";
 import type { AudioRecorder } from "expo-audio";
 import { File } from "expo-file-system";
 import { useSyncExternalStore } from "react";
-import type { MobileSnapshot } from "./api";
+import type { ApiRequestContext, MobileSnapshot } from "./api";
 import {
   applyMobileThreadEvent,
   blockText,
@@ -38,8 +38,9 @@ import {
 } from "./call-sounds";
 import type { DictationGiveUp } from "./dictation";
 import * as dictation from "./dictation";
-import { getActiveUiLocale, t } from "./i18n";
+import { deviceLanguage, getActiveUiLocale, t } from "./i18n";
 import { reportMobileError } from "./monitoring";
+import { currentSessionGeneration, subscribeSessionGeneration } from "./session";
 import { errorText, voiceAccountErrorText } from "./user-error";
 import type { SpeechOwner } from "./voice";
 import { createSpeechOwner, speakText, stopSpeaking } from "./voice";
@@ -117,6 +118,8 @@ const METER_POLL_MS = 200;
 const MAX_CLIP_MS = 30_000;
 
 let state: CallState | null = null;
+/** The session the call started in: a sign-out or an account or server change ends the call. */
+let callSessionGeneration = 0;
 /** Shared by every message this call sends, so the thread can group one call's exchange. */
 let callId = "";
 /** Requests for this call that must persist before its server-side hang-up. */
@@ -162,6 +165,10 @@ let switchBot: ((text: string) => CallSwitch | undefined) | undefined;
 let switching = false;
 const watchers = new Set<() => void>();
 
+subscribeSessionGeneration(() => {
+  if (state && currentSessionGeneration() !== callSessionGeneration) endCall();
+});
+
 export function subscribe(watcher: () => void): () => void {
   watchers.add(watcher);
   return () => {
@@ -202,15 +209,21 @@ export function startCall(
     transcribe?: boolean;
     /** Spoken as the call connects, before the caller's first turn. */
     greeting?: string;
+    answered?: { callId: string };
+    requestContext?: ApiRequestContext;
     /** Called with each finished turn; a target means the caller asked for that bot instead. */
     switchBot?: (text: string) => CallSwitch | undefined;
+    /** The session the caller's setup began in; no call starts once it has changed. */
+    session?: number;
   },
   overrides: Partial<CallDeps> = {},
-): string {
+): string | undefined {
+  if (call.session !== undefined && call.session !== currentSessionGeneration()) return undefined;
   endCall();
-  deps = { ...productionDeps(), ...overrides };
+  callSessionGeneration = currentSessionGeneration();
+  deps = { ...productionDeps(call.requestContext), ...overrides };
   switchBot = call.switchBot;
-  callId = newClientId();
+  callId = call.answered?.callId ?? newClientId();
   callRunId = null;
   canTranscribe = call.transcribe ?? true;
   onDevice = null;
@@ -640,17 +653,34 @@ function onCallEnded(ended: CallEnded): void {
   speakAndListen(farewell);
 }
 
-function productionDeps(): CallDeps {
+function productionDeps(requestContext?: ApiRequestContext): CallDeps {
   // One owner per call: its hang-up and barge-in stop only its own speech, never
   // unrelated read-aloud that has since replaced it.
   const speechOwner = createSpeechOwner();
-  return {
+  // A late request of this call fails instead of going out with a newer session.
+  const generation = callSessionGeneration;
+  const callContext = async () => {
+    const context = requestContext ?? (await captureApiRequestContext());
+    if (context.sessionGeneration !== generation || currentSessionGeneration() !== generation)
+      throw new Error(t("Something went wrong. Try again."));
+    return context;
+  };
+  const own: CallDeps = {
     dictate: dictateTurn,
     record: recordClip,
-    transcribe: transcribeClip,
-    send: sendHeard,
-    endCall: closeCall,
-    speak: (botId, text) => speakReply(botId, text, speechOwner),
+    transcribe: async (clip, signal) => transcribeClip(clip, signal, await callContext()),
+    send: async (botId, text, clientNonce) => {
+      try {
+        return await sendHeard(botId, text, clientNonce, await callContext());
+      } catch (error) {
+        // The server rejected this call's session: stop listening instead of opening the
+        // microphone for another turn. The next ordinary request handles the sign-out.
+        if ((error as { status?: unknown }).status === 401 && deps.send === own.send) endCall();
+        throw error;
+      }
+    },
+    endCall: async (botId, id) => closeCall(botId, id, await callContext()),
+    speak: (botId, text) => speakReply(botId, text, speechOwner, requestContext),
     stopSpeaking: () => stopSpeaking(speechOwner),
     cue: playCallCue,
     waitSound: (action) => {
@@ -659,32 +689,43 @@ function productionDeps(): CallDeps {
       else if (action === "preload") void preloadWaitSound().catch(() => undefined);
       else releaseWaitSound();
     },
-    watch: watchReplies,
+    watch: (botId, onReply, onEnded) => watchReplies(botId, onReply, onEnded, requestContext),
   };
+  return own;
 }
 
 /** The device's own speech recognition, which works with a speak-only voice provider. */
 async function dictateTurn(handlers: DictationHandlers, signal: AbortSignal): Promise<boolean> {
   if (!(await dictation.available())) return false;
-  await dictation.listen({ ...handlers, signal, lang: speechLocaleTag(getActiveUiLocale()) });
+  const lang = recognitionLocaleTag(getActiveUiLocale(), await deviceLanguage());
+  await dictation.listen({ ...handlers, signal, lang });
   return true;
 }
+
+// The turn whose recording owns the shared audio mode. A hung-up turn that finishes
+// late must not switch recording off under the next call's recorder.
+let recordingTurn: AbortSignal | undefined;
 
 /** Records one hands-free turn: wait for speech, stop once the speaker goes quiet. */
 async function recordClip(signal: AbortSignal): Promise<CallClip | null> {
   const { AudioModule, RecordingPresets, setAudioModeAsync } = await import("expo-audio");
+  if (signal.aborted) return null;
   const permission = await AudioModule.requestRecordingPermissionsAsync();
+  // The call can end while the microphone prompt is open.
+  if (signal.aborted) return null;
   if (!permission.granted)
     throw new ExpectedTurnFailure(t("Allow microphone access to call a bot."));
   let recorder: AudioRecorder | undefined;
   let heardSpeech = false;
   try {
+    recordingTurn = signal;
     await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
     recorder = new AudioModule.AudioRecorder({
       ...RecordingPresets.HIGH_QUALITY,
       isMeteringEnabled: true,
     });
     await recorder.prepareToRecordAsync();
+    if (signal.aborted) return null;
     recorder.record();
     let quietMs = 0;
     for (let elapsed = 0; elapsed < MAX_CLIP_MS && !signal.aborted; elapsed += METER_POLL_MS) {
@@ -712,7 +753,10 @@ async function recordClip(signal: AbortSignal): Promise<CallClip | null> {
     return { base64, mimeType: "audio/m4a" };
   } finally {
     recorder?.release();
-    await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+    if (recordingTurn === signal) {
+      recordingTurn = undefined;
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+    }
   }
 }
 
@@ -725,8 +769,12 @@ function deleteQuietly(uri: string | null): void {
   }
 }
 
-async function transcribeClip(clip: CallClip, signal: AbortSignal): Promise<string> {
-  const { apiBase, headers } = await captureApiRequestContext();
+async function transcribeClip(
+  clip: CallClip,
+  signal: AbortSignal,
+  requestContext: ApiRequestContext,
+): Promise<string> {
+  const { apiBase, headers } = requestContext;
   const res = await fetch(`${apiBase}/api/voice/transcribe`, {
     method: "POST",
     headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
@@ -750,17 +798,27 @@ async function sendHeard(
   botId: string,
   text: string,
   clientNonce: string,
+  requestContext: ApiRequestContext,
 ): Promise<string | undefined> {
-  const sent = await rpc("threads/send", { botId, clientNonce, text });
+  const sent = await rpc("threads/send", { botId, clientNonce, text }, { requestContext });
   return sent.runId;
 }
 
-async function closeCall(botId: string, id: string): Promise<void> {
-  await rpc("threads/endCall", { botId, callId: id });
+async function closeCall(
+  botId: string,
+  id: string,
+  requestContext: ApiRequestContext,
+): Promise<void> {
+  await rpc("threads/endCall", { botId, callId: id }, { requestContext });
 }
 
-async function speakReply(botId: string, text: string, owner: SpeechOwner): Promise<void> {
-  if (!(await speakText(text, { botId, owner }))) {
+async function speakReply(
+  botId: string,
+  text: string,
+  owner: SpeechOwner,
+  requestContext?: ApiRequestContext,
+): Promise<void> {
+  if (!(await speakText(text, { botId, owner, requestContext }))) {
     throw new Error(t("Add a voice provider in Voice settings."));
   }
 }
@@ -770,6 +828,7 @@ function watchReplies(
   botId: string,
   onNewReply: (messageId: string, text: string, runId?: string) => void,
   onEnded: (ended: CallEnded) => void,
+  requestContext?: ApiRequestContext,
 ): () => void {
   const controller = new AbortController();
   const watchedCallId = callId;
@@ -786,7 +845,11 @@ function watchReplies(
     while (!controller.signal.aborted) {
       try {
         if (!snapshot) {
-          snapshot = await rpc("threads/get", { botId }, { signal: controller.signal });
+          snapshot = await rpc(
+            "threads/get",
+            { botId },
+            { signal: controller.signal, requestContext },
+          );
           lastSeen = latestSpokenCallReply(snapshot.messages, watchedCallId)?.id ?? null;
           cursor = snapshot.cursor ?? 0;
         }
@@ -817,6 +880,7 @@ function watchReplies(
             onNewReply(message.id, text, message.runId);
           },
           controller.signal,
+          requestContext,
         );
         retry = FEED_RETRY_MIN_MS;
         failure = undefined;

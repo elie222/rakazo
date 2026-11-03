@@ -1,5 +1,6 @@
 import type { Agent, AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
+import { validateToolArguments } from "@earendil-works/pi-ai";
 import type {
   AdapterContext,
   AgentRunRequest,
@@ -11,12 +12,18 @@ import type {
 } from "@rakazo/adapter-kit";
 import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
-import { isToolPauseResult } from "./approval-effect.js";
+import {
+  isInternalTermination,
+  isTerminatingReplyResult,
+  isToolPauseResult,
+} from "./approval-effect.js";
 import {
   connectionIdArgument,
   credentialArgument,
   loginFieldLabelsArgument,
+  oneTimeCodeArgument,
 } from "./bot-secrets.js";
+import { FIND_TOOL, findTools, partitionTools, USE_TOOL } from "./builtin-tool-bridge.js";
 import { shortenToolResultText } from "./context-selection.js";
 import type { PiAgentRuntimeOptions } from "./pi-runtime.js";
 import { sanitizeSensitiveText } from "./pi-runtime-errors.js";
@@ -29,6 +36,7 @@ import { VERBATIM_TOOL_RESULTS } from "./runtime-context.js";
 import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import type { FinishedShellCommand } from "./shell-command-stream.js";
 import { textContentArg } from "./tool-text.js";
+import { isVerbatimMcpResult } from "./verbatim-mcp-result.js";
 
 export interface ToolCallBudget {
   count: number;
@@ -55,7 +63,57 @@ export function maxToolCallsPerTurn(env: NodeJS.ProcessEnv = process.env): numbe
 }
 
 export function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost): AgentTool[] {
-  return namedAgentTools(toolDefs).map(({ tool, name }) => toAgentTool(tool, host, name));
+  const { listed, deferred } = partitionTools(toolDefs);
+  const tools = namedAgentTools(listed).map(({ tool, name }) =>
+    toAgentTool(tool, host, name, { deferred }),
+  );
+  if (!deferred.length) return tools;
+  const runnable = new Map(
+    [...tools, ...deferred.map((tool) => toAgentTool(tool, host, tool.name, { viaUseTool: true }))]
+      .filter((tool) => tool.name !== FIND_TOOL && tool.name !== USE_TOOL)
+      .map((tool) => [tool.name, tool]),
+  );
+  return tools.map((tool) =>
+    tool.name === USE_TOOL ? useToolAgentTool(tool, runnable, host) : tool,
+  );
+}
+
+/**
+ * Unwraps to the real tool before anything else, so its gate, approvals, checkpoint, audit
+ * and activity all name that tool exactly as a direct call would.
+ */
+function useToolAgentTool(
+  wrapper: AgentTool,
+  runnable: ReadonlyMap<string, AgentTool>,
+  host: ToolHost,
+): AgentTool {
+  return {
+    ...wrapper,
+    // Deferred schedule and memory tools must not race a sibling call.
+    executionMode: "sequential",
+    execute: async (toolCallId, params, signal, onUpdate) => {
+      const { name, arguments: args } = params as { name: string; arguments?: unknown };
+      const tool = runnable.get(name);
+      if (!tool) {
+        host.queue.push({
+          type: "tool",
+          name: USE_TOOL,
+          args: params as Record<string, unknown>,
+          executionId: JSON.stringify(["pi-tool", host.agentNamespace ?? "main", toolCallId]),
+          response: host.modelResponses,
+        });
+        throw new Error(`${name} is not available. Use a name find_tool lists.`);
+      }
+      const prepared = tool.prepareArguments?.(args ?? {}) ?? args ?? {};
+      const validated = validateToolArguments(tool, {
+        type: "toolCall",
+        id: toolCallId,
+        name,
+        arguments: prepared as never,
+      });
+      return tool.execute(toolCallId, validated, signal, onUpdate);
+    },
+  };
 }
 
 /** Shared canonical mapping for checkpoint validation and runtime exposure. */
@@ -116,6 +174,8 @@ const ACTIVITY_DETAIL_LIMIT = 90;
 /** One human-readable line describing a tool call, shown live in the thread. */
 export function describeToolActivity(toolName: string, args: unknown): string {
   const record = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
+  if (toolName === USE_TOOL) return describeToolActivity(String(record.name), record.arguments);
+  if (toolName === FIND_TOOL) return "Finding a tool";
   const detail = (value: unknown): string => {
     const text = sanitizeSensitiveText(String(value ?? ""))
       .replaceAll(/\s+/g, " ")
@@ -125,12 +185,17 @@ export function describeToolActivity(toolName: string, args: unknown): string {
   if (toolName === "shell") return `Running: ${detail(record.command)}`;
   if (toolName === "user_computer_shell")
     return `Running on your computer: ${detail(record.command)}`;
+  if (toolName === "user_computer_observe") return `Looking at ${detail(record.app)}`;
+  if (toolName === "user_computer_act") return `Using ${detail(record.app)}`;
   if (toolName === "read_file") return `Reading ${detail(record.path)}`;
   if (toolName === "write_file") return `Writing ${detail(record.path)}`;
   if (toolName === "list_files") return `Listing ${detail(record.path ?? ".")}`;
   if (toolName === "attach_file") return `Attaching ${detail(record.path)}`;
   if (toolName === "open_path") return `Opening ${detail(record.path)}`;
   if (toolName === "render_plot") return "Rendering a chart";
+  if (toolName === "save_page") {
+    return record.help === true ? "Reading the page kit reference" : "Writing the page code";
+  }
   if (toolName === "add_mcp_server") return `Connecting MCP server: ${detail(record.name)}`;
   if (toolName === "computer_observe") return "Looking at the screen";
   if (toolName === "browser_navigate")
@@ -238,12 +303,18 @@ export function prepareRequestSecretArguments(raw: Record<string, unknown>) {
     purpose,
     ...(connectionId ? { connectionId } : {}),
     ...(credential !== undefined ? { credential } : {}),
+    ...(raw.oneTimeCode !== undefined ? { oneTimeCode: oneTimeCodeArgument(raw.oneTimeCode) } : {}),
     ...(raw.replace === true ? { replace: true } : {}),
     ...(raw.fields != null ? { fields: loginFieldLabelsArgument(raw.fields) } : {}),
   };
 }
 
-function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): AgentTool {
+function toAgentTool(
+  tool: ConnectorTool,
+  host: ToolHost,
+  exposedName: string,
+  { deferred = [], viaUseTool = false }: { deferred?: ConnectorTool[]; viaUseTool?: boolean } = {},
+): AgentTool {
   return {
     name: exposedName,
     label: tool.name,
@@ -251,8 +322,11 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
     // Pi runs a turn's tool calls concurrently by default, so a batch that
     // creates a routine and lists routines can read the list before the row
     // exists. Pi runs the whole batch in order when any call in it is
-    // sequential. Remember also needs this to avoid competing revision writes.
-    ...(SCHEDULE_TOOL_NAMES.has(tool.name) || tool.name === "remember"
+    // sequential. Remember also needs this to avoid competing revision writes, and request_secret
+    // so a sibling request cannot start after one pauses for its card and share its answer.
+    ...(SCHEDULE_TOOL_NAMES.has(tool.name) ||
+    tool.name === "remember" ||
+    tool.name === "request_secret"
       ? { executionMode: "sequential" as const }
       : {}),
     parameters: parametersFor(tool),
@@ -261,7 +335,7 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
       if (tool.name === "remember") {
         return {
           content: String(raw.content ?? ""),
-          path: String(raw.path ?? "MEMORY.md"),
+          ...(typeof raw.old_text === "string" && raw.old_text ? { old_text: raw.old_text } : {}),
         };
       }
       if (tool.name === "request_takeover") {
@@ -350,6 +424,9 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
         async (span) => {
           host.signal.throwIfAborted();
           const args = (params ?? {}) as Record<string, unknown>;
+          const keepToolResultWhole = (name: string, callArgs: Record<string, unknown>) =>
+            VERBATIM_TOOL_RESULTS.has(name) ||
+            isVerbatimMcpResult(name, callArgs, host.request.verbatimMcpServers);
           recordPiTelemetryContent(span, "pi.agent.tool.arguments", args);
           const rawCallId =
             toolCallId || `${host.request.runId}:${tool.name}:${host.toolCallSeq.value++}`;
@@ -368,7 +445,14 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
               details: { skipped: true },
             };
           }
-          host.queue.push({ type: "tool", name: tool.name, args, executionId });
+          host.queue.push({
+            type: "tool",
+            name: tool.name,
+            args,
+            executionId,
+            response: host.modelResponses,
+            ...(viaUseTool ? { viaUseTool } : {}),
+          });
           const startedAt = Date.now();
           let result: unknown;
           let failure: unknown;
@@ -444,6 +528,13 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
                   terminate: true,
                 };
               }
+              if (tool.name === FIND_TOOL) {
+                const found = findTools(deferred, args);
+                return {
+                  content: [{ type: "text", text: JSON.stringify(found) }],
+                  details: found,
+                };
+              }
               if (tool.name === "run_subagent") {
                 const result = await executeSubagent(host, executionId, args);
                 return {
@@ -465,7 +556,9 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
                 );
                 if (isAgentToolExecutionResult(result)) {
                   if (isToolPauseResult(result)) host.pausePending = true;
-                  return boundAgentToolResult(result);
+                  return keepToolResultWhole(tool.name, args)
+                    ? result
+                    : boundAgentToolResult(result);
                 }
                 return {
                   content: [
@@ -476,6 +569,7 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
                         host.request.contextStrategy,
                         tool.name,
                         args,
+                        host.request.verbatimMcpServers,
                       ),
                     },
                   ],
@@ -492,15 +586,16 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
                 details: { error: "no executor" },
               };
             })();
-            if (VERBATIM_TOOL_RESULTS.has(tool.name)) return result as AgentToolResult<unknown>;
+            if (keepToolResultWhole(tool.name, args)) return result as AgentToolResult<unknown>;
             return boundAgentToolResult(result as AgentToolResult<unknown>);
           } catch (error) {
             failure = error;
             throw error;
           } finally {
             // Pi only terminates a parallel batch when every result terminates.
-            // A single paused call must stop the turn before another model request.
-            if (host.pausePending) host.abortTurn?.();
+            // A single paused or turn-ending call must stop the turn before another
+            // model request, or the next assistant message replaces its final reply.
+            if (host.pausePending || isTerminatingReplyResult(result)) host.abortTurn?.();
             const details = (
               result as AgentToolResult<{ error?: unknown; isError?: unknown }> | undefined
             )?.details;
@@ -536,6 +631,8 @@ function isAgentToolExecutionResult(result: unknown): result is AgentToolExecuti
     !result ||
     typeof result !== "object" ||
     (result as { kind?: unknown }).kind !== "agent_tool_result" ||
+    (((result as { terminate?: unknown }).terminate === true || isToolPauseResult(result)) &&
+      !isInternalTermination(result)) ||
     !("content" in result)
   ) {
     return false;
@@ -558,12 +655,18 @@ export function serializeToolResult(
   strategy: AgentRunRequest["contextStrategy"],
   name: string,
   args: Record<string, unknown>,
+  verbatimMcpServers?: AgentRunRequest["verbatimMcpServers"],
 ) {
   try {
     const text = JSON.stringify(result);
     if (!text) return "ok";
     // skill-tools.ts already bounds skill content; the context budget selector may still shorten it.
-    if (text.length <= 12_000 || VERBATIM_TOOL_RESULTS.has(name)) return text;
+    if (
+      text.length <= 12_000 ||
+      VERBATIM_TOOL_RESULTS.has(name) ||
+      isVerbatimMcpResult(name, args, verbatimMcpServers)
+    )
+      return text;
     return (strategy ?? DEFAULT_CONTEXT_STRATEGY) === "current"
       ? clipToolResultText(text)
       : shortenToolResultText(text, 12_000, { name, arguments: args });
@@ -628,6 +731,8 @@ export interface ToolHost {
   captureCheckpoint?: (toolCallId: string, executionId: string) => Promise<void>;
   /** Shell commands that returned output and are still running. */
   pendingShells: Array<Promise<FinishedShellCommand>>;
+  /** Model responses started by the main agent. Helpers reset it, so each of their calls counts. */
+  modelResponses?: number;
 }
 
 export function toolCallBudgetExceededMessage(limit: number) {

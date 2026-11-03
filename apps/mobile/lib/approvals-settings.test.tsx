@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import Approvals from "../app/(settings)/approvals";
 
 type Rule = {
@@ -19,6 +19,8 @@ const state = vi.hoisted(() => ({
   spaceId: undefined as string | undefined,
   settings: { mode: "ask", enabled: false, skipApprovals: false, checkerAvailable: false },
   rules: [] as Rule[],
+  headerItems: [] as { label: string; onPress: () => void }[],
+  prompt: vi.fn(),
 }));
 const { element } = vi.hoisted(() => ({
   element:
@@ -32,7 +34,6 @@ vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({
   native: {},
   useResolvedAppearance: () => "light",
-  useMobileTokens: () => ({}),
   useThemedStyles: (factory: () => unknown) => factory(),
 }));
 vi.mock("./i18n", () => {
@@ -47,13 +48,20 @@ vi.mock("./api", () => ({
 vi.mock("expo-router", () => ({
   useFocusEffect: (effect: () => undefined | (() => void)) => useEffect(effect, [effect]),
   useLocalSearchParams: () => ({ spaceId: state.spaceId }),
+  useNavigation: () => ({
+    setOptions: (options: { unstable_headerRightItems: () => typeof state.headerItems }) => {
+      state.headerItems = options.unstable_headerRightItems();
+    },
+  }),
 }));
+vi.mock("./native-controls", () => ({ iosAtLeast: () => true }));
+vi.mock("../components/name-dialog", () => ({ TextFieldDialog: () => null }));
 vi.mock("react-native", () => ({
+  Alert: { prompt: state.prompt },
+  Platform: { OS: "ios" },
   ScrollView: element("div"),
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: element("p"),
-  TextInput: ({ value, accessibilityLabel }: { value: string; accessibilityLabel: string }) =>
-    createElement("input", { value, readOnly: true, "aria-label": accessibilityLabel }),
   View: element("div"),
 }));
 vi.mock("react-native-safe-area-context", () => ({ SafeAreaView: element("div") }));
@@ -149,6 +157,8 @@ beforeEach(() => {
   state.spaceId = undefined;
   state.settings = { mode: "ask", enabled: false, skipApprovals: false, checkerAvailable: false };
   state.rules = [];
+  state.headerItems = [];
+  state.prompt.mockReset();
   state.rpc
     .mockReset()
     .mockImplementation(async (proc: string, input?: Record<string, unknown>) => {
@@ -158,7 +168,6 @@ beforeEach(() => {
         return state.settings;
       }
       if (proc === "approvalRules/list") return state.rules;
-      if (proc === "approvalRules/preview") return { before: "always_allow", after: "default" };
       if (proc === "approvalRules/set")
         return rule({
           id: "saved",
@@ -172,68 +181,6 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-});
-
-it("previews a rule without saving it in the selected space", async () => {
-  state.spaceId = "space-preview";
-  state.rules = [rule({ id: "preview-rule" })];
-  await render();
-  await act(async () => menuButton("Send email", "Preview")!.click());
-  await act(async () =>
-    [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Test rule")!
-      .click(),
-  );
-  expect(state.rpc).toHaveBeenCalledWith(
-    "approvalRules/preview",
-    {
-      scope: "space",
-      id: "preview-rule",
-      effect: "remove",
-      sample: { tools: [{ name: "send_email" }] },
-    },
-    { requestContext: { headers: { space: "space-preview" } } },
-  );
-  expect(container.textContent).toContain("Current: Allow rule → Preview: No matching rule");
-  expect(
-    state.rpc.mock.calls.some(
-      ([proc]) => proc === "approvalRules/set" || proc === "approvalRules/remove",
-    ),
-  ).toBe(false);
-});
-
-it("clears a preview and ignores old responses when another saved rule is removed", async () => {
-  state.rules = [
-    rule({ id: "tool" }),
-    rule({ id: "connector", matchKind: "connector", matchValue: "gmail", effect: "deny" }),
-  ];
-  await render();
-  await act(async () => menuButton("Send email", "Preview")!.click());
-  const testButton = () =>
-    [...container.querySelectorAll("button")].find((entry) => entry.textContent === "Test rule")!;
-  await act(async () => testButton().click());
-  expect(container.textContent).toContain("Current: Allow rule");
-  await act(async () => menuButton("gmail", "Allow")!.click());
-  expect(container.textContent).not.toContain("Current: Allow rule");
-  const base = state.rpc.getMockImplementation()!;
-  let finish!: (value: { before: string; after: string }) => void;
-  state.rpc.mockImplementation((proc: string, input?: Record<string, unknown>) =>
-    proc === "approvalRules/preview"
-      ? new Promise((resolve) => {
-          finish = resolve;
-        })
-      : base(proc, input),
-  );
-  await act(async () => testButton().click());
-  await act(async () => menuButton("gmail", "Remove")!.click());
-  await act(async () => finish({ before: "deny", after: "deny" }));
-  expect(container.textContent).not.toContain("Current: Block rule");
-  expect(container.textContent).not.toContain("Current: Allow rule");
-});
-afterEach(() => {
-  act(() => root.unmount());
-  container.remove();
-  vi.unstubAllGlobals();
 });
 
 it("lists only the rules; the mode is a row in settings", async () => {
@@ -299,4 +246,43 @@ it("offers a retry when the first load fails, then shows the rules", async () =>
   expect(rows()).toEqual(["Send email: Allow"]);
   expect(retry()).toBeUndefined();
   expect(container.textContent).not.toContain("Something went wrong. Try again.");
+});
+
+it("switches a tool rule back to Ask", async () => {
+  state.rules = [
+    {
+      id: "tool",
+      effect: "always_allow",
+      matchKind: "tool",
+      matchValue: "write_file",
+      createdAt: "2026-10-25T00:00:00.000Z",
+    },
+  ];
+  await render();
+  await act(async () => menuButton("Write file", "Ask")!.click());
+  expect(state.rpc).toHaveBeenCalledWith("approvalRules/set", {
+    scope: "account",
+    effect: "require_approval",
+    matchKind: "tool",
+    matchValue: "write_file",
+  });
+  expect(menuButton("Write file", "Ask")!.getAttribute("aria-pressed")).toBe("true");
+});
+
+it("adds a tool rule from the header prompt", async () => {
+  await render();
+  await act(async () => state.headerItems.find((item) => item.label === "Add rule")!.onPress());
+  const [, , buttons] = state.prompt.mock.calls[0] as [
+    string,
+    undefined,
+    { text: string; onPress?: (value?: string) => void }[],
+  ];
+  await act(async () => buttons.find((button) => button.text === "Save")!.onPress!(" write_file "));
+  expect(state.rpc).toHaveBeenCalledWith("approvalRules/set", {
+    scope: "account",
+    effect: "require_approval",
+    matchKind: "tool",
+    matchValue: "write_file",
+  });
+  expect(rows()).toEqual(["Write file: Ask"]);
 });

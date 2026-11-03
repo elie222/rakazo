@@ -5,6 +5,7 @@ import type {
   BotSection,
   ComputerStatus,
   Group,
+  IncomingBotCall,
   Me,
   MessageBlock,
   ModelCatalogEntry,
@@ -23,6 +24,7 @@ import {
   accountSecuritySchema,
   authCapabilitiesSchema,
   CLIENT_UPDATE_REQUIRED_STATUS,
+  IncomingBotCallSchema,
   legacyAccountSecurity,
   legacyAuthCapabilitiesSchema,
 } from "@rakazo/contracts";
@@ -63,7 +65,7 @@ import * as SecureStore from "expo-secure-store";
 import { promptAiConsent } from "./ai-consent";
 import type { EndpointResult } from "./endpoint";
 import { defaultApiBase, normalizeApiBase } from "./endpoint";
-import { t } from "./i18n";
+import { getActiveUiLocale, t } from "./i18n";
 import { identityLabels } from "./identity-display";
 import { resumeLiveNotifications } from "./live-notifications";
 import {
@@ -74,13 +76,16 @@ import {
   syncMobileAvatarSession,
 } from "./logo-avatar-activity";
 import { reportMobileError } from "./monitoring";
+import { followSelectedSpace, selectedSpaceChanged } from "./referral";
 import { API_BASE_STORAGE_KEY as ENDPOINT_KEY } from "./server-config";
+import { fetchServer, loadServerHeaders, saveServerHeaders, serverHeaders } from "./server-headers";
 import {
   clearSessionToken,
   currentSessionGeneration,
   loadSessionToken,
-  replaceSessionTokenIfCurrent,
   restoreSessionToken,
+  rotateSessionTokenIfCurrent,
+  saveRotatedSessionToken,
   saveSessionToken,
   saveVerifiedIntegrationsScope,
   snapshotSessionToken,
@@ -113,6 +118,7 @@ function setCachedApiBase(url: string): void {
   for (const listener of apiBaseListeners) listener();
 }
 let cachedSpaceId = "";
+followSelectedSpace(() => cachedSpaceId || null);
 /** Bumped on every in-memory Space selection change so a delayed response
  * cannot treat a later reselection of the same Space id as its own. */
 let spaceSelectionGeneration = 0;
@@ -127,6 +133,8 @@ export function spaceSelectionSeq(): number {
 
 function bumpSpaceSelectionGeneration(): void {
   spaceSelectionGeneration += 1;
+  // Another Space can belong to another organization, with its own invite link.
+  selectedSpaceChanged();
 }
 
 /** Keeps a timeout or cancel reason; turns transport and parsing detail into copy. */
@@ -175,6 +183,7 @@ export async function loadApiBase() {
   } catch {
     // SecureStore is unavailable in some test / web hosts.
   }
+  await loadServerHeaders(apiBase);
   setCachedApiBase(apiBase);
   try {
     const storedSpace = (await SecureStore.getItemAsync(SPACE_KEY)) ?? "";
@@ -425,11 +434,15 @@ async function recoverSpaceRollback(apiBase: string) {
   await clearStoredValue(SPACE_KEY);
 }
 
-export async function saveApiBase(input: string): Promise<EndpointResult> {
+export async function saveApiBase(
+  input: string,
+  headers: Record<string, string> = {},
+): Promise<EndpointResult> {
   const parsed = normalizeApiBase(input);
   if (!parsed.ok) return parsed;
-  if (parsed.url === defaultApiBase()) return resetApiBase();
+  if (parsed.url === defaultApiBase() && Object.keys(headers).length === 0) return resetApiBase();
   const previous = currentApiBase();
+  const previousHeaders = serverHeaders(previous);
   let cleared:
     | {
         previousToken: string;
@@ -441,9 +454,14 @@ export async function saveApiBase(input: string): Promise<EndpointResult> {
     if (!result.ok) return result.result;
     cleared = result;
   }
+  if (!(await saveServerHeaders(parsed.url, headers))) {
+    if (cleared) await restoreCredentials(cleared.previousToken, cleared.previousSpace);
+    return { ok: false, error: t("Could not save the server URL") };
+  }
   try {
     await SecureStore.setItemAsync(ENDPOINT_KEY, parsed.url);
   } catch {
+    await saveServerHeaders(previous, previousHeaders);
     if (cleared) {
       await restoreCredentials(cleared.previousToken, cleared.previousSpace);
     }
@@ -475,6 +493,11 @@ export async function resetApiBase(): Promise<EndpointResult> {
       await restoreCredentials(cleared.previousToken, cleared.previousSpace);
       return { ok: false, error: t("Could not clear the custom server URL") };
     }
+  }
+  if (!(await saveServerHeaders(url, {}))) {
+    await SecureStore.setItemAsync(ENDPOINT_KEY, previous).catch(() => undefined);
+    if (cleared) await restoreCredentials(cleared.previousToken, cleared.previousSpace);
+    return { ok: false, error: t("Could not clear the custom server URL") };
   }
   setCachedApiBase(url);
   await clearStoredValue(SPACE_ROLLBACK_KEY);
@@ -533,7 +556,12 @@ async function postAuth(path: string, input: Record<string, string>) {
     `${currentApiBase()}/api/auth/${path}`,
     {
       method: "POST",
-      headers: { "content-type": "application/json", origin: "rakazo://" },
+      // Emails sent before an account has a language follow the one this app shows.
+      headers: {
+        "content-type": "application/json",
+        origin: "rakazo://",
+        "accept-language": getActiveUiLocale(),
+      },
       body: JSON.stringify(input),
     },
     {},
@@ -609,7 +637,11 @@ export async function requestPasswordReset(email: string, redirectTo: string): P
     `${currentApiBase()}/api/auth/request-password-reset`,
     {
       method: "POST",
-      headers: { "content-type": "application/json", origin: "rakazo://" },
+      headers: {
+        "content-type": "application/json",
+        origin: "rakazo://",
+        "accept-language": getActiveUiLocale(),
+      },
       body: JSON.stringify({ email, redirectTo }),
     },
     {},
@@ -646,20 +678,56 @@ export async function updateAccountName(name: string): Promise<void> {
 
 /** Revoking other sessions also refuses this one until the replacement is saved. */
 let passwordChangesInFlight = 0;
+export function passwordChangeInFlight() {
+  return passwordChangesInFlight > 0;
+}
+/** A hash of the change whose new session is not saved yet; never the passwords themselves. */
+let unsavedPasswordChange: string | undefined;
+
+/** A 53-bit hash, so an unchanged form can be recognized without keeping its passwords. */
+function submissionHash(currentPassword: string, newPassword: string) {
+  const text = JSON.stringify([currentPassword, newPassword]);
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ code, 2654435761);
+    h2 = Math.imul(h2 ^ code, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
 
 export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
   passwordChangesInFlight += 1;
+  const submission = submissionHash(currentPassword, newPassword);
   try {
-    await replaceSessionAfterPasswordChange(currentPassword, newPassword);
+    // An earlier change whose new session was not saved is finished first, so this change is sent
+    // with that session; if it still cannot be saved, nothing new is submitted.
+    const saved = await saveRotatedSessionToken();
+    const finished = unsavedPasswordChange;
+    unsavedPasswordChange = undefined;
+    // The server already accepted this exact change; sending it again would fail.
+    if (saved && finished === submission) return;
+    await replaceSessionAfterPasswordChange(currentPassword, newPassword, submission);
   } finally {
     passwordChangesInFlight -= 1;
   }
 }
 
-async function replaceSessionAfterPasswordChange(currentPassword: string, newPassword: string) {
+async function replaceSessionAfterPasswordChange(
+  currentPassword: string,
+  newPassword: string,
+  submission: string,
+) {
   const apiBase = currentApiBase();
   const generation = currentSessionGeneration();
   const headers = await authHeaders();
+  // The token the server replaces is the one this request carries; a second read could differ.
+  const previousToken = headers.authorization?.slice("Bearer ".length) ?? "";
+  // Without it the cookie jar could still sign the change, and the queue could not move over.
+  if (!previousToken) throw new Error(t("Could not change password"));
   const { response, body, invalidJson } = await fetchMobileJson<unknown>(
     `${apiBase}/api/auth/change-password`,
     {
@@ -690,8 +758,10 @@ async function replaceSessionAfterPasswordChange(currentPassword: string, newPas
     }
   };
   try {
-    if (!(await replaceSessionTokenIfCurrent(generation, token))) return;
+    // The same account on the same server keeps its unsent messages.
+    if (!(await rotateSessionTokenIfCurrent(generation, previousToken, token))) return;
   } catch (error) {
+    unsavedPasswordChange = submission;
     // The replacement is already in memory; resume before the keychain error reaches the UI.
     await maybeResume();
     throw error;
@@ -708,7 +778,14 @@ export async function fetchMobileJson<T>(
   const timer = setTimeout(() => controller.abort(new Error("Request timed out")), RPC_TIMEOUT_MS);
   try {
     const response = await withAbort(
-      fetch(input, { ...init, signal: controller.signal }),
+      fetchServer(
+        input,
+        {
+          ...init,
+          signal: controller.signal,
+        },
+        currentApiBase(),
+      ),
       controller.signal,
       "Request timed out",
     ).catch((error: unknown) => {
@@ -739,12 +816,16 @@ export async function signOut() {
   const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
   try {
     await withAbort(
-      fetch(`${currentApiBase()}/api/auth/sign-out`, {
-        method: "POST",
-        headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
-        body: "{}",
-        signal: controller.signal,
-      }),
+      fetchServer(
+        `${currentApiBase()}/api/auth/sign-out`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
+          body: "{}",
+          signal: controller.signal,
+        },
+        currentApiBase(),
+      ),
       controller.signal,
       "Request timed out",
     ).catch(() => undefined);
@@ -877,17 +958,21 @@ async function request(
     let res: Response;
     const correlation = clientCorrelationHeaders();
     try {
-      res = await fetch(`${consentContext?.apiBase ?? currentApiBase()}/rpc/${proc}`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          origin: "rakazo://",
-          ...requestHeaders,
-          ...correlation,
+      res = await fetchServer(
+        `${consentContext?.apiBase ?? currentApiBase()}/rpc/${proc}`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            origin: "rakazo://",
+            ...requestHeaders,
+            ...correlation,
+          },
+          body: JSON.stringify({ json: body }),
+          signal: controller.signal,
         },
-        body: JSON.stringify({ json: body }),
-        signal: controller.signal,
-      });
+        consentContext?.apiBase ?? currentApiBase(),
+      );
     } catch (error) {
       // The native fetch reports an aborted request with an implementation detail
       // ("FetchRequestCanceledException") and an unreachable server with a native stack
@@ -1067,6 +1152,7 @@ export type MobileBot = Pick<
   | "autoSpeak"
   | "fleetManagement"
   | "crossSpaceCommunication"
+  | "dailyCheckIns"
 > &
   Partial<Pick<Bot, "parentBotId" | "spaceId" | "instructions">>;
 
@@ -1087,6 +1173,7 @@ export type MobileMe = Pick<
   | "needsSignupSurvey"
   | "billingEnabled"
   | "paymentWalletProvider"
+  | "ticketBoardEnabled"
 >;
 
 export type MobileModel = ModelCatalogEntry;
@@ -1238,6 +1325,7 @@ export function blockText(message: MobileMessage) {
         return `${block.status === "archived" ? "Archived" : block.status === "deleted" ? "Deleted" : "Bot"} ${block.name ?? ""}`;
       }
       if (block.kind === "chart") return `[chart: ${block.name ?? "chart"}]`;
+      if (block.kind === "page") return `[page: ${block.title}]`;
       if (block.kind === "image") return `[image: ${block.name ?? "attachment"}]`;
       if (block.kind === "file") {
         return `[file: ${block.name ?? "attachment"}${block.size ? ` (${block.size} bytes)` : ""}]`;
@@ -1286,33 +1374,90 @@ export async function subscribeThread(
   cursor: number,
   onEvent: (event: ThreadEvent) => void,
   signal: AbortSignal,
+  requestContext?: ApiRequestContext,
 ) {
-  const context = await captureApiRequestContext();
+  const context = requestContext ?? (await captureApiRequestContext());
   syncMobileAvatarSession(currentApiBase(), currentSessionGeneration());
   const activityFeed = beginMobileAvatarFeed(target, cursor);
+  return subscribeRpcEvents(
+    "threads/subscribe",
+    { ...target, cursor },
+    (event) => {
+      const threadId = event.threadId ?? activityFeed.threadId;
+      if (threadId && typeof event.seq === "number" && event.seq > cursor)
+        mobileLogoAvatarActivity.apply(activityFeed.source, {
+          threadId,
+          seq: event.seq,
+          botId: event.botId,
+          runId: event.runId,
+          type: event.type,
+          payload: event.payload ?? {},
+        });
+      onEvent(displayIdentityEvent(event, identityLabels()));
+    },
+    signal,
+    context,
+    () => mobileLogoAvatarActivity.resetSource(activityFeed.source),
+  );
+}
+
+export async function subscribeIncomingCallEvents(
+  onCalls: (calls: IncomingBotCall[]) => void,
+  signal: AbortSignal,
+) {
+  const context = await captureApiRequestContext(null);
+  return subscribeRpcEvents(
+    "notifications/subscribeCalls",
+    {},
+    (event) => {
+      if (event.type !== "incoming.calls") return;
+      const calls = IncomingBotCallSchema.array().safeParse(event.payload?.calls);
+      if (calls.success) onCalls(calls.data);
+    },
+    signal,
+    context,
+  );
+}
+
+async function subscribeRpcEvents(
+  procedure: string,
+  input: Record<string, unknown>,
+  onEvent: (event: ThreadEvent) => void,
+  signal: AbortSignal,
+  context: ApiRequestContext,
+  onClose: () => void = () => {},
+) {
   const current = () =>
     context.apiBase === currentApiBase() &&
     context.sessionGeneration === currentSessionGeneration();
-  const res = await fetch(`${context.apiBase}/rpc/threads/subscribe`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "text/event-stream",
-      origin: "rakazo://",
-      ...context.headers,
+  if (!current()) {
+    onClose();
+    return;
+  }
+  const res = await fetchServer(
+    `${context.apiBase}/rpc/${procedure}`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "text/event-stream",
+        origin: "rakazo://",
+        ...context.headers,
+      },
+      body: JSON.stringify({ json: input }),
+      signal,
     },
-    body: JSON.stringify({ json: { ...target, cursor } }),
-    signal,
-  }).catch((error: unknown) => {
-    mobileLogoAvatarActivity.resetSource(activityFeed.source);
+    context.apiBase,
+  ).catch((error: unknown) => {
+    onClose();
     if (current() && !signal.aborted && isServerUnreachable(error)) noteServerReachable(false);
     throw error;
   });
   if (current()) noteServerReachable(!isUnreachableStatus(res.status));
   if (!res.ok || !res.body) {
-    mobileLogoAvatarActivity.resetSource(activityFeed.source);
+    onClose();
     cancelResponseBody(res);
-    throw httpError(`rpc threads/subscribe failed (${res.status})`, res);
+    throw httpError(`rpc ${procedure} failed (${res.status})`, res);
   }
   const reader = res.body.getReader();
   let finished = false;
@@ -1348,21 +1493,11 @@ export async function subscribeThread(
         // Heartbeats prove liveness only; forwarding one would advance the caller's cursor.
         if (parsed.json?.type && parsed.json.type !== "heartbeat") {
           if (!current()) {
-            mobileLogoAvatarActivity.resetSource(activityFeed.source);
+            onClose();
             return;
           }
           const event = parsed.json;
-          const threadId = event.threadId ?? activityFeed.threadId;
-          if (threadId && typeof event.seq === "number" && event.seq > cursor)
-            mobileLogoAvatarActivity.apply(activityFeed.source, {
-              threadId,
-              seq: event.seq,
-              botId: event.botId,
-              runId: event.runId,
-              type: event.type,
-              payload: event.payload ?? {},
-            });
-          onEvent(displayIdentityEvent(event, identityLabels()));
+          onEvent(event);
         }
       } catch {
         // Malformed frames and callback errors do not interrupt the subscription.
@@ -1417,7 +1552,7 @@ export async function subscribeThread(
       if (start < value.byteLength) appendFrameBytes(value.subarray(start));
     }
   } finally {
-    mobileLogoAvatarActivity.resetSource(activityFeed.source);
+    onClose();
     if (!finished) {
       try {
         void Promise.resolve(reader.cancel()).catch(() => undefined);
@@ -1427,6 +1562,19 @@ export async function subscribeThread(
     }
     reader.releaseLock();
   }
+}
+
+/** Mirrors the web reducer so group member status matches across surfaces. */
+function updateMemberStatus(
+  members: MobileSnapshot["members"],
+  botId: string | undefined,
+  status: string,
+): MobileSnapshot["members"] {
+  const member = members?.find((candidate) => candidate.botId === botId);
+  if (!member || member.status === status) return members;
+  return members?.map((candidate) =>
+    candidate.botId === botId ? { ...candidate, status } : candidate,
+  );
 }
 
 export function applyMobileThreadEvent(
@@ -1528,8 +1676,16 @@ export function applyMobileThreadEvent(
         ? { ...prev.computer, busyBotName: null }
         : prev.computer;
     const computerChanged = computer !== prev.computer;
+    const members = updateMemberStatus(prev.members, event.botId, status);
     const cursor = event.seq ?? prev.cursor;
-    if (!runChanged && !activeRunChanged && !progressCleared && !needsInsert && !computerChanged) {
+    if (
+      !runChanged &&
+      !activeRunChanged &&
+      !progressCleared &&
+      !needsInsert &&
+      !computerChanged &&
+      members === prev.members
+    ) {
       return cursor === prev.cursor ? prev : { ...prev, cursor };
     }
     if (needsInsert && runId) {
@@ -1547,6 +1703,7 @@ export function applyMobileThreadEvent(
       return {
         ...prev,
         cursor,
+        members,
         messages,
         computer,
         run: promoteWaiting ? waitingRun : prev.run,
@@ -1564,7 +1721,7 @@ export function applyMobileThreadEvent(
             : candidate,
         )
       : prev.activeRuns;
-    return { ...prev, cursor, run, activeRuns, messages, computer };
+    return { ...prev, cursor, members, run, activeRuns, messages, computer };
   }
   if (event.type === "computer.takeover.released") {
     const runId = event.runId;
@@ -1600,6 +1757,7 @@ export function applyMobileThreadEvent(
   }
   if (isRunTerminalEvent(event)) {
     const activeRuns = prev.activeRuns?.filter((candidate) => candidate.id !== event.runId);
+    const nextMemberRun = activeRuns?.find((candidate) => candidate.botId === event.botId);
     const failure = runFailureError(event);
     const primaryEnded = prev.run?.id === event.runId ? prev.run : null;
     // A group member run can fail while another is displayed; see reduceThreadSnapshot.
@@ -1609,6 +1767,7 @@ export function applyMobileThreadEvent(
       ...prev,
       cursor: event.seq ?? prev.cursor,
       messages: prev.messages.filter((message) => message.id !== progressMessageId(event)),
+      members: updateMemberStatus(prev.members, event.botId, nextMemberRun?.status ?? "idle"),
       // A failed run stays in run so the thread can say why it stopped (see reduceThreadSnapshot).
       run:
         endedRun && failure

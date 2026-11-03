@@ -16,7 +16,8 @@ import {
 } from "@rakazo/adapters";
 import type { createApp } from "@rakazo/api/app";
 import type { MessageBlock } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, ONCE_ROUTINE_CRON } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, ONCE_ROUTINE_CRON, resolveScreenProxySecret } from "@rakazo/core";
+import { openScreenCapability } from "@rakazo/core/node/screen-capability";
 import {
   appendEvent,
   createThreadEvents,
@@ -31,7 +32,7 @@ import { sessionCookieHeader } from "./index.js";
 import { createModelConnectionFixtureFetch } from "./model-connection-fixture.js";
 import { asSystem } from "./system-db.js";
 
-type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
+type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
 process.env.WAKEUP_DRIVER = "memory";
 process.env.SANDBOX_PROVIDER = "fake";
 process.env.AGENT_RUNTIME = "scripted";
@@ -59,7 +60,7 @@ describeJourneys("required product journeys", () => {
 
   async function sendAndWait(app: App, cookie: string, botId: string, text: string) {
     const { runId } = await rpc<{ runId: string }>(app, cookie, "threads/send", { botId, text });
-    let terminal: { status: string; error: string | null } | null = null;
+    let terminal = null as { status: string; error: string | null } | null;
     await waitForDatabase(async () => {
       terminal = await prisma.run.findUnique({
         where: { id: runId },
@@ -107,7 +108,7 @@ describeJourneys("required product journeys", () => {
       }
     }
     for (const runId of targets) {
-      let terminal: { status: string; error: string | null } | null = null;
+      let terminal = null as { status: string; error: string | null } | null;
       await waitForDatabase(async () => {
         terminal = await prisma.run.findUnique({
           where: { id: runId },
@@ -416,8 +417,8 @@ describeJourneys("required product journeys", () => {
     );
     expect(chief.computerMode).toBe("team");
     expect(coder.computerMode).toBe("team");
-    expect(chiefRecord.computerId).toBe(coderRecord.computerId);
-    expect(chiefRecord.computerId).not.toBe(bobRecord.computerId);
+    expect(chiefRecord!.computerId).toBe(coderRecord!.computerId);
+    expect(chiefRecord!.computerId).not.toBe(bobRecord!.computerId);
 
     const bobList = await rpc<Bot[]>(app, bob, "bots/list");
     expect(bobList.map((b) => b.id)).not.toContain(chief.id);
@@ -551,10 +552,10 @@ describeJourneys("required product journeys", () => {
       where: { id: coder.id },
       include: { computer: true },
     });
-    expect(dedicatedRecord.computerId).not.toBe(chiefRecord.computerId);
+    expect(dedicatedRecord.computerId).not.toBe(chiefRecord!.computerId);
     await rpc<Bot>(app, ada, "bots/setComputer", { botId: coder.id, mode: "team" });
     const backOnTeam = await prisma.bot.findUniqueOrThrow({ where: { id: coder.id } });
-    expect(backOnTeam.computerId).toBe(chiefRecord.computerId);
+    expect(backOnTeam.computerId).toBe(chiefRecord!.computerId);
     await rpc<Bot>(app, ada, "bots/setComputer", { botId: coder.id, mode: "dedicated" });
     const reusedDedicated = await prisma.bot.findUniqueOrThrow({ where: { id: coder.id } });
     expect(reusedDedicated.computerId).toBe(dedicatedRecord.computerId);
@@ -782,9 +783,16 @@ describeJourneys("required product journeys", () => {
     const researcherScreen = await rpc<{ url: string | null }>(app, cookie, "computer/screenUrl", {
       botId: researcher.id,
     });
-    expect(writerScreen.url).toContain(writer.id);
-    expect(researcherScreen.url).toContain(researcher.id);
-    expect(writerScreen.url).not.toBe(researcherScreen.url);
+    const screenOf = (url: string | null) => {
+      const sealed = new URL(url ?? "");
+      const target = openScreenCapability(
+        `${sealed.pathname}${sealed.search}`,
+        resolveScreenProxySecret(),
+      )?.target;
+      return new URL(target?.path ?? "/", "http://screen.invalid").searchParams.get("screen");
+    };
+    expect(screenOf(writerScreen.url)).toBe(writer.id);
+    expect(screenOf(researcherScreen.url)).toBe(researcher.id);
   });
 
   it("3: disconnect and reconnect from a cursor reconstructs the thread", async () => {
@@ -893,6 +901,52 @@ describeJourneys("required product journeys", () => {
       runId: waiting.run?.id,
       payload: { reason: "skipped" },
     });
+  });
+
+  it("4e: deleting a group with a run waiting on takeover frees its bot's computer", async () => {
+    const cookie = await signup(app, `takeover-group-delete-${stamp}@rakazo.test`, "Group Delete");
+    const createBot = (name: string) =>
+      rpc<Bot>(app, cookie, "bots/create", {
+        name,
+        title: "",
+        description: "",
+        instructions: "",
+        notifyOnFinish: true,
+      });
+    const chief = await createBot("Chief");
+    const mate = await createBot("Mate");
+    const group = await rpc<{ id: string; threadId: string }>(app, cookie, "groups/create", {
+      name: "Launch room",
+      botIds: [chief.id, mate.id],
+    });
+    await rpc(app, cookie, "threads/send", {
+      groupId: group.id,
+      text: "@Chief install the gsc cli and sign in",
+    });
+    let waitingRunId: string | undefined;
+    await waitForDatabase(async () => {
+      const run = await prisma.run.findFirst({
+        where: { threadId: group.threadId, botId: chief.id, status: "waiting_takeover" },
+        select: { id: true },
+      });
+      waitingRunId = run?.id;
+      return Boolean(run);
+    });
+    // The takeover holds Chief's computer for a day.
+    const held = await prisma.computerExecutionLease.findFirstOrThrow({
+      where: { botId: chief.id, runId: waitingRunId },
+    });
+    expect(held.expiresAt.getTime()).toBeGreaterThan(Date.now() + 60 * 60_000);
+
+    await rpc(app, cookie, "groups/remove", { groupId: group.id });
+
+    expect(await prisma.run.findUnique({ where: { id: waitingRunId } })).toBeNull();
+    // Chief's next run, in its own chat, takes the computer instead of waiting a day for it.
+    const direct = await sendAndWait(app, cookie, chief.id, "hello again");
+    expect(direct.run.status).toBe("completed");
+    expect(
+      await prisma.computerExecutionLease.findUniqueOrThrow({ where: { id: held.id } }),
+    ).toMatchObject({ runId: direct.run.id, fence: held.fence + 1 });
   });
 
   it("4b: an expired takeover denies input and reconciles API and database state", async () => {
@@ -2104,6 +2158,93 @@ describeJourneys("required product journeys", () => {
     );
   });
 
+  it("15c: a bare stop message ends the work like Stop, and is an ordinary message when idle", async () => {
+    const cookie = await signup(app, `stop-msg-j-${stamp}@rakazo.test`, "Stop Ada");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const notes = (snap: Snap) =>
+      snap.messages.flatMap((message) =>
+        message.blocks.filter((block) => block.kind === "meta").map((block) => block.text),
+      );
+
+    const working = await rpc<{ runId: string }>(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "keep working until I stop you",
+    });
+    await waitFor(app, cookie, bot.id, (snap) => snap.run?.status === "running");
+    // With a file attached it is not just "stop": it steers like any message.
+    const file = await rpc<{ id: string }>(app, cookie, "artifacts/create", {
+      botId: bot.id,
+      name: "stop.txt",
+      mimeType: "text/plain",
+      contentBase64: Buffer.from("stop").toString("base64"),
+    });
+    await rpc(app, cookie, "threads/send", { botId: bot.id, text: "stop", artifactIds: [file.id] });
+    expect((await prisma.run.findUniqueOrThrow({ where: { id: working.runId } })).status).toBe(
+      "running",
+    );
+    const stop = { botId: bot.id, text: " Stop now! ", clientNonce: `stop-msg-${stamp}` };
+    const stopped = await rpc<{ runId: string }>(app, cookie, "threads/send", stop);
+    expect(stopped.runId).toBe(working.runId);
+    expect((await prisma.run.findUniqueOrThrow({ where: { id: working.runId } })).status).toBe(
+      "cancelled",
+    );
+    const afterStop = await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id });
+    expect(afterStop.run).toBeNull();
+    expect(notes(afterStop)).toEqual(["Stopped. Anything already done stays done."]);
+    expect(await prisma.steeringMessage.count({ where: { botId: bot.id } })).toBe(0);
+
+    // A retried stop is the same send: it leaves newer work alone.
+    const newer = await rpc<{ runId: string }>(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "keep working until I stop you",
+    });
+    await waitFor(app, cookie, bot.id, (snap) => snap.run?.status === "running");
+    expect((await rpc<{ runId: string }>(app, cookie, "threads/send", stop)).runId).toBe(
+      working.runId,
+    );
+    expect((await prisma.run.findUniqueOrThrow({ where: { id: newer.runId } })).status).toBe(
+      "running",
+    );
+    await rpc(app, cookie, "threads/stop", { botId: bot.id });
+    expect(notes(await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id }))).toHaveLength(1);
+
+    // A waiting card is work too: stop cancels it instead of answering it.
+    const asked = await rpc<{ runId: string }>(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "ask me which city to use",
+    });
+    await waitFor(
+      app,
+      cookie,
+      bot.id,
+      (snap) => snap.run?.id === asked.runId && snap.run.status === "waiting_input",
+    );
+    const stoppedCard = await rpc<{ runId: string }>(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "stop",
+    });
+    expect(stoppedCard.runId).toBe(asked.runId);
+    expect((await prisma.run.findUniqueOrThrow({ where: { id: asked.runId } })).status).toBe(
+      "cancelled",
+    );
+    const afterCard = await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id });
+    expect(afterCard.messages.flatMap((message) => message.blocks)).not.toContainEqual(
+      expect.objectContaining({ kind: "ask", answer: "stop" }),
+    );
+    expect(notes(afterCard)).toHaveLength(2);
+
+    // Nothing running: "stop" starts an ordinary turn and adds no note.
+    const idle = await sendAndWait(app, cookie, bot.id, "stop");
+    expect([working.runId, asked.runId]).not.toContain(idle.run.id);
+    expect(notes(idle)).toHaveLength(2);
+  });
+
   it("16: routine test-run and plugin connect/revoke", async () => {
     const ada = await signup(app, `plug-j-${stamp}@rakazo.test`, "Plug Ada");
     const bob = await signup(app, `plug-bob-j-${stamp}@rakazo.test`, "Plug Bob");
@@ -2919,6 +3060,52 @@ describeJourneys("required product journeys", () => {
     ]);
   });
 
+  it("20e: always allowing a paid request's site stops asking for that site, and only that site", async () => {
+    const cookie = await signup(app, `always-site-j-${stamp}@rakazo.test`, "Always Site");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const first = await rpc<{ runId: string }>(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "show a paid request card",
+    });
+    const waiting = await waitFor(
+      app,
+      cookie,
+      bot.id,
+      (snap) => snap.run?.status === "waiting_input",
+    );
+    expect(JSON.stringify(waiting.messages)).toContain("Always allow example.test");
+    await answerPendingApproval(app, cookie, bot.id, first.runId, "always", waiting);
+    await waitFor(
+      app,
+      cookie,
+      bot.id,
+      (snap) => !snap.run || ["completed", "failed", "cancelled"].includes(snap.run.status),
+    );
+    // A new run, so nothing approved in the first one carries over.
+    await sendAndWait(app, cookie, bot.id, "show a paid request card again");
+    expect(
+      (
+        await rpc<Array<{ effect: string; matchKind: string; matchValue: string }>>(
+          app,
+          cookie,
+          "approvalRules/list",
+        )
+      ).map(({ effect, matchKind, matchValue }) => ({ effect, matchKind, matchValue })),
+    ).toEqual([{ effect: "always_allow", matchKind: "site", matchValue: "example.test" }]);
+
+    await rpc(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "show a paid request card on other",
+    });
+    await waitFor(app, cookie, bot.id, (snap) => snap.run?.status === "waiting_input");
+  });
+
   it("21: in Ask mode, routine destination writes pause on the same approval card", async () => {
     const cookie = await signup(app, `routine-approval-j-${stamp}@rakazo.test`, "Routine Approval");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {
@@ -3316,7 +3503,7 @@ describeJourneys("required product journeys", () => {
       const card = JSON.stringify(pending.waiting.messages);
       expect(card).toContain("Create group “Crew”?");
       expect(card).toContain("Members: Alpha, Beta");
-      expect(card).not.toContain("Always allow this tool");
+      expect(card).toContain("Always allow this tool");
       expect(await activeGroups(me.userId, "Crew")).toEqual([]);
 
       await answerAndSettle(cookie, chief.id, pending, "allow");
@@ -3996,6 +4183,7 @@ type Bot = {
   sectionId: string | null;
   unread: boolean;
   computerMode: "team" | "dedicated";
+  fleetManagement: boolean;
   parentBotId?: string | null;
 };
 type Snap = {
@@ -4003,7 +4191,13 @@ type Snap = {
     id: string;
     seq: number;
     runId?: string | null;
-    blocks: Array<{ kind?: string; status?: string; answer?: string; actions?: unknown[] }>;
+    blocks: Array<{
+      kind?: string;
+      status?: string;
+      answer?: string;
+      text?: string;
+      actions?: unknown[];
+    }>;
   }>;
   run: { id: string; status: string } | null;
   activeRuns?: Array<{ id: string; status: string }>;

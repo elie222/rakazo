@@ -1,4 +1,5 @@
 import { ALTERNATIVES, alternativeMarkdown } from "./alternatives";
+import { BRAND_COLORS, BRAND_LOGOS } from "./brand";
 import { GROK_ALTERNATIVE_MARKDOWN } from "./grok-alternative";
 import { OPENCLAW_MARKDOWN, SELF_HOST_MARKDOWN } from "./guide";
 import {
@@ -8,7 +9,7 @@ import {
   getHomeCopy,
 } from "./i18n/home";
 import { roundupMarkdown } from "./roundup";
-import { APP_URL, PLUGIN_SUBMISSIONS_URL } from "./site";
+import { APP_URL, GITHUB_URL, PLUGIN_SUBMISSIONS_URL } from "./site";
 
 export const AGENT_DISCOVERY_LINKS =
   '</llms.txt>; rel="describedby"; type="text/plain", </.well-known/ai-catalog.json>; rel="ai-catalog"; type="application/ai-catalog+json"';
@@ -80,8 +81,9 @@ ${home.cta.copy}
 - [Docs](https://rakazo.com/docs/)
 - [Integrations](https://rakazo.com/integrations/)
 - [Blog](https://rakazo.com/blog/)
-- [Open source Grok Bot alternative](https://rakazo.com/grok-bot-alternative/)
+- [Grok Bot alternatives](https://rakazo.com/grok-bot-alternative/)
 - [About](https://rakazo.com/about/)
+- [Brand](https://rakazo.com/brand/)
 - [Support](https://rakazo.com/support/)
 - [Privacy](https://rakazo.com/privacy/)
 - [Terms](https://rakazo.com/terms/)
@@ -170,8 +172,9 @@ Rakazo Cloud at https://app.rakazo.com is in beta. Self-hosting is also availabl
 - [Website](https://rakazo.com/): product overview, supported models, and common questions.
 - [Website Markdown](https://rakazo.com/index.md): the English product overview as Markdown.
 - [Alternatives](https://rakazo.com/alternatives/)
-- [Open source Grok Bot alternative](https://rakazo.com/grok-bot-alternative/)
+- [Grok Bot alternatives](https://rakazo.com/grok-bot-alternative/)
 - [About](https://rakazo.com/about/)
+- [Brand](https://rakazo.com/brand/)
 - [Source](https://github.com/elie222/rakazo)
 - [Self-hosting guide](https://rakazo.com/self-hosted-ai-agent/): requirements, Docker install, source setup, and desktop and mobile connections.
 - [Self-hosting Markdown](https://rakazo.com/self-hosted-ai-agent.md): the setup guide with language-tagged code examples.
@@ -188,11 +191,32 @@ Rakazo Cloud at https://app.rakazo.com is in beta. Self-hosting is also availabl
 - [Sitemap](https://rakazo.com/sitemap-index.xml)
 `;
 
+export const BRAND_MARKDOWN = `# Rakazo brand
+
+Logos and colors for writing about Rakazo.
+
+## Logos
+
+${BRAND_LOGOS.map((logo) => `- [${logo.name}](https://rakazo.com${logo.file}): ${logo.format}`).join("\n")}
+
+## Colors
+
+${BRAND_COLORS.map((color) => `- ${color.name}: \`${color.hex}\``).join("\n")}
+
+## Usage
+
+Write Rakazo with a capital R in text. The wordmark is lowercase. Do not alter the mascot or imply an endorsement.
+
+For press, email hello@rakazo.com.
+`;
+
 export const PLUGIN_SUBMIT_MARKDOWN = `# Submit a plugin to Rakazo
 
 List a plugin in the Rakazo marketplace. We review every submission and email the result.
 
-The plugin must be a public GitHub repository with a plugin manifest (\`plugin.json\` following [Agent Plugins](https://agent-plugins.org), or \`.cursor-plugin/plugin.json\`) and skills, a hosted MCP server, or both.
+The plugin must be a public GitHub repository with a plugin manifest (\`plugin.json\` following [Agent Plugins](https://agent-plugins.org), \`.cursor-plugin/plugin.json\`, or \`.grok-plugin/plugin.json\`) and skills, a hosted MCP server, or both.
+
+[Build a plugin](https://rakazo.com/docs/build-a-plugin/) starts with a hosted MCP server and covers configuration, testing, and marketplace submission. Copy the [MCP server example](${GITHUB_URL}/tree/main/examples/plugins/mcp-server) for hosted tools, or the [hello world example](${GITHUB_URL}/tree/main/examples/plugins/hello-world) for skills only.
 
 ## Submit with the API
 
@@ -215,7 +239,7 @@ curl -X POST ${PLUGIN_SUBMISSIONS_URL} \\
   -d '{"email":"you@example.com","name":"Acme","logo":"https://example.com/logo.svg","source":"https://github.com/acme/rakazo-plugin","description":"Search Acme tickets.","testing":"Install it and ask a bot to find ticket 42.","tested":true}'
 \`\`\`
 
-A new submission returns \`201\` with \`{"id","status":"pending"}\`. Resubmitting the same repository while it waits updates it and returns \`200\`. Invalid input returns \`400\` with an \`issues\` list naming each field.
+A new submission returns \`201\` with \`{"id","status":"pending"}\`. Resubmitting the same source URL with the same email while it waits updates it and returns \`200\`. Invalid input returns \`400\` with an \`issues\` list naming each field.
 `;
 
 export const NOT_FOUND_MARKDOWN = `# Page not found
@@ -231,6 +255,7 @@ The requested Rakazo page does not exist.
 const MARKDOWN_DOCUMENTS = new Map<string, string>([
   ["/", HOME_MARKDOWN],
   ["/about", ABOUT_MARKDOWN],
+  ["/brand", BRAND_MARKDOWN],
   ["/openclaw-alternative", OPENCLAW_MARKDOWN],
   ["/grok-bot-alternative", GROK_ALTERNATIVE_MARKDOWN],
   ["/privacy", PRIVACY_MARKDOWN],

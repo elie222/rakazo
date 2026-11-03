@@ -38,6 +38,20 @@ describe("reply context", () => {
     expect(context).toContain("Test message 1/3: Hello!");
   });
 
+  it("gives a reply to a page card the page's id and version", async () => {
+    const card = {
+      id: "message-first",
+      threadId: "thread-1",
+      role: "bot",
+      blocks: [{ kind: "page", pageId: "page-1", version: 3, title: "Q3 plan" }],
+    };
+    for (const quote of [null, "Q3 plan"]) {
+      // A quoted reply to the card still reads it whole, not just its title.
+      const context = await loadReplyContext(harness(card, quote).prisma, "thread-1", "user-reply");
+      expect(context).toContain("[page: Q3 plan (pageId page-1, version 3)]");
+    }
+  });
+
   it("does not add context without a source or a surviving reply target", async () => {
     const { prisma, findFirst } = harness();
     expect(await loadReplyContext(prisma, "thread-1", null)).toBeUndefined();
@@ -195,18 +209,4 @@ it("includes the server-derived first line and author role for an id-only reply"
   expect(text).toContain('"quotedText":"First line"');
   expect(text).not.toContain("Second line");
   expect(text).toContain("Why?");
-});
-
-it("names the person on their own line, after the quoted reply target", () => {
-  const message = {
-    id: "reply",
-    threadId: "thread-1",
-    role: "user",
-    blocks: [{ kind: "text", text: "Why?" }],
-    replyToMessageId: target.id,
-    replyTo: target,
-  };
-  const labelled = messageToAgentHistoryText(message, "Ana");
-  expect(labelled.endsWith("\n\n[from Ana] Why?")).toBe(true);
-  expect(labelled.replace("[from Ana] ", "")).toBe(messageToAgentHistoryText(message));
 });

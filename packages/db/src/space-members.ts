@@ -357,13 +357,13 @@ async function departSpace(prisma: PrismaClient, input: SpaceRef): Promise<Space
           const cancelledRunIds = runs.map((run) => run.id);
           // Snapshot before cancelling: an expired lease still names the run's screen.
           const { targets } = await snapshotRunTeardownTargets(tx, cancelledRunIds);
-          await cancelRunsInTransaction(tx, runs, new Date());
+          const cancelled = await cancelRunsInTransaction(tx, runs, new Date());
           const latestSeq = new Map<string, number>();
-          if (runs.length) {
+          if (cancelled.length) {
             await tx.event.deleteMany({
               where: { type: "thread.progress", runId: { in: cancelledRunIds } },
             });
-            for (const run of runs) {
+            for (const run of cancelled) {
               const event = await appendEventInTransaction(tx, {
                 spaceId,
                 threadId: run.threadId,
@@ -381,7 +381,7 @@ async function departSpace(prisma: PrismaClient, input: SpaceRef): Promise<Space
           // once it finished.
           const continuationRunIds: string[] = [];
           const waiting = new Map(
-            runs.map(({ threadId, botId }) => [`${threadId}:${botId}`, { threadId, botId }]),
+            cancelled.map(({ threadId, botId }) => [`${threadId}:${botId}`, { threadId, botId }]),
           );
           for (const thread of waiting.values()) {
             const id = await createPendingSteeringRun(tx, { spaceId, ...thread });

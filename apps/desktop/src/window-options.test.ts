@@ -17,12 +17,21 @@ describe("desktop window chrome", () => {
     expect(opts.trafficLightPosition).toEqual({ x: 16, y: 16 });
   });
 
-  it("is frameless on Windows and Linux so in-app buttons control the window", () => {
-    for (const platform of ["win32", "linux"] as const) {
-      const opts = browserWindowOptions(platform, laptop);
-      expect(opts.frame).toBe(false);
+  it("uses the native Windows frame in the app and setup windows", () => {
+    for (const opts of [
+      browserWindowOptions("win32", laptop),
+      setupWindowOptions("win32", laptop),
+    ]) {
+      expect(opts.frame).toBe(true);
       expect(opts.titleBarStyle).toBeUndefined();
+      expect(opts.trafficLightPosition).toBeUndefined();
     }
+  });
+
+  it("keeps Linux frameless so its in-app buttons control the window", () => {
+    const opts = browserWindowOptions("linux", laptop);
+    expect(opts.frame).toBe(false);
+    expect(opts.titleBarStyle).toBeUndefined();
   });
 });
 

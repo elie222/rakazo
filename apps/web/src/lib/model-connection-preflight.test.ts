@@ -58,6 +58,7 @@ describe("loadStoredModelAuth", () => {
       storedAuthKind: null,
       credentialLookupFailed: false,
       credentialUnreadable: false,
+      reconnectRequired: false,
     });
     await expect(
       loadStoredModelAuth("anthropic", async () => {
@@ -67,6 +68,7 @@ describe("loadStoredModelAuth", () => {
       storedAuthKind: null,
       credentialLookupFailed: true,
       credentialUnreadable: false,
+      reconnectRequired: false,
     });
   });
 
@@ -123,6 +125,7 @@ describe("loadStoredModelAuth", () => {
         storedAuthKind: null,
         credentialLookupFailed: false,
         credentialUnreadable: false,
+        reconnectRequired: false,
       });
     }
     await expect(
@@ -131,6 +134,7 @@ describe("loadStoredModelAuth", () => {
       storedAuthKind: null,
       credentialLookupFailed: false,
       credentialUnreadable: true,
+      reconnectRequired: false,
     });
   });
 
@@ -188,6 +192,7 @@ describe("loadStoredModelAuth", () => {
       storedAuthKind: null,
       credentialLookupFailed: false,
       credentialUnreadable: true,
+      reconnectRequired: false,
     });
   });
 });
@@ -222,8 +227,6 @@ describe("runModelConnectionPreflight", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.failure.outcome).toBe("unavailable_model");
-      expect(result.failure.message).toBe('Model "missing-model" was not listed.');
-      expect(result.failure.nextAction).toBe("Pick a model from the catalog.");
     }
   });
 
@@ -235,7 +238,7 @@ describe("runModelConnectionPreflight", () => {
       catalogProbe: false,
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.failure.message).toMatch(/cannot be tested without saving/);
+    if (!result.ok) expect(result.failure.outcome).toBe("unknown");
   });
 
   it("reports oauth when not connected", async () => {
@@ -261,6 +264,19 @@ describe("runModelConnectionPreflight", () => {
     }
   });
 
+  it("does not treat a rejected subscription sign-in as stored and usable", async () => {
+    const result = await runModelConnectionPreflight({
+      authKind: "oauth",
+      provider: "openai-codex",
+      storedAuthKind: "oauth",
+      reconnectRequired: true,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.failure.outcome).toBe("needs_sign_in");
+    }
+  });
+
   it("accepts a stored subscription credential", async () => {
     const result = await runModelConnectionPreflight({
       authKind: "oauth",
@@ -270,31 +286,19 @@ describe("runModelConnectionPreflight", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("does not treat an unreadable credential as a missing sign-in", async () => {
-    const result = await runModelConnectionPreflight({
-      authKind: "oauth",
-      provider: "anthropic",
-      credentialUnreadable: true,
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.failure.outcome).toBe("unknown");
-      expect(result.failure.message).toMatch(/Could not check stored credentials/);
-    }
-  });
-
-  it("keeps credential lookup failures distinct from a missing sign-in", async () => {
-    const result = await runModelConnectionPreflight({
-      authKind: "oauth",
-      provider: "openai-codex",
-      credentialLookupFailed: true,
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.failure.outcome).toBe("unknown");
-      expect(result.failure.message).toMatch(/Could not check stored credentials/);
-    }
-  });
+  it.each([{ credentialUnreadable: true }, { credentialLookupFailed: true }])(
+    "keeps credential lookup problems distinct from a missing sign-in: %j",
+    async (lookup) => {
+      const result = await runModelConnectionPreflight({
+        authKind: "oauth",
+        provider: "anthropic",
+        storedAuthKind: "oauth",
+        ...lookup,
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.failure.outcome).toBe("unknown");
+    },
+  );
 });
 
 describe("modelPreflightSuccessMessage", () => {

@@ -57,14 +57,14 @@ describe("catalog provider authentication", () => {
   );
 
   it.each([302, 429, 503])(
-    "keeps upstream failures (%i) distinct from invalid keys",
+    "lets an upstream failure (%i) through as inconclusive",
     async (status) => {
       await expect(
         verifyCatalogProviderApiKey(
           { provider: "openrouter", apiKey: "fixture-key" },
           async () => new Response("private upstream details", { status }),
         ),
-      ).rejects.toThrow("Could not verify the API key. Try again.");
+      ).resolves.toBeUndefined();
     },
   );
 
@@ -117,7 +117,7 @@ describe("catalog provider authentication", () => {
         { provider: "google", apiKey: "fixture-key" },
         async () => new Response(body, { status: 400 }),
       ),
-    ).rejects.toThrow("Could not verify the API key. Try again.");
+    ).resolves.toBeUndefined();
   });
 
   it("finishes a Google check safely when cancellation interrupts a partial error body", async () => {
@@ -167,14 +167,16 @@ describe("catalog provider authentication", () => {
         { provider: "google", apiKey: "fixture-key" },
         async () => response,
       ),
-    ).rejects.toThrow("Could not verify the API key. Try again.");
+    ).resolves.toBeUndefined();
     expect(cancel).toHaveBeenCalledOnce();
     expect(response.body?.locked).toBe(false);
   });
 
-  it("bounds a stalled check and hides transport error details", async () => {
+  it("bounds a stalled check and lets it through as inconclusive", async () => {
     const deadline = new AbortController();
     const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    // The app gives up on saving a connection after 60 seconds, so key checks ignore the setting.
+    vi.stubEnv("MODEL_CONNECT_TIMEOUT_MS", "90000");
     try {
       const result = verifyCatalogProviderApiKey(
         { provider: "openrouter", apiKey: "fixture-key" },
@@ -183,12 +185,13 @@ describe("catalog provider authentication", () => {
             init?.signal?.addEventListener("abort", () => reject(new Error("fixture-key")));
           }),
       );
-      const assertion = expect(result).rejects.toThrow("Could not verify the API key. Try again.");
+      const assertion = expect(result).resolves.toBeUndefined();
       expect(timeout).toHaveBeenCalledWith(MODEL_CONNECT_TIMEOUT_MS);
       deadline.abort();
       await assertion;
     } finally {
       timeout.mockRestore();
+      vi.unstubAllEnvs();
     }
   });
 

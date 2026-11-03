@@ -1,5 +1,6 @@
 import { BillingEmulator } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import { BYOK_ANNUAL_PRICE_CENTS, BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, billingAccountForOrganization, createDb, spaceHasModelAccess } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -91,6 +92,18 @@ dbTests("own-key plan", () => {
     await expect(service.checkout(actor)).rejects.toMatchObject({ code: "CONFLICT" });
   });
 
+  it("keeps showing the price the plan was bought at after the price changes", async () => {
+    const customer = (await billingAccountForOrganization(prisma, organizationId))!.customerId;
+    const plan = provider.subscriptions.find((subscription) => subscription.byokPlan)!;
+    expect(plan.byokPriceCents).toBe(BYOK_MONTHLY_PRICE_CENTS);
+    // Bought before the price rose.
+    plan.byokPriceCents = BYOK_MONTHLY_PRICE_CENTS! - 500;
+    await service.sync(customer);
+    await expect(service.status(actor)).resolves.toMatchObject({
+      byokPriceCents: BYOK_MONTHLY_PRICE_CENTS! - 500,
+    });
+  });
+
   it("ends the plan at renewal once monthly credits start", async () => {
     await service.purchaseCredits(actor, { amountCents: 2000, monthly: true });
     const customer = (await billingAccountForOrganization(prisma, organizationId))!.customerId;
@@ -133,5 +146,55 @@ dbTests("own-key plan", () => {
         (subscription) => subscription.byokPlan && subscription.status === "active",
       ),
     ).toMatchObject({ cancelAtPeriodEnd: true });
+  });
+
+  it("bills the yearly plan at the yearly price and shows it as yearly", async () => {
+    const customer = (await billingAccountForOrganization(prisma, organizationId))!.customerId;
+    for (const subscription of provider.subscriptions) subscription.status = "canceled";
+    await service.sync(customer);
+    await expect(service.status(actor)).resolves.toMatchObject({
+      byokPriceCents: BYOK_MONTHLY_PRICE_CENTS,
+      byokInterval: "month",
+      byokAnnualPriceCents: BYOK_ANNUAL_PRICE_CENTS,
+    });
+    await service.selectFunding(actor, "byok", undefined, "year");
+    expect(provider.byokCheckouts.get(customer)).toMatchObject({
+      amountCents: BYOK_ANNUAL_PRICE_CENTS,
+      interval: "year",
+    });
+    provider.completeByokCheckout(customer);
+    await service.sync(customer);
+    await expect(service.status(actor)).resolves.toMatchObject({
+      access: true,
+      funding: "byok",
+      byokPriceCents: BYOK_ANNUAL_PRICE_CENTS,
+      byokInterval: "year",
+    });
+  });
+
+  it("switches a paid monthly plan to yearly, once", async () => {
+    const customer = (await billingAccountForOrganization(prisma, organizationId))!.customerId;
+    for (const subscription of provider.subscriptions) subscription.status = "canceled";
+    await service.sync(customer);
+    await service.selectFunding(actor, "byok");
+    provider.completeByokCheckout(customer);
+    await service.sync(customer);
+    await expect(service.status(actor)).resolves.toMatchObject({ byokInterval: "month" });
+    // A subscriber on an older, cheaper monthly price would pay more by switching.
+    const plan = provider.subscriptions.at(-1)!;
+    plan.byokPriceCents = 1000;
+    await expect(service.switchToYearly(actor)).rejects.toMatchObject({ code: "CONFLICT" });
+    plan.byokPriceCents = BYOK_MONTHLY_PRICE_CENTS!;
+    // An overdue month must not be credited against the year.
+    plan.status = "past_due";
+    await expect(service.switchToYearly(actor)).rejects.toMatchObject({ code: "CONFLICT" });
+    plan.status = "active";
+    await service.switchToYearly(actor);
+    await expect(service.status(actor)).resolves.toMatchObject({
+      access: true,
+      byokPriceCents: BYOK_ANNUAL_PRICE_CENTS,
+      byokInterval: "year",
+    });
+    await expect(service.switchToYearly(actor)).rejects.toMatchObject({ code: "CONFLICT" });
   });
 });

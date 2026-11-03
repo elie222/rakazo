@@ -1,4 +1,5 @@
 import {
+  desktopGuardApplies,
   desktopProtectionGuardMessage,
   protectedComputerLifecycleRefusal,
 } from "./desktop-command-guard.js";
@@ -176,7 +177,7 @@ export const taskTools: ToolHandlers = {
     const { args } = call;
     const command = commandWatchFromTool(args.watch);
     const refusal = command === undefined ? undefined : protectedComputerLifecycleRefusal(command);
-    if (ctx.computer.graphical && refusal)
+    if (desktopGuardApplies(ctx.computer) && refusal)
       return call.finish({ error: desktopProtectionGuardMessage(refusal) });
     const created = await createScheduleFromTool(deps, {
       spaceId: run.spaceId,

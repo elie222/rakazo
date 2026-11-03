@@ -1,8 +1,9 @@
 import type { ConnectorCall, ConnectorTool } from "@rakazo/adapter-kit";
+import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
-import { reserveInstructionProposal, validateInstructionProposal } from "@rakazo/db";
 import { prepareAgentConnectionResponse } from "./agent-connections.js";
 import type { FleetCardSummary } from "./approval-ask.js";
+import type { TerminatingToolResult } from "./approval-effect.js";
 import {
   approvalReplayPathError,
   approvalReplayResourceError,
@@ -21,7 +22,20 @@ import { sanitizeConnectorError } from "./connector-safety.js";
 import { isFleetApprovalTool, prepareFleetRequest } from "./fleet-tools.js";
 import { assertConnectorToolArgs, CATALOG_EXECUTE } from "./lazy-tool-catalog.js";
 import { paidRequestEffect, restorePaidRequest } from "./paid-request.js";
+import type { PurchaseApproval } from "./purchase-gate.js";
+import {
+  detectPurchase,
+  PURCHASE_CHECKED_TOOLS,
+  purchaseApprovalOf,
+  purchaseCardSummary,
+} from "./purchase-gate.js";
 import type { RunContext } from "./run-context.js";
+import {
+  isRunTainted,
+  neverAsks,
+  OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR,
+  refuseOwnerSettingsChange,
+} from "./run-context.js";
 import {
   approvalReplayEffectToolName,
   CATALOG_APPROVAL_TOOL,
@@ -29,7 +43,9 @@ import {
 } from "./run-effects.js";
 import { fleetPrepareDeps } from "./run-model.js";
 import { BUILTIN_AGENT_TOOL_NAMES, FLEET_WRITE_TOOL_NAMES_SET } from "./run-tool-selection.js";
-import { USER_COMPUTER_SHELL_TOOL } from "./run-tools-user-computer.js";
+import { USER_COMPUTER_TOOLS } from "./run-tools-user-computer.js";
+import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
+import { SKILL_TOOL_NAMES } from "./skill-tools.js";
 import { argumentGiven } from "./update-bot-patch.js";
 
 /** A tool call resolved to the tool it runs and the exact request an approval covers. */
@@ -48,9 +64,16 @@ export interface ToolRequest {
   approvedEffectKey: string | undefined;
   replayEffectToolName: string;
   fleetSummary: FleetCardSummary | undefined;
+  /** Gated like a consequential action, even when the tool alone is not. */
+  heldForApproval: boolean;
+  /** This page tool call completes a purchase, which a person approves each time. */
+  purchase: PurchaseApproval | undefined;
 }
 
 type ToolError = { error: string };
+
+/** A prepare-step refusal: a plain error, or a result that ends the turn on a repeat. */
+type PrepareRefusal = ToolError | TerminatingToolResult;
 
 /**
  * Resolve catalog and bound connector routes, and line the call up with the next approved
@@ -115,6 +138,7 @@ export async function resolveToolRequest(
                 connectorId: resolved.tool.route.connectorId,
                 resourceId: resolved.tool.route.resourceId,
                 resourceRevision: resolved.tool.route.resourceRevision,
+                connectionId: resolved.tool.route.connectionId,
                 toolName: resolved.tool.route.toolName,
               }
             : undefined,
@@ -142,6 +166,7 @@ export async function resolveToolRequest(
         connectorId: connectorCall.route.connectorId,
         resourceId: connectorCall.route.resourceId,
         resourceRevision: connectorCall.route.resourceRevision,
+        connectionId: connectorCall.route.connectionId,
         toolName: connectorCall.route.toolName,
       },
       args,
@@ -162,6 +187,7 @@ export async function resolveToolRequest(
           connectorId: connectorCall.route.connectorId,
           resourceId: connectorCall.route.resourceId,
           resourceRevision: connectorCall.route.resourceRevision,
+          connectionId: connectorCall.route.connectionId,
           toolName: connectorCall.route.toolName,
         }
       : undefined;
@@ -256,6 +282,8 @@ export async function resolveToolRequest(
     approvedEffectKey,
     replayEffectToolName,
     fleetSummary: undefined,
+    heldForApproval: false,
+    purchase: undefined,
   };
 }
 
@@ -263,51 +291,29 @@ export async function resolveToolRequest(
  * Check bot-management and instruction-proposal preconditions, and canonicalize the
  * requests whose approval card shows resolved names. Updates the request in place.
  */
-// Runs whose prompt someone other than the owner wrote; their text stays in the chat's history.
-const OUTSIDE_RUN_TRIGGERS = [
-  "webhook",
-  "messaging",
-  "bot_message",
-  "spawn",
-  "cloud_agent",
-  "tickets",
-];
-
-/** Earlier outside text in the chat can steer this run even when the run itself took in none. */
-async function threadHasOutsideHistory(
-  prisma: RunContext["deps"]["prisma"],
-  threadId: string,
-  botId: string,
-): Promise<boolean> {
-  const [message, run] = await Promise.all([
-    prisma.message.findFirst({
-      where: {
-        threadId,
-        OR: [
-          { role: "bot", botId: { not: botId } },
-          { blocks: { array_contains: [{ kind: "channel_message" }] } },
-          { blocks: { array_contains: [{ kind: "bot_message_received" }] } },
-        ],
-      },
-      select: { id: true },
-    }),
-    prisma.run.findFirst({
-      where: { threadId, trigger: { in: OUTSIDE_RUN_TRIGGERS } },
-      select: { id: true },
-    }),
-  ]);
-  return Boolean(message || run);
-}
-
 export async function prepareToolRequest(
   ctx: RunContext,
   request: ToolRequest,
-): Promise<ToolError | undefined> {
-  const { deps, run, runId, bot } = ctx;
+): Promise<PrepareRefusal | undefined> {
+  const { deps, run, bot } = ctx;
   const { name, executionId, nextApprovedTool } = request;
   let { args } = request;
+  if (
+    (SCHEDULE_TOOL_NAMES.has(name) || SKILL_TOOL_NAMES.has(name)) &&
+    (ctx.source.messagingChannelRun ||
+      (await deps.prisma.steeringMessage.findFirst({
+        where: {
+          runId: ctx.runId,
+          claimedAt: { not: null },
+          message: { blocks: { array_contains: [{ kind: "channel_message" }] } },
+        },
+        select: { id: true },
+      })))
+  ) {
+    return { error: "This tool is unavailable after a shared-channel message." };
+  }
   // Before the gate, so a run that may never reach the user's computer shows no approval card.
-  if (name === USER_COMPUTER_SHELL_TOOL) {
+  if (USER_COMPUTER_TOOLS.has(name)) {
     if (!ctx.source.userComputerOwner || !deps.userDevices)
       return { error: "The user's computer is not available in this run." };
     if (isSubagentToolExecution(executionId))
@@ -328,57 +334,22 @@ export async function prepareToolRequest(
     if (!live?.fleetManagement) return { error: "This tool is disabled for this bot." };
     if (!ctx.source.ownerStartedRun)
       return { error: "Bot management tools need a run you started." };
-    if (fleetWrite && (await ctx.trust.receivedOutsideMessage()))
+    if (fleetWrite && !(await neverAsks(ctx)) && (await ctx.trust.receivedOutsideMessage()))
       return {
         error:
           "Changes to the bots you manage are blocked for the rest of this run because it received a channel or webhook message.",
       };
   }
-  if (name === "update_bot" && !argumentGiven(args.bot_id) && argumentGiven(args.instructions)) {
-    if (isSubagentToolExecution(executionId)) return { error: "Helpers cannot set instructions." };
-    // Only the owner's own words may become instructions unseen: no outside message, and no
-    // outside tool result in this attempt's context, restored or new. The creation intro has
-    // no tools that read outside content, and answering its question clears the checkpoint.
-    const ownWords =
-      !(await ctx.trust.receivedOutsideMessage()) &&
-      (run.trigger === "created" || (ctx.source.ownerStartedRun && !ctx.state.tainted)) &&
-      !(await threadHasOutsideHistory(deps.prisma, run.threadId, bot.id));
-    if (!ownWords) return { error: "Propose your instructions with propose_instructions_update." };
-    if (redactSecrets(String(args.instructions), ctx.secrets) !== args.instructions)
-      return { error: "Instructions cannot contain credentials." };
-  }
-  if (name === "propose_instructions_update") {
-    try {
-      if (run.trigger === "follow_up" && !ctx.source.ownerStartedRun)
-        return {
-          error: "Instruction updates are blocked for externally triggered runs.",
-        };
-      if (!nextApprovedTool) validateInstructionProposal(args, run.trigger);
-      else
-        validateInstructionProposal(
-          { instructions: args.instructions, reason: args.reason },
-          run.trigger,
-        );
-      if (
-        redactSecrets(String(args.instructions), ctx.secrets) !== args.instructions ||
-        redactSecrets(String(args.reason), ctx.secrets) !== args.reason
-      )
-        return { error: "Instruction proposals cannot contain credentials." };
-      const instructionProposalBot = await reserveInstructionProposal(deps.prisma, bot.id, runId);
-      if (!nextApprovedTool) {
-        args = { ...args, previousInstructions: instructionProposalBot.instructions };
-      }
-    } catch (error) {
-      return {
-        error: error instanceof Error ? error.message : "Invalid instruction proposal.",
-      };
-    }
+  if (name === "update_bot" && !argumentGiven(args.bot_id)) {
+    const refused = await prepareOwnBotUpdate(ctx, request);
+    if (refused) return refused;
+    args = request.args;
   }
   if (isFleetApprovalTool(name) && nextApprovedTool !== name) {
     // Resolve names, members, model and schedule now; an approved replay runs the stored
     // request above and never resolves them again.
     const prepared = await prepareFleetRequest(
-      fleetPrepareDeps(deps, run),
+      await fleetPrepareDeps(deps, run),
       ctx.fleetRun,
       name,
       args,
@@ -405,12 +376,134 @@ export async function prepareToolRequest(
       return { error: "connection request is no longer pending" };
     }
   }
+  if (PURCHASE_CHECKED_TOOLS.has(name)) {
+    // The approval is written here from what the page says; a model-supplied one is dropped, and an
+    // approved replay keeps the one the user saw.
+    const { purchaseApproval: given, ...rest } = args;
+    const approved = nextApprovedTool === name ? purchaseApprovalOf(given) : undefined;
+    args = approved ? args : rest;
+    // A desktop press has no check on the page right before it, as a browser_act click does: one the user
+    // approved goes ahead only while the page still shows what the card did. A card that named nothing
+    // (the check failed) has nothing to compare.
+    if (
+      name === "computer_act" &&
+      approved &&
+      (approved.site || approved.label || approved.amount)
+    ) {
+      const now = await detectPurchase(ctx, name, rest);
+      if (
+        !now ||
+        now.site !== approved.site ||
+        now.label !== approved.label ||
+        now.amount !== approved.amount
+      )
+        return {
+          error:
+            "The page changed since the user approved this purchase, so nothing was pressed. Look at the screen and try again.",
+        };
+    }
+    const purchase = approved ?? (await detectPurchase(ctx, name, rest));
+    // An approval given for something else never covers a purchase: the call is made again and asks.
+    if (purchase && !approved && nextApprovedTool === name)
+      return {
+        error:
+          "This would complete a purchase, which the user has not approved, so nothing was pressed. Call the tool again with only that step; that asks the user.",
+      };
+    if (purchase) {
+      args = { ...rest, purchaseApproval: purchase };
+      // The wallet owner approved paying at a site this run typed the approved card or pay token into: the
+      // click still carries the approval to the page, with no card. Spent on the first purchase click there.
+      if (approved || !ctx.state.walletHosts.delete(purchase.site)) {
+        request.purchase = purchase;
+        request.fleetSummary = purchaseCardSummary(purchase);
+      }
+    }
+    if (purchase || given !== undefined) request.effectRequest = args;
+  }
   request.args = args;
-  if (
-    name === "propose_instructions_update" ||
-    name === "respond_agent_connection" ||
-    isFleetApprovalTool(name)
-  )
+  if (name === "respond_agent_connection" || name === "update_bot" || isFleetApprovalTool(name))
     request.effectRequest = args;
+  return undefined;
+}
+
+/** Settings that change what this bot runs on or how it speaks; only the owner's chat sets them. */
+const OWNER_SETTINGS = ["model", "thinkingLevel", "voice", "readAloud"];
+
+/** Everything a bot may change on itself. Credentials, tools and access stay in Settings. */
+const OWN_FIELDS = new Set([
+  ...OWNER_SETTINGS,
+  "name",
+  "description",
+  "instructions",
+  "color",
+  "artifact_id",
+  "use_attached_image",
+  "notifyOnFinish",
+  "dailyCheckIns",
+  "notify_on_finish",
+  "bot_id",
+]);
+
+/**
+ * `update_bot` on this bot itself. Under Never ask instructions are written at once; otherwise
+ * they go through approval like any other action, and outside runs cannot change them.
+ */
+async function prepareOwnBotUpdate(
+  ctx: RunContext,
+  request: ToolRequest,
+): Promise<PrepareRefusal | undefined> {
+  const { run } = ctx;
+  const { executionId, nextApprovedTool } = request;
+  if (nextApprovedTool === "update_bot") {
+    // The approved replay runs the stored request.
+    request.heldForApproval = typeof request.args.previousInstructions === "string";
+    return undefined;
+  }
+  const { previousInstructions: _previous, reason: _reason, ...args } = request.args;
+  request.args = args;
+  const settingsOnly = Object.keys(args).filter(
+    (key) => !OWN_FIELDS.has(key) && argumentGiven(args[key]),
+  );
+  if (settingsOnly.length)
+    return { error: `Only the owner can change ${settingsOnly.join(", ")}, in Settings.` };
+  const unguarded = await neverAsks(ctx);
+  if (OWNER_SETTINGS.some((key) => argumentGiven(args[key]))) {
+    if (isSubagentToolExecution(executionId) || (!unguarded && !ctx.source.ownerStartedRun))
+      return {
+        error:
+          "Only the owner can change your model, thinking, voice or read-aloud, from their own chat.",
+      };
+    if (!unguarded && (await isRunTainted(ctx)))
+      return refuseOwnerSettingsChange(
+        ctx,
+        "Model, thinking, voice and read-aloud changes are blocked for the rest of this run because it read outside content.",
+      );
+  }
+  if (!argumentGiven(args.instructions)) return undefined;
+  if (isSubagentToolExecution(executionId)) return { error: "Helpers cannot set instructions." };
+  const instructions = String(args.instructions).trim();
+  if (instructions.length > BOT_INSTRUCTIONS_MAX_LENGTH)
+    return { error: `instructions must be at most ${BOT_INSTRUCTIONS_MAX_LENGTH} characters.` };
+  if (redactSecrets(instructions, ctx.secrets) !== instructions)
+    return { error: "Instructions cannot contain credentials." };
+  request.args = { ...args, instructions };
+  if (unguarded) return undefined;
+  if (!["created", "routine"].includes(run.trigger) && !ctx.source.ownerStartedRun)
+    return { error: "Instruction changes are blocked for runs someone else started." };
+  if (Object.keys(args).some((key) => key !== "instructions"))
+    return { error: "Change your instructions in their own update_bot call." };
+  // An older checkpoint predates the baseline; this attempt must not guess.
+  if (ctx.state.ownInstructionsBaseline === undefined)
+    return { error: OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR };
+  request.args = {
+    instructions,
+    reason: "Set in chat",
+    // The text the model worked from, not a fresh read: a change that landed since the
+    // attempt started conflicts at approval instead of being overwritten.
+    previousInstructions: ctx.state.ownInstructionsBaseline,
+    // Provenance the approved replay checks; requests stored before the baseline lack it.
+    previousInstructionsFromBaseline: true,
+  };
+  request.heldForApproval = true;
   return undefined;
 }

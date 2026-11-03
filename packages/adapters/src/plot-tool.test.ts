@@ -35,7 +35,7 @@ describe("render_plot", () => {
           undefined,
           dom(),
         ),
-      ).toThrow("Plot tick count exceeds the 1,000-tick limit.");
+      ).toThrow("Plot ticks would generate more than 1,000 values");
     },
   );
 
@@ -46,7 +46,153 @@ describe("render_plot", () => {
         undefined,
         dom(),
       ),
-    ).toThrow("Plot tick count exceeds the 1,000-tick limit.");
+    ).toThrow("Plot ticks would generate more than 1,000 values");
+  });
+
+  describe("generated geometry limits", () => {
+    const series = Array.from({ length: 100 }, (_, i) => ({
+      a: i,
+      b: i % 7,
+      at: new Date(Date.UTC(2024, 0, 1) + i * 86_400_000),
+    }));
+    const dot = { type: "dot", options: { x: "a", y: "b" } };
+    const contour = (options: Record<string, unknown>) => ({
+      marks: [{ type: "contour", options: { x: "a", y: "b", fill: "b", ...options } }],
+    });
+
+    it.each<[string, PlotSpec, RegExp]>([
+      ["width", { width: 100_000, marks: [dot] }, /width must be within ±2,000/],
+      ["height", { height: "100000" as never, marks: [dot] }, /height must be within ±2,000/],
+      ["margin", { marginLeft: -100_000, marks: [dot] }, /marginLeft must be within ±2,000/],
+      ["scale inset", { x: { inset: -100_000 }, marks: [dot] }, /inset must be within ±2,000/],
+      ["scale range", { x: { range: [0, 100_000] }, marks: [dot] }, /range must be within ±2,000/],
+      ["tick spacing", { x: { tickSpacing: 0.5 }, marks: [dot] }, /tickSpacing must be at least 5/],
+      [
+        "grid tick spacing",
+        { marks: [{ type: "gridX", options: { tickSpacing: 0.5 } }, dot] },
+        /tickSpacing must be at least 5/,
+      ],
+      [
+        "hexgrid",
+        { marks: [{ type: "hexgrid", options: { binWidth: 2 } }, dot] },
+        /binWidth must be at least 5/,
+      ],
+      ["contour pixels", contour({ pixelSize: 0.5 }), /pixelSize must be at least 1/],
+      [
+        "contour thresholds",
+        contour({ thresholds: 300 }),
+        /thresholds would generate more than 200/,
+      ],
+      ["contour interval", contour({ interval: 0.02 }), /interval would generate more than 200/],
+      [
+        "projection precision",
+        { projection: { type: "equal-earth", precision: 1e-5 }, marks: [{ type: "sphere" }] },
+        /precision must be at least 0.01/,
+      ],
+      [
+        "aspect ratio",
+        { aspectRatio: 1, marks: [dot] } as PlotSpec,
+        /aspectRatio is not supported; set height instead/,
+      ],
+      [
+        "data-dependent bin count",
+        {
+          marks: [
+            {
+              type: "rectY",
+              transform: { name: "binX", outputs: { y: "count", thresholds: "freedman-diaconis" } },
+              options: { x: "a" },
+            },
+          ],
+        },
+        /"freedman-diaconis" is not supported/,
+      ],
+      [
+        "contour thresholds list",
+        contour({ thresholds: Array.from({ length: 201 }, (_, i) => i / 40) }),
+        /thresholds would generate more than 200/,
+      ],
+      [
+        "ticks list",
+        { x: { ticks: Array.from({ length: 1_001 }, (_, i) => i / 10) }, marks: [dot] },
+        /ticks would generate more than 1,000/,
+      ],
+      [
+        "monthly ticks",
+        {
+          x: { ticks: "1 month" },
+          marks: [
+            {
+              type: "dot",
+              data: [
+                { at: new Date(Date.UTC(2000, 0, 1)) },
+                { at: new Date(Date.UTC(2083, 4, 2)) },
+              ],
+              options: { x: "at" },
+            },
+          ],
+        },
+        /ticks would generate more than 1,000/,
+      ],
+      [
+        "tick interval",
+        { x: { ticks: "1 hour" }, marks: [{ type: "dot", options: { x: "at", y: "b" } }] },
+        /ticks would generate more than 1,000 values/,
+      ],
+      [
+        "scale interval",
+        { x: { interval: 0.005 }, marks: [{ type: "barY", options: { x: "a", y: "b" } }] },
+        /interval would generate more than 10,000/,
+      ],
+      [
+        "bin interval",
+        {
+          marks: [
+            {
+              type: "rectY",
+              transform: { name: "binX", outputs: { y: "count" } },
+              options: { x: "a", interval: 0.005 },
+            },
+          ],
+        },
+        /interval would generate more than 10,000/,
+      ],
+    ])("rejects an oversized %s before rendering", (_name, spec, message) => {
+      expect(() => renderPlotSpecToSvg(spec, series, dom())).toThrow(message);
+    });
+
+    it("keeps ordinary interval, threshold and size options", () => {
+      const svg = renderPlotSpecToSvg(
+        {
+          width: 1_200,
+          height: 600,
+          marginLeft: 60,
+          x: { interval: 1, ticks: 20 },
+          marks: [
+            { type: "barY", options: { x: "a", y: "b" } },
+            { type: "axisX", options: { ticks: "1 day", tickSpacing: 40 } },
+          ],
+        },
+        series,
+        dom(),
+      );
+      expect(svg).toContain('width="1200"');
+      const daily = renderPlotSpecToSvg(
+        {
+          x: { type: "time", ticks: "1 week" },
+          marks: [{ type: "dot", options: { x: "at", y: "b" } }],
+        },
+        series,
+        dom(),
+      );
+      expect(daily).toContain("<svg");
+      const histogram = buildPlotParts(
+        contour({ thresholds: 20, pixelSize: 2 }),
+        series,
+        dom(),
+      ).plotted;
+      expect(histogram.querySelectorAll("path").length).toBeGreaterThan(0);
+    });
   });
 
   it("renders a bounded custom tick count", () => {
@@ -310,6 +456,47 @@ describe("render_plot", () => {
     for (const spec of specs) {
       expectInertLinks(buildPlotParts(spec, undefined, dom()).plotted);
     }
+  });
+
+  it.each([
+    {
+      position: "fixed",
+      inset: "0",
+      zIndex: "9999",
+      background: "url(https://example.test/a.png)",
+    },
+    "position:fixed;inset:0;background:url(https://example.test/a.png)",
+  ])("ignores page styles on the chart: %j", (style) => {
+    const spec = { style, className: "flex", marks: [linkedDot] } as unknown as PlotSpec;
+    const data = [{ x: 1, y: 2, url: "https://example.test" }];
+    const { plotted } = buildPlotParts(spec, data, dom());
+    expect(plotted.getAttribute("style") ?? "").not.toMatch(/fixed|url\(/);
+    expect(plotted.outerHTML).not.toContain(".flex");
+    expect(plotted.getAttribute("class")).not.toBe("flex");
+    const svg = renderPlotSpecToSvg(spec, data, dom());
+    expect(svg).not.toMatch(/fixed|url\(https|\.flex/);
+  });
+
+  it("keeps link targets and remote url() references out of the chart", () => {
+    const remote = "url(https://example.test/paint.svg#p)";
+    const spec: PlotSpec = {
+      color: { type: "ordinal", domain: ["a"], range: [remote] },
+      marks: [
+        {
+          type: "dot",
+          options: { x: "x", y: "y", fill: remote, href: "url", target: "_top", className: "flex" },
+        },
+        { type: "dot", options: { x: "x", y: "y", stroke: "k", imageFilter: remote, clip: true } },
+      ],
+    };
+    const data = [{ x: 1, y: 2, k: "a", url: "https://example.test" }];
+    const { plotted, swatches } = buildPlotParts(spec, data, dom());
+    expect(swatches).toEqual([]);
+    expect(plotted.querySelector("a")?.hasAttribute("target")).toBe(false);
+    expect(plotted.querySelector(".flex")).toBeNull();
+    expect(plotted.outerHTML).not.toContain("example.test/paint");
+    expect(plotted.querySelector("[clip-path]")?.getAttribute("clip-path")).toMatch(/^url\(#/);
+    expect(renderPlotSpecToSvg(spec, data, dom())).not.toContain("example.test/paint");
   });
 
   it("supports transforms: binned histogram and grouped stacked bars", () => {

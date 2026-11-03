@@ -1,6 +1,8 @@
 /** Default for deployments and clients connected to older servers. */
 export const ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
 export const ATTACHMENT_MAX_COUNT = 4;
+/** Hard ceiling for the configurable per-message limit. */
+export const ATTACHMENT_COUNT_CEILING = 100;
 /** Shared photo preparation policy for web and mobile composers. */
 export const ATTACHMENT_IMAGE_MAX_EDGE = 1_600;
 export const ATTACHMENT_IMAGE_QUALITY = 0.7;
@@ -30,6 +32,8 @@ export const ATTACHMENT_FILE_MIME_TYPES = [
   "text/plain",
   "text/markdown",
   "text/csv",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "text/html",
   "application/json",
   "application/zip",
@@ -44,6 +48,30 @@ export type AttachmentMimeType = (typeof ATTACHMENT_ALLOWED_MIME_TYPES)[number];
 
 export function isAttachmentImageMimeType(mimeType: string): boolean {
   return (ATTACHMENT_IMAGE_MIME_TYPES as readonly string[]).includes(mimeType);
+}
+
+export type ArtifactPreviewKind = "html" | "markdown" | "pdf" | "image" | "video" | "text" | "none";
+
+const TEXT_APPLICATION_MIME_TYPES = new Set([
+  "application/json",
+  "application/xml",
+  "application/yaml",
+  "application/x-yaml",
+  "application/javascript",
+  "application/x-sh",
+  "application/sql",
+]);
+
+/** How every client previews a saved file, so web and mobile show the same types. */
+export function artifactPreviewKind(mimeType: string): ArtifactPreviewKind {
+  const type = mimeType.split(";")[0]?.trim().toLowerCase() ?? "";
+  if (type === "text/html") return "html";
+  if (type === "text/markdown") return "markdown";
+  if (type === "application/pdf") return "pdf";
+  if (isAttachmentImageMimeType(type)) return "image";
+  if (type === "video/mp4") return "video";
+  if (type.startsWith("text/") || TEXT_APPLICATION_MIME_TYPES.has(type)) return "text";
+  return "none";
 }
 
 export function isAttachmentAudioMimeType(mimeType: string): boolean {
@@ -70,4 +98,9 @@ export function attachmentMaxBytes(config?: { maxUploadSizeBytes?: number } | nu
 
 export function attachmentSizeLabel(maxBytes: number): string {
   return `${maxBytes / (1024 * 1024)} MiB`;
+}
+
+/** Effective per-message limit, including the fallback for older servers. */
+export function attachmentMaxCount(config?: { maxAttachmentsPerMessage?: number } | null): number {
+  return config?.maxAttachmentsPerMessage ?? ATTACHMENT_MAX_COUNT;
 }

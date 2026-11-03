@@ -2,10 +2,11 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { RoutineWatchSchema } from "@rakazo/contracts";
+import { encodeLoginSecret, RoutineWatchSchema } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { accountVault, fakeDatabase } from "./bot-secrets.test-support.js";
 import { ComputerBusyError, provisionComputer } from "./computer-lifecycle.js";
+import { protectedComputerLifecycleRefusal } from "./desktop-command-guard.js";
 import type { RoutineWatchTickDeps } from "./routine-watch.js";
 import {
   checkRoutineWatch,
@@ -320,6 +321,22 @@ describe("tickRoutineWatch", () => {
     },
   );
 
+  it("keeps the structured data in a change note beside supplemental text", async () => {
+    // The duplicate text was dropped on the way in, so the reader must not let
+    // the leftover note replace the data that triggered the routine.
+    const { deps, routine } = setup({
+      data: {
+        content: [{ type: "text", text: "Query completed." }],
+        structuredContent: { changes: [{ what: "add test note", at: "2026-11-01T09:30:00Z" }] },
+        isError: false,
+      },
+    });
+    routine.watchState = { checkedAt: "x", outcome: "unchanged", fingerprint: "old", detail: null };
+    const result = await checkRoutineWatch(deps, routine);
+    expect(result.state.detail).toContain("Query completed.");
+    expect(result.state.detail).toContain("add test note");
+  });
+
   it.each([new ComputerBusyError(), new DOMException("timed out", "TimeoutError")])(
     "retries temporary provisioning conflicts without losing the baseline",
     async (error) => {
@@ -418,36 +435,81 @@ describe("tickRoutineWatch", () => {
 });
 
 describe("tool results", () => {
-  it("treats an MCP error result as a failed check, not a reading", async () => {
-    const deps = {
-      prisma: {
-        connection: { findMany: vi.fn(async () => []) },
-        spaceSettingOverride: { findUnique: vi.fn(async () => null) },
-        actionApprovalRule: { findMany: vi.fn(async () => []) },
-        userActionApprovalRule: { findMany: vi.fn(async () => []) },
+  it.each([
+    [
+      "its text",
+      { content: [{ type: "text", text: "limit must be a number" }], isError: true },
+      /limit must be a number/,
+    ],
+    [
+      "structured diagnostics when the text is blank",
+      {
+        content: [{ type: "text", text: "" }],
+        structuredContent: { error: "Permission denied" },
+        isError: true,
       },
-      connector: {
-        discoverTools: vi.fn(async () => [
-          { name: "brain_changed", readOnly: true, route: { connectorId: "installed" } },
-        ]),
-        execute: vi.fn(async function* () {
-          yield {
-            type: "result",
-            data: { content: [{ type: "text", text: "limit must be a number" }], isError: true },
-          };
-        }),
+      /Permission denied/,
+    ],
+    [
+      "structured diagnostics the short text does not repeat",
+      {
+        content: [{ type: "text", text: "Request failed" }],
+        structuredContent: { error: "Permission denied", requiredScope: "reports:read" },
+        isError: true,
       },
-    } as unknown as RoutineWatchTickDeps;
-    const routine = {
-      id: "r",
-      spaceId: "s",
-      userId: "u",
-      botId: "b",
-      watch: { kind: "tool", tool: "brain_changed", args: {} },
-      watchState: null,
-    };
-    await expect(checkRoutineWatch(deps, routine)).rejects.toThrow(/limit must be a number/);
-  });
+      /Request failed[\s\S]*reports:read/,
+    ],
+    [
+      "a numeric diagnostic whose digits happen to appear in the text",
+      {
+        content: [{ type: "text", text: "Service returned HTTP 503" }],
+        structuredContent: { error: "Service returned HTTP 503", retryAfterSeconds: 3 },
+        isError: true,
+      },
+      /retryAfterSeconds/,
+    ],
+    [
+      "a text diagnostic whose value happens to appear in the text",
+      {
+        content: [{ type: "text", text: "Permission denied while reading repository" }],
+        structuredContent: {
+          error: "Permission denied while reading repository",
+          requiredScope: "repo",
+        },
+        isError: true,
+      },
+      /requiredScope/,
+    ],
+  ])(
+    "treats an MCP error result as a failed check that reports %s",
+    async (_case, data, reported) => {
+      const deps = {
+        prisma: {
+          connection: { findMany: vi.fn(async () => []) },
+          spaceSettingOverride: { findUnique: vi.fn(async () => null) },
+          actionApprovalRule: { findMany: vi.fn(async () => []) },
+          userActionApprovalRule: { findMany: vi.fn(async () => []) },
+        },
+        connector: {
+          discoverTools: vi.fn(async () => [
+            { name: "brain_changed", readOnly: true, route: { connectorId: "installed" } },
+          ]),
+          execute: vi.fn(async function* () {
+            yield { type: "result", data };
+          }),
+        },
+      } as unknown as RoutineWatchTickDeps;
+      const routine = {
+        id: "r",
+        spaceId: "s",
+        userId: "u",
+        botId: "b",
+        watch: { kind: "tool", tool: "brain_changed", args: {} },
+        watchState: null,
+      };
+      await expect(checkRoutineWatch(deps, routine)).rejects.toThrow(reported);
+    },
+  );
 });
 
 describe("tickRoutineWatch on a computer", () => {
@@ -760,6 +822,118 @@ describe("tickRoutineWatch on a computer", () => {
     expect(saved).not.toContain(secret);
   });
 
+  it("hides saved logins' hidden fields and recent card numbers in command output, as runs do", async () => {
+    const password = "fake-watch-password-1";
+    const card = "4242 4242 4242 4242";
+    const vault = fakeDatabase();
+    await vault.prisma.vaultCredential.create({
+      data: {
+        id: "site-login",
+        ...accountVault,
+        name: "site_login",
+        origin: "https://login.example.test",
+        auth: { type: "login" },
+        ciphertext: "cipher-login",
+      },
+    });
+    const secretStore = {
+      async load(ciphertext: string) {
+        if (ciphertext === "cipher-card") return card;
+        if (ciphertext !== "cipher-login") throw new Error("unreadable");
+        return encodeLoginSecret({
+          fields: [
+            { label: "Username", value: "watcher@example.test", hidden: false },
+            { label: "Password", value: password, hidden: true },
+          ],
+        });
+      },
+    };
+    const withPurchases = (deps: RoutineWatchTickDeps) => {
+      Object.assign(deps, { paymentWallet: {} });
+      Object.assign(deps.prisma, {
+        purchase: {
+          // Only this bot's own purchases, as for its runs.
+          findMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
+            where.spaceId === "space-1" && where.userId === "user-1" && where.botId === "bot-1"
+              ? [{ id: "purchase-1", cardCiphertext: "cipher-card", tokenCiphertext: null }]
+              : [],
+          ),
+        },
+      });
+    };
+    const output = `Signed in as watcher@example.test with ${password}, paid with ${card.replaceAll(" ", "")} and ${card.replaceAll(" ", "-")}`;
+
+    vi.mocked(provisionComputer).mockResolvedValueOnce({
+      id: "computer-1",
+      botId: "bot-1",
+      kind: "fake",
+      providerRef: "fake",
+    });
+    const changed = setupComputer(
+      { kind: "command", command: "check-order" },
+      { stdout: output },
+      undefined,
+      { vault, secretStore },
+    );
+    withPurchases(changed.deps);
+    const tick = await tickRoutineWatch(changed.deps, changed.routine, target, scheduledAt);
+    if (!tick.run) throw new Error("expected a run");
+    expect(tick.note).toContain(
+      "Signed in as watcher@example.test with [redacted], paid with [redacted] and [redacted]",
+    );
+    expect(tick.note).not.toContain(password);
+    expect(tick.note).not.toContain("4242424242424242");
+    expect(tick.note).not.toContain("4242-4242-4242-4242");
+
+    vi.mocked(provisionComputer).mockResolvedValueOnce({
+      id: "computer-1",
+      botId: "bot-1",
+      kind: "fake",
+      providerRef: "fake",
+    });
+    const failed = setupComputer(
+      { kind: "command", command: "check-order" },
+      { stderr: output, code: 1 },
+      undefined,
+      { vault, secretStore },
+    );
+    withPurchases(failed.deps);
+    await tickRoutineWatch(failed.deps, failed.routine, target, scheduledAt);
+    const posted = JSON.stringify(failed.messages);
+    expect(posted).toContain(
+      "Signed in as watcher@example.test with [redacted], paid with [redacted] and [redacted]",
+    );
+    expect(posted).not.toContain(password);
+    expect(posted).not.toContain("4242424242424242");
+    expect(posted).not.toContain("4242-4242-4242-4242");
+
+    // An item saved before its value was hidden is named from the last reading when it goes.
+    vi.mocked(provisionComputer).mockResolvedValueOnce({
+      id: "computer-1",
+      botId: "bot-1",
+      kind: "fake",
+      providerRef: "fake",
+    });
+    const tracked = setupComputer(
+      { kind: "command", command: "list-orders", track: ["id"] },
+      { stdout: '[{"id":"8","title":"Order 8"}]' },
+      undefined,
+      { vault, secretStore },
+    );
+    withPurchases(tracked.deps);
+    tracked.routine.watchState = {
+      checkedAt: "x",
+      outcome: "unchanged",
+      fingerprint: "old",
+      entries: readItems([{ id: "7", title: `Reset ${password}` }], ["id"]).entries,
+      detail: null,
+    } as never;
+    const gone = await tickRoutineWatch(tracked.deps, tracked.routine, target, scheduledAt);
+    if (!gone.run) throw new Error("expected a run");
+    expect(gone.note).toContain("New: Order 8\nGone: Reset [redacted]");
+    expect(gone.note).not.toContain(password);
+  });
+
   it("scrubs a quote and backslash inside tracked command JSON", async () => {
     const secret = 'ghp_quote"slash\\secretToken';
     const vault = fakeDatabase();
@@ -903,6 +1077,33 @@ describe("tickRoutineWatch on a computer", () => {
     }
   });
 
+  it("runs a Windows check in PowerShell without the bash desktop guard", async () => {
+    const computer = {
+      id: "computer-1",
+      botId: "bot-1",
+      kind: "desktop" as const,
+      providerRef: "ecd-1",
+    };
+    vi.mocked(provisionComputer).mockResolvedValueOnce(computer);
+    const command = "(Get-ChildItem inbox).Count";
+    expect(protectedComputerLifecycleRefusal(command)).toBeDefined();
+    const { deps, routine, execute } = setupComputer(
+      { kind: "command", command },
+      { stdout: "3\n" },
+      { id: "computer-1", scope: "team", kind: "desktop" },
+      { shell: { platform: "win32", shell: "powershell.exe", home: "C:\\Users\\rakazo" } },
+    );
+    deps.commandRefusal = protectedComputerLifecycleRefusal;
+    await checkRoutineWatch(deps, routine);
+    expect(execute).toHaveBeenCalledWith(
+      computer,
+      expect.objectContaining({
+        argv: ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+      }),
+      expect.anything(),
+    );
+  });
+
   it("retries in a minute without pausing when the computer is busy", async () => {
     vi.mocked(provisionComputer).mockRejectedValueOnce(new ComputerBusyError());
     const { deps, routine, updateMany, messages } = setupComputer({
@@ -1016,6 +1217,16 @@ describe("toolResultText", () => {
         ],
       }),
     ).toBe("one\ntwo");
+  });
+
+  it("keeps an error result's text alone instead of repeating its structured copy", () => {
+    expect(
+      toolResultText({
+        content: [{ type: "text", text: "Permission denied for folder Reports" }],
+        structuredContent: { error: "Permission denied for folder Reports" },
+        isError: true,
+      }),
+    ).toBe("Permission denied for folder Reports");
   });
 
   it("keeps plain strings and other data readable", () => {

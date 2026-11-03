@@ -37,6 +37,37 @@ const messagingRun = {
   sourceMessage: { blocks: [{ kind: "text", text: "hi" }] },
 };
 
+type OutboundRowFilter = {
+  status?: string;
+  createdAt?: { lt: Date };
+  identityId?: string | null;
+  threadId?: string;
+  OR?: Array<{ status: string; updatedAt?: { gt: Date } }>;
+};
+
+/** A lane's next pending row, or an earlier row still pending or in flight. */
+function findOutboundRow(rows: Array<Record<string, unknown>>, where: OutboundRowFilter) {
+  const ordered = rows.every((row) => row.createdAt instanceof Date)
+    ? [...rows].sort((a, b) => (a.createdAt as Date).getTime() - (b.createdAt as Date).getTime())
+    : rows;
+  return (
+    ordered.find((row) => {
+      if (where.status && row.status !== where.status) return false;
+      if (where.identityId && row.identityId !== where.identityId) return false;
+      if (where.threadId !== undefined && row.threadId !== where.threadId) return false;
+      if (where.createdAt && !((row.createdAt as Date) < where.createdAt.lt)) return false;
+      if (!where.OR) return true;
+      return where.OR.some((condition) =>
+        condition.status === "pending"
+          ? row.status === "pending"
+          : row.status === "sent" &&
+            row.providerHandle == null &&
+            ((row.updatedAt as Date | undefined) ?? new Date()) > condition.updatedAt!.gt,
+      );
+    }) ?? null
+  );
+}
+
 function createFakeSurface(sendError?: Error) {
   const sendToThread = vi.fn(async () => ({ handle: "handle-out-1" }));
   if (sendError) sendToThread.mockRejectedValue(sendError);
@@ -150,32 +181,13 @@ function createDeps(overrides: {
           return nextMs <= now;
         });
         // The drain reads in send order (orderBy createdAt).
-        return found.every((row) => row.createdAt instanceof Date)
+        const ordered = found.every((row) => row.createdAt instanceof Date)
           ? found.sort((a, b) => (a.createdAt as Date).getTime() - (b.createdAt as Date).getTime())
           : found;
+        return ordered;
       }),
-      // Earlier undelivered part of the same reply (see hasUndeliveredEarlierPart).
-      findFirst: vi.fn(
-        async ({
-          where,
-        }: {
-          where: {
-            sourceMessageId: string;
-            createdAt: { lt: Date };
-            OR: Array<{ status: string; updatedAt?: { gt: Date } }>;
-          };
-        }) =>
-          rows.find((row) => {
-            if (row.sourceMessageId !== where.sourceMessageId) return false;
-            if (!((row.createdAt as Date) < where.createdAt.lt)) return false;
-            return where.OR.some((condition) =>
-              condition.status === "pending"
-                ? row.status === "pending"
-                : row.status === "sent" &&
-                  row.providerHandle == null &&
-                  ((row.updatedAt as Date | undefined) ?? new Date()) > condition.updatedAt!.gt,
-            );
-          }) ?? null,
+      findFirst: vi.fn(async ({ where }: { where: OutboundRowFilter }) =>
+        findOutboundRow(rows, where),
       ),
       createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
         let count = 0;
@@ -261,6 +273,75 @@ describe("deliverMessagingOutbound", () => {
       where: { id: "run-1", trigger: "messaging" },
       data: { messagingMirroredAt: expect.any(Date) },
     });
+  });
+
+  it("sends a page the bot named as its title, never as an app-only page link", async () => {
+    const deps = createDeps({
+      messages: [
+        {
+          id: "m-1",
+          blocks: [
+            { kind: "text", text: "I made a [Test dashboard](page:cm123) for you." },
+            { kind: "page", pageId: "cm123", version: 1, title: "Test dashboard" },
+          ],
+        },
+      ],
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.sendToThread).toHaveBeenCalledWith(
+      { threadId: "sendblue:dm-1", body: "I made a Test dashboard for you." },
+      context,
+    );
+  });
+
+  const sentBodies = (deps: ReturnType<typeof createDeps>) =>
+    (deps.sendToThread.mock.calls as unknown as [{ body: string }][]).map(([input]) => input.body);
+
+  it("sends a page card's title when the reply does not name the page, and only once when it does", async () => {
+    const card = {
+      id: "m-1",
+      blocks: [{ kind: "page", pageId: "cm123", version: 1, title: "Plan" }],
+    };
+    const silent = createDeps({
+      messages: [card, { id: "m-2", blocks: [{ kind: "text", text: "Done." }] }],
+    });
+    await deliverMessagingOutbound(silent, { runId: "run-1" }, context);
+    expect(sentBodies(silent)).toEqual(["Plan", "Done."]);
+
+    const named = createDeps({
+      messages: [
+        card,
+        { id: "m-2", blocks: [{ kind: "text", text: "Here is [Plan](page:cm123)." }] },
+      ],
+    });
+    await deliverMessagingOutbound(named, { runId: "run-1" }, context);
+    expect(sentBodies(named)).toEqual(["Here is Plan."]);
+
+    // A link shown inside a code example names nothing, so the card's title still goes.
+    const example = createDeps({
+      messages: [
+        card,
+        { id: "m-2", blocks: [{ kind: "text", text: "Write `[Plan](page:cm123)` to link it." }] },
+      ],
+    });
+    await deliverMessagingOutbound(example, { runId: "run-1" }, context);
+    expect(sentBodies(example)).toEqual(["Plan", "Write `[Plan](page:cm123)` to link it."]);
+
+    // A real link still counts when the same text also shows it as a code example.
+    const both = createDeps({
+      messages: [
+        card,
+        {
+          id: "m-2",
+          blocks: [
+            { kind: "text", text: "Open [Plan](page:cm123), or write `[Plan](page:cm123)`." },
+          ],
+        },
+      ],
+    });
+    await deliverMessagingOutbound(both, { runId: "run-1" }, context);
+    expect(sentBodies(both)).toEqual(["Open Plan, or write `[Plan](page:cm123)`."]);
   });
 
   it("resolves the DM thread once and caches it when the identity has none", async () => {
@@ -750,28 +831,8 @@ function createChannelDeps(
           return nextMs <= now;
         });
       }),
-      // Earlier undelivered part of the same reply (see hasUndeliveredEarlierPart).
-      findFirst: vi.fn(
-        async ({
-          where,
-        }: {
-          where: {
-            sourceMessageId: string;
-            createdAt: { lt: Date };
-            OR: Array<{ status: string; updatedAt?: { gt: Date } }>;
-          };
-        }) =>
-          rows.find((row) => {
-            if (row.sourceMessageId !== where.sourceMessageId) return false;
-            if (!((row.createdAt as Date) < where.createdAt.lt)) return false;
-            return where.OR.some((condition) =>
-              condition.status === "pending"
-                ? row.status === "pending"
-                : row.status === "sent" &&
-                  row.providerHandle == null &&
-                  ((row.updatedAt as Date | undefined) ?? new Date()) > condition.updatedAt!.gt,
-            );
-          }) ?? null,
+      findFirst: vi.fn(async ({ where }: { where: OutboundRowFilter }) =>
+        findOutboundRow(rows, where),
       ),
       createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
         for (const item of data)
@@ -1628,4 +1689,122 @@ describe("accepted outbound bookkeeping failures", () => {
       expect(deps.rows[0]!.status).toBe("sent");
     },
   );
+});
+
+describe("drain lanes", () => {
+  const groupRow = (id: string, threadId: string, offset: number) => ({
+    id,
+    idempotencyKey: `msg:${id}`,
+    kind: "group",
+    identityId: null,
+    threadId,
+    body: id,
+    status: "pending",
+    sourceMessageId: `${id}-source`,
+    providerHandle: null,
+    attempts: 0,
+    nextAttemptAt: null,
+    createdAt: new Date(1_000 + offset),
+  });
+
+  it("sends separate conversations without waiting for a slow one", async () => {
+    const deps = createDeps({
+      run: null,
+      outboundRows: [groupRow("slow-1", "t-slow", 0), groupRow("fast-1", "t-fast", 1)],
+    });
+    let releaseSlow = () => {};
+    const slowSend = new Promise<void>((resolve) => {
+      releaseSlow = resolve;
+    });
+    deps.sendToThread.mockImplementationOnce(async () => {
+      await slowSend;
+      return { handle: "h-slow" };
+    });
+
+    const drained = deliverMessagingOutbound(deps, {}, context);
+    // Both conversations are on the wire before the slow one answers.
+    await vi.waitFor(() => expect(deps.sendToThread).toHaveBeenCalledTimes(2));
+    releaseSlow();
+    await drained;
+
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "sent"]);
+  });
+
+  it("keeps one conversation in order while its first send is running", async () => {
+    const deps = createDeps({
+      run: null,
+      outboundRows: [groupRow("a-1", "t-a", 0), groupRow("a-2", "t-a", 1)],
+    });
+    let releaseFirst = () => {};
+    const firstSend = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    deps.sendToThread.mockImplementationOnce(async () => {
+      await firstSend;
+      return { handle: "h-1" };
+    });
+
+    const drained = deliverMessagingOutbound(deps, {}, context);
+    await vi.waitFor(() => expect(deps.sendToThread).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(deps.sendToThread).toHaveBeenCalledTimes(1);
+    expect(deps.rows[1]!.status).toBe("pending");
+
+    releaseFirst();
+    await drained;
+    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
+      { threadId: "t-a", body: "a-1" },
+      { threadId: "t-a", body: "a-2" },
+    ]);
+  });
+
+  it("leaves a conversation alone when another drain claimed its oldest row", async () => {
+    const deps = createDeps({
+      run: null,
+      outboundRows: [groupRow("a-1", "t-a", 0), groupRow("a-2", "t-a", 1)],
+    });
+    (
+      deps.prisma.messagingOutbound.updateMany as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce({ count: 0 });
+
+    await deliverMessagingOutbound(deps, {}, context);
+
+    // Overtaking would reorder the conversation, so the later row waits too.
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+    expect(deps.rows.map((row) => row.status)).toEqual(["pending", "pending"]);
+  });
+
+  it("sends a reply queued while its conversation's previous send was running", async () => {
+    const deps = createDeps({ run: null, outboundRows: [groupRow("a-1", "t-a", 0)] });
+    deps.sendToThread.mockImplementationOnce(async () => {
+      // Another drain started for this reply, found a-1 in flight, and left it.
+      deps.rows.push(groupRow("a-2", "t-a", 1));
+      return { handle: "h-1" };
+    });
+
+    await deliverMessagingOutbound(deps, {}, context);
+
+    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
+      { threadId: "t-a", body: "a-1" },
+      { threadId: "t-a", body: "a-2" },
+    ]);
+  });
+
+  it("does not let a long held conversation starve the others", async () => {
+    const held = Array.from({ length: 100 }, (_, index) => ({
+      ...groupRow(`w-${index}`, "t-held", index),
+      nextAttemptAt: new Date(Date.now() + 60_000),
+    }));
+    const deps = createDeps({
+      run: null,
+      outboundRows: [...held, groupRow("later", "t-other", 1_000)],
+    });
+
+    await deliverMessagingOutbound(deps, {}, context);
+
+    expect(deps.sendToThread).toHaveBeenCalledExactlyOnceWith(
+      { threadId: "t-other", body: "later" },
+      context,
+    );
+  });
 });

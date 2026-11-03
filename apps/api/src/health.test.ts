@@ -89,10 +89,11 @@ describe("health routes", () => {
   });
 
   it("hides details from requests that came through a reverse proxy", async () => {
-    for (const headers of [
+    const proxied: Record<string, string>[] = [
       { "x-forwarded-for": "203.0.113.7" },
       { forwarded: "for=203.0.113.7;proto=https" },
-    ]) {
+    ];
+    for (const headers of proxied) {
       const response = await app.request("/internal/health", { headers });
       expect(response.status).toBe(404);
     }

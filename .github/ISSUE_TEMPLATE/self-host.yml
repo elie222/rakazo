@@ -43,6 +43,13 @@ body:
     validations:
       required: true
 
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics report
+      description: If the stack starts, paste the output of `docker compose -f docker-compose.images.yml exec api node dist/cli/diagnostics.js`. It contains no secrets.
+      render: markdown
+
   - type: input
     id: version
     attributes:

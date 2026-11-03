@@ -97,6 +97,13 @@ vi.mock("react-native-safe-area-context", () => ({
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => <span>bot avatar</span> }));
 vi.mock("../components/group-avatar", () => ({ GroupAvatar: () => <span>group avatar</span> }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("../components/native-action-button", () => ({
+  NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) => (
+    <button type="button" onClick={onPress}>
+      {label}
+    </button>
+  ),
+}));
 vi.mock("../components/glass-icon-button", () => ({
   GlassIconButton: ({ testID, onPress }: { testID: string; onPress: () => void }) => (
     <button type="button" data-testid={testID} onClick={onPress}>
@@ -110,7 +117,9 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: (styles: unknown) => styles },
   useWindowDimensions: () => ({ width: 390 }),
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Text: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  Text: ({ children, accessibilityRole }: { children: ReactNode; accessibilityRole?: string }) => (
+    <span role={accessibilityRole}>{children}</span>
+  ),
   TextInput: ({
     ref,
     value,
@@ -148,15 +157,18 @@ vi.mock("react-native", () => ({
     data,
     renderItem,
     ListEmptyComponent,
+    ListFooterComponent,
   }: {
     data: { key: string }[];
     renderItem: (info: { item: unknown }) => ReactNode;
     ListEmptyComponent: ReactNode;
+    ListFooterComponent?: ReactNode;
   }) => (
     <div>
       {data.length
         ? data.map((item) => <div key={item.key}>{renderItem({ item })}</div>)
         : ListEmptyComponent}
+      {ListFooterComponent}
     </div>
   ),
 }));
@@ -193,8 +205,11 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
+/** A button by its label; a result row's label starts with its title and kind, then the preview. */
 function row(label: string) {
-  return container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+  return container.querySelector<HTMLButtonElement>(
+    `button[aria-label="${label}"], button[aria-label^="${label}, "]`,
+  )!;
 }
 async function type(text: string) {
   await act(async () => {
@@ -223,7 +238,7 @@ it("debounces typing, renders server hits and preserves the message jump destina
   expect(state.search).not.toHaveBeenCalled();
   await act(async () => vi.advanceTimersByTime(1));
   expect(state.search).toHaveBeenCalledWith("matching");
-  expect(container.querySelectorAll('button[aria-label="Found note, Message"]')).toHaveLength(1);
+  expect(container.querySelectorAll('button[aria-label^="Found note, Message, "]')).toHaveLength(1);
   expect(row("Found note, Message").textContent).toContain("Scout: A matching line");
   await act(async () => row("Found note, Message").click());
   expect(state.selectSpace).toHaveBeenCalledWith("space-a");
@@ -240,7 +255,7 @@ it("keeps local name matching and does not duplicate conversation hits", async (
   state.search.mockResolvedValue([{ ...message, kind: "conversation", title: "Scout" }]);
   await type("Scout");
   await act(async () => vi.advanceTimersByTime(200));
-  expect(container.querySelectorAll('button[aria-label="Scout, Bot"]')).toHaveLength(1);
+  expect(container.querySelectorAll('button[aria-label^="Scout, Bot, "]')).toHaveLength(1);
   expect(row("Team, Group")).toBeNull();
 });
 it("opens a group after switching spaces and keeps the sheet on switch failure", async () => {
@@ -272,6 +287,60 @@ it("ignores stale server responses and restores chats when cleared", async () =>
   expect(row("Found note, Message")).toBeNull();
   await type("");
   expect(row("Scout, Bot")).not.toBeNull();
+});
+it("says the search failed instead of no results, ignoring superseded and cleared requests", async () => {
+  const pending: {
+    resolve: (hits: (typeof message)[]) => void;
+    reject: (error: unknown) => void;
+  }[] = [];
+  state.search.mockImplementation(
+    () =>
+      new Promise((resolve, reject) => {
+        pending.push({ resolve, reject });
+      }),
+  );
+  async function search(text: string) {
+    await type(text);
+    await act(async () => vi.advanceTimersByTime(200));
+  }
+  await search("first");
+  await act(async () => pending[0]!.reject(new Error("Search is unavailable right now")));
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+    "Search is unavailable right now",
+  );
+  expect(container.textContent).not.toContain("No results");
+
+  await act(async () =>
+    [...container.querySelectorAll("button")].find((b) => b.textContent === "Try again")!.click(),
+  );
+  expect(container.textContent).toBe("CloseSearching…");
+  await act(async () => vi.advanceTimersByTime(200));
+  expect(state.search).toHaveBeenLastCalledWith("first");
+  await act(async () => pending[1]!.resolve([]));
+  expect(container.textContent).toBe("CloseNo results");
+
+  await search("Scout");
+  expect(container.textContent).not.toContain("Search is unavailable right now");
+  await act(async () => pending[2]!.reject(new Error("Search is unavailable right now")));
+  expect(row("Scout, Bot")).not.toBeNull();
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+    "Search is unavailable right now",
+  );
+
+  await search("third");
+  await search("fourth");
+  await act(async () => pending[3]!.reject(new Error("Search is unavailable right now")));
+  expect(container.textContent).toBe("CloseSearching…");
+  await act(async () => pending[4]!.resolve([message]));
+  expect(row("Found note, Message")).not.toBeNull();
+  expect(container.textContent).not.toContain("Search is unavailable right now");
+
+  await search("fifth");
+  await type("");
+  await act(async () => pending[5]!.reject(new Error("Search is unavailable right now")));
+  expect(row("Scout, Bot")).not.toBeNull();
+  expect(container.textContent).not.toContain("Search is unavailable right now");
+  expect(state.search).toHaveBeenCalledTimes(6);
 });
 it.each([
   ["conversation", "Bot"],

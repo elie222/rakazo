@@ -3,6 +3,7 @@ import { displayName } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { returnBotMessageOutcome } from "./bot-messages.js";
+import { sleepDeferReason } from "./computer-idle.js";
 import { withComputerScreenAvailability } from "./computer-screens.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { notifyRun } from "./run-notifications.js";
@@ -16,6 +17,7 @@ import { TAKEOVER_RESUME_CHECKPOINTS } from "./takeover-resume.js";
  */
 export function createRunWorkspaceCheckpoint(
   checkpoint: () => Promise<unknown>,
+  computer: { id: string; kind: string },
   signal?: AbortSignal,
 ) {
   let dirty = false;
@@ -35,7 +37,12 @@ export function createRunWorkspaceCheckpoint(
       } catch (error) {
         dirty = true;
         if (signal?.aborted) throw error;
-        getLogger().warn("computer.checkpoint_deferred", { error });
+        getLogger().warn("computer.checkpoint_deferred", {
+          "computer.id": computer.id,
+          provider: computer.kind,
+          reason: sleepDeferReason(error),
+          error,
+        });
         return false;
       }
     },
@@ -150,6 +157,14 @@ export async function setupFailureStreak(prisma: PrismaClient, runId: string): P
 
 export function computerRetryDelay(fence: number): number {
   return Math.min(10_000, 250 * 2 ** Math.min(Math.max(fence - 1, 0), 5));
+}
+
+/**
+ * An outage at the computer provider usually lasts minutes, so the retries a run gets before
+ * failing are spread over about a quarter of an hour instead of spent within seconds.
+ */
+export function providerOutageRetryDelay(priorFailures: number): number {
+  return Math.min(5 * 60_000, 15_000 * 2 ** Math.min(priorFailures, 5));
 }
 
 /**
@@ -297,6 +312,7 @@ export async function requeueComputerRun(
   heldForTakeover = false,
   untilReleased = false,
 ): Promise<void> {
+  const retryAt = new Date(Date.now() + computerRetryDelay(fence));
   const released = await writeComputerRunRequeue(
     deps,
     runId,
@@ -305,11 +321,11 @@ export async function requeueComputerRun(
     resumeCheckpoint,
     heldForTakeover,
     null,
-    untilReleased ? null : undefined,
+    untilReleased ? null : retryAt,
   );
   if (!released || untilReleased) return;
   await deps.jobs.enqueue({
     ...runContinueJob(runId),
-    availableAt: new Date(Date.now() + computerRetryDelay(fence)),
+    availableAt: retryAt,
   });
 }

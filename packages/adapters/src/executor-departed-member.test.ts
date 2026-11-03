@@ -29,6 +29,7 @@ describe("a run whose sender has left the space", () => {
         findUnique: vi.fn(async () => run),
         findMany: vi.fn(async () => [run]),
         updateMany: vi.fn(async () => ({ count: 1 })),
+        updateManyAndReturn: vi.fn(async () => [{ id: run.id }]),
       },
       message: { findMany: vi.fn(async () => []) },
       secret: { deleteMany: vi.fn(async () => ({ count: 0 })) },
@@ -64,10 +65,12 @@ describe("a run whose sender has left the space", () => {
     // Never claimed, never ran.
     expect(prisma.run.updateMany).not.toHaveBeenCalled();
     expect(runtimeRun).not.toHaveBeenCalled();
-    expect(tx.run.updateMany).toHaveBeenCalledWith({
-      where: { id: { in: ["run-1"] } },
-      data: expect.objectContaining({ status: "cancelled", leaseOwner: null }),
-    });
+    expect(tx.run.updateManyAndReturn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: { in: ["run-1"] } }),
+        data: expect.objectContaining({ status: "cancelled", leaseOwner: null }),
+      }),
+    );
     expect(tx.task.updateMany).toHaveBeenCalledWith({
       where: { id: { in: ["task-1"] } },
       data: { status: "cancelled" },

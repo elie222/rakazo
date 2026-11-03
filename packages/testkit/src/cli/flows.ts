@@ -10,7 +10,7 @@ import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { computerTestSandbox } from "../computer-test-config.js";
 import { FLOWS } from "../flows/index.js";
 import type { FlowResult } from "../flows/runner.js";
-import { startPostgres } from "./postgres.js";
+import { disposableDatabaseEnv, startPostgres } from "./postgres.js";
 
 const { values } = parseArgs({
   options: {
@@ -63,8 +63,7 @@ async function main() {
   let closeSupervisor: (() => Promise<void>) | undefined;
   try {
     Object.assign(process.env, {
-      DATABASE_URL: database.getConnectionUri(),
-      REALTIME_DATABASE_URL: database.getConnectionUri(),
+      ...disposableDatabaseEnv(database.getConnectionUri()),
       WAKEUP_DRIVER: "memory",
       SANDBOX_PROVIDER: sandbox.provider,
       ...(sandbox.provider === "docker"

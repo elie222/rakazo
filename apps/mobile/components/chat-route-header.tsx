@@ -9,8 +9,7 @@ import type { ChatTitleParams } from "./chat-header-title";
 import { ChatHeaderTitle } from "./chat-header-title";
 import { NativeSymbol } from "./native-symbol";
 import { trailingHeaderOptions } from "./sheet-header";
-import { threadHeaderRight } from "./thread-header-right";
-import { createThreadHeaderStyles } from "./thread-header-styles";
+import { openInvite, threadHeaderRight } from "./thread-header-right";
 
 /**
  * Whether the chat sits beside the chat list, whether that list is hidden, and whether a
@@ -23,12 +22,13 @@ export type ChatSplit = { split: boolean; inboxHidden: boolean; foldActive?: boo
  * has rendered: the title capsule, the right-side button and, beside the chat list, the
  * sidebar button. Everything is in the first native header, so the title sits at its final
  * place from the first frame of the push and is never re-laid out. The open chat feeds the
- * title its data and fills in the buttons' actions, without changing their shape.
+ * title its data without changing the buttons' shape.
  */
 export function chatRouteHeader(
   route: { key: string; params?: object },
   t: (text: string) => string,
   { split, inboxHidden, foldActive }: ChatSplit,
+  canInvite = false,
 ): NativeStackNavigationOptions {
   const params = (route.params ?? {}) as ChatTitleParams;
   const { groupId, botId } = params;
@@ -41,14 +41,11 @@ export function chatRouteHeader(
     ...threadHeaderRight({
       inGroup: Boolean(groupId),
       readOnly,
-      hasBot: Boolean(botId),
       t,
       color,
-      rowStyle: createThreadHeaderStyles().headerActions,
       onGroupSettings: () =>
         router.push({ pathname: "/group-settings", params: { groupId: groupId ?? "" } }),
-      onBotActions: () => undefined,
-      menuActions: [],
+      onInvite: canInvite && botId ? openInvite : undefined,
     }),
     ...threadHeaderLeft({ split, inboxHidden, foldActive, t, color }),
     // An archived chat offers Restore; the open chat gives it its action.

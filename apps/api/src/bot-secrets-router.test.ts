@@ -596,6 +596,36 @@ describe("vault router", () => {
     expect(secrets.delete).toHaveBeenCalledWith(prepared.ciphertext, expect.anything());
   });
 
+  it("keeps a saved login on its site when saved again for another one", async () => {
+    const login = {
+      name: "portal",
+      origin: "https://www.portal.example.test",
+      auth: { type: "login" },
+    };
+    const saved = {
+      id: "login-1",
+      userId: "user-1",
+      spaceId: null,
+      ...login,
+      ciphertext: "enc:login-1",
+    };
+    const { rows, call } = botSecretDeps([saved]);
+    const value = JSON.stringify({ username: "fake-user", password: FAKE_VALUE });
+    for (const path of ["vault/put", "put"]) {
+      const refused = await call(path, {
+        ...(path === "put" ? { botId: "bot-1" } : {}),
+        destination: { ...login, origin: "https://login.portal.example.test" },
+        value,
+      });
+      expect(refused.status).toBe(400);
+      expect(refused.text).toContain(
+        "Remove the existing credential before changing its destination",
+      );
+      expect(refused.text).not.toContain(FAKE_VALUE);
+    }
+    expect(rows).toEqual([saved]);
+  });
+
   it("refuses to save into a Space's own vault the Space no longer uses", async () => {
     const { rows, call } = botSecretDeps();
     const refused = await call("vault/put", { scope: "space", destination, value: FAKE_VALUE });

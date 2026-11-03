@@ -7,6 +7,7 @@ import {
   commandVariableName,
   LoginSecretValue,
   loginCardFields,
+  normalizeOneTimeCode,
 } from "@rakazo/contracts";
 import {
   isApprovalAskBlock,
@@ -39,17 +40,20 @@ function formatAnsweredState(
   if (!approval) return answer === "approved" ? t`Sent` : selectedAskActionLabel(answer, actions);
   if (outcome === "created") return t`Created`;
   if (outcome === "cancelled") return t`Cancelled`;
-  if (answer === "allow") return allowsChat(actions) ? t`Allowed for this chat` : t`Allowed once`;
+  if (answer === "allow") return allowsSpace(actions) ? t`Allowed in this space` : t`Allowed once`;
   if (answer === "always") return t`Always allowed`;
   if (answer === "deny") return t`Denied`;
   return t`Answered: ${answer}`;
 }
 
-/** The server's label on the user's-computer approval, whose "allow" covers the rest of the chat. */
-const ALLOW_FOR_CHAT = "Allow for this chat";
+/**
+ * The server's labels on the user's-computer approval, whose "allow" covers the whole space. Cards
+ * from before it covered the space carry the older label.
+ */
+const ALLOW_IN_SPACE = new Set(["Allow in this space", "Allow for this chat"]);
 
-function allowsChat(actions: AskBlock["actions"]): boolean {
-  return actions?.some((action) => action.label === ALLOW_FOR_CHAT) ?? false;
+function allowsSpace(actions: AskBlock["actions"]): boolean {
+  return actions?.some((action) => ALLOW_IN_SPACE.has(action.label)) ?? false;
 }
 
 function approvalActionLabel(
@@ -60,7 +64,7 @@ function approvalActionLabel(
 ): string {
   if (outcome === "created") return t`Create space`;
   if (outcome === "cancelled") return t`Cancel`;
-  if (id === "allow") return fallback === ALLOW_FOR_CHAT ? t`Allow for this chat` : t`Allow once`;
+  if (id === "allow") return ALLOW_IN_SPACE.has(fallback) ? t`Allow in this space` : t`Allow once`;
   if (id === "always") return site ? t`Always allow ${site}` : t`Always allow this tool`;
   if (id === "deny") return t`Deny`;
   return fallback;
@@ -130,14 +134,17 @@ export function AskCard({
     displayedAnswer !== "approved"
       ? displayedAnswer
       : undefined;
-  // A login or credential is saved for the run's user, so only they can fill one in; others see
+  // A login, credential or code is for the run's user, so only they can fill one in; others see
   // the card without fields or buttons.
-  const ownerOnly = secretInput && Boolean(block.credential) && !canDismiss;
+  const ownerOnly = secretInput && Boolean(block.credential || block.oneTimeCode) && !canDismiss;
   const loginInput = secretInput && block.credential?.auth.type === "login";
   const shownLoginLabels = block.loginFields ?? [t`Username`, t`Password`];
   const loginReady = LoginSecretValue.safeParse({ fields: login }).success;
   const secretLabel = secretFieldLabel(block.purpose);
   const commandInput = secretInput && block.credential?.auth.type === "command";
+  const codeInput = secretInput && Boolean(block.oneTimeCode);
+  const codeHost = block.oneTimeCode ? new URL(block.oneTimeCode.origin).host : undefined;
+  const replacedSite = block.replaces?.origin;
 
   // A password field can't hold line breaks, so it would flatten a multi-line command variable
   // such as an SSH private key. That text is kept as is and the field turns read-only, so what
@@ -206,11 +213,34 @@ export function AskCard({
     }
   }
 
-  if (block.instructionUpdate?.undoVersionId)
+  const { instructionUpdate, settingsUpdate } = block;
+  const undo = instructionUpdate?.undoVersionId
+    ? {
+        label: t`Instructions updated`,
+        run: () =>
+          rpc.bots.restoreInstructions({
+            botId: instructionUpdate.botId,
+            versionId: instructionUpdate.undoVersionId!,
+            expectedInstructions: instructionUpdate.after,
+            undo: true,
+          }),
+      }
+    : settingsUpdate
+      ? {
+          label: t`Settings updated`,
+          run: () =>
+            rpc.bots.update({
+              botId: settingsUpdate.botId,
+              ...settingsUpdate.before,
+              expectedSettings: settingsUpdate.after,
+            }),
+        }
+      : undefined;
+  if (undo)
     return (
       <BuiCard className="px-5 py-4">
         <div className="flex items-center gap-2 text-sm">
-          <Trans>Instructions updated</Trans>
+          {undo.label}
           <Button
             variant="link"
             disabled={undone || submitting}
@@ -218,12 +248,7 @@ export function AskCard({
               setPendingAction("undo");
               setError(null);
               try {
-                await rpc.bots.restoreInstructions({
-                  botId: block.instructionUpdate!.botId,
-                  versionId: block.instructionUpdate!.undoVersionId!,
-                  expectedInstructions: block.instructionUpdate!.after,
-                  undo: true,
-                });
+                await undo.run();
                 setUndone(true);
               } catch (err) {
                 setError(errorText(err));
@@ -257,20 +282,31 @@ export function AskCard({
           <ChatMarkdown>{block.text}</ChatMarkdown>
         )}
       </div>
-      {secretInput && block.credential ? (
+      {secretInput && (block.credential || block.oneTimeCode) ? (
         <div
           data-testid="secret-ask-destination"
-          className="mt-2 break-all text-[13px] text-muted-foreground"
+          // A code's line is a sentence, so it wraps between words; an address breaks anywhere.
+          className={`mt-2 ${codeHost ? "wrap-anywhere" : "break-all"} text-[13px] text-muted-foreground`}
         >
-          {block.credential.auth.type === "command" ? (
+          {block.credential?.auth.type === "command" ? (
             <span className="flex flex-wrap gap-x-2">
               <span>{t`Command variable`}</span>
               <span>${commandVariableName(block.credential.name)}</span>
             </span>
+          ) : codeHost ? (
+            t`Only enter a code ${codeHost} sent you.`
           ) : (
-            block.credential.origin
+            block.credential?.origin
           )}
         </div>
+      ) : null}
+      {secretInput && replacedSite && !ownerOnly && !answered ? (
+        <div className="mt-0.5 break-all text-[13px] text-muted-foreground">
+          {t`Replaces the login saved for ${replacedSite}`}
+        </div>
+      ) : null}
+      {codeInput && block.detail ? (
+        <div className="mt-2 break-words text-[13px] text-muted-foreground">{block.detail}</div>
       ) : null}
       {block.detail && !secretInput ? (
         <pre
@@ -346,7 +382,8 @@ export function AskCard({
                 approvalActions?.find((action) => action.id === displayedAnswer)?.outcome,
                 askActions,
                 displayedDismissed,
-                displayedRemembered,
+                // A code is used once, never saved.
+                codeInput ? false : displayedRemembered,
               )}
         </div>
       ) : !canAnswer ? (
@@ -413,7 +450,7 @@ export function AskCard({
               className="w-full"
               aria-label={secretLabel}
               type="password"
-              autoComplete="off"
+              autoComplete={codeInput ? "one-time-code" : "off"}
               spellCheck={false}
               disabled={submitting}
               readOnly={pastedLines}
@@ -454,9 +491,15 @@ export function AskCard({
           <div className="flex gap-2">
             <Button
               type="submit"
-              disabled={(loginInput ? !loginReady : answer.length === 0) || submitting}
+              disabled={
+                (loginInput
+                  ? !loginReady
+                  : codeInput
+                    ? !normalizeOneTimeCode(answer)
+                    : answer.length === 0) || submitting
+              }
             >
-              {loginInput && !remember ? (
+              {(loginInput && !remember) || codeInput ? (
                 pendingAction === "submit" ? (
                   <Trans>Sending…</Trans>
                 ) : (

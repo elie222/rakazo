@@ -1,6 +1,8 @@
 import { isSecretAskBlock } from "@rakazo/core";
 import type { MobileMessage } from "./api";
-import { isCenteredAgentEvent } from "./message-presentation";
+import { isCenteredAgentEvent, THREAD_COLUMN_GUTTER } from "./message-presentation";
+
+const COLUMN_PADDING = THREAD_COLUMN_GUTTER * 2;
 
 /** Sizes a message's column: wide asks and centered events fill it, minus the avatar gutter. */
 export function messageRowLayout(
@@ -18,18 +20,20 @@ export function messageRowLayout(
   const wideAsk = blocks.some(isSecretAskBlock);
   const full = wideAsk || isCenteredAgentEvent(blocks);
   // Connect cards fill the bubble width instead of shrinking to their button.
-  const appConnect = blocks.some((block) => block.kind === "app_connect");
+  const appConnect = blocks.some(
+    (block) => block.kind === "app_connect" || block.kind === "mcp_approval",
+  );
   const gutter = activityBotId ? (inGroup ? 28 : 36) : 0;
   return {
     width: full ? "100%" : appConnect && !activityBotId ? "90%" : undefined,
     maxWidth: full ? "100%" : activityBotId ? undefined : "90%",
     menuFullWidth: wideAsk || appConnect,
     menuMaxWidth: wideAsk
-      ? columnWidth - 40 - gutter
+      ? columnWidth - COLUMN_PADDING - gutter
       : isCenteredAgentEvent(blocks)
-        ? columnWidth - 40
+        ? columnWidth - COLUMN_PADDING
         : activityBotId
-          ? columnWidth - 40 - gutter
-          : (columnWidth - 40) * 0.9,
+          ? columnWidth - COLUMN_PADDING - gutter
+          : (columnWidth - COLUMN_PADDING) * 0.9,
   } as const;
 }

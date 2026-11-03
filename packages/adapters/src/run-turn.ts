@@ -5,6 +5,7 @@ import {
   ModelAccountError,
   ModelOutputError,
   runContinueJob,
+  SandboxAllowanceUsedError,
   SandboxRateLimitError,
   TransientModelError,
 } from "@rakazo/adapter-kit";
@@ -14,6 +15,7 @@ import {
   humanizeToolName,
   isBackgroundRunTrigger,
   redactSecrets,
+  redactSecretsAfter,
   TAKEOVER_COMPUTER_PENDING_STATE,
   userRunError,
   withoutLastToolStepNotes,
@@ -34,7 +36,7 @@ import {
 import {
   backOffRoutineAfterAccountError,
   clearRoutineBackoff,
-  isModelAccountRefusal,
+  modelAccountRefusal,
 } from "./routine-backoff.js";
 import type { RunContext } from "./run-context.js";
 import { persistTurnCheckpoint } from "./run-context.js";
@@ -54,6 +56,7 @@ import {
   flushProgress,
   nextProgressNonce,
   publishMidTurnNarration,
+  publishNarrationBeforeAsk,
   recordExplicitNoResponse,
   showNarrationStatus,
   tryFlushPendingTools,
@@ -73,9 +76,17 @@ import {
   stripNoResponseReply,
   stripStrayNoResponse,
 } from "./silent-reply.js";
+import { isStrategicInitiativeRun } from "./strategic-initiative.js";
 import { takeoverCheckpointOf } from "./takeover-resume.js";
 import { appendToolCompletionAudit, toolCompletionFromResult } from "./tool-completion-audit.js";
-import { advanceToolCallLoopGuard, loopGuardStopText } from "./tool-loop.js";
+import {
+  advanceOverLimitActionCalls,
+  advanceToolCallLoopGuard,
+  loopGuardStopText,
+  MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS,
+  overLimitStopText,
+  toolResultFingerprint,
+} from "./tool-loop.js";
 import {
   assistantTurnSeparator,
   botMessageOutcomeFromMidTurn,
@@ -84,6 +95,7 @@ import {
   finalBlocksAfterMidTurnProgress,
   STEERING_RESET_MIN_GAP_MS,
   STEERING_RESETS_MAX_PER_RUN,
+  USER_PROGRESS_MESSAGE_MAX_LENGTH,
 } from "./user-progress.js";
 
 type RuntimeEvent<T extends AgentRuntimeEvent["type"]> = Extract<AgentRuntimeEvent, { type: T }>;
@@ -111,7 +123,7 @@ export async function consumeRunEvents(
         botId: bot.id,
         runId,
         type: "thread.meta",
-        activityLease: { owner: ctx.workerId, fence: ctx.fence },
+        lease: { owner: ctx.workerId, fence: ctx.fence },
         payload: { activity: { thinking: active } },
       });
     } catch (error) {
@@ -126,6 +138,12 @@ export async function consumeRunEvents(
       if (!ctx.state.lease.valid) return true;
       if (await runLeaseLost(ctx)) return true;
 
+      if (
+        isStrategicInitiativeRun(run) &&
+        (event.type === "takeover" || event.type === "subagent")
+      ) {
+        throw new Error("Daily check-ins cannot start a computer or helper.");
+      }
       if (event.type === "thinking") {
         await publishThinking(event.active);
         continue;
@@ -206,12 +224,13 @@ async function runLeaseLost(ctx: RunContext) {
     where: { id: runId },
     select: { status: true, leaseOwner: true, leaseFence: true, checkpoint: true },
   });
-  if (
-    !still ||
-    still.status === "cancelled" ||
-    still.leaseOwner !== workerId ||
-    still.leaseFence !== fence
-  ) {
+  if (!still || still.status === "cancelled" || still.leaseOwner !== workerId) {
+    lease.valid = false;
+    return true;
+  }
+  if (still.leaseFence !== fence) {
+    // A newer attempt of this run recovered it in this process (same worker, new
+    // fence): only this attempt's writes must stop, the run's state stays.
     lease.valid = false;
     return true;
   }
@@ -253,7 +272,8 @@ async function streamText(ctx: RunContext, event: RuntimeEvent<"text">) {
 async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) {
   const { deps, run, runId, bot, thread } = ctx;
   const { reply } = ctx.state;
-  ctx.state.toolCallStreak = { key: undefined, count: 0 };
+  // Tool status lines are not the model writing.
+  if (!event.activity) ctx.state.toolCallStreak = { key: undefined, count: 0 };
   if (run.trigger === "routine" || isBackgroundRunTrigger(run.trigger)) return;
   // The bot's own note stays the working line until it writes again.
   if (event.activity && reply.narrationStatusShowing) return;
@@ -285,29 +305,37 @@ async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) 
 }
 
 /**
- * The run's person wrote while the bot worked. What the bot wrote before that is posted as
- * its own message instead of running on into the reply to them, and the interim-message
- * budget starts again: the first note may answer them at once. Webhooks, external chats and
- * other members stay on the normal budget, and the restart is capped so a stream of messages
- * can't lift it.
+ * The run's person wrote while the bot worked: the next note may answer them at once, each time.
+ * The budget restart for unprompted updates stays capped. Webhooks, external chats and other
+ * members stay on the normal budget.
  */
 async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
   const { deps, run } = ctx;
   const { reply } = ctx.state;
   reply.assistantTurnBreakPending = true;
+  if (!event.fromRunUser) return;
   const now = Date.now();
   if (
-    !event.fromRunUser ||
     reply.steeringResets >= STEERING_RESETS_MAX_PER_RUN ||
     now - reply.lastSteeringResetAt < STEERING_RESET_MIN_GAP_MS
-  )
+  ) {
+    // What the bot wrote before may still use an earlier message's allowance. If it can't be
+    // posted now, it stays in the reply.
+    await flushProgress(ctx);
+    const before = extractNarrationText(reply.messageSegments, reply.currentTextSegment).text;
+    const text = redactSecretsAfter(reply.narrationSoFar, before, ctx.secrets).trim();
+    if (text.length <= USER_PROGRESS_MESSAGE_MAX_LENGTH && canPublishDurableNarration(ctx))
+      await publishMidTurnNarration(ctx);
+    reply.steeringReplyPending = true;
     return;
+  }
   reply.steeringResets += 1;
   reply.lastSteeringResetAt = now;
   await flushProgress(ctx);
   const before = extractNarrationText(reply.messageSegments, reply.currentTextSegment);
-  const text = redactSecrets(before.text, ctx.secrets).trim();
+  const text = redactSecretsAfter(reply.narrationSoFar, before.text, ctx.secrets).trim();
   if (text && runPromotesMidTurnNarration(run.trigger)) {
+    reply.narrationSoFar += before.text;
     reply.messageSegments = before.remaining;
     reply.currentTextSegment = "";
     reply.workingNotes.length = 0;
@@ -335,6 +363,7 @@ async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
 async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">) {
   const { deps, run, runId, bot, thread, workerId, fence } = ctx;
   if (!(await renewRunLease(deps, runId, workerId, fence))) return;
+  await publishNarrationBeforeAsk(ctx);
   const safeText = redactSecrets(event.text, ctx.secrets);
   const safeDetail = event.detail ? redactSecrets(event.detail, ctx.secrets) : event.detail;
   const safeActions = event.actions?.map((action) => ({
@@ -437,6 +466,12 @@ async function pauseForTakeover(ctx: RunContext, event: RuntimeEvent<"takeover">
     computerId: ctx.computer.stored.id,
   });
   if (!paused) return;
+  if (typeof paused === "object") {
+    await deps.jobs
+      .enqueue(runContinueJob(paused.continuationRunId))
+      .catch((error) => getLogger().error("takeover continuation enqueue", error));
+    return;
+  }
   ctx.state.lease.retainComputer = true;
   await notifyRun(deps, run, {
     kind: "takeover",
@@ -456,7 +491,11 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   await flushProgress(ctx);
   // Queued first so the text written before this call becomes its note.
   reply.pendingToolNames.push(event.name);
-  const heldNote = event.name === "message_user" ? undefined : await publishMidTurnNarration(ctx);
+  // Text before ask_user stays pending: the run pauses next, and the question needs it.
+  const heldNote =
+    event.name === "message_user" || event.name === "ask_user"
+      ? undefined
+      : await publishMidTurnNarration(ctx);
   // A step without a note of its own replaces the earlier one in the live view, so its status
   // lines show again.
   if (!heldNote) reply.narrationStatusShowing = false;
@@ -472,9 +511,30 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   });
   await showNarrationStatus(ctx, heldNote);
   tryFlushPendingTools(reply);
-  const loopGuard = advanceToolCallLoopGuard(ctx.state.toolCallStreak, event.name, event.args);
-  ctx.state.toolCallStreak = loopGuard.streak;
-  if (loopGuard.stuck) {
+  // A call can finish before or after its own event is handled, so its result is read here.
+  const { toolCallStreak: streak, toolResults } = ctx.state;
+  const previousResult = streak.executionId ? toolResults.get(streak.executionId) : undefined;
+  const loopGuard = advanceToolCallLoopGuard(
+    streak,
+    event.name,
+    event.args,
+    previousResult,
+    event.response,
+  );
+  // A call from the same response as the streak's last one leaves it as it was.
+  if (loopGuard.streak !== streak) {
+    if (streak.executionId) toolResults.delete(streak.executionId);
+    ctx.state.toolCallStreak = { ...loopGuard.streak, executionId: event.executionId };
+  }
+  ctx.state.overLimitActionCalls = advanceOverLimitActionCalls(
+    ctx.state.overLimitActionCalls,
+    event.name,
+    event.args,
+  );
+  if (
+    loopGuard.stuck ||
+    ctx.state.overLimitActionCalls >= MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS
+  ) {
     await stopStuckToolLoop(ctx, event.name);
     return true;
   }
@@ -483,6 +543,7 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   const audit = { spaceId: run.spaceId, threadId: thread.id, botId: bot.id, runId };
   try {
     const result = await applyTool(ctx, event.name, event.args, event.executionId);
+    toolResults.set(event.executionId, toolResultFingerprint(result));
     await appendToolCompletionAudit(
       deps,
       audit,
@@ -525,7 +586,12 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
   }
   await ctx.computer.checkpoint.flush();
   ctx.state.terminalCheckpointComplete = true;
-  const stuckText = loopGuardStopText(humanizeToolName(toolName), ctx.state.toolCallStreak.count);
+  const overLimit = ctx.state.overLimitActionCalls;
+  const humanName = humanizeToolName(toolName);
+  const stuckText =
+    overLimit >= MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS
+      ? overLimitStopText(humanName, overLimit)
+      : loopGuardStopText(humanName, ctx.state.toolCallStreak);
   await ctx.settleRunningHelpers();
   const stopped = await deps.events.finalizeRun({
     spaceId: run.spaceId,
@@ -632,7 +698,7 @@ export async function completeRun(ctx: RunContext) {
   reply.pendingProgress += reply.redactor.finish();
   await flushProgress(ctx);
 
-  for (const turn of ctx.script ?? []) {
+  for (const turn of isStrategicInitiativeRun(run) ? [] : (ctx.script ?? [])) {
     for (const file of turn.files ?? []) {
       ctx.computer.checkpoint.markDirty();
       await deps.sandbox.writeFile(
@@ -850,7 +916,11 @@ export async function failRun(
   try {
     ctx.computer.lazy.throwIfFailed();
   } catch (computerError) {
-    if (!(computerError instanceof SandboxRateLimitError)) throw computerError;
+    if (
+      !(computerError instanceof SandboxRateLimitError) &&
+      !(computerError instanceof SandboxAllowanceUsedError)
+    )
+      throw computerError;
     error = computerError;
   }
   if (!ctx.state.terminalCheckpointComplete) {
@@ -893,11 +963,12 @@ export async function failRun(
     error instanceof TransientModelError ||
     error instanceof ModelAccountError ||
     error instanceof ModelOutputError ||
-    error instanceof SandboxRateLimitError
+    error instanceof SandboxRateLimitError ||
+    error instanceof SandboxAllowanceUsedError
   ) {
     // Provider outages that outlasted retries, provider accounts, plans and model
-    // choices the user fixes, unusable model output and the computer provider's own
-    // rate limit are not server faults; the run error already tells the user what to do.
+    // choices the user fixes, unusable model output, the computer provider's own rate limit
+    // and a spent computer allowance are not server faults; the run error tells the user.
     getLogger().warn("run.failed", {
       "run.outcome": "failed",
       "run.failure": error.name,
@@ -930,13 +1001,15 @@ export async function failRun(
     ).catch((returnError) => getLogger().error("bot message failure return", returnError));
   }
   // A refusal of the deployment's own key is the operator's problem, not the user's.
+  const refusal =
+    run.trigger === "routine" && model.ownCredential ? modelAccountRefusal(error) : undefined;
+  // A spent computer allowance refuses every run that needs the computer until the period resets.
   if (
     run.trigger === "routine" &&
     run.routineId &&
-    model.ownCredential &&
-    isModelAccountRefusal(error)
+    (refusal || error instanceof SandboxAllowanceUsedError)
   ) {
-    await backOffRoutineAfterAccountError(deps, run.routineId);
+    await backOffRoutineAfterAccountError(deps, run.routineId, new Date(), refusal?.resetAt);
   }
   const retrying = !failed.continuationRunId && (await scheduleRoutineRetry(deps, run, error));
   if (runSendsFinishNotification(run.trigger) && !failed.continuationRunId && !retrying) {

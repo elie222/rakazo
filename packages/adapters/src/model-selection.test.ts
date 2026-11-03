@@ -244,9 +244,15 @@ describe("space catalog auth", () => {
         preferences: [],
         secrets: [{ id: "personal-secret", ciphertext: "fixture-ciphertext" }],
       });
+      // A balance does not replace a key the member connected outside credits mode.
+      Object.assign(prisma.userModelCredential, {
+        findFirst: vi.fn().mockResolvedValue({ id: "personal" }),
+      });
       Object.assign(prisma, {
         space: {
-          findFirst: vi.fn().mockResolvedValue({ organization: { modelCredits: { mode } } }),
+          findFirst: vi
+            .fn()
+            .mockResolvedValue({ organization: { modelCredits: { mode, balanceMicros: 1n } } }),
         },
       });
       const load = vi.fn().mockResolvedValue("fixture-personal-key");

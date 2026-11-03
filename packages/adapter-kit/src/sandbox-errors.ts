@@ -1,4 +1,4 @@
-import { COMPUTER_RATE_LIMIT_ERROR } from "@rakazo/contracts";
+import { COMPUTER_ALLOWANCE_USED_ERROR, COMPUTER_RATE_LIMIT_ERROR } from "@rakazo/contracts";
 
 /** The sandbox provider refused the request because an account rate limit or quota was hit. */
 export class SandboxRateLimitError extends Error {
@@ -9,6 +9,28 @@ export class SandboxRateLimitError extends Error {
     super(COMPUTER_RATE_LIMIT_ERROR, options);
     this.name = "SandboxRateLimitError";
     this.retryAfterMs = options?.retryAfterMs;
+  }
+}
+
+/**
+ * The sandbox supervisor refused a page browser request while parsing it, before anything was
+ * sent to the computer, so nothing ran. It is the only refusal that proves that.
+ */
+export const INVALID_BROWSER_REQUEST = "invalid_browser_request";
+export class SandboxRequestRejectedError extends Error {
+  readonly code = INVALID_BROWSER_REQUEST;
+  constructor() {
+    super("The page browser could not accept this request, so nothing was done.");
+    this.name = "SandboxRequestRejectedError";
+  }
+}
+
+/** The organization spent this month's computer allowance, so no computer that bills starts. */
+export class SandboxAllowanceUsedError extends Error {
+  readonly code = "SANDBOX_ALLOWANCE_USED";
+  constructor() {
+    super(COMPUTER_ALLOWANCE_USED_ERROR);
+    this.name = "SandboxAllowanceUsedError";
   }
 }
 

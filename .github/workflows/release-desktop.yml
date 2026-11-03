@@ -82,6 +82,11 @@ jobs:
             fi
           fi
 
+          if ! grep -qF "## [$version] - " CHANGELOG.md; then
+            echo "CHANGELOG.md has no [$version] section; prepare the release with the release skill first." >&2
+            exit 1
+          fi
+
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "sha=$tag_sha" >> "$GITHUB_OUTPUT"
@@ -129,6 +134,7 @@ jobs:
         run: pnpm --filter @rakazo/web build && pnpm --filter @rakazo/desktop build
         env:
           RAKAZO_ALLOW_DEV_SECRETS: "1"
+          RAKAZO_DESKTOP_RELEASE: "1"
 
       - name: Require macOS signing and notarization credentials
         if: runner.os == 'macOS'
@@ -261,6 +267,14 @@ jobs:
           lipo "$native/@koromix/koffi-darwin-arm64/darwin_arm64/koffi.node" -verify_arch arm64
           lipo "$native/@oxc-parser/binding-darwin-x64/parser.darwin-x64.node" -verify_arch x86_64
           lipo "$native/@oxc-parser/binding-darwin-arm64/parser.darwin-arm64.node" -verify_arch arm64
+          # Dictation's system recognizer captures audio itself, so it needs the microphone entitlement too.
+          speech="$app/Contents/Resources/speech/rakazo-speech"
+          lipo "$speech" -verify_arch x86_64 arm64
+          entitlements="$(mktemp)"
+          codesign -d --entitlements :- "$speech" > "$entitlements" 2>/dev/null
+          test "$(/usr/libexec/PlistBuddy -c "Print :com.apple.security.device.audio-input" "$entitlements")" = true
+          rm -f "$entitlements"
+          "$speech" xx < /dev/null | grep -Fq '"language-not-supported"'
           ELECTRON_RUN_AS_NODE=1 "$app/Contents/MacOS/Rakazo" -e '
             const { createRequire } = require("node:module");
             const appRequire = createRequire(`${process.argv[1]}/Contents/Resources/app.asar/package.json`);
@@ -446,6 +460,13 @@ jobs:
           )
           for feed in "${feeds[@]}"; do
             grep -Fqx "version: $RELEASE_VERSION" "$feed"
+            # GitHub renames assets with spaces, so every file a feed names must upload under that name.
+            sed -nE 's/^ *(- )?(url|path): +//p' "$feed" | while IFS= read -r file; do
+              if [[ "$file" == */* || ! -f "release-artifacts/$file" ]]; then
+                echo "$feed names $file, which is not a release asset." >&2
+                exit 1
+              fi
+            done
           done
 
           (
@@ -463,9 +484,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ needs.validate.outputs.tag }}
-        run: >-
-          gh release create "$RELEASE_TAG" release-artifacts/*
-          --draft --generate-notes --title "Rakazo $RELEASE_TAG" --verify-tag
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The curated changelog section leads; GitHub appends the merged pull requests.
+          awk -v heading="## [$RELEASE_VERSION] - " '
+            index($0, heading) == 1 { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/release-notes.md"
+          gh release create "$RELEASE_TAG" release-artifacts/* \
+            --draft --notes-file "$RUNNER_TEMP/release-notes.md" --generate-notes \
+            --title "Rakazo $RELEASE_TAG" --verify-tag
       - name: Publish the completed release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

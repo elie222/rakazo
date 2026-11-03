@@ -4,7 +4,7 @@
     "slug": "rakazo",
     "owner": "inbox-zero",
     "scheme": "rakazo",
-    "version": "1.0.11",
+    "version": "1.0.12",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
@@ -80,12 +80,16 @@
       ],
       "./plugins/with-worklets-headers",
       "./plugins/with-scene-lifecycle",
-      "./plugins/with-lan-cleartext"
+      "./plugins/with-lan-cleartext",
+      "./plugins/with-app-intents"
     ],
+    "locales": {
+      "es": "./locales/es.json"
+    },
     "ios": {
       "bundleIdentifier": "com.rakazo.app",
       "buildNumber": "1",
-      "supportsTablet": false,
+      "supportsTablet": true,
       "icon": "../../packages/ui-tokens/assets/Rakazo.icon",
       "config": {
         "usesNonExemptEncryption": false
@@ -96,7 +100,11 @@
         "NSLocalNetworkUsageDescription": "Rakazo connects to a self-hosted Rakazo server on your local network.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
-        }
+        },
+        "UIBackgroundModes": ["voip", "audio", "remote-notification"]
+      },
+      "entitlements": {
+        "com.apple.developer.usernotifications.time-sensitive": true
       }
     },
     "android": {
@@ -117,7 +125,19 @@
       "router": {},
       "supportsRTL": true,
       "eas": {
-        "projectId": "07f7eb04-45e3-47fe-9374-99a2f991131e"
+        "projectId": "07f7eb04-45e3-47fe-9374-99a2f991131e",
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "RakazoWidgets",
+                  "bundleIdentifier": "com.rakazo.app.widgets"
+                }
+              ]
+            }
+          }
+        }
       }
     },
     "runtimeVersion": {

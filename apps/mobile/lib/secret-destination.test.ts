@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { resetI18nForTests, t } from "./i18n";
-import { secretDestinationLabel } from "./secret-destination";
+import { secretDestinationLabel, siteHost } from "./secret-destination";
 
 describe("mobile credential destination label", () => {
   afterEach(() => {
@@ -58,4 +58,11 @@ it.each([
   ["invalid origin", "invalid origin"],
 ])("formats login destination %s as %s", (origin, expected) => {
   expect(secretDestinationLabel({ name: "login", origin, auth: { type: "login" } })).toBe(expected);
+});
+
+describe("mobile site host", () => {
+  it("shows the host of an origin, and the text itself when it is not one", () => {
+    expect(siteHost("https://login.example.test")).toBe("login.example.test");
+    expect(siteHost("not a url")).toBe("not a url");
+  });
 });

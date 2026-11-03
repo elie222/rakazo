@@ -1,6 +1,11 @@
 import type { ThreadMessage } from "@rakazo/contracts";
 import type { ThreadScrollState } from "@rakazo/core";
-import { expandPeerReplies, foldPeerReplies, reconcileThreadScrollState } from "@rakazo/core";
+import {
+  expandPeerReplies,
+  foldPeerReplies,
+  peerExchangeLines,
+  reconcileThreadScrollState,
+} from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import {
   isOwnThreadMessage,
@@ -594,4 +599,58 @@ describe("message ownership", () => {
     behavior.onContentChanged(false, latestThreadRowKey("reply"));
     expect(behavior.state().unread).toBe(true);
   });
+});
+
+it("marks a receipt joining the last exchange unread while folded replies stay hidden", () => {
+  const marker: ThreadMessage = {
+    id: "receipt-1",
+    threadId: "thread",
+    seq: 1,
+    role: "user",
+    runId: "peer-run",
+    createdAt: "2026-10-20T00:00:00Z",
+    blocks: [
+      {
+        kind: "bot_message_received",
+        fromBotId: "peer",
+        fromBotName: "Peer",
+        text: "Request",
+        intent: "request",
+      },
+    ],
+  };
+  const messages: ThreadMessage[] = [marker];
+  const behavior = createScrollBehavior();
+  behavior.onLayout(600);
+  behavior.onContentSizeChanged(1800);
+  const arrive = () => {
+    const transcript = foldPeerReplies(messages, { includePeerReceipts: true });
+    const exchanges = peerExchangeLines(transcript);
+    expect([...exchanges.lines.keys()]).toEqual(["receipt-1"]);
+    return behavior.onContentChanged(
+      false,
+      latestThreadRowKey(
+        latestArrivalMessage(transcript.messages, transcript.markerOf)?.id ?? null,
+      ),
+    );
+  };
+  expect(arrive()).toBe("jump");
+  behavior.onUserScroll(200);
+  messages.push({
+    ...marker,
+    id: "reply",
+    role: "bot",
+    seq: 2,
+    blocks: [{ kind: "text", text: "Answer" }],
+  });
+  expect(arrive()).toBeNull();
+  expect(behavior.state()).toEqual({ detached: true, unread: false });
+  messages.push({
+    ...marker,
+    id: "receipt-2",
+    seq: 3,
+    blocks: [{ kind: "bot_message_sent", toBotId: "peer", toBotName: "Peer", text: "Answer" }],
+  });
+  expect(arrive()).toBeNull();
+  expect(behavior.state()).toEqual({ detached: true, unread: true });
 });

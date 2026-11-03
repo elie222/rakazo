@@ -28,12 +28,26 @@ describePostgres("shared space content (PostgreSQL)", () => {
     await system.user.create({
       data: { id, name, email: `${id}@example.test`, emailVerified: true },
     });
-    await system.organization.create({ data: { id, name: "Personal", slug: id, createdAt } });
+    await system.organization.create({
+      data: { id, name: "Personal", slug: id, createdAt },
+    });
     await system.member.create({
-      data: { id: `m-${id}`, organizationId: id, userId: id, role: "owner", createdAt },
+      data: {
+        id: `m-${id}`,
+        organizationId: id,
+        userId: id,
+        role: "owner",
+        createdAt,
+      },
     });
     await system.space.create({
-      data: { id, organizationId: id, name: "Personal", isDefault: true, createdByUserId: id },
+      data: {
+        id,
+        organizationId: id,
+        name: "Personal",
+        isDefault: true,
+        createdByUserId: id,
+      },
     });
     await system.spaceMember.create({
       data: {
@@ -45,18 +59,36 @@ describePostgres("shared space content (PostgreSQL)", () => {
         createdAt,
       },
     });
-    return { userId: id, spaceId: id, email: `${id}@example.test`, isDeploymentOwner: false };
+    return {
+      userId: id,
+      spaceId: id,
+      email: `${id}@example.test`,
+      isDeploymentOwner: false,
+    };
   }
 
   async function join(spaceId: string, organizationId: string, userId: string, role: string) {
     const createdAt = new Date();
     if (role !== "owner") {
       await system.member.create({
-        data: { id: randomUUID(), organizationId, userId, role: "member", createdAt },
+        data: {
+          id: randomUUID(),
+          organizationId,
+          userId,
+          role: "member",
+          createdAt,
+        },
       });
     }
     await system.spaceMember.create({
-      data: { id: randomUUID(), spaceId, organizationId, userId, role, createdAt },
+      data: {
+        id: randomUUID(),
+        spaceId,
+        organizationId,
+        userId,
+        role,
+        createdAt,
+      },
     });
   }
 
@@ -94,7 +126,9 @@ describePostgres("shared space content (PostgreSQL)", () => {
 
   afterAll(async () => {
     if (!prisma) return;
-    await system.organization.deleteMany({ where: { id: { in: organizations } } });
+    await system.organization.deleteMany({
+      where: { id: { in: organizations } },
+    });
     await system.user.deleteMany({ where: { id: { in: users } } });
     await prisma.$disconnect();
     await db.pool.end();
@@ -122,7 +156,6 @@ describePostgres("shared space content (PostgreSQL)", () => {
       runAsTenant(actor, () =>
         repos.createBot(actor, {
           name,
-          title: "",
           description: "",
           instructions: "",
           notifyOnFinish: false,
@@ -139,7 +172,12 @@ describePostgres("shared space content (PostgreSQL)", () => {
     );
     await runAsTenant(owner, () =>
       new MarkdownMemoryStore(prisma).commit(
-        { scope: "bot", botId: chef.id, path: "pantry.md", content: "Out of basil" },
+        {
+          scope: "bot",
+          botId: chef.id,
+          path: "pantry.md",
+          content: "Out of basil",
+        },
         {
           operationId: "fixture",
           traceId: "fixture",
@@ -200,15 +238,24 @@ describePostgres("shared space content (PostgreSQL)", () => {
     const enqueue = vi.fn().mockResolvedValue(undefined);
     const notify = vi.fn().mockResolvedValue(undefined);
     await runAsTenant(partner, async () => {
-      const target = await resolveThreadTarget(prisma, partner, { botId: chef.id });
+      const target = await resolveThreadTarget(prisma, partner, {
+        botId: chef.id,
+      });
       await sendThreadMessage(
-        { prisma, events: { notify } as never, jobs: { enqueue } as never },
+        {
+          prisma,
+          events: { notify } as never,
+          jobs: { enqueue } as never,
+          sandbox: {} as never,
+        },
         partner,
         target,
         { text: "Buy basil", clientNonce: randomUUID() },
       );
     });
-    const run = await system.run.findFirstOrThrow({ where: { botId: chef.id } });
+    const run = await system.run.findFirstOrThrow({
+      where: { botId: chef.id },
+    });
     expect(run.userId).toBe(partner.userId);
     expect(enqueue).toHaveBeenCalled();
 
@@ -225,7 +272,12 @@ describePostgres("shared space content (PostgreSQL)", () => {
 
     // A member can archive the owner's bot but not delete it for good.
     expect(
-      (await call(partner, "bots/remove", { botId: chef.id, deleteMemories: false })).status,
+      (
+        await call(partner, "bots/remove", {
+          botId: chef.id,
+          deleteMemories: false,
+        })
+      ).status,
     ).toBe(403);
   });
 });

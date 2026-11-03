@@ -1,6 +1,9 @@
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { PassThrough } from "node:stream";
 import type { ProcessEvent } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as processTree from "./desktop-process-tree.js";
@@ -20,6 +23,83 @@ describe("desktop command execution", () => {
   afterEach(() => {
     for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
   });
+
+  it.each([
+    { code: 0, signal: null, expected: 0, stderr: "" },
+    { code: 7, signal: null, expected: 7, stderr: "" },
+    { code: null, signal: null, expected: 1, stderr: "" },
+    { code: null, signal: "SIGTERM", expected: 1, stderr: "command terminated by SIGTERM\n" },
+    { code: null, signal: "SIGSEGV", expected: 1, stderr: "command terminated by SIGSEGV\n" },
+  ])("reports close code $code and signal $signal", async ({ code, signal, expected, stderr }) => {
+    const root = mkdtempSync(path.join(tmpdir(), "rakazo-desktop-command-"));
+    roots.push(root);
+    const desktop = new DesktopSandboxProvider({ root });
+    const computer = await desktop.provision({ botId: "close", homePath: "/unused" }, ctx);
+    const child = Object.assign(new EventEmitter(), {
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+    });
+    const tree = { alive: () => false, kill: vi.fn(), close: vi.fn() };
+    const spawn = vi.spyOn(processTree, "spawnOwnedCommand").mockImplementation(() => {
+      setImmediate(() => child.emit("close", code, signal));
+      return { child: child as unknown as ChildProcessWithoutNullStreams, tree };
+    });
+    try {
+      const result = await collect(desktop.execute(computer, { argv: ["test-command"] }, ctx));
+      expect(result).toEqual({ code: expected, stdout: "", stderr });
+    } finally {
+      spawn.mockRestore();
+      await desktop.destroy(computer, ctx);
+    }
+  });
+
+  it.each(["error", "cancel"] as const)(
+    "preserves %s when close follows settlement",
+    async (outcome) => {
+      const root = mkdtempSync(path.join(tmpdir(), "rakazo-desktop-command-"));
+      roots.push(root);
+      const desktop = new DesktopSandboxProvider({ root });
+      const controller = new AbortController();
+      const computer = await desktop.provision({ botId: "settlement", homePath: "/unused" }, ctx);
+      const child = Object.assign(new EventEmitter(), {
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+      });
+      const tree = { alive: () => false, kill: vi.fn(), close: vi.fn() };
+      const spawn = vi.spyOn(processTree, "spawnOwnedCommand").mockImplementation(() => {
+        setImmediate(() => {
+          if (outcome === "error") child.emit("error", new Error("spawn failed"));
+          else controller.abort();
+          child.emit("close", null, "SIGTERM");
+        });
+        return { child: child as unknown as ChildProcessWithoutNullStreams, tree };
+      });
+      try {
+        const events: ProcessEvent[] = [];
+        for await (const event of desktop.execute(
+          computer,
+          { argv: ["test-command"] },
+          { ...ctx, signal: controller.signal },
+        ))
+          events.push(event);
+        expect(events).toEqual(
+          outcome === "error"
+            ? [
+                { type: "stderr", data: "spawn failed" },
+                { type: "exit", code: 1 },
+              ]
+            : [
+                { type: "stderr", data: "command aborted\n" },
+                { type: "exit", code: 130 },
+              ],
+        );
+        expect(tree.kill).toHaveBeenCalledTimes(outcome === "cancel" ? 1 : 0);
+      } finally {
+        spawn.mockRestore();
+        await desktop.destroy(computer, ctx);
+      }
+    },
+  );
 
   it("only hosts commands in the desktop app or a local development process", () => {
     const node = { ...process.versions, electron: undefined };

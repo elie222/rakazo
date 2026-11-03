@@ -6,6 +6,7 @@ import { readBodyCapped } from "./web-ssrf.js";
 
 /** A 2,000-character utterance should stay far below this, even at high MP3 bitrates. */
 export const MAX_SYNTHESIZED_AUDIO_BYTES = 16 * 1024 * 1024;
+export const MAX_SPEAK_CHARS = 2000;
 export const MAX_VOICE_JSON_BYTES = 1024 * 1024;
 
 /** Client disconnect plus a hard deadline — `context.signal` is always set. */

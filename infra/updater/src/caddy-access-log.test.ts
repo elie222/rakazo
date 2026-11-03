@@ -53,6 +53,9 @@ describe.each(caddyfiles)("%s access log", (filename) => {
     expect(redact("/novnc/session/view/1792540000.c4p4b1l1ty/websockify")).toBe(
       "/novnc/session/view/REDACTED/websockify",
     );
+    expect(redact("/api/v1/pages/shared/Zm9vYmFy_-x")).toBe("/api/v1/pages/shared/REDACTED");
+    expect(redact("/p/q3-plan-Zm9vYmFy_-x?ref=1")).toBe("/p/REDACTED?ref=1");
+    expect(redact("/app/p/page1")).toBe("/app/p/page1");
     expect(redact("/rpc/threads/get?botId=b1")).toBe("/rpc/threads/get?botId=b1");
   });
 });

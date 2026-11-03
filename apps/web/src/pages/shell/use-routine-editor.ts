@@ -38,7 +38,8 @@ export function useRoutineEditor({
 }) {
   const { t } = useLingui();
   const [routineDraft, setRoutineDraft] = useState<RoutineDraftState>(emptyRoutineDraft());
-  const [routineWebhookSecret, setRoutineWebhookSecret] = useState<string | null>(null);
+  const [revealedWebhookSecrets, setRevealedWebhookSecrets] = useState<Record<string, string>>({});
+  const routineWebhookSecret = (active && revealedWebhookSecrets[active.id]) || null;
   const [editingRoutine, setEditingRoutine] = useState<Routine | null>(null);
   const [deleteRoutineTarget, setDeleteRoutineTarget] = useState<Routine | null>(null);
   const [savingRoutine, setSavingRoutine] = useState(false);
@@ -49,7 +50,7 @@ export function useRoutineEditor({
   const ensureWebhookSecret = (botId: string) =>
     sharedInflight(webhookSecretProvisionRef.current, botId, async () => {
       const result = await rpc.bots.rotateWebhookSecret({ botId });
-      setRoutineWebhookSecret(result.secret);
+      setRevealedWebhookSecrets((current) => ({ ...current, [botId]: result.secret }));
       setBots((current) =>
         current.map((bot) => (bot.id === botId ? { ...bot, webhookConfigured: true } : bot)),
       );
@@ -59,7 +60,7 @@ export function useRoutineEditor({
   const routineRunPending = useRef(false);
   const addSkillRoutine = useCallback((name: string, prompt: string) => {
     setRoutineDraft({ ...emptyRoutineDraft(), name, prompt });
-    setRoutineWebhookSecret(null);
+    setRevealedWebhookSecrets({});
     setEditingRoutine(null);
     setPanel("routine");
   }, []);
@@ -67,16 +68,16 @@ export function useRoutineEditor({
   function restoreRoutine(routine: Routine | null) {
     setEditingRoutine(routine);
     setRoutineDraft(routine ? draftFromRoutine(routine) : emptyRoutineDraft());
-    setRoutineWebhookSecret(null);
+    setRevealedWebhookSecrets({});
   }
   function editRoutine(routine: Routine) {
     setRoutineDraft(draftFromRoutine(routine));
-    setRoutineWebhookSecret(null);
+    setRevealedWebhookSecrets({});
     setEditingRoutine(routine);
   }
   function startRoutine(routine?: Routine) {
     setRoutineDraft(routine ? draftFromRoutine(routine) : emptyRoutineDraft());
-    setRoutineWebhookSecret(null);
+    setRevealedWebhookSecrets({});
     setEditingRoutine(routine ?? null);
     setRoutineError(null);
     setPanel("routine");
@@ -111,7 +112,7 @@ export function useRoutineEditor({
         saving: savingRoutine,
         running: runningRoutine,
         error: routineError,
-        onBack: () => setPanel("computer"),
+        onBack: () => setPanel("routines"),
         onClose: () => setPanel(null),
         onEnsureWebhook: async () => {
           await ensureWebhookSecret(active.id);
@@ -179,7 +180,11 @@ export function useRoutineEditor({
                 name: routineDraft.name || t`Routine`,
                 prompt: routineDraft.prompt || t`Check in.`,
                 crons,
-                active: armOneShot ? true : routineDraft.active,
+                // Send on/off only when this save changes it, so a stale draft cannot undo a
+                // disable made elsewhere since the editor opened.
+                ...(armOneShot || routineDraft.active !== targetRoutine.active
+                  ? { active: armOneShot ? true : routineDraft.active }
+                  : {}),
                 webhookEnabled: routineDraft.webhookEnabled,
                 githubEnabled: routineDraft.githubEnabled,
                 messageProvider: routineDraft.messageProvider,
@@ -209,7 +214,17 @@ export function useRoutineEditor({
             }
             if (routineSaveRequest.current === saveRequest && activeBotId.current === targetBotId) {
               setEditingRoutine(saved);
-              setRoutineDraft(draftFromRoutine(saved));
+              // Fields edited while the save was in flight keep the newer value.
+              const fresh = draftFromRoutine(saved);
+              setRoutineDraft(
+                (current) =>
+                  Object.fromEntries(
+                    Object.entries(fresh).map(([key, value]) => {
+                      const field = key as keyof RoutineDraftState;
+                      return [key, current[field] === routineDraft[field] ? value : current[field]];
+                    }),
+                  ) as RoutineDraftState,
+              );
             }
           } catch (error) {
             if (routineSaveRequest.current !== saveRequest || activeBotId.current !== targetBotId) {
@@ -251,7 +266,7 @@ export function useRoutineEditor({
             setDeleteRoutineTarget(editingRoutine);
             return;
           }
-          setPanel("computer");
+          setPanel("routines");
         },
       } satisfies ComponentProps<typeof RoutineEditor>)
     : null;
@@ -267,7 +282,7 @@ export function useRoutineEditor({
           setEditingRoutine((current) => (current?.id === target.id ? null : current));
           if (activeBotId.current !== target.botId) return;
           await refreshThread(target.botId);
-          if (activeBotId.current === target.botId) setPanel("computer");
+          if (activeBotId.current === target.botId) setPanel("routines");
         },
       }
     : null;

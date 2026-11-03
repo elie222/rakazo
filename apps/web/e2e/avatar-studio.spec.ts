@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, openBotPanelTab, signup } from "./helpers";
 
 test("bot settings open Avatar Studio on the Bot tab", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -55,7 +55,7 @@ test("bot settings open Avatar Studio on the Bot tab", async ({ page }, testInfo
   await expect(studio.locator(".rakazo-logo-avatar").first()).toBeVisible();
   await studio.getByRole("button", { name: "Done", exact: true }).click();
   await page.reload();
-  await page.getByTestId("bot-settings-trigger").click();
+  await openBotPanelTab(page, "Computer");
   await page.getByTestId("bot-settings").getByTestId("avatar-studio-trigger").click();
   await expect(
     page.getByTestId("avatar-studio").getByRole("tab", { name: "Rakazo", exact: true }),

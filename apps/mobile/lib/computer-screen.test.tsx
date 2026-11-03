@@ -23,7 +23,7 @@ const screens = vi.hoisted(() => ({
     | ((event: { nativeEvent: { data: string; url?: string } }) => void)
     | undefined,
   source: "",
-  onLoadStart: undefined as (() => void) | undefined,
+  onLoadStart: undefined as ((event?: { nativeEvent: { url: string } }) => void) | undefined,
 }));
 const picker = vi.hoisted(() => ({
   mounts: 0,
@@ -125,7 +125,7 @@ vi.mock("react-native-webview", () => {
       onMessage?: (event: { nativeEvent: { data: string; url?: string } }) => void;
       onError?: () => void;
       source?: { uri: string };
-      onLoadStart?: () => void;
+      onLoadStart?: (event?: { nativeEvent: { url: string } }) => void;
     }) => {
       screens.onMessage = props.onMessage;
       screens.error = props.onError;
@@ -336,6 +336,34 @@ describe("computer screen", () => {
     expect(window?.textContent).toContain("Retry screen");
   });
 
+  it("keeps an unreachable screen's error while later reads rotate its token", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    respond(botWorking);
+    const original = rpc.getMockImplementation()!;
+    const expiresAt = Date.now() + 60 * 60_000;
+    let token = 0;
+    rpc.mockImplementation(async (method: string, ...args: unknown[]) => {
+      if (method !== "computer/screenUrl") return original(method, ...args);
+      token += 1;
+      return { url: `http://127.0.0.1:5180/novnc/session/view/${expiresAt}.t${token}/embed.html` };
+    });
+    const view = await render();
+    act(() => screens.error?.());
+    expect(view.textContent).toContain("Could not load the desktop.");
+    const mounted = screens.mounts;
+    const reads = calls("computer/screenUrl").length;
+    for (let poll = 0; poll < 5; poll += 1) {
+      await act(async () => vi.advanceTimersByTimeAsync(2_000));
+      await settle();
+    }
+    // The failed URL is read again once, and that fresh token alone does not reload the page.
+    expect(calls("computer/screenUrl").length).toBe(reads + 1);
+    expect(screens.mounts).toBe(mounted);
+    expect(view.textContent).toContain("Could not load the desktop.");
+    expect(view.textContent).toContain("Retry screen");
+    vi.useRealTimers();
+  });
+
   it("shows a fixed screen failure when the page stalls", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     respond(botWorking);
@@ -349,6 +377,39 @@ describe("computer screen", () => {
     await act(async () => vi.advanceTimersByTimeAsync(15_000));
     expect(view.textContent).toContain("Could not connect to the computer screen");
     expect(view.textContent).toContain("Retry screen");
+    vi.useRealTimers();
+  });
+
+  it("keeps an Android sandboxed screen connected past the state-report deadline", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const screen = "https://screen.example.test/novnc/session/view/1.t/vnc.html";
+    respond(botWorking, screen);
+    const view = await render();
+    await act(async () => {
+      screens.onLoadStart?.({ nativeEvent: { url: screen } });
+      screens.onMessage?.({
+        nativeEvent: { url: "null", data: '{"rakazoScreen":"connected"}' },
+      });
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(16_000));
+    expect(view.querySelector("iframe")).not.toBeNull();
+    expect(view.textContent).not.toContain("Could not connect to the computer screen");
+    expect(view.textContent).not.toContain("Retry screen");
+    vi.useRealTimers();
+  });
+
+  it("rejects opaque state reports after navigating away from the authorized screen", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    respond(botWorking, "https://screen.example.test/novnc/session/view/1.t/vnc.html");
+    const view = await render();
+    await act(async () => {
+      screens.onLoadStart?.({ nativeEvent: { url: "https://elsewhere.example.test/" } });
+      screens.onMessage?.({
+        nativeEvent: { url: "null", data: '{"rakazoScreen":"connected"}' },
+      });
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(16_000));
+    expect(view.textContent).toContain("Could not connect to the computer screen");
     vi.useRealTimers();
   });
 

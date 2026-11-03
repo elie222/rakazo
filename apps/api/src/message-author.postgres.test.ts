@@ -43,7 +43,10 @@ describe.skipIf(!enabled)("message authors (PostgreSQL)", () => {
       ),
     );
     actor = { spaceId: identity.spaceId, userId: identity.userId } as Actor;
-    await system.user.update({ where: { id: actor.userId }, data: { name: "Ana" } });
+    await system.user.update({
+      where: { id: actor.userId },
+      data: { name: "Ana" },
+    });
     target = {
       kind: "bot",
       botId: identity.botId,
@@ -53,7 +56,9 @@ describe.skipIf(!enabled)("message authors (PostgreSQL)", () => {
   });
   afterEach(async () => {
     if (!actor) return;
-    await system.messagingIdentity.deleteMany({ where: { userId: actor.userId } });
+    await system.messagingIdentity.deleteMany({
+      where: { userId: actor.userId },
+    });
     await system.organization.deleteMany({ where: { id: actor.spaceId } });
     await system.user.deleteMany({ where: { id: actor.userId } });
   });
@@ -64,7 +69,12 @@ describe.skipIf(!enabled)("message authors (PostgreSQL)", () => {
   function send(input: { text: string; replyToMessageId?: string }) {
     return runAsTenant(actor, () =>
       sendThreadMessage(
-        { prisma, events: { notify } as never, jobs: { enqueue } as never },
+        {
+          prisma,
+          events: { notify } as never,
+          jobs: { enqueue } as never,
+          sandbox: {} as never,
+        },
         actor,
         target,
         { ...input, clientNonce: randomUUID() },

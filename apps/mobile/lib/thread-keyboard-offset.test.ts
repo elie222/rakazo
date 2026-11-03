@@ -1,7 +1,7 @@
 import { Platform } from "react-native";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { threadHeaderFloats } from "./thread-edges";
-import { threadKeyboardOffset } from "./thread-keyboard-offset";
+import { threadKeyboardAvoidance } from "./thread-keyboard-offset";
 
 vi.mock("react-native", () => ({ Platform: { OS: "ios", Version: "18.5" } }));
 
@@ -10,42 +10,38 @@ afterEach(() => {
   Platform.Version = "18.5";
 });
 
-describe("threadKeyboardOffset", () => {
+describe("threadKeyboardAvoidance", () => {
   it.each(["18.5", 26, "26.1", "27.1"])(
-    "does not offset the floating header on iOS %s",
+    "preserves zero offset for the floating iOS header on %s",
     (version) => {
       Platform.Version = version;
       expect(
-        threadKeyboardOffset({
+        threadKeyboardAvoidance({
           os: Platform.OS,
           floatingHeader: threadHeaderFloats(),
           nativeHeaderHeight: 103,
-          measuredOffset: 0,
         }),
-      ).toBe(0);
+      ).toEqual({ automaticOffset: false, keyboardVerticalOffset: 0 });
     },
   );
 
-  it("would need the native header height for an opaque iOS header", () => {
+  it("preserves the native height for an opaque iOS header", () => {
     expect(
-      threadKeyboardOffset({
-        os: "ios",
-        floatingHeader: false,
-        nativeHeaderHeight: 103,
-        measuredOffset: 0,
-      }),
-    ).toBe(103);
+      threadKeyboardAvoidance({ os: "ios", floatingHeader: false, nativeHeaderHeight: 103 }),
+    ).toEqual({ automaticOffset: false, keyboardVerticalOffset: 103 });
   });
 
-  it("uses the measured window position on Android", () => {
-    Platform.OS = "android";
-    expect(
-      threadKeyboardOffset({
-        os: Platform.OS,
-        floatingHeader: threadHeaderFloats(),
-        nativeHeaderHeight: 64,
-        measuredOffset: 88,
-      }),
-    ).toBe(88);
-  });
+  it.each([0, 32, 64, 88, 120])(
+    "lets Android track the actual screen position rather than caching a %s px header",
+    (header) => {
+      Platform.OS = "android";
+      expect(
+        threadKeyboardAvoidance({
+          os: Platform.OS,
+          floatingHeader: threadHeaderFloats(),
+          nativeHeaderHeight: header,
+        }),
+      ).toEqual({ automaticOffset: true, keyboardVerticalOffset: 0 });
+    },
+  );
 });

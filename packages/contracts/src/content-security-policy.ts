@@ -9,6 +9,17 @@
  * app policy the way a srcdoc frame would; its own meta CSP governs it and its nested preview. */
 export const HTML_VIEWER_PATH = "/html-viewer.html";
 
+/** Embedded computer screen and its local runtime assets. */
+export const COMPUTER_SCREEN_PATH = "/computer-screen/screen.html";
+export const COMPUTER_SCREEN_PREFIX = "/computer-screen/";
+export const COMPUTER_SCREEN_RUNTIME_PATH = "/computer-screen/sdk/ASP/container.html";
+
+/** Adapter-owned policies for the embedded page and its opaque nested runtime. */
+export interface EmbeddedComputerScreenPolicy {
+  screen: string;
+  runtime: string;
+}
+
 /** Same-origin endpoint browsers send violation reports to, so a blocked resource is not silent. */
 export const CSP_REPORT_PATH = "/api/csp-report";
 const CSP_REPORT_GROUP = "csp";
@@ -128,11 +139,17 @@ const PASSTHROUGH_PREFIXES = ["/api", "/rpc", "/novnc"];
 export function contentSecurityPolicyFor(
   pathname: string,
   appPolicy = APP_CONTENT_SECURITY_POLICY,
+  screenPolicy?: EmbeddedComputerScreenPolicy,
 ): string | null {
   if (
     PASSTHROUGH_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
   )
     return null;
   if (pathname === HTML_VIEWER_PATH) return HTML_VIEWER_CONTENT_SECURITY_POLICY;
+  // The nested runtime has an opaque ancestor, which cannot match 'self'. Its sandbox
+  // policy still prevents access to the app even when visited directly.
+  if (screenPolicy && pathname === COMPUTER_SCREEN_RUNTIME_PATH) return screenPolicy.runtime;
+  if (pathname.startsWith(COMPUTER_SCREEN_PREFIX))
+    return screenPolicy?.screen ?? "default-src 'none'; sandbox; frame-ancestors 'self'";
   return appPolicy;
 }

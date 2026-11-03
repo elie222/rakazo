@@ -35,7 +35,7 @@ const REPORTING_API = [
       statusCode: 200,
     },
   },
-  { type: "deprecation", body: { id: "x" } },
+  { type: "deprecation", body: { id: "x", effectiveDirective: "script-src" } },
   {
     type: "csp-violation",
     body: {
@@ -83,6 +83,23 @@ describe("CSP report parsing", () => {
     expect(JSON.stringify(parseCspReports(LEGACY))).not.toMatch(/secret|private|frag|v=1/);
   });
 
+  it("never logs the link token of a shared page the report came from", () => {
+    const token = "a".repeat(43);
+    const [violation] = parseCspReports([
+      {
+        type: "csp-violation",
+        body: {
+          documentURL: `https://app.example.com/p/q3-plan-${token}`,
+          blockedURL: "inline",
+          sourceFile: `https://app.example.com/p/q3-plan-${token}?x=1`,
+          effectiveDirective: "script-src-elem",
+        },
+      },
+    ]);
+    expect(violation?.page).toBe("/p/[Redacted]");
+    expect(JSON.stringify(violation)).not.toContain(token);
+  });
+
   it("falls back to violated-directive when an older browser omits the effective one", () => {
     const report = { "csp-report": { ...LEGACY["csp-report"], "effective-directive": undefined } };
     expect(parseCspReports(report)[0]?.directive).toBe("script-src-elem");
@@ -98,6 +115,14 @@ describe("CSP report parsing", () => {
       },
       { directive: "img-src", blocked: "data", page: "/", disposition: "enforce" },
     ]);
+  });
+
+  it("reads at most twenty violations from one batch", () => {
+    const batch = Array.from({ length: 25 }, (_, index) => ({
+      type: "csp-violation",
+      body: { documentURL: `https://app.example.com/${index}`, effectiveDirective: "img-src" },
+    }));
+    expect(parseCspReports(batch)).toHaveLength(20);
   });
 
   it("reports blob and other non-network URLs by scheme alone", () => {

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CartesiaVoiceProvider } from "./cartesia-voice.js";
 import { ElevenLabsVoiceProvider } from "./elevenlabs-voice.js";
 import { FishAudioVoiceProvider } from "./fish-audio-voice.js";
+import type * as MacOsVoice from "./macos-voice.js";
 import { OpenAIVoiceProvider } from "./openai-voice.js";
 import {
   SCRIPTED_MPEG,
@@ -27,9 +28,16 @@ const ctx = {
   signal: new AbortController().signal,
 };
 
+const macOs = vi.hoisted(() => ({ available: false }));
+vi.mock("./macos-voice.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof MacOsVoice>()),
+  macOsSayAvailable: () => macOs.available,
+}));
+
 const previousRuntime = process.env.AGENT_RUNTIME;
 
 afterEach(() => {
+  macOs.available = false;
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   if (previousRuntime === undefined) delete process.env.AGENT_RUNTIME;
@@ -83,6 +91,22 @@ describe("createVoiceProvider", () => {
     expect(listVoiceCatalog().some((entry) => entry.id === "scripted")).toBe(true);
     expect(isVoiceProviderId("scripted")).toBe(true);
     expect(createVoiceProvider("scripted").describe().id).toBe("scripted");
+  });
+
+  it("lists macOS first only where the server can run say", () => {
+    process.env.AGENT_RUNTIME = "pi";
+    expect(listVoiceCatalog().some((entry) => entry.id === "macos")).toBe(false);
+    expect(isVoiceProviderId("macos")).toBe(false);
+    expect(() => createVoiceProvider("macos")).toThrow(/unknown voice provider/i);
+
+    macOs.available = true;
+    expect(listVoiceCatalog()[0]).toMatchObject({
+      id: "macos",
+      name: "Server (Mac)",
+      keyless: true,
+    });
+    expect(isVoiceProviderId("macos")).toBe(true);
+    expect(createVoiceProvider("macos").describe().capabilities.transcribe).toBe(false);
   });
 });
 

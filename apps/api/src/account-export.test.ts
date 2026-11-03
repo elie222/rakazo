@@ -38,7 +38,7 @@ async function* generate<T>(items: T[]): AsyncGenerator<T> {
 }
 
 const createdAt = "2026-01-02T03:04:05.000Z";
-const botRecord = (id: string): AccountExportRecord => ({
+const botRecord = (id: string): Extract<AccountExportRecord, { type: "bot" }> => ({
   type: "bot",
   id,
   name: "Chief",
@@ -62,6 +62,7 @@ const botRecord = (id: string): AccountExportRecord => ({
   teamChatAmbientEnabled: false,
   teamChatRules: "",
   crossSpaceCommunication: false,
+  dailyCheckIns: false,
   fleetManagement: true,
   createdAt,
 });
@@ -144,6 +145,14 @@ function stores(): AccountExportStores & { contexts: unknown[] } {
 }
 
 describe("account export archive", () => {
+  it("preserves the check-in opt-out and defaults older archives to on", () => {
+    expect(AccountExportRecordSchema.parse(botRecord("bot-1"))).toMatchObject({
+      dailyCheckIns: false,
+    });
+    const { dailyCheckIns: _dailyCheckIns, ...olderRecord } = botRecord("bot-1");
+    expect(AccountExportRecordSchema.parse(olderRecord)).toMatchObject({ dailyCheckIns: true });
+  });
+
   it("streams manifest, then each space's records, artifacts and homes", async () => {
     const fakes = stores();
     const entries = await unzipStream(

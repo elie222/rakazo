@@ -1,6 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { Bot } from "@rakazo/contracts";
+import { PageIcon } from "@rakazo/chat-ui/web";
+import type { Bot, PageSummary } from "@rakazo/contracts";
 import {
   Badge,
   BotAvatar,
@@ -14,13 +15,22 @@ import {
   CommandShortcut,
   Kbd,
 } from "@rakazo/ui-web";
+import { Check } from "lucide-react";
+import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { formatRelativeTime } from "../../lib/relative-time";
+import { isApplePlatform } from "./shell-shortcuts";
 
-function isApplePlatform() {
-  if (typeof navigator === "undefined") return false;
-  // platform is deprecated but still the most reliable Apple check in browsers.
-  return /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent);
-}
+/** Pages listed before anything is typed. */
+const RECENT_PAGES = 5;
+
+export type CommandPaletteAction = {
+  id: string;
+  label: string;
+  icon: ComponentType<{ size?: number; strokeWidth?: number; "aria-hidden"?: boolean }>;
+  checked?: boolean;
+  onSelect: () => void;
+};
 
 function botSearchText(bot: Bot) {
   return `${bot.name} ${bot.description} ${bot.preview}`.toLowerCase();
@@ -35,13 +45,24 @@ export function CommandPalette({
   onOpenChange,
   bots,
   onSelectBot,
+  actions,
+  pages = [],
+  onSelectPage,
+  onSearchChange,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   bots: Bot[];
   onSelectBot: (botId: string) => void;
+  actions: CommandPaletteAction[];
+  /** Pages bots built in this Space. */
+  pages?: PageSummary[];
+  onSelectPage?: (page: PageSummary) => void;
+  /** The typed search, so pages beyond the first loaded can be asked for. */
+  onSearchChange?: (search: string) => void;
 }) {
   const [search, setSearch] = useState("");
+  useEffect(() => onSearchChange?.(search), [search, onSearchChange]);
   const [modKey, setModKey] = useState("⌘");
 
   useEffect(() => {
@@ -58,6 +79,52 @@ export function CommandPalette({
     return bots.filter((bot) => botSearchText(bot).includes(needle));
   }, [bots, search]);
 
+  const filteredActions = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return actions;
+    return actions.filter((action) => action.label.toLowerCase().includes(needle));
+  }, [actions, search]);
+
+  // Without a search only the latest few pages show, so actions stay in reach; with one, titles
+  // that start with it come first, and if one does the pages lead the menu.
+  const needle = search.trim().toLowerCase();
+  const filteredPages = useMemo(() => {
+    if (!needle) return pages.slice(0, RECENT_PAGES);
+    const starts = (page: PageSummary) => page.title.toLowerCase().startsWith(needle);
+    return pages
+      .filter((page) => page.title.toLowerCase().includes(needle))
+      .sort((a, b) => Number(starts(b)) - Number(starts(a)));
+  }, [pages, needle]);
+  const pagesFirst =
+    needle !== "" && filteredPages.some((page) => page.title.toLowerCase().startsWith(needle));
+  const pagesGroup =
+    filteredPages.length > 0 && onSelectPage ? (
+      <CommandGroup heading={t`Pages`}>
+        {filteredPages.map((page) => (
+          <CommandItem
+            key={page.id}
+            value={`page:${page.id}`}
+            onSelect={() => {
+              onOpenChange(false);
+              onSelectPage(page);
+            }}
+            className="items-center gap-3 rounded-xl! px-2.5 py-2.5"
+          >
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-[8px] bg-muted">
+              <PageIcon className="h-[17px] w-[13px]" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium text-foreground" dir="auto">
+                {page.title}
+              </span>
+              <span className="mt-0.5 block truncate text-[13px] text-muted-foreground">
+                {formatRelativeTime(page.updatedAt)}
+              </span>
+            </span>
+          </CommandItem>
+        ))}
+      </CommandGroup>
+    ) : null;
   useEffect(() => {
     if (!open) return;
     function onKey(event: KeyboardEvent) {
@@ -79,8 +146,8 @@ export function CommandPalette({
     <CommandDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={t`Switch bot`}
-      description={t`Search bots and switch conversations`}
+      title={t`Command menu`}
+      description={t`Search bots, actions, and settings`}
       className="sm:max-w-xl"
     >
       <Command
@@ -96,8 +163,9 @@ export function CommandPalette({
         />
         <CommandList className="max-h-80" data-testid="command-palette-list">
           <CommandEmpty>
-            <Trans>No bots</Trans>
+            <Trans>No results</Trans>
           </CommandEmpty>
+          {pagesFirst ? pagesGroup : null}
           <CommandGroup>
             {filteredBots.map((bot, index) => {
               const subtitle = botSubtitle(bot);
@@ -139,10 +207,41 @@ export function CommandPalette({
               );
             })}
           </CommandGroup>
+          {pagesFirst ? null : pagesGroup}
+          {filteredActions.length > 0 ? (
+            <CommandGroup>
+              {filteredActions.map((action) => (
+                <CommandItem
+                  key={action.id}
+                  value={action.id}
+                  aria-checked={action.checked}
+                  data-testid={`command-palette-action-${action.id}`}
+                  onSelect={() => {
+                    onOpenChange(false);
+                    action.onSelect();
+                  }}
+                  className="items-center gap-3 rounded-xl! px-2.5 py-2.5"
+                >
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                    <action.icon size={16} strokeWidth={1.8} aria-hidden />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                    {action.label}
+                  </span>
+                  {action.checked ? (
+                    <Check
+                      size={16}
+                      strokeWidth={1.8}
+                      className="text-muted-foreground"
+                      aria-hidden
+                    />
+                  ) : null}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          ) : null}
         </CommandList>
       </Command>
     </CommandDialog>
   );
 }
-
-export { isCommandPaletteHotkey } from "./command-palette-hotkey";

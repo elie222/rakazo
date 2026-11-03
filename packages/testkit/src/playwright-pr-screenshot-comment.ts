@@ -30,7 +30,8 @@ export function specStemsFromChangedPaths(changedPaths: readonly string[]): stri
 }
 
 export function screenshotMatchesSpecStem(source: string, specStem: string): boolean {
-  const directory = (source.split(/[\\/]/)[0] ?? source).toLowerCase();
+  // Projects may nest output under their own folder, so use the test's directory, not the first segment.
+  const directory = (source.split(/[\\/]/).at(-2) ?? source).toLowerCase();
   const stem = specStem.toLowerCase();
   return directory === stem || directory.startsWith(`${stem}-`);
 }
@@ -42,19 +43,19 @@ export function selectPlaywrightPrFeatureFrames(input: {
 }): PlaywrightPrFeatureFrameSelection {
   const limit = input.limit ?? PLAYWRIGHT_PR_FEATURE_FRAME_LIMIT;
   const stems = specStemsFromChangedPaths(input.changedPaths);
+  // The main baseline can trail main by hours, so checkpoints other merged PRs added also
+  // look new. Only specs this PR touched say anything about this PR.
   const checkpoints = input.screenshots.filter(
-    (screenshot) => screenshot.captureType === "checkpoint",
+    (screenshot) =>
+      screenshot.captureType === "checkpoint" &&
+      stems.some((stem) => screenshotMatchesSpecStem(screenshot.source, stem)),
   );
   const frames: PlaywrightPrFeatureFrame[] = [
     ...checkpoints
       .filter((screenshot) => screenshot.comparison === "new")
       .map((screenshot) => ({ ...screenshot, kind: "new" as const })),
     ...checkpoints
-      .filter(
-        (screenshot) =>
-          screenshot.comparison === "changed" &&
-          stems.some((stem) => screenshotMatchesSpecStem(screenshot.source, stem)),
-      )
+      .filter((screenshot) => screenshot.comparison === "changed")
       .map((screenshot) => ({ ...screenshot, kind: "changed" as const })),
   ];
 
@@ -89,10 +90,11 @@ export function buildPlaywrightPrScreenshotComment(input: {
           "Feature frames for this PR:",
           ...frames.map((frame) => {
             const imageUrl = new URL(frame.fileName, galleryBaseUrl).toString();
-            return `- [${escapeMarkdownLinkLabel(frame.title)}](${imageUrl}) (${frame.kind})`;
+            const label = escapeMarkdownLinkLabel(frame.title);
+            return `**${label}** (${frame.kind})\n\n![${label}](${imageUrl})`;
           }),
-          ...(omittedCount > 0 ? [`- +${omittedCount} more in the gallery`] : []),
-        ].join("\n");
+          ...(omittedCount > 0 ? [`+${omittedCount} more in the gallery`] : []),
+        ].join("\n\n");
 
   return [
     PLAYWRIGHT_PR_SCREENSHOT_COMMENT_MARKER,

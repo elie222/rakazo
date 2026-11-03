@@ -28,7 +28,7 @@ export default function RoutineDetail() {
     error: loadError,
     readSinceShown,
     failedSinceShown,
-  } = useBotRoutines(botId ?? "", { poll: false });
+  } = useBotRoutines(botId ?? "");
   const routine = routines?.find((item) => item.id === routineId) ?? null;
   const error =
     !botId || !routineId

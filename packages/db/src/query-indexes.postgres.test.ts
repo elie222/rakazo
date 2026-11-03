@@ -19,7 +19,7 @@ const hotQueries = [
   },
   {
     name: "a bot's run lease fence",
-    index: "runs_botId_idx",
+    index: "runs_botId_createdAt_idx",
     sql: `SELECT max("leaseFence") FROM runs WHERE "botId" = $1`,
   },
   {
@@ -33,6 +33,12 @@ const hotQueries = [
     sql: `SELECT id FROM runs WHERE trigger = 'bot_message' AND "botOutcomeReturnedAt" IS NULL
       AND (status IN ('completed', 'failed') OR (status = 'cancelled' AND error = $1))
       ORDER BY "updatedAt", id LIMIT 100`,
+  },
+  {
+    name: "a bot thread's latest run",
+    index: "runs_threadId_createdAt_id_idx",
+    sql: `SELECT id FROM runs WHERE "threadId" = $1 AND trigger NOT IN ('bot_message', 'tickets')
+      ORDER BY "createdAt" DESC, id DESC LIMIT 1`,
   },
   {
     name: "a thread's messages after a cursor",

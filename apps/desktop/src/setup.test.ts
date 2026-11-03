@@ -11,9 +11,14 @@ import type {
   RakazoSetup,
 } from "@rakazo/contracts";
 import { afterEach, describe, expect, it } from "vitest";
+import { ES_MESSAGES } from "./locales/es.js";
+import { HE_MESSAGES } from "./locales/he.js";
+
+type DesktopSetupResult = Awaited<ReturnType<RakazoSetup["save"]>>;
 
 const DEFAULT_LOCAL_URL = "http://127.0.0.1:6130";
 const CLOUD_URL = "https://cloud.rakazo.example";
+const ENGLISH: RakazoSetup["locale"] = { lang: "en", dir: "ltr", messages: {} };
 
 // The jsdom environment replaces the global URL, so resolve the sibling files via Node's.
 const srcDir = path.dirname(fileURLToPath(import.meta.url));
@@ -81,9 +86,11 @@ interface Harness {
   pushStackState: (state: DesktopLocalStackState) => void;
   /** Payloads received by `save`. */
   saves: DesktopSetup[];
+  /** Resolves the oldest pending `save` call, in call order. */
+  resolveSave: (result: DesktopSetupResult) => void;
 }
 
-function mount(saved: DesktopSetup | null): Harness {
+function mount(saved: DesktopSetup | null, locale = ENGLISH): Harness {
   document.body.innerHTML = setupBody ?? "";
   const checkCalls: Array<Deferred<DesktopReachability>> = [];
   const startResult = deferred<DesktopLocalStackState>();
@@ -91,9 +98,11 @@ function mount(saved: DesktopSetup | null): Harness {
   const stackStateCalls: Array<Deferred<DesktopLocalStackState>> = [];
   const pushListeners: Array<(state: DesktopLocalStackState) => void> = [];
   const saves: DesktopSetup[] = [];
+  const saveCalls: Array<Deferred<DesktopSetupResult>> = [];
 
   const bridge: RakazoSetup = {
     platform: "linux",
+    locale,
     state: () => {
       const call = deferred<DesktopSetupState>();
       stateCalls.push(call);
@@ -106,7 +115,9 @@ function mount(saved: DesktopSetup | null): Harness {
     },
     save: (setup) => {
       saves.push(setup);
-      return Promise.resolve({ ok: true });
+      const call = deferred<DesktopSetupResult>();
+      saveCalls.push(call);
+      return call.promise;
     },
     quit: () => Promise.resolve(),
     openLink: () => Promise.resolve(),
@@ -145,12 +156,13 @@ function mount(saved: DesktopSetup | null): Harness {
       for (const listener of pushListeners) listener(state);
     },
     saves,
+    resolveSave: (result) => saveCalls.shift()?.resolve(result),
   };
 }
 
 /** Loads the page and lets init settle on an idle stack. */
-async function boot(saved: DesktopSetup | null): Promise<Harness> {
-  const ui = mount(saved);
+async function boot(saved: DesktopSetup | null, locale = ENGLISH): Promise<Harness> {
+  const ui = mount(saved, locale);
   await flush(); // init reaches its stack.state call only after its state await resumes
   ui.resolveStackState(stackState("idle"));
   await flush();
@@ -274,6 +286,48 @@ describe("setup", () => {
     expect(element("stack-phase").textContent).toBe("Downloading Rakazo…");
   });
 
+  it("locks the address while it is being saved and unlocks it when the save fails", async () => {
+    const ui = await boot(null);
+    selectMode("existing");
+    await flush();
+    const field = element<HTMLInputElement>("server-url");
+    field.value = "https://one.example";
+    submitForm();
+    await flush();
+
+    expect(ui.saves).toEqual([{ mode: "existing", serverUrl: "https://one.example", headers: {} }]);
+    expect(field.disabled).toBe(true);
+    // Headers saved with this address must not change while the save is pending.
+    expect(element<HTMLTextAreaElement>("server-headers").disabled).toBe(true);
+
+    ui.resolveSave({ ok: false, error: "Server did not answer." });
+    await flush();
+    expect(field.disabled).toBe(false);
+    expect(element<HTMLTextAreaElement>("server-headers").disabled).toBe(false);
+    expect(element("status").textContent).toBe("Server did not answer.");
+  });
+
+  it("gives the address its focus back when a save started from it fails", async () => {
+    const ui = await boot(null);
+    selectMode("existing");
+    await flush();
+    const field = element<HTMLInputElement>("server-url");
+    field.value = "https://one.example";
+    field.focus();
+    submitForm();
+    await flush();
+    // Browsers drop focus from a control that becomes disabled; jsdom keeps it, so drop it here.
+    expect(field.disabled).toBe(true);
+    field.disabled = false;
+    field.blur();
+    field.disabled = true;
+    expect(document.activeElement).toBe(document.body);
+
+    ui.resolveSave({ ok: false, error: "Server did not answer." });
+    await flush();
+    expect(document.activeElement).toBe(field);
+  });
+
   it("normalizes the address and reports success for the current check", async () => {
     const ui = await boot(null);
     selectMode("existing");
@@ -303,6 +357,31 @@ describe("setup", () => {
     expect(element<HTMLButtonElement>("check").disabled).toBe(false);
   });
 
+  it("shows saved headers and saves them with the existing server", async () => {
+    const headers = { "CF-Access-Client-Id": "id.access", "CF-Access-Client-Secret": "secret" };
+    const ui = await boot({ mode: "existing", serverUrl: "https://one.example", headers });
+    expect(element<HTMLDetailsElement>("server-headers-section").open).toBe(true);
+    expect(element<HTMLTextAreaElement>("server-headers").value).toBe(
+      "CF-Access-Client-Id: id.access\nCF-Access-Client-Secret: secret",
+    );
+
+    submitForm();
+    await flush();
+
+    expect(ui.saves).toEqual([{ mode: "existing", serverUrl: "https://one.example", headers }]);
+  });
+
+  it("refuses a header line without a name before saving", async () => {
+    const ui = await boot({ mode: "existing", serverUrl: "https://one.example" });
+    element<HTMLTextAreaElement>("server-headers").value = ": value";
+
+    submitForm();
+    await flush();
+
+    expect(ui.saves).toEqual([]);
+    expect(element("status").textContent).toBe("Invalid custom headers");
+  });
+
   it("renders a current start and follows it until it saves the ready stack", async () => {
     const ui = await boot(null);
     selectMode("new");
@@ -317,10 +396,54 @@ describe("setup", () => {
     await flush();
     ui.resolveAppState(null);
     await flush();
+    ui.resolveSave({ ok: true });
+    await flush();
 
     expect(element("stack-phase").textContent).toBe("Rakazo is ready.");
     expect(element("stack-phase").getAttribute("data-tone")).toBe("ok");
     expect(ui.saves).toEqual([{ mode: "new", serverUrl: DEFAULT_LOCAL_URL }]);
     expect(element<HTMLButtonElement>("continue").disabled).toBe(false);
+  });
+
+  it("lays a right-to-left language out right to left", async () => {
+    await boot(null, { lang: "he", dir: "rtl", messages: HE_MESSAGES });
+    expect(document.documentElement.lang).toBe("he");
+    expect(document.documentElement.dir).toBe("rtl");
+    expect(element("continue").textContent).toBe(HE_MESSAGES.Continue);
+  });
+
+  it("renders the page and its messages in the app's language", async () => {
+    const ui = await boot(null, { lang: "es", dir: "ltr", messages: ES_MESSAGES });
+    expect(document.documentElement.lang).toBe("es");
+    expect(document.documentElement.dir).toBe("ltr");
+    expect(document.querySelector("h1")?.textContent).toBe("Te damos la bienvenida a Rakazo");
+    expect(document.querySelector('label[for="mode-new"]')?.textContent?.trim()).toBe(
+      "Esta computadora",
+    );
+    expect(document.querySelector('label[for="mode-cloud"]')?.textContent?.trim()).toBe(
+      "Rakazo Cloud",
+    );
+    expect(element("quit").textContent).toBe("Salir");
+    expect(element("quit").title).toBe("Salir de Rakazo");
+    expect(element("stack-details").getAttribute("aria-label")).toBe("Detalles técnicos");
+    expect(element<HTMLTextAreaElement>("server-headers").placeholder).toBe("Nombre: valor");
+    expect(element("continue").textContent).toBe("Continuar");
+
+    selectMode("existing");
+    await flush();
+    element<HTMLInputElement>("server-url").value = "one.example";
+    element<HTMLButtonElement>("check").click();
+    await flush();
+    expect(element("status").textContent).toBe("Comprobando…");
+    ui.resolveCheck({ ok: true, url: "https://one.example" });
+    await flush();
+    expect(element("status").textContent).toBe("Rakazo respondió en https://one.example.");
+
+    selectMode("new");
+    submitForm();
+    ui.startResult.resolve({ ...stackState("pulling"), layerBytes: { layer: 2.5e6 } });
+    await flush();
+    expect(element("stack-phase").textContent).toBe("Descargando Rakazo…");
+    expect(element("stack-detail").textContent).toBe("3 MB descargados");
   });
 });

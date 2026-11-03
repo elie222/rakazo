@@ -5,13 +5,13 @@
 [![GitHub stars](https://img.shields.io/github/stars/elie222/rakazo?labelColor=black&style=for-the-badge&color=2563EB)](https://github.com/elie222/rakazo/stargazers)
 [![Discord コミュニティに参加](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?labelColor=black&style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/RWwKa2Sn7h)
 [![App Store で iPhone 版をダウンロード](https://img.shields.io/badge/App%20Store-Download%20for%20iPhone-black?labelColor=black&style=for-the-badge&logo=apple&logoColor=white)](https://apps.apple.com/app/rakazo/id6801531099)
-[![Android APK をダウンロード](https://img.shields.io/badge/Android-Download%20APK-black?labelColor=black&style=for-the-badge&logo=android&logoColor=white)](https://github.com/elie222/rakazo/releases/download/android/rakazo.apk)
+[![Google Play で Android 版をダウンロード](https://img.shields.io/badge/Google%20Play-Get%20the%20app-black?labelColor=black&style=for-the-badge&logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=com.rakazo.app)
 
 ![Rakazo：本当に自分のものにできる AI チームメイト](./docs/readme-hero.png)
 
 Rakazo は、常駐型の AI チームメイトを持てるオープンソースの AI エージェントです。自分のマシンで動かせる
 セルフホスト型の AI アシスタントでもあります。Web 版、Electron デスクトップアプリ、
-[iPhone](https://apps.apple.com/app/rakazo/id6801531099) 版と [Android](https://github.com/elie222/rakazo/releases/download/android/rakazo.apk) 版で利用できます。
+[iPhone](https://apps.apple.com/app/rakazo/id6801531099) 版と [Android](https://play.google.com/store/apps/details?id=com.rakazo.app) 版で利用できます。
 モデルやコンピューターのプロバイダーは自分で選べるほか、スタック全体をローカルで動かすこともできます。
 
 Grok Bot、Meta Muse、OpenAI Dots、Instinct、OpenClaw、Hermes Agent、Claude Duet の
@@ -97,7 +97,7 @@ bash install-images.sh
 ```
 
 ポート 5173 の前段に HTTPS を置いてください。Caddy の設定とホストの堅牢化については
-[docs/self-host.md](./docs/self-host.md#public-single-vm-deployment) で説明しています。デスクトップアプリでは
+[docs/self-host-production.md](./docs/self-host-production.md#public-single-vm-deployment) で説明しています。デスクトップアプリでは
 **Existing instance**（既存のインスタンス）を選び、`https://` のアドレスを入力します。
 
 または [Railway にデプロイ](https://railway.com/new/template/rakazo-template)することもできます。[Railway セットアップガイド](./infra/railway/README.md)を参照してください。
@@ -116,7 +116,7 @@ cp .env.example .env
 `POSTGRES_PASSWORD` と `POSTGRES_APP_PASSWORD` に `openssl rand -hex 16` で生成した 2 つの値を設定し、
 それらを `DATABASE_MIGRATION_URL` と `DATABASE_URL` に記入します。アプリは専用の
 `rakazo_app` ログインで接続し、行レベルセキュリティが適用されます。マイグレーションはオーナーとして実行されます
-（[データベースロール](docs/self-host.md#database-roles)）。`BETTER_AUTH_SECRET`、`ENCRYPTION_KEY`、`SCREEN_PROXY_SECRET` には
+（[データベースロール](docs/self-host-configuration.md#database-roles)）。`BETTER_AUTH_SECRET`、`ENCRYPTION_KEY`、`SCREEN_PROXY_SECRET` には
 それぞれ独立した長いランダム値を設定します。Docker サンドボックスには専用の
 `SANDBOX_SUPERVISOR_TOKEN` も必要です。`OPENROUTER_API_KEY` を設定するか、オンボーディング中に
 対応するモデルプロバイダーを接続することもできます。
@@ -267,7 +267,7 @@ pnpm test:e2e
 - [デスクトップのリリース](./docs/desktop-release.md)
 - [モバイルのリリース](./docs/mobile-release.md)
 - [パフォーマンステスト](./docs/performance.md)
-- [作成したボットの管理](./docs/fleet-management.md)
+- [ボットを管理するボット](./docs/fleet-management.md)
 
 ## Rakazo と他製品の比較
 

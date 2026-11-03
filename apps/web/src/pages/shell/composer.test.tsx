@@ -17,6 +17,7 @@ vi.mock("@lingui/react/macro", () => {
 });
 
 import { dictation } from "../../lib/dictation";
+import { createPageSession, PagesProvider } from "../../lib/pages";
 import { Composer } from "./composer";
 
 let root: Root | null = null;
@@ -190,6 +191,25 @@ function type(textarea: HTMLTextAreaElement, value: string) {
   });
 }
 
+function nativeDelete(
+  textarea: HTMLTextAreaElement,
+  selection: [number, number],
+  removed: [number, number],
+  { key = "Backspace", isComposing = false } = {},
+) {
+  const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+  act(() => textarea.setSelectionRange(...selection));
+  act(() => textarea.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })));
+  act(() => {
+    setValue?.call(
+      textarea,
+      textarea.value.slice(0, removed[0]) + textarea.value.slice(removed[1]),
+    );
+    textarea.setSelectionRange(removed[0], removed[0]);
+    textarea.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing }));
+  });
+}
+
 function pressEnter(textarea: HTMLTextAreaElement) {
   act(() => {
     textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
@@ -238,7 +258,7 @@ describe("Composer", () => {
     type(textarea, `${textarea.value}and then @Bo`);
     pressEnter(textarea);
     expect(textarea.value).toBe("ask @Bob and then @Bob ");
-    expect(container?.querySelectorAll('[data-testid="mention-chip"]')).toHaveLength(1);
+    expect(container?.querySelectorAll('[data-testid="mention-chip"]')).toHaveLength(2);
     expect(container?.querySelector('[data-testid="mention-picker"]')).toBeNull();
     expect(textarea.selectionStart).toBe(textarea.value.length);
     pressEnter(textarea);
@@ -258,17 +278,62 @@ describe("Composer", () => {
     expect(onSend).toHaveBeenCalledWith("ask @Bobby later", [], expect.any(String));
   });
 
-  it("removes mention text using the existing chip control without normalizing whitespace", () => {
-    const textarea = renderComposer(vi.fn());
-    type(textarea, "ask  @Bo");
+  it("draws each completed mention inline in the field instead of beside it", () => {
+    const textarea = renderComposer(vi.fn(), {
+      mentionTargets: [{ ...bob, color: "#3366FF" }],
+    });
+    type(textarea, "ask @Bo");
     pressEnter(textarea);
-    type(textarea, `${textarea.value} later`);
-    act(() =>
-      container?.querySelector<HTMLButtonElement>('[aria-label="Remove mention Bob"]')?.click(),
+    type(textarea, `${textarea.value}now`);
+    const field = container?.querySelector('[data-testid="composer-field"]');
+    const card = field?.querySelector('[data-testid="mention-chip"]');
+    expect(card?.textContent).toBe("@Bob");
+    expect((card as HTMLElement | null)?.style.color).toBe("rgb(51, 102, 255)");
+    expect(card?.closest("[inert]")?.textContent).toBe("ask @Bob now");
+    expect(container?.querySelector('[aria-label="Remove mention Bob"]')).toBeNull();
+    expect(textarea.className).toContain("text-transparent");
+
+    const uploaded = "data:image/png;base64,bmV3";
+    rerenderComposer({ mentionTargets: [{ ...bob, color: uploaded }] });
+    expect(container?.querySelector('[data-testid="mention-chip"] img')?.getAttribute("src")).toBe(
+      uploaded,
     );
-    expect(textarea.value).toBe("ask    later");
-    expect(container?.querySelectorAll('[data-testid="mention-chip"]')).toHaveLength(0);
   });
+
+  it.each([
+    ["Backspace at its end", [9, 9], [8, 9], "Backspace", "ask   ", 5],
+    ["Delete at its start", [5, 5], [5, 6], "Delete", "ask   ", 5],
+    ["Backspace inside it", [7, 7], [6, 7], "Backspace", "ask   ", 5],
+    ["a selection cutting into it", [2, 7], [2, 7], "Backspace", "as ", 2],
+    ["a phone keyboard deletion", [9, 9], [8, 9], "Unidentified", "ask   ", 5],
+  ] as const)(
+    "removes the whole mention after %s",
+    (_label, selection, removed, key, value, caret) => {
+      const textarea = renderComposer(vi.fn());
+      type(textarea, "ask  @Bo");
+      pressEnter(textarea);
+      expect(textarea.value).toBe("ask  @Bob ");
+      nativeDelete(textarea, [...selection], [...removed], { key });
+      expect(textarea.value).toBe(value);
+      expect([textarea.selectionStart, textarea.selectionEnd]).toEqual([caret, caret]);
+      expect(container?.querySelector('[data-testid="mention-chip"]')).toBeNull();
+    },
+  );
+
+  it.each([
+    ["the space after it", [10, 10], [9, 10], false, "ask  @Bob", 1],
+    ["an IME composition edit", [9, 9], [8, 9], true, "ask  @Bo ", 0],
+  ] as const)(
+    "keeps the native edit for %s",
+    (_label, selection, removed, isComposing, value, cards) => {
+      const textarea = renderComposer(vi.fn());
+      type(textarea, "ask  @Bo");
+      pressEnter(textarea);
+      nativeDelete(textarea, [...selection], [...removed], { isComposing });
+      expect(textarea.value).toBe(value);
+      expect(container?.querySelectorAll('[data-testid="mention-chip"]')).toHaveLength(cards);
+    },
+  );
 
   it("moves the caret past the full token even when completion leaves text unchanged", () => {
     const textarea = renderComposer(vi.fn());
@@ -352,9 +417,7 @@ describe("Composer", () => {
         ?.click(),
     );
     expect(textarea.value).toBe("@Bob ask @Bob Jones ");
-    act(() =>
-      container?.querySelector<HTMLButtonElement>('[aria-label="Remove mention Bob"]')?.click(),
-    );
+    nativeDelete(textarea, [4, 4], [3, 4]);
     expect(textarea.value).toBe(" ask @Bob Jones ");
     pressEnter(textarea);
     await act(async () => {});
@@ -421,7 +484,7 @@ describe("Composer", () => {
   );
 
   it.each(["bot", "group"])(
-    "removing a same-name %s chip removes only its occurrence",
+    "deleting a same-name %s card with Backspace removes only its occurrence",
     async (removed) => {
       const group: ComposerMention = { kind: "group", id: "group-bob", name: "Bob" };
       const onSend = vi.fn().mockResolvedValue(true);
@@ -430,11 +493,8 @@ describe("Composer", () => {
       pressEnter(textarea);
       type(textarea, `${textarea.value}then @Bo`);
       act(() => container?.querySelectorAll<HTMLButtonElement>('[role="option"]')[1]?.click());
-      act(() =>
-        container
-          ?.querySelector<HTMLButtonElement>(`[data-mention-kind="${removed}"] button`)
-          ?.click(),
-      );
+      const end = removed === "group" ? 18 : 8;
+      nativeDelete(textarea, [end, end], [end - 1, end]);
       expect(textarea.value).toBe(removed === "group" ? "ask @Bob then  " : "ask  then @Bob ");
       pressEnter(textarea);
       await act(async () => {});
@@ -509,29 +569,6 @@ describe("Composer", () => {
     expect(onSend.mock.calls[1]?.[1]).toEqual([bob]);
   });
 
-  it.each([
-    [0, 0, 0, 0],
-    [3, 3, 3, 3],
-    [5, 7, 4, 4],
-    [10, 13, 6, 9],
-    [2, 12, 2, 8],
-  ])("maps a selection %s..%s through chip removal", (start, end, nextStart, nextEnd) => {
-    const textarea = renderComposer(vi.fn());
-    type(textarea, "ask @Bo");
-    pressEnter(textarea);
-    type(textarea, `${textarea.value}one two three`);
-    act(() => {
-      textarea.setSelectionRange(start, end);
-      document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
-    });
-    act(() =>
-      container?.querySelector<HTMLButtonElement>('[aria-label="Remove mention Bob"]')?.click(),
-    );
-    expect(textarea.value).toBe("ask  one two three");
-    expect(textarea.selectionStart).toBe(nextStart);
-    expect(textarea.selectionEnd).toBe(nextEnd);
-  });
-
   it("restores a legacy raw same-name draft without inventing either target identity", async () => {
     localStorage.setItem("rakazo.composerDraft.bot:bot-1", "@Bob ");
     const group: ComposerMention = { kind: "group", id: "group-bob", name: "Bob" };
@@ -584,7 +621,7 @@ describe("Composer", () => {
       });
       pressEnter(textarea);
 
-      expect(container?.querySelector('[data-testid="mention-chip"]')?.textContent).toBe("Bob");
+      expect(container?.querySelector('[data-testid="mention-chip"]')?.textContent).toBe("@Bob");
       expect(container?.querySelector('[data-testid="mention-picker"]')).toBeNull();
     },
   );
@@ -600,7 +637,7 @@ describe("Composer", () => {
     rerenderComposer({ mentionTargets: [alice] });
     pressEnter(textarea);
 
-    expect(container?.querySelector('[data-testid="mention-chip"]')?.textContent).toBe("Alice");
+    expect(container?.querySelector('[data-testid="mention-chip"]')?.textContent).toBe("@Alice");
   });
 
   it.each([false, true])(
@@ -673,7 +710,7 @@ describe("Composer", () => {
     expect(mentionChips()).toEqual([]);
     await act(async () => finishSend(false));
     expect(textarea.value).toBe("@Bob hello");
-    expect(mentionChips()).toEqual(["Bob"]);
+    expect(mentionChips()).toEqual(["@Bob"]);
   });
 
   it("restores the chosen skill when the send fails", async () => {
@@ -1293,4 +1330,166 @@ it("accepts file drops in transparent padding only during file drags", () => {
   dispatchDrag(window, "dragenter", dataTransfer);
   dispatchDrag(window, "dragend", dataTransfer);
   expect(fieldset.classList.contains("pointer-events-none")).toBe(true);
+});
+
+it("stops the running reply on Escape, but lets Escape close the mention picker first", () => {
+  const onStop = vi.fn(async () => {});
+  const textarea = renderComposer(async () => true, { onStop });
+  const pressEscape = () =>
+    act(() =>
+      textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    );
+
+  pressEscape();
+  expect(onStop).not.toHaveBeenCalled();
+
+  rerenderComposer({ running: true });
+  pressEscape();
+  expect(onStop).toHaveBeenCalledTimes(1);
+
+  type(textarea, "@");
+  pressEscape();
+  expect(onStop).toHaveBeenCalledTimes(1);
+
+  type(textarea, "/sum");
+  expect(container?.querySelector('[aria-label="Skill summarize"]')).not.toBeNull();
+  pressEscape();
+  expect(onStop).toHaveBeenCalledTimes(1);
+  expect(container?.querySelector('[aria-label="Skill summarize"]')).toBeNull();
+
+  act(() =>
+    textarea.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", repeat: true, bubbles: true }),
+    ),
+  );
+  expect(onStop).toHaveBeenCalledTimes(1);
+});
+
+it.each([10, -30, window.innerHeight - 10])(
+  "records an intersecting run error at top %s once uncovered and stops hit testing",
+  async (top) => {
+    let fire: ((entries: Array<{ isIntersecting: boolean }>) => void) | undefined;
+    const onRunErrorPresented = vi.fn();
+    const original = globalThis.IntersectionObserver;
+    class FakeIntersectionObserver {
+      constructor(callback: (entries: Array<{ isIntersecting: boolean }>) => void) {
+        fire = callback;
+      }
+      observe(target: Element) {
+        const callback = fire;
+        fire = (entries) => callback?.(entries.map((entry) => ({ ...entry, target })));
+      }
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver);
+    const rect = {
+      width: 200,
+      height: 40,
+      top,
+      left: 10,
+      bottom: top + 40,
+      right: 210,
+      x: 10,
+      y: top,
+      toJSON: () => ({}),
+    } as DOMRect;
+    const rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(rect);
+    let covered = true;
+    const pointSpy = vi.fn((x: number, y: number) =>
+      x < 0 || x >= window.innerWidth || y < 0 || y >= window.innerHeight
+        ? null
+        : covered
+          ? document.body
+          : document.querySelector('[data-testid="composer-error"]'),
+    );
+    Object.defineProperty(document, "elementFromPoint", {
+      value: pointSpy,
+      configurable: true,
+      writable: true,
+    });
+    try {
+      renderComposer(async () => true, {
+        runError: "Something failed.",
+        runErrorId: "run-1",
+        onRunErrorPresented,
+      });
+
+      // Off screen: nothing is marked.
+      act(() => fire?.([{ isIntersecting: false }]));
+      expect(onRunErrorPresented).not.toHaveBeenCalled();
+
+      act(() => fire?.([{ isIntersecting: true }]));
+      expect(onRunErrorPresented).not.toHaveBeenCalled();
+      expect(pointSpy).toHaveBeenCalledTimes(1);
+      expect(pointSpy).toHaveBeenLastCalledWith(
+        110,
+        (Math.max(0, top) + Math.min(window.innerHeight, top + 40)) / 2,
+      );
+
+      // The last entry wins when a fast scroll enters and leaves in one batch.
+      act(() => fire?.([{ isIntersecting: true }, { isIntersecting: false }]));
+      await act(async () => {
+        document.body.setAttribute("data-uncovered", "false");
+        document.dispatchEvent(new Event("transitionend"));
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      });
+      expect(pointSpy).toHaveBeenCalledTimes(1);
+      expect(onRunErrorPresented).not.toHaveBeenCalled();
+
+      act(() => fire?.([{ isIntersecting: true }]));
+      expect(pointSpy).toHaveBeenCalledTimes(2);
+      covered = false;
+      await act(async () => {
+        document.body.setAttribute("data-uncovered", "true");
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      });
+      expect(onRunErrorPresented).toHaveBeenCalledExactlyOnceWith("run-1");
+      expect(pointSpy).toHaveBeenCalledTimes(3);
+
+      await act(async () => {
+        document.body.removeAttribute("data-uncovered");
+        document.dispatchEvent(new Event("transitionend"));
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      });
+      expect(pointSpy).toHaveBeenCalledTimes(3);
+
+      // A second entry for the same card does not report it twice.
+      act(() => fire?.([{ isIntersecting: true }]));
+      expect(onRunErrorPresented).toHaveBeenCalledTimes(1);
+    } finally {
+      rectSpy.mockRestore();
+      Reflect.deleteProperty(document, "elementFromPoint");
+      vi.stubGlobal("IntersectionObserver", original);
+    }
+  },
+);
+
+it("answers the page, not an earlier picked message, when the page's reply button fills it", () => {
+  const onClearReply = vi.fn();
+  renderComposer(vi.fn(), {
+    onClearReply,
+    replyTarget: {
+      id: "message-1",
+      threadId: "thread-1",
+      seq: 1,
+      role: "bot",
+      blocks: [{ kind: "text", text: "earlier" }],
+      createdAt: "2026-01-01T00:00:00.000Z",
+    },
+  });
+  const session = createPageSession();
+  session.dock.set({ page: { id: "page-1", title: "Plan" } });
+  act(() =>
+    root?.render(
+      <PagesProvider value={{ open: () => {}, session }}>
+        <Composer {...composerProps} />
+      </PagesProvider>,
+    ),
+  );
+  act(() => session.offerReply("Mark task 3 done"));
+  expect(onClearReply).toHaveBeenCalledTimes(1);
+  expect(container?.querySelector("textarea")?.value).toBe("Mark task 3 done");
 });

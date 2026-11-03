@@ -13,7 +13,7 @@ import {
   PgSpaceKeyStore,
 } from "./content-keys.js";
 import { PrismaClient } from "./generated/prisma/client.js";
-import { installDbContext, withRowLevelSecurity } from "./row-security.js";
+import { installDbContext, rlsBypassKey, withRowLevelSecurity } from "./row-security.js";
 import { withTextSanitization } from "./text-sanitization.js";
 
 export type Db = PrismaClient;
@@ -108,7 +108,10 @@ export function createDb(
   // Row-level security wraps everything else, so its findUnique rewrite still runs
   // through content encryption. Text is cleaned for Postgres before any of them see it.
   const prisma = withTextSanitization(
-    withRowLevelSecurity(withContentEncryption(client, contentKeys)),
+    withRowLevelSecurity(
+      withContentEncryption(client, contentKeys),
+      rlsBypassKey(connectionString),
+    ),
   );
   return { prisma, pool, contentKeys };
 }
@@ -130,6 +133,11 @@ export function isTooManyDatabaseConnections(error: unknown): boolean {
     current = current instanceof Error ? current.cause : undefined;
   }
   return false;
+}
+
+/** pg-pool's error when no connection frees up within `connectionTimeoutMillis`. */
+export function isPoolCheckoutTimeout(error: unknown): boolean {
+  return error instanceof Error && error.message === "timeout exceeded when trying to connect";
 }
 
 export async function retryOnTooManyConnections<T>(

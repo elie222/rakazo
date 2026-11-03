@@ -1,4 +1,6 @@
+import type { Api, Model } from "@earendil-works/pi-ai";
 import { DEFAULT_MODEL_MAX_TOKENS } from "@rakazo/contracts";
+import { LOCAL_PROVIDER_ID } from "./pi-local-provider-id.js";
 
 /** Per-attempt wait for response headers; this does not cap active streaming duration. */
 export const MODEL_STREAM_TIMEOUT_MS = 120_000;
@@ -17,6 +19,28 @@ export function modelStreamMaxRetries(): number {
   const value = process.env.MODEL_STREAM_MAX_RETRIES?.trim();
   const raw = Number(value || DEFAULT_MODEL_STREAM_MAX_RETRIES);
   return Number.isInteger(raw) && raw >= 0 && raw <= 5 ? raw : DEFAULT_MODEL_STREAM_MAX_RETRIES;
+}
+
+/**
+ * Whole milliseconds from 1 second to 5 minutes; blank or out of range keeps the default.
+ * Node's fetch stops waiting for headers or the next body chunk after 5 minutes, so a longer
+ * setting would not take effect for most providers.
+ */
+function timeoutMsFromEnv(value: string | undefined, fallback: number): number {
+  const raw = Number(value?.trim() || fallback);
+  return Number.isInteger(raw) && raw >= 1_000 && raw <= 300_000 ? raw : fallback;
+}
+
+export function modelStreamTimeoutMs(): number {
+  return timeoutMsFromEnv(process.env.MODEL_STREAM_TIMEOUT_MS, MODEL_STREAM_TIMEOUT_MS);
+}
+
+export function modelConnectTimeoutMs(): number {
+  return timeoutMsFromEnv(process.env.MODEL_CONNECT_TIMEOUT_MS, MODEL_CONNECT_TIMEOUT_MS);
+}
+
+export function modelStreamIdleTimeoutMs(): number {
+  return timeoutMsFromEnv(process.env.MODEL_STREAM_IDLE_TIMEOUT_MS, MODEL_STREAM_IDLE_TIMEOUT_MS);
 }
 
 export const TOOL_RESULT_TEXT_LIMIT = 12_000;
@@ -97,11 +121,25 @@ export function effectiveOutputReserve(contextWindow: number, maxTokens: number)
 }
 
 /**
+ * The output cap the operator chose for a model that has no per-connection field: the local
+ * model server's own limit, when RAKAZO_LOCAL_MAX_TOKENS is set. Unset, and for other providers,
+ * the defaults apply.
+ */
+export function operatorMaxTokens(
+  model: Pick<Model<Api>, "provider" | "maxTokens">,
+): number | undefined {
+  return model.provider === LOCAL_PROVIDER_ID && process.env.RAKAZO_LOCAL_MAX_TOKENS?.trim()
+    ? model.maxTokens
+    : undefined;
+}
+
+/**
  * Completions default to a modest output cap so OpenRouter-style providers do not
  * hold credit for a model card's 128k ceiling. A configured maxTokens overrides this
  * default, still bounded to a quarter of the context window when it is supplied.
  * Reasoning models get the wider default because their thinking is billed against
  * the same ceiling: at 4k a hard question can leave no room for the reply at all.
+ * An operator-set limit (operatorMaxTokens) replaces both defaults.
  */
 export function resolveCompletionMaxTokens(
   modelMaxTokens?: number,
@@ -109,13 +147,16 @@ export function resolveCompletionMaxTokens(
   optionsMaxTokens?: number,
   reasoning?: boolean,
   contextWindow?: number,
+  operatorDefault?: number,
 ): number {
   const userCap =
     typeof configuredMaxTokens === "number" && configuredMaxTokens >= 1
       ? configuredMaxTokens
-      : reasoning
-        ? REASONING_MODEL_MAX_TOKENS
-        : DEFAULT_MODEL_MAX_TOKENS;
+      : operatorDefault !== undefined && operatorDefault >= 1
+        ? operatorDefault
+        : reasoning
+          ? REASONING_MODEL_MAX_TOKENS
+          : DEFAULT_MODEL_MAX_TOKENS;
   const optionCap =
     typeof optionsMaxTokens === "number" && optionsMaxTokens >= 1
       ? Math.min(optionsMaxTokens, userCap)

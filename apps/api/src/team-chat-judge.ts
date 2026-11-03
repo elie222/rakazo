@@ -1,26 +1,21 @@
 import { randomUUID } from "node:crypto";
-import type {
-  AgentRunModel,
-  AgentRuntime,
-  ModelCredentialFailedState,
-  ModelCredentialRetireReason,
-  SecretStore,
-} from "@rakazo/adapter-kit";
+import type { AgentRunModel, AgentRuntime, SecretStore } from "@rakazo/adapter-kit";
 import {
   deploymentModelRole,
   formatCurrentTimeInstruction,
   hasHostedModelCredits,
   hostedModelCreditObserver,
-  matchesFailedOAuthSecret,
+  parseModelSecret,
   resolveMemberMainModel,
   resolveModelAuth,
+  retireToReconnectMarker,
   secretValuesToRedact,
   serializeModelSecret,
   toOAuthCredential,
 } from "@rakazo/adapters";
 import { redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { findModelCredential, recordUsage, retireModelCredential } from "@rakazo/db";
+import { findModelCredential, recordUsage } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
 const MAX_RULES_CHARS = 4_000;
@@ -291,25 +286,14 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         data: { ciphertext: stored.ciphertext },
       });
     };
-    // Same fences as the run path: a stale failure must not delete material a
-    // concurrent refresh or reconnect already persisted.
-    const retire = (
-      _reason: ModelCredentialRetireReason,
-      _detail: string | undefined,
-      failed?: ModelCredentialFailedState,
-    ) =>
-      retireModelCredential(this.deps.prisma, {
-        userId: bot.userId,
-        credentialId: credential.id,
-        secretId: credential.secretId,
-        matchesFailedSecret: failed
-          ? matchesFailedOAuthSecret(
-              (ciphertext, secretId) => this.deps.secrets.load(ciphertext, secretId),
-              failed,
-            )
-          : undefined,
-      });
     const plaintext = await this.deps.secrets.load(secret.ciphertext, secret.id);
+    const retire = retireToReconnectMarker(
+      this.deps.prisma,
+      this.deps.secrets,
+      { userId: bot.userId, spaceId: bot.spaceId },
+      credential,
+      parseModelSecret(plaintext).maxTokens,
+    );
     const auth = await resolveModelAuth(plaintext, provider, { persist, retire });
     const parsed = auth.secret;
     const limit = parsed.maxTokens !== undefined ? { maxTokens: parsed.maxTokens } : {};

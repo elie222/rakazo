@@ -4,8 +4,7 @@ import { BlockList, isIP } from "node:net";
 import { networkInterfaces } from "node:os";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { CLIENT_IP_HEADER } from "@rakazo/auth";
-import { securityRequestBindings } from "@rakazo/db";
-import { enrichLogContext } from "@rakazo/logging";
+import { withSecurityRequest } from "@rakazo/db";
 import type { Context, MiddlewareHandler } from "hono";
 
 export interface ClientIpConfig {
@@ -80,16 +79,23 @@ export function createClientIpResolver(
     else throw new Error(`TRUSTED_PROXIES entry is not an IP, CIDR range, or hostname: ${entry}`);
   }
 
-  let hostAddresses = new Set<string>();
+  const hostAddresses = new Map<string, Set<string>>();
   let resolvedAt = Number.NEGATIVE_INFINITY;
   let resolving: Promise<void> | undefined;
   const refreshHosts = async () => {
     if (hostnames.length === 0 || now() - resolvedAt < HOST_TTL_MS) return;
-    resolving ??= Promise.all(hostnames.map((name) => resolve(name).catch(() => null)))
+    resolving ??= Promise.all(
+      hostnames.map(async (name) => ({
+        name,
+        addresses: await resolve(name).catch(() => null),
+      })),
+    )
       .then((results) => {
         // A failed lookup keeps the last answer instead of untrusting a proxy mid-deploy.
-        if (results.some((addresses) => addresses === null) && hostAddresses.size > 0) return;
-        hostAddresses = new Set(results.flatMap((addresses) => addresses ?? []).map(normalizeIp));
+        for (const { name, addresses } of results) {
+          if (addresses === null) continue;
+          hostAddresses.set(name, new Set(addresses.map(normalizeIp)));
+        }
         resolvedAt = now();
       })
       .finally(() => {
@@ -98,7 +104,8 @@ export function createClientIpResolver(
     await resolving;
   };
   const trusted = (ip: string) =>
-    ranges.check(ip, isIP(ip) === 6 ? "ipv6" : "ipv4") || hostAddresses.has(ip);
+    ranges.check(ip, isIP(ip) === 6 ? "ipv6" : "ipv4") ||
+    [...hostAddresses.values()].some((addresses) => addresses.has(ip));
 
   return async (request: { peer?: string; forwarded?: string }): Promise<string | undefined> => {
     const peer = request.peer ? parseIp(request.peer) : undefined;
@@ -142,13 +149,12 @@ function normalizeIp(value: string): string {
 
 const CLIENT_IP_KEY = "rakazo.clientIp";
 
-/** Resolve the caller once per request, and stamp it on every log line and security event. */
+/** Resolve the caller once per request and make it available to security events. */
 export function clientIpMiddleware(resolver: ClientIpResolver, header: string): MiddlewareHandler {
   return async (c, next) => {
     const ip = await resolver({ peer: socketPeer(c), forwarded: c.req.header(header) });
     c.set(CLIENT_IP_KEY, ip);
-    enrichLogContext(securityRequestBindings({ ip, userAgent: c.req.header("user-agent") }));
-    await next();
+    await withSecurityRequest({ ip, userAgent: c.req.header("user-agent") }, next);
   };
 }
 

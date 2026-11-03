@@ -10,7 +10,7 @@ import type { ModelEmulatorStep } from "./model-emulator.js";
 import { startModelEmulator } from "./model-emulator.js";
 import { asSystem } from "./system-db.js";
 
-type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
+type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
 const databaseAvailable = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 const fixtureOrigin = "http://127.0.0.1:5173";
 

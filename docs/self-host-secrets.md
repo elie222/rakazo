@@ -72,6 +72,10 @@ off it, set `ENCRYPTION_MASTER_KEYS` and run the rotation in
 without stranding content. Keep `ENCRYPTION_KEY` unchanged afterwards: stored
 credentials still depend on it.
 
+With `MASTER_KEY_PROVIDER=aws-kms`, these and the other API and worker
+secrets can be kept in `.env` wrapped by the key manager instead of in
+plaintext ([wrapped settings](content-encryption.md#wrapped-settings)).
+
 ## Optional keys (leave blank if unused)
 
 From `.env.images.example` (images installer). Leave blank if unused:
@@ -85,6 +89,9 @@ From `.env.images.example` (images installer). Leave blank if unused:
 | `EMAIL_PROVIDER` / `EMAIL_API_KEY` / `SMTP_URL` / `EMAIL_FROM` | Optional account email via Resend API or SMTP |
 | `EXPO_ACCESS_TOKEN` | Mobile push when the Expo project enables enhanced push security |
 | Messaging tokens (Slack, Telegram, …) | Only if you enable those surfaces |
+
+Optional `APNS_VOIP_KEY_ID`, `APNS_VOIP_TEAM_ID`, and `APNS_VOIP_PRIVATE_KEY` enable
+[iOS VoIP ringing](./self-host-clients.md#mobile-incoming-calls). Keep the `.p8` contents in the secret manager.
 
 Blank optional keys are normal for a minimal published-images boot. Pipedream
 Connect keys appear only in source/Compose `.env.example`, not the images
@@ -117,6 +124,8 @@ later" item.
 ## Related
 
 - [Self-hosting](./self-host.md)
+- [Configuration](./self-host-configuration.md)
+- [Storage and encryption](./self-host-storage.md)
 
 ## Optional credential storage
 

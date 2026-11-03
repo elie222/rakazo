@@ -5,13 +5,13 @@
 [![GitHub stars](https://img.shields.io/github/stars/elie222/rakazo?labelColor=black&style=for-the-badge&color=2563EB)](https://github.com/elie222/rakazo/stargazers)
 [![加入 Discord 社区](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?labelColor=black&style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/RWwKa2Sn7h)
 [![在 App Store 下载 iPhone 版](https://img.shields.io/badge/App%20Store-Download%20for%20iPhone-black?labelColor=black&style=for-the-badge&logo=apple&logoColor=white)](https://apps.apple.com/app/rakazo/id6801531099)
-[![下载 Android APK](https://img.shields.io/badge/Android-Download%20APK-black?labelColor=black&style=for-the-badge&logo=android&logoColor=white)](https://github.com/elie222/rakazo/releases/download/android/rakazo.apk)
+[![在 Google Play 下载 Android 版](https://img.shields.io/badge/Google%20Play-Get%20the%20app-black?labelColor=black&style=for-the-badge&logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=com.rakazo.app)
 
 ![Rakazo：由你掌控的 AI 队友](./docs/readme-hero.png)
 
 Rakazo 是一个开源 AI 智能体项目，让你拥有可长期协作的 AI 队友，也可以作为自托管 AI 助手在自己的电脑上运行。
 它提供网页版、Electron 桌面应用，以及 [iPhone](https://apps.apple.com/app/rakazo/id6801531099) 和
-[Android](https://github.com/elie222/rakazo/releases/download/android/rakazo.apk) 应用。
+[Android](https://play.google.com/store/apps/details?id=com.rakazo.app) 应用。
 你可以接入自己的模型和计算环境提供商，也可以在本地运行完整服务。
 
 它是 Grok Bot、Meta Muse、OpenAI Dots、Instinct、OpenClaw、Hermes Agent、Claude Duet 和 Hark Pro 的开源、自托管替代方案。
@@ -110,7 +110,7 @@ bash install-images.sh --prepare-only
 bash install-images.sh
 ```
 
-为 5173 端口配置 HTTPS 入口。[docs/self-host.md](./docs/self-host.md#public-single-vm-deployment)
+为 5173 端口配置 HTTPS 入口。[docs/self-host-production.md](./docs/self-host-production.md#public-single-vm-deployment)
 介绍了 Caddy 配置和主机加固方法。在桌面应用中选择 **Existing instance**（已有实例），填写 `https://` 地址。
 
 ## 本地开发（从源码运行）
@@ -125,7 +125,7 @@ cp .env.example .env
 ```
 
 将 `POSTGRES_PASSWORD` 和 `POSTGRES_APP_PASSWORD` 分别设置为由 `openssl rand -hex 16` 生成的两个值，再把它们填入 `DATABASE_MIGRATION_URL` 和 `DATABASE_URL`。
-应用以自己的 `rakazo_app` 登录身份连接数据库，并受行级安全策略约束；迁移则以所有者身份运行（参见 [数据库角色](docs/self-host.md#database-roles)）。
+应用以自己的 `rakazo_app` 登录身份连接数据库，并受行级安全策略约束；迁移则以所有者身份运行（参见 [数据库角色](docs/self-host-configuration.md#database-roles)）。
 为 `BETTER_AUTH_SECRET`、`ENCRYPTION_KEY` 和 `SCREEN_PROXY_SECRET` 分别设置独立的长随机值。
 Docker 沙箱还需要专用的 `SANDBOX_SUPERVISOR_TOKEN`。
 你也可以设置 `OPENROUTER_API_KEY`，或在首次设置时连接支持的模型提供商。
@@ -270,7 +270,7 @@ pnpm test:e2e
 - [桌面端发布](./docs/desktop-release.md)
 - [移动端发布](./docs/mobile-release.md)
 - [性能测试](./docs/performance.md)
-- [计算机集群管理](./docs/fleet-management.md)
+- [管理机器人的机器人](./docs/fleet-management.md)
 
 ## 参与贡献
 

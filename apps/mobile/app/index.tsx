@@ -1,5 +1,5 @@
 import type { RunActivityRow, SpaceBot, SpaceGroup } from "@rakazo/contracts";
-import { accountDisplay, isRetryableError } from "@rakazo/core";
+import { accountDisplay, isRetryableError, reportUiLocale } from "@rakazo/core";
 import type { Href } from "expo-router";
 import {
   Redirect,
@@ -52,12 +52,14 @@ import {
   unreadChatCount,
 } from "../lib/app-badge";
 import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
+import { explicitSignInRoute } from "../lib/auth-routing";
 import { AvatarViewportScope, createAvatarViewport } from "../lib/avatar-life";
 import { isPaywallShown } from "../lib/billing";
+import type { CreateAction } from "../lib/create-chooser";
 import { createInboxBot } from "../lib/create-inbox-bot";
 import { useHeaderHeightIfAny } from "../lib/floating-header";
 import { useForegroundPoll } from "../lib/foreground-poll";
-import { t, useI18n } from "../lib/i18n";
+import { getActiveUiLocale, t, useI18n } from "../lib/i18n";
 import { retainInboxValue } from "../lib/inbox-retention";
 import type { InboxItem, InboxSpace, PinnedChat } from "../lib/inbox-spaces";
 import {
@@ -73,6 +75,7 @@ import {
   spaceInboxItems,
 } from "../lib/inbox-spaces";
 import { applyUnreadOverrides, withoutArchiving } from "../lib/inbox-swipe";
+import { mobileLogoAvatarActivity } from "../lib/logo-avatar-activity";
 import { native, useThemedStyles } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
 import type { OrganizeTarget } from "../lib/organize-target";
@@ -80,6 +83,8 @@ import { findOrganizeTarget } from "../lib/organize-target";
 import { offerPasskeyOnce } from "../lib/passkey";
 import { ACTIVITY_POLL_INTERVAL_MS, INBOX_POLL_INTERVAL_MS } from "../lib/poll-cadence";
 import { registerPushToken } from "../lib/push";
+import { forgetReferrals, rememberReferral } from "../lib/referral";
+import { hasSignedInBefore, rememberSignedIn } from "../lib/returning-user";
 import { loadSavedInbox, saveInbox } from "../lib/saved-chats";
 import {
   currentReadySessionGeneration,
@@ -108,6 +113,9 @@ async function openMobileSpace(spaceId: string | undefined, open: () => void) {
   }
   open();
 }
+
+/** The account this launch has saved its language to (see the inbox load). */
+let localeReportedFor: string | null = null;
 
 export default function HomeRoute() {
   const { split } = useSplitView();
@@ -161,6 +169,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   );
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [hasSession, setHasSession] = useState(false);
+  const [returningUser, setReturningUser] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [organizeTarget, setOrganizeTarget] = useState<OrganizeTarget | null>(null);
   const organizeRequestId = useRef(0);
@@ -241,17 +250,20 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         apiBase !== currentApiBase()
       )
         return;
-      if (nextMe.billingEnabled) {
+      if (!nextMe.billingEnabled) forgetReferrals();
+      else {
+        // Filed under the Space it was fetched for, so a late answer never shows in another.
+        const spaceId = selectedSpaceId();
         void rpc("billing/status")
           .then((billing) => {
-            if (
+            const current =
               requestId === inboxRequestId.current &&
               generation === currentSessionGeneration() &&
-              apiBase === currentApiBase() &&
-              billing.funding !== undefined &&
-              !billing.access &&
-              !isPaywallShown()
-            )
+              apiBase === currentApiBase();
+            // Only while this session is still the live one: a reply after sign-out must not
+            // restore the previous owner's link.
+            if (current) rememberReferral(spaceId, billing.referral);
+            if (current && billing.funding !== undefined && !billing.access && !isPaywallShown())
               router.push("/paywall");
           })
           .catch(() => undefined);
@@ -261,6 +273,17 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
       setGroups((current) => retainInboxValue(current, navigation.current.groups));
       setSpaces((current) => retainInboxValue(current, navigation.spaces));
       setMe((current) => retainInboxValue(current, nextMe));
+      // Emails follow the app's language, so the account keeps the one this app runs in. Once
+      // per account and launch: polls must not undo a language picked on another device since.
+      // A server that predates it leaves `locale` out.
+      if (localeReportedFor !== nextMe.userId && nextMe.locale !== undefined) {
+        localeReportedFor = nextMe.userId;
+        if (nextMe.locale !== getActiveUiLocale()) {
+          void reportUiLocale(getActiveUiLocale, (locale) =>
+            rpc("preferences/update", { locale }),
+          ).catch(() => undefined);
+        }
+      }
       inboxLoaded.current = true;
       setBadgeLoad({ generation: badgeGeneration });
       setLoadFailure(null);
@@ -304,8 +327,11 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   }, [loadBots]);
 
   useEffect(() => {
-    void loadSessionToken().then((token) => {
+    void Promise.all([loadSessionToken(), hasSignedInBefore()]).then(([token, before]) => {
+      // Sessions saved before this mark existed are recorded on their first open.
+      if (token) void rememberSignedIn();
       setHasSession(Boolean(token));
+      setReturningUser(before);
       setSessionLoaded(true);
     });
   }, []);
@@ -494,7 +520,25 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   const nativeHeader = iosAtLeast(26) && !embedded;
   const headerHeight = useHeaderHeightIfAny();
   const listRef = useRef<FlatList<InboxItem>>(null);
-  const jumpSignals = useMemo(() => listData.map(inboxSignal), [listData]);
+  const jumpSignals = useSyncExternalStore(
+    mobileLogoAvatarActivity.subscribe,
+    useMemo(() => {
+      let previous: ReturnType<typeof inboxSignal>[] = [];
+      return () => {
+        const next = listData.map(inboxSignal);
+        if (
+          next.length !== previous.length ||
+          next.some(
+            (signal, index) =>
+              signal.unread !== previous[index]?.unread ||
+              signal.attention !== previous[index]?.attention,
+          )
+        )
+          previous = next;
+        return previous;
+      };
+    }, [listData]),
+  );
   const jumpKeys = useMemo(() => listData.map(inboxItemKey), [listData]);
   const unreadJump = useUnreadJumpPills({
     signals: jumpSignals,
@@ -642,7 +686,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   }, [openChat, refreshBots, t]);
 
   const runCreateAction = useCallback(
-    (action: "bot" | "group" | "space") => {
+    (action: CreateAction) => {
       if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
       if (action === "bot") void createQuickBot();
       else if (action === "group") router.push("/new-group");
@@ -753,7 +797,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
       </View>
     );
   }
-  if (!hasSession) return <Redirect href="/sign-in" />;
+  if (!hasSession) return <Redirect href={returningUser ? explicitSignInRoute : "/sign-in"} />;
   // With nothing to show, the failure takes the screen; over saved chats it stays one line.
   // Headings of empty saved Spaces are not chats, so they do not hide the failure.
   const showLoadFailure = Boolean(loadFailure) && inboxHasNoChats(listData);
@@ -817,10 +861,16 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                         <Text style={styles.spaceTitle}>{t("Try again.")}</Text>
                       </Pressable>
                     ) : null}
-                    {!onShareSelect &&
-                    activityMode &&
-                    (activity.active.length > 0 || activity.recent.length > 0) ? (
-                      <ActivitySection activity={activity} bots={bots} />
+                    {/* Folds are saved per account, so wait for it before offering them. */}
+                    {!onShareSelect && activityMode && userId ? (
+                      <ActivitySection
+                        activity={activity}
+                        bots={visible}
+                        groups={visibleGroups}
+                        toggledSections={collapsed}
+                        onToggleSection={toggleCollapsed}
+                        openChat={openChat}
+                      />
                     ) : null}
                   </>
                 }

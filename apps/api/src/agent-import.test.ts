@@ -62,7 +62,7 @@ function services(overrides: Partial<AgentImportServices>): AgentImportServices 
     connectedProviders: async () => new Set(),
     mcpCredentialValues: async () => null,
     validateBotModel: async () => "Connect that model provider first",
-    stdioAllowed: () => false,
+    stdioAllowed: async () => () => false,
     prepareModelKey: async () => ({}),
     writeModelKey: async () => ({ id: "cred-1", secretId: "secret-1", provider: "openrouter" }),
     afterModelKey: () => undefined,

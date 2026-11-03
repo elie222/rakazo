@@ -20,8 +20,10 @@ import {
   BACKGROUND_RUN_TRIGGERS,
   callIdFromClientNonce,
   isConversationalRun,
+  MODEL_REQUIRED_SEND_ERROR,
   messageBypassesTakeoverWait,
   messageReaction,
+  parseMessagingCommand,
   projectMessages,
   QUEUE_HOLDING_RUN_STATUSES,
   resolveGroupTargetBotIds,
@@ -318,6 +320,21 @@ async function lockAndLoadGroupMembers(
     color: member.bot.color,
     avatarSet: resolveBotAvatarSet(member.bot.avatarSet),
   }));
+}
+
+/** The bots a send wakes: the bot itself, or the group members it names (else the first). */
+export function sendTargetBotIds(
+  target:
+    | { kind: "bot"; botId: string }
+    | { kind: "group"; members: Array<{ botId: string; name: string }> },
+  input: { text?: string; mentions?: MentionTargetInput[] },
+): string[] {
+  if (target.kind === "bot") return [target.botId];
+  return resolveGroupTargetBotIds({
+    text: input.text ?? "",
+    members: target.members.map((member) => ({ id: member.botId, name: member.name })),
+    explicitMentions: splitMentionTargets(input.mentions).botMentionIds,
+  });
 }
 
 export async function resolveThreadTarget(
@@ -725,7 +742,9 @@ export async function sendThreadMessage(
     events: ThreadEvents;
     jobs: JobPublisher;
     imageAdmission?: Parameters<typeof assertThreadImageInput>[5];
+    maxAttachmentsPerMessage?: number;
     analytics?: ProductAnalytics;
+    sandbox: SandboxProvider;
   },
   actor: Actor,
   target: ThreadTarget,
@@ -736,9 +755,14 @@ export async function sendThreadMessage(
     mentions?: MentionTargetInput[];
     replyToMessageId?: string;
     replyQuote?: string;
+    fromPage?: true;
     clientNonce?: string;
+    /** No model to start a turn: the send may only stop active work. */
+    noModel?: boolean;
   },
   releaseTakeover?: (runId: string) => Promise<void>,
+  /** Runs saved with the message, after the thread lock and before the message is routed. */
+  startRoutines?: (tx: Prisma.TransactionClient) => Promise<Array<{ id: string; status: string }>>,
 ) {
   const existing = await replayExistingSend(
     deps,
@@ -758,6 +782,7 @@ export async function sendThreadMessage(
   const commit = () =>
     deps.prisma.$transaction(async (tx) => {
       const author = await loadMessageAuthor(tx, actor.userId);
+      let routineRuns: Array<{ id: string; status: string }> = [];
       let replyToMessageId: string | undefined;
       let replyQuote: string | undefined;
       let replyPreview: ReplyPreview | null | undefined;
@@ -783,7 +808,11 @@ export async function sendThreadMessage(
               await loadMessageAuthor(tx, reply.authorUserId),
             );
             // Attachment labels stay in the preview; only selected text is persisted as a quote.
-            if (!requestedReplyQuote && !replyPreview.attachment) {
+            if (
+              !requestedReplyQuote &&
+              !replyPreview.attachment &&
+              !(input.fromPage && replyPreview.page)
+            ) {
               replyQuote = replyPreview.text || undefined;
             }
           }
@@ -808,7 +837,7 @@ export async function sendThreadMessage(
       if (target.kind === "bot") {
         const mentionTargets = splitMentionTargets(input.mentions);
         const { blocks: attachmentBlocks, artifacts } = await resolveSendAttachments(
-          { prisma: tx },
+          { prisma: tx, maxAttachmentsPerMessage: deps.maxAttachmentsPerMessage },
           actor,
           target.botId,
           input.artifactIds,
@@ -820,6 +849,7 @@ export async function sendThreadMessage(
         );
         // Match message counter locking before inspecting runs, without changing counters on rejection.
         await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
+        routineRuns = (await startRoutines?.(tx)) ?? [];
         const activeRuns = await tx.run.findMany({
           where: {
             threadId: target.threadId,
@@ -858,10 +888,15 @@ export async function sendThreadMessage(
           replyQuote,
           clientNonce: input.clientNonce,
         });
+        // A bare "stop" from the owner while work is active is the Stop button, not a reply.
+        const stopping = activeRuns.length > 0 && !routineRuns.length && isStopMessage(input);
+        if (input.noModel && !stopping) {
+          throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
+        }
         const answered: typeof activeRuns = [];
         // Someone else's question stays on its card; this message starts the sender's own run.
         for (const run of activeRuns.filter(
-          (run) => run.status === "waiting_input" && run.userId === actor.userId,
+          (run) => !stopping && run.status === "waiting_input" && run.userId === actor.userId,
         )) {
           if (
             await answerWaitingRunWithTextInTransaction(tx, {
@@ -919,13 +954,15 @@ export async function sendThreadMessage(
               replyPreview,
             },
           });
-          return { message, runs: answered, eventSeq: event.seq };
+          return { message, runs: answered, routineRuns, eventSeq: event.seq };
         }
-        const holdingRuns = activeRuns.filter(
-          (run) =>
-            QUEUE_HOLDING_RUN_STATUSES.some((status) => status === run.status) &&
-            !messageBypassesTakeoverWait(run),
-        );
+        const holdingRuns = stopping
+          ? activeRuns
+          : activeRuns.filter(
+              (run) =>
+                QUEUE_HOLDING_RUN_STATUSES.some((status) => status === run.status) &&
+                !messageBypassesTakeoverWait(run),
+            );
         const active =
           holdingRuns.find((run) => steersMessageFrom(run, actor)) ??
           holdingRuns.find(steersUserMessage) ??
@@ -958,7 +995,11 @@ export async function sendThreadMessage(
               replyPreview,
             },
           });
-          return { message, runs: [active], eventSeq: event.seq };
+          if (stopping) {
+            const stop = await cancelThreadRuns(actor, target, { botId: target.botId })(tx);
+            return { message, runs: [active], routineRuns, eventSeq: event.seq, stop };
+          }
+          return { message, runs: [active], routineRuns, eventSeq: event.seq };
         }
         const task = await tx.task.create({
           data: {
@@ -1008,19 +1049,15 @@ export async function sendThreadMessage(
             replyPreview,
           },
         });
-        return { message, runs: [run], eventSeq: event.seq };
+        return { message, runs: [run], routineRuns, eventSeq: event.seq };
       }
 
       const members = await lockAndLoadGroupMembers(tx, actor, target);
       const memberBotIds = members.map((member) => member.botId);
       const mentionTargets = splitMentionTargets(input.mentions);
-      const targetBotIds = resolveGroupTargetBotIds({
-        text: input.text ?? "",
-        members: members.map((member) => ({ id: member.botId, name: member.name })),
-        explicitMentions: mentionTargets.botMentionIds,
-      });
+      const targetBotIds = sendTargetBotIds({ kind: "group", members }, input);
       const { blocks: attachmentBlocks, artifacts } = await resolveGroupSendAttachments(
-        { prisma: tx },
+        { prisma: tx, maxAttachmentsPerMessage: deps.maxAttachmentsPerMessage },
         actor,
         target.groupId,
         memberBotIds,
@@ -1033,6 +1070,7 @@ export async function sendThreadMessage(
       );
       // Group ownership is locked first, then the thread, as in the normal write path.
       await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
+      routineRuns = (await startRoutines?.(tx)) ?? [];
       const activeRuns = await tx.run.findMany({
         where: {
           threadId: target.threadId,
@@ -1205,7 +1243,7 @@ export async function sendThreadMessage(
           replyPreview,
         },
       });
-      return { message, runs, eventSeq: event.seq };
+      return { message, runs, routineRuns, eventSeq: event.seq };
     });
 
   const committed = await withSerializableRetry(commit).catch(async (error) => {
@@ -1224,6 +1262,10 @@ export async function sendThreadMessage(
     { name: "message_sent", trigger: "user" },
     { id: committed.message.id, at: committed.message.createdAt },
   );
+  if ("stop" in committed && committed.stop) {
+    await finishThreadStop(deps, actor, target, committed.stop);
+    return sendResult(committed.message, committed.runs);
+  }
   await deps.events.notify(target.threadId, committed.eventSeq).catch((error) => {
     // Subscribers catch up from the durable event cursor after a missed realtime wake.
     getLogger().error("thread send realtime notification", error);
@@ -1233,7 +1275,7 @@ export async function sendThreadMessage(
       if (steersMessageFrom(run, actor)) await releaseTakeover(run.id);
     }
   }
-  await enqueueRunsNeedingContinue(deps.jobs, committed.runs);
+  await enqueueRunsNeedingContinue(deps.jobs, [...committed.routineRuns, ...committed.runs]);
   return sendResult(committed.message, committed.runs);
 }
 
@@ -1254,7 +1296,7 @@ export async function reactToThreadMessage(
     messageId: string;
     reaction: MessageReaction;
     clientNonce: string;
-    /** False when a send could not start a run either (no model, teaching). */
+    /** False when a send to the reacted-to bot could not start a run either (no model, teaching). */
     mayStartTurn: boolean;
   },
   releaseTakeover?: (runId: string) => Promise<void>,
@@ -1463,6 +1505,13 @@ async function startReactionTurn(
   return [run];
 }
 
+/** A bare "stop" or "stop now" with nothing attached: the owner's Stop, sent as text. */
+export function isStopMessage(input: { text?: string; artifactIds?: string[] }) {
+  return !input.artifactIds?.length && parseMessagingCommand(input.text ?? "") === "stop";
+}
+
+export const STOPPED_BY_MESSAGE_NOTE = "Stopped. Anything already done stays done.";
+
 export async function stopThreadRuns(
   deps: {
     prisma: PrismaClient;
@@ -1472,7 +1521,23 @@ export async function stopThreadRuns(
   actor: Actor,
   target: ThreadTarget,
 ) {
-  const { runIds, computers, leases, eventSeq } = await deps.prisma.$transaction(async (tx) => {
+  const stop = await deps.prisma.$transaction(cancelThreadRuns(actor, target));
+  await finishThreadStop(deps, actor, target, stop);
+}
+
+/**
+ * Stop's database half, run in the caller's transaction: cancels the thread's active runs and
+ * clears its pending steering under the thread lock. `note` says so in the chat when anything
+ * was cancelled. Call finishThreadStop after commit.
+ */
+export function cancelThreadRuns(
+  actor: Pick<Actor, "spaceId">,
+  target:
+    | { kind: "bot"; botId: string; threadId: string }
+    | { kind: "group"; memberBotIds: string[]; threadId: string },
+  note?: { botId: string },
+) {
+  return async (tx: Prisma.TransactionClient) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
     const cancelled = await tx.run.updateManyAndReturn({
       where: {
@@ -1536,6 +1601,23 @@ export async function stopThreadRuns(
       });
       eventSeq = event.seq;
     }
+    if (ids.length && note) {
+      const blocks: MessageBlock[] = [{ kind: "meta", text: STOPPED_BY_MESSAGE_NOTE }];
+      const message = await createThreadMessageInTransaction(tx, {
+        threadId: target.threadId,
+        role: "system",
+        blocks,
+        botId: note.botId,
+      });
+      const event = await appendEventInTransaction(tx, {
+        spaceId: actor.spaceId,
+        threadId: target.threadId,
+        botId: note.botId,
+        type: "thread.message.created",
+        payload: { messageId: message.id, role: "system", blocks },
+      });
+      eventSeq = event.seq;
+    }
     if (ids.length) {
       await tx.event.deleteMany({
         where: {
@@ -1545,7 +1627,16 @@ export async function stopThreadRuns(
       });
     }
     return { runIds: ids, computers, leases, eventSeq };
-  });
+  };
+}
+
+/** Stop's after-commit half: wakes subscribers and tears down the cancelled runs' computer work. */
+export async function finishThreadStop(
+  deps: { prisma: PrismaClient; sandbox: SandboxProvider; events: Pick<ThreadEvents, "notify"> },
+  actor: Pick<Actor, "spaceId" | "userId">,
+  target: { threadId: string },
+  { runIds, computers, leases, eventSeq }: Awaited<ReturnType<ReturnType<typeof cancelThreadRuns>>>,
+) {
   if (eventSeq !== null) {
     // The events are durable; subscribers refetch from their persisted cursor.
     await deps.events.notify(target.threadId, eventSeq).catch((error) => {

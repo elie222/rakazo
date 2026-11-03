@@ -197,12 +197,13 @@ test("an armed reply survives the parent paging out of the transcript", async ({
     reaction: "👍",
     clientNonce: `qr-${stamp}`,
   });
-  const computerButton = page.getByRole("button", { name: "Agent computer", exact: true });
+  // Opening the bot panel refreshes the thread.
+  const panelButton = page.getByTestId("bot-settings-trigger");
   await expect(async () => {
-    if ((await computerButton.getAttribute("data-active")) !== null) {
-      await computerButton.click();
+    if ((await panelButton.getAttribute("aria-expanded")) === "true") {
+      await panelButton.click();
     }
-    await computerButton.click();
+    await panelButton.click();
     await expect(parentRow).toHaveCount(0, { timeout: 3_000 });
   }).toPass({ timeout: 30_000 });
   await expect(replyChip).toBeVisible();
@@ -222,6 +223,29 @@ test("an armed reply survives the parent paging out of the transcript", async ({
 
   // Stop the reply's run so its continues cannot churn into the next test.
   await rpc(page, "threads/stop", { botId });
+});
+
+test("triple-clicking the last paragraph of the latest reply quotes it", async ({ page }) => {
+  const stamp = Date.now();
+  await signup(page, `quote-triple-${stamp}@rakazo.test`, "password12", "Quote Tester");
+  await completeOnboarding(page);
+
+  const composer = page.getByRole("combobox", { name: /Message/ });
+  await composer.fill(`quote-triple-${stamp}`);
+  await composer.press("Enter");
+  // The scripted bot answers in two paragraphs; the last one ends the transcript,
+  // so a triple-click's selection runs on into the composer.
+  const lastParagraph = page
+    .getByTestId("message-bot-bubble")
+    .locator("p")
+    .filter({ hasText: `i handled: quote-triple-${stamp}` });
+  await expect(lastParagraph).toBeVisible({ timeout: 20_000 });
+
+  await lastParagraph.click({ clickCount: 3 });
+  const quoteButton = page.getByTestId("quote-selection");
+  await expect(quoteButton).toBeVisible();
+  await quoteButton.click();
+  await expect(page.getByTestId("reply-chip")).toContainText(`i handled: quote-triple-${stamp}`);
 });
 
 test("quoting a second message retargets the armed reply", async ({ page }) => {

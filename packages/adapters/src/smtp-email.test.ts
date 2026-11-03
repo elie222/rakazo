@@ -1,5 +1,4 @@
-import type { Socket } from "node:net";
-import { createServer } from "node:net";
+import { createServer, Socket } from "node:net";
 import nodemailer from "nodemailer";
 import { describe, expect, it, vi } from "vitest";
 import { SmtpEmailProvider } from "./smtp-email.js";
@@ -73,19 +72,42 @@ describe("SmtpEmailProvider", () => {
     expect(sleep.mock.calls.map(([delay]) => delay)).toEqual([250, 1_000]);
   });
 
-  // Each case runs real nodemailer against a scripted server and counts connections.
+  // Each case runs real nodemailer against a scripted server and records every reply
+  // the scripted sessions received, so the expected retry cannot be faked by a probe.
   it.each([
-    { name: "a 4xx on RCPT", script: { rcpt: ["451 busy", "250 ok"] }, connections: 2, sent: 1 },
+    {
+      name: "a 4xx on RCPT",
+      script: { rcpt: ["451 busy", "250 ok"] },
+      sessions: 2,
+      sent: 1,
+      rcpt: ["451 busy", "250 ok"],
+      end: ["250 queued"],
+    },
     {
       name: "a 4xx after DATA",
       script: { end: ["451 later", "250 queued"] },
-      connections: 2,
+      sessions: 2,
       sent: 1,
+      rcpt: ["250 ok", "250 ok"],
+      end: ["451 later", "250 queued"],
     },
-    { name: "a 5xx on RCPT", script: { rcpt: ["550 no such user"] }, connections: 1, sent: 0 },
-    { name: "a drop after the message was sent", script: { end: [null] }, connections: 1, sent: 0 },
-    { name: "a missing greeting", script: { greet: [false, true] }, connections: 2, sent: 1 },
-  ])("handles $name", async ({ script, connections, sent }) => {
+    {
+      name: "a 5xx on RCPT",
+      script: { rcpt: ["550 no such user"] },
+      sessions: 1,
+      sent: 0,
+      rcpt: ["550 no such user"],
+      end: [],
+    },
+    {
+      name: "a drop after the message was sent",
+      script: { end: [null] },
+      sessions: 1,
+      sent: 0,
+      rcpt: ["250 ok"],
+      end: [null],
+    },
+  ])("handles $name", async ({ script, sessions, sent, rcpt, end }) => {
     const server = await scriptedSmtpServer(script);
     const provider = new SmtpEmailProvider(
       { url: "smtp://smtp.example.test", from: "a@example.test" },
@@ -105,10 +127,64 @@ describe("SmtpEmailProvider", () => {
       const delivery = provider.send({ to: "ada@example.test", subject: "Hi", text: "Hello" });
       if (sent) await expect(delivery).resolves.toBeUndefined();
       else await expect(delivery).rejects.toThrow();
-      expect(server.connections()).toBe(connections);
+      expect(server.sessions()).toBe(sessions);
       expect(server.messages()).toBe(sent);
+      expect(server.rcptReplies()).toEqual(rcpt);
+      expect(server.endReplies()).toEqual(end);
     } finally {
       await server.close();
+    }
+  });
+
+  it("retries a delivery whose connection never receives a greeting", async () => {
+    // A relay that accepts TCP but never speaks. Every transport connection hits its
+    // greeting timeout, so the provider must retry the greeting failure until the
+    // retries run out. The relay keeps no state, so a probe from a local tool cannot
+    // change what the test observes; the hook counts only this process's sockets.
+    const sockets = new Set<Socket>();
+    const server = createServer((socket) => {
+      sockets.add(socket);
+      socket.on("close", () => sockets.delete(socket));
+      socket.on("error", () => undefined);
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("SMTP test server did not bind");
+    let transportConnections = 0;
+    const realConnect = Socket.prototype.connect as (...args: unknown[]) => unknown;
+    const countTransportSocket = function (this: Socket, ...args: unknown[]) {
+      const socket = realConnect.apply(this, args);
+      if (connectTargetPort(args) === address.port) transportConnections += 1;
+      return socket;
+    };
+    const socketConnect = vi
+      .spyOn(Socket.prototype, "connect")
+      .mockImplementation(countTransportSocket as never);
+    const provider = new SmtpEmailProvider(
+      { url: "smtp://smtp.example.test", from: "a@example.test" },
+      {
+        createTransport: () =>
+          nodemailer.createTransport({
+            host: "127.0.0.1",
+            port: address.port,
+            ignoreTLS: true,
+            greetingTimeout: 100,
+          }),
+        retryDelaysMs: [0, 0],
+      },
+    );
+    try {
+      await expect(
+        provider.send({ to: "ada@example.test", subject: "Hi", text: "Hello" }),
+      ).rejects.toThrow(/greeting/i);
+      // The transport itself connected three times: the greeting timeout was retried.
+      expect(transportConnections).toBe(3);
+    } finally {
+      socketConnect.mockRestore();
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
     }
   });
 
@@ -305,25 +381,29 @@ describe("SmtpEmailProvider", () => {
 });
 
 type SmtpScript = {
-  /** Whether each connection, in order, gets a greeting; later ones do. */
-  greet?: boolean[];
-  /** Reply to RCPT TO on each connection; later ones accept. */
+  /** Reply to RCPT TO on each session; later ones accept. */
   rcpt?: string[];
   /** Reply after the message body, or null to drop the connection; later ones queue it. */
   end?: Array<string | null>;
 };
 
+/**
+ * scriptedSmtpServer greets every connection, but only a client that opens the SMTP
+ * handshake takes a script slot: a local tool probing the port speaks HTTP or hangs up
+ * and is closed without consuming a scripted reply.
+ */
 async function scriptedSmtpServer(script: SmtpScript) {
   const sockets = new Set<Socket>();
-  let connections = 0;
+  const rcptReplies: string[] = [];
+  const endReplies: Array<string | null> = [];
+  let sessions = 0;
   let messages = 0;
   const server = createServer((socket) => {
-    const index = connections++;
     sockets.add(socket);
     socket.on("close", () => sockets.delete(socket));
     socket.on("error", () => undefined);
-    if (script.greet?.[index] === false) return;
     socket.write("220 localhost ESMTP\r\n");
+    let index = -1;
     let buffer = "";
     let inData = false;
     socket.on("data", (chunk) => {
@@ -331,20 +411,33 @@ async function scriptedSmtpServer(script: SmtpScript) {
       for (let end = buffer.indexOf("\r\n"); end >= 0; end = buffer.indexOf("\r\n")) {
         const line = buffer.slice(0, end);
         buffer = buffer.slice(end + 2);
+        if (index < 0 && !/^(EHLO|HELO) /i.test(line)) {
+          socket.destroy();
+          return;
+        }
+        if (index < 0) {
+          index = sessions++;
+          socket.write("250 localhost\r\n");
+          continue;
+        }
         if (inData) {
           if (line !== ".") continue;
           inData = false;
-          const reply = script.end && index < script.end.length ? script.end[index] : "250 queued";
+          const reply = script.end && index < script.end.length ? script.end[index]! : "250 queued";
+          endReplies.push(reply);
           if (reply === null) {
             socket.destroy();
             return;
           }
-          if (reply?.startsWith("250")) messages += 1;
+          if (reply.startsWith("250")) messages += 1;
           socket.write(`${reply}\r\n`);
         } else if (/^(EHLO|HELO) /i.test(line)) socket.write("250 localhost\r\n");
         else if (/^MAIL FROM:/i.test(line)) socket.write("250 ok\r\n");
-        else if (/^RCPT TO:/i.test(line)) socket.write(`${script.rcpt?.[index] ?? "250 ok"}\r\n`);
-        else if (/^DATA$/i.test(line)) {
+        else if (/^RCPT TO:/i.test(line)) {
+          const reply = script.rcpt?.[index] ?? "250 ok";
+          rcptReplies.push(reply);
+          socket.write(`${reply}\r\n`);
+        } else if (/^DATA$/i.test(line)) {
           inData = true;
           socket.write("354 go ahead\r\n");
         } else if (/^QUIT$/i.test(line)) socket.end("221 bye\r\n");
@@ -358,7 +451,9 @@ async function scriptedSmtpServer(script: SmtpScript) {
   let closed = false;
   return {
     port: address.port,
-    connections: () => connections,
+    sessions: () => sessions,
+    rcptReplies: () => rcptReplies,
+    endReplies: () => endReplies,
     messages: () => messages,
     close: async () => {
       if (closed) return;
@@ -369,4 +464,17 @@ async function scriptedSmtpServer(script: SmtpScript) {
       );
     },
   };
+}
+
+/** The destination port of a `Socket.prototype.connect` call, in either argument shape. */
+function connectTargetPort(args: unknown[]): number | undefined {
+  let [first] = args;
+  if (Array.isArray(first)) [first] = first; // node's normalized [options, listener] pair
+  if (typeof first === "number") return first;
+  if (first && typeof first === "object" && "port" in first) {
+    const { port } = first as { port?: number | string };
+    if (typeof port === "number") return port;
+    if (typeof port === "string") return Number.parseInt(port, 10);
+  }
+  return undefined;
 }

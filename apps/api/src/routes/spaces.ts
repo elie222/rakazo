@@ -1,5 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import { runContinueJob } from "@rakazo/adapter-kit";
+import { stopCancelledGroupRuns } from "@rakazo/adapters";
 import type { Actor, SpaceNavigation } from "@rakazo/contracts";
 import type { createGroupRepos, createRepos, PrismaClient, SpaceDeparture } from "@rakazo/db";
 import {
@@ -19,7 +20,7 @@ import {
   leaveSpace,
   listSpaceMembers,
   previewSpaceInvite,
-  recordSecurityEvent,
+  recordAuditEvent,
   removeSpaceMember,
   renameSpaceForMember,
   runAsSystem,
@@ -40,7 +41,6 @@ import type { RouterDeps } from "../router.js";
 import { listRoutinesDto } from "../routines.js";
 import { deleteSpaceWithContent } from "../space-deletion.js";
 import { resolveThreadTarget, threadSnapshot } from "../thread-target.js";
-import { stopCancelledRunWork } from "./bots.js";
 import type { RouterContext } from "./context.js";
 import { meDto } from "./shared.js";
 
@@ -67,7 +67,6 @@ function mapSpaceMemberError(error: unknown): never {
 /** Remove and leave share this: stop the departed person's runs and tell clients. */
 async function afterSpaceDeparture(
   deps: RouterDeps,
-  groupRepos: ReturnType<typeof createGroupRepos>,
   actor: { spaceId: string; userId: string },
   departure: SpaceDeparture,
 ): Promise<void> {
@@ -78,7 +77,7 @@ async function afterSpaceDeparture(
       }),
     ),
   );
-  await stopCancelledRunWork(deps, groupRepos, actor, departure);
+  await stopCancelledGroupRuns(deps, actor, departure);
   // The job reconciler retries a failed enqueue: the runs are already queued.
   await Promise.all(
     departure.continuationRunIds.map((runId) =>
@@ -111,7 +110,10 @@ async function asMemberOf<T>(
     where: { spaceId, userId: actor.userId },
     select: { id: true },
   });
-  if (!member) throw new ORPCError("NOT_FOUND", { message: new SpaceNotFoundError().message });
+  if (!member)
+    throw new ORPCError("NOT_FOUND", {
+      message: new SpaceNotFoundError().message,
+    });
   return runAsTenant({ spaceId, userId: actor.userId }, fn);
 }
 
@@ -146,6 +148,12 @@ export function spacesRoutes(ctx: RouterContext) {
             }
             throw error;
           }
+          await recordAuditEvent({
+            action: "space.created",
+            actor: { type: "user", id: context.actor.userId },
+            spaceId: space.id,
+            target: { type: "space", id: space.id, label: space.name },
+          });
           return {
             id: space.id,
             name: space.name,
@@ -165,12 +173,19 @@ export function spacesRoutes(ctx: RouterContext) {
       rename: authed.spaces.rename.handler(({ context, input }) =>
         asMemberOf(deps.prisma, context.actor, input.spaceId, async () => {
           try {
-            return await renameSpaceForMember(deps.prisma, {
+            const renamed = await renameSpaceForMember(deps.prisma, {
               currentSpaceId: context.actor.spaceId,
               userId: context.actor.userId,
               spaceId: input.spaceId,
               name: input.name,
             });
+            await recordAuditEvent({
+              action: "space.renamed",
+              actor: { type: "user", id: context.actor.userId },
+              spaceId: renamed.id,
+              target: { type: "space", id: renamed.id, label: renamed.name },
+            });
+            return renamed;
           } catch (error) {
             if (error instanceof SpaceNotFoundError) {
               throw new ORPCError("NOT_FOUND", { message: error.message });
@@ -193,12 +208,26 @@ export function spacesRoutes(ctx: RouterContext) {
       remove: authed.spaces.remove.handler(({ context, input }) =>
         asMemberOf(deps.prisma, context.actor, input.spaceId, async () => {
           try {
+            const space = await deps.prisma.space.findUnique({
+              where: { id: input.spaceId },
+              select: { organizationId: true, name: true },
+            });
             const { activeSpaceId } = await deleteSpaceWithContent(
               deps,
               context.actor,
               input.spaceId,
               context.signal,
             );
+            if (space) {
+              await recordAuditEvent({
+                action: "space.deleted",
+                actor: { type: "user", id: context.actor.userId },
+                spaceId: input.spaceId,
+                organizationId: space.organizationId,
+                spaceName: space.name,
+                target: { type: "space", id: input.spaceId, label: space.name },
+              });
+            }
             return { ok: true as const, activeSpaceId };
           } catch (error) {
             if (error instanceof SpaceNotFoundError) {
@@ -236,15 +265,14 @@ export function spacesRoutes(ctx: RouterContext) {
               userId: context.actor.userId,
               memberUserId: input.userId,
             }).catch(mapSpaceMemberError);
-            await recordSecurityEvent({
-              type: "space.member.removed",
-              userId: context.actor.userId,
+            await recordAuditEvent({
+              action: "space.member.removed",
+              actor: { type: "user", id: context.actor.userId },
               spaceId: input.spaceId,
-              metadata: { memberUserId: input.userId },
+              target: { type: "user", id: input.userId },
             });
             await afterSpaceDeparture(
               deps,
-              groupRepos,
               { spaceId: input.spaceId, userId: context.actor.userId },
               departure,
             );
@@ -257,14 +285,13 @@ export function spacesRoutes(ctx: RouterContext) {
               spaceId: input.spaceId,
               userId: context.actor.userId,
             }).catch(mapSpaceMemberError);
-            await recordSecurityEvent({
-              type: "space.member.left",
-              userId: context.actor.userId,
+            await recordAuditEvent({
+              action: "space.member.left",
+              actor: { type: "user", id: context.actor.userId },
               spaceId: input.spaceId,
             });
             await afterSpaceDeparture(
               deps,
-              groupRepos,
               { spaceId: input.spaceId, userId: context.actor.userId },
               departure,
             );
@@ -284,9 +311,9 @@ export function spacesRoutes(ctx: RouterContext) {
               spaceId: input.spaceId,
               userId: context.actor.userId,
             }).catch(mapSpaceMemberError);
-            await recordSecurityEvent({
-              type: "space.invite.created",
-              userId: context.actor.userId,
+            await recordAuditEvent({
+              action: "space.invite.created",
+              actor: { type: "user", id: context.actor.userId },
               spaceId: input.spaceId,
             });
             return {
@@ -308,9 +335,9 @@ export function spacesRoutes(ctx: RouterContext) {
             userId: context.actor.userId,
           }).catch(mapSpaceMemberError);
           if (accepted.joined) {
-            await recordSecurityEvent({
-              type: "space.member.joined",
-              userId: context.actor.userId,
+            await recordAuditEvent({
+              action: "space.member.joined",
+              actor: { type: "user", id: context.actor.userId },
               spaceId: accepted.spaceId,
             });
             syncSeatsLater(deps, accepted.organizationId);

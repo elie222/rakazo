@@ -3,6 +3,8 @@ import { displayName } from "@rakazo/core";
 import { isOwnerRole } from "./billing.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
+import type { PageShareSecret } from "./page-shares.js";
+import { deletePageShareSecrets } from "./page-shares.js";
 import { IsolationError } from "./scope.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
@@ -421,7 +423,12 @@ export async function releaseSpaceDeletionClaim(
 export async function deleteClaimedSpaceForMember(
   prisma: PrismaClient,
   input: ClaimedSpaceDeleteInput,
-): Promise<{ id: string; artifactKeys: string[]; homeKeys: string[] }> {
+): Promise<{
+  id: string;
+  artifactKeys: string[];
+  homeKeys: string[];
+  pageShareSecrets: PageShareSecret[];
+}> {
   return withTransactionRetry(() =>
     prisma.$transaction(
       async (tx) => {
@@ -444,6 +451,7 @@ export async function deleteClaimedSpaceForMember(
         // Content creation is blocked while claimed, so this only trips when teardown
         // was cut short; a retry finishes it.
         if (remainingBots > 0 || provisioned > 0) throw new SpaceDeletionInProgressError();
+        const pageShareSecrets = await deletePageShareSecrets(tx, { spaceId: input.spaceId });
         await tx.space.delete({ where: { id: input.spaceId } });
         // People who only belonged to this Space leave its organization with it.
         await tx.member.deleteMany({
@@ -452,6 +460,7 @@ export async function deleteClaimedSpaceForMember(
         const removed = {
           artifactKeys: artifacts.map((artifact) => artifact.storageKey),
           homeKeys: computers.map((computer) => computer.homeKey),
+          pageShareSecrets,
         };
         if (input.spaceId !== input.currentSpaceId) {
           return { id: input.currentSpaceId, ...removed };
@@ -557,7 +566,7 @@ export async function claimSpacesLeavingWithAccount(
 export async function deleteSpaceLeavingWithAccount(
   prisma: PrismaClient,
   input: { spaceId: string; userId: string },
-): Promise<{ artifactKeys: string[] } | null> {
+): Promise<{ artifactKeys: string[]; pageShareSecrets: PageShareSecret[] } | null> {
   const claimId = accountDeletionClaimId(input.userId);
   const organizationIds = await personalOrganizationIds(prisma, input.userId);
   return withTransactionRetry(() =>
@@ -588,8 +597,18 @@ export async function deleteSpaceLeavingWithAccount(
         }
         // Teardown was cut short; deleting again finishes it.
         if (remainingBots > 0 || remainingComputers > 0) throw new SpaceDeletionInProgressError();
-        await tx.space.deleteMany({ where: { id: input.spaceId, deletionClaimId: claimId } });
-        return { artifactKeys: artifacts.map((artifact) => artifact.storageKey) };
+        // The page links' tokens go with the Space; the caller removes them from the store.
+        const pageShareSecrets = await tx.secret.findMany({
+          where: { pageShare: { is: { spaceId: input.spaceId } } },
+          select: { id: true, ciphertext: true },
+        });
+        const gone = await tx.space.deleteMany({
+          where: { id: input.spaceId, deletionClaimId: claimId },
+        });
+        return {
+          artifactKeys: artifacts.map((artifact) => artifact.storageKey),
+          pageShareSecrets: gone.count > 0 ? pageShareSecrets : [],
+        };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),

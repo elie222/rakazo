@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canChooseOwnComputer,
   classifySandboxProvider,
   computersAreUnavailable,
   sandboxCheckFailureMessage,
@@ -18,6 +19,17 @@ describe("computersAreUnavailable", () => {
   it("treats configured providers as available", () => {
     expect(computersAreUnavailable("docker")).toBe(false);
     expect(computersAreUnavailable("e2b")).toBe(false);
+  });
+});
+
+describe("canChooseOwnComputer", () => {
+  it("offers an account its own desktop wherever Settings routes computers", () => {
+    expect(canChooseOwnComputer("docker")).toBe(true);
+    expect(canChooseOwnComputer("test-desktop")).toBe(true);
+    expect(canChooseOwnComputer("none")).toBe(false);
+    expect(canChooseOwnComputer("desktop")).toBe(false);
+    expect(canChooseOwnComputer("fake")).toBe(false);
+    expect(canChooseOwnComputer(null)).toBe(false);
   });
 });
 

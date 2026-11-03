@@ -1,6 +1,7 @@
 import { MenuView } from "@expo/ui/community/menu";
 import type { BillingStatus } from "@rakazo/contracts";
 import {
+  byokYearlySwitchSavings,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
@@ -9,9 +10,15 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { Alert, AppState, ScrollView, Share, StyleSheet } from "react-native";
 import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
-import { rpc } from "../../lib/api";
-import { currentPlan, openBillingPage, planEndsAt } from "../../lib/billing";
+import { rpc, selectedSpaceId } from "../../lib/api";
+import {
+  currentPlan,
+  openBillingPage,
+  ownKeySubscriptionCents,
+  planEndsAt,
+} from "../../lib/billing";
 import { dateLocaleForUi, useI18n } from "../../lib/i18n";
+import { rememberReferral } from "../../lib/referral";
 import { openFromSettingsSheet } from "../../lib/settings-sheet";
 import { useSideInsets } from "../../lib/side-insets";
 
@@ -33,12 +40,19 @@ export default function BillingScreen() {
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [amount, setAmount] = useState<Amount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
   const [pending, setPending] = useState(false);
-  const show = useCallback((next: BillingStatus) => {
-    setStatus(next);
-    setAmount(
-      ModelCreditAmountSchema.catch(DEFAULT_MONTHLY_CREDIT_AMOUNT).parse(next.monthlyAmountCents),
-    );
-  }, []);
+  // This screen shows the Space it opened in; every answer it gets, including a late one after a
+  // Space switch, is filed under that Space.
+  const [space] = useState(selectedSpaceId);
+  const show = useCallback(
+    (next: BillingStatus) => {
+      setStatus(next);
+      rememberReferral(space, next.referral);
+      setAmount(
+        ModelCreditAmountSchema.catch(DEFAULT_MONTHLY_CREDIT_AMOUNT).parse(next.monthlyAmountCents),
+      );
+    },
+    [space],
+  );
   useFocusEffect(
     useCallback(() => {
       let active = true;
@@ -76,12 +90,16 @@ export default function BillingScreen() {
 
   const plan = currentPlan(status);
   const endsAt = planEndsAt(status);
+  const ownKeyCents = ownKeySubscriptionCents(status);
   const recurring = Boolean(
     status.monthlyAmountCents && !["none", "canceled", "incomplete"].includes(status.state),
   );
   // Owners can always top up, as on web; a top-up is how an own-key plan starts on credits.
   const credits = status.funding === "credits" || (status.balanceUsd ?? 0) > 0 || status.canManage;
   const referral = status.referral;
+  const endTrial = status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd;
+  const yearlySavings = byokYearlySwitchSavings(status);
+  const annualCents = status.byokAnnualPriceCents;
   return (
     <ScrollView
       style={sideInsets}
@@ -91,6 +109,13 @@ export default function BillingScreen() {
       <SettingsGroup>
         <SettingsRow
           title={t("Plan")}
+          detail={
+            ownKeyCents
+              ? status.byokInterval === "year"
+                ? t("{price} / year", { price: `$${ownKeyCents / 100}` })
+                : t("{price} / month", { price: `$${ownKeyCents / 100}` })
+              : undefined
+          }
           value={
             status.state === "trialing" || status.byokFreeUntil
               ? t("Free trial")
@@ -109,6 +134,35 @@ export default function BillingScreen() {
         ) : status.access && status.currentPeriodEndsAt ? (
           <SettingsRow title={t("Renews")} value={formatDate(status.currentPeriodEndsAt)} />
         ) : null}
+        {yearlySavings !== null && annualCents ? (
+          <SettingsRow
+            title={t("Switch to yearly")}
+            value={`−${yearlySavings}%`}
+            disabled={pending}
+            onPress={() =>
+              Alert.alert(
+                t("Switch to yearly?"),
+                status.state === "trialing"
+                  ? t("Your plan becomes {price} / year when your trial ends.", {
+                      price: `$${annualCents / 100}`,
+                    })
+                  : t("Your card is charged {price} today, less the unused part of this month.", {
+                      price: `$${annualCents / 100}`,
+                    }),
+                [
+                  { text: t("Cancel"), style: "cancel" },
+                  {
+                    text: t("Switch"),
+                    onPress: () =>
+                      void action(async () => {
+                        show(await rpc("billing/switchToYearly"));
+                      }),
+                  },
+                ],
+              )
+            }
+          />
+        ) : null}
         {status.canManage ? (
           <SettingsRow
             title={plan && !status.byokFreeUntil ? t("Change plan") : t("Choose a plan")}
@@ -117,6 +171,39 @@ export default function BillingScreen() {
           />
         ) : null}
       </SettingsGroup>
+      {status.computerHoursLeft != null ? (
+        <SettingsGroup
+          footer={endTrial ? t("Trials get fewer hours to prevent abuse.") : undefined}
+        >
+          <SettingsRow title={t("Computer hours left")} value={String(status.computerHoursLeft)} />
+          {endTrial ? (
+            <SettingsRow
+              title={t("Start plan now")}
+              disabled={pending}
+              onPress={() =>
+                Alert.alert(
+                  t("Start your plan now?"),
+                  ownKeyCents
+                    ? t("Your trial ends and your card is charged {price} today.", {
+                        price: `$${ownKeyCents / 100}`,
+                      })
+                    : t("Your trial ends and your card is charged today."),
+                  [
+                    { text: t("Cancel"), style: "cancel" },
+                    {
+                      text: t("Start plan"),
+                      onPress: () =>
+                        void action(async () => {
+                          show(await rpc("billing/endTrial"));
+                        }),
+                    },
+                  ],
+                )
+              }
+            />
+          ) : null}
+        </SettingsGroup>
+      ) : null}
       {referral ? (
         <SettingsGroup footer={t("Get a free month for each friend who starts a trial.")}>
           <SettingsRow

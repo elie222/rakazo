@@ -5,7 +5,7 @@ import {
   percentageDelta,
   roundMetric,
   summarize,
-} from "./performance-report";
+} from "./performance-report.js";
 
 describe("performance report statistics", () => {
   it("summarizes a distribution without mutating it", () => {
