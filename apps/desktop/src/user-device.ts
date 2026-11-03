@@ -101,6 +101,9 @@ export async function readDeviceConsent(
   try {
     const saved = raw === null ? null : JSON.parse(raw);
     if (saved?.origin !== origin) return null;
+    // Versions before accounts were saved also wrote "declined" when the server ended a pairing,
+    // so that answer may not be the person's: ask again.
+    if (saved.consent === "declined" && !("userId" in saved)) return null;
     return saved.consent === "allowed" || saved.consent === "declined"
       ? { consent: saved.consent, userId: optionalString(saved.userId) }
       : null;

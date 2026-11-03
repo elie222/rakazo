@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -93,6 +93,19 @@ describe("device token storage", () => {
       userId: "user-1",
     });
     expect(await readDeviceConsent(userData, other)).toEqual({ consent: "declined", userId: null });
+  });
+
+  it("asks again when a decline was saved before accounts were, since the server's sign-out wrote those too", async () => {
+    await saveDeviceConsent(userData, origin, { consent: "declined", userId: null });
+    await saveDeviceConsent(userData, other, { consent: "allowed", userId: null });
+    const dir = path.join(userData, "devices");
+    for (const name of await readdir(dir)) {
+      const file = path.join(dir, name);
+      const { userId: _, ...legacy } = JSON.parse(await readFile(file, "utf8"));
+      await writeFile(file, JSON.stringify(legacy));
+    }
+    expect(await readDeviceConsent(userData, origin)).toBeNull();
+    expect(await readDeviceConsent(userData, other)).toEqual({ consent: "allowed", userId: null });
   });
 });
 
