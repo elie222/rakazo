@@ -16,8 +16,8 @@ import type {
   MessagingSurface,
 } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
-import type { Adapter, Message, PostableMarkdown, Thread } from "chat";
-import { Chat, isLinkNode, parseMarkdown, text, toPlainText, walkAst } from "chat";
+import type { Adapter, Message, PostableMarkdown, Root, Thread } from "chat";
+import { Chat, isLinkNode, paragraph, parseMarkdown, root, text, toPlainText, walkAst } from "chat";
 import { getLarkTextParts } from "./lark/text-parts.js";
 
 /**
@@ -27,7 +27,34 @@ import { getLarkTextParts } from "./lark/text-parts.js";
 const webhookDrain = new AsyncLocalStorage<{
   pending: Promise<unknown>[];
   failedKeys: string[];
+  markdownChars: number;
 }>();
+
+/**
+ * Markdown parsing is superlinear on hostile text (unmatched emphasis, deep
+ * quotes), so past this many characters in one webhook the text stays literal.
+ */
+export const INBOUND_MARKDOWN_MAX_CHARS = 8_000;
+
+/** Bound the adapter's inbound text-to-markdown parsing per webhook; sends are untouched. */
+export function boundInboundMarkdown(adapter: Adapter): void {
+  const converter = (adapter as unknown as { formatConverter: { toAst(value: string): Root } })
+    .formatConverter;
+  const toAst = converter.toAst.bind(converter);
+  converter.toAst = (value) => {
+    const drain = webhookDrain.getStore();
+    if (!drain) return toAst(value);
+    drain.markdownChars += value.length;
+    if (drain.markdownChars <= INBOUND_MARKDOWN_MAX_CHARS) {
+      try {
+        return toAst(value);
+      } catch {
+        // Deep nesting overflows the parser's stack.
+      }
+    }
+    return root([paragraph([text(value)])]);
+  };
+}
 
 /** Inbound webhook bodies larger than this are rejected before parsing. */
 export const MESSAGING_WEBHOOK_MAX_BODY_BYTES = 256 * 1024;
@@ -412,7 +439,11 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     // only register the work via waitUntil. Drain that work before ACKing so
     // a vendor 200 cannot race ahead of provision/enqueue, and surface sink
     // failures as 5xx so the vendor retries.
-    const drain = { pending: [] as Promise<unknown>[], failedKeys: [] as string[] };
+    const drain = {
+      pending: [] as Promise<unknown>[],
+      failedKeys: [] as string[],
+      markdownChars: 0,
+    };
     const response = await webhookDrain.run(drain, async () => {
       const adapterResponse = await chat.webhooks[adapterName]!(forwarded, {
         waitUntil: (task) => {
