@@ -132,7 +132,7 @@ export function PageCard({ block, messageId }: { block: PageBlock; messageId: st
         />
       )}
       <View style={[styles.footer, { borderTopColor: `${tokens.foreground}0A` }]}>
-        <PageIcon style={styles.icon} />
+        <PageIcon colors={tokens} style={styles.icon} />
         <View style={styles.footerText}>
           <Text numberOfLines={1} style={[styles.title, { color: tokens.foreground }]}>
             {state.title}

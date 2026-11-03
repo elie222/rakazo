@@ -120,7 +120,7 @@ export default function PagesScreen() {
         chevron="right"
         title={page.title}
         detail={`${page.visibility === "link" ? `${t("Shared")} · ` : ""}${formatActivityRelativeTime(page.updatedAt)}`}
-        leading={<PageIcon width={26} />}
+        leading={<PageIcon colors={tokens} width={26} />}
         onPress={() => open(page)}
       />
     </MenuView>

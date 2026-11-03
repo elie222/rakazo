@@ -1,12 +1,5 @@
 import type { ColorTokens, ResolvedAppearance } from "@rakazo/ui-tokens";
-import {
-  darkTokens,
-  fontWeight,
-  MAX_FONT_SCALE,
-  pageIconBars,
-  tokensForAppearance,
-  typeScale,
-} from "@rakazo/ui-tokens";
+import { darkTokens, fontWeight, MAX_FONT_SCALE, pageIconBars, typeScale } from "@rakazo/ui-tokens";
 import type {
   ASTNode,
   MarkdownStyleMap,
@@ -32,7 +25,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  useColorScheme,
   useWindowDimensions,
   View,
 } from "react-native";
@@ -1210,9 +1202,9 @@ const renderRules: RenderRules = {
 };
 
 /** What a chip in the text does: a mention's rendering, and opening a linked page. */
-const InlineChipsContext = createContext<Pick<ChatMarkdownProps, "renderMention" | "onOpenPage">>(
-  {},
-);
+const InlineChipsContext = createContext<
+  Pick<ChatMarkdownProps, "renderMention" | "onOpenPage"> & { palette: ColorTokens }
+>({ palette: darkTokens });
 
 function MarkdownMention({
   id,
@@ -1229,15 +1221,17 @@ function MarkdownMention({
 
 /** `PAGE_ICON` drawn from views so it can sit inline in text; the flap is a border triangle. */
 export function PageIcon({
+  colors,
   width = PAGE_ICON.width,
   style,
 }: {
+  /** The app's resolved palette, which can differ from the device's color scheme. */
+  colors: ColorTokens;
   width?: number;
   style?: StyleProp<ViewStyle>;
 }) {
   const s = width / PAGE_ICON.width;
   const { foldX, foldY, radius } = PAGE_ICON;
-  const colors = tokensForAppearance(useColorScheme() === "light" ? "light" : "dark");
   const sheet = { position: "absolute", backgroundColor: colors.pageIconSheet } as const;
   return (
     <View
@@ -1337,13 +1331,13 @@ function MarkdownPageChip({
   /** A user bubble's opener; Markdown reads it from the message. */
   onOpenPage?: (pageId: string) => void;
 }) {
-  const fromMessage = useContext(InlineChipsContext).onOpenPage;
+  const { onOpenPage: fromMessage, palette } = useContext(InlineChipsContext);
   const openPage = onOpenPage ?? fromMessage;
   if (!openPage) return <Text>{children}</Text>;
   return (
     <Text accessibilityRole="link" onPress={() => openPage(pageId)}>
       <View style={pageChipMarker}>
-        <PageIcon width={chipIconWidth} />
+        <PageIcon colors={palette} width={chipIconWidth} />
       </View>
       <Text style={titleStyle}>{children}</Text>
     </Text>
@@ -1645,7 +1639,10 @@ export const ChatMarkdown = memo(function ChatMarkdown({
     },
   };
 
-  const inlineChips = useMemo(() => ({ renderMention, onOpenPage }), [renderMention, onOpenPage]);
+  const inlineChips = useMemo(
+    () => ({ renderMention, onOpenPage, palette }),
+    [renderMention, onOpenPage, palette],
+  );
   return (
     <OpenLinkContext.Provider value={openLink}>
       <InlineChipsContext.Provider value={inlineChips}>
