@@ -10,7 +10,7 @@ for the sharing and persistence contract.
 | --- | --- | --- |
 | Local Docker computers | `SANDBOX_PROVIDER=docker` | `SANDBOX_SUPERVISOR_TOKEN`, computer image, Docker socket for supervisor |
 | UI only, no computers | `SANDBOX_PROVIDER=none` | No provider credential; published-images Compose still requires `SANDBOX_SUPERVISOR_TOKEN` |
-| Managed remote desktop | `e2b` / `novita` / `daytona` / `boat` / `boxd` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/Boat) |
+| Managed remote desktop | `e2b` / `novita` / `daytona` / `createos` / `boat` / `boxd` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/CreateOS/Boat) |
 | One pod per computer on your own cluster | `SANDBOX_PROVIDER=kubernetes` | API and worker running in the cluster, a namespace and a Role that can create, read, delete and exec into pods |
 
 Published-images [Compose](../infra/compose/docker-compose.images.yml) defaults to **`docker`**.
