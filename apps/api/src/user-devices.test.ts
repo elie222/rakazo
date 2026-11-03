@@ -32,6 +32,8 @@ function fakePrisma() {
   const events: Array<{ type: string; userId: string | null; metadata: object }> = [];
   /** Live sessions by id, with their expiry. Every test user starts signed in. */
   const sessions = new Map<string, Date>();
+  /** Users with no sign-in left at all. */
+  const signedOutUsers = new Set<string>();
   const signedIn = (id: string) =>
     sessions.get(id) ?? (id.endsWith("-ended") ? null : new Date(Date.now() + 60_000));
   type Where = Partial<Row> & { OR?: Partial<Row>[] };
@@ -94,6 +96,8 @@ function fakePrisma() {
       findUnique: async () => null,
     },
     session: {
+      findFirst: async ({ where }: { where: { userId: string } }) =>
+        signedOutUsers.has(where.userId) ? null : { id: `${where.userId}-session` },
       findMany: async ({ where }: { where: { id: { in: string[] }; expiresAt: { gt: Date } } }) =>
         where.id.in
           .filter((id) => {
@@ -107,7 +111,14 @@ function fakePrisma() {
     },
     $transaction: (run: (tx: unknown) => Promise<unknown>) => run(prisma),
   };
-  return { prisma: prisma as unknown as PrismaClient, rows, events, connections, sessions };
+  return {
+    prisma: prisma as unknown as PrismaClient,
+    rows,
+    events,
+    connections,
+    sessions,
+    signedOutUsers,
+  };
 }
 
 class FakeSocket extends EventEmitter implements UserDeviceSocket {
@@ -332,15 +343,45 @@ describe("device sessions", () => {
     await expect(hub.authenticate(`Bearer ${token}`)).resolves.toBeNull();
   });
 
-  it("ends a device paired before sessions were recorded with the user's next session", async () => {
-    const { pair, store, rows } = setup();
+  it("keeps a device paired before sessions were recorded until the user has no sign-in left", async () => {
+    const { pair, store, rows, signedOutUsers } = setup();
     await pair("user-1", { session: "desktop" });
     rows[0]!.sessionId = null;
     await pair("user-2");
     rows[1]!.sessionId = null;
 
     await endUserDeviceSession(store, { id: "phone", userId: "user-1" });
+    expect(rows.map((row) => row.revokedAt === null)).toEqual([true, true]);
+
+    signedOutUsers.add("user-1");
+    await endUserDeviceSession(store, { id: "desktop", userId: "user-1" });
     expect(rows.map((row) => row.revokedAt === null)).toEqual([false, true]);
+  });
+
+  it("ties a device paired before sessions were recorded to its desktop's sign-in", async () => {
+    const { pair, app, store, rows } = setup();
+    const { token } = await (await pair("user-1", { session: "desktop" })).json();
+    rows[0]!.sessionId = null;
+    const tie = (user: string | null, authorization = `Bearer ${token}`, session = "desktop") =>
+      app.request("/api/devices/self/session", {
+        method: "POST",
+        headers: {
+          authorization,
+          ...(user ? { "x-test-user": user, "x-test-session": session } : {}),
+        },
+      });
+
+    expect((await tie(null)).status).toBe(401);
+    expect((await tie("user-1", "Bearer wrong")).status).toBe(401);
+    expect((await tie("user-2")).status).toBe(403);
+    expect(rows[0]!.sessionId).toBeNull();
+
+    expect((await tie("user-1")).status).toBe(204);
+    expect((await tie("user-1", `Bearer ${token}`, "phone")).status).toBe(204);
+    expect(rows[0]!.sessionId).toBe("desktop");
+
+    await endUserDeviceSession(store, { id: "desktop", userId: "user-1" });
+    expect(rows[0]!.revokedAt).toBeInstanceOf(Date);
   });
 
   it("never accepts a device paired by a sign-in that already ended", async () => {

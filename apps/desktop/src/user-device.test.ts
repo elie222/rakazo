@@ -384,11 +384,43 @@ describe("remote computer access", () => {
     await access.pair();
     expect(clients[0]!.closed).toBe(true);
     expect(clients).toHaveLength(1);
-    expect(requests).toEqual([]);
+    expect(requests.map((request) => request.url)).toEqual([`${origin}/api/devices/self/session`]);
     await access.select(origin);
     expect(clients).toHaveLength(2);
     access.close();
     expect(clients[1]!.closed).toBe(true);
+  });
+
+  it("ties a saved pairing to the sign-in once, waiting for one when signed out", async () => {
+    await savePairedDevice(
+      userData,
+      origin,
+      { token: "saved-token", deviceId: "d1", userId: null },
+      cipher,
+    );
+    let signedIn = false;
+    const { access, requests } = setup({
+      fetch: async (url, init) => {
+        requests.push({ url, init });
+        return new Response(null, { status: signedIn ? 204 : 401 });
+      },
+    });
+    await access.select(origin);
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0]).toMatchObject({
+      url: `${origin}/api/devices/self/session`,
+      init: {
+        method: "POST",
+        credentials: "include",
+        headers: { authorization: "Bearer saved-token" },
+      },
+    });
+
+    signedIn = true;
+    await access.pair();
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await access.pair();
+    expect(requests).toHaveLength(2);
   });
 
   it("forgets a revoked token and stays unpaired until turned back on", async () => {
@@ -411,7 +443,7 @@ describe("remote computer access", () => {
     );
     expect(access.state(origin)).toEqual({ deviceId: null, allowed: false });
     await access.pair();
-    expect(requests).toEqual([]);
+    expect(requests.map((request) => request.url)).toEqual([`${origin}/api/devices/self/session`]);
 
     await access.setAllowed(origin, true);
     expect(confirm).toHaveBeenCalledTimes(1);

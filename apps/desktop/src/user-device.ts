@@ -9,7 +9,11 @@ import type {
   UserDevicePairRequest,
   UserDevicePairResponse,
 } from "@rakazo/contracts";
-import { USER_DEVICE_PAIR_PATH, USER_DEVICE_PATH } from "@rakazo/contracts";
+import {
+  USER_DEVICE_PAIR_PATH,
+  USER_DEVICE_PATH,
+  USER_DEVICE_SESSION_PATH,
+} from "@rakazo/contracts";
 import { readPrivateFile, writePrivateFile } from "./setup-store.js";
 
 export interface DeviceTokenCipher {
@@ -158,6 +162,8 @@ export function createUserDeviceAccess(deps: {
   const unavailable = new Set<string>();
   const prompts = new Map<string, Promise<boolean>>();
   const pairings = new Map<string, Promise<void>>();
+  /** Saved tokens not yet tied to a sign-in this launch; pairings from before that was recorded. */
+  const untied = new Map<string, string>();
   /** A revoked token's file deletion, which a new pairing's save must follow. */
   const removals = new Map<string, Promise<void>>();
 
@@ -177,6 +183,7 @@ export function createUserDeviceAccess(deps: {
       onRevoked: (reason) => {
         if (client === active) client = undefined;
         paired.delete(origin);
+        untied.delete(origin);
         removals.set(
           origin,
           deletePairedDevice(deps.userDataDir, origin).catch(() => undefined),
@@ -249,8 +256,33 @@ export function createUserDeviceAccess(deps: {
 
   function pair() {
     const origin = current;
-    if (origin === null || consent.get(origin)?.consent === "declined") return Promise.resolve();
+    if (origin === null) return Promise.resolve();
+    void tieToSignIn(origin);
+    if (consent.get(origin)?.consent === "declined") return Promise.resolve();
     return pairOnce(origin);
+  }
+
+  /** Signed out, it waits for the next sign-in; already tied, the server leaves it alone. */
+  async function tieToSignIn(origin: string) {
+    const token = untied.get(origin);
+    const device = paired.get(origin);
+    if (!token || !device) return;
+    untied.delete(origin);
+    let tied = false;
+    try {
+      const response = await deps.fetch(new URL(USER_DEVICE_SESSION_PATH, origin).href, {
+        method: "POST",
+        credentials: "include",
+        headers: { authorization: `Bearer ${token}` },
+        redirect: "error",
+        signal: AbortSignal.timeout(10_000),
+      });
+      await response.body?.cancel();
+      tied = response.status !== 401;
+    } catch {
+      /* Tried again on the next sign-in or launch. */
+    }
+    if (!tied && paired.get(origin) === device) untied.set(origin, token);
   }
 
   function pairOnce(origin: string) {
@@ -344,7 +376,9 @@ export function createUserDeviceAccess(deps: {
       if (consent.get(origin)?.consent !== "declined") consent.set(origin, choice);
       if (device) {
         paired.set(origin, { deviceId: device.deviceId, userId: device.userId });
+        untied.set(origin, device.token);
         start(origin, device.token);
+        void tieToSignIn(origin);
       } else {
         paired.delete(origin);
         void pair();

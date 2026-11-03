@@ -14,6 +14,7 @@ import {
   USER_DEVICE_CONNECT_PATH,
   USER_DEVICE_PAIR_PATH,
   USER_DEVICE_PATH,
+  USER_DEVICE_SESSION_PATH,
   userDevicePairRequest,
 } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
@@ -56,8 +57,9 @@ async function revokeDevice(
 /**
  * A computer stays paired only while the sign-in that paired it lasts, so signing out, a password
  * reset or signing out everywhere disconnects it. A password change that keeps the caller signed
- * in moves the caller's computers to the replacing session. Computers paired before sessions were
- * recorded end with the user's next session.
+ * in moves the caller's computers to the replacing session. A computer paired before sessions were
+ * recorded is tied to none, so it ends only once the user has no sign-in left; its desktop app ties
+ * it to its own sign-in when it next connects.
  */
 export async function endUserDeviceSession(
   store: DeviceStore,
@@ -75,9 +77,19 @@ export async function endUserDeviceSession(
     );
     return;
   }
+  const signedIn = await runAsSystem("check for a user's remaining sign-ins", () =>
+    prisma.session.findFirst({
+      where: { userId, expiresAt: { gt: new Date() } },
+      select: { id: true },
+    }),
+  );
   const devices = await runAsSystem("find a session's user devices", () =>
     prisma.userDevice.findMany({
-      where: { userId, revokedAt: null, OR: [{ sessionId: ended.id }, { sessionId: null }] },
+      where: {
+        userId,
+        revokedAt: null,
+        OR: [{ sessionId: ended.id }, ...(signedIn ? [] : [{ sessionId: null }])],
+      },
       select: { id: true },
     }),
   );
@@ -141,6 +153,20 @@ export function mountUserDeviceRoutes(app: Hono, deps: UserDeviceRouteDeps) {
   });
 
   app.get(USER_DEVICE_CONNECT_PATH, (c) => c.json({ error: "Upgrade required" }, 426));
+
+  app.post(USER_DEVICE_SESSION_PATH, async (c) => {
+    const device = await deps.hub.authenticate(c.req.header("authorization"));
+    const session = await deps.session(c.req.raw);
+    if (!device || !session) return c.json({ error: "Unauthorized" }, 401);
+    if (device.userId !== session.userId) return c.json({ error: "Forbidden" }, 403);
+    await runAsSystem("tie a user device to its sign-in", () =>
+      prisma.userDevice.updateMany({
+        where: { id: device.id, userId: device.userId, revokedAt: null, sessionId: null },
+        data: { sessionId: session.sessionId },
+      }),
+    );
+    return c.body(null, 204);
+  });
 
   // Registered before `:deviceId` so "self" is never read as an id.
   app.delete(`${USER_DEVICE_PATH}/self`, async (c) => {
