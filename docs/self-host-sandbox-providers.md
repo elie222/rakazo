@@ -238,7 +238,8 @@ That exception lifts only the uptime cap; idle suspension after `SANDBOX_IDLE_MS
 applies once nothing holds the computer.
 Docker and Kubernetes computers are capped only when `COMPUTER_MAX_ACTIVE_UNBILLED_MS` is set
 (off by default; minimum 60000), with the same exceptions, so an abandoned background command
-cannot keep one running for days. This-Mac computers are never capped. The next use resumes it.
+cannot keep one running for days. Like every cap, it needs idle sleep on: `SANDBOX_IDLE_MS=0`
+turns it off too. This-Mac computers are never capped. The next use resumes it.
 Asking for takeover restarts the idle timer, and on providers that do not bill while running the run
 also holds the computer for 30 minutes after asking, so the user can answer the push on
 the same open page.
