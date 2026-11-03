@@ -209,12 +209,21 @@ List the cases without inference:
 pnpm test:evals --list
 ```
 
-Run through a normal provider connection, referring to an existing credential
-variable rather than placing a key on the command line:
+By default every suite except approval, which keeps its configured reviewer,
+runs Claude Haiku 5.5 through OpenRouter, reading the key
+from `OPENROUTER_API_KEY` and pricing from the committed fixture, so results do
+not depend on a local `PI_DEFAULT_MODEL`:
+
+```bash
+pnpm test:evals --live --trials 3
+```
+
+To try another model, name an existing credential variable rather than placing
+a key on the command line:
 
 ```bash
 pnpm test:evals --live --provider openrouter --model <model-id> \
-  --api-key-env OPENROUTER_API_KEY --trials 3
+  --api-key-env OPENROUTER_API_KEY --pricing <pricing.json> --trials 3
 ```
 
 `--connection <private-json-file>` also accepts the shared `models/connect`
@@ -421,6 +430,41 @@ fact and a wiped memory.
 The offline model-protocol fixture runs the same product path and proves that an
 appended Berlin beside London and a claimed save after a full-memory refusal
 fail, while a rewrite and a consolidate-then-save pass.
+
+### Reply length evals
+
+```sh
+pnpm test:evals --suite verbosity --list
+pnpm test:evals --live --suite verbosity --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/verbosity.json
+```
+
+Seven ordinary chat requests that need tools: a one-fact CRM lookup, an inbox
+check, a note whose save errors after it succeeded, a GitHub outage, work across
+two apps, a fact found mid-task that the person must be told before the last
+step, and an owner whose bot instructions ask for one or two sentences.
+Each case checks the effect (the right reads, exactly one note, no other
+writes, and a read after the uncertain save before it is reported) and a word
+budget over every message the person saw during the turn.
+
+The `verbosity-meaning-v7` judge then reads that whole turn, in order, with the
+owner's instructions when the bot has them, and grades meaning: the reply gives
+the requested outcome without contradicting the case facts, leads with it, does
+not narrate its process, and has no recap, unrequested advice, or closing offer
+after a successful answer. One short opening sentence, one short line while
+working, one short sentence about a recovered error, and one short next step
+after a failure are allowed. A fact the person must learn has to reach them even
+though they did not ask for it. It runs only after the deterministic checks
+pass and is calibrated against reviewed examples of direct answers, narrated
+work, self-correction, closing offers, invented causes, omitted facts, and
+short-but-wrong replies. Owner-trusted writes are pre-approved through approval
+rules; the outage case turns off web and computer fallbacks so it grades how
+the failure is reported.
+
+On Claude Haiku 5.5 with the reply-style guidance, 9 of 21 trials pass and
+replies average 35 visible words. The person was told about the already-paid
+invoice in every trial of that case. Most failures are extra explanation: a
+two-sentence account of the recovered save, lists where the owner asked for one
+or two sentences, and small embellishments such as "review and sign".
 
 ### Long conversation and cost evals
 

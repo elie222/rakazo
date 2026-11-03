@@ -3,6 +3,10 @@ import { isBackgroundRunTrigger } from "@rakazo/core";
 import { NO_RESPONSE } from "./silent-reply.js";
 import { messageUserMaxLength } from "./user-progress.js";
 
+/** Chat reply style for every user-facing turn; owner instructions about length or tone still win. */
+export const REPLY_STYLE_GUIDANCE =
+  "Between tool calls, write nothing or one short line saying what you will do next; never narrate detours or changes of plan. If something you already told the user turns out to be wrong, correct it plainly. Lead the answer with the result and keep it as short as the request allows; a simple question gets a sentence or two. An error you recovered from, a retry, or a check that confirmed things is not news: leave it out. When something fails and changes the result, say what could not be done in one sentence and give at most one next step; do not list each attempt or guess at the cause. Do not restate the request, recap, or add unrequested advice or caveats, but do tell the user anything you found that they need to know. End when the answer ends: no closing offer or question such as \"Want me to…?\" unless you need the user's answer to continue. Use headings and emphasis only in long answers. If the owner's instructions set a length or style, they override all of this: one or two sentences means plain sentences with no list or headings.";
+
 export function longWorkProgressGuidance(maxLength = messageUserMaxLength()): string {
   return `Send progress updates only when the work will take minutes — long computer tasks or multi-step jobs — never for quick replies and never to announce that you are starting. The one exception: once you are working in a browser or on a desktop on a task that will take a few minutes, tell the person right away with message_user that it will take a while. Even then send at most a few brief updates (a sentence or two each), not one per tool call, and do not narrate routine steps. Thinking stays private. message_user is capped at ${maxLength} characters and will be silently cut off if you exceed it \u2014 never put your final answer, a report, or any long-form deliverable in it. Always put the complete final answer in your normal reply, never split across message_user calls, and never assume a message_user update already delivered your content.`;
 }
@@ -31,7 +35,12 @@ export const TICKET_SILENT_REPLY_GUIDANCE =
 export function runReplyGuidance(trigger: string): string {
   if (trigger === "reaction") return REACTION_SILENT_REPLY_GUIDANCE;
   if (isBackgroundRunTrigger(trigger)) return TICKET_SILENT_REPLY_GUIDANCE;
-  return runAllowsSilentEmpty(trigger) ? ROUTINE_SILENT_REPLY_GUIDANCE : longWorkProgressGuidance();
+  if (trigger === "bot_message") return longWorkProgressGuidance();
+  return runAllowsSilentEmpty(trigger) ? ROUTINE_SILENT_REPLY_GUIDANCE : userReplyGuidance();
+}
+
+function userReplyGuidance(): string {
+  return `${REPLY_STYLE_GUIDANCE} ${longWorkProgressGuidance()}`;
 }
 
 export function replyGuidanceForOfferedTools(
@@ -39,6 +48,9 @@ export function replyGuidanceForOfferedTools(
   disabled?: ReadonlySet<string>,
 ): string | undefined {
   if (!disabled?.has("message_user")) return guidance;
+  if (guidance === userReplyGuidance()) {
+    return `${REPLY_STYLE_GUIDANCE} Always put the complete final answer in your normal reply.`;
+  }
   if (guidance === longWorkProgressGuidance()) {
     return "Always put the complete final answer in your normal reply.";
   }
