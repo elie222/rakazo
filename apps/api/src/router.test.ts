@@ -3525,7 +3525,7 @@ describe("connections.complete", () => {
       return { status: response.status, body: await response.json() };
     }
     const securityEvents = () => sink.events.filter((event) => event.message === "security.event");
-    return { complete, revoke, connector, securityEvents, row, sink };
+    return { complete, revoke, connector, connection, securityEvents, row, sink };
   }
 
   it.each([
@@ -3571,6 +3571,15 @@ describe("connections.complete", () => {
     expect(row.providerRef).toBe("account-1");
     expect(connector.complete).not.toHaveBeenCalled();
     expect(securityEvents()).toEqual([]);
+  });
+
+  it("keeps the app-only ref while a sibling authorization for the same app is unresolved", async () => {
+    const { complete, connector, connection, row } = pollFixture("connected");
+    connection.findMany.mockResolvedValue([{ providerRef: "gmail" }] as never);
+    Object.assign(connector, { resolveConnectedAccountId: vi.fn(async () => "account-2") });
+
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
+    expect(row.providerRef).toBe("gmail");
   });
 
   it("stores the connected account a request id resolves to", async () => {

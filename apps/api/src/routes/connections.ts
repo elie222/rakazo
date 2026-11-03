@@ -683,7 +683,11 @@ export function connectionsRoutes(ctx: RouterContext) {
                   const ref = sibling.providerRef?.trim();
                   // Slug-only refs cannot identify a concrete remote account; resolving
                   // them would pick an arbitrary ACTIVE id and over-exclude.
-                  if (!ref || ref === existing.provider) continue;
+                  if (!ref || ref === existing.provider) {
+                    // A connected row has no claim on a newer account a sibling may have just authorized.
+                    if (current.status === "connected") return current;
+                    continue;
+                  }
                   const resolvedSiblingId = await resolveAccountId(ref, []);
                   if (!resolvedSiblingId) return current;
                   excludeIds.push(resolvedSiblingId);
