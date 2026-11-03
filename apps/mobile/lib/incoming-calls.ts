@@ -351,8 +351,12 @@ export function startIncomingCalls() {
     void notificationResponse(response).catch(() => undefined);
   });
   const app = AppState.addEventListener("change", (state) => {
-    if (state === "active") refresh();
-    else if (snapshot) reportNativeCall(snapshot);
+    if (state === "active") {
+      // Android's in-app screen takes over the ring from the native notification.
+      if (Platform.OS === "android" && snapshot)
+        void native?.endIncomingCall(snapshot.incomingCall.callId);
+      refresh();
+    } else if (snapshot) reportNativeCall(snapshot);
   });
   const events = native?.addListener("onIncomingCallChanged", () => {
     void drainNative().catch(() => undefined);
