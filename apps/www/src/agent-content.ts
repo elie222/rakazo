@@ -9,8 +9,7 @@ import {
   getHomeCopy,
 } from "./i18n/home";
 import { roundupMarkdown } from "./roundup";
-import { ANDROID_APP_STORE_URL } from "@rakazo/contracts/client-build";
-import { APP_URL, GITHUB_URL, IOS_APP_URL, PLUGIN_SUBMISSIONS_URL } from "./site";
+import { APP_URL, GITHUB_URL, PLUGIN_SUBMISSIONS_URL } from "./site";
 
 export const AGENT_DISCOVERY_LINKS =
   '</llms.txt>; rel="describedby"; type="text/plain", </.well-known/ai-catalog.json>; rel="ai-catalog"; type="application/ai-catalog+json"';
@@ -104,18 +103,6 @@ Rakazo targets the web, macOS, Windows, Linux, iOS, and Android. The source is a
 - [Self-hosting guide](https://rakazo.com/self-hosted-ai-agent/)
 - [Full self-hosting reference](https://github.com/elie222/rakazo/blob/main/docs/self-host.md)
 - [Support](https://rakazo.com/support/)
-`;
-
-export const DOWNLOAD_MARKDOWN = `# Download Rakazo
-
-- [macOS](https://rakazo.com/api/download?platform=mac)
-- [Windows](https://rakazo.com/api/download?platform=windows)
-- [Linux](https://rakazo.com/api/download?platform=linux)
-- [iPhone](${IOS_APP_URL})
-- [Android](${ANDROID_APP_STORE_URL})
-- [Web](${APP_URL})
-
-The apps also connect to a self-hosted server. See the [self-hosting guide](https://rakazo.com/self-hosted-ai-agent/).
 `;
 
 export const SUPPORT_MARKDOWN = `# Rakazo support
@@ -271,7 +258,6 @@ const MARKDOWN_DOCUMENTS = new Map<string, string>([
   ["/", HOME_MARKDOWN],
   ["/about", ABOUT_MARKDOWN],
   ["/brand", BRAND_MARKDOWN],
-  ["/download", DOWNLOAD_MARKDOWN],
   ["/openclaw-alternative", OPENCLAW_MARKDOWN],
   ["/grok-bot-alternative", GROK_ALTERNATIVE_MARKDOWN],
   ["/privacy", PRIVACY_MARKDOWN],
