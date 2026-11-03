@@ -806,8 +806,10 @@ export async function completeRun(ctx: RunContext) {
   // Tool steps succeeded and the only completion text is the synthetic
   // empty notice. That is a missed final answer or a swallowed provider
   // failure, not a successful delegated summary.
+  // A turn that told its owner something did answer, even with no reply to the bot.
   if (
     !ctx.state.handedOff &&
+    reply.ownerNotifyCount === 0 &&
     !silentReply.assembled.trim() &&
     emptyDelegatedToolTurnShouldFail(completionBlocks)
   ) {

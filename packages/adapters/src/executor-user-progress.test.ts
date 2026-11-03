@@ -840,6 +840,47 @@ describe("notes that can't be posted as messages", () => {
     );
   });
 
+  it("keeps the normal silent answer to the bot after notifying the owner", async () => {
+    vi.mocked(returnBotMessageOutcome).mockClear();
+    await runTurn("", false, undefined, [], "request", {
+      trigger: "bot_message",
+      linkedChat: true,
+      runtime: async function* (request) {
+        const args = { message: "Approve the deploy?" };
+        yield { type: "tool", name: "notify_owner", args, executionId: "call-1" };
+        await request.executeTool!("notify_owner", args, "call-1");
+        yield { type: "text", text: "NO_RESPONSE" };
+        yield { type: "done", text: "NO_RESPONSE" };
+      },
+    });
+    expect(vi.mocked(returnBotMessageOutcome).mock.calls.map((call) => call[3])).toEqual([
+      PEER_NOTHING_NEW_REPLY,
+    ]);
+  });
+
+  it("completes a request turn that only notifies the owner", async () => {
+    const { finalizeRun, messages } = await runTurn("", false, undefined, [], "request", {
+      trigger: "bot_message",
+      linkedChat: true,
+      runtime: async function* (request) {
+        const args = { message: "Approve the deploy?" };
+        yield { type: "tool", name: "notify_owner", args, executionId: "call-1" };
+        await request.executeTool!("notify_owner", args, "call-1");
+        yield { type: "done", text: "" };
+      },
+    });
+    expect(finalizeRun).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: "completed" }),
+    );
+    expect(
+      (messages as Array<{ blocks: MessageBlock[]; clientNonce?: string }>).filter((message) =>
+        message.clientNonce?.startsWith("owner-notify:"),
+      ),
+    ).toEqual([
+      expect.objectContaining({ blocks: [{ kind: "text", text: "Approve the deploy?" }] }),
+    ]);
+  });
+
   it("tells the bot whether a message_user update it can't post can be retried", async () => {
     const update = async ({
       startedAt,
