@@ -27,8 +27,8 @@ const LIGHT_PALETTE = palette(pageKitPalette.light);
 const KIT_CSS = `
 *,*::before,*::after{box-sizing:border-box}
 :root{--rk-font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",sans-serif;--rk-secondary:color-mix(in srgb,var(--foreground) 60%,transparent);--rk-tertiary:color-mix(in srgb,var(--foreground) 40%,transparent);--rk-line:color-mix(in srgb,var(--foreground) 15%,transparent);--rk-hairline:color-mix(in srgb,var(--foreground) 9%,transparent);--rk-track:color-mix(in srgb,var(--foreground) 8%,transparent);--rk-fill:color-mix(in srgb,var(--foreground) 7%,transparent);${DARK_PALETTE}}
-[data-theme="light"]{${LIGHT_PALETTE}--rk-secondary:color-mix(in srgb,var(--foreground) 64%,transparent);--rk-on-c5:#fff}
-:root{--rk-on-c1:#121212;--rk-on-c2:#121212;--rk-on-c3:#121212;--rk-on-c4:#121212;--rk-on-c5:#121212}
+[data-theme="light"]{${LIGHT_PALETTE}--rk-secondary:color-mix(in srgb,var(--foreground) 64%,transparent);--rk-on-c5:${pageKitPalette.shared.onDeepTone}}
+:root{--rk-on-c1:${pageKitPalette.shared.onTone};--rk-on-c2:${pageKitPalette.shared.onTone};--rk-on-c3:${pageKitPalette.shared.onTone};--rk-on-c4:${pageKitPalette.shared.onTone};--rk-on-c5:${pageKitPalette.shared.onTone}}
 html{font-size:16px}
 html,body{margin:0;background:var(--background);color:var(--foreground);font-family:var(--rk-font);line-height:1.5;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;-webkit-text-size-adjust:100%}
 body{font-size:1rem}
@@ -113,7 +113,7 @@ body{font-size:1rem}
 .rk-table-filter:focus-visible{outline:2px solid var(--ring);outline-offset:1px}
 .rk-table-box{border:1px solid var(--rk-line);border-radius:12px;overflow:hidden}
 .rk-section[data-card] .rk-table-box{border-radius:8px}
-.rk-table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;--rk-fade-start:#000;--rk-fade-end:#000;-webkit-mask-image:linear-gradient(to right,var(--rk-fade-start),#000 2.5rem,#000 calc(100% - 2.5rem),var(--rk-fade-end));mask-image:linear-gradient(to right,var(--rk-fade-start),#000 2.5rem,#000 calc(100% - 2.5rem),var(--rk-fade-end))}
+.rk-table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;--rk-fade-start:${pageKitPalette.shared.mask};--rk-fade-end:${pageKitPalette.shared.mask};-webkit-mask-image:linear-gradient(to right,var(--rk-fade-start),${pageKitPalette.shared.mask} 2.5rem,${pageKitPalette.shared.mask} calc(100% - 2.5rem),var(--rk-fade-end));mask-image:linear-gradient(to right,var(--rk-fade-start),${pageKitPalette.shared.mask} 2.5rem,${pageKitPalette.shared.mask} calc(100% - 2.5rem),var(--rk-fade-end))}
 .rk-table-scroll[data-fade-start]{--rk-fade-start:transparent}
 .rk-table-scroll[data-fade-end]{--rk-fade-end:transparent}
 .rk-table-scroll[data-long]{max-height:34rem;overflow-y:auto}

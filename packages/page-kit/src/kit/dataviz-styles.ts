@@ -1,7 +1,8 @@
+import { pageKitPalette } from "@rakazo/ui-tokens";
 // Charts and data display. Kept apart from the base kit styles so each family reads on its own.
 export const DATAVIZ_CSS = `
-:root{--rk-axis:color-mix(in srgb,var(--foreground) 58%,transparent);--rk-hover:color-mix(in srgb,var(--foreground) 4%,transparent);--rk-hover-strong:color-mix(in srgb,var(--foreground) 12%,transparent);--rk-line-strong:color-mix(in srgb,var(--foreground) 30%,transparent);--rk-hairline-soft:color-mix(in srgb,var(--foreground) 6%,transparent);--rk-fill-strong:rgba(119,119,119,.17);--rk-surface:color-mix(in srgb,var(--foreground) 7%,var(--background))}
-[data-theme="light"]{--rk-fill-strong:rgba(119,119,119,.11);--rk-surface:var(--background)}
+:root{--rk-axis:color-mix(in srgb,var(--foreground) 58%,transparent);--rk-hover:color-mix(in srgb,var(--foreground) 4%,transparent);--rk-hover-strong:color-mix(in srgb,var(--foreground) 12%,transparent);--rk-line-strong:color-mix(in srgb,var(--foreground) 30%,transparent);--rk-hairline-soft:color-mix(in srgb,var(--foreground) 6%,transparent);--rk-fill-strong:${pageKitPalette.dark.fillStrong};--rk-surface:color-mix(in srgb,var(--foreground) 7%,var(--background))}
+[data-theme="light"]{--rk-fill-strong:${pageKitPalette.light.fillStrong};--rk-surface:var(--background)}
 .rk-chart{position:relative}
 .rk-frame{padding:1.25rem;border:1px solid var(--rk-line);border-radius:16px}
 :is(.rk-section[data-card],.rk-grid>*,.rk-frame) .rk-frame{padding:0;border:0;border-radius:0}
@@ -84,7 +85,7 @@ export const DATAVIZ_CSS = `
 .rk-stamp-pill{padding:.0625rem .5rem;border-radius:999px;background:var(--rk-fill-strong);color:var(--rk-secondary)}
 .rk-stamp-pill[data-error]{background:color-mix(in srgb,var(--rk-warning) 17%,transparent);color:var(--rk-warning)}
 .rk-chart-empty{display:grid;place-items:center;min-height:5rem;border:1px dashed var(--rk-line);border-radius:12px;font-size:.8125rem;color:var(--rk-axis)}
-.rk-tip{position:absolute;z-index:3;pointer-events:none;min-width:7rem;max-width:16rem;padding:.5rem .625rem;border-radius:10px;background:var(--rk-surface);border:1px solid var(--rk-line);box-shadow:0 6px 24px rgba(0,0,0,.18);font-size:.75rem;line-height:1.05rem;color:var(--foreground);font-variant-numeric:tabular-nums;transform:translate(-50%,calc(-100% - 10px));white-space:nowrap}
+.rk-tip{position:absolute;z-index:3;pointer-events:none;min-width:7rem;max-width:16rem;padding:.5rem .625rem;border-radius:10px;background:var(--rk-surface);border:1px solid var(--rk-line);box-shadow:0 6px 24px ${pageKitPalette.shared.tipShadow};font-size:.75rem;line-height:1.05rem;color:var(--foreground);font-variant-numeric:tabular-nums;transform:translate(-50%,calc(-100% - 10px));white-space:nowrap}
 .rk-tip-title{margin-bottom:.2rem;color:var(--rk-secondary)}
 .rk-tip-row{display:flex;align-items:center;gap:.4rem}
 .rk-tip-row b{margin-left:auto;padding-left:.75rem;font-weight:500}
@@ -100,7 +101,7 @@ export const DATAVIZ_CSS = `
 .rk-matrix-plot{height:14rem}
 }
 @media print{
-:root,[data-theme]{--rk-fill-strong:rgba(119,119,119,.11);--rk-surface:#fff}
+:root,[data-theme]{--rk-fill-strong:${pageKitPalette.light.fillStrong};--rk-surface:${pageKitPalette.shared.paper}}
 .rk-tip,.rk-table-filter,.rk-table-more button{display:none}
 .rk-table-scroll{-webkit-mask-image:none;mask-image:none;max-height:none!important;overflow:visible}
 .rk-draw{animation:none!important;stroke-dasharray:none;stroke-dashoffset:0}

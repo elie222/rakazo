@@ -678,7 +678,7 @@ export const TEXT_KIT_CSS = `
 a.rk-linkcard:hover{background:var(--rk-fill)}
 a.rk-linkcard:hover .rk-linkcard-arrow{color:var(--foreground);transform:translate(1px,-1px)}
 a.rk-linkcard:focus-visible{outline:2px solid var(--ring);outline-offset:-2px;border-radius:21px}
-.rk-linkcard-badge{flex:none;display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:1px solid color-mix(in srgb,var(--foreground) 5%,transparent);background:color-mix(in srgb,#777777 17%,transparent);color:var(--rk-secondary);font-size:.8125rem;font-variant-numeric:tabular-nums}
+.rk-linkcard-badge{flex:none;display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:1px solid color-mix(in srgb,var(--foreground) 5%,transparent);background:color-mix(in srgb,var(--rk-other) 17%,transparent);color:var(--rk-secondary);font-size:.8125rem;font-variant-numeric:tabular-nums}
 .rk-linkcard-text{flex:1;min-width:0;display:flex;flex-direction:column}
 .rk-linkcard-title{font-size:.875rem;line-height:1.25rem;color:var(--foreground);overflow-wrap:anywhere}
 .rk-linkcard-meta{font-size:.75rem;line-height:1rem;color:var(--rk-secondary);overflow-wrap:anywhere}
@@ -701,8 +701,8 @@ a.rk-linkcard:focus-visible{outline:2px solid var(--ring);outline-offset:-2px;bo
 .rk-floating-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;pointer-events:auto}
 .rk-floating-row[data-bar]{padding:8px;border:1px solid var(--rk-line);border-radius:12px;background:var(--card)}
 .rk-backtotop{display:flex;justify-content:flex-end}
-.rk-backtotop button{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:0 12px;border:0;border-radius:8px;background:color-mix(in srgb,#777777 17%,transparent);color:var(--foreground);font:inherit;font-size:.8125rem;cursor:pointer;transition:background-color .14s ease}
-.rk-backtotop button:hover{background:color-mix(in srgb,#777777 28%,transparent)}
+.rk-backtotop button{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:0 12px;border:0;border-radius:8px;background:color-mix(in srgb,var(--rk-other) 17%,transparent);color:var(--foreground);font:inherit;font-size:.8125rem;cursor:pointer;transition:background-color .14s ease}
+.rk-backtotop button:hover{background:color-mix(in srgb,var(--rk-other) 28%,transparent)}
 .rk-backtotop button:focus-visible,.rk-toc a:focus-visible,.rk-toc-fold:focus-visible,.rk-section-toggle:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
 .rk-toc{display:flex;flex-direction:column;gap:4px;padding:12px 16px;border:1px solid var(--rk-line);border-radius:12px}
 .rk-toc-title{margin:0;font-size:.75rem;line-height:1rem;font-weight:500;letter-spacing:.01em;color:var(--rk-secondary)}

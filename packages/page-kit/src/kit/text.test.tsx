@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { pageKitPalette } from "@rakazo/ui-tokens";
 import type { ReactElement } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -311,6 +314,43 @@ describe("helpers", () => {
       <i data-kind={theme.kind} data-bg={theme.bg.base} data-c={theme.dataviz.categorical[0]} />
     );
   }
+
+  it("takes every colour from the shared page palette", () => {
+    const root = join(import.meta.dirname, "..");
+    const sources = readdirSync(root, { recursive: true, encoding: "utf8" }).filter(
+      (file) => /\.tsx?$/.test(file) && !/\.(test|d)\.tsx?$/.test(file),
+    );
+    expect(sources).toContain("kit/theme.ts");
+    const literal = /#[0-9a-f]{3,8}\b|\b(rgb|hsl)a?\(/i;
+    expect(sources.filter((file) => literal.test(readFileSync(join(root, file), "utf8")))).toEqual(
+      [],
+    );
+    let theme: ReturnType<typeof useTheme> | undefined;
+    function Grab() {
+      theme = useTheme();
+      return null;
+    }
+    for (const kind of ["dark", "light"] as const) {
+      document.documentElement.dataset.theme = kind;
+      mount(<Grab />);
+      const tone: Record<string, string> = pageKitPalette[kind];
+      expect(theme?.text).toMatchObject({
+        accentDeep: tone.accentDeep,
+        successDeep: tone.successDeep,
+        warningDeep: tone.warningDeep,
+        dangerDeep: tone.dangerDeep,
+      });
+      expect(tone.accentDeep).toMatch(/^#/);
+      expect(theme?.dataviz.diverging).toEqual([
+        tone.div1,
+        tone.div2,
+        tone.div3,
+        tone.div4,
+        tone.div5,
+      ]);
+      expect(tone.div1).toMatch(/^#/);
+    }
+  });
 
   it("follows the page's theme", () => {
     document.documentElement.dataset.theme = "light";

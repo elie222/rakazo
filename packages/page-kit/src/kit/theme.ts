@@ -28,21 +28,6 @@ const FONT_TOKENS = {
   caption: type(11, 16, "0.01em"),
   code: type(13, 20, "0"),
 };
-// Deep tones are the darker ink for text on a tinted fill; the shared palette has no slot for them.
-const DEEP = {
-  dark: {
-    accentDeep: "#80befe",
-    successDeep: "#78e2b4",
-    warningDeep: "#ffc878",
-    dangerDeep: "#ff8c98",
-  },
-  light: {
-    accentDeep: "#084382",
-    successDeep: "#00673a",
-    warningDeep: "#824e00",
-    dangerDeep: "#82131f",
-  },
-};
 const SUBTLE_ALPHA = { dark: "2c", light: "17" };
 
 function themeFor(kind: Kind) {
@@ -58,18 +43,21 @@ function themeFor(kind: Kind) {
       primary: ink,
       secondary: `${ink}99`,
       tertiary: `${ink}66`,
-      onColor: "#fcfcfc",
+      onColor: pageKitPalette.shared.onColor,
       onPrimary: web.primaryForeground,
       accent: tone.accent,
       success: tone.success,
       warning: tone.warning,
       danger: tone.danger,
-      ...DEEP[kind],
+      accentDeep: tone.accentDeep,
+      successDeep: tone.successDeep,
+      warningDeep: tone.warningDeep,
+      dangerDeep: tone.dangerDeep,
     },
     fill: {
       primary: web.primary,
       primaryHover: web.primaryHover,
-      secondary: `#777777${alpha}`,
+      secondary: `${tone.other}${alpha}`,
       hover: `${ink}${kind === "light" ? "0f" : "14"}`,
       pressed: `${ink}${kind === "light" ? "17" : "1f"}`,
       accent: tone.c1,
@@ -91,17 +79,19 @@ function themeFor(kind: Kind) {
     motion: { hover: "140ms", easing: "ease" },
     dataviz: {
       categorical,
-      other: "#777777",
+      other: tone.other,
       negative: tone.danger,
       singleSeriesRest: tone.rest,
       areaAlpha: Number(tone.area),
       sequential: [tone.seq1, tone.seq2, tone.seq3, tone.seq4, tone.seq5],
-      diverging:
-        kind === "light"
-          ? ["#C21D2E", "#FF8C98", "#E8E8E8", "#80BEFE", "#0C64C1"]
-          : ["#FF5667", "#82131F", "#262626", "#084382", "#459FFE"],
+      diverging: [tone.div1, tone.div2, tone.div3, tone.div4, tone.div5],
     },
-    chart: [ink, `${ink}66`, `color-mix(in srgb, ${ink}66 45%, transparent)`, `#777777${alpha}`],
+    chart: [
+      ink,
+      `${ink}66`,
+      `color-mix(in srgb, ${ink}66 45%, transparent)`,
+      `${tone.other}${alpha}`,
+    ],
   };
 }
 
