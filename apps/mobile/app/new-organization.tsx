@@ -1,12 +1,12 @@
 import { Stack, useRouter } from "expo-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Alert, ScrollView, Text, TextInput } from "react-native";
 import { NativeActionButton } from "../components/native-action-button";
 import { cancelHeaderOptions } from "../components/sheet-header";
 import { rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
-import { switchOrganization, useOrganizations } from "../lib/organizations";
+import { refreshOrganizations, switchOrganization, useOrganizations } from "../lib/organizations";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
@@ -18,23 +18,27 @@ export default function NewOrganization() {
   const organizations = useOrganizations().data;
   const [name, setName] = useState("");
   const [pending, setPending] = useState(false);
+  const creating = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   async function create() {
     const trimmed = name.trim();
-    if (!trimmed || pending) return;
+    if (!trimmed || creating.current) return;
+    creating.current = true;
     setPending(true);
     setError(null);
     try {
       const created = await rpc("organizations/create", { name: trimmed });
       const target = { ...created, spaceIds: [created.defaultSpaceId], canManage: true };
       if (!(await switchOrganization(target, organizations?.organizations ?? []))) {
+        void refreshOrganizations();
         Alert.alert(t("Could not switch spaces"), t("Try again."));
         router.dismissAll();
         router.replace("/");
       }
     } catch (reason) {
       setError(errorText(reason, t("Something went wrong. Try again.")));
+      creating.current = false;
       setPending(false);
     }
   }
