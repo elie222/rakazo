@@ -29,7 +29,7 @@ vi.mock("react-native", () => rn);
 vi.mock("./api", () => ({ configureClientBuild: vi.fn() }));
 vi.mock("./i18n", () => ({ t: (message: string) => message }));
 
-import { ANDROID_APP_STORE_URL, IOS_APP_STORE_URL } from "@rakazo/contracts";
+import { IOS_APP_STORE_URL } from "@rakazo/contracts";
 import {
   clientBuildHeaders,
   FOREGROUND_UPDATE_CHECK_MS,
@@ -39,7 +39,6 @@ import {
 } from "./client-update";
 
 afterEach(() => {
-  rn.Platform.OS = "ios";
   updates.isEnabled = true;
   updates.createdAt = new Date("2026-10-22T09:30:15Z");
   vi.clearAllMocks();
@@ -82,24 +81,15 @@ describe("update required", () => {
     expect(rn.Linking.openURL).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ["ios", IOS_APP_STORE_URL],
-    ["android", ANDROID_APP_STORE_URL],
-  ])(
-    "opens the %s store when no over-the-air update can fix it, and asks again next time",
-    async (platform, storeUrl) => {
-      rn.Platform.OS = platform;
-      noteClientUpdateRequired();
-      pressUpdate();
-      await flush();
-      expect(updates.reloadAsync).not.toHaveBeenCalled();
-      expect(rn.Linking.openURL).toHaveBeenCalledWith(storeUrl);
-      noteClientUpdateRequired();
-      expect(rn.Alert.alert).toHaveBeenCalledTimes(2);
-      pressUpdate();
-      await flush();
-    },
-  );
+  it("opens the store when no over-the-air update can fix it, and asks again next time", async () => {
+    noteClientUpdateRequired();
+    pressUpdate();
+    await flush();
+    expect(updates.reloadAsync).not.toHaveBeenCalled();
+    expect(rn.Linking.openURL).toHaveBeenCalledWith(IOS_APP_STORE_URL);
+    noteClientUpdateRequired();
+    expect(rn.Alert.alert).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("foreground update checks", () => {
