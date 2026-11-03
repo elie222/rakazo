@@ -87,7 +87,7 @@ describe("locked-device declines", () => {
         findUnique: vi.fn(async () => ({
           id: "message-1",
           botId: "bot-1",
-          thread: { spaceId: "space-1" },
+          thread: { spaceId: "space-1", userId: actor.userId, bot: { name: "Caller" } },
           blocks: [
             { kind: "call_request", callId, status, reason: "Review", opening: "Hello", expiresAt },
           ],
@@ -97,18 +97,20 @@ describe("locked-device declines", () => {
       thread: { update: vi.fn(async () => ({ nextEventSeq: 1 })) },
       event: { create: vi.fn(async () => ({ seq: 1 })) },
     };
+    const incomingCall = vi.fn(async () => {});
     const client = createRouterClient(
       createRouter({
         prisma: { ...tx, $transaction: async (fn: (value: typeof tx) => unknown) => fn(tx) },
         env: { phoneCallsEnabled: true },
         events: { notify: vi.fn(async () => {}) },
+        notifications: { incomingCall },
       } as unknown as RouterDeps),
       { context: { actor } },
     );
-    return { client, tx };
+    return { client, tx, incomingCall };
   }
   it("finds a call only in the signed-in user's own one-to-one threads and settles it once", async () => {
-    const { client, tx } = fixture();
+    const { client, tx, incomingCall } = fixture();
     await expect(client.notifications.declineIncomingCall({ callId })).resolves.toEqual({
       ok: true,
     });
@@ -123,6 +125,10 @@ describe("locked-device declines", () => {
       expect.objectContaining({
         data: { blocks: [expect.objectContaining({ status: "declined" })] },
       }),
+    );
+    expect(incomingCall).toHaveBeenCalledWith(
+      actor.userId,
+      expect.objectContaining({ callId, ended: true }),
     );
   });
   it("rejects another owner's call without changing it", async () => {

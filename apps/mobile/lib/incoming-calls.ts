@@ -191,6 +191,12 @@ export async function respondToMobileCall(call: IncomingBotCall, action: "answer
     handled.add(target.callId);
     if (action === "decline") await native?.endIncomingCall(target.callId);
   } catch (error) {
+    // Answered elsewhere or rung out: there is nothing left to decline.
+    if (action === "decline" && (error as { code?: string } | null)?.code === "CONFLICT") {
+      handled.add(call.incomingCall.callId);
+      await native?.endIncomingCall(call.incomingCall.callId);
+      return;
+    }
     if (answered && context) {
       await rpc(
         "threads/endCall",

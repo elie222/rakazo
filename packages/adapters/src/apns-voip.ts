@@ -1,7 +1,7 @@
 import { createPrivateKey, sign } from "node:crypto";
 import { connect } from "node:http2";
-
 import type { IncomingCallNotification as IncomingCallPush } from "@rakazo/adapter-kit";
+import { getLogger } from "@rakazo/logging";
 
 export type { IncomingCallNotification as IncomingCallPush } from "@rakazo/adapter-kit";
 
@@ -116,14 +116,13 @@ export class ApnsVoipProvider implements VoipPushProvider {
           expiresAt: call.expiresAt,
         }),
       );
-      if (
-        reply.status === 410 ||
-        reply.reason === "BadDeviceToken" ||
-        reply.reason === "Unregistered"
-      )
-        return "invalid";
-      return reply.status === 200 ? "sent" : "unavailable";
-    } catch {
+      if (reply.status === 410 || reply.reason === "Unregistered") return "invalid";
+      if (reply.status === 200) return "sent";
+      // BadDeviceToken also means a sandbox/production mismatch, so it never drops the token.
+      getLogger().warn("call.voip_push_failed", { status: reply.status, reason: reply.reason });
+      return "unavailable";
+    } catch (error) {
+      getLogger().warn("call.voip_push_failed", { error });
       return "unavailable";
     }
   }

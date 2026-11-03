@@ -175,7 +175,8 @@ class IncomingCallActivity : Activity() {
       window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
     }
     val call = runCatching { JSONObject(intent.getStringExtra("call") ?: "") }.getOrNull()
-    if (call == null || !IncomingCalls.fresh(call)) { if (call != null) IncomingCalls.end(this, call.optString("callId")); finish(); return }
+    // A tap can race the push that ended the call; only a call still ringing here may open.
+    if (call == null || !IncomingCalls.fresh(call) || !IncomingCalls.exists(this, call.optString("callId"))) { if (call != null) IncomingCalls.end(this, call.optString("callId")); finish(); return }
     if (intent.getBooleanExtra("answer", false)) { IncomingCalls.answer(this, call); return }
     val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(32, 32, 32, 32) }
     layout.addView(TextView(this).apply { text = call.optString("botName"); textSize = 28f; gravity = Gravity.CENTER })

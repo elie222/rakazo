@@ -1,7 +1,7 @@
 import { createAudioPlayer } from "expo-audio";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { AppState, Modal, StyleSheet, Text, Vibration, View } from "react-native";
-import { getSnapshot, useCallSession } from "../lib/call-session";
+import { useCallSession } from "../lib/call-session";
 import { useI18n } from "../lib/i18n";
 import {
   getIncomingCall,
@@ -24,7 +24,7 @@ export function IncomingCall() {
   const id = incoming?.incomingCall.callId;
   useEffect(() => {
     setError(null);
-    if (!id || getSnapshot() || usesNativeIncomingCallRingtone()) return;
+    if (!id || active || usesNativeIncomingCallRingtone()) return;
     const player = createAudioPlayer(require("../assets/sounds/warm-start.m4a"));
     player.loop = true;
     const play = () => {
@@ -43,7 +43,7 @@ export function IncomingCall() {
       player.remove();
       Vibration.cancel();
     };
-  }, [id]);
+  }, [id, active]);
   if (!incoming || active) return null;
   const respond = async (action: "answer" | "decline") => {
     setBusy(true);

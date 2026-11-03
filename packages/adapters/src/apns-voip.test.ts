@@ -51,14 +51,14 @@ describe("APNs VoIP", () => {
       ),
     ).toBe(true);
   });
-  it.each([{ status: 410 }, { status: 400, reason: "BadDeviceToken" }])(
-    "identifies invalid tokens (%j)",
-    async (reply) => {
-      expect(await new ApnsVoipProvider(config, async () => reply).send("fake", call)).toBe(
-        "invalid",
-      );
-    },
-  );
+  it.each([
+    [{ status: 410 }, "invalid"],
+    [{ status: 400, reason: "Unregistered" }, "invalid"],
+    // Also returned for a sandbox/production mismatch, which must not drop every token.
+    [{ status: 400, reason: "BadDeviceToken" }, "unavailable"],
+  ] as const)("classifies %j as %s", async (reply, result) => {
+    expect(await new ApnsVoipProvider(config, async () => reply).send("fake", call)).toBe(result);
+  });
   it("does not deliver expired calls; transient errors permit fallback", async () => {
     const transport = vi.fn<ApnsTransport>().mockRejectedValue(new Error("offline"));
     const push = new ApnsVoipProvider(config, transport);

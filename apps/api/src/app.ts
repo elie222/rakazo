@@ -772,6 +772,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     paymentWallet,
     codexCatalog,
     prisma,
+    notifications,
     pushTokens,
     events,
     ticketChanges,
