@@ -26,24 +26,24 @@ name: Workspace
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 03-vault
-- tapOn: ".*help-desk.*"
+- tapOn: "Help desk"
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 04-vault-actions
+- takeScreenshot: 04-vault-item
 - tapOn: "Remove"
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 05-vault-remove
 - tapOn: "Cancel"
-- tapOn: "Add credential"
+- tapOn: "Done"
+- tapOn: "New item"
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 06-vault-add
-- tapOn: "Bearer token"
-- tapOn: "Website login"
+- takeScreenshot: 06-vault-new
+- tapOn: "Card"
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 07-vault-add-login
+- takeScreenshot: 07-vault-new-card
 - tapOn: "Cancel"
 - openLink: "rakazo:///archived-bots"
 - extendedWaitUntil:

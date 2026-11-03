@@ -1961,8 +1961,10 @@ model BotSecret {
   @@map("bot_secrets")
 }
 
-/// A member's saved credentials. A null spaceId is the account vault every Space uses; a Space
-/// with a "credentials" override uses its own rows instead, which no other Space can read.
+/// A member's vault items: logins, cards, contacts, API credentials and command variables. A null
+/// spaceId is the account vault every Space uses; a Space with a "credentials" override uses its
+/// own rows instead, which no other Space can read. `name` is the handle bots use, `auth` says what
+/// kind of item it is and how it is used, and `ciphertext` holds every value, contacts included.
 model VaultCredential {
   id         String   @id
   userId     String
@@ -1970,6 +1972,10 @@ model VaultCredential {
   spaceId    String?
   space      Space?   @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   name       String
+  /// What people call it; empty uses a default read from the item.
+  title      String   @default("")
+  /// When the bot should use it, such as "For travel".
+  note       String   @default("")
   origin     String
   auth       Json
   ciphertext String
