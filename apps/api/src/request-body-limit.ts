@@ -73,14 +73,26 @@ export function mountApiRequestBodyLimits(app: Hono): void {
 }
 
 /**
- * Signed out, only the bodiless `health` procedure is callable, so RPC bodies
- * get the small auth allowance until the session is known.
+ * Signed out, only the bodiless `health` procedure is callable, so the body
+ * is discarded unread and oRPC answers as it would anyway: 401, or health.
  */
 export function rpcBodyLimit(maxUploadSizeBytes = ATTACHMENT_MAX_BYTES) {
   const signedInLimit = rpcRequestMaxBytes(maxUploadSizeBytes);
   const message = `Request body is too large. Upload limit: ${attachmentSizeLabel(maxUploadSizeBytes)} per file.`;
-  return (c: Context, signedIn: boolean) =>
-    signedIn
-      ? limitRequestBody(c, signedInLimit, message)
-      : limitRequestBody(c, MAX_AUTH_REQUEST_BYTES);
+  return async (c: Context, signedIn: boolean) => {
+    if (signedIn) return limitRequestBody(c, signedInLimit, message);
+    const request = c.req.raw;
+    if (request.body) {
+      cancelBody(request.body);
+      const headers = new Headers(request.headers);
+      headers.delete("content-length");
+      headers.delete("transfer-encoding");
+      c.req.raw = new Request(request.url, {
+        method: request.method,
+        headers,
+        signal: request.signal,
+      });
+    }
+    return undefined;
+  };
 }

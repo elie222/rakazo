@@ -43,26 +43,24 @@ describe("API request body limits", () => {
     });
   });
 
-  it("gives signed-out RPC calls the small allowance before reading the body", async () => {
+  it("discards a signed-out RPC body unread", async () => {
     const cancel = vi.fn();
-    const { app, parse } = rpcApp(false);
-    const streamed = await app.request(
+    const pull = vi.fn();
+    const app = new Hono();
+    const limit = rpcBodyLimit();
+    app.post("/rpc/*", async (c) => (await limit(c, false)) ?? c.text(await c.req.raw.text()));
+    const response = await app.request(
       new Request("http://localhost/rpc/me", {
         method: "POST",
-        body: new ReadableStream({
-          start(controller) {
-            controller.enqueue(new Uint8Array(MAX_AUTH_REQUEST_BYTES + 1));
-          },
-          cancel,
-        }),
+        headers: { "content-length": "999999999" },
+        body: new ReadableStream({ pull, cancel }),
         duplex: "half",
       } as RequestInit & { duplex: "half" }),
     );
-    expect(streamed.status).toBe(413);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("");
     expect(cancel).toHaveBeenCalledOnce();
-    const health = await app.request("/rpc/health", { method: "POST", body: '{"json":{}}' });
-    expect(health.status).toBe(200);
-    expect(parse).toHaveBeenCalledOnce();
+    expect(pull).not.toHaveBeenCalled();
     const signedIn = rpcApp(true).app;
     const upload = await signedIn.request("/rpc/artifacts/create", {
       method: "POST",
