@@ -947,6 +947,12 @@ html[data-platform="web"] [data-show]:not([data-show~="web"]) {
   gap: 40px;
 }
 
+@media (max-width: 960px) {
+  .site-footer {
+    flex-direction: column;
+  }
+}
+
 .site-footer__column h2 {
   margin: 0 0 14px;
   color: var(--ink);

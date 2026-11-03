@@ -1,5 +1,5 @@
 import { ALTERNATIVES, alternativeMarkdown } from "./alternatives";
-import { SANDBOXES, sandboxPath } from "./sandboxes";
+import { SANDBOXES, sandboxMarkdown, sandboxPath } from "./sandboxes";
 import { BRAND_COLORS, BRAND_LOGOS } from "./brand";
 import { GROK_ALTERNATIVE_MARKDOWN } from "./grok-alternative";
 import { OPENCLAW_MARKDOWN, SELF_HOST_MARKDOWN } from "./guide";
@@ -283,6 +283,9 @@ const MARKDOWN_DOCUMENTS = new Map<string, string>([
   ["/plugins/submit", PLUGIN_SUBMIT_MARKDOWN],
   ["/alternatives", roundupMarkdown()],
   ...ALTERNATIVES.map((page) => [`/${page.slug}`, alternativeMarkdown(page)] as const),
+  ...SANDBOXES.map(
+    (sandbox) => [sandboxPath(sandbox.slug).slice(0, -1), sandboxMarkdown(sandbox)] as const,
+  ),
   ["/terms", TERMS_MARKDOWN],
 ]);
 

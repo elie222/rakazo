@@ -295,7 +295,7 @@ export const SANDBOXES: readonly Sandbox[] = [
       "Each command can run for up to a minute.",
     ],
     setup: [
-      "Choose Wuying in Settings → Computer, or set `SANDBOX_PROVIDER=wuying` with the access key, desktop and gateway values from the setup guide.",
+      "Choose Wuying in Settings → Computer, or set `SANDBOX_PROVIDER=wuying` with every value listed in the Wuying setup guide, including `WUYING_END_USER_ID`.",
       "The region defaults to `cn-hangzhou`.",
     ],
     faq: [
@@ -406,34 +406,35 @@ export const SANDBOXES: readonly Sandbox[] = [
   {
     slug: "your-computer",
     name: "Your computer",
-    title: "Let an AI agent use your own computer, with approval",
+    title: "Let an AI agent use your own computer",
     description:
-      "With the Rakazo desktop app, bots can run commands and use apps on your Mac or Windows PC. They ask first.",
+      "With the Rakazo desktop app, bots can run commands and use apps on the Mac or PC the app runs on.",
     h1: "Let your AI agents use your own computer",
     intro: [
-      "With the Rakazo desktop app, bots can work on the computer the app runs on: your real files, apps and logins, with nothing in the cloud.",
-      "That is also the risk. This is your machine, not a sandbox, so only turn it on for bots you'd trust unattended.",
+      "With the Rakazo desktop app, bots can work on the computer the app runs on, with your real files, apps and logins. There are two ways to turn it on, and they behave differently.",
+      "Either way, this is your machine, not a sandbox. Only turn it on for bots you'd trust unattended.",
     ],
     image: {
       webp: "/graphics/chat/approval.png",
       width: 1200,
       height: 800,
       alt: "An approval card asking whether a demo bot may send an email, with allow once, always allow, and deny.",
-      caption: "Bots ask before they act.",
+      caption: "An approval card in Rakazo.",
     },
     works: [
-      "Turn on Let bots use this computer in Settings → General. It works with Rakazo Cloud or any server.",
-      "A bot asks before its first command in a space, and before it first uses each app, in every approval mode. A Block rule always wins.",
-      "On Mac and Windows, bots can see and use apps on screen. macOS asks for Accessibility and Screen Recording.",
-      "It only works in your own chats, never in routines, webhooks or channels.",
+      "Let bots use this computer, in Settings → General, works with Rakazo Cloud or any server. A bot asks before its first command in a space and before it first uses each app, in every approval mode, and only in your own chats.",
+      "With it, bots can also see and use apps on screen on Mac and Windows. macOS asks for Accessibility and Screen Recording.",
+      "Use this Mac (Use this computer on Windows and Linux) makes your computer the bot's computer on a local server the app runs. Bots run commands on it without asking, including in routines.",
     ],
     limits: [
       "Commands run as you, with your permissions. There is no isolation.",
-      "The app has to stay open. Screen control isn't available on Linux.",
-      "Revoke access from the app menu at any time.",
+      "With Let bots use this computer, commands, output and screenshots pass through the Rakazo server you're connected to. Your files stay on your computer.",
+      "Use this Mac has no screen control. Screen control isn't available on Linux.",
+      "The app has to stay open.",
     ],
     setup: [
-      "Install the desktop app, then turn on Let bots use this computer in Settings → General and confirm Allow bots to use this computer?",
+      "Install the desktop app. With any server, turn on Let bots use this computer in Settings → General, and turn it off there to revoke access.",
+      "On a local server started by the app, choose Use this Mac when it asks Where should bots run?, and use Revoke Local Computer Access in the app menu to undo it.",
     ],
     faq: [
       {
