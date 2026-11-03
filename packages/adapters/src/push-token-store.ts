@@ -258,8 +258,15 @@ export class PrismaPushTokenStore implements PushTokenStore {
           if (mode === "import")
             await tx.pushRegistration.create({ data: { userId, tokenDigest, ...data } });
           else {
+            // A device's token belongs to one account, and one session is one device,
+            // so a rotated token replaces the session's previous one.
             await tx.pushRegistration.deleteMany({
-              where: { tokenDigest, userId: { not: userId } },
+              where: {
+                OR: [
+                  { tokenDigest, userId: { not: userId } },
+                  { userId, sessionId, tokenDigest: { not: tokenDigest } },
+                ],
+              },
             });
             await tx.pushRegistration.upsert({
               where: { userId_tokenDigest: { userId, tokenDigest } },

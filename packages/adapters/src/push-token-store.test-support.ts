@@ -11,7 +11,10 @@ export class MemoryPushTokenStore implements PushTokenStore {
       .map(({ token, sessionId }) => ({ token, ...(sessionId ? { sessionId } : {}) }));
   }
   async save(userId: string, token: string, sessionId = "") {
-    this.rows = this.rows.filter((row) => row.token !== token);
+    this.rows = this.rows.filter(
+      (row) =>
+        row.token !== token && !(sessionId && row.userId === userId && row.sessionId === sessionId),
+    );
     this.rows.push({ userId, token, ...(sessionId ? { sessionId } : {}) });
   }
   async importLegacy(userId: string, token: string, sessionId: string) {

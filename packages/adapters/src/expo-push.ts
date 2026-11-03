@@ -295,11 +295,15 @@ export class ExpoPushProvider implements NotificationProvider {
     const results = await Promise.allSettled(
       tokens.map((token) => this.deliverTo(token, message, context)),
     );
-    const failed = results.find((result) => result.status === "rejected");
-    if (results.some((result) => result.status === "fulfilled" && result.value === "delivered")) {
-      if (failed) getLogger().error("expo push device delivery failed", failed.reason);
+    for (const [index, result] of results.entries())
+      if (result.status === "rejected")
+        getLogger().error("expo push device delivery failed", {
+          error: result.reason,
+          tokenDigest: credentialDigest(tokens[index]!),
+        });
+    if (results.some((result) => result.status === "fulfilled" && result.value === "delivered"))
       return "delivered";
-    }
+    const failed = results.find((result) => result.status === "rejected");
     if (failed) throw failed.reason;
     return "undeliverable";
   }

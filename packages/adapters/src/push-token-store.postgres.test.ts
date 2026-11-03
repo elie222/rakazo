@@ -105,6 +105,15 @@ suite("database push registrations", () => {
     ]);
   });
 
+  it("replaces a device's rotated token instead of pushing to both", async () => {
+    await api.save(user("a"), token("phone"), session("a"));
+    await worker.save(user("a"), token("tablet"), session("a2"));
+    await api.save(user("a"), token("phone-rotated"), session("a"));
+    expect((await api.list(user("a"))).map((row) => row.token).sort()).toEqual(
+      [token("phone-rotated"), token("tablet")].sort(),
+    );
+  });
+
   it("retargets only the replaced session and cannot reclaim a handed-over device", async () => {
     await api.save(user("a"), token("shared"), session("a"));
     await worker.endSession(user("a"), session("a"), session("a2"));
