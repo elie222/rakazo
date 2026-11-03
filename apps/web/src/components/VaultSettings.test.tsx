@@ -297,7 +297,6 @@ describe("VaultSettings new items", () => {
         cvc: "123",
         billing: "home",
       }),
-      title: "",
     });
     expect(vault.list).toHaveBeenCalledTimes(2);
     expect(editor()).toBeNull();
@@ -344,7 +343,6 @@ describe("VaultSettings new items", () => {
           { label: "Password", value: FAKE_VALUE, hidden: true },
         ],
       }),
-      title: "",
     });
   });
 
@@ -365,7 +363,6 @@ describe("VaultSettings new items", () => {
         auth: { type: "header", name: "X-Api-Key" },
       },
       value: FAKE_VALUE,
-      title: "",
     });
     expect(editor()?.textContent).toContain("Credential limit reached");
     expect((field("Value") as HTMLInputElement).value).toBe("");
@@ -385,7 +382,6 @@ describe("VaultSettings new items", () => {
       scope: "account",
       destination: { name: "netbird_setup_key", origin: "", auth: { type: "command" } },
       value: FAKE_VALUE,
-      title: "",
     });
   });
 });

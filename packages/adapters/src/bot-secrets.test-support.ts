@@ -17,8 +17,9 @@ type Row = {
 };
 type Where = Record<string, unknown>;
 
-function matches(row: Row, where: Where) {
+function matches(row: Row, where: Where): boolean {
   return Object.entries(where).every(([key, value]) => {
+    if (key === "OR") return (value as Where[]).some((branch) => matches(row, branch));
     const field = row[key as keyof Row];
     if (value && typeof value === "object" && "not" in value) return field !== value.not;
     if (value && typeof value === "object" && "startsWith" in value)

@@ -199,11 +199,14 @@ describe("saving from the editor", () => {
 
   it("keeps a key's value, which the form never shows, until a new one is typed", () => {
     const key = readableItem(item({})) as VaultItem;
+    // The title shown is read from the item; leaving it as it was keeps it that way.
     expect(draftSave("api_key", itemDraft(key, []), key)).toEqual({
       destination: { name: "github", origin: "https://api.github.com", auth: { type: "bearer" } },
-      title: "api.github.com",
       note: "",
     });
+    expect(draftSave("api_key", { ...itemDraft(key, []), title: "GitHub" }, key)?.title).toBe(
+      "GitHub",
+    );
     expect(draftSave("api_key", { ...itemDraft(key, []), value: "new" }, key)?.value).toBe("new");
   });
 

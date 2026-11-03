@@ -283,9 +283,15 @@ function EditorForm({
             : variableValid && !reserved && valueReady;
 
   function result(): VaultEditorResult {
+    // A title is sent only when it changed: a saved item shows one read from it when it has none
+    // of its own, and keeping that would freeze it when the card or contact changes later.
+    const titleChanged = title.trim() !== (initial?.title ?? "");
     const labels = asking
       ? {}
-      : { title: title.trim(), ...(noteShown || editing ? { note: note.trim() } : {}) };
+      : {
+          ...(titleChanged ? { title: title.trim() } : {}),
+          ...(noteShown || editing ? { note: note.trim() } : {}),
+        };
     const name = initial?.name;
     if (kind === "login") {
       return {
@@ -374,10 +380,11 @@ function EditorForm({
       <Input
         id={id(field)}
         value={state}
-        disabled={busy || props.disabled}
         spellCheck={false}
         autoComplete="off"
         {...props}
+        // After the spread, so a field that is otherwise editable still locks while a save runs.
+        disabled={busy || props.disabled}
         onChange={(event) => set(event.target.value)}
       />
     </FormField>

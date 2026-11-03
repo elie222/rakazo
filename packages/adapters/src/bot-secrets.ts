@@ -1110,9 +1110,15 @@ export async function loadLoginPasswordRedactions(
   secretStore: Pick<SecretStore, "load">,
   scope: BotSecretScope,
 ): Promise<string[]> {
-  // Every saved login and card, however many other credentials the bot has; only they are decrypted.
+  // Every saved login and card, however many other credentials the bot has; only they are read.
   const rows = await prisma.vaultCredential.findMany({
-    where: await vaultFields(prisma, scope),
+    where: {
+      ...(await vaultFields(prisma, scope)),
+      OR: [
+        { auth: { path: ["type"], equals: "login" } },
+        { auth: { path: ["type"], equals: "card" } },
+      ],
+    },
     select: { id: true, auth: true, ciphertext: true },
   });
   const forms = new Set<string>();

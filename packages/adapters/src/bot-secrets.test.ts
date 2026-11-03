@@ -806,20 +806,22 @@ describe("normalizeSecretDestination", () => {
   });
 });
 
-/** Prisma's where for these tests: plain fields, a JSON path filter on auth, and take. */
+/** Prisma's where for these tests: plain fields, a JSON path filter on auth, OR, and take. */
 function matchingRows<T extends Record<string, unknown>>(
   rows: T[],
   { where, take }: { where: Record<string, unknown>; take?: number },
 ) {
-  const matches = rows.filter((row) =>
-    Object.entries(where).every(([key, value]) => {
+  const matchesWhere = (row: T, clause: Record<string, unknown>): boolean =>
+    Object.entries(clause).every(([key, value]) => {
+      if (key === "OR")
+        return (value as Record<string, unknown>[]).some((branch) => matchesWhere(row, branch));
       if (key === "auth" && value && typeof value === "object" && "path" in value) {
         const filter = value as { path: string[]; equals: unknown };
         return (row.auth as Record<string, unknown>)[filter.path[0]!] === filter.equals;
       }
       return row[key] === value;
-    }),
-  );
+    });
+  const matches = rows.filter((row) => matchesWhere(row, where));
   return take === undefined ? matches : matches.slice(0, take);
 }
 

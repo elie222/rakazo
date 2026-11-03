@@ -292,7 +292,13 @@ export function draftSave(
   draft: VaultDraft,
   saved?: VaultItem,
 ): VaultSave | undefined {
-  const labels = { title: draft.title.trim(), note: draft.note.trim() };
+  // A title is sent only when it changed: a saved item shows one read from it when it has none of
+  // its own, and keeping that would freeze it when the card or contact changes later.
+  const title = draft.title.trim();
+  const labels = {
+    ...(title !== (saved?.title ?? "") ? { title } : {}),
+    note: draft.note.trim(),
+  };
   if (saved) {
     if (!valueStarted(kind, draft)) return { destination: itemDestination(saved), ...labels };
     const value = draftValue(kind, draft);
