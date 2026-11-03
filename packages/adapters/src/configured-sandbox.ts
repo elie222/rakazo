@@ -318,7 +318,20 @@ export class ConfiguredSandbox implements SandboxProvider {
     return target.provision({ ...request, providerRef }, context);
   }
 
+  /** Whether the computer's owner has since chosen another computer of their own. */
+  private async ownerMovedAway(computer: Pick<ComputerRef, "kind" | "botId" | "providerRef">) {
+    const descriptor = computerProviderRegistry.find((entry) => entry.id === computer.kind);
+    if (!descriptor?.capabilities.perAccount) return false;
+    const own = await this.ownSettings(computer.botId);
+    if (!own) return false;
+    if (own.provider !== computer.kind) return true;
+    const provider = await this.providerFor(own, computer.botId);
+    return !(provider.ownsReference?.(computer) ?? true);
+  }
+
   async isRunning(computer: ComputerRef, context: AdapterContext) {
+    // Cloud desktops rarely stop, so waiting for a stop would keep it on the old one for good.
+    if (await this.ownerMovedAway(computer)) return false;
     return (await this.route(computer)).isRunning?.(computer, context) ?? false;
   }
 

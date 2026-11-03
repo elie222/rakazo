@@ -135,13 +135,17 @@ describe("ConfiguredSandbox", () => {
     expect(desktop.calls).toEqual([]);
   });
 
-  it("keeps a computer on the default desktop until it starts again on its owner's", async () => {
+  it("moves a running computer to its owner's new desktop at its next start", async () => {
     const { sandbox, desktop, own } = setup({ provider: "desktop", settings });
     await sandbox.refresh();
     const before = await sandbox.provision({ botId: "mine", homePath: "/h" }, ctx);
+    expect(await sandbox.isRunning(before, ctx)).toBe(true);
     own.set("mine", { ...settings, values: { ...values, desktopId: "ecd-own" } });
     await sandbox.refresh();
+    // Not confirmed running, so the next start provisions it again instead of reusing it.
+    expect(await sandbox.isRunning(before, ctx)).toBe(false);
 
+    // A run already holding the computer finishes on the default desktop.
     await sandbox.prepare(before, ctx);
     desktop.calls.length = 0;
     await sandbox.listFiles(before, "", ctx);
