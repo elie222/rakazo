@@ -1,7 +1,8 @@
 import type { TransactionalEmailProvider } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { startHourlySweep } from "./hourly-sweep.js";
 import { unsubscribeUrl } from "./marketing-email.js";
-import { sendReferralEmails, startReferralEmails } from "./referral-email.js";
+import { sendReferralEmails } from "./referral-email.js";
 
 const DAY = 86_400_000;
 const now = new Date("2026-10-29T12:00:00Z");
@@ -108,7 +109,7 @@ describe("day-one referral email", () => {
           finish = resolve;
         }),
     );
-    const stop = startReferralEmails(sweep, vi.fn());
+    const stop = startHourlySweep(sweep, vi.fn());
     expect(sweep).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
     expect(sweep).toHaveBeenCalledTimes(1);
