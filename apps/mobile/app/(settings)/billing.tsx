@@ -40,9 +40,10 @@ export default function BillingScreen() {
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [amount, setAmount] = useState<Amount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
   const [pending, setPending] = useState(false);
-  const show = useCallback((next: BillingStatus) => {
+  // Filed under the Space the request was made for, so a late answer never lands in another.
+  const show = useCallback((next: BillingStatus, spaceId = selectedSpaceId()) => {
     setStatus(next);
-    rememberReferral(selectedSpaceId(), next.referral);
+    rememberReferral(spaceId, next.referral);
     setAmount(
       ModelCreditAmountSchema.catch(DEFAULT_MONTHLY_CREDIT_AMOUNT).parse(next.monthlyAmountCents),
     );
@@ -51,9 +52,10 @@ export default function BillingScreen() {
     useCallback(() => {
       let active = true;
       const load = () => {
+        const spaceId = selectedSpaceId();
         void rpc("billing/status")
           .then((next) => {
-            if (active) show(next);
+            if (active) show(next, spaceId);
           })
           .catch(() => {
             if (active) Alert.alert(t("Could not load billing"));
