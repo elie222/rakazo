@@ -185,6 +185,21 @@ describe("WuyingSandboxProvider", () => {
     ));
     // One too long for a command line goes through a file instead.
     expect(desktop.backgroundCommand?.endsWith(long)).toBe(true);
+    // So does a short script whose other arguments make the command line too long.
+    desktop.calls.length = 0;
+    for await (const _ of provider.execute(
+      computer,
+      {
+        argv: ["powershell.exe", "-Command", "Write-Output $args", "y".repeat(31_000)],
+        timeoutMs: 600_000,
+      },
+      ctx,
+    ));
+    expect(
+      desktop.calls.some(
+        (call) => call.tool === "fs_write" && String(call.args.path).endsWith("\\command.ps1"),
+      ),
+    ).toBe(true);
     const launch = desktop.calls.find((call) => call.tool === "app_start");
     const dir = /'([^']+)\\run\.ps1'/.exec(
       String((launch?.args.args as string[] | undefined)?.at(-1)),

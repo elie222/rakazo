@@ -610,8 +610,14 @@ export class WuyingSandboxProvider implements SandboxProvider {
       // Encoded, the command needs no quoting and keeps the exit code -Command gives it in the
       // foreground. Only one too long for a command line goes through a file, which loses that.
       const encoded = Buffer.from(args[script + 1] ?? "", "utf16le").toString("base64");
-      if (encoded.length <= MAX_ENCODED_COMMAND_CHARS) {
-        args = [...args.slice(0, script), "-EncodedCommand", encoded, ...args.slice(script + 2)];
+      const encodedArgs = [
+        ...args.slice(0, script),
+        "-EncodedCommand",
+        encoded,
+        ...args.slice(script + 2),
+      ];
+      if ([program, ...encodedArgs].join(" ").length <= MAX_ENCODED_COMMAND_CHARS) {
+        args = encodedArgs;
       } else {
         await this.tools.call(
           "fs_write",

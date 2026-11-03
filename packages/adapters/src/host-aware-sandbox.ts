@@ -17,6 +17,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { cancelComputerRunWork } from "./computer-idle.js";
 import { computerProviderDescriptor } from "./computer-provider-registry.js";
 import { manageComputerWorkspaceDirectories } from "./computer-workspace.js";
@@ -60,7 +61,10 @@ export async function createRunSandbox(
         }),
     },
   );
-  await configured.refresh();
+  // Startup never waits on the secret store or a saved provider: routing rereads them on first use.
+  await configured
+    .refresh()
+    .catch((error) => getLogger().warn("computer_provider.load_failed", { error }));
   return configured;
 }
 
