@@ -67,7 +67,7 @@ them on a desktop the account brings, with its own AccessKey and MCP gateway. Th
 before it is saved.
 
 The connection is saved to the account, not a space, and no one else can read it. A Team Computer
-on the old desktop moves the next time Rakazo uses it; its files stay on the old desktop. Private
+moves the next time it starts; files it kept on the old desktop stay there. Private
 Computers always use the deployment's computers. Going back to **Deployment default** deletes the
 saved connection. Accounts choose their own desktop only when the deployment has computers and
 `SANDBOX_PROVIDER` is not `desktop` or `fake`.

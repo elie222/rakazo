@@ -54,8 +54,8 @@ Bot 可以把一台现有的[无影云电脑](https://www.aliyun.com/product/ecs
 选 **Deployment default** 就用部署默认的电脑（上面管理员的选择，或 `SANDBOX_PROVIDER`）；
 选 **Wuying** 就用这个账号自己的云电脑、自己的 AccessKey 和 MCP 网关。保存前同样会先检查。
 
-连接信息保存在账号上，不属于某个空间，其他人都读不到。还在原来云电脑上的 Team Computer
-会在 Rakazo 下次用到它时换过去，原来的文件留在原来的云电脑上。Private Computer 始终用部署默认的电脑。切回 **Deployment default** 会删除已保存的连接。
+连接信息保存在账号上，不属于某个空间，其他人都读不到。Team Computer
+会在下次启动时换过去，留在原来云电脑上的文件仍在那里。Private Computer 始终用部署默认的电脑。切回 **Deployment default** 会删除已保存的连接。
 只有部署提供电脑、并且 `SANDBOX_PROVIDER` 不是 `desktop` 或 `fake` 时，账号才能选择自己的云电脑。
 
 ## 用环境变量配置

@@ -178,21 +178,42 @@ export async function updateComputerProviderSettings(
   const settings = await checkedSettings(deps, actor, input, existing.settings);
   // Owned by the deployment row, not a user or space, so no account deletion removes it.
   const stored = await encrypt(deps, actor, settings, DEPLOYMENT_COMPUTER_PROVIDER_RECORD);
-  await runAsSystem("an admin configures computers", () =>
-    deps.prisma.deploymentSettings.upsert({
-      where: { id: "default" },
-      create: {
-        id: "default",
-        computerProvider: input.provider,
-        computerProviderCipher: stored.ciphertext,
-      },
-      update: { computerProvider: input.provider, computerProviderCipher: stored.ciphertext },
-    }),
-  );
-  if (existing.settings?.ciphertext && existing.settings.ciphertext !== stored.ciphertext)
-    await deps.secrets
-      .delete(existing.settings.ciphertext, DEPLOYMENT_COMPUTER_PROVIDER_RECORD)
-      .catch(() => undefined);
+  const forget = (ciphertext: string) =>
+    deps.secrets.delete(ciphertext, DEPLOYMENT_COMPUTER_PROVIDER_RECORD).catch(() => undefined);
+  let replaced: string | null | undefined;
+  try {
+    // Read what this save replaces in the same transaction, so concurrent saves each remove theirs.
+    replaced = await withSerializableRetry(() =>
+      runAsSystem("an admin configures computers", () =>
+        deps.prisma.$transaction(
+          async (tx) => {
+            const current = await tx.deploymentSettings.findUnique({
+              where: { id: "default" },
+              select: { computerProviderCipher: true },
+            });
+            await tx.deploymentSettings.upsert({
+              where: { id: "default" },
+              create: {
+                id: "default",
+                computerProvider: input.provider,
+                computerProviderCipher: stored.ciphertext,
+              },
+              update: {
+                computerProvider: input.provider,
+                computerProviderCipher: stored.ciphertext,
+              },
+            });
+            return current?.computerProviderCipher;
+          },
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        ),
+      ),
+    );
+  } catch (error) {
+    await forget(stored.ciphertext);
+    throw error;
+  }
+  if (replaced && replaced !== stored.ciphertext) await forget(replaced);
   await refreshComputerProvider(deps.sandbox);
   return view(input.provider, settings, deps.env.sandboxProvider);
 }

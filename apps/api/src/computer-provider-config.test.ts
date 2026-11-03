@@ -134,6 +134,16 @@ describe("computer provider settings", () => {
     expect(state.secrets.size).toBe(1);
   });
 
+  it("removes the new ciphertext when saving it fails", async () => {
+    const { deps, prisma, state } = makeDeps();
+    prisma.deploymentSettings.upsert.mockRejectedValueOnce(new Error("database unavailable"));
+    await expect(
+      updateComputerProviderSettings(deps, actor, { provider: "desktop", values: testDesktop }),
+    ).rejects.toThrow("database unavailable");
+    expect(deps.secrets.delete).toHaveBeenCalledWith("secret-1", "deployment-computer-provider");
+    expect(state.secrets.size).toBe(0);
+  });
+
   it("sends the saved token only to the gateway it was saved for", async () => {
     const { deps } = makeDeps();
     await updateComputerProviderSettings(deps, actor, {
