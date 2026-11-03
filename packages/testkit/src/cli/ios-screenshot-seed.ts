@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import type { BotSecretDestination, MessageBlock } from "@rakazo/contracts";
 import { encodeLoginSecret } from "@rakazo/contracts";
 import { allocateTicketNumber, createDb, createThreadMessage, ensureBoard } from "@rakazo/db";
@@ -27,6 +28,7 @@ export interface IosScreenshotFixture {
   imageId: string;
   pdfId: string;
   archiveId: string;
+  videoId: string;
   teamSpaceId: string;
   conversationId: string;
   /** A bot whose thread shows the cards a bot sends when it needs something. */
@@ -244,6 +246,13 @@ export async function seedIosScreenshotFixture(input: {
     Buffer.from([0x50, 0x4b, 0x05, 0x06, ...new Array(18).fill(0)]),
   );
 
+  // The product demo already in the repository, so the video viewer has something real to play.
+  const video = await upload(
+    "launch-demo.mp4",
+    "video/mp4",
+    await readFile(new URL("../../../../docs/screenshots/demo.mp4", import.meta.url)),
+  );
+
   const spaces = await rpc<{ spaces: { id: string; name: string }[] }>(
     input.apiUrl,
     populated.headers,
@@ -302,6 +311,7 @@ export async function seedIosScreenshotFixture(input: {
       imageId: image.id,
       pdfId: pdf.id,
       archiveId: archive.id,
+      videoId: video.id,
       teamSpaceId: teamSpace.id,
       conversationId: conversation.id,
       cardsBotId: support.id,
