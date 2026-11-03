@@ -11,6 +11,7 @@ import {
   anySignal,
   createRefreshCoalescer,
   isRunTerminalEvent,
+  isRunWorking,
   runThreadSubscription,
 } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
@@ -312,7 +313,12 @@ export function useThreadSync({
       ? undefined
       : (queryClient.getQueryData(threadKey) ??
         (seed?.thread?.botId === active.id ? seed.thread : undefined));
-    if (cachedThread && snapshotRef.current?.botId !== active.id) commitSnapshot(cachedThread);
+    if (
+      cachedThread &&
+      snapshotRef.current?.botId !== active.id &&
+      isRunWorking(cachedThread.run?.status) === isRunWorking(active.status)
+    )
+      commitSnapshot(cachedThread);
     const sidebarRefresh = createRefreshCoalescer(() => refreshBots());
     const snapshotRefresh = createRefreshCoalescer(() => refreshThread(active.id));
     const abort = new AbortController();
