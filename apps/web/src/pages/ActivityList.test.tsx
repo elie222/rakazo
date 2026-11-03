@@ -34,6 +34,7 @@ vi.mock("@rakazo/ui-web", () => {
     Label: Container,
     NativeSelect: () => null,
     NativeSelectOption: () => null,
+    SectionHeading: ({ children }: { children: ReactNode }) => <h3>{children}</h3>,
     Spinner: (props: ComponentProps<"svg">) => <svg role="status" {...props} />,
   };
 });

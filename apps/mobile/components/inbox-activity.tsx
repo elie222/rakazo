@@ -1,9 +1,9 @@
 import type { RunActivityRow } from "@rakazo/contracts";
 import { activitySections } from "@rakazo/core";
-import { useRouter } from "expo-router";
+import type { Href } from "expo-router";
 import type { ReactNode } from "react";
 import { useMemo } from "react";
-import { Pressable, Text, View } from "react-native";
+import { View } from "react-native";
 import { activityPreview, activityStatusLabel, formatActivityRelativeTime } from "../lib/activity";
 import type { MobileBot, MobileGroup } from "../lib/api";
 import { useI18n } from "../lib/i18n";
@@ -11,7 +11,7 @@ import { useThemedStyles } from "../lib/native";
 import { BotAvatar } from "./bot-avatar";
 import { GroupAvatar } from "./group-avatar";
 import { createHomeStyles } from "./home-styles";
-import { ConversationRow, FALLBACK_COLOR, SectionChevron } from "./inbox-rows";
+import { ConversationRow, FALLBACK_COLOR, SectionToggle } from "./inbox-rows";
 
 export function ActivitySection({
   activity,
@@ -19,6 +19,7 @@ export function ActivitySection({
   groups,
   toggledSections,
   onToggleSection,
+  openChat,
 }: {
   activity: { active: RunActivityRow[]; recent: RunActivityRow[] };
   bots: MobileBot[];
@@ -26,21 +27,21 @@ export function ActivitySection({
   /** Section keys flipped from their default fold, stored with the inbox's collapsed sections. */
   toggledSections: ReadonlySet<string>;
   onToggleSection: (key: string) => void;
+  openChat: (href: Href) => void;
 }) {
   const styles = useThemedStyles(createHomeStyles);
   const { t } = useI18n();
-  const router = useRouter();
   const botsById = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
   const sections = activitySections({ ...activity, bots, groups });
   const openRun = (run: RunActivityRow) => {
     if (run.groupId) {
-      router.push({
+      openChat({
         pathname: "/group-thread",
         params: { groupId: run.groupId, name: run.groupName ?? t("Group") },
       });
       return;
     }
-    router.push({ pathname: "/thread", params: { botId: run.botId, name: run.botName } });
+    openChat({ pathname: "/thread", params: { botId: run.botId, name: run.botName } });
   };
   const runRows = (runs: RunActivityRow[], detailed = false) =>
     runs.map((run) => (
@@ -87,7 +88,7 @@ export function ActivitySection({
               time={formatActivityRelativeTime(group.updatedAt)}
               accessibilityLabel={group.name}
               onPress={() =>
-                router.push({
+                openChat({
                   pathname: "/group-thread",
                   params: { groupId: group.id, name: group.name },
                 })
@@ -103,7 +104,7 @@ export function ActivitySection({
               time={formatActivityRelativeTime(bot.updatedAt)}
               accessibilityLabel={bot.name}
               onPress={() =>
-                router.push({ pathname: "/thread", params: { botId: bot.id, name: bot.name } })
+                openChat({ pathname: "/thread", params: { botId: bot.id, name: bot.name } })
               }
               avatar={
                 <BotAvatar
@@ -126,7 +127,6 @@ export function ActivitySection({
   );
 }
 
-/** A section header like the inbox's own: title, count, and a chevron that folds it. */
 function Fold({
   title,
   count,
@@ -141,24 +141,10 @@ function Fold({
   children: ReactNode;
 }) {
   const styles = useThemedStyles(createHomeStyles);
-  const { t } = useI18n();
   return (
     <View>
       <View style={styles.sectionHeadingRow}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={
-            open ? t("Collapse {name}", { name: title }) : t("Expand {name}", { name: title })
-          }
-          accessibilityState={{ expanded: open }}
-          accessibilityValue={{ text: String(count) }}
-          onPress={onToggle}
-          style={({ pressed }) => [styles.sectionToggle, pressed && styles.rowPressed]}
-        >
-          <Text style={styles.sectionTitle}>{title}</Text>
-          <Text style={styles.sectionCount}>{count}</Text>
-          <SectionChevron collapsed={!open} />
-        </Pressable>
+        <SectionToggle title={title} count={count} collapsed={!open} onPress={onToggle} />
       </View>
       {open ? children : null}
     </View>

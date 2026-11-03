@@ -19,7 +19,6 @@ vi.mock("react-native", () => ({
   Text: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("expo-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("./i18n", () => ({
   useI18n: () => ({
     t: (value: string, params?: { name: string }) =>
@@ -37,7 +36,9 @@ vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => <i /> }));
 vi.mock("../components/group-avatar", () => ({ GroupAvatar: () => <i /> }));
 vi.mock("../components/inbox-rows", () => ({
   FALLBACK_COLOR: "orange",
-  SectionChevron: () => <i />,
+  SectionToggle: ({ title, collapsed }: { title: string; collapsed: boolean }) => (
+    <button type="button" aria-label={`${collapsed ? "Expand" : "Collapse"} ${title}`} />
+  ),
   ConversationRow: ({ title }: { title: string }) => <p>{title}</p>,
 }));
 
@@ -57,6 +58,7 @@ it("opens Needs attention and folds Working and Unread until the user opens them
       groups: [],
       toggledSections: new Set(["activity:unread"]),
       onToggleSection: () => undefined,
+      openChat: () => undefined,
     }),
   );
   expect(markup).toContain('aria-label="Collapse Needs attention"');

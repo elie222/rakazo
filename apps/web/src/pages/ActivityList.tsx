@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, Group, RunActivityRow, RunStatus } from "@rakazo/contracts";
-import { activitySections, isAgedStuckWork, isRetryableError } from "@rakazo/core";
+import { activitySections, isRetryableError } from "@rakazo/core";
 import {
   BotAvatar,
   Button,
@@ -13,6 +13,7 @@ import {
   Label,
   NativeSelect,
   NativeSelectOption,
+  SectionHeading,
   Spinner,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
@@ -30,19 +31,15 @@ import {
 import { useSpaceQueries } from "../lib/query";
 import { formatRelativeTime } from "../lib/relative-time";
 
-export function statusTone(status: RunActivityRow["status"], updatedAt?: string): string {
+export function statusTone(status: RunActivityRow["status"]): string {
   if (status === "failed") return "text-destructive";
   if (status === "cancelled") return "text-muted-foreground";
   if (status === "completed") return "text-success";
   if (status === "waiting_input" || status === "waiting_takeover") return "text-warning";
-  if (updatedAt && isAgedStuckWork(status, updatedAt)) return "text-warning";
   return "text-foreground";
 }
 
 const NO_RUNS: RunActivityRow[] = [];
-
-const NO_BOTS: Bot[] = [];
-const NO_GROUPS: Group[] = [];
 
 type ActivityListProps = {
   bots: Bot[];
@@ -107,13 +104,16 @@ export function ActivityList({
   );
 
   const filtersOn = activityFiltersActive(filters);
-  // Filters narrow runs, so unread chats step aside and every match stays in its run section.
   const sections = activitySections({
     active: filteredActive,
     recent: filteredRecent,
-    bots: filtersOn ? NO_BOTS : bots,
-    groups: filtersOn ? NO_GROUPS : groups,
+    bots,
+    groups,
   });
+  // Filters narrow runs, so unread chats step aside and their matching runs stay in Recent.
+  const recentRows = filtersOn
+    ? filteredRecent.filter((run) => !sections.attention.includes(run))
+    : sections.recent;
   const botsById = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
   const section = (key: string, title: string, count: number, defaultOpen: boolean) => ({
     title,
@@ -131,7 +131,7 @@ export function ActivityList({
         onOpen={() => onOpenRun(run)}
       />
     ));
-  const unreadCount = sections.unreadGroups.length + sections.unreadBots.length;
+  const unreadCount = filtersOn ? 0 : sections.unreadGroups.length + sections.unreadBots.length;
   const hasAnyRuns = activeRuns.length > 0 || recentRuns.length > 0;
   const hasVisibleRuns = filteredActive.length > 0 || filteredRecent.length > 0;
 
@@ -210,9 +210,9 @@ export function ActivityList({
           ))}
         </ActivitySection>
       ) : null}
-      {sections.recent.length > 0 ? (
-        <ActivitySection {...section("recent", t`Recent`, sections.recent.length, true)}>
-          {runRows(sections.recent, true)}
+      {recentRows.length > 0 ? (
+        <ActivitySection {...section("recent", t`Recent`, recentRows.length, true)}>
+          {runRows(recentRows, true)}
         </ActivitySection>
       ) : null}
     </div>
@@ -410,16 +410,18 @@ function ActivitySection({
   return (
     <section aria-label={title}>
       <Collapsible open={open} onOpenChange={onToggle}>
-        <CollapsibleTrigger className="flex w-full items-center gap-2 rounded-lg px-2.5 pb-1 pt-1.5 text-[12.5px] font-medium text-muted-foreground hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring">
-          <span className="min-w-0 flex-1 truncate text-start">{title}</span>
-          <span className="tabular-nums">{count}</span>
-          <ChevronDown
-            size={14}
-            strokeWidth={1.8}
-            className={open ? "transition-transform" : "-rotate-90 transition-transform"}
-            aria-hidden="true"
-          />
-        </CollapsibleTrigger>
+        <SectionHeading variant="label">
+          <CollapsibleTrigger className="flex w-full items-center gap-2 rounded-lg px-2.5 pb-1 pt-1.5 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring">
+            <span className="min-w-0 flex-1 truncate text-start">{title}</span>
+            <span className="tabular-nums">{count}</span>
+            <ChevronDown
+              size={14}
+              strokeWidth={1.8}
+              className={open ? "transition-transform" : "-rotate-90 transition-transform"}
+              aria-hidden="true"
+            />
+          </CollapsibleTrigger>
+        </SectionHeading>
         <CollapsibleContent>{children}</CollapsibleContent>
       </Collapsible>
     </section>
@@ -478,9 +480,7 @@ function ActivityRow({
             </span>
           ) : null}
           {detailed ? (
-            <span className={`ms-auto shrink-0 text-xs ${statusTone(run.status, run.updatedAt)}`}>
-              {label}
-            </span>
+            <span className={`ms-auto shrink-0 text-xs ${statusTone(run.status)}`}>{label}</span>
           ) : null}
         </div>
       </div>

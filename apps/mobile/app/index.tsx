@@ -858,6 +858,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                         groups={visibleGroups}
                         toggledSections={collapsed}
                         onToggleSection={toggleCollapsed}
+                        openChat={openChat}
                       />
                     ) : null}
                   </>
