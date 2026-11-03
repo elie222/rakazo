@@ -311,6 +311,17 @@ describe("routine failure notifications", () => {
     );
   });
 
+  it("keeps a failed daily check-in quiet", async () => {
+    const { send } = await failRun({
+      error: new Error("Invalid API key"),
+      clientNonce: "strategic-initiative:bot-1:1",
+    });
+    expect(send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "failure" }),
+      expect.anything(),
+    );
+  });
+
   it("puts the unread chats across the user's Spaces on the app icon", async () => {
     const { send, prisma } = await failRun({ error: new Error("Invalid API key"), unreadChats: 3 });
     expect(send).toHaveBeenCalledWith(
