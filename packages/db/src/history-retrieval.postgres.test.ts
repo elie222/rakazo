@@ -683,9 +683,13 @@ postgres("history retrieval (PostgreSQL)", () => {
     });
     expect(single.queries).toEqual(["quasar"]);
     for (const hit of single.messages) expect(hit.matchedQueryIndexes).toEqual([0]);
-    expect(result.messages).toHaveLength(6);
-    expect(new Set(result.messages.map((hit) => hit.messageId)).size).toBe(6);
-    expect(new Set(result.messages.map((hit) => hit.threadId))).toEqual(
+    // A page holds at most five hits; the sixth is on the next one.
+    expect(result.messages).toHaveLength(5);
+    const rest = await searchHistory(prisma, grant, result.nextSearch!);
+    expect(rest.nextSearch).toBeNull();
+    const all = [...result.messages, ...rest.messages];
+    expect(new Set(all.map((hit) => hit.messageId)).size).toBe(6);
+    expect(new Set(all.map((hit) => hit.threadId))).toEqual(
       new Set([
         "cross-peer-thread",
         "cross-group-thread",
@@ -693,7 +697,7 @@ postgres("history retrieval (PostgreSQL)", () => {
         "cross-team-group-thread",
       ]),
     );
-    for (const hit of result.messages) expect(hit.matchedQueryIndexes).toEqual([0, 1]);
+    for (const hit of all) expect(hit.matchedQueryIndexes).toEqual([0, 1]);
     expect(result.chats?.find((chat) => chat.threadId === "cross-peer-thread")?.name).toBe(
       "Researcher",
     );
@@ -737,12 +741,12 @@ postgres("history retrieval (PostgreSQL)", () => {
     }
     const first = await searchHistory(prisma, grant, { ...input, limit: 2 });
     const next = await searchHistory(prisma, grant, first.nextSearch!);
-    const rest = await searchHistory(prisma, grant, next.nextSearch!);
+    const last = await searchHistory(prisma, grant, next.nextSearch!);
     expect(
-      new Set([...first.messages, ...next.messages, ...rest.messages].map((hit) => hit.messageId))
+      new Set([...first.messages, ...next.messages, ...last.messages].map((hit) => hit.messageId))
         .size,
     ).toBe(6);
-    expect(rest.nextSearch).toBeNull();
+    expect(last.nextSearch).toBeNull();
     expect((await searchHistory(prisma, grant, { query: "quasar" })).messages).toEqual([]);
     const own = await readHistory(prisma, grant, {
       threadId: "cross-peer-thread",
