@@ -95,6 +95,19 @@ describe("render_plot", () => {
         /aspectRatio is not supported; set height instead/,
       ],
       [
+        "data-dependent bin count",
+        {
+          marks: [
+            {
+              type: "rectY",
+              transform: { name: "binX", outputs: { y: "count", thresholds: "freedman-diaconis" } },
+              options: { x: "a" },
+            },
+          ],
+        },
+        /"freedman-diaconis" is not supported/,
+      ],
+      [
         "contour thresholds list",
         contour({ thresholds: Array.from({ length: 201 }, (_, i) => i / 40) }),
         /thresholds would generate more than 200/,

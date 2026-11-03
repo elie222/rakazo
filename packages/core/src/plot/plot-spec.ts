@@ -133,7 +133,8 @@ const MINIMUM_OPTIONS: Record<string, number> = {
   pixelSize: 1,
   precision: 0.01,
 };
-const NAMED_THRESHOLDS = new Set(["auto", "freedman-diaconis", "scott", "sturges"]);
+// Freedman-Diaconis is left out: a tight cluster plus one outlier yields unbounded bins.
+const NAMED_THRESHOLDS = new Set(["auto", "scott", "sturges"]);
 
 type PlotInterval = {
   floor(value: unknown): unknown;
@@ -215,6 +216,11 @@ function boundPlotOption(
   if (typeof value === "number" && key !== "interval") {
     if (value > maxSteps) throw tooMany(key, maxSteps);
     return value;
+  }
+  if (typeof value === "string" && value.toLowerCase() === "freedman-diaconis") {
+    throw new Error(
+      'Plot thresholds "freedman-diaconis" is not supported; use "scott" or a count.',
+    );
   }
   if (
     typeof value === "number" ||
