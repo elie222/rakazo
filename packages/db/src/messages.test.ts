@@ -94,7 +94,7 @@ describe("createThreadMessage", () => {
 });
 
 describe("loadRunHistoryMessages", () => {
-  it.each(["user", "follow_up", "messaging"])(
+  it.each(["user", "follow_up", "messaging", "webhook"])(
     "bounds %s history at its source message regardless of source role",
     async (trigger) => {
       const findFirst = vi.fn().mockResolvedValue({ seq: 12 });
@@ -212,6 +212,29 @@ describe("loadRunHistoryMessages", () => {
         botId: "bot-1",
         sourceMessageId: null,
         trigger: "routine",
+      },
+      40,
+    );
+
+    expect(findFirst).not.toHaveBeenCalled();
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { threadId: "thread-1" } }),
+    );
+  });
+
+  it("does not source-bound history for other triggers", async () => {
+    const findFirst = vi.fn();
+    const findMany = vi.fn().mockResolvedValue([]);
+    const prisma = { message: { findFirst, findMany } } as unknown as PrismaClient;
+
+    await loadRunHistoryMessages(
+      prisma,
+      {
+        id: "run-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        sourceMessageId: "message-12",
+        trigger: "reaction",
       },
       40,
     );
