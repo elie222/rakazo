@@ -309,7 +309,12 @@ export class ExpoPushProvider implements NotificationProvider {
         ? {
             ...shared,
             priority: "high",
-            data: { ...data, notificationTitle: title, notificationBody: text },
+            data: {
+              ...data,
+              notificationTitle: title,
+              notificationBody: text,
+              ...(message.badge === undefined ? {} : { notificationBadge: message.badge }),
+            },
           }
         : {
             ...shared,

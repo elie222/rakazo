@@ -902,6 +902,7 @@ it("uses data-only delivery only for Android builds that registered sender suppo
       botId: "bot",
       threadId: "thread",
       sender: { botId: "bot", name: "Marketing" },
+      badge: 3,
     },
     notifyContext,
   );
@@ -913,6 +914,7 @@ it("uses data-only delivery only for Android builds that registered sender suppo
   expect(request.data).toMatchObject({
     notificationTitle: "Marketing",
     notificationBody: "Draft ready",
+    notificationBadge: 3,
     sender: { botId: "bot", name: "Marketing" },
   });
   expect(request.priority).toBe("high");

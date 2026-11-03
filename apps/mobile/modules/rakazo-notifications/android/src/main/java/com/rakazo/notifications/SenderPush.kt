@@ -54,6 +54,7 @@ internal object SenderPush {
       .setContentIntent(openThread(context, data, botId, threadId))
       .setAutoCancel(true)
       .setCategory(Notification.CATEGORY_MESSAGE)
+      .apply { if (data.has("notificationBadge")) setNumber(data.optInt("notificationBadge")) }
       .addExtras(Bundle().apply {
         putString("rakazo.botId", botId)
         putString("rakazo.threadId", threadId)
