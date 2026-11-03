@@ -1179,7 +1179,7 @@ class PageBrowser:
                 done, total = error.index // keys_per_command, len(chars)
                 if "Typing stopped: page" in str(error):
                     raise PageLeft(f"The page changed while typing, after {done} of {total} characters, "
-                                        "so the rest was not typed. Take a fresh snapshot before continuing.") from None
+                                   "so the rest was not typed. Take a fresh snapshot before continuing.") from None
                 raise TypingStopped(f"Focus left the field while typing, after {done} of {total} characters, "
                                     "so the rest was not typed. Check the page in this snapshot before trying again.") from None
             raise
