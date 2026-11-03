@@ -62,6 +62,7 @@ import { setMobileMonitoringScreen } from "../lib/monitoring";
 import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
 import { useNotificationResponses } from "../lib/open-notification";
 import { clearQueries } from "../lib/query";
+import { useReferral } from "../lib/referral";
 import {
   getCachedRemoteImagesEnabled,
   loadRemoteImagesPreference,
@@ -269,6 +270,7 @@ function LayoutContent() {
   const insets = useSafeAreaInsets();
   // Beside the list a chat swaps in place, the way it does when picked from a sidebar.
   const { split, inboxHidden, foldActive } = useSplitView();
+  const canInvite = Boolean(useReferral());
   const chatAnimation = split ? "none" : undefined;
   const [ready, setReady] = useState(false);
   useNotificationResponses(ready);
@@ -442,6 +444,15 @@ function LayoutContent() {
                       }}
                     />
                     <Stack.Screen
+                      name="invite"
+                      options={{
+                        headerShown: false,
+                        presentation: "formSheet",
+                        sheetAllowedDetents: "fitToContents",
+                        sheetGrabberVisible: true,
+                      }}
+                    />
+                    <Stack.Screen
                       name="new-group"
                       options={{
                         title: t("New group chat"),
@@ -485,7 +496,7 @@ function LayoutContent() {
                       options={({ route }) => ({
                         title: t("Group"),
                         animation: chatAnimation,
-                        ...chatRouteHeader(route, t, { split, inboxHidden, foldActive }),
+                        ...chatRouteHeader(route, t, { split, inboxHidden, foldActive }, canInvite),
                       })}
                     />
                     <Stack.Screen
@@ -503,7 +514,7 @@ function LayoutContent() {
                       options={({ route }) => ({
                         title: t("Thread"),
                         animation: chatAnimation,
-                        ...chatRouteHeader(route, t, { split, inboxHidden, foldActive }),
+                        ...chatRouteHeader(route, t, { split, inboxHidden, foldActive }, canInvite),
                       })}
                     />
                     <Stack.Screen name="routines" options={glassHeaderOptions(t("Routines"))} />

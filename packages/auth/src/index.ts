@@ -50,6 +50,8 @@ export {
   signInCodeEmail,
   verificationEmail,
 } from "./email.js";
+export type { HomeDeletionReason } from "./home-deletion-email.js";
+export { homeDeletionEmail } from "./home-deletion-email.js";
 export type { OidcConfig } from "./oidc.js";
 export { passkeyRelyingParty } from "./passkey.js";
 export {

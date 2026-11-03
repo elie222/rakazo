@@ -95,7 +95,7 @@ describePostgres("billing accounts (PostgreSQL)", () => {
     await expect(ownedBillingAccounts(prisma, memberId)).resolves.toEqual([]);
   });
 
-  it("overwrites the snapshot idempotently and records the first subscription once", async () => {
+  it("overwrites the snapshot idempotently and records the first subscription and payment once", async () => {
     await expect(syncBillingSnapshot(prisma, "cus_unknown", async () => snapshot)).resolves.toBe(
       false,
     );
@@ -104,11 +104,13 @@ describePostgres("billing accounts (PostgreSQL)", () => {
     const first = await billingAccountForOrganization(prisma, organizationId);
     expect(first).toMatchObject({ status: "trialing", seats: 2, subscriptionItemId: "si_1" });
     expect(first?.subscribedAt).toBeInstanceOf(Date);
+    expect(first?.paidAt).toBeNull();
 
     await syncBillingSnapshot(prisma, customerId, async () => ({ ...snapshot, status: "active" }));
     const second = await billingAccountForOrganization(prisma, organizationId);
     expect(second?.status).toBe("active");
     expect(second?.subscribedAt).toEqual(first?.subscribedAt);
+    expect(second?.paidAt).toBeInstanceOf(Date);
 
     await syncBillingSnapshot(prisma, customerId, async () => null);
     const cleared = await billingAccountForOrganization(prisma, organizationId);
@@ -121,6 +123,7 @@ describePostgres("billing accounts (PostgreSQL)", () => {
       cancelAtPeriodEnd: false,
     });
     expect(cleared?.subscribedAt).toEqual(first?.subscribedAt);
+    expect(cleared?.paidAt).toEqual(second?.paidAt);
   });
 
   it("applies concurrent syncs in order so an older read cannot win", async () => {

@@ -1253,6 +1253,9 @@ export async function replaceComputer(
         controlRunId: null,
         // The replacement is a new machine; damage to the old one is no reason to hold it back.
         autoRecoveredAt: null,
+        diskUsedBytes: null,
+        diskFreeBytes: null,
+        diskDismissedPercent: null,
         updatedAt: claimStamp,
       },
     });

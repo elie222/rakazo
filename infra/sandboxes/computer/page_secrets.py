@@ -374,7 +374,7 @@ EVAL_HELPERS = r"""
         throw refused(card
           ? "The page is not on the merchant's site for this purchase. Open the merchant's checkout with browser_navigate, then fill again."
           : code ? "The page is not on the site this code was asked for. Open that site with browser_navigate, then fill again."
-          : "The page is not on the site this login was saved for. Open the saved site with browser_navigate, then fill again.");
+          : `This login is saved for ${saved.origin}; the page is on ${location.origin}. Open the saved site with browser_navigate, then fill again.`);
       }
       const el = focused();
       if (!el) throw refused("The field did not keep focus, so nothing was typed. Take a fresh snapshot and fill again.");
@@ -659,8 +659,8 @@ def frame_site_check(client: CdpClient, frame: tuple[str, str, int], step: dict[
         # Served from its site but run sandboxed, without that site's own origin: not the site's page as such.
         raise Refused("This field is in a sandboxed frame, so nothing was filled.")
     if not found.get("same"):
-        raise Refused(f"This field is in a frame from {found.get('origin')}, not on the site this login was saved "
-                      "for, so nothing was filled." if login else
+        raise Refused(f"This field is in a frame from {found.get('origin')}, and this login is saved for "
+                      f"{step['origin']}, so nothing was filled." if login else
                       f"This field is in a frame from {found.get('origin')}, not on the site it is meant for, "
                       "so nothing was filled.")
 

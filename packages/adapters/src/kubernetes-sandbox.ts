@@ -26,7 +26,7 @@ import { LinuxDesktop, onBotScreen } from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import {
   shouldSkipPortableWorkspaceFile,
-  workspaceSaveFindExpression,
+  workspaceSaveFindCommand,
 } from "./workspace-save-policy.js";
 
 const DISPLAY_START = 20;
@@ -461,7 +461,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
       [
         "bash",
         "-c",
-        `cd ${shellQuote(WORKSPACE)} && find . ${workspaceSaveFindExpression()} -printf '%P\\0'`,
+        `cd ${shellQuote(WORKSPACE)} && ${workspaceSaveFindCommand()} -printf '%P\\0'`,
       ],
       context,
     );

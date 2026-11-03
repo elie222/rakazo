@@ -1863,7 +1863,8 @@ class SavedLoginTest(unittest.TestCase):
 
     def test_a_field_in_another_site_s_frame_is_refused_and_its_own_site_s_is_filled(self):
         browser = LoginFrameBrowser(focus_in_frame=True)
-        with self.assertRaisesRegex(secrets.Refused, "in a frame from https://auth.example.test"):
+        with self.assertRaisesRegex(secrets.Refused, "in a frame from https://auth.example.test, and this login is "
+                                    "saved for https://portal.example.test,"):
             secrets.fill_focused(browser.client, "page", dict(self.STEP))
         self.assertEqual(browser.filled_in(), [])
         browser = LoginFrameBrowser(focus_in_frame=True, frame_check={"same": True})

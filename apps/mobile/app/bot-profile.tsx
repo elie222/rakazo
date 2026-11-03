@@ -4,6 +4,7 @@ import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-rou
 import { useCallback, useRef, useState } from "react";
 import { Alert, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
+import { botProfileMenuOptions, useBotProfileActions } from "../components/bot-profile-menu";
 import { glassHeaderOptions } from "../components/glass-title";
 import { NativeActionButton } from "../components/native-action-button";
 import { NativeSymbol } from "../components/native-symbol";
@@ -35,6 +36,7 @@ export default function BotProfile() {
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const name = displayName(bot?.name ?? nameParam, t("Bot"));
   const { routines } = useBotRoutines(botId);
+  const actions = useBotProfileActions(botId, name);
   // Counts switch saves as they start and end, so a reload can tell it overlapped one.
   const notifySaves = useRef(0);
   const notifyQueue = useRef<ReturnType<typeof createQueuedSave<boolean>> | null>(null);
@@ -111,6 +113,7 @@ export default function BotProfile() {
           ...glassHeaderOptions(name),
           // The avatar and name below name the page; the bar title stays for the back menu.
           ...(Platform.OS === "ios" ? { headerTitle: "" } : null),
+          ...(botId ? botProfileMenuOptions(actions, t("Bot actions"), tokens.foreground) : null),
         }}
       />
       <View style={styles.identity}>

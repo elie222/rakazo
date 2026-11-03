@@ -11,6 +11,8 @@ import ArtifactsScreen from "../app/artifacts";
 import BotProfile from "../app/bot-profile";
 import RoutineDetail from "../app/routine";
 import RoutinesScreen from "../app/routines";
+import { onConversationCleared } from "./conversation-cleared";
+import type * as NativeControls from "./native-controls";
 import { queryClient } from "./query";
 import type * as RoutineHelpers from "./routine";
 import { ROUTINES_POLL_MS, ROUTINES_RETRY_MS } from "./routine-store";
@@ -26,6 +28,7 @@ const {
   focus,
   session,
   requestContext,
+  screen,
 } = vi.hoisted(() => ({
   rpc: vi.fn(),
   push: vi.fn(),
@@ -37,6 +40,7 @@ const {
   focus: new Set<() => (() => void) | undefined>(),
   session: { generation: 0 },
   requestContext: vi.fn(),
+  screen: { options: {} as Record<string, unknown> },
 }));
 
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
@@ -55,7 +59,12 @@ vi.mock("./artifacts", () => ({
   removeArtifact: vi.fn(),
 }));
 vi.mock("expo-router", () => ({
-  Stack: { Screen: () => null },
+  Stack: {
+    Screen: ({ options }: { options: Record<string, unknown> }) => {
+      screen.options = options;
+      return null;
+    },
+  },
   useRouter: () => ({ push }),
   useNavigation: () => ({ setOptions: vi.fn() }),
   useLocalSearchParams: () => params.current,
@@ -67,6 +76,11 @@ vi.mock("expo-router", () => ({
       return () => void focus.delete(effect);
     }, [effect]);
   },
+}));
+// iOS 26, where the profile's menu is a native header item.
+vi.mock("./native-controls", async (importOriginal) => ({
+  ...(await importOriginal<typeof NativeControls>()),
+  iosAtLeast: () => true,
 }));
 vi.mock("react-native", () => {
   const view = ({ children }: { children?: ReactNode }) => createElement("div", null, children);
@@ -287,6 +301,31 @@ describe("bot profile", () => {
     ]);
     const rows = [...container.querySelectorAll("button")].map((node) => node.textContent);
     expect(rows.slice(0, 5)).toEqual(["Edit", "Routines0 on", "Pages", "Artifacts", "Computer"]);
+  });
+
+  it("keeps the bot's less common actions in its … menu, and clears the open chat", async () => {
+    profileRpc(async () => []);
+    await render(createElement(BotProfile));
+    const [menu] = (
+      screen.options.unstable_headerRightItems as () => {
+        menu: { items: { label: string; onPress: () => void }[] };
+      }[]
+    )();
+    const items = menu!.menu.items;
+    expect(items.map((item) => item.label)).toEqual(["Clear conversation", "Archive", "Delete…"]);
+    const cleared = vi.fn();
+    const stop = onConversationCleared(cleared);
+    items[0]!.onPress();
+    const [, , buttons] = alert.mock.lastCall as [
+      string,
+      string,
+      { text: string; onPress?: () => void }[],
+    ];
+    rpc.mockResolvedValueOnce({});
+    await act(async () => buttons.find((button) => button.text === "Clear")!.onPress!());
+    expect(rpc).toHaveBeenCalledWith("threads/clear", { botId: "bot-fixture" });
+    expect(cleared).toHaveBeenCalledWith("bot-fixture");
+    stop();
   });
 
   it.each([

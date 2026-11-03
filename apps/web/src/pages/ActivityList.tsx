@@ -1,18 +1,24 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { RunActivityRow, RunStatus } from "@rakazo/contracts";
-import { isAgedStuckWork, isRetryableError } from "@rakazo/core";
+import type { Bot, Group, RunActivityRow, RunStatus } from "@rakazo/contracts";
+import { activitySections, isRetryableError } from "@rakazo/core";
 import {
+  BotAvatar,
   Button,
   Collapsible,
   CollapsibleContent,
+  CollapsibleTrigger,
+  GroupAvatar,
   Input,
   Label,
   NativeSelect,
   NativeSelectOption,
+  SectionHeading,
   Spinner,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
+import { ChevronDown } from "lucide-react";
+import type { ReactNode } from "react";
 import { useId, useMemo, useState } from "react";
 import type { ActivityListFilters } from "../lib/activity-list-filters";
 import {
@@ -25,19 +31,25 @@ import {
 import { useSpaceQueries } from "../lib/query";
 import { formatRelativeTime } from "../lib/relative-time";
 
-export function statusTone(status: RunActivityRow["status"], updatedAt?: string): string {
+export function statusTone(status: RunActivityRow["status"]): string {
   if (status === "failed") return "text-destructive";
   if (status === "cancelled") return "text-muted-foreground";
   if (status === "completed") return "text-success";
   if (status === "waiting_input" || status === "waiting_takeover") return "text-warning";
-  if (updatedAt && isAgedStuckWork(status, updatedAt)) return "text-warning";
   return "text-foreground";
 }
 
 const NO_RUNS: RunActivityRow[] = [];
 
 type ActivityListProps = {
+  bots: Bot[];
+  groups: Group[];
+  /** Section keys flipped from their default fold, stored with the sidebar's collapsed groups. */
+  toggledSections: ReadonlySet<string>;
+  onToggleSection: (key: string) => void;
   onOpenRun: (run: RunActivityRow) => void;
+  onOpenBot: (bot: Bot) => void;
+  onOpenGroup: (group: Group) => void;
   filters: ActivityListFilters;
   onFiltersChange: (next: ActivityListFilters) => void;
   filtersExpanded: boolean;
@@ -45,7 +57,13 @@ type ActivityListProps = {
 };
 
 export function ActivityList({
+  bots,
+  groups,
+  toggledSections,
+  onToggleSection,
   onOpenRun,
+  onOpenBot,
+  onOpenGroup,
   filters,
   onFiltersChange,
   filtersExpanded,
@@ -86,13 +104,43 @@ export function ActivityList({
   );
 
   const filtersOn = activityFiltersActive(filters);
+  const sections = activitySections({
+    active: filteredActive,
+    recent: filteredRecent,
+    bots,
+    groups,
+  });
+  // Filters narrow runs, so unread chats step aside and their matching runs stay in Recent.
+  const recentRows = filtersOn
+    ? filteredRecent.filter((run) => !sections.attention.includes(run))
+    : sections.recent;
+  const botsById = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
+  const section = (key: string, title: string, count: number, defaultOpen: boolean) => ({
+    title,
+    count,
+    open: defaultOpen !== toggledSections.has(`activity:${key}`),
+    onToggle: () => onToggleSection(`activity:${key}`),
+  });
+  const runRows = (runs: RunActivityRow[], detailed = false) =>
+    runs.map((run) => (
+      <ActivityRow
+        key={run.runId}
+        run={run}
+        bot={botsById.get(run.botId)}
+        detailed={detailed}
+        onOpen={() => onOpenRun(run)}
+      />
+    ));
+  const unreadCount = filtersOn ? 0 : sections.unreadGroups.length + sections.unreadBots.length;
   const hasAnyRuns = activeRuns.length > 0 || recentRuns.length > 0;
   const hasVisibleRuns = filteredActive.length > 0 || filteredRecent.length > 0;
 
   return (
     <div
       className={
-        hasAnyRuns || filtersOn || filtersExpanded ? "mb-2 border-b border-border pb-2" : undefined
+        hasAnyRuns || unreadCount > 0 || filtersOn || filtersExpanded
+          ? "mb-2 border-b border-border pb-2"
+          : undefined
       }
       data-testid="activity-list"
     >
@@ -119,34 +167,53 @@ export function ActivityList({
         </p>
       ) : null}
 
-      {filteredActive.length > 0 ? (
-        <section aria-labelledby="activity-now-heading">
-          <div
-            id="activity-now-heading"
-            className="px-2.5 pb-1 pt-1 text-[12.5px] font-medium text-muted-foreground/80"
-          >
-            <Trans>Now</Trans>
-          </div>
-          {filteredActive.map((run) => (
-            <ActivityRow key={run.runId} run={run} onOpen={() => onOpenRun(run)} />
-          ))}
-        </section>
-      ) : null}
-      {filteredRecent.length > 0 ? (
-        <section
-          className={filteredActive.length > 0 ? "mt-2" : undefined}
-          aria-labelledby="activity-recent-heading"
+      {sections.attention.length > 0 ? (
+        <ActivitySection
+          {...section("attention", t`Needs attention`, sections.attention.length, true)}
         >
-          <div
-            id="activity-recent-heading"
-            className="px-2.5 pb-1 pt-1 text-[12.5px] font-medium text-muted-foreground/80"
-          >
-            <Trans>Recent</Trans>
-          </div>
-          {filteredRecent.map((run) => (
-            <ActivityRow key={run.runId} run={run} onOpen={() => onOpenRun(run)} />
+          {runRows(sections.attention)}
+        </ActivitySection>
+      ) : null}
+      {sections.working.length > 0 ? (
+        <ActivitySection {...section("working", t`Working`, sections.working.length, false)}>
+          {runRows(sections.working)}
+        </ActivitySection>
+      ) : null}
+      {unreadCount > 0 ? (
+        <ActivitySection {...section("unread", t`Unread`, unreadCount, false)}>
+          {sections.unreadGroups.map((group) => (
+            <ChatRow
+              key={group.id}
+              avatar={<GroupAvatar members={group.members} size={28} />}
+              name={group.name}
+              preview={group.preview}
+              updatedAt={group.updatedAt}
+              onOpen={() => onOpenGroup(group)}
+            />
           ))}
-        </section>
+          {sections.unreadBots.map((bot) => (
+            <ChatRow
+              key={bot.id}
+              avatar={
+                <BotAvatar
+                  identity={bot.id}
+                  color={bot.color}
+                  avatarSet={bot.avatarSet}
+                  size={28}
+                />
+              }
+              name={bot.name}
+              preview={bot.preview}
+              updatedAt={bot.updatedAt}
+              onOpen={() => onOpenBot(bot)}
+            />
+          ))}
+        </ActivitySection>
+      ) : null}
+      {recentRows.length > 0 ? (
+        <ActivitySection {...section("recent", t`Recent`, recentRows.length, true)}>
+          {runRows(recentRows, true)}
+        </ActivitySection>
       ) : null}
     </div>
   );
@@ -327,23 +394,70 @@ function FilterChip({ label, onClear }: { label: string; onClear: () => void }) 
   );
 }
 
-function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void }) {
+function ActivitySection({
+  title,
+  count,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string;
+  count: number;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section aria-label={title}>
+      <Collapsible open={open} onOpenChange={onToggle}>
+        <SectionHeading variant="label">
+          <CollapsibleTrigger className="flex w-full items-center gap-2 rounded-lg px-2.5 pb-1 pt-1.5 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring">
+            <span className="min-w-0 flex-1 truncate text-start">{title}</span>
+            <span className="tabular-nums">{count}</span>
+            <ChevronDown
+              size={14}
+              strokeWidth={1.8}
+              className={open ? "transition-transform" : "-rotate-90 transition-transform"}
+              aria-hidden="true"
+            />
+          </CollapsibleTrigger>
+        </SectionHeading>
+        <CollapsibleContent>{children}</CollapsibleContent>
+      </Collapsible>
+    </section>
+  );
+}
+
+function ActivityRow({
+  run,
+  bot,
+  detailed,
+  onOpen,
+}: {
+  run: RunActivityRow;
+  bot?: Bot;
+  /** Recent mixes outcomes, so its rows say how each run ended and when. */
+  detailed: boolean;
+  onOpen: () => void;
+}) {
   const { t } = useLingui();
   const title = run.groupName ? `${run.botName}, ${run.groupName}` : run.botName;
   const label = statusLabel(run.status);
   const activityLabel = t`${title}, ${label}`;
-  const tone = statusTone(run.status, run.updatedAt);
   const preview = activityPreview(run);
   return (
     <button
       type="button"
       aria-label={activityLabel}
       onClick={onOpen}
-      className="flex w-full gap-3 rounded-xl px-2.5 py-[9px] text-left hover:bg-accent"
+      className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left hover:bg-accent"
     >
-      <span
-        className={`mt-1.5 size-2 shrink-0 rounded-full bg-current ${tone}`}
-        aria-hidden="true"
+      <BotAvatar
+        identity={run.botId}
+        color={bot?.color ?? ""}
+        avatarSet={bot?.avatarSet}
+        status={run.status}
+        size={28}
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
@@ -353,18 +467,57 @@ function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void 
               <span className="truncate text-muted-foreground">{run.groupName}</span>
             ) : null}
           </span>
-          <span className="shrink-0 text-xs text-muted-foreground/80">
-            {formatRelativeTime(run.updatedAt)}
-          </span>
+          {detailed ? (
+            <span className="shrink-0 text-xs text-muted-foreground/80">
+              {formatRelativeTime(run.updatedAt)}
+            </span>
+          ) : null}
         </div>
-        <div className="mt-0.5 flex items-baseline gap-2">
+        <div className="flex items-baseline gap-2">
           {preview ? (
             <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
               {preview}
             </span>
           ) : null}
-          <span className={`ms-auto shrink-0 text-xs ${tone}`}>{label}</span>
+          {detailed ? (
+            <span className={`ms-auto shrink-0 text-xs ${statusTone(run.status)}`}>{label}</span>
+          ) : null}
         </div>
+      </div>
+    </button>
+  );
+}
+
+function ChatRow({
+  avatar,
+  name,
+  preview,
+  updatedAt,
+  onOpen,
+}: {
+  avatar: ReactNode;
+  name: string;
+  preview: string;
+  updatedAt: string;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left hover:bg-accent"
+    >
+      {avatar}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="truncate text-sm font-medium text-foreground">{name}</span>
+          <span className="shrink-0 text-xs text-muted-foreground/80">
+            {formatRelativeTime(updatedAt)}
+          </span>
+        </div>
+        {preview ? (
+          <div className="truncate text-[13px] text-muted-foreground">{preview}</div>
+        ) : null}
       </div>
     </button>
   );

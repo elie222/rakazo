@@ -1,6 +1,6 @@
 import { BotSettingsValuesSchema } from "@rakazo/contracts";
-import { redactSecrets } from "@rakazo/core";
 import {
+  appendEventInTransaction,
   commitBotUpdate,
   createSpaceForMember,
   InstructionConflictError,
@@ -34,7 +34,7 @@ import {
   OWN_INSTRUCTIONS_CHANGED_ERROR,
 } from "./run-context.js";
 import { mayOpenModelStream } from "./run-lifecycle.js";
-import { persistMessageInTransaction, publishMessage } from "./run-messages.js";
+import { publishMessage } from "./run-messages.js";
 import { fleetPrepareDeps } from "./run-model.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import { argumentGiven } from "./update-bot-patch.js";
@@ -78,7 +78,7 @@ async function archiveBot(ctx: RunContext, call: ToolCall) {
   return archived;
 }
 
-/** Writes this bot's instructions and posts the change, with its undo, in the chat. */
+/** Writes this bot's instructions quietly; earlier versions stay restorable in its settings. */
 async function commitOwnInstructions(
   ctx: RunContext,
   input: {
@@ -92,7 +92,8 @@ async function commitOwnInstructions(
   // both rather than guess or overwrite what the rewrite never saw.
   if (ctx.state.ownInstructionsBaseline === undefined || input.previousInstructions === undefined)
     return { error: OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR };
-  const { deps, run, runId, bot, context } = ctx;
+  const { deps, run, runId, context } = ctx;
+  const botId = ctx.bot.id;
   const previousInstructions = input.previousInstructions;
   const committed = await deps.prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${run.threadId} FOR UPDATE`;
@@ -104,7 +105,7 @@ async function commitOwnInstructions(
     let undoVersionId: string | null;
     try {
       undoVersionId = await writeBotInstructions(tx, {
-        botId: bot.id,
+        botId,
         instructions: input.instructions,
         reason: input.reason,
         expectedInstructions: previousInstructions,
@@ -115,25 +116,23 @@ async function commitOwnInstructions(
       return { error: OWN_INSTRUCTIONS_CHANGED_ERROR };
     }
     if (!undoVersionId) return null;
-    return persistMessageInTransaction(tx, run, "bot", [
-      {
-        kind: "ask",
-        text: "Instructions updated",
-        status: "answered",
-        instructionUpdate: {
-          botId: bot.id,
-          before: redactSecrets(previousInstructions, ctx.secrets),
-          after: input.instructions,
-          reason: input.reason,
-          undoVersionId,
-        },
-      },
-    ]);
+    const bot = await tx.bot.findUniqueOrThrow({
+      where: { id: botId },
+      select: { name: true, description: true },
+    });
+    return appendEventInTransaction(tx, {
+      spaceId: run.spaceId,
+      threadId: run.threadId,
+      botId,
+      runId,
+      type: "bot.updated",
+      payload: { botId, name: bot.name, description: bot.description },
+    });
   });
   if (committed && "error" in committed) return committed;
   if (committed)
     await deps.events
-      .notify(run.threadId, committed.eventSeq, committed.firstResponseRunId)
+      .notify(run.threadId, committed.seq)
       .catch((error) => getLogger().error("instruction update realtime notification", error));
   ctx.state.ownInstructionsBaseline = input.instructions;
   return { ok: true };

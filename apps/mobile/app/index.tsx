@@ -83,6 +83,7 @@ import { findOrganizeTarget } from "../lib/organize-target";
 import { offerPasskeyOnce } from "../lib/passkey";
 import { ACTIVITY_POLL_INTERVAL_MS, INBOX_POLL_INTERVAL_MS } from "../lib/poll-cadence";
 import { registerPushToken } from "../lib/push";
+import { forgetReferrals, rememberReferral } from "../lib/referral";
 import { hasSignedInBefore, rememberSignedIn } from "../lib/returning-user";
 import { loadSavedInbox, saveInbox } from "../lib/saved-chats";
 import {
@@ -249,17 +250,20 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         apiBase !== currentApiBase()
       )
         return;
-      if (nextMe.billingEnabled) {
+      if (!nextMe.billingEnabled) forgetReferrals();
+      else {
+        // Filed under the Space it was fetched for, so a late answer never shows in another.
+        const spaceId = selectedSpaceId();
         void rpc("billing/status")
           .then((billing) => {
-            if (
+            const current =
               requestId === inboxRequestId.current &&
               generation === currentSessionGeneration() &&
-              apiBase === currentApiBase() &&
-              billing.funding !== undefined &&
-              !billing.access &&
-              !isPaywallShown()
-            )
+              apiBase === currentApiBase();
+            // Only while this session is still the live one: a reply after sign-out must not
+            // restore the previous owner's link.
+            if (current) rememberReferral(spaceId, billing.referral);
+            if (current && billing.funding !== undefined && !billing.access && !isPaywallShown())
               router.push("/paywall");
           })
           .catch(() => undefined);
@@ -857,10 +861,16 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                         <Text style={styles.spaceTitle}>{t("Try again.")}</Text>
                       </Pressable>
                     ) : null}
-                    {!onShareSelect &&
-                    activityMode &&
-                    (activity.active.length > 0 || activity.recent.length > 0) ? (
-                      <ActivitySection activity={activity} bots={bots} />
+                    {/* Folds are saved per account, so wait for it before offering them. */}
+                    {!onShareSelect && activityMode && userId ? (
+                      <ActivitySection
+                        activity={activity}
+                        bots={visible}
+                        groups={visibleGroups}
+                        toggledSections={collapsed}
+                        onToggleSection={toggleCollapsed}
+                        openChat={openChat}
+                      />
                     ) : null}
                   </>
                 }

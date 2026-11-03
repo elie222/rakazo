@@ -10,7 +10,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { Alert, AppState, ScrollView, Share, StyleSheet } from "react-native";
 import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
-import { rpc } from "../../lib/api";
+import { rpc, selectedSpaceId } from "../../lib/api";
 import {
   currentPlan,
   openBillingPage,
@@ -18,6 +18,7 @@ import {
   planEndsAt,
 } from "../../lib/billing";
 import { dateLocaleForUi, useI18n } from "../../lib/i18n";
+import { rememberReferral } from "../../lib/referral";
 import { openFromSettingsSheet } from "../../lib/settings-sheet";
 import { useSideInsets } from "../../lib/side-insets";
 
@@ -39,12 +40,19 @@ export default function BillingScreen() {
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [amount, setAmount] = useState<Amount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
   const [pending, setPending] = useState(false);
-  const show = useCallback((next: BillingStatus) => {
-    setStatus(next);
-    setAmount(
-      ModelCreditAmountSchema.catch(DEFAULT_MONTHLY_CREDIT_AMOUNT).parse(next.monthlyAmountCents),
-    );
-  }, []);
+  // This screen shows the Space it opened in; every answer it gets, including a late one after a
+  // Space switch, is filed under that Space.
+  const [space] = useState(selectedSpaceId);
+  const show = useCallback(
+    (next: BillingStatus) => {
+      setStatus(next);
+      rememberReferral(space, next.referral);
+      setAmount(
+        ModelCreditAmountSchema.catch(DEFAULT_MONTHLY_CREDIT_AMOUNT).parse(next.monthlyAmountCents),
+      );
+    },
+    [space],
+  );
   useFocusEffect(
     useCallback(() => {
       let active = true;

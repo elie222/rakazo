@@ -66,7 +66,7 @@ import { ThreadErrorNotice, ThreadFetchErrorNotice } from "../thread-error-notic
 import { createThreadHeaderStyles } from "../thread-header-styles";
 import { QuoteSheet } from "./quote-sheet";
 import { ThreadComposerDock } from "./thread-composer-dock";
-import { BotActionsModal, useThreadHeader } from "./thread-header";
+import { useThreadHeader } from "./thread-header";
 import { LoadEarlierButton, ThreadWorkingFooter } from "./thread-list-controls";
 import { ThreadMessageList } from "./thread-message-list";
 import { useLatestRowActions, useThreadRows } from "./thread-rows";
@@ -306,7 +306,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     ),
   });
 
-  const { botActions, botActionsOpen, closeBotActions } = useThreadHeader({
+  useThreadHeader({
     botId,
     groupId,
     inGroup,
@@ -317,7 +317,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     groupMembers,
     currentBotStatus,
     composingBots,
-    styles,
     onCleared: history.clear,
   });
 
@@ -645,7 +644,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
             />
           </ThreadComposerDock>
         </View>
-        {botActionsOpen ? <BotActionsModal actions={botActions} onClose={closeBotActions} /> : null}
         {selectableText !== null ? (
           <SelectTextSheet text={selectableText} onClose={() => setSelectableText(null)} />
         ) : null}
