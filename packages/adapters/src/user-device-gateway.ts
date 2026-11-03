@@ -5,7 +5,7 @@ import type { Duplex } from "node:stream";
 import type { UserDeviceSummary } from "@rakazo/contracts";
 import { USER_DEVICE_CONNECT_PATH } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { runAsSystem } from "@rakazo/db";
+import { recordSecurityEvent, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
@@ -314,7 +314,8 @@ export class UserDeviceHub {
         select: { id: true },
       }),
     );
-    return new Set(sessionIds.filter((id) => !live.some((session) => session.id === id)));
+    const kept = new Set(live.map((session) => session.id));
+    return new Set(sessionIds.filter((id) => !kept.has(id)));
   }
 
   /** Revokes and closes live devices whose pairing sign-in ended without its hook running. */
@@ -327,15 +328,23 @@ export class UserDeviceHub {
       }),
     );
     const ended = await this.endedSessions(devices.map((device) => device.sessionId!));
-    const expired = devices.filter((device) => ended.has(device.sessionId!));
-    if (!expired.length) return;
-    await runAsSystem("revoke user devices whose sign-in ended", () =>
-      this.deps.prisma.userDevice.updateMany({
-        where: { id: { in: expired.map((device) => device.id) }, revokedAt: null },
-        data: { revokedAt: new Date() },
-      }),
-    );
-    for (const device of expired) this.disconnect(device.id, "session-ended");
+    for (const device of devices.filter((device) => ended.has(device.sessionId!))) {
+      // Matching the session too leaves a device a password change just moved alone.
+      const { count } = await runAsSystem("revoke a user device whose sign-in ended", () =>
+        this.deps.prisma.userDevice.updateMany({
+          where: { id: device.id, sessionId: device.sessionId, revokedAt: null },
+          data: { revokedAt: new Date() },
+        }),
+      );
+      if (!count) continue;
+      const userId = entries.find((entry) => entry.device.id === device.id)!.device.userId;
+      await recordSecurityEvent({
+        type: "device.revoked",
+        userId,
+        metadata: { deviceId: device.id, by: "session" },
+      });
+      this.disconnect(device.id, "session-ended");
+    }
   }
 
   /** Closes this process's socket for a device and fails its in-flight requests. */

@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { PrismaClient } from "@rakazo/db";
-import { asSystem, createDb } from "@rakazo/db";
+import { asSystem, createDb, installSecurityEventStore } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { UserDeviceSocket } from "./user-device-gateway.js";
 import {
@@ -142,6 +142,7 @@ describePostgres("user devices (PostgreSQL)", () => {
     socket.ping = () => socket.emit("pong");
     await hub.attach(authenticated!, socket);
 
+    installSecurityEventStore(raw);
     // Deleted without the sign-out hook, as if its cleanup had failed.
     await prisma.session.delete({ where: { id: session.id } });
     await vi.waitFor(() =>
@@ -149,6 +150,16 @@ describePostgres("user devices (PostgreSQL)", () => {
     );
     const revoked = await prisma.userDevice.findUniqueOrThrow({ where: { id: device.id } });
     expect(revoked.revokedAt).toBeInstanceOf(Date);
+    await expect(
+      prisma.securityEvent.count({
+        where: {
+          type: "device.revoked",
+          userId,
+          metadata: { path: ["deviceId"], equals: device.id },
+        },
+      }),
+    ).resolves.toBe(1);
+    installSecurityEventStore(undefined);
     await expect(hub.authenticate(`Bearer ${token}`)).resolves.toBeNull();
   });
 
