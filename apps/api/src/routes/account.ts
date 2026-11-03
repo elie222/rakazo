@@ -33,7 +33,6 @@ import {
   selectVoicePreference,
   voicePreferenceTarget,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
 import { createAccessGrant, listAccessGrants, revokeAccessGrant } from "../access-grants.js";
 import { requireAdmin } from "../admins.js";
 import { aiConsentStatus, allowAiConsent } from "../ai-consent.js";
@@ -104,12 +103,8 @@ export function accountRoutes(ctx: RouterContext) {
       ),
       status: authed.billing.status.handler(async ({ context, input }) => {
         const billing = requireBilling(deps);
-        // A failed claim never blocks billing; the invite just goes unattributed, as before.
-        if (input?.referralCode) {
-          await billing
-            .claimReferral(context.actor, input.referralCode)
-            .catch((error: unknown) => getLogger().error("referral claim failed", error));
-        }
+        // A failed claim fails the request, so the client keeps the code and sends it again.
+        if (input?.referralCode) await billing.claimReferral(context.actor, input.referralCode);
         return billing.status(context.actor);
       }),
       refresh: authed.billing.refresh.handler(async ({ context }) => {
