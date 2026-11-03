@@ -124,6 +124,16 @@ describe("Pi runtime errors", () => {
     },
   );
 
+  it.each([
+    "ModelAccountError[auth]: Diagnostic text without a category.",
+    "  ModelAccountError[auth]: \nModelAccountError[auth]: Diagnostic text without a category.",
+  ])("does not trust a saved-kind tag supplied by a provider: %s", async (message) => {
+    provider.errorMessage = message;
+    const failure = consume();
+    await expect(failure).rejects.toBeInstanceOf(ModelProviderError);
+    await expect(failure).rejects.not.toBeInstanceOf(ModelAccountError);
+  });
+
   it("marks a provider overload that outlasted its retries as transient", async () => {
     provider.errorMessage =
       "Codex error: Our servers are currently overloaded. Please try again later.";

@@ -17,8 +17,9 @@ import { isOpenCodeProvider } from "./pi-runtime-stream.js";
 /** Keep controlled account recovery advice without retaining upstream diagnostic text. */
 export function modelRunFailureReason(error: ModelProviderError): string {
   if (!(error instanceof ModelAccountError)) return modelFailureReason(error);
+  const providerMessage = stripSavedErrorKind(error.message);
   const normalized = normalizeRunError(
-    terminalOAuthRefreshErrorMarker(error.message) ? "authentication_error" : error.message,
+    terminalOAuthRefreshErrorMarker(providerMessage) ? "authentication_error" : providerMessage,
     (message, values) => {
       // Keep a machine-readable reset below instead of the localized calendar label.
       if (message === "{summary} Resets {date}.") return String(values?.summary ?? "");
@@ -142,8 +143,12 @@ const MODEL_FAILURE_RANK = [
   ModelProviderError,
 ];
 
+function stripSavedErrorKind(message: string): string {
+  return message.replace(/^\s*(?:ModelAccountError\[\w+\]:\s*)+/, "");
+}
+
 function modelFailureClass(error: string, message: string): number {
-  const { kind } = normalizeRunError(message);
+  const { kind } = normalizeRunError(stripSavedErrorKind(message));
   // Output diagnostics can quote generated text that looks like a timeout.
   if (kind === "output") return MODEL_FAILURE_RANK.indexOf(ModelOutputError);
   // OpenCode drops chat sessions on its side; the next send opens a new one.
