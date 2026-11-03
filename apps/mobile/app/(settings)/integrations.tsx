@@ -1203,14 +1203,16 @@ export default function Integrations() {
         actions={addOptions.map((option) => ({ id: option.id, title: option.label }))}
         onPressAction={({ nativeEvent }) => startAdding(nativeEvent.event as "github" | SourceKind)}
       >
-        <Pressable
+        {/* A plain view: on Android the menu opens from its own Pressable, which a
+            nested Pressable would take the touch from. */}
+        <View
+          accessible
           accessibilityRole="button"
           accessibilityLabel={t("Add custom")}
-          hitSlop={8}
           style={styles.addCustom}
         >
           <NativeSymbol ios="plus" android="add" size={20} />
-        </Pressable>
+        </View>
       </MenuView>
     );
   }
@@ -1626,6 +1628,6 @@ function createIntegrationsStyles() {
     },
     toolsBody: { gap: 8, paddingTop: 4 },
     toolName: { color: native.label, fontSize: 14 },
-    addCustom: { alignSelf: "flex-end", padding: 4 },
+    addCustom: { alignSelf: "flex-end", padding: 12, margin: -8 },
   });
 }
