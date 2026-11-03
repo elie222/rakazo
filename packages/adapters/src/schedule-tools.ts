@@ -28,8 +28,8 @@ export const SCHEDULE_TOOL_NAMES = new Set([
   "schedule_cancel",
 ]);
 
-/** A routine run may list or cancel routines, but not write new unattended work. */
-const ROUTINE_RUN_HIDDEN_TOOLS = new Set(["schedule_create", "schedule_update"]);
+/** Routine runs may create, list, or cancel routines, but may not update them. */
+const ROUTINE_RUN_HIDDEN_TOOLS = new Set(["schedule_update"]);
 
 export function filterBuiltinToolsForRun<T extends { name: string }>(
   tools: T[],
