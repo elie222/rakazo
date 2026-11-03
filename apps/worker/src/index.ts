@@ -1,6 +1,6 @@
 import { hostname } from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
+import type { BackgroundJobHandlers, JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
 import {
   ComposioConnector,
   IntegrationProviderSettings,
@@ -353,6 +353,23 @@ async function main() {
     paymentWallet,
     notifications,
   });
+
+  // Per-job error boundary: a failing job marks itself failed and logs, so a
+  // poisonous job never escapes to uncaughtException and aborts every
+  // in-flight run. graphile-worker still sees the throw and marks the job
+  // failed; the boundary only contains the error at job level instead of the
+  // whole process.
+  const safeJobHandlers: Record<string, unknown> = {};
+  for (const [name, handler] of Object.entries(jobHandlers)) {
+    safeJobHandlers[name] = async (...args: unknown[]) => {
+      try {
+        return await (handler as (...args: unknown[]) => Promise<unknown>)(...args);
+      } catch (error) {
+        logger.error(`job handler failed: ${name}`, error);
+        throw error;
+      }
+    };
+  }
   const reconciler = createJobReconciler({
     prisma,
     jobs,
@@ -442,7 +459,7 @@ async function main() {
   // Keep retrying without exiting; the handlers above drain them on shutdown.
   for (let attempt = 0; !stopping; attempt += 1) {
     try {
-      await jobHost.start(jobHandlers);
+      await jobHost.start(safeJobHandlers as BackgroundJobHandlers);
       break;
     } catch (error) {
       if (stopping) return;
