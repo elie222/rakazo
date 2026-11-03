@@ -453,9 +453,10 @@ describe("remote computer access", () => {
     await vi.waitFor(() => expect(requests).toHaveLength(3));
     await access.pair();
     await vi.waitFor(() => expect(requests).toHaveLength(4));
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    // The fake fetch does no I/O, so every pending promise settles before setImmediate runs.
+    await new Promise(setImmediate);
     await access.pair();
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await new Promise(setImmediate);
     expect(requests).toHaveLength(4);
   });
 
