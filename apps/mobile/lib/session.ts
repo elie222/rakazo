@@ -6,6 +6,7 @@ import {
 } from "./artifact-cache-session";
 import { stopLiveNotifications } from "./live-notifications";
 import { clearNetworkCache } from "./network-cache";
+import { rememberSignedIn } from "./returning-user";
 import { clearFailedSends } from "./thread-feedback";
 
 const SESSION_KEY = "rakazo.session_token";
@@ -171,6 +172,7 @@ export async function saveSessionToken(token: string) {
   sessionInvalidated = false;
   sessionFallback = undefined;
   if (generation === sessionGeneration) publishSessionGeneration();
+  await rememberSignedIn();
 }
 
 /** Clears the session. Returns false only when SecureStore could neither delete nor overwrite. */

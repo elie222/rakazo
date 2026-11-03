@@ -324,6 +324,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
 
   useEffect(() => {
     void Promise.all([loadSessionToken(), hasSignedInBefore()]).then(([token, before]) => {
+      // Sessions saved before this mark existed are recorded on their first open.
       if (token) void rememberSignedIn();
       setHasSession(Boolean(token));
       setReturningUser(before);
