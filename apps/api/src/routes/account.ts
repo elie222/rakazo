@@ -16,6 +16,7 @@ import {
 import { urlSite } from "@rakazo/core/egress";
 import {
   auditLogOrganization,
+  commitBotUpdate,
   findAutoReviewPreference,
   findDefaultVoiceCredential,
   findModelCredential,
@@ -151,24 +152,36 @@ export function accountRoutes(ctx: RouterContext) {
       update: authed.preferences.update.handler(async ({ context, input }): Promise<Me> => {
         const userId = context.actor.userId;
         const botAvatarSet = input.botAvatarSet;
-        await deps.prisma.$transaction(async (tx) => {
-          await tx.user.update({
-            where: { id: userId },
-            // An avatar style from an older app is accepted and ignored: there is only one.
-            data: {
-              ...(input.timezone === undefined ? {} : { timezone: input.timezone }),
-              ...(input.locale === undefined ? {} : { locale: input.locale }),
-              ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
-            },
+        // Waits for any bot creation holding the user row, so no new bot is missed below.
+        await deps.prisma.user.update({
+          where: { id: userId },
+          // An avatar style from an older app is accepted and ignored: there is only one.
+          data: {
+            ...(input.timezone === undefined ? {} : { timezone: input.timezone }),
+            ...(input.locale === undefined ? {} : { locale: input.locale }),
+            ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
+          },
+        });
+        if (botAvatarSet !== undefined) {
+          // Every bot not pinned to another set follows the new default, announced like any edit
+          // so other devices and open chats redraw it.
+          const bots = await deps.prisma.bot.findMany({
+            where: { userId, avatarSetPinned: false, avatarSet: { not: botAvatarSet } },
+            select: { id: true, spaceId: true, thread: { select: { id: true } } },
           });
-          // Every bot the user has not pinned to another set follows the new default.
-          if (botAvatarSet !== undefined) {
-            await tx.bot.updateMany({
-              where: { userId, avatarSetPinned: false, avatarSet: { not: botAvatarSet } },
+          for (const bot of bots) {
+            if (!bot.thread) continue;
+            await commitBotUpdate({
+              prisma: deps.prisma,
+              notify: (threadId, seq) => deps.events.notify(threadId, seq),
+              spaceId: bot.spaceId,
+              threadId: bot.thread.id,
+              botId: bot.id,
+              emitBotUpdated: true,
               data: { avatarSet: botAvatarSet },
             });
           }
-        });
+        }
         return meDto(deps, context.actor);
       }),
       adoptTimezone: authed.preferences.adoptTimezone.handler(

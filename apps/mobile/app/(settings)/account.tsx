@@ -101,6 +101,7 @@ export default function Account() {
   const router = useRouter();
   const { focus } = useLocalSearchParams<{ focus?: string }>();
   const [me, setMe] = useState<MobileMe | null>(null);
+  const botStyleRequest = useRef(0);
   const account = accountDisplay(me ?? {}, t("Your account"));
   const [nameDialogOpen, setNameDialogOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
@@ -570,10 +571,15 @@ export default function Account() {
               accessibilityLabel={t("Bot style")}
               onChange={(botAvatarSet) => {
                 const previous = me.botAvatarSet;
+                // Only the latest tap's reply may land, so a slower earlier save can't undo it.
+                const request = ++botStyleRequest.current;
                 setMe((current) => (current ? { ...current, botAvatarSet } : current));
                 rpc("preferences/update", { botAvatarSet })
-                  .then(setMe)
+                  .then((next) => {
+                    if (request === botStyleRequest.current) setMe(next);
+                  })
                   .catch(() => {
+                    if (request !== botStyleRequest.current) return;
                     setMe((current) =>
                       current ? { ...current, botAvatarSet: previous } : current,
                     );

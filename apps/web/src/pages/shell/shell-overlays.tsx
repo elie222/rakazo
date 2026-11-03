@@ -175,8 +175,9 @@ export function SettingsOverlays({
             setBootstrapMe((prev) =>
               prev ? { ...prev, botAvatarSet: nextMe.botAvatarSet } : nextMe,
             );
-            // Unpinned bots were restyled with it.
-            await refreshSpaces();
+            // Unpinned bots were restyled with it. The save already succeeded, so a failed
+            // refresh only waits for the roster's next poll.
+            void refreshSpaces().catch(() => undefined);
           }}
           onAccountImported={refreshSpaces}
           onImportAgent={() => {

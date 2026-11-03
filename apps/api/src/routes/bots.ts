@@ -310,7 +310,9 @@ export function botsRoutes(ctx: RouterContext) {
       create: authed.bots.create.handler(async ({ context, input }) => {
         let bot: Bot;
         try {
-          bot = await repos.createBot(context.actor, input);
+          // Older apps always send Original, which would pin every new bot to it.
+          const { avatarSet: _ignored, ...request } = input;
+          bot = await repos.createBot(context.actor, request);
         } catch (error) {
           throw mapSpaceLifecycleError(error);
         }

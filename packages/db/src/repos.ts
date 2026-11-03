@@ -587,10 +587,9 @@ export function createRepos(
             _max: { position: true },
           });
           // A bot follows its owner's default set unless created with another, which pins it.
-          const owner = await tx.user.findUnique({
-            where: { id: actor.userId },
-            select: { botAvatarSet: true },
-          });
+          // Held until this bot commits, so a concurrent default change restyles it afterwards.
+          const [owner] = await tx.$queryRaw<{ botAvatarSet: string }[]>`
+            SELECT "botAvatarSet" FROM "user" WHERE id = ${actor.userId} FOR SHARE`;
           const defaultSet = owner
             ? resolveBotAvatarSet(owner.botAvatarSet)
             : DEFAULT_NEW_BOT_AVATAR_SET;

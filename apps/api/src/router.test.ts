@@ -86,17 +86,16 @@ describe("account preferences", () => {
         return { count: 1 };
       },
     );
-    const botUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
+    const botFindMany = vi.fn().mockResolvedValue([]);
     const prisma = {
       user: {
         update,
         updateMany,
         findUniqueOrThrow: vi.fn().mockResolvedValue(user),
       },
-      bot: { updateMany: botUpdateMany },
+      bot: { findMany: botFindMany },
       userModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
-      $transaction: (run: (tx: unknown) => Promise<unknown>) => run(prisma),
     } as unknown as PrismaClient;
     const deps = {
       prisma,
@@ -118,7 +117,7 @@ describe("account preferences", () => {
     return {
       update,
       updateMany,
-      botUpdateMany,
+      botFindMany,
       deps,
       actor,
       handler: new RPCHandler(createRouter(deps)),
@@ -337,7 +336,7 @@ describe("account preferences", () => {
   });
 
   it("saves the bot style and restyles only bots not pinned to another set", async () => {
-    const { update, botUpdateMany, actor, handler } = preferencesDeps("organic");
+    const { update, botFindMany, actor, handler } = preferencesDeps("organic");
 
     const response = await handle(
       handler,
@@ -354,10 +353,11 @@ describe("account preferences", () => {
       where: { id: "user-1" },
       data: { botAvatarSet: "rakazo" },
     });
-    expect(botUpdateMany).toHaveBeenCalledWith({
-      where: { userId: "user-1", avatarSetPinned: false, avatarSet: { not: "rakazo" } },
-      data: { avatarSet: "rakazo" },
-    });
+    expect(botFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: "user-1", avatarSetPinned: false, avatarSet: { not: "rakazo" } },
+      }),
+    );
   });
 
   it("rejects avatar styles outside robot|organic", async () => {
