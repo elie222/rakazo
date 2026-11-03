@@ -92,9 +92,13 @@ function fixture({
         const user = data.user!.find((row) => row.id === where.id || row.email === where.email);
         return user ? { locale: user.locale ?? null } : null;
       }),
-      findMany: vi.fn(async () =>
+      findMany: vi.fn(async ({ where }: { where?: { id?: { not?: string } } } = {}) =>
         data
-          .user!.filter((user) => !String(user.email).toLowerCase().endsWith("@messaging.invalid"))
+          .user!.filter(
+            (user) =>
+              user.id !== where?.id?.not &&
+              !String(user.email).toLowerCase().endsWith("@messaging.invalid"),
+          )
           .slice(0, 2)
           .map((user) => ({ id: String(user.id) })),
       ),
@@ -138,9 +142,11 @@ function fixture({
     },
     organization: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     spaceMember: {
-      findFirst: vi.fn(async ({ where }: { where: { userId: string } }) =>
-        members.has(where.userId) ? { spaceId: "space-1" } : null,
-      ),
+      findFirst: vi.fn(async ({ where }: { where: { userId: string | { in: string[] } } }) => {
+        const ids = typeof where.userId === "string" ? [where.userId] : where.userId.in;
+        const userId = ids.find((id) => members.has(id));
+        return userId ? { spaceId: "space-1", userId } : null;
+      }),
     },
   };
   vi.mocked(bootstrapUserSpace).mockImplementation(async (_prisma, user) => {

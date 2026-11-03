@@ -30,6 +30,10 @@ function fakePrisma() {
   const rows: Row[] = [];
   const connections = new Map<string, Date>();
   const events: Array<{ type: string; userId: string | null; metadata: object }> = [];
+  /** Live sessions by id, with their expiry. Every test user starts signed in. */
+  const sessions = new Map<string, Date>();
+  const signedIn = (id: string) =>
+    sessions.get(id) ?? (id.endsWith("-ended") ? null : new Date(Date.now() + 60_000));
   type Where = Partial<Row> & { OR?: Partial<Row>[] };
   const matches = (row: Row, { OR, ...where }: Where): boolean =>
     Object.entries(where).every(([key, value]) => row[key as keyof Row] === value) &&
@@ -89,12 +93,21 @@ function fakePrisma() {
       findFirst: async () => null,
       findUnique: async () => null,
     },
+    session: {
+      findMany: async ({ where }: { where: { id: { in: string[] }; expiresAt: { gt: Date } } }) =>
+        where.id.in
+          .filter((id) => {
+            const expiresAt = signedIn(id);
+            return expiresAt !== null && expiresAt > where.expiresAt.gt;
+          })
+          .map((id) => ({ id })),
+    },
     securityEvent: {
       create: async ({ data }: { data: (typeof events)[number] }) => events.push(data),
     },
     $transaction: (run: (tx: unknown) => Promise<unknown>) => run(prisma),
   };
-  return { prisma: prisma as unknown as PrismaClient, rows, events, connections };
+  return { prisma: prisma as unknown as PrismaClient, rows, events, connections, sessions };
 }
 
 class FakeSocket extends EventEmitter implements UserDeviceSocket {
@@ -328,6 +341,21 @@ describe("device sessions", () => {
 
     await endUserDeviceSession(store, { id: "phone", userId: "user-1" });
     expect(rows.map((row) => row.revokedAt === null)).toEqual([false, true]);
+  });
+
+  it("never accepts a device paired by a sign-in that already ended", async () => {
+    const { pair, hub, rows } = setup();
+    const { token } = await (await pair("user-1", { session: "desktop-ended" })).json();
+    expect(rows[0]!.revokedAt).toBeNull();
+    await expect(hub.authenticate(`Bearer ${token}`)).resolves.toBeNull();
+  });
+
+  it("stops accepting a device once the sign-in that paired it expires", async () => {
+    const { pair, hub, sessions } = setup();
+    const { token } = await (await pair("user-1", { session: "desktop" })).json();
+    await expect(hub.authenticate(`Bearer ${token}`)).resolves.toMatchObject({ userId: "user-1" });
+    sessions.set("desktop", new Date(Date.now() - 1));
+    await expect(hub.authenticate(`Bearer ${token}`)).resolves.toBeNull();
   });
 
   it("tells a device held by another process why it was revoked", async () => {

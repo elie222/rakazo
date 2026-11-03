@@ -486,6 +486,27 @@ describe("remote computer access", () => {
     expect(confirm).toHaveBeenCalledTimes(2);
   });
 
+  it("ignores a prompt from a sign-in that ended before it was answered", async () => {
+    const { server, fetch } = accountServer();
+    let answer: (allowed: boolean) => void = () => undefined;
+    const confirm = vi.fn(() => new Promise<boolean>((resolve) => (answer = resolve)));
+    const { access, clients } = setup({ fetch, confirm });
+    server.account = "alice";
+    await access.select(origin);
+    await access.pair();
+    const waiting = clients[0]!.authorize();
+    await vi.waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+
+    server.account = null;
+    clients[0]!.revoke("session-ended");
+    server.account = "bob";
+    await access.pair();
+    answer(true);
+    expect(await waiting).toBe(false);
+    expect(access.state(origin)).toEqual({ deviceId: "device-2", allowed: false });
+    expect(await readDeviceConsent(userData, origin)).toBeNull();
+  });
+
   it("does not let a saved answer for another account through after a relaunch", async () => {
     await savePairedDevice(
       userData,

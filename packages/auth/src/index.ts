@@ -164,18 +164,35 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     }
   };
   const discovery = env.oidc ? oidcDiscovery(env.oidc) : undefined;
-  const admission = async (newUserId?: string) => {
+  /** Refuses a new account early, before creating it, once a single-person deployment has one. */
+  const admission = async () => {
     const policy = signupPolicyFromEnv(env);
     if (!env.singleAccount || !policy.enabled) return policy;
     const existing = await prisma.user.findFirst({
-      where: {
-        ...(newUserId ? { id: { not: newUserId } } : {}),
-        NOT: { email: { endsWith: MESSAGING_EMAIL_SUFFIX } },
-      },
+      where: { NOT: { email: { endsWith: MESSAGING_EMAIL_SUFFIX } } },
       select: { id: true },
     });
     return existing ? { ...policy, enabled: false } : policy;
   };
+  /** Admits the sole account one at a time, so two first signups cannot both get in. */
+  const admitSoleAccount = (userId: string) =>
+    prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('rakazo:single-account'))`;
+      const others = await tx.user.findMany({
+        where: { id: { not: userId }, NOT: { email: { endsWith: MESSAGING_EMAIL_SUFFIX } } },
+        select: { id: true },
+      });
+      const admitted =
+        others.length > 0 &&
+        (await tx.spaceMember.findFirst({
+          where: { userId: { in: others.map((other) => other.id) } },
+          select: { userId: true },
+        }));
+      if (admitted) return false;
+      // Committed before the lock is released, so the next signup sees it.
+      await bootstrapUserSpace(prisma, { id: userId }, env);
+      return true;
+    });
   // SSO-only deployments keep every email credential closed, codes included.
   const emailCodeSignIn = Boolean(env.email) && env.passwordAuth !== false;
   // SSO-only deployments keep the identity provider as the only way in.
@@ -580,7 +597,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
           before: async (session, ctx) => {
             // The auth adapter can still be inside the signup transaction.
             const user = await ctx?.context.internalAdapter.findUserById(session.userId);
-            const policy = await admission(session.userId);
+            const policy = signupPolicyFromEnv(env);
             const oidcSignIn = isOidcCallback(ctx);
             const bypassAllowlist = oidcSignIn && env.oidc?.allowSignupBypass;
             if (!user || isMessagingEmail(user.email)) {
@@ -607,7 +624,12 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                   message: "Registration is closed",
                 });
               }
-              await bootstrapUserSpace(prisma, user, env);
+              if (!env.singleAccount) await bootstrapUserSpace(prisma, user, env);
+              else if (!(await admitSoleAccount(user.id)))
+                throw new APIError("FORBIDDEN", {
+                  code: "REGISTRATION_CLOSED",
+                  message: "Registration is closed",
+                });
             }
           },
           after: async (session, ctx) => {

@@ -154,12 +154,14 @@ export class UserDeviceHub {
           platform: true,
           tokenHash: true,
           revokedAt: true,
+          sessionId: true,
         },
       }),
     );
     // The lookup is by hash; compare again in constant time so a lookup quirk never authorizes.
     if (!device || device.revokedAt) return null;
     if (!timingSafeEqual(Buffer.from(device.tokenHash), Buffer.from(hash))) return null;
+    if (device.sessionId && (await this.endedSessions([device.sessionId])).size) return null;
     return { id: device.id, userId: device.userId, name: device.name, platform: device.platform };
   }
 
@@ -304,6 +306,38 @@ export class UserDeviceHub {
     });
   }
 
+  /** Sessions among these that were deleted or have expired. */
+  private async endedSessions(sessionIds: string[]): Promise<Set<string>> {
+    const live = await runAsSystem("check user device sessions", () =>
+      this.deps.prisma.session.findMany({
+        where: { id: { in: sessionIds }, expiresAt: { gt: new Date() } },
+        select: { id: true },
+      }),
+    );
+    return new Set(sessionIds.filter((id) => !live.some((session) => session.id === id)));
+  }
+
+  /** Revokes and closes live devices whose pairing sign-in ended without its hook running. */
+  private async endWithSessions(entries: LiveDevice[]) {
+    if (!entries.length) return;
+    const devices = await runAsSystem("find live user device sessions", () =>
+      this.deps.prisma.userDevice.findMany({
+        where: { id: { in: entries.map((entry) => entry.device.id) }, sessionId: { not: null } },
+        select: { id: true, sessionId: true },
+      }),
+    );
+    const ended = await this.endedSessions(devices.map((device) => device.sessionId!));
+    const expired = devices.filter((device) => ended.has(device.sessionId!));
+    if (!expired.length) return;
+    await runAsSystem("revoke user devices whose sign-in ended", () =>
+      this.deps.prisma.userDevice.updateMany({
+        where: { id: { in: expired.map((device) => device.id) }, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    );
+    for (const device of expired) this.disconnect(device.id, "session-ended");
+  }
+
   /** Closes this process's socket for a device and fails its in-flight requests. */
   disconnect(deviceId: string, reason?: UserDeviceRevokeReason): void {
     const entry = this.live.get(deviceId);
@@ -398,6 +432,9 @@ export class UserDeviceHub {
       );
       // A revoke whose direct disconnect did not reach this process still closes here.
       for (const device of revoked) this.disconnect(device.id);
+      await this.endWithSessions(
+        live.filter((entry) => !revoked.some(({ id }) => id === entry.device.id)),
+      );
     } catch (error) {
       getLogger().warn("user device heartbeat failed", { error });
     }

@@ -34,11 +34,19 @@ it.skipIf(!databaseUrl || !process.env.COPY_TEST_DATABASE)(
         headers: { "content-type": "application/json", ...(origin ? { origin } : {}) },
         body: JSON.stringify(body),
       });
-    const owner = { email: "owner@example.test", password: "test-password-123" };
     try {
-      expect((await post("/sign-up/email", { ...owner, name: "Owner" }, webOrigin)).status).toBe(
-        200,
+      // Two first signups at once: exactly one becomes the account.
+      const first = ["owner@example.test", "racer@example.test"].map((email) => ({
+        email,
+        password: "test-password-123",
+      }));
+      const signups = await Promise.all(
+        first.map((account) => post("/sign-up/email", { ...account, name: "First" }, webOrigin)),
       );
+      expect(signups.filter((response) => response.status === 200)).toHaveLength(1);
+      const owner = first[signups.findIndex((response) => response.status === 200)]!;
+      const loser = first.find((account) => account !== owner)!;
+      expect((await post("/sign-in/email", loser, webOrigin)).status).toBeGreaterThanOrEqual(400);
 
       const stranger = await post("/sign-up/email", {
         email: "stranger@example.test",

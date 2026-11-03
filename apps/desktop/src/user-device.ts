@@ -158,6 +158,8 @@ export function createUserDeviceAccess(deps: {
   const unavailable = new Set<string>();
   const prompts = new Map<string, Promise<boolean>>();
   const pairings = new Map<string, Promise<void>>();
+  /** A revoked token's file deletion, which a new pairing's save must follow. */
+  const removals = new Map<string, Promise<void>>();
 
   function disconnect() {
     client?.close();
@@ -175,10 +177,15 @@ export function createUserDeviceAccess(deps: {
       onRevoked: (reason) => {
         if (client === active) client = undefined;
         paired.delete(origin);
-        void deletePairedDevice(deps.userDataDir, origin).catch(() => undefined);
-        // Signing out ends the pairing but keeps the answer for that account's next sign-in.
-        // Removed or rejected otherwise: stay unpaired until turned back on.
-        if (reason !== "session-ended") void decide(origin, "declined").catch(() => undefined);
+        removals.set(
+          origin,
+          deletePairedDevice(deps.userDataDir, origin).catch(() => undefined),
+        );
+        // Signing out ends the pairing but keeps the answer for that account's next sign-in;
+        // a prompt still open belongs to the ended sign-in. Removed or rejected otherwise:
+        // stay unpaired until turned back on.
+        if (reason === "session-ended") changes.set(origin, (changes.get(origin) ?? 0) + 1);
+        else void decide(origin, "declined").catch(() => undefined);
       },
       authorize: () => authorize(origin),
     });
@@ -289,6 +296,7 @@ export function createUserDeviceAccess(deps: {
       return;
     }
     try {
+      await removals.get(origin);
       await savePairedDevice(deps.userDataDir, origin, device, deps.cipher);
     } catch {
       // A token that cannot be kept must not stay valid on the server.

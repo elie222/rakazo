@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { UserDeviceSocket } from "./user-device-gateway.js";
 import {
   createUserDeviceToken,
@@ -108,6 +108,47 @@ describePostgres("user devices (PostgreSQL)", () => {
     await prisma.userDevice.update({ where: { id: device.id }, data: { revokedAt: new Date() } });
     await expect(gateway.connected(userId)).resolves.toBeNull();
     await expect(gateway.pairedSince(userId)).resolves.toBeNull();
+    await expect(hub.authenticate(`Bearer ${token}`)).resolves.toBeNull();
+  });
+
+  it("revokes a connected device once the sign-in that paired it is gone", async () => {
+    const session = await prisma.session.create({
+      data: {
+        id: `${suffix}-session`,
+        token: `${suffix}-session-token`,
+        userId,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    const token = createUserDeviceToken();
+    const device = await prisma.userDevice.create({
+      data: {
+        userId,
+        name: "Desktop",
+        platform: "darwin",
+        tokenHash: hashUserDeviceToken(token),
+        sessionId: session.id,
+      },
+    });
+    const hub = new UserDeviceHub({
+      prisma: raw,
+      address: "http://127.0.0.1:1",
+      pingIntervalMs: 50,
+    });
+    hubs.push(hub);
+    const authenticated = await hub.authenticate(`Bearer ${token}`);
+    expect(authenticated).toMatchObject({ id: device.id });
+    const socket = new Socket();
+    socket.ping = () => socket.emit("pong");
+    await hub.attach(authenticated!, socket);
+
+    // Deleted without the sign-out hook, as if its cleanup had failed.
+    await prisma.session.delete({ where: { id: session.id } });
+    await vi.waitFor(() =>
+      expect(socket.sent).toContainEqual({ type: "revoked", reason: "session-ended" }),
+    );
+    const revoked = await prisma.userDevice.findUniqueOrThrow({ where: { id: device.id } });
+    expect(revoked.revokedAt).toBeInstanceOf(Date);
     await expect(hub.authenticate(`Bearer ${token}`)).resolves.toBeNull();
   });
 
