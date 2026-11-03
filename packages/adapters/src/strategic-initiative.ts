@@ -126,8 +126,17 @@ export async function reconcileStrategicInitiatives(deps: {
           orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
           take: MAX_STALE_ITEMS_SCANNED,
         },
+        // A follow-up covers its item until it fires and for a day after, like a check-in.
         routines: {
-          where: { active: true, crons: { has: ONCE_ROUTINE_CRON } },
+          where: {
+            crons: { has: ONCE_ROUTINE_CRON },
+            OR: [
+              { active: true },
+              {
+                lastRunAt: { gt: new Date(deps.now.getTime() - STRATEGIC_INITIATIVE_INTERVAL_MS) },
+              },
+            ],
+          },
           select: { id: true },
         },
       },
@@ -145,7 +154,6 @@ export async function reconcileStrategicInitiatives(deps: {
       if (!membership) continue;
       if (deps.billingEnabled && !(await spaceHasModelAccess(deps.prisma, bot.spaceId))) continue;
       if (!bot.thread) continue;
-      // An item whose notes name a pending follow-up will be woken by that follow-up.
       const scratchpadItems = bot.scratchpadItems
         .filter((item) => !bot.routines.some((routine) => item.notes.includes(routine.id)))
         .slice(0, MAX_ITEMS_IN_PROMPT);

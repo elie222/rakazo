@@ -130,7 +130,7 @@ describe("reconcileStrategicInitiatives", () => {
     });
   });
 
-  it("leaves items that have a pending follow-up to that follow-up", async () => {
+  it("leaves items to a pending or just-fired follow-up", async () => {
     const now = new Date("2026-11-02T12:00:00.000Z");
     const stale = new Date("2026-11-01T00:00:00.000Z");
     const bot = {
@@ -170,6 +170,22 @@ describe("reconcileStrategicInitiatives", () => {
     ).toBe(1);
     expect(tasks[0]?.prompt).toContain("Book venue");
     expect(tasks[0]?.prompt).not.toContain("Signed lease");
+    expect(prisma.bot.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          routines: {
+            where: {
+              crons: { has: "@once" },
+              OR: [
+                { active: true },
+                { lastRunAt: { gt: new Date(now.getTime() - 24 * 60 * 60 * 1000) } },
+              ],
+            },
+            select: { id: true },
+          },
+        }),
+      }),
+    );
   });
 
   it("skips bots without a thread", async () => {
