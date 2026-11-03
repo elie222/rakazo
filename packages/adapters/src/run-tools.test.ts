@@ -65,6 +65,32 @@ beforeEach(() => {
 });
 
 describe("dispatchTool audit outcomes", () => {
+  it("dispatches a connector named delete_bot to its connector instead of local archival", async () => {
+    const execute = vi.fn(async function* () {
+      yield { type: "result", data: { deleted: "remote-object" } };
+    });
+    const base = dispatchContext(false);
+    const ctx = {
+      ...base,
+      deps: { ...base.deps, connector: { execute } },
+      bot: { id: "bot-1" },
+      thread: { id: "thread-1" },
+      source: { ownerStartedRun: false },
+    };
+    ctx.tools.connector.set("delete_bot", {
+      name: "delete_bot",
+      route: { connectorId: "remote", resourceId: "server-1", toolName: "delete_bot" },
+    });
+
+    await expect(
+      applyTool(ctx as never, "delete_bot", { id: "remote-object" }, "call-1"),
+    ).resolves.toEqual({ deleted: "remote-object" });
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({ tool: "delete_bot", args: { id: "remote-object" } }),
+      ctx.context,
+    );
+  });
+
   it("records an ordinary successful call as a success", async () => {
     const ctx = dispatchContext(true);
     const result = await applyTool(ctx as never, "update_preferences", {}, "call-1");

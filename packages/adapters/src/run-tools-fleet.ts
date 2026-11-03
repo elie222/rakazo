@@ -375,5 +375,4 @@ export const fleetTools: ToolHandlers = {
     });
   },
   archive_bot: archiveBot,
-  delete_bot: archiveBot,
 };
