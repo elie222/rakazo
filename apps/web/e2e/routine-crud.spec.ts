@@ -40,7 +40,7 @@ test("a delayed schedule is visible only while the routine is active", async ({
     await route.fulfill({ response, json: body });
   });
   await page.reload();
-  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  await openBotPanelTab(page, "Routines");
   await page.getByRole("button", { name: /Morning report/ }).click();
   const delay = page.getByRole("status").filter({ hasText: "Schedule delayed" });
   await expect(delay).toBeVisible();

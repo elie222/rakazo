@@ -103,7 +103,7 @@ export function setRoutineActive(
         (rows ?? []).map((row) => (row.id === routine.id ? change(row) : row)),
       );
     toggle = createQueuedSave(routine.active, {
-      onChange: (value) => void patch((row) => ({ ...row, active: value })),
+      onChange: (value) => void patch((row) => ({ ...row, active: value, scheduleDelayed: false })),
       save: async (value) => {
         const context = await requestContext;
         // Signed out or switched since the tap: that list is gone, so nothing is sent.
