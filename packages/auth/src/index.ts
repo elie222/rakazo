@@ -205,8 +205,6 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       maxPasswordLength: MAX_PASSWORD_LENGTH,
       revokeSessionsOnPasswordReset: true,
       onPasswordReset: async ({ user }) => {
-        // The reset proved the mailbox, not the logins someone added before it.
-        if (!user.emailVerified) await revokeUnprovenCredentials(prisma, user.id);
         await recordSecurityEvent({
           type: "auth.password.changed",
           userId: user.id,
@@ -411,6 +409,20 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             code: "PASSWORD_AUTH_DISABLED",
             message: "Password authentication is disabled",
           });
+        }
+        if (ctx.path === "/reset-password") {
+          // A reset proves the mailbox, not the logins someone added before it. Clean up
+          // first, so a failure leaves the token unused for another try.
+          const token = ctx.body?.token ?? ctx.query?.token;
+          const reset =
+            typeof token === "string"
+              ? await ctx.context.internalAdapter.findVerificationValue(`reset-password:${token}`)
+              : null;
+          const user =
+            reset && reset.expiresAt > new Date()
+              ? await ctx.context.internalAdapter.findUserById(reset.value)
+              : null;
+          if (user && !user.emailVerified) await revokeUnprovenCredentials(prisma, user.id);
         }
         if (isUnusedEmailCodePath(ctx.path, ctx.body)) throw new APIError("NOT_FOUND");
         if (ctx.path === SEND_SIGN_IN_CODE_PATH || ctx.path === CODE_SIGN_IN_PATH) {
