@@ -27,7 +27,7 @@ function candidate(status: "queued" | "waiting_input" | "waiting_takeover", hour
     botId: "bot-1",
     userId: "user-1",
     taskId: "task-1",
-    bot: { name: "Ada", notifyOnFinish: true },
+    bot: { name: "Ada", color: "ink", avatarSet: "persona", notifyOnFinish: true },
     thread: { groupId: null as string | null },
   };
 }
@@ -93,6 +93,7 @@ describe("reconcileStuckWork", () => {
     expect(send).toHaveBeenCalledWith(
       {
         kind: "help",
+        sender: { botId: "bot-1", name: "Ada", avatar: expect.any(String) },
         title: "Ada still needs an answer",
         body: "This has been waiting on you.",
         botId: "bot-1",
@@ -392,6 +393,7 @@ describe("reconcileStuckWork", () => {
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: "failure",
+        sender: { botId: "bot-1", name: "Ada", avatar: expect.any(String) },
         title: "Ada stopped",
         body: stuckWorkStatusMessage("queued"),
       }),

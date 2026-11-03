@@ -80,22 +80,13 @@ export default function ApprovalRules() {
         return;
       }
       if (action === rule.effect || rule.matchKind === "category") return;
-      const saved = await rpc("approvalRules/set", {
+      await rpc("approvalRules/set", {
         scope,
         effect: action,
         matchKind: rule.matchKind,
         matchValue: rule.matchValue,
       });
-      // Saving replaces any other effect on the same match.
-      setRules(
-        (current) =>
-          current?.flatMap((entry) => {
-            if (entry.id === rule.id) return [saved];
-            const sameMatch =
-              entry.matchKind === rule.matchKind && entry.matchValue === rule.matchValue;
-            return sameMatch ? [] : [entry];
-          }) ?? null,
-      );
+      setRules(await rpc("approvalRules/list", { scope }));
     });
 
   const effectLabel = (effect: ActionApprovalRule["effect"]) =>

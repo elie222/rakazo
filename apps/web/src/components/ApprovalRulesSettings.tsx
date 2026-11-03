@@ -80,14 +80,14 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
   ) =>
     save(async () => {
       if (rule.matchKind === "category") return;
-      const saved = await rpc.approvalRules.set({
+      await rpc.approvalRules.set({
         scope,
         effect,
         matchKind: rule.matchKind,
         matchValue: rule.matchValue,
       });
-      // Saving replaces the rule's other effect on the same match.
-      await setRules((current) => [...current.filter((other) => other.id !== rule.id), saved]);
+      const saved = await rpc.approvalRules.list({ scope });
+      await setRules(() => saved);
     }, t`Could not save rule`);
 
   const removeRule = (rule: ActionApprovalRule) =>

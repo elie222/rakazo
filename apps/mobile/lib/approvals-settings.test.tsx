@@ -155,13 +155,26 @@ beforeEach(() => {
         return state.settings;
       }
       if (proc === "approvalRules/list") return state.rules;
-      if (proc === "approvalRules/set")
-        return rule({
+      if (proc === "approvalRules/set") {
+        const saved = rule({
           id: "saved",
           effect: input!.effect as Rule["effect"],
           matchKind: input!.matchKind as Rule["matchKind"],
           matchValue: input!.matchValue as string,
         });
+        let replaced = false;
+        state.rules = state.rules.flatMap((entry) => {
+          if (
+            entry.matchKind !== saved.matchKind ||
+            entry.matchValue.toLowerCase() !== saved.matchValue.toLowerCase()
+          )
+            return [entry];
+          if (replaced) return [];
+          replaced = true;
+          return [saved];
+        });
+        return saved;
+      }
       if (proc === "approvalRules/remove") return { ok: true };
       throw new Error(`Unexpected RPC: ${proc}`);
     });
@@ -254,4 +267,17 @@ it("switches a tool rule back to Ask", async () => {
     matchValue: "write_file",
   });
   expect(menuButton("Write file", "Ask")!.getAttribute("aria-pressed")).toBe("true");
+});
+
+it("reloads the server's rules after switching a case variant", async () => {
+  state.rules = [
+    rule({ id: "tool", matchValue: "write_file" }),
+    rule({ id: "variant", matchValue: "Write_File", effect: "deny" }),
+    rule({ id: "connector", matchKind: "connector", matchValue: "write_file" }),
+  ];
+  await render();
+  expect(rows()).toEqual(["Write file: Allow", "Write file: Block", "write_file: Allow"]);
+  await act(async () => menuButton("Write file", "Ask")!.click());
+  expect(rows()).toEqual(["Write file: Ask", "write_file: Allow"]);
+  expect(state.rpc).toHaveBeenLastCalledWith("approvalRules/list", { scope: "account" });
 });

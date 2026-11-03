@@ -123,7 +123,9 @@ it("blocks or removes an allowed tool", async () => {
     matchValue: "GMAIL_SEND_EMAIL",
     createdAt: "2026-10-25T00:00:00.000Z",
   };
-  rpcMock.approvalRules.list.mockResolvedValue([allowed]);
+  rpcMock.approvalRules.list
+    .mockResolvedValueOnce([allowed])
+    .mockResolvedValue([{ ...allowed, id: "rule-2", effect: "deny" }]);
   rpcMock.approvalRules.set.mockResolvedValue({ ...allowed, id: "rule-2", effect: "deny" });
   rpcMock.approvalRules.remove.mockResolvedValue({ ok: true });
   rpcMock.autoReview.get.mockResolvedValue(settings);
@@ -297,7 +299,9 @@ it("reads and writes a Space's own approvals apart from the account's", async ()
 it("switches an allowed tool back to Ask", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const rule = { id: "tool", effect: "always_allow", matchKind: "tool", matchValue: "write_file" };
-  rpcMock.approvalRules.list.mockResolvedValue([rule]);
+  rpcMock.approvalRules.list
+    .mockResolvedValueOnce([rule])
+    .mockResolvedValue([{ ...rule, effect: "require_approval" }]);
   rpcMock.autoReview.get.mockResolvedValue(settings);
   rpcMock.approvalRules.set.mockResolvedValue({ ...rule, effect: "require_approval" });
   const { container, root } = await render();
@@ -315,6 +319,43 @@ it("switches an allowed tool back to Ask", async () => {
     expect(
       button(container, "Ask", '[data-testid="approval-rules"]')!.getAttribute("aria-pressed"),
     ).toBe("true");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("replaces case variants with the server's saved rules", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const rule = { id: "tool", effect: "always_allow", matchKind: "tool", matchValue: "write_file" };
+  const saved = { ...rule, id: "saved", effect: "require_approval" };
+  const connector = { ...rule, id: "connector", matchKind: "connector" };
+  rpcMock.approvalRules.list
+    .mockResolvedValueOnce([
+      rule,
+      { ...rule, id: "variant", matchValue: "Write_File", effect: "deny" },
+      connector,
+    ])
+    .mockResolvedValue([connector, saved]);
+  rpcMock.approvalRules.set.mockResolvedValue(saved);
+  rpcMock.autoReview.get.mockResolvedValue(settings);
+  const { container, root } = await render("space");
+  const rules = '[data-testid="approval-rules"]';
+  try {
+    await vi.waitFor(() =>
+      expect(container.querySelectorAll(`${rules} [aria-pressed="true"]`)).toHaveLength(3),
+    );
+    await act(async () => button(container, "Ask", rules)!.click());
+    await vi.waitFor(() =>
+      expect(container.querySelectorAll(`${rules} [aria-pressed="true"]`)).toHaveLength(2),
+    );
+    expect(rpcMock.approvalRules.list).toHaveBeenLastCalledWith({ scope: "space" });
+    expect(
+      [...container.querySelectorAll(`${rules} [aria-pressed="true"]`)].map(
+        (entry) => entry.textContent,
+      ),
+    ).toEqual(["Allow", "Ask"]);
   } finally {
     await act(async () => root.unmount());
     container.remove();
