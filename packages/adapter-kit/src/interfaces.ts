@@ -21,6 +21,8 @@ import type {
   BrowserCapabilities,
   BrowserNavigateRequest,
   BrowserNavigateResult,
+  BrowserPurchaseCheckRequest,
+  BrowserPurchaseCheckResult,
   BrowserSnapshotRequest,
   BrowserSnapshotResult,
   CloudAgentCapabilities,
@@ -452,9 +454,19 @@ export interface RealtimeFanout {
   close(): Promise<void>;
 }
 
+export type IncomingCallNotification = {
+  callId: string;
+  botId: string;
+  botName: string;
+  expiresAt: string;
+  /** Stops a ring that is still going on Android devices for a call settled elsewhere. */
+  ended?: true;
+};
+
 export interface NotificationProvider {
   describe(): AdapterDescriptor<{ push: boolean; email: boolean }>;
   send(message: NotificationMessage, context: AdapterContext): Promise<void>;
+  incomingCall?(userId: string, call: IncomingCallNotification): Promise<void>;
 }
 
 /** Outbound account and security email. Product code owns content; adapters own delivery. */
@@ -478,6 +490,17 @@ export interface BillingProvider {
   createByokCheckout?(input: BillingByokCheckoutRequest): Promise<{ url: string }>;
   /** Ends the customer's running trial now and bills the first period; a no-op without one. */
   endTrial?(customerId: string): Promise<void>;
+  /**
+   * Moves the customer's live monthly own-key subscription `subscriptionId` to `amountCents` a
+   * year, charging the difference now less the unused part of the month. A failed payment leaves
+   * the plan unchanged. Returns false without charging when that subscription is no longer an active
+   * or trialing monthly own-key plan, is set to cancel, or monthly credits have started.
+   */
+  switchByokToYearly?(
+    customerId: string,
+    subscriptionId: string,
+    amountCents: number,
+  ): Promise<boolean>;
   /** Ends every live own-key plan at its period end. */
   endByokPlans?(customerId: string): Promise<void>;
   /**
@@ -608,6 +631,15 @@ export interface BrowserProvider {
     request: BrowserActRequest,
     context: AdapterContext,
   ): Promise<BrowserActResult>;
+  /**
+   * Whether these clicks, or a click or key on the screen, would complete a purchase, without acting.
+   * A browser that cannot tell, such as an older computer image, answers none.
+   */
+  purchaseCheck?(
+    computer: ComputerRef,
+    request: BrowserPurchaseCheckRequest,
+    context: AdapterContext,
+  ): Promise<BrowserPurchaseCheckResult>;
 }
 
 /**

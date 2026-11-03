@@ -101,11 +101,6 @@ msgstr "{0} {unitLabel}"
 msgid "{0} connection"
 msgstr "{0} connection"
 
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} default"
-msgstr "{0} default"
-
 #. placeholder {0}: parts.amount
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} GB"
@@ -150,11 +145,6 @@ msgstr "{0} rollup hours"
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} TB"
 msgstr "{0} TB"
-
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} will still respond to direct mentions."
-msgstr "{0} will still respond to direct mentions."
 
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
@@ -962,10 +952,6 @@ msgstr "Auto"
 msgid "Automated senders"
 msgstr "Automated senders"
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Automated senders will appear after they post here."
-msgstr "Automated senders will appear after they post here."
-
 #: src/pages/RoutineEditor.tsx
 msgid "Available after the routine is saved"
 msgstr "Available after the routine is saved"
@@ -1151,7 +1137,6 @@ msgid "Can't reach the server."
 msgstr "Can't reach the server."
 
 #: src/components/TextOnlyMark.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "Can't read images"
@@ -1477,10 +1462,6 @@ msgstr "column {index}"
 msgid "Comfortable"
 msgstr "Comfortable"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Coming soon"
-msgstr "Coming soon"
-
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Command"
@@ -1598,6 +1579,7 @@ msgstr "Confirm the URL is reachable from this browser session, then test again.
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
+#: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connect"
 msgstr "Connect"
@@ -2419,6 +2401,10 @@ msgstr "Customize {label}"
 msgid "Customize bot avatar"
 msgstr "Customize bot avatar"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Daily check-ins on unfinished work"
+msgstr "Daily check-ins on unfinished work"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Dark"
@@ -2598,6 +2584,10 @@ msgstr "Dictation failed: {code}"
 #: src/lib/dictation.ts
 msgid "Dictation failed."
 msgstr "Dictation failed."
+
+#: src/pages/Auth.tsx
+msgid "Did you mean <0>{emailSuggestion}</0>?"
+msgstr "Did you mean <0>{emailSuggestion}</0>?"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
@@ -2782,10 +2772,6 @@ msgstr "Enable {0}"
 msgid "Ends {day}"
 msgstr "Ends {day}"
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Engage when... Ignore..."
-msgstr "Engage when... Ignore..."
-
 #: src/components/GitHubStarPrompt.tsx
 msgid "Enjoying Rakazo?"
 msgstr "Enjoying Rakazo?"
@@ -2874,6 +2860,10 @@ msgstr "Every hour"
 #: src/lib/cron.ts
 msgid "Every hour at :{0}"
 msgstr "Every hour at :{0}"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Every message"
+msgstr "Every message"
 
 #: src/lib/cron.ts
 msgid "Every Monday"
@@ -3038,7 +3028,6 @@ msgid "Forgot password?"
 msgstr "Forgot password?"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "Free"
 
@@ -3359,6 +3348,10 @@ msgstr "Instructions {position}"
 msgid "Instructions are too long. Untick some files."
 msgstr "Instructions are too long. Untick some files."
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Instructions for this room"
+msgstr "Instructions for this room"
+
 #: src/components/AskCard.tsx
 msgid "Instructions updated"
 msgstr "Instructions updated"
@@ -3477,10 +3470,6 @@ msgstr "Lets bots save and recall facts by meaning, alongside MEMORY.md."
 msgid "Light"
 msgstr "Light"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Linear issue"
-msgstr "Linear issue"
-
 #: src/pages/SpaceSearch.tsx
 msgid "Link"
 msgstr "Link"
@@ -3497,12 +3486,7 @@ msgstr "Link SSO"
 msgid "List view"
 msgstr "List view"
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Listen"
-msgstr "Listen"
-
 #: src/components/call/CallCard.tsx
-#: src/pages/ExternalConversationSettings.tsx
 msgid "Listening"
 msgstr "Listening"
 
@@ -3839,7 +3823,6 @@ msgstr "Mode"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3860,7 +3843,7 @@ msgstr "Model connections"
 msgid "Model id"
 msgstr "Model id"
 
-#: src/pages/model-settings/model-picker.tsx
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 msgid "Model options"
 msgstr "Model options"
@@ -3875,8 +3858,8 @@ msgstr "Models"
 msgid "Models at provider cost"
 msgstr "Models at provider cost"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Models from server"
 msgstr "Models from server"
 
@@ -4106,7 +4089,6 @@ msgid "No matching artifacts on this page."
 msgstr "No matching artifacts on this page."
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -4293,6 +4275,10 @@ msgstr "One-time"
 msgid "One-time purchase. Credits do not expire."
 msgstr "One-time purchase. Credits do not expire."
 
+#: src/components/AskCard.tsx
+msgid "Only enter a code {codeHost} sent you."
+msgstr "Only enter a code {codeHost} sent you."
+
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/shell/computer-panel.tsx
@@ -4386,8 +4372,8 @@ msgstr "Original"
 msgid "Original message unavailable"
 msgstr "Original message unavailable"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "Other model…"
 
@@ -4407,10 +4393,6 @@ msgstr "Page {page} of {count}"
 #: src/pages/NotFound.tsx
 msgid "Page not found"
 msgstr "Page not found"
-
-#: src/pages/RoutineEditor.tsx
-msgid "PagerDuty incident"
-msgstr "PagerDuty incident"
 
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
@@ -4816,6 +4798,7 @@ msgid "Release control"
 msgstr "Release control"
 
 #: src/components/InstructionSettings.tsx
+#: src/lib/client-update.ts
 msgid "Reload"
 msgstr "Reload"
 
@@ -4931,6 +4914,10 @@ msgstr "Replace key"
 msgid "Replace value"
 msgstr "Replace value"
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Replies to"
+msgstr "Replies to"
+
 #: src/pages/shell/message-hover-actions.tsx
 #: src/pages/shell/quote-selection-button.tsx
 msgid "Reply"
@@ -4958,6 +4945,7 @@ msgid "Research & writing"
 msgstr "Research & writing"
 
 #: src/components/ComputerMaintenanceActions.tsx
+#: src/pages/ExternalConversationSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Reset"
 msgstr "Reset"
@@ -5069,10 +5057,6 @@ msgstr "Revoke"
 msgid "Revoked"
 msgstr "Revoked"
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Room guidance"
-msgstr "Room guidance"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Rotate key"
 msgstr "Rotate key"
@@ -5142,6 +5126,9 @@ msgstr "Sales & CRM"
 #: src/pages/model-settings/computer-model-settings.tsx
 msgid "Same as main model"
 msgstr "Same as main model"
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Same as {botName}"
+msgstr "Same as {botName}"
 
 #: src/lib/cron.ts
 msgid "Saturday"
@@ -5236,8 +5223,8 @@ msgstr "Scopes (optional)"
 msgid "Screen not connected"
 msgstr "Screen not connected"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5270,8 +5257,8 @@ msgstr "Search by domain"
 msgid "Search integrations.sh"
 msgstr "Search integrations.sh"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"
@@ -5358,10 +5345,6 @@ msgstr "Sending…"
 #: src/components/AskCard.tsx
 msgid "Sent"
 msgstr "Sent"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Sentry alert"
-msgstr "Sentry alert"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Serenity endpoint is required."
@@ -5679,6 +5662,18 @@ msgstr "Start recording"
 msgid "Start your plan now?"
 msgstr "Start your plan now?"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}d late"
+msgstr "Started {count}d late"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}h late"
+msgstr "Started {count}h late"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}m late"
+msgstr "Started {count}m late"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "Starting"
@@ -5787,9 +5782,18 @@ msgstr "Supports images"
 msgid "Supports thinking"
 msgstr "Supports thinking"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
 msgstr "Switch"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly"
+msgstr "Switch to yearly"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly?"
+msgstr "Switch to yearly?"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
@@ -5827,10 +5831,6 @@ msgstr "Team Computer"
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
 msgstr "Teams message"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Teams not enabled"
-msgstr "Teams not enabled"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
@@ -5958,6 +5958,7 @@ msgid "This browser has no on-device dictation. Connect a voice provider with tr
 msgstr "This browser has no on-device dictation. Connect a voice provider with transcription, or use Chrome / the desktop app."
 
 #: src/components/call/IncomingCall.tsx
+#: src/lib/user-error.ts
 msgid "This call is no longer ringing."
 msgstr "This call is no longer ringing."
 
@@ -6272,6 +6273,10 @@ msgstr "Update instructions?"
 msgid "Update progress"
 msgstr "Update progress"
 
+#: src/lib/client-update.ts
+msgid "Update required"
+msgstr "Update required"
+
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"
 msgstr "Updated {updated}"
@@ -6336,10 +6341,6 @@ msgstr "Use a found model"
 #: src/lib/model-connection-preflight.ts
 msgid "Use Connect to verify the key."
 msgstr "Use Connect to verify the key."
-
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Use default guidance"
-msgstr "Use default guidance"
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Use defaults"
@@ -6635,6 +6636,10 @@ msgstr "You have control"
 msgid "Your Anthropic"
 msgstr "Your Anthropic"
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged {annualPrice} today, less the unused part of this month."
+msgstr "Your card is charged {annualPrice} today, less the unused part of this month."
+
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr "Your data"
@@ -6665,6 +6670,10 @@ msgstr "Your OpenAI"
 #: src/lib/run-error.ts
 msgid "Your OpenRouter"
 msgstr "Your OpenRouter"
+
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {annualPrice} / year when your trial ends."
+msgstr "Your plan becomes {annualPrice} / year when your trial ends."
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"

@@ -9,11 +9,14 @@ test.afterEach(async ({ page }) => {
 test("onboarding cannot continue with an empty or failed model catalog", async ({ page }) => {
   let unavailable: "empty" | "failed" = "empty";
   await page.route("**/rpc/me", async (route) => {
-    // The reload below can cancel a profile read mid-fetch.
-    const response = await route.fetch().catch(() => null);
-    if (!response) return route.abort().catch(() => {});
-    const body = (await response.json()) as { json: Record<string, unknown> };
-    await route.fulfill({ response, json: { json: { ...body.json, needsModel: true } } });
+    // The reload below can cancel a profile read at any point while it is being rewritten.
+    try {
+      const response = await route.fetch();
+      const body = (await response.json()) as { json: Record<string, unknown> };
+      await route.fulfill({ response, json: { json: { ...body.json, needsModel: true } } });
+    } catch {
+      await route.abort().catch(() => {});
+    }
   });
   await page.route("**/rpc/models/list", (route) =>
     unavailable === "failed" ? route.abort() : route.fulfill({ json: { json: [] } }),

@@ -138,6 +138,7 @@ export function BotSettings({
     autoSpeak?: boolean;
     fleetManagement?: boolean;
     crossSpaceCommunication?: boolean;
+    dailyCheckIns?: boolean;
     voiceId?: string | null;
     modelProvider?: string | null;
     modelId?: string | null;
@@ -183,6 +184,8 @@ export function BotSettings({
     () => setCrossSpaceCommunication(bot.crossSpaceCommunication ?? true),
     [bot.crossSpaceCommunication],
   );
+  const [dailyCheckIns, setDailyCheckIns] = useState(bot.dailyCheckIns ?? true);
+  useEffect(() => setDailyCheckIns(bot.dailyCheckIns ?? true), [bot.dailyCheckIns]);
   const [fleetManagement, setFleetManagement] = useState(bot.fleetManagement);
   useEffect(() => setFleetManagement(bot.fleetManagement), [bot.fleetManagement]);
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
@@ -246,6 +249,7 @@ export function BotSettings({
         notifyOnFinish?: boolean;
         fleetManagement?: boolean;
         crossSpaceCommunication?: boolean;
+        dailyCheckIns?: boolean;
         disabledBuiltinTools?: string[];
         baseDisabledBuiltinTools?: string[];
       },
@@ -334,6 +338,7 @@ export function BotSettings({
       notifyOnFinish?: boolean;
       fleetManagement?: boolean;
       crossSpaceCommunication?: boolean;
+      dailyCheckIns?: boolean;
       disabledBuiltinTools?: string[];
       baseDisabledBuiltinTools?: string[];
     },
@@ -344,6 +349,10 @@ export function BotSettings({
       setError(null);
       if (patchOverrides?.crossSpaceCommunication !== undefined) {
         await onSave({ crossSpaceCommunication: patchOverrides.crossSpaceCommunication });
+        return;
+      }
+      if (patchOverrides?.dailyCheckIns !== undefined) {
+        await onSave({ dailyCheckIns: patchOverrides.dailyCheckIns });
         return;
       }
       if (patchOverrides?.fleetManagement !== undefined) {
@@ -452,6 +461,8 @@ export function BotSettings({
         setNotifyOnFinish(acceptedAutomatic.current.notifyOnFinish);
       if (patchOverrides?.crossSpaceCommunication !== undefined)
         setCrossSpaceCommunication(!patchOverrides.crossSpaceCommunication);
+      if (patchOverrides?.dailyCheckIns !== undefined)
+        setDailyCheckIns(!patchOverrides.dailyCheckIns);
       if (patchOverrides?.fleetManagement !== undefined)
         setFleetManagement(!patchOverrides.fleetManagement);
       setError(errorText(err, t`Could not save`));
@@ -484,6 +495,7 @@ export function BotSettings({
     notifyOnFinish?: boolean;
     fleetManagement?: boolean;
     crossSpaceCommunication?: boolean;
+    dailyCheckIns?: boolean;
     disabledBuiltinTools?: string[];
   }) {
     // Serialize full-object auto-saves so an older in-flight request cannot
@@ -727,6 +739,20 @@ export function BotSettings({
               ) : null}
             </SettingsGroup>
             <SettingsGroup label={t`Permissions`}>
+              <div className="flex min-h-11 items-center justify-between gap-3 text-sm">
+                <label htmlFor={`${ids}-daily-check-ins`} className={rowLabelClass}>
+                  <Trans>Daily check-ins on unfinished work</Trans>
+                </label>
+                <Switch
+                  id={`${ids}-daily-check-ins`}
+                  checked={dailyCheckIns}
+                  disabled={saving}
+                  onCheckedChange={(checked) => {
+                    setDailyCheckIns(checked);
+                    void enqueueSave({ dailyCheckIns: checked });
+                  }}
+                />
+              </div>
               <div className="flex min-h-11 items-center justify-between gap-3 text-sm">
                 <label htmlFor={`${ids}-cross-space`} className={rowLabelClass}>
                   <Trans>Allow cross-space bot communication</Trans>

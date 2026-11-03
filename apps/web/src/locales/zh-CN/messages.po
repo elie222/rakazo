@@ -101,11 +101,6 @@ msgstr "{0} {unitLabel}"
 msgid "{0} connection"
 msgstr "{0} 连接"
 
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} default"
-msgstr "{0} 的默认"
-
 #. placeholder {0}: parts.amount
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} GB"
@@ -150,11 +145,6 @@ msgstr "{0} 的合并间隔（小时）"
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} TB"
 msgstr "{0} TB"
-
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} will still respond to direct mentions."
-msgstr "{0} 被直接 @ 时仍会回复。"
 
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
@@ -422,7 +412,7 @@ msgstr "@{0}"
 
 #: src/components/ModelCredits.tsx
 msgid "/ month"
-msgstr ""
+msgstr "/ 月"
 
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
@@ -962,10 +952,6 @@ msgstr "自动"
 msgid "Automated senders"
 msgstr "自动发送者"
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Automated senders will appear after they post here."
-msgstr "自动发送者在这里发过消息后会出现。"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Available after the routine is saved"
 msgstr "保存例行任务后可用"
@@ -1029,7 +1015,7 @@ msgstr "账单"
 
 #: src/components/ModelCredits.tsx
 msgid "Billing period"
-msgstr ""
+msgstr "账单周期"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
@@ -1151,7 +1137,6 @@ msgid "Can't reach the server."
 msgstr "无法连接服务器。"
 
 #: src/components/TextOnlyMark.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "无法读取图像"
@@ -1477,10 +1462,6 @@ msgstr "第 {index} 列"
 msgid "Comfortable"
 msgstr "舒适"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Coming soon"
-msgstr "即将推出"
-
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Command"
@@ -1598,6 +1579,7 @@ msgstr "请确认此浏览器会话可以访问该 URL，然后重新测试。"
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
+#: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connect"
 msgstr "连接"
@@ -2419,6 +2401,10 @@ msgstr "自定义{label}"
 msgid "Customize bot avatar"
 msgstr "自定义机器人头像"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Daily check-ins on unfinished work"
+msgstr "每天跟进未完成的工作"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Dark"
@@ -2598,6 +2584,10 @@ msgstr ""
 #: src/lib/dictation.ts
 msgid "Dictation failed."
 msgstr ""
+
+#: src/pages/Auth.tsx
+msgid "Did you mean <0>{emailSuggestion}</0>?"
+msgstr "你是不是想输入 <0>{emailSuggestion}</0>？"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
@@ -2782,10 +2772,6 @@ msgstr "启用 {0}"
 msgid "Ends {day}"
 msgstr "将于 {day} 结束"
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Engage when... Ignore..."
-msgstr "在…时参与，忽略…"
-
 #: src/components/GitHubStarPrompt.tsx
 msgid "Enjoying Rakazo?"
 msgstr ""
@@ -2874,6 +2860,10 @@ msgstr "每小时"
 #: src/lib/cron.ts
 msgid "Every hour at :{0}"
 msgstr "每小时{0}分"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Every message"
+msgstr "所有消息"
 
 #: src/lib/cron.ts
 msgid "Every Monday"
@@ -3038,7 +3028,6 @@ msgid "Forgot password?"
 msgstr "忘记密码？"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "免费"
 
@@ -3359,6 +3348,10 @@ msgstr "指令 {position}"
 msgid "Instructions are too long. Untick some files."
 msgstr "指令太长。请取消勾选部分文件。"
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Instructions for this room"
+msgstr "此房间的指示"
+
 #: src/components/AskCard.tsx
 msgid "Instructions updated"
 msgstr "指令已更新"
@@ -3477,10 +3470,6 @@ msgstr "让机器人在 MEMORY.md 之外，按语义保存和回忆事实。"
 msgid "Light"
 msgstr "浅色"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Linear issue"
-msgstr "Linear 工单"
-
 #: src/pages/SpaceSearch.tsx
 msgid "Link"
 msgstr ""
@@ -3497,12 +3486,7 @@ msgstr "关联 SSO"
 msgid "List view"
 msgstr "列表视图"
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Listen"
-msgstr "全部消息"
-
 #: src/components/call/CallCard.tsx
-#: src/pages/ExternalConversationSettings.tsx
 msgid "Listening"
 msgstr "聆听"
 
@@ -3839,7 +3823,6 @@ msgstr "模式"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3860,7 +3843,7 @@ msgstr "模型连接"
 msgid "Model id"
 msgstr "模型 ID"
 
-#: src/pages/model-settings/model-picker.tsx
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 msgid "Model options"
 msgstr "模型选项"
@@ -3875,8 +3858,8 @@ msgstr "模型"
 msgid "Models at provider cost"
 msgstr "按提供方成本计费的模型"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Models from server"
 msgstr "来自服务器的模型"
 
@@ -4106,7 +4089,6 @@ msgid "No matching artifacts on this page."
 msgstr "这一页没有匹配的产物。"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -4293,6 +4275,10 @@ msgstr "一次性"
 msgid "One-time purchase. Credits do not expire."
 msgstr "单次购买，额度不会过期。"
 
+#: src/components/AskCard.tsx
+msgid "Only enter a code {codeHost} sent you."
+msgstr ""
+
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/shell/computer-panel.tsx
@@ -4386,8 +4372,8 @@ msgstr "原始"
 msgid "Original message unavailable"
 msgstr "原消息不可用"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "其他模型…"
 
@@ -4407,10 +4393,6 @@ msgstr "第 {page} 页，共 {count} 页"
 #: src/pages/NotFound.tsx
 msgid "Page not found"
 msgstr "找不到页面"
-
-#: src/pages/RoutineEditor.tsx
-msgid "PagerDuty incident"
-msgstr "PagerDuty 事件"
 
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
@@ -4816,6 +4798,7 @@ msgid "Release control"
 msgstr "交还控制权"
 
 #: src/components/InstructionSettings.tsx
+#: src/lib/client-update.ts
 msgid "Reload"
 msgstr "重新加载"
 
@@ -4931,6 +4914,10 @@ msgstr "替换密钥"
 msgid "Replace value"
 msgstr "替换值"
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Replies to"
+msgstr "回复对象"
+
 #: src/pages/shell/message-hover-actions.tsx
 #: src/pages/shell/quote-selection-button.tsx
 msgid "Reply"
@@ -4958,6 +4945,7 @@ msgid "Research & writing"
 msgstr "调研和写作"
 
 #: src/components/ComputerMaintenanceActions.tsx
+#: src/pages/ExternalConversationSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Reset"
 msgstr "重置"
@@ -5069,10 +5057,6 @@ msgstr "撤销"
 msgid "Revoked"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Room guidance"
-msgstr "房间指引"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Rotate key"
 msgstr "轮换密钥"
@@ -5142,6 +5126,9 @@ msgstr "销售与 CRM"
 #: src/pages/model-settings/computer-model-settings.tsx
 msgid "Same as main model"
 msgstr "与主模型相同"
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Same as {botName}"
+msgstr "与 {botName} 相同"
 
 #: src/lib/cron.ts
 msgid "Saturday"
@@ -5236,8 +5223,8 @@ msgstr "范围（可选）"
 msgid "Screen not connected"
 msgstr "屏幕未连接"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5270,8 +5257,8 @@ msgstr "按域名搜索"
 msgid "Search integrations.sh"
 msgstr "搜索 integrations.sh"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"
@@ -5358,10 +5345,6 @@ msgstr "正在发送…"
 #: src/components/AskCard.tsx
 msgid "Sent"
 msgstr "已发送"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Sentry alert"
-msgstr "Sentry 告警"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Serenity endpoint is required."
@@ -5679,6 +5662,18 @@ msgstr "开始录制"
 msgid "Start your plan now?"
 msgstr "立即开始你的套餐？"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}d late"
+msgstr "延迟 {count} 天开始"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}h late"
+msgstr "延迟 {count} 小时开始"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}m late"
+msgstr "延迟 {count} 分钟开始"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "正在开始"
@@ -5755,7 +5750,7 @@ msgstr "订阅"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe for {annualPrice} / year"
-msgstr ""
+msgstr "以每年 {annualPrice} 订阅"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
@@ -5787,9 +5782,18 @@ msgstr "支持图片"
 msgid "Supports thinking"
 msgstr "支持思考"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
 msgstr "切换"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly"
+msgstr "切换为按年"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly?"
+msgstr "切换为按年付费？"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
@@ -5827,10 +5831,6 @@ msgstr "团队电脑"
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
 msgstr "Teams 消息"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Teams not enabled"
-msgstr "未启用 Teams"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
@@ -5958,6 +5958,7 @@ msgid "This browser has no on-device dictation. Connect a voice provider with tr
 msgstr ""
 
 #: src/components/call/IncomingCall.tsx
+#: src/lib/user-error.ts
 msgid "This call is no longer ringing."
 msgstr "这通电话已经不响了。"
 
@@ -6272,6 +6273,10 @@ msgstr "更新指令？"
 msgid "Update progress"
 msgstr "更新进度"
 
+#: src/lib/client-update.ts
+msgid "Update required"
+msgstr "需要更新"
+
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"
 msgstr "更新于 {updated}"
@@ -6336,10 +6341,6 @@ msgstr "使用找到的模型"
 #: src/lib/model-connection-preflight.ts
 msgid "Use Connect to verify the key."
 msgstr "请使用“连接”验证密钥。"
-
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Use default guidance"
-msgstr "使用默认指引"
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Use defaults"
@@ -6599,7 +6600,7 @@ msgstr "年"
 
 #: src/components/ModelCredits.tsx
 msgid "Yearly"
-msgstr ""
+msgstr "按年"
 
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
@@ -6635,6 +6636,10 @@ msgstr "你已接管"
 msgid "Your Anthropic"
 msgstr "你的 Anthropic"
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged {annualPrice} today, less the unused part of this month."
+msgstr "今天将从你的卡中扣款 {annualPrice}，并抵扣本月未使用的部分。"
+
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr ""
@@ -6665,6 +6670,10 @@ msgstr "你的 OpenAI"
 #: src/lib/run-error.ts
 msgid "Your OpenRouter"
 msgstr "你的 OpenRouter"
+
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {annualPrice} / year when your trial ends."
+msgstr "试用结束后，你的套餐将变为每年 {annualPrice}。"
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"

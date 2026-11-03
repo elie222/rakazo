@@ -86,13 +86,6 @@ const SCHEDULE_PRESETS: CronFreq[] = [
   "Advanced",
 ];
 
-const COMING_SOON = [
-  { id: "teams", label: () => t`Teams message` },
-  { id: "linear", label: () => t`Linear issue` },
-  { id: "sentry", label: () => t`Sentry alert` },
-  { id: "pagerduty", label: () => t`PagerDuty incident` },
-] as const;
-
 export type RoutineDraftState = {
   name: string;
   prompt: string;
@@ -708,22 +701,6 @@ export function RoutineEditor({
                 </span>
               ) : null}
             </span>
-
-            {COMING_SOON.map((item) => (
-              <span
-                key={item.id}
-                className="block"
-                title={item.id === "teams" ? t`Teams not enabled` : t`Coming soon`}
-              >
-                <DropdownMenuItem disabled>
-                  <span
-                    aria-hidden
-                    className="inline-block size-3.5 rounded-[4px] bg-muted-foreground/50"
-                  />
-                  {item.label()}
-                </DropdownMenuItem>
-              </span>
-            ))}
 
             <DropdownMenuItem
               disabled={Boolean(draft.watch) || draft.schedules.length > 0}

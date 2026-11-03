@@ -9,7 +9,7 @@ import { notifyArchivedChatsChanged } from "./archived-chats";
 import { confirmDeleteBot, confirmDeleteGroup } from "./bot-lifecycle";
 import type { InboxRowAction } from "./inbox-swipe";
 import { applyUnreadOverrides, withoutArchiving } from "./inbox-swipe";
-import { dismissThreadNotifications } from "./live-notifications";
+import { afterChatNotifyChange, dismissThreadNotifications } from "./live-notifications";
 import { removeFromSearchInbox } from "./search-inbox";
 import { useInboxChatActions } from "./use-inbox-chat-actions";
 
@@ -106,10 +106,33 @@ async function handlers(
     },
     runRowAction: (kind: "bot" | "group", chat: Chat, action: InboxRowAction) =>
       current().runRowAction(kind, chat as MobileBot, action),
-    updateChat: (kind: "bot" | "group", chat: Chat, change: { pinned?: boolean }) =>
-      current().updateChat(kind, chat as MobileBot, change),
+    updateChat: (
+      kind: "bot" | "group",
+      chat: Chat,
+      change: { pinned?: boolean; notifyOnFinish?: boolean },
+    ) => current().updateChat(kind, chat as MobileBot, change),
   };
 }
+
+it("reports a saved bot mute even when its inbox row has no thread id", async () => {
+  const actions = await handlers(async () => undefined);
+  await actions.updateChat("bot", { id: "b1", spaceId: "space-a" }, { notifyOnFinish: false });
+  expect(afterChatNotifyChange).toHaveBeenCalledExactlyOnceWith("", null, "space-a", {
+    botId: "b1",
+    threadId: undefined,
+    notify: false,
+  });
+});
+
+it("does not report a bot mute when the server save fails", async () => {
+  const actions = await handlers(async () => {
+    throw new Error("offline");
+  });
+  await expect(
+    actions.updateChat("bot", { id: "b1", spaceId: "space-a" }, { notifyOnFinish: false }),
+  ).rejects.toThrow("offline");
+  expect(afterChatNotifyChange).not.toHaveBeenCalled();
+});
 
 it("sends overlapping read changes for one chat in order and keeps the newest on screen", async () => {
   const pending: Array<() => void> = [];

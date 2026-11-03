@@ -7,7 +7,7 @@ import {
   selectCompatibleModelCredential,
   withConnectionName,
 } from "@rakazo/contracts";
-import { matchesSearchQuery } from "./search.js";
+import { listSearch } from "./list-search.js";
 
 /** Bots that pick their own model ignore the space default and its changes. */
 export function botsWithOwnModel<T extends Pick<Bot, "modelProvider" | "modelId">>(
@@ -93,16 +93,20 @@ export const POPULAR_MODEL_PROVIDER_IDS = [
 const DEFAULT_PROVIDER_COUNT = POPULAR_MODEL_PROVIDER_IDS.length;
 const POPULAR_MODEL_PROVIDER_IDS_LIST: readonly string[] = POPULAR_MODEL_PROVIDER_IDS;
 
-/** Popular providers in curated order, then the rest in their original order. */
+/** Popular providers in curated order, then the rest by name. */
 export function popularModelProvidersFirst<T>(
   items: readonly T[],
   providerId: (item: T) => string,
+  name: (item: T) => string,
 ): T[] {
   const rank = (item: T) => {
     const index = POPULAR_MODEL_PROVIDER_IDS_LIST.indexOf(providerId(item));
     return index === -1 ? DEFAULT_PROVIDER_COUNT : index;
   };
-  return [...items].sort((a, b) => rank(a) - rank(b));
+  return [...items].sort(
+    (a, b) =>
+      rank(a) - rank(b) || name(a).localeCompare(name(b), undefined, { sensitivity: "base" }),
+  );
 }
 
 /**
@@ -132,20 +136,6 @@ export function pickCatalogModelId(
     }
   }
   return entries.find((entry) => entry.recommended)?.id ?? entries[0]?.id ?? "";
-}
-
-/** Return the active choice separately when it is not one of the search results. */
-export function selectedProviderOutsideSearchResults(
-  filteredProviders: readonly ModelCatalogEntry[],
-  allProviders: readonly ModelCatalogEntry[],
-  selectedProvider: string,
-): ModelCatalogEntry | undefined {
-  if (
-    filteredProviders.some((entry) => entry.provider === canonicalPiProviderId(selectedProvider))
-  ) {
-    return undefined;
-  }
-  return allProviders.find((entry) => entry.provider === canonicalPiProviderId(selectedProvider));
 }
 
 /**
@@ -351,20 +341,6 @@ export function connectedModelChoices(
   });
 }
 
-/** Match a model by name, id, or provider name; a blank query keeps every model. */
-export function filterModelCatalog(
-  entries: readonly ModelCatalogEntry[],
-  query: string,
-): readonly ModelCatalogEntry[] {
-  if (!query.trim()) return entries;
-  return entries.filter((entry) =>
-    matchesSearchQuery(query, entry.label, entry.id, entry.providerName ?? entry.provider),
-  );
-}
-
-/** Model lists longer than this get a search field. */
-export const MODEL_SEARCH_THRESHOLD = 10;
-
 export type ChatModelChoice = {
   key: string;
   label: string;
@@ -438,16 +414,7 @@ export function filterModelChoices<C extends ChatModelChoice>(
   choices: readonly C[],
   query: string,
 ): readonly C[] {
-  if (!query.trim()) return choices;
-  return choices.filter((choice) =>
-    matchesSearchQuery(
-      query,
-      choice.label,
-      choice.modelId,
-      choice.provider,
-      choice.provider ? choice.providerLabel : undefined,
-    ),
-  );
+  return listSearch(choices, query, { text: modelChoiceSearchText }).visible;
 }
 
 type SavedCompatibleModels = { baseUrl?: string; enabledModelIds?: readonly string[] };
@@ -502,3 +469,16 @@ export function canUseCompatibleModelAsDefault(
 ): boolean {
   return savedIds === undefined || savedIds.includes(modelId);
 }
+
+export const modelCatalogSearchText = (entry: ModelCatalogEntry) => [
+  entry.label,
+  entry.id,
+  entry.providerName ?? entry.provider,
+];
+
+export const modelChoiceSearchText = (choice: ChatModelChoice) => [
+  choice.label,
+  choice.modelId,
+  choice.provider,
+  choice.provider ? choice.providerLabel : undefined,
+];

@@ -3,6 +3,7 @@ import type {
   ArtifactStore,
   JobPublisher,
   MemoryStore,
+  NotificationProvider,
   PaymentWalletProvider,
   ProductAnalytics,
   SandboxProvider,
@@ -58,6 +59,8 @@ export { callMarkerClientNonce } from "./routes/threads.js";
 
 export interface RouterDeps {
   pushTokens: PushTokenStore;
+  /** Stops a call's ring on the owner's other devices once it is settled. */
+  notifications?: NotificationProvider;
   analytics?: ProductAnalytics;
   cloudAgent?: CloudAgentConnection | null;
   /** The deployment's wallet provider; absent hides purchases. */

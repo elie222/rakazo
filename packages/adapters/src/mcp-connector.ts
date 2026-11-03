@@ -47,6 +47,7 @@ import {
   lazyCatalogTools,
   resolveCatalogCall,
 } from "./lazy-tool-catalog.js";
+import { closeMcpResource } from "./mcp-close.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import {
   accessTokenExpiresAt,
@@ -349,11 +350,15 @@ function credentialContentSecrets(content: string): string[] {
 
 /** Stop the process, then remove the credential files it was launched with. */
 async function closeEntry(entry: { session: McpSession; credentialDir?: string }): Promise<void> {
-  try {
-    await entry.session.close();
-  } finally {
-    if (entry.credentialDir) await rm(entry.credentialDir, { recursive: true, force: true });
-  }
+  await closeMcpResource(() =>
+    entry.session.close(async () => {
+      if (entry.credentialDir)
+        await rm(entry.credentialDir, { recursive: true, force: true }).catch(() => {
+          // Filesystem errors can include credential paths; report only the failure.
+          getLogger().warn("MCP credential file cleanup failed");
+        });
+    }),
+  );
 }
 
 export class McpConnector implements ConnectorProvider {
@@ -1225,7 +1230,7 @@ export class McpConnector implements ConnectorProvider {
         } catch (error) {
           if (!authProvider || !isRejectedTokenError(error)) throw error;
           await authProvider.replaceRejectedToken();
-          await session.close();
+          await closeMcpResource(() => session.close());
           session = new McpSession({ name: `rakazo-${server.slug}` });
           await connect();
         }

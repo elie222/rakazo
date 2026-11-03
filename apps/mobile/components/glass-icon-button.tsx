@@ -23,6 +23,7 @@ export function GlassIconButton({
   color,
   tint,
   selected,
+  disabled,
   fallbackStyle,
 }: {
   testID?: string;
@@ -35,6 +36,7 @@ export function GlassIconButton({
   color?: ColorValue;
   tint?: string;
   selected?: boolean;
+  disabled?: boolean;
   fallbackStyle?: StyleProp<ViewStyle>;
 }) {
   const tokens = useMobileTokens();
@@ -56,8 +58,12 @@ export function GlassIconButton({
         testID={testID}
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
-        accessibilityState={selected === undefined ? undefined : { selected }}
-        hitSlop={4}
+        accessibilityState={
+          selected === undefined && disabled === undefined ? undefined : { selected, disabled }
+        }
+        disabled={disabled}
+        // A small button still gets the 44-point tap target platforms recommend.
+        hitSlop={Math.max(4, (44 - size) / 2)}
         android_ripple={androidRipple(withAlpha(iconColor, 0.14))}
         onPress={onPress}
         style={({ pressed }) => ({
@@ -65,7 +71,7 @@ export function GlassIconButton({
           alignItems: "center",
           justifyContent: "center",
           ...(Platform.OS === "android" ? { borderRadius: size / 2, overflow: "hidden" } : null),
-          opacity: pressed && Platform.OS !== "android" ? 0.6 : 1,
+          opacity: disabled ? 0.45 : pressed && Platform.OS !== "android" ? 0.6 : 1,
         })}
       >
         <NativeSymbol ios={ios} android={android} size={iconSize} color={iconColor} />

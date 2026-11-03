@@ -91,6 +91,7 @@ import {
   ExternalConversationPolicySchema,
   GroupDetailSchema,
   GroupSchema,
+  IncomingBotCallSchema,
   IntegrationCatalogResultSchema,
   McpServerConfigInput,
   McpServerSchema,
@@ -306,6 +307,8 @@ export const appContract = {
       .output(z.object({ url: z.string().url() })),
     /** Owners only: ends the running trial and bills the first period now. */
     endTrial: oc.output(BillingStatusSchema),
+    /** Owners only: moves a monthly own-key plan to yearly, charging the difference now. */
+    switchToYearly: oc.output(BillingStatusSchema),
     /** Records who invited this organization; ignored once it has subscribed. */
     claimReferral: oc
       .input(z.object({ code: z.string().min(1).max(64) }))
@@ -1277,6 +1280,34 @@ export const appContract = {
     accountToken: oc.output(z.object({ token: z.string() })),
   },
   notifications: {
+    subscribeCalls: oc.output(
+      eventIterator(
+        z.object({
+          type: z.enum(["incoming.calls", "heartbeat"]),
+          payload: z.object({ calls: z.array(IncomingBotCallSchema) }).optional(),
+        }),
+      ),
+    ),
+    declineIncomingCall: oc
+      .input(z.object({ callId: z.string().uuid() }))
+      .output(z.object({ ok: z.literal(true) })),
+    registerCallPush: oc
+      .input(
+        z
+          .object({
+            deviceId: z.string().uuid(),
+            platform: z.enum(["ios", "android"]),
+            expoToken: z.string().min(8).max(512).regex(/^\S+$/).optional(),
+            voipToken: z
+              .string()
+              .regex(/^[a-fA-F0-9]{64,200}$/)
+              .optional(),
+          })
+          .refine((value) =>
+            Boolean(value.expoToken || (value.platform === "ios" && value.voipToken)),
+          ),
+      )
+      .output(z.object({ ok: z.literal(true) })),
     registerPush: oc
       // No whitespace: the token store keeps the registering session on the next line.
       .input(z.object({ token: z.string().min(8).max(512).regex(/^\S+$/) }))

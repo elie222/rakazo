@@ -222,7 +222,7 @@ export function AppConnectCard({
           <SuccessPop label={t`Connected`} />
         ) : (
           <Button disabled={busy} onClick={() => void authorize()}>
-            {busy ? t`Waiting…` : t`Authorize`}
+            {busy ? t`Waiting…` : t`Connect`}
           </Button>
         )}
       </div>

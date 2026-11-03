@@ -101,11 +101,6 @@ msgstr "{0} {unitLabel}"
 msgid "{0} connection"
 msgstr "{0} bağlantısı"
 
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} default"
-msgstr ""
-
 #. placeholder {0}: parts.amount
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} GB"
@@ -150,11 +145,6 @@ msgstr ""
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} TB"
 msgstr "{0} TB"
-
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} will still respond to direct mentions."
-msgstr ""
 
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
@@ -422,7 +412,7 @@ msgstr "@{0}"
 
 #: src/components/ModelCredits.tsx
 msgid "/ month"
-msgstr ""
+msgstr "/ ay"
 
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
@@ -962,10 +952,6 @@ msgstr "Otomatik"
 msgid "Automated senders"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Automated senders will appear after they post here."
-msgstr ""
-
 #: src/pages/RoutineEditor.tsx
 msgid "Available after the routine is saved"
 msgstr ""
@@ -1029,7 +1015,7 @@ msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Billing period"
-msgstr ""
+msgstr "Fatura dönemi"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
@@ -1151,7 +1137,6 @@ msgid "Can't reach the server."
 msgstr "Sunucuya ulaşılamıyor."
 
 #: src/components/TextOnlyMark.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "Görselleri okuyamaz"
@@ -1477,10 +1462,6 @@ msgstr "sütun {index}"
 msgid "Comfortable"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
-msgid "Coming soon"
-msgstr ""
-
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Command"
@@ -1598,6 +1579,7 @@ msgstr "URL'nin bu tarayıcı oturumundan erişilebilir olduğunu doğrula, sonr
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
+#: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connect"
 msgstr "Bağlan"
@@ -2419,6 +2401,10 @@ msgstr "{label}: özelleştir"
 msgid "Customize bot avatar"
 msgstr "Bot avatarını özelleştir"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Daily check-ins on unfinished work"
+msgstr "Tamamlanmamış işler için günlük takip"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Dark"
@@ -2598,6 +2584,10 @@ msgstr ""
 #: src/lib/dictation.ts
 msgid "Dictation failed."
 msgstr ""
+
+#: src/pages/Auth.tsx
+msgid "Did you mean <0>{emailSuggestion}</0>?"
+msgstr "<0>{emailSuggestion}</0> mi demek istediniz?"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
@@ -2782,10 +2772,6 @@ msgstr "{0} etkinleştir"
 msgid "Ends {day}"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Engage when... Ignore..."
-msgstr ""
-
 #: src/components/GitHubStarPrompt.tsx
 msgid "Enjoying Rakazo?"
 msgstr ""
@@ -2874,6 +2860,10 @@ msgstr "Her saat"
 #: src/lib/cron.ts
 msgid "Every hour at :{0}"
 msgstr "Her saat :{0}"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Every message"
+msgstr "Her mesaj"
 
 #: src/lib/cron.ts
 msgid "Every Monday"
@@ -3038,7 +3028,6 @@ msgid "Forgot password?"
 msgstr "Parolanızı mı unuttunuz?"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr ""
 
@@ -3359,6 +3348,10 @@ msgstr "Talimatlar {position}"
 msgid "Instructions are too long. Untick some files."
 msgstr "Talimatlar çok uzun. Bazı dosyaların işaretini kaldırın."
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Instructions for this room"
+msgstr "Bu oda için talimatlar"
+
 #: src/components/AskCard.tsx
 msgid "Instructions updated"
 msgstr "Talimatlar güncellendi"
@@ -3477,10 +3470,6 @@ msgstr "Botların MEMORY.md'ye ek olarak bilgileri anlamına göre kaydedip hat�
 msgid "Light"
 msgstr "Açık"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Linear issue"
-msgstr ""
-
 #: src/pages/SpaceSearch.tsx
 msgid "Link"
 msgstr ""
@@ -3497,12 +3486,7 @@ msgstr "SSO bağla"
 msgid "List view"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Listen"
-msgstr ""
-
 #: src/components/call/CallCard.tsx
-#: src/pages/ExternalConversationSettings.tsx
 msgid "Listening"
 msgstr ""
 
@@ -3839,7 +3823,6 @@ msgstr "Mod"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3860,7 +3843,7 @@ msgstr "Model bağlantıları"
 msgid "Model id"
 msgstr "Model kimliği"
 
-#: src/pages/model-settings/model-picker.tsx
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 msgid "Model options"
 msgstr "Model seçenekleri"
@@ -3875,8 +3858,8 @@ msgstr "Modeller"
 msgid "Models at provider cost"
 msgstr ""
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Models from server"
 msgstr "Sunucudan gelen modeller"
 
@@ -4106,7 +4089,6 @@ msgid "No matching artifacts on this page."
 msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -4293,6 +4275,10 @@ msgstr "Tek seferlik"
 msgid "One-time purchase. Credits do not expire."
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "Only enter a code {codeHost} sent you."
+msgstr ""
+
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/shell/computer-panel.tsx
@@ -4386,8 +4372,8 @@ msgstr ""
 msgid "Original message unavailable"
 msgstr "Orijinal mesaj kullanılamıyor"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "Başka model…"
 
@@ -4407,10 +4393,6 @@ msgstr "Sayfa {page} / {count}"
 #: src/pages/NotFound.tsx
 msgid "Page not found"
 msgstr "Sayfa bulunamadı"
-
-#: src/pages/RoutineEditor.tsx
-msgid "PagerDuty incident"
-msgstr ""
 
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
@@ -4816,6 +4798,7 @@ msgid "Release control"
 msgstr "Kontrolü bırak"
 
 #: src/components/InstructionSettings.tsx
+#: src/lib/client-update.ts
 msgid "Reload"
 msgstr "Yeniden yükle"
 
@@ -4931,6 +4914,10 @@ msgstr "Anahtarı değiştir"
 msgid "Replace value"
 msgstr ""
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Replies to"
+msgstr "Yanıt verdiği"
+
 #: src/pages/shell/message-hover-actions.tsx
 #: src/pages/shell/quote-selection-button.tsx
 msgid "Reply"
@@ -4958,6 +4945,7 @@ msgid "Research & writing"
 msgstr ""
 
 #: src/components/ComputerMaintenanceActions.tsx
+#: src/pages/ExternalConversationSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Reset"
 msgstr ""
@@ -5069,10 +5057,6 @@ msgstr "İptal et"
 msgid "Revoked"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Room guidance"
-msgstr ""
-
 #: src/pages/RoutineEditor.tsx
 msgid "Rotate key"
 msgstr ""
@@ -5142,6 +5126,9 @@ msgstr ""
 #: src/pages/model-settings/computer-model-settings.tsx
 msgid "Same as main model"
 msgstr "Ana modelle aynı"
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Same as {botName}"
+msgstr "{botName} ile aynı"
 
 #: src/lib/cron.ts
 msgid "Saturday"
@@ -5236,8 +5223,8 @@ msgstr "Kapsamlar (isteğe bağlı)"
 msgid "Screen not connected"
 msgstr "Ekran bağlı değil"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5270,8 +5257,8 @@ msgstr ""
 msgid "Search integrations.sh"
 msgstr ""
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"
@@ -5357,10 +5344,6 @@ msgstr "Gönderiliyor…"
 
 #: src/components/AskCard.tsx
 msgid "Sent"
-msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Sentry alert"
 msgstr ""
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
@@ -5679,6 +5662,18 @@ msgstr "Kaydı başlat"
 msgid "Start your plan now?"
 msgstr "Planınız şimdi başlatılsın mı?"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}d late"
+msgstr "{count} gün gecikmeyle başladı"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}h late"
+msgstr "{count} sa gecikmeyle başladı"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}m late"
+msgstr "{count} dk gecikmeyle başladı"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "Başlıyor"
@@ -5755,7 +5750,7 @@ msgstr "Abone ol"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe for {annualPrice} / year"
-msgstr ""
+msgstr "Yıllık {annualPrice} ile abone ol"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
@@ -5787,9 +5782,18 @@ msgstr "Görüntüleri destekler"
 msgid "Supports thinking"
 msgstr "Düşünmeyi destekler"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
-msgstr ""
+msgstr "Geç"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly"
+msgstr "Yıllığa geç"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly?"
+msgstr "Yıllığa geçilsin mi?"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
@@ -5826,10 +5830,6 @@ msgstr "Takım Bilgisayarı"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
-msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Teams not enabled"
 msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
@@ -5958,6 +5958,7 @@ msgid "This browser has no on-device dictation. Connect a voice provider with tr
 msgstr ""
 
 #: src/components/call/IncomingCall.tsx
+#: src/lib/user-error.ts
 msgid "This call is no longer ringing."
 msgstr ""
 
@@ -6272,6 +6273,10 @@ msgstr "Talimatlar güncellensin mi?"
 msgid "Update progress"
 msgstr ""
 
+#: src/lib/client-update.ts
+msgid "Update required"
+msgstr "Güncelleme gerekli"
+
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"
 msgstr ""
@@ -6336,10 +6341,6 @@ msgstr "Bulunan bir modeli kullan"
 #: src/lib/model-connection-preflight.ts
 msgid "Use Connect to verify the key."
 msgstr "Anahtarı doğrulamak için Bağlan'ı kullan."
-
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Use default guidance"
-msgstr ""
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Use defaults"
@@ -6599,7 +6600,7 @@ msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Yearly"
-msgstr ""
+msgstr "Yıllık"
 
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
@@ -6635,6 +6636,10 @@ msgstr "Kontrol sende"
 msgid "Your Anthropic"
 msgstr "Anthropic sağlayıcınız"
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged {annualPrice} today, less the unused part of this month."
+msgstr "Bugün kartından {annualPrice} tahsil edilir, bu ayın kullanılmayan kısmı düşülür."
+
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr ""
@@ -6665,6 +6670,10 @@ msgstr "OpenAI sağlayıcınız"
 #: src/lib/run-error.ts
 msgid "Your OpenRouter"
 msgstr "OpenRouter sağlayıcınız"
+
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {annualPrice} / year when your trial ends."
+msgstr "Deneme süren bitince planın yıllık {annualPrice} olur."
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"

@@ -129,6 +129,7 @@ export const BotSchema = z.object({
   teamChatAmbientEnabled: z.boolean(),
   teamChatRules: z.string(),
   crossSpaceCommunication: z.boolean().optional(),
+  dailyCheckIns: z.boolean().optional(),
   fleetManagement: z.boolean().default(true),
   disabledBuiltinTools: z.array(z.string()).default([]),
   webhookConfigured: z.boolean(),
@@ -146,6 +147,18 @@ export const BotSchema = z.object({
     .optional(),
 });
 export type Bot = z.infer<typeof BotSchema>;
+
+/** The caller identity and request needed by every incoming-call surface. */
+export const IncomingBotCallSchema = BotSchema.pick({
+  id: true,
+  spaceId: true,
+  name: true,
+  color: true,
+  avatarSet: true,
+}).extend({
+  incomingCall: BotSchema.shape.incomingCall.unwrap().unwrap(),
+});
+export type IncomingBotCall = z.infer<typeof IncomingBotCallSchema>;
 
 export const ReorderBotsInput = z.object({
   botIds: z
@@ -389,6 +402,7 @@ export const CreateBotInput = z.object({
   description: z.string().max(BOT_DESCRIPTION_MAX_LENGTH).default(""),
   instructions: z.string().max(BOT_INSTRUCTIONS_MAX_LENGTH).default(""),
   notifyOnFinish: z.boolean().default(true),
+  dailyCheckIns: z.boolean().optional(),
   fleetManagement: z.boolean().optional(),
   color: BotAvatarValueSchema.optional(),
   avatarSet: BotAvatarSetSchema.optional(),
@@ -423,6 +437,7 @@ export const UpdateBotInput = z
     teamChatAmbientEnabled: z.boolean().optional(),
     teamChatRules: z.string().max(TEAM_CHAT_RULES_MAX_LENGTH).optional(),
     crossSpaceCommunication: z.boolean().optional(),
+    dailyCheckIns: z.boolean().optional(),
     fleetManagement: z.boolean().optional(),
     disabledBuiltinTools: DisabledBuiltinToolsSchema.optional(),
     /** Write only while these settings still hold, as an undo does. */
@@ -1996,6 +2011,32 @@ export const BillingStatusSchema = z.object({
     .optional(),
 });
 export type BillingStatus = z.infer<typeof BillingStatusSchema>;
+
+/** The percent a yearly own-key price saves over twelve months at `monthlyCents`. */
+export function byokYearlySavingsPercent(monthlyCents: number, annualCents: number): number {
+  return Math.round((1 - annualCents / (monthlyCents * 12)) * 100);
+}
+
+/**
+ * What switching a paid monthly own-key plan to yearly saves, in percent, or null when the switch
+ * is not offered: not the owner, no live monthly plan, or a yearly price that saves nothing.
+ */
+export function byokYearlySwitchSavings(status: BillingStatus): number | null {
+  if (
+    !status.canManage ||
+    status.funding !== "byok" ||
+    status.byokInterval === "year" ||
+    status.byokFreeUntil ||
+    status.monthlyAmountCents ||
+    status.cancelAtPeriodEnd ||
+    (status.state !== "active" && status.state !== "trialing") ||
+    !status.byokPriceCents ||
+    !status.byokAnnualPriceCents
+  )
+    return null;
+  const savings = byokYearlySavingsPercent(status.byokPriceCents, status.byokAnnualPriceCents);
+  return savings > 0 ? savings : null;
+}
 
 export const AppBootstrapSchema = z.object({
   me: MeSchema,

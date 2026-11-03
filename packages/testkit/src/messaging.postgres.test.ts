@@ -48,6 +48,47 @@ describeMessaging("messaging surface journeys", () => {
       where: { provider_address: { provider: "sendblue", address } },
     });
 
+  /** Text answers apply only to a request the person has received. */
+  const waitForInviteSent = async (address: string) => {
+    const identity = await waitForDatabase(async () => findIdentity(address));
+    await waitForDatabase(async () =>
+      prisma.messagingOutbound.findFirst({
+        where: {
+          identityId: identity.id,
+          idempotencyKey: { startsWith: "invite:" },
+          status: "sent",
+        },
+      }),
+    );
+  };
+
+  /** A DM to the bot, returned once its reply has gone out, as a person would see it. */
+  const dmAndWaitForReply = async (address: string, content: string, handle: string) => {
+    const res = await app.request(
+      emulator.buildInboundRequest({ fromNumber: address, content, handle }),
+    );
+    expect(res.status).toBe(200);
+    const identity = await waitForDatabase(async () => findIdentity(address));
+    const thread = await waitForDatabase(async () =>
+      prisma.thread.findFirst({ where: { botId: identity.botId } }),
+    );
+    const message = await waitForDatabase(async () =>
+      prisma.message.findUnique({
+        where: {
+          threadId_clientNonce: {
+            threadId: thread.id,
+            clientNonce: `messaging:sendblue:${handle}`,
+          },
+        },
+      }),
+    );
+    await waitForDatabase(async () => {
+      const run = await prisma.run.findFirst({ where: { sourceMessageId: message.id } });
+      return run?.messagingMirroredAt ? run : null;
+    });
+    return identity;
+  };
+
   beforeAll(async () => {
     const { createApp } = await import("@rakazo/api/app");
     const handles = await createApp({
@@ -274,12 +315,14 @@ describeMessaging("messaging surface journeys", () => {
     const identity = await findIdentity(sender);
     const runsBefore = await prisma.run.count({ where: { botId: identity.botId } });
 
-    // 2. The owner approves by text command.
+    // 2. The owner approves by text command, sent as plain SMS.
+    await waitForInviteSent(sender);
     const yes = await app.request(
       emulator.buildInboundRequest({
         fromNumber: sender,
         content: "YES",
         handle: `grp-yes-${stamp}`,
+        service: "SMS",
       }),
     );
     expect(yes.status).toBe(200);
@@ -341,15 +384,7 @@ describeMessaging("messaging surface journeys", () => {
     const stranger = uniqueNumber();
     const groupId = `grp-no-${stamp}`;
 
-    const provision = await app.request(
-      emulator.buildInboundRequest({
-        fromNumber: owner,
-        content: "link me",
-        handle: `no-dm-${stamp}`,
-      }),
-    );
-    expect(provision.status).toBe(200);
-    const identity = await waitForDatabase(async () => findIdentity(owner));
+    const identity = await dmAndWaitForReply(owner, "link me", `no-dm-${stamp}`);
     const runsBefore = await prisma.run.count({ where: { botId: identity.botId } });
 
     const discovery = await app.request(
@@ -366,6 +401,7 @@ describeMessaging("messaging surface journeys", () => {
       prisma.messagingChannel.findUnique({ where: { threadId: groupThreadId(groupId) } }),
     );
 
+    await waitForInviteSent(owner);
     const no = await app.request(
       emulator.buildInboundRequest({
         fromNumber: owner,
@@ -400,15 +436,7 @@ describeMessaging("messaging surface journeys", () => {
     const stranger = uniqueNumber();
     const groupId = `grp-leave-${stamp}`;
 
-    const provision = await app.request(
-      emulator.buildInboundRequest({
-        fromNumber: owner,
-        content: "link me again",
-        handle: `leave-dm-${stamp}`,
-      }),
-    );
-    expect(provision.status).toBe(200);
-    await waitForDatabase(async () => findIdentity(owner));
+    await dmAndWaitForReply(owner, "link me again", `leave-dm-${stamp}`);
 
     const discovery = await app.request(
       emulator.buildInboundRequest({
@@ -424,6 +452,7 @@ describeMessaging("messaging surface journeys", () => {
       prisma.messagingChannel.findUnique({ where: { threadId: groupThreadId(groupId) } }),
     );
 
+    await waitForInviteSent(owner);
     const yes = await app.request(
       emulator.buildInboundRequest({
         fromNumber: owner,
@@ -470,6 +499,39 @@ describeMessaging("messaging surface journeys", () => {
       });
       return member?.status === "invited";
     });
+  });
+
+  it("answers a group invite by text only right after it", async () => {
+    const owner = uniqueNumber();
+    const stranger = uniqueNumber();
+    const groupId = `grp-answer-${stamp}`;
+    await dmAndWaitForReply(owner, "hello", `answer-dm-${stamp}`);
+    const discovery = await app.request(
+      emulator.buildInboundRequest({
+        fromNumber: owner,
+        content: "group hello",
+        groupId,
+        participants: [owner, stranger, emulator.phoneNumber],
+        handle: `answer-discover-${stamp}`,
+      }),
+    );
+    expect(discovery.status).toBe(200);
+    const channel = await waitForDatabase(async () =>
+      prisma.messagingChannel.findUnique({ where: { threadId: groupThreadId(groupId) } }),
+    );
+    const memberStatus = async () =>
+      (
+        await prisma.messagingChannelMember.findUnique({
+          where: { channelId_address: { channelId: channel.id, address: owner } },
+        })
+      )?.status;
+    await waitForDatabase(async () => (await memberStatus()) === "invited");
+    await waitForInviteSent(owner);
+
+    // Once the bot has said something since, a bare YES is a reply to the bot.
+    await dmAndWaitForReply(owner, "Should I book the table?", `answer-question-${stamp}`);
+    await dmAndWaitForReply(owner, "YES", `answer-yes-${stamp}`);
+    expect(await memberStatus()).toBe("invited");
   });
 
   it("marks a mirrored reply failed when the outbound status webhook reports ERROR", async () => {

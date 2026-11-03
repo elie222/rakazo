@@ -36,6 +36,7 @@ const { element, account } = vi.hoisted(() => ({
     push: vi.fn(),
     approvals: { mode: "ask", enabled: false, skipApprovals: false, checkerAvailable: true },
     rules: [] as { id: string }[],
+    messaging: { enabled: true },
   },
 }));
 
@@ -180,7 +181,9 @@ vi.mock("./api", () => ({
         ? account.approvals
         : method === "approvalRules/list"
           ? account.rules
-          : {},
+          : method === "messaging/status"
+            ? account.messaging
+            : {},
   ),
   selectedSpaceId: () => "space-1",
   signOut: vi.fn(),
@@ -272,6 +275,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   account.me = { userId: "user-1", name: "Tester", email: "tester@example.test" };
   account.rules = [];
+  account.messaging = { enabled: true };
   vi.mocked(fetchAccountSecurity).mockResolvedValue(security());
 });
 
@@ -531,4 +535,12 @@ it("shows the approval mode as the Approvals row's value, with Rules only once t
   expect(view.button("Rules")!.dataset.value).toBe("2");
   await view.press("Rules");
   expect(account.push).toHaveBeenCalledWith("/approvals");
+});
+
+it("hides Messaging when no chat app is connected to the server", async () => {
+  account.messaging = { enabled: false };
+  const view = await renderAccount();
+  const titles = Array.from(view.screen.querySelectorAll("[data-row]"), (row) => row.textContent);
+  expect(titles).toContain("Skills");
+  expect(titles).not.toContain("Messaging");
 });

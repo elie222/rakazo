@@ -63,6 +63,7 @@ model User {
   createdTickets              Ticket[]                     @relation("TicketCreatorUser")
   ticketComments              TicketComment[]              @relation("TicketCommentAuthorUser")
   pushToken                   PushToken?
+  callPushDevices             CallPushDevice[]
   trustedLinkSites            TrustedLinkSite[]
   feedbackReports             FeedbackReport[]
   emailSends                  EmailSend[]
@@ -119,6 +120,21 @@ model PushToken {
   @@map("push_tokens")
 }
 
+/// Encrypted call registrations per installation. Legacy message push remains compatible.
+model CallPushDevice {
+  id String @id
+  expoTokenDigest String? @unique
+  voipTokenDigest String? @unique
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId String
+  ciphertext String
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, sessionId])
+  @@map("call_push_devices")
+}
+
 model EmailSend {
   userId String
   user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -136,9 +152,13 @@ model UserDevice {
   name        String
   platform    String
   tokenHash   String                 @unique
+  /// The session that paired it. Ending that session revokes the device.
+  sessionId   String?
   createdAt   DateTime               @default(now())
   lastSeenAt  DateTime?
   revokedAt   DateTime?
+  /// Who revoked it: "owner", "device" or "session" (its sign-in ended). Null when unknown.
+  revokedBy   String?
   connections UserDeviceConnection[]
 
   @@index([userId, revokedAt])
@@ -736,6 +756,7 @@ model Bot {
   teamChatAmbientEnabled Boolean @default(false)
   teamChatRules          String  @default("")
   crossSpaceCommunication Boolean @default(true)
+  dailyCheckIns Boolean @default(true)
   fleetManagement        Boolean @default(true)
   routines          Routine[]
   scratchpadItems   ScratchpadItem[]
@@ -968,6 +989,8 @@ model Run {
   // Server-side first visible output, preserved across attempts and resumes.
   firstResponseAt      DateTime?
   startedAt            DateTime?
+  // The occurrence a recurring timer run was due at, recorded at its first start only when it started late.
+  lateSince            DateTime?
   completedAt          DateTime?
   botOutcomeReturnedAt DateTime?
   messagingMirroredAt  DateTime?
@@ -1204,6 +1227,7 @@ model ScratchpadItem {
 
   @@index([spaceId, botId, status])
   @@index([spaceId, botId, updatedAt])
+  @@index([botId, status, updatedAt, id])
   @@map("scratchpad_items")
 }
 
@@ -2218,6 +2242,8 @@ model MessagingInstallation {
   botId String
   bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
   ciphertext String
+  /// Sender address of the person who installed it, as inbound messages carry it.
+  ownerAddress String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@unique([provider, workspaceId])

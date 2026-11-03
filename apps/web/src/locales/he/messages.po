@@ -101,11 +101,6 @@ msgstr "{0} {unitLabel}"
 msgid "{0} connection"
 msgstr "חיבור {0}"
 
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} default"
-msgstr "ברירת המחדל של {0}"
-
 #. placeholder {0}: parts.amount
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} GB"
@@ -150,11 +145,6 @@ msgstr "שעות סיכום של {0}"
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} TB"
 msgstr "{0} TB"
-
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} will still respond to direct mentions."
-msgstr "{0} ימשיך להגיב לאזכורים ישירים."
 
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
@@ -422,7 +412,7 @@ msgstr "@{0}"
 
 #: src/components/ModelCredits.tsx
 msgid "/ month"
-msgstr ""
+msgstr "/ חודש"
 
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
@@ -962,10 +952,6 @@ msgstr "אוטומטי"
 msgid "Automated senders"
 msgstr "שולחים אוטומטיים"
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Automated senders will appear after they post here."
-msgstr "שולחים אוטומטיים יופיעו כאן אחרי שיפרסמו הודעה."
-
 #: src/pages/RoutineEditor.tsx
 msgid "Available after the routine is saved"
 msgstr "זמין אחרי שמירת הרוטינה"
@@ -1029,7 +1015,7 @@ msgstr "חיוב"
 
 #: src/components/ModelCredits.tsx
 msgid "Billing period"
-msgstr ""
+msgstr "תקופת חיוב"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
@@ -1151,7 +1137,6 @@ msgid "Can't reach the server."
 msgstr "אין גישה לשרת."
 
 #: src/components/TextOnlyMark.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "לא ניתן לקרוא תמונות"
@@ -1477,10 +1462,6 @@ msgstr "עמודה {index}"
 msgid "Comfortable"
 msgstr "מרווח"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Coming soon"
-msgstr "בקרוב"
-
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Command"
@@ -1598,6 +1579,7 @@ msgstr "יש לוודא שאפשר להגיע לכתובת ה-URL מסשן הד�
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
+#: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connect"
 msgstr "חיבור"
@@ -2419,6 +2401,10 @@ msgstr "התאמה אישית של {label}"
 msgid "Customize bot avatar"
 msgstr "התאמת תמונת הבוט"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Daily check-ins on unfinished work"
+msgstr "מעקב יומי אחר עבודה שלא הושלמה"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Dark"
@@ -2598,6 +2584,10 @@ msgstr ""
 #: src/lib/dictation.ts
 msgid "Dictation failed."
 msgstr ""
+
+#: src/pages/Auth.tsx
+msgid "Did you mean <0>{emailSuggestion}</0>?"
+msgstr "האם התכוונת ל-<0>{emailSuggestion}</0>?"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
@@ -2782,10 +2772,6 @@ msgstr "הפעלת {0}"
 msgid "Ends {day}"
 msgstr "מסתיים ב-{day}"
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Engage when... Ignore..."
-msgstr "להגיב כאשר... להתעלם מ..."
-
 #: src/components/GitHubStarPrompt.tsx
 msgid "Enjoying Rakazo?"
 msgstr ""
@@ -2874,6 +2860,10 @@ msgstr "כל שעה"
 #: src/lib/cron.ts
 msgid "Every hour at :{0}"
 msgstr "כל שעה בדקה {0}"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Every message"
+msgstr "כל הודעה"
 
 #: src/lib/cron.ts
 msgid "Every Monday"
@@ -3038,7 +3028,6 @@ msgid "Forgot password?"
 msgstr "שכחת סיסמה?"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "חינם"
 
@@ -3359,6 +3348,10 @@ msgstr "הנחיות {position}"
 msgid "Instructions are too long. Untick some files."
 msgstr "ההנחיות ארוכות מדי. בטלו את הסימון של חלק מהקבצים."
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Instructions for this room"
+msgstr "הוראות לחדר הזה"
+
 #: src/components/AskCard.tsx
 msgid "Instructions updated"
 msgstr "ההנחיות עודכנו"
@@ -3477,10 +3470,6 @@ msgstr "מאפשר לבוטים לשמור ולשלוף עובדות לפי מש
 msgid "Light"
 msgstr "בהיר"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Linear issue"
-msgstr "Issue ב-Linear"
-
 #: src/pages/SpaceSearch.tsx
 msgid "Link"
 msgstr ""
@@ -3497,12 +3486,7 @@ msgstr "קישור SSO"
 msgid "List view"
 msgstr "תצוגת רשימה"
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Listen"
-msgstr "האזנה"
-
 #: src/components/call/CallCard.tsx
-#: src/pages/ExternalConversationSettings.tsx
 msgid "Listening"
 msgstr "מאזין"
 
@@ -3839,7 +3823,6 @@ msgstr "מצב"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3860,7 +3843,7 @@ msgstr "חיבורים למודלים"
 msgid "Model id"
 msgstr "מזהה מודל"
 
-#: src/pages/model-settings/model-picker.tsx
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 msgid "Model options"
 msgstr "אפשרויות מודל"
@@ -3875,8 +3858,8 @@ msgstr "מודלים"
 msgid "Models at provider cost"
 msgstr ""
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Models from server"
 msgstr "מודלים מהשרת"
 
@@ -4106,7 +4089,6 @@ msgid "No matching artifacts on this page."
 msgstr "אין תוצרים תואמים בדף הזה."
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -4293,6 +4275,10 @@ msgstr "חד-פעמי"
 msgid "One-time purchase. Credits do not expire."
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "Only enter a code {codeHost} sent you."
+msgstr ""
+
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/shell/computer-panel.tsx
@@ -4386,8 +4372,8 @@ msgstr ""
 msgid "Original message unavailable"
 msgstr "ההודעה המקורית אינה זמינה"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "מודל אחר…"
 
@@ -4407,10 +4393,6 @@ msgstr "עמוד {page} מתוך {count}"
 #: src/pages/NotFound.tsx
 msgid "Page not found"
 msgstr "הדף לא נמצא"
-
-#: src/pages/RoutineEditor.tsx
-msgid "PagerDuty incident"
-msgstr "תקרית PagerDuty"
 
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
@@ -4816,6 +4798,7 @@ msgid "Release control"
 msgstr "שחרור השליטה"
 
 #: src/components/InstructionSettings.tsx
+#: src/lib/client-update.ts
 msgid "Reload"
 msgstr "טעינה מחדש"
 
@@ -4931,6 +4914,10 @@ msgstr "החלפת מפתח"
 msgid "Replace value"
 msgstr "החלפת ערך"
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Replies to"
+msgstr "משיב ל"
+
 #: src/pages/shell/message-hover-actions.tsx
 #: src/pages/shell/quote-selection-button.tsx
 msgid "Reply"
@@ -4958,6 +4945,7 @@ msgid "Research & writing"
 msgstr "מחקר וכתיבה"
 
 #: src/components/ComputerMaintenanceActions.tsx
+#: src/pages/ExternalConversationSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Reset"
 msgstr "איפוס"
@@ -5069,10 +5057,6 @@ msgstr "ביטול הרשאה"
 msgid "Revoked"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Room guidance"
-msgstr "הנחיות לחדר"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Rotate key"
 msgstr "החלפת מפתח"
@@ -5142,6 +5126,9 @@ msgstr ""
 #: src/pages/model-settings/computer-model-settings.tsx
 msgid "Same as main model"
 msgstr "כמו המודל הראשי"
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Same as {botName}"
+msgstr "כמו {botName}"
 
 #: src/lib/cron.ts
 msgid "Saturday"
@@ -5236,8 +5223,8 @@ msgstr "היקפים (אופציונלי)"
 msgid "Screen not connected"
 msgstr "המסך אינו מחובר"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5270,8 +5257,8 @@ msgstr "חיפוש לפי דומיין"
 msgid "Search integrations.sh"
 msgstr "חיפוש ב-integrations.sh"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"
@@ -5358,10 +5345,6 @@ msgstr "שולח…"
 #: src/components/AskCard.tsx
 msgid "Sent"
 msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Sentry alert"
-msgstr "התראת Sentry"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Serenity endpoint is required."
@@ -5679,6 +5662,18 @@ msgstr "התחלת הקלטה"
 msgid "Start your plan now?"
 msgstr "להתחיל את התוכנית עכשיו?"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}d late"
+msgstr "{count, plural, one {התחיל באיחור של יום} other {התחיל באיחור של # ימים}}"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}h late"
+msgstr "התחיל באיחור של {count} שע׳"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}m late"
+msgstr "התחיל באיחור של {count} דק׳"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "מתחיל"
@@ -5755,7 +5750,7 @@ msgstr "הרשמה למנוי"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe for {annualPrice} / year"
-msgstr ""
+msgstr "הרשמה ב-{annualPrice} / שנה"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
@@ -5787,9 +5782,18 @@ msgstr "תומך בתמונות"
 msgid "Supports thinking"
 msgstr "תומך בחשיבה"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
-msgstr ""
+msgstr "החלפה"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly"
+msgstr "מעבר לתשלום שנתי"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly?"
+msgstr "לעבור לתשלום שנתי?"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
@@ -5827,10 +5831,6 @@ msgstr "מחשב הצוות"
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
 msgstr "הודעת Teams"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Teams not enabled"
-msgstr "Teams לא מופעל"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
@@ -5958,6 +5958,7 @@ msgid "This browser has no on-device dictation. Connect a voice provider with tr
 msgstr ""
 
 #: src/components/call/IncomingCall.tsx
+#: src/lib/user-error.ts
 msgid "This call is no longer ringing."
 msgstr ""
 
@@ -6272,6 +6273,10 @@ msgstr "לעדכן את ההוראות?"
 msgid "Update progress"
 msgstr "התקדמות העדכון"
 
+#: src/lib/client-update.ts
+msgid "Update required"
+msgstr "נדרש עדכון"
+
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"
 msgstr "עודכן {updated}"
@@ -6336,10 +6341,6 @@ msgstr "שימוש במודל שנמצא"
 #: src/lib/model-connection-preflight.ts
 msgid "Use Connect to verify the key."
 msgstr "יש ללחוץ על חיבור כדי לאמת את המפתח."
-
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Use default guidance"
-msgstr "שימוש בהנחיות ברירת המחדל"
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Use defaults"
@@ -6599,7 +6600,7 @@ msgstr "שנה"
 
 #: src/components/ModelCredits.tsx
 msgid "Yearly"
-msgstr ""
+msgstr "שנתי"
 
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
@@ -6635,6 +6636,10 @@ msgstr "השליטה אצלך"
 msgid "Your Anthropic"
 msgstr "Anthropic"
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged {annualPrice} today, less the unused part of this month."
+msgstr "הכרטיס שלך יחויב היום ב-{annualPrice}, בניכוי החלק שלא נוצל מהחודש הזה."
+
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr ""
@@ -6665,6 +6670,10 @@ msgstr "OpenAI"
 #: src/lib/run-error.ts
 msgid "Your OpenRouter"
 msgstr "OpenRouter"
+
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {annualPrice} / year when your trial ends."
+msgstr "בסיום תקופת הניסיון, המינוי שלך יעלה {annualPrice} / שנה."
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"

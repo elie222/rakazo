@@ -534,8 +534,10 @@ test("live page helper types codes as real key presses into one-box-per-digit fi
       return result;
     }
     const page = context.pages()[0]!;
-    await page.route("https://code.example.test/**", (route) =>
-      route.fulfill({
+    await page.route("https://code.example.test/**", async (route) => {
+      // A slow next page keeps the one that is leaving on screen while the keys are typed.
+      if (route.request().url().endsWith("/next")) await new Promise((r) => setTimeout(r, 500));
+      await route.fulfill({
         contentType: "text/html",
         body: route.request().url().endsWith("/done")
           ? "<title>Signed in</title>"
@@ -546,8 +548,8 @@ test("live page helper types codes as real key presses into one-box-per-digit fi
               : route.request().url().endsWith("/next")
                 ? '<title>Next</title><input aria-label="Next" autofocus>'
                 : CODE_FIELDS,
-      }),
-    );
+      });
+    });
     const open = async () => {
       await page.goto("https://code.example.test/");
       await refresh();

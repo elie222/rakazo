@@ -29,9 +29,6 @@ const tableEvents = vi.hoisted(() => ({
   onLayout: undefined as
     | ((event: { nativeEvent: { layout: { width: number; height: number } } }) => void)
     | undefined,
-  onScroll: undefined as
-    | ((event: { nativeEvent: { contentOffset: { x: number } } }) => void)
-    | undefined,
   onStartShouldSetResponder: undefined as (() => boolean) | undefined,
   onContentSizeChange: undefined as ((width: number, height: number) => void) | undefined,
 }));
@@ -84,9 +81,6 @@ vi.mock("react-native", async () => {
         imageLoads.push(rest.onLoad as (typeof imageLoads)[number]);
         delete rest.onLoad;
         delete rest.onError;
-      }
-      if (tag === "rn-scroll-view" && typeof rest.onScroll === "function") {
-        tableEvents.onScroll = rest.onScroll as typeof tableEvents.onScroll;
       }
       if (tag === "rn-scroll-view" && typeof rest.onContentSizeChange === "function") {
         tableEvents.onContentSizeChange =
@@ -157,6 +151,7 @@ vi.mock("react-native", async () => {
       "marginRight",
       "accessibilityElementsHidden",
       "importantForAccessibility",
+      "accessibilityRole",
     ]),
     get Text() {
       return reactNativeText.current;
@@ -338,7 +333,7 @@ describe("native markdown tables", () => {
     expect(html).toContain('data-flex-shrink="0"');
   });
 
-  it("keeps an offscreen column from stretching the row, and lets it back in when scrolled", async () => {
+  it("lets every cell set its row's height, even in columns scrolled out of view", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -350,27 +345,16 @@ describe("native markdown tables", () => {
       tableEvents.onLayout?.({ nativeEvent: { layout: { width: 70, height: 40 } } });
     });
 
-    const rows = () => tableRows(container.innerHTML);
-    const notesHeights = () =>
-      [
-        ...new DOMParser()
-          .parseFromString(container.innerHTML, "text/html")
-          .querySelectorAll("rn-view[data-border-bottom-width]"),
-      ].map(
-        (view) =>
-          view.querySelector("rn-view[data-max-width]:last-child")?.getAttribute("data-height") ??
-          null,
-      );
-    expect(rows()).toHaveLength(2);
-    expect(notesHeights()).toEqual(["28", "28"]);
-
-    const notesStart = (rows()[0]?.cells ?? [])
-      .slice(0, -1)
-      .reduce((total, width) => total + width, 0);
-    await act(async () => {
-      tableEvents.onScroll?.({ nativeEvent: { contentOffset: { x: notesStart } } });
-    });
-    expect(notesHeights()).toEqual([null, null]);
+    const cells = [
+      ...new DOMParser()
+        .parseFromString(container.innerHTML, "text/html")
+        .querySelectorAll("rn-view[data-border-bottom-width] rn-view[data-max-width]"),
+    ];
+    expect(cells).toHaveLength(6);
+    for (const cell of cells) {
+      expect(cell.getAttribute("data-height")).toBeNull();
+      expect(cell.getAttribute("data-overflow")).toBeNull();
+    }
 
     await act(async () => {
       root.unmount();
@@ -936,6 +920,47 @@ describe("native markdown lists", () => {
     // 13 + 5 + 8: the dot ends where a one-digit number ends.
     expect(dots[0]?.parentElement?.getAttribute("data-margin-left")).toBe("13");
     expect(dots[0]?.parentElement?.getAttribute("data-margin-right")).toBe("8");
+  });
+
+  it("draws task list items as checkboxes instead of their [ ] and [x] text", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"- [x] Draft the announcement\n- [ ] Collect quotes\n- plain"}</ChatMarkdown>,
+    );
+    expect(html).not.toContain("[x]");
+    expect(html).not.toContain("[ ]");
+    expect(html).toContain("Draft the announcement");
+    expect(html.match(/data-accessibility-role="checkbox"/g)).toHaveLength(2);
+    expect(html.match(/✓/g)).toHaveLength(1);
+    // Each task is one accessible element that reads its text with its state.
+    expect(html).toMatch(/accessible=""[^>]*accessibilityLabel="Draft the announcement"/);
+    // The plain item keeps its bullet.
+    expect(bulletDots(html)).toHaveLength(1);
+  });
+
+  it("draws a checkbox when the task text starts on the next line", () => {
+    const html = renderToStaticMarkup(<ChatMarkdown>{"- [x]\n  Ship it"}</ChatMarkdown>);
+    expect(html).not.toContain("[x]");
+    expect(html).toContain("Ship it");
+    expect(html.match(/data-accessibility-role="checkbox"/g)).toHaveLength(1);
+  });
+
+  it("keeps each nested task's own checkbox state", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"- [ ] Launch\n  - [x] Draft\n  - [ ] Review"}</ChatMarkdown>,
+    );
+    expect(html.match(/data-accessibility-role="checkbox"/g)).toHaveLength(3);
+    expect(html).toMatch(/accessibilityLabel="Launch"/);
+    expect(html).toMatch(/accessibilityLabel="Draft"/);
+  });
+
+  it("keeps escaped [x] and [ ] as literal text", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"- \\[x\\] done literally\n- \\[ \\] open literally"}</ChatMarkdown>,
+    );
+    expect(html).toContain("[x] done literally");
+    expect(html).toContain("[ ] open literally");
+    expect(html).not.toContain('data-accessibility-role="checkbox"');
+    expect(bulletDots(html)).toHaveLength(2);
   });
 
   it("draws the bullet dot in the list-marker colour", () => {
