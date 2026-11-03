@@ -95,7 +95,9 @@ export default function ArtifactDetailScreen() {
       .then((list) => {
         if (cancelled) return;
         setVersions(list);
-        setSelectedVersionId(list[0]?.id ?? artifactId);
+        // Open the version a chat attachment points at; the picker still offers the rest.
+        const attached = list.some((version) => version.id === artifactId);
+        setSelectedVersionId(attached ? artifactId : (list[0]?.id ?? artifactId));
       })
       .catch(() => {
         if (!cancelled) setSelectedVersionId(artifactId);
