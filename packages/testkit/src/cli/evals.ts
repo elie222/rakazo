@@ -77,14 +77,16 @@ async function main() {
       "cases-file": { type: "string" },
       "timeout-ms": { type: "string", default: "180000" },
       "max-tool-calls": { type: "string", default: "30" },
-      "reply-mode": { type: "string", default: "chat" },
+      "reply-mode": { type: "string" },
       output: { type: "string", default: "test-report/evals/report.json" },
     },
   });
   if (values["cases-file"] && values.suite !== "tool-choice")
     throw new Error("--cases-file adds tool-choice cases; use --suite tool-choice");
-  const replyMode = ReplyModeSchema.safeParse(values["reply-mode"]);
+  const replyMode = ReplyModeSchema.safeParse(values["reply-mode"] ?? "chat");
   if (!replyMode.success) throw new Error("Unknown reply mode; use chat or messages");
+  if (values["reply-mode"] && values.suite === "approval")
+    throw new Error("--reply-mode sets the trial's bots; the approval suite has none");
   if (values.suite === "approval")
     return runApprovalSuite(values, {
       codeRevision: codeRevision(),
