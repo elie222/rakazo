@@ -1,11 +1,4 @@
 export const ZH_TW_MESSAGES: Record<string, string> = {
-  "Add account": "新增帳戶",
-  "Switch accounts": "切換帳戶",
-  "Sign in to open this account": "登入以開啟此帳戶",
-  "Sign in to open this notification": "登入以開啟此通知",
-  "Sign out all": "全部登出",
-  "Sign out all accounts?": "登出所有帳戶？",
-  "Could not sign out of every account": "無法登出所有帳號",
   "Daily check-ins on unfinished work": "每天追蹤未完成的工作",
   "How other bots see it": "其他機器人如何瞭解它",
   "Share to": "分享到",
@@ -1281,6 +1274,13 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "1 bot now uses the space default.": "1 個機器人已改用空間預設模型。",
   "{count} bots now use the space default.": "{count} 個機器人已改用空間預設模型。",
   "Could not switch {failedNames}. Try again.": "無法切換 {failedNames}，請再試一次。",
+  "Add account": "新增帳戶",
+  "Switch accounts": "切換帳戶",
+  "Sign in to open this account": "登入以開啟此帳戶",
+  "Sign in to open this notification": "登入以開啟此通知",
+  "Sign out all": "全部登出",
+  "Sign out all accounts?": "登出所有帳戶？",
+  "Could not sign out of every account": "無法登出所有帳號",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "與{peer}的 {count} 則訊息" };

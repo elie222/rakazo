@@ -1,11 +1,4 @@
 export const DE_MESSAGES: Record<string, string> = {
-  "Add account": "Konto hinzufügen",
-  "Switch accounts": "Konten wechseln",
-  "Sign in to open this account": "Melde dich an, um dieses Konto zu öffnen",
-  "Sign in to open this notification": "Melde dich an, um diese Benachrichtigung zu öffnen",
-  "Sign out all": "Alle abmelden",
-  "Sign out all accounts?": "Von allen Konten abmelden?",
-  "Could not sign out of every account": "Abmeldung von allen Konten fehlgeschlagen",
   "Daily check-ins on unfinished work": "Tägliche Rückfragen zu offenen Aufgaben",
   "How other bots see it": "So sehen andere Bots ihn",
   "Share to": "Teilen mit",
@@ -1278,6 +1271,13 @@ export const DE_MESSAGES: Record<string, string> = {
   "{count} bots now use the space default.": "{count} Bots verwenden jetzt den Space-Standard.",
   "Could not switch {failedNames}. Try again.":
     "{failedNames} konnte nicht umgestellt werden. Versuche es erneut.",
+  "Add account": "Konto hinzufügen",
+  "Switch accounts": "Konten wechseln",
+  "Sign in to open this account": "Melde dich an, um dieses Konto zu öffnen",
+  "Sign in to open this notification": "Melde dich an, um diese Benachrichtigung zu öffnen",
+  "Sign out all": "Alle abmelden",
+  "Sign out all accounts?": "Von allen Konten abmelden?",
+  "Could not sign out of every account": "Abmeldung von allen Konten fehlgeschlagen",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

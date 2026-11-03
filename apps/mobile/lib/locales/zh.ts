@@ -1,11 +1,4 @@
 export const ZH_MESSAGES: Record<string, string> = {
-  "Add account": "添加账户",
-  "Switch accounts": "切换账户",
-  "Sign in to open this account": "登录以打开此账户",
-  "Sign in to open this notification": "登录以打开此通知",
-  "Sign out all": "全部退出登录",
-  "Sign out all accounts?": "退出所有账户？",
-  "Could not sign out of every account": "无法退出所有账号的登录",
   "Daily check-ins on unfinished work": "每天跟进未完成的工作",
   "How other bots see it": "其他机器人如何了解它",
   "Share to": "分享到",
@@ -1284,6 +1277,13 @@ export const ZH_MESSAGES: Record<string, string> = {
   "1 bot now uses the space default.": "1 个 Bot 已改用空间默认。",
   "{count} bots now use the space default.": "{count} 个 Bot 已改用空间默认。",
   "Could not switch {failedNames}. Try again.": "无法切换 {failedNames}。请重试。",
+  "Add account": "添加账户",
+  "Switch accounts": "切换账户",
+  "Sign in to open this account": "登录以打开此账户",
+  "Sign in to open this notification": "登录以打开此通知",
+  "Sign out all": "全部退出登录",
+  "Sign out all accounts?": "退出所有账户？",
+  "Could not sign out of every account": "无法退出所有账号的登录",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

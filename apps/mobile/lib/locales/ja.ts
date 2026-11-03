@@ -1,11 +1,4 @@
 export const JA_MESSAGES: Record<string, string> = {
-  "Add account": "アカウントを追加",
-  "Switch accounts": "アカウントを切り替え",
-  "Sign in to open this account": "このアカウントを開くにはログインしてください",
-  "Sign in to open this notification": "この通知を開くにはログインしてください",
-  "Sign out all": "すべてログアウト",
-  "Sign out all accounts?": "すべてのアカウントからログアウトしますか？",
-  "Could not sign out of every account": "一部のアカウントからログアウトできませんでした",
   "Daily check-ins on unfinished work": "未完了の作業を毎日確認",
   "How other bots see it": "他のボットからの見え方",
   "Share to": "共有先",
@@ -1304,6 +1297,13 @@ export const JA_MESSAGES: Record<string, string> = {
     "{count}個のボットがスペースのデフォルトを使用するようになりました。",
   "Could not switch {failedNames}. Try again.":
     "{failedNames}を切り替えられませんでした。もう一度お試しください。",
+  "Add account": "アカウントを追加",
+  "Switch accounts": "アカウントを切り替え",
+  "Sign in to open this account": "このアカウントを開くにはログインしてください",
+  "Sign in to open this notification": "この通知を開くにはログインしてください",
+  "Sign out all": "すべてログアウト",
+  "Sign out all accounts?": "すべてのアカウントからログアウトしますか？",
+  "Could not sign out of every account": "一部のアカウントからログアウトできませんでした",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "{peer}とのメッセージ{count}件" };

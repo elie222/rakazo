@@ -1,11 +1,4 @@
 export const RU_MESSAGES: Record<string, string> = {
-  "Add account": "Добавить аккаунт",
-  "Switch accounts": "Сменить аккаунт",
-  "Sign in to open this account": "Войдите, чтобы открыть этот аккаунт",
-  "Sign in to open this notification": "Войдите, чтобы открыть это уведомление",
-  "Sign out all": "Выйти из всех",
-  "Sign out all accounts?": "Выйти из всех аккаунтов?",
-  "Could not sign out of every account": "Не удалось выйти из всех аккаунтов",
   "Daily check-ins on unfinished work": "Ежедневные напоминания о незавершённой работе",
   "How other bots see it": "Как его видят другие боты",
   "Share to": "Отправить в",
@@ -1311,6 +1304,13 @@ export const RU_MESSAGES: Record<string, string> = {
     "Ботов переведено на модель пространства по умолчанию: {count}.",
   "Could not switch {failedNames}. Try again.":
     "Не удалось переключить {failedNames}. Попробуйте снова.",
+  "Add account": "Добавить аккаунт",
+  "Switch accounts": "Сменить аккаунт",
+  "Sign in to open this account": "Войдите, чтобы открыть этот аккаунт",
+  "Sign in to open this notification": "Войдите, чтобы открыть это уведомление",
+  "Sign out all": "Выйти из всех",
+  "Sign out all accounts?": "Выйти из всех аккаунтов?",
+  "Could not sign out of every account": "Не удалось выйти из всех аккаунтов",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

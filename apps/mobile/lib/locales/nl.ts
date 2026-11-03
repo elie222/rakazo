@@ -1,11 +1,4 @@
 export const NL_MESSAGES: Record<string, string> = {
-  "Add account": "Account toevoegen",
-  "Switch accounts": "Van account wisselen",
-  "Sign in to open this account": "Meld je aan om dit account te openen",
-  "Sign in to open this notification": "Meld je aan om deze melding te openen",
-  "Sign out all": "Alle accounts afmelden",
-  "Sign out all accounts?": "Bij alle accounts afmelden?",
-  "Could not sign out of every account": "Uitloggen bij alle accounts mislukt",
   "Daily check-ins on unfinished work": "Dagelijks navragen over onafgemaakt werk",
   "How other bots see it": "Hoe andere bots deze zien",
   "Share to": "Delen met",
@@ -1270,6 +1263,13 @@ export const NL_MESSAGES: Record<string, string> = {
   "{count} bots now use the space default.": "{count} bots gebruiken nu de spacestandaard.",
   "Could not switch {failedNames}. Try again.":
     "Kon {failedNames} niet overzetten. Probeer het opnieuw.",
+  "Add account": "Account toevoegen",
+  "Switch accounts": "Van account wisselen",
+  "Sign in to open this account": "Meld je aan om dit account te openen",
+  "Sign in to open this notification": "Meld je aan om deze melding te openen",
+  "Sign out all": "Alle accounts afmelden",
+  "Sign out all accounts?": "Bij alle accounts afmelden?",
+  "Could not sign out of every account": "Uitloggen bij alle accounts mislukt",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {
