@@ -46,6 +46,10 @@ tags:
 - inputText: "Work"
 - takeScreenshot: "41-new-organization"
 - tapOn: "Create"
+# The new organization's inbox asks for notifications again on Android.
+- tapOn:
+    text: "Don’t allow"
+    optional: true
 
 # The new organization opens empty, with the title switching between both.
 - extendedWaitUntil:
@@ -63,6 +67,9 @@ tags:
 - assertVisible: "Personal"
 - takeScreenshot: "43-organization-menu"
 - tapOn: "Personal"
+- tapOn:
+    text: "Don’t allow"
+    optional: true
 - extendedWaitUntil:
     visible: "Researcher"
     timeout: 15000

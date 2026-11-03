@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { adoptDeletedSpaceFallback } from "./api";
 import type { Organization } from "./organizations";
 import {
+  activeOrganization,
+  ensureOrganizations,
   leaveDeletedOrganization,
   organizationSwitchActions,
   organizationSwitchEpoch,
@@ -168,11 +170,50 @@ describe("organizationSwitchActions", () => {
       organizationSwitchActions({ activeOrganizationId: work.id, organizations: [work] }),
     ).toEqual([]);
     expect(organizationSwitchActions(undefined)).toEqual([]);
+    state.selected = "space-b2";
     expect(
       organizationSwitchActions({ activeOrganizationId: home.id, organizations: [work, home] }),
     ).toEqual([
       { id: "organization:org-work", title: "Work", state: "off" },
       { id: "organization:org-home", title: "Home", state: "on" },
     ]);
+  });
+});
+
+describe("the organization list", () => {
+  const listKey = (spaceId: string) => [
+    "server:https://app.example.test",
+    "session:1",
+    `space:${spaceId}`,
+    "organizations/list",
+    {},
+  ];
+
+  it("follows the selected Space when the server's answer has not caught up", () => {
+    state.selected = "space-b1";
+    expect(
+      activeOrganization({ activeOrganizationId: work.id, organizations: [work, home] })?.id,
+    ).toBe(home.id);
+    state.selected = "space-new";
+    expect(
+      activeOrganization({ activeOrganizationId: work.id, organizations: [work, home] })?.id,
+    ).toBe(work.id);
+  });
+
+  it("is asked for again after a switch, so a new organization shows at once", async () => {
+    const before = { activeOrganizationId: home.id, organizations: [home] };
+    queryClient.setQueryData(listKey("space-b1"), before);
+    await switchOrganization(home, [work, home]);
+    expect(queryClient.getQueryState(listKey("space-b1"))?.isInvalidated).toBe(true);
+  });
+
+  it("loads again on the next inbox load after a failed first try", async () => {
+    state.rpc.mockRejectedValueOnce(Object.assign(new Error("Offline"), { status: 404 }));
+    await ensureOrganizations();
+    expect(queryClient.getQueryData(listKey("space-a1"))).toBeUndefined();
+    const list = { activeOrganizationId: work.id, organizations: [work, home] };
+    state.rpc.mockResolvedValueOnce(list);
+    await ensureOrganizations();
+    expect(queryClient.getQueryData(listKey("space-a1"))).toEqual(list);
   });
 });

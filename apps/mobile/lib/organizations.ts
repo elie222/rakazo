@@ -38,13 +38,34 @@ function noteOrganizationSwitch(): void {
   for (const listener of [...switchListeners]) listener();
 }
 
-/** Servers without organizations never answer, which hides every organization control. */
-export function useOrganizations(enabled = true) {
-  return useQuery({ ...rpcQuery("organizations/list"), retry: false, enabled }, queryClient);
+/** A server without organizations refuses the list, so it is not asked again. */
+function organizationsQuery() {
+  return {
+    ...rpcQuery("organizations/list"),
+    retry: (failures: number, error: Error) => {
+      const status = (error as { status?: number }).status;
+      return failures < 2 && (status === undefined || status >= 500);
+    },
+  };
 }
 
+/** Servers without organizations never answer, which hides every organization control. */
+export function useOrganizations(enabled = true) {
+  return useQuery({ ...organizationsQuery(), enabled }, queryClient);
+}
+
+/** Loads the list when it is missing or stale, as after a failed first try. */
+export function ensureOrganizations(): Promise<void> {
+  return queryClient.prefetchQuery(organizationsQuery());
+}
+
+/** The organization of the selected Space, which the server's answer may not have caught up to. */
 export function activeOrganization(list: OrganizationList | undefined): Organization | undefined {
-  return list?.organizations.find((organization) => organization.id === list.activeOrganizationId);
+  if (!list) return undefined;
+  return (
+    organizationOfSpace(list.organizations, selectedSpaceId()) ??
+    list.organizations.find((organization) => organization.id === list.activeOrganizationId)
+  );
 }
 
 export function refreshOrganizations(): Promise<void> {
@@ -56,10 +77,11 @@ export function refreshOrganizations(): Promise<void> {
 /** Organization rows with a check on the active one; none until there is a second. */
 export function organizationSwitchActions(list: OrganizationList | undefined): MenuAction[] {
   if (!list || list.organizations.length < 2) return [];
+  const active = activeOrganization(list);
   return list.organizations.map((organization) => ({
     id: `${ORGANIZATION_ACTION_PREFIX}${organization.id}`,
     title: organization.name,
-    state: organization.id === list.activeOrganizationId ? "on" : "off",
+    state: organization.id === active?.id ? "on" : "off",
   }));
 }
 
@@ -82,6 +104,7 @@ async function enterSpace(spaceId: string, leaving: Organization | undefined): P
   if (leaving && current) await rememberOrganizationSpace(leaving.id, current);
   if (!(await selectSpace(spaceId).catch(() => false))) return false;
   if (leaving) removeSpaceQueries(leaving.spaceIds);
+  void refreshOrganizations();
   noteOrganizationSwitch();
   return true;
 }
@@ -105,7 +128,7 @@ export async function switchOrganization(
  */
 export async function selectSpaceAcrossOrganizations(spaceId: string): Promise<boolean> {
   const list = await queryClient
-    .fetchQuery({ ...rpcQuery("organizations/list"), retry: false })
+    .fetchQuery({ ...organizationsQuery(), retry: false })
     .catch(() => undefined);
   const leaving = organizationOfSpace(list?.organizations ?? [], selectedSpaceId());
   if (!leaving || leaving.spaceIds.includes(spaceId)) return selectSpace(spaceId);
@@ -125,6 +148,7 @@ export async function leaveDeletedOrganization(
     (await adoptDeletedSpaceFallback(activeSpaceId));
   if (!selected) throw new Error(t("Could not switch spaces"));
   removeSpaceQueries(deleted.spaceIds);
+  void refreshOrganizations();
   noteOrganizationSwitch();
   returnHome();
 }

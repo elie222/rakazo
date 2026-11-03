@@ -80,6 +80,7 @@ import { mobileLogoAvatarActivity } from "../lib/logo-avatar-activity";
 import { native, useThemedStyles } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
 import {
+  ensureOrganizations,
   organizationSwitchEpoch,
   subscribeOrganizationSwitch,
   useOrganizations,
@@ -295,6 +296,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         }
       }
       inboxLoaded.current = true;
+      void ensureOrganizations();
       setBadgeLoad({ generation: badgeGeneration });
       setLoadFailure(null);
       saveInbox(
