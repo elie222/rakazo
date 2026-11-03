@@ -603,6 +603,10 @@ msgstr "הוספת מפתח גישה"
 msgid "Add provider"
 msgstr "הוספת ספק"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Add rule"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Add server"
 msgstr "הוספת שרת"
@@ -5361,6 +5365,7 @@ msgstr "כמו {botName}"
 msgid "Saturday"
 msgstr "שבת"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/AskCard.tsx
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
@@ -6409,6 +6414,7 @@ msgstr ""
 msgid "Tool arguments must be JSON"
 msgstr ""
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "שם הכלי"

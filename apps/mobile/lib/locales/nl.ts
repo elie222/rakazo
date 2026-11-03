@@ -1,4 +1,6 @@
 export const NL_MESSAGES: Record<string, string> = {
+  "Add rule": "Regel toevoegen",
+  "Tool name": "Toolnaam",
   "Daily check-ins on unfinished work": "Dagelijks navragen over onafgemaakt werk",
   "Pages this group builds for you appear here.":
     "Pagina's die deze groep voor je maakt, verschijnen hier.",

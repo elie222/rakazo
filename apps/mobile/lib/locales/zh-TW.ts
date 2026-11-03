@@ -1,4 +1,6 @@
 export const ZH_TW_MESSAGES: Record<string, string> = {
+  "Add rule": "新增規則",
+  "Tool name": "工具名稱",
   "Daily check-ins on unfinished work": "每天追蹤未完成的工作",
   "Pages this group builds for you appear here.": "此群組為你建立的頁面會顯示在這裡。",
   Deleted: "已刪除",

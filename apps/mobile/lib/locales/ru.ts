@@ -1,4 +1,6 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Add rule": "Добавить правило",
+  "Tool name": "Название инструмента",
   "Daily check-ins on unfinished work": "Ежедневные напоминания о незавершённой работе",
   "Pages this group builds for you appear here.":
     "Здесь появятся страницы, которые эта группа создаст для вас.",

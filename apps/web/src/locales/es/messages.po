@@ -603,6 +603,10 @@ msgstr "Añadir llave de acceso"
 msgid "Add provider"
 msgstr "Añadir proveedor"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Add rule"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Add server"
 msgstr "Agregar servidor"
@@ -5361,6 +5365,7 @@ msgstr "Igual que {botName}"
 msgid "Saturday"
 msgstr "sábado"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/AskCard.tsx
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
@@ -6409,6 +6414,7 @@ msgstr "Los argumentos deben ser un objeto JSON"
 msgid "Tool arguments must be JSON"
 msgstr "Los argumentos deben ser JSON"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "Nombre de la herramienta"
