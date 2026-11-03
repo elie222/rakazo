@@ -52,7 +52,6 @@ vi.mock("./live-notifications", () => ({ afterChatNotifyChange }));
 vi.mock("./artifacts", () => ({
   listSpaceArtifacts,
   matchesArtifactQuery: () => true,
-  mimeBadgeLabel: () => "",
   removeArtifact: vi.fn(),
 }));
 vi.mock("expo-router", () => ({

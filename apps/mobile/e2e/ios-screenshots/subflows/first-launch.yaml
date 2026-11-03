@@ -1,0 +1,13 @@
+appId: com.rakazo.app
+---
+# A link left from building the app can leave iOS asking to open it.
+- tapOn:
+    text: "Cancel"
+    optional: true
+# A debug build loads its JavaScript from Metro on launch.
+- launchApp:
+    stopApp: true
+# The first bundle can take a few minutes to build.
+- extendedWaitUntil:
+    visible: "Sign up for Rakazo|Sign in to Rakazo|Account|.*How did you hear about us.*"
+    timeout: 300000
