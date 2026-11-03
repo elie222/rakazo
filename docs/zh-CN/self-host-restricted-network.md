@@ -84,6 +84,20 @@ Docker Hub 的镜像设置不会替代 GHCR 应用与计算机镜像的覆盖配
 镜像源仅是传输渠道，不能作为信任来源。从可信上游或另一台可信机器取得预期的 `postgres:16` 和 `busybox:1` 摘要，
 将摘要固定在 `.env` 中。先运行准备命令，再拉取、校验，最后禁止重新拉取并启动。
 
+下面的直接 Compose 启动不会执行安装器的计算机出站配置。开始前，在使用 iptables 防火墙后端的
+Linux Docker Engine 主机上，将可信来源的 `restrict-computer-egress.sh` 复制到安装目录，先安装规则：
+
+```bash
+sudo bash ./restrict-computer-egress.sh
+```
+
+成功后，在 `.env` 中设置 `SANDBOX_COMPUTER_EGRESS=restricted`，并确认当前终端没有用不同值覆盖它。
+这会让监督服务在无法验证防火墙规则时拒绝启动计算机，而不是降级为开放出站。
+Docker Desktop、rootless Docker 和 nftables 后端不支持这套规则；需要这些隔离保证时，应改用支持的主机。
+若明确选择 `SANDBOX_COMPUTER_EGRESS=open`，机器人计算机将能访问宿主机、局域网和云元数据。
+不要把默认的 `auto` 当成隔离保证；缺少规则时它可能使用开放出站。
+旧版 Docker 或自定义 DNS 的额外配置见[计算机出站限制（英文）](../self-host-docker-computers.md#restricted-computer-egress)。
+
 下面在同一个 Bash 会话运行；先将占位值替换为可信摘要：
 
 ```bash

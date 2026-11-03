@@ -92,8 +92,9 @@ with `pg_dumpall`, and compares roles, memberships, ownership, grants, row-level
 policies, sequences and the row count of every table. It also checks that `rakazo_app` signs in
 with `POSTGRES_APP_PASSWORD` and does not bypass row-level security. Only then does it switch
 Postgres 18 over and restart the services that were running. The site is down for the whole copy,
-which takes about as long as dumping and restoring the database: a few minutes for a small one. It needs free disk for one more copy of the
-database plus 1 GiB. Running it again after it succeeded does nothing. If any step fails, it stops
+which takes about as long as dumping and restoring the database: a few minutes for a small one.
+It needs free disk equal to 125% of the old database data directory's size, plus 1 GiB.
+Running it again after it succeeded does nothing. If any step fails, it stops
 with the stack down and the Postgres 16 data unchanged; fix the error and run it again. On the
 production host, then rerun the deploy that stopped.
 

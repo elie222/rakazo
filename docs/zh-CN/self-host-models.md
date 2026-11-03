@@ -21,7 +21,10 @@ Linux 默认不提供相同的 `host.docker.internal` 行为。
 只连接自己掌控的端点：提示词、附件和工具结果会发往该地址。
 公开地址携带 API 密钥或自定义请求头时需要 HTTPS，并且解析结果必须全部是公网地址。
 `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0` 可禁止普通公开兼容端点。
-私有端点受部署策略限制；不要为了接入模型而关闭不相关的网络安全措施，详见[端点访问策略（英文）](../self-host-models.md#openai-compatible-connections)。
+私有端点默认受限。部署运营方可在 API 和 worker 上同时设置 `MCP_ALLOW_PRIVATE_ENDPOINT=true`，
+并重建相应服务，允许用户连接私有模型端点。此权限对部署内所有用户生效，不只对管理员生效；
+仅在接受这项访问范围时启用，元数据和链路本地目标仍会被阻止。
+自定义主机名解析到私有 IP 时，还需配置准确的主机名白名单，见[端点访问策略（英文）](../self-host-models.md#openai-compatible-connections)。
 
 在 Docker Desktop 上，机器人计算机也可能通过 `host.docker.internal` 访问宿主机仅绑定回环地址的服务。
 机器人运行期间，不要在该地址上开放未经认证的敏感服务，或通过防火墙阻断这条访问路径。

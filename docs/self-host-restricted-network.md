@@ -109,7 +109,26 @@ starting containers.
 Treat a mirror as a transport, not as the source of truth. Obtain the expected `postgres:16` and
 `busybox:1` digests from a trusted upstream or an out-of-band trusted workstation. Put the digest in
 each mirrored image reference, then pull, compare the local repository digests, and start without
-pulling again. Replace every example value below before running it:
+pulling again.
+
+Direct Compose startup below does not run the installer's computer-egress setup. On Linux Docker
+Engine with the iptables firewall backend, first copy a trusted `restrict-computer-egress.sh` into
+the installation directory and install the host rules without starting containers:
+
+```bash
+sudo bash ./restrict-computer-egress.sh
+```
+
+After it succeeds, set `SANDBOX_COMPUTER_EGRESS=restricted` in `.env` and make sure the shell does
+not override it with another value. The supervisor then refuses to start computers if it cannot
+verify the rules, rather than falling back to open egress. Docker Desktop, rootless Docker and the
+nftables backend cannot use these rules; use a supported host if you need this isolation. Choosing
+`SANDBOX_COMPUTER_EGRESS=open` instead lets computers reach the host, LAN and cloud metadata. Do not
+rely on the default `auto` for isolation: it can use open egress when rules are absent. See
+[restricted computer egress](./self-host-docker-computers.md#restricted-computer-egress) for older
+Docker and custom DNS requirements.
+
+Replace every example value below before running it:
 
 ```bash
 (
