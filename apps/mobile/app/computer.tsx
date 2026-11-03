@@ -109,7 +109,11 @@ export default function Computer() {
   const [screenReload, setScreenReload] = useState(0);
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl, currentApiBase());
-  useEffect(() => setScreenError(null), [embeddedScreenUrl]);
+  // Every screen URL read rotates its token, so only a different stream earns a fresh load.
+  // Clearing on a rotated token reloaded a screen this device cannot reach every few seconds,
+  // and each reload blanked the preview in place of the error.
+  const embeddedScreenStream = embeddedScreenUrl ? screenStreamKey(embeddedScreenUrl) : null;
+  useEffect(() => setScreenError(null), [embeddedScreenStream]);
   // Without a WebView a dropped URL never fails on its own, so say so instead of a dead preview.
   const unreachableScreen =
     computer?.state === "running" && Boolean(screenUrl) && !embeddedScreenUrl;
