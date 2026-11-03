@@ -144,18 +144,23 @@ const MODEL_FAILURE_RANK = [
 ];
 
 function stripSavedErrorKind(message: string): string {
-  return message.replace(/^\s*(?:ModelAccountError\[\w+\]:\s*)+/, "");
+  return message.replace(
+    /^\s*(?:(?:ModelAccountError|ModelOutputError|ModelProviderError|TransientModelError)(?:\[\w+\])?:\s*)+/,
+    "",
+  );
 }
 
 function modelFailureClass(error: string, message: string): number {
-  const { kind } = normalizeRunError(stripSavedErrorKind(message));
+  const providerError = stripSavedErrorKind(error);
+  const providerMessage = stripSavedErrorKind(message);
+  const { kind } = normalizeRunError(providerMessage);
   // Output diagnostics can quote generated text that looks like a timeout.
   if (kind === "output") return MODEL_FAILURE_RANK.indexOf(ModelOutputError);
   // OpenCode drops chat sessions on its side; the next send opens a new one.
-  if (isTransientModelError(error) || message === OPENCODE_SESSION_ERROR)
+  if (isTransientModelError(providerError) || providerMessage === OPENCODE_SESSION_ERROR)
     return MODEL_FAILURE_RANK.indexOf(TransientModelError);
   // A refresh token the provider no longer accepts; the credential is already retired.
-  if (terminalOAuthRefreshErrorMarker(message))
+  if (terminalOAuthRefreshErrorMarker(providerMessage))
     return MODEL_FAILURE_RANK.indexOf(ModelAccountError);
   if (kind) return MODEL_FAILURE_RANK.indexOf(ModelAccountError);
   return MODEL_FAILURE_RANK.indexOf(ModelProviderError);

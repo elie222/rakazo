@@ -126,12 +126,17 @@ describe("Pi runtime errors", () => {
 
   it.each([
     "ModelAccountError[auth]: Diagnostic text without a category.",
+    "ModelOutputError: Diagnostic text without a category.",
+    "TransientModelError: Diagnostic text without a category.",
+    "ModelProviderError: Diagnostic text without a category.",
     "  ModelAccountError[auth]: \nModelAccountError[auth]: Diagnostic text without a category.",
   ])("does not trust a saved-kind tag supplied by a provider: %s", async (message) => {
     provider.errorMessage = message;
     const failure = consume();
     await expect(failure).rejects.toBeInstanceOf(ModelProviderError);
     await expect(failure).rejects.not.toBeInstanceOf(ModelAccountError);
+    await expect(failure).rejects.not.toBeInstanceOf(ModelOutputError);
+    await expect(failure).rejects.not.toBeInstanceOf(TransientModelError);
   });
 
   it("marks a provider overload that outlasted its retries as transient", async () => {
