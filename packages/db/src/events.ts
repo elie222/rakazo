@@ -56,6 +56,7 @@ import {
   createThreadMessageInTransaction,
   partialReplyClientNonce,
   RunHistoryWriteError,
+  runFailureNoticeClientNonce,
 } from "./messages.js";
 import { deleteRunSecretsInTransaction } from "./run-secrets.js";
 import { isRunResponse, readRunTimingFields } from "./run-timing.js";
@@ -1890,7 +1891,11 @@ async function finalizeRunOnce(
         runId: input.runId,
         ...(input.outcome === "completed"
           ? { markUnread: input.markUnread }
-          : { clientNonce: partialReplyClientNonce(input.runId) }),
+          : {
+              clientNonce: input.partialReply?.length
+                ? partialReplyClientNonce(input.runId)
+                : runFailureNoticeClientNonce(input.runId),
+            }),
       });
       const response = await appendEventInTransaction(tx, {
         spaceId: input.spaceId,

@@ -27,7 +27,11 @@ import {
   sendUserMessage,
   settleReleasedTakeoverCards,
 } from "./events.js";
-import { partialReplyClientNonce, RunHistoryWriteError } from "./messages.js";
+import {
+  partialReplyClientNonce,
+  RunHistoryWriteError,
+  runFailureNoticeClientNonce,
+} from "./messages.js";
 import { installSecurityEventStore } from "./security-events.js";
 
 class TestFanout implements RealtimeFanout {
@@ -286,6 +290,7 @@ describe("finalizeRun", () => {
         runId: "run-1",
         role: "bot",
         blocks: [{ kind: "text", text: "Run failed: terminated" }],
+        clientNonce: runFailureNoticeClientNonce("run-1"),
       }),
     });
     expect(tx.run.updateMany).toHaveBeenCalledWith(
