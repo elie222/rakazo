@@ -1242,8 +1242,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "Get a free month for each friend who starts a trial.":
     "Erhalte einen Gratismonat für jeden Freund, der eine Testphase startet.",
   "Invite a friend": "Freund einladen",
-  "Give a friend 2 weeks free": "Schenk einem Freund 2 Wochen gratis",
-  "They get 2 weeks free.": "Sie bekommen 2 Wochen gratis.",
+  "Give a friend {weeks} weeks free": "Schenk einem Freund {weeks} Wochen gratis",
+  "They get {weeks} weeks free.": "Sie bekommen {weeks} Wochen gratis.",
   "You get a free month when they start their trial.":
     "Du bekommst einen Gratismonat, wenn sie ihre Testphase starten.",
   "Share link": "Link teilen",

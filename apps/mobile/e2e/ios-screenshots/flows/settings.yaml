@@ -111,11 +111,15 @@ name: Settings
 - extendedWaitUntil:
     visible: ".*Routines.*"
     timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 13-bot-profile
 - tapOn: "Bot actions"
 - extendedWaitUntil:
     visible: "Clear conversation"
     timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 14-bot-profile-menu
 - openLink: "rakazo:///group-settings?groupId=${RAKAZO_SCREENSHOT_GROUP_ID}"
 - extendedWaitUntil:

@@ -3128,8 +3128,8 @@ msgid "Git event"
 msgstr "Evento de Git"
 
 #: src/components/InviteDialog.tsx
-msgid "Give a friend 2 weeks free"
-msgstr "Regala a un amigo 2 semanas gratis"
+msgid "Give a friend {weeks} weeks free"
+msgstr "Regala a un amigo {weeks} semanas gratis"
 
 #: src/pages/NotFound.tsx
 msgid "Go home"
@@ -5984,8 +5984,8 @@ msgid "These saved settings can't be read. Remove it and add it again."
 msgstr "No se puede leer esta configuración guardada. Quítala y vuelve a agregarla."
 
 #: src/components/InviteDialog.tsx
-msgid "They get 2 weeks free."
-msgstr "Recibe 2 semanas gratis."
+msgid "They get {weeks} weeks free."
+msgstr "Recibe {weeks} semanas gratis."
 
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx

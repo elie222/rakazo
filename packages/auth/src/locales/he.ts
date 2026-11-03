@@ -36,8 +36,8 @@ export const HE_MESSAGES: Record<string, string> = {
   "Have any questions? Reply to this email.": "יש שאלות? אפשר להשיב לאימייל הזה.",
   Unsubscribe: "ביטול המינוי",
   "Invite a friend": "הזמנת חבר",
-  "Invite a friend to Rakazo and earn a free month when they start a qualifying subscription with a new card.":
-    "אפשר להזמין חבר ל-Rakazo ולקבל חודש חינם כשהוא מתחיל מינוי מתאים עם כרטיס חדש.",
+  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
+    "אפשר להזמין חבר ל-Rakazo: הוא מקבל {weeks} שבועות בחינם, ואתם מקבלים חודש חינם כשהוא מתחיל מינוי מתאים עם כרטיס חדש.",
   "Open Rakazo": "פתיחת Rakazo",
   "and choose Invite friends for your link.": "ובחירה ב״הזמנת חברים״ כדי לקבל את הקישור שלך.",
   "Have any questions? Just reply to this email.": "יש שאלות? פשוט משיבים לאימייל הזה.",

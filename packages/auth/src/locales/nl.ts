@@ -36,8 +36,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Have any questions? Reply to this email.": "Vragen? Beantwoord deze e-mail.",
   Unsubscribe: "Afmelden",
   "Invite a friend": "Nodig een vriend uit",
-  "Invite a friend to Rakazo and earn a free month when they start a qualifying subscription with a new card.":
-    "Nodig een vriend uit voor Rakazo en krijg een gratis maand zodra die een geldig abonnement afsluit met een nieuwe kaart.",
+  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
+    "Nodig een vriend uit voor Rakazo: die krijgt {weeks} weken gratis, en jij verdient een gratis maand zodra die met een nieuwe kaart een geldig abonnement start.",
   "Open Rakazo": "Open Rakazo",
   "and choose Invite friends for your link.": "en kies Vrienden uitnodigen voor je link.",
   "Have any questions? Just reply to this email.": "Vragen? Beantwoord gewoon deze e-mail.",

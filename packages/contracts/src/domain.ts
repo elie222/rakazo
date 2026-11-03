@@ -1946,6 +1946,8 @@ export type Me = z.infer<typeof MeSchema>;
 export const MODEL_CREDIT_AMOUNTS = [1000, 2000, 3000, 5000, 10000, 20000, 50000] as const;
 /** Monthly price in cents of running bots on your own model connection; `null` makes it free. */
 export const BYOK_MONTHLY_PRICE_CENTS: number | null = 1500;
+/** An invited friend's first trial, in weeks; the invite copy and the trial both read it. */
+export const INVITED_TRIAL_WEEKS = 2;
 /** Yearly price in cents of the same plan; `null` offers it monthly only. */
 export const BYOK_ANNUAL_PRICE_CENTS: number | null = 14400;
 export const ByokIntervalSchema = z.enum(["month", "year"]);

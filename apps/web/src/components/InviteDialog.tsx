@@ -1,6 +1,6 @@
 import { Plural, Trans } from "@lingui/react/macro";
 import type { BillingStatus } from "@rakazo/contracts";
-import { BOT_COLORS, DEFAULT_NEW_BOT_AVATAR_SET } from "@rakazo/contracts";
+import { BOT_COLORS, DEFAULT_NEW_BOT_AVATAR_SET, INVITED_TRIAL_WEEKS } from "@rakazo/contracts";
 import {
   BotAvatar,
   Button,
@@ -13,6 +13,8 @@ import { CalendarPlus, Check, Copy, Gift } from "lucide-react";
 import { useCopyText } from "../lib/copy-text";
 
 type Referral = NonNullable<BillingStatus["referral"]>;
+// Named for the copy's placeholder.
+const weeks = INVITED_TRIAL_WEEKS;
 
 const AVATAR_COLORS = BOT_COLORS.slice(0, 5);
 
@@ -42,13 +44,13 @@ export function InviteDialog({
         </div>
         <DialogHeader className="items-center text-center">
           <DialogTitle>
-            <Trans>Give a friend 2 weeks free</Trans>
+            <Trans>Give a friend {weeks} weeks free</Trans>
           </DialogTitle>
         </DialogHeader>
         <ul className="flex flex-col gap-3 text-sm">
           <li className="flex items-center gap-3">
             <Gift aria-hidden="true" className="size-5 shrink-0 text-muted-foreground" />
-            <Trans>They get 2 weeks free.</Trans>
+            <Trans>They get {weeks} weeks free.</Trans>
           </li>
           <li className="flex items-center gap-3">
             <CalendarPlus aria-hidden="true" className="size-5 shrink-0 text-muted-foreground" />

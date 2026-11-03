@@ -1234,8 +1234,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Get a free month for each friend who starts a trial.":
     "Krijg een gratis maand voor elke vriend die een proefperiode start.",
   "Invite a friend": "Nodig een vriend uit",
-  "Give a friend 2 weeks free": "Geef een vriend 2 weken gratis",
-  "They get 2 weeks free.": "Zij krijgen 2 weken gratis.",
+  "Give a friend {weeks} weeks free": "Geef een vriend {weeks} weken gratis",
+  "They get {weeks} weeks free.": "Zij krijgen {weeks} weken gratis.",
   "You get a free month when they start their trial.":
     "Jij krijgt een gratis maand wanneer zij hun proefperiode starten.",
   "Share link": "Link delen",

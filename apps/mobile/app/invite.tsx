@@ -1,4 +1,4 @@
-import { BOT_COLORS, DEFAULT_NEW_BOT_AVATAR_SET } from "@rakazo/contracts";
+import { BOT_COLORS, DEFAULT_NEW_BOT_AVATAR_SET, INVITED_TRIAL_WEEKS } from "@rakazo/contracts";
 import { typeScale } from "@rakazo/ui-tokens";
 import { useRouter } from "expo-router";
 import { useEffect } from "react";
@@ -53,7 +53,7 @@ export default function InviteScreen() {
         ))}
       </View>
       <Text accessibilityRole="header" style={styles.title}>
-        {t("Give a friend 2 weeks free")}
+        {t("Give a friend {weeks} weeks free", { weeks: INVITED_TRIAL_WEEKS })}
       </Text>
       <View style={styles.rows}>
         <View style={styles.row}>
@@ -63,7 +63,9 @@ export default function InviteScreen() {
             size={22}
             color={tokens.mutedForeground}
           />
-          <Text style={styles.rowText}>{t("They get 2 weeks free.")}</Text>
+          <Text style={styles.rowText}>
+            {t("They get {weeks} weeks free.", { weeks: INVITED_TRIAL_WEEKS })}
+          </Text>
         </View>
         <View style={styles.row}>
           <NativeSymbol

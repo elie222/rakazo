@@ -37,8 +37,8 @@ export const JA_MESSAGES: Record<string, string> = {
   "Have any questions? Reply to this email.": "ご質問があれば、このメールに返信してください。",
   Unsubscribe: "配信停止",
   "Invite a friend": "友だちを招待",
-  "Invite a friend to Rakazo and earn a free month when they start a qualifying subscription with a new card.":
-    "友だちをRakazoに招待しましょう。友だちが新しいカードで対象のサブスクリプションを始めると、1か月分が無料になります。",
+  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
+    "友だちをRakazoに招待しましょう。友だちは{weeks}週間無料で使え、新しいカードで対象のサブスクリプションを始めると、あなたは1か月無料になります。",
   "Open Rakazo": "Rakazoを開き",
   "and choose Invite friends for your link.": "「友だちを招待」を選ぶとリンクを取得できます。",
   "Have any questions? Just reply to this email.":

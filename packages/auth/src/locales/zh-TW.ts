@@ -34,8 +34,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Have any questions? Reply to this email.": "有任何問題嗎？請回覆這封郵件。",
   Unsubscribe: "取消訂閱",
   "Invite a friend": "邀請朋友",
-  "Invite a friend to Rakazo and earn a free month when they start a qualifying subscription with a new card.":
-    "邀請朋友加入 Rakazo，當對方以新卡開始符合資格的訂閱時，你就能獲得一個月免費使用。",
+  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
+    "邀請朋友加入 Rakazo：對方可免費使用 {weeks} 週；當對方用新卡開始符合條件的訂閱時，你將獲得一個月免費。",
   "Open Rakazo": "開啟 Rakazo",
   "and choose Invite friends for your link.": "並選擇「邀請朋友」取得你的連結。",
   "Have any questions? Just reply to this email.": "有任何問題嗎？直接回覆這封郵件即可。",

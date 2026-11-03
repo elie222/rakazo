@@ -14,7 +14,11 @@ import {
 } from "@rakazo/adapter-kit";
 import { sandboxAllowance, sandboxHoursLeft } from "@rakazo/adapters";
 import type { Actor, BillingStatus, ByokInterval } from "@rakazo/contracts";
-import { BYOK_ANNUAL_PRICE_CENTS, BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
+import {
+  BYOK_ANNUAL_PRICE_CENTS,
+  BYOK_MONTHLY_PRICE_CENTS,
+  INVITED_TRIAL_WEEKS,
+} from "@rakazo/contracts";
 import type { BillingAccount, PrismaClient } from "@rakazo/db";
 import {
   billingAccountForOrganization,
@@ -41,7 +45,7 @@ import { createReferrals } from "./referrals.js";
 
 export const TRIAL_DAYS = 7;
 /** An invited organization's first trial. */
-export const INVITED_TRIAL_DAYS = 14;
+export const INVITED_TRIAL_DAYS = INVITED_TRIAL_WEEKS * 7;
 const PRICE_CACHE_MS = 60 * 60 * 1000;
 const CHECKOUT_LEASE_MS = 120_000;
 const CHECKOUT_LEASE_POLL_MS = 250;

@@ -37,8 +37,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Have any questions? Reply to this email.": "Есть вопросы? Ответьте на это письмо.",
   Unsubscribe: "Отписаться",
   "Invite a friend": "Пригласите друга",
-  "Invite a friend to Rakazo and earn a free month when they start a qualifying subscription with a new card.":
-    "Пригласите друга в Rakazo и получите бесплатный месяц, когда он оформит подходящую подписку с новой картой.",
+  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
+    "Пригласите друга в Rakazo: он получит {weeks} недели бесплатно, а вы — бесплатный месяц, когда он оформит подходящую подписку с новой картой.",
   "Open Rakazo": "Откройте Rakazo",
   "and choose Invite friends for your link.":
     "и выберите «Пригласить друзей», чтобы получить ссылку.",
