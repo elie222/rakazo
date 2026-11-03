@@ -1,9 +1,10 @@
 appId: com.rakazo.app
 ---
-# A cold API 34 emulator can show a launcher ANR over the healthy app.
+# A cold API 34 emulator can show a launcher ANR over the healthy app, and a relaunch
+# after clearState can take Maestro about half a minute to bring the app back.
 - extendedWaitUntil:
     visible: "Sign up for Rakazo|Pixel Launcher isn't responding"
-    timeout: 30000
+    timeout: 60000
 - runFlow:
     when:
       visible: "Pixel Launcher isn't responding"
