@@ -57,6 +57,7 @@ export function useOpenSpaceChat({
       }
       const reload = () => {
         void leaveOrganization(userId ?? null, previousEffective, spaceId).then(() => {
+          if (request !== spaceSwitchRequest.current) return;
           if (selectSpace(spaceId)) window.location.assign(destination());
         });
       };
