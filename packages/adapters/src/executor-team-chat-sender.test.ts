@@ -105,7 +105,7 @@ async function teamChatRun(input: {
     task: {
       findUniqueOrThrow: vi.fn(async () => ({
         id: run.taskId,
-        prompt: "Use @Private recipe and @Rakazo",
+        prompt: "Use @Private recipe and @Rakazo and @Interrogate",
       })),
     },
     connection: { findMany: vi.fn(async () => []) },
@@ -137,6 +137,13 @@ async function teamChatRun(input: {
           name: "Private recipe",
           description: "PRIVATE_SKILL_DESCRIPTION",
           content: "PRIVATE_SKILL_BODY",
+          source: "user",
+        },
+        {
+          id: "shadow-1",
+          name: "Interrogate",
+          description: "PRIVATE_SKILL_SHADOW",
+          content: "PRIVATE_SKILL_OVERRIDE",
           source: "user",
         },
       ]),
@@ -304,6 +311,7 @@ describe("private skills in shared-channel prompts", () => {
     expect(result.context).not.toContain("PRIVATE_SKILL");
     expect(result.context).not.toContain("PRIVATE_TAUGHT");
     expect(result.context).toContain("Use skill: Rakazo");
+    expect(result.context).toContain("Use skill: Interrogate");
   });
 
   it("keeps private skills available to the owner", async () => {
