@@ -537,11 +537,16 @@ export const TEXT_ANSWER_WINDOW_MS = 24 * 60 * 60 * 1000;
  */
 async function answeredRequest(deps: MessagingInboundDeps, identity: IdentityRow) {
   const latest = await deps.prisma.messagingOutbound.findFirst({
-    where: { identityId: identity.id, kind: "dm", status: "sent" },
+    where: { identityId: identity.id, kind: "dm", status: { in: ["pending", "sent"] } },
     orderBy: { createdAt: "desc" },
-    select: { idempotencyKey: true, createdAt: true },
+    select: { idempotencyKey: true, createdAt: true, status: true },
   });
-  if (!latest || Date.now() - latest.createdAt.getTime() > TEXT_ANSWER_WINDOW_MS) return null;
+  if (
+    latest?.status !== "sent" ||
+    Date.now() - latest.createdAt.getTime() > TEXT_ANSWER_WINDOW_MS
+  ) {
+    return null;
+  }
   const [kind, first, second] = latest.idempotencyKey.split(":");
   if (kind === "invite" && first && second === identity.id) {
     const membership = await deps.prisma.messagingChannelMember.findFirst({
