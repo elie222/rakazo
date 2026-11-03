@@ -75,7 +75,7 @@ export const SANDBOXES: readonly Sandbox[] = [
     ],
     limits: [
       "No region choice, custom image, or E2B snapshots, volumes or egress rules from Rakazo.",
-      "Computers use a fixed template, `rakazo-computer`, at 2 vCPU and 4 GB.",
+      "Computers use the `rakazo-computer` template at 2 vCPU and 4 GB once it's built, and E2B's larger stock desktop before that.",
     ],
     setup: [
       "Set `SANDBOX_PROVIDER=e2b` and `E2B_API_KEY` on the API and worker, or choose E2B in Settings → Computer as an admin.",
@@ -114,11 +114,11 @@ export const SANDBOXES: readonly Sandbox[] = [
     image: homepage("daytona", "Daytona", "The Daytona homepage, headed Run AI code."),
     works: [
       "A Linux desktop you can watch live and take over, with several bots' screens on one computer.",
-      "Shell commands and reading and writing files.",
+      "Shell commands, a terminal, and reading and writing files.",
       "Stopped computers keep their disk. Archived sandboxes are woken up when a bot needs them again.",
     ],
     limits: [
-      "No terminal. Command output arrives when the command finishes, not as it runs.",
+      "A bot's command output arrives when the command finishes, not as it runs.",
       "The first start installs the desktop, so it is slower than later starts.",
       "Linux only from Rakazo. No volumes, and no region choice beyond `DAYTONA_TARGET`.",
     ],
@@ -135,7 +135,7 @@ export const SANDBOXES: readonly Sandbox[] = [
       {
         question: "Daytona or E2B?",
         answer:
-          "E2B adds a terminal, streamed output and pausing with resume. Daytona suits teams already on it.",
+          "E2B streams command output and pauses idle computers so they resume where they left off. Daytona suits teams already on it.",
       },
     ],
     sources: [
@@ -246,12 +246,11 @@ export const SANDBOXES: readonly Sandbox[] = [
     ),
     works: [
       "A Linux desktop you can watch live and take over, with several bots' screens on one computer.",
-      "Shell commands and reading and writing files.",
+      "Shell commands, a terminal, and reading and writing files.",
       "A separate, persistent Chrome profile for each bot.",
       "Computers start from a prebuilt snapshot that Rakazo builds on its own the first time.",
     ],
     limits: [
-      "No terminal.",
       "No region choice or custom image from Rakazo. Boat's regions are in the EU.",
       "Stopping keeps the disk, not running programs.",
     ],
