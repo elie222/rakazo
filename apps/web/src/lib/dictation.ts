@@ -179,6 +179,8 @@ export class Dictation {
   private transcribeAbort: AbortController | null = null;
   private audioContext: AudioContext | null = null;
   private vadTimer: ReturnType<typeof setInterval> | undefined;
+  private speechMonitored = false;
+  private heardSpeech = false;
   private onFinal: ((text: string) => void) | null = null;
 
   subscribe(fn: (s: DictationSnapshot) => void): () => void {
@@ -230,6 +232,8 @@ export class Dictation {
       }
     }
     this.chunks = [];
+    this.speechMonitored = false;
+    this.heardSpeech = false;
     this.onFinal = null;
     if (this.snapshot.status !== "idle" || this.snapshot.error) this.set(IDLE);
   }
@@ -452,7 +456,11 @@ export class Dictation {
       return;
     }
     const keptSpeech = this.snapshot.transcript.trim().length > 0;
-    if (mode === "endpoint" && !this.armSilence(stream, mine, endpointMs, keptSpeech)) {
+    this.speechMonitored = false;
+    this.heardSpeech = keptSpeech;
+    const endpoint = mode === "endpoint";
+    const monitoring = this.monitorInput(stream, mine, endpoint ? endpointMs : undefined);
+    if (endpoint && !monitoring) {
       for (const track of stream.getTracks()) track.stop();
       this.failListening(
         mine,
@@ -489,12 +497,13 @@ export class Dictation {
     }
   }
 
-  private armSilence(
-    stream: MediaStream,
-    mine: number,
-    endpointMs: number,
-    alreadyHeard = false,
-  ): boolean {
+  /**
+   * Watches the microphone level so a recording that never rose above the speech
+   * threshold is not sent to a transcription model, which invents text for silence.
+   * Endpoint mode also uses it to end the turn after a quiet gap; `endpointMs` is
+   * undefined in hold mode, where the caller's release ends the turn.
+   */
+  private monitorInput(stream: MediaStream, mine: number, endpointMs: number | undefined): boolean {
     const Ctor = audioContextCtor();
     if (!Ctor) return false;
     try {
@@ -506,7 +515,7 @@ export class Dictation {
       this.audioContext = ctx;
       if (ctx.state === "suspended") void ctx.resume();
       const data = new Uint8Array(analyser.fftSize);
-      let heardSpeech = alreadyHeard;
+      this.speechMonitored = true;
       let silentFor = 0;
       this.vadTimer = setInterval(() => {
         const media = this.media;
@@ -519,11 +528,11 @@ export class Dictation {
         }
         const rms = Math.sqrt(sum / data.length);
         if (rms > SILENCE_RMS) {
-          heardSpeech = true;
+          this.heardSpeech = true;
           silentFor = 0;
           return;
         }
-        if (!heardSpeech) return;
+        if (endpointMs === undefined || !this.heardSpeech) return;
         silentFor += ENDPOINT_TICK_MS;
         if (silentFor < endpointMs) return;
         this.stopVad();
@@ -550,6 +559,17 @@ export class Dictation {
 
   private async transcribeChunks(mine: number, spaceId: string | null) {
     if (this.token !== mine) return;
+    // Whisper-style models invent text for silence, so a recording that never rose above
+    // the speech threshold is not sent. Only gate when the level was actually measured.
+    if (this.speechMonitored && !this.heardSpeech) {
+      const prefix = normalizedTranscript(this.snapshot.transcript);
+      if (prefix) {
+        this.finish(prefix, mine);
+        return;
+      }
+      this.set({ ...IDLE, error: t`Didn't catch that.` });
+      return;
+    }
     const blob = new Blob(this.chunks, { type: this.chunks[0]?.type || "audio/webm" });
     this.chunks = [];
     if (!blob.size) {

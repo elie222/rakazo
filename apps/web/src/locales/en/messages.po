@@ -2547,6 +2547,10 @@ msgstr "Dictation failed: {code}"
 msgid "Dictation failed."
 msgstr "Dictation failed."
 
+#: src/lib/dictation.ts
+msgid "Didn't catch that."
+msgstr "Didn't catch that."
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "Disable a tool"

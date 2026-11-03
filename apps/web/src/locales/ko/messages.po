@@ -2547,6 +2547,10 @@ msgstr ""
 msgid "Dictation failed."
 msgstr ""
 
+#: src/lib/dictation.ts
+msgid "Didn't catch that."
+msgstr ""
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "도구 비활성화"

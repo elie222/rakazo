@@ -2547,6 +2547,10 @@ msgstr "Falló el dictado: {code}"
 msgid "Dictation failed."
 msgstr "Falló el dictado."
 
+#: src/lib/dictation.ts
+msgid "Didn't catch that."
+msgstr ""
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "Desactivar una herramienta"
