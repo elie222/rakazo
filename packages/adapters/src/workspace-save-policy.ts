@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { open } from "node:fs/promises";
+import { lstat, open } from "node:fs/promises";
 import path from "node:path";
 import type { WorkspaceExportLimits } from "@rakazo/adapter-kit";
 import { shellQuote } from "@rakazo/core/node/desktop-runtime";
@@ -93,8 +93,11 @@ const MAX_PRUNED_CACHE_DIRECTORIES = 1000;
 /** True when `directory` holds a cache directory tag; a save leaves the whole directory out. */
 export async function isTaggedCacheDirectory(directory: string): Promise<boolean> {
   // Like find's -type f: a symlinked tag is not followed and a pipe named like one cannot block.
+  // Windows has no O_NOFOLLOW, so the type is checked first as well.
+  const tag = path.join(directory, CACHE_DIRECTORY_TAG);
+  if (!(await lstat(tag).catch(() => null))?.isFile()) return false;
   const handle = await open(
-    path.join(directory, CACHE_DIRECTORY_TAG),
+    tag,
     constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
   ).catch(() => null);
   if (!handle) return false;

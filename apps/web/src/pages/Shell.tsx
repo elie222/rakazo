@@ -300,7 +300,7 @@ function SpaceShell() {
       computerState.cacheComputerFor(botId, {
         computer: { ...cached, diskFullPercent: undefined },
       });
-    void rpc.computer.dismissDiskWarning({ botId }).catch(() => undefined);
+    return rpc.computer.dismissDiskWarning({ botId }).catch(() => undefined);
   };
   useReportedUiLocale(rpc, bootstrapMe?.locale);
   const cycleBots = useMemo(
@@ -1199,14 +1199,15 @@ function SpaceShell() {
                 setCleaningUpDisk(true);
                 void rpc.threads
                   .send({ botId, clientNonce: crypto.randomUUID(), intent: "free_disk_space" })
-                  .then(() => {
-                    dismissDiskWarning(botId);
+                  .then(async () => {
+                    // The refresh must read the dismissal, or it would paint the warning again.
+                    await dismissDiskWarning(botId);
                     void refreshThread(botId);
                   })
                   .catch((error: unknown) => composer.setSendError(errorText(error)))
                   .finally(() => setCleaningUpDisk(false));
               }}
-              onDismissDiskWarning={() => dismissDiskWarning(active.id)}
+              onDismissDiskWarning={() => void dismissDiskWarning(active.id)}
             />
           ) : null
         }
