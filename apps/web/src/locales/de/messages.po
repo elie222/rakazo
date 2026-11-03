@@ -5653,6 +5653,18 @@ msgstr "Aufnahme starten"
 msgid "Start your plan now?"
 msgstr "Plan jetzt starten?"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}d late"
+msgstr "{count} T. verspätet gestartet"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}h late"
+msgstr "{count} Std. verspätet gestartet"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}m late"
+msgstr "{count} Min. verspätet gestartet"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "Startet"

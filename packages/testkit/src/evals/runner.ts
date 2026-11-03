@@ -273,12 +273,8 @@ export async function runTrial(
       messagingLinked = false;
       messagingAddress = `U-eval-${randomUUID()}`;
       messaging.resetWitnesses();
-      if (scenario.approvalTool)
-        await rpc(app, cookie, "approvalRules/set", {
-          effect: "require_approval",
-          matchKind: "tool",
-          matchValue: scenario.approvalTool,
-        });
+      // Ask mode asks before any change, so the write stops at its approval card.
+      if (scenario.approvalTool) await rpc(app, cookie, "autoReview/set", { mode: "ask" });
     };
     await setupActor();
     if (scenario.routine) {

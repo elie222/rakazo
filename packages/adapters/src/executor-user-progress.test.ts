@@ -13,6 +13,7 @@ import { loadBotMessageContext, returnBotMessageOutcome } from "./bot-messages.j
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import { createJobReconciler } from "./job-reconciler.js";
+import type * as ModelVisionModule from "./model-vision.js";
 import { PEER_NOTHING_NEW_REPLY } from "./silent-reply.js";
 import { MID_TURN_PROGRESS_MIN_TURN_AGE_MS, userProgressClientNonce } from "./user-progress.js";
 
@@ -20,6 +21,12 @@ vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
   provisionComputer: async () => ({ id: "computer-1", kind: "desktop" }),
+}));
+
+const vision = vi.hoisted(() => ({ seesImages: false }));
+vi.mock("./model-vision.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof ModelVisionModule>()),
+  modelAcceptsImageInput: () => vision.seesImages,
 }));
 
 vi.mock("./bot-messages.js", () => ({
@@ -60,6 +67,8 @@ async function runTurn(
     runtime?: (request: AgentRunRequest) => AsyncGenerator<AgentRuntimeEvent>;
     /** Lets a test hold an event write open, to land runtime events while it waits. */
     appendGate?: (event: AppendEventInput) => Promise<void> | undefined;
+    /** The computer has a screen and a page browser, and the model can see. */
+    graphical?: boolean;
   } = {},
 ) {
   vi.mocked(loadBotMessageContext).mockResolvedValue({
@@ -284,6 +293,7 @@ async function runTurn(
     return appendEventInTransaction(prisma as unknown as Prisma.TransactionClient, event);
   });
   const pauseRunForInput = vi.fn(async () => ({ continuationRunId: null }));
+  vision.seesImages = options.graphical ?? false;
   const executor = createRunExecutor({
     deploymentModelKey: "fixture-model-key",
     prisma,
@@ -292,7 +302,13 @@ async function runTurn(
       run: runtimeRun,
     },
     sandbox: {
-      describe: () => ({ capabilities: { graphical: false } }),
+      describe: () => ({ capabilities: { graphical: options.graphical ?? false } }),
+      observe: async () => ({
+        frameId: "frame-1",
+        width: 1,
+        height: 1,
+        image: new Uint8Array([0]),
+      }),
       writeFile: vi.fn(async () => undefined),
       async *exportWorkspace() {
         yield* [];
@@ -304,6 +320,19 @@ async function runTurn(
     events: { append, finalizeRun, pauseRunForInput, notify: vi.fn(async () => undefined) },
     jobs: { enqueue: vi.fn(async () => undefined) },
     secrets,
+    ...(options.graphical
+      ? {
+          browser: {
+            describe: () => ({ capabilities: { page: true } }),
+            snapshot: async () => ({
+              url: "https://example.test/",
+              title: "Example",
+              tree: "",
+              elements: [],
+            }),
+          },
+        }
+      : {}),
   } as unknown as Parameters<typeof createRunExecutor>[0]);
 
   await executor.continueRun(run.id, "worker-1");
@@ -754,6 +783,35 @@ describe("notes that can't be posted as messages", () => {
     expect(
       await update({ startedAt: longTurn, earlier: [...earlier, "Yes, still on it."], steerAt: 3 }),
     ).toEqual({ result: notYet, sent: [...earlier, "Yes, still on it."] });
+  });
+
+  it("posts one heads-up at once once a fresh turn calls a browser or desktop tool", async () => {
+    const sent = async (trigger: string, step: string, graphical = true) => {
+      const { messages } = await runTurn("", false, undefined, [], "fyi", {
+        trigger,
+        graphical,
+        runtime: async function* (request) {
+          await request.executeTool!(step, {}, "call-0").catch(() => undefined);
+          for (const [index, message] of [
+            "This will take a few minutes.",
+            "Still going.",
+          ].entries())
+            await request.executeTool!("message_user", { message }, `call-${index + 1}`);
+          yield { type: "text", text: "Done." };
+          yield { type: "done", text: "" };
+        },
+      });
+      return sentTexts(messages);
+    };
+    const headsUp = ["This will take a few minutes."];
+    expect(await sent("user", "computer_observe")).toEqual(headsUp);
+    expect(await sent("messaging", "browser_snapshot")).toEqual(headsUp);
+    // Other steps, tools this computer lacks, and runs nobody is waiting on keep the
+    // fresh-turn rule.
+    expect(await sent("user", "shell")).toEqual([]);
+    expect(await sent("user", "browser_snapshot", false)).toEqual([]);
+    for (const trigger of ["routine", "webhook", "reaction", "bot_message"])
+      expect(await sent(trigger, "browser_snapshot")).toEqual([]);
   });
 });
 

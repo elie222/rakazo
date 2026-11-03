@@ -176,6 +176,7 @@ describe("tool completion audit", () => {
       }),
     );
     expect(sink.events).toEqual([
+      expect.objectContaining({ message: "agent.tool.completed", "tool.outcome": "error" }),
       expect.objectContaining({
         message: "agent tool completion audit append failed",
         "error.detail": "database unavailable",
@@ -196,7 +197,59 @@ describe("tool completion audit", () => {
     );
 
     expect(append).toHaveBeenCalledOnce();
-    expect(sink.events).toEqual([]);
+    expect(sink.events.map((event) => event.message)).toEqual(["agent.tool.completed"]);
+    installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+  });
+
+  it("logs each tool completion by name, outcome and duration without its content", async () => {
+    const append = vi.fn().mockResolvedValue(undefined);
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+
+    await appendToolCompletionAudit(
+      { events: { append } },
+      { spaceId: "space-1", threadId: "thread-1", botId: "bot-1", runId: "run-1" },
+      {
+        name: "web_search",
+        executionId: "call-1",
+        durationMs: 12.4,
+        result: {
+          kind: "agent_tool_result",
+          content: [{ type: "text", text: "private search result" }],
+          details: {},
+        },
+      },
+    );
+    await appendToolCompletionAudit(
+      { events: { append } },
+      { spaceId: "space-1", threadId: "thread-1", botId: "bot-1", runId: "run-1" },
+      {
+        name: "mcp__notes__create",
+        executionId: "call-2",
+        durationMs: 3,
+        error: new Error("private failure detail"),
+      },
+    );
+
+    expect(sink.events).toEqual([
+      expect.objectContaining({
+        message: "agent.tool.completed",
+        "run.id": "run-1",
+        "space.id": "space-1",
+        "thread.id": "thread-1",
+        "bot.id": "bot-1",
+        tool: "web_search",
+        "tool.outcome": "succeeded",
+        "tool.duration_ms": 12,
+      }),
+      expect.objectContaining({
+        message: "agent.tool.completed",
+        tool: "mcp__notes__create",
+        "tool.outcome": "error",
+        "tool.duration_ms": 3,
+      }),
+    ]);
+    expect(JSON.stringify(sink.events)).not.toMatch(/private|call-1|call-2/);
     installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
   });
 

@@ -25,6 +25,7 @@ import {
   messagingChannelPrivacyBlock,
   messagingDmSurfaceNote,
   nextFence,
+  nonOwnerChatPrivacyBlock,
   promptInvokesSkill,
   redactSecrets,
   renderBotDirectory,
@@ -45,6 +46,7 @@ import {
   recordUsage,
   settleReleasedTakeoverCards,
   spaceHasModelAccess,
+  teamChatRunFromOwner,
 } from "@rakazo/db";
 import { enrichLogContext, getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
@@ -123,7 +125,7 @@ import { isRetiredModelCredentialError } from "./pi-oauth.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
 import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
 import { backOffRoutineAfterAccountError } from "./routine-backoff.js";
-import { lateRoutineRunInstruction } from "./routine-lateness.js";
+import { lateRoutineRunDueAt, lateRoutineRunInstruction } from "./routine-lateness.js";
 import { lazyRunComputer } from "./run-computer.js";
 import type {
   RunComputerUseState,
@@ -430,12 +432,25 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
       let attempt: { id: string };
       // Resumed attempts keep the first start, so lateness reflects when the run began.
       const executionStartedAt = current.startedAt ?? new Date();
+      // Classified with the first start, so a retry, resume or later schedule edit keeps it.
+      let firstLateSince: Date | undefined;
+      if (!current.startedAt && run.trigger === "routine" && run.routineId && run.clientNonce) {
+        try {
+          const routine = await deps.prisma.routine.findUnique({
+            where: { id: run.routineId },
+            select: { crons: true, timezone: true },
+          });
+          if (routine) firstLateSince = lateRoutineRunDueAt(run, routine, executionStartedAt);
+        } catch {
+          // Lateness is optional context; a lookup failure must not prevent a run.
+        }
+      }
       try {
         // Acquiring the computer can requeue a busy run. Count that wait as queue
         // time, and only stamp execution once this attempt can use its computer.
         const executionStarted = await deps.prisma.run.updateMany({
           where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
-          data: { startedAt: executionStartedAt },
+          data: { startedAt: executionStartedAt, lateSince: firstLateSince },
         });
         if (executionStarted.count !== 1) {
           await releaseComputerExecutionLease(deps.prisma, computerLease).catch(() => undefined);
@@ -502,15 +517,14 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // integration and computer setup must not occupy a queue dispatch slot.
         onRunStarted?.();
         dispatchHandedOff = Boolean(onRunStarted);
-        const sourceBlocks =
+        const messagingSource =
           run.trigger === "messaging" && run.sourceMessageId
-            ? ((
-                await deps.prisma.message.findUnique({
-                  where: { id: run.sourceMessageId },
-                  select: { blocks: true },
-                })
-              )?.blocks as MessageBlock[] | undefined)
-            : undefined;
+            ? await deps.prisma.message.findUnique({
+                where: { id: run.sourceMessageId },
+                select: { blocks: true, clientNonce: true },
+              })
+            : null;
+        const sourceBlocks = messagingSource?.blocks as MessageBlock[] | undefined;
         const channelId = messagingChannelId(sourceBlocks);
         const messagingChannelRun = isMessagingChannelRun(run.trigger, sourceBlocks);
         const [
@@ -570,6 +584,17 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           loadRunLoginRedactions(deps.prisma, deps.secretStore, run, run.id),
           loadRunCodeRedactions(deps.prisma, deps.secretStore, run, run.id),
         ]);
+        // Team chat reaches people besides the owner, so their runs get a group channel's limits.
+        const teamChatConversationId =
+          run.trigger === "messaging" ? thread.externalConversationId : null;
+        const nonOwnerChatRun =
+          messagingChannelRun ||
+          (teamChatConversationId
+            ? !(await teamChatRunFromOwner(deps.prisma, {
+                externalConversationId: teamChatConversationId,
+                sourceClientNonce: messagingSource?.clientNonce,
+              }))
+            : false);
         const historySearchBeforeSeq =
           contextStrategy !== "current" && run.sourceMessageId
             ? (messages.find((message) => message.id === run.sourceMessageId)?.seq ??
@@ -695,7 +720,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             summary: thread.historyCompactionSummary,
             historyCompactedUpToSeq: thread.historyCompactedUpToSeq,
           },
-          messagingChannelRun,
+          nonOwnerChatRun,
           run.sourceMessageId,
         );
         const compactedHistory = selectCompactedHistory({
@@ -788,16 +813,16 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         ] = await Promise.all([
           discoveredPromise,
           loadCurrentTurnImages(deps, turnBlocks, context),
-          messagingChannelRun
+          nonOwnerChatRun
             ? Promise.resolve("")
             : loadAgentMemoryContext(deps.memory, bot.id, context),
-          messagingChannelRun
+          nonOwnerChatRun
             ? Promise.resolve("")
             : loadAgentScratchpadContext(deps, {
                 spaceId: run.spaceId,
                 botId: bot.id,
               }),
-          messagingChannelRun || !deps.ticketBoardEnabled
+          nonOwnerChatRun || !deps.ticketBoardEnabled
             ? Promise.resolve(undefined)
             : loadAgentTicketContext(deps, {
                 spaceId: run.spaceId,
@@ -805,7 +830,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               }),
           recallPromise,
         ]);
-        const semanticMemoryEnabled = Boolean(semanticMemory) && !messagingChannelRun;
+        const semanticMemoryEnabled = Boolean(semanticMemory) && !nonOwnerChatRun;
         let recalledMemory = "";
         let recallSucceeded = false;
         if (recalled) {
@@ -1115,11 +1140,17 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               run.userId,
             )
           : false;
-        const messagingContext = hasMessagingIdentity
-          ? [messagingDmSurfaceNote(), messagingChannelRun ? messagingChannelPrivacyBlock() : null]
-              .filter(Boolean)
-              .join("\n\n")
-          : undefined;
+        const messagingContext =
+          [
+            hasMessagingIdentity ? messagingDmSurfaceNote() : null,
+            messagingChannelRun
+              ? messagingChannelPrivacyBlock()
+              : nonOwnerChatRun
+                ? nonOwnerChatPrivacyBlock()
+                : null,
+          ]
+            .filter(Boolean)
+            .join("\n\n") || undefined;
         if (heldForTakeover) {
           const held = await deps.prisma.run.findUnique({
             where: { id: runId },
@@ -1154,7 +1185,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const userComputerOwnerId = userComputerOwner({
           trigger: run.trigger,
           sourceRole: sourceMessage?.role,
-          messagingChannelRun,
+          messagingChannelRun: nonOwnerChatRun,
           runUserId: run.userId,
           botUserId: bot.userId,
         });
@@ -1190,7 +1221,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
             cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
             paymentWalletEnabled,
-            messagingChannelRun,
+            messagingChannelRun: nonOwnerChatRun,
             voiceCall,
             disabledBuiltinTools: bot.disabledBuiltinTools,
             fleetManagement: bot.fleetManagement,
@@ -1226,7 +1257,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           botId: bot.id,
           taskPrompt: task.prompt,
           ownerStartedRun,
-          messagingChannelRun,
+          messagingChannelRun: nonOwnerChatRun,
           sourceMessage,
           connectedPlugins,
         });
@@ -1364,13 +1395,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           secrets: runSecrets,
           source: {
             ownerStartedRun,
-            messagingChannelRun,
+            messagingChannelRun: nonOwnerChatRun,
             channelId,
             historySearchBeforeSeq,
             myChatsAllowed: historyMyChatsAllowed(
               run,
               sourceMessage,
-              messagingChannelRun ||
+              nonOwnerChatRun ||
                 Boolean(
                   channelId ||
                     thread.externalConversationId ||
@@ -1476,14 +1507,19 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           // Timezone is optional context; a lookup failure must not prevent a run.
         }
         let lateRoutineNote: string | undefined;
-        if (run.trigger === "routine" && run.routineId && run.clientNonce) {
+        const lateSince = current.lateSince ?? firstLateSince;
+        if (lateSince && run.routineId) {
           try {
             const routine = await deps.prisma.routine.findUnique({
               where: { id: run.routineId },
-              select: { crons: true, timezone: true },
+              select: { timezone: true },
             });
             if (routine)
-              lateRoutineNote = lateRoutineRunInstruction(run, routine, executionStartedAt);
+              lateRoutineNote = lateRoutineRunInstruction(
+                lateSince,
+                executionStartedAt,
+                routine.timezone,
+              );
           } catch {
             // Lateness is optional context; a lookup failure must not prevent a run.
           }

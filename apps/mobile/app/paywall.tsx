@@ -423,31 +423,39 @@ export default function Paywall() {
               onPress={() => setPlan("credits")}
               title={t("Rakazo credits")}
               badge={subscribed === "credits" ? t("Current plan") : undefined}
-              price={
-                <MenuView
-                  actions={MODEL_CREDIT_AMOUNTS.map((value) => ({
-                    id: String(value),
-                    title: t("{price} / month", { price: `$${value / 100}` }),
-                    state: amount === value ? ("on" as const) : ("off" as const),
-                  }))}
-                  onPressAction={({ nativeEvent }) => {
-                    setAmount(ModelCreditAmountSchema.parse(Number(nativeEvent.event)));
-                    setPlan("credits");
-                  }}
-                >
-                  <View style={styles.amount}>
-                    <Text style={[styles.price, { color: tokens.foreground }]}>
-                      {t("{price} / month", { price: creditPrice })}
-                    </Text>
-                    <NativeSymbol
-                      ios="chevron.up.chevron.down"
-                      android="chevron-expand"
-                      size={12}
-                      color={tokens.mutedForeground}
-                    />
-                  </View>
-                </MenuView>
-              }
+              price={{
+                label: t("{price} / month", { price: creditPrice }),
+                control: (
+                  <MenuView
+                    actions={MODEL_CREDIT_AMOUNTS.map((value) => ({
+                      id: String(value),
+                      title: t("{price} / month", { price: `$${value / 100}` }),
+                      state: amount === value ? ("on" as const) : ("off" as const),
+                    }))}
+                    onPressAction={({ nativeEvent }) => {
+                      setAmount(ModelCreditAmountSchema.parse(Number(nativeEvent.event)));
+                      setPlan("credits");
+                    }}
+                  >
+                    <View
+                      accessible
+                      accessibilityRole="button"
+                      accessibilityLabel={t("{price} / month", { price: creditPrice })}
+                      style={styles.amount}
+                    >
+                      <Text style={[styles.price, { color: tokens.foreground }]}>
+                        {t("{price} / month", { price: creditPrice })}
+                      </Text>
+                      <NativeSymbol
+                        ios="chevron.up.chevron.down"
+                        android="chevron-expand"
+                        size={12}
+                        color={tokens.mutedForeground}
+                      />
+                    </View>
+                  </MenuView>
+                ),
+              }}
               detail={t("All {price} goes to model usage.", { price: creditPrice })}
             />
           )}
@@ -525,18 +533,15 @@ function PlanCard({
   selected: boolean;
   onPress: () => void;
   title: string;
-  price: ReactNode;
+  /** Text, or a control that picks it with its text as the label read for the plan. */
+  price: string | { label: string; control: ReactNode };
   detail: string;
   badge?: string;
   accessory?: ReactNode;
 }) {
   const tokens = useMobileTokens();
   return (
-    <Pressable
-      accessibilityRole="radio"
-      accessibilityState={{ checked: selected }}
-      accessibilityLabel={title}
-      onPress={onPress}
+    <View
       style={[
         styles.plan,
         {
@@ -548,32 +553,44 @@ function PlanCard({
         },
       ]}
     >
-      <View style={styles.planHeader}>
-        <NativeSymbol
-          ios={selected ? "checkmark.circle.fill" : "circle"}
-          android={selected ? "checkmark-circle" : "ellipse-outline"}
-          size={22}
-          color={selected ? tokens.primary : tokens.faintForeground}
-        />
-        <Text style={[styles.planTitle, { color: tokens.foreground }]}>{title}</Text>
-      </View>
-      <View style={styles.planBody}>
-        <View style={styles.priceRow}>
-          {typeof price === "string" ? (
-            <Text style={[styles.price, { color: tokens.foreground }]}>{price}</Text>
-          ) : (
-            price
-          )}
-          {badge ? (
-            <View style={[styles.badge, { backgroundColor: tokens.primary }]}>
-              <Text style={[styles.badgeLabel, { color: tokens.primaryForeground }]}>{badge}</Text>
-            </View>
-          ) : null}
+      <Pressable
+        accessibilityRole="radio"
+        accessibilityState={{ checked: selected }}
+        accessibilityLabel={[title, typeof price === "string" ? price : price.label, badge, detail]
+          .filter(Boolean)
+          .join(", ")}
+        onPress={onPress}
+        style={styles.planPress}
+      >
+        <View style={styles.planHeader}>
+          <NativeSymbol
+            ios={selected ? "checkmark.circle.fill" : "circle"}
+            android={selected ? "checkmark-circle" : "ellipse-outline"}
+            size={22}
+            color={selected ? tokens.primary : tokens.faintForeground}
+          />
+          <Text style={[styles.planTitle, { color: tokens.foreground }]}>{title}</Text>
         </View>
-        <Text style={[styles.planDetail, { color: tokens.mutedForeground }]}>{detail}</Text>
-        {accessory ? <View style={styles.planAccessory}>{accessory}</View> : null}
-      </View>
-    </Pressable>
+        <View style={styles.planBody}>
+          <View style={styles.priceRow}>
+            {typeof price === "string" ? (
+              <Text style={[styles.price, { color: tokens.foreground }]}>{price}</Text>
+            ) : null}
+            {badge ? (
+              <View style={[styles.badge, { backgroundColor: tokens.primary }]}>
+                <Text style={[styles.badgeLabel, { color: tokens.primaryForeground }]}>
+                  {badge}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+          <Text style={[styles.planDetail, { color: tokens.mutedForeground }]}>{detail}</Text>
+        </View>
+      </Pressable>
+      {/* Controls sit outside the radio, so VoiceOver can reach each one. */}
+      {typeof price === "string" ? null : <View style={styles.planAccessory}>{price.control}</View>}
+      {accessory ? <View style={styles.planAccessory}>{accessory}</View> : null}
+    </View>
   );
 }
 
@@ -663,7 +680,8 @@ const styles = StyleSheet.create({
   planHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   planTitle: { ...typeScale.cardTitle, flex: 1 },
   planBody: { paddingLeft: 32, gap: 2 },
-  planAccessory: { marginTop: 10 },
+  planPress: { gap: 8 },
+  planAccessory: { marginTop: 4, marginLeft: 32 },
   price: { fontSize: 22, lineHeight: 28, fontWeight: "600" },
   planDetail: typeScale.secondary,
   amount: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start" },

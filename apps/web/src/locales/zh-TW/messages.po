@@ -5654,6 +5654,18 @@ msgstr "開始錄製"
 msgid "Start your plan now?"
 msgstr "立即開始你的方案？"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}d late"
+msgstr "延遲 {count} 天開始"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}h late"
+msgstr "延遲 {count} 小時開始"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}m late"
+msgstr "延遲 {count} 分鐘開始"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "正在開始"

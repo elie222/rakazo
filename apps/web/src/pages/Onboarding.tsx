@@ -238,7 +238,11 @@ export function OnboardingPage() {
     for (const entry of catalog) {
       if (!seen.has(entry.provider)) seen.set(entry.provider, entry);
     }
-    return popularModelProvidersFirst([...seen.values()], (entry) => entry.provider);
+    return popularModelProvidersFirst(
+      [...seen.values()],
+      (entry) => entry.provider,
+      (entry) => entry.providerName ?? entry.provider,
+    );
   }, [catalog]);
 
   const modelsForProvider = useMemo(
@@ -268,7 +272,7 @@ export function OnboardingPage() {
       cloudflareRoutingReady &&
       (isOpenAiCompatible ? openAiCompatibleReady : acceptsKey && apiKey.trim()),
   );
-  // Subscriptions and the common API providers first; every other provider follows.
+  // Subscriptions and the common API providers first; every other provider follows by name.
   const providerOptions = useMemo(() => {
     const byId = new Map(providers.map((entry) => [entry.provider, entry]));
     // Beside the subscriptions, the key-based options say API.
@@ -284,16 +288,20 @@ export function OnboardingPage() {
         label: optionLabel(option.provider, option.auth),
       })),
     ];
-    const rest = providers
-      .filter(
-        (entry) => !MAIN_PROVIDER_OPTIONS.some((option) => option.provider === entry.provider),
-      )
-      .flatMap((entry) => {
-        const item = { value: entry.provider, label: entry.providerName ?? entry.provider };
-        return entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID
-          ? [item, { value: "ollama-preset", label: t`Ollama Cloud` }]
-          : [item];
-      });
+    const rest = popularModelProvidersFirst(
+      providers
+        .filter(
+          (entry) => !MAIN_PROVIDER_OPTIONS.some((option) => option.provider === entry.provider),
+        )
+        .flatMap((entry) => {
+          const item = { value: entry.provider, label: entry.providerName ?? entry.provider };
+          return entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID
+            ? [item, { value: "ollama-preset", label: t`Ollama Cloud` }]
+            : [item];
+        }),
+      (option) => option.value,
+      (option) => option.label,
+    );
     return { main, rest };
   }, [billingEnabled, providers, t]);
   // Base UI Select.Value only resolves labels when Root gets `items`.

@@ -151,6 +151,7 @@ vi.mock("react-native", async () => {
       "marginRight",
       "accessibilityElementsHidden",
       "importantForAccessibility",
+      "accessibilityRole",
     ]),
     get Text() {
       return reactNativeText.current;
@@ -919,6 +920,47 @@ describe("native markdown lists", () => {
     // 13 + 5 + 8: the dot ends where a one-digit number ends.
     expect(dots[0]?.parentElement?.getAttribute("data-margin-left")).toBe("13");
     expect(dots[0]?.parentElement?.getAttribute("data-margin-right")).toBe("8");
+  });
+
+  it("draws task list items as checkboxes instead of their [ ] and [x] text", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"- [x] Draft the announcement\n- [ ] Collect quotes\n- plain"}</ChatMarkdown>,
+    );
+    expect(html).not.toContain("[x]");
+    expect(html).not.toContain("[ ]");
+    expect(html).toContain("Draft the announcement");
+    expect(html.match(/data-accessibility-role="checkbox"/g)).toHaveLength(2);
+    expect(html.match(/✓/g)).toHaveLength(1);
+    // Each task is one accessible element that reads its text with its state.
+    expect(html).toMatch(/accessible=""[^>]*accessibilityLabel="Draft the announcement"/);
+    // The plain item keeps its bullet.
+    expect(bulletDots(html)).toHaveLength(1);
+  });
+
+  it("draws a checkbox when the task text starts on the next line", () => {
+    const html = renderToStaticMarkup(<ChatMarkdown>{"- [x]\n  Ship it"}</ChatMarkdown>);
+    expect(html).not.toContain("[x]");
+    expect(html).toContain("Ship it");
+    expect(html.match(/data-accessibility-role="checkbox"/g)).toHaveLength(1);
+  });
+
+  it("keeps each nested task's own checkbox state", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"- [ ] Launch\n  - [x] Draft\n  - [ ] Review"}</ChatMarkdown>,
+    );
+    expect(html.match(/data-accessibility-role="checkbox"/g)).toHaveLength(3);
+    expect(html).toMatch(/accessibilityLabel="Launch"/);
+    expect(html).toMatch(/accessibilityLabel="Draft"/);
+  });
+
+  it("keeps escaped [x] and [ ] as literal text", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"- \\[x\\] done literally\n- \\[ \\] open literally"}</ChatMarkdown>,
+    );
+    expect(html).toContain("[x] done literally");
+    expect(html).toContain("[ ] open literally");
+    expect(html).not.toContain('data-accessibility-role="checkbox"');
+    expect(bulletDots(html)).toHaveLength(2);
   });
 
   it("draws the bullet dot in the list-marker colour", () => {

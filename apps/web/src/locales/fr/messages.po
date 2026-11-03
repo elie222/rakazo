@@ -5653,6 +5653,18 @@ msgstr "Démarrer l'enregistrement"
 msgid "Start your plan now?"
 msgstr "Démarrer votre abonnement maintenant ?"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}d late"
+msgstr "Démarré avec {count} j de retard"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}h late"
+msgstr "Démarré avec {count} h de retard"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}m late"
+msgstr "Démarré avec {count} min de retard"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "Démarrage"
