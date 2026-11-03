@@ -8,7 +8,7 @@ import { EnvHttpProxyAgent } from "undici";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { secureFetch } from "./mcp-transport.js";
 import type { ResolveHostname } from "./network-address.js";
-import { TEST_TLS_CERT, TEST_TLS_KEY } from "./proxy-dispatcher.test-support.js";
+import { createTestTlsIdentity } from "./proxy-dispatcher.test-support.js";
 import { createSafeRemoteFetch } from "./remote-mcp.js";
 import { dispatcherFetch } from "./undici-fetch.js";
 import { fetchSafeWebText } from "./web-ssrf.js";
@@ -17,6 +17,7 @@ const publicResolver: ResolveHostname = async () => [{ address: "203.0.113.10", 
 
 describe.each(["web", "remote"] as const)("%s proxy transport", (kind) => {
   let savedCas: string[];
+  let identity: ReturnType<typeof createTestTlsIdentity>;
   let target: ReturnType<typeof createHttpsServer>;
   let proxy: ReturnType<typeof createHttpServer>;
   let sockets: Set<Socket>;
@@ -28,7 +29,8 @@ describe.each(["web", "remote"] as const)("%s proxy transport", (kind) => {
 
   beforeAll(() => {
     savedCas = getCACertificates();
-    setDefaultCACertificates([...savedCas, TEST_TLS_CERT]);
+    identity = createTestTlsIdentity();
+    setDefaultCACertificates([...savedCas, identity.cert]);
   });
   afterAll(() => setDefaultCACertificates(savedCas));
 
@@ -38,7 +40,7 @@ describe.each(["web", "remote"] as const)("%s proxy transport", (kind) => {
     requests = [];
     servernames = [];
     hostnameOnly = false;
-    target = createHttpsServer({ key: TEST_TLS_KEY, cert: TEST_TLS_CERT }, (request, response) => {
+    target = createHttpsServer(identity, (request, response) => {
       requests.push({
         host: request.headers.host ?? "",
         authorization: request.headers.authorization,
