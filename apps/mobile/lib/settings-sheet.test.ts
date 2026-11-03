@@ -63,6 +63,16 @@ describe("settings links", () => {
   it.each([true, false])("opens the share target for cold/warm arrivals (%s)", (initial) => {
     expect(redirectSystemPath({ path: "rakazo://expo-sharing", initial })).toBe("/share");
   });
+  it("keeps the current screen when an MCP sign-in returns to the app", () => {
+    const close = vi.fn();
+    const unregister = registerSettingsSheet(close);
+
+    expect(
+      redirectSystemPath({ path: "rakazo://mcp-oauth?code=c&state=mobile-1", initial: false }),
+    ).toBe("");
+    expect(close).not.toHaveBeenCalled();
+    unregister();
+  });
   it("knows every public page in the settings group", () => {
     const pages = readdirSync(resolve(mobileRoot, "app/(settings)"))
       .filter((file) => !["_layout.tsx", "model-picker.tsx", "model-connection.tsx"].includes(file))
