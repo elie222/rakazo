@@ -168,9 +168,11 @@ export async function respondToMobileCall(call: IncomingBotCall, action: "answer
       );
       answered = true;
       // A sign-out or server switch mid-answer hangs up below with the answer's own session.
-      if (generation !== currentSessionGeneration()) throw new Error(t("Something went wrong. Try again."));
+      if (generation !== currentSessionGeneration())
+        throw new Error(t("Something went wrong. Try again."));
       const voice = await rpc("voice/status", {}, { requestContext: context });
-      if (generation !== currentSessionGeneration()) throw new Error(t("Something went wrong. Try again."));
+      if (generation !== currentSessionGeneration())
+        throw new Error(t("Something went wrong. Try again."));
       if (nativeEnded.has(target.callId)) throw new Error(t("This call is no longer ringing."));
       activeNativeCall = target.callId;
       startCall({
