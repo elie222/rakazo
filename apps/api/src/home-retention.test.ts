@@ -16,6 +16,7 @@ const credits = (fields: Record<string, unknown> = {}) => ({
   mode: "credits",
   balanceMicros: 0n,
   byokFreeUntil: null,
+  lots: [],
   ...fields,
 });
 
@@ -56,6 +57,16 @@ describe("saved home deletion date", () => {
     };
     expect(homeDeletionDue(ended, at(50), now)).toEqual({ at: at(130), reason: "plan-ended" });
     expect(homeDeletionDue(ended, at(110), now)).toEqual({ at: at(140), reason: "plan-ended" });
+  });
+
+  it("moves the date out from the latest credit purchase, even once those credits are spent", () => {
+    const bought = {
+      billing: billing({ status: "canceled", paidAt: at(0), endedAt: at(100) }),
+      modelCredits: credits({ lots: [{ createdAt: at(120) }] }),
+    };
+    expect(homeDeletionDue(bought, at(50), now)).toEqual({ at: at(150), reason: "plan-ended" });
+    const neverPaid = { billing: null, modelCredits: credits({ lots: [{ createdAt: at(120) }] }) };
+    expect(homeDeletionDue(neverPaid, at(10), now)).toEqual({ at: at(210), reason: "unused" });
   });
 
   it("gives a computer without a paid plan 90 days from its last use", () => {

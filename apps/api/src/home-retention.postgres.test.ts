@@ -294,6 +294,31 @@ describePostgres("saved home retention (PostgreSQL)", () => {
     expect(await objects()).toHaveLength(1);
   });
 
+  it("keeps the files when credits are bought after the warning, even once spent", async () => {
+    await sweep();
+    expect(sent()).toHaveLength(1);
+    travel(3);
+    await system.modelCreditAccount.create({
+      data: {
+        organizationId: id,
+        mode: "credits",
+        balanceMicros: 0n,
+        lots: {
+          create: {
+            id: `lot-${id}`,
+            amountMicros: 1_000_000n,
+            availableMicros: 0n,
+            createdAt: new Date(now),
+          },
+        },
+      },
+    });
+    travel(6);
+    await sweep();
+    expect(errors).toEqual([]);
+    expect(await objects()).toHaveLength(1);
+  });
+
   it("never deletes without a delivered warning", async () => {
     email.failNextSends(1);
     await sweep();

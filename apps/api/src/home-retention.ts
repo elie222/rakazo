@@ -24,7 +24,13 @@ type Account = {
     currentPeriodEndsAt: Date | null;
     updatedAt: Date;
   } | null;
-  modelCredits: { mode: string | null; balanceMicros: bigint; byokFreeUntil: Date | null } | null;
+  modelCredits: {
+    mode: string | null;
+    balanceMicros: bigint;
+    byokFreeUntil: Date | null;
+    /** The latest purchase or grant only. */
+    lots: Array<{ createdAt: Date }>;
+  } | null;
 };
 type Due = { at: Date; reason: HomeDeletionReason };
 type Db = PrismaClient | Prisma.TransactionClient;
@@ -33,17 +39,19 @@ type Warning = { organizationId: string; reason: HomeDeletionReason; ids: string
 /**
  * When a computer's saved home becomes due for deletion: 30 days after a paid plan ended, or
  * 90 days unused without one (a trial that never paid counts as none). Use since then moves it
- * later. Null while the organization can run bots (a plan, credits or a free period) or owes a
- * payment.
+ * later, and so does buying credits, even ones spent before the next sweep. Null while the
+ * organization can run bots (a plan, credits or a free period) or owes a payment.
  */
 export function homeDeletionDue(account: Account, lastUsedAt: Date, now = new Date()): Due | null {
   if (planIsLive(account, now)) return null;
-  const { billing } = account;
+  const { billing, modelCredits } = account;
+  const credited = modelCredits?.lots[0]?.createdAt;
+  const since = credited ? latest(credited, lastUsedAt) : lastUsedAt;
   if (billing?.paidAt) {
     const ended = billing.endedAt ?? billing.currentPeriodEndsAt ?? billing.updatedAt;
-    return { at: addDays(latest(ended, lastUsedAt), PLAN_ENDED_DAYS), reason: "plan-ended" };
+    return { at: addDays(latest(ended, since), PLAN_ENDED_DAYS), reason: "plan-ended" };
   }
-  return { at: addDays(lastUsedAt, UNUSED_DAYS), reason: "unused" };
+  return { at: addDays(since, UNUSED_DAYS), reason: "unused" };
 }
 
 function planIsLive({ billing, modelCredits }: Account, now: Date) {
@@ -127,7 +135,9 @@ export function homeRetentionSweep(
  */
 async function dueDates(db: Db, where: Prisma.ComputerWhereInput, now: Date, cursor?: string) {
   const computers = await db.computer.findMany({
-    where: { ...where, ...candidate },
+    // Paging by id, not a Prisma cursor: a computer cleared on this page no longer matches, and a
+    // cursor's skip would then pass over the next one.
+    where: { AND: [where, candidate, cursor ? { id: { gt: cursor } } : {}] },
     select: {
       id: true,
       state: true,
@@ -145,7 +155,14 @@ async function dueDates(db: Db, where: Prisma.ComputerWhereInput, now: Date, cur
                   updatedAt: true,
                 },
               },
-              modelCredits: { select: { mode: true, balanceMicros: true, byokFreeUntil: true } },
+              modelCredits: {
+                select: {
+                  mode: true,
+                  balanceMicros: true,
+                  byokFreeUntil: true,
+                  lots: { select: { createdAt: true }, orderBy: { createdAt: "desc" }, take: 1 },
+                },
+              },
             },
           },
         },
@@ -154,7 +171,6 @@ async function dueDates(db: Db, where: Prisma.ComputerWhereInput, now: Date, cur
     },
     orderBy: { id: "asc" },
     take: BATCH,
-    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   });
   // Only computers that could be due need their history read.
   const used = await lastUsed(
