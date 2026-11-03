@@ -9,6 +9,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { pushReceiptJob } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
+import type { IncomingCallPush, VoipPushProvider } from "./apns-voip.js";
 import { combineSignals } from "./connector-safety.js";
 import { credentialDigest } from "./credential-digest.js";
 import type { PushTokenStore } from "./push-token-store.js";
@@ -38,6 +39,34 @@ export function expoPushData(message: NotificationMessage, spaceId: string, deli
     deliveryId,
     ...(spaceId ? { spaceId } : {}),
     ...(message.groupId ? { groupId: message.groupId } : {}),
+  };
+}
+
+/** Android devices with native call support render data-only pushes themselves. */
+function incomingCallPayload(token: string, call: IncomingCallPush, dataOnly = false) {
+  const expiration = Math.floor(Date.parse(call.expiresAt) / 1000);
+  const botName = call.botName.slice(0, MAX_PUSH_TITLE_CHARS);
+  return {
+    to: token,
+    priority: "high",
+    ttl: Math.floor((Date.parse(call.expiresAt) - Date.now()) / 1000),
+    expiration,
+    data: {
+      kind: call.ended ? "incoming_call_ended" : "incoming_call",
+      callId: call.callId,
+      botId: call.botId,
+      botName,
+      expiresAt: call.expiresAt,
+    },
+    ...(dataOnly
+      ? {}
+      : {
+          title: botName,
+          body: "",
+          sound: "default",
+          interruptionLevel: "time-sensitive",
+          categoryId: "incoming-call",
+        }),
   };
 }
 
@@ -120,6 +149,7 @@ function expoPushReceipts(body: unknown): Record<string, ExpoPushTicket | undefi
 }
 
 export type ExpoPushOptions = {
+  voip?: VoipPushProvider;
   sessionExpiresAt?: PushSessionExpiresAt;
   /** Schedules the receipt check; without it receipts are not read. */
   jobs?: JobPublisher;
@@ -129,6 +159,7 @@ export type ExpoPushOptions = {
 };
 
 export class ExpoPushProvider implements NotificationProvider {
+  private readonly voip?: VoipPushProvider;
   private readonly sessionExpiresAt?: PushSessionExpiresAt;
   private readonly jobs?: JobPublisher;
   private readonly accessToken?: string;
@@ -138,6 +169,7 @@ export class ExpoPushProvider implements NotificationProvider {
     private readonly tokens: PushTokenStore,
     options: ExpoPushOptions = {},
   ) {
+    this.voip = options.voip;
     this.sessionExpiresAt = options.sessionExpiresAt;
     this.jobs = options.jobs;
     this.accessToken = options.accessToken?.trim() || undefined;
@@ -159,6 +191,93 @@ export class ExpoPushProvider implements NotificationProvider {
 
   async send(message: NotificationMessage, context: AdapterContext): Promise<void> {
     await this.deliver(message, context);
+  }
+
+  async incomingCall(userId: string, call: IncomingCallPush): Promise<void> {
+    const devices = (await this.tokens.devices?.(userId)) ?? [];
+    await Promise.allSettled(
+      devices.map(async (device) => {
+        if (device.userId !== userId || !(Date.parse(call.expiresAt) > Date.now())) return;
+        // PushKit makes every VoIP push ring, so only Android's data push can stop a ring.
+        if (call.ended && device.platform !== "android") return;
+        const expires = await this.sessionExpiresAt?.(device.sessionId);
+        if (!expires || expires.getTime() <= Date.now()) return;
+        // Re-read after the session lookup: sign-out or device handover may have won.
+        const current = await this.tokens.devices?.(userId);
+        if (
+          !current?.some(
+            (row) =>
+              row.deviceId === device.deviceId &&
+              row.revision === device.revision &&
+              row.sessionId === device.sessionId,
+          )
+        )
+          return;
+        let invalidVoip = false;
+        let invalidExpo = false;
+        try {
+          if (device.platform === "ios" && device.voipToken && this.voip) {
+            const result = await this.voip.send(device.voipToken, call);
+            if (result === "sent") return;
+            invalidVoip = result === "invalid";
+          }
+          if (!device.expoToken) return;
+          invalidExpo =
+            (await this.sendCallPush(
+              userId,
+              device.expoToken,
+              call,
+              device.platform === "android",
+            )) === "invalid";
+        } finally {
+          // Invalidate once, against the authorized revision, after both transports finish.
+          if (invalidVoip || invalidExpo)
+            await this.tokens.removeDevice?.(
+              userId,
+              device.deviceId,
+              device.revision,
+              invalidVoip && invalidExpo ? undefined : invalidVoip ? "voip" : "expo",
+            );
+        }
+      }),
+    );
+    // Old native builds registered only the account's Expo token.
+    if (devices.length === 0 && !call.ended) {
+      const token = await this.deliverableToken(userId);
+      if (token && (await this.sendCallPush(userId, token, call)) === "invalid")
+        await this.tokens.remove(userId, credentialDigest(token));
+    }
+  }
+
+  /** Retries Expo back-off until the call stops ringing; a ring that cannot arrive is logged. */
+  private async sendCallPush(
+    userId: string,
+    token: string,
+    call: IncomingCallPush,
+    dataOnly = false,
+  ): Promise<"sent" | "invalid" | "failed"> {
+    const payload = incomingCallPayload(token, call, dataOnly);
+    if (payload.ttl <= 0) return "failed";
+    try {
+      const { status, body } = await this.postWithBackoff(
+        EXPO_PUSH_URL,
+        payload,
+        AbortSignal.timeout(payload.ttl * 1000),
+      );
+      const [ticket] = expoPushTickets(body);
+      if (ticket?.details?.error === "DeviceNotRegistered") return "invalid";
+      const failure =
+        expoUnauthorizedError(body, status, this.accessToken) ?? expoPushErrorMessage(body, status);
+      if (failure) {
+        getLogger().warn("call.push_failed", { status, error: failure });
+        return "failed";
+      }
+      if (ticket?.id) await this.scheduleReceiptCheck(userId, token, ticket.id);
+      return "sent";
+    } catch (error) {
+      getLogger().warn("call.push_failed", { error });
+      return "failed";
+    }
   }
 
   /**
@@ -217,6 +336,17 @@ export class ExpoPushProvider implements NotificationProvider {
     }
     if (result.status !== "error") return;
     if (result.details?.error === "DeviceNotRegistered") {
+      const devices = (await this.tokens.devices?.(receipt.userId)) ?? [];
+      await Promise.all(
+        devices
+          .filter(
+            (device) =>
+              device.expoToken && credentialDigest(device.expoToken) === receipt.tokenDigest,
+          )
+          .map((device) =>
+            this.tokens.removeDevice?.(receipt.userId, device.deviceId, device.revision, "expo"),
+          ),
+      );
       await this.tokens.remove(receipt.userId, receipt.tokenDigest);
       return;
     }

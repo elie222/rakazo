@@ -256,7 +256,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Always allow {site}": "始终允许 {site}",
   "Always allowed": "已始终允许",
   "Android blocked notifications.": "Android 已阻止通知。",
-  Answer: "回答",
+  Answer: "接听",
+  "This call is no longer ringing.": "这通电话已经不响了。",
   Answered: "已回答",
   Approve: "批准",
   "Approve this server to let your agent use its tools.":

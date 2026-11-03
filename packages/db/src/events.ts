@@ -76,6 +76,7 @@ export class AnswerTooLongError extends Error {
 const EVENT_BATCH_SIZE = 200;
 const PUSH_CATCH_UP_MS = 30_000;
 const POLL_ONLY_CATCH_UP_MS = 400;
+const INCOMING_CALL_POLL_MS = 3_000;
 
 export interface AppendEventInput {
   spaceId: string;
@@ -102,6 +103,8 @@ export function transientRunEventsWhere(): Prisma.EventWhereInput {
 }
 
 export interface ThreadEvents {
+  notifyIncomingCalls?(userId: string): Promise<void>;
+  followIncomingCalls?(userId: string, signal?: AbortSignal): AsyncGenerator<void>;
   answerRunInput(input: AnswerRunInput): Promise<boolean>;
   append(input: AppendEventInput): Promise<ProductEvent>;
   claimSteering(input: ClaimSteeringInput): Promise<ClaimedSteeringMessage[]>;
@@ -354,6 +357,10 @@ export function createThreadEvents(
   } = {},
 ): ThreadEvents {
   return {
+    notifyIncomingCalls: async (userId) => {
+      await realtime?.publish(`incoming-calls:${userId}`, "");
+    },
+    followIncomingCalls: (userId, signal) => followIncomingCallSignals(realtime, userId, signal),
     answerRunInput: (input) => answerRunInput(prisma, input, realtime, options.runSecretWriter),
     append: (input) => appendEvent(prisma, input, realtime, options.analytics),
     claimSteering: (input) => claimSteering(prisma, input),
@@ -384,7 +391,7 @@ export async function clearThread(
         ...(input.groupId ? { groupId: input.groupId } : { botId: input.botId }),
       },
       data: { unread: false },
-      select: { nextMessageSeq: true, historyCompactionGeneration: true },
+      select: { nextMessageSeq: true, historyCompactionGeneration: true, userId: true },
     });
     const activeRuns = await tx.run.findMany({
       where: {
@@ -437,11 +444,14 @@ export async function clearThread(
     });
     return {
       event,
+      userId: thread.userId,
       cancelledRunIds: runIds,
       historyCompactionGeneration: thread.historyCompactionGeneration,
     };
   });
   await notifyRealtime(realtime, committed.event.threadId, committed.event.seq);
+  if (!input.groupId && committed.userId)
+    await realtime?.publish(`incoming-calls:${committed.userId}`, "").catch(() => undefined);
   // Legacy execution bindings point at runs of pre-lease releases, which kept writing
   // Computer.executionRunId. Clearing them inside the transaction reaches for the
   // computer row while holding the thread row — the inverted half of a cycle with a
@@ -2249,6 +2259,32 @@ function mapProductEvent(event: {
     createdAt: event.createdAt.toISOString(),
     payload: event.payload as Record<string, unknown>,
   };
+}
+
+/** One account stream; signals carry no content, and a periodic re-read covers a missed publish. */
+async function* followIncomingCallSignals(
+  realtime: RealtimeFanout | undefined,
+  userId: string,
+  signal?: AbortSignal,
+): AsyncGenerator<void> {
+  const latch = new ChangeLatch();
+  const unsubscribe = await realtime
+    ?.subscribe(`incoming-calls:${userId}`, () => latch.notify())
+    .catch(() => undefined);
+  // Without fanout each wake re-reads every ringing request, so poll gently.
+  const catchUpMs = unsubscribe ? PUSH_CATCH_UP_MS : INCOMING_CALL_POLL_MS;
+  try {
+    let seen = latch.generation;
+    yield;
+    while (!signal?.aborted) {
+      await latch.waitForChange(seen, catchUpMs, signal);
+      if (signal?.aborted) return;
+      seen = latch.generation;
+      yield;
+    }
+  } finally {
+    await unsubscribe?.();
+  }
 }
 
 class ChangeLatch {

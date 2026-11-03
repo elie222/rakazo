@@ -778,7 +778,7 @@ msgstr "Antwoorden"
 #: src/components/call/IncomingCall.tsx
 msgctxt "incoming call"
 msgid "Answer"
-msgstr "Antwoorden"
+msgstr "Opnemen"
 
 #: src/components/AskCard.tsx
 msgid "Answered"
@@ -5948,6 +5948,7 @@ msgid "This browser has no on-device dictation. Connect a voice provider with tr
 msgstr ""
 
 #: src/components/call/IncomingCall.tsx
+#: src/lib/user-error.ts
 msgid "This call is no longer ringing."
 msgstr "Dit gesprek rinkelt niet meer."
 

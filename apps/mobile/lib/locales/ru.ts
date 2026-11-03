@@ -278,7 +278,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Always allow {site}": "Всегда разрешать {site}",
   "Always allowed": "Всегда разрешено",
   "Android blocked notifications.": "Android заблокировал уведомления.",
-  Answer: "Ответ",
+  Answer: "Ответить",
+  "This call is no longer ringing.": "Этот звонок уже не активен.",
   Answered: "Отвечено",
   Approve: "Одобрить",
   "Approve this server to let your agent use its tools.":

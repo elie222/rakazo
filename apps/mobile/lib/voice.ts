@@ -32,6 +32,7 @@ export function createSpeechOwner(): SpeechOwner {
 }
 
 type SpeechOptions = {
+  requestContext?: ApiRequestContext;
   /** Which copy of the voice settings to use; omitted means whichever applies in the space. */
   scope?: SettingsScope;
   voiceId?: string;
@@ -211,7 +212,7 @@ async function speakPrepared(text: string, opts: SpeechOptions, epoch: number): 
       if (!spoken && playback.status !== "idle") setPlayback(IDLE_PLAYBACK, null);
       return spoken;
     }
-    const requestContext = await captureApiRequestContext();
+    const requestContext = opts.requestContext ?? (await captureApiRequestContext());
     if (!isCurrentSpeech(epoch)) return false;
     const prepared = await rpc(
       "voice/prepare",

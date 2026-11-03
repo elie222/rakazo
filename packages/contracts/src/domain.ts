@@ -148,6 +148,18 @@ export const BotSchema = z.object({
 });
 export type Bot = z.infer<typeof BotSchema>;
 
+/** The caller identity and request needed by every incoming-call surface. */
+export const IncomingBotCallSchema = BotSchema.pick({
+  id: true,
+  spaceId: true,
+  name: true,
+  color: true,
+  avatarSet: true,
+}).extend({
+  incomingCall: BotSchema.shape.incomingCall.unwrap().unwrap(),
+});
+export type IncomingBotCall = z.infer<typeof IncomingBotCallSchema>;
+
 export const ReorderBotsInput = z.object({
   botIds: z
     .array(Id)

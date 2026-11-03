@@ -263,7 +263,8 @@ export const NL_MESSAGES: Record<string, string> = {
   Agent: "Agent",
   "Allowed once": "Een keer toegestaan",
   "Always allowed": "Altijd toegestaan",
-  Answer: "Antwoorden",
+  Answer: "Opnemen",
+  "This call is no longer ringing.": "Dit gesprek rinkelt niet meer.",
   Answered: "Beantwoord",
   Approve: "Goedkeuren",
   "Approve this server to let your agent use its tools.":

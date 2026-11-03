@@ -46,6 +46,7 @@ import {
   signOut,
   signUp,
   spaceSelectionSeq,
+  subscribeIncomingCallEvents,
   subscribeServerReachable,
   subscribeSessionRejected,
   subscribeThread,
@@ -2836,6 +2837,30 @@ describe("mobile thread subscription", () => {
     vi.restoreAllMocks();
     vi.mocked(SecureStore.getItemAsync).mockReset();
     vi.mocked(SecureStore.getItemAsync).mockResolvedValue("");
+  });
+
+  it("shares the bounded SSE transport for one account call stream", async () => {
+    const call = {
+      id: "bot-1",
+      spaceId: "space-1",
+      name: "Caller",
+      color: "",
+      avatarSet: "rakazo",
+      incomingCall: {
+        callId: "call-1",
+        reason: "Review",
+        opening: "Hello",
+        expiresAt: new Date(Date.now() + 45000).toISOString(),
+      },
+    };
+    const frame = `data: ${JSON.stringify({ json: { type: "incoming.calls", payload: { calls: [call] } } })}\n\n`;
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response(frame, { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+    const onCalls = vi.fn();
+    await subscribeIncomingCallEvents(onCalls, new AbortController().signal);
+    expect(onCalls).toHaveBeenCalledWith([call]);
+    expect(fetch.mock.calls[0]?.[0]).toContain("notifications/subscribeCalls");
+    expect(fetch).toHaveBeenCalledOnce();
   });
 
   it("parses fragmented SSE frames and ignores malformed data and completion markers", async () => {

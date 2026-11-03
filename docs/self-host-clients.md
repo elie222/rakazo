@@ -41,6 +41,51 @@ EXPO_ACCESS_TOKEN=replace-with-your-expo-access-token
 Leave it unset when enhanced security is off. A missing or revoked token fails the push with an
 error that names `EXPO_ACCESS_TOKEN`; the token itself is never logged.
 
+### Mobile incoming calls
+
+Incoming calls ring in the mobile app while it is open. Registered devices also receive an
+expiring high-priority push: a native call notification on Android, and a time-sensitive
+notification on iOS. Android uses the existing Expo push setup (including the Firebase
+configuration in the native build). Android 14 and later may deny full-screen notification
+access; the call then uses a heads-up notification. Notification permissions and channel
+settings still apply.
+
+For iOS to ring while locked or backgrounded, optionally configure APNs VoIP delivery on
+both the API and worker. In Apple Developer, open **Certificates, Identifiers & Profiles →
+Keys**, create a key with **Apple Push Notifications service (APNs)** enabled for the app,
+and download its `.p8` file. Configure these server secrets through your deployment's
+normal environment/secret manager:
+
+| Setting | Value |
+| --- | --- |
+| `APNS_VOIP_KEY_ID` | `<APNS_KEY_ID>` |
+| `APNS_VOIP_TEAM_ID` | `<APPLE_TEAM_ID>` |
+| `APNS_VOIP_PRIVATE_KEY` | Contents of the `.p8` file; literal `\n` escapes are accepted |
+| `APNS_VOIP_ENVIRONMENT` | `sandbox` for development signing, `production` for TestFlight/App Store (default) |
+| `APNS_VOIP_BUNDLE_ID` | Your iOS bundle identifier; defaults to `com.rakazo.app` |
+
+The adapter uses the `<bundle identifier>.voip` topic. Keep keys on the server; never put
+them in the app or repository. Enable Push Notifications and Background Modes (Voice over
+IP, Audio, and Remote notifications) for the iOS App ID and provisioning profile. The Expo
+app config declares those modes and the time-sensitive notification capability. Development
+profiles must use the matching APNs entitlement/environment. Ship a new native build;
+an over-the-air JavaScript update cannot add these capabilities. PushKit registration is
+independent of permission for ordinary notifications.
+
+Without APNs configuration, or if APNs delivery fails, iOS falls back to the Expo notification.
+That fallback cannot provide CallKit ringing when iOS has suspended the app. Every VoIP
+push is reported immediately to CallKit in native code; an expired push is reported and
+immediately ended. When the call is answered or declined elsewhere, Android devices get a
+second push that stops the ring. iOS stops ringing through the open app; a VoIP push would ring
+again, so a backgrounded iPhone rings until the call expires. Declining from the lock screen uses the authenticated decline endpoint.
+Its session is kept in the device keychain with access after first unlock, on that device
+only, so a locked phone can reject the call; sign-out clears it and revokes delivery.
+Payloads contain only the call ID, bot ID/name, and expiry, never message content or credentials.
+
+Verify locked-screen delivery, answering, declining, token rotation, and multiple-device
+races on physical iOS and Android devices with the matching push credentials. Simulators
+and offline unit tests cannot validate APNs delivery or operating-system push throttling.
+
 ## Client updates
 
 Every web build is named by the UTC time it was built (`YYYYMMDDHHMMSS`). The web app sends its
