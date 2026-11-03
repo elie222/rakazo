@@ -393,8 +393,7 @@ export const builtinAgentTools: ConnectorTool[] = [
               },
               card: {
                 type: "string",
-                description:
-                  "Saved card for fill_card, with site; each call asks the user.",
+                description: "Saved card for fill_card, with site; each call asks the user.",
               },
               site: {
                 type: "string",

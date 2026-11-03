@@ -536,7 +536,11 @@ describe("vault router", () => {
     const { call } = botSecretDeps();
     await call("vault/put", { destination, value: FAKE_VALUE });
     const relabeled = await call("vault/put", { destination, title: "Portal", note: "For work" });
-    expect(relabeled.body.json).toMatchObject({ name: "portal", title: "Portal", note: "For work" });
+    expect(relabeled.body.json).toMatchObject({
+      name: "portal",
+      title: "Portal",
+      note: "For work",
+    });
     expect((await call("vault/reveal", { name: "portal" })).status).not.toBe(200);
     const missing = await call("vault/put", {
       destination: { ...destination, name: "missing" },
