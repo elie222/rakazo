@@ -98,13 +98,21 @@ function fakePrisma() {
     session: {
       findFirst: async ({ where }: { where: { userId: string } }) =>
         signedOutUsers.has(where.userId) ? null : { id: `${where.userId}-session` },
-      findMany: async ({ where }: { where: { id: { in: string[] }; expiresAt: { gt: Date } } }) =>
-        where.id.in
-          .filter((id) => {
-            const expiresAt = signedIn(id);
-            return expiresAt !== null && expiresAt > where.expiresAt.gt;
-          })
-          .map((id) => ({ id })),
+      findMany: async ({
+        where,
+      }: {
+        where: { id?: { in: string[] }; userId?: { in: string[] }; expiresAt: { gt: Date } };
+      }) =>
+        where.userId
+          ? where.userId.in
+              .filter((userId) => !signedOutUsers.has(userId))
+              .map((userId) => ({ userId }))
+          : where
+              .id!.in.filter((id) => {
+                const expiresAt = signedIn(id);
+                return expiresAt !== null && expiresAt > where.expiresAt.gt;
+              })
+              .map((id) => ({ id })),
     },
     securityEvent: {
       create: async ({ data }: { data: (typeof events)[number] }) => events.push(data),
@@ -356,6 +364,17 @@ describe("device sessions", () => {
     signedOutUsers.add("user-1");
     await endUserDeviceSession(store, { id: "desktop", userId: "user-1" });
     expect(rows.map((row) => row.revokedAt === null)).toEqual([false, true]);
+  });
+
+  it("refuses a device paired before sessions were recorded once no sign-in is left", async () => {
+    const { pair, hub, rows, signedOutUsers } = setup();
+    const { token } = await (await pair("user-1")).json();
+    rows[0]!.sessionId = null;
+    await expect(hub.authenticate(`Bearer ${token}`)).resolves.toMatchObject({ userId: "user-1" });
+
+    signedOutUsers.add("user-1");
+    await expect(hub.authenticate(`Bearer ${token}`)).resolves.toBeNull();
+    expect(rows[0]).toMatchObject({ revokedBy: "session" });
   });
 
   it("ties a device paired before sessions were recorded to its desktop's sign-in", async () => {
