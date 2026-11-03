@@ -113,25 +113,16 @@ describe("Pi runtime errors", () => {
     );
   });
 
-  it("keeps a thrown HTTP status without retaining the response in the saved reason", async () => {
-    provider.thrown = Object.assign(new Error("gateway rejected request"), {
-      status: 502,
-      body: { apiKey: "fixture-secret", prompt: "private request" },
-    });
-    const error = await consume().catch((error: unknown) => error);
-    expect(error).toBeInstanceOf(ModelProviderError);
-    expect(modelFailureReason(error as ModelProviderError)).toBe(
-      "ModelProviderError: The model request failed. HTTP 502.",
-    );
-  });
-
-  it("keeps internal runtime failures outside the provider error class", async () => {
-    provider.errorMessage = "";
-    provider.idleThrown = new TypeError("Internal runtime failure");
-    const failure = consume();
-    await expect(failure).rejects.not.toBeInstanceOf(ModelProviderError);
-    await expect(failure).rejects.toThrow("Internal runtime failure");
-  });
+  it.each(["Internal runtime failure", "Internal parser failure quoting HTTP 502"])(
+    "keeps internal runtime failures outside the provider error class: %s",
+    async (message) => {
+      provider.errorMessage = "";
+      provider.idleThrown = new TypeError(message);
+      const failure = consume();
+      await expect(failure).rejects.not.toBeInstanceOf(ModelProviderError);
+      await expect(failure).rejects.toThrow(message);
+    },
+  );
 
   it("marks a provider overload that outlasted its retries as transient", async () => {
     provider.errorMessage =

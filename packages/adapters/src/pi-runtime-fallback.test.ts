@@ -11,6 +11,7 @@ import type {
 import { clampThinkingLevel } from "@earendil-works/pi-ai";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import type { AgentRunRequest, AgentRuntimeEvent, ModelCallObserver } from "@rakazo/adapter-kit";
+import { ModelProviderError } from "@rakazo/adapter-kit";
 import type * as Core from "@rakazo/core";
 import {
   MODEL_CONTEXT_TOO_SMALL_ERROR,
@@ -811,6 +812,20 @@ describe("Pi runtime ordered model fallback", () => {
       expect(beforeCall).toHaveBeenCalledTimes(1);
     },
   );
+
+  it("retains structured HTTP status from a thrown provider stream error", async () => {
+    providerState.stream.mockImplementation(() => {
+      throw Object.assign(new Error("gateway rejected request"), {
+        status: 502,
+        body: { apiKey: "fixture-secret", prompt: "private request" },
+      });
+    });
+    const failure = await run(request([])).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ModelProviderError);
+    expect((failure as ModelProviderError).httpStatus).toBe(502);
+    expect(providerState.stream).toHaveBeenCalledTimes(1);
+    expect((failure as Error).message).not.toContain("fixture-secret");
+  });
 
   it("advances after a provider stream throws before output", async () => {
     providerState.stream.mockImplementation((target: Model<"openai-completions">) => {

@@ -387,7 +387,7 @@ export class PiAgentRuntime implements AgentRuntime {
           },
         };
         // The idle watchdog may clone a terminal message, preserving its content array.
-        const providerFailures = new WeakSet<AssistantMessage["content"]>();
+        const providerFailures = new WeakMap<AssistantMessage["content"], number | undefined>();
         const hasBackups = Boolean(request.fallbackModels?.length);
         let agent: Agent;
         let activeStreamTarget = host.activeModel;
@@ -431,7 +431,8 @@ export class PiAgentRuntime implements AgentRuntime {
                     {
                       ...usageHooks,
                       prepareContext,
-                      onProviderError: (message) => providerFailures.add(message.content),
+                      onProviderError: (message, httpStatus) =>
+                        providerFailures.set(message.content, httpStatus),
                     },
                   ),
                 target.config.cacheCapabilities?.retentionMode,
@@ -987,7 +988,12 @@ export class PiAgentRuntime implements AgentRuntime {
               ...fallbackState.backupOutcomes.values(),
             ]);
           }
-          throw modelFailure(error, message);
+          throw modelFailure(error, message, {
+            httpStatus:
+              terminalMessage?.role === "assistant"
+                ? providerFailures.get(terminalMessage.content)
+                : undefined,
+          });
         }
         // Only an assistant message can hold the answer a provider left off the deltas;
         // a trailing tool result is tool output, not the model's reply.
@@ -1059,7 +1065,6 @@ export class PiAgentRuntime implements AgentRuntime {
       } catch (error) {
         span?.setStatus({ status: "error" });
         const message = sanitizeError(error instanceof Error ? error.message : String(error));
-        const providerError = new ModelProviderError(message, error);
         queue.fail(
           error instanceof TransientModelError
             ? new TransientModelError(message, { cause: error })
@@ -1067,8 +1072,8 @@ export class PiAgentRuntime implements AgentRuntime {
               ? new ModelAccountError(message, { cause: error })
               : error instanceof ModelOutputError
                 ? new ModelOutputError(message, { cause: error })
-                : error instanceof ModelProviderError || providerError.httpStatus
-                  ? providerError
+                : error instanceof ModelProviderError
+                  ? new ModelProviderError(message, { cause: error })
                   : new Error(message),
         );
       } finally {

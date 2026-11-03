@@ -119,7 +119,7 @@ function looksLikeOpenCodeSessionError(message: string): boolean {
  * attributes to the user's provider account, key, plan or model choice, or to the model's own
  * unusable output, is not a server fault. Unclassified provider failures keep the generic provider error type.
  */
-export function modelFailure(error: string, message: string): Error {
+export function modelFailure(error: string, message: string, diagnostics?: unknown): Error {
   // When every model failed, the run is only as clear as its least explained failure: an
   // unexplained part stays a generic provider failure, and a part the user must fix outranks bad output,
   // which outranks one that clears on its own. Skipped backups never ran, so they do not count.
@@ -131,7 +131,7 @@ export function modelFailure(error: string, message: string): Error {
       ].map((part) => modelFailureClass(part, part))
     : [modelFailureClass(error, message)];
   const Failure = MODEL_FAILURE_RANK[Math.max(...failures)] ?? ModelProviderError;
-  return new Failure(message);
+  return new Failure(message, diagnostics);
 }
 
 /** Least to most severe; an unclassified provider failure is last. */
