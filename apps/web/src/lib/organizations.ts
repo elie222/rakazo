@@ -73,6 +73,8 @@ export async function leaveOrganization(
   rememberSpace(from.id, fromSpaceId);
   // The departing shell saves its Space's seed as it unmounts, so this runs after it.
   window.setTimeout(() => {
+    const current = selectedSpaceId();
+    if (current && from.spaceIds.includes(current)) return;
     for (const spaceId of [...from.spaceIds, null]) {
       queryClient.removeQueries({ queryKey: spaceQueries(userId, spaceId).key() });
     }

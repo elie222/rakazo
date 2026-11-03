@@ -392,7 +392,6 @@ async function clearCredentialsForEndpointChange(): Promise<
   const sessionCleared = await clearSessionToken();
   cachedSpaceId = "";
   bumpSpaceSelectionGeneration();
-  await clearStoredValue(ORGANIZATION_SPACES_KEY);
   const spaceCleared = await clearStoredValue(SPACE_KEY);
   if (sessionCleared && spaceCleared) {
     return {
@@ -500,6 +499,7 @@ export async function saveApiBase(
   }
   setCachedApiBase(parsed.url);
   await clearStoredValue(SPACE_ROLLBACK_KEY);
+  if (cleared) await clearStoredValue(ORGANIZATION_SPACES_KEY);
   return parsed;
 }
 
@@ -532,6 +532,7 @@ export async function resetApiBase(): Promise<EndpointResult> {
   }
   setCachedApiBase(url);
   await clearStoredValue(SPACE_ROLLBACK_KEY);
+  if (cleared) await clearStoredValue(ORGANIZATION_SPACES_KEY);
   return { ok: true, url };
 }
 

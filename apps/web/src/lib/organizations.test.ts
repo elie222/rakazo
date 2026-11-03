@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { landingSpaceId, leaveOrganization, organizationsQuery } from "./organizations";
 import { queryClient, spaceQueries } from "./query";
 import type * as RpcModule from "./rpc";
-import { clearSpaceSelection, rpc } from "./rpc";
+import { clearSpaceSelection, rpc, selectSpace } from "./rpc";
 
 vi.mock("./auth", () => ({ authClient: { $store: { notify: vi.fn() } } }));
 vi.mock("./rpc", async (importOriginal) => ({
@@ -35,6 +35,7 @@ beforeEach(() => {
       removeItem: (key: string) => items.delete(key),
     },
     setTimeout: (run: () => void) => run(),
+    dispatchEvent: () => true,
   });
   queryClient.setQueryData(organizationsQuery("user-1").queryKey, {
     activeOrganizationId: personal.id,
@@ -95,6 +96,17 @@ describe("leaving an organization", () => {
 
     expect(landingSpaceId(personal)).toBe("side");
     expect(queryClient.getQueryData(spaceQueries("user-1", "home").me.queryKey())).toBeUndefined();
+  });
+
+  it("keeps the cache when the selection is back in that organization before it is dropped", async () => {
+    queryClient.setQueryData(spaceQueries("user-1", "home").me.queryKey(), {
+      spaceId: "home",
+    } as never);
+    expect(selectSpace("home")).toBe(true);
+    await leaveOrganization("user-1", "home", "work-home");
+    expect(queryClient.getQueryData(spaceQueries("user-1", "home").me.queryKey())).toEqual({
+      spaceId: "home",
+    });
   });
 
   it("keeps everything when moving between Spaces of one organization", async () => {

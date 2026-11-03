@@ -32,11 +32,9 @@ export async function requireMembership(
     ? null
     : await sessionOrganizationId(prisma, userId, sessionId);
   const membership = await prisma.spaceMember.findFirst({
-    where: {
-      userId,
-      ...(requestedSpaceId ? { spaceId: requestedSpaceId } : {}),
-      ...(organizationId ? { organizationId } : {}),
-    },
+    where: requestedSpaceId
+      ? { userId, spaceId: requestedSpaceId }
+      : { userId, ...(organizationId ? { organizationId } : {}), space: { deletingAt: null } },
     orderBy: [{ space: { isDefault: "desc" } }, { createdAt: "asc" }, { id: "asc" }],
     select: {
       userId: true,
@@ -61,38 +59,57 @@ async function sessionOrganizationId(
   sessionId: string | undefined,
 ): Promise<string | null> {
   return runAsSystem("pick the organization a session opens", async () => {
-    const pinned = sessionId
-      ? (
-          await prisma.session.findUnique({
-            where: { id: sessionId },
-            select: { activeOrganizationId: true },
-          })
-        )?.activeOrganizationId
-      : null;
-    if (pinned) {
-      const stillMember = await prisma.member.findFirst({
-        where: { organizationId: pinned, userId },
-        select: { id: true },
-      });
-      if (stillMember) return pinned;
-    }
-    const spaceId = await lastActiveSpaceId(prisma, userId);
-    const organizationId = spaceId
-      ? ((
-          await prisma.space.findUnique({
-            where: { id: spaceId },
-            select: { organizationId: true },
-          })
-        )?.organizationId ?? null)
-      : null;
-    if (sessionId && organizationId) {
-      await prisma.session.updateMany({
-        where: { id: sessionId, userId },
-        data: { activeOrganizationId: organizationId },
-      });
-    }
-    return organizationId;
+    const pinned = sessionId ? await sessionPin(prisma, sessionId) : null;
+    if (pinned && (await opensInOrganization(prisma, userId, pinned))) return pinned;
+    const chosen = await recentOrganizationId(prisma, userId);
+    if (!sessionId || !chosen) return chosen;
+    // Replace only the pin this request read, so concurrent first requests settle on one.
+    const { count } = await prisma.session.updateMany({
+      where: { id: sessionId, userId, activeOrganizationId: pinned },
+      data: { activeOrganizationId: chosen },
+    });
+    if (count > 0) return chosen;
+    const winner = await sessionPin(prisma, sessionId);
+    return winner && (await opensInOrganization(prisma, userId, winner)) ? winner : chosen;
   });
+}
+
+async function sessionPin(prisma: PrismaClient, sessionId: string): Promise<string | null> {
+  const session = await prisma.session.findUnique({
+    where: { id: sessionId },
+    select: { activeOrganizationId: true },
+  });
+  return session?.activeOrganizationId ?? null;
+}
+
+async function opensInOrganization(
+  prisma: PrismaClient,
+  userId: string,
+  organizationId: string,
+): Promise<boolean> {
+  const membership = await prisma.spaceMember.findFirst({
+    where: { userId, organizationId, space: { deletingAt: null } },
+    select: { id: true },
+  });
+  return membership !== null;
+}
+
+/** The organization of the user's latest finished run, else of the Space they would open first. */
+async function recentOrganizationId(prisma: PrismaClient, userId: string): Promise<string | null> {
+  const spaceId = await lastActiveSpaceId(prisma, userId);
+  if (spaceId) {
+    const space = await prisma.space.findUnique({
+      where: { id: spaceId },
+      select: { organizationId: true },
+    });
+    if (space) return space.organizationId;
+  }
+  const first = await prisma.spaceMember.findFirst({
+    where: { userId, space: { deletingAt: null } },
+    orderBy: [{ space: { isDefault: "desc" } }, { createdAt: "asc" }, { id: "asc" }],
+    select: { organizationId: true },
+  });
+  return first?.organizationId ?? null;
 }
 
 /**

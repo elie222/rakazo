@@ -1691,6 +1691,7 @@ describe("mobile API authentication", () => {
       authorization: "Bearer session-token",
       "x-rakazo-space-id": "space-support",
     });
+    expect(SecureStore.deleteItemAsync).not.toHaveBeenCalledWith("rakazo.org_spaces");
   });
 
   it("restores a persisted space when its initial load failed", async () => {
