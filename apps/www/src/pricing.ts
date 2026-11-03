@@ -69,6 +69,4 @@ ${plan.features.map((feature) => `- ${feature}`).join("\n")}
 
 [${plan.action.label}](${new URL(plan.action.href, "https://rakazo.com").href})`,
 ).join("\n\n")}
-
-Model usage on your own connection is billed by your provider. Monthly credits expire at renewal; credits you top up don't. Hosted plans include fair use of up to 100 computer-hours a month. See the [terms](https://rakazo.com/terms/).
 `;
