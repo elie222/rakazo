@@ -170,9 +170,23 @@ local files in the body and upload them with `gh pr edit <n> --body-file
 <body.md> --attach ./<shot>.png` (gh 2.99 or newer), which rewrites each
 reference to the uploaded asset.
 
-Report the PR link, final head, waits, fix rounds, what feedback you handled and
-declined, what you validated, any unresolved threads, and whether you finished
-clean or stopped at a limit. If you stopped at a limit, say what was pending.
+## Reporting
+
+The user reads the chat, not the loop. Stay quiet while watching; speak up
+mid-loop only when you are blocked or need a decision.
+
+End with a few short lines, not sections:
+
+- The PR link and whether it is ready to merge. If it is and the change is low
+  risk, say so; still do not merge unless the user asked.
+- Any decision the user needs to make.
+- Review findings you declined that the user might reasonably disagree with,
+  one line each. Leave the rest to your PR replies.
+- Tests only when something failed or a real risk went untested.
+- If you stopped at a limit, what was still pending.
+
+Do not restate the PR description, list routine checks that passed, or recap
+each fix round; that detail already lives on the PR.
 
 ## Reference
 
