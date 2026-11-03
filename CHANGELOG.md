@@ -58,6 +58,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A routine shows "Schedule delayed" when its next scheduled run is more than five minutes overdue, and its run history marks scheduled runs that started late, for example "Started 2h late", on web and mobile.
 - Messaging your bot just "stop" or "stop now" while it works stops it, as if you had pressed Stop. This works in the app chat and in your private chat with the bot on a chat app, where it replies "Nothing is running." when the bot is idle.
 - Self-hosters can set `MODEL_STREAM_TIMEOUT_MS`, `MODEL_STREAM_IDLE_TIMEOUT_MS` and `MODEL_CONNECT_TIMEOUT_MS` (defaults 120 s, 180 s and 30 s), for example when bots share one local model server and queue for minutes.
+- Invited friends get two weeks free. A gift button in the chat header opens a short invite sheet on web and mobile, and tapping the bot's name opens a simpler bot profile that holds the actions the old menu had.
+- Self-hosters can list local models that support thinking in `RAKAZO_LOCAL_REASONING_MODELS`. Those models get thinking levels, and the chosen level is sent to the local server ([models](docs/self-host-models.md)).
 
 ### Changed
 
@@ -120,6 +122,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - On Windows, the desktop app tells a failed Docker Compose check apart from a missing Compose plugin.
 - Tables in mobile messages keep one height while you scroll them sideways, and on iOS the chat scroll indicator sits on the screen edge.
 - When the mobile app can't reach a bot computer's screen, the Computer page keeps showing the error and its Retry button instead of flashing back to a blank card every few seconds.
+- A saved login kept for the wrong site, such as `www.` instead of the `login.` host the form is on, can be moved to the right site from one login card instead of saving a second copy. A fill refused on another site now names both sites.
 
 ### Self-host upgrade notes
 
