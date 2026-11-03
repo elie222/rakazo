@@ -176,6 +176,12 @@ export function accountRoutes(ctx: RouterContext) {
           for (const bot of bots) {
             const threadId = bot.thread?.id;
             if (!threadId) continue;
+            // A newer save changed the default again: its own pass owns the remaining bots.
+            const current = await deps.prisma.user.findUniqueOrThrow({
+              where: { id: userId },
+              select: { botAvatarSet: true },
+            });
+            if (current.botAvatarSet !== botAvatarSet) break;
             // The default is saved; a bot that fails here keeps its style until the next save.
             await runAsTenant({ spaceId: bot.spaceId, userId }, () =>
               commitBotUpdate({
