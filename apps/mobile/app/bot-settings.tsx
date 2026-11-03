@@ -642,6 +642,7 @@ export default function BotSettingsScreen() {
                   target={{ kind: "bot", botId: bot.id }}
                   userId={me.userId}
                   spaceId={me.spaceId}
+                  refreshKey={JSON.stringify(credentials)}
                 />
               </SettingsGroup>
             ) : null}

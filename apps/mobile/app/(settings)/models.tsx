@@ -304,6 +304,7 @@ export default function Models() {
                   target={{ kind: "connection", credentialId: credential.id, scope: target.scope }}
                   userId={shared.userId}
                   spaceId={shared.spaceId}
+                  refreshKey={JSON.stringify(credentials)}
                   label={connectionDisplayName(
                     credential,
                     catalog.find(

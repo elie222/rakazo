@@ -340,6 +340,7 @@ export function ModelSettingsOverlay({
                   spaceId={me!.spaceId}
                   target={{ kind: "connection", credentialId: credential.id, scope }}
                   label={connectionName(credential)}
+                  refreshKey={JSON.stringify(credentials)}
                 />
               ))}
             </details>

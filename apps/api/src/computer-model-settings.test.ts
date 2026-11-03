@@ -214,6 +214,7 @@ describe("computer settings persistence and authorization", () => {
           computerCredentialId: null,
           computerProvider: null,
           hasMainPreference: false,
+          updatedAt: new Date(0),
         });
     },
   );

@@ -670,6 +670,7 @@ export function BotSettings({
                 target={{ kind: "bot", botId: bot.id }}
                 userId={me.userId}
                 spaceId={me.spaceId}
+                refreshKey={JSON.stringify(credentials)}
               />
             ) : null}
             <SettingsGroup label={t`Computer`} plain>

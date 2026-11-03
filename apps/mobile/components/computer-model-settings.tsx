@@ -16,11 +16,14 @@ export function ComputerModelSettings({
   userId,
   spaceId,
   label,
+  refreshKey,
 }: {
   target: ComputerModelTarget;
   userId: string;
   spaceId: string;
   label?: string;
+  /** Changes when the account's connections do, so the choices reload. */
+  refreshKey?: string;
 }) {
   const { t } = useI18n();
   const tokens = useMobileTokens();
@@ -39,9 +42,10 @@ export function ComputerModelSettings({
       JSON.stringify([base, userId, spaceId, targetKey]),
     );
   }, [base, userId, spaceId, targetKey]);
+  // refreshKey is only the reload signal.
   useEffect(() => {
     void controller.load();
-  }, [controller]);
+  }, [controller, refreshKey]);
   const state = useSyncExternalStore(controller.subscribe, controller.snapshot);
   const selection = state.view?.selection ?? null;
   const key = computerModelKey(selection);

@@ -251,7 +251,8 @@ export function computerModelSettings(
               const prior = await tx.userModelPreference.findFirst({ where: key });
               await tx.userModelPreference.upsert({
                 where: { userId_credentialId: key },
-                create: { ...key, ...data, hasMainPreference: false },
+                // Oldest, so a computer-only row never ranks first among main connections.
+                create: { ...key, ...data, hasMainPreference: false, updatedAt: new Date(0) },
                 update: { ...data, updatedAt: prior?.updatedAt ?? new Date(0) },
               });
             } else {

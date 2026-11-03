@@ -143,6 +143,23 @@ it.each(["account", "space", "bot"] as const)(
     unmount();
   },
 );
+it("reloads its choices when the account's connections change", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const view = (refreshKey: string) => (
+    <ComputerModelSettings
+      target={{ kind: "bot", botId: "refresh" }}
+      userId="user"
+      spaceId="space"
+      refreshKey={refreshKey}
+    />
+  );
+  await act(async () => root.render(view("one")));
+  await act(async () => root.render(view("two")));
+  expect(client.models.computer).toHaveBeenCalledTimes(2);
+  act(() => root.unmount());
+});
 it("offers effort only where the medium default applies", async () => {
   const fixed = { ...option, thinkingLevels: ["off"] };
   const selection = { ...fixed, thinkingLevel: null };
