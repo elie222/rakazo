@@ -29,7 +29,21 @@ test("ordinary accounts can add personal MCP connections without server setup", 
                   kind: "mcp",
                   slug: "notion",
                   source: "https://mcp.notion.example.test/mcp",
-                  auth: null,
+                  auth: { type: "oauth", headerName: null, note: null },
+                },
+              ],
+            },
+            {
+              domain: "keyed.example.test",
+              name: "Keyed tool",
+              description: "",
+              pageUrl: null,
+              surfaces: [
+                {
+                  kind: "mcp",
+                  slug: "keyed",
+                  source: "https://mcp.keyed.example.test/mcp",
+                  auth: { type: "header", headerName: "x-api-key", note: null },
                 },
               ],
             },
@@ -44,6 +58,7 @@ test("ordinary accounts can add personal MCP connections without server setup", 
   await page.getByRole("textbox", { name: "Search apps", exact: true }).fill("Notion");
   await page.getByRole("button", { name: "Search integrations.sh", exact: true }).click();
   await expect(page.getByText("Notion", { exact: true })).toBeVisible();
+  await expect(page.getByText("Keyed tool", { exact: true })).toBeHidden();
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.getByRole("button", { name: "Connected", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "personal-mcp-without-server-admin");
