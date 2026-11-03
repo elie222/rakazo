@@ -139,6 +139,21 @@ export function checkPageSource(source: string): PageSourceCheck {
     ) {
       const name = source.slice(tokens[index + 2]!.start, tokens[index + 2]!.end);
       if (/^[A-Z]/.test(name) && !tags.has(name)) tags.set(name, lineOf(tokens[index + 2]!.start));
+    } else if (
+      // createElement("iframe") makes the same element <iframe> would.
+      token.type === TokenType.name &&
+      text === "createElement" &&
+      tokens[index + 1]?.type === TokenType.parenL &&
+      tokens[index + 2]?.type === TokenType.string
+    ) {
+      const name = source.slice(tokens[index + 2]!.start + 1, tokens[index + 2]!.end - 1);
+      const element = name.toLowerCase();
+      if (BLOCKED_ELEMENTS.has(element) && !blocked.has(element)) {
+        blocked.add(element);
+        errors.push(
+          `line ${line}: <${name}> is not allowed in a page; ${BLOCKED_ELEMENTS.get(element)}`,
+        );
+      }
     }
   });
   for (const { name, start } of selfRenderingKitNames(tokens, source)) {

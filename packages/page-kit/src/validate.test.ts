@@ -158,6 +158,11 @@ describe("checkPageSource", () => {
       "line 1: <iFrame> is not allowed",
     ],
     [
+      "an iframe made with createElement",
+      "const App = () => React.createElement(\"iframe\", { src: 'https://x.dev' });",
+      "line 1: <iframe> is not allowed",
+    ],
+    [
       "a script in odd case",
       "const App = () => <sCRIPT>{'x'}</sCRIPT>;",
       "line 1: <sCRIPT> is not allowed",
