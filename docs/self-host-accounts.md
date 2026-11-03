@@ -38,6 +38,8 @@ three attempts. A code can create an account, so it follows the same registratio
 rules as password signup. Signing in with a code to an existing unverified account removes that
 account's password, SSO links and sessions, since nothing proved they belonged to the mailbox
 owner. This is what stops someone who registered another person's address from keeping access.
+A password reset proves the mailbox the same way, so resetting an unverified account's password
+also removes its SSO links, passkeys and paired devices.
 
 Allowlisted signup requires mailbox verification and email delivery, including the first account.
 Without email delivery, use the server-side account bootstrap described below; public signup never marks an address verified or assigns server permissions.
@@ -162,10 +164,12 @@ never register a client secret in the mobile app. Mobile stores the resulting se
 SecureStore, like password sign-in. Native builds need the Expo WebBrowser module.
 
 Provider emails are verified only when `email_verified` is the boolean `true`. False or missing
-claims stay unverified, including on subsequent sign-ins. Sign-in never links accounts by email.
+claims stay unverified, including on subsequent sign-ins, and an unverified claim never changes
+the account's email. Sign-in never links accounts by email.
 If an email belongs to another account, sign in to that existing account and choose **Link SSO**
 in account settings. Linking requires an authenticated session, a verified provider email and
-matching email addresses. The issuer and provider subject identify the linked account thereafter. Changing issuers does
+matching email addresses. An account whose email is not yet verified can link SSO only from a
+browser signed in to it, so not from the mobile app until it verifies. The issuer and provider subject identify the linked account thereafter. Changing issuers does
 not reuse an old identity. Old-issuer links remain stored but do not count as linked to the
 current provider, so **Link SSO** becomes available again. Link the new identity from the
 existing signed-in account; authenticated-session, verified-email and matching-email checks

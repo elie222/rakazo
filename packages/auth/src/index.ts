@@ -205,6 +205,8 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       maxPasswordLength: MAX_PASSWORD_LENGTH,
       revokeSessionsOnPasswordReset: true,
       onPasswordReset: async ({ user }) => {
+        // The reset proved the mailbox, not the logins someone added before it.
+        if (!user.emailVerified) await revokeUnprovenCredentials(prisma, user.id);
         await recordSecurityEvent({
           type: "auth.password.changed",
           userId: user.id,
@@ -252,6 +254,14 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         if (isMessagingEmail(email)) return { error: "EMAIL_NOT_AVAILABLE" };
         if (source.action === "link-account") {
           if (!verified) return { error: "unable_to_link_account" };
+          // The native authorization proxy can plant a link state in any browser, so an
+          // unverified address alone does not show who the account belongs to.
+          const target = await ctx.context.internalAdapter.findUserById(String(user.id));
+          if (
+            !target ||
+            (!target.emailVerified && (await sessionForAuthHook(ctx))?.user.id !== target.id)
+          )
+            return { error: "unable_to_link_account" };
           return;
         }
         if (source.action === "create-user") {
@@ -270,8 +280,14 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
           const credential = await ctx.context.internalAdapter.findCredentialAccount(user.id);
           if (credential?.password && stored?.email.toLowerCase() !== email)
             return { error: "email_does_not_match" };
-          // A previous verified claim must not mask a later false/missing claim.
-          await ctx.context.internalAdapter.updateUser(user.id, { email, emailVerified: verified });
+          // A previous verified claim must not mask a later false/missing claim, and an
+          // unverified claim must not move the account onto an address nobody proved.
+          await ctx.context.internalAdapter.updateUser(
+            user.id,
+            verified || stored?.email.toLowerCase() === email
+              ? { email, emailVerified: verified }
+              : { emailVerified: false },
+          );
         }
       },
       deleteUser: {
@@ -683,6 +699,7 @@ async function revokeUnprovenCredentials(prisma: PrismaClient, userId: string) {
   // Auth requests carry a database context, which a batch $transaction([...]) cannot.
   await prisma.$transaction(async (tx) => {
     await tx.passkey.deleteMany({ where: { userId } });
+    await tx.account.deleteMany({ where: { userId, providerId: { not: "credential" } } });
     await tx.messagingIdentity.deleteMany({ where: { userId } });
     await tx.messagingLinkCode.deleteMany({ where: { userId } });
     await tx.userDevice.updateMany({
