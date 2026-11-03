@@ -101,11 +101,6 @@ msgstr "{0} {unitLabel}"
 msgid "{0} connection"
 msgstr "{0} 连接"
 
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} default"
-msgstr "{0} 的默认"
-
 #. placeholder {0}: parts.amount
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} GB"
@@ -150,11 +145,6 @@ msgstr "{0} 的合并间隔（小时）"
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} TB"
 msgstr "{0} TB"
-
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} will still respond to direct mentions."
-msgstr "{0} 被直接 @ 时仍会回复。"
 
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
@@ -962,10 +952,6 @@ msgstr "自动"
 msgid "Automated senders"
 msgstr "自动发送者"
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Automated senders will appear after they post here."
-msgstr "自动发送者在这里发过消息后会出现。"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Available after the routine is saved"
 msgstr "保存例行任务后可用"
@@ -1584,6 +1570,7 @@ msgstr "请确认此浏览器会话可以访问该 URL，然后重新测试。"
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
+#: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connect"
 msgstr "连接"
@@ -2772,10 +2759,6 @@ msgstr "启用 {0}"
 msgid "Ends {day}"
 msgstr "将于 {day} 结束"
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Engage when... Ignore..."
-msgstr "在…时参与，忽略…"
-
 #: src/components/GitHubStarPrompt.tsx
 msgid "Enjoying Rakazo?"
 msgstr ""
@@ -2864,6 +2847,10 @@ msgstr "每小时"
 #: src/lib/cron.ts
 msgid "Every hour at :{0}"
 msgstr "每小时{0}分"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Every message"
+msgstr "所有消息"
 
 #: src/lib/cron.ts
 msgid "Every Monday"
@@ -3348,6 +3335,10 @@ msgstr "指令 {position}"
 msgid "Instructions are too long. Untick some files."
 msgstr "指令太长。请取消勾选部分文件。"
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Instructions for this room"
+msgstr "此房间的指示"
+
 #: src/components/AskCard.tsx
 msgid "Instructions updated"
 msgstr "指令已更新"
@@ -3482,12 +3473,7 @@ msgstr "关联 SSO"
 msgid "List view"
 msgstr "列表视图"
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Listen"
-msgstr "全部消息"
-
 #: src/components/call/CallCard.tsx
-#: src/pages/ExternalConversationSettings.tsx
 msgid "Listening"
 msgstr "聆听"
 
@@ -4914,6 +4900,10 @@ msgstr "替换密钥"
 msgid "Replace value"
 msgstr "替换值"
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Replies to"
+msgstr "回复对象"
+
 #: src/pages/shell/message-hover-actions.tsx
 #: src/pages/shell/quote-selection-button.tsx
 msgid "Reply"
@@ -4941,6 +4931,7 @@ msgid "Research & writing"
 msgstr "调研和写作"
 
 #: src/components/ComputerMaintenanceActions.tsx
+#: src/pages/ExternalConversationSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Reset"
 msgstr "重置"
@@ -5051,10 +5042,6 @@ msgstr "撤销"
 msgid "Revoked"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Room guidance"
-msgstr "房间指引"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Rotate key"
 msgstr "轮换密钥"
@@ -5120,6 +5107,10 @@ msgstr "这个 Bot 收到该提供方发来的已验证消息时会运行。"
 #: src/pages/PluginsOverlay.tsx
 msgid "Sales & CRM"
 msgstr "销售与 CRM"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Same as {botName}"
+msgstr "与 {botName} 相同"
 
 #: src/lib/cron.ts
 msgid "Saturday"
@@ -6326,10 +6317,6 @@ msgstr "使用找到的模型"
 #: src/lib/model-connection-preflight.ts
 msgid "Use Connect to verify the key."
 msgstr "请使用“连接”验证密钥。"
-
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Use default guidance"
-msgstr "使用默认指引"
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Use defaults"

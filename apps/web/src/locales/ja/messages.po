@@ -101,11 +101,6 @@ msgstr "{0}{unitLabel}"
 msgid "{0} connection"
 msgstr "{0}の接続"
 
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} default"
-msgstr "{0}のデフォルト"
-
 #. placeholder {0}: parts.amount
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} GB"
@@ -150,11 +145,6 @@ msgstr "{0}のまとめ間隔（時間）"
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} TB"
 msgstr "{0} TB"
-
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} will still respond to direct mentions."
-msgstr "{0}は直接のメンションには引き続き応答します。"
 
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
@@ -962,10 +952,6 @@ msgstr "自動"
 msgid "Automated senders"
 msgstr "自動送信者"
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Automated senders will appear after they post here."
-msgstr "自動送信者は、ここに投稿すると表示されます。"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Available after the routine is saved"
 msgstr "ルーティンの保存後に利用可能"
@@ -1584,6 +1570,7 @@ msgstr "このブラウザセッションからURLにアクセスできること
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
+#: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connect"
 msgstr "接続"
@@ -2772,10 +2759,6 @@ msgstr "{0}を有効にする"
 msgid "Ends {day}"
 msgstr "{day}に終了"
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Engage when... Ignore..."
-msgstr "対応する場合… 無視する場合…"
-
 #: src/components/GitHubStarPrompt.tsx
 msgid "Enjoying Rakazo?"
 msgstr ""
@@ -2864,6 +2847,10 @@ msgstr "毎時"
 #: src/lib/cron.ts
 msgid "Every hour at :{0}"
 msgstr "毎時{0}分"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Every message"
+msgstr "すべてのメッセージ"
 
 #: src/lib/cron.ts
 msgid "Every Monday"
@@ -3348,6 +3335,10 @@ msgstr "指示 {position}"
 msgid "Instructions are too long. Untick some files."
 msgstr "指示が長すぎます。いくつかのファイルのチェックを外してください。"
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Instructions for this room"
+msgstr "このルームへの指示"
+
 #: src/components/AskCard.tsx
 msgid "Instructions updated"
 msgstr "指示を更新しました"
@@ -3482,12 +3473,7 @@ msgstr "SSOを連携"
 msgid "List view"
 msgstr "リスト表示"
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Listen"
-msgstr "常に聞く"
-
 #: src/components/call/CallCard.tsx
-#: src/pages/ExternalConversationSettings.tsx
 msgid "Listening"
 msgstr "聞いています"
 
@@ -4914,6 +4900,10 @@ msgstr "キーを置き換え"
 msgid "Replace value"
 msgstr "値を置き換え"
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Replies to"
+msgstr "返信対象"
+
 #: src/pages/shell/message-hover-actions.tsx
 #: src/pages/shell/quote-selection-button.tsx
 msgid "Reply"
@@ -4941,6 +4931,7 @@ msgid "Research & writing"
 msgstr "リサーチと執筆"
 
 #: src/components/ComputerMaintenanceActions.tsx
+#: src/pages/ExternalConversationSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Reset"
 msgstr "リセット"
@@ -5051,10 +5042,6 @@ msgstr "取り消す"
 msgid "Revoked"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Room guidance"
-msgstr "ルームのガイダンス"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Rotate key"
 msgstr "キーをローテーション"
@@ -5120,6 +5107,10 @@ msgstr "このボットがこのプロバイダーから検証済みのメッセ
 #: src/pages/PluginsOverlay.tsx
 msgid "Sales & CRM"
 msgstr ""
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Same as {botName}"
+msgstr "{botName}と同じ"
 
 #: src/lib/cron.ts
 msgid "Saturday"
@@ -6326,10 +6317,6 @@ msgstr "見つかったモデルを使用"
 #: src/lib/model-connection-preflight.ts
 msgid "Use Connect to verify the key."
 msgstr "「接続」でキーを確認してください。"
-
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Use default guidance"
-msgstr "デフォルトのガイダンスを使用"
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Use defaults"

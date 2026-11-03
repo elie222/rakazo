@@ -40,6 +40,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { IconTooltip } from "../components/IconTooltip";
+import { VideoPreview } from "../components/ArtifactFileCard";
 import { PdfViewer } from "../components/PdfViewer";
 import { SandboxedHtmlViewer } from "../components/SandboxedHtmlViewer";
 import { decodeArtifactBase64, downloadArtifactBytes } from "../lib/artifact-open";
@@ -951,6 +952,8 @@ function ArtifactPreview({ artifact, bytes }: { artifact: Artifact; bytes: Uint8
       );
     case "pdf":
       return <PdfViewer bytes={bytes} title={artifact.name} />;
+    case "video":
+      return <VideoPreview bytes={bytes} name={artifact.name} />;
     case "image":
       return <ImagePreview bytes={bytes} mimeType={artifact.mimeType} name={artifact.name} />;
     case "none":

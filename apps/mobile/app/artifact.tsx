@@ -18,6 +18,7 @@ import {
 } from "react-native";
 import { NativeSymbol } from "../components/native-symbol";
 import { PdfPreview } from "../components/pdf-preview";
+import { VideoPreview } from "../components/video-preview";
 import { SandboxedHtmlPreview } from "../components/sandboxed-html-preview";
 import { formatActivityRelativeTime } from "../lib/activity";
 import { mobileTokens } from "../lib/appearance";
@@ -42,6 +43,7 @@ type PreviewContent =
   | { kind: "text"; text: string }
   | { kind: "pdf"; uri: string }
   | { kind: "image"; uri: string }
+  | { kind: "video"; uri: string }
   | { kind: "unsupported" };
 
 type ContentState =
@@ -69,6 +71,8 @@ async function computePreview(mimeType: string, file: File): Promise<PreviewCont
       return { kind: "pdf", uri: file.uri };
     case "image":
       return { kind: "image", uri: file.uri };
+    case "video":
+      return { kind: "video", uri: file.uri };
     case "none":
       return { kind: "unsupported" };
   }
@@ -351,6 +355,13 @@ function ArtifactPreview({
     return (
       <View style={styles.previewCard}>
         <PdfPreview uri={preview.uri} name={name} />
+      </View>
+    );
+  }
+  if (preview.kind === "video") {
+    return (
+      <View style={styles.previewCard}>
+        <VideoPreview uri={preview.uri} name={name} />
       </View>
     );
   }

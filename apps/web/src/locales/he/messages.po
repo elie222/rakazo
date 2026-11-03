@@ -101,11 +101,6 @@ msgstr "{0} {unitLabel}"
 msgid "{0} connection"
 msgstr "חיבור {0}"
 
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} default"
-msgstr "ברירת המחדל של {0}"
-
 #. placeholder {0}: parts.amount
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} GB"
@@ -150,11 +145,6 @@ msgstr "שעות סיכום של {0}"
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} TB"
 msgstr "{0} TB"
-
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} will still respond to direct mentions."
-msgstr "{0} ימשיך להגיב לאזכורים ישירים."
 
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
@@ -962,10 +952,6 @@ msgstr "אוטומטי"
 msgid "Automated senders"
 msgstr "שולחים אוטומטיים"
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Automated senders will appear after they post here."
-msgstr "שולחים אוטומטיים יופיעו כאן אחרי שיפרסמו הודעה."
-
 #: src/pages/RoutineEditor.tsx
 msgid "Available after the routine is saved"
 msgstr "זמין אחרי שמירת הרוטינה"
@@ -1584,6 +1570,7 @@ msgstr "יש לוודא שאפשר להגיע לכתובת ה-URL מסשן הד�
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
+#: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connect"
 msgstr "חיבור"
@@ -2772,10 +2759,6 @@ msgstr "הפעלת {0}"
 msgid "Ends {day}"
 msgstr "מסתיים ב-{day}"
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Engage when... Ignore..."
-msgstr "להגיב כאשר... להתעלם מ..."
-
 #: src/components/GitHubStarPrompt.tsx
 msgid "Enjoying Rakazo?"
 msgstr ""
@@ -2864,6 +2847,10 @@ msgstr "כל שעה"
 #: src/lib/cron.ts
 msgid "Every hour at :{0}"
 msgstr "כל שעה בדקה {0}"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Every message"
+msgstr "כל הודעה"
 
 #: src/lib/cron.ts
 msgid "Every Monday"
@@ -3348,6 +3335,10 @@ msgstr "הנחיות {position}"
 msgid "Instructions are too long. Untick some files."
 msgstr "ההנחיות ארוכות מדי. בטלו את הסימון של חלק מהקבצים."
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Instructions for this room"
+msgstr "הוראות לחדר הזה"
+
 #: src/components/AskCard.tsx
 msgid "Instructions updated"
 msgstr "ההנחיות עודכנו"
@@ -3482,12 +3473,7 @@ msgstr "קישור SSO"
 msgid "List view"
 msgstr "תצוגת רשימה"
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Listen"
-msgstr "האזנה"
-
 #: src/components/call/CallCard.tsx
-#: src/pages/ExternalConversationSettings.tsx
 msgid "Listening"
 msgstr "מאזין"
 
@@ -4914,6 +4900,10 @@ msgstr "החלפת מפתח"
 msgid "Replace value"
 msgstr "החלפת ערך"
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Replies to"
+msgstr "משיב ל"
+
 #: src/pages/shell/message-hover-actions.tsx
 #: src/pages/shell/quote-selection-button.tsx
 msgid "Reply"
@@ -4941,6 +4931,7 @@ msgid "Research & writing"
 msgstr "מחקר וכתיבה"
 
 #: src/components/ComputerMaintenanceActions.tsx
+#: src/pages/ExternalConversationSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Reset"
 msgstr "איפוס"
@@ -5051,10 +5042,6 @@ msgstr "ביטול הרשאה"
 msgid "Revoked"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Room guidance"
-msgstr "הנחיות לחדר"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Rotate key"
 msgstr "החלפת מפתח"
@@ -5120,6 +5107,10 @@ msgstr "רץ כשהבוט הזה מקבל הודעה מאומתת מהספק ה�
 #: src/pages/PluginsOverlay.tsx
 msgid "Sales & CRM"
 msgstr ""
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Same as {botName}"
+msgstr "כמו {botName}"
 
 #: src/lib/cron.ts
 msgid "Saturday"
@@ -6326,10 +6317,6 @@ msgstr "שימוש במודל שנמצא"
 #: src/lib/model-connection-preflight.ts
 msgid "Use Connect to verify the key."
 msgstr "יש ללחוץ על חיבור כדי לאמת את המפתח."
-
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Use default guidance"
-msgstr "שימוש בהנחיות ברירת המחדל"
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Use defaults"

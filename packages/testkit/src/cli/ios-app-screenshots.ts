@@ -11,6 +11,7 @@ import type { IosGallerySection } from "../ios-screenshot-gallery.js";
 import { renderIosScreenshotGallery } from "../ios-screenshot-gallery.js";
 import { startIosScreenshotBackend } from "./ios-screenshot-backend.js";
 import { captureIosProviderLimitError } from "./ios-screenshot-error.js";
+import { assertPublishConfigured, publishIosGallery } from "./ios-screenshot-publish.js";
 import { seedIosScreenshotFixture } from "./ios-screenshot-seed.js";
 import { runProcess } from "./process.js";
 
@@ -29,10 +30,13 @@ const LOCAL_API_PORT = 3110;
 // Debug builds load JavaScript from this port only.
 const METRO_PORT = 8081;
 const METRO_URL = `http://localhost:${METRO_PORT}`;
+// The local API names this as the web origin, which computer screens load through.
+const SCREEN_RELAY_PORT = 5180;
 const LOCAL_PASSWORD = "ios-screenshot-password-1234";
 
 async function main() {
-  const requested = parseSections(process.argv.slice(2));
+  const { sections: requested, publish } = parseArgs(process.argv.slice(2));
+  if (publish) assertPublishConfigured();
   const catalog = await loadIosScreenshotCatalog(CATALOG_DIR);
   const unknown = requested.filter((id) => !catalog.some((section) => section.id === id));
   if (unknown.length > 0) {
@@ -70,6 +74,10 @@ async function main() {
   });
   const { apiUrl, databaseUrl } = backend;
   const metro = await startMetro(apiUrl, outDir);
+  const screenRelay = await startScreenRelay(apiUrl, outDir).catch((error: unknown) => {
+    metro.stop();
+    throw error;
+  });
   try {
     await firstLaunch(udid, outDir);
     const fixture = await seedIosScreenshotFixture({
@@ -102,13 +110,16 @@ async function main() {
         RAKAZO_SCREENSHOT_ARCHIVE_ID: fixture.archiveId,
         RAKAZO_SCREENSHOT_TEAM_SPACE_ID: fixture.teamSpaceId,
         RAKAZO_SCREENSHOT_CONVERSATION_ID: fixture.conversationId,
+        RAKAZO_SCREENSHOT_CARDS_BOT_ID: fixture.cardsBotId,
       },
       botId: fixture.botId,
     });
   } finally {
+    screenRelay.stop();
     metro.stop();
     await backend.stop();
   }
+  if (publish) console.log(`Published: ${await publishIosGallery(outDir, ROOT)}`);
 }
 
 async function captureSections(input: {
@@ -243,16 +254,10 @@ async function simulatorUdid() {
  * A debug build loads JavaScript from Metro, and Metro bakes the API address into the bundle.
  * A fresh Metro per run serves exactly the code on disk.
  */
-async function startMetro(apiUrl: string, outDir: string): Promise<{ stop: () => void }> {
-  if (await metroRunning()) {
-    throw new Error(
-      `Metro is already running on port ${METRO_PORT}. Stop it: the catalog starts its own, so the screenshots show the code on disk.`,
-    );
-  }
-  const log = createWriteStream(path.join(outDir, "metro.log"));
-  const child = spawn(
-    "pnpm",
-    [
+function startMetro(apiUrl: string, outDir: string) {
+  return startServer({
+    name: "Metro",
+    args: [
       "--filter",
       "@rakazo/mobile",
       "exec",
@@ -263,54 +268,91 @@ async function startMetro(apiUrl: string, outDir: string): Promise<{ stop: () =>
       String(METRO_PORT),
       "--localhost",
     ],
-    {
-      cwd: ROOT,
-      env: {
-        ...process.env,
-        // The local API sets NODE_ENV=test in this process; Metro must not run as a test.
-        NODE_ENV: "development",
-        EXPO_PUBLIC_API_URL: apiUrl,
-        EXPO_NO_TELEMETRY: "1",
-        CI: "1",
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-      // Its own process group, so stopping it also stops the Expo process pnpm starts.
-      detached: true,
+    port: METRO_PORT,
+    log: path.join(outDir, "metro.log"),
+    env: { EXPO_PUBLIC_API_URL: apiUrl, EXPO_NO_TELEMETRY: "1", CI: "1" },
+    ready: () =>
+      fetch(`${METRO_URL}/status`).then(
+        async (response) => (await response.text()).includes("packager-status:running"),
+        () => false,
+      ),
+  });
+}
+
+/** The web dev server relays computer screens, as it does for the web app. */
+function startScreenRelay(apiUrl: string, outDir: string) {
+  return startServer({
+    name: "The screen relay",
+    args: ["--filter", "@rakazo/web", "exec", "vite"],
+    port: SCREEN_RELAY_PORT,
+    log: path.join(outDir, "screen-relay.log"),
+    // These win over any values in the repository's .env.
+    env: {
+      API_PROXY_TARGET: apiUrl,
+      WEB_PORT: String(SCREEN_RELAY_PORT),
+      RAKAZO_DEV_HOST: "127.0.0.1",
+      SCREEN_PROXY_SECRET: process.env.SCREEN_PROXY_SECRET ?? "",
+      BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET ?? "",
     },
-  );
-  // Ctrl-C reaches only this process's group, so stop Metro's group before exiting.
-  const interrupted = () => {
-    stop();
+    ready: () =>
+      fetch(`http://127.0.0.1:${SCREEN_RELAY_PORT}/`).then(
+        (response) => response.ok,
+        () => false,
+      ),
+  });
+}
+
+// Ctrl-C reaches only this process's group, so stop every server's group before exiting.
+const running = new Set<() => void>();
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.on(signal, () => {
+    for (const stop of running) stop();
     process.exit(130);
-  };
+  });
+}
+
+/**
+ * A dev server in its own process group, so stopping it also stops what pnpm starts. It must
+ * be fresh: one already on the port could serve other code.
+ */
+async function startServer(input: {
+  name: string;
+  args: string[];
+  port: number;
+  log: string;
+  env: Record<string, string>;
+  ready: () => Promise<boolean>;
+}): Promise<{ stop: () => void }> {
+  if (await input.ready()) {
+    throw new Error(`${input.name} is already running on port ${input.port}. Stop it first.`);
+  }
+  const log = createWriteStream(input.log);
+  const child = spawn("pnpm", input.args, {
+    cwd: ROOT,
+    // The local API sets NODE_ENV=test in this process; dev servers must not run as tests.
+    env: { ...process.env, NODE_ENV: "development", ...input.env },
+    stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
+  });
   const stop = () => {
-    process.off("SIGINT", interrupted);
-    process.off("SIGTERM", interrupted);
+    running.delete(stop);
     try {
       if (child.pid) process.kill(-child.pid, "SIGTERM");
     } catch {
       // Already gone.
     }
   };
-  process.once("SIGINT", interrupted);
-  process.once("SIGTERM", interrupted);
+  running.add(stop);
   child.stdout?.pipe(log);
   child.stderr?.pipe(log);
   const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
-    if (await metroRunning()) return { stop };
+    if (await input.ready()) return { stop };
     if (child.exitCode !== null) break;
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   stop();
-  throw new Error(`Metro did not start; see ${path.join(outDir, "metro.log")}`);
-}
-
-async function metroRunning() {
-  return fetch(`${METRO_URL}/status`).then(
-    async (response) => (await response.text()).includes("packager-status:running"),
-    () => false,
-  );
+  throw new Error(`${input.name} did not start; see ${input.log}`);
 }
 
 /** Launches the app and waits for its first bundle, which can take minutes to build. */
@@ -330,8 +372,9 @@ async function firstLaunch(udid: string, outDir: string) {
   );
 }
 
-function parseSections(argv: string[]) {
+function parseArgs(argv: string[]) {
   const sections: string[] = [];
+  let publish = false;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (!arg || arg === "--") continue;
@@ -346,9 +389,13 @@ function parseSections(argv: string[]) {
       sections.push(arg.slice("--section=".length));
       continue;
     }
+    if (arg === "--publish") {
+      publish = true;
+      continue;
+    }
     throw new Error(`Unknown argument ${arg}`);
   }
-  return sections;
+  return { sections, publish };
 }
 
 function requiredEnv(name: string) {

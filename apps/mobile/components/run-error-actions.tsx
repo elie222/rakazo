@@ -1,18 +1,8 @@
-import { useWindowDimensions } from "react-native";
 import { NativeActionButton } from "./native-action-button";
 
-/** The one action that fixes a failed run; it fills its row once large text would crowd it. */
+/** The one action that fixes a failed run. */
 export function RunErrorAction({ label, onPress }: { label: string; onPress: () => void }) {
-  const { fontScale } = useWindowDimensions();
-  return (
-    <NativeActionButton
-      label={label}
-      onPress={onPress}
-      prominence="primary"
-      variant="rectangular"
-      fill={fontScale > 1.3}
-    />
-  );
+  return <NativeActionButton label={label} onPress={onPress} prominence="primary" fill={false} />;
 }
 
 export function RunErrorTextAction({
