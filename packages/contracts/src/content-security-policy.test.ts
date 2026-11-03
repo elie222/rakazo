@@ -2,13 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   APP_CONTENT_SECURITY_POLICY,
   appContentSecurityPolicy,
+  COMPUTER_SCREEN_PATH,
+  COMPUTER_SCREEN_RUNTIME_PATH,
   CSP_REPORT_PATH,
   CSP_REPORTING_ENDPOINTS,
   contentSecurityPolicyFor,
   HTML_VIEWER_PATH,
   parseContentSecuritySources,
   parseCrispWebsiteId,
-  WUYING_SCREEN_PATH,
 } from "./content-security-policy.js";
 
 function directives(policy: string) {
@@ -68,17 +69,30 @@ describe("app content security policy", () => {
     expect(contentSecurityPolicyFor(HTML_VIEWER_PATH)).toBe("frame-ancestors 'self'");
   });
 
-  it("isolates Wuying documents without widening the app policy", () => {
-    const screen = directives(contentSecurityPolicyFor(WUYING_SCREEN_PATH)!);
-    expect(screen.get("sandbox")).toEqual(["allow-scripts", "allow-pointer-lock"]);
-    expect(screen.get("frame-ancestors")).toEqual(["'self'"]);
-    expect(screen.get("connect-src")).not.toContain("'self'");
-    expect(screen.get("script-src")).not.toContain("'unsafe-eval'");
-    expect(screen.get("script-src")).toContain("'wasm-unsafe-eval'");
-    const nested = directives(contentSecurityPolicyFor("/wuying/sdk/ASP/container.html")!);
-    expect(nested.get("sandbox")).toEqual(screen.get("sandbox"));
-    expect(nested.get("frame-ancestors")).toBeUndefined();
-    expect(contentSecurityPolicyFor("/chat")).toBe(APP_CONTENT_SECURITY_POLICY);
+  it("applies an injected screen policy only to embedded screen paths", () => {
+    const policy = {
+      screen: "default-src 'none'; sandbox allow-scripts; frame-ancestors 'self'",
+      runtime: "default-src 'none'; sandbox allow-scripts",
+    };
+    const select = (path: string) => contentSecurityPolicyFor(path, undefined, policy);
+    expect(select(COMPUTER_SCREEN_RUNTIME_PATH)).toBe(policy.runtime);
+    for (const path of [
+      COMPUTER_SCREEN_PATH,
+      "/computer-screen/",
+      "/computer-screen/other.html",
+      `${COMPUTER_SCREEN_RUNTIME_PATH}/`,
+      `${COMPUTER_SCREEN_RUNTIME_PATH}.extra`,
+    ]) {
+      expect(select(path)).toBe(policy.screen);
+    }
+    expect(select("/chat")).toBe(APP_CONTENT_SECURITY_POLICY);
+    expect(select("/computer-screen-other")).toBe(APP_CONTENT_SECURITY_POLICY);
+    expect(contentSecurityPolicyFor(COMPUTER_SCREEN_PATH)).toBe(
+      "default-src 'none'; sandbox; frame-ancestors 'self'",
+    );
+    expect(contentSecurityPolicyFor(COMPUTER_SCREEN_RUNTIME_PATH)).toContain(
+      "frame-ancestors 'self'",
+    );
   });
 });
 

@@ -1,4 +1,5 @@
 import { USER_DEVICE_CONNECT_PATH } from "@rakazo/contracts";
+import { secureHttpOrigin } from "@rakazo/contracts/network-host";
 import WebSocket from "ws";
 import type { HostComputerFrame } from "./host-computer-protocol.js";
 import { HOST_COMPUTER_MAX_BYTES } from "./host-computer-protocol.js";
@@ -37,6 +38,8 @@ export interface UserDeviceClientOptions {
  * `cancelAll` stops every command and refuses requests still waiting on `authorize`.
  */
 export function startUserDeviceClient(options: UserDeviceClientOptions) {
+  if (secureHttpOrigin(options.serverUrl) === null)
+    throw new Error("Local computer access requires HTTPS or loopback");
   const retry = options.retryMs ?? { min: 1_000, max: 60_000 };
   const runner = createHostComputerRunner({ root: options.root, screen: options.screen });
   runner.setEnabled(true);
