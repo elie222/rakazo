@@ -27,6 +27,13 @@ export class CannotDeleteLastOrganizationError extends Error {
   }
 }
 
+export class SharedOrganizationError extends Error {
+  constructor() {
+    super("An organization with other members cannot be deleted");
+    this.name = "SharedOrganizationError";
+  }
+}
+
 const OWNER = { contains: "owner" };
 
 /** Organizations whose default Space is being deleted are on their way out. */
@@ -116,9 +123,36 @@ export async function renameOrganization(
 }
 
 /**
- * Claims every Space of an organization the user owns, unless it is the last one they own, which
- * hides it from the list. A retry keeps the claims it already holds.
+ * Only the owner deletes an organization, never one shared with anyone else, and never the last
+ * one they own.
  */
+export async function assertOrganizationDeletable(
+  db: PrismaClient | Prisma.TransactionClient,
+  input: { userId: string; organizationId: string },
+): Promise<void> {
+  const [owner, otherMembers, otherOwned] = await Promise.all([
+    db.member.findFirst({
+      where: { organizationId: input.organizationId, userId: input.userId, role: OWNER },
+      select: { id: true },
+    }),
+    db.member.count({
+      where: { organizationId: input.organizationId, userId: { not: input.userId } },
+    }),
+    db.member.count({
+      where: {
+        userId: input.userId,
+        role: OWNER,
+        organizationId: { not: input.organizationId },
+        organization: LIVE,
+      },
+    }),
+  ]);
+  if (!owner) throw new IsolationError();
+  if (otherMembers > 0) throw new SharedOrganizationError();
+  if (otherOwned === 0) throw new CannotDeleteLastOrganizationError();
+}
+
+/** Claims every Space of a deletable organization, which hides it from the list. A retry keeps the claims it already holds. */
 export async function claimOrganizationForDeletion(
   prisma: PrismaClient,
   input: { userId: string; organizationId: string },
@@ -128,22 +162,7 @@ export async function claimOrganizationForDeletion(
     prisma.$transaction(
       async (tx) => {
         await lockUserOrganizations(tx, input.userId);
-        const [owner, others] = await Promise.all([
-          tx.member.findFirst({
-            where: { organizationId: input.organizationId, userId: input.userId, role: OWNER },
-            select: { id: true },
-          }),
-          tx.member.count({
-            where: {
-              userId: input.userId,
-              role: OWNER,
-              organizationId: { not: input.organizationId },
-              organization: LIVE,
-            },
-          }),
-        ]);
-        if (!owner) throw new IsolationError();
-        if (others === 0) throw new CannotDeleteLastOrganizationError();
+        await assertOrganizationDeletable(tx, input);
         const spaces = await tx.space.findMany({
           where: { organizationId: input.organizationId },
           select: { id: true },

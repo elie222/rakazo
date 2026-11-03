@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text } from "react-native";
+import { ActivityIndicator, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LoadFailure } from "../../components/load-failure";
 import { SettingsGroup, SettingsInputRow, SettingsRow } from "../../components/settings-group";
@@ -70,8 +70,7 @@ export default function OrganizationSettings() {
     setError(null);
     try {
       const { activeSpaceId } = await rpc("organizations/remove", { organizationId: current.id });
-      if (!(await leaveDeletedOrganization(current, activeSpaceId)))
-        Alert.alert(t("Could not switch spaces"), t("Try again."));
+      await leaveDeletedOrganization(current, activeSpaceId);
     } catch (err) {
       setError(errorText(err));
       setPending(false);
@@ -115,6 +114,7 @@ export default function OrganizationSettings() {
             {confirming ? (
               <SettingsInputRow
                 key="confirmation"
+                accessibilityLabel={t("Type {name} to confirm", { name: current.name })}
                 autoCapitalize="none"
                 autoCorrect={false}
                 autoFocus

@@ -9,6 +9,7 @@ import {
   recordAuditEvent,
   renameOrganization,
   runAsSystem,
+  SharedOrganizationError,
   SpaceDeletionInProgressError,
 } from "@rakazo/db";
 import { deleteOrganization } from "../account-deletion.js";
@@ -79,7 +80,10 @@ export function organizationsRoutes(ctx: RouterContext) {
           try {
             await deleteOrganization(deps, userId, input.organizationId);
           } catch (error) {
-            if (error instanceof CannotDeleteLastOrganizationError)
+            if (
+              error instanceof CannotDeleteLastOrganizationError ||
+              error instanceof SharedOrganizationError
+            )
               throw new ORPCError("BAD_REQUEST", { message: error.message });
             if (error instanceof SpaceDeletionInProgressError)
               throw new ORPCError("CONFLICT", { message: error.message });

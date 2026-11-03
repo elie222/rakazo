@@ -298,6 +298,51 @@ describePostgres("organizations (PostgreSQL)", () => {
     expect(sandbox.destroyed).toEqual([`sb-retry-${suffix}`]);
   });
 
+  it("hides nothing when cancelling the organization's billing fails", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    await subscribe(asUser(ada, work.id));
+    vi.spyOn(emulator, "cancelCustomerSubscriptions").mockRejectedValueOnce(
+      new Error("billing unavailable"),
+    );
+
+    await expect(client(ada).organizations.remove({ organizationId: work.id })).rejects.toThrow(
+      "billing unavailable",
+    );
+
+    expect((await client(ada).organizations.list()).organizations.map((org) => org.id)).toEqual([
+      ada.spaceId,
+      work.id,
+    ]);
+    expect(await system.space.findUnique({ where: { id: work.id } })).toMatchObject({
+      deletionClaimId: null,
+      deletingAt: null,
+    });
+  });
+
+  it("never deletes an organization someone else is a member of", async () => {
+    const ada = await signup();
+    const grace = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    await system.member.create({
+      data: {
+        id: `member-${grace.userId}`,
+        organizationId: work.id,
+        userId: grace.userId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+
+    await expect(
+      client(ada).organizations.remove({ organizationId: work.id }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(await system.space.findUnique({ where: { id: work.id } })).toMatchObject({
+      deletionClaimId: null,
+    });
+  });
+
   it("offers a new organization no trial once another of the owner's subscribed", async () => {
     const ada = await signup();
     await expect(billing.status(ada)).resolves.toMatchObject({ trialAvailable: true });
@@ -324,6 +369,23 @@ describePostgres("organizations (PostgreSQL)", () => {
     await runAsSystem("organizations test", () => billing.checkout(inNext));
     const { customerId } = (await billingAccountForOrganization(system, next.id))!;
     expect(emulator.checkouts.get(customerId)?.trialDays).toBeUndefined();
+  });
+
+  it("keeps the trial used by a deleted organization from before the user-level mark", async () => {
+    const ada = await signup();
+    const used = await client(ada).organizations.create({ name: "Used" });
+    await subscribe(asUser(ada, used.id));
+    await system.user.update({ where: { id: ada.userId }, data: { billingTrialUsedAt: null } });
+
+    await client(ada).organizations.remove({ organizationId: used.id });
+    const next = await client(ada).organizations.create({ name: "Next" });
+
+    await expect(
+      system.user.findUniqueOrThrow({ where: { id: ada.userId } }),
+    ).resolves.toMatchObject({ billingTrialUsedAt: expect.any(Date) });
+    await expect(billing.status(asUser(ada, next.id))).resolves.toMatchObject({
+      trialAvailable: false,
+    });
   });
 
   it("offers a new organization no own-key trial once another of the owner's had free days", async () => {

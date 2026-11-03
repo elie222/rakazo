@@ -65,6 +65,7 @@ export * from "./model-oauth.js";
 export * from "./model-probe.js";
 export * from "./model-providers.js";
 export * from "./model-role-settings.js";
+export * from "./organizations.js";
 export * from "./page-links.js";
 export * from "./passkey-offer.js";
 export * from "./password-policy.js";

@@ -75,7 +75,7 @@ export function AccountMenu({
               onValueChange={(id) => {
                 const organization = organizations.find((candidate) => candidate.id === id);
                 if (organization && id !== activeOrganizationId)
-                  switchOrganization(userId, organization);
+                  void switchOrganization(userId, organization);
               }}
             >
               {organizations.map((organization) => (

@@ -18,7 +18,7 @@ import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import type { Organization } from "../lib/organizations";
 import { organizationsQuery, useOrganizations } from "../lib/organizations";
 import { queryClient, useQueryUserId } from "../lib/query";
-import { rpc, selectSpace } from "../lib/rpc";
+import { clearSpaceSelection, rpc, selectSpace } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 
 /** The organization the app is showing: its name, and deletion while the user has another. */
@@ -137,7 +137,8 @@ function OrganizationSettings({
             const { activeSpaceId } = await rpc.organizations.remove({
               organizationId: organization.id,
             });
-            if (selectSpace(activeSpaceId)) window.location.assign("/");
+            if (!selectSpace(activeSpaceId)) clearSpaceSelection();
+            window.location.assign("/");
           }}
         />
       ) : null}

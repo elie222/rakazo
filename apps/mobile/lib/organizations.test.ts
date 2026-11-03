@@ -1,9 +1,9 @@
 import type { OrganizationList } from "@rakazo/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { adoptDeletedSpaceFallback } from "./api";
 import type { Organization } from "./organizations";
 import {
   leaveDeletedOrganization,
-  organizationLanding,
   organizationSwitchActions,
   organizationSwitchEpoch,
   selectSpaceAcrossOrganizations,
@@ -76,14 +76,6 @@ beforeEach(() => {
   state.router.dismissAll.mockReset();
 });
 
-describe("organizationLanding", () => {
-  it("opens the Space last used there, else the default", () => {
-    expect(organizationLanding(home, { "org-home": "space-b2" })).toBe("space-b2");
-    expect(organizationLanding(home, { "org-home": "space-deleted" })).toBe("space-b1");
-    expect(organizationLanding(home, {})).toBe("space-b1");
-  });
-});
-
 describe("switchOrganization", () => {
   it("remembers where it left, lands on the saved Space and forgets the old organization", async () => {
     state.selected = "space-a2";
@@ -151,10 +143,23 @@ describe("selectSpaceAcrossOrganizations", () => {
 it("opens the Space the server chose after deleting an organization", async () => {
   seed("space-a1");
   seed("space-b1");
-  await expect(leaveDeletedOrganization(work, "space-b1")).resolves.toBe(true);
+  await leaveDeletedOrganization(work, "space-b1");
   expect(state.selectSpace).toHaveBeenCalledWith("space-b1");
   expect(cachedSpaces()).toEqual(["space:space-b1"]);
   expect(state.router.replace).toHaveBeenCalledWith("/");
+});
+
+it("stays on the settings screen when no Space can be selected after deleting", async () => {
+  state.selectSpace.mockResolvedValue(false);
+  vi.mocked(adoptDeletedSpaceFallback).mockResolvedValueOnce(false);
+  seed("space-a1");
+  const epoch = organizationSwitchEpoch();
+
+  await expect(leaveDeletedOrganization(work, "space-b1")).rejects.toThrow();
+
+  expect(cachedSpaces()).toEqual(["space:space-a1"]);
+  expect(organizationSwitchEpoch()).toBe(epoch);
+  expect(state.router.replace).not.toHaveBeenCalled();
 });
 
 describe("organizationSwitchActions", () => {

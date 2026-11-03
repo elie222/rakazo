@@ -1,4 +1,5 @@
 import type { OrganizationList } from "@rakazo/contracts";
+import { organizationLandingSpaceId, organizationOfSpace } from "@rakazo/core";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { queryClient, spaceQueries, useQueryUserId } from "./query";
 import { ORGANIZATION_SPACES_STORAGE_KEY, rpc, selectedSpaceId, selectSpace } from "./rpc";
@@ -23,9 +24,7 @@ export function useOrganizations() {
   const organizations = data?.organizations ?? [];
   const spaceId = selectedSpaceId();
   const activeOrganizationId =
-    organizations.find((organization) => spaceId && organization.spaceIds.includes(spaceId))?.id ??
-    data?.activeOrganizationId ??
-    null;
+    organizationOfSpace(organizations, spaceId)?.id ?? data?.activeOrganizationId ?? null;
   return { organizations, activeOrganizationId };
 }
 
@@ -51,25 +50,25 @@ function rememberSpace(organizationId: string, spaceId: string) {
 
 /** The Space last used in the organization on this device, or its default once that is gone. */
 export function landingSpaceId(organization: Organization): string {
-  const saved = lastSpaces()[organization.id];
-  return saved && organization.spaceIds.includes(saved) ? saved : organization.defaultSpaceId;
+  return organizationLandingSpaceId(organization, lastSpaces());
 }
 
 /**
  * Called as the selection moves from one Space to another. Crossing into another organization
  * remembers where the user was in the one being left and drops what was cached for its Spaces.
  */
-export function leaveOrganization(
+export async function leaveOrganization(
   userId: string | null,
   fromSpaceId: string | null | undefined,
   toSpaceId: string,
-): void {
+): Promise<void> {
   if (!fromSpaceId || fromSpaceId === toSpaceId) return;
-  const organizations = queryClient.getQueryData(
-    organizationsQuery(userId).queryKey,
-  )?.organizations;
-  const from = organizations?.find((organization) => organization.spaceIds.includes(fromSpaceId));
-  const to = organizations?.find((organization) => organization.spaceIds.includes(toSpaceId));
+  // A link into another organization can arrive before the list has loaded.
+  const organizations =
+    (await queryClient.ensureQueryData(organizationsQuery(userId)).catch(() => undefined))
+      ?.organizations ?? [];
+  const from = organizationOfSpace(organizations, fromSpaceId);
+  const to = organizationOfSpace(organizations, toSpaceId);
   if (!from || !to || from.id === to.id) return;
   rememberSpace(from.id, fromSpaceId);
   // The departing shell saves its Space's seed as it unmounts, so this runs after it.
@@ -82,27 +81,32 @@ export function leaveOrganization(
 
 type OpenSpaceChat = (spaceId: string, path: string) => void;
 
-/** Moves to a Space that may be in another organization: in place inside the shell, by loading the page outside it. */
-export function openOrganizationSpace(
+/**
+ * Moves to a Space that may be in another organization: in place inside the shell, by loading the
+ * page outside it. False when the Space could not be selected.
+ */
+export async function openOrganizationSpace(
   userId: string | null,
   spaceId: string,
   path: string,
   openSpaceChat?: OpenSpaceChat,
-): void {
+): Promise<boolean> {
   if (openSpaceChat) {
     openSpaceChat(spaceId, path);
-    return;
+    return true;
   }
-  leaveOrganization(userId, selectedSpaceId(), spaceId);
-  if (selectSpace(spaceId)) window.location.assign(path);
+  await leaveOrganization(userId, selectedSpaceId(), spaceId);
+  if (!selectSpace(spaceId)) return false;
+  window.location.assign(path);
+  return true;
 }
 
 export function switchOrganization(
   userId: string | null,
   target: Organization,
   openSpaceChat?: OpenSpaceChat,
-): void {
-  openOrganizationSpace(
+): Promise<boolean> {
+  return openOrganizationSpace(
     userId,
     landingSpaceId(target),
     openSpaceChat ? "/app" : "/",

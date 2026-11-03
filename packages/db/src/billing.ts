@@ -46,6 +46,13 @@ export async function extendByokFreePeriod(
   await markOwnersTrialUsed(tx, { id: organizationId });
 }
 
+const HAD_TRIAL: Prisma.OrganizationWhereInput = {
+  OR: [
+    { billing: { is: { subscribedAt: { not: null } } } },
+    { modelCredits: { is: { byokFreeUntil: { not: null } } } },
+  ],
+};
+
 /** Survives the organization, so deleting it never earns its owner another trial. */
 async function markOwnersTrialUsed(
   db: Pick<PrismaClient, "user"> | Prisma.TransactionClient,
@@ -278,6 +285,11 @@ export async function ownedBillingAccounts(
   );
 }
 
+/** Before an organization's billing rows go, so one that predates the user-level mark still counts. */
+export async function keepOrganizationTrialUse(prisma: PrismaClient, organizationId: string) {
+  await markOwnersTrialUsed(prisma, { id: organizationId, ...HAD_TRIAL });
+}
+
 /**
  * One trial per person. Organizations that subscribed or got free days before the user-level
  * mark existed still count, so older accounts need no backfill.
@@ -292,12 +304,7 @@ export async function ownerHadTrial(prisma: PrismaClient, userId: string): Promi
     where: {
       userId,
       role: { contains: "owner" },
-      organization: {
-        OR: [
-          { billing: { is: { subscribedAt: { not: null } } } },
-          { modelCredits: { is: { byokFreeUntil: { not: null } } } },
-        ],
-      },
+      organization: HAD_TRIAL,
     },
     select: { id: true },
   });

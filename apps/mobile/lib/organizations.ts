@@ -1,5 +1,6 @@
 import type { MenuAction } from "@expo/ui/community/menu";
 import type { OrganizationList } from "@rakazo/contracts";
+import { organizationLandingSpaceId, organizationOfSpace } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
 import {
@@ -9,6 +10,7 @@ import {
   selectedSpaceId,
   selectSpace,
 } from "./api";
+import { t } from "./i18n";
 import { queryClient, removeSpaceQueries, rpcQuery } from "./query";
 
 export type Organization = OrganizationList["organizations"][number];
@@ -51,24 +53,6 @@ export function refreshOrganizations(): Promise<void> {
   });
 }
 
-export function organizationOfSpace(
-  organizations: readonly Organization[],
-  spaceId: string | null,
-): Organization | undefined {
-  return spaceId
-    ? organizations.find((organization) => organization.spaceIds.includes(spaceId))
-    : undefined;
-}
-
-/** The Space last used in the organization on this device, else its default. */
-export function organizationLanding(
-  target: Organization,
-  remembered: Readonly<Record<string, string>>,
-): string {
-  const spaceId = remembered[target.id];
-  return spaceId && target.spaceIds.includes(spaceId) ? spaceId : target.defaultSpaceId;
-}
-
 /** Organization rows with a check on the active one; none until there is a second. */
 export function organizationSwitchActions(list: OrganizationList | undefined): MenuAction[] {
   if (!list || list.organizations.length < 2) return [];
@@ -109,7 +93,7 @@ export async function switchOrganization(
 ): Promise<boolean> {
   const leaving = organizationOfSpace(organizations, selectedSpaceId());
   if (leaving?.id === target.id) return true;
-  const landing = organizationLanding(target, await loadOrganizationSpaces());
+  const landing = organizationLandingSpaceId(target, await loadOrganizationSpaces());
   if (!(await enterSpace(landing, leaving))) return false;
   returnHome();
   return true;
@@ -128,16 +112,19 @@ export async function selectSpaceAcrossOrganizations(spaceId: string): Promise<b
   return enterSpace(spaceId, leaving);
 }
 
-/** After the server deleted `deleted`, opens the Space it chose and returns to the inbox. */
+/**
+ * After the server deleted `deleted`, opens the Space it chose and returns to the inbox. Throws,
+ * leaving the screen in place, when no Space could be selected.
+ */
 export async function leaveDeletedOrganization(
   deleted: Organization,
   activeSpaceId: string,
-): Promise<boolean> {
+): Promise<void> {
   const selected =
     (await selectSpace(activeSpaceId).catch(() => false)) ||
     (await adoptDeletedSpaceFallback(activeSpaceId));
+  if (!selected) throw new Error(t("Could not switch spaces"));
   removeSpaceQueries(deleted.spaceIds);
   noteOrganizationSwitch();
   returnHome();
-  return selected;
 }

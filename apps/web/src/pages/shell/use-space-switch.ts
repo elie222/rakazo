@@ -56,8 +56,9 @@ export function useOpenSpaceChat({
         return;
       }
       const reload = () => {
-        leaveOrganization(userId ?? null, previousEffective, spaceId);
-        if (selectSpace(spaceId)) window.location.assign(destination());
+        void leaveOrganization(userId ?? null, previousEffective, spaceId).then(() => {
+          if (selectSpace(spaceId)) window.location.assign(destination());
+        });
       };
       const destination = () =>
         overlayRevision.current === startedOverlay
@@ -102,7 +103,7 @@ export function useOpenSpaceChat({
             discardPrimedBootstrap(primed);
             return false;
           }
-          leaveOrganization(userId ?? null, previousEffective, spaceId);
+          void leaveOrganization(userId ?? null, previousEffective, spaceId);
           // Playback belongs to the conversation being left.
           speaker.stop();
           navigate(destination());

@@ -50,6 +50,7 @@ export default function NewOrganization() {
       >
         <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t("Name")}</Text>
         <TextInput
+          accessibilityLabel={t("Name")}
           autoFocus
           value={name}
           maxLength={60}

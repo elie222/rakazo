@@ -423,7 +423,7 @@ function ShellSidebarFooter({
         onSwitchOrganization={(organization) => {
           setMenuOpen(false);
           if (organization.id !== activeOrganizationId)
-            switchOrganization(userId, organization, openSpaceChat);
+            void switchOrganization(userId, organization, openSpaceChat);
         }}
         onCreateOrganization={() => {
           setMenuOpen(false);

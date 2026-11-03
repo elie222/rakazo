@@ -43,7 +43,11 @@ export function CreateOrganizationDialog({
       await queryClient
         .fetchQuery({ ...organizationsQuery(userId), staleTime: 0 })
         .catch(() => undefined);
-      openOrganizationSpace(userId, created.defaultSpaceId, "/onboarding", openSpaceChat);
+      // The new organization is listed even if this device cannot switch into it.
+      if (
+        !(await openOrganizationSpace(userId, created.defaultSpaceId, "/onboarding", openSpaceChat))
+      )
+        window.location.assign("/");
     } catch (reason) {
       setError(errorText(reason));
       setSaving(false);
