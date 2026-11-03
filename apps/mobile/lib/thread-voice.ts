@@ -77,7 +77,7 @@ export function useAutoSpeakReply({
       botId: currentBot.id,
       speaker: {
         name: currentBot.name,
-        color: resolvePersonaColorDef(currentBot.id, currentBot.color).light,
+        color: resolvePersonaColorDef(currentBot.id, currentBot.color).hex,
       },
     }).catch(() => undefined);
   }, [

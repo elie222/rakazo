@@ -20,5 +20,5 @@ export function speakerColorFor(
   const raw =
     bots.find((bot) => bot.id === botId)?.color ??
     members?.find((member) => member.botId === botId)?.color;
-  return resolvePersonaColorDef(botId, raw).light;
+  return resolvePersonaColorDef(botId, raw).hex;
 }

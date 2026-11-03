@@ -14,6 +14,7 @@ import { redactConnectorPayload } from "./connector-safety.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
 import type { PurchaseApproval } from "./purchase-gate.js";
 import { MAX_ACTIONS_PER_CALL } from "./tool-loop.js";
+import { cardFillSite } from "./vault-card-use.js";
 
 /** The action kinds `browser_act` takes, as its tool schema lists them. */
 export const BROWSER_ACT_KINDS = [
@@ -36,13 +37,15 @@ export type SecretFillStep = {
   secret: string;
   field: string;
 };
-/** The model never supplies or sees the value. */
+/**
+ * One field of an approved purchase's card, or of a saved card on the checkout `site` the person
+ * approved. The model never supplies or sees the value.
+ */
 export type CardFillStep = {
   kind: "fill_card";
   ref?: string;
-  purchase: string;
   field: PurchaseCardField;
-};
+} & ({ purchase: string } | { card: string; site: string });
 /** The model never supplies or sees the token. */
 export type PayTokenFillStep = { kind: "fill_pay_token"; purchase: string };
 /** Types the code the user entered for the run's last code request; the model never sees it. */
@@ -369,17 +372,19 @@ export function parseBrowserActions(value: unknown): BrowserActInput[] {
     }
     if (kind === "fill_card") {
       const purchase = String(action.purchase ?? "").trim();
+      const card = typeof action.card === "string" ? action.card.trim() : "";
       const field = action.field;
-      if (!purchase)
+      if (!purchase === !card)
         throw new BrowserToolInputError(
-          "browser_act fill_card needs purchase: the id of an approved purchase",
+          "browser_act fill_card needs purchase: the id of an approved purchase, or card: the name of a saved card",
         );
       if (!(PURCHASE_CARD_FIELDS as readonly unknown[]).includes(field)) {
         throw new BrowserToolInputError(
           `browser_act fill_card needs field: ${PURCHASE_CARD_FIELDS.map((name) => `"${name}"`).join(", ")}`,
         );
       }
-      return { kind, ...(ref ? { ref } : {}), purchase, field: field as PurchaseCardField };
+      const step = { kind, ...(ref ? { ref } : {}), field: field as PurchaseCardField };
+      return purchase ? { ...step, purchase } : { ...step, card, site: cardFillSite(action.site) };
     }
     if (!ref) throw new BrowserToolInputError(`browser_act action ${index} requires ref`);
     if (kind === "fill_code") return { kind, ref };

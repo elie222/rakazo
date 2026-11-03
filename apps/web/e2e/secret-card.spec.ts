@@ -344,12 +344,14 @@ test("keeps a website login password on one line", { tag: "@nightly" }, async ({
 }) => {
   const { card, loginAnswers } = await openSecretCard(page, "login", "show a login card");
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await card.getByLabel("Username", { exact: true }).fill("someone");
+  await card.getByRole("button", { name: "Add", exact: true }).click();
+  const form = page.getByTestId("vault-editor");
+  await form.getByLabel("Username", { exact: true }).fill("someone");
   await page.evaluate(() => navigator.clipboard.writeText("pass-one\npass-two"));
-  await card.getByLabel("Password", { exact: true }).click();
+  await form.getByLabel("Password", { exact: true }).click();
   await page.keyboard.press("ControlOrMeta+v");
-  await expect(card.getByLabel("Password", { exact: true })).not.toHaveAttribute("readonly");
-  await card.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(form.getByLabel("Password", { exact: true })).not.toHaveAttribute("readonly");
+  await form.getByRole("button", { name: "Save", exact: true }).click();
   await expect
     .poll(() => loginAnswers)
     .toEqual([
@@ -388,19 +390,21 @@ test("uses a login for this run only when Save to Vault is turned off on its car
     await expect(page.getByPlaceholder(/Message/)).toBeVisible({ timeout: 15_000 });
   }
   await expect(card).toBeVisible({ timeout: 15_000 });
-  const saveToVault = card.getByRole("switch", { name: "Save to Vault" });
+  await card.getByRole("button", { name: "Add", exact: true }).click();
+  const form = page.getByTestId("vault-editor");
+  const saveToVault = form.getByRole("switch", { name: "Save to Vault" });
   await expect(saveToVault).toBeChecked();
-  await expect(card.getByRole("button", { name: "Save", exact: true })).toBeVisible();
+  await expect(form.getByRole("button", { name: "Save", exact: true })).toBeVisible();
 
-  const username = card.getByLabel("Username", { exact: true });
+  const username = form.getByLabel("Username", { exact: true });
   const password = `fake-login-password-${stamp}`;
   await username.fill(`fake-user-${stamp}@example.test`);
-  await card.getByLabel("Password", { exact: true }).fill(password);
+  await form.getByLabel("Password", { exact: true }).fill(password);
   await saveToVault.click();
   await expect(saveToVault).not.toBeChecked();
   // Turning it off keeps what was typed.
   await expect(username).toHaveValue(`fake-user-${stamp}@example.test`);
-  const send = card.getByRole("button", { name: "Continue", exact: true });
+  const send = form.getByRole("button", { name: "Continue", exact: true });
   await expect(send).toBeEnabled();
   await captureScreenshot(page, testInfo, "login-card-save-off");
   await page.setViewportSize({ width: 390, height: 844 });

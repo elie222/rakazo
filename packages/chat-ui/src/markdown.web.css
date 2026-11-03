@@ -3,6 +3,12 @@
   overflow-wrap: anywhere;
 }
 
+/* Semibold, not bold: the system font's 700 reads heavy and smudged beside 420 body text. */
+.rk-chat-markdown strong,
+.rk-chat-markdown b {
+  font-weight: 600;
+}
+
 .rk-chat-markdown > :first-child,
 .rk-chat-markdown > :first-child > :first-child {
   margin-top: 0;

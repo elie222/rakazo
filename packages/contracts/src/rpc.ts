@@ -1388,7 +1388,12 @@ export const appContract = {
       .output(z.object({ ok: z.literal(true) })),
     registerPush: oc
       // No whitespace: the token store keeps the registering session on the next line.
-      .input(z.object({ token: z.string().min(8).max(512).regex(/^\S+$/) }))
+      .input(
+        z.object({
+          token: z.string().min(8).max(512).regex(/^\S+$/),
+          presentation: z.literal("android_sender").optional(),
+        }),
+      )
       .output(z.object({ ok: z.literal(true) })),
     unregisterPush: oc.output(z.object({ ok: z.literal(true) })),
   },

@@ -761,7 +761,7 @@ const ComposerBody = memo(function Composer({
         data-testid="composer-bar"
         data-expanded={expanded}
         className={`grid grid-cols-[auto_minmax(0,1fr)_auto] content-end items-center rounded-[26px] border border-border pe-2.5 ps-3 transition-colors focus-within:border-input ${
-          docked ? "bg-card" : "bg-background"
+          docked ? "bg-card" : "bg-background dark:bg-card"
         } ${
           expanded
             ? "gap-x-2 gap-y-2 pb-[9px] pt-3"

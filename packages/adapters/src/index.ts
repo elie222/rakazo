@@ -16,11 +16,16 @@ export * from "./boat-sandbox.js";
 export * from "./bot-avatar.js";
 export * from "./bot-messages.js";
 export {
+  defaultVaultItemTitle,
   forgetBotSecret,
   getBotSecretMetadata,
+  isSecretAlreadySaved,
   listBotSecretMetadata,
+  listVaultItems,
+  newVaultItemName,
   normalizeSecretDestination,
   pageUrlOrigin,
+  relabelVaultItem,
   revealBotSecret,
   SPACE_VAULT_NOT_IN_USE,
   storeBotSecret,
