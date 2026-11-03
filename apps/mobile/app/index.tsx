@@ -181,6 +181,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   const activityRequestId = useRef(0);
   const inboxRequestId = useRef(0);
   const inboxLoaded = useRef(false);
+  const [inboxLive, setInboxLive] = useState(false);
   const creatingBotRef = useRef(false);
   const spaceActionRef = useRef<{ busy: boolean; recoveryId: string | null }>({
     busy: false,
@@ -285,6 +286,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         }
       }
       inboxLoaded.current = true;
+      setInboxLive(true);
       setBadgeLoad({ generation: badgeGeneration });
       setLoadFailure(null);
       saveInbox(
@@ -452,7 +454,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
           : [],
     [shownSpaces, me, visible, visibleGroups, botSections, t, locale],
   );
-  usePublishSearchInbox(inboxSpaces, me !== null);
+  usePublishSearchInbox(inboxSpaces, me !== null, inboxLive);
   const listData = useMemo((): InboxItem[] => {
     // Only bot threads support importing shares; use the same rows for every target.
     if (onShareSelect)
@@ -592,6 +594,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
           // A space seen before opens as it was saved; polling stays off until it is painted.
           const saved = await loadSavedInbox().catch(() => null);
           if (saved?.me.spaceId === spaceId) {
+            setInboxLive(false);
             setBots(saved.bots);
             setBotSections(saved.botSections);
             setGroups(saved.groups);

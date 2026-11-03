@@ -9,6 +9,7 @@ const empty: readonly InboxSpace[] = [];
 let snapshot = empty;
 let generation = -1;
 let apiBase = "";
+let live = false;
 const listeners = new Set<() => void>();
 
 type InboxAddition = { kind: "bot"; bot: MobileBot } | { kind: "group"; group: MobileGroup };
@@ -21,7 +22,7 @@ const additionSpaceId = (item: InboxAddition) =>
   item.kind === "bot" ? item.bot.spaceId : item.group.spaceId;
 
 // Share the home roster without another request or navigation payload.
-export function setSearchInbox(spaces: readonly InboxSpace[]): void {
+export function setSearchInbox(spaces: readonly InboxSpace[], loadedLive = false): void {
   const sameSession = generation === currentSessionGeneration() && apiBase === currentApiBase();
   generation = currentSessionGeneration();
   apiBase = currentApiBase();
@@ -41,6 +42,7 @@ export function setSearchInbox(spaces: readonly InboxSpace[]): void {
         })
       : [];
   snapshot = additions.reduce(withAddition, spaces);
+  live = loadedLive;
   for (const listener of listeners) listener();
 }
 
@@ -136,6 +138,14 @@ export function useInboxBot(botId: string | undefined): MobileBot | SpaceBot | u
     if (bot) return bot;
   }
   return undefined;
+}
+
+export function isSearchInboxLive(): boolean {
+  return live && getSearchInbox() !== empty;
+}
+
+export function useInboxLive(): boolean {
+  return useSyncExternalStore(subscribeSearchInbox, isSearchInboxLive, isSearchInboxLive);
 }
 
 /**

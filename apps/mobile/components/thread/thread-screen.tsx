@@ -29,7 +29,7 @@ import { cronLabels } from "../../lib/cron";
 import { useI18n } from "../../lib/i18n";
 import { useThemedStyles } from "../../lib/native";
 import { useChatOnScreen } from "../../lib/page-card-detail";
-import { useInboxBot } from "../../lib/search-inbox";
+import { useInboxBot, useInboxLive } from "../../lib/search-inbox";
 import { useSplitView } from "../../lib/split-view";
 import { useIncomingShareImport, useThreadAttachments } from "../../lib/thread-attachments";
 import { useThreadBots } from "../../lib/thread-bots";
@@ -247,8 +247,10 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const composerPrompt = displayName ? t("Message {name}", { name: displayName }) : t("Message…");
   const notificationThreadId = snap?.threadId ?? requestedThreadId ?? currentBot?.threadId;
   activeThreadId.current = notificationThreadId;
+  const inboxLive = useInboxLive();
+  const statusBot = currentBot ?? (inboxLive ? inboxBot : undefined);
   const currentBotStatus =
-    snap && (!showingSaved || error) ? snap.run?.status : (titleBot?.status ?? snap?.run?.status);
+    snap && (!showingSaved || error) ? snap.run?.status : (statusBot?.status ?? snap?.run?.status);
   // The group's members in its order, once the chat or its group list has loaded them; the
   // title seats the inbox's copy until then.
   const groupMembers = threadGroupMembers(groupId, snap, mentionGroups);

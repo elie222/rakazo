@@ -535,8 +535,16 @@ it("collapses a section from its heading and keeps the choice for the account", 
 
 it("waits for a saved or live inbox before publishing a remounted session's search roster", () => {
   const publish = ui.setSearchInbox.mockReset();
-  function PublishRoster({ me, inboxSpaces }: { me: object | null; inboxSpaces: InboxSpace[] }) {
-    usePublishSearchInbox(inboxSpaces, me !== null);
+  function PublishRoster({
+    me,
+    inboxSpaces,
+    live = false,
+  }: {
+    me: object | null;
+    inboxSpaces: InboxSpace[];
+    live?: boolean;
+  }) {
+    usePublishSearchInbox(inboxSpaces, me !== null, live);
     return null;
   }
   const me = { spaceId: "space-a" };
@@ -547,16 +555,18 @@ it("waits for a saved or live inbox before publishing a remounted session's sear
   expect(publish).not.toHaveBeenCalled();
   // Either a verified saved inbox or the first live response supplies me and the roster.
   render(<PublishRoster key="session-1" me={me} inboxSpaces={loaded} />);
-  expect(publish).toHaveBeenLastCalledWith(loaded);
+  expect(publish).toHaveBeenLastCalledWith(loaded, false);
+  render(<PublishRoster key="session-1" me={me} inboxSpaces={loaded} live />);
+  expect(publish).toHaveBeenLastCalledWith(loaded, true);
   publish.mockClear();
   // HomeSession remounts Home for the new generation, even behind an unfocused route.
   render(<PublishRoster key="session-2" me={null} inboxSpaces={[]} />);
   expect(publish).not.toHaveBeenCalled();
   render(<PublishRoster key="session-2" me={me} inboxSpaces={loaded} />);
-  expect(publish).toHaveBeenCalledExactlyOnceWith(loaded);
+  expect(publish).toHaveBeenCalledExactlyOnceWith(loaded, false);
   // A loaded inbox may legitimately become empty; only the initial placeholder is skipped.
   render(<PublishRoster key="session-2" me={me} inboxSpaces={[]} />);
-  expect(publish).toHaveBeenLastCalledWith([]);
+  expect(publish).toHaveBeenLastCalledWith([], false);
 });
 
 it("gives the long-press menu, and with it Delete, only to chats in the current space", () => {
