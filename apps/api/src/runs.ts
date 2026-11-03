@@ -5,6 +5,7 @@ import {
   BACKGROUND_RUN_TRIGGERS,
   botMessageContext,
   displayName,
+  runFailureError,
   truncatePlainText,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
@@ -97,6 +98,7 @@ export async function listSpaceRuns(
     groupName: row.thread.group ? row.thread.group.name : null,
     threadId: row.threadId,
     status: row.status as RunActivityRow["status"],
+    error: runFailureError({ type: `run.${row.status}`, payload: { error: row.error } }),
     trigger: row.trigger as RunActivityRow["trigger"],
     notificationsEnabled: activityNotificationsEnabled(row.thread.groupId, row.bot.notifyOnFinish),
     ...activityPreview({
