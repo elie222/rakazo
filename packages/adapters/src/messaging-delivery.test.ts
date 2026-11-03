@@ -317,6 +317,16 @@ describe("deliverMessagingOutbound", () => {
     });
     await deliverMessagingOutbound(named, { runId: "run-1" }, context);
     expect(sentBodies(named)).toEqual(["Here is Plan."]);
+
+    // A link shown inside a code example names nothing, so the card's title still goes.
+    const example = createDeps({
+      messages: [
+        card,
+        { id: "m-2", blocks: [{ kind: "text", text: "Write `[Plan](page:cm123)` to link it." }] },
+      ],
+    });
+    await deliverMessagingOutbound(example, { runId: "run-1" }, context);
+    expect(sentBodies(example)).toEqual(["Plan", "Write `[Plan](page:cm123)` to link it."]);
   });
 
   it("resolves the DM thread once and caches it when the identity has none", async () => {

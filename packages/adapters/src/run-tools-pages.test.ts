@@ -142,4 +142,27 @@ describe("save_page", () => {
       ),
     ).toEqual([{ kind: "page", pageId: "page-1", version: 1, title: "A [redacted]" }]);
   });
+
+  it("redacts a kept title that holds a secret this run learned after it was saved", async () => {
+    const secret = "FAKE_PAGE_SECRET_9132";
+    const tx = {
+      page: {
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        findUniqueOrThrow: vi.fn(async () => ({ title: `Keys ${secret}` })),
+        update: vi.fn(),
+      },
+      pageVersion: { create: vi.fn() },
+    };
+    const result = (await pageTools.save_page!(
+      context(tx, { currentVersion: 1 }, [secret]),
+      call({ pageId: "page-1", source: source("Plan") }),
+    )) as Record<string, unknown>;
+    expect(result.title).toBe("Keys [redacted]");
+    expect(tx.page.update).toHaveBeenCalledWith({
+      where: { id: "page-1" },
+      data: { title: "Keys [redacted]" },
+    });
+    expect(JSON.stringify(tx.pageVersion.create.mock.calls)).not.toContain(secret);
+    expect(JSON.stringify(publishMessage.mock.calls)).not.toContain(secret);
+  });
 });

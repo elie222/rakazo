@@ -136,10 +136,16 @@ async function savePage(ctx: RunContext, call: ToolCall) {
         data: { currentVersion: version, title, updatedAt: new Date() },
       });
       if (moved.count === 0) throw new PageChangedError();
-      const nextTitle =
+      let nextTitle =
         title ??
         (await tx.page.findUniqueOrThrow({ where: { id: page.id }, select: { title: true } }))
           .title;
+      // A title saved before this run learned a secret is redacted before it is shown again.
+      const kept = redactSecrets(nextTitle, ctx.secrets).slice(0, PAGE_TITLE_MAX_LENGTH);
+      if (kept !== nextTitle) {
+        nextTitle = kept;
+        await tx.page.update({ where: { id: page.id }, data: { title: kept } });
+      }
       await tx.pageVersion.create({
         data: { pageId: page.id, version, title: nextTitle, source, code: check.code },
       });

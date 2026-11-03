@@ -585,6 +585,17 @@ describe("data display", () => {
     const labels = [...folded.querySelectorAll(".rk-pie-label")].map((l) => l.textContent);
     expect(labels).toHaveLength(9);
     expect(labels.at(-1)).toBe("Other");
+    // Parts whose total overflows draw nothing rather than NaN slices.
+    const huge = mount(
+      <Pie
+        parts={[
+          { label: "a", value: 1e308 },
+          { label: "b", value: 1e308 },
+        ]}
+      />,
+    );
+    expect(huge.innerHTML).not.toContain("NaN");
+    expect(huge.querySelector("svg")).toBeNull();
   });
 
   it("marks a delta up or down, coloured by which way is good, and draws an optional trend", () => {

@@ -472,7 +472,8 @@ export function Pie({
       ];
     }
   }
-  if (shown.length === 0) return null;
+  // Parts too large to add up have no shares to draw.
+  if (shown.length === 0 || !Number.isFinite(sum)) return null;
   const radius = (PIE_SIZE - PIE_RING) / 2;
   const circumference = 2 * Math.PI * radius;
   const largest = shown.reduce(

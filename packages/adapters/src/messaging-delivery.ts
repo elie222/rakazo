@@ -743,8 +743,12 @@ function textBlocks(blocks: unknown): string[] {
 function linkedPageIds(messages: readonly { blocks: unknown }[]): Set<string> {
   const ids = new Set<string>();
   for (const message of messages)
-    for (const text of textBlocks(message.blocks))
-      for (const match of text.matchAll(/\]\(page:([A-Za-z0-9_-]{1,64})\)/g)) ids.add(match[1]!);
+    for (const text of textBlocks(message.blocks)) {
+      // Only links the conversion names count; one inside a code example stays as written.
+      const converted = pageLinksAsTitles(text);
+      for (const match of text.matchAll(/\]\(page:([A-Za-z0-9_-]{1,64})\)/g))
+        if (!converted.includes(match[0])) ids.add(match[1]!);
+    }
   return ids;
 }
 
