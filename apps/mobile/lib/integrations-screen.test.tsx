@@ -1121,3 +1121,50 @@ it("shows a catalog server that still needs a client after its sign-in fails", a
   });
   expect(container.querySelector('[data-testid="mcp-oauth-client-form"]')).not.toBeNull();
 });
+
+it("shows a saved client as saved when the sign-in after it fails", async () => {
+  const server = {
+    id: "client",
+    slug: "client-server",
+    name: "Client server",
+    description: "",
+    transport: "streamable_http",
+    endpoint: "https://mcp.client.example/mcp",
+    headerKeys: [],
+    enabled: true,
+    hasSecret: false,
+    oauthClientId: null as string | null,
+    health: { status: "error", code: MCP_OAUTH_CLIENT_REQUIRED },
+  };
+  const fallback = state.rpc.getMockImplementation();
+  state.rpc.mockImplementation((proc: string, args: unknown) => {
+    if (proc === "mcp/servers/list") return Promise.resolve([server]);
+    if (proc === "integrationSetup/get")
+      return Promise.resolve({ webUrl: "https://rakazo.example.test/integrations/setup" });
+    if (proc === "mcp/servers/update") {
+      server.oauthClientId = "client-1";
+      return Promise.resolve(server);
+    }
+    return fallback?.(proc, args);
+  });
+  vi.mocked(signInToMcpServer).mockRejectedValueOnce(new Error("Provider unavailable"));
+  await render();
+  const form = container.querySelector('[data-testid="mcp-oauth-client-form"]');
+  const input = form?.querySelector('input[placeholder="Client ID"]') as HTMLInputElement;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+      input,
+      "client-1",
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+
+  await act(async () =>
+    [...(form?.querySelectorAll("button") ?? [])]
+      .find((node) => node.textContent === "Sign in")
+      ?.click(),
+  );
+
+  expect(container.querySelector('[data-testid="mcp-oauth-client-form"]')).toBeNull();
+  expect(container.textContent).not.toContain("Needs an OAuth client ID");
+});

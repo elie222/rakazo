@@ -63,8 +63,12 @@ export function McpOAuthClientForm({
           },
         },
       });
-      await signInToMcpServer(server.id);
-      await onSaved();
+      try {
+        await signInToMcpServer(server.id);
+      } finally {
+        // The client is saved even when sign-in fails, so the screen shows it either way.
+        await onSaved().catch(() => undefined);
+      }
     } catch (reason) {
       setError(errorText(reason, t("Could not connect")));
     } finally {
