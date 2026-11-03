@@ -1,6 +1,6 @@
 import type { ConnectedConnector, ConnectorTool } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
-import { scopeConnectorTools } from "./connector-accounts.js";
+import { resolveAccountToolCall, scopeConnectorTools } from "./connector-accounts.js";
 import { catalogEntries, resolveCatalogCall } from "./lazy-tool-catalog.js";
 
 const first: ConnectedConnector = {
@@ -22,6 +22,17 @@ const tool: ConnectorTool = {
 };
 
 describe("account-scoped connector tools", () => {
+  it("resolves old watch names only when one account matches", () => {
+    const call = { tool: tool.name, args: {}, executionId: "watch" };
+    const work = scopeConnectorTools([tool], first);
+    const both = [...work, ...scopeConnectorTools([tool], second)];
+    expect(resolveAccountToolCall(call, work)?.call.route?.connectionId).toBe(first.id);
+    expect(resolveAccountToolCall(call, both)).toBeUndefined();
+    expect(
+      resolveAccountToolCall({ ...call, tool: work[0]!.name }, both)?.call.route?.connectionId,
+    ).toBe(first.id);
+  });
+
   it("keeps names and routes stable when accounts are reordered, removed, or renamed", () => {
     const original = scopeConnectorTools([tool], first)[0]!;
     const sibling = scopeConnectorTools([tool], second)[0]!;

@@ -10,7 +10,7 @@ import type {
 import { getLogger } from "@rakazo/logging";
 import { catalogToolPrefix } from "./approval-effect.js";
 import { collectPages, filterCatalog } from "./composio-connector.js";
-import { scopeConnectorTools } from "./connector-accounts.js";
+import { resolveAccountToolCall, scopeConnectorTools } from "./connector-accounts.js";
 import {
   combineSignals,
   redactConnectorPayload,
@@ -194,6 +194,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
                   getLogger().error(
                     "pipedream account discovery failed",
                     sanitizeConnectorError(error),
+                    { "connector.app": app, "connection.id": account.connectionId },
                   );
                   return [];
                 }
@@ -228,6 +229,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     call: ConnectorCall,
     context: AdapterContext,
   ): Promise<{ call: ConnectorCall; tool: ConnectorTool } | undefined> {
+    if (!call.route) return resolveAccountToolCall(call, await this.allTools(context));
     // Wrappers have no resourceId; real tools always do.
     if (call.route?.resourceId || call.route?.toolName !== CATALOG_EXECUTE) return undefined;
     return resolveCatalogCall(call, catalogEntries(await this.allTools(context)));
@@ -266,7 +268,10 @@ export class PipedreamConnector implements ManagedConnectorProvider {
       ) {
         yield {
           type: "error",
-          message: "The selected connected account is unavailable. Reload the account's tools.",
+          message:
+            accounts.length === 0
+              ? `No connected ${app} account can be identified. Reconnect ${app}.`
+              : "The selected connected account is unavailable. Reload the account's tools.",
         };
         return;
       }

@@ -605,6 +605,18 @@ describe("PipedreamConnector", () => {
     };
   }
 
+  it("resolves an old watch action only for a single connected account", async () => {
+    const connector = new PipedreamConnector(FAKE_CONFIG, {
+      ...TEST_NETWORK,
+      fetch: pipedreamMcpFetch({ gmail: ["send_email"] }),
+    });
+    const call = { tool: "send_email", args: { text: "hello" }, executionId: "watch" };
+    expect(
+      (await connector.resolveCall(call, gmailContext("apn_work")))?.call.route?.connectionId,
+    ).toBe("connection-0");
+    expect(await connector.resolveCall(call, gmailContext("apn_work", "apn_home"))).toBeUndefined();
+  });
+
   it("discovers each account's own tools and keeps a healthy sibling when one fails", async () => {
     const healthy = pipedreamMcpFetch({ gmail: ["send_email"] });
     let failWork = false;

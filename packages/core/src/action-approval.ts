@@ -115,6 +115,7 @@ export function connectorToolRequiresApproval(toolName: string, readOnly?: boole
 /** Unattended watches require explicit read-only metadata and must respect approval rules. */
 export function watchToolRefusal(input: {
   toolName: string;
+  toolAliases?: readonly string[];
   readOnly?: boolean;
   connectorKind?: string;
   rules: ActionApprovalRule[];
@@ -125,6 +126,7 @@ export function watchToolRefusal(input: {
   }
   const decision = resolveActionApprovalDetail({
     toolName,
+    toolAliases: input.toolAliases,
     connectorKind: input.connectorKind,
     readOnly,
     rules: input.rules,
@@ -397,14 +399,18 @@ export function decisiveActionApprovalRules(
  */
 export function resolveActionApprovalDetail(input: {
   toolName: string;
+  toolAliases?: readonly string[];
   connectorKind?: string;
   readOnly?: boolean;
   site?: string;
   rules: ActionApprovalRule[];
 }): ActionApprovalResolved {
   const connectorKind = input.connectorKind ?? connectorKindFromToolName(input.toolName);
-  const matchingRules = input.rules.filter((rule) =>
-    ruleMatches(rule, input.toolName, connectorKind, input.readOnly, input.site),
+  const matchingRules = input.rules.filter(
+    (rule) =>
+      ruleMatches(rule, input.toolName, connectorKind, input.readOnly, input.site) ||
+      (rule.matchKind === "tool" &&
+        input.toolAliases?.some((alias) => alias.toLowerCase() === rule.matchValue.toLowerCase())),
   );
   if (matchingRules.length === 0) {
     return { decision: "allow", source: "default", matchingRules, decisiveRules: [] };
@@ -474,14 +480,25 @@ export function batchActions(
  * can only block: a block on the batch tool itself or its connector still stops every batch.
  */
 export function resolveActionApprovalForTools(input: {
-  tools: ReadonlyArray<{ name: string; connectorKind?: string; readOnly?: boolean }>;
+  tools: ReadonlyArray<{
+    name: string;
+    aliases?: readonly string[];
+    connectorKind?: string;
+    readOnly?: boolean;
+  }>;
   wrapper?: { name: string; connectorKind?: string };
   site?: string;
   rules: ActionApprovalRule[];
 }): ActionApprovalResolved {
-  const resolve = (tool: { name: string; connectorKind?: string; readOnly?: boolean }) =>
+  const resolve = (tool: {
+    name: string;
+    aliases?: readonly string[];
+    connectorKind?: string;
+    readOnly?: boolean;
+  }) =>
     resolveActionApprovalDetail({
       toolName: tool.name,
+      toolAliases: tool.aliases,
       connectorKind: tool.connectorKind,
       readOnly: tool.readOnly,
       site: input.site,
