@@ -68,6 +68,7 @@ vi.mock("./session", () => ({
   registerSessionDiskCache: vi.fn(),
 }));
 
+import { endCall } from "./call-session";
 import {
   getIncomingCall,
   respondToMobileCall,
@@ -153,6 +154,20 @@ describe("mobile incoming calls", () => {
       }),
     );
     expect(getIncomingCall()).toBeNull();
+  });
+  it("ends the current call when a native answer arrives during it", async () => {
+    await ring();
+    fake.call = { botId: "bot-2" };
+    fake.native.incomingState.mockResolvedValue({
+      token: "",
+      actions: [
+        { action: "answer", callId: "call-1", botId: bot.id, expiresAt: block().expiresAt },
+      ],
+    });
+    fake.onAppState?.("active");
+    await vi.waitFor(() => expect(fake.startCall).toHaveBeenCalled());
+    expect(endCall).toHaveBeenCalled();
+    expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-1", true);
   });
   it("declines through the same backend path as web", async () => {
     await respondToMobileCall(await ring(), "decline");

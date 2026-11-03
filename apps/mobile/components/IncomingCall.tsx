@@ -60,9 +60,8 @@ export function IncomingCall() {
     <Modal
       visible
       presentationStyle="fullScreen"
-      onRequestClose={() => {
-        if (!busy) void respond("decline");
-      }}
+      // Back must not reject the call; only Decline does.
+      onRequestClose={() => {}}
     >
       <View
         style={[styles.screen, { backgroundColor: tokens.background }]}

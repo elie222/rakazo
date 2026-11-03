@@ -174,6 +174,8 @@ export async function respondToMobileCall(call: IncomingBotCall, action: "answer
       if (generation !== currentSessionGeneration())
         throw new Error(t("Something went wrong. Try again."));
       if (nativeEnded.has(target.callId)) throw new Error(t("This call is no longer ringing."));
+      // Answering during a call replaces it, like a phone's end-and-accept.
+      if (getSnapshot()) endCall();
       activeNativeCall = target.callId;
       startCall({
         botId: call.id,
@@ -230,7 +232,7 @@ async function drainNative() {
       if (activeNativeCall === action.callId) endCall();
       continue;
     }
-    if (getSnapshot() || !callIsRinging(action)) {
+    if (!callIsRinging(action)) {
       await native?.finishAnswer(action.callId, false);
       continue;
     }
@@ -353,10 +355,10 @@ export function startIncomingCalls() {
   const app = AppState.addEventListener("change", (state) => {
     if (state === "active") {
       // Android's in-app screen takes over the ring from the native notification.
-      if (Platform.OS === "android" && snapshot)
-        void native?.endIncomingCall(snapshot.incomingCall.callId);
+      if (Platform.OS === "android")
+        for (const call of calls) void native?.endIncomingCall(call.incomingCall.callId);
       refresh();
-    } else if (snapshot) reportNativeCall(snapshot);
+    } else for (const call of calls) reportNativeCall(call);
   });
   const events = native?.addListener("onIncomingCallChanged", () => {
     void drainNative().catch(() => undefined);
