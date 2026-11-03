@@ -939,8 +939,9 @@ describe("a message from the person while the bot works", () => {
         { type: "done", text: "" },
       ],
     });
-    // The unprompted notes stay working lines on the fresh turn; each answer is posted on its own.
-    expect(sentTexts(messages)).toEqual(["Reply one.", "Reply two."]);
+    // Text that can't be posted when the next message arrives stays in the reply and goes out
+    // with that answer; the unprompted note after it stays a working line on the fresh turn.
+    expect(sentTexts(messages)).toEqual(["Reply one.", "Still checking.\n\nReply two."]);
   });
 
   it("posts what it wrote after one message on that message's allowance when another arrives", async () => {
@@ -956,6 +957,44 @@ describe("a message from the person while the bot works", () => {
       ],
     });
     expect(sentTexts(messages)).toEqual(["Reply one.", "Reply two."]);
+  });
+
+  it("keeps an answer it can't post yet in the reply when another message arrives", async () => {
+    const { messages, finalizeRun } = await runTurn("", false, undefined, [], "fyi", {
+      executeTools: true,
+      runtimeEvents: [
+        { type: "steered", fromRunUser: true },
+        {
+          type: "tool",
+          name: "message_user",
+          args: { message: "On it." },
+          executionId: "call-1",
+        },
+        { type: "text", text: "Here is the full answer to your first question." },
+        { type: "steered", fromRunUser: true },
+        { type: "text", text: "And the answer to the second." },
+        { type: "done", text: "" },
+      ],
+    });
+    expect(sentTexts(messages)).toEqual(["On it."]);
+    expect(finalText(finalizeRun)).toBe(
+      "Here is the full answer to your first question.\n\nAnd the answer to the second.",
+    );
+  });
+
+  it("keeps a long answer in the reply, whole, when another message arrives", async () => {
+    const summary = `Full summary: ${"Supplier totals match the order. ".repeat(60)}`.trim();
+    const { messages, finalizeRun } = await runTurn("", false, undefined, [], "fyi", {
+      runtimeEvents: [
+        { type: "steered", fromRunUser: true },
+        { type: "text", text: summary },
+        { type: "steered", fromRunUser: true },
+        { type: "text", text: "And the answer to the second." },
+        { type: "done", text: "" },
+      ],
+    });
+    expect(sentTexts(messages)).toEqual([]);
+    expect(finalText(finalizeRun)).toBe(`${summary}\n\nAnd the answer to the second.`);
   });
 
   it("answers a fourth message minutes apart without restarting the budget a fourth time", async () => {

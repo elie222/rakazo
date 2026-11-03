@@ -15,6 +15,7 @@ import {
   humanizeToolName,
   isBackgroundRunTrigger,
   redactSecrets,
+  redactSecretsAfter,
   TAKEOVER_COMPUTER_PENDING_STATE,
   userRunError,
   withoutLastToolStepNotes,
@@ -92,6 +93,7 @@ import {
   finalBlocksAfterMidTurnProgress,
   STEERING_RESET_MIN_GAP_MS,
   STEERING_RESETS_MAX_PER_RUN,
+  USER_PROGRESS_MESSAGE_MAX_LENGTH,
 } from "./user-progress.js";
 
 type RuntimeEvent<T extends AgentRuntimeEvent["type"]> = Extract<AgentRuntimeEvent, { type: T }>;
@@ -309,9 +311,13 @@ async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
     reply.steeringResets >= STEERING_RESETS_MAX_PER_RUN ||
     now - reply.lastSteeringResetAt < STEERING_RESET_MIN_GAP_MS
   ) {
-    // What the bot wrote before may still use an earlier message's allowance.
+    // What the bot wrote before may still use an earlier message's allowance. If it can't be
+    // posted now, it stays in the reply.
     await flushProgress(ctx);
-    await showNarrationStatus(ctx, await publishMidTurnNarration(ctx));
+    const before = extractNarrationText(reply.messageSegments, reply.currentTextSegment).text;
+    const text = redactSecretsAfter(reply.narrationSoFar, before, ctx.secrets).trim();
+    if (text.length <= USER_PROGRESS_MESSAGE_MAX_LENGTH && canPublishDurableNarration(ctx))
+      await publishMidTurnNarration(ctx);
     reply.steeringReplyPending = true;
     return;
   }
