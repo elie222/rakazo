@@ -494,16 +494,18 @@ export function connectionsRoutes(ctx: RouterContext) {
             message: `Connector ${existing.connectorId} is not configured`,
           });
         }
-        const prepared =
-          existing.status !== "connected"
-            ? await prepareManagedConnectorForTransaction(connector)
-            : { provider: connector, recheck: undefined };
+        // Catalog reconciliation connects a row without its account id; the next poll stores it.
+        const settling = (row: { status: string; provider: string; providerRef: string | null }) =>
+          row.status !== "connected" || row.providerRef === row.provider;
+        const prepared = settling(existing)
+          ? await prepareManagedConnectorForTransaction(connector)
+          : { provider: connector, recheck: undefined };
         const transactionConnector = prepared.provider;
         if (!transactionConnector)
           throw new ORPCError("BAD_REQUEST", { message: "Integration provider is not configured" });
         let row = existing;
         let connectedNow = false;
-        if (existing.status !== "connected") {
+        if (settling(existing)) {
           // Hold the provider lock across remote completion, account-id resolution,
           // providerRef persistence, and any overlapping revokeUnreferenced cleanup
           // so a concurrent begin-loss cleanup cannot delete the account we are about
@@ -533,7 +535,7 @@ export function connectionsRoutes(ctx: RouterContext) {
                   message: "Integration credentials changed; retry.",
                 });
               }
-              if (current.status === "connected") return current;
+              if (!settling(current)) return current;
               if (current.status === "revoked") {
                 // Authorization URLs from a revoke-win begin can still finish
                 // remotely. Cancel leftover Composio request ids / drop Pipedream
@@ -630,7 +632,7 @@ export function connectionsRoutes(ctx: RouterContext) {
                 "connections.complete",
                 context.signal,
               );
-              if (input.code) {
+              if (input.code && current.status !== "connected") {
                 const state = current.providerRef ?? current.provider;
                 try {
                   await transactionConnector.complete({ state, code: input.code }, adapterContext);
@@ -730,7 +732,7 @@ export function connectionsRoutes(ctx: RouterContext) {
                   ...(providerRef ? { providerRef } : {}),
                 },
               });
-              connectedNow = updated.count > 0;
+              connectedNow = updated.count > 0 && current.status !== "connected";
               if (!connectedNow && providerRef) {
                 // Reconciliation sets only the status; keep the resolved account id so
                 // revoke still deletes the right remote account.

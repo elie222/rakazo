@@ -3563,6 +3563,16 @@ describe("connections.complete", () => {
     expect(securityEvents()).toEqual([]);
   });
 
+  it("stores the account id on a poll after the catalog connected the row", async () => {
+    const { complete, connector, securityEvents, row } = pollFixture("connected");
+    Object.assign(connector, { resolveConnectedAccountId: vi.fn(async () => "account-1") });
+
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
+    expect(row.providerRef).toBe("account-1");
+    expect(connector.complete).not.toHaveBeenCalled();
+    expect(securityEvents()).toEqual([]);
+  });
+
   it("stores the connected account a request id resolves to", async () => {
     const { complete, connector, row } = pollFixture("pending");
     row.providerRef = "request-1";
