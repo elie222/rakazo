@@ -1,3 +1,4 @@
+import { getLogger } from "@rakazo/logging";
 import {
   getAccountComputerSettings,
   getComputerProviderSettings,
@@ -23,7 +24,11 @@ export function computerProviderRoutes(ctx: RouterContext) {
         ),
         update: authed.computerProvider.account.update.handler(async ({ context, input }) => {
           const settings = await updateAccountComputerSettings(deps, context.actor, input);
-          await moveAccountComputers(deps, context.actor);
+          // Starting desktops can take minutes; the save returns now and a computer not moved
+          // here moves at its next run.
+          void moveAccountComputers(deps, context.actor).catch((error) =>
+            getLogger().warn("computer.move_failed", { error }),
+          );
           return settings;
         }),
       },
