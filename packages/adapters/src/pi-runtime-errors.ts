@@ -3,6 +3,7 @@ import {
   ModelAccountError,
   ModelOutputError,
   ModelProviderError,
+  modelFailureReason,
   TransientModelError,
 } from "@rakazo/adapter-kit";
 import {
@@ -12,6 +13,27 @@ import {
 } from "@rakazo/core";
 import { terminalOAuthRefreshErrorMarker } from "./pi-oauth.js";
 import { isOpenCodeProvider } from "./pi-runtime-stream.js";
+
+/** Keep controlled account recovery advice without retaining upstream diagnostic text. */
+export function modelRunFailureReason(error: ModelProviderError): string {
+  if (!(error instanceof ModelAccountError)) return modelFailureReason(error);
+  const normalized = normalizeRunError(
+    terminalOAuthRefreshErrorMarker(error.message) ? "authentication_error" : error.message,
+    (message, values) => {
+      // Keep a machine-readable reset below instead of the localized calendar label.
+      if (message === "{summary} Resets {date}.") return String(values?.summary ?? "");
+      return message.replace(/\{(\w+)\}/g, (placeholder, key: string) =>
+        key === "provider" ? "Your model provider" : String(values?.[key] ?? placeholder),
+      );
+    },
+  );
+  if (!normalized.kind) return modelFailureReason(error);
+  const reset = normalized.resetAt
+    ? ` Resets at ${new Date(normalized.resetAt).toISOString()}.`
+    : "";
+  const status = error.httpStatus ? ` HTTP ${error.httpStatus}.` : "";
+  return `ModelAccountError: ${normalized.summary}${reset}${status}`;
+}
 
 export function assistantText(message: unknown): string {
   if (!message || typeof message !== "object" || !("content" in message)) return "";

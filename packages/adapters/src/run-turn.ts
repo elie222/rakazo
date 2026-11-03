@@ -5,7 +5,6 @@ import {
   ModelAccountError,
   ModelOutputError,
   ModelProviderError,
-  modelFailureReason,
   runContinueJob,
   SandboxAllowanceUsedError,
   SandboxRateLimitError,
@@ -35,6 +34,7 @@ import {
   HISTORY_WINDOW_SIZE,
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
+import { modelRunFailureReason } from "./pi-runtime-errors.js";
 import {
   backOffRoutineAfterAccountError,
   clearRoutineBackoff,
@@ -915,7 +915,7 @@ export async function failRun(
   }
   const message = redactSecrets(
     error instanceof ModelProviderError && !isKnownRunError(error.message)
-      ? modelFailureReason(error)
+      ? modelRunFailureReason(error)
       : userRunError(error),
     ctx.secrets,
   );

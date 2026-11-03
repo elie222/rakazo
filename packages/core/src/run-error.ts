@@ -382,6 +382,7 @@ export function normalizeRunError(
   if (
     status !== 413 &&
     quotaResetAt === undefined &&
+    !trimmed.startsWith("ModelAccountError: ") &&
     (status === 429 ||
       /rate[_ -]limit|too many requests|resource[_ ]?exhausted|request limit reached/i.test(
         signals,
@@ -477,7 +478,7 @@ export function normalizeRunError(
   } else if (
     status === 401 ||
     ((status === 403 ||
-      /(?:invalid|incorrect)[_ -](?:api[_ -])?key|api[_ -]?key[_ -](?:invalid|expired)|authentication_error|\bauthentication token (?:has|is) expired\b|\binvalidated oauth token\b|\bapi key is not scoped to a workspace\b/i.test(
+      /(?:invalid|incorrect)[_ -](?:api[_ -])?key|rejected the API key|api[_ -]?key[_ -](?:invalid|expired)|authentication_error|\bauthentication token (?:has|is) expired\b|\binvalidated oauth token\b|\bapi key is not scoped to a workspace\b/i.test(
         signals,
       )) &&
       /auth|unauthorized|invalid|key/i.test(signals))

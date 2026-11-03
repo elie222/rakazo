@@ -8,7 +8,7 @@ export class ModelProviderError extends Error {
     super(message);
     this.name = "ModelProviderError";
     // Retain structured HTTP metadata without keeping request bodies or raw causes.
-    this.httpStatus = [...errorFacts(diagnostics).statuses].find(
+    this.httpStatus = [...errorFacts([message, diagnostics]).statuses].find(
       (value) => Number.isInteger(value) && value >= 400 && value <= 599,
     );
   }

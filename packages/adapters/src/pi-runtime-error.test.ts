@@ -9,6 +9,7 @@ import {
   MODEL_CONTEXT_TOO_SMALL_ERROR,
   MODEL_OUTPUT_LIMIT_ERROR,
   modelFallbackFailure,
+  normalizeRunError,
 } from "@rakazo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -52,6 +53,7 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 }));
 
 import { PiAgentRuntime } from "./pi-runtime.js";
+import { modelRunFailureReason } from "./pi-runtime-errors.js";
 
 function consume() {
   const runtime = new PiAgentRuntime();
@@ -308,4 +310,19 @@ describe("Pi runtime errors after every backup failed", () => {
     await expect(failure).rejects.not.toBeInstanceOf(ModelAccountError);
     await expect(failure).rejects.not.toBeInstanceOf(ModelOutputError);
   });
+});
+
+it.each([
+  ["429 insufficient credits", "credit", "model"],
+  ["429 spending limit exceeded", "spending", "model"],
+  ["Your authentication token has expired.", "auth", "connection"],
+  [
+    'OAuth refresh failed: status=400; body={"error":"invalid_grant","private":"fixture-secret"}',
+    "auth",
+    "connection",
+  ],
+])("preserves controlled account recovery for %s", (message, kind, recovery) => {
+  const reason = modelRunFailureReason(new ModelAccountError(message));
+  expect(reason).not.toContain("fixture-secret");
+  expect(normalizeRunError(reason)).toMatchObject({ kind, recovery });
 });
