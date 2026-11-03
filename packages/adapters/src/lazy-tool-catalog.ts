@@ -507,7 +507,8 @@ export function fitsNameIndexBudget(groups: Array<{ group: string; names: string
 function catalogEntryId(tool: ConnectorTool): string {
   const route = tool.route;
   if (!route?.resourceId) return tool.name;
-  return `${route.resourceId}:${encodeURIComponent(route.toolName)}`;
+  const account = route.connectionId ? `:${encodeURIComponent(route.connectionId)}` : "";
+  return `${route.resourceId}${account}:${encodeURIComponent(route.toolName)}`;
 }
 
 function catalogGroupOf(tool: ConnectorTool): string {
