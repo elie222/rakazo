@@ -62,9 +62,10 @@ class RakazoPdfView(context: Context, appContext: AppContext) : ExpoView(context
   private var descriptor: ParcelFileDescriptor? = null
   private var aspect: List<Float> = emptyList()
   private var uri: String? = null
-  private var generation = 0
+  // Read on the worker too, so a render for a document or width already left never starts.
+  @Volatile private var generation = 0
   // The width the cached bitmaps were drawn at; a resize or settled zoom redraws them sharp.
-  private var cacheWidth = 0
+  @Volatile private var cacheWidth = 0
   private var scale = 1f
   // The zoom the pages are drawn at, updated only when a gesture settles.
   private var renderScale = 1f
@@ -140,6 +141,10 @@ class RakazoPdfView(context: Context, appContext: AppContext) : ExpoView(context
 
   override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
     super.onSizeChanged(w, h, oldw, oldh)
+    resetZoom()
+  }
+
+  private fun resetZoom() {
     stopZoomAnimation()
     scale = 1f
     renderScale = 1f
@@ -238,6 +243,8 @@ class RakazoPdfView(context: Context, appContext: AppContext) : ExpoView(context
     val current = ++generation
     pages.adapter = null
     bitmaps.evictAll()
+    // Another document opens at its own start, not at the last one's zoom.
+    resetZoom()
     worker.execute {
       closeDocument()
       val sizes = try {
@@ -283,7 +290,7 @@ class RakazoPdfView(context: Context, appContext: AppContext) : ExpoView(context
     val current = generation
     worker.execute {
       val page = renderer ?: return@execute
-      if (current != generation || index >= page.pageCount) return@execute
+      if (current != generation || width != cacheWidth || index >= page.pageCount) return@execute
       val drawWidth = drawWidth(index, width)
       // A page PdfRenderer cannot draw stays blank instead of crashing the app.
       val bitmap = try {

@@ -18,6 +18,7 @@ import type { NativeStackNavigationOptions } from "expo-router";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { glassHeaderOptions } from "../../components/glass-title";
 import { LoadFailure } from "../../components/load-failure";
 import { MenuPickerMenu } from "../../components/menu-picker";
 import { NativeActionButton } from "../../components/native-action-button";
@@ -77,7 +78,7 @@ export default function TeamConversationSettings() {
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      title,
+      ...glassHeaderOptions(title),
       ...(!loaded
         ? { headerRight: undefined, unstable_headerRightItems: undefined }
         : iosAtLeast(26)
