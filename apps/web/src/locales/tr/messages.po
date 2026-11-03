@@ -4103,6 +4103,11 @@ msgstr ""
 msgid "Needs an OAuth client ID"
 msgstr "OAuth istemci kimliği gerekli"
 
+#. js-lingui-explicit-id
+#: src/lib/browser-notifications.ts
+msgid "Needs attention"
+msgstr "İlgilenmeniz gerekiyor"
+
 #: src/pages/ActivityList.tsx
 msgid "Needs attention"
 msgstr "İlgi gerekiyor"

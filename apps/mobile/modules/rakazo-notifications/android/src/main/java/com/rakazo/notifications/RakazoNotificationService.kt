@@ -64,12 +64,12 @@ class RakazoNotificationService : Service() {
       manager.cancelAll()
       state.edit().putBoolean(THREAD_NOTIFICATION_IDS, true).apply()
     }
-    createChannels(localizedContext(NotificationStorage(this).locale))
+    createRakazoChannels(localizedContext(NotificationStorage(this).locale))
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     // Channel names follow the current locale; recreating an existing channel updates its copy.
-    createChannels(localizedContext(NotificationStorage(this).locale))
+    createRakazoChannels(localizedContext(NotificationStorage(this).locale))
     val generation = synchronized(sessionLock) {
       if (intent?.getBooleanExtra(EXTRA_RESET_TOKEN, false) == true) tokenCache.reset()
       intent?.getStringExtra(EXTRA_MUTED_BOT_ID)?.let { botId ->
@@ -349,9 +349,7 @@ class RakazoNotificationService : Service() {
     manager.cancel(LIVE_NOTIFICATION_ID)
   }
 
-  private fun isOpenThread(run: RunRecord): Boolean = synchronized(sessionLock) {
-    if (openThreadId != null) openThreadId == run.threadId else openBotId == run.botId
-  }
+  private fun isOpenThread(run: RunRecord): Boolean = isOpenThread(run.botId, run.threadId)
 
   @Suppress("DEPRECATION")
   private fun builder(channel: String): Notification.Builder =
@@ -384,32 +382,6 @@ class RakazoNotificationService : Service() {
     val configuration = Configuration(resources.configuration)
     configuration.setLocale(Locale.forLanguageTag(tag))
     return createConfigurationContext(configuration)
-  }
-
-  private fun createChannels(context: Context) {
-    if (Build.VERSION.SDK_INT < 26) return
-    listOf(
-      NotificationChannel(
-        Channels.LIVE,
-        context.getString(R.string.rakazo_channel_live),
-        NotificationManager.IMPORTANCE_LOW,
-      ),
-      NotificationChannel(
-        Channels.MESSAGES,
-        context.getString(R.string.rakazo_channel_messages),
-        NotificationManager.IMPORTANCE_DEFAULT,
-      ),
-      NotificationChannel(
-        Channels.SCHEDULED,
-        context.getString(R.string.rakazo_channel_scheduled),
-        NotificationManager.IMPORTANCE_DEFAULT,
-      ),
-      NotificationChannel(
-        Channels.ATTENTION,
-        context.getString(R.string.rakazo_channel_attention),
-        NotificationManager.IMPORTANCE_HIGH,
-      ),
-    ).forEach(manager::createNotificationChannel)
   }
 
   private fun stop() {
@@ -452,6 +424,10 @@ class RakazoNotificationService : Service() {
 
     fun stop(context: Context) {
       context.stopService(Intent(context, RakazoNotificationService::class.java))
+    }
+
+    fun isOpenThread(botId: String, threadId: String): Boolean = synchronized(sessionLock) {
+      if (openThreadId != null) openThreadId == threadId else openBotId == botId
     }
 
     fun setOpenThread(context: Context, botId: String?, threadId: String?) {
@@ -499,7 +475,7 @@ private fun attentionCopy(context: Context, run: RunRecord): NotificationCopy = 
   )
 }
 
-private object Channels {
+internal object Channels {
   const val LIVE = "rakazo_live"
   const val MESSAGES = "rakazo_messages"
   const val SCHEDULED = "rakazo_scheduled"
@@ -1073,3 +1049,29 @@ private fun JSONObject.requiredString(name: String): String =
 
 private fun JSONObject.optionalString(name: String): String? =
   if (isNull(name)) null else optString(name).takeIf(String::isNotBlank)
+
+internal fun createRakazoChannels(context: Context) {
+  if (Build.VERSION.SDK_INT < 26) return
+  listOf(
+    NotificationChannel(
+      Channels.LIVE,
+      context.getString(R.string.rakazo_channel_live),
+      NotificationManager.IMPORTANCE_LOW,
+    ),
+    NotificationChannel(
+      Channels.MESSAGES,
+      context.getString(R.string.rakazo_channel_messages),
+      NotificationManager.IMPORTANCE_DEFAULT,
+    ),
+    NotificationChannel(
+      Channels.SCHEDULED,
+      context.getString(R.string.rakazo_channel_scheduled),
+      NotificationManager.IMPORTANCE_DEFAULT,
+    ),
+    NotificationChannel(
+      Channels.ATTENTION,
+      context.getString(R.string.rakazo_channel_attention),
+      NotificationManager.IMPORTANCE_HIGH,
+    ),
+  ).forEach(context.getSystemService(NotificationManager::class.java)::createNotificationChannel)
+}

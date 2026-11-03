@@ -4103,6 +4103,11 @@ msgstr "回答が必要"
 msgid "Needs an OAuth client ID"
 msgstr "OAuth クライアント ID が必要です"
 
+#. js-lingui-explicit-id
+#: src/lib/browser-notifications.ts
+msgid "Needs attention"
+msgstr "対応が必要です"
+
 #: src/pages/ActivityList.tsx
 msgid "Needs attention"
 msgstr "要対応"

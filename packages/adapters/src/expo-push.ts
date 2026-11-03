@@ -12,7 +12,7 @@ import { getLogger } from "@rakazo/logging";
 import type { IncomingCallPush, VoipPushProvider } from "./apns-voip.js";
 import { combineSignals } from "./connector-safety.js";
 import { credentialDigest } from "./credential-digest.js";
-import type { PushTokenStore } from "./push-token-store.js";
+import type { PushRecord, PushTokenStore } from "./push-token-store.js";
 import { readBodyCapped, withAbort } from "./web-ssrf.js";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
@@ -25,6 +25,8 @@ const EXPO_RECEIPT_DELAY_MS = 15 * 60_000;
 /** Keeps a push well inside Expo's 4096-byte payload limit. */
 const MAX_PUSH_TITLE_CHARS = 100;
 const MAX_PUSH_BODY_CHARS = 180;
+/** APNs and FCM cap the whole payload at 4096 bytes; multibyte text and the sender thumbnail count. */
+const MAX_PUSH_PAYLOAD_BYTES = 3300;
 export const MAX_EXPO_PUSH_RESPONSE_BYTES = 64 * 1024;
 const RESPONSE_TOO_LARGE = "Expo push response is too large.";
 
@@ -34,6 +36,7 @@ const RESPONSE_TOO_LARGE = "Expo push response is too large.";
 export function expoPushData(message: NotificationMessage, spaceId: string, deliveryId: string) {
   return {
     kind: message.kind,
+    ...(message.sender ? { sender: message.sender } : {}),
     botId: message.botId,
     threadId: message.threadId,
     deliveryId,
@@ -243,7 +246,7 @@ export class ExpoPushProvider implements NotificationProvider {
     );
     // Old native builds registered only the account's Expo token.
     if (devices.length === 0 && !call.ended) {
-      const token = await this.deliverableToken(userId);
+      const token = (await this.deliverableToken(userId))?.token;
       if (token && (await this.sendCallPush(userId, token, call)) === "invalid")
         await this.tokens.remove(userId, credentialDigest(token));
     }
@@ -286,17 +289,40 @@ export class ExpoPushProvider implements NotificationProvider {
    * Neither is an Expo acceptance, so callers must not record a reminder.
    */
   async deliver(message: NotificationMessage, context: AdapterContext): Promise<ExpoPushDelivery> {
-    const token = await this.deliverableToken(context.userId);
-    if (!token) return "undeliverable";
-    const payload = {
+    const registration = await this.deliverableToken(context.userId);
+    if (!registration) return "undeliverable";
+    const token = registration.token;
+    const title = capped(message.title, MAX_PUSH_TITLE_CHARS);
+    let text = capped(message.body, MAX_PUSH_BODY_CHARS);
+    const data = expoPushData(message, context.spaceId, randomUUID());
+    const shared = {
       to: token,
-      title: capped(message.title, MAX_PUSH_TITLE_CHARS),
-      body: capped(message.body, MAX_PUSH_BODY_CHARS),
       collapseId: message.threadId,
       tag: message.threadId,
       ...(message.badge === undefined ? {} : { badge: message.badge }),
-      data: expoPushData(message, context.spaceId, randomUUID()),
     };
+    const urgent =
+      message.kind === "help" || message.kind === "takeover" || message.kind === "failure";
+    const build = () =>
+      registration.presentation === "android_sender"
+        ? {
+            ...shared,
+            priority: "high",
+            data: { ...data, notificationTitle: title, notificationBody: text },
+          }
+        : {
+            ...shared,
+            title,
+            body: text,
+            data,
+            ...(message.sender ? { mutableContent: true } : {}),
+            ...(urgent ? { priority: "high" } : {}),
+          };
+    let payload = build();
+    while (Buffer.byteLength(JSON.stringify(payload)) > MAX_PUSH_PAYLOAD_BYTES && text) {
+      text = text.slice(0, Math.floor(text.length / 2));
+      payload = build();
+    }
     const { status, body } = await this.postWithBackoff(EXPO_PUSH_URL, payload, context.signal);
     const [ticket] = expoPushTickets(body);
     if (status < 300 && body === undefined) {
@@ -382,10 +408,10 @@ export class ExpoPushProvider implements NotificationProvider {
    * row is removed. The token is read again after the lookup so a handover
    * during that wait is not sent.
    */
-  private async deliverableToken(userId: string): Promise<string | undefined> {
+  private async deliverableToken(userId: string): Promise<PushRecord | undefined> {
     const saved = await this.tokens.load(userId);
     if (!saved?.token) return undefined;
-    if (!saved.sessionId) return saved.token;
+    if (!saved.sessionId) return saved;
     if (!this.sessionExpiresAt) return undefined;
     let expiresAt: Date | null;
     try {
@@ -401,7 +427,7 @@ export class ExpoPushProvider implements NotificationProvider {
     }
     const current = await this.tokens.load(userId);
     if (current?.token !== saved.token || current.sessionId !== saved.sessionId) return undefined;
-    return current.token;
+    return current;
   }
 }
 

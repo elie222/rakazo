@@ -116,6 +116,8 @@ model PushToken {
   ciphertext String
   tokenDigest String @unique
   sessionId String
+  /// "android_sender" when the installed Android build renders data-only sender pushes.
+  presentation String?
   updatedAt DateTime @updatedAt
 
   @@map("push_tokens")

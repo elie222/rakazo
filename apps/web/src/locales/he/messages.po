@@ -4103,6 +4103,11 @@ msgstr "ממתין לתשובה"
 msgid "Needs an OAuth client ID"
 msgstr "נדרש מזהה לקוח OAuth"
 
+#. js-lingui-explicit-id
+#: src/lib/browser-notifications.ts
+msgid "Needs attention"
+msgstr "דורש תשומת לב"
+
 #: src/pages/ActivityList.tsx
 msgid "Needs attention"
 msgstr "דורש תשומת לב"

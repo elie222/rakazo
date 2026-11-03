@@ -51,9 +51,22 @@ export function shouldNotifyBrowser(
   context: BrowserNotificationContext,
 ): boolean {
   const notifiable =
-    (event.type === "thread.message.created" && event.payload.role === "bot") ||
+    (event.type === "thread.message.created" &&
+      event.payload.role === "bot" &&
+      Array.isArray(event.payload.blocks) &&
+      event.payload.blocks.some(
+        (block) =>
+          block &&
+          typeof block === "object" &&
+          "kind" in block &&
+          block.kind === "text" &&
+          "text" in block &&
+          typeof block.text === "string" &&
+          block.text.trim(),
+      )) ||
     event.type === "run.failed" ||
-    event.type === "run.cancelled";
+    event.type === "run.waiting_input" ||
+    event.type === "computer.takeover.requested";
   return (
     context.streamReady &&
     notifiable &&
@@ -83,6 +96,9 @@ export function browserNotificationMessage(
       .trim();
     return { title: name, body: body || i18n._({ id: "Message", message: "Message" }) };
   }
+  if (event.type === "run.waiting_input" || event.type === "computer.takeover.requested") {
+    return { title: name, body: i18n._({ id: "Needs attention", message: "Needs attention" }) };
+  }
   if (event.type === "run.failed") {
     return {
       title: i18n._({ id: "{name} failed", message: "{name} failed", values: { name } }),
@@ -106,6 +122,7 @@ export function deliverBrowserNotification(
   botName: string,
   context: {
     enabled: boolean;
+    allowForeground?: boolean;
     pageVisible: boolean;
     windowFocused: boolean;
     permission: BrowserNotificationPermission;
@@ -115,7 +132,7 @@ export function deliverBrowserNotification(
 ): "delivered" | "pending" | "discarded" {
   if (
     !context.enabled ||
-    (context.pageVisible && context.windowFocused) ||
+    (context.pageVisible && context.windowFocused && !context.allowForeground) ||
     context.notifiedEventIds.has(event.id) ||
     context.permission === "denied"
   ) {

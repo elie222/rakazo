@@ -18,7 +18,9 @@ function event(
       | "run.completed"
       | "run.failed"
       | "run.cancelled"
-      | "run.started";
+      | "run.started"
+      | "run.waiting_input"
+      | "computer.takeover.requested";
     threadId: string;
     id: string;
     runId: string;
@@ -67,7 +69,7 @@ describe("browser notifications", () => {
     expect(shouldNotifyBrowser(event(), context())).toBe(true);
     expect(shouldNotifyBrowser(event({ type: "run.started" }), context())).toBe(false);
     expect(shouldNotifyBrowser(event({ type: "run.failed" }), context())).toBe(true);
-    expect(shouldNotifyBrowser(event({ type: "run.cancelled" }), context())).toBe(true);
+    expect(shouldNotifyBrowser(event({ type: "run.cancelled" }), context())).toBe(false);
     expect(shouldNotifyBrowser(event({ payload: { role: "user", blocks: [] } }), context())).toBe(
       false,
     );
@@ -165,4 +167,15 @@ describe("browser notifications", () => {
 
 it("uses a readable fallback for opaque notification names", () => {
   expect(browserNotificationMessage(event(), "__TestTok1__").title).toBe("Bot");
+});
+
+it("alerts for questions and takeover, but keeps tool-only messages quiet", () => {
+  expect(shouldNotifyBrowser(event({ type: "run.waiting_input" }), context())).toBe(true);
+  expect(shouldNotifyBrowser(event({ type: "computer.takeover.requested" }), context())).toBe(true);
+  expect(
+    shouldNotifyBrowser(
+      event({ payload: { role: "bot", blocks: [{ kind: "tool", name: "read_file" }] } }),
+      context(),
+    ),
+  ).toBe(false);
 });
