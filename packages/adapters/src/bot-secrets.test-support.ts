@@ -12,6 +12,8 @@ type Row = {
   origin: string;
   auth: unknown;
   ciphertext: string;
+  title?: string;
+  note?: string;
 };
 type Where = Record<string, unknown>;
 
@@ -19,6 +21,8 @@ function matches(row: Row, where: Where) {
   return Object.entries(where).every(([key, value]) => {
     const field = row[key as keyof Row];
     if (value && typeof value === "object" && "not" in value) return field !== value.not;
+    if (value && typeof value === "object" && "startsWith" in value)
+      return String(field).startsWith(String(value.startsWith));
     if (value && typeof value === "object" && "path" in value) {
       const filter = value as { path: string[]; equals: unknown };
       return (field as Record<string, unknown> | null)?.[filter.path[0]!] === filter.equals;
@@ -52,6 +56,11 @@ export function fakeDatabase() {
     }),
     update: vi.fn(async ({ where, data }: { where: { id: string }; data: Partial<Row> }) => {
       Object.assign(rows.find((row) => row.id === where.id)!, data);
+    }),
+    updateMany: vi.fn(async ({ where, data }: { where: Where; data: Partial<Row> }) => {
+      const matched = rows.filter((row) => matches(row, where));
+      for (const row of matched) Object.assign(row, data);
+      return { count: matched.length };
     }),
     deleteMany: vi.fn(async ({ where }: { where: Where }) => {
       const before = rows.length;

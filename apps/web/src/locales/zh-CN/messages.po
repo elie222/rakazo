@@ -158,7 +158,7 @@ msgstr "{botCount, plural, other {删除 {name} 及其 # 个机器人？}}"
 msgid "{botName}’s computer"
 msgstr "{botName} 的电脑"
 
-#: src/components/VaultSettings.tsx
+#: src/components/vault/VaultItemEditor.tsx
 msgid "{commandVariable} is reserved and cannot be used as a command variable. Choose another name."
 msgstr "{commandVariable} 是保留名称，不能用作命令变量。请选择其他名称。"
 
@@ -502,6 +502,7 @@ msgid "Activity"
 msgstr "动态"
 
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/components/SecretAskCard.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
@@ -524,6 +525,10 @@ msgstr "添加要监视的文件或文件夹"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Add a model in Settings to use this."
 msgstr "请在设置中添加模型后再使用。"
+
+#: src/components/vault/VaultItemEditor.tsx
+msgid "Add a note"
+msgstr ""
 
 #: src/components/PasskeyOffer.tsx
 msgid "Add a passkey for faster sign-in?"
@@ -558,10 +563,6 @@ msgstr "请填写 HTTPS 服务器 URL。"
 msgid "Add another"
 msgstr "再添加一个"
 
-#: src/components/VaultSettings.tsx
-msgid "Add credential"
-msgstr "添加凭据"
-
 #: src/components/ModelCredits.tsx
 msgid "Add credits"
 msgstr "添加额度"
@@ -574,7 +575,7 @@ msgstr "添加自定义"
 msgid "Add fallback"
 msgstr "添加备用模型"
 
-#: src/components/LoginFields.tsx
+#: src/components/vault/LoginFieldsInput.tsx
 msgid "Add field"
 msgstr "添加字段"
 
@@ -642,6 +643,15 @@ msgstr "已添加"
 msgid "Adding…"
 msgstr "正在添加…"
 
+#: src/components/vault/VaultItemDetail.tsx
+#: src/components/vault/VaultItemEditor.tsx
+msgid "Address"
+msgstr ""
+
+#: src/components/vault/VaultItemEditor.tsx
+msgid "Address line 2"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -660,6 +670,7 @@ msgstr "高级..."
 msgid "Agent from another app"
 msgstr ""
 
+#: src/components/VaultSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
 msgstr "全部"
@@ -807,8 +818,9 @@ msgstr "任意模型，使用你自己的密钥"
 msgid "Anyone with the link"
 msgstr "任何拥有链接的人"
 
-#: src/components/AskCard.tsx
 #: src/components/ComputerProviderSettings.tsx
+#: src/components/SecretAskCard.tsx
+#: src/components/vault/kinds.tsx
 #: src/lib/localized-provider-hint.ts
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/model-settings/compatible-key-field.tsx
@@ -990,7 +1002,7 @@ msgstr "可用额度"
 msgid "Available in"
 msgstr "可用于"
 
-#: src/components/VaultSettings.tsx
+#: src/components/vault/VaultItemEditor.tsx
 msgid "Available to shell commands as {commandVariable}"
 msgstr "Shell 命令可通过 {commandVariable} 使用"
 
@@ -1000,6 +1012,7 @@ msgstr "头像工作室"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
+#: src/components/vault/VaultPageHeader.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/AdminPluginsPage.tsx
 #: src/pages/Auth.tsx
@@ -1025,15 +1038,16 @@ msgstr "返回登录"
 msgid "Base URL"
 msgstr "Base URL"
 
-#: src/components/VaultSettings.tsx
+#: src/components/vault/VaultItemEditor.tsx
 msgid "Basic auth"
 msgstr "基本认证"
 
-#: src/components/VaultSettings.tsx
+#: src/components/vault/VaultItemDetail.tsx
 msgid "Basic auth ({username})"
 msgstr "基本认证（{username}）"
 
-#: src/components/VaultSettings.tsx
+#: src/components/vault/VaultItemDetail.tsx
+#: src/components/vault/VaultItemEditor.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Bearer token"
@@ -1042,6 +1056,11 @@ msgstr "Bearer token"
 #: src/pages/settings-nav.ts
 msgid "Billing"
 msgstr "账单"
+
+#: src/components/vault/VaultItemDetail.tsx
+#: src/components/vault/VaultItemEditor.tsx
+msgid "Billing address"
+msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Billing period"
@@ -1182,7 +1201,7 @@ msgstr "无法读取图像"
 #: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
-#: src/components/VaultSettings.tsx
+#: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -1224,9 +1243,21 @@ msgstr "已取消"
 msgid "Cancelled"
 msgstr "已取消"
 
+#: src/components/vault/kinds.tsx
+msgid "Card"
+msgstr ""
+
+#: src/components/vault/VaultItemEditor.tsx
+msgid "Card number"
+msgstr ""
+
 #: src/pages/Artifacts.tsx
 msgid "Card view"
 msgstr "卡片视图"
+
+#: src/components/vault/kinds.tsx
+msgid "Cards"
+msgstr ""
 
 #: src/pages/ModelRoleSettings.tsx
 msgid "Change {name}"
@@ -1368,6 +1399,10 @@ msgstr "选择文件夹"
 msgid "Choose how to use Rakazo"
 msgstr "选择如何使用 Rakazo"
 
+#: src/components/vault/VaultItemEditor.tsx
+msgid "City"
+msgstr ""
+
 #: src/lib/localized-provider-hint.ts
 msgid "Claude subscription"
 msgstr "Claude 订阅"
@@ -1376,7 +1411,7 @@ msgstr "Claude 订阅"
 msgid "Clean up"
 msgstr "清理"
 
-#: src/components/AskCard.tsx
+#: src/components/SecretAskCard.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
 msgstr "清空"
@@ -1478,8 +1513,8 @@ msgstr "关闭语音设置"
 msgid "Cloud"
 msgstr "云端"
 
-#: src/components/AskCard.tsx
 #: src/components/ConfirmIdentityDialog.tsx
+#: src/components/SecretAskCard.tsx
 msgid "Code"
 msgstr "代码"
 
@@ -1518,8 +1553,7 @@ msgstr "命令"
 msgid "Command menu"
 msgstr ""
 
-#: src/components/AskCard.tsx
-#: src/components/VaultSettings.tsx
+#: src/components/SecretAskCard.tsx
 msgid "Command variable"
 msgstr "命令变量"
 
@@ -1721,6 +1755,14 @@ msgstr "与 {0} 的连接仍在等待。可以关闭此窗口稍后再看。"
 msgid "Connector"
 msgstr "连接器"
 
+#: src/components/vault/kinds.tsx
+msgid "Contact"
+msgstr ""
+
+#: src/components/vault/kinds.tsx
+msgid "Contacts"
+msgstr ""
+
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/import-status.ts
 msgid "Contains code to run"
@@ -1731,10 +1773,11 @@ msgstr "包含可运行的代码"
 msgid "Context limit"
 msgstr "上下文限制"
 
-#: src/components/AskCard.tsx
 #: src/components/ConfirmIdentityDialog.tsx
 #: src/components/integrations/IntegrationSetup.tsx
+#: src/components/SecretAskCard.tsx
 #: src/components/SignupSurvey.tsx
+#: src/components/vault/VaultItemEditor.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
@@ -1764,14 +1807,14 @@ msgstr "对话"
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
-#: src/components/VaultSettings.tsx
+#: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Copied"
 msgstr "已复制"
 
-#: src/components/VaultSettings.tsx
+#: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/message-hover-actions.tsx
@@ -2295,6 +2338,7 @@ msgid "Could not stop computer"
 msgstr "无法停止电脑"
 
 #: src/components/AskCard.tsx
+#: src/components/SecretAskCard.tsx
 msgid "Could not submit this answer"
 msgstr "无法提交此回答"
 
@@ -2386,6 +2430,10 @@ msgstr "无法更新你的时区"
 msgid "Couldn't update your wallet"
 msgstr "无法更新钱包"
 
+#: src/components/vault/VaultItemEditor.tsx
+msgid "Country"
+msgstr ""
+
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -2467,7 +2515,7 @@ msgstr "Cron 表达式"
 msgid "Current password"
 msgstr "当前密码"
 
-#: src/components/VaultSettings.tsx
+#: src/components/vault/VaultItemEditor.tsx
 msgid "Custom header"
 msgstr "自定义请求头"
 
@@ -2727,7 +2775,9 @@ msgstr "正在断开…"
 #: src/components/AskCard.tsx
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/PasskeyOffer.tsx
+#: src/components/SecretAskCard.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
+#: src/components/vault/VaultItemEditor.tsx
 #: src/pages/shell/computer-panel.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Dismiss"
@@ -2738,6 +2788,7 @@ msgid "Dismiss error"
 msgstr "关闭错误"
 
 #: src/components/AskCard.tsx
+#: src/components/SecretAskCard.tsx
 msgid "Dismissed"
 msgstr "已忽略"
 
@@ -2826,6 +2877,7 @@ msgid "Each name can be used once."
 msgstr "每个名称只能使用一次。"
 
 #: src/components/AskCard.tsx
+#: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Edit"
@@ -2843,6 +2895,8 @@ msgstr "编辑名称"
 msgid "Edit Profile"
 msgstr "编辑资料"
 
+#: src/components/vault/VaultItemDetail.tsx
+#: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
 msgid "Email"
@@ -3004,6 +3058,18 @@ msgstr "展开表格"
 #: src/components/CloudAgentCard.tsx
 msgid "expired"
 msgstr "已过期"
+
+#: src/components/vault/VaultItemDetail.tsx
+msgid "Expires"
+msgstr ""
+
+#: src/components/vault/kinds.tsx
+msgid "Expires {expiry}"
+msgstr ""
+
+#: src/components/vault/VaultItemEditor.tsx
+msgid "Expiry"
+msgstr ""
 
 #: src/components/AccountDataSettings.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -3170,6 +3236,11 @@ msgstr "从 {0}"
 msgid "From GitHub"
 msgstr "来自 GitHub"
 
+#: src/components/vault/VaultItemDetail.tsx
+#: src/components/vault/VaultItemEditor.tsx
+msgid "Full name"
+msgstr ""
+
 #: src/pages/WindowChrome.tsx
 msgid "Fullscreen"
 msgstr "全屏"
@@ -3252,12 +3323,12 @@ msgstr "请挂断，然后输入屏幕上的代码。"
 msgid "header"
 msgstr "请求头"
 
-#: src/components/VaultSettings.tsx
+#: src/components/vault/VaultItemDetail.tsx
 msgid "Header \"{header}\""
 msgstr "请求头“{header}”"
 
 #: src/components/ModelHeadersEditor.tsx
-#: src/components/VaultSettings.tsx
+#: src/components/vault/VaultItemEditor.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Header name"
@@ -3280,11 +3351,11 @@ msgstr "试听"
 msgid "Hi, this is how I'll sound when I read replies out loud."
 msgstr "你好，这是我朗读回复时的声音。"
 
-#: src/components/LoginFields.tsx
+#: src/components/vault/LoginFieldsInput.tsx
 msgid "Hidden"
 msgstr "隐藏"
 
-#: src/components/VaultSettings.tsx
+#: src/components/vault/VaultItemDetail.tsx
 msgid "Hide"
 msgstr "隐藏"
 
@@ -3314,6 +3385,10 @@ msgstr "按住说话"
 #: src/components/composer/HoldToTalk.tsx
 msgid "Hold to talk, release to send"
 msgstr "按住说话，松开发送"
+
+#: src/components/vault/VaultItemEditor.tsx
+msgid "Home"
+msgstr ""
 
 #: src/lib/cron.ts
 msgid "hour"
@@ -3559,7 +3634,12 @@ msgstr ""
 msgid "key"
 msgstr "密钥"
 
-#: src/components/LoginFields.tsx
+#: src/components/vault/kinds.tsx
+msgid "Keys"
+msgstr ""
+
+#: src/components/vault/LoginFieldsInput.tsx
+#: src/components/vault/VaultItemEditor.tsx
 msgid "Label"
 msgstr "标签"
 
@@ -3698,6 +3778,14 @@ msgstr "访问本机电脑需要最新版桌面应用。"
 msgid "Log out"
 msgstr "退出登录"
 
+#: src/components/vault/kinds.tsx
+msgid "Login"
+msgstr ""
+
+#: src/components/vault/kinds.tsx
+msgid "Logins"
+msgstr ""
+
 #: src/pages/shell/agent-import.tsx
 msgid "Looks like it contains a key"
 msgstr "似乎包含密钥"
@@ -3712,10 +3800,6 @@ msgstr "低"
 #: src/lib/model-catalog.ts
 msgid "Low"
 msgstr "低"
-
-#: src/components/VaultSettings.tsx
-msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
-msgstr "只能用小写字母、数字、连字符和下划线，并且以字母开头。"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Main model"
@@ -4062,7 +4146,7 @@ msgid "My computers"
 msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
-#: src/components/VaultSettings.tsx
+#: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
@@ -4077,6 +4161,11 @@ msgstr ""
 #: src/pages/SpaceSettingsPanel.tsx
 msgid "Name"
 msgstr "名称"
+
+#: src/components/vault/VaultItemDetail.tsx
+#: src/components/vault/VaultItemEditor.tsx
+msgid "Name on card"
+msgstr ""
 
 #: src/pages/shell/agent-import.tsx
 msgid "Name this bot"
@@ -4129,9 +4218,14 @@ msgstr "需要：{names}"
 msgid "Never ask"
 msgstr "从不询问"
 
+#: src/components/VaultSettings.tsx
 #: src/pages/shell/chat-context.tsx
 msgid "New"
 msgstr "新消息"
+
+#: src/components/VaultSettings.tsx
+msgid "New API key"
+msgstr ""
 
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
@@ -4139,8 +4233,16 @@ msgstr "新消息"
 msgid "New bot"
 msgstr "新建 Bot"
 
+#: src/components/VaultSettings.tsx
+msgid "New card"
+msgstr ""
+
 #: src/components/ComputerProviderSettings.tsx
 msgid "New computers run on"
+msgstr ""
+
+#: src/components/VaultSettings.tsx
+msgid "New contact"
 msgstr ""
 
 #: src/pages/GroupPanel.tsx
@@ -4151,6 +4253,10 @@ msgstr "新建群组"
 #: src/pages/shell/bot-picker.tsx
 msgid "New group chat"
 msgstr "新建群聊"
+
+#: src/components/VaultSettings.tsx
+msgid "New login"
+msgstr ""
 
 #: src/pages/shell/chat-context.tsx
 msgid "New messages"
@@ -4187,6 +4293,10 @@ msgstr "新建工作区"
 msgid "New ticket"
 msgstr "新建工单"
 
+#: src/components/VaultSettings.tsx
+msgid "New variable"
+msgstr ""
+
 #: src/components/markdown-copy.tsx
 msgid "Next page"
 msgstr "下一页"
@@ -4221,12 +4331,17 @@ msgid "No bots match"
 msgstr "没有匹配的 Bot"
 
 #: src/components/AskCard.tsx
+#: src/components/SecretAskCard.tsx
 msgid "No longer active"
 msgstr "已停用"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "No managed app catalog is configured on this deployment."
 msgstr "此部署未配置托管应用目录。"
+
+#: src/components/VaultSettings.tsx
+msgid "No matches"
+msgstr ""
 
 #: src/pages/Artifacts.tsx
 msgid "No matching artifacts on this page."
@@ -4305,6 +4420,10 @@ msgstr "还没有工单"
 msgid "No trigger"
 msgstr "无触发器"
 
+#: src/components/vault/VaultItemEditor.tsx
+msgid "None"
+msgstr ""
+
 #: src/lib/ticket-priority.ts
 msgid "Normal"
 msgstr "普通"
@@ -4359,6 +4478,10 @@ msgstr "暂无记忆"
 #: src/pages/shell/bot-panel.tsx
 msgid "Notifications"
 msgstr "通知"
+
+#: src/components/vault/VaultItemDetail.tsx
+msgid "Number"
+msgstr ""
 
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth authorization was cancelled."
@@ -4419,7 +4542,7 @@ msgstr "一次性"
 msgid "One-time purchase. Credits do not expire."
 msgstr "单次购买，额度不会过期。"
 
-#: src/components/AskCard.tsx
+#: src/components/SecretAskCard.tsx
 msgid "Only enter a code {codeHost} sent you."
 msgstr ""
 
@@ -4621,9 +4744,10 @@ msgstr "通行密钥"
 msgid "Passkeys"
 msgstr "通行密钥"
 
-#: src/components/AskCard.tsx
 #: src/components/ConfirmIdentityDialog.tsx
-#: src/components/VaultSettings.tsx
+#: src/components/SecretAskCard.tsx
+#: src/components/vault/VaultItemDetail.tsx
+#: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
 msgid "Password"
@@ -4698,6 +4822,11 @@ msgstr "人设"
 #: src/components/SignupSurvey.tsx
 msgid "Personal"
 msgstr "个人"
+
+#: src/components/vault/VaultItemDetail.tsx
+#: src/components/vault/VaultItemEditor.tsx
+msgid "Phone"
+msgstr ""
 
 #: src/components/call/VoiceChatCard.tsx
 msgid "Phone call"
@@ -5029,9 +5158,9 @@ msgstr "重新加载"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/components/LoginFields.tsx
 #: src/components/TrustedLinkSitesSettings.tsx
-#: src/components/VaultSettings.tsx
+#: src/components/vault/LoginFieldsInput.tsx
+#: src/components/vault/VaultItemDetail.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5051,7 +5180,7 @@ msgstr "移除 {0}"
 msgid "Remove {0} from the group"
 msgstr "把 {0} 移出群组"
 
-#: src/components/VaultSettings.tsx
+#: src/components/vault/VaultItemDetail.tsx
 msgid "Remove {secretName}? Bots will no longer be able to use it."
 msgstr "要移除 {secretName} 吗？机器人将无法再使用它。"
 
@@ -5137,13 +5266,12 @@ msgstr "替换 API 密钥"
 msgid "Replace key"
 msgstr "替换密钥"
 
-#: src/components/VaultSettings.tsx
-msgid "Replace value"
-msgstr "替换值"
-
-#: src/components/AskCard.tsx
-msgid "Replaces the login saved for {replacedSite}"
-msgstr "替换为 {replacedSite} 保存的登录信息"
+#. placeholder {0}: block.replaces.origin
+#. placeholder {0}: initial.replacedSite
+#: src/components/SecretAskCard.tsx
+#: src/components/vault/VaultItemEditor.tsx
+msgid "Replaces the login saved for {0}"
+msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
@@ -5366,10 +5494,11 @@ msgid "Saturday"
 msgstr "周六"
 
 #: src/components/ApprovalRulesSettings.tsx
-#: src/components/AskCard.tsx
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
+#: src/components/SecretAskCard.tsx
 #: src/components/teach/SkillDraftCard.tsx
+#: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Board.tsx
 #: src/pages/ExternalConversationSettings.tsx
@@ -5385,24 +5514,16 @@ msgstr "周六"
 msgid "Save"
 msgstr "保存"
 
-#: src/components/VaultSettings.tsx
-msgid "Save credential"
-msgstr "保存凭据"
-
-#: src/components/VaultSettings.tsx
-msgid "Save new value"
-msgstr "保存新值"
-
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Save the workspace and install current software."
 msgstr "保存工作区并安装最新软件。"
 
-#: src/components/AskCard.tsx
+#: src/components/vault/VaultItemEditor.tsx
 msgid "Save to Vault"
 msgstr "保存到保管库"
 
-#: src/components/AskCard.tsx
 #: src/components/ComputerProviderSettings.tsx
+#: src/components/SecretAskCard.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Saved"
@@ -5428,9 +5549,9 @@ msgstr "正在保存工作区"
 msgid "Saving..."
 msgstr "正在保存…"
 
-#: src/components/AskCard.tsx
+#: src/components/SecretAskCard.tsx
 #: src/components/teach/SkillDraftCard.tsx
-#: src/components/VaultSettings.tsx
+#: src/components/vault/VaultItemEditor.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/connection-controls.tsx
@@ -5462,6 +5583,7 @@ msgid "Screen not connected"
 msgstr "屏幕未连接"
 
 #: src/components/FoundModelPicker.tsx
+#: src/components/VaultSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -5510,6 +5632,10 @@ msgstr "搜索运行记录"
 msgid "Search skills"
 msgstr "搜索技能"
 
+#: src/components/VaultSettings.tsx
+msgid "Search Vault"
+msgstr ""
+
 #. placeholder {0}: filters.query.trim()
 #: src/pages/ActivityList.tsx
 msgid "Search: {0}"
@@ -5527,6 +5653,11 @@ msgstr "安全"
 #: src/pages/PluginsOverlay.tsx
 msgid "Security & Ops"
 msgstr "安全与运维"
+
+#: src/components/vault/VaultItemDetail.tsx
+#: src/components/vault/VaultItemEditor.tsx
+msgid "Security code"
+msgstr ""
 
 #: src/pages/shell/chat-header.tsx
 msgid "Select a bot"
@@ -5577,10 +5708,13 @@ msgid "Send with Enter"
 msgstr "按 Enter 发送"
 
 #: src/components/AskCard.tsx
+#: src/components/SecretAskCard.tsx
+#: src/components/vault/VaultItemEditor.tsx
 msgid "Sending…"
 msgstr "正在发送…"
 
 #: src/components/AskCard.tsx
+#: src/components/SecretAskCard.tsx
 msgid "Sent"
 msgstr "已发送"
 
@@ -5665,6 +5799,7 @@ msgstr "共享"
 msgid "Shared memory"
 msgstr "共享记忆"
 
+#: src/components/vault/VaultItemDetail.tsx
 #: src/components/VaultSettings.tsx
 msgid "Show"
 msgstr "显示"
@@ -5756,7 +5891,8 @@ msgstr "注册"
 msgid "Sign-in cancelled. Try again."
 msgstr "登录已取消。请重试。"
 
-#: src/components/VaultSettings.tsx
+#: src/components/vault/VaultItemDetail.tsx
+#: src/components/vault/VaultItemEditor.tsx
 msgid "Site"
 msgstr "网站"
 
@@ -5936,6 +6072,10 @@ msgstr "正在开始"
 #: src/pages/Onboarding.tsx
 msgid "Starting…"
 msgstr "正在开始…"
+
+#: src/components/vault/VaultItemEditor.tsx
+msgid "State or region"
+msgstr ""
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Board.tsx
@@ -6184,6 +6324,7 @@ msgstr "这些文件太大，无法导入。"
 msgid "These files or choices no longer match. Choose the files again."
 msgstr "这些文件或选择已不再匹配。请重新选择文件。"
 
+#: src/components/vault/VaultItemDetail.tsx
 #: src/components/VaultSettings.tsx
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr "这些已保存的设置读不出来。请移除后再添加一次。"
@@ -6485,7 +6626,8 @@ msgstr "请重试测试。"
 msgid "Tuesday"
 msgstr "周二"
 
-#: src/components/VaultSettings.tsx
+#: src/components/vault/VaultItemDetail.tsx
+#: src/components/vault/VaultItemEditor.tsx
 msgid "Type"
 msgstr "类型"
 
@@ -6567,10 +6709,6 @@ msgstr "更新进度"
 #: src/lib/client-update.ts
 msgid "Update required"
 msgstr "需要更新"
-
-#: src/components/VaultSettings.tsx
-msgid "Updated {updated}"
-msgstr "更新于 {updated}"
 
 #: src/pages/settings-nav.ts
 msgid "Updates"
@@ -6669,8 +6807,9 @@ msgstr "最多 512 个字母、数字、_ 或 -。"
 msgid "User peer"
 msgstr "用户 peer"
 
-#: src/components/AskCard.tsx
-#: src/components/VaultSettings.tsx
+#: src/components/SecretAskCard.tsx
+#: src/components/vault/VaultItemDetail.tsx
+#: src/components/vault/VaultItemEditor.tsx
 msgid "Username"
 msgstr "用户名"
 
@@ -6694,11 +6833,25 @@ msgstr "使用你的 API 密钥"
 msgid "Using your API key. Free plan ends {freeUntil}."
 msgstr "正在使用你的 API 密钥。免费方案将于 {freeUntil} 结束。"
 
-#: src/components/LoginFields.tsx
-#: src/components/VaultSettings.tsx
+#: src/components/vault/LoginFieldsInput.tsx
+#: src/components/vault/VaultItemDetail.tsx
+#: src/components/vault/VaultItemEditor.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Value"
 msgstr "值"
+
+#: src/components/vault/kinds.tsx
+#: src/components/vault/VaultItemDetail.tsx
+msgid "Variable"
+msgstr ""
+
+#: src/components/vault/VaultItemEditor.tsx
+msgid "Variable name"
+msgstr ""
+
+#: src/components/vault/kinds.tsx
+msgid "Variables"
+msgstr ""
 
 #: src/pages/settings-nav.ts
 #: src/pages/SpaceSettingOverrides.tsx
@@ -6767,10 +6920,6 @@ msgstr "Web、桌面和移动应用"
 #: src/pages/RoutineEditor.tsx
 msgid "Webhook"
 msgstr "Webhook"
-
-#: src/components/VaultSettings.tsx
-msgid "Website login"
-msgstr "网站登录"
 
 #: src/lib/cron.ts
 msgid "Wednesday"
@@ -6847,6 +6996,8 @@ msgid "When to run"
 msgstr "何时运行"
 
 #: src/components/teach/SkillDraftCard.tsx
+#: src/components/vault/VaultItemDetail.tsx
+#: src/components/vault/VaultItemEditor.tsx
 msgid "When to use"
 msgstr "何时使用"
 
@@ -7002,3 +7153,7 @@ msgstr "你的语音提供方额度已用完。"
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "你的语音提供方拒绝了该密钥。"
+
+#: src/components/vault/VaultItemEditor.tsx
+msgid "ZIP or postal code"
+msgstr ""

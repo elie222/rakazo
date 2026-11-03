@@ -1474,7 +1474,7 @@ describe("replacing a saved login's site", () => {
     });
     // Every bot of the member lists it for the new site, and fills take their site from the row.
     const otherBot = { ...scope, botId: "bot-2" };
-    expect(await listBotSecrets(db.prisma, otherBot)).toEqual([
+    expect(await listBotSecrets(db.prisma, secretStore, otherBot)).toEqual([
       expect.objectContaining(login(LOGIN)),
     ]);
     expect(
