@@ -136,7 +136,11 @@ export function leaveUnavailableSpace(spaceId: string): Promise<void> {
         selectedSpaceId() !== spaceId
       )
         return;
-      clearSpaceSelection();
+      try {
+        window.localStorage.removeItem(SPACE_STORAGE_KEY);
+      } catch {
+        // Without storage the reload keeps asking without a Space.
+      }
       window.location.reload();
     } catch {
       // Signed out or unreachable: leave the selection for the next request to try again.

@@ -87,8 +87,10 @@ describe("unavailable space", () => {
 
   it("drops a space the user is no longer in and reloads", async () => {
     const { items, reload } = browser("space-gone", ["home"]);
+    items.set("rakazo:org-spaces", JSON.stringify({ work: "work-home" }));
     await leaveUnavailableSpace("space-gone");
     expect(items.has("rakazo:space-id")).toBe(false);
+    expect(items.get("rakazo:org-spaces")).toBe(JSON.stringify({ work: "work-home" }));
     expect(reload).toHaveBeenCalledOnce();
   });
 
