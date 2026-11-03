@@ -13,7 +13,8 @@ const WARNING_DAYS = 7;
 const CLAIM_MS = 15 * 60 * 1000;
 const BATCH = 500;
 /** A computer is only cleared while nothing runs on it. */
-const IDLE_STATES = ["stopped", "suspended"];
+/** Nothing is running in these; a failed start leaves `error`, which nothing else moves on from. */
+const IDLE_STATES = ["stopped", "suspended", "error"];
 const NO_CREDITS = { mode: null, balanceMicros: 0n, byokFreeUntil: null };
 
 type Account = {
@@ -53,7 +54,8 @@ function planIsLive({ billing, modelCredits }: Account, now: Date) {
 
 const candidate = {
   homeStorageId: { not: null },
-  kind: { not: "docker" },
+  // These work in a copy on a host the user or the server runs; the stored home only backs it up.
+  kind: { notIn: ["docker", "desktop", "wuying"] },
 } satisfies Prisma.ComputerWhereInput;
 
 interface HomeRetentionDeps {
@@ -72,9 +74,9 @@ interface HomeRetentionDeps {
  * Deleting clears the computer's pointer to its stored home and the key that decrypts it; the
  * worker's storage sweep then removes the unowned objects. The computer row and its provider
  * reference stay, so a provider that keeps its own disk resumes it; any other computer, or one
- * whose provider copy has expired, starts empty next time. Docker computers are skipped: they
- * work in a host's cached copy, which the stored home backs up. Aborting stops it between
- * emails and deletions; the next sweep picks up the rest.
+ * whose provider copy has expired, starts empty next time. Docker, desktop and Wuying computers
+ * are skipped: they work in a copy on a host, which the stored home backs up. Aborting stops it
+ * between emails and deletions; the next sweep picks up the rest.
  */
 export function homeRetentionSweep(
   deps: HomeRetentionDeps,
@@ -177,7 +179,8 @@ async function dueDates(db: Db, where: Prisma.ComputerWhereInput, now: Date, cur
 }
 
 /**
- * The latest of each computer's creation, its bots' latest runs, and its latest running stretch.
+ * The latest of each computer's creation, its last save, its bots' latest runs, and its latest
+ * running stretch.
  * Each lookup reads one index entry, so the cost does not grow with run history.
  */
 async function lastUsed(db: Db, ids: string[]) {
@@ -185,6 +188,7 @@ async function lastUsed(db: Db, ids: string[]) {
   const rows = await db.$queryRaw<Array<{ id: string; at: Date }>>`
     SELECT c.id, GREATEST(
       c."createdAt",
+      c."homeRevisionAt",
       (SELECT max((SELECT max(r."createdAt") FROM runs r WHERE r."botId" = b.id))
         FROM bots b WHERE b."computerId" = c.id),
       (SELECT GREATEST(s."startedAt", s."endedAt", s."lastSeenAt") FROM computer_runs s

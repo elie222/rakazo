@@ -264,6 +264,36 @@ describePostgres("saved home retention (PostgreSQL)", () => {
     expect(sent()).toHaveLength(1);
   });
 
+  it("keeps the files when the computer saves after the warning", async () => {
+    await sweep();
+    expect(sent()).toHaveLength(1);
+    travel(3);
+    await system.computer.update({ where: { id }, data: { homeRevisionAt: new Date(now) } });
+    travel(6);
+    await sweep();
+    expect(await objects()).toHaveLength(1);
+    expect(sent()).toHaveLength(1);
+  });
+
+  it("deletes the stored copy of a computer whose last start failed", async () => {
+    await system.computer.update({ where: { id }, data: { state: "error" } });
+    await sweep();
+    expect(sent()).toHaveLength(1);
+    travel(9);
+    await sweep();
+    expect(errors).toEqual([]);
+    expect(await objects()).toEqual([]);
+  });
+
+  it("leaves a desktop computer's stored copy alone", async () => {
+    await system.computer.update({ where: { id }, data: { kind: "desktop" } });
+    await sweep();
+    travel(9);
+    await sweep();
+    expect(sent()).toHaveLength(0);
+    expect(await objects()).toHaveLength(1);
+  });
+
   it("never deletes without a delivered warning", async () => {
     email.failNextSends(1);
     await sweep();
