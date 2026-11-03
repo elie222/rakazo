@@ -325,8 +325,9 @@ async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
   reply.lastSteeringResetAt = now;
   await flushProgress(ctx);
   const before = extractNarrationText(reply.messageSegments, reply.currentTextSegment);
-  const text = redactSecrets(before.text, ctx.secrets).trim();
+  const text = redactSecretsAfter(reply.narrationSoFar, before.text, ctx.secrets).trim();
   if (text && runPromotesMidTurnNarration(run.trigger)) {
+    reply.narrationSoFar += before.text;
     reply.messageSegments = before.remaining;
     reply.currentTextSegment = "";
     reply.workingNotes.length = 0;

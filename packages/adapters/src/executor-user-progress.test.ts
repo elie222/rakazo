@@ -997,6 +997,36 @@ describe("a message from the person while the bot works", () => {
     expect(finalText(finalizeRun)).toBe(`${summary}\n\nAnd the answer to the second.`);
   });
 
+  it.each([
+    ["the next message", { type: "steered" as const, fromRunUser: true }],
+    [
+      "the next step",
+      { type: "tool" as const, name: "read_file", args: {}, executionId: "call-1" },
+    ],
+  ])("hides the rest of a secret split across an answer and %s", async (_, next) => {
+    const { append, messages, finalizeRun } = await runTurn(
+      "",
+      false,
+      undefined,
+      ["hunter abcxyz"],
+      "fyi",
+      {
+        runtimeEvents: [
+          { type: "text", text: "The token is hunter" },
+          { type: "steered", fromRunUser: true },
+          { type: "text", text: " abcxyz saved." },
+          next,
+          { type: "text", text: "Done." },
+          { type: "done", text: "" },
+        ],
+      },
+    );
+    expect(sentTexts(messages)).toEqual(["The token is hunter", "[redacted] saved."]);
+    expect(JSON.stringify([append.mock.calls, messages, finalizeRun.mock.calls])).not.toContain(
+      "abcxyz",
+    );
+  });
+
   it("answers a fourth message minutes apart without restarting the budget a fourth time", async () => {
     let clock = Date.now();
     const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
