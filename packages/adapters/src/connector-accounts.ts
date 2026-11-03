@@ -13,7 +13,9 @@ export function scopeConnectorTools(
       .slice(0, 16);
     return {
       ...tool,
-      name: `${tool.name.slice(0, 46)}__${suffix}`,
+      // Keep the full action name for approval classification. Long names put the
+      // account hash first so runtime name truncation cannot erase the account.
+      name: tool.name.length <= 46 ? `${tool.name}__${suffix}` : `account_${suffix}__${tool.name}`,
       description: `${tool.description}\nConnected account: ${JSON.stringify(connection.displayName)} (${connection.id})`,
       route: {
         ...tool.route,
@@ -21,6 +23,7 @@ export function scopeConnectorTools(
         resourceId: tool.route?.resourceId ?? connection.externalId,
         toolName: tool.route?.toolName ?? tool.name,
         connectionId: connection.id,
+        resourceRevision: tool.route?.resourceRevision ?? connection.providerRef,
         catalogGroup: `${connection.externalId} (${connection.displayName}; ${connection.id})`,
       },
     };

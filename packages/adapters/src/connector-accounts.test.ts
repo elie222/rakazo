@@ -65,12 +65,12 @@ describe("account-scoped connector tools", () => {
     const tools = scopeConnectorTools(
       [
         tool,
-        { ...tool, name: `${tool.name}${"x".repeat(200)}` },
-        { ...tool, name: `${tool.name}${"x".repeat(200)}y` },
+        { ...tool, name: `${tool.name}${"x".repeat(60)}` },
+        { ...tool, name: `${tool.name}${"x".repeat(60)}y` },
       ],
       first,
     );
     expect(new Set(tools.map(({ name }) => name)).size).toBe(3);
-    expect(tools.every(({ name }) => name.length <= 64)).toBe(true);
+    expect(tools[1]?.name).toContain(`${tool.name}${"x".repeat(60)}`);
   });
 });

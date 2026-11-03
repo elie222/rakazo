@@ -686,6 +686,7 @@ describe("PipedreamConnector", () => {
     context: AdapterContext,
     args: Record<string, unknown>,
     connectionId?: string,
+    resourceRevision?: string,
   ) {
     const connector = new PipedreamConnector(FAKE_CONFIG, { ...TEST_NETWORK, fetch });
     const tools = await connector.discoverTools(context);
@@ -700,6 +701,7 @@ describe("PipedreamConnector", () => {
           resourceId: "gmail",
           toolName: "send_email",
           connectionId,
+          resourceRevision,
         },
       },
       context,
@@ -772,6 +774,19 @@ describe("PipedreamConnector", () => {
       gmailContext("apn_home"),
       { text: "hello" },
       "removed-connection",
+    );
+    expect(events).toEqual([expect.objectContaining({ type: "error" })]);
+    expect(calls).toEqual([]);
+  });
+
+  it("refuses a stale route after its connection is reauthorized as a different account", async () => {
+    const calls: Array<{ app: string | null; name: string; args: unknown }> = [];
+    const { events } = await runGmail(
+      pipedreamMcpFetch({ gmail: ["send_email"] }, calls),
+      gmailContext("apn_new"),
+      { text: "hello" },
+      "connection-0",
+      "apn_old",
     );
     expect(events).toEqual([expect.objectContaining({ type: "error" })]);
     expect(calls).toEqual([]);

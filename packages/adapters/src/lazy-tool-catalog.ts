@@ -5,6 +5,7 @@ import type {
   ConnectorTool,
 } from "@rakazo/adapter-kit";
 import { z } from "zod";
+import { catalogIdForRoute } from "./approval-effect.js";
 
 export const DIRECT_TOOL_LIMIT = 20;
 export const TOOL_SEARCH_LIMIT = 10;
@@ -507,8 +508,7 @@ export function fitsNameIndexBudget(groups: Array<{ group: string; names: string
 function catalogEntryId(tool: ConnectorTool): string {
   const route = tool.route;
   if (!route?.resourceId) return tool.name;
-  const account = route.connectionId ? `:${encodeURIComponent(route.connectionId)}` : "";
-  return `${route.resourceId}${account}:${encodeURIComponent(route.toolName)}`;
+  return catalogIdForRoute({ ...route, resourceId: route.resourceId });
 }
 
 function catalogGroupOf(tool: ConnectorTool): string {

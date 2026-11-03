@@ -188,6 +188,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
                     connectorId: "pipedream",
                     externalId: app,
                     displayName: account.label,
+                    providerRef: account.id,
                   });
                 } catch (error) {
                   getLogger().error(
@@ -259,7 +260,10 @@ export class PipedreamConnector implements ManagedConnectorProvider {
         : accounts.length === 1
           ? accounts[0]
           : undefined;
-      if (!account) {
+      if (
+        !account ||
+        (call.route?.resourceRevision !== undefined && call.route.resourceRevision !== account.id)
+      ) {
         yield {
           type: "error",
           message: "The selected connected account is unavailable. Reload the account's tools.",
