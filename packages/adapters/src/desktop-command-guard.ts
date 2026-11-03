@@ -612,8 +612,12 @@ export function protectedComputerLifecycleRefusal(command: string): string | und
 }
 
 /** Whether commands reach the Linux desktop this guard protects rather than a native shell. */
-export function desktopGuardApplies(computer: { graphical: boolean; stored: { kind: string } }) {
-  return computer.graphical && !usesNativeShell(computer.stored.kind);
+export function desktopGuardApplies(computer: {
+  graphical: boolean;
+  stored: { kind: string };
+  kind?: string;
+}) {
+  return computer.graphical && !usesNativeShell(computer.kind ?? computer.stored.kind);
 }
 
 export function isProtectedComputerLifecycleCommand(command: string): boolean {

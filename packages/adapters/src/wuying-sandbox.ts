@@ -1012,6 +1012,11 @@ export class WuyingSandboxProvider implements SandboxProvider {
     if (status !== "Stopping")
       await this.control.stopDesktop(this.options.desktopId, context.signal);
     await this.waitFor("Stopped", STOP_TIMEOUT_MS, context.signal);
+    // A computer that started on the desktop while it powered off needs it back on.
+    if (await this.options.referenceInUse?.(computer)) {
+      await this.control.startDesktop(this.options.desktopId, context.signal);
+      await this.waitFor("Running", START_TIMEOUT_MS, context.signal);
+    }
   }
 
   /** The desktop belongs to the account, so only this computer's home folder is removed. */

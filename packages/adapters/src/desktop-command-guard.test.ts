@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  desktopGuardApplies,
   desktopProtectionGuardMessage,
   isProtectedComputerLifecycleCommand,
   protectedComputerLifecycleRefusal,
@@ -632,4 +633,10 @@ connection.close()`;
       expect(protectedComputerLifecycleRefusal(command), command).toBe("heredoc");
     }
   });
+});
+
+it("guards by the kind a run starts its computer as, not the kind it last ran as", () => {
+  const stored = { kind: "docker" };
+  expect(desktopGuardApplies({ graphical: true, stored })).toBe(true);
+  expect(desktopGuardApplies({ graphical: true, stored, kind: "wuying" })).toBe(false);
 });

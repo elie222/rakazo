@@ -65,6 +65,12 @@ describe("WuyingSandboxProvider", () => {
     await desktop.provider("ecd-fake", async () => false).stop(computer, ctx);
     expect(desktop.status).toBe("Stopped");
     expect(desktop.control).toEqual(["start", "stop"]);
+    // Another computer started on it while it powered off.
+    desktop.status = "Running";
+    const uses = [false, true];
+    await desktop.provider("ecd-fake", async () => uses.shift() ?? true).stop(computer, ctx);
+    expect(desktop.status).toBe("Running");
+    expect(desktop.control).toEqual(["start", "stop", "stop", "start"]);
   });
 
   it("saves a workspace without dependency folders, and reports one too large to save", async () => {
