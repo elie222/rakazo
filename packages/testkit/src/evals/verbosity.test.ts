@@ -2,7 +2,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import type { Evidence } from "./cases.js";
 import { EMPTY_SETTINGS } from "./cases.js";
-import { narrationBetweenTools, VERBOSITY_EVAL_CASES, visibleWords } from "./verbosity.js";
+import { VERBOSITY_EVAL_CASES, visibleTurn, visibleWords } from "./verbosity.js";
 
 const steps: MessageBlock = { kind: "steps", steps: [{ label: "Crm list records", count: 1 }] };
 
@@ -33,39 +33,13 @@ const failed = (e: Evidence) => lookup.grade(e).flatMap((c) => (c.pass ? [] : [c
 describe("verbosity grading", () => {
   it("counts every visible word", () => expect(visibleWords(" one\ntwo  three ")).toBe(3));
 
-  it("finds visible text between tool calls, allowing one opening line", () => {
+  it("shows the judge every message of the turn, without tool steps", () => {
     expect(
-      narrationBetweenTools([
-        {
-          beforeTools: false,
-          blocks: [
-            { kind: "text", text: "Let me check the CRM." },
-            steps,
-            { kind: "text", text: "That failed, retrying." },
-            steps,
-            { kind: "text", text: "Answer." },
-          ],
-        },
-      ]),
-    ).toEqual(["That failed, retrying."]);
-  });
-
-  it("counts narration posted as its own message before the final one", () => {
-    expect(
-      narrationBetweenTools([
-        { beforeTools: false, blocks: [{ kind: "text", text: "Still checking the CRM." }] },
-        { beforeTools: false, blocks: [steps, steps, { kind: "text", text: "Answer." }] },
-      ]),
-    ).toEqual(["Still checking the CRM."]);
-  });
-
-  it("allows an opener posted as its own message before the first tool call", () => {
-    expect(
-      narrationBetweenTools([
+      visibleTurn([
         { beforeTools: true, blocks: [{ kind: "text", text: "Checking the CRM." }] },
         { beforeTools: false, blocks: [steps, { kind: "text", text: "Answer." }] },
       ]),
-    ).toEqual([]);
+    ).toBe("Checking the CRM.\n\nAnswer.");
   });
 
   it("passes a direct answer after tool work", () => {
@@ -73,16 +47,21 @@ describe("verbosity grading", () => {
     expect(failed(evidence(answer, [steps, { kind: "text", text: answer }]))).toEqual([]);
   });
 
-  it("fails narration between tool calls even when the answer is short", () => {
-    const blocks: MessageBlock[] = [
-      steps,
-      { kind: "text", text: "Retrying." },
-      steps,
-      { kind: "text", text: "Lead, normal." },
+  it("counts words posted mid-turn toward the budget", () => {
+    const e = evidence("Lead, normal.", [steps, { kind: "text", text: "Lead, normal." }]);
+    e.turnMessages = [
+      [
+        { beforeTools: false, blocks: [{ kind: "text", text: "word ".repeat(40).trim() }] },
+        { beforeTools: false, blocks: [steps, { kind: "text", text: "Lead, normal." }] },
+      ],
     ];
-    expect(failed(evidence("Retrying.\nLead, normal.", blocks))).toEqual([
-      "no-narration-between-tool-calls",
-    ]);
+    expect(failed(e)).toEqual(["at-most-35-words"]);
+  });
+
+  it("gives the judge the owner's instructions", () => {
+    const brief = VERBOSITY_EVAL_CASES.find((c) => c.id === "verbosity-owner-asked-brief")!;
+    const input = brief.judge!(evidence("Done.", [steps, { kind: "text", text: "Done." }]));
+    expect(input.evidence).toMatchObject({ ownerInstructions: brief.botSetup?.instructions });
   });
 
   it("fails a reply over the word budget", () => {

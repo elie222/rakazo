@@ -442,29 +442,30 @@ Seven ordinary chat requests that need tools: a one-fact CRM lookup, an inbox
 check, a note whose save errors after it succeeded, a GitHub outage, work across
 two apps, a fact found mid-task that the person must be told before the last
 step, and an owner whose bot instructions ask for one or two sentences.
-Each case checks the effect (the right reads, exactly one note, no other writes),
-then two structural limits on everything the person saw for the turn: a word
-budget, and no narration such as "That failed, retrying…" while it worked:
-no text in an earlier message of the turn, and none between the first and last
-tool call of the final one. One opening sentence before the first tool call is
-allowed.
+Each case checks the effect (the right reads, exactly one note, no other
+writes, and a read after the uncertain save before it is reported) and a word
+budget over every message the person saw during the turn.
 
-The `verbosity-meaning-v5` judge then grades meaning: the reply gives the
-requested outcome without contradicting the case facts, leads with it, does not
-narrate its process or correct itself, and has no recap, unrequested advice, or
-closing offer after a successful answer. One short sentence about a recovered
-error, and one short next step after a failure, are allowed. A fact the person
-must learn has to reach them even though they did not ask for it. It runs only
-after the deterministic checks pass and is calibrated against reviewed examples of direct answers, narrated work,
-self-correction, closing offers, invented causes, and short-but-wrong replies.
-Owner-trusted writes are pre-approved through approval rules; the outage case
-turns off web and computer fallbacks so it grades how the failure is reported.
+The `verbosity-meaning-v6` judge then reads that whole turn, in order, with the
+owner's instructions when the bot has them, and grades meaning: the reply gives
+the requested outcome without contradicting the case facts, leads with it, does
+not narrate its process, and has no recap, unrequested advice, or closing offer
+after a successful answer. One short opening sentence, one short line while
+working, one short sentence about a recovered error, and one short next step
+after a failure are allowed. A fact the person must learn has to reach them even
+though they did not ask for it. It runs only after the deterministic checks
+pass and is calibrated against reviewed examples of direct answers, narrated
+work, self-correction, closing offers, invented causes, omitted facts, and
+short-but-wrong replies. Owner-trusted writes are pre-approved through approval
+rules; the outage case turns off web and computer fallbacks so it grades how
+the failure is reported.
 
-On Claude Haiku 5.5 with the reply-style guidance, 12 of 18 trials pass, replies
-average 38 visible words, and no trial narrates between tool calls. The
-remaining failures explain a recovered save error in two sentences, list each
-failed lookup and offer to retry after an outage, or run one word over the
-owner's brevity budget.
+On Claude Haiku 5.5 with the reply-style guidance, 7 of 21 trials pass and
+replies average 41 visible words. The person was told about the already-paid
+invoice in every trial of that case. Most failures are extra explanation: a
+two-sentence account of the recovered save, outage replies that name each
+failed lookup and offer to retry, and lists where the owner asked for one or two
+sentences.
 
 ### Long conversation and cost evals
 
