@@ -78,9 +78,9 @@ async function main() {
   });
   const { apiUrl, databaseUrl } = backend;
   const metro = await startMetro(apiUrl, outDir);
-  const screenRelay = await startScreenRelay(apiUrl, outDir).catch((error: unknown) => {
-    screenRelay.stop();
+  const screenRelay = await startScreenRelay(apiUrl, outDir).catch(async (error: unknown) => {
     metro.stop();
+    await backend.stop();
     throw error;
   });
   try {
@@ -121,6 +121,7 @@ async function main() {
       botId: fixture.botId,
     });
   } finally {
+    screenRelay.stop();
     metro.stop();
     await backend.stop();
   }
