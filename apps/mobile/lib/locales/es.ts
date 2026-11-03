@@ -1,8 +1,8 @@
 export const ES_MESSAGES: Record<string, string> = {
   Unavailable: "No disponible",
+  "Default ({level})": "Predeterminado ({level})",
   "Computer thinking": "Razonamiento al usar la computadora",
   "Computer-use model": "Modelo para usar la computadora",
-  "Default (Medium)": "Predeterminado (Medio)",
   "Same as main model": "Igual que el modelo principal",
   "Use provider default": "Usar el modelo predeterminado del proveedor",
   "Daily check-ins on unfinished work": "Seguimiento diario del trabajo pendiente",

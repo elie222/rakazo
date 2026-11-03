@@ -74,6 +74,8 @@ export function ComputerModelSettings({
           <MenuPicker
             label={label ?? t("Computer-use model")}
             showLabel={Boolean(label)}
+            plain={!label}
+            menuTitle={t("Computer-use model")}
             choices={choices}
             value={key}
             onChange={(value) => {
@@ -99,9 +101,13 @@ export function ComputerModelSettings({
           {thinkingLevels.length > 0 && selection?.mode === "model" ? (
             <MenuPicker
               divider
+              plain={!label}
               label={t("Computer thinking")}
               choices={[
-                { key: "", label: t("Default (Medium)") },
+                {
+                  key: "",
+                  label: t("Default ({level})", { level: thinkingLevelLabel("medium", t) }),
+                },
                 ...thinkingLevels.map((level) => ({
                   key: level,
                   label: thinkingLevelLabel(level, t),
@@ -119,9 +125,7 @@ export function ComputerModelSettings({
           ) : null}
         </View>
       ) : state.busy ? (
-        <Text style={{ color: tokens.mutedForeground, padding: 16 }}>
-          {t("Loading…")}
-        </Text>
+        <Text style={{ color: tokens.mutedForeground, padding: 16 }}>{t("Loading…")}</Text>
       ) : null}
       {state.error ? (
         <View style={{ padding: 16 }}>

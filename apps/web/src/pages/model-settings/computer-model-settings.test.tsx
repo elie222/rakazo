@@ -13,7 +13,10 @@ const { client } = vi.hoisted(() => ({
 vi.mock("../../lib/space-rpc", () => ({ useSpaceRpc: () => client }));
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
-  useLingui: () => ({ t: (strings: TemplateStringsArray) => strings.join("") }),
+  useLingui: () => ({
+    t: (strings: TemplateStringsArray, ...values: unknown[]) =>
+      String.raw({ raw: strings }, ...values),
+  }),
 }));
 vi.mock("../../lib/model-catalog", () => ({ thinkingLevelLabel: (level: string) => level }));
 
@@ -72,7 +75,7 @@ it("labels inherit and same-main distinctly, then persists only the exact select
     },
   });
   expect(host.querySelector("details")?.open).toBe(false);
-  expect(host.textContent).toContain("Default (Medium)");
+  expect(host.textContent).toContain("Default (medium)");
   await select(host.querySelectorAll("select")[1]!, "low");
   expect(client.models.setComputer).toHaveBeenLastCalledWith(
     expect.objectContaining({ selection: expect.objectContaining({ thinkingLevel: "low" }) }),
@@ -146,7 +149,7 @@ it("offers effort only where the medium default applies", async () => {
   client.models.computer.mockResolvedValue({ selection, options: [fixed] });
   const { host, unmount } = await render();
   expect(host.querySelectorAll("select")).toHaveLength(1);
-  expect(host.textContent).not.toContain("Default (Medium)");
+  expect(host.textContent).not.toContain("Default (medium)");
   unmount();
 });
 it("shows loading, error and retry instead of a false saved default", async () => {

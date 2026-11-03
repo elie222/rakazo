@@ -96,8 +96,11 @@ export function MenuPicker({
   divider = false,
   plain = false,
   showLabel = true,
+  menuTitle = label,
 }: {
   label: string;
+  /** The open menu's heading, when the row's label names something narrower. */
+  menuTitle?: string;
   choices: readonly MenuPickerChoice[];
   value: string;
   onChange: (key: string) => void;
@@ -157,7 +160,7 @@ export function MenuPicker({
     );
   }
   const menu = (
-    <MenuPickerMenu choices={choices} label={label} onChange={onChange} value={value}>
+    <MenuPickerMenu choices={choices} label={menuTitle} onChange={onChange} value={value}>
       <View {...row} style={rowStyle}>
         {content}
       </View>
@@ -180,6 +183,7 @@ function createStyles() {
       borderTopColor: native.separator,
     },
     label: {
+      flexShrink: 1,
       color: native.label,
       fontSize: 16,
     },

@@ -444,6 +444,14 @@ msgstr ""
 msgid "About {label}"
 msgstr "{label} 정보"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key ID"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key secret"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Access token (optional)"
 msgstr "액세스 토큰(선택 사항)"
@@ -791,6 +799,7 @@ msgid "Any model, with your own key"
 msgstr ""
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/lib/localized-provider-hint.ts
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/model-settings/compatible-key-field.tsx
@@ -811,6 +820,14 @@ msgstr "API 키 헤더"
 #: src/pages/shell/agent-import.tsx
 msgid "API keys"
 msgstr "API 키"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API URL"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
@@ -1524,15 +1541,6 @@ msgstr "컴퓨터가 절전 상태입니다. 열어 깨우세요."
 msgid "Computer is stopped"
 msgstr "컴퓨터가 중지됨"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Computer thinking"
-msgstr "컴퓨터 사용 추론"
-
-#: src/pages/model-settings/computer-model-settings.tsx
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Computer-use model"
-msgstr "컴퓨터 사용 모델"
-
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Computers"
@@ -1985,6 +1993,10 @@ msgstr ""
 msgid "Could not load bots. Reload to try again."
 msgstr ""
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not load computer settings"
+msgstr ""
+
 #: src/components/VaultSettings.tsx
 msgid "Could not load credentials."
 msgstr ""
@@ -1998,7 +2010,6 @@ msgstr "연동 목록을 불러오지 못했습니다."
 msgid "Could not load MCP servers"
 msgstr "MCP 서버 목록을 불러오지 못했습니다."
 
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "AI 모델 설정을 불러오지 못했습니다."
@@ -2146,6 +2157,10 @@ msgstr "저장하지 못했습니다."
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
 msgstr "자동 검토를 저장할 수 없습니다"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not save computer settings"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "Could not save group"
@@ -2448,10 +2463,6 @@ msgstr "기본값"
 msgid "Default ({0})"
 msgstr "기본값 ({0})"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Default (Medium)"
-msgstr "기본값 (중간)"
-
 #: src/pages/shell/agent-import.tsx
 msgid "Default from Hermes"
 msgstr "Hermes 기본값"
@@ -2548,6 +2559,11 @@ msgstr "거부됨"
 msgid "Deny"
 msgstr "거부"
 
+#. placeholder {0}: settings.defaultProvider
+#: src/components/ComputerProviderSettings.tsx
+msgid "Deployment default ({0})"
+msgstr ""
+
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Description"
@@ -2559,6 +2575,10 @@ msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop app"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Desktop ID"
 msgstr ""
 
 #: src/components/DesktopUpdates.tsx
@@ -2769,6 +2789,10 @@ msgstr "이메일 인증이 필요합니다"
 msgid "Enable {0}"
 msgstr "{0} 활성화"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "End user ID"
+msgstr ""
+
 #: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr ""
@@ -2803,6 +2827,10 @@ msgstr "이미지 한도는 1에서 1000 사이의 정수로 입력하세요."
 #: src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
 msgstr "테스트하기 전에 API 키를 입력하세요."
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Environment ID"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
@@ -3070,6 +3098,14 @@ msgstr "전체 화면"
 #: src/pages/Onboarding.tsx
 msgid "Gateway ID"
 msgstr "게이트웨이 ID"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway URL"
+msgstr ""
 
 #: src/pages/settings-nav.ts
 #: src/pages/SettingsOverlay.tsx
@@ -3546,7 +3582,6 @@ msgstr "음성 서비스를 불러오는 중…"
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -3926,6 +3961,10 @@ msgstr "음소거"
 msgid "Muted"
 msgstr ""
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "My computers"
+msgstr ""
+
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -3999,6 +4038,10 @@ msgstr ""
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "New bot"
 msgstr "새 Bot 만들기"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "New computers run on"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"
@@ -4360,6 +4403,10 @@ msgstr "선택 사항인 헤더 값"
 #: src/pages/Onboarding.tsx
 msgid "Or paste an API key"
 msgstr "또는 API 키 붙여넣기"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Organization"
+msgstr ""
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
@@ -4773,6 +4820,10 @@ msgstr "화면 새로고침"
 msgid "Refreshing…"
 msgstr "새로고침 중…"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Region"
+msgstr ""
+
 #: src/lib/user-error.ts
 msgid "Registration is closed"
 msgstr "가입이 마감되었습니다"
@@ -5018,7 +5069,6 @@ msgstr ""
 #: src/components/PasskeySettings.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
@@ -5056,6 +5106,10 @@ msgstr "연결 해제"
 
 #: src/pages/AdminAccessPage.tsx
 msgid "Revoked"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Root filesystem"
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx
@@ -5128,15 +5182,12 @@ msgstr ""
 msgid "Same as {botName}"
 msgstr "{botName}와(과) 동일"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Same as main model"
-msgstr "기본 모델과 동일"
-
 #: src/lib/cron.ts
 msgid "Saturday"
 msgstr "토요일"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5171,6 +5222,7 @@ msgid "Save to Vault"
 msgstr "보관함에 저장"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Saved"
@@ -5396,6 +5448,7 @@ msgstr "설정 완료"
 msgid "Setup help"
 msgstr "설정 도움말"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Shape"
 msgstr "모양"
@@ -5812,6 +5865,10 @@ msgstr "표"
 msgid "Take control"
 msgstr "제어권 가져오기"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Target"
+msgstr ""
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "작업 가르치기"
@@ -5831,6 +5888,10 @@ msgstr "팀 컴퓨터"
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
 msgstr "Teams 메시지"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Template"
+msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
@@ -5921,7 +5982,6 @@ msgid "These saved settings can't be read. Remove it and add it again."
 msgstr ""
 
 #: src/components/call/CallCard.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -6212,10 +6272,6 @@ msgstr "답변을 입력하세요"
 msgid "Unassigned"
 msgstr "섹션 없음"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Unavailable"
-msgstr ""
-
 #: src/components/AskCard.tsx
 msgid "Undo"
 msgstr "실행 취소"
@@ -6361,10 +6417,6 @@ msgstr ""
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
 msgstr ""
-
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Use provider default"
-msgstr "제공업체 기본값 사용"
 
 #: src/components/ModelCredits.tsx
 msgid "Use Rakazo credits"
@@ -6698,3 +6750,24 @@ msgstr "음성 서비스 크레딧이 모두 소진되었습니다."
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "음성 서비스에서 키를 거부했습니다."
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Computer thinking"
+msgstr "컴퓨터 사용 추론"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model"
+msgstr "컴퓨터 사용 모델"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Same as main model"
+msgstr "기본 모델과 동일"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Unavailable"
+msgstr "사용할 수 없음"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Use provider default"
+msgstr "제공업체 기본값 사용"

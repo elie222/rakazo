@@ -47,8 +47,7 @@ export function createComputerModelSettings(
         const view = await api.load();
         if (version === generation) publish({ view, busy: false, stale: false, error: null });
       } catch (e) {
-        if (version === generation)
-          publish({ busy: false, stale: true, error: e });
+        if (version === generation) publish({ busy: false, stale: true, error: e });
       }
     },
     async save(selection: ComputerModelSelection) {
@@ -63,8 +62,7 @@ export function createComputerModelSettings(
         const view = await work;
         if (version === generation) publish({ view, busy: false, stale: false });
       } catch (e) {
-        if (version === generation)
-          publish({ busy: false, stale: true, error: e });
+        if (version === generation) publish({ busy: false, stale: true, error: e });
       } finally {
         if (pending.get(identity) === work) pending.delete(identity);
       }

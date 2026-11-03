@@ -2,7 +2,6 @@ export const JA_MESSAGES: Record<string, string> = {
   Unavailable: "利用できません",
   "Computer thinking": "コンピューター操作の思考レベル",
   "Computer-use model": "コンピューター操作モデル",
-  "Default (Medium)": "既定（中）",
   "Same as main model": "メインモデルと同じ",
   "Use provider default": "プロバイダーの既定値を使用",
   "Daily check-ins on unfinished work": "未完了の作業を毎日確認",

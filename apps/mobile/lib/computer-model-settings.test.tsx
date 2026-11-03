@@ -122,7 +122,7 @@ it.each(["account", "space", "bot"] as const)(
       },
       { requestContext: { headers: { "x-rakazo-space-id": "space" } } },
     );
-    expect(host.textContent).toContain("Default (Medium)");
+    expect(host.textContent).toContain("Default ({level})");
     expect(host.querySelectorAll("select")).toHaveLength(2);
     await act(async () => root.unmount());
   },

@@ -170,7 +170,11 @@ describe("computer settings persistence and authorization", () => {
     const { api, secrets } = fixture();
     const view = await api.load(actor, target);
     expect(view.options).toEqual([
-      expect.objectContaining({ modelId: "vision", label: "vision", connection: "OpenAI-compatible (Local)" }),
+      expect.objectContaining({
+        modelId: "vision",
+        label: "vision",
+        connection: "OpenAI-compatible (Local)",
+      }),
     ]);
     expect(secrets.load).toHaveBeenCalledTimes(1);
   });

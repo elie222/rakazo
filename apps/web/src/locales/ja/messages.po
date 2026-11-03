@@ -444,6 +444,14 @@ msgstr ""
 msgid "About {label}"
 msgstr "{label}について"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key ID"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key secret"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Access token (optional)"
 msgstr "アクセストークン（任意）"
@@ -791,6 +799,7 @@ msgid "Any model, with your own key"
 msgstr "自分のキーで、あらゆるモデルを"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/lib/localized-provider-hint.ts
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/model-settings/compatible-key-field.tsx
@@ -811,6 +820,14 @@ msgstr "APIキーのヘッダー"
 #: src/pages/shell/agent-import.tsx
 msgid "API keys"
 msgstr "APIキー"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API URL"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
@@ -1524,15 +1541,6 @@ msgstr "コンピューターはスリープ中です。開くと起動します
 msgid "Computer is stopped"
 msgstr "コンピューターは停止しています"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Computer thinking"
-msgstr "コンピューター操作の思考レベル"
-
-#: src/pages/model-settings/computer-model-settings.tsx
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Computer-use model"
-msgstr "コンピューター操作モデル"
-
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Computers"
@@ -1985,6 +1993,10 @@ msgstr "請求情報を読み込めませんでした"
 msgid "Could not load bots. Reload to try again."
 msgstr "ボットを読み込めませんでした。再読み込みしてもう一度お試しください。"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not load computer settings"
+msgstr ""
+
 #: src/components/VaultSettings.tsx
 msgid "Could not load credentials."
 msgstr "認証情報を読み込めませんでした。"
@@ -1998,7 +2010,6 @@ msgstr "連携を読み込めませんでした"
 msgid "Could not load MCP servers"
 msgstr "MCPサーバーを読み込めませんでした"
 
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "モデル設定を読み込めませんでした"
@@ -2146,6 +2157,10 @@ msgstr "保存できませんでした"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
 msgstr "自動レビューを保存できませんでした"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not save computer settings"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "Could not save group"
@@ -2448,10 +2463,6 @@ msgstr "デフォルト"
 msgid "Default ({0})"
 msgstr "デフォルト（{0}）"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Default (Medium)"
-msgstr "既定（中）"
-
 #: src/pages/shell/agent-import.tsx
 msgid "Default from Hermes"
 msgstr "Hermesの初期設定"
@@ -2548,6 +2559,11 @@ msgstr "拒否済み"
 msgid "Deny"
 msgstr "拒否"
 
+#. placeholder {0}: settings.defaultProvider
+#: src/components/ComputerProviderSettings.tsx
+msgid "Deployment default ({0})"
+msgstr ""
+
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Description"
@@ -2560,6 +2576,10 @@ msgstr ""
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop app"
 msgstr "デスクトップアプリ"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Desktop ID"
+msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop update"
@@ -2769,6 +2789,10 @@ msgstr "メールアドレスの確認が必要です"
 msgid "Enable {0}"
 msgstr "{0}を有効にする"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "End user ID"
+msgstr ""
+
 #: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr "{day}に終了"
@@ -2803,6 +2827,10 @@ msgstr "画像の上限には1〜1000の整数を入力してください。"
 #: src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
 msgstr "テストする前にAPIキーを入力してください。"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Environment ID"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
@@ -3070,6 +3098,14 @@ msgstr "フルスクリーン"
 #: src/pages/Onboarding.tsx
 msgid "Gateway ID"
 msgstr "ゲートウェイID"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway URL"
+msgstr ""
 
 #: src/pages/settings-nav.ts
 #: src/pages/SettingsOverlay.tsx
@@ -3546,7 +3582,6 @@ msgstr "音声プロバイダーを読み込み中…"
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -3926,6 +3961,10 @@ msgstr "ミュート"
 msgid "Muted"
 msgstr "ミュート中"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "My computers"
+msgstr ""
+
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -3999,6 +4038,10 @@ msgstr "新規"
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "New bot"
 msgstr "新しいボット"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "New computers run on"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"
@@ -4360,6 +4403,10 @@ msgstr "ヘッダー値（任意）"
 #: src/pages/Onboarding.tsx
 msgid "Or paste an API key"
 msgstr "またはAPIキーを貼り付け"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Organization"
+msgstr ""
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
@@ -4773,6 +4820,10 @@ msgstr "表示を更新"
 msgid "Refreshing…"
 msgstr "更新中…"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Region"
+msgstr ""
+
 #: src/lib/user-error.ts
 msgid "Registration is closed"
 msgstr "新規登録は締め切られています"
@@ -5018,7 +5069,6 @@ msgstr "ワークスペースを復元中"
 #: src/components/PasskeySettings.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
@@ -5056,6 +5106,10 @@ msgstr "取り消す"
 
 #: src/pages/AdminAccessPage.tsx
 msgid "Revoked"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Root filesystem"
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx
@@ -5128,15 +5182,12 @@ msgstr ""
 msgid "Same as {botName}"
 msgstr "{botName}と同じ"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Same as main model"
-msgstr "メインモデルと同じ"
-
 #: src/lib/cron.ts
 msgid "Saturday"
 msgstr "土曜日"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5171,6 +5222,7 @@ msgid "Save to Vault"
 msgstr "保管庫に保存"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Saved"
@@ -5396,6 +5448,7 @@ msgstr "セットアップ完了"
 msgid "Setup help"
 msgstr "設定ヘルプ"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Shape"
 msgstr "形"
@@ -5812,6 +5865,10 @@ msgstr "テーブル"
 msgid "Take control"
 msgstr "操作を引き継ぐ"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Target"
+msgstr ""
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "タスクを教える"
@@ -5831,6 +5888,10 @@ msgstr "チームのコンピューター"
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
 msgstr "Teamsメッセージ"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Template"
+msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
@@ -5921,7 +5982,6 @@ msgid "These saved settings can't be read. Remove it and add it again."
 msgstr "保存された設定を読み取れません。削除してから再度追加してください。"
 
 #: src/components/call/CallCard.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -6212,10 +6272,6 @@ msgstr "回答を入力"
 msgid "Unassigned"
 msgstr "未割り当て"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Unavailable"
-msgstr ""
-
 #: src/components/AskCard.tsx
 msgid "Undo"
 msgstr "元に戻す"
@@ -6361,10 +6417,6 @@ msgstr "自分のサブスクリプションまたはAPIキーを使用"
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
 msgstr "パスワードには保護された入力を使用してください。"
-
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Use provider default"
-msgstr "プロバイダーの既定値を使用"
 
 #: src/components/ModelCredits.tsx
 msgid "Use Rakazo credits"
@@ -6698,3 +6750,24 @@ msgstr "音声プロバイダーのクレジットが不足しています。"
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "音声プロバイダーのキーが拒否されました。"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Computer thinking"
+msgstr "コンピューター操作の思考レベル"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model"
+msgstr "コンピューター操作モデル"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Same as main model"
+msgstr "メインモデルと同じ"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Unavailable"
+msgstr "利用できません"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Use provider default"
+msgstr "プロバイダーの既定値を使用"

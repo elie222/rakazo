@@ -2,7 +2,6 @@ export const RU_MESSAGES: Record<string, string> = {
   Unavailable: "Недоступно",
   "Computer thinking": "Уровень рассуждений при работе с компьютером",
   "Computer-use model": "Модель для работы с компьютером",
-  "Default (Medium)": "По умолчанию (Средний)",
   "Same as main model": "Как у основной модели",
   "Use provider default": "Использовать настройку провайдера",
   "Daily check-ins on unfinished work": "Ежедневные напоминания о незавершённой работе",

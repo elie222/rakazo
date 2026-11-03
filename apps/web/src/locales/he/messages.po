@@ -444,6 +444,14 @@ msgstr ""
 msgid "About {label}"
 msgstr "על {label}"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key ID"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key secret"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Access token (optional)"
 msgstr "טוקן גישה (אופציונלי)"
@@ -791,6 +799,7 @@ msgid "Any model, with your own key"
 msgstr "כל מודל, עם מפתח משלך"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/lib/localized-provider-hint.ts
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/model-settings/compatible-key-field.tsx
@@ -811,6 +820,14 @@ msgstr "header של מפתח API"
 #: src/pages/shell/agent-import.tsx
 msgid "API keys"
 msgstr "מפתחות API"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API URL"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
@@ -1524,15 +1541,6 @@ msgstr "המחשב במצב שינה. יש לפתוח אותו כדי להעיר
 msgid "Computer is stopped"
 msgstr "המחשב כבוי"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Computer thinking"
-msgstr "חשיבה בשימוש במחשב"
-
-#: src/pages/model-settings/computer-model-settings.tsx
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Computer-use model"
-msgstr "מודל לשימוש במחשב"
-
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Computers"
@@ -1985,6 +1993,10 @@ msgstr "לא ניתן לטעון את החיוב"
 msgid "Could not load bots. Reload to try again."
 msgstr "לא ניתן לטעון את הבוטים. יש לטעון מחדש כדי לנסות שוב."
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not load computer settings"
+msgstr ""
+
 #: src/components/VaultSettings.tsx
 msgid "Could not load credentials."
 msgstr "לא ניתן לטעון את פרטי הגישה."
@@ -1998,7 +2010,6 @@ msgstr "לא ניתן לטעון את האינטגרציות"
 msgid "Could not load MCP servers"
 msgstr "לא ניתן לטעון את שרתי ה-MCP"
 
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "לא ניתן לטעון את הגדרות המודל"
@@ -2146,6 +2157,10 @@ msgstr "השמירה נכשלה"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
 msgstr "לא ניתן לשמור את Auto Review"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not save computer settings"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "Could not save group"
@@ -2448,10 +2463,6 @@ msgstr "ברירת מחדל"
 msgid "Default ({0})"
 msgstr "ברירת מחדל ({0})"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Default (Medium)"
-msgstr "ברירת מחדל (בינונית)"
-
 #: src/pages/shell/agent-import.tsx
 msgid "Default from Hermes"
 msgstr "ברירת מחדל של Hermes"
@@ -2548,6 +2559,11 @@ msgstr "נדחה"
 msgid "Deny"
 msgstr "דחייה"
 
+#. placeholder {0}: settings.defaultProvider
+#: src/components/ComputerProviderSettings.tsx
+msgid "Deployment default ({0})"
+msgstr ""
+
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Description"
@@ -2560,6 +2576,10 @@ msgstr ""
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop app"
 msgstr "אפליקציית הדסקטופ"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Desktop ID"
+msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop update"
@@ -2769,6 +2789,10 @@ msgstr "נדרש אימות אימייל"
 msgid "Enable {0}"
 msgstr "הפעלת {0}"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "End user ID"
+msgstr ""
+
 #: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr "מסתיים ב-{day}"
@@ -2803,6 +2827,10 @@ msgstr "יש להזין מספר שלם בין 1 ל-1000 עבור מגבלת ה�
 #: src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
 msgstr "יש להזין מפתח API לפני הבדיקה."
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Environment ID"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
@@ -3070,6 +3098,14 @@ msgstr "מסך מלא"
 #: src/pages/Onboarding.tsx
 msgid "Gateway ID"
 msgstr "Gateway ID"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway URL"
+msgstr ""
 
 #: src/pages/settings-nav.ts
 #: src/pages/SettingsOverlay.tsx
@@ -3546,7 +3582,6 @@ msgstr "טוען ספקי קול…"
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -3926,6 +3961,10 @@ msgstr "השתקה"
 msgid "Muted"
 msgstr ""
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "My computers"
+msgstr ""
+
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -3999,6 +4038,10 @@ msgstr ""
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "New bot"
 msgstr "בוט חדש"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "New computers run on"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"
@@ -4360,6 +4403,10 @@ msgstr "ערך header אופציונלי"
 #: src/pages/Onboarding.tsx
 msgid "Or paste an API key"
 msgstr "או הדבקת מפתח API"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Organization"
+msgstr ""
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
@@ -4773,6 +4820,10 @@ msgstr "רענון התצוגה"
 msgid "Refreshing…"
 msgstr "מרענן…"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Region"
+msgstr ""
+
 #: src/lib/user-error.ts
 msgid "Registration is closed"
 msgstr "ההרשמה סגורה"
@@ -5018,7 +5069,6 @@ msgstr "משחזר את סביבת העבודה"
 #: src/components/PasskeySettings.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
@@ -5056,6 +5106,10 @@ msgstr "ביטול הרשאה"
 
 #: src/pages/AdminAccessPage.tsx
 msgid "Revoked"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Root filesystem"
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx
@@ -5128,15 +5182,12 @@ msgstr ""
 msgid "Same as {botName}"
 msgstr "כמו {botName}"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Same as main model"
-msgstr "כמו המודל הראשי"
-
 #: src/lib/cron.ts
 msgid "Saturday"
 msgstr "שבת"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5171,6 +5222,7 @@ msgid "Save to Vault"
 msgstr "שמירה בכספת"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Saved"
@@ -5396,6 +5448,7 @@ msgstr "ההגדרה הושלמה"
 msgid "Setup help"
 msgstr "עזרה בהגדרה"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Shape"
 msgstr "צורה"
@@ -5812,6 +5865,10 @@ msgstr "טבלה"
 msgid "Take control"
 msgstr "השתלטות"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Target"
+msgstr ""
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "לימוד משימה"
@@ -5831,6 +5888,10 @@ msgstr "מחשב הצוות"
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
 msgstr "הודעת Teams"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Template"
+msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
@@ -5921,7 +5982,6 @@ msgid "These saved settings can't be read. Remove it and add it again."
 msgstr "לא ניתן לקרוא את ההגדרות השמורות. יש להסיר ולהוסיף מחדש."
 
 #: src/components/call/CallCard.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -6212,10 +6272,6 @@ msgstr "יש להקליד תשובה"
 msgid "Unassigned"
 msgstr "ללא שיוך"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Unavailable"
-msgstr ""
-
 #: src/components/AskCard.tsx
 msgid "Undo"
 msgstr "ביטול"
@@ -6361,10 +6417,6 @@ msgstr ""
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
 msgstr "לסיסמאות יש להשתמש בקלט מוגן."
-
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Use provider default"
-msgstr "שימוש בברירת המחדל של הספק"
 
 #: src/components/ModelCredits.tsx
 msgid "Use Rakazo credits"
@@ -6698,3 +6750,24 @@ msgstr "לספק הקול שלך נגמר הקרדיט."
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "ספק הקול שלך דחה את המפתח."
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Computer thinking"
+msgstr "חשיבה בשימוש במחשב"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model"
+msgstr "מודל לשימוש במחשב"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Same as main model"
+msgstr "כמו המודל הראשי"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Unavailable"
+msgstr "לא זמין"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Use provider default"
+msgstr "שימוש בברירת המחדל של הספק"

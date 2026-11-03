@@ -444,6 +444,14 @@ msgstr ""
 msgid "About {label}"
 msgstr "Sobre {label}"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key ID"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key secret"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Access token (optional)"
 msgstr "Token de acesso (opcional)"
@@ -791,6 +799,7 @@ msgid "Any model, with your own key"
 msgstr ""
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/lib/localized-provider-hint.ts
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/model-settings/compatible-key-field.tsx
@@ -811,6 +820,14 @@ msgstr "Cabeçalho da chave API"
 #: src/pages/shell/agent-import.tsx
 msgid "API keys"
 msgstr "Chaves de API"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API URL"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
@@ -1524,15 +1541,6 @@ msgstr ""
 msgid "Computer is stopped"
 msgstr "O computador está parado"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Computer thinking"
-msgstr "Raciocínio para uso do computador"
-
-#: src/pages/model-settings/computer-model-settings.tsx
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Computer-use model"
-msgstr "Modelo para uso do computador"
-
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Computers"
@@ -1985,6 +1993,10 @@ msgstr ""
 msgid "Could not load bots. Reload to try again."
 msgstr ""
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not load computer settings"
+msgstr ""
+
 #: src/components/VaultSettings.tsx
 msgid "Could not load credentials."
 msgstr ""
@@ -1998,7 +2010,6 @@ msgstr "Não foi possível carregar as integrações"
 msgid "Could not load MCP servers"
 msgstr "Não foi possível carregar os servidores MCP"
 
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "Não foi possível carregar as configurações do modelo"
@@ -2145,6 +2156,10 @@ msgstr "Não foi possível salvar"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not save computer settings"
 msgstr ""
 
 #: src/pages/GroupPanel.tsx
@@ -2448,10 +2463,6 @@ msgstr "Padrão"
 msgid "Default ({0})"
 msgstr "Padrão ({0})"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Default (Medium)"
-msgstr "Padrão (Médio)"
-
 #: src/pages/shell/agent-import.tsx
 msgid "Default from Hermes"
 msgstr "Padrão do Hermes"
@@ -2548,6 +2559,11 @@ msgstr "Negado"
 msgid "Deny"
 msgstr "Negar"
 
+#. placeholder {0}: settings.defaultProvider
+#: src/components/ComputerProviderSettings.tsx
+msgid "Deployment default ({0})"
+msgstr ""
+
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Description"
@@ -2559,6 +2575,10 @@ msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop app"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Desktop ID"
 msgstr ""
 
 #: src/components/DesktopUpdates.tsx
@@ -2769,6 +2789,10 @@ msgstr "É necessário verificar o e-mail"
 msgid "Enable {0}"
 msgstr "Ativar {0}"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "End user ID"
+msgstr ""
+
 #: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr ""
@@ -2803,6 +2827,10 @@ msgstr "Digite um número inteiro de 1 a 1000 para o limite de imagens."
 #: src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
 msgstr "Informe uma chave de API antes de testar."
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Environment ID"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
@@ -3070,6 +3098,14 @@ msgstr "Tela Cheia"
 #: src/pages/Onboarding.tsx
 msgid "Gateway ID"
 msgstr "ID do gateway"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway URL"
+msgstr ""
 
 #: src/pages/settings-nav.ts
 #: src/pages/SettingsOverlay.tsx
@@ -3546,7 +3582,6 @@ msgstr "Carregando provedores de voz..."
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -3926,6 +3961,10 @@ msgstr "Silenciar"
 msgid "Muted"
 msgstr ""
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "My computers"
+msgstr ""
+
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -3999,6 +4038,10 @@ msgstr ""
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "New bot"
 msgstr "Novo bot"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "New computers run on"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"
@@ -4360,6 +4403,10 @@ msgstr "Valor de cabeçalho opcional"
 #: src/pages/Onboarding.tsx
 msgid "Or paste an API key"
 msgstr "Ou cole uma chave de API"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Organization"
+msgstr ""
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
@@ -4773,6 +4820,10 @@ msgstr ""
 msgid "Refreshing…"
 msgstr ""
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Region"
+msgstr ""
+
 #: src/lib/user-error.ts
 msgid "Registration is closed"
 msgstr "O cadastro está fechado"
@@ -5018,7 +5069,6 @@ msgstr ""
 #: src/components/PasskeySettings.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
@@ -5056,6 +5106,10 @@ msgstr ""
 
 #: src/pages/AdminAccessPage.tsx
 msgid "Revoked"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Root filesystem"
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx
@@ -5128,15 +5182,12 @@ msgstr ""
 msgid "Same as {botName}"
 msgstr "Igual a {botName}"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Same as main model"
-msgstr "Igual ao modelo principal"
-
 #: src/lib/cron.ts
 msgid "Saturday"
 msgstr "sábado"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5171,6 +5222,7 @@ msgid "Save to Vault"
 msgstr "Salvar no cofre"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Saved"
@@ -5396,6 +5448,7 @@ msgstr "Configuração concluída"
 msgid "Setup help"
 msgstr "Ajuda"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Shape"
 msgstr "Forma"
@@ -5812,6 +5865,10 @@ msgstr "Tabela"
 msgid "Take control"
 msgstr "Assumir o controle"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Target"
+msgstr ""
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "Ensinar uma tarefa"
@@ -5830,6 +5887,10 @@ msgstr "Computador da equipe"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Template"
 msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
@@ -5921,7 +5982,6 @@ msgid "These saved settings can't be read. Remove it and add it again."
 msgstr ""
 
 #: src/components/call/CallCard.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -6212,10 +6272,6 @@ msgstr "Digite sua resposta"
 msgid "Unassigned"
 msgstr "Não atribuído"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Unavailable"
-msgstr ""
-
 #: src/components/AskCard.tsx
 msgid "Undo"
 msgstr "Desfazer"
@@ -6361,10 +6417,6 @@ msgstr ""
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
 msgstr ""
-
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Use provider default"
-msgstr "Usar padrão do provedor"
 
 #: src/components/ModelCredits.tsx
 msgid "Use Rakazo credits"
@@ -6698,3 +6750,24 @@ msgstr "Seu provedor de voz está sem crédito."
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "Seu provedor de voz recusou a chave."
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Computer thinking"
+msgstr "Raciocínio para uso do computador"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model"
+msgstr "Modelo para uso do computador"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Same as main model"
+msgstr "Igual ao modelo principal"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Unavailable"
+msgstr "Indisponível"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Use provider default"
+msgstr "Usar padrão do provedor"

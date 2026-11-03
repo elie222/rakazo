@@ -444,6 +444,14 @@ msgstr ""
 msgid "About {label}"
 msgstr "Over {label}"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key ID"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key secret"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Access token (optional)"
 msgstr "Toegangstoken (optioneel)"
@@ -791,6 +799,7 @@ msgid "Any model, with your own key"
 msgstr "Elk model, met je eigen sleutel"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/lib/localized-provider-hint.ts
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/model-settings/compatible-key-field.tsx
@@ -811,6 +820,14 @@ msgstr "API-sleutelheader"
 #: src/pages/shell/agent-import.tsx
 msgid "API keys"
 msgstr "API-sleutels"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API URL"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
@@ -1524,15 +1541,6 @@ msgstr "De computer is in slaapstand. Open hem om hem te laten ontwaken."
 msgid "Computer is stopped"
 msgstr "De computer is gestopt"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Computer thinking"
-msgstr "Denkniveau voor computergebruik"
-
-#: src/pages/model-settings/computer-model-settings.tsx
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Computer-use model"
-msgstr "Model voor computergebruik"
-
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Computers"
@@ -1985,6 +1993,10 @@ msgstr "Facturatie laden mislukt"
 msgid "Could not load bots. Reload to try again."
 msgstr "Bots laden mislukt. Herlaad om het opnieuw te proberen."
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not load computer settings"
+msgstr ""
+
 #: src/components/VaultSettings.tsx
 msgid "Could not load credentials."
 msgstr "Gegevens laden mislukt."
@@ -1998,7 +2010,6 @@ msgstr "Integraties laden mislukt"
 msgid "Could not load MCP servers"
 msgstr "MCP-servers laden mislukt"
 
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "Modelinstellingen laden mislukt"
@@ -2146,6 +2157,10 @@ msgstr "Opslaan mislukt"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
 msgstr "Auto Review opslaan mislukt"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not save computer settings"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "Could not save group"
@@ -2448,10 +2463,6 @@ msgstr "Standaard"
 msgid "Default ({0})"
 msgstr "Standaard ({0})"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Default (Medium)"
-msgstr "Standaard (Gemiddeld)"
-
 #: src/pages/shell/agent-import.tsx
 msgid "Default from Hermes"
 msgstr "Standaard van Hermes"
@@ -2548,6 +2559,11 @@ msgstr "Geweigerd"
 msgid "Deny"
 msgstr "Weigeren"
 
+#. placeholder {0}: settings.defaultProvider
+#: src/components/ComputerProviderSettings.tsx
+msgid "Deployment default ({0})"
+msgstr ""
+
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Description"
@@ -2560,6 +2576,10 @@ msgstr ""
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop app"
 msgstr "Desktopapp"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Desktop ID"
+msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop update"
@@ -2769,6 +2789,10 @@ msgstr "E-mailverificatie vereist"
 msgid "Enable {0}"
 msgstr "{0} inschakelen"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "End user ID"
+msgstr ""
+
 #: src/lib/billing.ts
 msgid "Ends {day}"
 msgstr "Eindigt op {day}"
@@ -2803,6 +2827,10 @@ msgstr "Voer een geheel getal van 1 tot 1000 in voor de afbeeldingslimiet."
 #: src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
 msgstr "Voer een API-sleutel in voordat je test."
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Environment ID"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
@@ -3070,6 +3098,14 @@ msgstr "Volledig scherm"
 #: src/pages/Onboarding.tsx
 msgid "Gateway ID"
 msgstr "Gateway-ID"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway URL"
+msgstr ""
 
 #: src/pages/settings-nav.ts
 #: src/pages/SettingsOverlay.tsx
@@ -3546,7 +3582,6 @@ msgstr "Spraakanbieders laden…"
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -3926,6 +3961,10 @@ msgstr "Dempen"
 msgid "Muted"
 msgstr "Gedempt"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "My computers"
+msgstr ""
+
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -3999,6 +4038,10 @@ msgstr "Nieuw"
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "New bot"
 msgstr "Nieuwe bot"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "New computers run on"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"
@@ -4360,6 +4403,10 @@ msgstr "Optionele headerwaarde"
 #: src/pages/Onboarding.tsx
 msgid "Or paste an API key"
 msgstr "Of plak een API-sleutel"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Organization"
+msgstr ""
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
@@ -4773,6 +4820,10 @@ msgstr "Scherm vernieuwen"
 msgid "Refreshing…"
 msgstr "Bezig met vernieuwen…"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Region"
+msgstr ""
+
 #: src/lib/user-error.ts
 msgid "Registration is closed"
 msgstr "Registratie is gesloten"
@@ -5018,7 +5069,6 @@ msgstr "Je werkruimte herstellen"
 #: src/components/PasskeySettings.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
@@ -5056,6 +5106,10 @@ msgstr "Intrekken"
 
 #: src/pages/AdminAccessPage.tsx
 msgid "Revoked"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Root filesystem"
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx
@@ -5128,15 +5182,12 @@ msgstr ""
 msgid "Same as {botName}"
 msgstr "Zelfde als {botName}"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Same as main model"
-msgstr "Zelfde als hoofdmodel"
-
 #: src/lib/cron.ts
 msgid "Saturday"
 msgstr "zaterdag"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5171,6 +5222,7 @@ msgid "Save to Vault"
 msgstr "Opslaan in kluis"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Saved"
@@ -5396,6 +5448,7 @@ msgstr "Instellen voltooid"
 msgid "Setup help"
 msgstr "Installatiehulp"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Shape"
 msgstr "Vorm"
@@ -5812,6 +5865,10 @@ msgstr "Tabel"
 msgid "Take control"
 msgstr "Controle overnemen"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Target"
+msgstr ""
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "Een taak aanleren"
@@ -5831,6 +5888,10 @@ msgstr "Teamcomputer"
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
 msgstr "Teams-bericht"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Template"
+msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
@@ -5921,7 +5982,6 @@ msgid "These saved settings can't be read. Remove it and add it again."
 msgstr "Deze opgeslagen instellingen kunnen niet worden gelezen. Verwijder ze en voeg ze opnieuw toe."
 
 #: src/components/call/CallCard.tsx
-#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -6212,10 +6272,6 @@ msgstr "Typ je antwoord"
 msgid "Unassigned"
 msgstr "Niet toegewezen"
 
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Unavailable"
-msgstr ""
-
 #: src/components/AskCard.tsx
 msgid "Undo"
 msgstr "Ongedaan maken"
@@ -6361,10 +6417,6 @@ msgstr ""
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
 msgstr "Gebruik Beveiligde invoer voor wachtwoorden."
-
-#: src/pages/model-settings/computer-model-settings.tsx
-msgid "Use provider default"
-msgstr "Standaard van provider gebruiken"
 
 #: src/components/ModelCredits.tsx
 msgid "Use Rakazo credits"
@@ -6698,3 +6750,24 @@ msgstr "Je spraakaanbieder heeft geen tegoed meer."
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "Je spraakaanbieder heeft de sleutel geweigerd."
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Computer thinking"
+msgstr "Denkniveau voor computergebruik"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model"
+msgstr "Model voor computergebruik"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Same as main model"
+msgstr "Zelfde als hoofdmodel"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Unavailable"
+msgstr "Niet beschikbaar"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Use provider default"
+msgstr "Standaard van provider gebruiken"

@@ -1,12 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ComputerModelTarget, ThinkingLevel } from "@rakazo/contracts";
 import { computerModelKey, createComputerModelSettings } from "@rakazo/core";
-import {
-  Button,
-  NativeSelect,
-  NativeSelectOptGroup,
-  NativeSelectOption,
-} from "@rakazo/ui-web";
+import { Button, NativeSelect, NativeSelectOptGroup, NativeSelectOption } from "@rakazo/ui-web";
 import { useEffect, useId, useMemo, useSyncExternalStore } from "react";
 import { thinkingLevelLabel } from "../../lib/model-catalog";
 import { useSpaceRpc } from "../../lib/space-rpc";
@@ -123,7 +118,9 @@ export function ComputerModelSettings({
                   })
                 }
               >
-                <NativeSelectOption value="">{t`Default (Medium)`}</NativeSelectOption>
+                <NativeSelectOption value="">
+                  {t`Default (${thinkingLevelLabel("medium")})`}
+                </NativeSelectOption>
                 {thinkingLevels.map((level) => (
                   <NativeSelectOption key={level} value={level}>
                     {thinkingLevelLabel(level)}

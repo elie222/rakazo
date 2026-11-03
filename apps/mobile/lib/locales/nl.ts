@@ -2,7 +2,6 @@ export const NL_MESSAGES: Record<string, string> = {
   Unavailable: "Niet beschikbaar",
   "Computer thinking": "Denkniveau voor computergebruik",
   "Computer-use model": "Model voor computergebruik",
-  "Default (Medium)": "Standaard (Gemiddeld)",
   "Same as main model": "Zelfde als hoofdmodel",
   "Use provider default": "Standaard van provider gebruiken",
   "Daily check-ins on unfinished work": "Dagelijks navragen over onafgemaakt werk",

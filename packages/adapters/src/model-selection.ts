@@ -378,14 +378,7 @@ export async function prepareStoredModelAuth(
   }
   return {
     ref: secret.ciphertext,
-    auth: await modelAuthFromPlaintext(
-      secret.plaintext,
-      userId,
-      provider,
-      modelId,
-      live,
-      liveOpts,
-    ),
+    auth: await modelAuthFromPlaintext(secret.plaintext, userId, provider, modelId, live, liveOpts),
   };
 }
 

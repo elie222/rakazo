@@ -2,7 +2,6 @@ export const DE_MESSAGES: Record<string, string> = {
   Unavailable: "Nicht verfügbar",
   "Computer thinking": "Denken bei Computernutzung",
   "Computer-use model": "Modell für Computernutzung",
-  "Default (Medium)": "Standard (Mittel)",
   "Same as main model": "Wie das Hauptmodell",
   "Use provider default": "Anbieterstandard verwenden",
   "Daily check-ins on unfinished work": "Tägliche Rückfragen zu offenen Aufgaben",
