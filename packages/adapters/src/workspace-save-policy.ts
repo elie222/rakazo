@@ -123,8 +123,9 @@ export function workspaceSaveFindCommand(): string {
     .join(" -o ");
   const find = "find . -regextype posix-extended";
   const script = [
+    // Errors only cost a missed tag, which saves that directory; the second walk reports them.
     // A name with a newline cannot be listed one per line, so its directory is kept.
-    `tags=$(${find} \\( ${excluded} \\) -prune -o -name ${CACHE_DIRECTORY_TAG} -type f ! -path '*\n*' -exec grep -ls ${shellQuote(`^${CACHE_DIRECTORY_SIGNATURE}`)} {} + | sed -e 's|/${CACHE_DIRECTORY_TAG.replace(".", "\\.")}$||' -e 's/[][*?\\\\]/\\\\&/g')`,
+    `tags=$(${find} \\( ${excluded} \\) -prune -o -name ${CACHE_DIRECTORY_TAG} -type f ! -path '*\n*' -exec grep -ls ${shellQuote(`^${CACHE_DIRECTORY_SIGNATURE}`)} {} + 2>/dev/null | sed -e 's|/${CACHE_DIRECTORY_TAG.replace(".", "\\.")}$||' -e 's/[][*?\\\\]/\\\\&/g')`,
     "n=$#",
     "IFS='\n'",
     "set -f",
