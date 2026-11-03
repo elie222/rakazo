@@ -38,33 +38,34 @@ export function ComputerPanel({
   ...props
 }: ComputerPanelProps) {
   const percent = props.computer?.diskFullPercent;
-  if (percent === undefined || !onCleanUpDisk || !onDismissDiskWarning) {
-    return <ComputerPreview {...props} />;
-  }
+  const warn = percent !== undefined && onCleanUpDisk && onDismissDiskWarning;
+  // The preview keeps its place either way, so the warning never remounts the live screen.
   return (
-    <div className="flex flex-col gap-2">
+    <>
       <ComputerPreview {...props} />
-      <div
-        data-testid="computer-disk-warning"
-        className="flex items-center gap-2 rounded-[14px] border border-warning/40 py-1.5 ps-3 pe-1.5 text-sm"
-      >
-        <HardDrive aria-hidden size={15} strokeWidth={1.9} className="shrink-0 text-warning" />
-        <span className="min-w-0 flex-1">
-          <Trans>Computer is {percent}% full</Trans>
-        </span>
-        <Button variant="secondary" size="sm" disabled={cleaningUpDisk} onClick={onCleanUpDisk}>
-          <Trans>Clean up</Trans>
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={t`Dismiss`}
-          onClick={onDismissDiskWarning}
+      {warn && (
+        <div
+          data-testid="computer-disk-warning"
+          className="mt-2 flex items-center gap-2 rounded-[14px] border border-warning/40 py-1.5 ps-3 pe-1.5 text-sm"
         >
-          <X size={15} aria-hidden />
-        </Button>
-      </div>
-    </div>
+          <HardDrive aria-hidden size={15} strokeWidth={1.9} className="shrink-0 text-warning" />
+          <span className="min-w-0 flex-1">
+            <Trans>Computer is {percent}% full</Trans>
+          </span>
+          <Button variant="secondary" size="sm" disabled={cleaningUpDisk} onClick={onCleanUpDisk}>
+            <Trans>Clean up</Trans>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t`Dismiss`}
+            onClick={onDismissDiskWarning}
+          >
+            <X size={15} aria-hidden />
+          </Button>
+        </div>
+      )}
+    </>
   );
 }
 

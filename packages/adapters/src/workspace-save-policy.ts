@@ -89,13 +89,16 @@ export function shouldSkipPortableWorkspaceFile(relative: string, isDirectory = 
 const CACHE_DIRECTORY_TAG = "CACHEDIR.TAG";
 const CACHE_DIRECTORY_SIGNATURE = "Signature: 8a477f597d28d172789f06886806bc55";
 const MAX_PRUNED_CACHE_DIRECTORIES = 1000;
+/** Real tags are a few lines; a larger file is not one, and the shell check never reads it. */
+const MAX_CACHE_DIRECTORY_TAG_BYTES = 1024;
 
 /** True when `directory` holds a cache directory tag; a save leaves the whole directory out. */
 export async function isTaggedCacheDirectory(directory: string): Promise<boolean> {
   // Like find's -type f: a symlinked tag is not followed and a pipe named like one cannot block.
   // Windows has no O_NOFOLLOW, so the type is checked first as well.
   const tag = path.join(directory, CACHE_DIRECTORY_TAG);
-  if (!(await lstat(tag).catch(() => null))?.isFile()) return false;
+  const info = await lstat(tag).catch(() => null);
+  if (!info?.isFile() || info.size >= MAX_CACHE_DIRECTORY_TAG_BYTES) return false;
   const handle = await open(
     tag,
     constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
@@ -137,7 +140,7 @@ export function workspaceSaveFindCommand(): string {
     // A name with a newline cannot be listed one per line, so its directory is kept. The home
     // itself is never pruned, and past the cap the remaining tagged directories are kept so the
     // final find's arguments stay bounded.
-    `tags=$(${find} \\( ${excluded} \\) -prune -o -name ${CACHE_DIRECTORY_TAG} -type f ! -path ./${CACHE_DIRECTORY_TAG} ! -path '*\n*' -exec awk ${shellQuote(`FNR == 1 && index($0, "${CACHE_DIRECTORY_SIGNATURE}") == 1 { print FILENAME } { nextfile }`)} {} + 2>/dev/null | head -n ${MAX_PRUNED_CACHE_DIRECTORIES} | sed -e 's|/${CACHE_DIRECTORY_TAG.replace(".", "\\.")}$||' -e 's/[][*?\\\\]/\\\\&/g')`,
+    `tags=$(${find} \\( ${excluded} \\) -prune -o -name ${CACHE_DIRECTORY_TAG} -type f -size -${MAX_CACHE_DIRECTORY_TAG_BYTES}c ! -path ./${CACHE_DIRECTORY_TAG} ! -path '*\n*' -exec awk ${shellQuote(`FNR == 1 && index($0, "${CACHE_DIRECTORY_SIGNATURE}") == 1 { print FILENAME } { nextfile }`)} {} + 2>/dev/null | head -n ${MAX_PRUNED_CACHE_DIRECTORIES} | sed -e 's|/${CACHE_DIRECTORY_TAG.replace(".", "\\.")}$||' -e 's/[][*?\\\\]/\\\\&/g')`,
     "n=$#",
     "IFS='\n'",
     "set -f",

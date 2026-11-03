@@ -137,6 +137,17 @@ it("holds Clean up while a clean up is being sent", async () => {
   expect(cleanUp?.hasAttribute("disabled")).toBe(true);
 });
 
+it("keeps the live screen mounted while the disk warning comes and goes", async () => {
+  const disk = { onCleanUpDisk: vi.fn(), onDismissDiskWarning: vi.fn() };
+  await render(computer("running"), vi.fn(), disk);
+  const frame = container.querySelector("iframe");
+  await render({ ...computer("running"), diskFullPercent: 93 }, vi.fn(), disk);
+  expect(container.querySelector('[data-testid="computer-disk-warning"]')).not.toBeNull();
+  expect(container.querySelector("iframe")).toBe(frame);
+  await render(computer("running"), vi.fn(), disk);
+  expect(container.querySelector("iframe")).toBe(frame);
+});
+
 it("shows no disk warning while the disk has room", async () => {
   await render(computer("running"), vi.fn(), {
     onCleanUpDisk: vi.fn(),

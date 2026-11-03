@@ -211,6 +211,8 @@ describe("tagged cache directories", () => {
       expect(await write("unsigned", "my notes")).toBe(false);
       expect(await write("short", CACHE_TAG.slice(0, 20))).toBe(false);
       expect(await write("missing")).toBe(false);
+      // The shell check skips these unread, so both paths agree.
+      expect(await write("oversized", CACHE_TAG + "x".repeat(1024))).toBe(false);
       await mkdir(path.join(scratch, "linked"));
       await symlink(
         path.join(scratch, "tagged", "CACHEDIR.TAG"),
