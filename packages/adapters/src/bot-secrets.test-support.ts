@@ -41,7 +41,10 @@ export function fakeDatabase() {
   let rows: Row[] = [];
   // A clock that moves on every write, as updatedAt does, so a changed row is told apart.
   let tick = Date.parse("2026-09-01T00:00:00.000Z");
-  const now = () => new Date((tick += 1000));
+  const now = () => {
+    tick += 1000;
+    return new Date(tick);
+  };
   // Spaces that customized "credentials" and so use their own vault.
   const ownVaults = new Set<string>();
   const vaultCredential = {
