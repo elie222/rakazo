@@ -118,7 +118,10 @@ export async function executeSubagent(
   }
   const subagentModel = modelForCompletion(selectedModel.model, requestModel.maxTokens);
 
-  const childDefs = host.request.tools.filter((tool) => !DELEGATION_TOOL_NAMES.has(tool.name));
+  // Parallel helpers would each get their own notify_owner budget; only the parent turn notifies.
+  const childDefs = host.request.tools.filter(
+    (tool) => !DELEGATION_TOOL_NAMES.has(tool.name) && tool.name !== "notify_owner",
+  );
   const nestedHost: ToolHost = {
     ...host,
     activeModel: {

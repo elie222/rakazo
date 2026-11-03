@@ -1036,7 +1036,7 @@ describe("Pi connector tool dispatch", () => {
     );
   });
 
-  it("runs schedule tools, remember and request_secret sequentially", async () => {
+  it("runs schedule tools, remember, request_secret and notify_owner sequentially", async () => {
     const executeTool = vi.fn(async () => ({ ok: true }));
     const runtime = new PiAgentRuntime();
 
@@ -1055,6 +1055,7 @@ describe("Pi connector tool dispatch", () => {
           destinationTool,
           builtinAgentTools.find((tool) => tool.name === "remember")!,
           builtinAgentTools.find((tool) => tool.name === "request_secret")!,
+          builtinAgentTools.find((tool) => tool.name === "notify_owner")!,
         ],
         model: { provider: "test", id: "dispatch-test-model" },
         executeTool,
@@ -1082,6 +1083,8 @@ describe("Pi connector tool dispatch", () => {
     expect(modes.get("remember")).toBe("sequential");
     // Two code requests in one batch would each wait on a card that one answer approves.
     expect(modes.get("request_secret")).toBe("sequential");
+    // A parallel batch would read the per-turn notification count before any send lands.
+    expect(modes.get("notify_owner")).toBe("sequential");
     expect(modes.get("destination_write")).toBe("default");
   });
 

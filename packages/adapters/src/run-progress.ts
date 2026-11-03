@@ -12,6 +12,7 @@ import {
 } from "@rakazo/core";
 import type { Run } from "@rakazo/db";
 import type { ExecutorDeps } from "./executor-deps.js";
+import { isOwnerNotifyClientNonce } from "./messaging-delivery.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
 import type { ReplyState, RunContext } from "./run-context.js";
 import { publishMessage } from "./run-messages.js";
@@ -47,6 +48,7 @@ export async function createReplyState(
     assistantTurnText: "",
     midTurnUserTexts: [],
     midTurnProgressCount: 0,
+    ownerNotifyCount: 0,
     turnStartedAtMs: run.startedAt?.getTime() ?? Date.now(),
     progressBudgetStart: 0,
     steeringReplyPending: false,
@@ -70,6 +72,7 @@ export async function createReplyState(
     select: { blocks: true, clientNonce: true },
   });
   for (const message of priorProgress) {
+    if (isOwnerNotifyClientNonce(message.clientNonce)) reply.ownerNotifyCount += 1;
     if (!isUserProgressClientNonce(message.clientNonce)) continue;
     const blocks = Array.isArray(message.blocks) ? (message.blocks as MessageBlock[]) : [];
     const text = blocks

@@ -75,6 +75,8 @@ export function selectBuiltinToolsForRun(options: {
   mediaImagesEnabled?: boolean;
   mediaVideoEnabled?: boolean;
   messagingChannelRun: boolean;
+  /** The bot has a linked messaging chat, so a bot_message turn can notify its owner there. */
+  linkedChat?: boolean;
   /** Hanging up is only offered to a turn the caller spoke on a live call. */
   voiceCall?: boolean;
   /** Built-in names this bot turned off. Unknown names are ignored. */
@@ -127,6 +129,7 @@ export function selectBuiltinToolsForRun(options: {
           "generate_video",
         ].includes(tool.name)) &&
       (options.voiceCall || tool.name !== "end_call") &&
+      ((options.linkedChat && options.trigger === "bot_message") || tool.name !== "notify_owner") &&
       (options.userComputer || tool.name !== "user_computer_shell") &&
       ((options.userComputer && options.userComputerScreen) ||
         !USER_COMPUTER_SCREEN_TOOLS.has(tool.name)) &&

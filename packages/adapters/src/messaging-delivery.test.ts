@@ -8,6 +8,7 @@ import {
   deliverMessagingOutbound,
   MESSAGING_DM_OUTBOUND_CAP,
   MESSAGING_OUTBOUND_MAX_ATTEMPTS,
+  ownerNotifyClientNonce,
 } from "./messaging-delivery.js";
 import { messagingPlatformsFromEnv } from "./messaging-platforms.js";
 
@@ -392,13 +393,38 @@ describe("deliverMessagingOutbound", () => {
     expect(noIdentity.sendToThread).not.toHaveBeenCalled();
   });
 
-  it("mirrors delegated bot_message replies to the linked DM", async () => {
-    const deps = createDeps({ run: { ...messagingRun, trigger: "bot_message" } });
+  it("mirrors only owner notifications from bot_message runs to the linked DM", async () => {
+    const replies = [
+      { id: "m-1", clientNonce: null, blocks: [{ kind: "text", text: "Ack, on it" }] },
+      {
+        id: "m-2",
+        clientNonce: ownerNotifyClientNonce("run-1", "call-1"),
+        blocks: [{ kind: "text", text: "Approve the deploy?" }],
+      },
+    ];
+    const deps = createDeps({
+      run: { ...messagingRun, trigger: "bot_message" },
+      messages: replies,
+    });
     await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+    expect(deps.sendToThread).toHaveBeenCalledTimes(1);
     expect(deps.sendToThread).toHaveBeenCalledWith(
-      { threadId: "sendblue:dm-1", body: "Hello from your bot" },
+      { threadId: "sendblue:dm-1", body: "Approve the deploy?" },
       context,
     );
+    expect(deps.rows).toEqual([expect.objectContaining({ idempotencyKey: "msg:m-2" })]);
+
+    const silent = createDeps({
+      run: { ...messagingRun, trigger: "bot_message" },
+      messages: [replies[0]],
+    });
+    await deliverMessagingOutbound(silent, { runId: "run-1" }, context);
+    expect(silent.sendToThread).not.toHaveBeenCalled();
+    expect(silent.rows).toHaveLength(0);
+
+    const inbound = createDeps({ messages: replies });
+    await deliverMessagingOutbound(inbound, { runId: "run-1" }, context);
+    expect(inbound.sendToThread).toHaveBeenCalledTimes(2);
   });
 
   it("holds sendblue DM sends at the consecutive-outbound cap", async () => {

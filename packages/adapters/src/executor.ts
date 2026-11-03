@@ -1146,7 +1146,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           : false;
         const messagingContext =
           [
-            hasMessagingIdentity ? messagingDmSurfaceNote() : null,
+            // A bot_message turn reaches the owner's chat only through notify_owner.
+            hasMessagingIdentity && run.trigger !== "bot_message" ? messagingDmSurfaceNote() : null,
             messagingChannelRun
               ? messagingChannelPrivacyBlock()
               : nonOwnerChatRun
@@ -1223,6 +1224,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
             paymentWalletEnabled,
             messagingChannelRun: nonOwnerChatRun,
+            linkedChat: hasMessagingIdentity,
             voiceCall,
             disabledBuiltinTools: bot.disabledBuiltinTools,
             fleetManagement: bot.fleetManagement,

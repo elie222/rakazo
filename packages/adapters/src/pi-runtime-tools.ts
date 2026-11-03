@@ -324,9 +324,11 @@ function toAgentTool(
     // exists. Pi runs the whole batch in order when any call in it is
     // sequential. Remember also needs this to avoid competing revision writes, and request_secret
     // so a sibling request cannot start after one pauses for its card and share its answer.
+    // notify_owner so a batch cannot pass its per-turn count before any call records a send.
     ...(SCHEDULE_TOOL_NAMES.has(tool.name) ||
     tool.name === "remember" ||
-    tool.name === "request_secret"
+    tool.name === "request_secret" ||
+    tool.name === "notify_owner"
       ? { executionMode: "sequential" as const }
       : {}),
     parameters: parametersFor(tool),

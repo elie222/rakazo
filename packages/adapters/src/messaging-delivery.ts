@@ -77,6 +77,17 @@ export async function deliverMessagingOutbound(
   await drain(deps, context);
 }
 
+const OWNER_NOTIFY_CLIENT_NONCE_PREFIX = "owner-notify:";
+
+/** Marks a notify_owner message, the only kind a bot_message run mirrors to the linked chat. */
+export function ownerNotifyClientNonce(runId: string, key: string): string {
+  return `${OWNER_NOTIFY_CLIENT_NONCE_PREFIX}${runId}:${key}`;
+}
+
+export function isOwnerNotifyClientNonce(clientNonce: string | null | undefined): boolean {
+  return Boolean(clientNonce?.startsWith(OWNER_NOTIFY_CLIENT_NONCE_PREFIX));
+}
+
 export async function mirrorMessagingOutbound(
   deps: MessagingDeliveryDeps,
   runId: string,
@@ -116,13 +127,15 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
   });
   if (!identity) return;
 
-  // bot_message runs can carry the bot's user-facing reply after a delegate wake.
-  // extractText keeps only text and page titles, so inter-bot chatter blocks never leak out.
-
-  const messages = await deps.prisma.message.findMany({
-    where: { runId: run.id, role: "bot" },
-    orderBy: { seq: "asc" },
-  });
+  // Replies to another bot stay in the app; only what the bot sent with notify_owner leaves.
+  const messages = (
+    await deps.prisma.message.findMany({
+      where: { runId: run.id, role: "bot" },
+      orderBy: { seq: "asc" },
+    })
+  ).filter(
+    (message) => run.trigger !== "bot_message" || isOwnerNotifyClientNonce(message.clientNonce),
+  );
   const sendsFiles = deps.messaging
     .platforms()
     .some((platform) => platform.provider === identity.provider && platform.capabilities.files);

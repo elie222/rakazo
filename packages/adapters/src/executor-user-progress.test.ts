@@ -15,7 +15,11 @@ import { createRunExecutor } from "./executor.js";
 import { createJobReconciler } from "./job-reconciler.js";
 import type * as ModelVisionModule from "./model-vision.js";
 import { PEER_NOTHING_NEW_REPLY } from "./silent-reply.js";
-import { MID_TURN_PROGRESS_MIN_TURN_AGE_MS, userProgressClientNonce } from "./user-progress.js";
+import {
+  MID_TURN_PROGRESS_MIN_TURN_AGE_MS,
+  messageUserMaxLength,
+  userProgressClientNonce,
+} from "./user-progress.js";
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
@@ -69,6 +73,8 @@ async function runTurn(
     appendGate?: (event: AppendEventInput) => Promise<void> | undefined;
     /** The computer has a screen and a page browser, and the model can see. */
     graphical?: boolean;
+    /** The bot has a linked messaging chat. */
+    linkedChat?: boolean;
   } = {},
 ) {
   vi.mocked(loadBotMessageContext).mockResolvedValue({
@@ -320,6 +326,7 @@ async function runTurn(
     events: { append, finalizeRun, pauseRunForInput, notify: vi.fn(async () => undefined) },
     jobs: { enqueue: vi.fn(async () => undefined) },
     secrets,
+    ...(options.linkedChat ? { messaging: { hasIdentity: async () => true } } : {}),
     ...(options.graphical
       ? {
           browser: {
@@ -738,6 +745,73 @@ describe("notes that can't be posted as messages", () => {
       .filter((event) => event.type === "thread.progress")
       .map((event) => event.payload as { text?: string; activity?: boolean });
     expect(lines).toContainEqual({ text: "Reading march.csv", activity: true });
+  });
+
+  it("lets only a bot_message turn with a linked chat notify its owner", async () => {
+    const turn = async (trigger: string, linkedChat = true) => {
+      const results: unknown[] = [];
+      let seen: AgentRunRequest | undefined;
+      let offered = false;
+      const { messages } = await runTurn("", false, undefined, [], "fyi", {
+        trigger,
+        linkedChat,
+        runtime: async function* (request) {
+          seen = request;
+          offered = request.tools.some((tool) => tool.name === "notify_owner");
+          for (const [message, executionId] of [
+            ["  ", "call-0"],
+            ["Approve the deploy?", "call-1"],
+            ["x".repeat(5_001), "call-2"],
+            ["y".repeat(5_001), "call-3"],
+            ["z", "call-4"],
+          ] as const)
+            results.push(await request.executeTool!("notify_owner", { message }, executionId));
+          yield { type: "text", text: "Done." };
+          yield { type: "done", text: "" };
+        },
+      });
+      const notices = (messages as Array<{ blocks: MessageBlock[]; clientNonce?: string }>).filter(
+        (message) => message.clientNonce?.startsWith("owner-notify:"),
+      );
+      return { results, notices, offered, instructions: seen!.instructions };
+    };
+
+    const max = messageUserMaxLength();
+    const delegated = await turn("bot_message");
+    expect(delegated.offered).toBe(true);
+    const cut = {
+      ok: true,
+      truncated: true,
+      note: `Your owner saw only the first ${max} characters.`,
+    };
+    expect(delegated.results).toEqual([
+      { error: "message is required" },
+      { ok: true },
+      cut,
+      cut,
+      { error: "Not sent: your owner already got as many notifications as one turn allows." },
+    ]);
+    expect(
+      delegated.notices.map((notice) => (notice.blocks[0] as { text: string }).text.length),
+    ).toEqual(["Approve the deploy?".length, max, max]);
+    expect(delegated.instructions).not.toContain("mirrored to their chat");
+
+    for (const [trigger, linkedChat] of [
+      ["bot_message", false],
+      ["messaging", true],
+      ["user", true],
+      ["routine", true],
+    ] as const) {
+      const other = await turn(trigger, linkedChat);
+      expect(other.offered).toBe(false);
+      expect(other.results).toEqual(
+        Array(5).fill({
+          error: "notify_owner needs a turn another bot started and a linked chat.",
+        }),
+      );
+      expect(other.notices).toEqual([]);
+    }
+    expect((await turn("user")).instructions).toContain("mirrored to their chat");
   });
 
   it("tells the bot whether a message_user update it can't post can be retried", async () => {

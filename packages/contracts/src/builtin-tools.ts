@@ -94,6 +94,7 @@ export const BUILTIN_TOOL_NAMES = [
   ...FLEET_TOOL_NAMES,
   "archive_bot",
   "message_bot",
+  "notify_owner",
   "handoff_to_bot",
   "update_preferences",
   "feedback",

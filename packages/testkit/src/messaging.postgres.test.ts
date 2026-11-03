@@ -2,6 +2,7 @@ import { randomInt } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { runContinueJob } from "@rakazo/adapter-kit";
 import {
   ChatSdkMessagingSurface,
   createEmulatedSendbluePlatform,
@@ -28,6 +29,7 @@ describeMessaging("messaging surface journeys", () => {
   let app: App;
   let stop: () => Promise<void>;
   let prisma: any;
+  let jobs: { enqueue: (job: ReturnType<typeof runContinueJob>) => Promise<unknown> };
   const emulator = new SendBlueEmulator();
   const platform = createEmulatedSendbluePlatform(emulator);
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-messaging-"));
@@ -104,6 +106,7 @@ describeMessaging("messaging surface journeys", () => {
     app = handles.app;
     stop = handles.stop;
     prisma = asSystem(handles.prisma);
+    jobs = handles.jobs;
   });
 
   afterAll(async () => {
@@ -267,6 +270,106 @@ describeMessaging("messaging surface journeys", () => {
     });
     expect(histories.get(appRun.id)).not.toContain("How is it going?");
     expect(histories.get(continuation.id)).toContain("How is it going?");
+  });
+
+  it("sends the owner only what a bot answering another bot posts with notify_owner", async () => {
+    const texter = uniqueNumber();
+    const identity = await dmAndWaitForReply(texter, "hello", `journey-notify-hello-${stamp}`);
+    const linked = await prisma.bot.findUniqueOrThrow({ where: { id: identity.botId } });
+    const peer = await prisma.bot.create({
+      data: {
+        spaceId: identity.spaceId,
+        userId: identity.userId,
+        name: `Peer${stamp}`,
+        color: "#64748b",
+        computerId: linked.computerId,
+      },
+    });
+    const peerThread = await prisma.thread.create({
+      data: { spaceId: identity.spaceId, botId: peer.id, userId: identity.userId },
+    });
+    const prompt = `message the bot named ${linked.name} saying Is the venue booked?`;
+    const task = await prisma.task.create({
+      data: {
+        spaceId: identity.spaceId,
+        botId: peer.id,
+        threadId: peerThread.id,
+        userId: identity.userId,
+        prompt,
+        status: "queued",
+      },
+    });
+    const notice = "Peer asked about the venue: it is booked for Friday.";
+    const chatter = "Thanks Peer, noted.";
+    const scripted = ScriptedAgentRuntime.prototype.run;
+    const runtime = vi.spyOn(ScriptedAgentRuntime.prototype, "run").mockImplementation(function (
+      this: ScriptedAgentRuntime,
+      request,
+      context,
+    ) {
+      if (request.botId !== linked.id || !request.tools.some((t) => t.name === "notify_owner"))
+        return scripted.call(this, request, context);
+      return (async function* () {
+        yield {
+          type: "tool" as const,
+          name: "notify_owner",
+          args: { message: notice },
+          executionId: `${request.runId}:notify_owner:0`,
+        };
+        yield { type: "text" as const, text: chatter };
+        yield { type: "done" as const, text: chatter };
+      })();
+    });
+    const sentBodies = async () =>
+      (
+        await prisma.messagingOutbound.findMany({
+          where: { identityId: identity.id, kind: "dm", providerHandle: { not: null } },
+          orderBy: { createdAt: "asc" },
+        })
+      ).map((row: { body: string }) => row.body);
+    let delegated: { id: string; status: string; messagingMirroredAt: Date | null } | undefined;
+    try {
+      const peerRun = await prisma.run.create({
+        data: {
+          spaceId: identity.spaceId,
+          botId: peer.id,
+          threadId: peerThread.id,
+          taskId: task.id,
+          userId: identity.userId,
+          status: "queued",
+          trigger: "user",
+        },
+      });
+      await jobs.enqueue(runContinueJob(peerRun.id));
+      delegated = await waitForDatabase(async () => {
+        const run = await prisma.run.findFirst({
+          where: { botId: linked.id, trigger: "bot_message", status: "completed" },
+        });
+        return run ?? null;
+      });
+      await waitForDatabase(async () => (await sentBodies()).includes(notice));
+    } finally {
+      runtime.mockRestore();
+    }
+    // The plain reply stays in the app thread; only the notification reached the chat.
+    const replies = await prisma.message.findMany({
+      where: { runId: delegated!.id, role: "bot" },
+      orderBy: { seq: "asc" },
+    });
+    expect(replies.map((m: { blocks: Array<{ text?: string }> }) => m.blocks[0]?.text)).toEqual(
+      expect.arrayContaining([notice, chatter]),
+    );
+    expect(
+      replies.find((m: { clientNonce: string | null }) =>
+        m.clientNonce?.startsWith("owner-notify:"),
+      )?.blocks,
+    ).toEqual([{ kind: "text", text: notice }]);
+    const bodies = await sentBodies();
+    expect(bodies.filter((body: string) => body === notice)).toHaveLength(1);
+    expect(bodies).not.toContain(chatter);
+    const toTexter = emulator.sent.filter((send) => send.kind === "dm" && send.to === texter);
+    expect(toTexter.map((send) => send.body)).toContain(notice);
+    expect(toTexter.map((send) => send.body)).not.toContain(chatter);
   });
 
   it("runs the channel loop: discovery, invite, intro, YES, fan-out, attributed post", async () => {

@@ -10,6 +10,7 @@ import type { PoolClient } from "pg";
 import { returnBotMessageOutcome } from "./bot-messages.js";
 import { reconcileCallRequests } from "./call-request.js";
 import { scheduleComputerControlExpiry } from "./computer-control.js";
+import { isOwnerNotifyClientNonce } from "./messaging-delivery.js";
 import { findRunRecoveryBlockers } from "./run-recovery.js";
 import { reconcileStuckWork } from "./stuck-work.js";
 import { isLoopGuardStopText } from "./tool-loop.js";
@@ -516,7 +517,8 @@ async function botRunOutcomeText(
   const finalParts: string[] = [];
   for (const message of messages) {
     const text = messageText(message.blocks);
-    if (!text) continue;
+    // A notification to the owner is not the run's answer to the requesting bot.
+    if (!text || isOwnerNotifyClientNonce(message.clientNonce)) continue;
     if (isUserProgressClientNonce(message.clientNonce)) progressParts.push(text);
     else finalParts.push(text);
   }
