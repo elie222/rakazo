@@ -327,8 +327,8 @@ export function threadsRoutes(ctx: RouterContext) {
       }),
       stop: authed.threads.stop.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
-        await stopThreadRuns(deps, context.actor, target);
-        return { ok: true as const };
+        const result = await stopThreadRuns(deps, context.actor, target);
+        return { ok: true as const, failedRunIds: result.failedRunIds };
       }),
       clear: authed.threads.clear.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);

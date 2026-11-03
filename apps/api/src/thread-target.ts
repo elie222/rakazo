@@ -1439,11 +1439,50 @@ async function startReactionTurn(
   return [run];
 }
 
+const RUN_CANCELLATION_DELIVERY_MS = 15_000;
+
+/** Deliver a stop to an optional runtime adapter without making the DB stop reversible. */
+export async function deliverRunCancellations(
+  deps: { cancelRun?: (runId: string) => Promise<void> },
+  runIds: readonly string[],
+): Promise<string[]> {
+  const cancelRun = deps.cancelRun;
+  if (!cancelRun) return [];
+  const failedRunIds: string[] = [];
+  await Promise.all(
+    runIds.map(async (runId) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          cancelRun(runId),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error("runtime cancellation delivery timed out")),
+              RUN_CANCELLATION_DELIVERY_MS,
+            );
+          }),
+        ]);
+      } catch (error) {
+        failedRunIds.push(runId);
+        getLogger().error(
+          `runtime cancellation delivery failed for run ${runId}`,
+          error instanceof Error ? error.message : "unknown error",
+        );
+      } finally {
+        clearTimeout(timer);
+      }
+    }),
+  );
+  return failedRunIds;
+}
+
 export async function stopThreadRuns(
   deps: {
     prisma: PrismaClient;
     sandbox: SandboxProvider;
     events: ThreadEvents;
+    /** Runtime cancellation seam; absent for compositions that observe DB state. */
+    cancelRun?: (runId: string) => Promise<void>;
   },
   actor: Actor,
   target: ThreadTarget,
@@ -1528,6 +1567,8 @@ export async function stopThreadRuns(
       getLogger().error("thread stop realtime notification", error);
     });
   }
+  // Start only after cancellation commits, and keep runtime delivery independent of teardown.
+  const failedRuntimeCancellations = deliverRunCancellations(deps, runIds);
   // Keep the DB lease until after teardown so a replacement run cannot claim the
   // screen while we still need the cancelled run's screenLeaseId to release it.
   const computerById = new Map(computers.map((computer) => [computer.id, computer]));
@@ -1597,6 +1638,7 @@ export async function stopThreadRuns(
       executionLeaseExpiresAt: null,
     },
   });
+  return { failedRunIds: await failedRuntimeCancellations };
 }
 
 /**

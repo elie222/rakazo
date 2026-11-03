@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ThreadTarget } from "./thread-target.js";
 import {
   cancelSupersededQueuedRuns,
+  deliverRunCancellations,
   reactToThreadMessage,
   sendThreadMessage,
   stopThreadRuns,
@@ -3714,6 +3715,37 @@ describe("sendThreadMessage", () => {
         payload: expect.objectContaining({ replyQuote: "just this span" }),
       }),
     });
+  });
+});
+
+describe("deliverRunCancellations", () => {
+  it("is a no-op without a runtime cancellation adapter", async () => {
+    await expect(deliverRunCancellations({}, ["run-1"])).resolves.toEqual([]);
+  });
+
+  it("reports failed runtime deliveries without rejecting the stop", async () => {
+    const cancelRun = vi
+      .fn<(runId: string) => Promise<void>>()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("runtime unavailable"));
+
+    await expect(deliverRunCancellations({ cancelRun }, ["run-1", "run-2"])).resolves.toEqual([
+      "run-2",
+    ]);
+    expect(cancelRun).toHaveBeenCalledTimes(2);
+  });
+
+  it("bounds a runtime delivery that never settles", async () => {
+    vi.useFakeTimers();
+    try {
+      const delivery = deliverRunCancellations({ cancelRun: () => new Promise<void>(() => {}) }, [
+        "run-1",
+      ]);
+      await vi.advanceTimersByTimeAsync(15_000);
+      await expect(delivery).resolves.toEqual(["run-1"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
