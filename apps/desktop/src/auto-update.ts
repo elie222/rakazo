@@ -244,8 +244,7 @@ export interface ElectronAutoUpdater {
   on: (event: string, listener: (payload: unknown) => void) => unknown;
   checkForUpdates: () => Promise<unknown>;
   downloadUpdate: () => Promise<unknown>;
-  quitAndInstall: () => void;
-  install: (isSilent: boolean, isForceRunAfter: boolean) => boolean;
+  quitAndInstall: (isSilent?: boolean, isForceRunAfter?: boolean) => void;
 }
 
 export interface DownloadedUpdate {
@@ -512,9 +511,11 @@ export class DesktopUpdateController {
     if (this.installStarted || this.current.phase !== "ready") return;
     this.installStarted = true;
     try {
-      updater.install(true, false);
-    } catch {
-      // The app is already quitting; the verified download stays cached for the next launch.
+      // Silent and without relaunching: the user chose to quit.
+      updater.quitAndInstall(true, false);
+    } catch (error) {
+      // The verified download stays cached for the next launch.
+      reportDesktopError(error, "desktop.update", { "update.failure": "install-on-quit" });
     }
   }
 }

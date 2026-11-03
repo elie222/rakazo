@@ -36,7 +36,6 @@ function fakeUpdater(overrides: Partial<ElectronAutoUpdater> = {}) {
     checkForUpdates: vi.fn(async () => undefined),
     downloadUpdate: vi.fn(async () => undefined),
     quitAndInstall: vi.fn(),
-    install: vi.fn(() => true),
     ...overrides,
   };
   return {
@@ -642,14 +641,13 @@ describe("DesktopUpdateController", () => {
       expect(await controller.install()).toMatchObject({ phase: "downloading" });
       controller.installOnQuit();
       expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
-      expect(fake.updater.install).not.toHaveBeenCalled();
 
       pass();
       expect(await downloading).toMatchObject({ phase: "ready", availableVersion: "0.2.0" });
       controller.installOnQuit();
       controller.installOnQuit();
-      expect(fake.updater.install).toHaveBeenCalledTimes(1);
-      expect(fake.updater.install).toHaveBeenCalledWith(true, false);
+      expect(fake.updater.quitAndInstall).toHaveBeenCalledTimes(1);
+      expect(fake.updater.quitAndInstall).toHaveBeenCalledWith(true, false);
     });
 
     it("never installs an update the verifier rejects", async () => {
@@ -673,7 +671,6 @@ describe("DesktopUpdateController", () => {
       controller.installOnQuit();
       expect(fake.updater.autoInstallOnAppQuit).toBe(false);
       expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
-      expect(fake.updater.install).not.toHaveBeenCalled();
     });
 
     it("ignores an earlier verification that finishes after a later download", async () => {
@@ -701,7 +698,7 @@ describe("DesktopUpdateController", () => {
       await Promise.resolve();
       expect(controller.state().phase).toBe("error");
       controller.installOnQuit();
-      expect(fake.updater.install).not.toHaveBeenCalled();
+      expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
     });
 
     it("stays failed when the updater errors while a verification is pending", async () => {
@@ -722,7 +719,7 @@ describe("DesktopUpdateController", () => {
       await Promise.resolve();
       expect(controller.state().phase).toBe("error");
       controller.installOnQuit();
-      expect(fake.updater.install).not.toHaveBeenCalled();
+      expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
     });
 
     it("rejects a download the updater reports without a file", async () => {
@@ -750,7 +747,7 @@ describe("DesktopUpdateController", () => {
       await vi.waitFor(() => expect(controller.state().phase).toBe("ready"));
       expect(fake.updater.autoInstallOnAppQuit).toBe(true);
       controller.installOnQuit();
-      expect(fake.updater.install).not.toHaveBeenCalled();
+      expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
     });
   });
 });
