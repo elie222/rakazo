@@ -981,15 +981,19 @@ class ActTest(unittest.TestCase):
     def test_saved_logins_cards_and_pay_tokens_go_through_page_secrets_only(self):
         steps = [{"kind": "fill", "ref": "e3", "text": "fake-password", "origin": "https://portal.example.test",
                   "field": "password"},
+                 # A visible saved field on a dropdown picks its option in page_secrets too, never through
+                 # agent-browser's select, whose errors repeat the text.
+                 {"kind": "fill", "ref": "e4", "text": "fake-choice", "origin": "https://portal.example.test",
+                  "field": "username"},
                  {"kind": "fill", "text": CARD_NUMBER, "origin": MERCHANT, "field": "card", "cardField": "number"},
                  {"kind": "pay_token", "text": PAY_TOKEN, "origin": MERCHANT, "merchantAccountId": "acct_fake123"}]
         with patch.object(secrets, "run_step") as run_step:
             result, browser = self.act(steps)
-        self.assertEqual(result["completed"], 3)
-        self.assertEqual(browser.actions(), [["focus", "@e3"]])
+        self.assertEqual(result["completed"], 4)
+        self.assertEqual(browser.actions(), [["focus", "@e3"], ["focus", "@e4"]])
         self.assertEqual([call.args for call in run_step.call_args_list], [(9222, "tab-1", step) for step in steps])
         sent = json.dumps(browser.sent)
-        for secret in ("fake-password", CARD_NUMBER, PAY_TOKEN):
+        for secret in ("fake-password", "fake-choice", CARD_NUMBER, PAY_TOKEN):
             self.assertNotIn(secret, sent)
 
     def test_a_refused_secret_is_settled_and_an_unconfirmed_card_field_is_uncertain(self):
