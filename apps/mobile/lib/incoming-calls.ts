@@ -213,8 +213,10 @@ export async function respondToMobileCall(call: IncomingBotCall, action: "answer
 }
 
 async function drainNative() {
+  const generation = currentSessionGeneration();
   const state = await native?.incomingState();
-  if (!state) return;
+  // A sign-out during the read belongs to the old session; the new one drains for itself.
+  if (!state || !running || generation !== currentSessionGeneration()) return;
   if (state.token) await registerCallPushToken({ voipToken: state.token }).catch(() => undefined);
   for (const ring of state.ringing ?? []) {
     if (!callIsRinging(ring)) continue;
