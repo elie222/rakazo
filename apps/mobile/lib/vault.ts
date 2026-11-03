@@ -25,7 +25,6 @@ import {
   vaultKind,
 } from "@rakazo/contracts";
 import { t } from "./i18n";
-import { siteHost } from "./secret-destination";
 
 export type CredentialAuth = NonNullable<BotSecretMetadata["auth"]>;
 export type CredentialType = CredentialAuth["type"];
