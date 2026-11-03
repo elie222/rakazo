@@ -1040,18 +1040,26 @@ export const appContract = {
         .output(z.array(BotMcpServerSchema)),
     },
     oauth: {
-      begin: oc.input(z.object({ serverId: Id, redirectUri: z.string().url().optional() })).output(
-        z.discriminatedUnion("status", [
+      begin: oc
+        .input(
           z.object({
-            status: z.literal("authorization_required"),
-            sessionId: Id,
-            authorizationUrl: z.string().url(),
+            serverId: Id,
+            redirectUri: z.string().url().optional(),
+            client: BillingClientSchema,
           }),
-          z.object({
-            status: z.enum(["already_connected", "authorization_not_requested"]),
-          }),
-        ]),
-      ),
+        )
+        .output(
+          z.discriminatedUnion("status", [
+            z.object({
+              status: z.literal("authorization_required"),
+              sessionId: Id,
+              authorizationUrl: z.string().url(),
+            }),
+            z.object({
+              status: z.enum(["already_connected", "authorization_not_requested"]),
+            }),
+          ]),
+        ),
       complete: oc
         .input(z.object({ sessionId: Id, code: z.string().min(1), state: z.string().min(1) }))
         .output(z.object({ ok: z.literal(true) })),

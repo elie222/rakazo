@@ -1,4 +1,4 @@
-import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
+import { MCP_OAUTH_CLIENT_REQUIRED, MOBILE_MCP_OAUTH_STATE_PREFIX } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OAuthMaterial } from "./mcp-oauth.js";
@@ -1119,20 +1119,24 @@ describe("MCP OAuth", () => {
       expect(authorizationUrl.searchParams.get("code_challenge_method")).toBe("S256");
       expect(authorizationUrl.searchParams.get("state")).toBe(started.sessionId);
 
-      const second = await broker.begin({
+      const mobile = await broker.begin({
         serverId: "server-1",
         spaceId: "workspace-1",
         userId: "user-1",
         redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+        client: "mobile",
       });
-      expect(second.status).toBe("authorization_required");
-      if (second.status !== "authorization_required") throw new Error("OAuth was not requested");
-      expect(second.sessionId).not.toBe(started.sessionId);
+      expect(mobile.status).toBe("authorization_required");
+      if (mobile.status !== "authorization_required") throw new Error("OAuth was not requested");
+      expect(mobile.sessionId).not.toBe(started.sessionId);
+      expect(mobile.sessionId.startsWith(MOBILE_MCP_OAUTH_STATE_PREFIX)).toBe(true);
+      expect(new URL(mobile.authorizationUrl).searchParams.get("state")).toBe(mobile.sessionId);
+      expect(started.sessionId.startsWith(MOBILE_MCP_OAUTH_STATE_PREFIX)).toBe(false);
 
       await broker.complete({
-        sessionId: started.sessionId,
+        sessionId: mobile.sessionId,
         code: "authorization-code",
-        state: started.sessionId,
+        state: mobile.sessionId,
         spaceId: "workspace-1",
         userId: "user-1",
       });

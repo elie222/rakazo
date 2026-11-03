@@ -23,6 +23,7 @@ import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import {
   isLocalhostOrLoopbackIp,
   MCP_OAUTH_CLIENT_REQUIRED,
+  MOBILE_MCP_OAUTH_STATE_PREFIX,
   mcpOAuthEnvReferences,
   parseMcpOAuthAuthorizationParams,
 } from "@rakazo/contracts";
@@ -967,6 +968,7 @@ export class McpOAuthBroker {
     spaceId: string;
     userId: string;
     redirectUri: string;
+    client?: "mobile";
   }): Promise<
     | { status: "authorization_required"; sessionId: string; authorizationUrl: string }
     | { status: "already_connected" | "authorization_not_requested" }
@@ -1000,7 +1002,7 @@ export class McpOAuthBroker {
     if (activeCount >= MAX_PENDING_SESSIONS) {
       throw new Error("Too many pending MCP authorization attempts; wait and try again");
     }
-    const sessionId = randomUUID();
+    const sessionId = `${input.client === "mobile" ? MOBILE_MCP_OAUTH_STATE_PREFIX : ""}${randomUUID()}`;
     let authorizationUrl: URL | undefined;
     const provider = this.createProvider(server, context, loaded, {
       redirectUri: input.redirectUri,
