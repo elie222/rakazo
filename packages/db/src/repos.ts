@@ -526,6 +526,8 @@ export function createRepos(
         fleetManagement?: boolean;
         color?: string;
         avatarSet?: BotAvatarSet;
+        /** Copy a pin as is (duplicates); otherwise a set other than the default pins the bot. */
+        avatarSetPinned?: boolean;
         avatarFamily?: number;
         parentBotId?: string | null;
         computerMode?: ComputerMode;
@@ -624,7 +626,7 @@ export function createRepos(
               fleetManagement: input.fleetManagement,
               color: avatar.color,
               avatarSet,
-              avatarSetPinned: avatarSet !== defaultSet,
+              avatarSetPinned: input.avatarSetPinned ?? avatarSet !== defaultSet,
               position: (positions._max.position ?? -1) + 1,
               parentBotId: input.parentBotId ?? null,
               computerId: teamComputer.id,

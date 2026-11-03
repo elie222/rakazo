@@ -576,7 +576,11 @@ export default function Account() {
                 setMe((current) => (current ? { ...current, botAvatarSet } : current));
                 rpc("preferences/update", { botAvatarSet })
                   .then((next) => {
-                    if (request === botStyleRequest.current) setMe(next);
+                    // Take only the style, so an older snapshot can't undo another edit.
+                    if (request !== botStyleRequest.current) return;
+                    setMe((current) =>
+                      current ? { ...current, botAvatarSet: next.botAvatarSet } : next,
+                    );
                   })
                   .catch(() => {
                     if (request !== botStyleRequest.current) return;
