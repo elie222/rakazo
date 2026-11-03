@@ -2405,6 +2405,10 @@ msgstr "{label}をカスタマイズ"
 msgid "Customize bot avatar"
 msgstr "ボットのアバターをカスタマイズ"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Daily check-ins on unfinished work"
+msgstr "未完了の作業を毎日確認"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Dark"

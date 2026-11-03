@@ -2406,6 +2406,10 @@ msgstr "自訂{label}"
 msgid "Customize bot avatar"
 msgstr "自訂機器人頭像"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Daily check-ins on unfinished work"
+msgstr "每天追蹤未完成的工作"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Dark"

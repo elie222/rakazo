@@ -2812,7 +2812,7 @@ describe("sendThreadMessage", () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it("persists the quote excerpt alongside the reply target", async () => {
+  it("persists quotes and namespaces a client-chosen strategic initiative nonce", async () => {
     let messageSeq = 0;
     let eventSeq = 0;
     const tx = {
@@ -2872,10 +2872,15 @@ describe("sendThreadMessage", () => {
         text: "why this?",
         replyToMessageId: "parent",
         replyQuote: "just this span",
-        clientNonce: "nonce-1",
+        clientNonce: "strategic-initiative:bot-1:1",
       },
     );
 
+    expect(tx.run.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ trigger: "user", clientNonce: "send:msg-1" }),
+      }),
+    );
     expect(result).toMatchObject({ runId: "run-1", taskId: "task-1" });
     expect(tx.message.findFirst).toHaveBeenCalledWith({
       where: { id: "parent", threadId: "thread-1" },

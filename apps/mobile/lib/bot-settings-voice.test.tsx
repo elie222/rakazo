@@ -394,6 +394,19 @@ describe("bot settings device voice menu", () => {
   };
   const menu = () => container.querySelector('[data-menu="Device voice"]');
 
+  it("defaults daily check-ins on and saves an opt-out", async () => {
+    await render();
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Daily check-ins on unfinished work"]',
+    )!;
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    await act(async () => toggle.click());
+    expect(mocks.rpc).toHaveBeenCalledWith("bots/update", {
+      botId: "bot-fixture",
+      dailyCheckIns: false,
+    });
+  });
+
   it.each([false, true])("loads and saves cross-space communication: %s", async (enabled) => {
     mocks.crossSpaceCommunication = enabled;
     await render();
@@ -728,6 +741,7 @@ describe("bot settings device voice menu", () => {
       model: "Model",
       readAloud: "Read replies aloud",
       voice: "Device voice",
+      dailyCheckIns: "Daily check-ins on unfinished work",
       crossSpaceCommunication: "Allow cross-space bot communication",
       fleetManagement: "Manage other bots",
     };
@@ -749,6 +763,7 @@ describe("bot settings device voice menu", () => {
       "model",
       "readAloud",
       "voice",
+      "dailyCheckIns",
       "crossSpaceCommunication",
       "fleetManagement",
     ]);

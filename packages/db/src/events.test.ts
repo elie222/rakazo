@@ -1655,8 +1655,11 @@ describe("answerRunInput", () => {
     );
   });
 
-  it("resumes an answered creation intro as the user's turn", async () => {
-    const answerIntro = async (answer: string) => {
+  it("resumes an answered creation intro or daily check-in as the user's turn", async () => {
+    const answerIntro = async (
+      answer: string,
+      opener: { trigger: string; clientNonce?: string } = { trigger: "created" },
+    ) => {
       const tx = {
         $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
         message: {
@@ -1679,7 +1682,7 @@ describe("answerRunInput", () => {
         run: {
           findFirst: vi.fn().mockResolvedValue({
             botId: "bot-2",
-            trigger: "created",
+            ...opener,
             task: { prompt: "You were just created." },
           }),
           updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -1727,6 +1730,14 @@ describe("answerRunInput", () => {
       where: { runs: { some: { id: "run-1" } } },
       data: { prompt: "Selected choice choice-2: Research and one-off tasks" },
     });
+
+    const checkIn = await answerIntro("choice-1", {
+      trigger: "routine",
+      clientNonce: "strategic-initiative:bot-2:1",
+    });
+    expect(checkIn.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ trigger: "user" }) }),
+    );
 
     const typed = await answerIntro("Track our competitors' launches");
     expect(typed.run.updateMany).toHaveBeenCalledWith(

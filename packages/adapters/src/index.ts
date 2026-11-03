@@ -178,6 +178,7 @@ export * from "./skill-tools.js";
 export * from "./slack-install-provider.js";
 export * from "./smtp-email.js";
 export * from "./storage-migration.js";
+export * from "./strategic-initiative.js";
 export * from "./stripe-billing.js";
 export { SupermemoryMemoryProvider } from "./supermemory-memory-provider.js";
 export * from "./task-catalog.js";

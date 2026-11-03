@@ -50,6 +50,7 @@ function sourceRecords(): AccountExportRecord[] {
       teamChatAmbientEnabled: false,
       teamChatRules: "",
       crossSpaceCommunication: false,
+      dailyCheckIns: false,
       fleetManagement: false,
       createdAt: at,
     },
@@ -77,6 +78,7 @@ function sourceRecords(): AccountExportRecord[] {
       teamChatAmbientEnabled: false,
       teamChatRules: "",
       crossSpaceCommunication: false,
+      dailyCheckIns: false,
       fleetManagement: true,
       createdAt: at,
     },
@@ -416,6 +418,8 @@ describePostgres("account import (PostgreSQL)", () => {
     expect(child.parentBotId).toBe(parent.id);
     expect(child.pinned).toBe(true);
     expect(child.fleetManagement).toBe(false);
+    expect(child.dailyCheckIns).toBe(false);
+    expect(parent.dailyCheckIns).toBe(false);
     expect(child.disabledBuiltinTools).toEqual(["browser"]);
     const section = await system.botSection.findFirstOrThrow({ where: { spaceId } });
     expect(child.sectionId).toBe(section.id);

@@ -2405,6 +2405,10 @@ msgstr "Customize {label}"
 msgid "Customize bot avatar"
 msgstr "Customize bot avatar"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Daily check-ins on unfinished work"
+msgstr "Daily check-ins on unfinished work"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Dark"
