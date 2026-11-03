@@ -1168,3 +1168,71 @@ it("shows a saved client as saved when the sign-in after it fails", async () => 
   expect(container.querySelector('[data-testid="mcp-oauth-client-form"]')).toBeNull();
   expect(container.textContent).not.toContain("Needs an OAuth client ID");
 });
+
+it("shows a catalog server added before its sign-in was cancelled", async () => {
+  const added = {
+    id: "tracker-server",
+    slug: "integration-1",
+    name: "Tracker",
+    description: "",
+    transport: "streamable_http",
+    endpoint: "https://mcp.tracker.example/mcp",
+    headerKeys: [],
+    enabled: true,
+    hasSecret: false,
+    oauthClientId: null,
+    health: {},
+  };
+  let servers: unknown[] = [];
+  const fallback = state.rpc.getMockImplementation();
+  state.rpc.mockImplementation((proc: string, args: unknown) => {
+    if (proc === "mcp/servers/list") return Promise.resolve(servers);
+    if (proc === "capabilities/catalogSearch")
+      return Promise.resolve({
+        enabled: true,
+        results: [
+          {
+            domain: "tracker.example",
+            name: "Tracker",
+            description: "",
+            pageUrl: null,
+            surfaces: [
+              {
+                kind: "mcp",
+                slug: "tracker",
+                source: added.endpoint,
+                auth: { type: "oauth", headerName: null, note: null },
+              },
+            ],
+          },
+        ],
+      });
+    if (proc === "mcp/servers/create") {
+      servers = [added];
+      return Promise.resolve(added);
+    }
+    return fallback?.(proc, args);
+  });
+  vi.mocked(signInToMcpServer).mockResolvedValueOnce("cancelled");
+  await render();
+  await act(async () => resolveCatalog([item]));
+  const search = container.querySelector('input[placeholder="Search apps"]') as HTMLInputElement;
+  const type = async (value: string) => {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+        search,
+        value,
+      );
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  const button = (label: string) =>
+    [...container.querySelectorAll("button")].find((node) => node.textContent === label);
+  await type("tracker");
+  await act(async () => button("Search integrations.sh")?.click());
+  await act(async () => button("Sign in")?.click());
+  await type("");
+
+  const rows = container.querySelectorAll('[data-testid="registered-mcp-server"]');
+  expect([...rows].map((row) => row.textContent?.includes("Tracker"))).toContain(true);
+});

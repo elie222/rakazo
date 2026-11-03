@@ -62,11 +62,14 @@ export function IntegrationCatalogSearch({
         list: () => rpc("mcp/servers/list"),
         create: (config) => rpc("mcp/servers/create", config),
       });
-      if ((await signInToMcpServer(row.id)) !== "cancelled") await onConnected();
+      try {
+        await signInToMcpServer(row.id);
+      } finally {
+        // The server is added whether or not sign-in finishes; show it, with any client it needs.
+        await onConnected().catch(() => undefined);
+      }
     } catch (reason) {
       setError(errorText(reason, t("Could not connect")));
-      // The server is added even when sign-in fails; show it, with any client it needs.
-      await onConnected().catch(() => undefined);
     } finally {
       setPending(null);
     }
