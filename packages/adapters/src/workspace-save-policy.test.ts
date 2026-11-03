@@ -118,9 +118,13 @@ describe.skipIf(findVersion.status !== 0 || !findVersion.stdout.includes("GNU"))
         for (const dir of ["rust/target", "odd [dir]*?/target"]) {
           await writeFile(path.join(home, dir, "CACHEDIR.TAG"), CACHE_TAG);
         }
+        // The signature counts only at the start of the tag, as the in-process walkers read it.
+        await writeFile(path.join(home, "untagged/CACHEDIR.TAG"), `note\n${CACHE_TAG}`, {
+          mode: 0o600,
+        });
         // Without the glob escaping, "odd [dir]*?/target" would also match this one.
         await mkdir(path.join(home, "odd d!/target"), { recursive: true });
-        await writeFile(path.join(home, "odd d!/target/kept.txt"), "data");
+        await writeFile(path.join(home, "odd d!/target/kept.txt"), "data", { mode: 0o600 });
         kept.push("odd d!/target/kept.txt");
         await symlink("notes.txt", path.join(home, "linked"));
         // A walk that descends into a pruned directory fails to read this subdirectory.

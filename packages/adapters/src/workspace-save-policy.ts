@@ -130,10 +130,11 @@ export function workspaceSaveFindCommand(): string {
   const find = "find . -regextype posix-extended";
   const script = [
     // Errors only cost a missed tag, which saves that directory; the second walk reports them.
+    // Like isTaggedCacheDirectory, only a tag that starts with the signature counts.
     // A name with a newline cannot be listed one per line, so its directory is kept. The home
     // itself is never pruned, and past the cap the remaining tagged directories are kept so the
     // final find's arguments stay bounded.
-    `tags=$(${find} \\( ${excluded} \\) -prune -o -name ${CACHE_DIRECTORY_TAG} -type f ! -path ./${CACHE_DIRECTORY_TAG} ! -path '*\n*' -exec grep -ls ${shellQuote(`^${CACHE_DIRECTORY_SIGNATURE}`)} {} + 2>/dev/null | head -n ${MAX_PRUNED_CACHE_DIRECTORIES} | sed -e 's|/${CACHE_DIRECTORY_TAG.replace(".", "\\.")}$||' -e 's/[][*?\\\\]/\\\\&/g')`,
+    `tags=$(${find} \\( ${excluded} \\) -prune -o -name ${CACHE_DIRECTORY_TAG} -type f ! -path ./${CACHE_DIRECTORY_TAG} ! -path '*\n*' -exec awk ${shellQuote(`FNR == 1 && index($0, "${CACHE_DIRECTORY_SIGNATURE}") == 1 { print FILENAME } { nextfile }`)} {} + 2>/dev/null | head -n ${MAX_PRUNED_CACHE_DIRECTORIES} | sed -e 's|/${CACHE_DIRECTORY_TAG.replace(".", "\\.")}$||' -e 's/[][*?\\\\]/\\\\&/g')`,
     "n=$#",
     "IFS='\n'",
     "set -f",
