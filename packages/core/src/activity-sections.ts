@@ -41,15 +41,18 @@ export function activitySections<
     ...groups.filter((group) => group.unread).map((group) => `group:${group.id}`),
   ]);
   const runUnread = (run: Run) => unreadChats.has(chatKey(run));
-  // Only a chat's latest outcome speaks for it; `recent` is newest first.
-  const seen = new Set<string>();
-  const latest = recent.filter((run) => !seen.has(chatKey(run)) && seen.add(chatKey(run)));
-  const attention = [...active, ...latest].filter(
+  // One run speaks for each chat: a question first, then live work, then the latest outcome
+  // (`recent` is newest first).
+  const byChat = new Map<string, Run>();
+  const waiting = active.filter((run) => activityAttention(run) === "needs_attention");
+  for (const run of [...waiting, ...active, ...recent]) {
+    if (!byChat.has(chatKey(run))) byChat.set(chatKey(run), run);
+  }
+  const latest = [...byChat.values()];
+  const attention = latest.filter(
     (run) => activityAttention(run, runUnread(run)) === "needs_attention",
   );
-  const working = active.filter(
-    (run) => !attention.includes(run) && activityAttention(run) === "working",
-  );
+  const working = latest.filter((run) => activityAttention(run, runUnread(run)) === "working");
   const busy = new Set([...attention, ...working].map(chatKey));
   return {
     attention,

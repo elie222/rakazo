@@ -851,7 +851,8 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                         <Text style={styles.spaceTitle}>{t("Try again.")}</Text>
                       </Pressable>
                     ) : null}
-                    {!onShareSelect && activityMode ? (
+                    {/* Folds are saved per account, so wait for it before offering them. */}
+                    {!onShareSelect && activityMode && userId ? (
                       <ActivitySection
                         activity={activity}
                         bots={visible}

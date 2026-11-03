@@ -68,3 +68,18 @@ it("judges a chat by its latest run only", () => {
   // A failure older than the fetched runs still leaves the chat under Unread.
   expect(sections.unreadBots.map((bot) => bot.id)).toEqual(["writer", "chief"]);
 });
+
+it("lets live work speak for a chat over its older outcome", () => {
+  const working = run("writer", "running");
+  const asking = run("launcher", "waiting_input", "launch");
+  const sections = activitySections({
+    active: [working, run("launcher", "running", "launch"), asking],
+    recent: [run("writer", "failed"), run("launcher", "failed", "launch")],
+    bots: [{ id: "writer", unread: true }],
+    groups: [{ id: "launch", unread: true }],
+  });
+  expect(sections.attention).toEqual([asking]);
+  expect(sections.working).toEqual([working]);
+  expect(sections.unreadBots).toEqual([]);
+  expect(sections.unreadGroups).toEqual([]);
+});
