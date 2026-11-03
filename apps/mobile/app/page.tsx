@@ -48,6 +48,8 @@ export default function PageScreen() {
 
   useEffect(() => {
     let active = true;
+    // A tap on the page before it reloads is not one on the new page.
+    tappedAt.current = null;
     setLoaded({ status: "loading" });
     void getLatestPage(pageId, { refresh: true })
       .then(async (page) => {

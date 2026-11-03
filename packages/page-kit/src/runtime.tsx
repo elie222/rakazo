@@ -29,11 +29,12 @@ declare global {
 /**
  * The policy allows inline scripts but not eval, so the compiled page runs as an inline script
  * that hands back a factory taking the page's globals as arguments. An import of React or the
- * kit, which the check allows, compiles to a require of what is already in scope.
+ * kit, which the check allows, compiles to a require of what is already in scope. The page runs
+ * in an inner function, so its own `const Steps` replaces the kit's instead of failing to load.
  */
 function loadPage(code: string): ComponentType {
   const script = document.createElement("script");
-  script.text = `window.__rakazoPageFactory=function(exports,require,${PAGE_GLOBALS.join(",")}){${code}\n};`;
+  script.text = `window.__rakazoPageFactory=function(exports,require,${PAGE_GLOBALS.join(",")}){(function(){${code}\n})()};`;
   document.head.append(script);
   script.remove();
   const factory = window.__rakazoPageFactory;

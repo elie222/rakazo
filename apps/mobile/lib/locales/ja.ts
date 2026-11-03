@@ -14,7 +14,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "This page couldn't be shown.": "このページを表示できませんでした。",
   "This page couldn't load": "このページを読み込めませんでした",
   "Only you": "自分のみ",
-  "Only you can open this page": "このページを開けるのは自分だけです",
   "Anyone with the link": "リンクを知っている全員",
   "No sign-in needed": "サインイン不要",
   "Share “{title}”": "「{title}」を共有",

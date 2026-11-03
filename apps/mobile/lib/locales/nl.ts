@@ -14,7 +14,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "This page couldn't be shown.": "Deze pagina kon niet worden weergegeven.",
   "This page couldn't load": "Deze pagina kon niet worden geladen",
   "Only you": "Alleen jij",
-  "Only you can open this page": "Alleen jij kunt deze pagina openen",
   "Anyone with the link": "Iedereen met de link",
   "No sign-in needed": "Geen aanmelding nodig",
   "Share “{title}”": "“{title}” delen",

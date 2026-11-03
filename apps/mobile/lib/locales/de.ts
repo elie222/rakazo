@@ -14,7 +14,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "This page couldn't be shown.": "Diese Seite konnte nicht angezeigt werden.",
   "This page couldn't load": "Diese Seite konnte nicht geladen werden",
   "Only you": "Nur du",
-  "Only you can open this page": "Nur du kannst diese Seite öffnen",
   "Anyone with the link": "Alle mit dem Link",
   "No sign-in needed": "Keine Anmeldung nötig",
   "Share “{title}”": "„{title}“ teilen",

@@ -14,7 +14,6 @@ export const ES_MESSAGES: Record<string, string> = {
   "This page couldn't be shown.": "No se pudo mostrar esta página.",
   "This page couldn't load": "No se pudo cargar esta página",
   "Only you": "Solo tú",
-  "Only you can open this page": "Solo tú puedes abrir esta página",
   "Anyone with the link": "Cualquiera con el enlace",
   "No sign-in needed": "No hace falta iniciar sesión",
   "Share “{title}”": "Compartir “{title}”",

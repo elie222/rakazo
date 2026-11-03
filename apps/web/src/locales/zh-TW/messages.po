@@ -4191,10 +4191,6 @@ msgstr "沒有可用的模型目錄。"
 msgid "No models listed."
 msgstr "未列出模型。"
 
-#: src/components/pages/SharePopover.tsx
-msgid "No one else can open it"
-msgstr "其他人無法開啟"
-
 #: src/pages/shell/agent-import.tsx
 msgid "No OpenClaw, Hermes or agent document found."
 msgstr "找不到 OpenClaw、Hermes 或代理程式文件。"

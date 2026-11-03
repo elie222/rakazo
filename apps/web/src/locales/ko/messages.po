@@ -4190,10 +4190,6 @@ msgstr "사용 가능한 모델 목록이 없습니다."
 msgid "No models listed."
 msgstr "나열된 모델이 없습니다."
 
-#: src/components/pages/SharePopover.tsx
-msgid "No one else can open it"
-msgstr "다른 사람은 열 수 없음"
-
 #: src/pages/shell/agent-import.tsx
 msgid "No OpenClaw, Hermes or agent document found."
 msgstr "OpenClaw, Hermes 또는 에이전트 문서를 찾지 못했습니다."

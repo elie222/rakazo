@@ -73,13 +73,12 @@ export function SharePopover({
   const shownOwner = accountDisplay(owner, t`You`);
   const [copied, copy, copyFailed] = useCopyText();
   const shared = visibility === "link";
-  const options: { value: PageVisibility; title: string; detail: string; icon: ReactNode }[] = [
+  const options: { value: PageVisibility; title: string; detail?: string; icon: ReactNode }[] = [
     {
       value: "private",
       title: t`Only you`,
       // Said where the choice is made: turning the link off breaks it for everyone holding it.
-      detail:
-        visibility === "private" ? t`No one else can open it` : t`The shared link stops working`,
+      detail: visibility === "private" ? undefined : t`The shared link stops working`,
       icon: <Lock className="size-4 text-foreground/70!" strokeWidth={1.5} />,
     },
     {
@@ -157,9 +156,11 @@ export function SharePopover({
                   <span className="truncate text-[14px] leading-5 tracking-[0.14px]">
                     {option.title}
                   </span>
-                  <span className="truncate text-[12px] leading-4 text-foreground/60">
-                    {option.detail}
-                  </span>
+                  {option.detail ? (
+                    <span className="truncate text-[12px] leading-4 text-foreground/60">
+                      {option.detail}
+                    </span>
+                  ) : null}
                 </span>
                 <RadioGroupItem value={option.value} className="mr-1.5" />
               </label>

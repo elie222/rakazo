@@ -66,6 +66,10 @@ describe("checkPageSource", () => {
       "function Script() { return <Text>x</Text>; }\nconst App = () => <Script />;",
     ],
     [
+      "its own component declared with const under a kit component's name",
+      "const Steps = () => <Text>own</Text>;\nconst App = () => <Page title='t'><Steps /></Page>;",
+    ],
+    [
       "require as a plain object key",
       "const notes = { require: 'sign-off' };\nconst App = () => <Text>{notes.require}</Text>;",
     ],

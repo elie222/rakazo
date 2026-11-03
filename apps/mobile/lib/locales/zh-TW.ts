@@ -12,7 +12,6 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "This page couldn't be shown.": "無法顯示此頁面。",
   "This page couldn't load": "無法載入此頁面",
   "Only you": "僅限你",
-  "Only you can open this page": "只有你可以開啟此頁面",
   "Anyone with the link": "任何擁有連結的人",
   "No sign-in needed": "無需登入",
   "Share “{title}”": "分享「{title}」",

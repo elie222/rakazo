@@ -14,6 +14,7 @@ const host = vi.hoisted(() => ({
   went: [] as unknown[],
   html: "",
   runtimeFails: false,
+  theme: "light",
   readError: null as unknown,
   page: {
     id: "page-1",
@@ -88,7 +89,7 @@ vi.mock("./page-runtime", () => ({ loadPageRuntime: async () => "" }));
 vi.mock("./i18n", () => ({ useI18n: () => ({ t: host.t }) }));
 vi.mock("./native", () => ({
   useMobileTokens: () => ({}),
-  useResolvedAppearance: () => "light",
+  useResolvedAppearance: () => host.theme,
 }));
 vi.mock("./pages", async (original) => ({
   ...(await original<typeof import("./pages")>()),
@@ -173,6 +174,32 @@ it("copies and opens links for a page only right after the person tapped it", as
   await attempt();
   expect(host.copied).toHaveLength(1);
   expect(host.opened).toHaveLength(1);
+  await act(async () => root.unmount());
+});
+
+it("does not let a page that reloads right after a tap act on that tap", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.spyOn(Date, "now").mockReturnValue(3_000_000);
+  host.copied = [];
+  const root = createRoot(document.createElement("div"));
+  await act(async () => root.render(createElement(PageScreen)));
+  const copy = () =>
+    act(async () => {
+      host.message?.(JSON.stringify({ type: "rakazo-page:copy", id: "a", text: "x" }), () => {});
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  host.touch.onTouchStart?.(at(10, 10));
+  host.touch.onTouchEnd?.(at(10, 10));
+  // The system switches to dark mode, so the page loads again within the same second.
+  host.theme = "dark";
+  await act(async () => root.render(createElement(PageScreen)));
+  await copy();
+  expect(host.copied).toEqual([]);
+  host.touch.onTouchStart?.(at(10, 10));
+  host.touch.onTouchEnd?.(at(10, 10));
+  await copy();
+  expect(host.copied).toEqual(["x"]);
+  host.theme = "light";
   await act(async () => root.unmount());
 });
 

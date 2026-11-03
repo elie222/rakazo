@@ -4190,10 +4190,6 @@ msgstr "אין קטלוג מודלים זמין."
 msgid "No models listed."
 msgstr "לא נמצאו מודלים ברשימה."
 
-#: src/components/pages/SharePopover.tsx
-msgid "No one else can open it"
-msgstr "אף אחד אחר לא יכול לפתוח אותו"
-
 #: src/pages/shell/agent-import.tsx
 msgid "No OpenClaw, Hermes or agent document found."
 msgstr "לא נמצאו קבצי OpenClaw, Hermes או מסמך סוכן."

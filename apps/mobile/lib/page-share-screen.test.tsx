@@ -40,8 +40,10 @@ vi.mock("../components/settings-group", () => ({
     onPress,
     accessibilityState,
     leading,
+    detail,
   }: {
     title: string;
+    detail?: string;
     onPress?: () => void;
     accessibilityState?: { checked?: boolean };
     leading?: ReactNode;
@@ -52,6 +54,7 @@ vi.mock("../components/settings-group", () => ({
         type: "button",
         onClick: onPress,
         "data-title": title,
+        "data-detail": detail,
         "aria-checked": accessibilityState?.checked,
       },
       leading,
@@ -111,6 +114,11 @@ it("shows what the server has after a lost answer, unknown if it can't say, and 
   host.server = { visibility: "private", shareUrl: null };
   const { root, row, press, checked, text } = await sheet();
   expect(checked()).toEqual(["Only you"]);
+  // A choice says only what its title does not.
+  expect([row("Only you")?.dataset.detail, row("Anyone with the link")?.dataset.detail]).toEqual([
+    undefined,
+    "No sign-in needed",
+  ]);
 
   // Turned on with the answer lost: asked again, the server says the link is on.
   host.loseAnswer = true;

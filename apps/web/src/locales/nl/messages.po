@@ -4190,10 +4190,6 @@ msgstr "Er is geen modelcatalogus beschikbaar."
 msgid "No models listed."
 msgstr "Geen modellen vermeld."
 
-#: src/components/pages/SharePopover.tsx
-msgid "No one else can open it"
-msgstr "Niemand anders kan hem openen"
-
 #: src/pages/shell/agent-import.tsx
 msgid "No OpenClaw, Hermes or agent document found."
 msgstr "Geen OpenClaw-, Hermes- of agentdocument gevonden."

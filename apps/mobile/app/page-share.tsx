@@ -122,7 +122,6 @@ export default function PageShareScreen() {
           accessibilityState={{ checked: shown === "private" }}
           disabled={state.pending !== null}
           title={t("Only you")}
-          detail={t("Only you can open this page")}
           leading={
             <NativeSymbol
               ios="lock"

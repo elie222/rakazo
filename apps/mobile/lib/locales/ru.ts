@@ -14,7 +14,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "This page couldn't be shown.": "Не удалось показать эту страницу.",
   "This page couldn't load": "Не удалось загрузить страницу",
   "Only you": "Только вы",
-  "Only you can open this page": "Только вы можете открыть эту страницу",
   "Anyone with the link": "Все, у кого есть ссылка",
   "No sign-in needed": "Вход не нужен",
   "Share “{title}”": "Поделиться «{title}»",
