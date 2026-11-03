@@ -62,7 +62,7 @@ Text props and list items accept **bold**, *italic* or _italic_, \`code\` and ba
 ### Charts
 - LineChart {points: [{label, value}], floor?, ceiling?, unit?, format?: (n) => string, labels?: [seriesName], lines?: [{label, values}], secondary?: {label, values}, annotations?: [{at: index | "zero", label}], legend?}: a trend; one series gets an area fill, lines add series, secondary adds a grey dashed comparison. A missing value leaves a gap.
 - Bars {bars: [{label, value, display?}], emphasis?: index | "none"}: horizontal bars; the longest is highlighted unless you choose. Negative values draw red.
-- Columns {points: [{label, value, display?}], emphasis?}: vertical columns with their value on top, for a few periods or categories.
+- Columns {points: [{label, value, display?}], emphasis?}: vertical columns with their value on top, for a few periods or categories; values are 0 or more, so chart losses or other negatives with Bars.
 - ColumnSeries {labels: string[], series: [{name, values}], stacked?, unit?, format?, ceiling?, reference?: {value, label}, legend?}: several series per label, side by side or stacked.
 - StackedBars {series: string[], bars: [{label, values, display?}]}: one horizontal bar per row split into named parts.
 - Pie {parts: [{label, value, display?}], total?: true | text, label?}: a donut of the parts of one whole, listed with their share; total puts the sum (or your text) in the middle over label.
