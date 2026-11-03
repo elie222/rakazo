@@ -747,8 +747,8 @@ function SidewaysScrollView({
         contentContainerStyle={{ flexGrow: measured ? 1 : 0 }}
       >
         <View
-          // iOS won't scroll while an ancestor, like a pressable bubble, holds the touch.
-          onStartShouldSetResponder={() => Platform.OS === "ios" && overflows}
+          // A table or code block won't scroll while an ancestor, like a pressable bubble, holds the touch.
+          onStartShouldSetResponder={() => overflows}
           style={
             measured
               ? { flexGrow: 1 }

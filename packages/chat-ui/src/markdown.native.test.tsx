@@ -366,7 +366,7 @@ describe("native markdown tables", () => {
   it.each([
     ["ios", SIX_COLUMN_TABLE, 200, true],
     ["ios", THREE_COLUMN_TABLE, 1000, false],
-    ["android", SIX_COLUMN_TABLE, 200, false],
+    ["android", SIX_COLUMN_TABLE, 200, true],
   ])(
     "on %s, keeps the touch inside a table only when it is wider than the bubble",
     async (os, table, width, claims) => {
