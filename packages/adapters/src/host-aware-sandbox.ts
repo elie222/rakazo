@@ -49,10 +49,10 @@ export async function createRunSandbox(
   const { prisma, secrets } = opts;
   const configured = new ConfiguredSandbox(
     base,
-    () => loadComputerProviderSelection(prisma, secrets),
+    () => loadComputerProviderSelection(prisma, secrets, true),
     {
       onSecretChange: secrets.onChange?.bind(secrets),
-      loadOwn: (homeKey) => loadComputerOwnerSettings(prisma, secrets, homeKey),
+      loadOwn: (homeKey) => loadComputerOwnerSettings(prisma, secrets, homeKey, true),
       createProvider: (settings) =>
         createBaseRunSandbox(settings.provider, {
           ...opts,

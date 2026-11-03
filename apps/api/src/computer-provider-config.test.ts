@@ -340,6 +340,15 @@ describe("an account's own computer", () => {
     ).rejects.toThrow("This deployment cannot use account computer settings");
     expect(await getAccountComputerSettings(none.deps, actor)).toMatchObject({ providers: [] });
   });
+
+  it("lets an account remove its saved desktop after the deployment stops offering one", async () => {
+    const { deps, rows } = makeAccountDeps();
+    await updateAccountComputerSettings(deps, actor, { provider: "desktop", values: testDesktop });
+    deps.env.sandboxProvider = "none";
+    expect((await getAccountComputerSettings(deps, actor)).providers.length).toBeGreaterThan(0);
+    await updateAccountComputerSettings(deps, actor, { provider: "default", values: {} });
+    expect(rows).toEqual([]);
+  });
 });
 
 // The same API sanitization checks cover every settings-configurable adapter.

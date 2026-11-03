@@ -77,16 +77,24 @@ export function parseStoredComputerSettings(plaintext: string): StoredComputerSe
     return null;
   }
 }
+/**
+ * `strict` callers route computers, so a store that cannot be read right now fails the call
+ * rather than look like a removed connection; Settings stays readable so an admin can replace it.
+ */
 async function decryptSettings(
   secrets: Pick<SecretStore, "load">,
   secret: { id: string; ciphertext: string },
+  strict: boolean,
 ) {
+  let plaintext: string;
   try {
-    const settings = parseStoredComputerSettings(await secrets.load(secret.ciphertext, secret.id));
-    return settings ? { ...settings, ciphertext: secret.ciphertext } : null;
-  } catch {
+    plaintext = await secrets.load(secret.ciphertext, secret.id);
+  } catch (error) {
+    if (strict) throw error;
     return null;
   }
+  const settings = parseStoredComputerSettings(plaintext);
+  return settings ? { ...settings, ciphertext: secret.ciphertext } : null;
 }
 export function computerSettingsForProvider(
   settings: StoredComputerSettings | null,
@@ -100,6 +108,7 @@ export function computerSettingsForProvider(
 export async function loadComputerProviderSelection(
   prisma: PrismaClient,
   secrets: Pick<SecretStore, "load">,
+  strict = false,
 ): Promise<ComputerProviderSelection> {
   const row = await runAsSystem("read the deployment's computer provider", () =>
     prisma.deploymentSettings.findUnique({
@@ -108,10 +117,14 @@ export async function loadComputerProviderSelection(
     }),
   );
   const settings = row?.computerProviderCipher
-    ? await decryptSettings(secrets, {
-        id: DEPLOYMENT_COMPUTER_PROVIDER_RECORD,
-        ciphertext: row.computerProviderCipher,
-      })
+    ? await decryptSettings(
+        secrets,
+        {
+          id: DEPLOYMENT_COMPUTER_PROVIDER_RECORD,
+          ciphertext: row.computerProviderCipher,
+        },
+        strict,
+      )
     : null;
   return {
     provider:
@@ -123,6 +136,7 @@ export async function loadAccountComputerSettings(
   prisma: PrismaClient,
   secrets: Pick<SecretStore, "load">,
   userId: string,
+  strict = false,
 ) {
   const secret = await runAsSystem("read account computer settings", () =>
     prisma.secret.findFirst({
@@ -131,7 +145,7 @@ export async function loadAccountComputerSettings(
       select: { id: true, ciphertext: true },
     }),
   );
-  const settings = secret ? await decryptSettings(secrets, secret) : null;
+  const settings = secret ? await decryptSettings(secrets, secret, strict) : null;
   return settings && computerProviderDescriptor(settings.provider).capabilities.perAccount
     ? settings
     : null;
@@ -140,12 +154,13 @@ export async function loadComputerOwnerSettings(
   prisma: PrismaClient,
   secrets: Pick<SecretStore, "load">,
   homeKey: string,
+  strict = false,
 ) {
   const computer = await runAsSystem("read computer owner", () =>
     prisma.computer.findUnique({ where: { homeKey }, select: { userId: true, scope: true } }),
   );
   return computer?.scope === "team"
-    ? loadAccountComputerSettings(prisma, secrets, computer.userId)
+    ? loadAccountComputerSettings(prisma, secrets, computer.userId, strict)
     : null;
 }
 export async function refreshComputerProvider(sandbox: SandboxProvider) {
@@ -456,7 +471,11 @@ export class ConfiguredSandbox implements SandboxProvider {
   }
 
   billsWhileRunning(computer: ComputerRef): boolean {
-    if (computer.kind === this.primary.describe().id)
+    // The primary bills its own kinds, such as a local host computer behind Docker.
+    if (
+      computer.kind === this.primary.describe().id ||
+      !computerProviderRegistry.some((entry) => entry.id === computer.kind)
+    )
       return this.primary.billsWhileRunning?.(computer) ?? false;
     for (const entry of this.providers.values()) {
       if (entry.resolved?.describe().id === computer.kind)

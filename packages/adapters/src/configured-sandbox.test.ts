@@ -226,6 +226,10 @@ describe("ConfiguredSandbox", () => {
     expect(await loadComputerProviderSelection(prisma as unknown as PrismaClient, secrets)).toEqual(
       { provider: "default", settings: null },
     );
+    // Routing never mistakes an unreadable store for a removed connection.
+    await expect(
+      loadComputerProviderSelection(prisma as unknown as PrismaClient, secrets, true),
+    ).rejects.toThrow("unable to decrypt");
   });
 
   it("reads only complete saved provider settings", () => {
@@ -348,3 +352,20 @@ vi.mock(
   "./computer-provider-registry.js",
   () => import("./fake-computer-settings.test-support.js"),
 );
+
+it("bills a kind only the primary runs the way the primary does", async () => {
+  const primary = Object.assign(new FakeSandboxProvider(), {
+    billsWhileRunning: (computer: Pick<ComputerRef, "kind">) => computer.kind !== "kubernetes",
+  });
+  const sandbox = new ConfiguredSandbox(primary, async () => ({
+    provider: "default",
+    settings: null,
+  }));
+  const local = {
+    id: "c",
+    botId: "a",
+    kind: "kubernetes",
+    providerRef: "k",
+  } as unknown as ComputerRef;
+  expect(sandbox.billsWhileRunning(local)).toBe(false);
+});

@@ -243,7 +243,8 @@ export async function getAccountComputerSettings(
     saved,
     defaultProvider,
     true,
-    accountCanChoose(defaultProvider),
+    // An account with saved keys still sees the form, so it can go back to the default.
+    accountCanChoose(defaultProvider) || Boolean(saved),
   );
 }
 
@@ -254,7 +255,8 @@ export async function updateAccountComputerSettings(
 ): Promise<ComputerProviderSettings> {
   // Those deployments run every computer on their own provider, never one chosen in Settings,
   // and one without computers has none for an account's private computers to fall back on.
-  if (!accountCanChoose(await deploymentProvider(deps)))
+  // Going back to the default stays open, so an account can always remove its saved keys.
+  if (input.provider !== "default" && !accountCanChoose(await deploymentProvider(deps)))
     throw new ORPCError("BAD_REQUEST", {
       message: "This deployment cannot use account computer settings",
     });
