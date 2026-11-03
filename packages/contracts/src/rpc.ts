@@ -153,6 +153,7 @@ import {
   IntegrationProviderConfigSchema,
   IntegrationSetupStateSchema,
 } from "./integration-settings.js";
+import { McpOAuthBeginClientSchema } from "./mcp-oauth-return.js";
 import { ModelHeadersSchema } from "./model-headers.js";
 import { ModelRoleSchema, ModelRoleUpdateSchema, ModelRoleViewSchema } from "./model-roles.js";
 import { PaymentWalletStatusSchema } from "./payments.js";
@@ -1045,7 +1046,7 @@ export const appContract = {
           z.object({
             serverId: Id,
             redirectUri: z.string().url().optional(),
-            client: BillingClientSchema,
+            client: McpOAuthBeginClientSchema,
           }),
         )
         .output(

@@ -1,3 +1,9 @@
+import * as z from "zod";
+
+/** Which client starts an MCP sign-in: the mobile app, or a browser when omitted. */
+export const McpOAuthBeginClientSchema = z.literal("mobile").optional();
+export type McpOAuthBeginClient = z.infer<typeof McpOAuthBeginClientSchema>;
+
 /** The deep link the web OAuth callback hands a mobile MCP sign-in back to. */
 export const MOBILE_MCP_OAUTH_CALLBACK_URL = "rakazo://mcp-oauth";
 /** Marks the state of an MCP sign-in the mobile app started; the app, not the browser, completes it. */
