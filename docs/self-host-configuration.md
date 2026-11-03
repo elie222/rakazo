@@ -63,6 +63,20 @@ screen lasts before control expires.
 `MODEL_STREAM_MAX_RETRIES` (0 to 5, default `1`) retries a model stream that fails partway; more
 retries let long turns survive brief provider failures.
 
+Three model timeouts take milliseconds from `1000` to `300000`; other values keep the default.
+Raise them when several bots share one model server that queues requests. Five minutes is the
+ceiling because Node's HTTP client stops waiting at that point on its own.
+
+- `MODEL_STREAM_TIMEOUT_MS` (default `120000`) is the time budget for retrying the same model. It
+  is also how long a request waits for the response to start when it uses the OpenAI Chat
+  Completions, Responses or Codex API, Anthropic Messages, Mistral or Azure OpenAI. Other APIs,
+  such as Google, Vertex AI, Bedrock and some routed models, use their client's own wait.
+- `MODEL_STREAM_IDLE_TIMEOUT_MS` (default `180000`) is how long a started response may go silent,
+  for every provider.
+- `MODEL_CONNECT_TIMEOUT_MS` (default `30000`) bounds connecting to an OpenAI-compatible model or
+  speech connection added in the app. `RAKAZO_LOCAL_MODELS` servers and built-in providers keep
+  Node's own connect wait; the other two settings apply to them as described above.
+
 ## Feature switches
 
 | Variable | Default | Effect |

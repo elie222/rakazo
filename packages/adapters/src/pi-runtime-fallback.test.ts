@@ -221,7 +221,10 @@ beforeEach(() => {
   providerState.delay.mockReset().mockResolvedValue(undefined);
 });
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
 
 describe("Pi runtime transient model retries", () => {
   it("recovers one empty idle stream after the header retry budget expires", async () => {
@@ -405,6 +408,26 @@ describe("Pi runtime transient model retries", () => {
       expect(providerState.delay).not.toHaveBeenCalled();
     },
   );
+
+  it("retries within the configured request budget", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("MODEL_STREAM_TIMEOUT_MS", "240000");
+    const pending = new AssistantMessageEventStream();
+    providerState.stream
+      .mockReturnValueOnce(pending)
+      .mockImplementation(() =>
+        stream(primary, message(primary, [{ type: "text", text: "Recovered." }], "stop")),
+      );
+    const outcome = run(request());
+    await vi.advanceTimersByTimeAsync(MODEL_STREAM_TIMEOUT_MS);
+    const failure = message(primary, [], "error", "Request timed out.");
+    pending.push({ type: "error", reason: "error", error: failure });
+    pending.end(failure);
+    expect(await outcome).toContainEqual({ type: "text", text: "Recovered." });
+    expect(providerState.stream.mock.calls[1]?.[2].timeoutMs).toBe(
+      240_000 - MODEL_STREAM_TIMEOUT_MS,
+    );
+  });
 
   it("bounds repeated early timeouts by elapsed request budget", async () => {
     vi.useFakeTimers();
