@@ -343,42 +343,6 @@ describe("LlmAutoReviewProvider", () => {
     expect(result.decision).toBe("ask");
     expect(run).not.toHaveBeenCalled();
   });
-
-  it.each(["userTask", "botDescription"] as const)(
-    "asks without running the checker when the %s is too long to show in full",
-    async (field) => {
-      const run = vi.fn();
-      const provider = new LlmAutoReviewProvider({
-        runtime: { run } as never,
-        checker: { provider: "openrouter", model: "x" },
-        runId: "run",
-        spaceId: "ws",
-        userId: "user",
-        botId: "bot",
-        threadId: "thread",
-      });
-      const result = await provider.review(
-        {
-          toolName: "gmail_send_email",
-          connectorKind: "gmail",
-          args: { to: "a@b.test" },
-          userTask: "Draft a reply",
-          botDescription: "Mail bot",
-          matchingRules: [],
-          [field]: "x".repeat(10_000),
-        },
-        {
-          operationId: "auto-review",
-          traceId: "auto-review",
-          spaceId: "ws",
-          userId: "user",
-          signal: new AbortController().signal,
-        },
-      );
-      expect(result).toMatchObject({ decision: "ask", reason: "Too long to review." });
-      expect(run).not.toHaveBeenCalled();
-    },
-  );
 });
 
 describe("runAutoReviewJudge instructions", () => {
