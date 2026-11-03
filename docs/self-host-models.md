@@ -68,7 +68,13 @@ RAKAZO_LOCAL_CONTEXT_WINDOW=32768
 RAKAZO_LOCAL_MAX_TOKENS=4096
 # Optional: model ids on this endpoint that accept images (screenshot computer tools).
 RAKAZO_LOCAL_VISION_MODELS=qwen3-vl
+# Optional: model ids on this endpoint that accept OpenAI-style reasoning_effort.
+RAKAZO_LOCAL_REASONING_MODELS=qwen3:4b
 ```
+
+A model in `RAKAZO_LOCAL_REASONING_MODELS` offers thinking levels and sends the chosen level as
+`reasoning_effort` (`medium` by default, `none` when thinking is off). Other local models never
+receive the field.
 
 `RAKAZO_LOCAL_MAX_TOKENS` is the output limit sent with every request to a local model, unless the
 connection sets its own max-tokens value. It never exceeds a quarter of
