@@ -258,7 +258,7 @@ const candidate = {
   ],
 };
 
-it("filters disabled bots in the database", async () => {
+it("filters disabled bots and bots with a pending follow-up in the database", async () => {
   const { prisma } = strategicPrisma({ bots: [{ ...candidate, dailyCheckIns: false }] });
   const { jobs, enqueue } = publisher();
   expect(await reconcileStrategicInitiatives({ prisma, jobs, now: new Date(), pageSize: 10 })).toBe(
@@ -270,6 +270,7 @@ it("filters disabled bots in the database", async () => {
         dailyCheckIns: true,
         archivedAt: null,
         space: { deletingAt: null },
+        routines: { none: { active: true, crons: { has: "@once" } } },
       }),
     }),
   );

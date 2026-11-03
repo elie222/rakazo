@@ -1,6 +1,11 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
-import { ACTIVE_RUN_STATUSES, escapePromptData, truncatePlainText } from "@rakazo/core";
+import {
+  ACTIVE_RUN_STATUSES,
+  escapePromptData,
+  ONCE_ROUTINE_CRON,
+  truncatePlainText,
+} from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { STRATEGIC_INITIATIVE_NONCE_PREFIX, spaceHasModelAccess } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -38,6 +43,8 @@ function strategicBotEligibility(now: Date): Prisma.BotWhereInput {
         updatedAt: { lte: new Date(now.getTime() - STALE_SCRATCHPAD_ITEM_MS) },
       },
     },
+    // A bot that already set itself a follow-up will be woken by it.
+    routines: { none: { active: true, crons: { has: ONCE_ROUTINE_CRON } } },
     runs: {
       none: {
         OR: [
