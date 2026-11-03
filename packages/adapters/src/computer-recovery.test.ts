@@ -109,7 +109,6 @@ function objectHome(root: string, revision: string | null = null) {
       return true;
     },
     revisions: async () => new Map(),
-    hasComputers: async () => true,
     kinds: async () => new Map(),
   };
   const host = (dir: string) => new ObjectAgentHomeStore(path.join(root, dir), storage, records);

@@ -100,11 +100,11 @@ describe("day-one referral email", () => {
     expect(f.createMany).not.toHaveBeenCalled();
   });
 
-  it("runs at startup and hourly without overlapping sweeps", async () => {
+  it("runs at startup and hourly without overlapping sweeps, aborting the running one on stop", async () => {
     vi.useFakeTimers();
     let finish: () => void = () => {};
     const sweep = vi.fn(
-      () =>
+      (_signal: AbortSignal) =>
         new Promise<void>((resolve) => {
           finish = resolve;
         }),
@@ -116,7 +116,10 @@ describe("day-one referral email", () => {
     finish();
     await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
     expect(sweep).toHaveBeenCalledTimes(2);
+    const signal = sweep.mock.calls[1]![0];
+    const stopped = stop();
+    expect(signal.aborted).toBe(true);
     finish();
-    await stop();
+    await stopped;
   });
 });

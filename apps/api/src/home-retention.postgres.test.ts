@@ -34,13 +34,13 @@ describePostgres("saved home retention (PostgreSQL)", () => {
     userId: "test",
     signal: new AbortController().signal,
   };
-  const sweep = () =>
+  const sweep = (signal = new AbortController().signal) =>
     homeRetentionSweep({
       prisma,
       email,
       appUrl: "https://app.example.test/app",
       onError: (error) => errors.push(error),
-    })();
+    })(signal);
   const travel = (days: number) => {
     now += days * DAY;
     vi.setSystemTime(now);
@@ -162,7 +162,7 @@ describePostgres("saved home retention (PostgreSQL)", () => {
         organizationId: id,
         customerId: `cus-${id}`,
         status: "active",
-        subscribedAt: new Date(now - 200 * DAY),
+        paidAt: new Date(now - 200 * DAY),
       },
     });
     await sweep();
@@ -200,7 +200,7 @@ describePostgres("saved home retention (PostgreSQL)", () => {
         organizationId: id,
         customerId: `cus-${id}`,
         status: "canceled",
-        subscribedAt: new Date(now - 200 * DAY),
+        paidAt: new Date(now - 200 * DAY),
         endedAt: new Date(now - 100 * DAY),
       },
     });
@@ -281,7 +281,7 @@ describePostgres("saved home retention (PostgreSQL)", () => {
         organizationId: id,
         customerId: `cus-${id}`,
         status: "canceled",
-        subscribedAt: new Date(now - 200 * DAY),
+        paidAt: new Date(now - 200 * DAY),
         endedAt: new Date(now - 100 * DAY),
       },
     });
@@ -308,7 +308,7 @@ describePostgres("saved home retention (PostgreSQL)", () => {
           organizationId: id,
           customerId: `cus-${id}`,
           status: "active",
-          subscribedAt: new Date(),
+          paidAt: new Date(),
         },
       });
       return rows;
@@ -319,6 +319,63 @@ describePostgres("saved home retention (PostgreSQL)", () => {
     expect(errors).toEqual([]);
     expect((await computer()).homeStorageId).not.toBeNull();
     expect(await objects()).toHaveLength(1);
+  });
+
+  it("keeps the files when a payment commits while the deletion waits for it", async () => {
+    await system.billingAccount.create({
+      data: {
+        organizationId: id,
+        customerId: `cus-${id}`,
+        status: "canceled",
+        paidAt: new Date(now - 200 * DAY),
+        endedAt: new Date(now - 100 * DAY),
+      },
+    });
+    await sweep();
+    expect(sent()).toHaveLength(1);
+    travel(9);
+    let commit!: () => void;
+    const held = new Promise<void>((resolve) => {
+      commit = resolve;
+    });
+    let updated!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      updated = resolve;
+    });
+    const payment = system.$transaction(
+      async (tx) => {
+        await tx.billingAccount.update({
+          where: { organizationId: id },
+          data: { status: "active", endedAt: null },
+        });
+        updated();
+        await held;
+      },
+      { timeout: 20_000 },
+    );
+    await pending;
+    const swept = sweep();
+    for (;;) {
+      const [{ waiting }] = await system.$queryRaw<[{ waiting: number }]>`
+        SELECT count(*)::int AS waiting FROM pg_stat_activity
+        WHERE wait_event_type = 'Lock' AND query LIKE '%billing_accounts%FOR SHARE%'`;
+      if (waiting) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    commit();
+    await payment;
+    await swept;
+    expect(errors).toEqual([]);
+    expect((await computer()).homeStorageId).not.toBeNull();
+    expect(await objects()).toHaveLength(1);
+  });
+
+  it("stops before warning once the sweep is aborted", async () => {
+    const stopping = new AbortController();
+    stopping.abort();
+    await sweep(stopping.signal);
+    expect(sent()).toHaveLength(0);
+    expect(await system.homeDeletionNotice.count({ where: { computerId: id } })).toBe(0);
   });
 
   it("does not send a warning when the computer is used after the scan read it", async () => {

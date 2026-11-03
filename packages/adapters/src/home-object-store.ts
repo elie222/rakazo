@@ -60,8 +60,6 @@ export interface AgentHomeRecords {
   advance(homeKey: string, storageId: string, from: string | null, to: string): Promise<boolean>;
   /** The current revision of each storage id that still belongs to a home. */
   revisions(storageIds: readonly string[]): Promise<Map<string, string | null>>;
-  /** Whether the database holds any computer, stored home or not. */
-  hasComputers(): Promise<boolean>;
   /** The computer kind of each home that still has a computer. */
   kinds(homeKeys: readonly string[]): Promise<Map<string, string>>;
 }
@@ -448,10 +446,9 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
       found.set(storageId, [...(found.get(storageId) ?? []), { ...object, revision }]);
     }
     const current = await this.records.revisions([...found.keys()]);
-    // A database with no computers at all is more likely the wrong database (or one this process
-    // cannot read) than one whose every computer was deleted. Retention can clear the last stored
-    // home while its computer remains, so that case is still swept.
-    if (found.size > 0 && current.size === 0 && !(await this.records.hasComputers())) {
+    // A database that knows none of the stored homes is more likely the wrong database (or
+    // one this process cannot read) than one whose every home was deleted.
+    if (found.size > 0 && current.size === 0) {
       getLogger().warn("home.storage.sweep_skipped", { "home.objects.unknown": found.size });
       return 0;
     }
@@ -618,13 +615,6 @@ export class PrismaAgentHomeRecords implements AgentHomeRecords {
       for (const row of rows) kinds.set(row.homeKey, row.kind);
     }
     return kinds;
-  }
-
-  async hasComputers() {
-    const row = await runAsSystem("check the database holds computers", () =>
-      this.prisma.computer.findFirst({ select: { id: true } }),
-    );
-    return row !== null;
   }
 
   async revisions(storageIds: readonly string[]) {

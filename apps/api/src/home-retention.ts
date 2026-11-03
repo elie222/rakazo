@@ -19,7 +19,7 @@ const NO_CREDITS = { mode: null, balanceMicros: 0n, byokFreeUntil: null };
 type Account = {
   billing: {
     status: string | null;
-    subscribedAt: Date | null;
+    paidAt: Date | null;
     endedAt: Date | null;
     currentPeriodEndsAt: Date | null;
     updatedAt: Date;
@@ -37,13 +37,14 @@ type Warning = {
 
 /**
  * When a computer's saved home becomes due for deletion: 30 days after a paid plan ended, or
- * 90 days unused without one. Use since then moves it later. Null while the organization can
- * run bots (a plan, credits or a free period) or owes a payment.
+ * 90 days unused without one (a trial that never paid counts as none). Use since then moves it
+ * later. Null while the organization can run bots (a plan, credits or a free period) or owes a
+ * payment.
  */
 export function homeDeletionDue(account: Account, lastUsedAt: Date, now = new Date()): Due | null {
   if (planIsLive(account, now)) return null;
   const { billing } = account;
-  if (billing?.subscribedAt) {
+  if (billing?.paidAt) {
     const ended = billing.endedAt ?? billing.currentPeriodEndsAt ?? billing.updatedAt;
     return { at: addDays(latest(ended, lastUsedAt), PLAN_ENDED_DAYS), reason: "plan-ended" };
   }
@@ -77,10 +78,13 @@ interface HomeRetentionDeps {
  * worker's storage sweep then removes the unowned objects. The computer row and its provider
  * reference stay, so a provider that keeps its own disk resumes it; any other computer, or one
  * whose provider copy has expired, starts empty next time. Docker computers are skipped: they
- * work in a host's cached copy, which the stored home backs up.
+ * work in a host's cached copy, which the stored home backs up. Aborting stops it between
+ * emails and deletions; the next sweep picks up the rest.
  */
-export function homeRetentionSweep(deps: HomeRetentionDeps): () => Promise<void> {
-  return () =>
+export function homeRetentionSweep(
+  deps: HomeRetentionDeps,
+): (signal: AbortSignal) => Promise<void> {
+  return (signal) =>
     runAsSystem("delete saved homes past retention", async () => {
       const { prisma } = deps;
       await prisma.homeDeletionNotice.deleteMany({
@@ -88,13 +92,14 @@ export function homeRetentionSweep(deps: HomeRetentionDeps): () => Promise<void>
       });
       const warnings = new Map<string, Warning>();
       let cursor: string | undefined;
-      for (;;) {
+      while (!signal.aborted) {
         const now = new Date();
         const computers = await dueDates(prisma, {}, now, cursor);
         for (const { id, userId, organizationId, notice, due } of computers) {
           // The deletion keeps the date the email gave, unless something since moved it later.
           if (notice?.warnedAt && notice.deleteAfter && due && due.at <= notice.deleteAfter) {
-            if (notice.deleteAfter <= now) await removeHome(prisma, id).catch(deps.onError);
+            if (notice.deleteAfter <= now && !signal.aborted)
+              await removeHome(prisma, id).catch(deps.onError);
             continue;
           }
           const warnable = due && due.at.getTime() <= now.getTime() + WARNING_DAYS * DAY_MS;
@@ -119,7 +124,10 @@ export function homeRetentionSweep(deps: HomeRetentionDeps): () => Promise<void>
         cursor = computers.at(-1)?.id;
       }
       // One at a time: a burst would trip the email provider's rate limit.
-      for (const group of warnings.values()) await warn(deps, group).catch(deps.onError);
+      for (const group of warnings.values()) {
+        if (signal.aborted) return;
+        await warn(deps, group).catch(deps.onError);
+      }
     });
 }
 
@@ -142,7 +150,7 @@ async function dueDates(db: Db, where: Prisma.ComputerWhereInput, now: Date, cur
               billing: {
                 select: {
                   status: true,
-                  subscribedAt: true,
+                  paidAt: true,
                   endedAt: true,
                   currentPeriodEndsAt: true,
                   updatedAt: true,
@@ -266,6 +274,12 @@ async function warn(deps: HomeRetentionDeps, group: Warning) {
           })
         : null;
     if (!user) {
+      if (due.length)
+        getLogger().warn("home.retention.no_recipient", {
+          "organization.id": group.organizationId,
+          "home.retention.reason": group.reason,
+          "home.retention.computers": due.length,
+        });
       await release();
       return;
     }
@@ -284,13 +298,27 @@ async function warn(deps: HomeRetentionDeps, group: Warning) {
 
 /**
  * Clears the computer's stored home in one transaction that locks the computer and its notice
- * and reads eligibility again, so a start, a run or a plan that lands first cancels it.
+ * and reads eligibility again, so a start, a run or a plan that lands first cancels it. It also
+ * locks the organization's billing and credit rows, and the organization row itself, which a new
+ * billing or credit account's foreign key check waits on, so a payment either lands before the
+ * read or waits for the deletion to commit.
  */
 async function removeHome(prisma: PrismaClient, computerId: string) {
   const removed = await prisma.$transaction(async (tx) => {
+    const [locked] = await tx.$queryRaw<Array<{ organizationId: string }>>`
+      SELECT s."organizationId" FROM computers c
+      JOIN home_deletion_notices n ON n."computerId" = c.id
+      JOIN spaces s ON s.id = c."spaceId"
+      WHERE c.id = ${computerId} FOR UPDATE OF c, n`;
+    if (!locked) return false;
+    const { organizationId } = locked;
+    await tx.$queryRaw`SELECT id FROM organization WHERE id = ${organizationId} FOR UPDATE`;
     await tx.$queryRaw`
-      SELECT c.id FROM computers c JOIN home_deletion_notices n ON n."computerId" = c.id
-      WHERE c.id = ${computerId} FOR UPDATE`;
+      SELECT "organizationId" FROM billing_accounts WHERE "organizationId" = ${organizationId}
+      FOR SHARE`;
+    await tx.$queryRaw`
+      SELECT "organizationId" FROM model_credit_accounts
+      WHERE "organizationId" = ${organizationId} FOR SHARE`;
     const now = new Date();
     const [computer] = await dueDates(
       tx,
