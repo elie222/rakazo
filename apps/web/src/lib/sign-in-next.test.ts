@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { signInNext } from "./sign-in-next.js";
+import { newAccountDestination, signInNext } from "./sign-in-next.js";
 
 it("returns to integration setup, plugin admin, MCP sign-in and invite links only", () => {
   expect(signInNext("/integrations/setup")).toBe("/integrations/setup");
@@ -14,4 +14,10 @@ it("returns to integration setup, plugin admin, MCP sign-in and invite links onl
   expect(signInNext("//example.com/invite/abc")).toBeNull();
   expect(signInNext("/invite/abc/../../app")).toBeNull();
   expect(signInNext("/invite/")).toBeNull();
+});
+
+it("starts a new account in onboarding unless it came for an invite", () => {
+  expect(newAccountDestination("/invite/abc_DEF-123")).toBe("/invite/abc_DEF-123");
+  expect(newAccountDestination("/integrations/setup")).toBe("/onboarding");
+  expect(newAccountDestination(null)).toBe("/onboarding");
 });

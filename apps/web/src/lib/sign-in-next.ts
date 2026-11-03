@@ -19,3 +19,8 @@ export function signInNext(next: string | null): string | null {
   }
   return null;
 }
+
+/** Where a new account starts: an invite it came for, otherwise onboarding. */
+export function newAccountDestination(next: string | null): string {
+  return next && INVITE_PATH.test(next) ? next : "/onboarding";
+}

@@ -21,6 +21,9 @@ export function speakerName(name: string): string {
   return clean.toLowerCase() === USER_SPEAKER.toLowerCase() ? `${USER_SPEAKER} (bot)` : clean;
 }
 
+/** A display name is free text; a label only needs to tell people apart. */
+const PERSON_NAME_MAX = 64;
+
 /**
  * A person's name as it appears in a label in a space several people share: the same cleaning
  * as a bot's, so a name cannot fake another speaker's label.
@@ -30,7 +33,8 @@ export function personSpeakerName(name: string): string {
     name
       .replace(/[[\]]/g, (bracket) => (bracket === "[" ? "(" : ")"))
       .replace(/\s+/g, " ")
-      .trim() || USER_SPEAKER
+      .trim()
+      .slice(0, PERSON_NAME_MAX) || USER_SPEAKER
   );
 }
 

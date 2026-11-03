@@ -39,6 +39,7 @@ import {
 } from "./lib/session-gate";
 import {
   MCP_OAUTH_CALLBACK_PATH,
+  newAccountDestination,
   SLACK_INSTALL_CALLBACK_PATH,
   signInNext,
 } from "./lib/sign-in-next";
@@ -201,7 +202,7 @@ function SessionApp() {
                 path="/sign-up"
                 element={
                   user ? (
-                    <Navigate to={next ?? "/onboarding"} replace />
+                    <Navigate to={newAccountDestination(next)} replace />
                   ) : (
                     <AuthPage key="up" mode="up" />
                   )

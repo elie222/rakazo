@@ -52,7 +52,7 @@ async function threadsForDecision(
   // Threads are shared by the space, but a card is about one member's own server:
   // only that member resolves it.
   const server = await deps.prisma.mcpServer.findFirst({
-    where: { id: input.serverId, spaceId: actor.spaceId, userId: actor.userId },
+    where: { id: input.serverId, ...availableInSpace(actor) },
     select: { id: true },
   });
   if (!server) return [];

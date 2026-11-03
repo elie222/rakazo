@@ -334,7 +334,15 @@ describe("resolveMcpApprovalCards", () => {
       threadId: "group-thread",
     });
     expect(deps.prisma.mcpServer.findFirst).toHaveBeenCalledWith({
-      where: { id: "srv-a", spaceId: "space", userId: "user" },
+      where: {
+        id: "srv-a",
+        userId: "user",
+        OR: [
+          { spaceId: "space" },
+          { allSpaces: true },
+          { availableIn: { some: { spaceId: "space" } } },
+        ],
+      },
       select: { id: true },
     });
     expect(deps.prisma.thread.findMany).not.toHaveBeenCalled();
