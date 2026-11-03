@@ -5128,6 +5128,10 @@ msgstr "キーを置き換え"
 msgid "Replace value"
 msgstr "値を置き換え"
 
+#: src/components/AskCard.tsx
+msgid "Replaces the login saved for {replacedSite}"
+msgstr "{replacedSite} に保存されたログインを置き換えます"
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
 msgstr "返信対象"

@@ -139,6 +139,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     credential: botSecretDestinationSchema({ allowPrivateHttpOrigin: true }).optional(),
     /** A texted or emailed code for this site's page; answered once, never saved. */
     oneTimeCode: OneTimeCodeTarget.optional(),
+    /** On a login card, the saved login this card replaces and the site it is saved for. */
+    replaces: z.object({ id: z.string().max(64), origin: z.string().max(2048) }).optional(),
     /** The fields a login card asks for, by label; absent means DEFAULT_LOGIN_FIELD_LABELS. */
     loginFields: LoginFieldLabels.optional(),
     /** On a fetch approval, the site an "always" answer allows. */

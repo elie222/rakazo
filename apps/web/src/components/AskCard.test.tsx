@@ -669,3 +669,26 @@ it("keeps one-time-code autofill off the other secret cards", async () => {
   await render(secretCard);
   expect(container.querySelector<HTMLInputElement>("input")!.autocomplete).toBe("off");
 });
+
+it("shows the site a replace card moves the login from only to the person answering it", async () => {
+  const replaced = "https://www.example.test";
+  const render = (canDismiss: boolean, status: AskBlock["status"] = "pending") =>
+    act(async () =>
+      root.render(
+        <AskCard
+          block={{ ...loginCard, status, replaces: { id: "saved-login-1", origin: replaced } }}
+          canAnswer
+          canDismiss={canDismiss}
+          onAnswer={async () => {}}
+          onDismiss={async () => {}}
+        />,
+      ),
+    );
+
+  await render(true);
+  expect(container.textContent).toContain(`Replaces the login saved for ${replaced}`);
+  await render(false);
+  expect(container.textContent).not.toContain(replaced);
+  await render(true, "answered");
+  expect(container.textContent).not.toContain(replaced);
+});

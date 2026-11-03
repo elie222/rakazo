@@ -5128,6 +5128,10 @@ msgstr "키 교체"
 msgid "Replace value"
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "Replaces the login saved for {replacedSite}"
+msgstr "{replacedSite}에 저장된 로그인을 대체합니다"
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
 msgstr "응답 대상"

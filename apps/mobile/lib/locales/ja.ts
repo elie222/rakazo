@@ -705,6 +705,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Always allow": "常に許可",
   "Always allow this tool": "このツールを常に許可",
   "Always allow {site}": "{site} を常に許可",
+  "Replaces the login saved for {site}": "{site} に保存されたログインを置き換えます",
   "Could not submit answer": "回答を送信できませんでした",
   Deny: "拒否",
   "Please try again.": "もう一度お試しください。",

@@ -5128,6 +5128,10 @@ msgstr "Remplacer la clé"
 msgid "Replace value"
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "Replaces the login saved for {replacedSite}"
+msgstr "Remplace l’identifiant enregistré pour {replacedSite}"
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
 msgstr "Répond à"

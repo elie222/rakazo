@@ -124,6 +124,11 @@ export function AskBlock({
       {secretInput && destination ? (
         <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }}>{destination}</Text>
       ) : null}
+      {secretInput && ask.replaces && !ownerOnly && !answered ? (
+        <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }}>
+          {t("Replaces the login saved for {site}", { site: ask.replaces.origin })}
+        </Text>
+      ) : null}
       {ask.detail && (!secretInput || ask.oneTimeCode) ? (
         <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }}>{ask.detail}</Text>
       ) : null}
@@ -224,6 +229,7 @@ export function AskBlock({
         <SecretAskSheet
           title={plainAskTitle(ask.text)}
           destination={secretDestinationLabel(ask.credential)}
+          replacedSite={ask.replaces?.origin}
           // Once any save is accepted, or the viewer is no longer the run's user, the open sheet
           // clears its own fields, then closes itself.
           pending={canAnswer && !answered && !ownerOnly}

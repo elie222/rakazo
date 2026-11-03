@@ -718,6 +718,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Always allow": "Altijd toestaan",
   "Always allow this tool": "Deze tool altijd toestaan",
   "Always allow {site}": "{site} altijd toestaan",
+  "Replaces the login saved for {site}": "Vervangt de opgeslagen login voor {site}",
   "Could not submit answer": "Antwoord insturen mislukt",
   Deny: "Weigeren",
   "Please try again.": "Probeer het opnieuw.",

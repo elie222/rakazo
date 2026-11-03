@@ -5128,6 +5128,10 @@ msgstr "Anahtarı değiştir"
 msgid "Replace value"
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "Replaces the login saved for {replacedSite}"
+msgstr "{replacedSite} için kayıtlı girişin yerini alır"
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
 msgstr "Yanıt verdiği"

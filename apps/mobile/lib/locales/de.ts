@@ -721,6 +721,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Always allow": "Immer erlauben",
   "Always allow this tool": "Dieses Tool immer erlauben",
   "Always allow {site}": "{site} immer erlauben",
+  "Replaces the login saved for {site}": "Ersetzt die für {site} gespeicherte Anmeldung",
   "Could not submit answer": "Antwort konnte nicht gesendet werden",
   Deny: "Ablehnen",
   "Please try again.": "Versuche es erneut.",
