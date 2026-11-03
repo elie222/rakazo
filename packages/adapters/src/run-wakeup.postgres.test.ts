@@ -353,6 +353,102 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
     }
   });
 
+  it("frees a computer held for a takeover by a run that was deleted or ended", async () => {
+    const computer = await system.computer.create({
+      data: {
+        spaceId: identity.spaceId,
+        userId: identity.userId,
+        scopeKey: `dispatch-abandoned-${randomUUID()}`,
+        homeKey: `dispatch-abandoned-${randomUUID()}`,
+        kind: "fake",
+      },
+    });
+    const bot = await system.bot.update({
+      where: { id: identity.botId },
+      data: { computerId: computer.id },
+    });
+    const otherBot = (name: string) =>
+      system.bot.create({
+        data: {
+          spaceId: identity.spaceId,
+          userId: identity.userId,
+          name,
+          color: "test",
+          computerId: computer.id,
+        },
+      });
+    const ended = await otherBot("Ended");
+    const booting = await otherBot("Booting");
+    const cancelled = await system.run.update({
+      where: { id: (await createRun({ status: "cancelled" })).id },
+      data: { botId: ended.id },
+    });
+    const day = new Date(Date.now() + 24 * 60 * 60_000);
+    // Leases name their run without a relation, so deleting the run leaves the hold behind.
+    const orphan = await system.computerExecutionLease.create({
+      data: {
+        computerId: computer.id,
+        botId: bot.id,
+        runId: randomUUID(),
+        fence: 4,
+        expiresAt: day,
+      },
+    });
+    const stale = await system.computerExecutionLease.create({
+      data: { computerId: computer.id, botId: ended.id, runId: cancelled.id, expiresAt: day },
+    });
+    // A computer operation holds a short lease under an id that is not a run.
+    const operation = await system.computerExecutionLease.create({
+      data: {
+        computerId: computer.id,
+        botId: booting.id,
+        runId: `boot:${randomUUID()}`,
+        expiresAt: new Date(Date.now() + 5 * 60_000),
+      },
+    });
+    const reply = await createRun();
+    const endedReply = await system.run.update({
+      where: { id: (await createRun()).id },
+      data: { botId: ended.id },
+    });
+    const bootingReply = await system.run.update({
+      where: { id: (await createRun()).id },
+      data: { botId: booting.id },
+    });
+    const fanout = new InMemoryRealtimeFanout();
+    const host = new RunWorkerHost(db.prisma, fanout, new RunStarter(fanout), { intervalMs: 25 });
+    const entered: string[] = [];
+    try {
+      await host.start({
+        "run.continue": async ({ runId }) => {
+          entered.push(runId);
+          await system.run.update({ where: { id: runId }, data: { status: "completed" } });
+        },
+      } as BackgroundJobHandlers);
+      await wait(() => expect(entered).toEqual(expect.arrayContaining([reply.id, endedReply.id])));
+      expect(entered).not.toContain(bootingReply.id);
+      // Expired as tombstones, so the next lease on each still raises the fence.
+      expect(
+        await system.computerExecutionLease.findUniqueOrThrow({ where: { id: orphan.id } }),
+      ).toMatchObject({ fence: 4, expiresAt: new Date(0) });
+      expect(
+        await system.computerExecutionLease.findUniqueOrThrow({ where: { id: stale.id } }),
+      ).toMatchObject({ expiresAt: new Date(0) });
+      expect(
+        await system.computerExecutionLease.findUniqueOrThrow({ where: { id: operation.id } }),
+      ).toMatchObject({ expiresAt: operation.expiresAt });
+    } finally {
+      await host.stop();
+      await system.run.updateMany({
+        where: { id: { in: [reply.id, endedReply.id, bootingReply.id] } },
+        data: { status: "cancelled" },
+      });
+      await system.computerExecutionLease.deleteMany({
+        where: { id: { in: [orphan.id, stale.id, operation.id] } },
+      });
+    }
+  });
+
   it("recovers an unnotified commit, deduplicates competing workers and drains active runs", async () => {
     const run = await createRun();
     const realtime = new InMemoryRealtimeFanout();

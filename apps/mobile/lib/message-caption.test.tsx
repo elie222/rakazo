@@ -13,6 +13,10 @@ const linking = vi.hoisted(() => ({
   openURL: vi.fn(async () => undefined),
 }));
 
+// Only drawn for a sent mention, which these tests do not use.
+vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
+vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+
 vi.mock("react-native", () => {
   function View({ children }: { children?: ReactNode }) {
     return createElement("div", null, children);

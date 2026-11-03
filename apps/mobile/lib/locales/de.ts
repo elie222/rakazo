@@ -1,4 +1,5 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "Daily check-ins on unfinished work": "Tägliche Rückfragen zu offenen Aufgaben",
   "How other bots see it": "So sehen andere Bots ihn",
   "Share to": "Teilen mit",
   "{count} files": "{count} Dateien",
@@ -211,6 +212,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Custom server {host}": "Eigener Server {host}",
   "Don’t have an account?": "Du hast noch kein Konto?",
   Email: "E-Mail",
+  "Did you mean {email}?": "Meintest du {email}?",
   "Forgot password?": "Passwort vergessen?",
   "Loading…": "Wird geladen…",
   Password: "Passwort",
@@ -271,6 +273,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "Genehmige diesen Server, damit dein Agent seine Tools nutzen kann.",
   "Answered: {answer}": "Beantwortet: {answer}",
+  "Only enter a code {host} sent you.": "Gib nur einen Code ein, den {host} dir geschickt hat.",
   Archive: "Archivieren",
   Attach: "Anhängen",
   "Attach file": "Datei anhängen",
@@ -298,6 +301,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not share image": "Bild konnte nicht geteilt werden",
   "Loading image…": "Bild wird geladen…",
   "Open image {name}": "Bild {name} öffnen",
+  "Open {name}": "{name} öffnen",
   "Tap to open": "Zum Öffnen tippen",
   "Could not open message": "Nachricht konnte nicht geöffnet werden",
   "Could not send answer": "Antwort konnte nicht gesendet werden",
@@ -1002,6 +1006,12 @@ export const DE_MESSAGES: Record<string, string> = {
   "Your trial ends and your card is charged today.":
     "Dein Testzeitraum endet und deine Karte wird heute belastet.",
   "Start plan": "Plan starten",
+  "Switch to yearly": "Zu jährlich wechseln",
+  "Switch to yearly?": "Zu jährlich wechseln?",
+  "Your card is charged {price} today, less the unused part of this month.":
+    "Deine Karte wird heute mit {price} belastet, abzüglich des ungenutzten Teils dieses Monats.",
+  "Your plan becomes {price} / year when your trial ends.":
+    "Nach dem Testzeitraum kostet dein Plan {price} / Jahr.",
   "Monthly credits": "Monatliches Guthaben",
   "Upgrade now": "Jetzt upgraden",
   "Downgrade at renewal": "Bei Verlängerung downgraden",

@@ -30,11 +30,24 @@ const TEST_NETWORK = { resolveHostname: async () => [{ address: "203.0.113.10", 
 function pipedreamMcpFetch(
   toolsByApp: Record<string, string[]>,
   calls: Array<{ app: string | null; name: string; args: unknown }> = [],
+  remoteAccountIds: string[] = [],
 ) {
   return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const request = input instanceof Request ? input : new Request(input, init);
-    if (new URL(request.url).pathname === "/v1/oauth/token") {
+    const url = new URL(request.url);
+    if (url.pathname === "/v1/oauth/token") {
       return Response.json({ access_token: "fake-access-token", expires_in: 3_600 });
+    }
+    if (url.pathname.endsWith("/accounts")) {
+      const slug = url.searchParams.get("app") ?? "";
+      return Response.json({
+        data: remoteAccountIds.map((id) => ({
+          id,
+          healthy: true,
+          app: { id: `app-${slug}`, name_slug: slug, name: slug },
+        })),
+        page_info: {},
+      });
     }
     const app = request.headers.get("x-pd-app-slug");
     const message = JSON.parse(await request.text()) as {
@@ -480,7 +493,9 @@ describe("PipedreamConnector", () => {
     }
 
     const index = (events[0] as { data?: { index?: Array<{ group: string }> } })?.data?.index;
-    expect(index?.map((entry) => entry.group).sort()).toEqual([...apps].sort());
+    expect(index?.map((entry) => entry.group).sort()).toEqual(
+      apps.map((app) => `${app} (${app}; connection-${app})`).sort(),
+    );
     expect(index).toHaveLength(21);
   });
 
@@ -529,8 +544,11 @@ describe("PipedreamConnector", () => {
         type: "result",
         data: {
           index: [
-            { group: "gmail", names: ["list_threads", "send_email"] },
-            { group: "slack", names: expect.arrayContaining(["slack_tool_0"]) },
+            { group: "gmail (gmail; connection-gmail)", names: ["list_threads", "send_email"] },
+            {
+              group: "slack (slack; connection-slack)",
+              names: expect.arrayContaining(["slack_tool_0"]),
+            },
           ],
         },
       },
@@ -547,7 +565,7 @@ describe("PipedreamConnector", () => {
     const execute = (await connector.discoverTools(context)).at(-1)!;
     const call = {
       tool: execute.name,
-      args: { id: "gmail:send_email", arguments: { text: "hello" } },
+      args: { id: "gmail:connection-gmail:send_email", arguments: { text: "hello" } },
       executionId: "execute",
       route: execute.route,
     };
@@ -555,7 +573,7 @@ describe("PipedreamConnector", () => {
     await expect(connector.resolveCall(call, context)).resolves.toEqual(
       expect.objectContaining({
         call: expect.objectContaining({
-          tool: "send_email",
+          tool: expect.stringMatching(/^send_email__/),
           args: { text: "hello" },
           route: expect.objectContaining({ resourceId: "gmail", toolName: "send_email" }),
         }),
@@ -587,10 +605,100 @@ describe("PipedreamConnector", () => {
     };
   }
 
+  it("resolves an old watch action only for a single connected account", async () => {
+    const connector = new PipedreamConnector(FAKE_CONFIG, {
+      ...TEST_NETWORK,
+      fetch: pipedreamMcpFetch({ gmail: ["send_email"] }),
+    });
+    const call = { tool: "send_email", args: { text: "hello" }, executionId: "watch" };
+    expect(
+      (await connector.resolveCall(call, gmailContext("apn_work")))?.call.route?.connectionId,
+    ).toBe("connection-0");
+    expect(await connector.resolveCall(call, gmailContext("apn_work", "apn_home"))).toBeUndefined();
+  });
+
+  it("discovers each account's own tools and keeps a healthy sibling when one fails", async () => {
+    const healthy = pipedreamMcpFetch({ gmail: ["send_email"] });
+    let failWork = false;
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const request = new Request(input, init);
+      const account = request.headers.get("x-pd-account-id");
+      if (failWork && account === "apn_work") return new Response("unavailable", { status: 503 });
+      const method = account
+        ? (
+            await request
+              .clone()
+              .json()
+              .catch(() => ({}))
+          ).method
+        : undefined;
+      const response = await healthy(request);
+      if (account && method === "tools/list") {
+        const body = await response.json();
+        body.result.tools[0].inputSchema.properties.text.description = `schema-${account}`;
+        return Response.json(body);
+      }
+      return response;
+    });
+    const connector = new PipedreamConnector(FAKE_CONFIG, { ...TEST_NETWORK, fetch });
+    const ctx = gmailContext("apn_work", "apn_home");
+    const tools = await connector.discoverTools(ctx);
+    expect(tools).toHaveLength(2);
+    expect(JSON.stringify(tools[0]?.inputSchema)).toContain("schema-apn_work");
+    expect(JSON.stringify(tools[1]?.inputSchema)).toContain("schema-apn_home");
+    failWork = true;
+    const remaining = await connector.discoverTools(ctx);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.name).toBe(tools[1]?.name);
+  });
+
+  it.each(["gmail", "google_calendar"])(
+    "keeps both %s accounts distinct through lazy execution",
+    async (app) => {
+      const calls: Array<{ app: string | null; name: string; args: unknown }> = [];
+      const fetch = pipedreamMcpFetch(appTools(app, 11), calls);
+      const connector = new PipedreamConnector(FAKE_CONFIG, { ...TEST_NETWORK, fetch });
+      const ctx = {
+        ...context,
+        connectedConnections: gmailContext("apn_work", "apn_home").connectedConnections!.map(
+          (row) => ({ ...row, externalId: app }),
+        ),
+      };
+      expect((await connector.discoverTools(ctx)).map(({ name }) => name)).toEqual([
+        "pipedream_search_tools",
+        "pipedream_load_tool",
+        "pipedream_execute_tool",
+      ]);
+      for (const row of ctx.connectedConnections) {
+        const call = {
+          tool: "execute",
+          executionId: "test",
+          route: { connectorId: "pipedream", toolName: "__catalog_execute" },
+          args: { id: `${app}:${row.id}:${app}_tool_0`, arguments: { text: "hello" } },
+        };
+        const resolved = await connector.resolveCall(call, ctx);
+        expect(resolved?.call.route?.connectionId).toBe(row.id);
+        const events = [];
+        for await (const event of connector.execute(call, ctx)) events.push(event);
+        expect(events).toEqual([expect.objectContaining({ type: "result" })]);
+        const requests = fetch.mock.calls.map(([input, init]) => new Request(input, init));
+        expect(
+          requests
+            .filter((req) => req.headers.has("x-pd-app-slug"))
+            .at(-1)
+            ?.headers.get("x-pd-account-id"),
+        ).toBe(row.providerRef);
+      }
+      expect(calls).toHaveLength(2);
+    },
+  );
+
   async function runGmail(
     fetch: ReturnType<typeof pipedreamMcpFetch>,
     context: AdapterContext,
     args: Record<string, unknown>,
+    connectionId?: string,
+    resourceRevision?: string,
   ) {
     const connector = new PipedreamConnector(FAKE_CONFIG, { ...TEST_NETWORK, fetch });
     const tools = await connector.discoverTools(context);
@@ -600,7 +708,13 @@ describe("PipedreamConnector", () => {
         tool: "send_email",
         args,
         executionId: "pin",
-        route: { connectorId: "pipedream", resourceId: "gmail", toolName: "send_email" },
+        route: {
+          connectorId: "pipedream",
+          resourceId: "gmail",
+          toolName: "send_email",
+          connectionId,
+          resourceRevision,
+        },
       },
       context,
     )) {
@@ -630,49 +744,64 @@ describe("PipedreamConnector", () => {
     expect(new Set(accounts)).toEqual(new Set(["apn_work"]));
   });
 
-  it.each(["apn_work", "apn_home"])(
-    "runs a call on %s when the model picks it from two approved accounts",
-    async (chosen) => {
-      const calls: Array<{ app: string | null; name: string; args: unknown }> = [];
-      const fetch = pipedreamMcpFetch({ gmail: ["send_email"] }, calls);
-      const { tools, events } = await runGmail(fetch, gmailContext("apn_work", "apn_home"), {
-        text: "hello",
-        connected_account: chosen,
-      });
+  it.each(["apn_work", "apn_home"])("runs the selected account's tool on %s", async (chosen) => {
+    const calls: Array<{ app: string | null; name: string; args: unknown }> = [];
+    const fetch = pipedreamMcpFetch({ gmail: ["send_email"] }, calls);
+    const ctx = gmailContext("apn_work", "apn_home");
+    const connectionId = ctx.connectedConnections!.find((row) => row.providerRef === chosen)!.id;
+    const { tools, events } = await runGmail(fetch, ctx, { text: "hello" }, connectionId);
+    expect(tools).toHaveLength(2);
+    expect(new Set(tools.map((tool) => tool.name)).size).toBe(2);
+    expect(tools.map((tool) => tool.route?.connectionId)).toEqual(["connection-0", "connection-1"]);
+    expect(tools[0]?.inputSchema).toEqual(expect.objectContaining({ required: ["text"] }));
+    expect(events).toEqual([expect.objectContaining({ type: "result" })]);
+    expect(calls).toEqual([{ app: "gmail", name: "send_email", args: { text: "hello" } }]);
+    const callAccounts = fetch.mock.calls
+      .map(([input, init]) => new Request(input, init))
+      .filter((request) => request.headers.has("x-pd-app-slug"))
+      .map((request) => request.headers.get("x-pd-account-id"));
+    expect(callAccounts.every(Boolean)).toBe(true);
+    expect(callAccounts.at(-1)).toBe(chosen);
+  });
 
-      expect(tools[0]?.inputSchema).toEqual(
-        expect.objectContaining({
-          required: ["text", "connected_account"],
-          properties: expect.objectContaining({
-            connected_account: expect.objectContaining({ enum: ["apn_work", "apn_home"] }),
-          }),
-        }),
+  it.each([undefined, "unknown-connection"])(
+    "refuses an ambiguous or unapproved route: %s",
+    async (id) => {
+      const calls: Array<{ app: string | null; name: string; args: unknown }> = [];
+      const { events } = await runGmail(
+        pipedreamMcpFetch({ gmail: ["send_email"] }, calls),
+        gmailContext("apn_work", "apn_home"),
+        { text: "hello" },
+        id,
       );
-      expect(events).toEqual([expect.objectContaining({ type: "result" })]);
-      expect(calls).toEqual([{ app: "gmail", name: "send_email", args: { text: "hello" } }]);
-      const callAccounts = fetch.mock.calls
-        .map(([input, init]) => new Request(input, init))
-        .filter((request) => request.headers.has("x-pd-app-slug"))
-        .map((request) => request.headers.get("x-pd-account-id"));
-      expect(callAccounts.every(Boolean)).toBe(true);
-      expect(callAccounts.at(-1)).toBe(chosen);
+      expect(events).toEqual([expect.objectContaining({ type: "error" })]);
+      expect(calls).toEqual([]);
     },
   );
 
-  it.each([
-    { label: "an unapproved account", args: { text: "hello", connected_account: "apn_other" } },
-    { label: "no account", args: { text: "hello" } },
-  ])("refuses a call naming $label when two are approved", async ({ args }) => {
+  it("does not redirect a removed account's route to its remaining sibling", async () => {
     const calls: Array<{ app: string | null; name: string; args: unknown }> = [];
-    const { events, accounts } = await runGmail(
+    const { events } = await runGmail(
       pipedreamMcpFetch({ gmail: ["send_email"] }, calls),
-      gmailContext("apn_work", "apn_home"),
-      args,
+      gmailContext("apn_home"),
+      { text: "hello" },
+      "removed-connection",
     );
-
     expect(events).toEqual([expect.objectContaining({ type: "error" })]);
     expect(calls).toEqual([]);
-    expect(accounts.every(Boolean)).toBe(true);
+  });
+
+  it("refuses a stale route after its connection is reauthorized as a different account", async () => {
+    const calls: Array<{ app: string | null; name: string; args: unknown }> = [];
+    const { events } = await runGmail(
+      pipedreamMcpFetch({ gmail: ["send_email"] }, calls),
+      gmailContext("apn_new"),
+      { text: "hello" },
+      "connection-0",
+      "apn_old",
+    );
+    expect(events).toEqual([expect.objectContaining({ type: "error" })]);
+    expect(calls).toEqual([]);
   });
 
   it("offers only accounts a row names when another row stores just the app", async () => {
@@ -693,6 +822,35 @@ describe("PipedreamConnector", () => {
     const calls: Array<{ app: string | null; name: string; args: unknown }> = [];
     const { tools, events, accounts } = await runGmail(
       pipedreamMcpFetch({ gmail: ["send_email"] }, calls),
+      gmailContext("gmail"),
+      { text: "hello" },
+    );
+
+    expect(tools).toEqual([]);
+    expect(events).toEqual([expect.objectContaining({ type: "error" })]);
+    expect(calls).toEqual([]);
+    expect(accounts).toEqual([]);
+  });
+
+  it("runs a connection that stores only the app on its one remote account", async () => {
+    const calls: Array<{ app: string | null; name: string; args: unknown }> = [];
+    const { tools, events, accounts } = await runGmail(
+      pipedreamMcpFetch({ gmail: ["send_email"] }, calls, ["apn_legacy"]),
+      gmailContext("gmail"),
+      { text: "hello" },
+    );
+
+    expect(tools).toHaveLength(1);
+    expect(tools[0]?.inputSchema).not.toHaveProperty("properties.connected_account");
+    expect(events).toEqual([expect.objectContaining({ type: "result" })]);
+    expect(calls).toHaveLength(1);
+    expect(new Set(accounts)).toEqual(new Set(["apn_legacy"]));
+  });
+
+  it("refuses a connection that stores only the app when several remote accounts exist", async () => {
+    const calls: Array<{ app: string | null; name: string; args: unknown }> = [];
+    const { tools, events, accounts } = await runGmail(
+      pipedreamMcpFetch({ gmail: ["send_email"] }, calls, ["apn_work", "apn_home"]),
       gmailContext("gmail"),
       { text: "hello" },
     );
@@ -761,7 +919,7 @@ describe("PipedreamConnector", () => {
     const tools = await connector.discoverTools(connectedContext);
     expect(tools).toContainEqual(
       expect.objectContaining({
-        name: "notes.write",
+        name: expect.stringMatching(/^notes.write__/),
         route: expect.objectContaining({ connectorId: "pipedream", resourceId: "linear" }),
       }),
     );

@@ -55,6 +55,10 @@ vi.mock("./components/SubscriptionGate", () => ({
   SubscriptionGate: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("./pages/Shell", () => ({ ShellPage: () => <div>Shell</div> }));
+vi.mock("./components/call/CallLayout", async () => {
+  const { Outlet } = await import("react-router-dom");
+  return { CallLayout: () => <Outlet /> };
+});
 vi.mock("./components/markdown-link-prompt", () => ({
   MarkdownLinkPrompt: ({ children }: { children: ReactNode }) => children,
 }));

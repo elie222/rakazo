@@ -17,6 +17,7 @@ export type OwnBotSettingsRow = {
   instructions: string;
   color: string;
   notifyOnFinish: boolean;
+  dailyCheckIns: boolean;
   modelProvider: string | null;
   modelId: string | null;
   thinkingLevel: string | null;
@@ -56,6 +57,7 @@ export async function readOwnBotSettings(
     instructions: bot.instructions,
     avatar: bot.color.startsWith("data:image/") ? "image" : bot.color,
     notifyOnFinish: bot.notifyOnFinish,
+    dailyCheckIns: bot.dailyCheckIns,
     model: `${modelLabel(effective.provider, effective.model)}${bot.modelId ? "" : " (default)"}`,
     thinkingLevel: bot.thinkingLevel ?? "default",
     readAloud: bot.autoSpeak,

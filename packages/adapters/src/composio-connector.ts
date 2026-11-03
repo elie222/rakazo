@@ -910,7 +910,30 @@ export class ConnectorRegistry implements ConnectorProvider {
       yield { type: "error", message: `unknown connector ${connectorId}` };
       return;
     }
-    yield* provider.execute({ ...call, tool: call.route?.toolName ?? call.tool }, context);
+    const connectionId = call.route?.connectionId ?? call.connectionId;
+    if (
+      connectionId &&
+      !context.connectedConnections?.some(
+        (connection) => connection.id === connectionId && connection.connectorId === connectorId,
+      )
+    ) {
+      yield { type: "error", message: "The selected connected account is unavailable." };
+      return;
+    }
+    const scopedContext = connectionId
+      ? {
+          ...context,
+          connectedConnections: context.connectedConnections!.filter(
+            (connection) =>
+              connection.id === connectionId && connection.connectorId === connectorId,
+          ),
+          connectedProviders: undefined,
+        }
+      : context;
+    yield* provider.execute(
+      { ...call, connectionId, tool: call.route?.toolName ?? call.tool },
+      scopedContext,
+    );
   }
 
   async resolveCall(

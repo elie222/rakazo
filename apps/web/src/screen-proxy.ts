@@ -9,12 +9,31 @@ import {
 } from "@rakazo/core/node/screen-capability";
 import { SCREEN_PROBE_PARAM } from "@rakazo/core/screen-reconnect";
 
-const SENSITIVE_FORWARD_HEADERS = new Set([
-  "authorization",
-  "cookie",
-  "host",
-  "proxy-authenticate",
-  "proxy-authorization",
+/**
+ * The computer is untrusted, so only what noVNC's pages and socket need reaches it. Anything else,
+ * such as credentials an access proxy in front of Rakazo expects, stays here.
+ */
+const FORWARDED_HEADERS = new Set([
+  "accept",
+  "accept-encoding",
+  "accept-language",
+  "cache-control",
+  "connection",
+  "content-length",
+  "content-type",
+  "if-modified-since",
+  "if-none-match",
+  "if-range",
+  "origin",
+  "pragma",
+  "range",
+  "sec-websocket-extensions",
+  "sec-websocket-key",
+  "sec-websocket-protocol",
+  "sec-websocket-version",
+  "transfer-encoding",
+  "upgrade",
+  "user-agent",
 ]);
 
 /**
@@ -130,10 +149,6 @@ export type ScreenTargetFailure =
   | "invalid_authority_response"
   | "authority_unavailable";
 
-function isHttp2PseudoHeader(key: string) {
-  return key.startsWith(":");
-}
-
 /**
  * Headers for the provider request. The provider's own credentials replace the browser's, and the
  * browser's Origin becomes the provider's: Boat refuses cross-origin WebSockets, and this proxy has
@@ -145,11 +160,7 @@ export function safeProxyHeaders(
 ) {
   const forwarded: IncomingHttpHeaders = Object.fromEntries(
     Object.entries(headers).filter(([key, value]) => {
-      return (
-        value != null &&
-        !isHttp2PseudoHeader(key) &&
-        !SENSITIVE_FORWARD_HEADERS.has(key.toLowerCase())
-      );
+      return value != null && FORWARDED_HEADERS.has(key.toLowerCase());
     }),
   );
   if (target && forwarded.origin) forwarded.origin = screenTargetOrigin(target);

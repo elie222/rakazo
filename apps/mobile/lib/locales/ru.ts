@@ -1,4 +1,5 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Daily check-ins on unfinished work": "Ежедневные напоминания о незавершённой работе",
   "How other bots see it": "Как его видят другие боты",
   "Share to": "Отправить в",
   "{count} files": "Файлов: {count}",
@@ -280,6 +281,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "Одобрите сервер, чтобы агент мог использовать его инструменты.",
   "Answered: {answer}": "Отвечено: {answer}",
+  "Only enter a code {host} sent you.": "Вводите только код, который вам прислал {host}.",
   Archive: "Архивировать",
   "Archive keeps everything and can be undone. Delete is permanent.":
     "Архивирование сохраняет всё и обратимо. Удаление необратимо.",
@@ -413,6 +415,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not share image": "Не удалось поделиться изображением",
   "Loading image…": "Загрузка изображения…",
   "Open image {name}": "Открыть изображение {name}",
+  "Open {name}": "Открыть {name}",
   "Tap to open": "Нажмите, чтобы открыть",
   "Could not open message": "Не удалось открыть сообщение",
   "Could not play a sample": "Не удалось воспроизвести сэмпл",
@@ -493,6 +496,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Failed to send message": "Не удалось отправить сообщение",
   "Failed to stop work": "Не удалось остановить работу",
   File: "Файл",
+  "Did you mean {email}?": "Вы имели в виду {email}?",
   "Forgot password?": "Забыли пароль?",
   "Find models": "Найти модели",
   "Finding…": "Поиск…",
@@ -1033,6 +1037,12 @@ export const RU_MESSAGES: Record<string, string> = {
   "Your trial ends and your card is charged today.":
     "Пробный период закончится, и сегодня с вашей карты будет списана оплата.",
   "Start plan": "Начать тариф",
+  "Switch to yearly": "Перейти на годовой план",
+  "Switch to yearly?": "Перейти на годовой план?",
+  "Your card is charged {price} today, less the unused part of this month.":
+    "Сегодня с карты спишется {price} за вычетом неиспользованной части месяца.",
+  "Your plan becomes {price} / year when your trial ends.":
+    "После пробного периода план будет стоить {price} в год.",
   "Monthly credits": "Ежемесячные кредиты",
   "Upgrade now": "Повысить тариф сейчас",
   "Downgrade at renewal": "Понизить тариф при продлении",

@@ -13,14 +13,8 @@ import Markdown, {
 } from "@ronradtke/react-native-markdown-display";
 import { Highlight, themes } from "prism-react-renderer";
 import type { ComponentType, ReactNode } from "react";
-import { createContext, memo, useCallback, useContext, useMemo, useState } from "react";
-import type {
-  NativeScrollEvent,
-  NativeSyntheticEvent,
-  StyleProp,
-  TextStyle,
-  ViewStyle,
-} from "react-native";
+import { createContext, Fragment, memo, useCallback, useContext, useMemo, useState } from "react";
+import type { StyleProp, TextStyle, ViewStyle } from "react-native";
 import {
   Alert,
   I18nManager,
@@ -517,56 +511,11 @@ function textStyleForParents(
 }
 
 const TABLE_FONT_SIZE = typeScale.caption.fontSize;
-const TABLE_LINE_HEIGHT = typeScale.caption.lineHeight;
-const TABLE_CELL_PADDING = 5;
-const TABLE_SINGLE_LINE_HEIGHT = TABLE_LINE_HEIGHT + TABLE_CELL_PADDING * 2;
 const TABLE_CELL_GUTTER = 16;
 const TABLE_MIN_COLUMN_WIDTH = 64;
 const TABLE_MAX_COLUMN_WIDTH = 220;
-const TABLE_VISIBLE_EDGE = 8;
 
-type TableLayout = {
-  widths: readonly number[];
-  viewportWidth: number;
-  scrollX: number;
-};
-
-const TableLayoutContext = createContext<TableLayout>({
-  widths: [],
-  viewportWidth: 0,
-  scrollX: 0,
-});
-
-function columnOffset(widths: readonly number[], index: number) {
-  let offset = 0;
-  for (let cursor = 0; cursor < index; cursor++) offset += widths[cursor] ?? 0;
-  return offset;
-}
-
-function columnContributesHeight(
-  index: number,
-  widths: readonly number[],
-  viewportWidth: number,
-  scrollX: number,
-) {
-  const start = columnOffset(widths, index);
-  const width = widths[index] ?? 0;
-  if (width <= 0) return false;
-  if (viewportWidth <= 0) return start === 0;
-  const overlap = Math.min(start + width, scrollX + viewportWidth) - Math.max(start, scrollX);
-  return overlap > TABLE_VISIBLE_EDGE;
-}
-
-function heightMask(widths: readonly number[], viewportWidth: number, scrollX: number) {
-  return widths
-    .map((_, index) => (columnContributesHeight(index, widths, viewportWidth, scrollX) ? "1" : "0"))
-    .join("");
-}
-
-const offscreenCell: ViewStyle = {
-  height: TABLE_SINGLE_LINE_HEIGHT,
-  overflow: "hidden",
-};
+const TableColumnWidthsContext = createContext<readonly number[]>([]);
 
 function glyphEm(char: string) {
   if (char === " " || char === "\n" || char === "\t") return 0.33;
@@ -668,14 +617,9 @@ function TableCell({
   baseStyle: StyleProp<ViewStyle>;
   children?: ReactNode;
 }) {
-  const { widths, viewportWidth, scrollX } = useContext(TableLayoutContext);
+  const widths = useContext(TableColumnWidthsContext);
   const width = widths[columnIndex] ?? TABLE_MIN_COLUMN_WIDTH;
-  const contributes = columnContributesHeight(columnIndex, widths, viewportWidth, scrollX);
-  return (
-    <View style={[baseStyle, columnStyle(width), contributes ? null : offscreenCell]}>
-      {children}
-    </View>
-  );
+  return <View style={[baseStyle, columnStyle(width)]}>{children}</View>;
 }
 
 function TableRow({
@@ -685,7 +629,7 @@ function TableRow({
   baseStyle: StyleProp<ViewStyle>;
   children?: ReactNode;
 }) {
-  const { widths } = useContext(TableLayoutContext);
+  const widths = useContext(TableColumnWidthsContext);
   const rowWidth = widths.reduce((total, width) => total + width, 0);
   return (
     <View style={[baseStyle, { width: rowWidth, minWidth: rowWidth, flexShrink: 0 }]}>
@@ -709,13 +653,11 @@ const scrollFrame: ViewStyle = {
 function SidewaysScrollView({
   contentWidth,
   onViewportWidth,
-  onScroll,
   style,
   children,
 }: {
   contentWidth?: number;
   onViewportWidth?: (width: number) => void;
-  onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
   style?: StyleProp<ViewStyle>;
   children?: ReactNode;
 }) {
@@ -741,8 +683,6 @@ function SidewaysScrollView({
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled
         directionalLockEnabled
-        scrollEventThrottle={16}
-        onScroll={onScroll}
         onContentSizeChange={measured ? (next) => setMeasuredWidth(Math.round(next)) : undefined}
         style={[
           style,
@@ -777,31 +717,17 @@ function TableScrollView({
   style?: StyleProp<ViewStyle>;
 }) {
   const [viewportWidth, setViewportWidth] = useState(0);
-  const [scrollX, setScrollX] = useState(0);
   const widths = useMemo(() => fittedColumnWidths(table, viewportWidth), [table, viewportWidth]);
-  const tableLayout = useMemo(
-    () => ({ widths, viewportWidth, scrollX }),
-    [widths, viewportWidth, scrollX],
-  );
-  const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const next = event.nativeEvent.contentOffset.x;
-    setScrollX((current) =>
-      heightMask(widths, viewportWidth, current) === heightMask(widths, viewportWidth, next)
-        ? current
-        : next,
-    );
-  };
   return (
-    <TableLayoutContext.Provider value={tableLayout}>
+    <TableColumnWidthsContext.Provider value={widths}>
       <SidewaysScrollView
         contentWidth={widths.reduce((total, width) => total + width, 0)}
         onViewportWidth={setViewportWidth}
-        onScroll={onScroll}
         style={style}
       >
         {children}
       </SidewaysScrollView>
-    </TableLayoutContext.Provider>
+    </TableColumnWidthsContext.Provider>
   );
 }
 
@@ -1378,6 +1304,8 @@ type LinkifiedTextProps = {
   color: string;
   linkColor: string;
   palette: ColorTokens;
+  /** Renders the runs between links, which are plain strings by default. */
+  renderText?: (text: string) => ReactNode;
 };
 
 export const LinkifiedText = memo(function LinkifiedText({
@@ -1385,6 +1313,7 @@ export const LinkifiedText = memo(function LinkifiedText({
   color,
   linkColor,
   palette,
+  renderText,
 }: LinkifiedTextProps) {
   const openLink = useNativeLinkConfirm();
   const labelStyle: TextStyle = {
@@ -1397,7 +1326,13 @@ export const LinkifiedText = memo(function LinkifiedText({
   return (
     <Text style={[{ color, ...typeScale.body }, contraryDirection(children) && layout.farSideText]}>
       {plainTextLinkParts(children).map((part, index) => {
-        if (part.type === "text") return part.value;
+        if (part.type === "text") {
+          return renderText ? (
+            <Fragment key={index}>{renderText(part.value)}</Fragment>
+          ) : (
+            part.value
+          );
+        }
         const open = () => {
           openLink(part.href);
         };
@@ -1574,5 +1509,10 @@ const layout = StyleSheet.create({
 });
 
 export type { ChatMarkdownProps, LinkFavicons } from "./markdown";
-export { LinkFaviconsContext, RemoteImagesContext, withBlockMentions } from "./markdown";
+export {
+  LinkFaviconsContext,
+  plainTextLinkParts,
+  RemoteImagesContext,
+  withBlockMentions,
+} from "./markdown";
 export { MarkdownLinkPromptProvider } from "./markdown-link-prompt";
