@@ -15,8 +15,12 @@ import {
   hostComputerDeadlineMs,
   hostComputerRequest,
 } from "./host-computer-protocol.js";
-import type { UserDevice, UserDeviceGateway } from "./user-device-protocol.js";
-import { userDeviceClientMessage } from "./user-device-protocol.js";
+import type {
+  UserDevice,
+  UserDeviceGateway,
+  UserDeviceRevokeReason,
+} from "./user-device-protocol.js";
+import { userDeviceClientMessage, userDeviceRevokeReason } from "./user-device-protocol.js";
 
 /** Internal API endpoints other processes forward to. Not under /api, so the public proxy never routes them. */
 export const USER_DEVICE_FORWARD_PATH = "/internal/user-devices/request";
@@ -301,11 +305,11 @@ export class UserDeviceHub {
   }
 
   /** Closes this process's socket for a device and fails its in-flight requests. */
-  disconnect(deviceId: string): void {
+  disconnect(deviceId: string, reason?: UserDeviceRevokeReason): void {
     const entry = this.live.get(deviceId);
     if (!entry) return;
     try {
-      entry.socket.send(JSON.stringify({ type: "revoked" }));
+      entry.socket.send(JSON.stringify({ type: "revoked", reason }));
     } catch {
       // Closing anyway.
     }
@@ -482,8 +486,8 @@ export class UserDevices implements UserDeviceGateway {
   }
 
   /** Closes the device's socket wherever it is held. Best effort; heartbeats close it otherwise. */
-  async disconnect(deviceId: string): Promise<void> {
-    this.deps.hub?.disconnect(deviceId);
+  async disconnect(deviceId: string, reason?: UserDeviceRevokeReason): Promise<void> {
+    this.deps.hub?.disconnect(deviceId, reason);
     const connection = await runAsSystem("find a user device connection", () =>
       this.deps.prisma.userDeviceConnection.findUnique({ where: { deviceId } }),
     );
@@ -494,7 +498,7 @@ export class UserDevices implements UserDeviceGateway {
         authorization: `Bearer ${this.deps.forwardSecret}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({ deviceId }),
+      body: JSON.stringify({ deviceId, reason }),
       redirect: "error",
       signal: AbortSignal.timeout(5_000),
     })
@@ -555,6 +559,11 @@ export class UserDevices implements UserDeviceGateway {
 }
 
 /** Body of a forwarded request; the forward secret authorizes it. */
+export const userDeviceDisconnectBody = z.object({
+  deviceId: z.string().min(1).max(64),
+  reason: userDeviceRevokeReason.optional(),
+});
+
 export const userDeviceForwardBody = z.object({
   deviceId: z.string().min(1).max(64),
   userId: z.string().min(1).max(128),

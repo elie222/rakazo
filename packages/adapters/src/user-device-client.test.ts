@@ -31,14 +31,14 @@ describe("user device client", () => {
   let upgrades: IncomingMessage[];
   let reject401: boolean;
   let client: UserDeviceClient | undefined;
-  let revoked: ReturnType<typeof vi.fn<() => void>>;
+  let revoked: ReturnType<typeof vi.fn<(reason?: string) => void>>;
   const sockets: WebSocket[] = [];
 
   beforeEach(async () => {
     root = await realpath(await mkdtemp(path.join(tmpdir(), "rakazo-device-test-")));
     upgrades = [];
     reject401 = false;
-    revoked = vi.fn<() => void>();
+    revoked = vi.fn<(reason?: string) => void>();
     http = createServer();
     wss = new WebSocketServer({ noServer: true });
     http.on("upgrade", (request, socket, head) => {
@@ -284,13 +284,23 @@ describe("user device client", () => {
     await once(ws, "close");
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(revoked).toHaveBeenCalledTimes(1);
+    expect(revoked).toHaveBeenCalledWith(undefined);
     expect(upgrades).toHaveLength(1);
+  });
+
+  it("passes on that the sign-in which paired the device ended", async () => {
+    start();
+    const ws = await connection();
+    ws.send(JSON.stringify({ type: "revoked", reason: "session-ended" }));
+    await until(() => revoked.mock.calls.length === 1);
+    expect(revoked).toHaveBeenCalledWith("session-ended");
   });
 
   it("treats a rejected token as revoked", async () => {
     reject401 = true;
     start();
     await until(() => revoked.mock.calls.length === 1);
+    expect(revoked).toHaveBeenCalledWith(undefined);
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(upgrades).toHaveLength(1);
   });

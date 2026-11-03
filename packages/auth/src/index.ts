@@ -6,6 +6,7 @@ import {
   emailAllowed,
   isMessagingEmail,
   MAX_PASSWORD_LENGTH,
+  MESSAGING_EMAIL_SUFFIX,
   MIN_PASSWORD_LENGTH,
   signupPolicyFromEnv,
 } from "@rakazo/core";
@@ -71,6 +72,8 @@ export interface AuthEnv {
   webOrigin: string;
   signupsEnabled: string | undefined;
   signupAllowlist: string | undefined;
+  /** Admits a new account only while there is none, for a deployment that serves one person. */
+  singleAccount?: boolean;
   extraOrigins?: string[];
   /** SHA-256 signing certificate fingerprints of Android apps allowed to use this server's passkeys. */
   androidAppCertFingerprints?: string[];
@@ -161,6 +164,18 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     }
   };
   const discovery = env.oidc ? oidcDiscovery(env.oidc) : undefined;
+  const admission = async (newUserId?: string) => {
+    const policy = signupPolicyFromEnv(env);
+    if (!env.singleAccount || !policy.enabled) return policy;
+    const existing = await prisma.user.findFirst({
+      where: {
+        ...(newUserId ? { id: { not: newUserId } } : {}),
+        NOT: { email: { endsWith: MESSAGING_EMAIL_SUFFIX } },
+      },
+      select: { id: true },
+    });
+    return existing ? { ...policy, enabled: false } : policy;
+  };
   // SSO-only deployments keep every email credential closed, codes included.
   const emailCodeSignIn = Boolean(env.email) && env.passwordAuth !== false;
   // SSO-only deployments keep the identity provider as the only way in.
@@ -265,7 +280,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
           return;
         }
         if (source.action === "create-user") {
-          const policy = signupPolicyFromEnv(env);
+          const policy = await admission();
           if (!policy.enabled) return { error: "REGISTRATION_CLOSED" };
           if (!env.oidc?.allowSignupBypass && !emailAllowed(email, policy.allowlist))
             return { error: "EMAIL_NOT_ALLOWED" };
@@ -433,17 +448,19 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             .trim()
             .toLowerCase();
           if (!(await ctx.context.internalAdapter.findUserByEmail(email))) {
-            const admission = signupPolicyFromEnv(env);
-            if (!admission.enabled || !emailAllowed(email, admission.allowlist)) {
+            const policy = await admission();
+            if (!policy.enabled || !emailAllowed(email, policy.allowlist)) {
               if (ctx.path === SEND_SIGN_IN_CODE_PATH) return ctx.json({ success: true });
               throw new APIError("BAD_REQUEST", { code: "INVALID_OTP", message: "Invalid OTP" });
             }
           }
         }
         let policy =
-          ctx.path === "/sign-up/email" || ctx.path === "/sign-in/email"
-            ? signupPolicyFromEnv(env)
-            : undefined;
+          ctx.path === "/sign-up/email"
+            ? await admission()
+            : ctx.path === "/sign-in/email"
+              ? signupPolicyFromEnv(env)
+              : undefined;
         let requireEmailVerification = false;
         if (ctx.path === "/sign-up/email") {
           if (!policy?.enabled) {
@@ -563,7 +580,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
           before: async (session, ctx) => {
             // The auth adapter can still be inside the signup transaction.
             const user = await ctx?.context.internalAdapter.findUserById(session.userId);
-            const policy = signupPolicyFromEnv(env);
+            const policy = await admission(session.userId);
             const oidcSignIn = isOidcCallback(ctx);
             const bypassAllowlist = oidcSignIn && env.oidc?.allowSignupBypass;
             if (!user || isMessagingEmail(user.email)) {

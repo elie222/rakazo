@@ -136,6 +136,8 @@ model UserDevice {
   name        String
   platform    String
   tokenHash   String                 @unique
+  /// The session that paired it. Ending that session revokes the device.
+  sessionId   String?
   createdAt   DateTime               @default(now())
   lastSeenAt  DateTime?
   revokedAt   DateTime?
