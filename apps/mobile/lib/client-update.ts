@@ -1,5 +1,5 @@
 import {
-  ANDROID_APK_URL,
+  ANDROID_APP_STORE_URL,
   buildIdAt,
   CLIENT_BUILD_HEADER,
   formatClientBuild,
@@ -52,7 +52,7 @@ export async function applyRequiredUpdate(): Promise<void> {
   } catch {
     // An unreachable update server falls through to the store.
   }
-  await Linking.openURL(Platform.OS === "ios" ? IOS_APP_STORE_URL : ANDROID_APK_URL).catch(
+  await Linking.openURL(Platform.OS === "ios" ? IOS_APP_STORE_URL : ANDROID_APP_STORE_URL).catch(
     () => undefined,
   );
 }
