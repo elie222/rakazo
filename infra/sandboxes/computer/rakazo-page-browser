@@ -1352,8 +1352,11 @@ TYPE_START = "(() => {" + CODE_BOXES + r"""
   if (el instanceof HTMLIFrameElement || el instanceof HTMLFrameElement) return { frame: true };
   if (!el || el === document.body) throw new Error("The field did not take keyboard focus. Click it, then type again.");
   // A page that starts to leave keeps its document until the next one loads; no key goes to it then.
+  // A page that asks to stay before leaving may stay, so only an unasked leave counts.
   let leaving = false;
-  addEventListener("beforeunload", () => { leaving = true; }, { once: true });
+  addEventListener("beforeunload", (event) => {
+    if (!event.defaultPrevented && !event.returnValue) leaving = true;
+  });
   const code = codeOf(el);
   let start = code ? code.at : 0;
   if (code && code.size > 1 && WHOLE) {
