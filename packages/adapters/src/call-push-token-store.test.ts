@@ -54,7 +54,7 @@ function fixture() {
     $queryRaw: vi.fn(async (strings: TemplateStringsArray) =>
       strings.join("").includes('FROM "session"') ? (live ? [{ id: "session-1" }] : []) : [],
     ),
-    pushToken: { deleteMany: vi.fn(async () => {}) },
+    pushRegistration: { deleteMany: vi.fn(async () => {}) },
   };
   const prisma = {
     ...tx,

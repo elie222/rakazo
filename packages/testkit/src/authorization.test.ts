@@ -50,7 +50,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
   let db: AppHandles["prisma"];
   let pushTokens: PrismaPushTokenStore;
   const encryptionKey = "offline-authorization-encryption-key";
-  const loadPushToken = async (userId: string) => (await pushTokens.load(userId))?.token;
+  const loadPushToken = async (userId: string) => (await pushTokens.list(userId))[0]?.token;
   let app: App;
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-authz-"));

@@ -186,7 +186,7 @@ export class ExpoPushProvider implements NotificationProvider {
   }
 
   async hasPushRecipient(userId: string): Promise<boolean> {
-    return Boolean(await this.deliverableToken(userId));
+    return (await this.deliverableTokens(userId)).length > 0;
   }
 
   async send(message: NotificationMessage, context: AdapterContext): Promise<void> {
@@ -243,9 +243,12 @@ export class ExpoPushProvider implements NotificationProvider {
     );
     // Old native builds registered only the account's Expo token.
     if (devices.length === 0 && !call.ended) {
-      const token = await this.deliverableToken(userId);
-      if (token && (await this.sendCallPush(userId, token, call)) === "invalid")
-        await this.tokens.remove(userId, credentialDigest(token));
+      await Promise.allSettled(
+        (await this.deliverableTokens(userId)).map(async (token) => {
+          if ((await this.sendCallPush(userId, token, call)) === "invalid")
+            await this.tokens.remove(userId, credentialDigest(token));
+        }),
+      );
     }
   }
 
@@ -281,13 +284,35 @@ export class ExpoPushProvider implements NotificationProvider {
   }
 
   /**
-   * Posts the push when a token is registered. `undeliverable` means this user
-   * has no token, or Expo said the device is gone and the token was dropped.
-   * Neither is an Expo acceptance, so callers must not record a reminder.
+   * Posts the push to every registered device. `undeliverable` means no device
+   * accepted it: none is registered, or Expo said each one is gone and its token
+   * was dropped. Neither is an Expo acceptance, so callers must not record a reminder.
+   * One device failing does not hold back the others; it is retried only when no
+   * device took the push, so a retry never repeats it on a device that already has it.
    */
   async deliver(message: NotificationMessage, context: AdapterContext): Promise<ExpoPushDelivery> {
-    const token = await this.deliverableToken(context.userId);
-    if (!token) return "undeliverable";
+    const tokens = await this.deliverableTokens(context.userId);
+    const results = await Promise.allSettled(
+      tokens.map((token) => this.deliverTo(token, message, context)),
+    );
+    for (const [index, result] of results.entries())
+      if (result.status === "rejected")
+        getLogger().error("expo push device delivery failed", {
+          error: result.reason,
+          tokenDigest: credentialDigest(tokens[index]!),
+        });
+    if (results.some((result) => result.status === "fulfilled" && result.value === "delivered"))
+      return "delivered";
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed) throw failed.reason;
+    return "undeliverable";
+  }
+
+  private async deliverTo(
+    token: string,
+    message: NotificationMessage,
+    context: AdapterContext,
+  ): Promise<ExpoPushDelivery> {
     const payload = {
       to: token,
       title: capped(message.title, MAX_PUSH_TITLE_CHARS),
@@ -379,29 +404,36 @@ export class ExpoPushProvider implements NotificationProvider {
   /**
    * A token bound to a session is delivered only while that session is still
    * live. A missing row is left for session replacement to retarget; an expired
-   * row is removed. The token is read again after the lookup so a handover
-   * during that wait is not sent.
+   * row is removed. Tokens are read again after the lookups so a sign-out or
+   * handover during that wait is not sent.
    */
-  private async deliverableToken(userId: string): Promise<string | undefined> {
-    const saved = await this.tokens.load(userId);
-    if (!saved?.token) return undefined;
-    if (!saved.sessionId) return saved.token;
-    if (!this.sessionExpiresAt) return undefined;
-    let expiresAt: Date | null;
-    try {
-      expiresAt = await this.sessionExpiresAt(saved.sessionId);
-    } catch (error) {
-      getLogger().error("push session lookup failed", error);
-      return undefined;
-    }
-    if (!expiresAt) return undefined;
-    if (expiresAt.getTime() <= Date.now()) {
-      await this.tokens.endSession(userId, saved.sessionId);
-      return undefined;
-    }
-    const current = await this.tokens.load(userId);
-    if (current?.token !== saved.token || current.sessionId !== saved.sessionId) return undefined;
-    return current.token;
+  private async deliverableTokens(userId: string): Promise<string[]> {
+    const saved = await this.tokens.list(userId);
+    const live = await Promise.all(
+      saved.map(async ({ sessionId }) => {
+        if (!sessionId) return true;
+        if (!this.sessionExpiresAt) return false;
+        let expiresAt: Date | null;
+        try {
+          expiresAt = await this.sessionExpiresAt(sessionId);
+        } catch (error) {
+          getLogger().error("push session lookup failed", error);
+          return false;
+        }
+        if (!expiresAt) return false;
+        if (expiresAt.getTime() > Date.now()) return true;
+        await this.tokens.endSession(userId, sessionId);
+        return false;
+      }),
+    );
+    const current = await this.tokens.list(userId);
+    return saved
+      .filter(
+        (row, index) =>
+          live[index] &&
+          current.some((now) => now.token === row.token && now.sessionId === row.sessionId),
+      )
+      .map((row) => row.token);
   }
 }
 
