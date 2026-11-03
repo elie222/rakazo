@@ -88,7 +88,11 @@ class RakazoPdfView(context: Context, appContext: AppContext) : ExpoView(context
         return true
       }
 
-      override fun onScaleEnd(detector: ScaleGestureDetector) = sharpen()
+      override fun onScaleEnd(detector: ScaleGestureDetector) {
+        // The finger still down after a pinch pans, without lifting it first.
+        pinching = false
+        sharpen()
+      }
     },
   )
 

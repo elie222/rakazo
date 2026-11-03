@@ -36,7 +36,11 @@ const LOCAL_PASSWORD = "ios-screenshot-password-1234";
 
 async function main() {
   const { sections: requested, publish } = parseArgs(process.argv.slice(2));
-  if (publish) assertPublishConfigured();
+  if (publish) {
+    // A partial run keeps older shots of the other sections, which must not go out as this run's.
+    if (requested.length > 0) throw new Error("--publish needs a full run, without --section");
+    assertPublishConfigured();
+  }
   const catalog = await loadIosScreenshotCatalog(CATALOG_DIR);
   const unknown = requested.filter((id) => !catalog.some((section) => section.id === id));
   if (unknown.length > 0) {
