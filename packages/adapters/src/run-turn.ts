@@ -15,6 +15,7 @@ import {
   humanizeToolName,
   isBackgroundRunTrigger,
   redactSecrets,
+  redactSecretsAfter,
   TAKEOVER_COMPUTER_PENDING_STATE,
   userRunError,
   withoutLastToolStepNotes,
@@ -93,6 +94,7 @@ import {
   finalBlocksAfterMidTurnProgress,
   STEERING_RESET_MIN_GAP_MS,
   STEERING_RESETS_MAX_PER_RUN,
+  USER_PROGRESS_MESSAGE_MAX_LENGTH,
 } from "./user-progress.js";
 
 type RuntimeEvent<T extends AgentRuntimeEvent["type"]> = Extract<AgentRuntimeEvent, { type: T }>;
@@ -302,29 +304,37 @@ async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) 
 }
 
 /**
- * The run's person wrote while the bot worked. What the bot wrote before that is posted as
- * its own message instead of running on into the reply to them, and the interim-message
- * budget starts again: the first note may answer them at once. Webhooks, external chats and
- * other members stay on the normal budget, and the restart is capped so a stream of messages
- * can't lift it.
+ * The run's person wrote while the bot worked: the next note may answer them at once, each time.
+ * The budget restart for unprompted updates stays capped. Webhooks, external chats and other
+ * members stay on the normal budget.
  */
 async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
   const { deps, run } = ctx;
   const { reply } = ctx.state;
   reply.assistantTurnBreakPending = true;
+  if (!event.fromRunUser) return;
   const now = Date.now();
   if (
-    !event.fromRunUser ||
     reply.steeringResets >= STEERING_RESETS_MAX_PER_RUN ||
     now - reply.lastSteeringResetAt < STEERING_RESET_MIN_GAP_MS
-  )
+  ) {
+    // What the bot wrote before may still use an earlier message's allowance. If it can't be
+    // posted now, it stays in the reply.
+    await flushProgress(ctx);
+    const before = extractNarrationText(reply.messageSegments, reply.currentTextSegment).text;
+    const text = redactSecretsAfter(reply.narrationSoFar, before, ctx.secrets).trim();
+    if (text.length <= USER_PROGRESS_MESSAGE_MAX_LENGTH && canPublishDurableNarration(ctx))
+      await publishMidTurnNarration(ctx);
+    reply.steeringReplyPending = true;
     return;
+  }
   reply.steeringResets += 1;
   reply.lastSteeringResetAt = now;
   await flushProgress(ctx);
   const before = extractNarrationText(reply.messageSegments, reply.currentTextSegment);
-  const text = redactSecrets(before.text, ctx.secrets).trim();
+  const text = redactSecretsAfter(reply.narrationSoFar, before.text, ctx.secrets).trim();
   if (text && runPromotesMidTurnNarration(run.trigger)) {
+    reply.narrationSoFar += before.text;
     reply.messageSegments = before.remaining;
     reply.currentTextSegment = "";
     reply.workingNotes.length = 0;

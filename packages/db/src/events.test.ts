@@ -419,7 +419,7 @@ describe("finalizeRun", () => {
     });
   });
 
-  it("resumes a held group-channel message without taking a later direct message", async () => {
+  it("resumes held app and direct-line messages first, without taking an earlier group-channel message", async () => {
     const channel = {
       kind: "channel_message" as const,
       provider: "slack",
@@ -505,13 +505,13 @@ describe("finalizeRun", () => {
     expect(tx.run.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         trigger: "messaging",
-        sourceMessageId: "message-channel",
+        sourceMessageId: "message-app",
         userId: "user-1",
         status: "queued",
       }),
     });
     expect(tx.steeringMessage.updateMany).toHaveBeenCalledWith({
-      where: { id: { in: ["steer-channel"] }, runId: null },
+      where: { id: { in: ["steer-dm", "steer-app"] }, runId: null },
       data: { runId: "run-reply", claimedAt: null },
     });
   });
@@ -3589,6 +3589,68 @@ describe("queue admission beside pending cards", () => {
       expect(tx.steeringMessage.create).not.toHaveBeenCalled();
     },
   );
+
+  it("answers waiting app and direct-line messages before earlier webhook deliveries and group texts", async () => {
+    const row = (id: string, seq: number, originTrigger: string | null, blocks: unknown[]) => ({
+      id,
+      userId: "user-1",
+      originTrigger,
+      message: { id: `message-${id}`, blocks, seq },
+    });
+    const group = {
+      kind: "channel_message",
+      provider: "sendblue",
+      channelId: "channel-1",
+      fromAddress: "+15550000001",
+      fromLabel: "Sam",
+      text: "hi all",
+    };
+    const tx = {
+      run: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({ id: "continuation" }),
+      },
+      steeringMessage: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([
+            row("webhook", 1, "webhook", [{ kind: "text", text: "order shipped" }]),
+            row("group", 2, "messaging", [group]),
+            row("owner", 3, null, [{ kind: "text", text: "Status?" }]),
+            row("owner-text", 4, "messaging", [{ kind: "text", text: "And the rest?" }]),
+          ]),
+        updateMany: vi.fn(),
+      },
+      task: { create: vi.fn().mockResolvedValue({ id: "task-new" }) },
+    };
+    await createPendingSteeringRun(tx as never, {
+      spaceId: "space-1",
+      threadId: "thread-1",
+      botId: "bot-1",
+    });
+    expect(tx.steeringMessage.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["owner", "owner-text"] }, runId: null },
+      data: { runId: "continuation", claimedAt: null },
+    });
+    expect(tx.run.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ sourceMessageId: "message-owner-text" }),
+    });
+
+    // With no app or direct-line message waiting, the oldest origin goes first as before.
+    tx.steeringMessage.findMany.mockResolvedValue([
+      row("webhook", 1, "webhook", [{ kind: "text", text: "order shipped" }]),
+      row("group", 2, "messaging", [group]),
+    ]);
+    await createPendingSteeringRun(tx as never, {
+      spaceId: "space-1",
+      threadId: "thread-1",
+      botId: "bot-1",
+    });
+    expect(tx.steeringMessage.updateMany).toHaveBeenLastCalledWith({
+      where: { id: { in: ["webhook"] }, runId: null },
+      data: { runId: "continuation", claimedAt: null },
+    });
+  });
 
   it("creates a pending steering continuation without attaching it to a paused run", async () => {
     const tx = {
