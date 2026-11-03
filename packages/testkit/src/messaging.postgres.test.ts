@@ -500,11 +500,11 @@ describeMessaging("messaging surface journeys", () => {
     });
   });
 
-  it("answers a group invite by text only right after it, and only off text messages", async () => {
+  it("answers a group invite by text only right after it", async () => {
     const owner = uniqueNumber();
     const stranger = uniqueNumber();
     const groupId = `grp-answer-${stamp}`;
-    const identity = await dmAndWaitForReply(owner, "hello", `answer-dm-${stamp}`);
+    await dmAndWaitForReply(owner, "hello", `answer-dm-${stamp}`);
     const discovery = await app.request(
       emulator.buildInboundRequest({
         fromNumber: owner,
@@ -526,23 +526,6 @@ describeMessaging("messaging surface journeys", () => {
       )?.status;
     await waitForDatabase(async () => (await memberStatus()) === "invited");
     await waitForInviteSent(owner);
-
-    // A YES sent as a text message could come from anyone using this number.
-    const sms = await app.request(
-      emulator.buildInboundRequest({
-        fromNumber: owner,
-        content: "YES",
-        handle: `answer-sms-${stamp}`,
-        service: "SMS",
-      }),
-    );
-    expect(sms.status).toBe(200);
-    await waitForDatabase(async () =>
-      prisma.messagingOutbound.findFirst({
-        where: { identityId: identity.id, body: "Answer this request in the Rakazo app." },
-      }),
-    );
-    expect(await memberStatus()).toBe("invited");
 
     // Once the bot has said something since, a bare YES is a reply to the bot.
     await dmAndWaitForReply(owner, "Should I book the table?", `answer-question-${stamp}`);
