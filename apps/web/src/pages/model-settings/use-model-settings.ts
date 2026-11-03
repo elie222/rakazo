@@ -277,6 +277,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
         entries,
       })),
       (group) => group.id,
+      (group) => group.name,
     );
   }, [catalog, credentials]);
   const credentialByProvider = useMemo(
