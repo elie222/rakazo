@@ -103,7 +103,9 @@ tags:
 # The confirmation field opens focused.
 - inputText: "Work"
 - takeScreenshot: "46-organization-delete-confirm"
-- tapOn: "Delete"
+# The keyboard's backspace key is also named "Delete".
+- hideKeyboard
+- tapOn: "^Delete$"
 - extendedWaitUntil:
     visible: "Researcher"
     timeout: 15000
