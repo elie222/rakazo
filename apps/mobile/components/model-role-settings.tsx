@@ -31,8 +31,9 @@ import { captureApiRequestContext, currentApiBase, rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
 import type { ModelPickerRequest } from "../lib/model-picker-selection";
-import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
+import { native, useMobileTokens, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { thinkingLevelLabel } from "../lib/thinking-level";
+import { NativeSymbol } from "./native-symbol";
 import { SettingsGroup, SettingsRow } from "./settings-group";
 
 export type ConnectableProvider = { id: string; name: string; baseUrl?: string };
@@ -410,23 +411,25 @@ export function ModelRoleSettings({
             : []),
         ].join(", ");
         return (
-          <RowMenu
+          <SettingsRow
             key={modelRoleChoiceKey(choice)}
+            accessibilityRole="button"
+            leading={ordered ? number(index + offset) : undefined}
             title={name}
-            actions={actions}
-            onAction={(id) => act(index, id)}
-          >
-            <SettingsRow
-              accessibilityRole="button"
-              leading={ordered ? number(index + offset) : undefined}
-              title={name}
-              detail={detail}
-              disabled={busy}
-              onPress={() => pick(index)}
-              accessibilityActions={accessibilityActions}
-              onAccessibilityAction={({ nativeEvent }) => act(index, nativeEvent.actionName)}
-            />
-          </RowMenu>
+            detail={detail}
+            disabled={busy}
+            onPress={() => pick(index)}
+            accessibilityActions={accessibilityActions}
+            onAccessibilityAction={({ nativeEvent }) => act(index, nativeEvent.actionName)}
+            trailing={
+              <RowMenuButton
+                title={name}
+                actions={actions}
+                disabled={busy}
+                onAction={(id) => act(index, id)}
+              />
+            }
+          />
         );
       })}
       {settings && backups.length < MAX_MODEL_BACKUPS ? (
@@ -451,6 +454,53 @@ export function ModelRoleSettings({
         />
       ) : null}
     </SettingsGroup>
+  );
+}
+
+/** The visible ⋯ at the end of a row; one tap opens the same menu a long-press would. */
+export function RowMenuButton({
+  title,
+  actions,
+  onAction,
+  disabled = false,
+}: {
+  title: string;
+  actions: MenuAction[];
+  onAction: (id: string) => void;
+  disabled?: boolean;
+}) {
+  const { t } = useI18n();
+  const tokens = useMobileTokens();
+  const colorScheme = useResolvedAppearance();
+  return (
+    <MenuView
+      colorScheme={colorScheme}
+      title={title}
+      actions={
+        disabled
+          ? actions.map((action) => ({
+              ...action,
+              attributes: { ...action.attributes, disabled: true },
+            }))
+          : actions
+      }
+      onPressAction={({ nativeEvent }) => onAction(nativeEvent.event)}
+      style={rowMenuStyles.button}
+    >
+      <View
+        accessibilityRole="button"
+        accessibilityLabel={t("{name} options", { name: title })}
+        accessibilityState={{ disabled }}
+        style={rowMenuStyles.buttonInner}
+      >
+        <NativeSymbol
+          ios="ellipsis"
+          android="ellipsis-horizontal"
+          color={tokens.mutedForeground}
+          size={20}
+        />
+      </View>
+    </MenuView>
   );
 }
 
@@ -488,7 +538,11 @@ export function RowMenu({
   );
 }
 
-const rowMenuStyles = StyleSheet.create({ fullWidth: { width: "100%" } });
+const rowMenuStyles = StyleSheet.create({
+  fullWidth: { width: "100%" },
+  button: { borderRadius: 18, overflow: "hidden" },
+  buttonInner: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
+});
 
 function createStyles() {
   const tokens = mobileTokens();
