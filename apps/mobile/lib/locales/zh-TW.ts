@@ -728,6 +728,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "What this bot is for": "這個機器人的用途",
   Working: "工作中",
   "Working…": "處理中…",
+  "Running {name}…": "正在執行 {name}…",
   "Work stopped, but the thread could not refresh: {detail}":
     "工作已停止，但無法重新整理對話串：{detail}",
   "You have control": "你已接管控制",

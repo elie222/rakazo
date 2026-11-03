@@ -759,6 +759,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "What this bot is for": "这个 Bot 的用途",
   Working: "工作中",
   "Working…": "处理中…",
+  "Running {name}…": "正在运行 {name}…",
   "Work stopped, but the thread could not refresh: {detail}":
     "工作已停止，但线程无法刷新：{detail}",
   "You have control": "你已接管控制",

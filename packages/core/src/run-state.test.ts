@@ -14,6 +14,7 @@ import {
   QUEUE_HOLDING_RUN_STATUSES,
   WAITING_ON_USER_RUN_STATUSES,
   WORKING_RUN_STATUSES,
+  workingRoutineName,
 } from "./run-state.js";
 
 describe("run state machine", () => {
@@ -55,6 +56,24 @@ describe("run state machine", () => {
     expect(isRunWorking("running")).toBe(true);
     expect(isRunWorking("idle")).toBe(false);
     expect(isRunWorking(undefined)).toBe(false);
+  });
+
+  it("names the routine only when it is the one run in progress", () => {
+    const routine = { status: "running", trigger: "routine", routineName: "Weekly sample report" };
+    const waiting = { status: "queued", trigger: "routine", routineName: "Hourly sample sync" };
+    expect(workingRoutineName([routine])).toBe("Weekly sample report");
+    expect(workingRoutineName([waiting, routine])).toBe("Weekly sample report");
+    expect(workingRoutineName([{ status: "waiting_input", trigger: "user" }, routine])).toBe(
+      "Weekly sample report",
+    );
+    expect(workingRoutineName([waiting])).toBeUndefined();
+    expect(workingRoutineName([{ ...waiting, status: "leased" }])).toBeUndefined();
+    expect(workingRoutineName([routine, { ...waiting, status: "running" }])).toBeUndefined();
+    expect(workingRoutineName([{ status: "running", trigger: "user" }, routine])).toBeUndefined();
+    expect(workingRoutineName([{ ...routine, status: "completed" }])).toBeUndefined();
+    expect(workingRoutineName([{ ...routine, routineName: null }])).toBeUndefined();
+    expect(workingRoutineName([{ ...routine, routineName: "  " }])).toBeUndefined();
+    expect(workingRoutineName([])).toBeUndefined();
   });
 
   it("allows takeover resume onto a lease", () => {

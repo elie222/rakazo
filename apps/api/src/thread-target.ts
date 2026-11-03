@@ -414,6 +414,7 @@ export async function threadSnapshot(
                 ],
               },
               orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+              include: { routine: { select: { name: true } } },
             }),
             tx.run.findFirst({
               where: {
@@ -507,6 +508,7 @@ export async function threadSnapshot(
             ],
           },
           orderBy: { createdAt: "desc" },
+          include: { routine: { select: { name: true } } },
         }),
         // Recently updated terminals (completion bumps updatedAt). pickLatestTerminalRun then
         // ranks by completedAt ?? createdAt so null timestamps cannot revive a stale failure.
@@ -634,6 +636,7 @@ function mapRun(run: {
   status: string;
   trigger: string;
   routineId: string | null;
+  routine?: { name: string } | null;
   modelProvider: string | null;
   modelId: string | null;
   error: string | null;
@@ -650,6 +653,7 @@ function mapRun(run: {
     status: run.status as never,
     trigger: run.trigger as never,
     routineId: run.routineId ?? null,
+    ...(run.routine ? { routineName: run.routine.name } : {}),
     modelProvider: run.modelProvider,
     modelId: run.modelId,
     // Same display clamp as live run.failed events so a huge stored error cannot bypass it.
@@ -1471,6 +1475,10 @@ export function isStopMessage(input: { text?: string; artifactIds?: string[] }) 
 
 export const STOPPED_BY_MESSAGE_NOTE = "Stopped. Anything already done stays done.";
 
+export function stoppedRoutineNote(routineName: string) {
+  return `Stopped the routine "${routineName}".`;
+}
+
 export async function stopThreadRuns(
   deps: {
     prisma: PrismaClient;
@@ -1504,7 +1512,14 @@ export function cancelThreadRuns(
         status: { in: [...ACTIVE_RUN_STATUSES] },
       },
       data: { status: "cancelled", completedAt: new Date() },
-      select: { id: true, botId: true, userId: true, spaceId: true },
+      select: {
+        id: true,
+        botId: true,
+        userId: true,
+        spaceId: true,
+        trigger: true,
+        routine: { select: { name: true } },
+      },
     });
     const ids = cancelled.map((run) => run.id);
     await clearEndedRunState(tx, ids);
@@ -1560,18 +1575,38 @@ export function cancelThreadRuns(
       });
       eventSeq = event.seq;
     }
-    if (ids.length && note) {
-      const blocks: MessageBlock[] = [{ kind: "meta", text: STOPPED_BY_MESSAGE_NOTE }];
+    const routineNotes = [
+      ...new Map(
+        cancelled.flatMap((run) =>
+          run.trigger === "routine" && run.routine
+            ? [
+                [
+                  `${run.botId}:${run.routine.name}`,
+                  { botId: run.botId, text: stoppedRoutineNote(run.routine.name) },
+                ] as const,
+              ]
+            : [],
+        ),
+      ).values(),
+    ];
+    const notes =
+      routineNotes.length > 0
+        ? routineNotes
+        : ids.length && note
+          ? [{ botId: note.botId, text: STOPPED_BY_MESSAGE_NOTE }]
+          : [];
+    for (const { botId, text } of notes) {
+      const blocks: MessageBlock[] = [{ kind: "meta", text }];
       const message = await createThreadMessageInTransaction(tx, {
         threadId: target.threadId,
         role: "system",
         blocks,
-        botId: note.botId,
+        botId,
       });
       const event = await appendEventInTransaction(tx, {
         spaceId: actor.spaceId,
         threadId: target.threadId,
-        botId: note.botId,
+        botId,
         type: "thread.message.created",
         payload: { messageId: message.id, role: "system", blocks },
       });

@@ -491,6 +491,29 @@ describe("thread event reduction", () => {
     expect(isThreadSnapshotEvent(event({ type: "agent.tool.completed" }))).toBe(true);
   });
 
+  it("keeps the routine name from run.started so the working line can name it", () => {
+    const started = reduceThreadSnapshot(
+      snapshot([]),
+      event({
+        type: "run.started",
+        seq: 3,
+        runId: "run-1",
+        payload: { trigger: "routine", routineId: "routine-1", routineName: "Daily check" },
+      }),
+    );
+    expect(started?.run).toMatchObject({
+      trigger: "routine",
+      routineId: "routine-1",
+      routineName: "Daily check",
+    });
+
+    const resumed = reduceThreadSnapshot(
+      started,
+      event({ type: "run.started", seq: 4, runId: "run-1", payload: { trigger: "routine" } }),
+    );
+    expect(resumed?.run?.routineName).toBe("Daily check");
+  });
+
   it("event-sources the active run on run.started so Stop does not wait on threads.get", () => {
     const initial = snapshot([]);
     const started = reduceThreadSnapshot(

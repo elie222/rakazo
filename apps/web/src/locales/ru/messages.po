@@ -5337,6 +5337,10 @@ msgstr "выполняется"
 msgid "Running"
 msgstr "Выполняется"
 
+#: src/pages/shell/transcript.tsx
+msgid "Running {workingRoutine}…"
+msgstr "Выполняется {workingRoutine}…"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
 msgstr "Выполняется…"

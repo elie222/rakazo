@@ -610,6 +610,7 @@ export const JA_MESSAGES: Record<string, string> = {
   Uninstall: "アンインストール",
   "Verify and add": "確認して追加",
   "Working…": "処理中…",
+  "Running {name}…": "{name} を実行中…",
   "https://example.com/graphql": "https://example.com/graphql",
   "https://example.com/mcp": "https://example.com/mcp",
   "https://example.com/openapi.json": "https://example.com/openapi.json",

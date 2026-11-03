@@ -5337,6 +5337,10 @@ msgstr "चल रहा है"
 msgid "Running"
 msgstr "चल रहा है"
 
+#: src/pages/shell/transcript.tsx
+msgid "Running {workingRoutine}…"
+msgstr "{workingRoutine} चल रहा है…"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
 msgstr "चल रहा है…"

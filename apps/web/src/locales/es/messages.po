@@ -5337,6 +5337,10 @@ msgstr "en ejecución"
 msgid "Running"
 msgstr "En ejecución"
 
+#: src/pages/shell/transcript.tsx
+msgid "Running {workingRoutine}…"
+msgstr "Ejecutando {workingRoutine}…"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
 msgstr "Ejecutando…"

@@ -776,6 +776,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "What this bot is for": "Для чего нужен этот бот",
   Working: "Выполняется",
   "Working…": "Выполняется…",
+  "Running {name}…": "Выполняется {name}…",
   "Work stopped, but the thread could not refresh: {detail}":
     "Работа остановлена, но диалог не удалось обновить: {detail}",
   "You have control": "Вы управляете",

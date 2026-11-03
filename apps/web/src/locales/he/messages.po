@@ -5337,6 +5337,10 @@ msgstr "פועל"
 msgid "Running"
 msgstr "פועל"
 
+#: src/pages/shell/transcript.tsx
+msgid "Running {workingRoutine}…"
+msgstr "מריץ את {workingRoutine}…"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
 msgstr "מריץ…"

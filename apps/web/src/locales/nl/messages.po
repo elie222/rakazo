@@ -5337,6 +5337,10 @@ msgstr "draait"
 msgid "Running"
 msgstr "Draait"
 
+#: src/pages/shell/transcript.tsx
+msgid "Running {workingRoutine}…"
+msgstr "{workingRoutine} wordt uitgevoerd…"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
 msgstr "Bezig met draaien…"
