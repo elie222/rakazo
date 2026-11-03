@@ -1134,6 +1134,7 @@ it("shows a saved client as saved when the sign-in after it fails", async () => 
     enabled: true,
     hasSecret: false,
     oauthClientId: null as string | null,
+    oauthStatus: "none",
     health: { status: "error", code: MCP_OAUTH_CLIENT_REQUIRED },
   };
   const fallback = state.rpc.getMockImplementation();
@@ -1167,6 +1168,8 @@ it("shows a saved client as saved when the sign-in after it fails", async () => 
 
   expect(container.querySelector('[data-testid="mcp-oauth-client-form"]')).toBeNull();
   expect(container.textContent).not.toContain("Needs an OAuth client ID");
+  const row = container.querySelector('[data-testid="registered-mcp-server"]');
+  expect(row?.querySelector("button")?.textContent).toBe("Connect OAuth");
 });
 
 it("shows a catalog server added before its sign-in was cancelled", async () => {
@@ -1235,4 +1238,42 @@ it("shows a catalog server added before its sign-in was cancelled", async () => 
 
   const rows = container.querySelectorAll('[data-testid="registered-mcp-server"]');
   expect([...rows].map((row) => row.textContent?.includes("Tracker"))).toContain(true);
+});
+
+it("shows the client form when a sign-in finds the provider needs one", async () => {
+  const server = {
+    id: "expired",
+    slug: "expired-server",
+    name: "Expired server",
+    description: "",
+    transport: "streamable_http",
+    endpoint: "https://mcp.expired.example/mcp",
+    headerKeys: [],
+    enabled: true,
+    hasSecret: false,
+    oauthClientId: null,
+    oauthStatus: "reconnect",
+    health: {} as Record<string, unknown>,
+  };
+  const fallback = state.rpc.getMockImplementation();
+  state.rpc.mockImplementation((proc: string, args: unknown) => {
+    if (proc === "mcp/servers/list") return Promise.resolve([server]);
+    if (proc === "integrationSetup/get")
+      return Promise.resolve({ webUrl: "https://rakazo.example.test/integrations/setup" });
+    return fallback?.(proc, args);
+  });
+  vi.mocked(signInToMcpServer).mockImplementationOnce(async () => {
+    server.health = { status: "error", code: MCP_OAUTH_CLIENT_REQUIRED };
+    throw new Error("Needs an OAuth client ID");
+  });
+  await render();
+  expect(container.querySelector('[data-testid="mcp-oauth-client-form"]')).toBeNull();
+
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((node) => node.textContent === "Connect OAuth")
+      ?.click(),
+  );
+
+  expect(container.querySelector('[data-testid="mcp-oauth-client-form"]')).not.toBeNull();
 });

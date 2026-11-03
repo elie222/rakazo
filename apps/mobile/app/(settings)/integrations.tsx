@@ -562,7 +562,10 @@ export default function Integrations() {
           {server.name}
         </Text>
         <Text style={styles.secondary}>{serverStatus(server)}</Text>
-        {server.enabled && (server.oauthStatus === "reconnect" || server.id === oauthServerId) ? (
+        {server.enabled &&
+        (server.oauthStatus === "reconnect" ||
+          server.id === oauthServerId ||
+          (server.oauthClientId && server.oauthStatus !== "connected")) ? (
           <NativeActionButton
             label={t("Connect OAuth")}
             fill={false}
@@ -892,10 +895,11 @@ export default function Integrations() {
     setMcpError(null);
     try {
       await signInToMcpServer(serverId);
-      if (isCurrent()) await refresh();
     } catch (reason) {
       if (isCurrent()) setMcpError(errorText(reason, t("Could not start MCP OAuth")));
     } finally {
+      // A failed sign-in can leave the server needing a client, which the reload shows.
+      if (isCurrent()) await refresh().catch(() => undefined);
       if (isCurrent()) setPending(null);
     }
   }
