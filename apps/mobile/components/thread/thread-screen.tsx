@@ -431,7 +431,9 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     answer: composer.answer,
     openBot,
     openComputer,
-    previewFile: (artifactId) => router.push({ pathname: "/artifact", params: { artifactId } }),
+    // A chat attachment opens the version it was sent with, not the newest.
+    previewFile: (artifactId) =>
+      router.push({ pathname: "/artifact", params: { artifactId, exact: "1" } }),
     previewImage: (target) =>
       router.push({
         pathname: "/image",

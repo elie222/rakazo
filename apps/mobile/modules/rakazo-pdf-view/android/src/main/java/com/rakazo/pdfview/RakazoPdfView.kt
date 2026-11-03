@@ -149,7 +149,8 @@ class RakazoPdfView(context: Context, appContext: AppContext) : ExpoView(context
         bitmaps.evictAll()
         cacheWidth = width
       }
-      image.layoutParams = ViewGroup.LayoutParams(width, (width * aspect[position]).toInt())
+      image.layoutParams =
+        ViewGroup.LayoutParams(width, (width * aspect[position]).toInt().coerceAtLeast(1))
       image.tag = position
       val cached = bitmaps.get(position)
       image.setImageBitmap(cached)

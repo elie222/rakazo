@@ -100,6 +100,8 @@ linkifyExplicitUrls(markdownParser);
 markTaskListItems(markdownParser);
 
 const TASK_MARKER = /^\[([ xX])\]\s+/;
+// The first text token ends at a line break, so its marker may have nothing after it.
+const TASK_MARKER_TOKEN = /^\[([ xX])\](?:\s+|$)/;
 
 /** The parts of a markdown-it token the task list rule reads and writes. */
 type ParsedToken = {
@@ -128,8 +130,13 @@ function markTaskListItems(parser: typeof markdownParser) {
       const first = inline.children?.[0];
       // Read the source, so an escaped `\[x\]` stays literal text.
       const match = TASK_MARKER.exec(inline.content);
-      if (first?.type !== "text" || !match || !TASK_MARKER.test(first.content)) continue;
-      first.content = first.content.slice(match[0].length);
+      const token = first?.type === "text" ? TASK_MARKER_TOKEN.exec(first.content) : null;
+      if (!first || !match || !token) continue;
+      first.content = first.content.slice(token[0].length);
+      // A marker alone on its line leaves the break that followed it leading the text.
+      if (!first.content && inline.children?.[1]?.type === "softbreak") {
+        inline.children.splice(1, 1);
+      }
       inline.content = inline.content.replace(TASK_MARKER, "");
       item.attrSet("data-task", match[1] === " " ? "open" : "done");
     }
@@ -990,17 +997,23 @@ function listItemRule(
     const color =
       (StyleSheet.flatten(styleMap.bullet_list_icon) as TextStyle | undefined)?.color ??
       body?.color;
+    // VoiceOver reads the item as one checkbox with its state. An item holding a nested list
+    // makes only its box the checkbox, so each nested item keeps its own.
+    const nested = node.children.some(
+      (child) => child.type === "bullet_list" || child.type === "ordered_list",
+    );
+    const checkbox = {
+      accessible: true,
+      accessibilityRole: "checkbox" as const,
+      accessibilityLabel: cellPlainText(nested ? (node.children[0] ?? node) : node).trim(),
+      accessibilityState: { checked: task === "done" },
+    };
     return (
-      <View
-        key={node.key}
-        style={row}
-        // One element, so VoiceOver reads the item with its checkbox state.
-        accessible
-        accessibilityRole="checkbox"
-        accessibilityLabel={cellPlainText(node).trim()}
-        accessibilityState={{ checked: task === "done" }}
-      >
-        <View style={[layout.bulletMarker, direction ? layout.taskAfter : layout.taskBefore]}>
+      <View key={node.key} style={row} {...(nested ? {} : checkbox)}>
+        <View
+          style={[layout.bulletMarker, direction ? layout.taskAfter : layout.taskBefore]}
+          {...(nested ? checkbox : {})}
+        >
           <Text style={marker} accessible={false} importantForAccessibility="no">
             {ZERO_WIDTH_SPACE}
           </Text>

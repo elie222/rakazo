@@ -75,7 +75,7 @@ async function computePreview(mimeType: string, file: File): Promise<PreviewCont
 }
 
 export default function ArtifactDetailScreen() {
-  const { artifactId } = useLocalSearchParams<{ artifactId: string }>();
+  const { artifactId, exact } = useLocalSearchParams<{ artifactId: string; exact?: string }>();
   const navigation = useNavigation();
   const router = useRouter();
   const headerInset = useFloatingHeaderInset();
@@ -95,8 +95,8 @@ export default function ArtifactDetailScreen() {
       .then((list) => {
         if (cancelled) return;
         setVersions(list);
-        // Open the version a chat attachment points at; the picker still offers the rest.
-        const attached = list.some((version) => version.id === artifactId);
+        // A chat attachment opens its own version; the Files list opens the newest.
+        const attached = exact === "1" && list.some((version) => version.id === artifactId);
         setSelectedVersionId(attached ? artifactId : (list[0]?.id ?? artifactId));
       })
       .catch(() => {
@@ -105,7 +105,7 @@ export default function ArtifactDetailScreen() {
     return () => {
       cancelled = true;
     };
-  }, [artifactId]);
+  }, [artifactId, exact]);
 
   useEffect(() => {
     if (!selectedVersionId) return;
