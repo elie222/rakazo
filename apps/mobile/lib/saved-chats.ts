@@ -11,6 +11,7 @@ import type {
 } from "./api";
 import { currentApiBase, selectedSpaceId } from "./api";
 import { artifactCacheSession } from "./artifact-cache-session";
+import { onConversationCleared } from "./conversation-cleared";
 import { identityLabels } from "./identity-display";
 import type { IntegrationsCacheScope } from "./integrations-cache";
 import { integrationsCacheScope, isIntegrationsScopeCurrent } from "./integrations-cache";
@@ -316,6 +317,19 @@ export function writeSavedThread(
       key: scopeKey(scope, target),
       snapshot: savedThreadSnapshot(snapshot),
     });
+  } catch {}
+}
+
+// A cleared chat never reopens showing its old messages, even when it was not open.
+onConversationCleared((botId) => void forgetSavedThread({ botId }));
+
+/** Drops one chat's saved copy. */
+async function forgetSavedThread(target: { botId?: string; groupId?: string }) {
+  const scope = await savedChatsScope();
+  if (!scope) return;
+  try {
+    const file = spaceFile(scope, savedChatTarget(target));
+    if (file.exists) file.delete();
   } catch {}
 }
 

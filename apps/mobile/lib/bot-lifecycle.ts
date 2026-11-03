@@ -2,6 +2,7 @@ import { Alert } from "react-native";
 import type { ApiRequestContext } from "./api";
 import { rpc } from "./api";
 import { notifyArchivedChatsChanged } from "./archived-chats";
+import { notifyConversationCleared } from "./conversation-cleared";
 import { t } from "./i18n";
 import { removeFromSearchInbox } from "./search-inbox";
 import { errorText } from "./user-error";
@@ -77,16 +78,6 @@ export async function archiveBot(botId: string): Promise<void> {
   notifyArchivedChatsChanged();
 }
 
-const clearedListeners = new Set<(botId: string) => void>();
-
-/** The open chat empties itself when its conversation is cleared from the bot's profile. */
-export function onConversationCleared(listener: (botId: string) => void): () => void {
-  clearedListeners.add(listener);
-  return () => {
-    clearedListeners.delete(listener);
-  };
-}
-
 export function confirmClearConversation(botId: string) {
   Alert.alert(
     t("Clear conversation?"),
@@ -100,9 +91,7 @@ export function confirmClearConversation(botId: string) {
         style: "destructive",
         onPress: () =>
           void rpc("threads/clear", { botId })
-            .then(() => {
-              for (const listener of clearedListeners) listener(botId);
-            })
+            .then(() => notifyConversationCleared(botId))
             .catch((error: unknown) =>
               Alert.alert(t("Could not clear conversation"), errorText(error, t("Try again."))),
             ),

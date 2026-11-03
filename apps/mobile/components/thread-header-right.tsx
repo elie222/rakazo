@@ -1,6 +1,6 @@
 import type { NativeStackNavigationOptions } from "expo-router";
 import { router } from "expo-router";
-import { Platform, Pressable } from "react-native";
+import { Pressable } from "react-native";
 import { iosAtLeast } from "../lib/native-controls";
 import { NativeSymbol } from "./native-symbol";
 
@@ -32,13 +32,10 @@ export function threadHeaderRight({
 }): NativeStackNavigationOptions {
   const label = inGroup ? t("Group settings") : t("Invite a friend");
   const onPress = inGroup ? onGroupSettings : onInvite;
-  if (readOnly || !onPress)
-    return {
-      headerRight: undefined,
-      ...(Platform.OS === "ios" ? { unstable_headerRightItems: () => [] } : {}),
-    };
+  // Undefined, not an empty list, so an older iOS header keeps a Restore button set elsewhere.
+  if (readOnly || !onPress) return { headerRight: undefined, unstable_headerRightItems: undefined };
   return {
-    ...(Platform.OS === "ios" && iosAtLeast(26)
+    ...(iosAtLeast(26)
       ? {
           unstable_headerRightItems: () => [
             {
@@ -50,7 +47,7 @@ export function threadHeaderRight({
             },
           ],
         }
-      : {}),
+      : { unstable_headerRightItems: undefined }),
     headerRight: () => (
       <Pressable
         accessibilityRole="button"

@@ -1,11 +1,12 @@
 import { MenuView } from "@expo/ui/community/menu";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { useRouter } from "expo-router";
-import { Alert, Platform, View } from "react-native";
+import { Alert, View } from "react-native";
 import { notifyArchivedChatsChanged } from "../lib/archived-chats";
 import { archiveBot, confirmClearConversation, confirmDeleteBot } from "../lib/bot-lifecycle";
 import { useI18n } from "../lib/i18n";
 import { useResolvedAppearance } from "../lib/native";
+import { iosAtLeast } from "../lib/native-controls";
 import { errorText } from "../lib/user-error";
 import { NativeSymbol } from "./native-symbol";
 
@@ -60,7 +61,8 @@ export function botProfileMenuOptions(
   label: string,
   color: string,
 ): NativeStackNavigationOptions {
-  if (Platform.OS === "ios")
+  // Native header items exist from iOS 26; older iOS uses the same menu button as Android.
+  if (iosAtLeast(26))
     return {
       unstable_headerRightItems: () => [
         {

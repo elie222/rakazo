@@ -11,7 +11,8 @@ import ArtifactsScreen from "../app/artifacts";
 import BotProfile from "../app/bot-profile";
 import RoutineDetail from "../app/routine";
 import RoutinesScreen from "../app/routines";
-import { onConversationCleared } from "./bot-lifecycle";
+import { onConversationCleared } from "./conversation-cleared";
+import type * as NativeControls from "./native-controls";
 import { queryClient } from "./query";
 import type * as RoutineHelpers from "./routine";
 import { ROUTINES_POLL_MS, ROUTINES_RETRY_MS } from "./routine-store";
@@ -75,6 +76,11 @@ vi.mock("expo-router", () => ({
       return () => void focus.delete(effect);
     }, [effect]);
   },
+}));
+// iOS 26, where the profile's menu is a native header item.
+vi.mock("./native-controls", async (importOriginal) => ({
+  ...(await importOriginal<typeof NativeControls>()),
+  iosAtLeast: () => true,
 }));
 vi.mock("react-native", () => {
   const view = ({ children }: { children?: ReactNode }) => createElement("div", null, children);

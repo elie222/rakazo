@@ -26,7 +26,7 @@ vi.mock("../components/sheet-header", () => ({ trailingHeaderOptions: () => ({})
 vi.mock("../components/thread-header-right", () => ({ threadHeaderRight: () => ({}) }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./archived-chats", () => ({ notifyArchivedChatsChanged: vi.fn() }));
-vi.mock("./bot-lifecycle", () => ({ onConversationCleared: () => () => undefined }));
+vi.mock("./bot-lifecycle", () => ({}));
 vi.mock("./i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock("./native", () => ({ useResolvedAppearance: () => "light" }));
 vi.mock("./thread-edges", () => ({ threadEdgeOptions: () => ({}) }));
