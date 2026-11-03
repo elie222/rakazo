@@ -70,6 +70,9 @@ function botSecretDeps(seed: Row[] = []) {
       return {};
     }),
     updateMany: vi.fn(async (args: { where: Row; data: Row }) => {
+      // As Prisma does, an unknown column fails the update.
+      const unknown = Object.keys(args.data).filter((key) => !["title", "note"].includes(key));
+      if (unknown.length) throw new Error(`Unknown argument ${unknown.join(", ")}`);
       const matched = rows.filter((row) => matches(row, args.where));
       for (const row of matched) Object.assign(row, args.data, { updatedAt: now });
       return { count: matched.length };

@@ -1,6 +1,11 @@
 import { MenuView } from "@expo/ui/community/menu";
-import type { BotSecretMetadata, VaultRevealed } from "@rakazo/contracts";
-import { cardExpiry, isIdentityConfirmationRequired } from "@rakazo/contracts";
+import type { BotSecretMetadata, VaultKind, VaultRevealed } from "@rakazo/contracts";
+import {
+  cardExpiry,
+  isIdentityConfirmationRequired,
+  VAULT_KINDS,
+  vaultKind,
+} from "@rakazo/contracts";
 import * as Clipboard from "expo-clipboard";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useNavigation } from "expo-router";
@@ -23,15 +28,13 @@ import { iosAtLeast } from "../../lib/native-controls";
 import { settingsRpc, settingsTarget } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
-import type { VaultItem, VaultKind, VaultSave } from "../../lib/vault";
+import type { VaultItem, VaultSave } from "../../lib/vault";
 import {
   billingChoices,
   filterVaultItems,
   readableItem,
-  VAULT_KINDS,
   VAULT_SEARCH_MIN_ITEMS,
   vaultItemSubtitle,
-  vaultKind,
   vaultKindLabel,
   vaultKindSymbol,
   vaultKindsPresent,
@@ -39,7 +42,7 @@ import {
 } from "../../lib/vault";
 
 type RowAction = "edit" | "remove";
-type Editing = { kind: VaultKind; item?: VaultItem };
+type Editing = { kind: VaultKind; item?: VaultItem; revealed?: VaultRevealed };
 
 /**
  * Logins, cards, contacts, API keys and variables bots can use. Opened with a Space that keeps its
@@ -212,16 +215,37 @@ export default function Vault() {
     ]);
   }
 
-  function edit(item: BotSecretMetadata) {
+  /** A login or card opens with its value, after the person confirms it's them, so Save keeps all of it. */
+  async function edit(item: BotSecretMetadata) {
     const readable = readableItem(item);
     if (!readable) return;
+    const kind = vaultKind(readable.auth.type);
+    let revealed: VaultRevealed | undefined;
+    if (kind === "login" || kind === "card") {
+      setPending(true);
+      setError(null);
+      try {
+        revealed = await withIdentityConfirmation(() =>
+          rpc("vault/reveal", { scope, name: readable.name }),
+        );
+      } catch (err) {
+        // Dismissing the confirmation prompt is the person's choice, not a failure.
+        if (!isIdentityConfirmationRequired(err)) {
+          setError(errorText(err, t("Could not show the item")));
+        }
+        return;
+      } finally {
+        setPending(false);
+      }
+      if (!focused.current) return;
+    }
     setOpened(null);
-    setEditing({ kind: vaultKind(readable.auth.type), item: readable });
+    setEditing({ kind, item: readable, revealed });
   }
 
   function runAction(item: BotSecretMetadata, action: RowAction) {
     if (pending) return;
-    if (action === "edit") edit(item);
+    if (action === "edit") void edit(item);
     if (action === "remove") confirmRemove(item);
   }
 
@@ -344,7 +368,7 @@ export default function Vault() {
           busy={pending}
           onClose={() => setOpened(null)}
           onShow={() => void show(openedItem)}
-          onEdit={() => edit(openedItem)}
+          onEdit={() => void edit(openedItem)}
           onRemove={() => confirmRemove(openedItem)}
         />
       ) : null}
@@ -352,6 +376,7 @@ export default function Vault() {
         <VaultItemEditor
           kind={editing.kind}
           item={editing.item}
+          revealed={editing.revealed}
           contacts={contacts}
           onClose={() => setEditing(null)}
           onSave={save}

@@ -605,8 +605,8 @@ function optionalText(max: number) {
     .string()
     .trim()
     .max(max)
-    .optional()
-    .transform((value) => value || undefined);
+    .transform((value) => value || undefined)
+    .optional();
 }
 
 /** The fields of a contact. Every one is optional, but a contact holds at least one. */

@@ -1,4 +1,4 @@
-import type { ContactFields } from "@rakazo/contracts";
+import type { ContactFields, VaultKind, VaultRevealed } from "@rakazo/contracts";
 import { commandVariableName } from "@rakazo/contracts";
 import type { ReactNode } from "react";
 import { useRef, useState } from "react";
@@ -10,7 +10,7 @@ import { useI18n } from "../lib/i18n";
 import { useThemedStyles } from "../lib/native";
 import { useSecretSheetClose } from "../lib/secret-sheet-close";
 import { errorText } from "../lib/user-error";
-import type { ApiAuthType, VaultDraft, VaultItem, VaultKind, VaultSave } from "../lib/vault";
+import type { ApiAuthType, VaultDraft, VaultItem, VaultSave } from "../lib/vault";
 import {
   draftSave,
   emptyDraft,
@@ -35,6 +35,7 @@ type ContactKey = keyof ContactFields;
 export function VaultItemEditor({
   kind,
   item,
+  revealed,
   ask,
   title,
   contacts = [],
@@ -44,6 +45,8 @@ export function VaultItemEditor({
   kind: VaultKind;
   /** The saved item being edited; without one the sheet adds an item. */
   item?: VaultItem;
+  /** A saved login's or card's value, revealed before editing so the form starts from all of it. */
+  revealed?: VaultRevealed;
   ask?: boolean;
   /** The sheet's heading; defaults to the kind, or the item's title. */
   title?: string;
@@ -62,7 +65,7 @@ export function VaultItemEditor({
       { id: 0, label: t("Username"), value: item?.preview?.username ?? "", hidden: false },
       { id: 1, label: t("Password"), value: "", hidden: true },
     ];
-    return item ? itemDraft(item, fields) : emptyDraft(fields);
+    return item ? itemDraft(item, fields, revealed) : emptyDraft(fields);
   });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);

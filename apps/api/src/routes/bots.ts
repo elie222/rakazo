@@ -125,7 +125,8 @@ async function saveVaultCredential(
   if (input.value === undefined) {
     if (!name) throw new ORPCError("BAD_REQUEST", { message: "A new item needs its value" });
     try {
-      if (!(await relabelVaultItem(deps.prisma, scope, name, input))) {
+      const labels = { title: input.title, note: input.note };
+      if (!(await relabelVaultItem(deps.prisma, scope, name, labels))) {
         throw new ORPCError("NOT_FOUND", { message: "Credential not found" });
       }
     } catch (error) {

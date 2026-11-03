@@ -1,13 +1,18 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { LoginFieldInput } from "@rakazo/contracts";
-import { commandVariableName, loginCardFields, normalizeOneTimeCode } from "@rakazo/contracts";
+import {
+  commandVariableName,
+  loginCardFields,
+  normalizeOneTimeCode,
+  vaultKind,
+} from "@rakazo/contracts";
 import { Button, Input } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { AskBlock, AskCardProps } from "./AskCard";
 import { BuiCard } from "./ai/primitives";
-import { siteHost, VaultTile, vaultKind } from "./vault/kinds";
+import { siteHost, VaultTile } from "./vault/kinds";
 import { useVaultContacts } from "./vault/use-vault-contacts";
 import type { VaultEditorResult } from "./vault/VaultItemEditor";
 import { VaultItemEditor } from "./vault/VaultItemEditor";
@@ -169,7 +174,7 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
     <BuiCard data-testid="secret-ask-card" className="w-full min-w-0 max-w-xl px-4 py-3">
       <div className="flex items-center gap-3">
         <VaultTile
-          kind={block.credential ? vaultKind(block.credential.auth) : null}
+          kind={block.credential ? vaultKind(block.credential.auth.type) : null}
           title={form === "login" && block.credential ? siteHost(block.credential.origin) : ""}
         />
         <div className="min-w-0 flex-1">

@@ -1,13 +1,13 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { BotSecretMetadata, VaultRevealed } from "@rakazo/contracts";
-import { BotSecretName, cardExpiry, commandVariableName } from "@rakazo/contracts";
+import { BotSecretName, cardExpiry, commandVariableName, vaultKind } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { Check, Copy, Eye, EyeOff } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
 import type { VaultAuth } from "./kinds";
-import { siteHost, useVaultKindLabels, VaultTile, vaultKind } from "./kinds";
+import { siteHost, useVaultKindLabels, VaultTile } from "./kinds";
 import { VaultPageHeader } from "./VaultPageHeader";
 
 /** How long a shown value stays on screen. */
@@ -98,7 +98,7 @@ export function VaultItemDetail({
   // An item saved under a name the current rules refuse can only be removed.
   const auth: VaultAuth | null =
     item.auth && BotSecretName.safeParse(item.name).success ? item.auth : null;
-  const kind = auth ? vaultKind(auth) : null;
+  const kind = auth ? vaultKind(auth.type) : null;
   const [revealed, setRevealed] = useState<VaultRevealed | null>(null);
   const [revealing, setRevealing] = useState(false);
   const [confirmingRemove, setConfirmingRemove] = useState(false);

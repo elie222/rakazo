@@ -930,9 +930,14 @@ export async function relabelVaultItem(
   labels: { title?: string; note?: string },
 ) {
   await assertVaultInUse(prisma, scope);
+  // Only these columns: the rest of a request never reaches the row.
+  const data = {
+    ...(labels.title !== undefined ? { title: labels.title } : {}),
+    ...(labels.note !== undefined ? { note: labels.note } : {}),
+  };
   const updated = await prisma.vaultCredential.updateMany({
     where: { ...(await vaultFields(prisma, scope)), name },
-    data: labels,
+    data,
   });
   return updated.count > 0;
 }

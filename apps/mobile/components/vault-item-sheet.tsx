@@ -1,12 +1,12 @@
 import type { BotSecretMetadata, ContactFields } from "@rakazo/contracts";
-import { cardExpiry, commandVariableName } from "@rakazo/contracts";
+import { cardExpiry, commandVariableName, vaultKind } from "@rakazo/contracts";
 import * as Clipboard from "expo-clipboard";
 import { Modal, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
 import { siteHost } from "../lib/secret-destination";
-import { readableItem, vaultKind, vaultKindLabel, vaultKindSymbol } from "../lib/vault";
+import { readableItem, vaultKindLabel, vaultKindSymbol } from "../lib/vault";
 import { NativeActionButton } from "./native-action-button";
 import { NativeSymbol } from "./native-symbol";
 import { SettingsGroup, SettingsRow } from "./settings-group";

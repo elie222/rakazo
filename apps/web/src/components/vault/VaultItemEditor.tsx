@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { CardSecretValue, ContactFields, LoginFieldInput } from "@rakazo/contracts";
+import type { CardSecretValue, ContactFields, LoginFieldInput, VaultKind } from "@rakazo/contracts";
 import {
   BotSecretName,
   CardSecretValue as CardSecretValueSchema,
@@ -27,7 +27,7 @@ import {
 } from "@rakazo/ui-web";
 import type { ComponentProps, ReactNode } from "react";
 import { useId, useRef, useState } from "react";
-import type { VaultAuth, VaultKind } from "./kinds";
+import type { VaultAuth } from "./kinds";
 import { LoginFieldsInput } from "./LoginFieldsInput";
 import { VaultPageHeader } from "./VaultPageHeader";
 
@@ -478,7 +478,8 @@ function EditorForm({
               t`Expiry`,
               expiry,
               (next) => {
-                const digits = digitsOf(next, 4);
+                // MM/YY as typed; a pasted MM/YYYY keeps its four-digit year.
+                const digits = digitsOf(next, 6);
                 setExpiry(digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits);
               },
               { inputMode: "numeric", placeholder: "MM/YY" },

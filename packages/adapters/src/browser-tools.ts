@@ -372,7 +372,7 @@ export function parseBrowserActions(value: unknown): BrowserActInput[] {
     }
     if (kind === "fill_card") {
       const purchase = String(action.purchase ?? "").trim();
-      const card = String(action.card ?? "").trim();
+      const card = typeof action.card === "string" ? action.card.trim() : "";
       const field = action.field;
       if (!purchase === !card)
         throw new BrowserToolInputError(

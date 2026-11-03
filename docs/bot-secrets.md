@@ -120,7 +120,7 @@ The bot types a saved card with `browser_act` `fill_card`, passing `card` and `s
 }
 ```
 
-Every call that types a saved card asks the person first, naming the card and the site ("Pay with Visa ·· 4242 on shop.example.test?"). Allow once is the only way to approve it, and a webhook run, which nobody can answer, is refused. One call types one card on one site, and the page browser types it only while the page is still on that origin, including a payment frame inside it. `postal_code` comes from the billing contact. Once the card is typed, the pay click on that site needs no second approval, as with a wallet purchase. Every run of the bot hides each saved card number from tool output, in plain, digits-only, spaced and dashed forms; the security code is hidden in the run that types it.
+Every call that types a saved card asks the person first, naming the card and the site ("Pay with Visa ·· 4242 on shop.example.test?"). Allow once is the only way to approve it, and a webhook run, which nobody can answer, is refused. One call types one card on one site, and the page browser types it only while the page is still on that origin, including a payment frame inside it. `postal_code` comes from the billing contact. Approving the card names no amount, so the click that places the order still asks, with the total the page shows; a call that types the card and presses that click asks once, showing both. Every run of the bot hides each saved card number from tool output, in plain, digits-only, spaced and dashed forms; the security code is hidden in the run that types it.
 
 ## Contacts
 

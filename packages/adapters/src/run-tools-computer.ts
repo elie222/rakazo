@@ -224,7 +224,8 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
                 });
                 if ("error" in resolved) return resolved;
                 addRunSecrets(ctx, resolved.redactions);
-                if (!paying) ctx.state.walletHosts.add(new URL(resolved.origin).host);
+                // No pass for the pay click: approving the card named no amount, so the click
+                // that places the order still asks, showing what the page charges.
                 return { text: resolved.text, origin: resolved.origin };
               }
               const paymentWallet = deps.paymentWallet;

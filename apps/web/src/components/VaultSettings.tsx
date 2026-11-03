@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { BotSecretMetadata, SettingsScope, VaultRevealed } from "@rakazo/contracts";
-import { isIdentityConfirmationRequired } from "@rakazo/contracts";
+import type { BotSecretMetadata, SettingsScope, VaultKind, VaultRevealed } from "@rakazo/contracts";
+import { isIdentityConfirmationRequired, VAULT_KINDS, vaultKind } from "@rakazo/contracts";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
   Button,
@@ -13,19 +13,12 @@ import {
 } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Plus } from "lucide-react";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useSpaceQueries } from "../lib/query";
 import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
 import { useIdentityConfirmation } from "./ConfirmIdentityDialog";
-import type { VaultKind } from "./vault/kinds";
-import {
-  useVaultKindLabels,
-  useVaultSubtitle,
-  VAULT_KINDS,
-  VaultTile,
-  vaultKind,
-} from "./vault/kinds";
+import { useVaultKindLabels, useVaultSubtitle, VaultTile } from "./vault/kinds";
 import { VaultItemDetail } from "./vault/VaultItemDetail";
 import type { VaultEditorInitial, VaultEditorResult } from "./vault/VaultItemEditor";
 import { VaultItemEditorPage } from "./vault/VaultItemEditor";
@@ -63,6 +56,7 @@ export function VaultSettings({
   const [error, setError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const { withIdentityConfirmation, identityDialog } = useIdentityConfirmation();
+  const revealAttempt = useRef(0);
 
   useEffect(() => {
     onBusyChange?.(busy);
@@ -96,24 +90,30 @@ export function VaultSettings({
 
   async function reveal(name: string): Promise<VaultRevealed | null> {
     setDetailError(null);
-    let current = true;
+    const attempt = revealAttempt.current;
+    const current = () => revealAttempt.current === attempt;
     try {
-      return await withIdentityConfirmation(async () => {
+      const shown = await withIdentityConfirmation(async () => {
         try {
           return await rpc.vault.reveal({ scope, name });
         } catch (err) {
-          // A reveal whose dialog closed while it waited must not ask the person to confirm.
-          throw current ? err : REVEAL_CANCELLED;
+          // A reveal whose item closed while it waited must not ask the person to confirm.
+          throw current() ? err : REVEAL_CANCELLED;
         }
       });
+      return current() ? shown : null;
     } catch (err) {
       // Closing the confirmation is a choice, not a failure.
-      if (err !== REVEAL_CANCELLED && !isIdentityConfirmationRequired(err))
+      if (current() && err !== REVEAL_CANCELLED && !isIdentityConfirmationRequired(err))
         setDetailError(errorText(err, t`Could not show the credential`));
       return null;
-    } finally {
-      current = false;
     }
+  }
+
+  /** Leaves the opened item; a reveal still waiting for it is dropped. */
+  function closeItem() {
+    revealAttempt.current += 1;
+    setOpened(null);
   }
 
   async function remove(name: string) {
@@ -128,7 +128,7 @@ export function VaultSettings({
     } finally {
       setBusy(false);
     }
-    setOpened(null);
+    closeItem();
     if (!(await refresh())) {
       await writeSaved(queryClient, list.queryKey, (prev = []) =>
         prev.filter((row) => row.name !== name),
@@ -140,7 +140,7 @@ export function VaultSettings({
 
   function startEdit(item: BotSecretMetadata, revealed?: VaultRevealed) {
     if (!item.auth) return;
-    const kind = vaultKind(item.auth);
+    const kind = vaultKind(item.auth.type);
     // The item stays opened underneath, so saving or going back returns to it.
     setEditing({
       kind,
@@ -163,14 +163,15 @@ export function VaultSettings({
   );
   const counts = new Map<VaultKind, number>();
   for (const item of items ?? [])
-    if (item.auth) counts.set(vaultKind(item.auth), (counts.get(vaultKind(item.auth)) ?? 0) + 1);
+    if (item.auth)
+      counts.set(vaultKind(item.auth.type), (counts.get(vaultKind(item.auth.type)) ?? 0) + 1);
   const kindsShown = VAULT_KINDS.filter((kind) => counts.has(kind));
   const activeFilter = filter !== "all" && counts.has(filter) ? filter : "all";
   const searching = (items?.length ?? 0) >= SEARCH_FROM;
   const needle = searching ? search.trim().toLowerCase() : "";
   const shown = (items ?? []).filter(
     (item) =>
-      (activeFilter === "all" || (item.auth && vaultKind(item.auth) === activeFilter)) &&
+      (activeFilter === "all" || (item.auth && vaultKind(item.auth.type) === activeFilter)) &&
       (!needle ||
         [item.title, subtitle(item), item.origin, item.name].some((text) =>
           text.toLowerCase().includes(needle),
@@ -214,7 +215,7 @@ export function VaultSettings({
           contactTitles={new Map(contacts.map((contact) => [contact.name, contact.title]))}
           busy={busy}
           error={detailError}
-          onClose={() => setOpened(null)}
+          onClose={closeItem}
           onReveal={() => reveal(openedItem.name)}
           onEdit={(revealed) => startEdit(openedItem, revealed)}
           onRemove={() => remove(openedItem.name)}
@@ -292,7 +293,7 @@ export function VaultSettings({
       {shown.length ? (
         <ul data-testid="vault-card" className="overflow-hidden rounded-xl bg-muted/50">
           {shown.map((item) => {
-            const kind = item.auth ? vaultKind(item.auth) : null;
+            const kind = item.auth ? vaultKind(item.auth.type) : null;
             const line = item.auth ? subtitle(item) : "";
             return (
               <li key={item.name} className="border-t border-border first:border-t-0">

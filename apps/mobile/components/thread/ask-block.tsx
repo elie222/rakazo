@@ -1,5 +1,5 @@
 import type { LoginFieldInput } from "@rakazo/contracts";
-import { normalizeOneTimeCode } from "@rakazo/contracts";
+import { normalizeOneTimeCode, vaultKind } from "@rakazo/contracts";
 import { isSecretAskBlock } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useRef, useState } from "react";
@@ -11,7 +11,7 @@ import { useMobileTokens } from "../../lib/native";
 import { secretDestinationLabel, siteHost } from "../../lib/secret-destination";
 import { secretFieldTraits } from "../../lib/secret-field-traits";
 import { errorText } from "../../lib/user-error";
-import { vaultKind, vaultKindSymbol } from "../../lib/vault";
+import { vaultKindSymbol } from "../../lib/vault";
 import { NativeActionButton } from "../native-action-button";
 import { NativeSymbol } from "../native-symbol";
 import { SecretAskSheet } from "../secret-ask-sheet";

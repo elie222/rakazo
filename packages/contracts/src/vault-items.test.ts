@@ -10,6 +10,7 @@ import {
   parseCardExpiry,
   VaultPutInput,
 } from "./bot-secrets.js";
+import { vaultItemSubtitle } from "./vault-items.js";
 
 describe("cards", () => {
   it("keeps a typed number as digits and refuses one that fails the Luhn check", () => {
@@ -86,5 +87,59 @@ describe("vault destinations", () => {
     expect(
       VaultPutInput.safeParse({ destination: { auth: { type: "login" } }, value: "{}" }).success,
     ).toBe(false);
+  });
+});
+
+describe("the vault list's subtitle, shared by web and mobile", () => {
+  const words = { apiKey: "API key", expires: (date: string) => `Expires ${date}` };
+  const item = (fields: Partial<Parameters<typeof vaultItemSubtitle>[0]>) => ({
+    name: "item",
+    origin: "",
+    auth: { type: "contact" as const },
+    title: "Home",
+    note: "",
+    ...fields,
+  });
+
+  it("tells items of a kind apart without repeating the title", () => {
+    expect(
+      vaultItemSubtitle(
+        item({
+          preview: { contact: { name: "Alex Rivera", line1: "12 Elm St", city: "Springfield" } },
+        }),
+        words,
+      ),
+    ).toBe("Alex Rivera · 12 Elm St, Springfield");
+    expect(
+      vaultItemSubtitle(
+        item({
+          origin: "https://www.github.com",
+          auth: { type: "login" },
+          title: "github.com",
+          preview: { username: "octo@example.com" },
+        }),
+        words,
+      ),
+    ).toBe("octo@example.com");
+    expect(
+      vaultItemSubtitle(
+        item({
+          auth: { type: "card" },
+          note: "For travel",
+          preview: { card: { brand: "Visa", last4: "4242", expMonth: 8, expYear: 2030 } },
+        }),
+        words,
+      ),
+    ).toBe("Expires 08/30 · For travel");
+    expect(
+      vaultItemSubtitle(
+        item({ origin: "https://api.example.com", auth: { type: "bearer" }, title: "Status" }),
+        words,
+      ),
+    ).toBe("API key · api.example.com");
+    expect(
+      vaultItemSubtitle(item({ name: "deploy-token", auth: { type: "command" } }), words),
+    ).toBe("$DEPLOY_TOKEN");
+    expect(vaultItemSubtitle(item({ auth: null }), words)).toBe("");
   });
 });

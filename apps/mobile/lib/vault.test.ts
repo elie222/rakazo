@@ -1,5 +1,10 @@
 import type { BotSecretMetadata, ContactFields } from "@rakazo/contracts";
-import { decodeCardSecret, decodeContactSecret, decodeLoginSecret } from "@rakazo/contracts";
+import {
+  decodeCardSecret,
+  decodeContactSecret,
+  decodeLoginSecret,
+  vaultKind,
+} from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./i18n", () => ({
@@ -18,7 +23,6 @@ import {
   typedCardBrand,
   variableProblem,
   vaultItemSubtitle,
-  vaultKind,
   vaultKindsPresent,
   withItem,
 } from "./vault";
@@ -158,21 +162,42 @@ describe("saving from the editor", () => {
     expect(draftSave("variable", draft({ variable: "PATH", value: "v" }))).toBeUndefined();
   });
 
-  it("changes only a saved item's title and note until a new value is typed", () => {
+  it("edits a saved card from its revealed value, so every field is sent", () => {
     const saved = readableItem(card) as VaultItem;
-    const start = itemDraft(saved, []);
-    expect(start).toMatchObject({ title: "Visa ·· 4242", expiry: "08/28", billing: "home" });
-    expect(draftSave("card", { ...start, title: "Work" }, saved)).toEqual({
-      destination: { name: "visa", auth: { type: "card" } },
-      title: "Work",
-      note: "For travel",
+    const revealed = {
+      card: { number: "4242424242424242", expMonth: 8, expYear: 2028, cvc: "123", billing: "home" },
+    };
+    const start = itemDraft(saved, [], revealed);
+    expect(start).toMatchObject({ number: "4242424242424242", expiry: "08/28", cvc: "123" });
+    const save = draftSave("card", { ...start, expiry: "09/29", title: "Work" }, saved);
+    expect(save).toMatchObject({ destination: { name: "visa" }, title: "Work" });
+    expect(decodeCardSecret(save!.value!)).toMatchObject({
+      expMonth: 9,
+      expYear: 2029,
+      cvc: "123",
     });
-    // A changed card detail needs the number again, so nothing saves until it is typed.
-    expect(draftSave("card", { ...start, expiry: "09/29" }, saved)).toBeUndefined();
-    expect(
-      draftSave("card", { ...start, expiry: "09/29", number: "4242424242424242" }, saved)?.value,
-    ).toBeDefined();
+  });
 
+  it("edits a saved login from all of its revealed fields", () => {
+    const saved = readableItem(login) as VaultItem;
+    const fields = [
+      { label: "Email", value: "octo@example.com", hidden: false },
+      { label: "Password", value: "fake-password-1", hidden: true },
+      { label: "PIN", value: "fake-pin-1", hidden: true },
+    ];
+    const start = itemDraft(saved, [], { fields });
+    const changed = start.fields.map((field, index) =>
+      index === 0 ? { ...field, value: "new@example.com" } : field,
+    );
+    const save = draftSave("login", { ...start, fields: changed }, saved);
+    expect(decodeLoginSecret(save!.value!).fields).toEqual([
+      { label: "Email", value: "new@example.com", hidden: false },
+      { label: "Password", value: "fake-password-1", hidden: true },
+      { label: "PIN", value: "fake-pin-1", hidden: true },
+    ]);
+  });
+
+  it("keeps a key's value, which the form never shows, until a new one is typed", () => {
     const key = readableItem(item({})) as VaultItem;
     expect(draftSave("api_key", itemDraft(key, []), key)).toEqual({
       destination: { name: "github", origin: "https://api.github.com", auth: { type: "bearer" } },

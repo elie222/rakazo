@@ -3,6 +3,8 @@ import type {
   CardSummary,
   ContactFields,
   LoginFieldInput,
+  VaultKind,
+  VaultRevealed,
 } from "@rakazo/contracts";
 import {
   BotSecretName,
@@ -18,6 +20,9 @@ import {
   encodeLoginSecret,
   LoginSecretValue,
   parseCardExpiry,
+  vaultItemSubtitle as sharedSubtitle,
+  VAULT_KINDS,
+  vaultKind,
 } from "@rakazo/contracts";
 import { t } from "./i18n";
 import { siteHost } from "./secret-destination";
@@ -27,21 +32,6 @@ export type CredentialType = CredentialAuth["type"];
 export type VaultItem = BotSecretMetadata & { auth: CredentialAuth };
 /** What a save sends: no name for a new item, which the server names from its title. */
 export type VaultDestination = { name?: string; origin?: string; auth: CredentialAuth };
-
-/** The kinds people add and filter by. API credentials of every auth type are one kind. */
-export type VaultKind = "login" | "card" | "contact" | "api_key" | "variable";
-export const VAULT_KINDS: readonly VaultKind[] = [
-  "login",
-  "card",
-  "contact",
-  "api_key",
-  "variable",
-];
-
-export function vaultKind(type: CredentialType): VaultKind {
-  if (type === "login" || type === "card" || type === "contact") return type;
-  return type === "command" ? "variable" : "api_key";
-}
 
 export function vaultKindLabel(kind: VaultKind): string {
   if (kind === "login") return t("Login");
@@ -68,43 +58,13 @@ export function readableItem(item: BotSecretMetadata): VaultItem | null {
     : null;
 }
 
-function contactAddress(contact: Partial<ContactFields>): string {
-  return [contact.line1, contact.city].filter(Boolean).join(", ");
-}
-
-/** The muted line under an item's title, the same as on web. */
+/** The muted line under an item's title, the same as on web; an unreadable one shows its site. */
 export function vaultItemSubtitle(item: BotSecretMetadata): string {
-  const { auth, preview } = item;
-  if (!auth) return item.origin;
-  const kind = vaultKind(auth.type);
-  if (kind === "login") {
-    // A login without its own title is already titled by its site.
-    const host = siteHost(item.origin).replace(/^www\./, "");
-    return [preview?.username, item.title === host ? undefined : host].filter(Boolean).join(" · ");
-  }
-  if (kind === "card") {
-    const expires = preview?.card
-      ? t("Expires {date}", { date: cardExpiry(preview.card) })
-      : undefined;
-    return [expires, item.note].filter(Boolean).join(" · ");
-  }
-  if (kind === "contact") {
-    const contact: Partial<ContactFields> = preview?.contact ?? {};
-    return [
-      contact.name && contact.name !== item.title ? contact.name : undefined,
-      contactAddress(contact) || undefined,
-      contact.phone,
-      contact.email,
-    ]
-      .filter(Boolean)
-      .slice(0, 2)
-      .join(" · ");
-  }
-  if (kind === "api_key") {
-    const host = siteHost(item.origin);
-    return item.title === host ? t("API key") : `${t("API key")} · ${host}`;
-  }
-  return `$${commandVariableName(item.name)}`;
+  if (!item.auth) return item.origin;
+  return sharedSubtitle(item, {
+    apiKey: t("API key"),
+    expires: (date) => t("Expires {date}", { date }),
+  });
 }
 
 /** The items a kind filter and a search keep, in the list's order. */
@@ -190,9 +150,17 @@ export function emptyDraft(fields: readonly LoginFieldInput[] = []): VaultDraft 
 }
 
 /** The editor's starting state for a saved item: its labels and what its preview shows. */
-export function itemDraft(item: VaultItem, fields: readonly LoginFieldInput[]): VaultDraft {
-  const draft = emptyDraft(fields);
-  const card = item.preview?.card;
+/**
+ * The form for a saved item. A login or card starts from its revealed value, so a save sends every
+ * field as it is now instead of only the ones typed again.
+ */
+export function itemDraft(
+  item: VaultItem,
+  fields: readonly LoginFieldInput[],
+  revealed?: VaultRevealed,
+): VaultDraft {
+  const draft = emptyDraft(revealed && "fields" in revealed ? revealed.fields : fields);
+  const card = revealed && "card" in revealed ? revealed.card : undefined;
   return {
     ...draft,
     title: item.title,
@@ -200,7 +168,13 @@ export function itemDraft(item: VaultItem, fields: readonly LoginFieldInput[]): 
     origin: item.origin,
     variable: commandVariableName(item.name),
     ...(card
-      ? { expiry: cardExpiry(card), cardName: card.name ?? "", billing: card.billing ?? "" }
+      ? {
+          number: card.number,
+          expiry: cardExpiry(card),
+          cvc: card.cvc ?? "",
+          cardName: card.name ?? "",
+          billing: card.billing ?? "",
+        }
       : {}),
     contact: { ...EMPTY_CONTACT, ...stringFields(item.preview?.contact) },
   };
@@ -279,21 +253,13 @@ export function draftValue(kind: VaultKind, draft: VaultDraft): string | undefin
   return draft.value.length > 0 ? draft.value : undefined;
 }
 
-/** Whether a new value was started: a saved item without one changes only its title and note. */
-export function valueStarted(kind: VaultKind, draft: VaultDraft, saved?: VaultItem): boolean {
-  if (kind === "contact") return true;
-  if (kind === "login") return draft.fields.some((field) => field.hidden && field.value.length > 0);
-  if (kind === "card") {
-    const card = saved?.preview?.card;
-    return (
-      draft.number.length > 0 ||
-      draft.cvc.length > 0 ||
-      (card !== undefined &&
-        (draft.expiry !== cardExpiry(card) ||
-          draft.cardName !== (card.name ?? "") ||
-          draft.billing !== (card.billing ?? "")))
-    );
-  }
+/**
+ * Whether a save sends a value. A contact, login or card always does: the form holds all of it,
+ * a login's and card's revealed before editing. An API key or variable is never shown in the form,
+ * so it keeps its value until a new one is typed, and a save without one changes only the labels.
+ */
+export function valueStarted(kind: VaultKind, draft: VaultDraft): boolean {
+  if (kind === "contact" || kind === "login" || kind === "card") return true;
   return draft.value.length > 0;
 }
 
@@ -329,8 +295,7 @@ export function draftSave(
 ): VaultSave | undefined {
   const labels = { title: draft.title.trim(), note: draft.note.trim() };
   if (saved) {
-    if (!valueStarted(kind, draft, saved))
-      return { destination: itemDestination(saved), ...labels };
+    if (!valueStarted(kind, draft)) return { destination: itemDestination(saved), ...labels };
     const value = draftValue(kind, draft);
     return value === undefined
       ? undefined

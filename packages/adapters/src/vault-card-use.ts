@@ -38,9 +38,9 @@ export function requestedCardUse(
   if (!Array.isArray(actions)) return undefined;
   const uses = actions.flatMap((raw) => {
     const step = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-    return step.kind === "fill_card" && step.card !== undefined
-      ? [{ card: String(step.card).trim(), site: cardFillSite(step.site) }]
-      : [];
+    // As browser_act reads a step: an empty card beside a purchase is no saved card.
+    const card = typeof step.card === "string" ? step.card.trim() : "";
+    return step.kind === "fill_card" && card ? [{ card, site: cardFillSite(step.site) }] : [];
   });
   const [first] = uses;
   if (!first) return undefined;

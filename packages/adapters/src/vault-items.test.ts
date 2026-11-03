@@ -247,6 +247,8 @@ describe("approving a saved card", () => {
       ]),
     ).toEqual({ card: "visa", site: "https://shop.example.test" });
     expect(requestedCardUse([{ kind: "fill_card", purchase: "p1" }])).toBeUndefined();
+    expect(requestedCardUse([{ kind: "fill_card", purchase: "p1", card: "" }])).toBeUndefined();
+    expect(requestedCardUse([{ kind: "fill_card", purchase: "p1", card: null }])).toBeUndefined();
     expect(
       requestedCardUse([
         { ...step, field: "number" },

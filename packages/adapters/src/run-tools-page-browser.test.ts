@@ -353,7 +353,7 @@ describe("browser_act types a saved card only where the user approved it", () =>
     }
   });
 
-  it("types it once approved, hides the number, and lets the pay click there go ahead", async () => {
+  it("types it once approved and hides the number, leaving the pay click to ask", async () => {
     const { seen, walletHosts, secrets } = await fillSavedCard({
       card: "visa",
       site: "https://example.test",
@@ -363,7 +363,8 @@ describe("browser_act types a saved card only where the user approved it", () =>
     expect(seen).not.toContain("could not");
     expect(seen).not.toContain("4242424242424242");
     expect(secrets).toContain("4242424242424242");
-    expect([...walletHosts]).toEqual(["example.test"]);
+    // Approving the card named no amount, so placing the order still asks.
+    expect(walletHosts.size).toBe(0);
   });
 });
 
