@@ -31,7 +31,6 @@ export type PlotSpec = {
   marginBottom?: number;
   grid?: boolean;
   inset?: number;
-  aspectRatio?: number;
   x?: Record<string, unknown>;
   y?: Record<string, unknown>;
   fx?: Record<string, unknown>;
@@ -164,9 +163,9 @@ function boundedInterval(key: string, value: number | string, maxSteps: number, 
       )) as unknown as PlotInterval;
   return Object.assign(Object.create(interval) as PlotInterval, {
     range(lo: unknown, hi: unknown) {
-      const first = interval.floor(lo);
-      const step = Number(interval.offset(first, 1)) - Number(first);
-      if ((Number(hi) - Number(first)) / step > maxSteps) throw tooMany(key, maxSteps);
+      if (Number(interval.offset(interval.floor(lo), maxSteps)) < Number(hi)) {
+        throw tooMany(key, maxSteps);
+      }
       return interval.range(lo, hi);
     },
   });
@@ -178,7 +177,20 @@ function boundPlotOption(
   mark: string | undefined,
   time: boolean,
 ): unknown {
+  if (key === "aspectRatio" && value != null) {
+    // Plot derives the height from the data's extents, so no limit holds.
+    throw new Error("Plot aspectRatio is not supported; set height instead.");
+  }
+  const maxSteps =
+    key === "ticks"
+      ? MAX_PLOT_TICKS
+      : key !== "thresholds" && key !== "interval"
+        ? undefined
+        : mark === "contour" || mark === "density"
+          ? MAX_CONTOUR_THRESHOLDS
+          : MAX_PLOT_STEPS;
   if (Array.isArray(value)) {
+    if (maxSteps !== undefined && value.length > maxSteps) throw tooMany(key, maxSteps);
     if (
       key === "range" &&
       value.some((item) => !(Math.abs(numericOption(item) ?? 0) <= MAX_PLOT_SIZE))
@@ -198,14 +210,6 @@ function boundPlotOption(
   if (number !== undefined && minimum !== undefined && !(number >= minimum)) {
     throw new Error(`Plot ${key} must be at least ${minimum}.`);
   }
-  const maxSteps =
-    key === "ticks"
-      ? MAX_PLOT_TICKS
-      : key !== "thresholds" && key !== "interval"
-        ? undefined
-        : mark === "contour" || mark === "density"
-          ? MAX_CONTOUR_THRESHOLDS
-          : MAX_PLOT_STEPS;
   if (maxSteps === undefined) return value;
   // A number is a count for ticks and thresholds but a step for interval.
   if (typeof value === "number" && key !== "interval") {
