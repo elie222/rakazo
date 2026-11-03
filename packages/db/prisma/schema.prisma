@@ -2206,6 +2206,8 @@ model MessagingInstallation {
   botId String
   bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
   ciphertext String
+  /// Sender address of the person who installed it, as inbound messages carry it.
+  ownerAddress String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@unique([provider, workspaceId])
