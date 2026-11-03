@@ -5653,6 +5653,18 @@ msgstr "Start recording"
 msgid "Start your plan now?"
 msgstr "Start your plan now?"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}d late"
+msgstr "Started {count}d late"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}h late"
+msgstr "Started {count}h late"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}m late"
+msgstr "Started {count}m late"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "Starting"

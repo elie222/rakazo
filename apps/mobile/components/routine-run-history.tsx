@@ -3,7 +3,7 @@ import { formatRoutineRunAt } from "@rakazo/core";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator } from "react-native";
-import { activityStatusLabel } from "../lib/activity";
+import { activityStatusLabel, routineRunLateLabel } from "../lib/activity";
 import { dateLocaleForUi, useI18n } from "../lib/i18n";
 import { native } from "../lib/native";
 import { routineRunDestination, useRoutineRuns } from "../lib/routine-runs";
@@ -97,7 +97,7 @@ function RunRow({
     <SettingsRow
       accessibilityRole={onPress ? "button" : undefined}
       title={title}
-      detail={failure?.summary}
+      detail={failure?.summary ?? routineRunLateLabel(run)}
       value={
         run.status !== "completed"
           ? activityStatusLabel(run.status)

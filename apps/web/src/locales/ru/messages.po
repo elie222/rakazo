@@ -5653,6 +5653,18 @@ msgstr "Начать запись"
 msgid "Start your plan now?"
 msgstr "Начать тариф сейчас?"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}d late"
+msgstr "Запущено с опозданием на {count} дн."
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}h late"
+msgstr "Запущено с опозданием на {count} ч"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}m late"
+msgstr "Запущено с опозданием на {count} мин"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "Запуск"

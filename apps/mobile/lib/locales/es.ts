@@ -728,6 +728,9 @@ export const ES_MESSAGES: Record<string, string> = {
   "{count}d ago": "hace {count} d",
   "{count}h ago": "hace {count} h",
   "{count}m ago": "hace {count} min",
+  "Started {count}m late": "Empezó con {count} min de retraso",
+  "Started {count}h late": "Empezó con {count} h de retraso",
+  "Started {count}d late": "Empezó con {count} d de retraso",
   "Could not clear the custom server URL": "No se pudo borrar la URL del servidor personalizado",
   "Could not clear the local session": "No se pudo borrar la sesión local",
   "Could not clear the previous server session":
