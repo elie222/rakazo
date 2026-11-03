@@ -77,6 +77,35 @@ describe("searchIntegrationCatalog", () => {
     ]);
   });
 
+  it("keeps OAuth sign-in apart from tokens", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({
+        results: [
+          {
+            domain: "linear.app",
+            surfaces: [
+              {
+                kind: "mcp",
+                slug: "linear-app",
+                url: "https://mcp.linear.example/mcp",
+                auth: { kind: "oauth" },
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const [result] = await searchIntegrationCatalog({
+      baseUrl: "https://mirror.example/",
+      query: "linear",
+      signal: new AbortController().signal,
+      fetch,
+    });
+
+    expect(result?.surfaces[0]?.auth).toEqual({ type: "oauth", headerName: null, note: null });
+  });
+
   it("does not contact the feed for an empty query", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>();
     await expect(

@@ -112,6 +112,7 @@ function normalizeAuth(value: unknown): IntegrationCatalogSurface["auth"] {
   const kind = shortString(value.kind, 40)?.toLowerCase();
   const note = shortString(value.note, 500) ?? null;
   if (kind === "none") return { type: "none", headerName: null, note };
+  if (kind === "oauth" || kind === "oauth2") return { type: "oauth", headerName: null, note };
 
   const header = shortString(value.header, 200);
   const headerName = header?.split(":", 1)[0]?.trim() || null;
@@ -119,7 +120,7 @@ function normalizeAuth(value: unknown): IntegrationCatalogSurface["auth"] {
     return { type: "bearer", headerName: null, note };
   }
   if (headerName) return { type: "header", headerName, note };
-  if (kind && ["bearer", "token", "mixed", "oauth", "oauth2"].includes(kind)) {
+  if (kind && ["bearer", "token", "mixed"].includes(kind)) {
     return { type: "bearer", headerName: null, note };
   }
   return note ? { type: "bearer", headerName: null, note } : null;
