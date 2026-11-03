@@ -1,4 +1,6 @@
 export const JA_MESSAGES: Record<string, string> = {
+  "Add rule": "ルールを追加",
+  "Tool name": "ツール名",
   "Daily check-ins on unfinished work": "未完了の作業を毎日確認",
   "How other bots see it": "他のボットからの見え方",
   "Share to": "共有先",
