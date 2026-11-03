@@ -181,6 +181,20 @@ describe("executor approval replay", () => {
     expect(afterGrowth).not.toContain("notes.write:");
   });
 
+  it("keeps the selected connection in a continuation when account tools move into the catalog", () => {
+    const request = boundDirectApprovalRequest(
+      { connectorId: "example", resourceId: "mail", toolName: "send", connectionId: "work" },
+      { text: "approved exactly" },
+      "__rakazoCatalogTool",
+    );
+    const continuation = buildApprovalContinuation(
+      [{ kind: "send_scoped", request }],
+      JSON.stringify,
+      { exposedToolNames: new Set(["example_execute_tool"]) },
+    );
+    expect(continuation).toContain('"id":"mail:work:send"');
+  });
+
   it("renders a catalog wrapper continuation when a bound MCP tool is no longer exposed", () => {
     const request = boundDirectApprovalRequest(
       { connectorId: "mcp", resourceId: "server-1", toolName: "send_message" },

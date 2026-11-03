@@ -105,6 +105,8 @@ describe("Pi runtime errors", () => {
     MODEL_CONTEXT_TOO_SMALL_ERROR,
     '400: {"code":"400","message":"Unsupported model example-model"}',
     '400: {"message":"The model `example/model` requires terms acceptance.","type":"invalid_request_error","code":"model_terms_required"}',
+    '400: {"message":"Model example is not a chat model; call /v1/example instead of /v1/chat/completions","type":"invalid_request_error","param":null,"code":null}',
+    `400: {"type":"server_error","message":"Upstream request failed: This example model requires Global regions. Select Global in your workspace's Privacy settings to use it."}`,
     'OAuth refresh failed for anthropic: Anthropic token refresh request failed. url=https://example.invalid/v1/oauth/token; details=Error: HTTP request failed. status=400; body={"error": "invalid_grant", "error_description": "Refresh token not found or invalid"}',
   ])("marks a provider account failure the user can fix: %s", async (message) => {
     provider.errorMessage = message;
@@ -119,6 +121,10 @@ describe("Pi runtime errors", () => {
     "Unhandled stop reason: MALFORMED_RESPONSE",
     "This request was blocked as it seems to violate Anthropic's Terms of Service restrictions on reverse engineering or duplicating model outputs.",
     "Provider returned an empty response",
+    'unexpected tokens remaining in message header: Some("to=functions.example")',
+    'HarmonyError: unexpected tokens remaining in message header: Some("analysis")',
+    '500: {"message":"unexpected tokens remaining in message header: Some(\\"analysis\\")"}',
+    'unexpected tokens remaining in message header: Some("credit limit, timeout, model not found")',
     "Failed to parse tool call arguments as JSON",
     "Tool call validation failed: attempted to call tool 'commentary' which was not in request.tools",
     "Parsing failed. The model generated output that could not be parsed. Please adjust your prompt. See 'failed_generation' for more details.",
@@ -136,7 +142,9 @@ describe("Pi runtime errors", () => {
     '400: {"message":"Unexpected message role.","type":"invalid_request_error"}',
     '{"error":{"message":"Function call is missing a thought_signature in functionCall parts.","code":400}}',
     '400: {"message":"Provider returned error","code":400,"metadata":{"raw":"The `uniqueItems` JSON Schema keyword is not supported."}}',
+    '400: {"message":"Provider returned error","code":400,"metadata":{"raw":"{\\"code\\":400,\\"msg\\":\\"bad request\\"}"}}',
     "Cannot read properties of undefined (reading 'content')",
+    "Internal failure while handling unexpected tokens remaining in message header: unknown",
   ])("keeps a request we built or an unknown failure ordinary: %s", async (message) => {
     provider.errorMessage = message;
     const failure = consume();
@@ -152,6 +160,7 @@ describe("Pi runtime errors", () => {
     "OpenCode rejected this chat session. Send the message again.",
     "The upstream model provider could not complete this request. Please retry shortly.",
     "server_error: The model failed to generate a response.",
+    '400 data: {"error":{"code":"invalid_parameter_error","param":null,"message":"Download multimodal file timed out","type":"invalid_request_error"},"id":"chatcmpl-example"}\n\n',
   ])("keeps a dropped connection transient: %s", async (message) => {
     provider.errorMessage = message;
     await expect(consume()).rejects.toBeInstanceOf(TransientModelError);

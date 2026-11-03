@@ -1,3 +1,5 @@
+import { SandboxAllowanceUsedError } from "@rakazo/adapter-kit";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { replaceComputer } from "./computer-lifecycle.js";
@@ -15,6 +17,7 @@ const replacement = vi.mocked(replaceComputer);
 afterEach(() => {
   vi.clearAllMocks();
   vi.useRealTimers();
+  installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
 });
 function fixture(status = "queued") {
   const row = {
@@ -93,6 +96,16 @@ describe("background computer maintenance", () => {
     expect(JSON.stringify(row)).not.toContain("provider-private-detail");
     await performComputerUpdate(deps, row.id);
     expect(replacement).toHaveBeenCalledOnce();
+  });
+  it("records a spent computer allowance as a warning, not an error report", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const { row, deps } = fixture();
+    replacement.mockRejectedValueOnce(new SandboxAllowanceUsedError());
+    await performComputerUpdate(deps, row.id);
+    expect(row.status).toBe("failed");
+    const logged = sink.events.filter((event) => event.message === "computer update failed");
+    expect(logged.map((event) => event.level)).toEqual(["warn"]);
   });
   it("checks the computer for idle sleep again after a failed update", async () => {
     const { row, deps, jobs } = fixture();

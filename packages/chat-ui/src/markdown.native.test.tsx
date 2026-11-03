@@ -29,9 +29,6 @@ const tableEvents = vi.hoisted(() => ({
   onLayout: undefined as
     | ((event: { nativeEvent: { layout: { width: number; height: number } } }) => void)
     | undefined,
-  onScroll: undefined as
-    | ((event: { nativeEvent: { contentOffset: { x: number } } }) => void)
-    | undefined,
   onStartShouldSetResponder: undefined as (() => boolean) | undefined,
   onContentSizeChange: undefined as ((width: number, height: number) => void) | undefined,
 }));
@@ -84,9 +81,6 @@ vi.mock("react-native", async () => {
         imageLoads.push(rest.onLoad as (typeof imageLoads)[number]);
         delete rest.onLoad;
         delete rest.onError;
-      }
-      if (tag === "rn-scroll-view" && typeof rest.onScroll === "function") {
-        tableEvents.onScroll = rest.onScroll as typeof tableEvents.onScroll;
       }
       if (tag === "rn-scroll-view" && typeof rest.onContentSizeChange === "function") {
         tableEvents.onContentSizeChange =
@@ -338,7 +332,7 @@ describe("native markdown tables", () => {
     expect(html).toContain('data-flex-shrink="0"');
   });
 
-  it("keeps an offscreen column from stretching the row, and lets it back in when scrolled", async () => {
+  it("lets every cell set its row's height, even in columns scrolled out of view", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -350,27 +344,16 @@ describe("native markdown tables", () => {
       tableEvents.onLayout?.({ nativeEvent: { layout: { width: 70, height: 40 } } });
     });
 
-    const rows = () => tableRows(container.innerHTML);
-    const notesHeights = () =>
-      [
-        ...new DOMParser()
-          .parseFromString(container.innerHTML, "text/html")
-          .querySelectorAll("rn-view[data-border-bottom-width]"),
-      ].map(
-        (view) =>
-          view.querySelector("rn-view[data-max-width]:last-child")?.getAttribute("data-height") ??
-          null,
-      );
-    expect(rows()).toHaveLength(2);
-    expect(notesHeights()).toEqual(["28", "28"]);
-
-    const notesStart = (rows()[0]?.cells ?? [])
-      .slice(0, -1)
-      .reduce((total, width) => total + width, 0);
-    await act(async () => {
-      tableEvents.onScroll?.({ nativeEvent: { contentOffset: { x: notesStart } } });
-    });
-    expect(notesHeights()).toEqual([null, null]);
+    const cells = [
+      ...new DOMParser()
+        .parseFromString(container.innerHTML, "text/html")
+        .querySelectorAll("rn-view[data-border-bottom-width] rn-view[data-max-width]"),
+    ];
+    expect(cells).toHaveLength(6);
+    for (const cell of cells) {
+      expect(cell.getAttribute("data-height")).toBeNull();
+      expect(cell.getAttribute("data-overflow")).toBeNull();
+    }
 
     await act(async () => {
       root.unmount();

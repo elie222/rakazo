@@ -444,12 +444,16 @@ const FIND_MISSING_DESKTOP_TOOLS = [
 
 /**
  * Same as infra/sandboxes/computer/browser-policy.json. Rakazo keeps credentials itself, so
- * the browser's save-password, address, and card prompts only cover the page.
+ * the browser's save-password, address, and card prompts only cover the page. Pop-ups open: a
+ * page that opens a report once it has made it is past the click's user activation, and the
+ * pop-up blocker would drop it without a sign the page tools can see. Only the hosted sandboxes
+ * that are the bot's own computer are prepared with it, never the person's own computer.
  */
 export const BROWSER_POLICY = JSON.stringify({
   PasswordManagerEnabled: false,
   AutofillAddressEnabled: false,
   AutofillCreditCardEnabled: false,
+  DefaultPopupsSetting: 1,
 });
 
 /** Managed policy directories for Chromium, Ubuntu's Chromium, Google Chrome, and Brave. */

@@ -282,8 +282,52 @@ EVAL_HELPERS = r"""
     cardMasked.add(el);
   }
   function unmaskCard(el) {
+    for (const node of codeSlots.get(el) || []) {
+      if (cardMasked.delete(node)) node.style.removeProperty("-webkit-text-security");
+    }
+    codeSlots.delete(el);
     if (!cardMasked.delete(el)) return;
     el.style.removeProperty("-webkit-text-security");
+  }
+  // A code box often sits over slot elements that draw each digit; the nearest ancestor (up to
+  // three up) that shows the code is drawn as dots too, so a screenshot never reads it.
+  const codeSlots = new WeakMap();
+  const codeShown = (text) => String(text).replace(/[\s-]+/g, "").toLowerCase();
+  function maskCodeSlots(el, code) {
+    const digits = codeShown(code);
+    if (!digits || !el.isConnected) return;
+    const held = codeSlots.get(el) || [];
+    let node = el.parentElement;
+    for (let level = 0; level < 3 && node && node !== document.body && node !== document.documentElement;
+         level++, node = node.parentElement) {
+      if (!codeShown(node.innerText ?? node.textContent ?? "").includes(digits)) continue;
+      if (!cardMasked.has(node)) maskCard(node);
+      if (!held.includes(node)) held.push(node);
+      break;
+    }
+    codeSlots.set(el, held);
+  }
+  // Whether an input is made for a one-time code: it says so, or takes digits, or is named or
+  // labelled like one, or holds a code's length. One box per digit is not one: those need the user.
+  function looksLikeCodeBox(el) {
+    if (el.maxLength === 1) return false;
+    if ((el.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/).includes("one-time-code")) return true;
+    if ((el.getAttribute("inputmode") || "").toLowerCase() === "numeric") return true;
+    if (el.maxLength >= 4 && el.maxLength <= 12) return true;
+    const root = el.getRootNode();
+    const named = [
+      el.name, el.id, el.getAttribute("aria-label"), el.placeholder, el.title,
+      ...[...(el.labels || [])].map((label) => label.textContent),
+      ...(el.getAttribute("aria-labelledby") || "").split(/\s+/).filter(Boolean)
+        .map((id) => root.getElementById?.(id)?.textContent),
+    ].join(" ");
+    return /otp|one.?time|code|token|2fa|mfa|verif|\bpin\b|passcode|קוד|אימות/i.test(named);
+  }
+  function numericBox(el) {
+    const mode = (el.getAttribute("inputmode") || "").toLowerCase();
+    const pattern = (el.getAttribute("pattern") || "").trim();
+    return mode === "numeric" || mode === "decimal" || el.type === "tel"
+      || /^(\\d|\[0-9\])([*+]|\{\d+(,\d*)?\})?$/.test(pattern);
   }
   function visible(el) {
     if (!(el instanceof Element)) return false;
@@ -315,16 +359,21 @@ EVAL_HELPERS = r"""
     // Private-LAN plain HTTP is not a login target, even when the page origin matches.
     fill(value, origin, field) {
       const card = field === "card";
+      // A code the user entered for this page: a visible field like a username, but drawn as dots
+      // and only into a box that looks made for a code.
+      const code = field === "code";
       let saved = null;
       try { saved = new URL(origin); } catch { /* rejected below */ }
       if (!saved || saved.protocol !== "https:" || location.protocol !== "https:") {
         throw refused(card
           ? "A card can only be filled on HTTPS. Open the merchant's checkout with browser_navigate, then fill again."
+          : code ? "A code can only be filled on HTTPS. Open the site with browser_navigate, then fill again."
           : "Website logins can only be filled on HTTPS. Open the saved site with browser_navigate, then fill again.");
       }
       if (location.origin !== saved.origin) {
         throw refused(card
           ? "The page is not on the merchant's site for this purchase. Open the merchant's checkout with browser_navigate, then fill again."
+          : code ? "The page is not on the site this code was asked for. Open that site with browser_navigate, then fill again."
           : "The page is not on the site this login was saved for. Open the saved site with browser_navigate, then fill again.");
       }
       const el = focused();
@@ -337,28 +386,40 @@ EVAL_HELPERS = r"""
       if (card && !(input && ["text", "tel", "password"].includes(input.type))) {
         throw refused("A card can only be typed into a card field.");
       }
-      const password = !card && field !== "username";
+      const password = !card && !code && field !== "username";
       if (password && !(input && input.type === "password")) {
         throw refused("A saved password can only be typed into a password field.");
       }
       if (!card && !password && !(input && ["text", "email", "tel"].includes(input.type))) {
-        throw refused("A saved username can only be typed into a text, email, or telephone field.");
+        throw refused(code ? "A code can only be typed into a text, email, or telephone field."
+          : "A saved username can only be typed into a text, email, or telephone field.");
       }
+      if (code && !looksLikeCodeBox(input)) {
+        throw refused("This field doesn't look like a code box; ask the user to take over.");
+      }
+      // A numeric box takes the digits of a code written with dashes.
+      if (code && numericBox(input)) value = String(value).replaceAll("-", "");
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
       setter.call(input, String(value));
       if (input.value !== String(value)) {
         // A partly accepted login (an email field trimming a username) is not left on the page.
         setter.call(input, "");
         throw refused(card ? "This field didn't accept the card, so it was cleared."
+          : code ? "This field didn't accept the code, so it was cleared."
           : "This field didn't accept the saved login, so it was cleared.");
       }
       // Snapshots never show the value again, whatever the page later does with the field.
       input.setAttribute(FILLED, "");
-      // Screenshots reach the model too, so a card is drawn as dots, like a password.
-      if (card) maskCard(input);
+      // Screenshots reach the model too, so a card or a code is drawn as dots, like a password.
+      if (card || code) maskCard(input);
       else unmaskCard(input);
       input.dispatchEvent(new Event("input", { bubbles: true }));
       input.dispatchEvent(new Event("change", { bubbles: true }));
+      if (code) {
+        // The widget may draw its slots right away or a moment later.
+        maskCodeSlots(input, value);
+        setTimeout(() => { if (cardMasked.has(input)) maskCodeSlots(input, value); }, 50);
+      }
       return true;
     },
     payTokenAccount() {
@@ -378,6 +439,9 @@ EVAL_HELPERS = r"""
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, String(token));
       el.dispatchEvent(new Event("input", { bubbles: true }));
       return el.value === String(token);
+    },
+    hasCardField() {
+      return ["cc-number", "cc-exp", "cc-csc"].some((token) => cardFields(token).length > 0);
     },
     findCard(token) {
       const found = cardFields(String(token));
@@ -778,14 +842,19 @@ def run_step(port: int, target_id: str, step: dict[str, Any]) -> None:
         client.close()
 
 
-def stripe_pay_token_account(port: int, target_id: str) -> str | None:
-    """The merchant account a pay token checkout names inside Stripe's frame, for the snapshot's hint."""
+def frame_hints(client: CdpClient, session_id: str) -> tuple[bool, str | None]:
+    """Whether a payment frame the page shows holds a card field, and the merchant account a pay token
+    checkout names inside Stripe's frame: what the snapshot tells the bot about its payment frames."""
+    frames = payment_frames(client, session_id)
+    card = any(frame_eval(client, frames, "window.__rakazoPageBrowser.hasCardField()"))
+    accounts = [found for found in frame_eval(client, pay_token_frames(client, frames),
+                                              "window.__rakazoPageBrowser.payTokenAccount()") if found]
+    return card, accounts[0] if len(accounts) == 1 else None
+
+
+def payment_frame_hints(port: int, target_id: str) -> tuple[bool, str | None]:
     client = connect(port)
     try:
-        session_id = attach(client, target_id)
-        frames = pay_token_frames(client, payment_frames(client, session_id))
-        accounts = [found for found in frame_eval(client, frames, "window.__rakazoPageBrowser.payTokenAccount()")
-                    if found]
-        return accounts[0] if len(accounts) == 1 else None
+        return frame_hints(client, attach(client, target_id))
     finally:
         client.close()

@@ -1,4 +1,5 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Daily check-ins on unfinished work": "每天跟进未完成的工作",
   "How other bots see it": "其他机器人如何了解它",
   "Share to": "分享到",
   "{count} files": "{count} 个文件",
@@ -258,6 +259,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "批准此服务器后，Agent 才能使用它的工具。",
   "Answered: {answer}": "已回答：{answer}",
+  "Only enter a code {host} sent you.": "仅输入 {host} 发给你的验证码。",
   Archive: "归档",
   "Archive keeps everything and can be undone. Delete is permanent.":
     "归档会保留全部内容，可以撤销。删除不可恢复。",
@@ -392,6 +394,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Could not share image": "无法分享图片",
   "Loading image…": "正在加载图片…",
   "Open image {name}": "打开图片 {name}",
+  "Open {name}": "打开 {name}",
   "Tap to open": "点按打开",
   "Could not open message": "无法打开消息",
   "Could not play a sample": "无法播放示例",
@@ -476,6 +479,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Failed to send message": "发送消息失败",
   "Failed to stop work": "停止工作失败",
   File: "文件",
+  "Did you mean {email}?": "你是不是想输入 {email}？",
   "Forgot password?": "忘记密码？",
   "Find models": "查找模型",
   "Finding…": "正在查找…",
@@ -1014,6 +1018,12 @@ export const ZH_MESSAGES: Record<string, string> = {
     "试用将结束，今天将从你的卡中扣款 {price}。",
   "Your trial ends and your card is charged today.": "试用将结束，今天将从你的卡中扣款。",
   "Start plan": "开始套餐",
+  "Switch to yearly": "切换为按年",
+  "Switch to yearly?": "切换为按年付费？",
+  "Your card is charged {price} today, less the unused part of this month.":
+    "今天将从你的卡中扣款 {price}，并抵扣本月未使用的部分。",
+  "Your plan becomes {price} / year when your trial ends.":
+    "试用结束后，你的套餐将变为每年 {price}。",
   "Monthly credits": "每月额度",
   "Upgrade now": "立即升级",
   "Downgrade at renewal": "下次续费时降级",

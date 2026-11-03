@@ -76,10 +76,10 @@ const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
   "web_search",
 ]);
 
-const READ_ONLY_CONNECTOR_PATTERN = /(^|_)(get|list|search|find|read)(_|$)/i;
+const READ_ONLY_CONNECTOR_PATTERN = /(^|[_-])(get|list|search|find|read)([_-]|$)/i;
 const MUTATING_CONNECTOR_PATTERN =
-  /(^|_)(accept|add|approve|archive|assign|buy|cancel|charge|checkout|close|commit|copy|create|delete|deploy|disable|enable|execute|forward|grant|invite|link|mark|merge|modify|move|patch|pay|post|publish|purchase|put|register|reject|remove|rename|replace|reply|reset|revoke|run|schedule|send|set|share|start|stop|submit|subscribe|trigger|unassign|unlink|unsubscribe|update|upload|upsert|write)(_|$)/i;
-const COMPOUND_CONNECTOR_ACTION_PATTERN = /_(and|or|then)_/i;
+  /(^|[_-])(accept|add|approve|archive|assign|buy|cancel|charge|checkout|close|commit|copy|create|delete|deploy|disable|enable|execute|forward|grant|invite|link|mark|merge|modify|move|patch|pay|post|publish|purchase|put|register|reject|remove|rename|replace|reply|reset|revoke|run|schedule|send|set|share|start|stop|submit|subscribe|trigger|unassign|unlink|unsubscribe|update|upload|upsert|write)([_-]|$)/i;
+const COMPOUND_CONNECTOR_ACTION_PATTERN = /[_-](and|or|then)[_-]/i;
 
 const EMAIL_CONNECTOR_SLUGS = new Set(["gmail", "outlook", "microsoft_outlook"]);
 const PURCHASE_CONNECTOR_SLUGS = new Set(["stripe", "shopify", "paypal", "square"]);
@@ -115,6 +115,7 @@ export function connectorToolRequiresApproval(toolName: string, readOnly?: boole
 /** Unattended watches require explicit read-only metadata and must respect approval rules. */
 export function watchToolRefusal(input: {
   toolName: string;
+  toolAliases?: readonly string[];
   readOnly?: boolean;
   connectorKind?: string;
   rules: ActionApprovalRule[];
@@ -125,6 +126,7 @@ export function watchToolRefusal(input: {
   }
   const decision = resolveActionApprovalDetail({
     toolName,
+    toolAliases: input.toolAliases,
     connectorKind: input.connectorKind,
     readOnly,
     rules: input.rules,
@@ -285,6 +287,12 @@ export function newSiteOutcome(input: {
   return input.trigger === "webhook" ? "deny" : "ask";
 }
 
+/**
+ * These send data to the site their url names, so a site the run was not given is gated, and
+ * "Always allow" on a card naming that site allows the site, never the tool.
+ */
+export const SITE_SENDING_TOOLS: ReadonlySet<string> = new Set(["web_fetch", "paid_request"]);
+
 export function siteAlwaysAllowed(rules: ActionApprovalRule[], site: string): boolean {
   return rules.some(
     (rule) =>
@@ -391,14 +399,18 @@ export function decisiveActionApprovalRules(
  */
 export function resolveActionApprovalDetail(input: {
   toolName: string;
+  toolAliases?: readonly string[];
   connectorKind?: string;
   readOnly?: boolean;
   site?: string;
   rules: ActionApprovalRule[];
 }): ActionApprovalResolved {
   const connectorKind = input.connectorKind ?? connectorKindFromToolName(input.toolName);
-  const matchingRules = input.rules.filter((rule) =>
-    ruleMatches(rule, input.toolName, connectorKind, input.readOnly, input.site),
+  const matchingRules = input.rules.filter(
+    (rule) =>
+      ruleMatches(rule, input.toolName, connectorKind, input.readOnly, input.site) ||
+      (rule.matchKind === "tool" &&
+        input.toolAliases?.some((alias) => alias.toLowerCase() === rule.matchValue.toLowerCase())),
   );
   if (matchingRules.length === 0) {
     return { decision: "allow", source: "default", matchingRules, decisiveRules: [] };
@@ -468,14 +480,25 @@ export function batchActions(
  * can only block: a block on the batch tool itself or its connector still stops every batch.
  */
 export function resolveActionApprovalForTools(input: {
-  tools: ReadonlyArray<{ name: string; connectorKind?: string; readOnly?: boolean }>;
+  tools: ReadonlyArray<{
+    name: string;
+    aliases?: readonly string[];
+    connectorKind?: string;
+    readOnly?: boolean;
+  }>;
   wrapper?: { name: string; connectorKind?: string };
   site?: string;
   rules: ActionApprovalRule[];
 }): ActionApprovalResolved {
-  const resolve = (tool: { name: string; connectorKind?: string; readOnly?: boolean }) =>
+  const resolve = (tool: {
+    name: string;
+    aliases?: readonly string[];
+    connectorKind?: string;
+    readOnly?: boolean;
+  }) =>
     resolveActionApprovalDetail({
       toolName: tool.name,
+      toolAliases: tool.aliases,
       connectorKind: tool.connectorKind,
       readOnly: tool.readOnly,
       site: input.site,
@@ -522,7 +545,8 @@ export function approvalPreferenceFromMode(mode: ApprovalMode): {
 export type AutoReviewJudgeDecision = "pass" | "ask" | "error";
 
 /**
- * The gate after rule resolution. A block refuses in every mode. An approval a person must give
+ * The gate after rule resolution. A block refuses in every mode. A purchase asks in every mode, Never
+ * ask included, and no allow rule or review passes it. An approval a person must give
  * asks, except in Never ask, which never waits: there it runs, unless `steerable` says outside
  * text could have asked for it. Otherwise Never ask runs it, an ask rule asks, and anything that
  * would ask goes to the approval model in Auto, falling back to asking when no model is set up.
@@ -543,8 +567,11 @@ export function planActionGate(input: {
   checkerConfigured: boolean;
   /** A fetch to a site the run was not given (see outboundSiteGate). */
   newDestination?: boolean;
+  /** A click that completes a purchase: a person approves it each time, in every mode. */
+  purchase?: boolean;
 }): "ask" | "allow" | "judge" | "deny" {
   if (input.resolved.decision === "deny") return "deny";
+  if (input.purchase) return "ask";
   if (input.mandatory) {
     if (input.mode !== "never") return "ask";
     return input.steerable ? "deny" : "allow";

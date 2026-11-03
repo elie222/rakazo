@@ -14,6 +14,7 @@ import { InfisicalSecretStore } from "./infisical-secret-store.js";
 import { InstalledConnectorProvider } from "./installed-connectors.js";
 import { IntegrationProviderSettings } from "./integration-provider-settings.js";
 import { DIRECT_TOOL_LIMIT } from "./lazy-tool-catalog.js";
+import { MCP_CLOSE_TIMEOUT_MS } from "./mcp-close.js";
 import { allowlistDrift, McpConnector } from "./mcp-connector.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import { StoredMcpOAuthProvider } from "./mcp-oauth.js";
@@ -148,6 +149,71 @@ function mcpFetch(
 }
 
 describe("MCP connector session cache", () => {
+  it.each([
+    "revision",
+    "discovery failure",
+    "call failure",
+    "expired listing",
+    "expired call",
+  ] as const)("does not let a stuck close block %s or the next session", async (scenario) => {
+    vi.useFakeTimers();
+    const state = { failNext: false, initializations: 0, sessionNotFound: 0 };
+    vi.stubGlobal("fetch", mcpFetch(state));
+    const assignment = { ...ASSIGNMENT, server: { ...SERVER } };
+    const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
+      botMcpServer: {
+        findMany: vi.fn(async () => [assignment]),
+        findFirst: vi.fn(async () => assignment),
+      },
+    };
+    const context = {
+      spaceId: "w1",
+      userId: "u1",
+      botId: "bot-1",
+      signal: new AbortController().signal,
+    } as never;
+    const connector = new McpConnector(prisma as never, {} as never, { network: TEST_NETWORK });
+    const execute = async () => {
+      const events: unknown[] = [];
+      for await (const event of connector.execute(
+        {
+          tool: "mcp__demo__echo",
+          args: {},
+          route: { connectorId: "mcp", resourceId: SERVER.id, toolName: "echo" },
+        } as never,
+        context,
+      ))
+        events.push(event);
+      return events;
+    };
+    let close: ReturnType<typeof vi.spyOn> | undefined;
+    try {
+      expect(await connector.discoverTools(context)).toMatchObject([{ name: "mcp__demo__echo" }]);
+      close = vi
+        .spyOn(McpSession.prototype, "close")
+        .mockImplementationOnce(() => new Promise(() => {}));
+      if (scenario === "revision") assignment.server.revision += 1;
+      else if (scenario.startsWith("expired")) state.sessionNotFound = 1;
+      else state.failNext = true;
+      const result = scenario.includes("call") ? execute() : connector.discoverTools(context);
+      await vi.advanceTimersByTimeAsync(MCP_CLOSE_TIMEOUT_MS);
+      if (scenario === "call failure") expect(await result).toMatchObject([{ type: "error" }]);
+      else if (scenario === "discovery failure") expect(await result).toEqual(unavailableOnly());
+      else if (scenario === "expired call")
+        expect(await result).toMatchObject([{ type: "result" }]);
+      else expect(await result).toMatchObject([{ name: "mcp__demo__echo" }]);
+      expect(close).toHaveBeenCalled();
+      state.failNext = false;
+      expect(await execute()).toMatchObject([{ type: "result" }]);
+      expect(state.initializations).toBe(2);
+    } finally {
+      close?.mockRestore();
+      await connector.close();
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps sessions across unchanged TTL reads and reconnects on observed rotation", async () => {
     vi.useFakeTimers();
     const fake = infisicalFake();
@@ -1049,6 +1115,55 @@ describe("MCP connector session cache", () => {
         expect(await connector.discoverTools(context)).toEqual(unavailableOnly());
         expect(level === "warn" ? error : warn).not.toHaveBeenCalled();
         expect(level === "warn" ? warn : error).toHaveBeenCalled();
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
+
+    it("warns when the run was cancelled before it listed a live session's tools", async () => {
+      vi.stubGlobal("fetch", mcpFetch({ failNext: false, initializations: 0 }));
+      const connector = connectorWith(SERVER);
+      const run = new AbortController();
+      const error = vi.spyOn(getLogger(), "error");
+      const warn = vi.spyOn(getLogger(), "warn");
+      try {
+        await connector.discoverTools(context);
+        run.abort();
+        expect(
+          await connector.discoverTools({ ...(context as object), signal: run.signal } as never),
+        ).toEqual(unavailableOnly());
+        expect(error).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith("mcp discovery failed for server demo", {
+          reason: expect.stringContaining("aborted"),
+        });
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
+
+    it("warns when the server does not list its tools in time", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(() => new Promise<Response>(() => undefined)),
+      );
+      const connector = new McpConnector(
+        {
+          botMcpServer: { findMany: vi.fn(async () => [ASSIGNMENT]) },
+          mcpServer: { ...NO_SHARED_SERVERS, updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        } as never,
+        {} as never,
+        { network: TEST_NETWORK, discoveryTimeoutMs: 50 },
+      );
+      const error = vi.spyOn(getLogger(), "error");
+      const warn = vi.spyOn(getLogger(), "warn");
+      try {
+        expect(await connector.discoverTools(context)).toEqual(unavailableOnly());
+        expect(error).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith("mcp discovery failed for server demo", {
+          reason: expect.stringContaining("did not list its tools"),
+        });
       } finally {
         vi.restoreAllMocks();
         await connector.close();
@@ -2642,7 +2757,9 @@ describe("MCP connector stdio credential files", () => {
       await connect?.();
     });
     vi.spyOn(McpSession.prototype, "listTools").mockResolvedValue({ tools: [] });
-    vi.spyOn(McpSession.prototype, "close").mockResolvedValue(undefined);
+    vi.spyOn(McpSession.prototype, "close").mockImplementation(async (afterClose) => {
+      await afterClose?.();
+    });
     return launches;
   }
 
@@ -2686,6 +2803,39 @@ describe("MCP connector stdio credential files", () => {
     expect(JSON.stringify(events)).toContain(text);
     await connector.close();
   });
+
+  it.each([false, true])(
+    "keeps files until a delayed SDK shutdown settles (rejects: %s)",
+    async (rejects) => {
+      const launches = stubSession();
+      vi.mocked(McpSession.prototype.close).mockRestore();
+      const connector = connectorFor(stored());
+      await connector.discoverTools(context);
+      const session = vi.mocked(McpSession.prototype.connectStdio).mock.contexts[0] as McpSession;
+      let finish!: () => void;
+      vi.spyOn(session.client, "close").mockImplementation(
+        () =>
+          new Promise<void>((resolve, reject) => {
+            finish = () => (rejects ? reject(new Error("shutdown failed")) : resolve());
+          }),
+      );
+      const dir = launches[0]!.files.MAIL_CREDENTIALS!.dir;
+      vi.useFakeTimers();
+      try {
+        const closing = connector.close();
+        await vi.advanceTimersByTimeAsync(MCP_CLOSE_TIMEOUT_MS);
+        await closing;
+        expect(existsSync(dir)).toBe(true);
+        finish();
+        vi.useRealTimers();
+        await vi.waitFor(() => expect(existsSync(dir)).toBe(false));
+      } finally {
+        finish();
+        vi.useRealTimers();
+        await connector.close();
+      }
+    },
+  );
 
   it("removes credentials when reconnect replaces a session", async () => {
     const launches = stubSession();

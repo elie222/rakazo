@@ -48,6 +48,11 @@ describe("transient model errors", () => {
     ["closed websocket", "WebSocket closed 1006"],
     ["idle stream", "Codex stream idle timeout"],
     [
+      "provider timed out downloading a linked file",
+      '400 data: {"error":{"code":"invalid_parameter_error","message":"Download multimodal file timed out","type":"invalid_request_error"}}',
+    ],
+    ["provider timed out on a file download", '400: {"message":"File download timed out"}'],
+    [
       "server-side processing failure",
       "Codex error: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID 00000000-0000-0000-0000-000000000000 in your message.",
     ],

@@ -202,6 +202,7 @@ async function runTurn(
               replyQuote: null,
               replyTo: null,
               clientNonce: message.clientNonce ?? null,
+              steeringMessages: [],
             }))
           : where.runId === run.id && options.priorProgressText
             ? [
@@ -922,21 +923,172 @@ describe("a message from the person while the bot works", () => {
     expect(sentTexts(messages)).toEqual(["One.", "Two.", "Three."]);
   });
 
-  it("restarts the budget at most once a minute however often the person writes", async () => {
+  it("answers every message from the person, but restarts the budget at most once a minute", async () => {
     const { messages } = await runTurn("", false, undefined, [], "fyi", {
       runtimeEvents: [
         { type: "steered", fromRunUser: true },
         { type: "text", text: "Reply one." },
         { type: "tool", name: "read_file", args: {}, executionId: "call-1" },
+        { type: "text", text: "Still checking." },
         { type: "steered", fromRunUser: true },
         { type: "text", text: "Reply two." },
         { type: "tool", name: "read_file", args: {}, executionId: "call-2" },
+        { type: "text", text: "Checking the last one." },
+        { type: "tool", name: "read_file", args: {}, executionId: "call-3" },
         { type: "text", text: "Done." },
         { type: "done", text: "" },
       ],
     });
-    expect(sentTexts(messages)).toEqual(["Reply one."]);
+    // Text that can't be posted when the next message arrives stays in the reply and goes out
+    // with that answer; the unprompted note after it stays a working line on the fresh turn.
+    expect(sentTexts(messages)).toEqual(["Reply one.", "Still checking.\n\nReply two."]);
   });
+
+  it("posts what it wrote after one message on that message's allowance when another arrives", async () => {
+    const { messages } = await runTurn("", false, undefined, [], "fyi", {
+      runtimeEvents: [
+        { type: "steered", fromRunUser: true },
+        { type: "text", text: "Reply one." },
+        { type: "steered", fromRunUser: true },
+        { type: "text", text: "Reply two." },
+        { type: "tool", name: "read_file", args: {}, executionId: "call-1" },
+        { type: "text", text: "Done." },
+        { type: "done", text: "" },
+      ],
+    });
+    expect(sentTexts(messages)).toEqual(["Reply one.", "Reply two."]);
+  });
+
+  it("keeps an answer it can't post yet in the reply when another message arrives", async () => {
+    const { messages, finalizeRun } = await runTurn("", false, undefined, [], "fyi", {
+      executeTools: true,
+      runtimeEvents: [
+        { type: "steered", fromRunUser: true },
+        {
+          type: "tool",
+          name: "message_user",
+          args: { message: "On it." },
+          executionId: "call-1",
+        },
+        { type: "text", text: "Here is the full answer to your first question." },
+        { type: "steered", fromRunUser: true },
+        { type: "text", text: "And the answer to the second." },
+        { type: "done", text: "" },
+      ],
+    });
+    expect(sentTexts(messages)).toEqual(["On it."]);
+    expect(finalText(finalizeRun)).toBe(
+      "Here is the full answer to your first question.\n\nAnd the answer to the second.",
+    );
+  });
+
+  it("keeps a long answer in the reply, whole, when another message arrives", async () => {
+    const summary = `Full summary: ${"Supplier totals match the order. ".repeat(60)}`.trim();
+    const { messages, finalizeRun } = await runTurn("", false, undefined, [], "fyi", {
+      runtimeEvents: [
+        { type: "steered", fromRunUser: true },
+        { type: "text", text: summary },
+        { type: "steered", fromRunUser: true },
+        { type: "text", text: "And the answer to the second." },
+        { type: "done", text: "" },
+      ],
+    });
+    expect(sentTexts(messages)).toEqual([]);
+    expect(finalText(finalizeRun)).toBe(`${summary}\n\nAnd the answer to the second.`);
+  });
+
+  it.each([
+    ["the next message", { type: "steered" as const, fromRunUser: true }],
+    [
+      "the next step",
+      { type: "tool" as const, name: "read_file", args: {}, executionId: "call-1" },
+    ],
+  ])("hides the rest of a secret split across an answer and %s", async (_, next) => {
+    const { append, messages, finalizeRun } = await runTurn(
+      "",
+      false,
+      undefined,
+      ["hunter abcxyz"],
+      "fyi",
+      {
+        runtimeEvents: [
+          { type: "text", text: "The token is hunter" },
+          { type: "steered", fromRunUser: true },
+          { type: "text", text: " abcxyz saved." },
+          next,
+          { type: "text", text: "Done." },
+          { type: "done", text: "" },
+        ],
+      },
+    );
+    expect(sentTexts(messages)).toEqual(["The token is hunter", "[redacted] saved."]);
+    expect(JSON.stringify([append.mock.calls, messages, finalizeRun.mock.calls])).not.toContain(
+      "abcxyz",
+    );
+  });
+
+  it("answers a fourth message minutes apart without restarting the budget a fourth time", async () => {
+    let clock = Date.now();
+    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    try {
+      const { messages } = await runTurn("", false, undefined, [], "fyi", {
+        runtime: async function* (request) {
+          const send = (message: string) =>
+            request.executeTool!("message_user", { message }, message);
+          for (const index of [1, 2, 3, 4]) {
+            clock += 120_000;
+            yield { type: "steered", fromRunUser: true };
+            await send(`Answer ${index}.`);
+            clock += 61_000;
+            await send(`Update ${index}a.`);
+            await send(`Update ${index}b.`);
+          }
+          yield { type: "text", text: "Done." };
+          yield { type: "done", text: "" };
+        },
+      });
+      // Each of the first three messages restarts the budget: its answer plus two updates. The
+      // fourth is answered, but its updates stay within the exhausted budget.
+      expect(sentTexts(messages)).toEqual([
+        ...[1, 2, 3].flatMap((index) => [
+          `Answer ${index}.`,
+          `Update ${index}a.`,
+          `Update ${index}b.`,
+        ]),
+        "Answer 4.",
+      ]);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it.each(["user", "messaging"])(
+    "posts a message_user answer to each of four messages in one minute (%s)",
+    async (trigger) => {
+      const steps = [1, 2, 3, 4].flatMap((index) => [
+        { type: "steered" as const, fromRunUser: true },
+        {
+          type: "tool" as const,
+          name: "message_user",
+          args: { message: `Answer ${index}.` },
+          executionId: `answer-${index}`,
+        },
+        {
+          type: "tool" as const,
+          name: "message_user",
+          args: { message: `Update ${index}.` },
+          executionId: `update-${index}`,
+        },
+      ]);
+      const { messages } = await runTurn("", false, undefined, [], "fyi", {
+        trigger,
+        executeTools: true,
+        runtimeEvents: [...steps, { type: "text", text: "Done." }, { type: "done", text: "" }],
+      });
+      // Updates nobody asked for keep the 60-second wait; every answer is posted.
+      expect(sentTexts(messages)).toEqual(["Answer 1.", "Answer 2.", "Answer 3.", "Answer 4."]);
+    },
+  );
 
   it("starts the interim-message budget again after it", async () => {
     const notes = ["One.", "Two.", "Three.", "Four."].flatMap((text, index) => [

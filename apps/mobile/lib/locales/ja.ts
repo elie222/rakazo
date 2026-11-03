@@ -1,4 +1,5 @@
 export const JA_MESSAGES: Record<string, string> = {
+  "Daily check-ins on unfinished work": "未完了の作業を毎日確認",
   "How other bots see it": "他のボットからの見え方",
   "Share to": "共有先",
   "{count} files": "{count}個のファイル",
@@ -194,6 +195,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Custom server {host}": "カスタムサーバー {host}",
   "Don’t have an account?": "アカウントをお持ちでないですか？",
   Email: "メールアドレス",
+  "Did you mean {email}?": "{email} のことですか？",
   "Forgot password?": "パスワードをお忘れですか？",
   "Loading…": "読み込み中…",
   Password: "パスワード",
@@ -253,6 +255,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "このサーバーを承認すると、エージェントがそのツールを使用できるようになります。",
   "Answered: {answer}": "回答済み: {answer}",
+  "Only enter a code {host} sent you.": "{host} から送られたコードだけを入力してください。",
   Archive: "アーカイブ",
   Attach: "添付",
   "Attach file": "ファイルを添付",
@@ -280,6 +283,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Could not share image": "画像を共有できませんでした",
   "Loading image…": "画像を読み込み中…",
   "Open image {name}": "画像{name}を開く",
+  "Open {name}": "{name}を開く",
   "Tap to open": "タップして開く",
   "Could not open message": "メッセージを開けませんでした",
   "Could not send answer": "回答を送信できませんでした",
@@ -982,6 +986,12 @@ export const JA_MESSAGES: Record<string, string> = {
   "Your trial ends and your card is charged today.":
     "トライアルが終了し、本日カードに請求されます。",
   "Start plan": "プランを開始",
+  "Switch to yearly": "年払いに切り替え",
+  "Switch to yearly?": "年払いに切り替えますか？",
+  "Your card is charged {price} today, less the unused part of this month.":
+    "本日カードに{price}が請求されます（今月の未使用分を差し引きます）。",
+  "Your plan becomes {price} / year when your trial ends.":
+    "トライアル終了後、プランは年額 {price} になります。",
   "Monthly credits": "月間クレジット",
   "Upgrade now": "今すぐアップグレード",
   "Downgrade at renewal": "更新時にダウングレード",

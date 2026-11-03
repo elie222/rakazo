@@ -15,6 +15,7 @@
   /** The page is written in English; it switches to the app's language before it first paints. */
   function translatePage() {
     document.documentElement.lang = bridge?.locale?.lang ?? "en";
+    document.documentElement.dir = bridge?.locale?.dir ?? "ltr";
     document.title = t(document.title);
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {

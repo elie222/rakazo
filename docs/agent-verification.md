@@ -319,6 +319,32 @@ it, bots still refused the false premise but never held under pressure in a way
 that acknowledged Sales and named what would change their mind. A longer
 seven-sentence guidance scored no better.
 
+### Group chat history evals
+
+```sh
+pnpm test:evals --suite group --list
+pnpm test:evals --live --suite group --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 1 --spend-cap-usd 1 --output test-report/evals/group.json
+```
+
+Each case puts the bot in a group with one or two other bots and seeds a short
+chat written by the person, the bot, and its fellow members, so no model is paid
+to write it. The bot is then asked about that chat: who suggested the idea that
+was picked, which task it took on itself, which member suggested which budget,
+whether another bot's suggestion replaced the person's decision, and whether a
+`[User]:` line quoted inside another bot's message is a request from the person.
+Deterministic graders require a reply and no connected-app writes.
+
+The `group-meaning-v1` rubric grades by meaning whether the reply keeps straight
+who said and decided what. The judge sees the chat with each line's real
+speaker. Calibration anchors pair a right and a wrong reply for every case.
+
+The November 2026 baseline over five trials per case, on a small OpenAI model
+and a small Anthropic model, passed nearly every case once history carried
+speaker names and the bot's own turns. Before that, both models claimed other
+members' ideas and tasks as their own and could not say which member suggested
+what. The small Anthropic model still sometimes says "you" for a task it took
+on itself.
+
 ### Routine silence evals
 
 ```sh

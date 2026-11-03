@@ -1,4 +1,5 @@
 import type { ProcessEvent } from "@rakazo/adapter-kit";
+import { SandboxRequestRejectedError } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DockerSandboxProvider,
@@ -583,6 +584,48 @@ describe("Docker page browser", () => {
         }),
       }),
     );
+  });
+});
+
+describe("Docker page browser refusals", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const computer = {
+    id: "computer",
+    botId: "team-home",
+    kind: "docker" as const,
+    providerRef: "computer",
+  };
+  const act = { command: "act" as const, actions: [{ kind: "click" as const, ref: "e1" }] };
+
+  async function failure(respond: () => Response | Promise<Response>) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => respond()),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    return provider.pageBrowser(computer, act, context).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+  }
+
+  it("names the supervisor's refusal of a malformed request as one that ran nothing", async () => {
+    const error = await failure(() =>
+      Response.json({ ok: false, code: "invalid_browser_request" }, { status: 400 }),
+    );
+    expect(error).toBeInstanceOf(SandboxRequestRejectedError);
+  });
+
+  it.each([
+    ["another 400", () => Response.json({ error: "bad" }, { status: 400 })],
+    ["a 400 that is not JSON", () => new Response("no", { status: 400 })],
+    ["a 404", () => Response.json({ code: "invalid_browser_request" }, { status: 404 })],
+    ["a 500", () => Response.json({ code: "invalid_browser_request" }, { status: 500 })],
+    ["a refused connection", () => Promise.reject(new TypeError("fetch failed"))],
+  ])("does not call %s a refusal that ran nothing", async (_name, respond) => {
+    const error = await failure(respond);
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(SandboxRequestRejectedError);
   });
 });
 

@@ -301,6 +301,8 @@ export const appContract = {
       .output(z.object({ url: z.string().url() })),
     /** Owners only: ends the running trial and bills the first period now. */
     endTrial: oc.output(BillingStatusSchema),
+    /** Owners only: moves a monthly own-key plan to yearly, charging the difference now. */
+    switchToYearly: oc.output(BillingStatusSchema),
     /** Records who invited this organization; ignored once it has subscribed. */
     claimReferral: oc
       .input(z.object({ code: z.string().min(1).max(64) }))

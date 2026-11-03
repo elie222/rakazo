@@ -285,6 +285,7 @@ export const fleetTools: ToolHandlers = {
         instructions: true,
         color: true,
         notifyOnFinish: true,
+        dailyCheckIns: true,
         modelProvider: true,
         modelId: true,
         thinkingLevel: true,

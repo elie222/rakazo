@@ -495,3 +495,16 @@ it("treats cross-space communication as on unless turned off", async () => {
   await flush();
   expect(onSave).toHaveBeenCalledWith({ crossSpaceCommunication: false });
 });
+
+it("defaults daily check-ins on and saves the opt-out", async () => {
+  const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async () => undefined);
+  await renderSettings(onSave);
+  const toggle = container.querySelector<HTMLButtonElement>('[id$="-daily-check-ins"]');
+  expect(toggle?.getAttribute("aria-checked")).toBe("true");
+  expect(container.querySelector('label[for$="-daily-check-ins"]')?.textContent?.trim()).toBe(
+    "Daily check-ins on unfinished work",
+  );
+  await act(async () => toggle?.click());
+  await flush();
+  expect(onSave).toHaveBeenCalledWith({ dailyCheckIns: false });
+});

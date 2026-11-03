@@ -5,6 +5,7 @@ import path from "node:path";
 import type { IpcMainInvokeEvent, WebContents } from "electron";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  CATALOGS,
   createLocaleHandler,
   desktopLocale,
   desktopMessages,
@@ -67,8 +68,8 @@ describe("desktop language", () => {
     [null, "es-419", "es"],
     [null, "es_ES", "es"],
     // The app offers languages the desktop has no catalog for yet; those read English.
-    ["de", "es-CL", "en"],
-    [null, "fr-FR", "en"],
+    ["it", "es-CL", "en"],
+    [null, "it-IT", "en"],
     [null, undefined, "en"],
   ] as const)("resolves reported %s on a %s system to %s", (reported, system, expected) => {
     expect(resolveDesktopLocale(reported, system)).toBe(expected);
@@ -108,9 +109,9 @@ describe("desktop language", () => {
     await handle(event, "es-MX");
     expect(save).toHaveBeenCalledTimes(2);
 
-    await handle(event, "de");
+    await handle(event, "it");
     expect(desktopLocale()).toBe("en");
-    expect(save).toHaveBeenLastCalledWith("de");
+    expect(save).toHaveBeenLastCalledWith("it");
     expect(onChange).toHaveBeenCalledTimes(2);
   });
 
@@ -228,27 +229,30 @@ describe("desktop language", () => {
   });
 });
 
-describe("Spanish catalog", () => {
-  it("keeps every placeholder and leaves no entry empty", () => {
-    const empty = Object.entries(ES_MESSAGES).filter(([, value]) => !value.trim());
-    const mismatched = Object.entries(ES_MESSAGES).filter(
-      ([id, value]) => JSON.stringify(placeholders(id)) !== JSON.stringify(placeholders(value)),
-    );
-    expect(empty).toEqual([]);
-    expect(mismatched).toEqual([]);
-  });
+describe.each(Object.entries(CATALOGS))(
+  "%s catalog",
+  (_locale, catalog: Readonly<Record<string, string>>) => {
+    it("keeps every placeholder and leaves no entry empty", () => {
+      const empty = Object.entries(catalog).filter(([, value]) => !value.trim());
+      const mismatched = Object.entries(catalog).filter(
+        ([id, value]) => JSON.stringify(placeholders(id)) !== JSON.stringify(placeholders(value)),
+      );
+      expect(empty).toEqual([]);
+      expect(mismatched).toEqual([]);
+    });
 
-  it("translates every desktop t() id and setup page string, and nothing else", () => {
-    const ids = new Set(setupPageStrings());
-    for (const file of readdirSync(srcDir)) {
-      if (!/\.(ts|js|cjs)$/.test(file) || file.endsWith(".test.ts")) continue;
-      for (const id of translationIds(readFileSync(path.join(srcDir, file), "utf8"))) ids.add(id);
-    }
-    const missing = [...ids].filter((id) => !ES_MESSAGES[id]?.trim()).sort();
-    const unused = Object.keys(ES_MESSAGES)
-      .filter((id) => !ids.has(id))
-      .sort();
-    expect(missing).toEqual([]);
-    expect(unused).toEqual([]);
-  });
-});
+    it("translates every desktop t() id and setup page string, and nothing else", () => {
+      const ids = new Set(setupPageStrings());
+      for (const file of readdirSync(srcDir)) {
+        if (!/\.(ts|js|cjs)$/.test(file) || file.endsWith(".test.ts")) continue;
+        for (const id of translationIds(readFileSync(path.join(srcDir, file), "utf8"))) ids.add(id);
+      }
+      const missing = [...ids].filter((id) => !catalog[id]?.trim()).sort();
+      const unused = Object.keys(catalog)
+        .filter((id) => !ids.has(id))
+        .sort();
+      expect(missing).toEqual([]);
+      expect(unused).toEqual([]);
+    });
+  },
+);
