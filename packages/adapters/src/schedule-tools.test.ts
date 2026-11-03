@@ -243,23 +243,21 @@ describe("filterBuiltinToolsForThread", () => {
     ]);
   });
 
-  it("hides schedule creation from routine runs without removing schedule management", () => {
+  it("allows schedule creation in routine runs but hides schedule updates", () => {
     expect(filterBuiltinToolsForRun(tools, "routine").map((tool) => tool.name)).toEqual([
       "handoff_to_bot",
       "message_bot",
+      "schedule_create",
       "schedule_list",
       "schedule_cancel",
       "remember",
     ]);
-    expect(filterBuiltinToolsForRun(tools, "user").map((tool) => tool.name)).toContain(
-      "schedule_create",
-    );
     const withUpdate = [...tools, { name: "schedule_update" }];
     expect(filterBuiltinToolsForRun(withUpdate, "routine").map((tool) => tool.name)).not.toContain(
       "schedule_update",
     );
-    expect(filterBuiltinToolsForRun(withUpdate, "user").map((tool) => tool.name)).toContain(
-      "schedule_update",
+    expect(filterBuiltinToolsForRun(withUpdate, "user").map((tool) => tool.name)).toEqual(
+      withUpdate.map((tool) => tool.name),
     );
   });
 
@@ -268,7 +266,13 @@ describe("filterBuiltinToolsForThread", () => {
       filterBuiltinToolsForThread(tools, "group-1"),
       "routine",
     ).map((tool) => tool.name);
-    expect(groupTools).toEqual(["handoff_to_bot", "schedule_list", "schedule_cancel", "remember"]);
+    expect(groupTools).toEqual([
+      "handoff_to_bot",
+      "schedule_create",
+      "schedule_list",
+      "schedule_cancel",
+      "remember",
+    ]);
     expect(
       filterBuiltinToolsForRun(filterBuiltinToolsForThread(tools, "group-1"), "user").map(
         (tool) => tool.name,
