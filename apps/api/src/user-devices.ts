@@ -40,10 +40,12 @@ async function revokeDevice(
   deviceId: string,
   userId: string,
   by: "owner" | "device" | "session",
+  /** For a session revoke, the sign-in it was selected under; a device tied since is left alone. */
+  sessionId?: string | null,
 ) {
   const { count } = await runAsSystem("revoke a user device", () =>
     prisma.userDevice.updateMany({
-      where: { id: deviceId, userId, revokedAt: null },
+      where: { id: deviceId, userId, revokedAt: null, ...(by === "session" ? { sessionId } : {}) },
       data: { revokedAt: new Date(), revokedBy: by },
     }),
   );
@@ -90,10 +92,11 @@ export async function endUserDeviceSession(
         revokedAt: null,
         OR: [{ sessionId: ended.id }, ...(signedIn ? [] : [{ sessionId: null }])],
       },
-      select: { id: true },
+      select: { id: true, sessionId: true },
     }),
   );
-  for (const device of devices) await revokeDevice(store, device.id, userId, "session");
+  for (const device of devices)
+    await revokeDevice(store, device.id, userId, "session", device.sessionId);
 }
 
 /** The device socket itself is upgraded by the hub before Hono sees it. */

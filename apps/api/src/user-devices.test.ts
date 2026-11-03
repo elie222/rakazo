@@ -377,6 +377,22 @@ describe("device sessions", () => {
     expect(rows[0]).toMatchObject({ revokedBy: "session" });
   });
 
+  it("leaves a device a new sign-in tied while the old sign-out was ending it", async () => {
+    const { pair, store, rows, signedOutUsers, prisma } = setup();
+    await pair("user-1");
+    rows[0]!.sessionId = null;
+    signedOutUsers.add("user-1");
+    const findMany = prisma.userDevice.findMany.bind(prisma.userDevice);
+    prisma.userDevice.findMany = (async (args: Parameters<typeof findMany>[0]) => {
+      const found = await findMany(args);
+      rows[0]!.sessionId = "desktop-2";
+      return found;
+    }) as typeof findMany;
+
+    await endUserDeviceSession(store, { id: "phone", userId: "user-1" });
+    expect(rows[0]).toMatchObject({ sessionId: "desktop-2", revokedAt: null });
+  });
+
   it("ties a device paired before sessions were recorded to its desktop's sign-in", async () => {
     const { pair, app, store, rows } = setup();
     const { token } = await (await pair("user-1", { session: "desktop" })).json();
