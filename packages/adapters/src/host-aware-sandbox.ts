@@ -56,12 +56,7 @@ export async function createRunSandbox(
       createProvider: (settings) =>
         createBaseRunSandbox(settings.provider, {
           ...opts,
-          // Only what Settings holds overrides the environment; limits it has no field for remain.
-          ...Object.fromEntries(
-            Object.entries(
-              computerProviderDescriptor(settings.provider).verify(settings.values),
-            ).filter(([, value]) => value !== undefined),
-          ),
+          ...computerProviderDescriptor(settings.provider).verify(settings.values),
         }),
     },
   );
@@ -91,7 +86,8 @@ async function createBaseRunSandbox(
                 kind: computer.kind,
                 providerRef: computer.providerRef,
                 homeKey: { not: computer.botId },
-                state: { in: ["booting", "running"] },
+                // One still saving its workspace needs the desktop until it finishes.
+                state: { in: ["booting", "running", "suspending"] },
               },
             }),
           )) > 0

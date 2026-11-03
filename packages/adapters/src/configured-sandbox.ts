@@ -154,7 +154,7 @@ export async function refreshComputerProvider(sandbox: SandboxProvider) {
 
 /** Resolve settings per operation; retain only the adapter for each current ciphertext. */
 export class ConfiguredSandbox implements SandboxProvider {
-  readonly pageBrowser: NonNullable<SandboxProvider["pageBrowser"]>;
+  readonly pageBrowser?: SandboxProvider["pageBrowser"];
   private selection: ComputerProviderSelection = { provider: "default", settings: null };
   private selectionLoadedAt = 0;
   private selected?: SandboxProvider;
@@ -184,17 +184,19 @@ export class ConfiguredSandbox implements SandboxProvider {
       for (const [key, entry] of this.providers)
         if (entry.ciphertext === ref) this.providers.delete(key);
     });
-    this.pageBrowser = async (computer, request, context) => {
-      const provider = await this.route(computer);
-      return provider.pageBrowser
-        ? provider.pageBrowser(computer, request, context)
-        : {
-            ok: false,
-            uncertain: false,
-            fallback: "computer_act",
-            error: "Page browser is unavailable on this computer.",
-          };
-    };
+    // Bots are offered page tools only where the deployment's own computers have them.
+    if (primary.pageBrowser)
+      this.pageBrowser = async (computer, request, context) => {
+        const provider = await this.route(computer);
+        return provider.pageBrowser
+          ? provider.pageBrowser(computer, request, context)
+          : {
+              ok: false,
+              uncertain: false,
+              fallback: "computer_act",
+              error: "Page browser is unavailable on this computer.",
+            };
+      };
   }
   async refresh() {
     const selection = await this.load();

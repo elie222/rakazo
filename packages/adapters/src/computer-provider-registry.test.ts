@@ -72,3 +72,22 @@ it("only offers declared account providers", () => {
   expect(offered.every((provider) => provider.capabilities.perAccount)).toBe(true);
   expect(() => computerProviderDescriptor("unregistered")).toThrow();
 });
+
+it("returns only the options a provider's fields set, so other environment options remain", () => {
+  const railway = computerProviderDescriptor("railway").verify({
+    apiToken: "test-token",
+    environmentId: "test-env",
+  });
+  expect(railway).toHaveProperty("railwaySandboxRegion", undefined);
+  expect(railway).not.toHaveProperty("railwayMaxWorkspaceFileBytes");
+  const wuying = computerProviderDescriptor("wuying").verify({
+    desktopId: "ecd-test",
+    endUserId: "test-user",
+    accessKeyId: "test-id",
+    accessKeySecret: "test-secret",
+    mcpUrl: "https://gateway.example.com/mcp",
+    mcpToken: "test-token",
+  });
+  // A blank region means the provider's default, not the environment's region.
+  expect(wuying).toHaveProperty("wuyingRegionId", undefined);
+});

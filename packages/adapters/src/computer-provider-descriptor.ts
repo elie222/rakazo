@@ -18,6 +18,13 @@ export function defineComputerProvider(
   descriptor: ComputerProviderDescriptor,
   bindings: Record<string, string>,
 ): SettingsComputerProvider {
+  const controlled = Object.fromEntries(
+    Object.entries(
+      sandboxProviderOptionsFromEnv(
+        Object.fromEntries(Object.values(bindings).map((name) => [name, "1"])),
+      ),
+    ).filter(([, value]) => value !== undefined),
+  );
   return {
     ...descriptor,
     verify(values) {
@@ -49,7 +56,12 @@ export function defineComputerProvider(
           throw new Error(`Invalid ${field.label}`);
         env[bindings[field.key]!] = value || undefined;
       }
-      return sandboxProviderOptionsFromEnv(env);
+      // Only the options these fields set: a blank one falls back to the provider's default,
+      // and options Settings has no field for keep their environment values.
+      const options = sandboxProviderOptionsFromEnv(env) as Record<string, unknown>;
+      return Object.fromEntries(
+        Object.keys(controlled).map((key) => [key, options[key]]),
+      ) as SandboxProviderOptions;
     },
   };
 }
