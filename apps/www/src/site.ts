@@ -9,10 +9,7 @@ export const INTEGRATION_CLAIMS_URL = `${APP_URL}/api/v1/integration-claims`;
 export const CATALOG_URL =
   "https://rakazo-public.fsn1.your-objectstorage.com/integrations/catalog.json";
 export const GITHUB_URL = "https://github.com/elie222/rakazo";
-export {
-  ANDROID_APP_STORE_URL,
-  IOS_APP_STORE_URL as IOS_APP_URL,
-} from "@rakazo/contracts/client-build";
+export const IOS_APP_URL = "https://apps.apple.com/app/rakazo/id6801531099";
 export const GITHUB_API_REPO = "https://api.github.com/repos/elie222/rakazo";
 export const DOCS_URL = "https://github.com/elie222/rakazo/blob/main/docs/self-host.md";
 export const SELF_HOST_SECRETS_URL =
