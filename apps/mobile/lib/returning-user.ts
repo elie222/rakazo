@@ -18,3 +18,12 @@ export async function rememberSignedIn(): Promise<void> {
     // SecureStore unavailable in some test / web hosts.
   }
 }
+
+/** A deleted account has nothing to sign in to, so the next launch offers sign up again. */
+export async function forgetSignedIn(): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(SIGNED_IN_BEFORE_KEY);
+  } catch {
+    // SecureStore unavailable in some test / web hosts.
+  }
+}

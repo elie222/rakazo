@@ -16,3 +16,12 @@ export function rememberSignedIn(): void {
     // Private mode / blocked storage: new visitors and returning ones both land on sign-up.
   }
 }
+
+/** A deleted account has nothing to sign in to, so the next visit offers sign up again. */
+export function forgetSignedIn(): void {
+  try {
+    window.localStorage.removeItem(SIGNED_IN_BEFORE_KEY);
+  } catch {
+    // Blocked storage never held the flag.
+  }
+}
