@@ -80,10 +80,25 @@ export function SubscriptionGate({
         if (!me.billingEnabled) return { kind: "open" };
         // Claimed first, so an invited friend's status already offers the longer trial; a claim
         // that hangs never holds the app back for more than a few seconds.
+        let claimed = false;
+        const claim = claimStoredReferral().then(() => {
+          claimed = true;
+        });
         await Promise.race([
-          claimStoredReferral(),
+          claim,
           new Promise((resolve) => setTimeout(resolve, REFERRAL_CLAIM_WAIT_MS)),
         ]);
+        // A slow claim that lands later refreshes billing, so the longer trial still shows.
+        if (!claimed) {
+          void claim.then(() =>
+            rpc.billing
+              .status()
+              .then((later) => {
+                if (active) setState(gateFor(later));
+              })
+              .catch(() => undefined),
+          );
+        }
         const status = await rpc.billing.status();
         if (active && capabilities.crispWebsiteId) {
           setSupportChat({

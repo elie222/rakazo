@@ -6,7 +6,7 @@ import {
 } from "./artifact-cache-session";
 import { stopLiveNotifications } from "./live-notifications";
 import { clearNetworkCache } from "./network-cache";
-import { rememberReferral } from "./referral";
+import { forgetReferrals } from "./referral";
 import { rememberSignedIn } from "./returning-user";
 import { clearFailedSends } from "./thread-feedback";
 
@@ -44,7 +44,7 @@ function invalidateSessionCaches(keepUnsent = false): Promise<void> {
   if (!keepUnsent) clearFailedSends();
   clearNetworkCache();
   // Another account must never see, or share, the previous owner's invite link.
-  rememberReferral(null);
+  forgetReferrals();
   for (const clear of sessionDiskCaches) {
     try {
       clear();

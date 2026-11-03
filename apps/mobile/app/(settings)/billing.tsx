@@ -10,7 +10,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { Alert, AppState, ScrollView, Share, StyleSheet } from "react-native";
 import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
-import { rpc } from "../../lib/api";
+import { rpc, selectedSpaceId } from "../../lib/api";
 import {
   currentPlan,
   openBillingPage,
@@ -42,7 +42,7 @@ export default function BillingScreen() {
   const [pending, setPending] = useState(false);
   const show = useCallback((next: BillingStatus) => {
     setStatus(next);
-    rememberReferral(next.referral);
+    rememberReferral(selectedSpaceId(), next.referral);
     setAmount(
       ModelCreditAmountSchema.catch(DEFAULT_MONTHLY_CREDIT_AMOUNT).parse(next.monthlyAmountCents),
     );

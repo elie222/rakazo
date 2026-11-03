@@ -44,7 +44,6 @@ import {
   selectInitialSpace,
   selectSpace,
   signOut,
-  spaceSelectionSeq,
 } from "../lib/api";
 import {
   appBadgeGeneration,
@@ -84,7 +83,7 @@ import { findOrganizeTarget } from "../lib/organize-target";
 import { offerPasskeyOnce } from "../lib/passkey";
 import { ACTIVITY_POLL_INTERVAL_MS, INBOX_POLL_INTERVAL_MS } from "../lib/poll-cadence";
 import { registerPushToken } from "../lib/push";
-import { rememberReferral } from "../lib/referral";
+import { forgetReferrals, rememberReferral } from "../lib/referral";
 import { hasSignedInBefore, rememberSignedIn } from "../lib/returning-user";
 import { loadSavedInbox, saveInbox } from "../lib/saved-chats";
 import {
@@ -251,17 +250,17 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         apiBase !== currentApiBase()
       )
         return;
-      if (!nextMe.billingEnabled) rememberReferral(null);
+      if (!nextMe.billingEnabled) forgetReferrals();
       else {
-        const spaceSeq = spaceSelectionSeq();
+        // Filed under the Space it was fetched for, so a late answer never shows in another.
+        const spaceId = selectedSpaceId();
         void rpc("billing/status")
           .then((billing) => {
+            rememberReferral(spaceId, billing.referral);
             const current =
-              spaceSeq === spaceSelectionSeq() &&
               requestId === inboxRequestId.current &&
               generation === currentSessionGeneration() &&
               apiBase === currentApiBase();
-            if (current) rememberReferral(billing.referral);
             if (current && billing.funding !== undefined && !billing.access && !isPaywallShown())
               router.push("/paywall");
           })
