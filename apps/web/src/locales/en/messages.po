@@ -1735,7 +1735,6 @@ msgstr "Conversations"
 msgid "Copied"
 msgstr "Copied"
 
-#: src/components/InviteDialog.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1754,6 +1753,10 @@ msgstr "Copy code"
 #: src/components/markdown-copy.tsx
 msgid "Copy diagram source"
 msgstr "Copy diagram source"
+
+#: src/components/InviteDialog.tsx
+msgid "Copy link"
+msgstr "Copy link"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
@@ -3112,10 +3115,6 @@ msgstr "Gateway URL"
 msgid "General"
 msgstr "General"
 
-#: src/components/InviteDialog.tsx
-msgid "Get a free month for each friend who starts a trial."
-msgstr "Get a free month for each friend who starts a trial."
-
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
 msgstr "Get the mobile app"
@@ -3127,6 +3126,10 @@ msgstr "Getting ready"
 #: src/pages/RoutineEditor.tsx
 msgid "Git event"
 msgstr "Git event"
+
+#: src/components/InviteDialog.tsx
+msgid "Give a friend 2 weeks free"
+msgstr "Give a friend 2 weeks free"
 
 #: src/pages/NotFound.tsx
 msgid "Go home"
@@ -3418,14 +3421,13 @@ msgstr "Interval unit"
 msgid "Invalid code"
 msgstr "Invalid code"
 
-#: src/components/InviteDialog.tsx
+#: src/pages/shell/chat-header.tsx
+msgid "Invite a friend"
+msgstr "Invite a friend"
+
 #: src/components/SidebarFooter.tsx
 msgid "Invite friends"
 msgstr "Invite friends"
-
-#: src/components/InviteDialog.tsx
-msgid "Invite link"
-msgstr "Invite link"
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -5981,6 +5983,10 @@ msgstr "These files or choices no longer match. Choose the files again."
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr "These saved settings can't be read. Remove it and add it again."
 
+#: src/components/InviteDialog.tsx
+msgid "They get 2 weeks free."
+msgstr "They get 2 weeks free."
+
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
@@ -6678,6 +6684,10 @@ msgstr "You can close this window."
 #: src/components/call/VoiceChatCard.tsx
 msgid "You declined"
 msgstr "You declined"
+
+#: src/components/InviteDialog.tsx
+msgid "You get a free month when they start their trial."
+msgstr "You get a free month when they start their trial."
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "You have control"

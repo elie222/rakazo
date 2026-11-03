@@ -26,7 +26,7 @@ vi.mock("../components/sheet-header", () => ({ trailingHeaderOptions: () => ({})
 vi.mock("../components/thread-header-right", () => ({ threadHeaderRight: () => ({}) }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./archived-chats", () => ({ notifyArchivedChatsChanged: vi.fn() }));
-vi.mock("./bot-lifecycle", () => ({}));
+vi.mock("./bot-lifecycle", () => ({ onConversationCleared: () => () => undefined }));
 vi.mock("./i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock("./native", () => ({ useResolvedAppearance: () => "light" }));
 vi.mock("./thread-edges", () => ({ threadEdgeOptions: () => ({}) }));
@@ -127,7 +127,6 @@ it("publishes the members the chat loads to its title", () => {
       titleName: "Duo",
       groupMembers: members,
       composingBots: "",
-      styles: {} as Parameters<typeof useThreadHeader>[0]["styles"],
       onCleared: vi.fn(),
     });
     return null;

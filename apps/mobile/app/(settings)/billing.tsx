@@ -18,6 +18,7 @@ import {
   planEndsAt,
 } from "../../lib/billing";
 import { dateLocaleForUi, useI18n } from "../../lib/i18n";
+import { rememberReferral } from "../../lib/referral";
 import { openFromSettingsSheet } from "../../lib/settings-sheet";
 import { useSideInsets } from "../../lib/side-insets";
 
@@ -41,6 +42,7 @@ export default function BillingScreen() {
   const [pending, setPending] = useState(false);
   const show = useCallback((next: BillingStatus) => {
     setStatus(next);
+    rememberReferral(next.referral);
     setAmount(
       ModelCreditAmountSchema.catch(DEFAULT_MONTHLY_CREDIT_AMOUNT).parse(next.monthlyAmountCents),
     );

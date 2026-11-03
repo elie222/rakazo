@@ -4,7 +4,7 @@ import { BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, billingAccountForOrganization, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createBillingService } from "./billing.js";
+import { createBillingService, INVITED_TRIAL_DAYS, TRIAL_DAYS } from "./billing.js";
 
 const dbTests =
   process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
@@ -69,6 +69,23 @@ dbTests("referrals", () => {
       rewards: 0,
     });
     await expect(service.status(referrer)).resolves.toMatchObject({ referral });
+  });
+
+  it("gives an invited friend a longer first trial and everyone else the usual one", async () => {
+    const referrer = await newOrganization("trial-referrer");
+    const friend = await newOrganization("trial-friend");
+    const stranger = await newOrganization("trial-stranger");
+    await service.claimReferral(friend, await inviteCode(referrer));
+    await expect(service.status(friend)).resolves.toMatchObject({ trialDays: INVITED_TRIAL_DAYS });
+    await expect(service.status(stranger)).resolves.toMatchObject({ trialDays: TRIAL_DAYS });
+    for (const [actor, days] of [
+      [friend, INVITED_TRIAL_DAYS],
+      [stranger, TRIAL_DAYS],
+    ] as const) {
+      await service.selectFunding(actor, "byok");
+      const { customerId } = (await billingAccountForOrganization(prisma, actor.organizationId))!;
+      expect(provider.byokCheckouts.get(customerId)?.trialDays).toBe(days);
+    }
   });
 
   it("grants the referrer a free month when the friend starts a trial with a new card", async () => {

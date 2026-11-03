@@ -76,7 +76,8 @@ export function SubscriptionGate({
         if (!capabilities.billing) return { kind: "open" };
         const me = await loadMe();
         if (!me.billingEnabled) return { kind: "open" };
-        void claimStoredReferral();
+        // Claimed first, so an invited friend's status already offers the longer trial.
+        await claimStoredReferral();
         const status = await rpc.billing.status();
         if (active && capabilities.crispWebsiteId) {
           setSupportChat({

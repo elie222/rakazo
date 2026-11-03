@@ -1,6 +1,7 @@
 import { Alert } from "react-native";
 import type { ApiRequestContext } from "./api";
 import { rpc } from "./api";
+import { notifyArchivedChatsChanged } from "./archived-chats";
 import { t } from "./i18n";
 import { removeFromSearchInbox } from "./search-inbox";
 import { errorText } from "./user-error";
@@ -68,4 +69,44 @@ export function confirmDeleteGroup(group: { id: string; name: string }, onDelete
 
 export async function restoreArchivedBot(botId: string): Promise<void> {
   await rpc("bots/restore", { botId });
+}
+
+export async function archiveBot(botId: string): Promise<void> {
+  await rpc("bots/archive", { botId });
+  removeFromSearchInbox(botId);
+  notifyArchivedChatsChanged();
+}
+
+const clearedListeners = new Set<(botId: string) => void>();
+
+/** The open chat empties itself when its conversation is cleared from the bot's profile. */
+export function onConversationCleared(listener: (botId: string) => void): () => void {
+  clearedListeners.add(listener);
+  return () => {
+    clearedListeners.delete(listener);
+  };
+}
+
+export function confirmClearConversation(botId: string) {
+  Alert.alert(
+    t("Clear conversation?"),
+    t(
+      "This removes every message and stops current work. The bot, computer, memory, and routines are kept.",
+    ),
+    [
+      { text: t("Cancel"), style: "cancel" },
+      {
+        text: t("Clear"),
+        style: "destructive",
+        onPress: () =>
+          void rpc("threads/clear", { botId })
+            .then(() => {
+              for (const listener of clearedListeners) listener(botId);
+            })
+            .catch((error: unknown) =>
+              Alert.alert(t("Could not clear conversation"), errorText(error, t("Try again."))),
+            ),
+      },
+    ],
+  );
 }

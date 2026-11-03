@@ -1735,7 +1735,6 @@ msgstr "对话"
 msgid "Copied"
 msgstr "已复制"
 
-#: src/components/InviteDialog.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1754,6 +1753,10 @@ msgstr "复制代码"
 #: src/components/markdown-copy.tsx
 msgid "Copy diagram source"
 msgstr "复制图表源代码"
+
+#: src/components/InviteDialog.tsx
+msgid "Copy link"
+msgstr "复制链接"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
@@ -3112,10 +3115,6 @@ msgstr ""
 msgid "General"
 msgstr "通用"
 
-#: src/components/InviteDialog.tsx
-msgid "Get a free month for each friend who starts a trial."
-msgstr "每有一位朋友开始试用，你就能获得一个月免费。"
-
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
 msgstr "获取移动应用"
@@ -3127,6 +3126,10 @@ msgstr "正在准备"
 #: src/pages/RoutineEditor.tsx
 msgid "Git event"
 msgstr "Git 事件"
+
+#: src/components/InviteDialog.tsx
+msgid "Give a friend 2 weeks free"
+msgstr "送朋友 2 周免费"
 
 #: src/pages/NotFound.tsx
 msgid "Go home"
@@ -3418,14 +3421,13 @@ msgstr "间隔单位"
 msgid "Invalid code"
 msgstr "验证码无效"
 
-#: src/components/InviteDialog.tsx
+#: src/pages/shell/chat-header.tsx
+msgid "Invite a friend"
+msgstr "邀请朋友"
+
 #: src/components/SidebarFooter.tsx
 msgid "Invite friends"
 msgstr "邀请朋友"
-
-#: src/components/InviteDialog.tsx
-msgid "Invite link"
-msgstr "邀请链接"
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -5981,6 +5983,10 @@ msgstr "这些文件或选择已不再匹配。请重新选择文件。"
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr "这些已保存的设置读不出来。请移除后再添加一次。"
 
+#: src/components/InviteDialog.tsx
+msgid "They get 2 weeks free."
+msgstr "对方可免费使用 2 周。"
+
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
@@ -6678,6 +6684,10 @@ msgstr "可以关闭此窗口。"
 #: src/components/call/VoiceChatCard.tsx
 msgid "You declined"
 msgstr "你已拒接"
+
+#: src/components/InviteDialog.tsx
+msgid "You get a free month when they start their trial."
+msgstr "对方开始试用后，你将获得 1 个月免费。"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "You have control"

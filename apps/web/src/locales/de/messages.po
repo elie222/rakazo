@@ -1735,7 +1735,6 @@ msgstr ""
 msgid "Copied"
 msgstr "Kopiert"
 
-#: src/components/InviteDialog.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1754,6 +1753,10 @@ msgstr "Code kopieren"
 #: src/components/markdown-copy.tsx
 msgid "Copy diagram source"
 msgstr "Diagrammquelle kopieren"
+
+#: src/components/InviteDialog.tsx
+msgid "Copy link"
+msgstr "Link kopieren"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
@@ -3112,10 +3115,6 @@ msgstr ""
 msgid "General"
 msgstr "Allgemein"
 
-#: src/components/InviteDialog.tsx
-msgid "Get a free month for each friend who starts a trial."
-msgstr "Erhalte einen Gratismonat für jeden Freund, der eine Testphase startet."
-
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
 msgstr "Mobile App herunterladen"
@@ -3127,6 +3126,10 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "Git event"
 msgstr ""
+
+#: src/components/InviteDialog.tsx
+msgid "Give a friend 2 weeks free"
+msgstr "Schenk einem Freund 2 Wochen gratis"
 
 #: src/pages/NotFound.tsx
 msgid "Go home"
@@ -3418,14 +3421,13 @@ msgstr "Intervalleinheit"
 msgid "Invalid code"
 msgstr "Ungültiger Code"
 
-#: src/components/InviteDialog.tsx
+#: src/pages/shell/chat-header.tsx
+msgid "Invite a friend"
+msgstr "Freund einladen"
+
 #: src/components/SidebarFooter.tsx
 msgid "Invite friends"
 msgstr "Freunde einladen"
-
-#: src/components/InviteDialog.tsx
-msgid "Invite link"
-msgstr "Einladungslink"
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -5981,6 +5983,10 @@ msgstr "Diese Dateien oder die Auswahl passen nicht mehr. Wähle die Dateien ern
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr ""
 
+#: src/components/InviteDialog.tsx
+msgid "They get 2 weeks free."
+msgstr "Sie bekommen 2 Wochen gratis."
+
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
@@ -6678,6 +6684,10 @@ msgstr "Du kannst dieses Fenster schließen."
 #: src/components/call/VoiceChatCard.tsx
 msgid "You declined"
 msgstr "Du hast abgelehnt"
+
+#: src/components/InviteDialog.tsx
+msgid "You get a free month when they start their trial."
+msgstr "Du bekommst einen Gratismonat, wenn sie ihre Testphase starten."
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "You have control"

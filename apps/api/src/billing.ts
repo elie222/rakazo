@@ -40,6 +40,8 @@ import { applyAccessGrants } from "./access-grants.js";
 import { createReferrals } from "./referrals.js";
 
 export const TRIAL_DAYS = 7;
+/** An invited organization's first trial. */
+export const INVITED_TRIAL_DAYS = 14;
 const PRICE_CACHE_MS = 60 * 60 * 1000;
 const CHECKOUT_LEASE_MS = 120_000;
 const CHECKOUT_LEASE_POLL_MS = 250;
@@ -281,6 +283,10 @@ export function createBillingService(deps: {
     }
   }
 
+  async function trialDays(organizationId: string) {
+    return (await referrals.invited(organizationId)) ? INVITED_TRIAL_DAYS : TRIAL_DAYS;
+  }
+
   async function billingAccountFor(actor: Actor, organizationId: string) {
     return (
       (await billingAccountForOrganization(prisma, organizationId)) ??
@@ -299,9 +305,10 @@ export function createBillingService(deps: {
   ) {
     const amountCents = byokOfferCents(interval);
     if (amountCents === null || !provider.createByokCheckout) throw new ORPCError("NOT_FOUND");
-    const [account, credits] = await Promise.all([
+    const [account, credits, days] = await Promise.all([
       billingAccountFor(actor, organizationId),
       creditAccount(prisma, organizationId),
+      trialDays(organizationId),
     ]);
     try {
       return await openCheckout(actor, account, true, (customerId) =>
@@ -309,7 +316,7 @@ export function createBillingService(deps: {
           customerId,
           amountCents,
           interval,
-          ...(byokTrialAvailable(account, credits) ? { trialDays: TRIAL_DAYS } : {}),
+          ...(byokTrialAvailable(account, credits) ? { trialDays: days } : {}),
           successUrl: client === "mobile" ? mobileReturnUrl : returnUrl,
           cancelUrl: client === "mobile" ? mobileReturnUrl : appUrl,
         }),
@@ -407,10 +414,11 @@ export function createBillingService(deps: {
             getLogger().error("access grant failed", error),
           );
         await expireModelCredits(prisma, organizationId);
-        const [credits, account, computerAllowance] = await Promise.all([
+        const [credits, account, computerAllowance, days] = await Promise.all([
           creditAccount(prisma, organizationId),
           billingAccountForOrganization(prisma, organizationId),
           deps.sandbox ? sandboxAllowance({ prisma, sandbox: deps.sandbox }, organizationId) : null,
+          trialDays(organizationId),
         ]);
         const freeUntil =
           credits.mode === "byok" &&
@@ -437,7 +445,7 @@ export function createBillingService(deps: {
           byokFreeUntil: freeUntil?.toISOString() ?? null,
           canManage: isOwner,
           trialAvailable: BYOK_MONTHLY_PRICE_CENTS !== null && byokTrialAvailable(account, credits),
-          trialDays: TRIAL_DAYS,
+          trialDays: days,
           state: (account?.status ?? "none") as BillingStatus["state"],
           price: account?.creditAmountCents
             ? {
@@ -457,16 +465,17 @@ export function createBillingService(deps: {
         };
       }
       const { organizationId, isOwner } = await organization(actor);
-      const [account, currentPrice] = await Promise.all([
+      const [account, currentPrice, days] = await Promise.all([
         billingAccountForOrganization(prisma, organizationId),
         price(),
+        trialDays(organizationId),
       ]);
       const status = account?.status ?? null;
       return {
         access: hasBillingAccess(status),
         canManage: isOwner,
         trialAvailable: !account?.subscribedAt,
-        trialDays: TRIAL_DAYS,
+        trialDays: days,
         state: (status ?? "none") as BillingStatus["state"],
         price: currentPrice,
         seats: account?.seats ?? (await organizationSeatCount(prisma, organizationId)),
@@ -498,7 +507,7 @@ export function createBillingService(deps: {
         customerId: await newCustomer(actor, organizationId),
       });
       const seats = await organizationSeatCount(prisma, organizationId);
-      const trial = account.subscribedAt ? {} : { trialDays: TRIAL_DAYS };
+      const trial = account.subscribedAt ? {} : { trialDays: await trialDays(organizationId) };
       try {
         return await withLiveCustomer(actor, account, (customerId) =>
           provider.createCheckout({

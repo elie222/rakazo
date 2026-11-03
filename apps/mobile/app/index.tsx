@@ -83,6 +83,7 @@ import { findOrganizeTarget } from "../lib/organize-target";
 import { offerPasskeyOnce } from "../lib/passkey";
 import { ACTIVITY_POLL_INTERVAL_MS, INBOX_POLL_INTERVAL_MS } from "../lib/poll-cadence";
 import { registerPushToken } from "../lib/push";
+import { rememberReferral } from "../lib/referral";
 import { hasSignedInBefore, rememberSignedIn } from "../lib/returning-user";
 import { loadSavedInbox, saveInbox } from "../lib/saved-chats";
 import {
@@ -249,17 +250,16 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         apiBase !== currentApiBase()
       )
         return;
-      if (nextMe.billingEnabled) {
+      if (!nextMe.billingEnabled) rememberReferral(null);
+      else {
         void rpc("billing/status")
           .then((billing) => {
-            if (
+            const current =
               requestId === inboxRequestId.current &&
               generation === currentSessionGeneration() &&
-              apiBase === currentApiBase() &&
-              billing.funding !== undefined &&
-              !billing.access &&
-              !isPaywallShown()
-            )
+              apiBase === currentApiBase();
+            if (current) rememberReferral(billing.referral);
+            if (current && billing.funding !== undefined && !billing.access && !isPaywallShown())
               router.push("/paywall");
           })
           .catch(() => undefined);

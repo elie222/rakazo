@@ -59,3 +59,15 @@ name: Thread
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 05-attachment-preview
+# The gift shows only where the account can invite (a billed deployment with referrals on).
+- runFlow:
+    when:
+      visible: "Invite a friend"
+    commands:
+      - tapOn: "Invite a friend"
+      - extendedWaitUntil:
+          visible: ".*2 weeks free.*"
+          timeout: 10000
+      - waitForAnimationToEnd:
+          timeout: 3000
+      - takeScreenshot: 06-invite

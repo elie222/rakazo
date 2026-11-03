@@ -93,6 +93,13 @@ export function createReferrals(deps: {
       return { url: `${deps.webOrigin}/sign-up?ref=${code}`, rewards };
     },
 
+    /** Whether the organization was invited and has not subscribed yet, so its trial is longer. */
+    async invited(organizationId: string) {
+      if (!enabled) return false;
+      const count = await prisma.referral.count({ where: { organizationId, outcome: null } });
+      return count > 0;
+    },
+
     /** Only before the organization's first subscription, so nobody claims after paying. */
     async claim(organizationId: string, code: string) {
       if (!enabled) return;

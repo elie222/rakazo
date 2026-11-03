@@ -1241,6 +1241,12 @@ export const DE_MESSAGES: Record<string, string> = {
   "Invite friends": "Freunde einladen",
   "Get a free month for each friend who starts a trial.":
     "Erhalte einen Gratismonat für jeden Freund, der eine Testphase startet.",
+  "Invite a friend": "Freund einladen",
+  "Give a friend 2 weeks free": "Schenk einem Freund 2 Wochen gratis",
+  "They get 2 weeks free.": "Sie bekommen 2 Wochen gratis.",
+  "You get a free month when they start their trial.":
+    "Du bekommst einen Gratismonat, wenn sie ihre Testphase starten.",
+  "Share link": "Link teilen",
   "1 free month earned": "1 Gratismonat verdient",
   "{count} free months earned": "{count} Gratismonate verdient",
   "Submit a plugin": "Plugin einreichen",
