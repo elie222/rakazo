@@ -78,7 +78,6 @@ export function PageFrame({
           title={title}
           className="bg-transparent"
           onFrameMessage={receive}
-          allowClipboardWrite={interactive}
         />
       </div>
       {dialog}

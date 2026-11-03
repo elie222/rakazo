@@ -90,8 +90,10 @@ describe("controls", () => {
     expect(replyText("   ")).toBeUndefined();
   });
 
-  it("copies through the host when the frame has no clipboard and shows the text when it cannot", async () => {
+  it("copies through the host, never the page's own clipboard, and shows the text when it cannot", async () => {
     vi.useFakeTimers();
+    const writeText = vi.fn(async (_text: string) => {});
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
     const answer = (data: unknown) =>
       act(async () => {
         window.dispatchEvent(new MessageEvent("message", { data }));
@@ -129,6 +131,8 @@ describe("controls", () => {
     );
     expect(await copyText("x".repeat(20_001))).toBe(false);
     expect(posted).toHaveLength(3);
+    expect(writeText).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
     vi.useRealTimers();
   });
 

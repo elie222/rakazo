@@ -32,7 +32,6 @@ export function SandboxedHtmlViewer({
   title,
   className = "bg-white",
   onFrameMessage,
-  allowClipboardWrite = false,
 }: {
   html: string;
   title: string;
@@ -42,8 +41,6 @@ export function SandboxedHtmlViewer({
    * `focused` says whether this frame holds the app's focus as the message arrives.
    */
   onFrameMessage?: (data: unknown, answer: (message: object) => void, focused: boolean) => void;
-  /** Lets the document write (never read) the clipboard where the browser allows it. */
-  allowClipboardWrite?: boolean;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   // Every shell load starts empty, so each one gets the document again.
@@ -73,7 +70,6 @@ export function SandboxedHtmlViewer({
       src={HTML_VIEWER_PATH}
       onLoad={() => setLoads((count) => count + 1)}
       sandbox="allow-scripts"
-      allow={allowClipboardWrite ? "clipboard-write" : undefined}
       referrerPolicy="no-referrer"
       // The viewer shell declares no colour scheme. Against a dark app the browser would paint
       // the frame opaque white until the document draws; matching schemes keep it see-through.

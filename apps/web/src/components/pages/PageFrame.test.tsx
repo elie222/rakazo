@@ -22,7 +22,8 @@ it("copies what its own page asks from the app's frame and answers whether it wo
   const root = createRoot(container);
   await act(async () => root.render(<PageFrame document="<p>x</p>" title="Board" interactive />));
   const frame = container.querySelector("iframe")!;
-  expect(frame.getAttribute("allow")).toBe("clipboard-write");
+  // The page itself gets no clipboard: every copy comes through here, one per click.
+  expect(frame.hasAttribute("allow")).toBe(false);
   frame.focus();
   const answers = vi.spyOn(frame.contentWindow!, "postMessage").mockImplementation(() => {});
   const send = (data: unknown, source: Window | null = frame.contentWindow) =>

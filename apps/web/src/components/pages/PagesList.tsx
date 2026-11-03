@@ -8,6 +8,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  SectionHeading,
   Spinner,
 } from "@rakazo/ui-web";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -226,9 +227,9 @@ function OwnerPages({ botId, groupId }: { botId?: string; groupId?: string }) {
       ) : null}
       {pinned.length ? (
         <section>
-          <h3 className="mb-1 px-2 text-xs font-medium text-muted-foreground">
+          <SectionHeading variant="label" className="mb-1 px-2">
             <Trans>Pinned</Trans>
-          </h3>
+          </SectionHeading>
           <ul className="flex flex-col">{pinned.map(row)}</ul>
         </section>
       ) : null}

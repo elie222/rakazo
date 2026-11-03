@@ -31,21 +31,12 @@ const COPY_MAX_LENGTH = 20_000;
 let copies = 0;
 
 /**
- * Copies text for the reader and resolves whether it worked. Where the viewer keeps the
- * clipboard from the page (Safari, phone WebViews), the app copies it and says whether it could.
+ * Copies text for the reader and resolves whether it worked. Pages have no clipboard of their
+ * own: the app copies, one copy per click in the page, and says whether it could.
  */
-export async function copyText(value: unknown): Promise<boolean> {
+export function copyText(value: unknown): Promise<boolean> {
   const content = text(value);
-  if (!content || content.length > COPY_MAX_LENGTH) return false;
-  try {
-    await navigator.clipboard.writeText(content);
-    return true;
-  } catch {
-    return copyViaHost(content);
-  }
-}
-
-function copyViaHost(content: string): Promise<boolean> {
+  if (!content || content.length > COPY_MAX_LENGTH) return Promise.resolve(false);
   copies += 1;
   const id = `copy-${copies}`;
   return new Promise((resolve) => {

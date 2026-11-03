@@ -799,10 +799,7 @@ test("a page acts for its reader only after a click in it, never on load or from
   await expect(pageFrame(page, "Rogue").getByText("Sent on load")).toBeVisible();
   await untouched();
 
-  // A click inside the page lets it copy, and its link still asks before leaving.
-  await pageFrame(page, "Rogue")
-    .locator("body")
-    .evaluate(() => Object.defineProperty(navigator, "clipboard", { value: undefined }));
+  // A click inside the page lets the app copy for it, and its link still asks before leaving.
   await pageFrame(page, "Rogue").getByRole("button", { name: "Copy now" }).click();
   await expect(pageFrame(page, "Rogue").getByRole("button", { name: "Copied" })).toBeVisible();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("copied after a click");

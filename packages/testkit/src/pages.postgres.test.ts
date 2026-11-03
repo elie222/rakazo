@@ -53,7 +53,8 @@ describePages("pages", () => {
 
   /**
    * Runs `during` while this test holds the page's row lock; `waitFor(n)` returns once n other
-   * transactions are queued on locks, so a race is forced rather than left to timing.
+   * sessions are queued behind this transaction, directly or behind each other, so a race is
+   * forced rather than left to timing. Waits elsewhere in the shared database never count.
    */
   async function holdingPageRow<T>(
     pageId: string,
@@ -62,18 +63,24 @@ describePages("pages", () => {
       tx: Parameters<Parameters<ReturnType<typeof db>["$transaction"]>[0]>[0],
     ) => Promise<T>,
   ): Promise<T> {
-    const waitFor = async (count: number) => {
-      for (let tries = 0; tries < 800; tries++) {
-        const [row] = await db().$queryRaw<{ waiting: number }[]>`
-          SELECT count(*)::int AS waiting FROM pg_locks WHERE NOT granted`;
-        if ((row?.waiting ?? 0) >= count) return;
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
-      throw new Error(`${count} writers never queued behind the held page row`);
-    };
     return db().$transaction(
       async (tx) => {
         await tx.$queryRaw`SELECT id FROM pages WHERE id = ${pageId} FOR UPDATE`;
+        const [held] = await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        const waitFor = async (count: number) => {
+          for (let tries = 0; tries < 800; tries++) {
+            const [row] = await db().$queryRaw<{ waiting: number }[]>`
+              WITH RECURSIVE queued(pid) AS (
+                SELECT pid FROM pg_stat_activity WHERE ${held!.pid}::int = ANY(pg_blocking_pids(pid))
+                UNION
+                SELECT a.pid FROM pg_stat_activity a JOIN queued q ON q.pid = ANY(pg_blocking_pids(a.pid))
+              )
+              SELECT count(*)::int AS waiting FROM queued`;
+            if ((row?.waiting ?? 0) >= count) return;
+            await new Promise((resolve) => setTimeout(resolve, 25));
+          }
+          throw new Error(`${count} writers never queued behind the held page row`);
+        };
         return during(waitFor, tx);
       },
       { timeout: 30_000 },
