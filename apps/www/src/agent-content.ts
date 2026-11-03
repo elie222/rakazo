@@ -8,6 +8,7 @@ import {
   HOME_MODEL_PROVIDERS,
   getHomeCopy,
 } from "./i18n/home";
+import { PRICING_MARKDOWN } from "./pricing";
 import { roundupMarkdown } from "./roundup";
 import { APP_URL, GITHUB_URL, PLUGIN_SUBMISSIONS_URL } from "./site";
 
@@ -82,6 +83,7 @@ ${home.cta.copy}
 - [Integrations](https://rakazo.com/integrations/)
 - [Blog](https://rakazo.com/blog/)
 - [Grok Bot alternatives](https://rakazo.com/grok-bot-alternative/)
+- [Pricing](https://rakazo.com/pricing/): free to self-host, or hosted with your own model or Rakazo credits.
 - [About](https://rakazo.com/about/)
 - [Brand](https://rakazo.com/brand/)
 - [Support](https://rakazo.com/support/)
@@ -258,6 +260,7 @@ const MARKDOWN_DOCUMENTS = new Map<string, string>([
   ["/brand", BRAND_MARKDOWN],
   ["/openclaw-alternative", OPENCLAW_MARKDOWN],
   ["/grok-bot-alternative", GROK_ALTERNATIVE_MARKDOWN],
+  ["/pricing", PRICING_MARKDOWN],
   ["/privacy", PRIVACY_MARKDOWN],
   ["/self-hosted-ai-agent", SELF_HOST_MARKDOWN],
   ["/support", SUPPORT_MARKDOWN],

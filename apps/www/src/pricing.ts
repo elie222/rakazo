@@ -1,0 +1,74 @@
+import {
+  BYOK_ANNUAL_PRICE_CENTS,
+  BYOK_MONTHLY_PRICE_CENTS,
+  MODEL_CREDIT_AMOUNTS,
+} from "@rakazo/contracts";
+import { APP_URL, SELF_HOST_GUIDE_PATH } from "./site";
+
+const dollars = (cents: number) => `$${cents / 100}`;
+
+export type PricingPlan = {
+  name: string;
+  price: string;
+  note?: string;
+  features: string[];
+  action: { label: string; href: string };
+};
+
+/** Prices come from the same constants the app bills with. */
+export const PRICING_PLANS: PricingPlan[] = [
+  {
+    name: "Self-hosted",
+    price: "Free",
+    note: "Forever",
+    features: [
+      "Open source, Apache-2.0",
+      "Your server or your own computer",
+      "Any model you connect",
+      "No usage limits",
+    ],
+    action: { label: "Self-hosting guide", href: SELF_HOST_GUIDE_PATH },
+  },
+  {
+    name: "Your model",
+    price: BYOK_MONTHLY_PRICE_CENTS === null ? "Free" : `${dollars(BYOK_MONTHLY_PRICE_CENTS)}/mo`,
+    note:
+      BYOK_ANNUAL_PRICE_CENTS === null
+        ? undefined
+        : `${dollars(BYOK_ANNUAL_PRICE_CENTS / 12)}/mo billed yearly`,
+    features: [
+      "Hosted by us",
+      "Your ChatGPT or Claude subscription, or any API key",
+      "Cloud computer included",
+      "Free trial",
+    ],
+    action: { label: "Start free trial", href: APP_URL },
+  },
+  {
+    name: "Rakazo credits",
+    price: `From ${dollars(MODEL_CREDIT_AMOUNTS[0])}/mo`,
+    note: "Paid as model credits",
+    features: [
+      "Hosted by us",
+      "No model account needed",
+      "Cloud computer included",
+      "Top up any time",
+    ],
+    action: { label: "Get started", href: APP_URL },
+  },
+];
+
+export const PRICING_MARKDOWN = `# Rakazo pricing
+
+${PRICING_PLANS.map(
+  (plan) => `## ${plan.name}
+
+${plan.price}${plan.note ? ` (${plan.note})` : ""}
+
+${plan.features.map((feature) => `- ${feature}`).join("\n")}
+
+[${plan.action.label}](${new URL(plan.action.href, "https://rakazo.com").href})`,
+).join("\n\n")}
+
+Model usage on your own connection is billed by your provider. Monthly credits expire at renewal; credits you top up don't. Hosted plans include fair use of up to 100 computer-hours a month. See the [terms](https://rakazo.com/terms/).
+`;

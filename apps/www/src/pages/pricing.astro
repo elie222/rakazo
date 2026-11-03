@@ -1,0 +1,45 @@
+---
+import Footer from "../components/Footer.astro";
+import Header from "../components/Header.astro";
+import { githubStarsLabel } from "../github";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { PRICING_PLANS } from "../pricing";
+
+const starsLabel = await githubStarsLabel();
+---
+
+<BaseLayout
+  title="Pricing · Rakazo"
+  description="Self-host Rakazo for free, or let us host it with your own model or Rakazo credits."
+>
+  <div class="container">
+    <Header starsLabel={starsLabel} />
+    <main id="main" class="pricing">
+      <h1 class="section-heading">Pricing</h1>
+      <div class="pricing__plans">
+        {
+          PRICING_PLANS.map((plan, index) => (
+            <section class="feature-card pricing__plan">
+              <h2>{plan.name}</h2>
+              <p class="pricing__price">{plan.price}</p>
+              {plan.note && <p class="pricing__note">{plan.note}</p>}
+              <ul>
+                {plan.features.map((feature) => (
+                  <li>{feature}</li>
+                ))}
+              </ul>
+              <a
+                class:list={["button", index === 0 ? "button--secondary" : "button--primary"]}
+                href={plan.action.href}
+                data-attr={`pricing-${index}`}
+              >
+                {plan.action.label}
+              </a>
+            </section>
+          ))
+        }
+      </div>
+    </main>
+    <Footer />
+  </div>
+</BaseLayout>
