@@ -84,6 +84,7 @@ ${home.cta.copy}
 - [Integrations](https://rakazo.com/integrations/)
 - [Blog](https://rakazo.com/blog/)
 - [Grok Bot alternatives](https://rakazo.com/grok-bot-alternative/)
+- [Pricing](https://rakazo.com/pricing/): free to self-host, or hosted with your own model or Rakazo credits.
 - [Download](https://rakazo.com/download/): desktop, mobile, and web apps.
 - [About](https://rakazo.com/about/)
 - [Brand](https://rakazo.com/brand/)
@@ -188,6 +189,7 @@ Rakazo Cloud at https://app.rakazo.com is in beta. Self-hosting is also availabl
 - [Website Markdown](https://rakazo.com/index.md): the English product overview as Markdown.
 - [Alternatives](https://rakazo.com/alternatives/)
 - [Grok Bot alternatives](https://rakazo.com/grok-bot-alternative/)
+- [Pricing](https://rakazo.com/pricing/): free to self-host, or hosted with your own model or Rakazo credits.
 - [Download](https://rakazo.com/download/): desktop, mobile, and web apps.
 - [About](https://rakazo.com/about/)
 - [Brand](https://rakazo.com/brand/)

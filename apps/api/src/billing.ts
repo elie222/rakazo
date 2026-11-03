@@ -18,6 +18,7 @@ import {
   BYOK_ANNUAL_PRICE_CENTS,
   BYOK_MONTHLY_PRICE_CENTS,
   INVITED_TRIAL_WEEKS,
+  TRIAL_DAYS,
 } from "@rakazo/contracts";
 import type { BillingAccount, PrismaClient } from "@rakazo/db";
 import {
@@ -43,7 +44,7 @@ import { getLogger } from "@rakazo/logging";
 import { applyAccessGrants } from "./access-grants.js";
 import { createReferrals } from "./referrals.js";
 
-export const TRIAL_DAYS = 7;
+export { TRIAL_DAYS };
 /** An invited organization's first trial. */
 export const INVITED_TRIAL_DAYS = INVITED_TRIAL_WEEKS * 7;
 const PRICE_CACHE_MS = 60 * 60 * 1000;
