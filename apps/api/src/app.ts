@@ -762,7 +762,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       ? startHourlySweep(
           homeRetentionSweep({
             prisma,
-            home,
             email,
             appUrl: new URL("/app", env.webOrigin).href,
             onError: (error) => getLogger().error("saved home retention failed", error),

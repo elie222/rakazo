@@ -455,17 +455,6 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
     return doomed.length;
   }
 
-  /**
-   * Deletes every stored revision under `storageId`, once no computer points at it. Objects a
-   * failure here leaves behind are the hourly sweep's.
-   */
-  async removeStorage(storageId: string): Promise<void> {
-    const keys: string[] = [];
-    for await (const object of this.storage.list(`${HOMES_PREFIX}${storageId}/`))
-      keys.push(object.key);
-    await this.storage.delete(keys);
-  }
-
   /** Home keys with a directory in the local cache, for migration. */
   async localHomes(): Promise<string[]> {
     const entries = await readdir(path.join(this.root, "homes"), { withFileTypes: true }).catch(

@@ -25,6 +25,7 @@ describePostgres("saved home retention (PostgreSQL)", () => {
   let email: EmailEmulator;
   let errors: unknown[];
   let id: string;
+  let docker: string;
   let now: number;
   const context: AdapterContext = {
     operationId: "test",
@@ -36,7 +37,6 @@ describePostgres("saved home retention (PostgreSQL)", () => {
   const sweep = () =>
     homeRetentionSweep({
       prisma,
-      home,
       email,
       appUrl: "https://app.example.test/app",
       onError: (error) => errors.push(error),
@@ -46,7 +46,13 @@ describePostgres("saved home retention (PostgreSQL)", () => {
     vi.setSystemTime(now);
   };
   const computer = () => system.computer.findUniqueOrThrow({ where: { id } });
-  const objects = () => [...storage.objects.keys()];
+  /** The stored objects left once the worker's storage sweep has removed unowned ones. */
+  const objects = async () => {
+    await home.sweep();
+    const storageId = (await system.computer.findUniqueOrThrow({ where: { id: docker } }))
+      .homeStorageId;
+    return [...storage.objects.keys()].filter((key) => !key.includes(`/${storageId}/`));
+  };
   const sent = () => email.sent.filter((message) => message.to === `${id}@rakazo.test`);
 
   beforeAll(async () => {
@@ -67,6 +73,7 @@ describePostgres("saved home retention (PostgreSQL)", () => {
     now = Date.now();
     vi.useFakeTimers({ toFake: ["Date"], now });
     id = `retention-${randomBytes(6).toString("hex")}`;
+    docker = `${id}-docker`;
     root = await mkdtemp(path.join(tmpdir(), "rakazo-retention-"));
     storage = new MemoryObjectStorage();
     home = new ObjectAgentHomeStore(root, storage, new PrismaAgentHomeRecords(system, ring()));
@@ -97,6 +104,20 @@ describePostgres("saved home retention (PostgreSQL)", () => {
       where: { id },
       data: { homeRevision: "rev-1", homeRevisionAt: new Date(now - 100 * DAY) },
     });
+    // A Docker computer works in a host's copy that its stored home backs up, so it is kept.
+    await system.computer.create({
+      data: {
+        id: docker,
+        spaceId: id,
+        userId: id,
+        scopeKey: docker,
+        homeKey: docker,
+        kind: "docker",
+        state: "stopped",
+        createdAt: new Date(now - 100 * DAY),
+      },
+    });
+    await home.commit(docker, files, context);
   });
 
   afterEach(async () => {
@@ -111,16 +132,16 @@ describePostgres("saved home retention (PostgreSQL)", () => {
     await sweep();
     expect(sent()).toHaveLength(1);
     expect(sent()[0]!.text).toContain("unless you use your bots before then");
-    expect(objects()).toHaveLength(1);
+    expect(await objects()).toHaveLength(1);
 
     travel(6);
     await sweep();
-    expect(objects()).toHaveLength(1);
+    expect(await objects()).toHaveLength(1);
 
     travel(2);
     await sweep();
     expect(errors).toEqual([]);
-    expect(objects()).toEqual([]);
+    expect(await objects()).toEqual([]);
     expect(await computer()).toMatchObject({
       providerRef: `sandbox-${id}`,
       homeStorageId: null,
@@ -158,7 +179,7 @@ describePostgres("saved home retention (PostgreSQL)", () => {
     });
     travel(8);
     await sweep();
-    expect(objects()).toHaveLength(1);
+    expect(await objects()).toHaveLength(1);
     expect(await system.homeDeletionNotice.count({ where: { computerId: id } })).toBe(0);
   });
 
@@ -171,7 +192,7 @@ describePostgres("saved home retention (PostgreSQL)", () => {
     });
     travel(5);
     await sweep();
-    expect(objects()).toHaveLength(1);
+    expect(await objects()).toHaveLength(1);
     expect(sent()).toHaveLength(1);
   });
 
@@ -181,34 +202,87 @@ describePostgres("saved home retention (PostgreSQL)", () => {
     expect(errors).toHaveLength(1);
     travel(8);
     await sweep();
-    expect(objects()).toHaveLength(1);
+    expect(await objects()).toHaveLength(1);
     expect(sent()).toHaveLength(1);
   });
 
-  it("waits for a running computer to stop", async () => {
+  it("neither warns nor deletes while the computer runs", async () => {
+    await system.computer.update({ where: { id }, data: { state: "running" } });
     await sweep();
+    expect(sent()).toHaveLength(0);
+    await system.computer.update({ where: { id }, data: { state: "suspended" } });
+    await sweep();
+    expect(sent()).toHaveLength(1);
+
     await system.computer.update({ where: { id }, data: { state: "running" } });
     travel(8);
     await sweep();
-    expect(objects()).toHaveLength(1);
-    await system.computer.update({ where: { id }, data: { state: "suspended" } });
-    await sweep();
-    expect(objects()).toEqual([]);
+    expect(await system.homeDeletionNotice.count({ where: { computerId: id } })).toBe(0);
+    expect(await objects()).toHaveLength(1);
   });
 
-  it("finishes a deletion interrupted after the computer was cleared", async () => {
+  it("keeps the files of an organization still running bots on credits", async () => {
+    await system.billingAccount.create({
+      data: {
+        organizationId: id,
+        customerId: `cus-${id}`,
+        status: "canceled",
+        subscribedAt: new Date(now - 200 * DAY),
+        endedAt: new Date(now - 100 * DAY),
+      },
+    });
+    await system.modelCreditAccount.create({
+      data: { organizationId: id, mode: "credits", balanceMicros: 1_000_000n },
+    });
     await sweep();
     travel(8);
-    const remove = vi.spyOn(storage, "delete").mockRejectedValueOnce(new Error("bucket down"));
     await sweep();
-    remove.mockRestore();
-    expect(errors).toHaveLength(1);
-    expect((await computer()).homeStorageId).toBeNull();
+    expect(sent()).toHaveLength(0);
+    expect(await objects()).toHaveLength(1);
+  });
 
-    travel(1);
+  it("keeps the files when a plan starts after the scan read the computer", async () => {
     await sweep();
+    travel(8);
+    const findMany = prisma.computer.findMany;
+    const scan = vi.spyOn(prisma.computer, "findMany").mockImplementationOnce((async (
+      args: Parameters<typeof findMany>[0],
+    ) => {
+      const rows = await findMany(args);
+      await system.billingAccount.create({
+        data: {
+          organizationId: id,
+          customerId: `cus-${id}`,
+          status: "active",
+          subscribedAt: new Date(),
+        },
+      });
+      return rows;
+    }) as never);
+    await sweep();
+    expect(scan).toHaveBeenCalled();
+    scan.mockRestore();
+    expect(errors).toEqual([]);
+    expect((await computer()).homeStorageId).not.toBeNull();
+    expect(await objects()).toHaveLength(1);
+  });
+
+  it("does not send a warning when the computer is used after the scan read it", async () => {
+    const createMany = prisma.homeDeletionNotice.createMany;
+    const queue = vi.spyOn(prisma.homeDeletionNotice, "createMany").mockImplementationOnce((async (
+      args: Parameters<typeof createMany>[0],
+    ) => {
+      await system.computerRun.create({
+        data: { computerId: id, kind: "fake", startedAt: new Date(), lastSeenAt: new Date() },
+      });
+      return createMany(args);
+    }) as never);
+    await sweep();
+    expect(queue).toHaveBeenCalledOnce();
+    queue.mockRestore();
+    expect(errors).toEqual([]);
+    expect(sent()).toHaveLength(0);
     expect(await system.homeDeletionNotice.count({ where: { computerId: id } })).toBe(0);
-    expect(objects()).toEqual([]);
   });
 });
 

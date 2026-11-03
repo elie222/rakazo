@@ -1003,6 +1003,7 @@ model Run {
   @@index([trigger, status, teamChatMirroredAt, updatedAt])
   @@index([spaceId, botId])
   @@index([botId])
+  @@index([botId, createdAt])
   @@index([taskId])
   @@index([sourceMessageId])
   @@index([threadId, status, createdAt])
@@ -1470,7 +1471,7 @@ model Computer {
 }
 
 /// Hosted billing only: a stopped computer whose saved home is due for deletion after its plan
-/// ended or it went unused. `claimId` leases the row to one process while it emails or deletes.
+/// ended or it went unused. `claimId` leases the row to one process while it emails.
 model HomeDeletionNotice {
   computerId     String    @id
   computer       Computer  @relation(fields: [computerId], references: [id], onDelete: Cascade)
@@ -1480,8 +1481,6 @@ model HomeDeletionNotice {
   warnedAt       DateTime?
   /// The deletion date the email gave.
   deleteAfter    DateTime?
-  /// The stored home a deletion in progress is removing, so a retry finishes it.
-  storageId      String?
   createdAt      DateTime  @default(now())
 
   @@map("home_deletion_notices")

@@ -4,7 +4,6 @@ CREATE TABLE "home_deletion_notices" (
   "claimExpiresAt" TIMESTAMP(3),
   "warnedAt" TIMESTAMP(3),
   "deleteAfter" TIMESTAMP(3),
-  "storageId" TEXT,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 ALTER TABLE "home_deletion_notices" ENABLE ROW LEVEL SECURITY;
