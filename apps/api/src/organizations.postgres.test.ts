@@ -385,6 +385,21 @@ describePostgres("organizations (PostgreSQL)", () => {
     ]);
   });
 
+  it("never leaves a Space created during an organization's deletion behind", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    const inWork = client(asUser(ada, work.id));
+
+    const [removed] = await Promise.allSettled([
+      client(ada).organizations.remove({ organizationId: work.id }),
+      inWork.spaces.create({ name: "Late" }),
+    ]);
+
+    expect(removed.status).toBe("fulfilled");
+    expect(await prisma.organization.findUnique({ where: { id: work.id } })).toBeNull();
+    expect(await prisma.space.count({ where: { organizationId: work.id } })).toBe(0);
+  });
+
   it("never deletes an organization someone else is a member of", async () => {
     const ada = await signup();
     const grace = await signup();

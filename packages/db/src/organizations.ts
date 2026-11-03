@@ -6,6 +6,7 @@ import { Prisma } from "./client.js";
 import { IsolationError } from "./scope.js";
 import {
   claimSpaceForDeletion,
+  lockOrganizationSpaces,
   normalizeSpaceName,
   SpaceDeletionInProgressError,
 } from "./spaces.js";
@@ -160,6 +161,7 @@ export async function claimOrganizationForDeletion(
         if (!owner) throw new IsolationError();
         if (otherMembers > 0) throw new SharedOrganizationError();
         if (otherOwned === 0) throw new CannotDeleteLastOrganizationError();
+        await lockOrganizationSpaces(tx, input.organizationId);
         const spaces = await tx.space.findMany({
           where: { organizationId: input.organizationId },
           select: { id: true },

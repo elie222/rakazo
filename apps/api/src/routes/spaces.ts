@@ -76,6 +76,9 @@ export function spacesRoutes(ctx: RouterContext) {
             if (error instanceof SpaceLimitError || error instanceof InvalidSpaceNameError) {
               throw new ORPCError("BAD_REQUEST", { message: error.message });
             }
+            if (error instanceof SpaceDeletionInProgressError) {
+              throw new ORPCError("CONFLICT", { message: error.message });
+            }
             throw error;
           }
           await recordAuditEvent({

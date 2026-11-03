@@ -158,6 +158,15 @@ export async function createSpaceForMember(
           select: { organizationId: true },
         });
         if (!currentMembership) throw new IsolationError();
+        await lockOrganizationSpaces(tx, currentMembership.organizationId);
+        const deleting = await tx.space.count({
+          where: {
+            organizationId: currentMembership.organizationId,
+            isDefault: true,
+            deletingAt: { not: null },
+          },
+        });
+        if (deleting > 0) throw new SpaceDeletionInProgressError();
         const count = await tx.spaceMember.count({
           where: {
             userId: input.userId,
@@ -210,6 +219,16 @@ export async function lockSpaceForContentCreation(
   if (!membership) throw new IsolationError();
   if (membership.space.deletingAt) throw new SpaceDeletionInProgressError();
   return { organizationId: membership.organizationId };
+}
+
+/** Serializes creating a Space in an organization with claiming the organization for deletion. */
+export async function lockOrganizationSpaces(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+): Promise<void> {
+  await tx.$queryRaw(Prisma.sql`
+    SELECT pg_advisory_xact_lock(hashtextextended(${`organization-spaces:${organizationId}`}, 0))::text AS "lock"
+  `);
 }
 
 async function lockSpaceDeletion(tx: Prisma.TransactionClient, spaceId: string): Promise<void> {
