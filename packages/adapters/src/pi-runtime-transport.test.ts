@@ -45,6 +45,9 @@ describe("Pi runtime transport", () => {
   it("reads the configured stream timeout on each call unless the caller sets one", () => {
     vi.stubEnv("MODEL_STREAM_TIMEOUT_MS", "240000");
     expect(reliableStreamOptions(codexModel).timeoutMs).toBe(240_000);
+
+    vi.stubEnv("MODEL_STREAM_TIMEOUT_MS", "13800000");
+    expect(reliableStreamOptions(codexModel).timeoutMs).toBe(13_800_000);
     expect(reliableStreamOptions(codexModel, { timeoutMs: 5_000 }).timeoutMs).toBe(5_000);
     vi.stubEnv("MODEL_STREAM_TIMEOUT_MS", "soon");
     expect(reliableStreamOptions(codexModel).timeoutMs).toBe(MODEL_STREAM_TIMEOUT_MS);
