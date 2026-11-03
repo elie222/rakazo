@@ -160,6 +160,7 @@ describe("purchase detection in the page helper", () => {
   it.each([
     "Pay",
     "Pay now",
+    "Pay securely now",
     "Pay with Apple Pay",
     "Pay USD 20",
     "Buy now",
@@ -298,6 +299,8 @@ describe("purchase detection in the page helper", () => {
     expect(hebrew.intent("שלם")?.amount).toBe("450 ₪");
     const split = page(`<p>Amount due</p>\n<p>USD 75.00</p>\n<button>Pay now</button>`);
     expect(split.intent("Pay now")?.amount).toBe("USD 75.00");
+    const grouped = page(`<button>Pay now</button><p>Total: 1 234,56 €</p>`);
+    expect(grouped.intent("Pay now")?.amount).toBe("1 234,56 €");
     const none = page(`<button>Pay now</button>`);
     expect(none.intent("Pay now")?.amount).toBe("");
   });
