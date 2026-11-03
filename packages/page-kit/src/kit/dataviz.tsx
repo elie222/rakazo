@@ -630,7 +630,8 @@ export function StackedBars({
   const parts = (bar: StackedBar) => bar.values.map((v) => (finite(v) && v > 0 ? v : 0));
   const totals = rows.map((bar) => parts(bar).reduce((sum, v) => sum + v, 0));
   const max = Math.max(0, ...totals);
-  if (rows.length === 0 || max <= 0) return <EmptyChart />;
+  // Parts whose total overflows draw nothing rather than NaN widths.
+  if (rows.length === 0 || max <= 0 || !finite(max)) return <EmptyChart />;
   return (
     <div className="rk-chart rk-frame">
       {names.length > 1 ? (

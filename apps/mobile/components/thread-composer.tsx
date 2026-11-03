@@ -214,6 +214,13 @@ export function ThreadComposer({
       const current = draftRef.current;
       draftRef.current = current.trim() ? `${current.trimEnd()} ${text}` : text;
       setDraft(draftRef.current);
+      // Typing continues after the reply, not where the caret was left earlier.
+      const end = draftRef.current.length;
+      pendingNativeEdit.current = null;
+      nativeSelection.current = { start: end, end };
+      selectionHistory.current = [nativeSelection.current];
+      completedSelection.current = null;
+      setSelection(nativeSelection.current);
     },
   }));
   const mentionOptions = useMemo(() => {

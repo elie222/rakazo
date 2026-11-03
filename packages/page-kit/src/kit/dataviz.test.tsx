@@ -173,6 +173,9 @@ describe("charts", () => {
     expect(root.querySelector('[role="img"]')!.getAttribute("aria-label")).toBe(
       "Design: Done 6, Open 2; Backend: Done 12, Open 4",
     );
+    const huge = mount(<StackedBars bars={[{ label: "a", values: [1e308, 1e308] }]} />);
+    expect(huge.innerHTML).not.toContain("NaN");
+    expect(huge.querySelector(".rk-stacked-bar")).toBeNull();
   });
 
   it("plots dots by series and size, fits a trend only when asked and labels the outlier", () => {

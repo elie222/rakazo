@@ -471,6 +471,13 @@ describe("thread composer isolation", () => {
     expect(props.send).not.toHaveBeenCalled();
   });
 
+  it("moves the caret after an added reply", () => {
+    type("then");
+    select(1);
+    act(() => composer.current!.addReply("Pick B"));
+    expect(JSON.parse(field().dataset.selection!)).toEqual({ start: 11, end: 11 });
+  });
+
   it("says when the user deletes the last of its text", () => {
     const onEmptied = vi.fn();
     render({ onEmptied });
