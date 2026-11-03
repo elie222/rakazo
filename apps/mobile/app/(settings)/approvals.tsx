@@ -1,6 +1,6 @@
 import { MenuView } from "@expo/ui/community/menu";
 import type { ActionApprovalRule } from "@rakazo/contracts";
-import { humanizeToolName } from "@rakazo/core";
+import { humanizeToolName, toolNameFromLabel } from "@rakazo/core";
 import { useFocusEffect, useLocalSearchParams, useNavigation } from "expo-router";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Alert, Platform, ScrollView, StyleSheet, Text } from "react-native";
@@ -105,13 +105,22 @@ export default function ApprovalRules() {
       );
     });
 
-  const addTool = (name: string) =>
+  const addTool = (entered: string) =>
     save(async () => {
+      const name = toolNameFromLabel(entered);
+      // An existing rule keeps its effect; changing it stays an explicit choice in the list.
+      const exists = rules?.some(
+        (rule) => rule.matchKind === "tool" && rule.matchValue.toLowerCase() === name.toLowerCase(),
+      );
+      if (exists) {
+        setDraft(null);
+        return;
+      }
       const saved = await rpc("approvalRules/set", {
         scope,
         effect: "require_approval",
         matchKind: "tool",
-        matchValue: name.trim(),
+        matchValue: name,
       });
       const value = saved.matchValue.toLowerCase();
       setRules((current) => [

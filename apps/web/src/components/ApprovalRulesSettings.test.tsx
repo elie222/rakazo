@@ -395,3 +395,35 @@ it("keeps the form and shows why a save failed", async () => {
     vi.unstubAllGlobals();
   }
 });
+
+it("leaves a tool's existing rule alone when it is typed again by its displayed name", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  rpcMock.approvalRules.list.mockResolvedValue([
+    { id: "blocked", effect: "deny", matchKind: "tool", matchValue: "write_file" },
+  ]);
+  rpcMock.autoReview.get.mockResolvedValue(settings);
+  const { container, root } = await render();
+  try {
+    await vi.waitFor(() => expect(button(container, "Add rule")!.disabled).toBe(false));
+    await act(async () => button(container, "Add rule")!.click());
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="Tool name"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "Write file",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () =>
+      container
+        .querySelector("form")!
+        .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+    );
+    expect(rpcMock.approvalRules.set).not.toHaveBeenCalled();
+    expect(container.querySelector("form")).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});

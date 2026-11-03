@@ -5,7 +5,7 @@ import type {
   ApprovalMode,
   SettingsScope,
 } from "@rakazo/contracts";
-import { humanizeToolName } from "@rakazo/core";
+import { humanizeToolName, toolNameFromLabel } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import { Button, Input, ToggleGroup, ToggleGroupItem } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -100,7 +100,13 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
 
   const addTool = () =>
     save(async () => {
-      await putRule({ effect: "require_approval", matchKind: "tool", matchValue: tool.trim() });
+      const name = toolNameFromLabel(tool);
+      // An existing rule keeps its effect; changing it stays an explicit choice in the list.
+      const exists = rules.some(
+        (rule) => rule.matchKind === "tool" && rule.matchValue.toLowerCase() === name.toLowerCase(),
+      );
+      if (!exists)
+        await putRule({ effect: "require_approval", matchKind: "tool", matchValue: name });
       setTool("");
       setAdding(false);
     }, t`Could not save rule`);
