@@ -48,7 +48,7 @@ export function ExternalConversationSettings({
   const [mode, setMode] = useState<ListenMode>(() =>
     listenMode(conversation.teamChatAmbientEnabled),
   );
-  const [rules, setRules] = useState<string | null>(conversation.teamChatRules);
+  const [rules, setRules] = useState<string | null>(conversation.teamChatRules || null);
   const [policies, setPolicies] = useState<AutomatedSenderPolicies>(
     conversation.automatedSenderPolicies,
   );

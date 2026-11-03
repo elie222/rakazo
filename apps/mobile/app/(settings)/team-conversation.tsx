@@ -64,7 +64,7 @@ export default function TeamConversationSettings() {
         if (!active || !conversation || !bot) return;
         setLoaded({ conversation, bot });
         setMode(listenMode(conversation.teamChatAmbientEnabled));
-        setRules(conversation.teamChatRules);
+        setRules(conversation.teamChatRules || null);
         setPolicies(conversation.automatedSenderPolicies);
         setLoadError(null);
       })

@@ -62,7 +62,8 @@ export function GlassIconButton({
           selected === undefined && disabled === undefined ? undefined : { selected, disabled }
         }
         disabled={disabled}
-        hitSlop={4}
+        // A small button still gets the 44-point tap target platforms recommend.
+        hitSlop={Math.max(4, (44 - size) / 2)}
         android_ripple={androidRipple(withAlpha(iconColor, 0.14))}
         onPress={onPress}
         style={({ pressed }) => ({
