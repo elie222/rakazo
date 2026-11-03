@@ -241,12 +241,12 @@ Mobile build and release instructions live in [docs/mobile-release.md](./docs/mo
 The web (and Electron-hosted) UI supports English, Deutsch, 한국어, Türkçe, हिन्दी,
 Português (Brasil), 简体中文, 繁體中文, Español, Русский, Français, עברית, Nederlands, and 日本語 under
 **Settings → Language**. The Expo app ships English, 简体中文, 繁體中文, Русский, Deutsch,
-Nederlands, and 日本語 catalogs, and **Account → Language** lists all seven. A device language or
+Nederlands, 日本語, and Español catalogs, and **Account → Language** lists all eight. A device language or
 `EXPO_PUBLIC_DEFAULT_UI_LOCALE` still selects the starting catalog before a saved choice.
-The marketing
-homepage (`apps/www`) is available in en/de/ko/zh/ja via footer language links (`/`, `/de/`,
-`/ko/`, `/zh/`, `/ja/`); other marketing pages stay English. The Russian marketing homepage and
-native Electron setup/menu remain separate follow-up work.
+Native Electron setup and menus also support the web UI's languages, following the saved app
+choice or, on first launch, the system language. The marketing homepage (`apps/www`) offers all
+14 languages through footer links, including `/zh/` and `/zh-tw/`; other marketing pages remain
+primarily English.
 
 ## Development
 
@@ -270,6 +270,10 @@ pnpm test:e2e
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for the development workflow and test matrix.
 
 ## Documentation
+
+Chinese guides cover [self-hosting](./docs/zh-CN/self-host.md), [models](./docs/zh-CN/self-host-models.md),
+[backups](./docs/zh-CN/self-host-backups.md), [upgrading](./docs/zh-CN/self-host-upgrading.md), and
+[restricted networks](./docs/zh-CN/self-host-restricted-network.md).
 
 - [Self-hosting](./docs/self-host.md)
 - [Self-host configuration](./docs/self-host-configuration.md)

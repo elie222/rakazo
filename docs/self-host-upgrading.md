@@ -3,6 +3,8 @@
 Move a deployment to a new release, handle one-time migrations, and let the updater sidecar do it
 for you.
 
+English | [简体中文](./zh-CN/self-host-upgrading.md)
+
 ## Upgrade
 
 A Compose deployment on a published release tag upgrades by moving that tag:

@@ -3,6 +3,8 @@
 Choose the deployment's default model, connect local or OpenAI-compatible servers, and configure
 approvals, media generation and voice.
 
+English | [简体中文](./zh-CN/self-host-models.md)
+
 ## Deployment model
 
 The deployment model is used by anyone who has not connected a model of their own. `PI_DEFAULT_PROVIDER`

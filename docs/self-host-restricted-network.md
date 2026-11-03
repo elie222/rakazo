@@ -10,6 +10,8 @@ These settings change downloads; model and remote-computer providers still need 
 | Cannot pull app or computer images | `RAKAZO_IMAGE`, `RAKAZO_IMAGE_TAG`, `RAKAZO_COMPUTER_IMAGE`, `RAKAZO_COMPUTER_IMAGE_TAG` |
 | Cannot pull Postgres or busybox | `POSTGRES_IMAGE`, `BUSYBOX_IMAGE`, or Docker daemon `registry-mirrors` |
 
+English | [简体中文](./zh-CN/self-host-restricted-network.md)
+
 ## Installer script
 
 When raw GitHub is unreachable, download the installer from your mirror:

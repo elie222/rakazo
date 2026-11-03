@@ -330,25 +330,28 @@ describe("lingui catalogs", () => {
   });
 });
 
-it("keeps source placeholders and JSX markers in Traditional Chinese translations", async () => {
-  const readCatalog = async (locale: string) => {
-    const filename = fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url));
-    return formatter().parse(readFileSync(filename, "utf8"), {
-      locale,
-      sourceLocale: "en",
-      filename,
-    });
-  };
-  const source = await readCatalog("en");
-  const translated = await readCatalog("zh-TW");
-  expect(Object.keys(translated).sort()).toEqual(Object.keys(source).sort());
-  const markers = (value: string) =>
-    [...new Set(value.match(/\{\w+(?=\s*[,}])|<\/?\d+\s*\/?>/g) ?? [])].sort();
-  for (const [id, entry] of Object.entries(source)) {
-    const message = entry.message ?? entry.translation ?? id;
-    // Untranslated entries fall back to English, as in every other catalog.
-    const translation = translated[id]?.translation;
-    if (!translation?.trim()) continue;
-    expect(markers(translation), message).toEqual(markers(message));
-  }
-});
+it.each(["zh-CN", "zh-TW"])(
+  "completes %s translations and keeps source placeholders and JSX markers",
+  async (locale) => {
+    const readCatalog = async (locale: string) => {
+      const filename = fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url));
+      return formatter().parse(readFileSync(filename, "utf8"), {
+        locale,
+        sourceLocale: "en",
+        filename,
+      });
+    };
+    const source = await readCatalog("en");
+    const translated = await readCatalog(locale);
+    expect(Object.keys(translated).sort()).toEqual(Object.keys(source).sort());
+    const markers = (value: string) =>
+      [...new Set(value.match(/\{\w+(?=\s*[,}])|<\/?\d+\s*\/?>/g) ?? [])].sort();
+    for (const [id, entry] of Object.entries(source)) {
+      const message = entry.message ?? entry.translation ?? id;
+      const translation = translated[id]?.translation;
+      expect(translation?.trim(), message).toBeTruthy();
+      if (!translation) continue;
+      expect(markers(translation), message).toEqual(markers(message));
+    }
+  },
+);
