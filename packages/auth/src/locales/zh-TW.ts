@@ -63,6 +63,6 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Your saved computer files will be deleted": "你儲存的電腦檔案將被刪除",
   "Your saved computer files will be deleted on {date} unless you resubscribe.":
     "除非你重新訂閱，否則你儲存的電腦檔案將於 {date} 被刪除。",
-  "Your saved computer files will be deleted on {date} unless you use your bots before then.":
-    "除非你在此之前使用你的機器人，否則你儲存的電腦檔案將於 {date} 被刪除。",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "除非你選擇一個方案，否則你儲存的電腦檔案將於 {date} 被刪除。",
 };

@@ -73,6 +73,6 @@ export const FR_MESSAGES: Record<string, string> = {
     "Les fichiers enregistrés de votre ordinateur vont être supprimés",
   "Your saved computer files will be deleted on {date} unless you resubscribe.":
     "Les fichiers enregistrés de votre ordinateur seront supprimés le {date}, sauf si vous vous réabonnez.",
-  "Your saved computer files will be deleted on {date} unless you use your bots before then.":
-    "Les fichiers enregistrés de votre ordinateur seront supprimés le {date}, sauf si vous utilisez vos bots d'ici là.",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "Les fichiers enregistrés de votre ordinateur seront supprimés le {date}, sauf si vous choisissez une offre.",
 };

@@ -11,6 +11,7 @@ import {
   signInCodeEmail,
   verificationEmail,
 } from "./email.js";
+import { homeDeletionEmail } from "./home-deletion-email.js";
 import {
   integrationClaimConfirmEmail,
   pluginSubmissionAdminEmail,
@@ -59,6 +60,8 @@ it("shares the layout across account, product and marketplace emails", async () 
     accountDeletionEmail(user.email, "123456"),
     identityCodeEmail(user.email, "123456"),
     welcomeEmail(user, url),
+    homeDeletionEmail(user, new Date(), "plan-ended", url),
+    homeDeletionEmail(user, new Date(), "unused", url),
     referralEmail(user, url, url),
     pluginSubmissionReceivedEmail(user.email),
     integrationClaimConfirmEmail(user.email, url),

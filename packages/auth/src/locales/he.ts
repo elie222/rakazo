@@ -68,6 +68,6 @@ export const HE_MESSAGES: Record<string, string> = {
   "Your saved computer files will be deleted": "קבצי המחשב השמורים שלך יימחקו",
   "Your saved computer files will be deleted on {date} unless you resubscribe.":
     "קבצי המחשב השמורים שלך יימחקו ב-{date} אלא אם תחדש את המינוי.",
-  "Your saved computer files will be deleted on {date} unless you use your bots before then.":
-    "קבצי המחשב השמורים שלך יימחקו ב-{date} אלא אם תשתמש בבוטים שלך עד אז.",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "קבצי המחשב השמורים שלך יימחקו ב-{date} אלא אם תבחר תוכנית.",
 };

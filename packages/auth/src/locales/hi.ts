@@ -68,6 +68,6 @@ export const HI_MESSAGES: Record<string, string> = {
   "Your saved computer files will be deleted": "आपकी सहेजी गई कंप्यूटर फ़ाइलें हटा दी जाएँगी",
   "Your saved computer files will be deleted on {date} unless you resubscribe.":
     "आपकी सहेजी गई कंप्यूटर फ़ाइलें {date} को हटा दी जाएँगी, जब तक आप फिर से सदस्यता नहीं लेते।",
-  "Your saved computer files will be deleted on {date} unless you use your bots before then.":
-    "आपकी सहेजी गई कंप्यूटर फ़ाइलें {date} को हटा दी जाएँगी, जब तक आप उससे पहले अपने बॉट का उपयोग नहीं करते।",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "आपकी सहेजी गई कंप्यूटर फ़ाइलें {date} को हटा दी जाएँगी, जब तक आप कोई प्लान नहीं चुनते।",
 };

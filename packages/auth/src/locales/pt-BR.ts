@@ -71,6 +71,6 @@ export const PT_BR_MESSAGES: Record<string, string> = {
     "Os arquivos salvos do seu computador serão excluídos",
   "Your saved computer files will be deleted on {date} unless you resubscribe.":
     "Os arquivos salvos do seu computador serão excluídos em {date}, a menos que você assine novamente.",
-  "Your saved computer files will be deleted on {date} unless you use your bots before then.":
-    "Os arquivos salvos do seu computador serão excluídos em {date}, a menos que você use seus bots até lá.",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "Os arquivos salvos do seu computador serão excluídos em {date}, a menos que você escolha um plano.",
 };

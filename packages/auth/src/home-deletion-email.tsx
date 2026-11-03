@@ -28,10 +28,9 @@ export function homeDeletionEmail(
           ? say("Your saved computer files will be deleted on {date} unless you resubscribe.", {
               date,
             })
-          : say(
-              "Your saved computer files will be deleted on {date} unless you use your bots before then.",
-              { date },
-            )}
+          : say("Your saved computer files will be deleted on {date} unless you choose a plan.", {
+              date,
+            })}
       </Text>
       <Text>
         <Link href={appUrl} style={linkStyle}>

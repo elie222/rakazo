@@ -71,6 +71,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Your saved computer files will be deleted": "Сохранённые файлы вашего компьютера будут удалены",
   "Your saved computer files will be deleted on {date} unless you resubscribe.":
     "Сохранённые файлы вашего компьютера будут удалены {date}, если вы не продлите подписку.",
-  "Your saved computer files will be deleted on {date} unless you use your bots before then.":
-    "Сохранённые файлы вашего компьютера будут удалены {date}, если вы не воспользуетесь своими ботами до этого.",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "Сохранённые файлы вашего компьютера будут удалены {date}, если вы не выберете тариф.",
 };

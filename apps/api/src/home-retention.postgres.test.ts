@@ -134,7 +134,7 @@ describePostgres("saved home retention (PostgreSQL)", () => {
     await sweep();
     await sweep();
     expect(sent()).toHaveLength(1);
-    expect(sent()[0]!.text).toContain("unless you use your bots before then");
+    expect(sent()[0]!.text).toContain("unless you choose a plan");
     expect(await objects()).toHaveLength(1);
 
     travel(6);
@@ -186,29 +186,43 @@ describePostgres("saved home retention (PostgreSQL)", () => {
     expect(await system.homeDeletionNotice.count({ where: { computerId: id } })).toBe(0);
   });
 
-  it("warns the organization's owner, not a member, when its plan ended", async () => {
-    const owner = `${id}-owner`;
-    await system.user.create({
-      data: { id: owner, name: "Sam", email: `${owner}@rakazo.test`, emailVerified: true },
-    });
-    await system.member.update({ where: { id }, data: { role: "member" } });
-    await system.member.create({
-      data: { id: owner, organizationId: id, userId: owner, role: "owner", createdAt: new Date() },
-    });
-    await system.billingAccount.create({
-      data: {
-        organizationId: id,
-        customerId: `cus-${id}`,
-        status: "canceled",
-        paidAt: new Date(now - 200 * DAY),
-        endedAt: new Date(now - 100 * DAY),
-      },
-    });
-    await sweep();
-    expect(errors).toEqual([]);
-    expect(sent()).toHaveLength(0);
-    expect(email.sent.map((message) => message.to)).toEqual([`${owner}@rakazo.test`]);
-  });
+  it.each([
+    ["has no plan", false, "unless you choose a plan"],
+    ["ended its plan", true, "unless you resubscribe"],
+  ])(
+    "warns the owner, not the computer's member, when the organization %s",
+    async (_, paid, text) => {
+      const owner = `${id}-owner`;
+      await system.user.create({
+        data: { id: owner, name: "Sam", email: `${owner}@rakazo.test`, emailVerified: true },
+      });
+      await system.member.update({ where: { id }, data: { role: "member" } });
+      await system.member.create({
+        data: {
+          id: owner,
+          organizationId: id,
+          userId: owner,
+          role: "owner",
+          createdAt: new Date(),
+        },
+      });
+      if (paid)
+        await system.billingAccount.create({
+          data: {
+            organizationId: id,
+            customerId: `cus-${id}`,
+            status: "canceled",
+            paidAt: new Date(now - 200 * DAY),
+            endedAt: new Date(now - 100 * DAY),
+          },
+        });
+      await sweep();
+      expect(errors).toEqual([]);
+      expect(sent()).toHaveLength(0);
+      expect(email.sent.map((message) => message.to)).toEqual([`${owner}@rakazo.test`]);
+      expect(email.sent[0]!.text).toContain(text);
+    },
+  );
 
   it("sends one warning for more computers than one batch", async () => {
     const extra = Array.from({ length: 501 }, (_, index) => `${id}-${index}`);

@@ -28,12 +28,7 @@ type Account = {
 };
 type Due = { at: Date; reason: HomeDeletionReason };
 type Db = PrismaClient | Prisma.TransactionClient;
-type Warning = {
-  userId: string;
-  organizationId: string;
-  reason: HomeDeletionReason;
-  ids: string[];
-};
+type Warning = { organizationId: string; reason: HomeDeletionReason; ids: string[] };
 
 /**
  * When a computer's saved home becomes due for deletion: 30 days after a paid plan ended, or
@@ -69,7 +64,7 @@ interface HomeRetentionDeps {
 }
 
 /**
- * Deletes stored homes that are past retention, emailing each owner a week first. Every API
+ * Deletes stored homes that are past retention, emailing each organization's owner a week first. Every API
  * instance may run it: a claim keeps each email to one process, and eligibility is read again
  * right before each email and inside the deletion's transaction, so resubscribing or using a
  * bot in the meantime cancels it.
@@ -95,7 +90,7 @@ export function homeRetentionSweep(
       while (!signal.aborted) {
         const now = new Date();
         const computers = await dueDates(prisma, {}, now, cursor);
-        for (const { id, userId, organizationId, notice, due } of computers) {
+        for (const { id, organizationId, notice, due } of computers) {
           // The deletion keeps the date the email gave, unless something since moved it later.
           if (notice?.warnedAt && notice.deleteAfter && due && due.at <= notice.deleteAfter) {
             if (notice.deleteAfter <= now && !signal.aborted)
@@ -109,14 +104,8 @@ export function homeRetentionSweep(
               where: { computerId: id, ...claimable() },
             });
           if (!warnable) continue;
-          // Only the organization's owner can resubscribe; unused bots are their owner's to use.
-          const key = due.reason === "plan-ended" ? `org:${organizationId}` : `user:${userId}`;
-          const group = warnings.get(key) ?? {
-            userId,
-            organizationId,
-            reason: due.reason,
-            ids: [],
-          };
+          const key = `${organizationId}:${due.reason}`;
+          const group = warnings.get(key) ?? { organizationId, reason: due.reason, ids: [] };
           group.ids.push(id);
           warnings.set(key, group);
         }
@@ -140,7 +129,6 @@ async function dueDates(db: Db, where: Prisma.ComputerWhereInput, now: Date, cur
     where: { ...where, ...candidate },
     select: {
       id: true,
-      userId: true,
       state: true,
       space: {
         select: {
@@ -181,7 +169,6 @@ async function dueDates(db: Db, where: Prisma.ComputerWhereInput, now: Date, cur
     const usedAt = used.get(computer.id);
     return {
       id: computer.id,
-      userId: computer.userId,
       organizationId: computer.space.organizationId,
       notice: computer.homeDeletionNotice,
       due: usedAt ? homeDeletionDue(computer.space.organization, usedAt, now) : null,
@@ -221,8 +208,8 @@ export function deletionDates(sentAt: Date) {
 }
 
 /**
- * Emails once for all the computers of a group still due for the same reason: the computers'
- * owner when unused, the organization's first owner when its plan ended. A crash after sending
+ * Emails the organization's first owner, the one who can pay, once for all its computers still
+ * due for the same reason. A crash after sending
  * and before recording it sends again once the claim expires, so nothing is deleted unwarned.
  */
 async function warn(deps: HomeRetentionDeps, group: Warning) {
@@ -256,23 +243,14 @@ async function warn(deps: HomeRetentionDeps, group: Warning) {
       cursor = page.at(-1)?.id;
     }
     await prisma.homeDeletionNotice.deleteMany({ where: { claimId, computerId: { notIn: due } } });
-    const userId =
-      group.reason === "plan-ended"
-        ? (
-            await prisma.member.findFirst({
-              where: { organizationId: group.organizationId, role: { contains: "owner" } },
-              orderBy: { createdAt: "asc" },
-              select: { userId: true },
-            })
-          )?.userId
-        : group.userId;
-    const user =
-      due.length && userId
-        ? await prisma.user.findUnique({
-            where: { id: userId },
-            select: { email: true, name: true, locale: true },
-          })
-        : null;
+    const owner = due.length
+      ? await prisma.member.findFirst({
+          where: { organizationId: group.organizationId, role: { contains: "owner" } },
+          orderBy: { createdAt: "asc" },
+          select: { user: { select: { email: true, name: true, locale: true } } },
+        })
+      : null;
+    const user = owner?.user;
     if (!user) {
       if (due.length)
         getLogger().warn("home.retention.no_recipient", {

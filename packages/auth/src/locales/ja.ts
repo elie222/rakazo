@@ -71,6 +71,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "Your saved computer files will be deleted": "保存されたコンピューターのファイルが削除されます",
   "Your saved computer files will be deleted on {date} unless you resubscribe.":
     "再登録しない場合、保存されたコンピューターのファイルは{date}に削除されます。",
-  "Your saved computer files will be deleted on {date} unless you use your bots before then.":
-    "それまでにボットを使用しない場合、保存されたコンピューターのファイルは{date}に削除されます。",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "プランを選択しない場合、保存されたコンピューターのファイルは{date}に削除されます。",
 };

@@ -70,6 +70,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "Your saved computer files will be deleted": "Je opgeslagen computerbestanden worden verwijderd",
   "Your saved computer files will be deleted on {date} unless you resubscribe.":
     "Je opgeslagen computerbestanden worden op {date} verwijderd, tenzij je opnieuw een abonnement neemt.",
-  "Your saved computer files will be deleted on {date} unless you use your bots before then.":
-    "Je opgeslagen computerbestanden worden op {date} verwijderd, tenzij je je bots voor die tijd gebruikt.",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "Je opgeslagen computerbestanden worden op {date} verwijderd, tenzij je een abonnement kiest.",
 };

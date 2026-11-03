@@ -72,6 +72,6 @@ export const TR_MESSAGES: Record<string, string> = {
   "Your saved computer files will be deleted": "Kayıtlı bilgisayar dosyaların silinecek",
   "Your saved computer files will be deleted on {date} unless you resubscribe.":
     "Yeniden abone olmazsan kayıtlı bilgisayar dosyaların {date} tarihinde silinecek.",
-  "Your saved computer files will be deleted on {date} unless you use your bots before then.":
-    "O zamana kadar botlarını kullanmazsan kayıtlı bilgisayar dosyaların {date} tarihinde silinecek.",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "Bir plan seçmezsen kayıtlı bilgisayar dosyaların {date} tarihinde silinecek.",
 };

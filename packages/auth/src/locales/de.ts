@@ -73,6 +73,6 @@ export const DE_MESSAGES: Record<string, string> = {
     "Deine gespeicherten Computerdateien werden gelöscht",
   "Your saved computer files will be deleted on {date} unless you resubscribe.":
     "Deine gespeicherten Computerdateien werden am {date} gelöscht, wenn du dein Abo nicht erneuerst.",
-  "Your saved computer files will be deleted on {date} unless you use your bots before then.":
-    "Deine gespeicherten Computerdateien werden am {date} gelöscht, wenn du deine Bots bis dahin nicht nutzt.",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "Deine gespeicherten Computerdateien werden am {date} gelöscht, wenn du keinen Tarif wählst.",
 };
