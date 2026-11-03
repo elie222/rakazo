@@ -1,4 +1,6 @@
 -- Additive: keep push_tokens intact while the previous API release is running.
+BEGIN;
+LOCK TABLE "push_tokens" IN SHARE ROW EXCLUSIVE MODE;
 CREATE TABLE "push_registrations" (
   "userId" TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
   "sessionId" TEXT NOT NULL,
@@ -41,3 +43,4 @@ CREATE TRIGGER push_tokens_sync_rotation AFTER UPDATE ON "push_tokens"
 CREATE CONSTRAINT TRIGGER push_tokens_sync_unregister AFTER DELETE ON "push_tokens"
   DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
   EXECUTE FUNCTION sync_legacy_push_registration();
+COMMIT;
