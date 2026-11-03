@@ -276,7 +276,6 @@ async function renderOrganizations(
           onSkills={() => {}}
           onArtifacts={() => {}}
           onSettings={() => {}}
-          onUsage={() => {}}
           onLogOut={() => {}}
           signingOut={false}
           logOutError={null}
