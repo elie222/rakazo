@@ -312,16 +312,34 @@ export function writeSavedThread(
   snapshot: MobileSnapshot,
 ): void {
   if (!isIntegrationsScopeCurrent(scope) || savedChatTarget(snapshot) !== target) return;
+  const cleared = clearedAt.get(target);
+  const kept =
+    cleared === undefined
+      ? snapshot
+      : {
+          ...snapshot,
+          messages: snapshot.messages.filter(
+            // A message not yet on the server has no time and is not old history.
+            (message) => !message.createdAt || Date.parse(message.createdAt) > cleared,
+          ),
+        };
   try {
     writeSavedFile(scope, target, {
       key: scopeKey(scope, target),
-      snapshot: savedThreadSnapshot(snapshot),
+      snapshot: savedThreadSnapshot(kept),
     });
   } catch {}
 }
 
+// When each chat was last cleared on this device, so a save still in flight with older
+// messages cannot write them back.
+const clearedAt = new Map<string, number>();
+
 // A cleared chat never reopens showing its old messages, even when it was not open.
-onConversationCleared((botId) => void forgetSavedThread({ botId }));
+onConversationCleared((botId) => {
+  clearedAt.set(savedChatTarget({ botId }), Date.now());
+  void forgetSavedThread({ botId });
+});
 
 /** Drops one chat's saved copy. */
 async function forgetSavedThread(target: { botId?: string; groupId?: string }) {

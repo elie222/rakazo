@@ -101,22 +101,19 @@ export function createReferrals(deps: {
     },
 
     /** Only before the organization's first subscription, so nobody claims after paying. */
-    async claim(organizationId: string, code: string) {
+    async claim(organizationId: string, code: string, userId: string) {
       if (!enabled) return;
       const [referrer, account] = await Promise.all([
         prisma.referralCode.findUnique({ where: { code } }),
         billingAccountForOrganization(prisma, organizationId),
       ]);
       if (!referrer || referrer.organizationId === organizationId || account?.subscribedAt) return;
-      // The friend's longer trial is a gift between people, so a code from another organization
-      // the same person belongs to earns nothing.
-      const shared = await prisma.member.count({
-        where: {
-          organizationId: referrer.organizationId,
-          user: { members: { some: { organizationId } } },
-        },
+      // The friend's longer trial is a gift between people, so a code from an organization the
+      // claiming owner also belongs to earns nothing. Teammates two companies share do not count.
+      const self = await prisma.member.count({
+        where: { organizationId: referrer.organizationId, userId },
       });
-      if (shared > 0) return;
+      if (self > 0) return;
       await prisma.referral.createMany({
         data: [{ organizationId, referrerOrganizationId: referrer.organizationId }],
         skipDuplicates: true,

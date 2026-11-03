@@ -75,6 +75,7 @@ import {
   syncMobileAvatarSession,
 } from "./logo-avatar-activity";
 import { reportMobileError } from "./monitoring";
+import { rememberReferral } from "./referral";
 import { API_BASE_STORAGE_KEY as ENDPOINT_KEY } from "./server-config";
 import { fetchServer, loadServerHeaders, saveServerHeaders, serverHeaders } from "./server-headers";
 import {
@@ -130,6 +131,8 @@ export function spaceSelectionSeq(): number {
 
 function bumpSpaceSelectionGeneration(): void {
   spaceSelectionGeneration += 1;
+  // Another Space can belong to another organization, with its own invite link.
+  rememberReferral(null);
 }
 
 /** Keeps a timeout or cancel reason; turns transport and parsing detail into copy. */

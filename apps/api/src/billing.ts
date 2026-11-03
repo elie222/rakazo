@@ -601,7 +601,7 @@ export function createBillingService(deps: {
 
     async claimReferral(actor, code) {
       const { organizationId, isOwner } = await organization(actor);
-      if (isOwner) await referrals.claim(organizationId, code);
+      if (isOwner) await referrals.claim(organizationId, code, actor.userId);
     },
 
     async cancelForDeletedUser(userId) {

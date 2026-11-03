@@ -100,8 +100,27 @@ dbTests("referrals", () => {
         createdAt: new Date(),
       },
     });
-    await service.claimReferral(second, await inviteCode(owner));
+    // The same person, acting in their second organization.
+    const sameOwner = { ...owner, spaceId: second.spaceId, organizationId: second.organizationId };
+    await service.claimReferral(sameOwner, await inviteCode(owner));
     await expect(service.status(second)).resolves.toMatchObject({ trialDays: TRIAL_DAYS });
+  });
+
+  it("still gifts the longer trial when two companies only share a teammate", async () => {
+    const referrer = await newOrganization("shared-referrer");
+    const friend = await newOrganization("shared-friend");
+    const teammate = await newOrganization("shared-teammate");
+    await prisma.member.createMany({
+      data: [referrer, friend].map((org) => ({
+        id: `${org.organizationId}-teammate`,
+        organizationId: org.organizationId,
+        userId: teammate.userId,
+        role: "member",
+        createdAt: new Date(),
+      })),
+    });
+    await service.claimReferral(friend, await inviteCode(referrer));
+    await expect(service.status(friend)).resolves.toMatchObject({ trialDays: INVITED_TRIAL_DAYS });
   });
 
   it("grants the referrer a free month when the friend starts a trial with a new card", async () => {

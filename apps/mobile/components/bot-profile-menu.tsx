@@ -108,7 +108,13 @@ function BotProfileMenu({
         actions.find((action) => action.id === nativeEvent.event)?.onPress()
       }
     >
-      <View accessible accessibilityRole="button" accessibilityLabel={label}>
+      {/* A sized trigger: an unsized one can collapse to zero width on some Android builds. */}
+      <View
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}
+      >
         <NativeSymbol ios="ellipsis" android="ellipsis-horizontal" size={21} color={color} />
       </View>
     </MenuView>

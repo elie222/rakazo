@@ -44,6 +44,7 @@ import {
   selectInitialSpace,
   selectSpace,
   signOut,
+  spaceSelectionSeq,
 } from "../lib/api";
 import {
   appBadgeGeneration,
@@ -252,9 +253,11 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         return;
       if (!nextMe.billingEnabled) rememberReferral(null);
       else {
+        const spaceSeq = spaceSelectionSeq();
         void rpc("billing/status")
           .then((billing) => {
             const current =
+              spaceSeq === spaceSelectionSeq() &&
               requestId === inboxRequestId.current &&
               generation === currentSessionGeneration() &&
               apiBase === currentApiBase();
