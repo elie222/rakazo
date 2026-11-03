@@ -5827,6 +5827,18 @@ msgstr "रिकॉर्डिंग शुरू करें"
 msgid "Start your plan now?"
 msgstr "अपना प्लान अभी शुरू करें?"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}d late"
+msgstr "{count} दिन देर से शुरू हुआ"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}h late"
+msgstr "{count} घंटे देर से शुरू हुआ"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}m late"
+msgstr "{count} मिनट देर से शुरू हुआ"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "शुरू हो रहा है"

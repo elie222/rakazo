@@ -136,6 +136,7 @@ export async function resolveToolRequest(
                 connectorId: resolved.tool.route.connectorId,
                 resourceId: resolved.tool.route.resourceId,
                 resourceRevision: resolved.tool.route.resourceRevision,
+                connectionId: resolved.tool.route.connectionId,
                 toolName: resolved.tool.route.toolName,
               }
             : undefined,
@@ -163,6 +164,7 @@ export async function resolveToolRequest(
         connectorId: connectorCall.route.connectorId,
         resourceId: connectorCall.route.resourceId,
         resourceRevision: connectorCall.route.resourceRevision,
+        connectionId: connectorCall.route.connectionId,
         toolName: connectorCall.route.toolName,
       },
       args,
@@ -183,6 +185,7 @@ export async function resolveToolRequest(
           connectorId: connectorCall.route.connectorId,
           resourceId: connectorCall.route.resourceId,
           resourceRevision: connectorCall.route.resourceRevision,
+          connectionId: connectorCall.route.connectionId,
           toolName: connectorCall.route.toolName,
         }
       : undefined;

@@ -155,10 +155,11 @@ export async function gateToolCall(
   // check look at each action, never the batch tool. An entry naming no action asks.
   const batch = connectorTool?.batch ? batchActions(connectorTool.batch, args) : undefined;
   const unidentifiedAction = Boolean(batch && !batch.complete);
-  const approvalToolNames = batch?.actions.length ? batch.actions : [name];
+  const approvalName = connectorCall.route?.connectionId ? connectorCall.route.toolName : name;
+  const approvalToolNames = batch?.actions.length ? batch.actions : [approvalName];
   // A batch tool declared as a write makes each of its actions one.
   const declaredReadOnlyFor = (toolName: string) =>
-    toolName === name || declaredReadOnly === false
+    toolName === approvalName || toolName === name || declaredReadOnly === false
       ? declaredReadOnly
       : ctx.tools.connector.get(toolName)?.readOnly;
   const requiresUnattendedApproval =
@@ -172,7 +173,7 @@ export async function gateToolCall(
       ),
     );
   const connectorProviders = ctx.tools.connectedPlugins.map((plugin) => plugin.provider);
-  const connectorKind = connectorKindFromToolName(name, connectorProviders);
+  const connectorKind = connectorKindFromToolName(approvalName, connectorProviders);
   // paid_request with only a purchase id sends the request its approval already named.
   const sendsToSite =
     SITE_SENDING_TOOLS.has(name) && (name === "web_fetch" || args.url !== undefined);
@@ -265,8 +266,11 @@ export async function gateToolCall(
   const resolvedRules = resolveActionApprovalForTools({
     tools: approvalToolNames.map((toolName) => ({
       name: toolName,
+      aliases: toolName === approvalName && approvalName !== name ? [name] : undefined,
       connectorKind:
-        toolName === name ? connectorKind : connectorKindFromToolName(toolName, connectorProviders),
+        toolName === approvalName
+          ? connectorKind
+          : connectorKindFromToolName(toolName, connectorProviders),
       readOnly: declaredReadOnlyFor(toolName),
     })),
     wrapper: batch ? { name, connectorKind } : undefined,

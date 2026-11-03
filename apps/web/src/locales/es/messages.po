@@ -5827,6 +5827,18 @@ msgstr "Iniciar grabación"
 msgid "Start your plan now?"
 msgstr "¿Iniciar tu plan ahora?"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}d late"
+msgstr "Empezó con {count} d de retraso"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}h late"
+msgstr "Empezó con {count} h de retraso"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}m late"
+msgstr "Empezó con {count} min de retraso"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "Iniciando"

@@ -11,6 +11,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { IsolationError, requireMembership, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { credentialDigest } from "./credential-digest.js";
+import { installationSenderAddress } from "./installed-messaging-surface.js";
 
 /** OAuth state is short-lived, single-use and tied to a user, space and bot. */
 export class MessagingInstallations implements MessagingInstallationStore {
@@ -106,6 +107,9 @@ export class MessagingInstallations implements MessagingInstallationStore {
         throw new Error("Workspace is already connected");
       }
       const id = existing?.id ?? randomBytes(16).toString("hex");
+      const ownerAddress = external.ownerId
+        ? installationSenderAddress(external.workspaceId, external.ownerId)
+        : null;
       const previousCiphertext = existing?.ciphertext;
       const sealed = await this.secrets.put(
         external.credential,
@@ -129,7 +133,11 @@ export class MessagingInstallations implements MessagingInstallationStore {
               botId: session.botId,
               ciphertext: previousCiphertext,
             },
-            data: { ciphertext: sealed.ciphertext, workspaceName: external.workspaceName },
+            data: {
+              ciphertext: sealed.ciphertext,
+              workspaceName: external.workspaceName,
+              ownerAddress,
+            },
           });
           if (updated.count !== 1) throw new Error("Workspace connection changed; try again");
         } else {
@@ -144,6 +152,7 @@ export class MessagingInstallations implements MessagingInstallationStore {
               userId: session.userId,
               botId: session.botId,
               ciphertext: sealed.ciphertext,
+              ownerAddress,
             },
           });
         }

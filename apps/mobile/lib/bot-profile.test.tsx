@@ -1067,8 +1067,21 @@ describe("routine detail", () => {
       history: async () => ({
         runs: [
           run,
-          { ...run, id: "run-2", groupId: "group-1", messageId: "reply-2" },
-          { ...run, id: "run-3", status: "failed", error: "504: timed out", messageId: null },
+          {
+            ...run,
+            id: "run-2",
+            groupId: "group-1",
+            messageId: "reply-2",
+            lateSince: "2026-01-02T11:20:00Z",
+          },
+          {
+            ...run,
+            id: "run-3",
+            status: "failed",
+            error: "504: timed out",
+            messageId: null,
+            lateSince: "2026-01-02T09:00:00Z",
+          },
         ],
         nextCursor: null,
       }),
@@ -1083,6 +1096,13 @@ describe("routine detail", () => {
       node.textContent?.includes("Jan 2,"),
     );
     expect(rows).toHaveLength(3);
+    // A late start is the row's detail, unless the row already explains a failure.
+    expect(rows.map((row) => row.textContent?.includes("Started 40m late"))).toEqual([
+      false,
+      true,
+      false,
+    ]);
+    expect(container.textContent).not.toContain("Started 3h late");
     rows[0]!.click();
     expect(push).toHaveBeenLastCalledWith({
       pathname: "/thread",

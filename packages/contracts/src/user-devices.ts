@@ -13,6 +13,8 @@ export type UserDevicePairRequest = z.infer<typeof userDevicePairRequest>;
 
 export interface UserDevicePairResponse {
   deviceId: string;
+  /** The account it was paired for. This computer's consent belongs to that account. */
+  userId: string;
   /** Shown once. The server keeps only its hash. */
   token: string;
 }

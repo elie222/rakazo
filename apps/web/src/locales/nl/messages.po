@@ -5827,6 +5827,18 @@ msgstr "Opname starten"
 msgid "Start your plan now?"
 msgstr "Je abonnement nu starten?"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}d late"
+msgstr "{count}d te laat gestart"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}h late"
+msgstr "{count}u te laat gestart"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}m late"
+msgstr "{count}m te laat gestart"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "Bezig met starten"

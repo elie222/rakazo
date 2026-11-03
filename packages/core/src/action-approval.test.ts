@@ -27,6 +27,31 @@ import {
 } from "./action-approval.js";
 
 describe("toolRequiresApproval", () => {
+  it.each([
+    { effect: "deny" as const, decision: "deny" },
+    { effect: "require_approval" as const, decision: "ask" },
+    { effect: "always_allow" as const, decision: "allow" },
+  ])("keeps original and scoped tool rules effective: $effect", ({ effect, decision }) => {
+    const tool = { name: "mail_send_email", aliases: ["mail_send_email__account"] };
+    for (const matchValue of [tool.name, tool.aliases[0]!]) {
+      expect(
+        resolveActionApprovalForTools({
+          tools: [tool],
+          rules: [{ effect, matchKind: "tool", matchValue }],
+        }).decision,
+      ).toBe(decision);
+    }
+    expect(
+      resolveActionApprovalForTools({
+        tools: [tool],
+        rules: [
+          { effect: "always_allow", matchKind: "tool", matchValue: tool.aliases[0]! },
+          { effect: "deny", matchKind: "tool", matchValue: tool.name },
+        ],
+      }).decision,
+    ).toBe("deny");
+  });
+
   it("requires approval for consequential builtins and connector writes", () => {
     expect(toolRequiresApproval("destination.write", true)).toBe(true);
     expect(toolRequiresApproval("secret_request", false)).toBe(true);

@@ -96,6 +96,8 @@ export interface ReplyState {
   progressBudgetStart: number;
   /** The first interim message after one may answer the person at once. */
   steeringReplyPending: boolean;
+  /** The bot called a browser or desktop tool, so it may say at once that this will take a while. */
+  computerTaskStarted: boolean;
   steeringResets: number;
   lastSteeringResetAt: number;
   /**

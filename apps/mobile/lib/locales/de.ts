@@ -804,6 +804,9 @@ export const DE_MESSAGES: Record<string, string> = {
   "{count}d ago": "vor {count} T.",
   "{count}h ago": "vor {count} Std.",
   "{count}m ago": "vor {count} Min.",
+  "Started {count}m late": "{count} Min. verspätet gestartet",
+  "Started {count}h late": "{count} Std. verspätet gestartet",
+  "Started {count}d late": "{count} T. verspätet gestartet",
   "Could not clear the custom server URL": "Die eigene Server-URL konnte nicht gelöscht werden",
   "Could not clear the local session": "Die lokale Sitzung konnte nicht gelöscht werden",
   "Could not clear the previous server session":

@@ -194,7 +194,7 @@ import {
   TEAM_CHAT_STARTUP_SHUTDOWN_MS,
   TeamChatStartupRetries,
 } from "./team-chat-startup.js";
-import { mountUserDeviceRoutes } from "./user-devices.js";
+import { endUserDeviceSession, mountUserDeviceRoutes } from "./user-devices.js";
 import { mountVoiceHttpRoutes, transcribeInboundVoice, voiceAccountErrorStatus } from "./voice.js";
 import { mountWebhookHttpRoutes } from "./webhook.js";
 
@@ -523,6 +523,17 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       jobs,
       accessToken: env.expoAccessToken,
     });
+  const userDeviceSecret = userDeviceForwardSecret(env.encryptionKey);
+  const userDeviceHub = env.userDevicesEnabled
+    ? new UserDeviceHub({ prisma, address: userDeviceInternalAddress(env.apiHost, env.port) })
+    : undefined;
+  const userDevices = userDeviceHub
+    ? new UserDevices({ prisma, forwardSecret: userDeviceSecret, hub: userDeviceHub })
+    : undefined;
+  const deviceSessions = {
+    prisma,
+    devices: userDevices ?? new UserDevices({ prisma, forwardSecret: userDeviceSecret }),
+  };
   const auth = createAuth(prisma, {
     analytics,
     passwordAuth: env.passwordAuth,
@@ -533,6 +544,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     webOrigin: env.webOrigin,
     signupsEnabled: env.signupsEnabled,
     signupAllowlist: env.signupAllowlist,
+    singleAccount: Boolean(env.desktopStackToken),
     email,
     logger: {
       level: "error",
@@ -586,11 +598,17 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await pushTokens
         .endSession(session.userId, session.id)
         .catch((error) => getLogger().error("push token removal failed", error));
+      await endUserDeviceSession(deviceSessions, session).catch((error) =>
+        getLogger().error("user device revocation failed", error),
+      );
     },
     afterReplaceSession: async (previous, session) => {
       await pushTokens
         .endSession(session.userId, previous.id, session.id)
         .catch((error) => getLogger().error("push token session update failed", error));
+      await endUserDeviceSession(deviceSessions, previous, session).catch((error) =>
+        getLogger().error("user device session update failed", error),
+      );
     },
   });
   const oauthTokenUpgrade = auth
@@ -616,13 +634,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   // One cache serves models.list, selection validation, and run-time model
   // resolution alike, so a list call warms the run path in this process.
   const codexCatalog = new CodexCatalogCache();
-  const userDeviceSecret = userDeviceForwardSecret(env.encryptionKey);
-  const userDeviceHub = env.userDevicesEnabled
-    ? new UserDeviceHub({ prisma, address: userDeviceInternalAddress(env.apiHost, env.port) })
-    : undefined;
-  const userDevices = userDeviceHub
-    ? new UserDevices({ prisma, forwardSecret: userDeviceSecret, hub: userDeviceHub })
-    : undefined;
   const executor = createRunExecutor({
     billingEnabled: modelCreditsEnabled,
     maxUploadSizeBytes: env.maxUploadSizeBytes,
@@ -946,8 +957,10 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       hub: userDeviceHub,
       devices: userDevices,
       forwardSecret: userDeviceSecret,
-      sessionUserId: async (request) =>
-        (await auth.api.getSession({ headers: request.headers }))?.user.id ?? null,
+      session: async (request) => {
+        const found = await auth.api.getSession({ headers: request.headers });
+        return found ? { userId: found.user.id, sessionId: found.session.id } : null;
+      },
       trustedOrigin: (origin) => isTrustedOrigin(origin, env),
     });
   }

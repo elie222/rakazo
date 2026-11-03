@@ -5827,6 +5827,18 @@ msgstr "开始录制"
 msgid "Start your plan now?"
 msgstr "立即开始你的套餐？"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}d late"
+msgstr "延迟 {count} 天开始"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}h late"
+msgstr "延迟 {count} 小时开始"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}m late"
+msgstr "延迟 {count} 分钟开始"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "正在开始"
