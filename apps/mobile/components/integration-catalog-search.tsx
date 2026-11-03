@@ -1,6 +1,6 @@
 import type { SignInMcpServer } from "@rakazo/core";
 import { findOrAddMcpServer, signInMcpServers } from "@rakazo/core";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
@@ -27,6 +27,8 @@ export function IntegrationCatalogSearch({
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const trimmed = query.trim();
+  const latestQuery = useRef(trimmed);
+  latestQuery.current = trimmed;
 
   useEffect(() => {
     setServers(null);
@@ -36,16 +38,17 @@ export function IntegrationCatalogSearch({
   if (!trimmed) return null;
 
   async function search() {
+    const sent = trimmed;
     setPending("search");
     setError(null);
     try {
       const response = await rpc("capabilities/catalogSearch", {
-        query: trimmed,
+        query: sent,
         usePublicCatalog: true,
       });
-      setServers(signInMcpServers(response.results));
+      if (latestQuery.current === sent) setServers(signInMcpServers(response.results));
     } catch (reason) {
-      setError(errorText(reason, t("Could not connect")));
+      if (latestQuery.current === sent) setError(errorText(reason, t("Could not connect")));
     } finally {
       setPending(null);
     }

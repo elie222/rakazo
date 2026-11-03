@@ -992,3 +992,59 @@ it("saves a client ID for a server that cannot register Rakazo, then signs in", 
   });
   expect(signInToMcpServer).toHaveBeenCalledWith("client");
 });
+
+it("drops an integrations.sh answer for a search the user has since changed", async () => {
+  let answer: (value: unknown) => void = () => undefined;
+  const fallback = state.rpc.getMockImplementation();
+  state.rpc.mockImplementation((proc: string, args: unknown) =>
+    proc === "capabilities/catalogSearch"
+      ? new Promise((resolve) => {
+          answer = resolve;
+        })
+      : fallback?.(proc, args),
+  );
+  await render();
+  await act(async () => resolveCatalog([item]));
+  const search = container.querySelector('input[placeholder="Search apps"]') as HTMLInputElement;
+  const type = async (value: string) => {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+        search,
+        value,
+      );
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  await type("tracker");
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((node) => node.textContent === "Search integrations.sh")
+      ?.click(),
+  );
+
+  await type("notes");
+  await act(async () =>
+    answer({
+      enabled: true,
+      results: [
+        {
+          domain: "tracker.example",
+          name: "Tracker",
+          description: "",
+          pageUrl: null,
+          surfaces: [
+            {
+              kind: "mcp",
+              slug: "tracker",
+              source: "https://mcp.tracker.example/mcp",
+              auth: { type: "oauth", headerName: null, note: null },
+            },
+          ],
+        },
+      ],
+    }),
+  );
+
+  const results = container.querySelector('[data-testid="integration-catalog-search"]');
+  expect(results?.textContent).toBe("Search integrations.sh");
+});
