@@ -170,15 +170,13 @@ describe.skipIf(findVersion.status !== 0 || !findVersion.stdout.includes("GNU"))
       const home = await mkdtemp(path.join(tmpdir(), "rakazo-find-many-"));
       try {
         // Long names put the uncapped argument list past Linux's 2 MiB limit.
-        const segment = "d".repeat(200);
-        const count = 12_000;
-        execFileSync("bash", [
-          "-c",
-          `cd "$1" && for i in $(seq ${count}); do mkdir -p "$i/${segment}/${segment}" && printf '%s' "$2" > "$i/${segment}/${segment}/CACHEDIR.TAG" && touch "$i/${segment}/${segment}/data"; done`,
-          "make-tags",
-          home,
-          CACHE_TAG,
-        ]);
+        const count = 10_000;
+        const dirs = Array.from({ length: count }, (_, i) =>
+          path.join(home, `${i}${"d".repeat(250)}`),
+        );
+        await Promise.all(dirs.map((dir) => mkdir(dir)));
+        await Promise.all(dirs.map((dir) => writeFile(path.join(dir, "CACHEDIR.TAG"), CACHE_TAG)));
+        await Promise.all(dirs.map((dir) => writeFile(path.join(dir, "data"), "")));
         const result = spawnSync(
           "bash",
           ["-c", `cd "$1" && ${workspaceSaveFindCommand()} -print`, "many-tags", home],
