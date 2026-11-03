@@ -261,9 +261,13 @@ export class PageBrowserSession {
           // A password goes only into a password field, which never displays it.
           throw new FillRefused("A saved password can only be typed into a password field.");
         }
-        if (action.field === "username" && !USERNAME_INPUT_TYPES.has(inputType)) {
+        if (
+          action.field === "username" &&
+          !USERNAME_INPUT_TYPES.has(inputType) &&
+          !(el instanceof win.HTMLSelectElement)
+        ) {
           throw new FillRefused(
-            "A saved username can only be typed into a text, email, or telephone field.",
+            "A saved username can only be typed into a text, email, or telephone field, or chosen in a dropdown.",
           );
         }
       }
@@ -289,11 +293,18 @@ export class PageBrowserSession {
       }
       if (el instanceof win.HTMLSelectElement) {
         const norm = (value: string) => value.replace(/\s+/g, " ").trim().toLowerCase();
-        const options = [...el.options];
+        // A saved login matches and lists only options that can be chosen, so a refusal never
+        // repeats its value.
+        const options = [...el.options].filter((o) => !action.origin || !unavailable(win, o));
         const match =
           options.find((o) => o.value === text) ??
           options.find((o) => optionLabel(o) === text) ??
           options.find((o) => norm(optionLabel(o)) === norm(text) || norm(o.value) === norm(text));
+        if (!match && action.origin) {
+          throw new FillRefused(
+            `This dropdown has no option for this saved field. Its options: ${describeChoices(options)}.`,
+          );
+        }
         if (!match) {
           throw new SettledStep(
             `This dropdown has no option "${text}". Its options: ${describeOptions(optionsOf(el, win))}.`,
@@ -305,7 +316,7 @@ export class PageBrowserSession {
           );
         }
         // The old choice goes: a multiple select would keep it otherwise.
-        for (const option of options) option.selected = false;
+        for (const option of el.options) option.selected = false;
         match.selected = true;
         el.dispatchEvent(new win.Event("input", { bubbles: true }));
         el.dispatchEvent(new win.Event("change", { bubbles: true }));
@@ -404,6 +415,26 @@ function describeOptions(options: NonNullable<BrowserSnapshotNode["options"]>): 
         (option.disabled ? " (disabled)" : ""),
     )
     .join(", ");
+}
+
+/** The options a saved login could choose, as the live helper lists them: long labels keep their
+ * start and end, and the list stops at about 2 KB. */
+function describeChoices(options: HTMLOptionElement[]): string {
+  const shown: string[] = [];
+  let size = 0;
+  for (const option of options) {
+    const text = optionLabel(option);
+    const part = JSON.stringify(
+      text.length > 80 ? `${text.slice(0, 50)}…${text.slice(-29)}` : text,
+    );
+    if (size + part.length > 2000) {
+      shown.push(`and ${options.length - shown.length} more`);
+      break;
+    }
+    shown.push(part);
+    size += part.length + 2;
+  }
+  return shown.join(", ") || "none";
 }
 
 function roleFor(win: DomWindow, el: DomElement): string {

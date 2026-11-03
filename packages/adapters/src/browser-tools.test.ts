@@ -425,6 +425,89 @@ describe("browser tools", () => {
       expect(snap).not.toContain("+1 555 0100");
     });
 
+    it("picks a dropdown option for a visible field and never names the value", async () => {
+      const url = "https://login.example.test/signin";
+      const browser = new FakeBrowserProvider({
+        pages: {
+          [url]: {
+            title: "Sign in",
+            html: `<!doctype html><html><head><title>Sign in</title></head><body>
+              <input aria-label="Account" />
+              <select aria-label="Branch"><option value="" disabled selected>Choose</option>
+                <option value="v1">A1</option><option>A2</option><option disabled>A3</option></select>
+              <input aria-label="Phone" type="tel" />
+            </body></html>`,
+          },
+          [`${url}?long`]: {
+            title: "Sign in",
+            html: `<!doctype html><html><head><title>Sign in</title></head><body>
+              <select aria-label="Branch">${Array.from(
+                { length: 300 },
+                (_, n) => `<option>${"x".repeat(120)}${n}</option>`,
+              ).join("")}</select>
+            </body></html>`,
+          },
+        },
+      });
+      await browserNavigateFromTool(browser, computer, context, { url });
+      const branch = async () => {
+        const snap = (await browserSnapshotFromTool(browser, computer, context, {})) as {
+          elements: Array<{ ref: string; name: string }>;
+        };
+        return snap.elements.find((el) => el.name.includes("Branch"))!.ref;
+      };
+      const fill = async (
+        text: string,
+        { hidden = false, origin = "https://login.example.test" } = {},
+      ) =>
+        browserActFromTool(
+          browser,
+          computer,
+          context,
+          {
+            actions: [
+              {
+                kind: "fill_secret",
+                ref: await branch(),
+                secret: "site_login",
+                field: "Branch",
+              },
+            ],
+          },
+          { resolveSecretFill: async () => ({ text, origin, hidden }) },
+        );
+      const chosen = async () =>
+        JSON.stringify(await browserSnapshotFromTool(browser, computer, context, {})).match(
+          /"label":"([^"]*)","value":"[^"]*","selected":true/,
+        )?.[1];
+
+      expect(await fill("A2")).toMatchObject({ ok: true, completed: 1 });
+      expect(await chosen()).toBe("A2");
+      expect(await fill("v1")).toMatchObject({ ok: true, completed: 1 });
+      expect(await chosen()).toBe("A1");
+      for (const text of ["fake-999", "A3"]) {
+        // The page itself lists every option; the refusal lists only those that can be chosen.
+        expect(await fill(text), text).toMatchObject({
+          ok: false,
+          completed: 0,
+          uncertain: false,
+          error: 'This dropdown has no option for this saved field. Its options: "A1", "A2".',
+        });
+      }
+      expect(JSON.stringify(await fill("fake-999"))).not.toContain("fake-999");
+      const hidden = await fill("A2", { hidden: true });
+      expect(JSON.stringify(hidden)).toMatch(/password field/);
+      const elsewhere = await fill("A2", { origin: "https://other.example.test" });
+      expect(JSON.stringify(elsewhere)).toMatch(/not on the site this login was saved for/);
+      expect(await chosen()).toBe("A1");
+      // A page of long labels cannot flood the refusal.
+      await browserNavigateFromTool(browser, computer, context, { url: `${url}?long` });
+      const flooded = (await fill("fake-999")) as { error: string };
+      expect(flooded.error).toMatch(/, and \d+ more\.$/);
+      expect(flooded.error.length).toBeLessThan(2200);
+      expect(flooded.error).not.toContain("x".repeat(51));
+    });
+
     it("tells every page browser a hidden field is a password and a visible one a username", async () => {
       const acts: unknown[] = [];
       const recorder = {

@@ -342,6 +342,38 @@ EVAL_HELPERS = r"""
       && !el.disabled && !el.readOnly && el.getAttribute("aria-hidden") !== "true" && visible(el)
       && (el.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/).includes(token));
   }
+  // The option a visible saved field picks, matched as browser_act fill matches one. Only options that
+  // can be chosen are matched or listed, so a refusal never repeats the saved value.
+  function chooseOption(select, value) {
+    const label = (option) => (option.label || option.text).replace(/\s+/g, " ").trim();
+    const norm = (text) => text.replace(/\s+/g, " ").trim().toLowerCase();
+    const options = [...select.options].filter((option) => !option.disabled
+      && !(option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled));
+    const match = options.find((option) => option.value === value)
+      ?? options.find((option) => label(option) === value)
+      ?? options.find((option) => norm(label(option)) === norm(value) || norm(option.value) === norm(value));
+    if (!match) {
+      // Long labels keep their start and end, and the list stops at about 2 KB.
+      const shown = [];
+      let size = 0;
+      for (const option of options) {
+        const text = label(option);
+        const part = JSON.stringify(text.length > 80 ? `${text.slice(0, 50)}…${text.slice(-29)}` : text);
+        if (size + part.length > 2000) {
+          shown.push(`and ${options.length - shown.length} more`);
+          break;
+        }
+        shown.push(part);
+        size += part.length + 2;
+      }
+      throw refused(`This dropdown has no option for this saved field. Its options: ${shown.join(", ") || "none"}.`);
+    }
+    for (const option of select.options) option.selected = false;
+    match.selected = true;
+    select.dispatchEvent(new Event("input", { bubbles: true }));
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  }
   // The element keys go to in this document, through open shadow trees.
   function focused() {
     let el = document.activeElement;
@@ -379,9 +411,9 @@ EVAL_HELPERS = r"""
       const el = focused();
       if (!el) throw refused("The field did not keep focus, so nothing was typed. Take a fresh snapshot and fill again.");
       if (el.readOnly || el.disabled) throw refused("Element is read-only");
-      // A password goes only into a password field, which never displays it. A username is an input;
-      // textareas, search boxes, and editable page content stay out. A card goes only into a plain
-      // input: text, tel, or password (CVC boxes are often masked).
+      // A password goes only into a password field, which never displays it. A username is an input or
+      // a dropdown's option; textareas, search boxes, and editable page content stay out. A card goes
+      // only into a plain input: text, tel, or password (CVC boxes are often masked).
       const input = el instanceof HTMLInputElement ? el : null;
       if (card && !(input && ["text", "tel", "password"].includes(input.type))) {
         throw refused("A card can only be typed into a card field.");
@@ -390,9 +422,10 @@ EVAL_HELPERS = r"""
       if (password && !(input && input.type === "password")) {
         throw refused("A saved password can only be typed into a password field.");
       }
+      if (field === "username" && el instanceof HTMLSelectElement) return chooseOption(el, String(value));
       if (!card && !password && !(input && ["text", "email", "tel"].includes(input.type))) {
         throw refused(code ? "A code can only be typed into a text, email, or telephone field."
-          : "A saved username can only be typed into a text, email, or telephone field.");
+          : "A saved username can only be typed into a text, email, or telephone field, or chosen in a dropdown.");
       }
       if (code && !looksLikeCodeBox(input)) {
         throw refused("This field doesn't look like a code box; ask the user to take over.");
