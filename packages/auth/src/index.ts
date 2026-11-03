@@ -164,31 +164,39 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     }
   };
   const discovery = env.oidc ? oidcDiscovery(env.oidc) : undefined;
+  /** Whether another account with email sign-in already has a workspace. */
+  const hasAdmittedAccount = async (
+    client: Pick<PrismaClient, "user" | "spaceMember">,
+    exceptUserId?: string,
+  ) => {
+    const others = await client.user.findMany({
+      where: {
+        ...(exceptUserId ? { id: { not: exceptUserId } } : {}),
+        NOT: { email: { endsWith: MESSAGING_EMAIL_SUFFIX } },
+      },
+      select: { id: true },
+    });
+    return (
+      others.length > 0 &&
+      Boolean(
+        await client.spaceMember.findFirst({
+          where: { userId: { in: others.map((other) => other.id) } },
+          select: { userId: true },
+        }),
+      )
+    );
+  };
   /** Refuses a new account early, before creating it, once a single-person deployment has one. */
   const admission = async () => {
     const policy = signupPolicyFromEnv(env);
     if (!env.singleAccount || !policy.enabled) return policy;
-    const existing = await prisma.user.findFirst({
-      where: { NOT: { email: { endsWith: MESSAGING_EMAIL_SUFFIX } } },
-      select: { id: true },
-    });
-    return existing ? { ...policy, enabled: false } : policy;
+    return (await hasAdmittedAccount(prisma)) ? { ...policy, enabled: false } : policy;
   };
   /** Admits the sole account one at a time, so two first signups cannot both get in. */
   const admitSoleAccount = (userId: string) =>
     prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('rakazo:single-account'))`;
-      const others = await tx.user.findMany({
-        where: { id: { not: userId }, NOT: { email: { endsWith: MESSAGING_EMAIL_SUFFIX } } },
-        select: { id: true },
-      });
-      const admitted =
-        others.length > 0 &&
-        (await tx.spaceMember.findFirst({
-          where: { userId: { in: others.map((other) => other.id) } },
-          select: { userId: true },
-        }));
-      if (admitted) return false;
+      if (await hasAdmittedAccount(tx, userId)) return false;
       // Committed before the lock is released, so the next signup sees it.
       await bootstrapUserSpace(prisma, { id: userId }, env);
       return true;

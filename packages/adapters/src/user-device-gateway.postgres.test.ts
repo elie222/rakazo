@@ -163,6 +163,41 @@ describePostgres("user devices (PostgreSQL)", () => {
     await expect(hub.authenticate(`Bearer ${token}`)).resolves.toBeNull();
   });
 
+  it("closes a device whose sign-out landed while it was connecting", async () => {
+    const session = await prisma.session.create({
+      data: {
+        id: `${suffix}-racing`,
+        token: `${suffix}-racing-token`,
+        userId,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    const token = createUserDeviceToken();
+    const device = await prisma.userDevice.create({
+      data: {
+        userId,
+        name: "Desktop",
+        platform: "darwin",
+        tokenHash: hashUserDeviceToken(token),
+        sessionId: session.id,
+      },
+    });
+    const hub = new UserDeviceHub({ prisma: raw, address: "http://127.0.0.1:1" });
+    hubs.push(hub);
+    const authenticated = await hub.authenticate(`Bearer ${token}`);
+    expect(authenticated).toMatchObject({ id: device.id });
+
+    // Sign-out revokes it after authentication but before the socket is attached.
+    await prisma.session.delete({ where: { id: session.id } });
+    await prisma.userDevice.update({ where: { id: device.id }, data: { revokedAt: new Date() } });
+    const socket = new Socket();
+    await hub.attach(authenticated!, socket);
+    expect(socket.sent).toContainEqual({ type: "revoked", reason: "session-ended" });
+    await expect(
+      new UserDevices({ prisma: raw, forwardSecret: "k", hub }).connected(userId),
+    ).resolves.toBeNull();
+  });
+
   it("deletes devices and their connections with the user", async () => {
     const other = `${userId}-gone`;
     await prisma.user.create({

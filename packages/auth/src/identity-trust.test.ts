@@ -1296,6 +1296,21 @@ describe("single-person deployments", () => {
     expect((await f.signup("owner@example.test")).status).toBe(200);
   });
 
+  it("is not closed by an earlier signup that never got in", async () => {
+    const f = fixture({ delivery: false, singleAccount: true });
+    const now = new Date();
+    f.data.user!.push({
+      id: "abandoned",
+      name: "Abandoned",
+      email: "abandoned@example.test",
+      emailVerified: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+    expect((await f.signup("owner@example.test")).status).toBe(200);
+    expect((await f.signup("someone@example.test")).status).toBe(400);
+  });
+
   it("keeps registration open on other deployments", async () => {
     const f = fixture({ delivery: false });
     expect((await f.signup("owner@example.test")).status).toBe(200);

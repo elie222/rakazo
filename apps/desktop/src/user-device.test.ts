@@ -507,6 +507,22 @@ describe("remote computer access", () => {
     expect(await readDeviceConsent(userData, origin)).toBeNull();
   });
 
+  it("pairs the next account even when its page loaded before the old pairing ended", async () => {
+    const { server, fetch } = accountServer();
+    const { access, clients } = setup({ fetch });
+    server.account = "alice";
+    await access.select(origin);
+    await access.pair();
+
+    server.account = "bob";
+    await access.pair();
+    expect(clients).toHaveLength(1);
+    clients[0]!.revoke("session-ended");
+    await vi.waitFor(() => expect(clients).toHaveLength(2));
+    expect(clients[1]).toMatchObject({ token: "token-2", closed: false });
+    expect(access.state(origin)).toEqual({ deviceId: "device-2", allowed: false });
+  });
+
   it("does not let a saved answer for another account through after a relaunch", async () => {
     await savePairedDevice(
       userData,

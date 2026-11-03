@@ -184,8 +184,13 @@ export function createUserDeviceAccess(deps: {
         // Signing out ends the pairing but keeps the answer for that account's next sign-in;
         // a prompt still open belongs to the ended sign-in. Removed or rejected otherwise:
         // stay unpaired until turned back on.
-        if (reason === "session-ended") changes.set(origin, (changes.get(origin) ?? 0) + 1);
-        else void decide(origin, "declined").catch(() => undefined);
+        if (reason !== "session-ended") {
+          void decide(origin, "declined").catch(() => undefined);
+          return;
+        }
+        changes.set(origin, (changes.get(origin) ?? 0) + 1);
+        // Whoever signed in next may have loaded the page before this arrived.
+        if (current === origin) void pair();
       },
       authorize: () => authorize(origin),
     });

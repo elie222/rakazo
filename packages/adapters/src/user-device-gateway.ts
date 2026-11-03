@@ -231,6 +231,17 @@ export class UserDeviceHub {
         await tx.userDevice.update({ where: { id: device.id }, data: { lastSeenAt: now } });
       }),
     );
+    // A sign-out that revoked this device while it was connecting found no socket to close.
+    const current = await runAsSystem("recheck a connected user device", () =>
+      this.deps.prisma.userDevice.findUnique({
+        where: { id: device.id },
+        select: { revokedAt: true, sessionId: true },
+      }),
+    );
+    if (current?.revokedAt) {
+      const ended = current.sessionId && (await this.endedSessions([current.sessionId])).size;
+      this.disconnect(device.id, ended ? "session-ended" : undefined);
+    } else if (current) await this.endWithSessions([entry]);
     return connectionId;
   }
 
