@@ -162,7 +162,7 @@ replace_worker() {
     live=""
   fi
   if [[ -z "${live}" ]]; then
-    compose "${UP_TIMEOUT}" up -d --wait worker
+    compose "${UP_TIMEOUT}" up -d --no-deps --wait worker
     return
   fi
   start_beside worker "${live}"
@@ -186,8 +186,8 @@ roll_out() {
   for service in api web; do
     old="$(compose 1m ps --all --quiet "${service}")"
     if [[ -z "${old}" ]]; then
-      # Nothing to keep serving, so start it with its dependencies (the database on a new host).
-      compose "${UP_TIMEOUT}" up -d --wait "${service}"
+      # The migration run already started the database; do not rerun it through dependencies.
+      compose "${UP_TIMEOUT}" up -d --no-deps --wait "${service}"
       continue
     fi
     start_beside "${service}" "${old}"
@@ -198,7 +198,8 @@ roll_out() {
   done
   replace_worker
   # shellcheck disable=SC2046 # one service name per word
-  compose "${UP_TIMEOUT}" up -d --remove-orphans $(compose 1m config --services | grep -vx worker)
+  # A second migration run would consume a deferred drop before the old worker has drained.
+  compose "${UP_TIMEOUT}" up -d --no-deps --remove-orphans $(compose 1m config --services | grep -Ev '^(worker|migrate)$')
 }
 
 # Caddy mounts its config as a single file, which keeps the old inode after a git checkout, so a

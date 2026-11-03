@@ -43,7 +43,7 @@ const rolloutSteps = (revision: string) => [
   "docker update --restart no worker-old",
   "docker kill --signal SIGTERM worker-old",
   `${COMPOSE} config --services`,
-  `${COMPOSE} up -d --remove-orphans api migrate`,
+  `${COMPOSE} up -d --no-deps --remove-orphans api`,
 ];
 // After a healthy deploy, the deploy waits for the old worker to finish and removes it.
 const finishDraining = [
@@ -278,7 +278,7 @@ describe("production deploy script", () => {
     expect(deploy.commands().some((line) => line.includes(" caddy"))).toBe(false);
     const commands = deploy.commands().map((line) => line.split(" @ ")[0]!);
     expect(
-      commands.slice(commands.findIndex((line) => line.includes(" up -d --remove-orphans")) + 1),
+      commands.slice(commands.findIndex((line) => line.includes("--remove-orphans")) + 1),
     ).toEqual([
       "curl https://app.example.test/health",
       "docker image ls --format {{.Repository}}:{{.Tag}} rakazo-rollback",
@@ -346,7 +346,7 @@ describe("production deploy script", () => {
     ]);
     expect(commands).toContain(`docker tag sha256:previous ${APP_IMAGE}`);
     expect(deploy.commands()).toContainEqual(
-      expect.stringMatching(/ up -d --remove-orphans api migrate @ first$/),
+      expect.stringMatching(/ up -d --no-deps --remove-orphans api @ first$/),
     );
     expect(commands.slice(-2)).toEqual(["docker stop worker-old", "docker rm worker-old"]);
   });
@@ -386,7 +386,7 @@ describe("production deploy script", () => {
         `docker tag ${published(next)} ${APP_IMAGE}`,
         `docker rmi ${published(next)}`,
       ]);
-      const up = commands.indexOf(`${COMPOSE} up -d --remove-orphans api migrate`);
+      const up = commands.indexOf(`${COMPOSE} up -d --no-deps --remove-orphans api`);
       expect(up).toBeGreaterThan(pull);
       expect(commands.slice(up + 1)).toEqual([
         "curl https://app.example.test/health",
@@ -462,8 +462,10 @@ describe("production deploy script", () => {
     commit(deploy.upstream, "next");
     expect(deploy.run({ FRESH: "1" }).status).toBe(0);
     const commands = rollout(deploy.commands());
-    expect(commands).toContain(`${COMPOSE} up -d --wait api`);
-    expect(commands).toContain(`${COMPOSE} up -d --wait web`);
+    expect(commands).toContain(`${COMPOSE} up -d --no-deps --wait api`);
+    expect(commands).toContain(`${COMPOSE} up -d --no-deps --wait web`);
+    expect(commands).toContain(`${COMPOSE} up -d --no-deps --wait worker`);
+    expect(commands.filter((line) => line.endsWith(" run --rm -T migrate"))).toHaveLength(1);
     expect(commands.some((line) => line.includes("--scale"))).toBe(false);
   });
 
@@ -496,11 +498,13 @@ describe("production deploy script", () => {
     const failed = commands.indexOf("docker kill --signal SIGTERM worker-new");
     expect(failed).toBeGreaterThan(commands.indexOf("docker kill --signal SIGTERM worker-old"));
     expect(
-      commands.slice(failed).filter((line) => /^docker (stop|rm) |up -d --wait worker$/.test(line)),
+      commands
+        .slice(failed)
+        .filter((line) => /^docker (stop|rm) |up -d --no-deps --wait worker$/.test(line)),
     ).toEqual([
       "docker stop worker-old worker-new",
       "docker rm worker-old worker-new",
-      `${COMPOSE} up -d --wait worker`,
+      `${COMPOSE} up -d --no-deps --wait worker`,
     ]);
   });
 
@@ -527,7 +531,7 @@ describe("production deploy script", () => {
     const removed = commands.indexOf("docker rm worker-old worker-new");
     expect(removed).toBeGreaterThan(replaced);
     expect(commands.slice(replaced).some((line) => line.includes("--scale worker"))).toBe(false);
-    expect(commands.slice(removed)).toContain(`${COMPOSE} up -d --wait worker`);
+    expect(commands.slice(removed)).toContain(`${COMPOSE} up -d --no-deps --wait worker`);
   });
 
   it("keeps the old container serving when the new one fails its health check", () => {
