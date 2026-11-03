@@ -26,7 +26,7 @@ const host = vi.hoisted(() => ({
 
 vi.mock("react-native", () => ({
   ActivityIndicator: () => null,
-  Pressable: () => null,
+  Platform: { OS: "android" },
   Text: ({ children }: { children?: ReactNode }) => createElement("p", {}, children),
   View: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => {
     if (props.onTouchStart) host.touch = props as typeof host.touch;
@@ -45,7 +45,7 @@ vi.mock("expo-router", () => ({
   useRouter: () => ({
     back: () => host.went.push("back"),
     canGoBack: () => true,
-    push: () => undefined,
+    push: (href: unknown) => host.went.push(href),
     replace: (href: unknown) => host.went.push(href),
   }),
   useNavigation: () => ({
@@ -58,8 +58,22 @@ vi.mock("@rakazo/chat-ui/native", () => ({
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/native-action-button", () => ({
-  NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) =>
-    createElement("button", { type: "button", onClick: onPress }, label),
+  NativeActionButton: (props: {
+    label?: string;
+    accessibilityLabel?: string;
+    icon?: { ios: string; android: string };
+    onPress: () => void;
+  }) =>
+    createElement(
+      "button",
+      {
+        type: "button",
+        "aria-label": props.accessibilityLabel ?? props.label,
+        "data-icon": props.icon ? `${props.icon.ios} ${props.icon.android}` : undefined,
+        onClick: props.onPress,
+      },
+      props.label,
+    ),
 }));
 vi.mock("../components/sandboxed-html-preview", () => ({
   SandboxedHtmlPreview: ({ html, onMessage }: { html: string; onMessage: typeof host.message }) => {
@@ -247,7 +261,32 @@ it("says a page that could not load in the user's words, with Try again unless i
   host.readError = Object.assign(new Error("Resource not found"), { code: "NOT_FOUND" });
   const gone = await render();
   expect(gone.container.textContent).toBe("This page isn't available");
-  expect(gone.container.querySelector("button")).toBeNull();
+  expect(
+    [...gone.container.querySelectorAll("button")].map((button) => button.textContent),
+  ).toEqual([""]);
   host.readError = null;
   await act(async () => gone.root.unmount());
+});
+
+it("closes and shares the page with the native icon buttons", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  host.went = [];
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  await act(async () => root.render(createElement(PageScreen)));
+  const buttons = [...container.querySelectorAll("button")];
+  expect(
+    buttons.map((button) => [
+      button.getAttribute("aria-label"),
+      button.dataset.icon,
+      button.textContent,
+    ]),
+  ).toEqual([
+    ["Close", "xmark close", ""],
+    ["Share", "square.and.arrow.up share-outline", ""],
+  ]);
+  await act(async () => buttons[0]!.click());
+  await act(async () => buttons[1]!.click());
+  expect(host.went).toEqual(["back", { pathname: "/page-share", params: { pageId: "page-1" } }]);
+  await act(async () => root.unmount());
 });

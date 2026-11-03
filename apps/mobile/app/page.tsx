@@ -5,14 +5,15 @@ import { webTokensForAppearance } from "@rakazo/ui-tokens";
 import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { NativeSymbol } from "../components/native-symbol";
+import { NativeActionButton } from "../components/native-action-button";
 import { PageLoadFailure } from "../components/pages/page-load-failure";
 import { SandboxedHtmlPreview } from "../components/sandboxed-html-preview";
 import { currentApiBase } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
+import { HEADER_CONTROL_SIZE } from "../lib/native-controls";
 import {
   getLatestPage,
   offerPageReply,
@@ -41,6 +42,9 @@ export default function PageScreen() {
   const pageBackground = webTokensForAppearance(theme).background;
   const [loaded, setLoaded] = useState<Loaded>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
+  // iOS keeps the native glass button as it is; Android's bordered button becomes a card circle.
+  const round =
+    Platform.OS === "ios" ? undefined : [styles.round, { backgroundColor: tokens.card }];
 
   useEffect(() => {
     let active = true;
@@ -109,7 +113,7 @@ export default function PageScreen() {
       {loaded.status === "ready" ? (
         // The page starts below the round buttons; its own top padding keeps the title clear.
         <View
-          style={[styles.screen, { paddingTop: insets.top + CONTROL_SIZE }]}
+          style={[styles.screen, { paddingTop: insets.top + HEADER_CONTROL_SIZE }]}
           onTouchStart={({ nativeEvent }) => {
             // A second finger makes it a pinch.
             const { pageX, pageY, touches } = nativeEvent;
@@ -146,17 +150,19 @@ export default function PageScreen() {
         </View>
       )}
       <View pointerEvents="box-none" style={[styles.controls, { top: insets.top + 6 }]}>
-        <RoundButton
-          label={t("Close")}
-          ios="xmark"
-          android="close"
+        <NativeActionButton
+          accessibilityLabel={t("Close")}
+          icon={{ ios: "xmark", android: "close", size: 20 }}
+          prominence="secondary"
+          style={round}
           onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))}
         />
         {loaded.status === "ready" ? (
-          <RoundButton
-            label={t("Share")}
-            ios="square.and.arrow.up"
-            android="share-outline"
+          <NativeActionButton
+            accessibilityLabel={t("Share")}
+            icon={{ ios: "square.and.arrow.up", android: "share-outline", size: 20 }}
+            prominence="secondary"
+            style={round}
             onPress={() => router.push({ pathname: "/page-share", params: { pageId } })}
           />
         ) : null}
@@ -164,37 +170,6 @@ export default function PageScreen() {
     </View>
   );
 }
-
-function RoundButton({
-  label,
-  ios,
-  android,
-  onPress,
-}: {
-  label: string;
-  ios: string;
-  android: "close" | "share-outline";
-  onPress: () => void;
-}) {
-  const tokens = useMobileTokens();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      hitSlop={6}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.round,
-        { backgroundColor: tokens.card, borderColor: tokens.border },
-        pressed ? { opacity: 0.7 } : null,
-      ]}
-    >
-      <NativeSymbol ios={ios} android={android} size={20} color={tokens.foreground} />
-    </Pressable>
-  );
-}
-
-const CONTROL_SIZE = 44;
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
@@ -207,11 +182,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   round: {
-    width: CONTROL_SIZE,
-    height: CONTROL_SIZE,
-    borderRadius: CONTROL_SIZE / 2,
-    borderWidth: StyleSheet.hairlineWidth,
-    alignItems: "center",
-    justifyContent: "center",
+    width: HEADER_CONTROL_SIZE,
+    minHeight: HEADER_CONTROL_SIZE,
+    borderRadius: HEADER_CONTROL_SIZE / 2,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
   },
 });
