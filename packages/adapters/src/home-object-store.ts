@@ -40,8 +40,6 @@ const IDLE_CACHE_MS = 60 * 60_000;
 const READER_HEARTBEAT_MS = 5 * 60_000;
 /** Revisions left by a crashed save are removed once they are clearly not in progress. */
 const STALE_REVISION_MS = 24 * 60 * 60_000;
-/** Marks a cached copy downloaded from object storage, as opposed to one only kept locally. */
-const DOWNLOADED = "stored:";
 
 /** Where a home's revisions are stored and the key that seals them. */
 export interface StoredHome {
@@ -275,16 +273,17 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
       }
       // A removed cache directory leaves its marker behind; only a present copy counts.
       if (local === stored.revision && (await this.hasCache(botId))) {
-        // Copies downloaded before the marker said so are recognized by matching the revision.
-        if (fromStorage) await this.touchRevision(botId);
-        else await super.writeRevision(botId, DOWNLOADED + local);
+        // Copies downloaded before downloads were recorded are recognized by matching the revision.
+        if (!fromStorage) await this.markDownloaded(botId);
+        await this.touchRevision(botId);
         return;
       }
       const revision = stored.revision;
       await this.replaceHome(botId, (staging) =>
         unpackHome(this.download(stored, revision), staging, this.limits),
       );
-      await super.writeRevision(botId, DOWNLOADED + revision);
+      await this.markDownloaded(botId);
+      await super.writeRevision(botId, revision);
     });
   }
 
@@ -299,9 +298,8 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
     // its UPDATE, even when another process saves while the database read is in flight.
     const stored = await this.records.load(botId);
     const local = await this.localRevision(botId);
-    if (local?.startsWith(DOWNLOADED))
-      return { stored, local: local.slice(DOWNLOADED.length), fromStorage: true };
-    if (!local?.startsWith("{")) return { stored, local, fromStorage: false };
+    if (!local?.startsWith("{"))
+      return { stored, local, fromStorage: await this.isDownloaded(botId) };
     const pending = JSON.parse(local) as Record<string, unknown>;
     if (
       pending.version !== 1 ||
@@ -409,11 +407,9 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
         // A confirmed refusal is an ordinary stale cache again. A previous proposal
         // matching the base was confirmed by the pre-save read; otherwise it still
         // represents an uncertain save and must keep protecting the live files.
-        const rollback =
-          previous?.startsWith("{") && JSON.parse(previous).revision === base
-            ? DOWNLOADED + base
-            : previous;
-        await super.writeRevision(botId, rollback ?? "");
+        const confirmed = previous?.startsWith("{") && JSON.parse(previous).revision === base;
+        if (confirmed) await this.markDownloaded(botId);
+        await super.writeRevision(botId, (confirmed ? base : previous) ?? "");
       }
       await discard();
       throw new HomeSaveConflictError();

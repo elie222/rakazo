@@ -1020,8 +1020,12 @@ describe("the local cache of object-backed homes", () => {
     await store.commit("bot-2", await staged({ "a.txt": "deleted too" }), context);
     await store.hydrate("bot-1");
     await store.hydrate("bot-2");
-    // A copy an older release downloaded has a bare revision for its marker until next read.
-    await writeFile(path.join(root, "home-revisions", "bot-2.txt"), rows[1]!.homeStorageRevision!);
+    // The marker keeps the bare revision a previous release reads, during a rollout or rollback.
+    expect(await readFile(path.join(root, "home-revisions", "bot-1.txt"), "utf8")).toBe(
+      rows[0]!.homeStorageRevision,
+    );
+    // A copy an older release downloaded has no download record until it is next read.
+    await rm(path.join(root, "home-downloads", "bot-2"));
     expect(await store.readFile("bot-2", "a.txt", context)).toBe("deleted too");
     for (const row of rows)
       Object.assign(row, { homeStorageId: null, homeStorageKey: null, homeStorageRevision: null });
