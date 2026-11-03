@@ -4,6 +4,7 @@ import {
   updateAccountComputerSettings,
   updateComputerProviderSettings,
 } from "../computer-provider-config.js";
+import { moveAccountComputers } from "./computer.js";
 import type { RouterContext } from "./context.js";
 
 export function computerProviderRoutes(ctx: RouterContext) {
@@ -20,9 +21,11 @@ export function computerProviderRoutes(ctx: RouterContext) {
         get: authed.computerProvider.account.get.handler(({ context }) =>
           getAccountComputerSettings(deps, context.actor),
         ),
-        update: authed.computerProvider.account.update.handler(({ context, input }) =>
-          updateAccountComputerSettings(deps, context.actor, input),
-        ),
+        update: authed.computerProvider.account.update.handler(async ({ context, input }) => {
+          const settings = await updateAccountComputerSettings(deps, context.actor, input);
+          await moveAccountComputers(deps, context.actor);
+          return settings;
+        }),
       },
     },
   };
