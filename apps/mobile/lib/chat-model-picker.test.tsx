@@ -289,6 +289,8 @@ vi.mock("react-native", () => {
     },
     Keyboard: { dismiss: mocks.dismissKeyboard },
     Alert: { alert: mocks.alert, prompt: mocks.prompt },
+    PanResponder: { create: () => ({ panHandlers: {} }) },
+    Vibration: { vibrate: vi.fn() },
     Linking: { openURL: vi.fn() },
     StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
     ScrollView: view,

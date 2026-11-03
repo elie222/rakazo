@@ -770,6 +770,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Update computer": "Actualizar computadora",
   Private: "Privado",
   Team: "Equipo",
+  "{name} options": "Opciones de {name}",
   "Continue in Background": "Continuar en segundo plano",
   "Could not complete action": "No se pudo completar la acción",
   Dismiss: "Descartar",

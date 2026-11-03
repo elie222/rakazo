@@ -24,8 +24,8 @@ import {
 import { createModelRoleSettings, modelRoleListPatch } from "@rakazo/core";
 import type { Href } from "expo-router";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { AccessibilityInfo, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { AccessibilityInfo, PanResponder, StyleSheet, Text, Vibration, View } from "react-native";
 import type { RpcArgs } from "../lib/api";
 import { captureApiRequestContext, currentApiBase, rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
@@ -341,6 +341,73 @@ export function ModelRoleSettings({
     }
   }
 
+  // Reordering by long-press and drag, like the web list's handle. The rows sit inside the
+  // screen's ScrollView, so the responder captures moves only after a row is grabbed.
+  const cardLayouts = useRef(new Map<number, { y: number; h: number }>());
+  const dragRef = useRef<{ index: number; dy: number } | null>(null);
+  const [drag, setDrag] = useState<{ index: number; dy: number } | null>(null);
+  const dragGrab = useRef(false);
+  const dragOriginY = useRef(0);
+  const latest = useRef({ rows, commit });
+  latest.current = { rows, commit };
+  const tokens = useMobileTokens();
+
+  function updateDrag(next: { index: number; dy: number } | null) {
+    dragRef.current = next;
+    setDrag(next);
+  }
+
+  function dropTarget(index: number, dy: number) {
+    const own = cardLayouts.current.get(index);
+    if (!own) return index;
+    const center = own.y + own.h / 2 + dy;
+    let target = index;
+    for (const [i, box] of cardLayouts.current) {
+      if (i === index) continue;
+      const mid = box.y + box.h / 2;
+      if (i > index && center > mid) target = Math.max(target, i);
+      if (i < index && center < mid) target = Math.min(target, i);
+    }
+    return target;
+  }
+
+  function endDrag(save: boolean) {
+    const current = dragRef.current;
+    dragGrab.current = false;
+    updateDrag(null);
+    if (!current || !save) return;
+    const target = dropTarget(current.index, current.dy);
+    if (target === current.index) return;
+    const next = [...latest.current.rows];
+    next.splice(target, 0, ...next.splice(current.index, 1));
+    void latest.current.commit(next);
+  }
+
+  const dragResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        // Capture beats the ScrollView's pan once a long-press has grabbed a row.
+        onMoveShouldSetPanResponderCapture: () => dragGrab.current,
+        onPanResponderMove: (event) => {
+          const current = dragRef.current;
+          if (!current) return;
+          updateDrag({ ...current, dy: event.nativeEvent.pageY - dragOriginY.current });
+        },
+        onPanResponderRelease: () => endDrag(true),
+        onPanResponderTerminate: () => endDrag(false),
+      }),
+    // The handlers only touch refs kept current on every render.
+    [],
+  );
+
+  function grabRow(index: number, pageY: number) {
+    dragGrab.current = true;
+    dragOriginY.current = pageY;
+    updateDrag({ index, dy: 0 });
+    Vibration.vibrate(8);
+  }
+
   if (!settings && !state.error) return null;
   const offset = primary ? 0 : 1;
   // Order only means something once there is more than one row.
@@ -410,26 +477,74 @@ export function ModelRoleSettings({
             ? [t("Thinking: {level}", { level: thinkingLevelLabel(thinking, t) })]
             : []),
         ].join(", ");
+        // While dragging, a primary line marks where the row will land.
+        const dragging = drag?.index === index;
+        const dragTarget = drag ? dropTarget(drag.index, drag.dy) : -1;
+        const markerBelow = drag !== null && dragTarget > drag.index && index === dragTarget;
+        const markerAbove = drag !== null && dragTarget < drag.index && index === dragTarget;
+        const marker =
+          markerBelow || markerAbove ? (
+            <View
+              accessible={false}
+              importantForAccessibility="no"
+              pointerEvents="none"
+              style={{
+                position: "absolute",
+                start: 12,
+                end: 12,
+                height: 2,
+                borderRadius: 1,
+                backgroundColor: tokens.primary,
+                ...(markerBelow ? { bottom: -1 } : { top: -1 }),
+              }}
+            />
+          ) : null;
+        const draggable = rows.length > 1 && !busy;
         return (
-          <SettingsRow
+          <View
             key={modelRoleChoiceKey(choice)}
-            accessibilityRole="button"
-            leading={ordered ? number(index + offset) : undefined}
-            title={name}
-            detail={detail}
-            disabled={busy}
-            onPress={() => pick(index)}
-            accessibilityActions={accessibilityActions}
-            onAccessibilityAction={({ nativeEvent }) => act(index, nativeEvent.actionName)}
-            trailing={
-              <RowMenuButton
-                title={name}
-                actions={actions}
-                disabled={busy}
-                onAction={(id) => act(index, id)}
-              />
+            onLayout={(event) =>
+              cardLayouts.current.set(index, {
+                y: event.nativeEvent.layout.y,
+                h: event.nativeEvent.layout.height,
+              })
             }
-          />
+            {...(draggable ? dragResponder.panHandlers : null)}
+            style={
+              dragging
+                ? {
+                    transform: [{ translateY: drag?.dy ?? 0 }],
+                    zIndex: 5,
+                    elevation: 4,
+                    opacity: 0.95,
+                  }
+                : null
+            }
+          >
+            {markerAbove ? marker : null}
+            <SettingsRow
+              accessibilityRole="button"
+              leading={ordered ? number(index + offset) : undefined}
+              title={name}
+              detail={detail}
+              disabled={busy}
+              onPress={() => pick(index)}
+              onLongPress={
+                draggable ? (event) => grabRow(index, event.nativeEvent.pageY) : undefined
+              }
+              accessibilityActions={accessibilityActions}
+              onAccessibilityAction={({ nativeEvent }) => act(index, nativeEvent.actionName)}
+              trailing={
+                <RowMenuButton
+                  title={name}
+                  actions={actions}
+                  disabled={busy}
+                  onAction={(id) => act(index, id)}
+                />
+              }
+            />
+            {markerBelow ? marker : null}
+          </View>
         );
       })}
       {settings && backups.length < MAX_MODEL_BACKUPS ? (
