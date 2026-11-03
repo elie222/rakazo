@@ -1368,6 +1368,10 @@ msgstr ""
 msgid "Claude subscription"
 msgstr ""
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Clean up"
+msgstr "साफ़ करें"
+
 #: src/components/AskCard.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
@@ -1549,6 +1553,10 @@ msgstr "कंप्यूटर शुरू नहीं हो सका"
 #: src/components/ModelCredits.tsx
 msgid "Computer hours left"
 msgstr "कंप्यूटर के बचे घंटे"
+
+#: src/pages/shell/computer-panel.tsx
+msgid "Computer is {percent}% full"
+msgstr "कंप्यूटर {percent}% भर गया है"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"
@@ -2716,6 +2724,7 @@ msgstr "डिस्कनेक्ट हो रहा है…"
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/PasskeyOffer.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
+#: src/pages/shell/computer-panel.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Dismiss"
 msgstr "खारिज करें"
@@ -6916,6 +6925,10 @@ msgstr "आपका Anthropic"
 #: src/components/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "आज आपके कार्ड से {annualPrice} लिए जाएंगे, इस महीने के बचे हुए हिस्से को घटाकर।"
+
+#: src/pages/Shell.tsx
+msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
+msgstr "आपके कंप्यूटर की डिस्क लगभग भर गई है। जिन बिल्ड आउटपुट और कैश की अब ज़रूरत नहीं है, उन्हें हटाकर जगह खाली करें।"
 
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"

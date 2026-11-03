@@ -1369,6 +1369,10 @@ msgstr "選擇 Rakazo 的使用方式"
 msgid "Claude subscription"
 msgstr "Claude 訂閱"
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Clean up"
+msgstr "清理"
+
 #: src/components/AskCard.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
@@ -1550,6 +1554,10 @@ msgstr "電腦啟動失敗"
 #: src/components/ModelCredits.tsx
 msgid "Computer hours left"
 msgstr "剩餘電腦時數"
+
+#: src/pages/shell/computer-panel.tsx
+msgid "Computer is {percent}% full"
+msgstr "電腦已使用 {percent}% 空間"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"
@@ -2717,6 +2725,7 @@ msgstr "正在中斷…"
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/PasskeyOffer.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
+#: src/pages/shell/computer-panel.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Dismiss"
 msgstr "忽略"
@@ -6917,6 +6926,10 @@ msgstr "你的 Anthropic"
 #: src/components/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "今天將從你的卡中扣款 {annualPrice}，並抵扣本月未使用的部分。"
+
+#: src/pages/Shell.tsx
+msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
+msgstr "電腦的磁碟快滿了。請刪除不再需要的建置輸出和快取，以釋放空間。"
 
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"

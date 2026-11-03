@@ -1368,6 +1368,10 @@ msgstr ""
 msgid "Claude subscription"
 msgstr ""
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Clean up"
+msgstr "정리하기"
+
 #: src/components/AskCard.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
@@ -1549,6 +1553,10 @@ msgstr "컴퓨터를 시작하지 못했습니다"
 #: src/components/ModelCredits.tsx
 msgid "Computer hours left"
 msgstr "남은 컴퓨터 시간"
+
+#: src/pages/shell/computer-panel.tsx
+msgid "Computer is {percent}% full"
+msgstr "컴퓨터 용량이 {percent}% 찼습니다"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"
@@ -2716,6 +2724,7 @@ msgstr "연결 해제 중…"
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/PasskeyOffer.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
+#: src/pages/shell/computer-panel.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Dismiss"
 msgstr "닫기"
@@ -6916,6 +6925,10 @@ msgstr "사용 중인 Anthropic"
 #: src/components/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "오늘 카드에서 {annualPrice}이 결제되며, 이번 달 사용하지 않은 금액은 차감됩니다."
+
+#: src/pages/Shell.tsx
+msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
+msgstr "컴퓨터 디스크가 거의 가득 찼습니다. 더 이상 필요 없는 빌드 출력과 캐시를 삭제해 공간을 확보하세요."
 
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"

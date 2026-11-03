@@ -501,6 +501,10 @@ export const JA_MESSAGES: Record<string, string> = {
   Release: "操作を戻す",
   Skip: "スキップ",
   "Take control": "操作を引き継ぐ",
+  "Clean up": "整理する",
+  "Computer is {percent}% full": "コンピューターのディスクが {percent}% 使用中",
+  "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need.":
+    "コンピューターのディスクがほぼいっぱいです。不要になったビルド出力やキャッシュを削除して空き容量を確保してください。",
   "You have control": "あなたが操作中",
   "Active model": "使用中のモデル",
   "Authorization code": "認証コード",

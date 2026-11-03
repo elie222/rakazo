@@ -496,6 +496,10 @@ export const ES_MESSAGES: Record<string, string> = {
   Release: "Ceder el control",
   Skip: "Omitir",
   "Take control": "Tomar el control",
+  "Clean up": "Liberar espacio",
+  "Computer is {percent}% full": "El ordenador está al {percent} % de su capacidad",
+  "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need.":
+    "El disco de tu ordenador está casi lleno. Libera espacio eliminando los resultados de compilación y las cachés que ya no necesites.",
   "You have control": "Tienes el control",
   "Active model": "Modelo activo",
   "Authorization code": "Código de autorización",

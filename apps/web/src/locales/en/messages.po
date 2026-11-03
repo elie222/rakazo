@@ -1368,6 +1368,10 @@ msgstr "Choose how to use Rakazo"
 msgid "Claude subscription"
 msgstr "Claude subscription"
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Clean up"
+msgstr "Clean up"
+
 #: src/components/AskCard.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
@@ -1549,6 +1553,10 @@ msgstr "Computer failed to boot"
 #: src/components/ModelCredits.tsx
 msgid "Computer hours left"
 msgstr "Computer hours left"
+
+#: src/pages/shell/computer-panel.tsx
+msgid "Computer is {percent}% full"
+msgstr "Computer is {percent}% full"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"
@@ -2716,6 +2724,7 @@ msgstr "Disconnecting…"
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/PasskeyOffer.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
+#: src/pages/shell/computer-panel.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Dismiss"
 msgstr "Dismiss"
@@ -6916,6 +6925,10 @@ msgstr "Your Anthropic"
 #: src/components/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "Your card is charged {annualPrice} today, less the unused part of this month."
+
+#: src/pages/Shell.tsx
+msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
+msgstr "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
 
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"

@@ -1292,6 +1292,8 @@ export const ComputerStatusSchema = z.object({
   busyBotName: z.string().nullable(),
   canUpdate: z.boolean(),
   terminalAvailable: z.boolean(),
+  /** Set only while the user should see that the disk is nearly full. */
+  diskFullPercent: z.number().int().min(0).max(100).optional(),
 });
 export type ComputerStatus = z.infer<typeof ComputerStatusSchema>;
 

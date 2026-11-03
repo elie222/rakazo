@@ -1368,6 +1368,10 @@ msgstr ""
 msgid "Claude subscription"
 msgstr ""
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Clean up"
+msgstr "Nettoyer"
+
 #: src/components/AskCard.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
@@ -1549,6 +1553,10 @@ msgstr "Échec du démarrage de l'ordinateur"
 #: src/components/ModelCredits.tsx
 msgid "Computer hours left"
 msgstr "Heures d'ordinateur restantes"
+
+#: src/pages/shell/computer-panel.tsx
+msgid "Computer is {percent}% full"
+msgstr "L’ordinateur est plein à {percent} %"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"
@@ -2716,6 +2724,7 @@ msgstr "Déconnexion en cours…"
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/PasskeyOffer.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
+#: src/pages/shell/computer-panel.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Dismiss"
 msgstr "Fermer"
@@ -6916,6 +6925,10 @@ msgstr "Votre Anthropic"
 #: src/components/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "Votre carte est débitée de {annualPrice} aujourd'hui, moins la partie inutilisée de ce mois."
+
+#: src/pages/Shell.tsx
+msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
+msgstr "Le disque de votre ordinateur est presque plein. Libérez de l’espace en supprimant les fichiers de build et les caches dont vous n’avez plus besoin."
 
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"

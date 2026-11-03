@@ -1368,6 +1368,10 @@ msgstr "Rakazoの使い方を選択"
 msgid "Claude subscription"
 msgstr "Claudeサブスクリプション"
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Clean up"
+msgstr "整理する"
+
 #: src/components/AskCard.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
@@ -1549,6 +1553,10 @@ msgstr "コンピューターの起動に失敗しました"
 #: src/components/ModelCredits.tsx
 msgid "Computer hours left"
 msgstr "コンピューターの残り時間"
+
+#: src/pages/shell/computer-panel.tsx
+msgid "Computer is {percent}% full"
+msgstr "コンピューターのディスクが {percent}% 使用中"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"
@@ -2716,6 +2724,7 @@ msgstr "切断中…"
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/PasskeyOffer.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
+#: src/pages/shell/computer-panel.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Dismiss"
 msgstr "閉じる"
@@ -6916,6 +6925,10 @@ msgstr "お使いのAnthropic"
 #: src/components/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "本日カードに{annualPrice}が請求されます（今月の未使用分を差し引きます）。"
+
+#: src/pages/Shell.tsx
+msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
+msgstr "コンピューターのディスクがほぼいっぱいです。不要になったビルド出力やキャッシュを削除して空き容量を確保してください。"
 
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"

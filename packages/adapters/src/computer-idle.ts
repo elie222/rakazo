@@ -27,6 +27,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import { activeCodingAgent } from "./coding-agent-activity.js";
 import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
+import { diskUpdate, measureComputerDisk } from "./computer-disk.js";
 import { screenLeaseIdForRun, toComputerRef } from "./computer-lifecycle.js";
 import { BrowserStillRunningError } from "./computer-screens.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
@@ -545,6 +546,11 @@ export async function sleepComputerIfIdle(
     updatedAt: checkpointedAt,
   };
 
+  // Read beside the save so the warning and the next run's note show what the last run left,
+  // including when the save fails because build output outgrew it.
+  const disk = measureComputerDisk(deps.sandbox, ref, ctx).then((measured) =>
+    measured ? diskUpdate(measured) : {},
+  );
   let damaged = false;
   try {
     const revision = await checkpointComputerWorkspace(
@@ -569,7 +575,7 @@ export async function sleepComputerIfIdle(
     if (saved.count !== 1) {
       await deps.prisma.computer.updateMany({
         where: suspensionClaim,
-        data: { state: "running" },
+        data: { ...(await disk), state: "running" },
       });
       scheduleComputerSleep(deps.jobs, computerId);
       return;
@@ -607,7 +613,7 @@ export async function sleepComputerIfIdle(
     } else {
       await deps.prisma.computer.updateMany({
         where: suspensionClaim,
-        data: { state: "running" },
+        data: { ...(await disk), state: "running" },
       });
       scheduleComputerSleep(deps.jobs, computerId, undefined, rateLimitEnds(error));
       if (deferSleep(error, computer)) {
@@ -632,7 +638,7 @@ export async function sleepComputerIfIdle(
   if (activeAfterCheckpoint || takeoverAfterCheckpoint || backgroundAfterCheckpoint) {
     await deps.prisma.computer.updateMany({
       where: suspensionClaim,
-      data: { state: "running" },
+      data: { ...(await disk), state: "running" },
     });
     scheduleComputerSleep(
       deps.jobs,
@@ -649,7 +655,7 @@ export async function sleepComputerIfIdle(
   ) {
     await deps.prisma.computer.updateMany({
       where: suspensionClaim,
-      data: { state: "running" },
+      data: { ...(await disk), state: "running" },
     });
     scheduleComputerSleep(deps.jobs, computerId);
     return;
@@ -662,7 +668,7 @@ export async function sleepComputerIfIdle(
   } catch (error) {
     await deps.prisma.computer.updateMany({
       where: suspensionClaim,
-      data: { state: "running" },
+      data: { ...(await disk), state: "running" },
     });
     scheduleComputerSleep(deps.jobs, computerId, undefined, rateLimitEnds(error));
     if (deferSleep(error, computer)) {
@@ -674,6 +680,7 @@ export async function sleepComputerIfIdle(
   const suspended = await deps.prisma.computer.updateMany({
     where: suspensionClaim,
     data: {
+      ...(await disk),
       state: "suspended",
       runningSince: null,
       controlHolder: "none",

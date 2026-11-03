@@ -690,6 +690,10 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   Stop: "停止",
   Submit: "提交",
   "Take control": "接管控制",
+  "Clean up": "清理",
+  "Computer is {percent}% full": "電腦已使用 {percent}% 空間",
+  "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need.":
+    "電腦的磁碟快滿了。請刪除不再需要的建置輸出和快取，以釋放空間。",
   "Tap + to create a bot": "點按 + 建立機器人",
   Team: "團隊",
   "Team Computer": "團隊電腦",

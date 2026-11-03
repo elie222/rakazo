@@ -712,6 +712,7 @@ export const appContract = {
       .input(z.object({ id: Id, workersStopped: z.literal(true) }))
       .output(z.object({ ok: z.literal(true) })),
     dismissUpdate: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
+    dismissDiskWarning: oc.input(botId).output(z.object({ ok: z.literal(true) })),
     takeover: oc.input(botId).output(z.object({ leaseId: Id, expiresAt: z.string() })),
     release: oc
       .input(

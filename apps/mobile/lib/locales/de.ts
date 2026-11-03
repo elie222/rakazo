@@ -520,6 +520,10 @@ export const DE_MESSAGES: Record<string, string> = {
   Release: "Freigeben",
   Skip: "Überspringen",
   "Take control": "Kontrolle übernehmen",
+  "Clean up": "Aufräumen",
+  "Computer is {percent}% full": "Computer ist zu {percent} % voll",
+  "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need.":
+    "Die Festplatte deines Computers ist fast voll. Schaffe Platz, indem du Build-Ausgaben und Caches entfernst, die du nicht mehr brauchst.",
   "You have control": "Du hast die Kontrolle",
   "Active model": "Aktives Modell",
   "Authorization code": "Autorisierungscode",
