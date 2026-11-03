@@ -781,10 +781,12 @@ export async function runTrial(
       where: { botId },
       select: { name: true, prompt: true, crons: true, active: true },
     });
-    // schedule_cancel deletes the routine, but its creation event stays in the thread.
-    const routinesCreated = await prisma.event.count({
-      where: { botId, type: "routine.created" },
-    });
+    // schedule_cancel deletes the routine, but its creation event stays in the thread. The event
+    // append is best-effort, so a routine that still exists counts even without one.
+    const routinesCreated = Math.max(
+      routines.length,
+      await prisma.event.count({ where: { botId, type: "routine.created" } }),
+    );
     await captureTools();
     const finalStep = scenario.steps.length;
     const evidence: Evidence = {
