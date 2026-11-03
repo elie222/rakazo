@@ -53,7 +53,7 @@ internal object SenderPush {
     val body = data.optString("notificationBody")
     // Like the app's foreground handler, a push that arrives while the app is open stays quiet.
     val channel = when {
-      foreground && Build.VERSION.SDK_INT < 29 -> Channels.LIVE
+      foreground && Build.VERSION.SDK_INT < 31 -> Channels.LIVE
       data.optString("kind") in setOf("help", "takeover", "failure") -> Channels.ATTENTION
       else -> Channels.MESSAGES
     }
@@ -68,10 +68,11 @@ internal object SenderPush {
       .setAutoCancel(true)
       .setCategory(Notification.CATEGORY_MESSAGE)
       .apply { if (data.has("notificationBadge")) setNumber(data.optInt("notificationBadge")) }
-      .apply { if (foreground && Build.VERSION.SDK_INT >= 29) setSilent(true) }
+      .apply { if (foreground && Build.VERSION.SDK_INT >= 31) setSilent(true) }
       .addExtras(Bundle().apply {
         putString("rakazo.botId", botId)
         putString("rakazo.threadId", threadId)
+        data.optString("runId").takeIf(String::isNotBlank)?.let { putString(RakazoNotificationService.EXTRA_RUN_ID, it) }
         data.optString("groupId").takeIf(String::isNotBlank)?.let { putString("rakazo.groupId", it) }
       })
     runCatching { addSender(context, builder, data, title, body) }

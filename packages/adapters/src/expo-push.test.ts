@@ -901,6 +901,7 @@ it("uses data-only delivery only for Android builds that registered sender suppo
       body: "Draft ready",
       botId: "bot",
       threadId: "thread",
+      runId: "run",
       sender: { botId: "bot", name: "Marketing" },
       badge: 3,
     },
@@ -915,6 +916,7 @@ it("uses data-only delivery only for Android builds that registered sender suppo
     notificationTitle: "Marketing",
     notificationBody: "Draft ready",
     notificationBadge: 3,
+    runId: "run",
     sender: { botId: "bot", name: "Marketing" },
   });
   expect(request).not.toHaveProperty("priority");
