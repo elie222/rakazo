@@ -14,7 +14,7 @@ import {
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Platform, View } from "react-native";
+import { I18nManager, Platform, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { readableGutters } from "../../lib/adaptive-layout";
@@ -31,7 +31,11 @@ import { useInboxBot } from "../../lib/search-inbox";
 import { useSplitView } from "../../lib/split-view";
 import { useIncomingShareImport, useThreadAttachments } from "../../lib/thread-attachments";
 import { useThreadBots } from "../../lib/thread-bots";
-import { threadHeaderClearance, threadHeaderFloats } from "../../lib/thread-edges";
+import {
+  threadColumnPadding,
+  threadHeaderClearance,
+  threadHeaderFloats,
+} from "../../lib/thread-edges";
 import { useThreadFeedback } from "../../lib/thread-feedback";
 import { useThreadFocus } from "../../lib/thread-focus";
 import { useThreadSnapshot } from "../../lib/thread-history";
@@ -52,8 +56,6 @@ import { useThreadTranscript } from "../../lib/thread-transcript";
 import { useAutoSpeakReply, useSpeakMessages, useThreadVoiceCall } from "../../lib/thread-voice";
 import { liveEndRunError } from "../../lib/thread-window";
 import { FailedSendBubble } from "../failed-send-bubble";
-import type { MarkdownArtifactPreviewTarget } from "../markdown-artifact-preview";
-import { MarkdownArtifactPreview } from "../markdown-artifact-preview";
 import { RunErrorSheet } from "../run-error-sheet";
 import { SelectTextSheet } from "../select-text-sheet";
 import { ThreadComposer } from "../thread-composer";
@@ -94,6 +96,10 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     right: insets.right,
   });
   const columnWidth = windowWidth - columnInsets.left - columnInsets.right;
+  const columnPadding = useMemo(
+    () => threadColumnPadding(columnInsets, I18nManager.isRTL),
+    [columnInsets.left, columnInsets.right],
+  );
   const {
     botId,
     groupId,
@@ -114,8 +120,10 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const inGroup = Boolean(groupId);
   const call = useCallSession();
   const onCall = Boolean(botId) && call?.botId === botId;
-  // The list's space that the composer does not cover; a read-only chat has no composer.
-  const bottomInset = readOnly ? insets.bottom : 0;
+  // The composer floats over the list, which scrolls underneath; this keeps the newest message
+  // clear of it. A read-only chat has no composer.
+  const [dockHeight, setDockHeight] = useState(0);
+  const bottomInset = Math.max(dockHeight, readOnly ? insets.bottom : 0);
   const activeBotId = useRef(botId);
   activeBotId.current = botId;
   const activeGroupId = useRef(groupId);
@@ -195,9 +203,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const feedback = useThreadFeedback(threadKey, newClientId, echoed);
   const { error, setError } = feedback;
   const [selectableText, setSelectableText] = useState<string | null>(null);
-  const [markdownPreview, setMarkdownPreview] = useState<MarkdownArtifactPreviewTarget | null>(
-    null,
-  );
   const transcript = useThreadTranscript(snap?.messages, inGroup);
   const { reactionView, peerTranscript, setExpandedPeerMarkers } = transcript;
   const visibleMessages = transcript.visibleMessages;
@@ -208,7 +213,12 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         query: "",
         includeEveryone: inGroup,
         currentGroupId: groupId,
-        bots: mentionBots.map((bot) => ({ id: bot.id, name: bot.name, color: bot.color })),
+        bots: mentionBots.map((bot) => ({
+          id: bot.id,
+          name: bot.name,
+          color: bot.color,
+          avatarSet: bot.avatarSet,
+        })),
         groups: mentionGroups.map((group) => ({ id: group.id, name: group.name })),
         routines: mentionRoutines.map((routine) => ({
           id: routine.id,
@@ -421,7 +431,9 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     answer: composer.answer,
     openBot,
     openComputer,
-    previewMarkdown: setMarkdownPreview,
+    // A chat attachment opens the version it was sent with, not the newest.
+    previewFile: (artifactId) =>
+      router.push({ pathname: "/artifact", params: { artifactId, exact: "1" } }),
     previewImage: (target) =>
       router.push({
         pathname: "/image",
@@ -548,74 +560,81 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         style={{
           flex: 1,
           backgroundColor: tokens.background,
-          paddingLeft: 20 + columnInsets.left,
-          paddingRight: 20 + columnInsets.right,
         }}
       >
-        <ThreadMessageList
-          scroll={scroll}
-          pinnedListHandlers={paging.pinnedListHandlers}
-          threadKey={threadKey}
-          headerClearance={headerClearance}
-          bottomInset={bottomInset}
-          visibleMessages={visibleMessages}
-          liveItems={liveItems}
-          renderItem={renderItem}
-          renderMessageRow={renderMessageRow}
-          loadEarlierControl={loadEarlierControl}
-          failedSendBubbles={failedSendBubbles}
-          errorNotice={errorNotice}
-          workingFooter={workingFooter}
-          loadingNewer={paging.loadingNewer}
-          showLatest={showLatest}
-        />
-        <ThreadFetchErrorNotice error={error} showingSaved={showingSaved} />
-        {/* Shrinks (the suggestion lists scroll) so the input and Send stay above the keyboard. */}
-        <ThreadComposerDock
-          hidden={readOnly}
-          fadeStyle={styles.composerFade}
-          replyTarget={replyTarget}
-          replyAuthor={
-            replyTarget?.role === "user"
-              ? (channelMessageSender(replyTarget.blocks) ?? t("You"))
-              : (memberName(snap?.members, replyTarget?.botId) ?? displayName ?? t("Bot"))
-          }
-          replyQuote={replyQuote}
-          threadTarget={artifactTarget}
-          onDismissReply={() => {
-            setReplyTarget(null);
-            setReplyQuote(null);
-          }}
-          attachmentNotice={attachments.attachmentNotice}
-          attachments={attachments.activePendingAttachments}
-          onRemoveAttachment={(id) =>
-            attachments.setPendingAttachments((current) => current.filter((item) => item.id !== id))
-          }
-        >
-          <ThreadComposer
-            key={threadKey}
-            ref={composer.composerRef}
-            draftScope={draftScope}
-            agentSkills={agentSkills}
-            composerMentionTargets={composerMentionTargets}
-            onMentionRequested={onMentionRequested}
-            composerPrompt={composerPrompt}
-            replyTargetId={replyTarget?.id}
-            replyQuote={replyQuote}
-            attachmentIds={attachments.activePendingAttachments.map((attachment) => attachment.id)}
-            botId={botId}
-            onCall={onCall}
-            working={working}
-            sending={composer.sending || attachments.shareImporting}
-            styles={styles}
-            attachActions={attachments.attachActions}
-            attachFrom={attachments.attachFrom}
-            send={composer.send}
-            stop={composer.stop}
-            startVoiceCall={startVoiceCall}
-            onSlashAction={composer.runSlashAction}
+        {/* The keyboard's padding shrinks this, so the floating composer rides above it. */}
+        <View style={{ flex: 1 }}>
+          <ThreadMessageList
+            scroll={scroll}
+            pinnedListHandlers={paging.pinnedListHandlers}
+            threadKey={threadKey}
+            headerClearance={headerClearance}
+            bottomInset={bottomInset}
+            columnPadding={columnPadding}
+            visibleMessages={visibleMessages}
+            liveItems={liveItems}
+            renderItem={renderItem}
+            renderMessageRow={renderMessageRow}
+            loadEarlierControl={loadEarlierControl}
+            failedSendBubbles={failedSendBubbles}
+            errorNotice={errorNotice}
+            workingFooter={workingFooter}
+            loadingNewer={paging.loadingNewer}
+            showLatest={showLatest}
           />
-        </ThreadComposerDock>
+          {/* Shrinks (the suggestion lists scroll) so the input and Send stay above the keyboard. */}
+          <ThreadComposerDock
+            hidden={readOnly}
+            columnPadding={columnPadding}
+            notice={<ThreadFetchErrorNotice error={error} showingSaved={showingSaved} />}
+            onHeight={setDockHeight}
+            replyTarget={replyTarget}
+            replyAuthor={
+              replyTarget?.role === "user"
+                ? (channelMessageSender(replyTarget.blocks) ?? t("You"))
+                : (memberName(snap?.members, replyTarget?.botId) ?? displayName ?? t("Bot"))
+            }
+            replyQuote={replyQuote}
+            threadTarget={artifactTarget}
+            onDismissReply={() => {
+              setReplyTarget(null);
+              setReplyQuote(null);
+            }}
+            attachmentNotice={attachments.attachmentNotice}
+            attachments={attachments.activePendingAttachments}
+            onRemoveAttachment={(id) =>
+              attachments.setPendingAttachments((current) =>
+                current.filter((item) => item.id !== id),
+              )
+            }
+          >
+            <ThreadComposer
+              key={threadKey}
+              ref={composer.composerRef}
+              draftScope={draftScope}
+              agentSkills={agentSkills}
+              composerMentionTargets={composerMentionTargets}
+              onMentionRequested={onMentionRequested}
+              composerPrompt={composerPrompt}
+              replyTargetId={replyTarget?.id}
+              replyQuote={replyQuote}
+              attachmentIds={attachments.activePendingAttachments.map(
+                (attachment) => attachment.id,
+              )}
+              botId={botId}
+              onCall={onCall}
+              working={working}
+              sending={composer.sending || attachments.shareImporting}
+              styles={styles}
+              attachActions={attachments.attachActions}
+              attachFrom={attachments.attachFrom}
+              send={composer.send}
+              stop={composer.stop}
+              startVoiceCall={startVoiceCall}
+              onSlashAction={composer.runSlashAction}
+            />
+          </ThreadComposerDock>
+        </View>
         {botActionsOpen ? <BotActionsModal actions={botActions} onClose={closeBotActions} /> : null}
         {selectableText !== null ? (
           <SelectTextSheet text={selectableText} onClose={() => setSelectableText(null)} />
@@ -625,13 +644,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
           onClose={() => setDetailsOpen(false)}
           action={runErrorAction}
         />
-        {markdownPreview && artifactTarget ? (
-          <MarkdownArtifactPreview
-            threadTarget={artifactTarget}
-            target={markdownPreview}
-            onClose={() => setMarkdownPreview(null)}
-          />
-        ) : null}
         {quoteTarget ? (
           <QuoteSheet
             message={quoteTarget}

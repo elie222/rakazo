@@ -101,11 +101,6 @@ msgstr "{0} {unitLabel}"
 msgid "{0} connection"
 msgstr "{0} 연결"
 
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} default"
-msgstr ""
-
 #. placeholder {0}: parts.amount
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} GB"
@@ -150,11 +145,6 @@ msgstr ""
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} TB"
 msgstr "{0} TB"
-
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} will still respond to direct mentions."
-msgstr ""
 
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
@@ -422,7 +412,7 @@ msgstr "@{0}"
 
 #: src/components/ModelCredits.tsx
 msgid "/ month"
-msgstr ""
+msgstr "/ 월"
 
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
@@ -453,6 +443,14 @@ msgstr ""
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
 msgstr "{label} 정보"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key ID"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key secret"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Access token (optional)"
@@ -801,6 +799,7 @@ msgid "Any model, with your own key"
 msgstr ""
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/lib/localized-provider-hint.ts
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/model-settings/compatible-key-field.tsx
@@ -821,6 +820,14 @@ msgstr "API 키 헤더"
 #: src/pages/shell/agent-import.tsx
 msgid "API keys"
 msgstr "API 키"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API URL"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
@@ -962,10 +969,6 @@ msgstr "자동"
 msgid "Automated senders"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Automated senders will appear after they post here."
-msgstr ""
-
 #: src/pages/RoutineEditor.tsx
 msgid "Available after the routine is saved"
 msgstr "루틴을 저장한 후 사용할 수 있습니다"
@@ -1029,7 +1032,7 @@ msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Billing period"
-msgstr ""
+msgstr "결제 주기"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
@@ -1151,7 +1154,6 @@ msgid "Can't reach the server."
 msgstr "서버에 연결할 수 없습니다."
 
 #: src/components/TextOnlyMark.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "이미지를 읽을 수 없음"
@@ -1477,10 +1479,6 @@ msgstr "열 {index}"
 msgid "Comfortable"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
-msgid "Coming soon"
-msgstr "준비 중"
-
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Command"
@@ -1589,6 +1587,7 @@ msgstr "이 브라우저 세션에서 URL에 연결할 수 있는지 확인한 �
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
+#: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connect"
 msgstr "연결"
@@ -1994,6 +1993,10 @@ msgstr ""
 msgid "Could not load bots. Reload to try again."
 msgstr ""
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not load computer settings"
+msgstr ""
+
 #: src/components/VaultSettings.tsx
 msgid "Could not load credentials."
 msgstr ""
@@ -2154,6 +2157,10 @@ msgstr "저장하지 못했습니다."
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
 msgstr "자동 검토를 저장할 수 없습니다"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not save computer settings"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "Could not save group"
@@ -2410,6 +2417,10 @@ msgstr "{label} 맞춤설정"
 msgid "Customize bot avatar"
 msgstr "봇 아바타 맞춤설정"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Daily check-ins on unfinished work"
+msgstr "미완료 작업 매일 확인"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Dark"
@@ -2548,6 +2559,11 @@ msgstr "거부됨"
 msgid "Deny"
 msgstr "거부"
 
+#. placeholder {0}: settings.defaultProvider
+#: src/components/ComputerProviderSettings.tsx
+msgid "Deployment default ({0})"
+msgstr ""
+
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Description"
@@ -2559,6 +2575,10 @@ msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop app"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Desktop ID"
 msgstr ""
 
 #: src/components/DesktopUpdates.tsx
@@ -2585,6 +2605,10 @@ msgstr ""
 #: src/lib/dictation.ts
 msgid "Dictation failed."
 msgstr ""
+
+#: src/pages/Auth.tsx
+msgid "Did you mean <0>{emailSuggestion}</0>?"
+msgstr "<0>{emailSuggestion}</0>을(를) 입력하려고 하셨나요?"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
@@ -2765,12 +2789,12 @@ msgstr "이메일 인증이 필요합니다"
 msgid "Enable {0}"
 msgstr "{0} 활성화"
 
-#: src/lib/billing.ts
-msgid "Ends {day}"
+#: src/components/ComputerProviderSettings.tsx
+msgid "End user ID"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Engage when... Ignore..."
+#: src/lib/billing.ts
+msgid "Ends {day}"
 msgstr ""
 
 #: src/components/GitHubStarPrompt.tsx
@@ -2803,6 +2827,10 @@ msgstr "이미지 한도는 1에서 1000 사이의 정수로 입력하세요."
 #: src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
 msgstr "테스트하기 전에 API 키를 입력하세요."
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Environment ID"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
@@ -2861,6 +2889,10 @@ msgstr "매시간"
 #: src/lib/cron.ts
 msgid "Every hour at :{0}"
 msgstr "매시간 {0}분"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Every message"
+msgstr "모든 메시지"
 
 #: src/lib/cron.ts
 msgid "Every Monday"
@@ -3025,7 +3057,6 @@ msgid "Forgot password?"
 msgstr "비밀번호를 잊으셨나요?"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "무료"
 
@@ -3067,6 +3098,14 @@ msgstr "전체 화면"
 #: src/pages/Onboarding.tsx
 msgid "Gateway ID"
 msgstr "게이트웨이 ID"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway URL"
+msgstr ""
 
 #: src/pages/settings-nav.ts
 #: src/pages/SettingsOverlay.tsx
@@ -3346,6 +3385,10 @@ msgstr "지침 {position}"
 msgid "Instructions are too long. Untick some files."
 msgstr "지침이 너무 깁니다. 일부 파일의 선택을 해제하세요."
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Instructions for this room"
+msgstr "이 방을 위한 지침"
+
 #: src/components/AskCard.tsx
 msgid "Instructions updated"
 msgstr "지침 업데이트됨"
@@ -3464,10 +3507,6 @@ msgstr "MEMORY.md와 함께 봇이 의미를 기준으로 사실을 저장하고
 msgid "Light"
 msgstr "라이트"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Linear issue"
-msgstr "Linear 이슈"
-
 #: src/pages/SpaceSearch.tsx
 msgid "Link"
 msgstr ""
@@ -3484,12 +3523,7 @@ msgstr "SSO 연결"
 msgid "List view"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Listen"
-msgstr ""
-
 #: src/components/call/CallCard.tsx
-#: src/pages/ExternalConversationSettings.tsx
 msgid "Listening"
 msgstr ""
 
@@ -3825,7 +3859,6 @@ msgstr "모드"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3846,7 +3879,7 @@ msgstr "모델 연결"
 msgid "Model id"
 msgstr "모델 ID"
 
-#: src/pages/model-settings/model-picker.tsx
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 msgid "Model options"
 msgstr "모델 선택지"
@@ -3861,8 +3894,8 @@ msgstr "AI 모델"
 msgid "Models at provider cost"
 msgstr ""
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Models from server"
 msgstr "서버에서 찾은 모델"
 
@@ -3926,6 +3959,10 @@ msgstr "음소거"
 
 #: src/components/call/CallCard.tsx
 msgid "Muted"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "My computers"
 msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
@@ -4001,6 +4038,10 @@ msgstr ""
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "New bot"
 msgstr "새 Bot 만들기"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "New computers run on"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"
@@ -4092,7 +4133,6 @@ msgid "No matching artifacts on this page."
 msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -4279,6 +4319,10 @@ msgstr "한 번"
 msgid "One-time purchase. Credits do not expire."
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "Only enter a code {codeHost} sent you."
+msgstr ""
+
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/shell/computer-panel.tsx
@@ -4360,6 +4404,10 @@ msgstr "선택 사항인 헤더 값"
 msgid "Or paste an API key"
 msgstr "또는 API 키 붙여넣기"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Organization"
+msgstr ""
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
 msgstr "조직 API 키"
@@ -4372,8 +4420,8 @@ msgstr ""
 msgid "Original message unavailable"
 msgstr "원본 메시지를 사용할 수 없습니다"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "다른 모델 직접 입력…"
 
@@ -4393,10 +4441,6 @@ msgstr "{page} / {count}페이지"
 #: src/pages/NotFound.tsx
 msgid "Page not found"
 msgstr "페이지를 찾을 수 없습니다"
-
-#: src/pages/RoutineEditor.tsx
-msgid "PagerDuty incident"
-msgstr "PagerDuty 인시던트"
 
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
@@ -4776,6 +4820,10 @@ msgstr "화면 새로고침"
 msgid "Refreshing…"
 msgstr "새로고침 중…"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Region"
+msgstr ""
+
 #: src/lib/user-error.ts
 msgid "Registration is closed"
 msgstr "가입이 마감되었습니다"
@@ -4802,6 +4850,7 @@ msgid "Release control"
 msgstr "제어권 넘기기"
 
 #: src/components/InstructionSettings.tsx
+#: src/lib/client-update.ts
 msgid "Reload"
 msgstr "새로고침"
 
@@ -4917,6 +4966,10 @@ msgstr "키 교체"
 msgid "Replace value"
 msgstr ""
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Replies to"
+msgstr "응답 대상"
+
 #: src/pages/shell/message-hover-actions.tsx
 #: src/pages/shell/quote-selection-button.tsx
 msgid "Reply"
@@ -4944,6 +4997,7 @@ msgid "Research & writing"
 msgstr ""
 
 #: src/components/ComputerMaintenanceActions.tsx
+#: src/pages/ExternalConversationSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Reset"
 msgstr "재설정"
@@ -5054,8 +5108,8 @@ msgstr "연결 해제"
 msgid "Revoked"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Room guidance"
+#: src/components/ComputerProviderSettings.tsx
+msgid "Root filesystem"
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx
@@ -5124,11 +5178,16 @@ msgstr ""
 msgid "Sales & CRM"
 msgstr ""
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Same as {botName}"
+msgstr "{botName}와(과) 동일"
+
 #: src/lib/cron.ts
 msgid "Saturday"
 msgstr "토요일"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5163,6 +5222,7 @@ msgid "Save to Vault"
 msgstr "보관함에 저장"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Saved"
@@ -5217,8 +5277,8 @@ msgstr "범위 (선택 사항)"
 msgid "Screen not connected"
 msgstr "화면이 연결되지 않음"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5251,8 +5311,8 @@ msgstr ""
 msgid "Search integrations.sh"
 msgstr ""
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"
@@ -5340,10 +5400,6 @@ msgstr "보내는 중…"
 msgid "Sent"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
-msgid "Sentry alert"
-msgstr "Sentry 알림"
-
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Serenity endpoint is required."
 msgstr ""
@@ -5392,6 +5448,7 @@ msgstr "설정 완료"
 msgid "Setup help"
 msgstr "설정 도움말"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Shape"
 msgstr "모양"
@@ -5458,7 +5515,6 @@ msgstr ""
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign in"
 msgstr "로그인"
 
@@ -5494,7 +5550,6 @@ msgid "Sign in with the subscription, or test the API key instead."
 msgstr "구독으로 로그인하거나 대신 API 키를 테스트하세요."
 
 #: src/pages/Auth.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign up"
 msgstr "가입하기"
 
@@ -5660,6 +5715,18 @@ msgstr "작업 녹화 시작"
 msgid "Start your plan now?"
 msgstr "지금 요금제를 시작할까요?"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}d late"
+msgstr "{count}일 늦게 시작됨"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}h late"
+msgstr "{count}시간 늦게 시작됨"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}m late"
+msgstr "{count}분 늦게 시작됨"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "시작 중"
@@ -5736,7 +5803,7 @@ msgstr "구독"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe for {annualPrice} / year"
-msgstr ""
+msgstr "연 {annualPrice}에 구독"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
@@ -5768,9 +5835,18 @@ msgstr "이미지 지원"
 msgid "Supports thinking"
 msgstr "사고 모드 지원"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
-msgstr ""
+msgstr "전환"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly"
+msgstr "연간 결제로 전환"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly?"
+msgstr "연간 결제로 전환할까요?"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
@@ -5788,6 +5864,10 @@ msgstr "표"
 #: src/pages/shell/computer-overlay.tsx
 msgid "Take control"
 msgstr "제어권 가져오기"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Target"
+msgstr ""
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
@@ -5809,8 +5889,8 @@ msgstr "팀 컴퓨터"
 msgid "Teams message"
 msgstr "Teams 메시지"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Teams not enabled"
+#: src/components/ComputerProviderSettings.tsx
+msgid "Template"
 msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
@@ -5938,6 +6018,7 @@ msgid "This browser has no on-device dictation. Connect a voice provider with tr
 msgstr ""
 
 #: src/components/call/IncomingCall.tsx
+#: src/lib/user-error.ts
 msgid "This call is no longer ringing."
 msgstr ""
 
@@ -6248,6 +6329,10 @@ msgstr "지침을 업데이트할까요?"
 msgid "Update progress"
 msgstr ""
 
+#: src/lib/client-update.ts
+msgid "Update required"
+msgstr "업데이트가 필요합니다"
+
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"
 msgstr ""
@@ -6312,10 +6397,6 @@ msgstr "찾은 모델 중에서 선택"
 #: src/lib/model-connection-preflight.ts
 msgid "Use Connect to verify the key."
 msgstr "키를 확인하려면 연결을 사용하세요."
-
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Use default guidance"
-msgstr ""
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Use defaults"
@@ -6571,7 +6652,7 @@ msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Yearly"
-msgstr ""
+msgstr "연간"
 
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
@@ -6607,6 +6688,10 @@ msgstr "직접 조작 중"
 msgid "Your Anthropic"
 msgstr "사용 중인 Anthropic"
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged {annualPrice} today, less the unused part of this month."
+msgstr "오늘 카드에서 {annualPrice}이 결제되며, 이번 달 사용하지 않은 금액은 차감됩니다."
+
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr ""
@@ -6638,6 +6723,10 @@ msgstr "사용 중인 OpenAI"
 msgid "Your OpenRouter"
 msgstr "사용 중인 OpenRouter"
 
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {annualPrice} / year when your trial ends."
+msgstr "체험 기간이 끝나면 요금제가 연 {annualPrice}로 바뀝니다."
+
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"
 msgstr ""
@@ -6645,10 +6734,6 @@ msgstr ""
 #: src/components/ModelCredits.tsx
 msgid "Your subscription or API key"
 msgstr ""
-
-#: src/pages/Welcome.tsx
-msgid "Your team of always-on agents<0/>that you can give real work to."
-msgstr "언제든 실제 작업을 맡길 수 있는<0/>나만의 Agent 팀"
 
 #: src/components/ModelCredits.tsx
 msgid "Your trial ends and your card is charged {price} today."

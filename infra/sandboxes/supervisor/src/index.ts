@@ -532,14 +532,14 @@ app.post("/computers/:id/exec", async (c) => {
   });
 });
 
-// The bot's folder in the computer's home that files its page downloads are saved to.
+// The bot's folder in the computer's home that files its page downloads, and PDFs its tabs show, are saved to.
 const downloadFolder = z.string().min(1).max(1024).optional();
 
 app.post("/computers/:id/browser", async (c) => {
   // Read eagerly so the Node HTTP adapter observes disconnects during screen setup too.
   const signal = c.req.raw.signal;
   signal.throwIfAborted();
-  const body = z
+  const parsed = z
     .discriminatedUnion("command", [
       z.object({
         command: z.literal("navigate"),
@@ -554,14 +554,42 @@ app.post("/computers/:id/browser", async (c) => {
           }),
         downloads: downloadFolder,
       }),
-      z.object({ command: z.literal("snapshot"), query: z.string().max(200).optional() }),
+      z.object({
+        command: z.literal("snapshot"),
+        query: z.string().max(200).optional(),
+        downloads: downloadFolder,
+      }),
+      z.object({
+        command: z.literal("purchase_check"),
+        // Only clicks are looked at; `desktop` asks about a click or key on the screen instead.
+        actions: z
+          .array(z.object({ kind: z.string().max(40), ref: z.string().max(200).optional() }))
+          .max(24)
+          .optional(),
+        desktop: z.boolean().optional(),
+        enter: z.boolean().optional(),
+        unplaced: z.boolean().optional(),
+        points: z
+          .array(z.object({ x: z.number().finite(), y: z.number().finite() }))
+          .max(24)
+          .optional(),
+      }),
       z.object({
         command: z.literal("act"),
         downloads: downloadFolder,
         actions: z
           .array(
             z.discriminatedUnion("kind", [
-              z.object({ kind: z.literal("click"), ref: z.string().min(1).max(200) }),
+              z.object({
+                kind: z.literal("click"),
+                ref: z.string().min(1).max(200),
+                // The user approved a purchase click on this site (see rakazo-page-browser).
+                approved: z.boolean().optional(),
+                // Empty for a page without a host (about:blank, data:, file:).
+                site: z.string().max(253).optional(),
+                label: z.string().max(200).optional(),
+                amount: z.string().max(100).optional(),
+              }),
               z.object({
                 kind: z.literal("upload"),
                 ref: z.string().min(1).max(200),
@@ -580,7 +608,7 @@ app.post("/computers/:id/browser", async (c) => {
                   ref: z.string().min(1).max(200).optional(),
                   text: z.string().max(32_000),
                   origin: z.string().url().max(2048).optional(),
-                  field: z.enum(["username", "password", "card"]).optional(),
+                  field: z.enum(["username", "password", "card", "code"]).optional(),
                   cardField: z.enum(["number", "expiry", "cvc", "postal_code"]).optional(),
                 })
                 // The field decides which input types the helper accepts for a saved login or card.
@@ -589,6 +617,12 @@ app.post("/computers/:id/browser", async (c) => {
                 .refine(
                   (step) => step.field !== "card" || step.origin,
                   "A card fill needs its origin",
+                )
+                // A one-time code goes into one field of the site that asked for it.
+                .refine(
+                  (step) =>
+                    step.field !== "code" || (step.kind === "fill" && step.ref && step.origin),
+                  "A code fill needs its ref and origin",
                 )
                 .refine(
                   (step) =>
@@ -603,7 +637,17 @@ app.post("/computers/:id/browser", async (c) => {
           .max(24),
       }),
     ])
-    .parse(await c.req.json());
+    .safeParse(await c.req.json());
+  // Refused here, before anything reaches the computer: the caller learns by this code alone that
+  // nothing ran, and may keep a one-time code for another try. Keep in step with the adapters'
+  // INVALID_BROWSER_REQUEST.
+  if (!parsed.success) {
+    return c.json(
+      { ok: false, code: "invalid_browser_request", error: "Invalid page browser request" },
+      400,
+    );
+  }
+  const body = parsed.data;
   const carriesSavedLogin =
     body.command === "act" && body.actions.some((step) => "origin" in step && step.origin);
   const screen = (reuseRecent: boolean) =>
@@ -648,8 +692,9 @@ app.post("/computers/:id/browser", async (c) => {
   try {
     const reusable = await screen(true);
     let result = await runHelper(reusable);
-    // A reused screen skipped setup, so a browser that has since exited gets it before one retry.
-    if (reusable.reused && pageBrowserNotReady(result))
+    // A reused screen skipped setup, so a browser that has since exited gets it before one retry. A
+    // purchase check presses nothing and never starts the browser again: no browser has nothing to buy.
+    if (reusable.reused && body.command !== "purchase_check" && pageBrowserNotReady(result))
       result = await runHelper(await screen(false));
     // A nonzero exit or malformed output cannot establish which mutations ran.
     if (result.code !== 0 || Buffer.byteLength(result.stdout) > 512 * 1024) {

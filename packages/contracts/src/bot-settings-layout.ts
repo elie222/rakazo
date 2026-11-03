@@ -9,6 +9,7 @@ export const BOT_SETTINGS_SECTIONS = {
     "memoryScope",
     "readAloud",
     "voice",
+    "dailyCheckIns",
     "crossSpaceCommunication",
     "fleetManagement",
     "instructions",

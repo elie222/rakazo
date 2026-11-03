@@ -8,11 +8,15 @@ name: Onboarding
 - extendedWaitUntil:
     visible: "Personal|Tap \\+ to create a bot"
     timeout: 20000
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 01-empty-inbox
 - openLink: "rakazo:///artifacts"
 - extendedWaitUntil:
     visible: "No artifacts yet|Artifacts"
     timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 02-empty-artifacts
 - openLink: "rakazo:///"
 - extendedWaitUntil:
@@ -23,9 +27,13 @@ name: Onboarding
 - extendedWaitUntil:
     visible: "What do you want me on first\\?"
     timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 04-choice-card
 - tapOn: "Day-to-day work"
 - extendedWaitUntil:
     notVisible: "Inbox & email"
     timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 05-choice-selected

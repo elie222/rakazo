@@ -3,6 +3,7 @@ import type {
   ArtifactStore,
   JobPublisher,
   MemoryStore,
+  NotificationProvider,
   PaymentWalletProvider,
   ProductAnalytics,
   SandboxProvider,
@@ -38,6 +39,7 @@ import { availabilityRoutes } from "./routes/availability.js";
 import { boardsRoutes } from "./routes/boards.js";
 import { botsRoutes } from "./routes/bots.js";
 import { computerRoutes } from "./routes/computer.js";
+import { computerProviderRoutes } from "./routes/computer-provider.js";
 import { connectionsRoutes } from "./routes/connections.js";
 import { contentRoutes } from "./routes/content.js";
 import { createRouterContext } from "./routes/context.js";
@@ -58,6 +60,8 @@ export { callMarkerClientNonce } from "./routes/threads.js";
 
 export interface RouterDeps {
   pushTokens: PushTokenStore;
+  /** Stops a call's ring on the owner's other devices once it is settled. */
+  notifications?: NotificationProvider;
   analytics?: ProductAnalytics;
   cloudAgent?: CloudAgentConnection | null;
   /** The deployment's wallet provider; absent hides purchases. */
@@ -151,6 +155,7 @@ export function createRouter(deps: RouterDeps) {
     ...botsRoutes(ctx),
     ...threadsRoutes(ctx),
     ...computerRoutes(ctx),
+    ...computerProviderRoutes(ctx),
     ...memoryRoutes(ctx),
     ...routinesRoutes(ctx),
     ...boardsRoutes(ctx),

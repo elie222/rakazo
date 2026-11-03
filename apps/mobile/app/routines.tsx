@@ -80,7 +80,7 @@ export default function Routines() {
         <>
           <Text style={styles.message}>{t("Could not load routines")}</Text>
           <NativeActionButton
-            label={t("Try Again")}
+            label={t("Try again")}
             variant="text"
             prominence="secondary"
             style={styles.retry}

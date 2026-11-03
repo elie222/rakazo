@@ -7,7 +7,7 @@ export function runErrorActionLabel(
 ) {
   if (error.recovery === "model") return t("Change model");
   if (error.recovery === "connection")
-    return error.kind === "auth" ? t("Replace key") : t("Add Model");
+    return error.kind === "auth" ? t("Replace key") : t("Add model");
   return null;
 }
 

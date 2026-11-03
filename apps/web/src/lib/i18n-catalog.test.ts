@@ -266,6 +266,43 @@ describe("lingui catalogs", () => {
     );
   });
 
+  it("says how late a run started for one and for many in every locale", () => {
+    const ids = ["Started {count}m late", "Started {count}h late", "Started {count}d late"];
+    for (const locale of UI_LOCALES.filter((locale) => locale !== "en")) {
+      const catalog = readFileSync(
+        fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
+        "utf8",
+      );
+      const messages = Object.fromEntries(
+        ids.map((id) => {
+          const entry = catalog
+            .split("\n\n")
+            .find((block) => block.includes(`msgid ${JSON.stringify(id)}\n`));
+          return [id, JSON.parse(entry?.match(/msgstr (".+")/)?.[1] ?? '""') as string];
+        }),
+      );
+      i18n.load(locale, messages);
+      i18n.activate(locale);
+      for (const id of ids) {
+        expect(messages[id], `${locale}: ${id}`).toBeTruthy();
+        for (const count of [1, 3]) {
+          const label = i18n._({ id, values: { count } });
+          expect(label, `${locale}: ${id}`).not.toMatch(/[{}]/);
+          if (!(locale === "he" && count === 1 && id.includes("d late"))) {
+            expect(label, `${locale}: ${id}`).toContain(String(count));
+          }
+        }
+      }
+    }
+    i18n.activate("he");
+    expect(i18n._({ id: "Started {count}d late", values: { count: 1 } })).toBe(
+      "התחיל באיחור של יום",
+    );
+    expect(i18n._({ id: "Started {count}d late", values: { count: 3 } })).toBe(
+      "התחיל באיחור של 3 ימים",
+    );
+  });
+
   it("translates counted peer exchanges and close controls in every locale", () => {
     const message = "{count, plural, one {# message with {peer}} other {# messages with {peer}}}";
     for (const locale of UI_LOCALES.filter((locale) => locale !== "en")) {

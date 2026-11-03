@@ -7,6 +7,7 @@ import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
 import { computersAreUnavailable } from "../components/ComputersUnavailableHint";
 import { SETTINGS_CONTENT_WIDTH, SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { VaultSettings } from "../components/VaultSettings";
+import { canChooseOwnComputer } from "../lib/computer-sandbox";
 import { desktopBridge } from "../lib/desktop";
 import { SpaceRpcProvider } from "../lib/space-rpc";
 import {
@@ -46,6 +47,7 @@ export function SettingsOverlay({
   billingEnabled = false,
   sandboxProvider,
   onSandboxProviderChange,
+  canConfigureComputers = false,
   messagingEnabled = false,
   paymentWalletProvider = null,
   memoryConfig,
@@ -73,6 +75,8 @@ export function SettingsOverlay({
   billingEnabled?: boolean;
   sandboxProvider?: string | null;
   onSandboxProviderChange?: (sandboxProvider: string) => void;
+  /** Admins choose where new computers run. */
+  canConfigureComputers?: boolean;
   messagingEnabled?: boolean;
   /** The wallet this deployment lets bots spend from; none hides Wallet. */
   paymentWalletProvider?: { id: string; name: string } | null;
@@ -90,7 +94,11 @@ export function SettingsOverlay({
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [keepComputerRecovery, setKeepComputerRecovery] = useState(false);
   const recoveryHoldTimer = useRef<number | undefined>(undefined);
-  const showComputer = keepComputerRecovery || computersAreUnavailable(sandboxProvider);
+  const showComputer =
+    canConfigureComputers ||
+    keepComputerRecovery ||
+    computersAreUnavailable(sandboxProvider) ||
+    canChooseOwnComputer(sandboxProvider);
   const showUpdates = Boolean(desktopBridge()?.update);
   // A section that isn't available yet (billing before its flag loads) shows General until it is.
   const section =
@@ -402,6 +410,7 @@ export function SettingsOverlay({
                         holdComputerRecovery();
                       }}
                       onRecoveryDismissed={releaseComputerRecovery}
+                      canConfigureComputers={canConfigureComputers}
                     />
                   ) : null}
                   {section === "billing" && billingEnabled ? <BillingSettingsPanel /> : null}

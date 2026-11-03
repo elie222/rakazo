@@ -86,13 +86,14 @@ export function choiceCardOptions(block: ChoiceBlock): ChoiceBlock["options"] {
     : block.options;
 }
 
-const THREAD_HORIZONTAL_PADDING = 20;
+/** Pads the content, not the scroll view, so the scroll indicator stays on the screen edge. */
+export const THREAD_COLUMN_GUTTER = 20;
 const MESSAGE_COLUMN_RATIO = 0.9;
 const CARD_MAX_WIDTH = 340;
 
 /** Width of a card in a normal bot row: thread padding, then the 90% column cap. */
 export function threadCardWidth(windowWidth: number): number {
-  const contentWidth = Math.max(0, windowWidth - THREAD_HORIZONTAL_PADDING * 2);
+  const contentWidth = Math.max(0, windowWidth - THREAD_COLUMN_GUTTER * 2);
   return Math.min(CARD_MAX_WIDTH, Math.floor(contentWidth * MESSAGE_COLUMN_RATIO));
 }
 

@@ -15,6 +15,7 @@ import {
   humanizeToolName,
   isBackgroundRunTrigger,
   redactSecrets,
+  redactSecretsAfter,
   TAKEOVER_COMPUTER_PENDING_STATE,
   userRunError,
   withoutLastToolStepNotes,
@@ -55,6 +56,7 @@ import {
   flushProgress,
   nextProgressNonce,
   publishMidTurnNarration,
+  publishNarrationBeforeAsk,
   recordExplicitNoResponse,
   showNarrationStatus,
   tryFlushPendingTools,
@@ -74,6 +76,7 @@ import {
   stripNoResponseReply,
   stripStrayNoResponse,
 } from "./silent-reply.js";
+import { isStrategicInitiativeRun } from "./strategic-initiative.js";
 import { takeoverCheckpointOf } from "./takeover-resume.js";
 import { appendToolCompletionAudit, toolCompletionFromResult } from "./tool-completion-audit.js";
 import {
@@ -92,6 +95,7 @@ import {
   finalBlocksAfterMidTurnProgress,
   STEERING_RESET_MIN_GAP_MS,
   STEERING_RESETS_MAX_PER_RUN,
+  USER_PROGRESS_MESSAGE_MAX_LENGTH,
 } from "./user-progress.js";
 
 type RuntimeEvent<T extends AgentRuntimeEvent["type"]> = Extract<AgentRuntimeEvent, { type: T }>;
@@ -134,6 +138,12 @@ export async function consumeRunEvents(
       if (!ctx.state.lease.valid) return true;
       if (await runLeaseLost(ctx)) return true;
 
+      if (
+        isStrategicInitiativeRun(run) &&
+        (event.type === "takeover" || event.type === "subagent")
+      ) {
+        throw new Error("Daily check-ins cannot start a computer or helper.");
+      }
       if (event.type === "thinking") {
         await publishThinking(event.active);
         continue;
@@ -295,29 +305,37 @@ async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) 
 }
 
 /**
- * The run's person wrote while the bot worked. What the bot wrote before that is posted as
- * its own message instead of running on into the reply to them, and the interim-message
- * budget starts again: the first note may answer them at once. Webhooks, external chats and
- * other members stay on the normal budget, and the restart is capped so a stream of messages
- * can't lift it.
+ * The run's person wrote while the bot worked: the next note may answer them at once, each time.
+ * The budget restart for unprompted updates stays capped. Webhooks, external chats and other
+ * members stay on the normal budget.
  */
 async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
   const { deps, run } = ctx;
   const { reply } = ctx.state;
   reply.assistantTurnBreakPending = true;
+  if (!event.fromRunUser) return;
   const now = Date.now();
   if (
-    !event.fromRunUser ||
     reply.steeringResets >= STEERING_RESETS_MAX_PER_RUN ||
     now - reply.lastSteeringResetAt < STEERING_RESET_MIN_GAP_MS
-  )
+  ) {
+    // What the bot wrote before may still use an earlier message's allowance. If it can't be
+    // posted now, it stays in the reply.
+    await flushProgress(ctx);
+    const before = extractNarrationText(reply.messageSegments, reply.currentTextSegment).text;
+    const text = redactSecretsAfter(reply.narrationSoFar, before, ctx.secrets).trim();
+    if (text.length <= USER_PROGRESS_MESSAGE_MAX_LENGTH && canPublishDurableNarration(ctx))
+      await publishMidTurnNarration(ctx);
+    reply.steeringReplyPending = true;
     return;
+  }
   reply.steeringResets += 1;
   reply.lastSteeringResetAt = now;
   await flushProgress(ctx);
   const before = extractNarrationText(reply.messageSegments, reply.currentTextSegment);
-  const text = redactSecrets(before.text, ctx.secrets).trim();
+  const text = redactSecretsAfter(reply.narrationSoFar, before.text, ctx.secrets).trim();
   if (text && runPromotesMidTurnNarration(run.trigger)) {
+    reply.narrationSoFar += before.text;
     reply.messageSegments = before.remaining;
     reply.currentTextSegment = "";
     reply.workingNotes.length = 0;
@@ -345,6 +363,7 @@ async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
 async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">) {
   const { deps, run, runId, bot, thread, workerId, fence } = ctx;
   if (!(await renewRunLease(deps, runId, workerId, fence))) return;
+  await publishNarrationBeforeAsk(ctx);
   const safeText = redactSecrets(event.text, ctx.secrets);
   const safeDetail = event.detail ? redactSecrets(event.detail, ctx.secrets) : event.detail;
   const safeActions = event.actions?.map((action) => ({
@@ -472,7 +491,11 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   await flushProgress(ctx);
   // Queued first so the text written before this call becomes its note.
   reply.pendingToolNames.push(event.name);
-  const heldNote = event.name === "message_user" ? undefined : await publishMidTurnNarration(ctx);
+  // Text before ask_user stays pending: the run pauses next, and the question needs it.
+  const heldNote =
+    event.name === "message_user" || event.name === "ask_user"
+      ? undefined
+      : await publishMidTurnNarration(ctx);
   // A step without a note of its own replaces the earlier one in the live view, so its status
   // lines show again.
   if (!heldNote) reply.narrationStatusShowing = false;
@@ -675,7 +698,7 @@ export async function completeRun(ctx: RunContext) {
   reply.pendingProgress += reply.redactor.finish();
   await flushProgress(ctx);
 
-  for (const turn of ctx.script ?? []) {
+  for (const turn of isStrategicInitiativeRun(run) ? [] : (ctx.script ?? [])) {
     for (const file of turn.files ?? []) {
       ctx.computer.checkpoint.markDirty();
       await deps.sandbox.writeFile(

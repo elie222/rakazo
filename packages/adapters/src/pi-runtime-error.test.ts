@@ -121,6 +121,10 @@ describe("Pi runtime errors", () => {
     "Unhandled stop reason: MALFORMED_RESPONSE",
     "This request was blocked as it seems to violate Anthropic's Terms of Service restrictions on reverse engineering or duplicating model outputs.",
     "Provider returned an empty response",
+    'unexpected tokens remaining in message header: Some("to=functions.example")',
+    'HarmonyError: unexpected tokens remaining in message header: Some("analysis")',
+    '500: {"message":"unexpected tokens remaining in message header: Some(\\"analysis\\")"}',
+    'unexpected tokens remaining in message header: Some("credit limit, timeout, model not found")',
     "Failed to parse tool call arguments as JSON",
     "Tool call validation failed: attempted to call tool 'commentary' which was not in request.tools",
     "Parsing failed. The model generated output that could not be parsed. Please adjust your prompt. See 'failed_generation' for more details.",
@@ -140,6 +144,7 @@ describe("Pi runtime errors", () => {
     '400: {"message":"Provider returned error","code":400,"metadata":{"raw":"The `uniqueItems` JSON Schema keyword is not supported."}}',
     '400: {"message":"Provider returned error","code":400,"metadata":{"raw":"{\\"code\\":400,\\"msg\\":\\"bad request\\"}"}}',
     "Cannot read properties of undefined (reading 'content')",
+    "Internal failure while handling unexpected tokens remaining in message header: unknown",
   ])("keeps a request we built or an unknown failure ordinary: %s", async (message) => {
     provider.errorMessage = message;
     const failure = consume();

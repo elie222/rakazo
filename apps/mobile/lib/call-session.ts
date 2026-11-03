@@ -209,6 +209,8 @@ export function startCall(
     transcribe?: boolean;
     /** Spoken as the call connects, before the caller's first turn. */
     greeting?: string;
+    answered?: { callId: string };
+    requestContext?: ApiRequestContext;
     /** Called with each finished turn; a target means the caller asked for that bot instead. */
     switchBot?: (text: string) => CallSwitch | undefined;
     /** The session the caller's setup began in; no call starts once it has changed. */
@@ -219,9 +221,9 @@ export function startCall(
   if (call.session !== undefined && call.session !== currentSessionGeneration()) return undefined;
   endCall();
   callSessionGeneration = currentSessionGeneration();
-  deps = { ...productionDeps(), ...overrides };
+  deps = { ...productionDeps(call.requestContext), ...overrides };
   switchBot = call.switchBot;
-  callId = newClientId();
+  callId = call.answered?.callId ?? newClientId();
   callRunId = null;
   canTranscribe = call.transcribe ?? true;
   onDevice = null;
@@ -651,22 +653,22 @@ function onCallEnded(ended: CallEnded): void {
   speakAndListen(farewell);
 }
 
-function productionDeps(): CallDeps {
+function productionDeps(requestContext?: ApiRequestContext): CallDeps {
   // One owner per call: its hang-up and barge-in stop only its own speech, never
   // unrelated read-aloud that has since replaced it.
   const speechOwner = createSpeechOwner();
   // A late request of this call fails instead of going out with a newer session.
   const generation = callSessionGeneration;
   const callContext = async () => {
-    const context = await captureApiRequestContext();
-    if (context.sessionGeneration !== generation)
+    const context = requestContext ?? (await captureApiRequestContext());
+    if (context.sessionGeneration !== generation || currentSessionGeneration() !== generation)
       throw new Error(t("Something went wrong. Try again."));
     return context;
   };
   const own: CallDeps = {
     dictate: dictateTurn,
     record: recordClip,
-    transcribe: transcribeClip,
+    transcribe: async (clip, signal) => transcribeClip(clip, signal, await callContext()),
     send: async (botId, text, clientNonce) => {
       try {
         return await sendHeard(botId, text, clientNonce, await callContext());
@@ -678,7 +680,7 @@ function productionDeps(): CallDeps {
       }
     },
     endCall: async (botId, id) => closeCall(botId, id, await callContext()),
-    speak: (botId, text) => speakReply(botId, text, speechOwner),
+    speak: (botId, text) => speakReply(botId, text, speechOwner, requestContext),
     stopSpeaking: () => stopSpeaking(speechOwner),
     cue: playCallCue,
     waitSound: (action) => {
@@ -687,7 +689,7 @@ function productionDeps(): CallDeps {
       else if (action === "preload") void preloadWaitSound().catch(() => undefined);
       else releaseWaitSound();
     },
-    watch: watchReplies,
+    watch: (botId, onReply, onEnded) => watchReplies(botId, onReply, onEnded, requestContext),
   };
   return own;
 }
@@ -767,8 +769,12 @@ function deleteQuietly(uri: string | null): void {
   }
 }
 
-async function transcribeClip(clip: CallClip, signal: AbortSignal): Promise<string> {
-  const { apiBase, headers } = await captureApiRequestContext();
+async function transcribeClip(
+  clip: CallClip,
+  signal: AbortSignal,
+  requestContext: ApiRequestContext,
+): Promise<string> {
+  const { apiBase, headers } = requestContext;
   const res = await fetch(`${apiBase}/api/voice/transcribe`, {
     method: "POST",
     headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
@@ -806,8 +812,13 @@ async function closeCall(
   await rpc("threads/endCall", { botId, callId: id }, { requestContext });
 }
 
-async function speakReply(botId: string, text: string, owner: SpeechOwner): Promise<void> {
-  if (!(await speakText(text, { botId, owner }))) {
+async function speakReply(
+  botId: string,
+  text: string,
+  owner: SpeechOwner,
+  requestContext?: ApiRequestContext,
+): Promise<void> {
+  if (!(await speakText(text, { botId, owner, requestContext }))) {
     throw new Error(t("Add a voice provider in Voice settings."));
   }
 }
@@ -817,6 +828,7 @@ function watchReplies(
   botId: string,
   onNewReply: (messageId: string, text: string, runId?: string) => void,
   onEnded: (ended: CallEnded) => void,
+  requestContext?: ApiRequestContext,
 ): () => void {
   const controller = new AbortController();
   const watchedCallId = callId;
@@ -833,7 +845,11 @@ function watchReplies(
     while (!controller.signal.aborted) {
       try {
         if (!snapshot) {
-          snapshot = await rpc("threads/get", { botId }, { signal: controller.signal });
+          snapshot = await rpc(
+            "threads/get",
+            { botId },
+            { signal: controller.signal, requestContext },
+          );
           lastSeen = latestSpokenCallReply(snapshot.messages, watchedCallId)?.id ?? null;
           cursor = snapshot.cursor ?? 0;
         }
@@ -864,6 +880,7 @@ function watchReplies(
             onNewReply(message.id, text, message.runId);
           },
           controller.signal,
+          requestContext,
         );
         retry = FEED_RETRY_MIN_MS;
         failure = undefined;

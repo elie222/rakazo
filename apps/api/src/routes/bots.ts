@@ -175,8 +175,7 @@ export function botIntroPrompt(input: {
     ]
       .filter(Boolean)
       .join(" "),
-    // Text streamed before ask_user is not kept once the run pauses, so the greeting
-    // goes in the question itself.
+    // The greeting goes in the question itself, so the card stands on its own.
     canAsk
       ? `Call ask_user right away, with no text before it. Its question greets them by first name in a few words and asks what they want you for, with ${options}. They can also type their own answer.`
       : `Greet them by first name in a few words and ask in one sentence what they want you for, suggesting ${options}.`,
@@ -294,6 +293,7 @@ export function botsRoutes(ctx: RouterContext) {
             description: source.description,
             instructions: source.instructions,
             notifyOnFinish: source.notifyOnFinish,
+            dailyCheckIns: source.dailyCheckIns,
             color: source.color,
             avatarSet: resolveBotAvatarSet(source.avatarSet),
             computerMode: source.computer?.scope === "dedicated" ? "dedicated" : "team",
@@ -361,7 +361,10 @@ export function botsRoutes(ctx: RouterContext) {
           spaceId: context.actor.spaceId,
           threadId: existing.thread.id,
           botId: input.botId,
-          emitBotUpdated: botProfileLabelsChanged(input) || input.expectedSettings !== undefined,
+          emitBotUpdated:
+            botProfileLabelsChanged(input) ||
+            input.expectedSettings !== undefined ||
+            input.dailyCheckIns !== undefined,
           expectedInstructions: input.expectedInstructions,
           expectedSettings: input.expectedSettings,
           data: {
@@ -387,6 +390,7 @@ export function botsRoutes(ctx: RouterContext) {
             ...(input.crossSpaceCommunication !== undefined
               ? { crossSpaceCommunication: input.crossSpaceCommunication }
               : {}),
+            ...(input.dailyCheckIns !== undefined ? { dailyCheckIns: input.dailyCheckIns } : {}),
             ...(input.fleetManagement !== undefined
               ? { fleetManagement: input.fleetManagement }
               : {}),
@@ -651,6 +655,7 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       remove: authed.groups.remove.handler(async ({ context, input }) => {
         const removed = await groupRepos.removeGroup(context.actor, input.groupId);
+        await stopCancelledGroupRuns(deps, context.actor, removed);
         const cleanup = await Promise.allSettled(
           removed.artifactStorageKeys.map((storageKey) =>
             deps.artifacts.remove(

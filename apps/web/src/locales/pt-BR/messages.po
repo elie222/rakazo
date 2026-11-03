@@ -101,11 +101,6 @@ msgstr "{0} {unitLabel}"
 msgid "{0} connection"
 msgstr "Conexão {0}"
 
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} default"
-msgstr ""
-
 #. placeholder {0}: parts.amount
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} GB"
@@ -150,11 +145,6 @@ msgstr ""
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} TB"
 msgstr "{0} TB"
-
-#. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx
-msgid "{0} will still respond to direct mentions."
-msgstr ""
 
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
@@ -422,7 +412,7 @@ msgstr "@{0}"
 
 #: src/components/ModelCredits.tsx
 msgid "/ month"
-msgstr ""
+msgstr "/ mês"
 
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
@@ -453,6 +443,14 @@ msgstr ""
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
 msgstr "Sobre {label}"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key ID"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Access key secret"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Access token (optional)"
@@ -801,6 +799,7 @@ msgid "Any model, with your own key"
 msgstr ""
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/lib/localized-provider-hint.ts
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/model-settings/compatible-key-field.tsx
@@ -821,6 +820,14 @@ msgstr "Cabeçalho da chave API"
 #: src/pages/shell/agent-import.tsx
 msgid "API keys"
 msgstr "Chaves de API"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "API URL"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
@@ -962,10 +969,6 @@ msgstr "Auto"
 msgid "Automated senders"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Automated senders will appear after they post here."
-msgstr ""
-
 #: src/pages/RoutineEditor.tsx
 msgid "Available after the routine is saved"
 msgstr ""
@@ -1029,7 +1032,7 @@ msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Billing period"
-msgstr ""
+msgstr "Período de cobrança"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
@@ -1151,7 +1154,6 @@ msgid "Can't reach the server."
 msgstr "Não é possível acessar o servidor."
 
 #: src/components/TextOnlyMark.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "Não pode ler imagens"
@@ -1477,10 +1479,6 @@ msgstr "coluna {index}"
 msgid "Comfortable"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
-msgid "Coming soon"
-msgstr ""
-
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Command"
@@ -1589,6 +1587,7 @@ msgstr "Confirme que a URL está acessível nesta sessão do navegador e teste n
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
+#: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connect"
 msgstr "Conectar"
@@ -1994,6 +1993,10 @@ msgstr ""
 msgid "Could not load bots. Reload to try again."
 msgstr ""
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not load computer settings"
+msgstr ""
+
 #: src/components/VaultSettings.tsx
 msgid "Could not load credentials."
 msgstr ""
@@ -2153,6 +2156,10 @@ msgstr "Não foi possível salvar"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Could not save computer settings"
 msgstr ""
 
 #: src/pages/GroupPanel.tsx
@@ -2410,6 +2417,10 @@ msgstr "Personalizar {label}"
 msgid "Customize bot avatar"
 msgstr "Personalizar avatar do bot"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Daily check-ins on unfinished work"
+msgstr "Acompanhamento diário do trabalho pendente"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Dark"
@@ -2548,6 +2559,11 @@ msgstr "Negado"
 msgid "Deny"
 msgstr "Negar"
 
+#. placeholder {0}: settings.defaultProvider
+#: src/components/ComputerProviderSettings.tsx
+msgid "Deployment default ({0})"
+msgstr ""
+
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Description"
@@ -2559,6 +2575,10 @@ msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop app"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Desktop ID"
 msgstr ""
 
 #: src/components/DesktopUpdates.tsx
@@ -2585,6 +2605,10 @@ msgstr ""
 #: src/lib/dictation.ts
 msgid "Dictation failed."
 msgstr ""
+
+#: src/pages/Auth.tsx
+msgid "Did you mean <0>{emailSuggestion}</0>?"
+msgstr "Você quis dizer <0>{emailSuggestion}</0>?"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
@@ -2765,12 +2789,12 @@ msgstr "É necessário verificar o e-mail"
 msgid "Enable {0}"
 msgstr "Ativar {0}"
 
-#: src/lib/billing.ts
-msgid "Ends {day}"
+#: src/components/ComputerProviderSettings.tsx
+msgid "End user ID"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Engage when... Ignore..."
+#: src/lib/billing.ts
+msgid "Ends {day}"
 msgstr ""
 
 #: src/components/GitHubStarPrompt.tsx
@@ -2803,6 +2827,10 @@ msgstr "Digite um número inteiro de 1 a 1000 para o limite de imagens."
 #: src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
 msgstr "Informe uma chave de API antes de testar."
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Environment ID"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
@@ -2861,6 +2889,10 @@ msgstr "A cada hora"
 #: src/lib/cron.ts
 msgid "Every hour at :{0}"
 msgstr "Toda hora aos {0} minutos"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Every message"
+msgstr "Todas as mensagens"
 
 #: src/lib/cron.ts
 msgid "Every Monday"
@@ -3025,7 +3057,6 @@ msgid "Forgot password?"
 msgstr "Esqueceu a senha?"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr ""
 
@@ -3067,6 +3098,14 @@ msgstr "Tela Cheia"
 #: src/pages/Onboarding.tsx
 msgid "Gateway ID"
 msgstr "ID do gateway"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway token"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Gateway URL"
+msgstr ""
 
 #: src/pages/settings-nav.ts
 #: src/pages/SettingsOverlay.tsx
@@ -3346,6 +3385,10 @@ msgstr "Instruções {position}"
 msgid "Instructions are too long. Untick some files."
 msgstr "As instruções estão longas demais. Desmarque alguns arquivos."
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Instructions for this room"
+msgstr "Instruções para esta sala"
+
 #: src/components/AskCard.tsx
 msgid "Instructions updated"
 msgstr "Instruções atualizadas"
@@ -3464,10 +3507,6 @@ msgstr "Permite que os bots salvem e recuperem fatos pelo significado, além do 
 msgid "Light"
 msgstr "Claro"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Linear issue"
-msgstr ""
-
 #: src/pages/SpaceSearch.tsx
 msgid "Link"
 msgstr ""
@@ -3484,12 +3523,7 @@ msgstr "Vincular SSO"
 msgid "List view"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Listen"
-msgstr ""
-
 #: src/components/call/CallCard.tsx
-#: src/pages/ExternalConversationSettings.tsx
 msgid "Listening"
 msgstr ""
 
@@ -3825,7 +3859,6 @@ msgstr "Modo"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3846,7 +3879,7 @@ msgstr "Conexões de modelos"
 msgid "Model id"
 msgstr "ID do modelo"
 
-#: src/pages/model-settings/model-picker.tsx
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 msgid "Model options"
 msgstr "Opções do modelo"
@@ -3861,8 +3894,8 @@ msgstr "Modelos"
 msgid "Models at provider cost"
 msgstr ""
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Models from server"
 msgstr "Modelos do servidor"
 
@@ -3926,6 +3959,10 @@ msgstr "Silenciar"
 
 #: src/components/call/CallCard.tsx
 msgid "Muted"
+msgstr ""
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "My computers"
 msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
@@ -4001,6 +4038,10 @@ msgstr ""
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "New bot"
 msgstr "Novo bot"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "New computers run on"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"
@@ -4092,7 +4133,6 @@ msgid "No matching artifacts on this page."
 msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -4279,6 +4319,10 @@ msgstr "Uma vez"
 msgid "One-time purchase. Credits do not expire."
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "Only enter a code {codeHost} sent you."
+msgstr ""
+
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/shell/computer-panel.tsx
@@ -4360,6 +4404,10 @@ msgstr "Valor de cabeçalho opcional"
 msgid "Or paste an API key"
 msgstr "Ou cole uma chave de API"
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Organization"
+msgstr ""
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
 msgstr "Chave da API da organização"
@@ -4372,8 +4420,8 @@ msgstr ""
 msgid "Original message unavailable"
 msgstr "Mensagem original indisponível"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "Outro modelo..."
 
@@ -4393,10 +4441,6 @@ msgstr "Página {page} de {count}"
 #: src/pages/NotFound.tsx
 msgid "Page not found"
 msgstr "Página não encontrada"
-
-#: src/pages/RoutineEditor.tsx
-msgid "PagerDuty incident"
-msgstr ""
 
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
@@ -4776,6 +4820,10 @@ msgstr ""
 msgid "Refreshing…"
 msgstr ""
 
+#: src/components/ComputerProviderSettings.tsx
+msgid "Region"
+msgstr ""
+
 #: src/lib/user-error.ts
 msgid "Registration is closed"
 msgstr "O cadastro está fechado"
@@ -4802,6 +4850,7 @@ msgid "Release control"
 msgstr "Liberar o controle"
 
 #: src/components/InstructionSettings.tsx
+#: src/lib/client-update.ts
 msgid "Reload"
 msgstr "Recarregar"
 
@@ -4917,6 +4966,10 @@ msgstr "Substituir chave"
 msgid "Replace value"
 msgstr ""
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Replies to"
+msgstr "Responde a"
+
 #: src/pages/shell/message-hover-actions.tsx
 #: src/pages/shell/quote-selection-button.tsx
 msgid "Reply"
@@ -4944,6 +4997,7 @@ msgid "Research & writing"
 msgstr ""
 
 #: src/components/ComputerMaintenanceActions.tsx
+#: src/pages/ExternalConversationSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Reset"
 msgstr "Redefinir"
@@ -5054,8 +5108,8 @@ msgstr ""
 msgid "Revoked"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Room guidance"
+#: src/components/ComputerProviderSettings.tsx
+msgid "Root filesystem"
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx
@@ -5124,11 +5178,16 @@ msgstr ""
 msgid "Sales & CRM"
 msgstr ""
 
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Same as {botName}"
+msgstr "Igual a {botName}"
+
 #: src/lib/cron.ts
 msgid "Saturday"
 msgstr "sábado"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5163,6 +5222,7 @@ msgid "Save to Vault"
 msgstr "Salvar no cofre"
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerProviderSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Saved"
@@ -5217,8 +5277,8 @@ msgstr "Escopos (opcional)"
 msgid "Screen not connected"
 msgstr "Tela não conectada"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5251,8 +5311,8 @@ msgstr ""
 msgid "Search integrations.sh"
 msgstr ""
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"
@@ -5340,10 +5400,6 @@ msgstr "Enviando…"
 msgid "Sent"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
-msgid "Sentry alert"
-msgstr ""
-
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Serenity endpoint is required."
 msgstr ""
@@ -5392,6 +5448,7 @@ msgstr "Configuração concluída"
 msgid "Setup help"
 msgstr "Ajuda"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Shape"
 msgstr "Forma"
@@ -5458,7 +5515,6 @@ msgstr ""
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign in"
 msgstr "Entrar"
 
@@ -5494,7 +5550,6 @@ msgid "Sign in with the subscription, or test the API key instead."
 msgstr "Entre com a assinatura ou teste a chave de API."
 
 #: src/pages/Auth.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign up"
 msgstr "Cadastre-se"
 
@@ -5660,6 +5715,18 @@ msgstr "Começar a gravar"
 msgid "Start your plan now?"
 msgstr "Começar seu plano agora?"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}d late"
+msgstr "Começou com {count} d de atraso"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}h late"
+msgstr "Começou com {count} h de atraso"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "Started {count}m late"
+msgstr "Começou com {count} min de atraso"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "Iniciando"
@@ -5736,7 +5803,7 @@ msgstr "Assinar"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe for {annualPrice} / year"
-msgstr ""
+msgstr "Assinar por {annualPrice} / ano"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
@@ -5768,9 +5835,18 @@ msgstr "Suporta imagens"
 msgid "Supports thinking"
 msgstr "Suporta raciocínio"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
-msgstr ""
+msgstr "Mudar"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly"
+msgstr "Mudar para anual"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to yearly?"
+msgstr "Mudar para anual?"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
@@ -5788,6 +5864,10 @@ msgstr "Tabela"
 #: src/pages/shell/computer-overlay.tsx
 msgid "Take control"
 msgstr "Assumir o controle"
+
+#: src/components/ComputerProviderSettings.tsx
+msgid "Target"
+msgstr ""
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
@@ -5809,8 +5889,8 @@ msgstr "Computador da equipe"
 msgid "Teams message"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
-msgid "Teams not enabled"
+#: src/components/ComputerProviderSettings.tsx
+msgid "Template"
 msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
@@ -5938,6 +6018,7 @@ msgid "This browser has no on-device dictation. Connect a voice provider with tr
 msgstr ""
 
 #: src/components/call/IncomingCall.tsx
+#: src/lib/user-error.ts
 msgid "This call is no longer ringing."
 msgstr ""
 
@@ -6248,6 +6329,10 @@ msgstr "Atualizar instruções?"
 msgid "Update progress"
 msgstr ""
 
+#: src/lib/client-update.ts
+msgid "Update required"
+msgstr "Atualização necessária"
+
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"
 msgstr ""
@@ -6312,10 +6397,6 @@ msgstr "Usar um modelo encontrado"
 #: src/lib/model-connection-preflight.ts
 msgid "Use Connect to verify the key."
 msgstr "Use Conectar para verificar a chave."
-
-#: src/pages/ExternalConversationSettings.tsx
-msgid "Use default guidance"
-msgstr ""
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Use defaults"
@@ -6571,7 +6652,7 @@ msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Yearly"
-msgstr ""
+msgstr "Anual"
 
 #: src/pages/shell/chat-context.tsx
 #: src/pages/shell/sidebar-roster.tsx
@@ -6607,6 +6688,10 @@ msgstr "Você tem o controle"
 msgid "Your Anthropic"
 msgstr "Seu Anthropic"
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged {annualPrice} today, less the unused part of this month."
+msgstr "Seu cartão será cobrado em {annualPrice} hoje, menos a parte não usada deste mês."
+
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr ""
@@ -6638,6 +6723,10 @@ msgstr "Seu OpenAI"
 msgid "Your OpenRouter"
 msgstr "Seu OpenRouter"
 
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {annualPrice} / year when your trial ends."
+msgstr "Quando seu teste terminar, seu plano passa a custar {annualPrice} / ano."
+
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"
 msgstr ""
@@ -6645,10 +6734,6 @@ msgstr ""
 #: src/components/ModelCredits.tsx
 msgid "Your subscription or API key"
 msgstr ""
-
-#: src/pages/Welcome.tsx
-msgid "Your team of always-on agents<0/>that you can give real work to."
-msgstr "Sua equipe de agentes sempre ativos<0/>, a quem você pode dar trabalho de verdade."
 
 #: src/components/ModelCredits.tsx
 msgid "Your trial ends and your card is charged {price} today."

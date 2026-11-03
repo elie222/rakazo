@@ -53,6 +53,11 @@ x-app-environment: &app-environment
   PHONE_CALL_COOLDOWN_MINUTES:
   RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP:
   EXPO_ACCESS_TOKEN:
+  APNS_VOIP_KEY_ID:
+  APNS_VOIP_TEAM_ID:
+  APNS_VOIP_PRIVATE_KEY:
+  APNS_VOIP_ENVIRONMENT:
+  APNS_VOIP_BUNDLE_ID:
   # Secret storage
   SECRET_STORE: ${SECRET_STORE:-encrypted}
   INFISICAL_URL: ${INFISICAL_URL:-}
@@ -184,6 +189,7 @@ x-app-environment: &app-environment
   SANDBOX_IDLE_MS:
   SANDBOX_MAX_COMPUTERS_PER_USER:
   COMPUTER_MAX_ACTIVE_MS:
+  COMPUTER_MAX_ACTIVE_UNBILLED_MS:
   COMPUTER_TAKEOVER_TTL_MS:
   BROWSER_PROVIDER:
   NOVITA_API_KEY:
@@ -482,6 +488,9 @@ services:
     # Directly, not through pnpm, so a stop reaches it (see the api command).
     working_dir: /app/apps/worker
     command: ["node", "--enable-source-maps", "dist/index.js"]
+    # A stop lets the running jobs finish rather than killing them mid-way, which would leave each
+    # locked for hours. Above JOB_DRAIN_TIMEOUT_MS in packages/adapters/src/wakeup.ts.
+    stop_grace_period: 50m
     healthcheck:
       test: ["CMD", "node", "dist/health-check.js"]
       interval: 30s

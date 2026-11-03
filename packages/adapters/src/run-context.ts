@@ -96,6 +96,8 @@ export interface ReplyState {
   progressBudgetStart: number;
   /** The first interim message after one may answer the person at once. */
   steeringReplyPending: boolean;
+  /** The bot called a browser or desktop tool, so it may say at once that this will take a while. */
+  computerTaskStarted: boolean;
   steeringResets: number;
   lastSteeringResetAt: number;
   /**
@@ -189,12 +191,19 @@ export interface RunState {
    */
   ownInstructionsBaseline: string | undefined;
   earlierAttempt: Promise<boolean> | undefined;
+  /**
+   * Hosts of the sites this run typed an approved wallet purchase into (fill_card, fill_pay_token):
+   * the wallet owner approved paying there, so the pay click there asks nothing more.
+   */
+  walletHosts: Set<string>;
   handedOff: boolean;
   terminalCheckpointComplete: boolean;
 }
 
 export interface RunComputerContext {
   stored: Computer;
+  /** Where the computer starts this run, which can differ from `stored` before it provisions. */
+  kind?: string;
   mode: ComputerMode;
   lease: ComputerExecutionLease | null;
   lazy: ReturnType<typeof lazyRunComputer>;
@@ -467,7 +476,9 @@ export function restoreTurnCheckpointEffects(
         for (const call of message.content) {
           if (call.type !== "toolCall" || unresolved.has(call)) continue;
           const tool = namedTools.find((tool) => tool.name === call.name)?.tool;
-          if (tool && tool.name !== "request_secret" && tool.name !== "connect_app")
+          // A code request counts like any tool: each one is its own card.
+          const single = tool?.name === "connect_app" || tool?.name === "request_secret";
+          if (tool && (!single || call.arguments.oneTimeCode !== undefined))
             nextMutatingEffectOccurrence(
               ctx,
               tool.name,

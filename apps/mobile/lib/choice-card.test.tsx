@@ -65,6 +65,11 @@ vi.mock("react-native", async () => {
 
 vi.mock("./api", () => ({ rpc }));
 
+vi.mock("../components/glass-icon-button", async () => {
+  const { Pressable } = await import("react-native");
+  return { GlassIconButton: Pressable };
+});
+
 vi.mock("./native", () => ({
   native: { fill: "fill", fillPressed: "fill-pressed" },
   useMobileTokens: () => ({
