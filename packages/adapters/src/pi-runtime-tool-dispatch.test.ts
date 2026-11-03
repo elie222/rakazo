@@ -982,6 +982,44 @@ describe("Pi connector tool dispatch", () => {
     );
   });
 
+  it("preserves a connected delete_bot schema and arguments through the runtime", async () => {
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    const tool: ConnectorTool = {
+      name: "delete_bot",
+      description: "Delete a remote object",
+      inputSchema: {
+        type: "object",
+        properties: { id: { type: "string" } },
+        required: ["id"],
+      },
+      route: { connectorId: "remote", toolName: "delete_bot" },
+    };
+    fakeAgentState.invoke = { name: "delete_bot", args: { id: "remote-object" } };
+    for await (const _event of new PiAgentRuntime().run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "r",
+        prompt: "delete the remote object",
+        instructions: "",
+        history: [],
+        tools: [tool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      { signal: new AbortController().signal },
+    )) {
+      // Exhaust the runtime so its tool call finishes.
+    }
+    expect(executeTool).toHaveBeenCalledWith(
+      "delete_bot",
+      { id: "remote-object" },
+      expect.any(String),
+      tool.route,
+      { onShellStillRunning: expect.any(Function) },
+    );
+  });
+
   it("passes spawn_bot's public description and private instructions to the executor", async () => {
     const spawnBotTool = builtinAgentTools.find((tool) => tool.name === "spawn_bot");
     if (!spawnBotTool) throw new Error("missing spawn_bot");

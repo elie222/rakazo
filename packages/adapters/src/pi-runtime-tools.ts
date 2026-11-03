@@ -404,7 +404,7 @@ function toAgentTool(
       if (tool.name === "create_space") {
         return { name: String(raw.name ?? "") };
       }
-      if (tool.name === "archive_bot" || tool.name === "delete_bot") {
+      if (tool.name === "archive_bot") {
         return {
           confirm_name: String(raw.confirm_name ?? raw.confirmName ?? ""),
           bot_id: raw.bot_id ? String(raw.bot_id) : raw.botId ? String(raw.botId) : "",
