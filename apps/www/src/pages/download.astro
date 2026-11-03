@@ -40,6 +40,7 @@ const platforms = [
               <a
                 class="button button--secondary button--small"
                 href={platform.href}
+                aria-label={`${platform.action}: ${platform.name}`}
                 data-attr={`download-page-${platform.attr}`}
               >
                 {platform.action}
