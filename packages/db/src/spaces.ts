@@ -566,7 +566,9 @@ export async function deleteClaimedSpace(
           where: { pageShare: { is: { spaceId } } },
           select: { id: true, ciphertext: true },
         });
-        const gone = await tx.space.deleteMany({ where: { id: spaceId, deletionClaimId: claimId } });
+        const gone = await tx.space.deleteMany({
+          where: { id: spaceId, deletionClaimId: claimId },
+        });
         return {
           artifactKeys: artifacts.map((artifact) => artifact.storageKey),
           pageShareSecrets: gone.count > 0 ? pageShareSecrets : [],
