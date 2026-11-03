@@ -25,7 +25,7 @@ import {
   Sum,
   TableOfContents,
 } from "./text.js";
-import { computeDAGLayout, refreshSources, useSource, useTheme } from "./theme.js";
+import { computeDAGLayout, useSource, useTheme } from "./theme.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -412,7 +412,6 @@ describe("helpers", () => {
       }).replace(/"/g, "&quot;"),
     );
     expect(() => html(<Uses id="other" />)).toThrow(/no source with that id/);
-    expect(refreshSources(["sales"])).toBeUndefined();
     delete (globalThis as { __rakazoPageSources?: unknown }).__rakazoPageSources;
   });
 

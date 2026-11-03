@@ -3,6 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { EncryptedSecretStore } from "@rakazo/adapters";
+import type { createApp } from "@rakazo/api/app";
 import type { PageDetail, PageSummary, ThreadSnapshot } from "@rakazo/contracts";
 import { SHARED_PAGE_PATH_PREFIX } from "@rakazo/contracts";
 import { deletePageShareSecrets } from "@rakazo/db";
@@ -29,7 +30,7 @@ const page = (heading: string) =>
 describePages("pages", () => {
   let app: App;
   let stop: () => Promise<void>;
-  let jobs: Awaited<ReturnType<typeof import("@rakazo/api/app").createApp>>["jobs"];
+  let jobs: Awaited<ReturnType<typeof createApp>>["jobs"];
   const stamp = Date.now();
 
   beforeAll(async () => {

@@ -179,5 +179,3 @@ export function useSource(id: string): SourceRecord {
     updating: false,
   };
 }
-
-export function refreshSources(_ids?: string[]): void {}
