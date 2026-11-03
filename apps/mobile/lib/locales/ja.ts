@@ -6,6 +6,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Sign out all": "すべてログアウト",
   "Sign out all accounts?": "すべてのアカウントからログアウトしますか？",
   "Could not sign out of every account": "一部のアカウントからログアウトできませんでした",
+  "Daily check-ins on unfinished work": "未完了の作業を毎日確認",
   "How other bots see it": "他のボットからの見え方",
   "Share to": "共有先",
   "{count} files": "{count}個のファイル",
@@ -261,6 +262,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "このサーバーを承認すると、エージェントがそのツールを使用できるようになります。",
   "Answered: {answer}": "回答済み: {answer}",
+  "Only enter a code {host} sent you.": "{host} から送られたコードだけを入力してください。",
   Archive: "アーカイブ",
   Attach: "添付",
   "Attach file": "ファイルを添付",
@@ -288,6 +290,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Could not share image": "画像を共有できませんでした",
   "Loading image…": "画像を読み込み中…",
   "Open image {name}": "画像{name}を開く",
+  "Open {name}": "{name}を開く",
   "Tap to open": "タップして開く",
   "Could not open message": "メッセージを開けませんでした",
   "Could not send answer": "回答を送信できませんでした",

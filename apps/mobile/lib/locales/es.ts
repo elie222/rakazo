@@ -6,6 +6,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Sign out all": "Cerrar todas las sesiones",
   "Sign out all accounts?": "¿Cerrar sesión en todas las cuentas?",
   "Could not sign out of every account": "No se pudo cerrar sesión en todas las cuentas",
+  "Daily check-ins on unfinished work": "Seguimiento diario del trabajo pendiente",
   "How other bots see it": "Cómo lo ven otros bots",
   "Share to": "Compartir en",
   "{count} files": "{count} archivos",
@@ -263,6 +264,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "Aprueba este servidor para que tu agente use sus herramientas.",
   "Answered: {answer}": "Respondido: {answer}",
+  "Only enter a code {host} sent you.": "Introduce solo un código que te haya enviado {host}.",
   Archive: "Archivar",
   "Attach file": "Adjuntar archivo",
   Attachment: "Archivo adjunto",
@@ -289,6 +291,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Could not share image": "No se pudo compartir la imagen",
   "Loading image…": "Cargando imagen…",
   "Open image {name}": "Abrir imagen {name}",
+  "Open {name}": "Abrir {name}",
   "Tap to open": "Toca para abrir",
   "Could not open message": "No se pudo abrir el mensaje",
   "Could not send answer": "No se pudo enviar la respuesta",

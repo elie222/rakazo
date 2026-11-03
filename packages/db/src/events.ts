@@ -3,6 +3,7 @@ import type {
   BotSecretDestination,
   LoginFieldInput,
   MessageBlock,
+  OneTimeCodeTarget,
   ProductEvent,
 } from "@rakazo/contracts";
 import {
@@ -13,6 +14,7 @@ import {
   hasThinkingActivityMarker,
   loginAnswerValue,
   MessageBlock as MessageBlockSchema,
+  normalizeOneTimeCode,
   ThreadActivityPayloadSchema,
 } from "@rakazo/contracts";
 import {
@@ -60,6 +62,8 @@ import { isRunResponse, readRunTimingFields } from "./run-timing.js";
 import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
 import { recordSecurityEvent } from "./security-events.js";
 import { withTransactionRetry } from "./transaction-retry.js";
+
+export const STRATEGIC_INITIATIVE_NONCE_PREFIX = "strategic-initiative";
 
 /** A one-time answer longer than a saved value may be. Nothing is stored or echoed. */
 export class AnswerTooLongError extends Error {
@@ -328,6 +332,8 @@ export interface RunSecretWriter {
   store(input: {
     botId: string;
     credential?: BotSecretDestination;
+    /** The site a code card was shown for. */
+    oneTimeCode?: OneTimeCodeTarget;
     /** False for a login card answered with "Save to Vault" off. */
     remember: boolean;
     runId: string;
@@ -838,6 +844,7 @@ async function commitAnswerRunInput(
       userId: true,
       checkpoint: true,
       trigger: true,
+      clientNonce: true,
       task: { select: { prompt: true } },
     },
   });
@@ -876,7 +883,18 @@ async function commitAnswerRunInput(
   )
     return null;
   if (secretAsk && !dismissed && !runSecretWriter) return null;
-  if (secretAsk && pendingAsk.credential && run.userId !== input.answeredByUserId) return null;
+  if (
+    secretAsk &&
+    (pendingAsk.credential || pendingAsk.oneTimeCode) &&
+    run.userId !== input.answeredByUserId
+  )
+    return null;
+  // A code is answered as the page will take it; anything that is not a code is not stored.
+  const code =
+    secretAsk && !dismissed && pendingAsk.oneTimeCode
+      ? normalizeOneTimeCode(input.answer)
+      : undefined;
+  if (secretAsk && !dismissed && pendingAsk.oneTimeCode && !code) return null;
   const loginAsk = secretAsk && !dismissed && pendingAsk.credential?.auth.type === "login";
   const login = loginAsk ? loginAnswerValue(pendingAsk.loginFields, input) : undefined;
   // Login fields belong only to a login card, which cannot be saved without them.
@@ -935,10 +953,13 @@ async function commitAnswerRunInput(
     }
   }
 
-  // Answering the creation intro's question tells the bot what it is for, so it resumes as
-  // the user's turn: with the conversation and every tool, to get going on that answer.
-  const resumedTrigger =
-    run.trigger === "created" && !approvalAsk && !secretAsk ? "user" : run.trigger;
+  // Answering the creation intro's or a daily check-in's question resumes as the user's
+  // turn: with the conversation and every tool, to get going on that answer.
+  const answersOpener =
+    run.trigger === "created" ||
+    (run.trigger === "routine" &&
+      Boolean(run.clientNonce?.startsWith(`${STRATEGIC_INITIATIVE_NONCE_PREFIX}:`)));
+  const resumedTrigger = answersOpener && !approvalAsk && !secretAsk ? "user" : run.trigger;
   const queued = await tx.run.updateMany({
     where: {
       id: input.runId,
@@ -1034,11 +1055,12 @@ async function commitAnswerRunInput(
     await runSecretWriter!.store({
       botId: run.botId,
       credential: pendingAsk.credential,
+      oneTimeCode: pendingAsk.oneTimeCode,
       remember: input.remember !== false,
       runId: input.runId,
       userId: run.userId,
       spaceId: input.spaceId,
-      plaintext: login ? encodeLoginSecret(login) : input.answer,
+      plaintext: login ? encodeLoginSecret(login) : (code ?? input.answer),
       tx,
     });
     await tx.externalEffect.updateMany({

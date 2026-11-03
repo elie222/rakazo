@@ -1,6 +1,15 @@
 import { commandVariableName } from "@rakazo/contracts";
 import { t } from "./i18n";
 
+/** The host a site card shows, or the origin when it does not parse. */
+export function siteHost(origin: string): string {
+  try {
+    return new URL(origin).host || origin;
+  } catch {
+    return origin;
+  }
+}
+
 /**
  * The destination line a credential request card shows beneath its prompt. A command variable has
  * no site, so it shows the environment variable name the bot's shell commands receive instead of
@@ -14,12 +23,6 @@ export function secretDestinationLabel(credential: {
   if (credential.auth.type === "command") {
     return `${t("Command variable")} $${commandVariableName(credential.name)}`;
   }
-  if (credential.auth.type === "login") {
-    try {
-      return new URL(credential.origin).host || credential.origin;
-    } catch {
-      return credential.origin;
-    }
-  }
+  if (credential.auth.type === "login") return siteHost(credential.origin);
   return credential.origin;
 }

@@ -1211,7 +1211,7 @@ describe("updateChildBot", () => {
     },
   );
 
-  it.each(["name", "description", "artifact_id", "color"])(
+  it.each(["name", "description", "artifact_id", "color", "dailyCheckIns"])(
     "omits blank %s while preserving a real update",
     async (field) => {
       const { prisma } = fakeFleet({ bots });
@@ -1238,6 +1238,38 @@ describe("updateChildBot", () => {
       expect(tx.bot.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { notifyOnFinish: false } }),
       );
+    },
+  );
+
+  it.each([true, false])("writes boolean dailyCheckIns: %j", async (dailyCheckIns) => {
+    const { prisma } = fakeFleet({ bots });
+    const update = vi.fn().mockRejectedValue(new Error("write reached"));
+    prisma.$transaction.mockImplementation(async (write) =>
+      write({
+        $queryRaw: vi.fn(),
+        bot: { update },
+      }),
+    );
+    await expect(
+      updateChildBot(writeDeps(prisma), run, {
+        bot_id: "bot-child",
+        dailyCheckIns,
+      }),
+    ).rejects.toThrow("write reached");
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: { dailyCheckIns } }));
+  });
+
+  it.each(["true", "false", 0, 1, {}, []])(
+    "rejects non-boolean dailyCheckIns: %j",
+    async (value) => {
+      const { prisma } = fakeFleet({ bots });
+      expect(
+        await updateChildBot(writeDeps(prisma), run, {
+          bot_id: "bot-child",
+          dailyCheckIns: value,
+        }),
+      ).toEqual({ error: "dailyCheckIns must be true or false." });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     },
   );
 

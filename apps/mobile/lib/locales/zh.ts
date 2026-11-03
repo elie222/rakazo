@@ -6,6 +6,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Sign out all": "全部退出登录",
   "Sign out all accounts?": "退出所有账户？",
   "Could not sign out of every account": "无法退出所有账号的登录",
+  "Daily check-ins on unfinished work": "每天跟进未完成的工作",
   "How other bots see it": "其他机器人如何了解它",
   "Share to": "分享到",
   "{count} files": "{count} 个文件",
@@ -265,6 +266,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "批准此服务器后，Agent 才能使用它的工具。",
   "Answered: {answer}": "已回答：{answer}",
+  "Only enter a code {host} sent you.": "仅输入 {host} 发给你的验证码。",
   Archive: "归档",
   "Archive keeps everything and can be undone. Delete is permanent.":
     "归档会保留全部内容，可以撤销。删除不可恢复。",
@@ -399,6 +401,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Could not share image": "无法分享图片",
   "Loading image…": "正在加载图片…",
   "Open image {name}": "打开图片 {name}",
+  "Open {name}": "打开 {name}",
   "Tap to open": "点按打开",
   "Could not open message": "无法打开消息",
   "Could not play a sample": "无法播放示例",

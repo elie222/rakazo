@@ -2411,6 +2411,10 @@ msgstr "התאמה אישית של {label}"
 msgid "Customize bot avatar"
 msgstr "התאמת תמונת הבוט"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Daily check-ins on unfinished work"
+msgstr "מעקב יומי אחר עבודה שלא הושלמה"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Dark"
@@ -4287,6 +4291,10 @@ msgstr "חד-פעמי"
 
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
+msgstr ""
+
+#: src/components/AskCard.tsx
+msgid "Only enter a code {codeHost} sent you."
 msgstr ""
 
 #: src/components/markdown-link-prompt.tsx

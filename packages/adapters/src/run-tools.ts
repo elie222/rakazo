@@ -26,6 +26,7 @@ import {
   userComputerObserve,
   userComputerShell,
 } from "./run-tools-user-computer.js";
+import { strategicInitiativeToolAllowed } from "./strategic-initiative.js";
 import { argumentGiven } from "./update-bot-patch.js";
 
 const TOOL_HANDLERS = new Map<string, ToolHandler>([
@@ -78,6 +79,9 @@ async function dispatchTool(
   observer: AgentToolExecutionObserver | undefined,
 ) {
   ctx.context.signal.throwIfAborted();
+  if (!strategicInitiativeToolAllowed(name, ctx.run)) {
+    return { error: "Daily check-ins can only ask or message the user." };
+  }
   if (ctx.state.handedOff) {
     return {
       error: "This stage was handed off. End the turn without more tool calls.",

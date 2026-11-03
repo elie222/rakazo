@@ -6,6 +6,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Sign out all": "全部登出",
   "Sign out all accounts?": "登出所有帳戶？",
   "Could not sign out of every account": "無法登出所有帳號",
+  "Daily check-ins on unfinished work": "每天追蹤未完成的工作",
   "How other bots see it": "其他機器人如何瞭解它",
   "Share to": "分享到",
   "{count} files": "{count} 個檔案",
@@ -249,6 +250,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   Approve: "核准",
   "Approve this server to let your agent use its tools.": "核准此伺服器，讓代理程式使用它的工具。",
   "Answered: {answer}": "已回答：{answer}",
+  "Only enter a code {host} sent you.": "僅輸入 {host} 傳給你的驗證碼。",
   Archive: "封存",
   "Archive keeps everything and can be undone. Delete is permanent.":
     "封存會保留全部內容，可以復原。刪除不可恢復。",
@@ -382,6 +384,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Could not share image": "無法分享圖片",
   "Loading image…": "正在載入圖片…",
   "Open image {name}": "開啟圖片 {name}",
+  "Open {name}": "開啟 {name}",
   "Tap to open": "點按開啟",
   "Could not open message": "無法開啟訊息",
   "Could not play a sample": "無法播放示例",

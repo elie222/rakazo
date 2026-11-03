@@ -2411,6 +2411,10 @@ msgstr "{label} anpassen"
 msgid "Customize bot avatar"
 msgstr "Bot-Avatar anpassen"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Daily check-ins on unfinished work"
+msgstr "Tägliche Rückfragen zu offenen Aufgaben"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Dark"
@@ -4287,6 +4291,10 @@ msgstr "Einmalig"
 
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
+msgstr ""
+
+#: src/components/AskCard.tsx
+msgid "Only enter a code {codeHost} sent you."
 msgstr ""
 
 #: src/components/markdown-link-prompt.tsx

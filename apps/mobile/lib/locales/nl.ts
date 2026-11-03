@@ -6,6 +6,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Sign out all": "Alle accounts afmelden",
   "Sign out all accounts?": "Bij alle accounts afmelden?",
   "Could not sign out of every account": "Uitloggen bij alle accounts mislukt",
+  "Daily check-ins on unfinished work": "Dagelijks navragen over onafgemaakt werk",
   "How other bots see it": "Hoe andere bots deze zien",
   "Share to": "Delen met",
   "{count} files": "{count} bestanden",
@@ -274,6 +275,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "Keur deze server goed zodat je agent zijn tools kan gebruiken.",
   "Answered: {answer}": "Beantwoord: {answer}",
+  "Only enter a code {host} sent you.": "Voer alleen een code in die {host} je heeft gestuurd.",
   Archive: "Archiveren",
   Attach: "Bijvoegen",
   "Attach file": "Bestand bijvoegen",
@@ -301,6 +303,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Could not share image": "Afbeelding delen mislukt",
   "Loading image…": "Afbeelding laden…",
   "Open image {name}": "Afbeelding {name} openen",
+  "Open {name}": "{name} openen",
   "Tap to open": "Tik om te openen",
   "Could not open message": "Bericht openen mislukt",
   "Could not send answer": "Antwoord verzenden mislukt",

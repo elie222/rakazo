@@ -6,6 +6,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Sign out all": "Выйти из всех",
   "Sign out all accounts?": "Выйти из всех аккаунтов?",
   "Could not sign out of every account": "Не удалось выйти из всех аккаунтов",
+  "Daily check-ins on unfinished work": "Ежедневные напоминания о незавершённой работе",
   "How other bots see it": "Как его видят другие боты",
   "Share to": "Отправить в",
   "{count} files": "Файлов: {count}",
@@ -287,6 +288,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "Одобрите сервер, чтобы агент мог использовать его инструменты.",
   "Answered: {answer}": "Отвечено: {answer}",
+  "Only enter a code {host} sent you.": "Вводите только код, который вам прислал {host}.",
   Archive: "Архивировать",
   "Archive keeps everything and can be undone. Delete is permanent.":
     "Архивирование сохраняет всё и обратимо. Удаление необратимо.",
@@ -420,6 +422,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not share image": "Не удалось поделиться изображением",
   "Loading image…": "Загрузка изображения…",
   "Open image {name}": "Открыть изображение {name}",
+  "Open {name}": "Открыть {name}",
   "Tap to open": "Нажмите, чтобы открыть",
   "Could not open message": "Не удалось открыть сообщение",
   "Could not play a sample": "Не удалось воспроизвести сэмпл",
