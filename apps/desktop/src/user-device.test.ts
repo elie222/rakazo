@@ -33,7 +33,7 @@ beforeEach(async () => {
   userData = await mkdtemp(path.join(tmpdir(), "rakazo-device-"));
 });
 afterEach(async () => {
-  await rm(userData, { recursive: true, force: true });
+  await rm(userData, { recursive: true, force: true, maxRetries: 5 });
 });
 
 describe("device token storage", () => {
