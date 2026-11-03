@@ -502,7 +502,7 @@ export function RoutineEditor({
       </div>
 
       {draft.active && scheduleDelayed ? (
-        <p role="status" className="mb-5 text-sm text-muted-foreground">
+        <p role="status" className="mb-5 text-sm text-warning">
           <Trans>Schedule delayed</Trans>
         </p>
       ) : null}
