@@ -1,7 +1,7 @@
 import { runContinueJob } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import type { ExecutorDeps } from "./executor-deps.js";
-import { startNextWaitingRun } from "./run-lifecycle.js";
+import { failRunBeforeTurn, startNextWaitingRun } from "./run-lifecycle.js";
 
 function deps(next: { id: string } | null) {
   const findFirst = vi.fn(async () => next);
@@ -41,3 +41,37 @@ describe("starting the next run waiting for a bot's computer", () => {
     expect(f.enqueue).not.toHaveBeenCalled();
   });
 });
+
+it.each([false, true])(
+  "preserves user-facing peer reply unread policy before a turn (%s)",
+  async (userFacingPeerReply) => {
+    const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
+    const deps = {
+      events: { finalizeRun },
+      prisma: {
+        run: { updateMany: vi.fn(async () => ({ count: 1 })), findFirst: vi.fn(async () => null) },
+      },
+    } as unknown as ExecutorDeps;
+    await expect(
+      failRunBeforeTurn(
+        deps,
+        {
+          id: "run-1",
+          spaceId: "space-1",
+          userId: "user-1",
+          botId: "bot-1",
+          threadId: "thread-1",
+          taskId: "task-1",
+          trigger: "bot_message",
+        },
+        "Bot",
+        { attemptId: "attempt-1", workerId: "worker-1", fence: 1 },
+        "Connect that model provider first",
+        userFacingPeerReply,
+      ),
+    ).resolves.toBe(true);
+    expect(finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "failed", markUnread: userFacingPeerReply }),
+    );
+  },
+);

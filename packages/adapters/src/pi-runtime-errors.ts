@@ -32,7 +32,7 @@ export function modelRunFailureReason(error: ModelProviderError): string {
     ? ` Resets at ${new Date(normalized.resetAt).toISOString()}.`
     : "";
   const status = error.httpStatus ? ` HTTP ${error.httpStatus}.` : "";
-  return `ModelAccountError: ${normalized.summary}${reset}${status}`;
+  return `ModelAccountError[${normalized.kind}]: ${normalized.summary}${reset}${status}`;
 }
 
 export function assistantText(message: unknown): string {
@@ -117,11 +117,11 @@ function looksLikeOpenCodeSessionError(message: string): boolean {
 /**
  * One classification for retries, reporting and the run error view. A failure the view
  * attributes to the user's provider account, key, plan or model choice, or to the model's own
- * unusable output, is not a server fault. Anything it cannot place stays a plain error.
+ * unusable output, is not a server fault. Unclassified provider failures keep the generic provider error type.
  */
 export function modelFailure(error: string, message: string): Error {
   // When every model failed, the run is only as clear as its least explained failure: an
-  // unexplained part stays a server error, and a part the user must fix outranks bad output,
+  // unexplained part stays a generic provider failure, and a part the user must fix outranks bad output,
   // which outranks one that clears on its own. Skipped backups never ran, so they do not count.
   const fallback = parseModelFallbackFailure(message);
   const failures = fallback

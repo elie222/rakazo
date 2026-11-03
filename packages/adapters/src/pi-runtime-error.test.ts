@@ -326,3 +326,22 @@ it.each([
   expect(reason).not.toContain("fixture-secret");
   expect(normalizeRunError(reason)).toMatchObject({ kind, recovery });
 });
+
+it.each([
+  "400 context_length_exceeded",
+  "400 unsupported model",
+  '400 {"code":"model_terms_required","message":"Accept the model terms."}',
+  "400 key limit exceeded",
+  "429 insufficient credits",
+  "429 spending limit exceeded",
+  "429 too many requests",
+  "401 invalid API key",
+  "Provider returned an empty response",
+])("round-trips a saved error kind without reclassifying its summary: %s", (message) => {
+  const original = normalizeRunError(message);
+  const saved = modelRunFailureReason(new ModelAccountError(message));
+  const restored = normalizeRunError(saved);
+  expect(original.kind).toBeDefined();
+  expect(restored.kind).toBe(original.kind);
+  expect(restored.recovery).toBe(original.recovery);
+});

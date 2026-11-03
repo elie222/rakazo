@@ -497,6 +497,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
 
       const runSecrets = [...deps.secrets];
       let dispatchHandedOff = false;
+      let userFacingPeerReply = false;
       try {
         // Durable run ownership and its heartbeat now carry recovery. Model,
         // integration and computer setup must not occupy a queue dispatch slot.
@@ -570,6 +571,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           loadRunLoginRedactions(deps.prisma, deps.secretStore, run, run.id),
           loadRunCodeRedactions(deps.prisma, deps.secretStore, run, run.id),
         ]);
+        userFacingPeerReply = peerMessage?.repliesToRequest === true;
         const historySearchBeforeSeq =
           contextStrategy !== "current" && run.sourceMessageId
             ? (messages.find((message) => message.id === run.sourceMessageId)?.seq ??
@@ -854,6 +856,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             bot.name,
             { attemptId: attempt.id, workerId, fence },
             message,
+            userFacingPeerReply,
           );
           if (failed && accountFailure && run.trigger === "routine" && run.routineId) {
             await backOffRoutineAfterAccountError(deps, run.routineId);
@@ -1859,6 +1862,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             bot?.name ?? "",
             { attemptId: attempt.id, workerId, fence },
             setupMessage,
+            userFacingPeerReply,
           );
           return;
         }

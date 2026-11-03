@@ -74,6 +74,7 @@ export async function failRunBeforeTurn(
   botName: string,
   lease: { attemptId: string; workerId: string; fence: number },
   message: string,
+  userFacingPeerReply = false,
 ): Promise<boolean> {
   const failed = await deps.events.finalizeRun({
     spaceId: run.spaceId,
@@ -86,7 +87,7 @@ export async function failRunBeforeTurn(
     leaseFence: lease.fence,
     outcome: "failed",
     error: message,
-    markUnread: completionMarksUnread(run.trigger, ""),
+    markUnread: completionMarksUnread(run.trigger, "", userFacingPeerReply),
   });
   if (!failed) return false;
   if (failed.continuationRunId) {
