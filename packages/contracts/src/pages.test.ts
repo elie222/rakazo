@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { AccountExportRecordSchema } from "./account-export.js";
 import { appContract } from "./index.js";
 import {
   PAGE_SOURCE_MAX_BYTES,
@@ -64,4 +65,18 @@ it("lets a newer client's reply from a page reach an older server, which drops w
     text: "hi",
     fromPage: true,
   });
+});
+
+it("refuses an exported page version past the database's 32-bit column", () => {
+  const record = (version: number) => ({
+    type: "page_version",
+    id: "src-page-v1",
+    pageId: "src-page",
+    version,
+    title: "Plan",
+    source: "export default () => null;",
+    createdAt: "2026-01-01T00:00:00.000Z",
+  });
+  expect(AccountExportRecordSchema.safeParse(record(2_147_483_647)).success).toBe(true);
+  expect(AccountExportRecordSchema.safeParse(record(2_147_483_648)).success).toBe(false);
 });

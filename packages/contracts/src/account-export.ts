@@ -17,6 +17,9 @@ import { PageSourceSchema, PageTitleSchema } from "./pages.js";
  * rewrites references, including ids inside message blocks. Credentials, integrations, runs,
  * billing, computers and page links are not exported: they belong to the source install.
  */
+/** A page version number, within the database's 32-bit column. */
+const PageVersionNumber = z.number().int().positive().max(2_147_483_647);
+
 export const ACCOUNT_EXPORT_FORMAT = "rakazo-account-export";
 export const ACCOUNT_EXPORT_VERSION = 1;
 export const ACCOUNT_EXPORT_MANIFEST_PATH = "manifest.json";
@@ -121,7 +124,7 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     groupId: Id.nullable(),
     title: PageTitleSchema,
     pinnedAt: IsoDate.nullable(),
-    currentVersion: z.number().int().positive(),
+    currentVersion: PageVersionNumber,
     createdAt: IsoDate,
     updatedAt: IsoDate,
   }),
@@ -129,7 +132,7 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     type: z.literal("page_version"),
     id: Id,
     pageId: Id,
-    version: z.number().int().positive(),
+    version: PageVersionNumber,
     title: PageTitleSchema,
     source: PageSourceSchema,
     createdAt: IsoDate,
