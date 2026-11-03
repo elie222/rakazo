@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { homeDeletionDue } from "./home-retention.js";
+import { deletionDates, homeDeletionDue } from "./home-retention.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 const at = (day: number) => new Date(Date.UTC(2026, 0, 1) + day * DAY);
@@ -67,5 +67,17 @@ describe("saved home deletion date", () => {
       at: at(100),
       reason: "unused",
     });
+  });
+});
+
+describe("saved home warning dates", () => {
+  it("deletes only once the emailed date has ended in every time zone", () => {
+    for (const sentAt of ["2026-11-03T00:00:00Z", "2026-11-03T01:00:00Z", "2026-11-03T23:59:59Z"]) {
+      const { shown, deleteAfter } = deletionDates(new Date(sentAt));
+      expect(shown.toISOString()).toBe("2026-11-10T00:00:00.000Z");
+      // The date ends last at UTC-12, 12 hours after it ends in UTC.
+      expect(deleteAfter.getTime()).toBeGreaterThanOrEqual(Date.parse("2026-11-11T12:00:00Z"));
+      expect(deleteAfter.getTime() - Date.parse(sentAt)).toBeLessThanOrEqual(9 * DAY);
+    }
   });
 });

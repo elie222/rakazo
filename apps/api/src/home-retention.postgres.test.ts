@@ -83,6 +83,9 @@ describePostgres("saved home retention (PostgreSQL)", () => {
       data: { id, name: "Alex", email: `${id}@rakazo.test`, emailVerified: true },
     });
     await system.organization.create({ data: { id, name: id, slug: id, createdAt: new Date() } });
+    await system.member.create({
+      data: { id, organizationId: id, userId: id, role: "owner", createdAt: new Date() },
+    });
     await system.space.create({ data: { id, organizationId: id, name: "Mine", isDefault: true } });
     await system.computer.create({
       data: {
@@ -123,7 +126,7 @@ describePostgres("saved home retention (PostgreSQL)", () => {
   afterEach(async () => {
     vi.useRealTimers();
     await system.organization.deleteMany({ where: { id } });
-    await system.user.deleteMany({ where: { id } });
+    await system.user.deleteMany({ where: { id: { startsWith: id } } });
     await rm(root, { recursive: true, force: true });
   });
 
@@ -138,7 +141,7 @@ describePostgres("saved home retention (PostgreSQL)", () => {
     await sweep();
     expect(await objects()).toHaveLength(1);
 
-    travel(2);
+    travel(3);
     await sweep();
     expect(errors).toEqual([]);
     expect(await objects()).toEqual([]);
@@ -177,10 +180,61 @@ describePostgres("saved home retention (PostgreSQL)", () => {
       where: { organizationId: id },
       data: { status: "active", endedAt: null },
     });
-    travel(8);
+    travel(9);
     await sweep();
     expect(await objects()).toHaveLength(1);
     expect(await system.homeDeletionNotice.count({ where: { computerId: id } })).toBe(0);
+  });
+
+  it("warns the organization's owner, not a member, when its plan ended", async () => {
+    const owner = `${id}-owner`;
+    await system.user.create({
+      data: { id: owner, name: "Sam", email: `${owner}@rakazo.test`, emailVerified: true },
+    });
+    await system.member.update({ where: { id }, data: { role: "member" } });
+    await system.member.create({
+      data: { id: owner, organizationId: id, userId: owner, role: "owner", createdAt: new Date() },
+    });
+    await system.billingAccount.create({
+      data: {
+        organizationId: id,
+        customerId: `cus-${id}`,
+        status: "canceled",
+        subscribedAt: new Date(now - 200 * DAY),
+        endedAt: new Date(now - 100 * DAY),
+      },
+    });
+    await sweep();
+    expect(errors).toEqual([]);
+    expect(sent()).toHaveLength(0);
+    expect(email.sent.map((message) => message.to)).toEqual([`${owner}@rakazo.test`]);
+  });
+
+  it("sends one warning for more computers than one batch", async () => {
+    const extra = Array.from({ length: 501 }, (_, index) => `${id}-${index}`);
+    await system.computer.createMany({
+      data: extra.map((computerId) => ({
+        id: computerId,
+        spaceId: id,
+        userId: id,
+        scopeKey: computerId,
+        homeKey: computerId,
+        kind: "fake",
+        state: "stopped",
+        createdAt: new Date(now - 100 * DAY),
+        homeStorageId: computerId,
+        homeStorageKey: "unused",
+      })),
+    });
+    await sweep();
+    await sweep();
+    expect(errors).toEqual([]);
+    expect(sent()).toHaveLength(1);
+    expect(
+      await system.homeDeletionNotice.count({
+        where: { computerId: { in: [id, ...extra] }, warnedAt: { not: null } },
+      }),
+    ).toBe(502);
   });
 
   it("keeps the files when the computer is used after the warning", async () => {
@@ -190,7 +244,7 @@ describePostgres("saved home retention (PostgreSQL)", () => {
     await system.computerRun.create({
       data: { computerId: id, kind: "fake", startedAt: new Date(now), endedAt: new Date(now) },
     });
-    travel(5);
+    travel(6);
     await sweep();
     expect(await objects()).toHaveLength(1);
     expect(sent()).toHaveLength(1);
@@ -200,7 +254,7 @@ describePostgres("saved home retention (PostgreSQL)", () => {
     email.failNextSends(1);
     await sweep();
     expect(errors).toHaveLength(1);
-    travel(8);
+    travel(9);
     await sweep();
     expect(await objects()).toHaveLength(1);
     expect(sent()).toHaveLength(1);
@@ -215,7 +269,7 @@ describePostgres("saved home retention (PostgreSQL)", () => {
     expect(sent()).toHaveLength(1);
 
     await system.computer.update({ where: { id }, data: { state: "running" } });
-    travel(8);
+    travel(9);
     await sweep();
     expect(await system.homeDeletionNotice.count({ where: { computerId: id } })).toBe(0);
     expect(await objects()).toHaveLength(1);
@@ -235,7 +289,7 @@ describePostgres("saved home retention (PostgreSQL)", () => {
       data: { organizationId: id, mode: "credits", balanceMicros: 1_000_000n },
     });
     await sweep();
-    travel(8);
+    travel(9);
     await sweep();
     expect(sent()).toHaveLength(0);
     expect(await objects()).toHaveLength(1);
@@ -243,7 +297,7 @@ describePostgres("saved home retention (PostgreSQL)", () => {
 
   it("keeps the files when a plan starts after the scan read the computer", async () => {
     await sweep();
-    travel(8);
+    travel(9);
     const findMany = prisma.computer.findMany;
     const scan = vi.spyOn(prisma.computer, "findMany").mockImplementationOnce((async (
       args: Parameters<typeof findMany>[0],

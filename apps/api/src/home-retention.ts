@@ -28,6 +28,12 @@ type Account = {
 };
 type Due = { at: Date; reason: HomeDeletionReason };
 type Db = PrismaClient | Prisma.TransactionClient;
+type Warning = {
+  userId: string;
+  organizationId: string;
+  reason: HomeDeletionReason;
+  ids: string[];
+};
 
 /**
  * When a computer's saved home becomes due for deletion: 30 days after a paid plan ended, or
@@ -80,15 +86,12 @@ export function homeRetentionSweep(deps: HomeRetentionDeps): () => Promise<void>
       await prisma.homeDeletionNotice.deleteMany({
         where: { computer: { NOT: candidate }, ...claimable() },
       });
-      const warnings = new Map<
-        string,
-        { userId: string; reason: HomeDeletionReason; ids: string[] }
-      >();
+      const warnings = new Map<string, Warning>();
       let cursor: string | undefined;
       for (;;) {
         const now = new Date();
         const computers = await dueDates(prisma, {}, now, cursor);
-        for (const { id, userId, notice, due } of computers) {
+        for (const { id, userId, organizationId, notice, due } of computers) {
           // The deletion keeps the date the email gave, unless something since moved it later.
           if (notice?.warnedAt && notice.deleteAfter && due && due.at <= notice.deleteAfter) {
             if (notice.deleteAfter <= now) await removeHome(prisma, id).catch(deps.onError);
@@ -101,8 +104,14 @@ export function homeRetentionSweep(deps: HomeRetentionDeps): () => Promise<void>
               where: { computerId: id, ...claimable() },
             });
           if (!warnable) continue;
-          const key = `${userId}:${due.reason}`;
-          const group = warnings.get(key) ?? { userId, reason: due.reason, ids: [] };
+          // Only the organization's owner can resubscribe; unused bots are their owner's to use.
+          const key = due.reason === "plan-ended" ? `org:${organizationId}` : `user:${userId}`;
+          const group = warnings.get(key) ?? {
+            userId,
+            organizationId,
+            reason: due.reason,
+            ids: [],
+          };
           group.ids.push(id);
           warnings.set(key, group);
         }
@@ -127,6 +136,7 @@ async function dueDates(db: Db, where: Prisma.ComputerWhereInput, now: Date, cur
       state: true,
       space: {
         select: {
+          organizationId: true,
           organization: {
             select: {
               billing: {
@@ -164,6 +174,7 @@ async function dueDates(db: Db, where: Prisma.ComputerWhereInput, now: Date, cur
     return {
       id: computer.id,
       userId: computer.userId,
+      organizationId: computer.space.organizationId,
       notice: computer.homeDeletionNotice,
       due: usedAt ? homeDeletionDue(computer.space.organization, usedAt, now) : null,
     };
@@ -193,14 +204,20 @@ function claimable() {
 }
 
 /**
- * Emails the owner once for all their computers still due for the same reason. A crash after
- * sending and before recording it sends again once the claim expires, so nothing is deleted
- * unwarned.
+ * The date a warning sent at `sentAt` names, and when deletion may start: once that date has
+ * ended in every time zone.
  */
-async function warn(
-  deps: HomeRetentionDeps,
-  group: { userId: string; reason: HomeDeletionReason; ids: string[] },
-) {
+export function deletionDates(sentAt: Date) {
+  const shown = new Date(addDays(sentAt, WARNING_DAYS).setUTCHours(0, 0, 0, 0));
+  return { shown, deleteAfter: addDays(shown, 2) };
+}
+
+/**
+ * Emails once for all the computers of a group still due for the same reason: the computers'
+ * owner when unused, the organization's first owner when its plan ended. A crash after sending
+ * and before recording it sends again once the claim expires, so nothing is deleted unwarned.
+ */
+async function warn(deps: HomeRetentionDeps, group: Warning) {
   const { prisma } = deps;
   await prisma.homeDeletionNotice.createMany({
     data: group.ids.map((computerId) => ({ computerId })),
@@ -220,29 +237,40 @@ async function warn(
   try {
     // Read again now that the claim holds them: a plan or use since the scan cancels.
     const sentAt = new Date();
-    const deleteAfter = addDays(sentAt, WARNING_DAYS);
-    const due = (await dueDates(prisma, { homeDeletionNotice: { claimId } }, sentAt))
-      .filter((computer) => computer.due?.reason === group.reason && computer.due.at <= deleteAfter)
-      .map((computer) => computer.id);
+    const { shown, deleteAfter } = deletionDates(sentAt);
+    const due: string[] = [];
+    for (let cursor: string | undefined; ; ) {
+      const page = await dueDates(prisma, { homeDeletionNotice: { claimId } }, sentAt, cursor);
+      for (const computer of page)
+        if (computer.due?.reason === group.reason && computer.due.at <= deleteAfter)
+          due.push(computer.id);
+      if (page.length < BATCH) break;
+      cursor = page.at(-1)?.id;
+    }
     await prisma.homeDeletionNotice.deleteMany({ where: { claimId, computerId: { notIn: due } } });
-    const user = due.length
-      ? await prisma.user.findUnique({
-          where: { id: group.userId },
-          select: { email: true, name: true, locale: true },
-        })
-      : null;
+    const userId =
+      group.reason === "plan-ended"
+        ? (
+            await prisma.member.findFirst({
+              where: { organizationId: group.organizationId, role: { contains: "owner" } },
+              orderBy: { createdAt: "asc" },
+              select: { userId: true },
+            })
+          )?.userId
+        : group.userId;
+    const user =
+      due.length && userId
+        ? await prisma.user.findUnique({
+            where: { id: userId },
+            select: { email: true, name: true, locale: true },
+          })
+        : null;
     if (!user) {
       await release();
       return;
     }
     await deps.email.send(
-      await homeDeletionEmail(
-        user,
-        deleteAfter,
-        group.reason,
-        deps.appUrl,
-        emailLocale(user.locale),
-      ),
+      await homeDeletionEmail(user, shown, group.reason, deps.appUrl, emailLocale(user.locale)),
     );
     await prisma.homeDeletionNotice.updateMany({
       where: { claimId },

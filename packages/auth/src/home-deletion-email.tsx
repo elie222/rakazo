@@ -8,14 +8,14 @@ export type HomeDeletionReason = "plan-ended" | "unused";
 
 export function homeDeletionEmail(
   user: { email: string; name: string },
-  deleteAfter: Date,
+  deletionDate: Date,
   reason: HomeDeletionReason,
   appUrl: string,
   locale = "en",
 ): Promise<TransactionalEmail> {
   const say = emailText(locale);
   const date = new Intl.DateTimeFormat(locale, { dateStyle: "long", timeZone: "UTC" }).format(
-    deleteAfter,
+    deletionDate,
   );
   return message(
     user.email,
