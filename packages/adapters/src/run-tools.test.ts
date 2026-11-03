@@ -65,6 +65,24 @@ beforeEach(() => {
 });
 
 describe("dispatchTool audit outcomes", () => {
+  it("does not read the owner's private routines for a shared-channel request", async () => {
+    const findMany = vi.fn(async () => []);
+    const base = dispatchContext(false);
+    const ctx = {
+      ...base,
+      deps: { ...base.deps, prisma: { ...base.deps.prisma, routine: { findMany } } },
+      run: { userId: "owner", spaceId: "space-1" },
+      bot: { id: "bot-1" },
+      thread: { id: "private-thread", groupId: null },
+      source: { ownerStartedRun: false, messagingChannelRun: true },
+    };
+
+    await expect(applyTool(ctx as never, "schedule_list", {}, "call-1")).resolves.toEqual({
+      error: "This tool is unavailable after a shared-channel message.",
+    });
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
   it("records an ordinary successful call as a success", async () => {
     const ctx = dispatchContext(true);
     const result = await applyTool(ctx as never, "update_preferences", {}, "call-1");
