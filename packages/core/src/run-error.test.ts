@@ -889,3 +889,19 @@ describe("known application run errors", () => {
     expect(isKnownRunError(`${MODEL_IMAGE_INPUT_ERROR} fixture-secret`)).toBe(false);
   });
 });
+
+it.each([
+  [
+    "ModelAccountError: The model provider rejected the account or request. HTTP 401.",
+    "auth",
+    "connection",
+  ],
+  [
+    "ModelAccountError: The model provider rejected the account or request. HTTP 403.",
+    "access",
+    "model",
+  ],
+  ["ModelOutputError: The model returned unusable output.", "output", "model"],
+])("keeps recovery actions for a safe failure reason: %s", (reason, kind, recovery) => {
+  expect(normalizeRunError(reason)).toMatchObject({ kind, recovery });
+});

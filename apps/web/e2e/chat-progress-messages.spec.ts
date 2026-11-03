@@ -39,9 +39,9 @@ test("failed run leaves a visible notice after its progress", async ({ page }, t
   await expect(bubbles).toHaveCount(2);
   await expect(bubbles.nth(0)).toHaveText("Checking your calendars…");
   await expect(bubbles.nth(1)).toHaveText(
-    "Run failed: TransientModelError: The model provider is temporarily unavailable. HTTP 502.",
+    "Chief failed: TransientModelError: The model provider is temporarily unavailable. HTTP 502.",
   );
   await page.reload();
-  await expect(bubbles.nth(1)).toContainText("Run failed:");
+  await expect(bubbles.nth(1)).toContainText("Chief failed:");
   await captureScreenshot(page, testInfo, "failed-run-notice");
 });

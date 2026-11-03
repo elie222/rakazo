@@ -2,6 +2,7 @@ import {
   isTransientModelError,
   ModelAccountError,
   ModelOutputError,
+  ModelProviderError,
   TransientModelError,
 } from "@rakazo/adapter-kit";
 import {
@@ -107,12 +108,17 @@ export function modelFailure(error: string, message: string): Error {
         ...fallback.backups.filter((item) => item.status === "failed").map((item) => item.reason),
       ].map((part) => modelFailureClass(part, part))
     : [modelFailureClass(error, message)];
-  const Failure = MODEL_FAILURE_RANK[Math.max(...failures)] ?? Error;
+  const Failure = MODEL_FAILURE_RANK[Math.max(...failures)] ?? ModelProviderError;
   return new Failure(message);
 }
 
-/** Least to most severe; a server fault (plain Error) is last. */
-const MODEL_FAILURE_RANK = [TransientModelError, ModelOutputError, ModelAccountError, Error];
+/** Least to most severe; an unclassified provider failure is last. */
+const MODEL_FAILURE_RANK = [
+  TransientModelError,
+  ModelOutputError,
+  ModelAccountError,
+  ModelProviderError,
+];
 
 function modelFailureClass(error: string, message: string): number {
   const { kind } = normalizeRunError(message);
@@ -125,7 +131,7 @@ function modelFailureClass(error: string, message: string): number {
   if (terminalOAuthRefreshErrorMarker(message))
     return MODEL_FAILURE_RANK.indexOf(ModelAccountError);
   if (kind) return MODEL_FAILURE_RANK.indexOf(ModelAccountError);
-  return MODEL_FAILURE_RANK.indexOf(Error);
+  return MODEL_FAILURE_RANK.indexOf(ModelProviderError);
 }
 
 export function sanitizeProviderError(provider: string, message: string): string {

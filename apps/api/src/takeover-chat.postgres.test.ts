@@ -1200,12 +1200,12 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       });
       expect(
         await system.message.findFirst({
-          where: { threadId: run.threadId, runId: run.id, role: "bot" },
+          where: { threadId: run.threadId, runId: run.id, role: "system" },
           orderBy: { seq: "desc" },
           select: { blocks: true },
         }),
       ).toEqual({
-        blocks: [{ kind: "text", text: "Run failed: The model provider is unavailable." }],
+        blocks: [{ kind: "text", text: "Fixture failed: The run could not be completed." }],
       });
       expect(vi.mocked(fixture.jobs.cancel).mock.calls).not.toContainEqual([runJobKey(run.id)]);
       expect(releaseScreen.mock.calls.some(([, context]) => context.runId === run.id)).toBe(false);

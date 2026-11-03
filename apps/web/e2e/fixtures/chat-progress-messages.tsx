@@ -41,12 +41,12 @@ const events: Partial<ProductEvent>[] = live
         type: "thread.message.created",
         payload: {
           messageId: "bot-reply",
-          role: "bot",
+          role: failed ? "system" : "bot",
           blocks: [
             {
               kind: "text",
               text: failed
-                ? "Run failed: TransientModelError: The model provider is temporarily unavailable. HTTP 502."
+                ? "Chief failed: TransientModelError: The model provider is temporarily unavailable. HTTP 502."
                 : "Tuesday afternoon is free.",
             },
           ],

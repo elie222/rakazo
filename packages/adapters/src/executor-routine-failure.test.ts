@@ -8,7 +8,7 @@ import {
   TransientModelError,
 } from "@rakazo/adapter-kit";
 import type * as DbModule from "@rakazo/db";
-import { countUnreadInboxChats, runFailureNoticeClientNonce } from "@rakazo/db";
+import { countUnreadInboxChats } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
@@ -80,7 +80,6 @@ async function failRun(scenario: Scenario) {
     if (backup) await request.onModelChange?.(backup.provider, backup.modelId);
     throw scenario.error;
   });
-  let finalized = false;
   const prisma = {
     user: { findUnique: vi.fn(async () => null) },
     run: {
@@ -139,16 +138,7 @@ async function failRun(scenario: Scenario) {
     message: {
       findMany: vi.fn(async () => []),
       findUnique: vi.fn(async () => null),
-      count: vi.fn(async ({ where }: { where: { OR?: Array<{ clientNonce: unknown }> } }) => {
-        const excludesNotice = where.OR?.some(
-          (condition) =>
-            typeof condition.clientNonce === "object" &&
-            condition.clientNonce !== null &&
-            "not" in condition.clientNonce &&
-            condition.clientNonce.not === runFailureNoticeClientNonce(run.id),
-        );
-        return (scenario.botMessages ?? 0) + (finalized && !excludesNotice ? 1 : 0);
-      }),
+      count: vi.fn(async () => scenario.botMessages ?? 0),
     },
     task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: "Sweep the inbox" })) },
     computer: { updateMany: vi.fn(async () => ({ count: 1 })) },
@@ -206,10 +196,7 @@ async function failRun(scenario: Scenario) {
     artifact: { findMany: vi.fn(async () => []) },
     $transaction: vi.fn(async () => null),
   };
-  const finalizeRun = vi.fn(async () => {
-    finalized = true;
-    return { continuationRunId: null };
-  });
+  const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
   const enqueue = vi.fn(async (job: { name: string }) => {
     if (job.name === "routine.retry" && scenario.retryEnqueueFails) throw new Error("queue down");
   });

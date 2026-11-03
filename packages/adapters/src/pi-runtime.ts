@@ -1059,6 +1059,7 @@ export class PiAgentRuntime implements AgentRuntime {
       } catch (error) {
         span?.setStatus({ status: "error" });
         const message = sanitizeError(error instanceof Error ? error.message : String(error));
+        const providerError = new ModelProviderError(message, error);
         queue.fail(
           error instanceof TransientModelError
             ? new TransientModelError(message, { cause: error })
@@ -1066,7 +1067,9 @@ export class PiAgentRuntime implements AgentRuntime {
               ? new ModelAccountError(message, { cause: error })
               : error instanceof ModelOutputError
                 ? new ModelOutputError(message, { cause: error })
-                : new ModelProviderError(message, { cause: error }),
+                : error instanceof ModelProviderError || providerError.httpStatus
+                  ? providerError
+                  : new Error(message),
         );
       } finally {
         stopThinking();

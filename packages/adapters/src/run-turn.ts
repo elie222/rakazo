@@ -948,6 +948,9 @@ export async function failRun(
     leaseFence: ctx.fence,
     outcome: "failed",
     error: message,
+    ...(error instanceof ModelProviderError || isKnownRunError(message)
+      ? { failureNotice: message }
+      : {}),
     ...(partialReply.length > 0 ? { partialReply } : {}),
   });
   if (!failed) return;

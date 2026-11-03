@@ -325,6 +325,7 @@ export function normalizeRunError(
   const message = typeof payload.message === "string" ? payload.message : body;
   // Output diagnostics can quote generated text that mentions a timeout or a quota.
   if (
+    trimmed.startsWith("ModelOutputError: ") ||
     trimmed === MODEL_OUTPUT_LIMIT_ERROR ||
     MODEL_OUTPUT_FAILURE.test(trimmed) ||
     MODEL_OUTPUT_FAILURE.test(message)
@@ -346,7 +347,15 @@ export function normalizeRunError(
     ),
   ].join(" ");
   const status =
-    [prefix?.[1], prefix?.[2], record.status, record.code, payload.code, payload.httpCode]
+    [
+      prefix?.[1],
+      prefix?.[2],
+      trimmed.match(/\bHTTP ([45]\d{2})\.$/)?.[1],
+      record.status,
+      record.code,
+      payload.code,
+      payload.httpCode,
+    ]
       .map(Number)
       .find((value) => Number.isInteger(value) && value >= 100 && value <= 599) ??
     // Bedrock names its modeled exception instead of reporting the HTTP status.

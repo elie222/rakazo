@@ -21,9 +21,11 @@ import {
   ACTIVE_RUN_STATUSES,
   blocksToAgentHistoryText,
   callIdFromClientNonce,
+  displayName,
   instructionUpdateDiff,
   isApprovalAskBlock,
   isConversationalRun,
+  isKnownRunError,
   isSecretAskBlock,
   messageBypassesTakeoverWait,
   messageReaction,
@@ -56,7 +58,6 @@ import {
   createThreadMessageInTransaction,
   partialReplyClientNonce,
   RunHistoryWriteError,
-  runFailureNoticeClientNonce,
 } from "./messages.js";
 import { deleteRunSecretsInTransaction } from "./run-secrets.js";
 import { isRunResponse, readRunTimingFields } from "./run-timing.js";
@@ -192,6 +193,8 @@ export type FinalizeRunInput = FinalizeRunBase &
     | {
         outcome: "failed";
         error: string;
+        /** Controlled, short text for the conversation; never raw diagnostics. */
+        failureNotice?: string;
         /** Reply text the user saw streaming before the failure, kept as a bot message. */
         partialReply?: MessageBlock[];
       }
@@ -1878,10 +1881,7 @@ async function finalizeRunOnce(
     const replyBlocks =
       input.outcome === "completed"
         ? completedRunBlocks(input.blocks, writableRun?.startedAt ?? null, now)
-        : [
-            ...(input.partialReply ?? []),
-            { kind: "text" as const, text: `Run failed: ${input.error || "Unknown error."}` },
-          ];
+        : (input.partialReply ?? []);
     if (replyBlocks.length > 0) {
       const message = await createThreadMessageInTransaction(tx, {
         threadId: input.threadId,
@@ -1891,11 +1891,7 @@ async function finalizeRunOnce(
         runId: input.runId,
         ...(input.outcome === "completed"
           ? { markUnread: input.markUnread }
-          : {
-              clientNonce: input.partialReply?.length
-                ? partialReplyClientNonce(input.runId)
-                : runFailureNoticeClientNonce(input.runId),
-            }),
+          : { clientNonce: partialReplyClientNonce(input.runId) }),
       });
       const response = await appendEventInTransaction(tx, {
         spaceId: input.spaceId,
@@ -1906,6 +1902,30 @@ async function finalizeRunOnce(
         payload: { messageId: message.id, role: "bot", blocks: replyBlocks },
       });
       firstResponse = response.firstResponse;
+    }
+    const bot = await tx.bot.update({ where: { id: input.botId }, data: { updatedAt: now } });
+    if (input.outcome === "failed") {
+      const reason =
+        input.failureNotice?.trim().slice(0, 300) ||
+        (isKnownRunError(input.error) ? input.error : "The run could not be completed.");
+      const blocks: MessageBlock[] = [
+        { kind: "text", text: `${displayName(bot.name, "Bot")} failed: ${reason}` },
+      ];
+      const notice = await createThreadMessageInTransaction(tx, {
+        threadId: input.threadId,
+        role: "system",
+        blocks,
+        botId: input.botId,
+        runId: input.runId,
+      });
+      await appendEventInTransaction(tx, {
+        spaceId: input.spaceId,
+        threadId: input.threadId,
+        botId: input.botId,
+        type: "thread.message.created",
+        runId: input.runId,
+        payload: { messageId: notice.id, role: "system", blocks },
+      });
     }
     const lastEvent = await appendEventInTransaction(tx, {
       spaceId: input.spaceId,
@@ -1933,7 +1953,6 @@ async function finalizeRunOnce(
       });
     }
     const continuationRunId = await createPendingSteeringRun(tx, input);
-    await tx.bot.update({ where: { id: input.botId }, data: { updatedAt: now } });
     return { threadId: lastEvent.threadId, seq: lastEvent.seq, continuationRunId, firstResponse };
   }, FINALIZE_TRANSACTION_OPTIONS);
 }

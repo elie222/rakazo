@@ -27,11 +27,7 @@ import {
   sendUserMessage,
   settleReleasedTakeoverCards,
 } from "./events.js";
-import {
-  partialReplyClientNonce,
-  RunHistoryWriteError,
-  runFailureNoticeClientNonce,
-} from "./messages.js";
+import { partialReplyClientNonce, RunHistoryWriteError } from "./messages.js";
 import { installSecurityEventStore } from "./security-events.js";
 
 class TestFanout implements RealtimeFanout {
@@ -223,15 +219,16 @@ describe("finalizeRun", () => {
       partialReply,
     });
 
-    expect(tx.message.create).toHaveBeenCalledExactlyOnceWith({
+    expect(tx.message.create).toHaveBeenNthCalledWith(1, {
       data: expect.objectContaining({
         role: "bot",
-        blocks: [...partialReply, { kind: "text", text: "Run failed: terminated" }],
+        blocks: partialReply,
         runId: "run-1",
         clientNonce: partialReplyClientNonce("run-1"),
       }),
     });
     expect(tx.event.create.mock.calls.map(([{ data }]) => data.type)).toEqual([
+      "thread.message.created",
       "thread.message.created",
       "run.failed",
     ]);
@@ -241,7 +238,10 @@ describe("finalizeRun", () => {
     );
   });
 
-  it("saves a failure notice even without a partial reply", async () => {
+  it.each([
+    undefined,
+    "TransientModelError: The model provider is temporarily unavailable. HTTP 502.",
+  ])("saves a safe system notice without bot output (%s)", async (failureNotice) => {
     const create = vi.fn(async () => ({ id: "failure-notice" }));
     const tx = {
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
@@ -281,21 +281,36 @@ describe("finalizeRun", () => {
       leaseOwner: "worker-1",
       leaseFence: 1,
       outcome: "failed",
-      error: "terminated",
+      failureNotice,
+      error: `setup stderr: secret=fixture-secret ${"x".repeat(400)}`,
     });
     expect(create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         threadId: "thread-1",
         botId: "bot-1",
         runId: "run-1",
-        role: "bot",
-        blocks: [{ kind: "text", text: "Run failed: terminated" }],
-        clientNonce: runFailureNoticeClientNonce("run-1"),
+        role: "system",
+        blocks: [
+          {
+            kind: "text",
+            text: `Bot failed: ${failureNotice ?? "The run could not be completed."}`,
+          },
+        ],
       }),
     });
     expect(tx.run.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ status: "failed", error: "terminated" }),
+        data: expect.objectContaining({ status: "failed" }),
+      }),
+    );
+    expect(tx.thread.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ unread: undefined }),
+      }),
+    );
+    expect(tx.run.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ firstResponseAt: expect.anything() }),
       }),
     );
   });

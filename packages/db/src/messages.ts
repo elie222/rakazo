@@ -53,11 +53,6 @@ export function partialReplyClientNonce(runId: string): string {
   return `partial-reply:${runId}`;
 }
 
-/** A terminal notice is not bot output for the existing routine retry guard. */
-export function runFailureNoticeClientNonce(runId: string): string {
-  return `run-failure:${runId}`;
-}
-
 export function isPartialReplyClientNonce(clientNonce: string | null | undefined): boolean {
   return Boolean(clientNonce?.startsWith("partial-reply:"));
 }

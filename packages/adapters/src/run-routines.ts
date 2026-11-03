@@ -12,7 +12,6 @@ import {
   isOneShotRoutineCrons,
   nextRoutineRunDateAcross,
 } from "@rakazo/core";
-import { runFailureNoticeClientNonce } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { protectedComputerLifecycleRefusal } from "./desktop-command-guard.js";
@@ -77,16 +76,7 @@ export async function scheduleRoutineRetry(
       }),
       deps.prisma.event.count({ where: { runId: run.id, type: "agent.tool.called" } }),
       deps.prisma.message.count({
-        where: {
-          threadId: run.threadId,
-          runId: run.id,
-          role: "bot",
-          // The finalizer already saved the failure notice. Actual output still blocks retries.
-          OR: [
-            { clientNonce: null },
-            { clientNonce: { not: runFailureNoticeClientNonce(run.id) } },
-          ],
-        },
+        where: { threadId: run.threadId, runId: run.id, role: "bot" },
       }),
     ]);
     if (!routine || toolCalls > 0 || botMessages > 0) return false;

@@ -16,6 +16,7 @@ const provider = vi.hoisted(() => ({
   errorMessage: "",
   messages: [] as unknown[],
   thrown: undefined as unknown,
+  idleThrown: undefined as unknown,
 }));
 
 vi.mock("@earendil-works/pi-agent-core", () => ({
@@ -26,7 +27,9 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
     async prompt() {
       if (provider.thrown) throw provider.thrown;
     }
-    async waitForIdle() {}
+    async waitForIdle() {
+      if (provider.idleThrown) throw provider.idleThrown;
+    }
     abort() {}
   },
 }));
@@ -82,6 +85,7 @@ describe("Pi runtime errors", () => {
     provider.errorMessage = "Request was aborted by policy";
     provider.messages = [];
     provider.thrown = undefined;
+    provider.idleThrown = undefined;
   });
 
   it("propagates provider failures instead of completing with error text", async () => {
@@ -117,6 +121,14 @@ describe("Pi runtime errors", () => {
     expect(modelFailureReason(error as ModelProviderError)).toBe(
       "ModelProviderError: The model request failed. HTTP 502.",
     );
+  });
+
+  it("keeps internal runtime failures outside the provider error class", async () => {
+    provider.errorMessage = "";
+    provider.idleThrown = new TypeError("Internal runtime failure");
+    const failure = consume();
+    await expect(failure).rejects.not.toBeInstanceOf(ModelProviderError);
+    await expect(failure).rejects.toThrow("Internal runtime failure");
   });
 
   it("marks a provider overload that outlasted its retries as transient", async () => {
