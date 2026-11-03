@@ -1,0 +1,35 @@
+appId: com.rakazo.app
+name: Bots
+---
+- runFlow:
+    file: ../subflows/sign-in.yaml
+    env:
+      RAKAZO_ACTIVE_EMAIL: ${RAKAZO_SCREENSHOT_EMAIL}
+- openLink: "rakazo:///bot-profile?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- extendedWaitUntil:
+    visible: ".*Routines.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 01-bot-profile
+- tapOn: ".*Routines.*"
+- extendedWaitUntil:
+    visible: ".*Weekly fixture review.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 02-routines
+- openLink: "rakazo:///bot-model?botId=${RAKAZO_SCREENSHOT_BOT_ID}"
+- extendedWaitUntil:
+    visible: ".*Space default.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 03-bot-model
+- openLink: "rakazo:///peer-chat?botId=${RAKAZO_SCREENSHOT_BOT_ID}&botName=Researcher&peerBotId=${RAKAZO_SCREENSHOT_PEER_BOT_ID}&peerBotName=Writer"
+- extendedWaitUntil:
+    visible: ".*draft the announcement.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 04-peer-chat

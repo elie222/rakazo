@@ -221,3 +221,26 @@ it("translates every size unit and rolls up instead of 1,024.0 KB or 1,536.0 MB"
   );
   expect(sizes).toEqual(["«512 B»", "«1 KB»", "«1 MB»", "«1.5 GB»", "«1.5 TB»"]);
 });
+
+it("previews plain text in the app instead of only offering a download", async () => {
+  mocks.fetch.mockResolvedValue(new TextEncoder().encode("1. Confirm the pricing page copy."));
+  await act(async () =>
+    root?.render(
+      <ArtifactFileCard
+        target={{ botId: "bot-1" }}
+        artifactId="notes-1"
+        name="notes.txt"
+        mimeType="text/plain"
+        size={33}
+      />,
+    ),
+  );
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Preview notes.txt"]')?.click(),
+  );
+  await vi.waitFor(() =>
+    expect(document.body.querySelector("pre")?.textContent).toBe(
+      "1. Confirm the pricing page copy.",
+    ),
+  );
+});

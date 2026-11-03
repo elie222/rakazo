@@ -1,6 +1,6 @@
 import { ChatMarkdown, withBlockMentions } from "@rakazo/chat-ui/native";
 import type { LoginFieldInput, MessageBlock } from "@rakazo/contracts";
-import { isAttachmentAudioMimeType } from "@rakazo/contracts";
+import { artifactPreviewKind, isAttachmentAudioMimeType } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
 import {
   formatFileSize,
@@ -44,7 +44,6 @@ import { ChangeUndo, isUndoableChange } from "../change-undo";
 import type { ImageArtifactPreviewTarget } from "../image-artifact-viewer";
 import { InlineImageAttachment } from "../inline-image-attachment";
 import { McpApprovalCard } from "../McpApprovalCard";
-import type { MarkdownArtifactPreviewTarget } from "../markdown-artifact-preview";
 import { MessageCaption } from "../message-caption";
 import { NativeSymbol } from "../native-symbol";
 import { PageCard } from "../pages/page-card";
@@ -189,7 +188,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   onAnswer,
   onOpenComputer,
   onChoiceDismissed,
-  onPreviewMarkdown,
+  onPreviewFile,
   onPreviewImage,
   peerExchange,
   onOpenPeerChat,
@@ -217,7 +216,8 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   onOpenBot: (botId: string, name: string) => void;
   onOpenComputer: (botId: string, name: string) => void;
   onChoiceDismissed?: (question: string) => void;
-  onPreviewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
+  /** Opens a file the app can show; other types go to the share sheet. */
+  onPreviewFile: (artifactId: string) => void;
   onPreviewImage: (target: ImageArtifactPreviewTarget) => void;
   peerExchange?: PeerExchange;
   onOpenPeerChat: (peer: { peerBotId: string; peerBotName: string }) => void;
@@ -596,12 +596,8 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                 {...actionProps}
                 onPress={() =>
                   attachment.artifactId
-                    ? attachment.mimeType === "text/markdown"
-                      ? onPreviewMarkdown({
-                          artifactId: attachment.artifactId,
-                          name: attachment.name ?? t("Markdown file"),
-                          mimeType: attachment.mimeType,
-                        })
+                    ? artifactPreviewKind(attachment.mimeType ?? "") !== "none"
+                      ? onPreviewFile(attachment.artifactId)
                       : void openMobileArtifact(
                           artifactTarget,
                           attachment.artifactId,

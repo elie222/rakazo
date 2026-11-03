@@ -1,5 +1,6 @@
-import { createDb, createThreadMessage } from "@rakazo/db";
+import { allocateTicketNumber, createDb, createThreadMessage, ensureBoard } from "@rakazo/db";
 import { pageViewerCode } from "@rakazo/page-kit/compile";
+import { PNG } from "pngjs";
 import { sessionCookieHeader } from "../index.js";
 
 const MARKER = "marigold checklist";
@@ -15,12 +16,27 @@ const PAGE_SOURCE = [
   ");",
   "export default App;",
 ].join("\n");
+const IMAGE_NAME = "launch-chart.png";
+const NOTES = [
+  "Launch notes",
+  "",
+  "1. Confirm the pricing page copy.",
+  "2. Collect three customer quotes.",
+  "3. Publish the changelog on launch day.",
+].join("\n");
 
 export interface IosScreenshotFixture {
   botId: string;
+  peerBotId: string;
   groupId: string;
   routineId: string;
-  pageId: string;
+  artifactId: string;
+  markdownId: string;
+  imageId: string;
+  pdfId: string;
+  archiveId: string;
+  teamSpaceId: string;
+  conversationId: string;
 }
 
 interface BotRow {
@@ -41,20 +57,34 @@ interface RoutineRow {
   active: boolean;
 }
 
+interface ArtifactRow {
+  id: string;
+  name: string;
+  size: number;
+}
+
 interface MeRow {
   userId: string;
   spaceId: string;
 }
+
+/** Finishes a plan checkout in the billing provider, as paying does in production. */
+export type CompleteCheckout = (customerId: string) => void;
 
 export async function seedIosScreenshotFixture(input: {
   apiUrl: string;
   databaseUrl: string;
   email: string;
   emptyEmail: string;
+  freeEmail: string;
   password: string;
+  /** Present when the API bills: the main user then pays for Pro, the empty one is on a trial. */
+  completeCheckout: CompleteCheckout;
 }): Promise<IosScreenshotFixture> {
   const populated = await ensureUser(input.apiUrl, input.email, input.password, "Screenshot User");
   const empty = await ensureUser(input.apiUrl, input.emptyEmail, input.password, "Empty User");
+  // Signs in without a plan or a survey answer, to show what a new account meets first.
+  await ensureUser(input.apiUrl, input.freeEmail, input.password, "Free User");
   for (const bot of await rpc<BotRow[]>(input.apiUrl, empty.headers, "bots/list")) {
     await rpc(input.apiUrl, empty.headers, "bots/remove", { botId: bot.id, deleteMemories: false });
   }
@@ -118,15 +148,89 @@ export async function seedIosScreenshotFixture(input: {
     });
   }
 
+  // A Pro user brings their own provider; the offline fixture accepts this key.
+  const credentials = await rpc<unknown[]>(input.apiUrl, populated.headers, "models/credentials");
+  if (credentials.length === 0) {
+    const model = { provider: "openrouter", modelId: "anthropic/claude-fable-5.1" };
+    await rpc(input.apiUrl, populated.headers, "models/connect", {
+      ...model,
+      apiKey: "fixture-openrouter-key",
+    });
+    await rpc(input.apiUrl, populated.headers, "models/setDefault", model);
+  }
+  const rules = await rpc<{ matchValue: string }[]>(
+    input.apiUrl,
+    populated.headers,
+    "approvalRules/list",
+  );
+  if (!rules.some((rule) => rule.matchValue === "example.com")) {
+    await rpc(input.apiUrl, populated.headers, "approvalRules/set", {
+      effect: "always_allow",
+      matchKind: "site",
+      matchValue: "example.com",
+    });
+  }
+  const vault = await rpc<{ name: string }[]>(input.apiUrl, populated.headers, "vault/list");
+  if (!vault.some((secret) => secret.name === "fixture-token")) {
+    await rpc(input.apiUrl, populated.headers, "vault/put", {
+      destination: { name: "fixture-token", auth: { type: "command" } },
+      value: "fixture-value-not-a-secret",
+    });
+  }
+
+  const stored = await rpc<ArtifactRow[]>(input.apiUrl, populated.headers, "artifacts/list", {
+    botId: researcher.id,
+  });
+  const upload = async (name: string, mimeType: string, bytes: Buffer) =>
+    stored.find((artifact) => artifact.name === name) ??
+    rpc<ArtifactRow>(input.apiUrl, populated.headers, "artifacts/create", {
+      botId: researcher.id,
+      name,
+      mimeType,
+      contentBase64: bytes.toString("base64"),
+    });
+  const notes = await upload(FILE_NAME, "text/plain", Buffer.from(NOTES));
+  const plan = await upload(
+    "launch-plan.md",
+    "text/markdown",
+    Buffer.from(
+      "# Launch plan\n\n**Owner:** Researcher\n\n- [x] Draft the announcement\n- [ ] Collect customer quotes\n- [ ] Publish the changelog\n",
+    ),
+  );
+  const image = await upload(IMAGE_NAME, "image/png", chartPng());
+  const pdf = await upload("launch-brief.pdf", "application/pdf", briefPdf());
+  // An empty archive: a type no client previews.
+  const archive = await upload(
+    "launch-assets.zip",
+    "application/zip",
+    Buffer.from([0x50, 0x4b, 0x05, 0x06, ...new Array(18).fill(0)]),
+  );
+
+  const spaces = await rpc<{ spaces: { id: string; name: string }[] }>(
+    input.apiUrl,
+    populated.headers,
+    "spaces/list",
+  );
+  const teamSpace =
+    spaces.spaces.find((space) => space.name === "Launch crew") ??
+    (await rpc<{ id: string }>(input.apiUrl, populated.headers, "spaces/create", {
+      name: "Launch crew",
+    }));
+
   const me = await rpc<MeRow>(input.apiUrl, populated.headers, "me");
+  const emptyMe = await rpc<MeRow>(input.apiUrl, empty.headers, "me");
   const db = createDb(input.databaseUrl, { applicationName: "ios-screenshots" });
-  let pageId = "";
   try {
     await ensureThreadCopy(db.prisma, {
       threadId: researcher.threadId,
       botId: researcher.id,
+      peer: writer,
+      artifact: notes,
+    });
+    const conversation = await ensureTeamConversation(db.prisma, {
       spaceId: me.spaceId,
       userId: me.userId,
+      botId: researcher.id,
     });
     await ensureActivity(db.prisma, {
       threadId: researcher.threadId,
@@ -135,18 +239,41 @@ export async function seedIosScreenshotFixture(input: {
       userId: me.userId,
     });
     await ensureText(db.prisma, group.threadId, "bot", writer.id, GROUP_READY);
-    pageId = await ensurePage(db.prisma, {
+    await ensurePage(db.prisma, {
       threadId: researcher.threadId,
       botId: researcher.id,
       spaceId: me.spaceId,
       userId: me.userId,
     });
+    await ensureTickets(db.prisma, me.spaceId, me.userId, [researcher.id, writer.id]);
+    const billing = { apiUrl: input.apiUrl, prisma: db.prisma, complete: input.completeCheckout };
+    await ensurePlan({ ...billing, headers: populated.headers, userId: me.userId, trial: false });
+    await ensurePlan({ ...billing, headers: empty.headers, userId: emptyMe.userId, trial: true });
+    for (const userId of [me.userId, emptyMe.userId]) {
+      // Hosted sign-ups answer a survey first; the free user's flow shows it.
+      await db.prisma.signupSurvey.upsert({
+        where: { userId },
+        create: { userId, use: "work" },
+        update: {},
+      });
+    }
+    return {
+      botId: researcher.id,
+      peerBotId: writer.id,
+      groupId: group.id,
+      routineId: routine.id,
+      artifactId: notes.id,
+      markdownId: plan.id,
+      imageId: image.id,
+      pdfId: pdf.id,
+      archiveId: archive.id,
+      teamSpaceId: teamSpace.id,
+      conversationId: conversation.id,
+    };
   } finally {
     await db.prisma.$disconnect();
     await db.pool.end();
   }
-
-  return { botId: researcher.id, groupId: group.id, routineId: routine.id, pageId };
 }
 
 /** A page the bot built, named in its reply with the card under it, for the page screens. */
@@ -158,7 +285,7 @@ async function ensurePage(
     where: { userId: input.userId, spaceId: input.spaceId, title: PAGE_TITLE },
     select: { id: true },
   });
-  if (existing) return existing.id;
+  if (existing) return;
   const page = await prisma.page.create({
     data: {
       spaceId: input.spaceId,
@@ -184,7 +311,6 @@ async function ensurePage(
       { kind: "page", pageId: page.id, version: 1, title: PAGE_TITLE },
     ],
   });
-  return page.id;
 }
 
 async function ensureBot(
@@ -204,7 +330,7 @@ async function ensureBot(
 
 async function ensureThreadCopy(
   prisma: ReturnType<typeof createDb>["prisma"],
-  input: { threadId: string; botId: string; spaceId: string; userId: string },
+  input: { threadId: string; botId: string; peer: BotRow; artifact: ArtifactRow },
 ) {
   const messages = await prisma.message.findMany({
     where: { threadId: input.threadId },
@@ -217,17 +343,31 @@ async function ensureThreadCopy(
       role: "user",
       blocks: [{ kind: "text", text: "Summarize the launch notes." }],
     });
-    const artifact = await prisma.artifact.create({
-      data: {
-        spaceId: input.spaceId,
-        userId: input.userId,
-        botId: input.botId,
-        name: FILE_NAME,
-        mimeType: "text/plain",
-        size: 2400,
-        hash: "ios-screenshot-fixture",
-        storageKey: `ios-screenshot-fixture/${input.botId}/${FILE_NAME}`,
-      },
+    // A bot-to-bot exchange, which the chat links to its own transcript.
+    await createThreadMessage(prisma, {
+      threadId: input.threadId,
+      role: "bot",
+      botId: input.botId,
+      blocks: [
+        {
+          kind: "bot_message_sent",
+          toBotId: input.peer.id,
+          toBotName: input.peer.name,
+          text: "Can you draft the announcement from these notes?",
+        },
+      ],
+    });
+    await createThreadMessage(prisma, {
+      threadId: input.threadId,
+      role: "user",
+      blocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: input.peer.id,
+          fromBotName: input.peer.name,
+          text: "Done. The draft leads with the customer quotes.",
+        },
+      ],
     });
     await createThreadMessage(prisma, {
       threadId: input.threadId,
@@ -248,10 +388,10 @@ async function ensureThreadCopy(
         },
         {
           kind: "file",
-          artifactId: artifact.id,
+          artifactId: input.artifact.id,
           mimeType: "text/plain",
           name: FILE_NAME,
-          size: 2400,
+          size: input.artifact.size,
         },
       ],
     });
@@ -297,6 +437,153 @@ async function ensureActivity(
       completedAt: new Date(),
     },
   });
+}
+
+/** A small bar chart, so the image viewer has something to show. */
+function chartPng() {
+  const png = new PNG({ width: 480, height: 320 });
+  const bars = [120, 200, 160, 260, 220];
+  for (let y = 0; y < png.height; y += 1) {
+    for (let x = 0; x < png.width; x += 1) {
+      const bar = Math.floor((x - 40) / 84);
+      const inBar = x >= 40 && (x - 40) % 84 < 60 && bar < bars.length;
+      const filled = inBar && png.height - 30 - y < (bars[bar] ?? 0) && y < png.height - 30;
+      const offset = (y * png.width + x) * 4;
+      const shade = filled ? 40 + bar * 30 : 248;
+      png.data[offset] = shade;
+      png.data[offset + 1] = shade;
+      png.data[offset + 2] = filled ? shade + 20 : 248;
+      png.data[offset + 3] = 255;
+    }
+  }
+  return PNG.sync.write(png);
+}
+
+/** A chat-app channel the bot answers in, so Messaging lists a conversation to open. */
+async function ensureTeamConversation(
+  prisma: ReturnType<typeof createDb>["prisma"],
+  input: { spaceId: string; userId: string; botId: string },
+) {
+  const key = { provider: "slack", workspaceId: "T-fixture", externalKey: "C-launch" };
+  const existing = await prisma.externalConversation.findUnique({
+    where: { provider_workspaceId_externalKey: key },
+    select: { id: true },
+  });
+  if (existing) return existing;
+  const conversation = await prisma.externalConversation.create({
+    data: {
+      ...key,
+      conversationId: "C-launch",
+      displayName: "#launch",
+      participantNames: ["Dana", "Lee"],
+      spaceId: input.spaceId,
+      botId: input.botId,
+      userId: input.userId,
+    },
+    select: { id: true },
+  });
+  const thread = await prisma.thread.create({
+    data: { spaceId: input.spaceId, userId: input.userId, externalConversationId: conversation.id },
+    select: { id: true },
+  });
+  await createThreadMessage(prisma, {
+    threadId: thread.id,
+    role: "user",
+    blocks: [{ kind: "text", text: "Dana: Is the launch checklist ready?" }],
+  });
+  await createThreadMessage(prisma, {
+    threadId: thread.id,
+    role: "bot",
+    botId: input.botId,
+    blocks: [{ kind: "text", text: "Yes. Two items are left: customer quotes and the changelog." }],
+  });
+  return conversation;
+}
+
+/** A one-page PDF with a heading and two lines, built by hand so no PDF library is needed. */
+function briefPdf() {
+  const text = [
+    "BT /F1 28 Tf 72 720 Td (Launch brief) Tj ET",
+    "BT /F1 14 Tf 72 680 Td (Ship the announcement on Tuesday.) Tj ET",
+    "BT /F1 14 Tf 72 656 Td (Quotes and changelog are the last open items.) Tj ET",
+  ].join("\n");
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    `<< /Length ${text.length} >>\nstream\n${text}\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  let body = "%PDF-1.4\n";
+  const offsets = objects.map((object, index) => {
+    const offset = body.length;
+    body += `${index + 1} 0 obj\n${object}\nendobj\n`;
+    return offset;
+  });
+  const xref = body.length;
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) body += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(body, "latin1");
+}
+
+const TICKETS = [
+  { title: "Draft the launch announcement", status: "doing" },
+  { title: "Collect customer quotes", status: "todo" },
+  { title: "Review pricing page copy", status: "review" },
+  { title: "Publish the changelog", status: "done" },
+] as const;
+
+/** Board cards in several columns. Only an API with the board enabled shows them. */
+async function ensureTickets(
+  prisma: ReturnType<typeof createDb>["prisma"],
+  spaceId: string,
+  userId: string,
+  botIds: string[],
+) {
+  const board = await ensureBoard(prisma, spaceId);
+  if (await prisma.ticket.count({ where: { boardId: board.id } })) return;
+  for (const [index, ticket] of TICKETS.entries()) {
+    await prisma.$transaction(async (tx) =>
+      tx.ticket.create({
+        data: {
+          boardId: board.id,
+          spaceId,
+          number: await allocateTicketNumber(tx, board.id),
+          title: ticket.title,
+          status: ticket.status,
+          assigneeBotId: botIds[index % botIds.length],
+          createdByUserId: userId,
+          completedAt: ticket.status === "done" ? new Date() : null,
+        },
+      }),
+    );
+  }
+}
+
+/** Subscribes through the API and the billing provider, so every billing screen reads it back. */
+async function ensurePlan(input: {
+  apiUrl: string;
+  headers: Record<string, string>;
+  prisma: ReturnType<typeof createDb>["prisma"];
+  complete: CompleteCheckout;
+  userId: string;
+  trial: boolean;
+}) {
+  const status = await rpc<{ access: boolean }>(input.apiUrl, input.headers, "billing/status");
+  if (status.access) return;
+  await rpc(input.apiUrl, input.headers, "billing/checkout", { client: "mobile" });
+  const member = await input.prisma.member.findFirstOrThrow({
+    where: { userId: input.userId },
+    select: { organizationId: true },
+  });
+  const account = await input.prisma.billingAccount.findUniqueOrThrow({
+    where: { organizationId: member.organizationId },
+    select: { customerId: true },
+  });
+  input.complete(account.customerId);
+  await rpc(input.apiUrl, input.headers, "billing/refresh");
+  if (!input.trial) await rpc(input.apiUrl, input.headers, "billing/endTrial");
 }
 
 async function ensureText(

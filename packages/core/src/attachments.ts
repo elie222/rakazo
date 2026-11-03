@@ -252,6 +252,14 @@ const MIME_TYPE_EXTENSIONS: Record<AttachmentMimeType, string> = {
   "application/zip": ".zip",
 };
 
+/** Short file-type badge, as a file's extension reads ("TXT", "MD", "PDF"). */
+export function artifactTypeLabel(mimeType: string): string {
+  const extension = attachmentExtensionForMimeType(mimeType);
+  if (extension) return extension.slice(1).toUpperCase();
+  const slash = mimeType.indexOf("/");
+  return (slash === -1 ? mimeType : mimeType.slice(slash + 1)).toUpperCase().slice(0, 6);
+}
+
 export function inferAttachmentMimeType(
   name: string,
   reportedType?: string,
