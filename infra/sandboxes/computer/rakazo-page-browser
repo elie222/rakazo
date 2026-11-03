@@ -136,6 +136,17 @@ def http_get_json(url: str, timeout: float = 5.0) -> Any:
         return json.loads(data.decode("utf-8"))
 
 
+def browser_closed(port: int) -> bool:
+    """Whether nothing listens on the browser's debugging port: no browser is running."""
+    try:
+        socket.create_connection(("127.0.0.1", port), timeout=0.3).close()
+    except ConnectionRefusedError:
+        return True
+    except OSError:
+        return False
+    return False
+
+
 def wait_for_cdp(port: int, timeout_s: float = 3.0) -> Any:
     """The browser's version answer, once it answers."""
     deadline = time.time() + timeout_s
@@ -2197,10 +2208,10 @@ class Purchases:
             verdict, found = "unknown", None
         if verdict == "offscreen" and not scrolled:
             raise Offscreen()
-        if verdict != "unknown":
+        if verdict in ("buy", "none"):
             return found if verdict == "buy" else None
-        # The spot could not be looked into, perhaps a frame: what the page or any of its frames shows decides,
-        # within the same time.
+        # The spot could not be looked into, perhaps a frame, or the control is still out of view: what the
+        # page or any of its frames shows decides, within the same time.
         try:
             return self.signals(False, deadline)
         except Exception:  # noqa: BLE001
@@ -2384,11 +2395,14 @@ def run(argv: list[str]) -> int:
             # No browser running, no tab open, or one of Chromium's own pages: nothing on it can be bought.
             # Any other failure is a failed check, which asks.
             try:
-                # Briefly: a desktop press waits on this check, and a closed browser has nothing to buy.
-                wait_for_cdp(port, 0.3)
-                address = front_tab(port)[1]
+                # A closed browser has nothing to buy, and a desktop press waits on this check, so it is
+                # told apart at once; a browser that is only slow is waited for, and failing still asks.
+                address = ""
+                if not browser_closed(port):
+                    wait_for_cdp(port)
+                    address = front_tab(port)[1]
             except RuntimeError as error:
-                if not str(error).startswith(("CDP not ready", NO_TAB)):
+                if str(error) != NO_TAB:
                     raise
                 address = ""
             if not address or internal(address):

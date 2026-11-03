@@ -527,6 +527,9 @@ def pays(browser, ref="e8", purchase=PAY):
 
 class PurchaseTest(unittest.TestCase):
     def setUp(self):
+        closed = patch.object(helper, "browser_closed", return_value=False)
+        closed.start()
+        self.addCleanup(closed.stop)
         FakePurchases.host, FakePurchases.shows, FakePurchases.on_desktop = "shop.example.test", None, None
         FakePurchases.offscreen, FakePurchases.fails = set(), False
 
@@ -629,11 +632,16 @@ class PurchaseTest(unittest.TestCase):
                 helper.validate_actions([step])
 
     def test_a_purchase_check_with_no_browser_finds_nothing_and_one_that_cannot_list_tabs_fails(self):
-        with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), patch.object(
-                helper, "wait_for_cdp", side_effect=RuntimeError("CDP not ready on port 1: refused")), \
+        with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), patch.object(helper, "browser_closed", return_value=True), \
                 patch("builtins.print") as printed:
             helper.run(["rakazo-page-browser", "purchase_check", '{"desktop": true}'])
         self.assertEqual(json.loads(printed.call_args.args[0])["purchase"], None)
+        # A browser that is running but slow to answer is a failed check, which asks.
+        with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), patch.object(helper, "browser_closed", return_value=False), \
+                patch.object(helper, "wait_for_cdp", side_effect=RuntimeError("CDP not ready on port 1: timed out")), \
+                patch("builtins.print") as printed:
+            helper.run(["rakazo-page-browser", "purchase_check", '{"desktop": true}'])
+        self.assertEqual(json.loads(printed.call_args.args[0])["ok"], False)
         with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), patch.object(helper, "wait_for_cdp"), \
                 patch.object(helper, "page_tabs", side_effect=RuntimeError("tab list too large")), \
                 patch("builtins.print") as printed:
@@ -751,6 +759,11 @@ class DesktopPurchaseTest(unittest.TestCase):
         with self.assertRaises(helper.Offscreen):
             found.click({"x": 0, "y": 900, "width": 10, "height": 10}, False)
         self.assertIsNone(found.click({"x": 0, "y": 900, "width": 10, "height": 10}, True))
+        # Still out of view after scrolling: the page's own signals decide.
+        shows = {**PAY, "reason": "payment_page"}
+        found, _ = self.purchases({"purchaseAt": {"offscreen": True},
+                                   "paymentPage": {"purchase": shows, "frames": False}})
+        self.assertEqual(found.click({"x": 0, "y": 900, "width": 10, "height": 10}, True), shows)
 
     def test_a_spot_inside_a_frame_of_the_same_process_is_looked_up_in_that_frame(self):
         found, _ = self.purchases({"purchaseAt": {"purchase": None, "inFrame": True, "scroll": [0, 0], "frames": True}})
