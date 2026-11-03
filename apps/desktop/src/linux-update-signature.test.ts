@@ -8,6 +8,7 @@ import {
   fetchLinuxUpdateSignature,
   LINUX_UPDATE_PUBLIC_KEY,
   linuxUpdateSignatureMessage,
+  SignatureUnreachableError,
   sha512File,
   verifyDownloadedLinuxUpdate,
   verifyLinuxUpdate,
@@ -105,6 +106,7 @@ describe("fetchLinuxUpdateSignature", () => {
     );
     expect(fetchUrl).toHaveBeenCalledWith(
       "https://github.com/elie222/rakazo/releases/download/v1.2.3/Rakazo-1.2.3.AppImage.sig",
+      expect.any(AbortSignal),
     );
   });
 
@@ -129,6 +131,23 @@ describe("fetchLinuxUpdateSignature", () => {
     expect(classifyUpdaterFailure(error).kind).toBe("signature");
   });
 
+  it("gives up on a request that never answers", async () => {
+    const hanging = vi.fn(
+      (_url: string, signal: AbortSignal) =>
+        new Promise<Response>((_resolve, reject) =>
+          signal.addEventListener("abort", () => reject(signal.reason)),
+        ),
+    );
+    const error = await fetchLinuxUpdateSignature(
+      "1.2.3",
+      "Rakazo-1.2.3.AppImage",
+      hanging,
+      10,
+    ).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(SignatureUnreachableError);
+    expect(classifyUpdaterFailure(error).kind).not.toBe("signature");
+  });
+
   it("stops reading an oversized signature", async () => {
     const large = "a".repeat(4_096);
     await expect(
@@ -145,6 +164,27 @@ describe("fetchLinuxUpdateSignature", () => {
 });
 
 describe("verifyDownloadedLinuxUpdate", () => {
+  it.each([
+    ["a server error", async () => respond("Unavailable", { status: 503 })],
+    [
+      "a network failure",
+      async () =>
+        vi.fn(async () => {
+          throw new TypeError("fetch failed");
+        }),
+    ],
+  ])("keeps the download after %s", async (_case, fetchFor) => {
+    const file = appImage();
+    const error = await verifyDownloadedLinuxUpdate(
+      { version: "1.2.3", downloadedFile: file },
+      await fetchFor(),
+      publicKey,
+    ).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(SignatureUnreachableError);
+    expect(classifyUpdaterFailure(error).kind).not.toBe("signature");
+    expect(existsSync(file)).toBe(true);
+  });
+
   it("keeps a verified download", async () => {
     const file = appImage();
     await verifyDownloadedLinuxUpdate(

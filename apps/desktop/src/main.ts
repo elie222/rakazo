@@ -1327,7 +1327,7 @@ app.whenReady().then(async () => {
       quitting = false;
     },
     process.platform === "linux"
-      ? (update) => verifyDownloadedLinuxUpdate(update, (url) => net.fetch(url))
+      ? (update) => verifyDownloadedLinuxUpdate(update, (url, signal) => net.fetch(url, { signal }))
       : undefined,
   );
   try {

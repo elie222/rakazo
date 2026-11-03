@@ -46,20 +46,40 @@ export async function verifyLinuxUpdate(
   return verify(null, message, key, Buffer.from(encoded, "base64"));
 }
 
-export type SignatureFetch = (url: string) => Promise<Response>;
+export type SignatureFetch = (url: string, signal: AbortSignal) => Promise<Response>;
+
+/** The release could not be reached; the download is kept so a later check can verify it. */
+export class SignatureUnreachableError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("Could not reach the update server.", options);
+    this.name = "SignatureUnreachableError";
+  }
+}
 
 /** Reads the `.sig` published beside the AppImage in the official release. */
 export async function fetchLinuxUpdateSignature(
   version: string,
   fileName: string,
   fetchUrl: SignatureFetch,
+  timeoutMs = 30_000,
 ) {
   if (!VERSION.test(version) || !UPDATE_FILE.test(fileName)) {
     throw new Error("Linux update signature cannot be located.");
   }
-  const response = await fetchUrl(`${RELEASES}/v${version}/${fileName}.sig`);
-  if (!response.ok || response.body === null) {
+  const signal = AbortSignal.timeout(timeoutMs);
+  let response: Response;
+  try {
+    response = await fetchUrl(`${RELEASES}/v${version}/${fileName}.sig`, signal);
+  } catch (error) {
+    throw new SignatureUnreachableError({ cause: error });
+  }
+  if (response.status === 404 || (response.ok && response.body === null)) {
+    await response.body?.cancel();
     throw new Error("Linux update signature is missing.");
+  }
+  if (!response.ok || response.body === null) {
+    await response.body?.cancel();
+    throw new SignatureUnreachableError();
   }
   if (Number(response.headers.get("content-length") ?? 0) > MAX_SIGNATURE_BYTES) {
     await response.body.cancel();
@@ -67,10 +87,16 @@ export async function fetchLinuxUpdateSignature(
   }
   const chunks: Uint8Array[] = [];
   let size = 0;
-  for await (const chunk of response.body) {
-    size += chunk.byteLength;
-    if (size > MAX_SIGNATURE_BYTES) throw new Error("Linux update signature is too large.");
-    chunks.push(chunk);
+  try {
+    for await (const chunk of response.body) {
+      size += chunk.byteLength;
+      if (size > MAX_SIGNATURE_BYTES) throw new Error("Linux update signature is too large.");
+      chunks.push(chunk);
+      if (signal.aborted) throw signal.reason;
+    }
+  } catch (error) {
+    if (size > MAX_SIGNATURE_BYTES) throw error;
+    throw new SignatureUnreachableError({ cause: error });
   }
   return Buffer.concat(chunks).toString("utf8");
 }
@@ -91,7 +117,8 @@ export async function verifyDownloadedLinuxUpdate(
       throw new Error("Linux update signature is invalid.");
     }
   } catch (error) {
-    await rm(payload.downloadedFile, { force: true }).catch(() => undefined);
+    if (!(error instanceof SignatureUnreachableError))
+      await rm(payload.downloadedFile, { force: true }).catch(() => undefined);
     throw error;
   }
 }
