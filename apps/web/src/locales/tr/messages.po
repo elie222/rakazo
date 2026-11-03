@@ -3954,6 +3954,10 @@ msgid "Needs an OAuth client ID"
 msgstr "OAuth istemci kimliği gerekli"
 
 #: src/pages/ActivityList.tsx
+msgid "Needs attention"
+msgstr "İlgi gerekiyor"
+
+#: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "Girdi bekliyor"
 
@@ -4197,10 +4201,6 @@ msgstr "Henüz hatırlanan bir şey yok"
 #: src/pages/shell/bot-panel.tsx
 msgid "Notifications"
 msgstr "Bildirimler"
-
-#: src/pages/ActivityList.tsx
-msgid "Now"
-msgstr "Şimdi"
 
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth authorization was cancelled."
@@ -6213,6 +6213,10 @@ msgstr "Sesi aç"
 msgid "Unpin"
 msgstr "Sabitlemeyi kaldır"
 
+#: src/pages/ActivityList.tsx
+msgid "Unread"
+msgstr "Okunmamış"
+
 #. placeholder {0}: pending.file.name
 #: src/pages/shell/use-composer-actions.ts
 msgid "Unsupported file type: {0}"
@@ -6547,6 +6551,10 @@ msgstr ""
 #: src/components/SignupSurvey.tsx
 msgid "Work"
 msgstr ""
+
+#: src/pages/ActivityList.tsx
+msgid "Working"
+msgstr "Çalışıyor"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Working instructions"

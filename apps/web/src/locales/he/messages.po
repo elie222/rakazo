@@ -3954,6 +3954,10 @@ msgid "Needs an OAuth client ID"
 msgstr "נדרש מזהה לקוח OAuth"
 
 #: src/pages/ActivityList.tsx
+msgid "Needs attention"
+msgstr "דורש תשומת לב"
+
+#: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "ממתין לקלט"
 
@@ -4197,10 +4201,6 @@ msgstr "עדיין אין זיכרונות"
 #: src/pages/shell/bot-panel.tsx
 msgid "Notifications"
 msgstr "התראות"
-
-#: src/pages/ActivityList.tsx
-msgid "Now"
-msgstr "עכשיו"
 
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth authorization was cancelled."
@@ -6213,6 +6213,10 @@ msgstr "ביטול השתקה"
 msgid "Unpin"
 msgstr "ביטול הצמדה"
 
+#: src/pages/ActivityList.tsx
+msgid "Unread"
+msgstr "לא נקראו"
+
 #. placeholder {0}: pending.file.name
 #: src/pages/shell/use-composer-actions.ts
 msgid "Unsupported file type: {0}"
@@ -6547,6 +6551,10 @@ msgstr "לא יבוצע"
 #: src/components/SignupSurvey.tsx
 msgid "Work"
 msgstr ""
+
+#: src/pages/ActivityList.tsx
+msgid "Working"
+msgstr "בעבודה"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Working instructions"

@@ -3954,6 +3954,10 @@ msgid "Needs an OAuth client ID"
 msgstr "OAuth क्लाइंट ID चाहिए"
 
 #: src/pages/ActivityList.tsx
+msgid "Needs attention"
+msgstr "ध्यान देने की ज़रूरत"
+
+#: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "इनपुट चाहिए"
 
@@ -4197,10 +4201,6 @@ msgstr "अभी तक कुछ याद नहीं किया गया
 #: src/pages/shell/bot-panel.tsx
 msgid "Notifications"
 msgstr "सूचनाएं"
-
-#: src/pages/ActivityList.tsx
-msgid "Now"
-msgstr "अभी"
 
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth authorization was cancelled."
@@ -6213,6 +6213,10 @@ msgstr "अनम्यूट करें"
 msgid "Unpin"
 msgstr "पिन हटाएं"
 
+#: src/pages/ActivityList.tsx
+msgid "Unread"
+msgstr "अपठित"
+
 #. placeholder {0}: pending.file.name
 #: src/pages/shell/use-composer-actions.ts
 msgid "Unsupported file type: {0}"
@@ -6547,6 +6551,10 @@ msgstr ""
 #: src/components/SignupSurvey.tsx
 msgid "Work"
 msgstr ""
+
+#: src/pages/ActivityList.tsx
+msgid "Working"
+msgstr "काम जारी"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Working instructions"

@@ -3954,6 +3954,10 @@ msgid "Needs an OAuth client ID"
 msgstr "OAuth 클라이언트 ID가 필요합니다"
 
 #: src/pages/ActivityList.tsx
+msgid "Needs attention"
+msgstr "확인 필요"
+
+#: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "입력 필요"
 
@@ -4197,10 +4201,6 @@ msgstr "아직 기억한 내용이 없습니다"
 #: src/pages/shell/bot-panel.tsx
 msgid "Notifications"
 msgstr "알림"
-
-#: src/pages/ActivityList.tsx
-msgid "Now"
-msgstr "지금"
 
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth authorization was cancelled."
@@ -6213,6 +6213,10 @@ msgstr "음소거 해제"
 msgid "Unpin"
 msgstr "고정 해제"
 
+#: src/pages/ActivityList.tsx
+msgid "Unread"
+msgstr "읽지 않음"
+
 #. placeholder {0}: pending.file.name
 #: src/pages/shell/use-composer-actions.ts
 msgid "Unsupported file type: {0}"
@@ -6547,6 +6551,10 @@ msgstr ""
 #: src/components/SignupSurvey.tsx
 msgid "Work"
 msgstr ""
+
+#: src/pages/ActivityList.tsx
+msgid "Working"
+msgstr "작업 중"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Working instructions"

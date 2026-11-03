@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, createNamedBot, rpc, signup } from "./helpers";
 
 /** Activity rows sit above `[data-sidebar-group]` bots; match their aria-label. */
 function activityRow(page: Page, botName: string) {
@@ -17,7 +17,7 @@ async function captureActivitySidebar(
   const aside = page.locator("aside").first();
   const toggle = page.getByRole("button", { name: "Activity", exact: true });
   await toggle.scrollIntoViewIfNeeded();
-  // Keep the header (bell + Create) in frame with the Now/Recent list.
+  // Keep the header (bell + Create) in frame with the activity sections.
   const box = await aside.boundingBox();
   if (box) {
     const screenshotPath = testInfo.outputPath(`${name}.png`);
@@ -38,7 +38,7 @@ async function captureActivitySidebar(
   await captureScreenshot(page, testInfo, name);
 }
 
-test("sidebar Now and Recent surface active and terminal runs", async ({ page }, testInfo) => {
+test("sidebar Working and Recent surface active and terminal runs", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `activity-${stamp}@rakazo.test`, "password12", "Activity");
   await completeOnboarding(page);
@@ -47,7 +47,7 @@ test("sidebar Now and Recent surface active and terminal runs", async ({ page },
   const activityToggle = page.getByRole("button", { name: "Activity", exact: true });
   await expect(activityToggle).toHaveAttribute("aria-pressed", "false");
   await expect(activityToggle).toHaveAttribute("data-activity-mode", "off");
-  await expect(aside.getByText("Now", { exact: true })).toHaveCount(0);
+  await expect(aside.getByText("Working", { exact: true })).toHaveCount(0);
   await expect(aside.getByText("Recent", { exact: true })).toHaveCount(0);
   await expect(aside.getByRole("status", { name: "Loading activity…" })).toHaveCount(0);
   await expect(aside.locator("[data-sidebar-group]").getByText("Chief").first()).toBeVisible();
@@ -74,7 +74,10 @@ test("sidebar Now and Recent surface active and terminal runs", async ({ page },
   await expect(page.getByRole("status", { name: "Loading activity…" })).toBeHidden({
     timeout: 20_000,
   });
-  await expect(aside.getByText("Now", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(aside.getByText("Working", { exact: true })).toBeVisible({ timeout: 20_000 });
+  // Working starts folded; opening it is remembered across reloads.
+  await expect(activityRow(page, "Chief")).toBeHidden();
+  await aside.getByRole("button", { name: /^Working/ }).click();
   await expect(activityRow(page, "Chief")).toBeVisible();
   await expect(activityRow(page, "Chief")).toContainText(/keep working|Running|Queued|Starting/i);
   await page.emulateMedia({ colorScheme: "light" });
@@ -141,7 +144,7 @@ test("sidebar Now and Recent surface active and terminal runs", async ({ page },
   await expect(aside.getByText("Recent", { exact: true })).toBeVisible({ timeout: 20_000 });
   await expect(activityRow(page, "Chief")).toBeVisible();
   await expect(activityRow(page, "Chief")).toContainText(/Cancelled|keep working/i);
-  await expect(aside.getByText("Now", { exact: true })).toHaveCount(0);
+  await expect(aside.getByText("Working", { exact: true })).toHaveCount(0);
   await captureActivitySidebar(page, testInfo, "59-activity-recent");
 
   const activitySearch = aside.getByRole("textbox", { name: "Search runs", exact: true });
@@ -196,7 +199,7 @@ test("activity filters keep retry when a refresh fails", async ({ page }, testIn
     groupId: null,
     groupName: null,
     threadId: "thread-filter",
-    status: "running",
+    status: "completed",
     trigger: "user",
     notificationsEnabled: false,
     agentMessage: null,
@@ -230,7 +233,7 @@ test("activity filters keep retry when a refresh fails", async ({ page }, testIn
       return;
     }
     const body = route.request().postDataJSON() as { json?: { filter?: string } } | null;
-    const runs = phase === "ok" && body?.json?.filter === "active" ? [run, agentRun] : [];
+    const runs = phase === "ok" && body?.json?.filter === "recent" ? [run, agentRun] : [];
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({ json: { runs } }),
@@ -282,4 +285,52 @@ test("activity filters keep retry when a refresh fails", async ({ page }, testIn
   await expect(retry).toHaveCount(0);
   await expect(aside.getByText("No runs match these filters.")).toHaveCount(0);
   await expect(activitySearch).toHaveValue("Chief");
+});
+
+test("activity groups what needs you, what is working, and unread chats", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `activity-sections-${Date.now()}@rakazo.test`, "password12", "Sections");
+  await completeOnboarding(page);
+  const writer = await createNamedBot(page, "Writer");
+  await expect
+    .poll(async () => {
+      const active = await rpc<{ runs: Array<{ botId: string }> }>(page, "runs/list", {
+        filter: "active",
+      });
+      return active.runs.some((run) => run.botId === writer);
+    })
+    .toBe(false);
+  await createNamedBot(page, "Head of Marketing");
+  await rpc(page, "threads/markUnread", { botId: writer });
+  await page.getByPlaceholder("Message Head of Marketing").fill("ask me which city to use");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Which city should I use?", { exact: true })).toBeVisible();
+  const researcher = await createNamedBot(page, "Researcher");
+  await page.getByPlaceholder("Message Researcher").fill("keep working until I stop you");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
+
+  const aside = page.locator("aside").first();
+  const attention = aside.getByRole("region", { name: "Needs attention", exact: true });
+  const working = aside.getByRole("region", { name: "Working", exact: true });
+  const unread = aside.getByRole("region", { name: "Unread", exact: true });
+  await expect(attention.getByRole("button", { name: /^Head of Marketing,/ })).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(attention).not.toContainText("Needs input");
+  await expect(working.getByRole("button", { name: /^Researcher,/ })).toBeHidden();
+  await working.getByRole("button", { name: /^Working/ }).click();
+  await expect(working.getByRole("button", { name: /^Researcher,/ })).toBeVisible();
+  await expect(unread.getByRole("button", { name: /^Unread/ })).toBeVisible();
+  await unread.getByRole("button", { name: /^Unread/ }).click();
+  await expect(unread).toContainText("Writer");
+  await captureActivitySidebar(page, testInfo, "61b-activity-sections");
+
+  await page.reload();
+  await expect(working.getByRole("button", { name: /^Researcher,/ })).toBeVisible({
+    timeout: 20_000,
+  });
+  await rpc(page, "threads/stop", { botId: researcher });
 });

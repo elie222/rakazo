@@ -3954,6 +3954,10 @@ msgid "Needs an OAuth client ID"
 msgstr "OAuth クライアント ID が必要です"
 
 #: src/pages/ActivityList.tsx
+msgid "Needs attention"
+msgstr "要対応"
+
+#: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "入力が必要"
 
@@ -4197,10 +4201,6 @@ msgstr "記憶はまだありません"
 #: src/pages/shell/bot-panel.tsx
 msgid "Notifications"
 msgstr "通知"
-
-#: src/pages/ActivityList.tsx
-msgid "Now"
-msgstr "現在"
 
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth authorization was cancelled."
@@ -6213,6 +6213,10 @@ msgstr "ミュート解除"
 msgid "Unpin"
 msgstr "ピン留めを解除"
 
+#: src/pages/ActivityList.tsx
+msgid "Unread"
+msgstr "未読"
+
 #. placeholder {0}: pending.file.name
 #: src/pages/shell/use-composer-actions.ts
 msgid "Unsupported file type: {0}"
@@ -6547,6 +6551,10 @@ msgstr "対応しない"
 #: src/components/SignupSurvey.tsx
 msgid "Work"
 msgstr "仕事"
+
+#: src/pages/ActivityList.tsx
+msgid "Working"
+msgstr "作業中"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Working instructions"

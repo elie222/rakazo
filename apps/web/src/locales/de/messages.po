@@ -3954,6 +3954,10 @@ msgid "Needs an OAuth client ID"
 msgstr "Benötigt eine OAuth-Client-ID"
 
 #: src/pages/ActivityList.tsx
+msgid "Needs attention"
+msgstr "Aufmerksamkeit erforderlich"
+
+#: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "Eingabe erforderlich"
 
@@ -4197,10 +4201,6 @@ msgstr "Noch nichts gemerkt"
 #: src/pages/shell/bot-panel.tsx
 msgid "Notifications"
 msgstr "Benachrichtigungen"
-
-#: src/pages/ActivityList.tsx
-msgid "Now"
-msgstr "Jetzt"
 
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth authorization was cancelled."
@@ -6213,6 +6213,10 @@ msgstr "Stummschaltung aufheben"
 msgid "Unpin"
 msgstr "Lösen"
 
+#: src/pages/ActivityList.tsx
+msgid "Unread"
+msgstr "Ungelesen"
+
 #. placeholder {0}: pending.file.name
 #: src/pages/shell/use-composer-actions.ts
 msgid "Unsupported file type: {0}"
@@ -6547,6 +6551,10 @@ msgstr ""
 #: src/components/SignupSurvey.tsx
 msgid "Work"
 msgstr ""
+
+#: src/pages/ActivityList.tsx
+msgid "Working"
+msgstr "Arbeitet"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Working instructions"
