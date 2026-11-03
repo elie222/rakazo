@@ -474,14 +474,19 @@ export class McpSession {
     })) as CallToolResult;
   }
 
-  async close(): Promise<void> {
+  /** `afterClose` follows actual SDK shutdown, even if this call stops waiting. */
+  async close(afterClose?: () => Promise<void>): Promise<void> {
     this.connecting = undefined;
     this.connected = false;
     const client = this.client;
     const remoteFetch = this.remoteFetch;
     this.remoteFetch = undefined;
     this.transport = undefined;
-    await closeMcpResource(() => client.close());
+    await closeMcpResource(() =>
+      Promise.resolve()
+        .then(() => client.close())
+        .finally(afterClose),
+    );
     if (remoteFetch) await closeMcpResource(() => remoteFetch.close());
   }
 
