@@ -125,7 +125,8 @@ internal object IncomingCalls {
     return listOf(call.keys().asSequence().associateWith { call.optString(it) })
   }
   fun decline(context: Context, call: JSONObject, done: () -> Unit) {
-    end(context, call.optString("callId"))
+    // Remembered like a call settled elsewhere, so a re-report from the app cannot ring it again.
+    settled(context, call)
     val storage = NotificationStorage(context)
     val endpoint = storage.endpoint
     val token = storage.token

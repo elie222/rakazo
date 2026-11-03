@@ -19,6 +19,8 @@ final class IncomingCalls: NSObject, PKPushRegistryDelegate, CXProviderDelegate,
   private var registry: PKPushRegistry!
   private var calls: [UUID: [String: String]] = [:]
   private var deadlines: [UUID: DispatchWorkItem] = [:]
+  /** Calls declined here, until they expire; a later report of one must not ring again. */
+  private var declined: [UUID: Date] = [:]
   /** Calls the app has joined; an earlier end only backs out of the join. */
   private var joined: Set<UUID> = []
   private var pending: [[String: String]] = []
@@ -67,7 +69,8 @@ final class IncomingCalls: NSObject, PKPushRegistryDelegate, CXProviderDelegate,
 
   func report(_ call: [String: String], mandatory: Bool = false, completion: @escaping () -> Void = {}) {
     let id = call["callId"].flatMap(UUID.init(uuidString:)) ?? UUID()
-    if calls[id] != nil && !mandatory { completion(); return }
+    declined = declined.filter { $0.value > Date() }
+    if (calls[id] != nil || declined[id] != nil) && !mandatory { completion(); return }
     let update = CXCallUpdate()
     update.remoteHandle = CXHandle(type: .generic, value: call["botName"] ?? "Rakazo")
     update.localizedCallerName = call["botName"] ?? "Rakazo"
@@ -79,7 +82,7 @@ final class IncomingCalls: NSObject, PKPushRegistryDelegate, CXProviderDelegate,
       DispatchQueue.main.async {
       defer { completion() }
       guard error == nil else { return }
-      guard self.hasSession(), self.expiry(call) > Date(), call["botId"] != nil, call["callId"] != nil else {
+      guard self.hasSession(), self.declined[id] == nil, self.expiry(call) > Date(), call["botId"] != nil, call["callId"] != nil else {
         self.provider.reportCall(with: id, endedAt: Date(), reason: .unanswered)
         return
       }
@@ -112,7 +115,10 @@ final class IncomingCalls: NSObject, PKPushRegistryDelegate, CXProviderDelegate,
   }
   func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
     // Not joined yet: the server still has it ringing, so this is a decline.
-    if let call = calls[action.callUUID], !joined.contains(action.callUUID) { decline(call) }
+    if let call = calls[action.callUUID], !joined.contains(action.callUUID) {
+      declined[action.callUUID] = expiry(call)
+      decline(call)
+    }
     end(action.callUUID, reason: .remoteEnded)
     action.fulfill()
   }
