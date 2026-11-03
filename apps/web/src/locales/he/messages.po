@@ -1219,6 +1219,7 @@ msgid "Chart failed to render: {error}"
 msgstr "לא ניתן להציג את התרשים: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Chat"
 msgstr ""
 
@@ -3759,6 +3760,10 @@ msgstr "הודעה…"
 msgid "Messaged {peer}"
 msgstr "נשלחה הודעה אל {peer}"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Messages"
+msgstr ""
+
 #: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr "הודעות"
@@ -4899,6 +4904,10 @@ msgstr "החלפת מפתח"
 #: src/components/VaultSettings.tsx
 msgid "Replace value"
 msgstr "החלפת ערך"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Replies"
+msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"

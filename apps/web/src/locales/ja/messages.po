@@ -1219,6 +1219,7 @@ msgid "Chart failed to render: {error}"
 msgstr "チャートを表示できませんでした: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Chat"
 msgstr ""
 
@@ -3759,6 +3760,10 @@ msgstr "メッセージ…"
 msgid "Messaged {peer}"
 msgstr "{peer}にメッセージを送信しました"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Messages"
+msgstr ""
+
 #: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr "メッセージ"
@@ -4899,6 +4904,10 @@ msgstr "キーを置き換え"
 #: src/components/VaultSettings.tsx
 msgid "Replace value"
 msgstr "値を置き換え"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Replies"
+msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"

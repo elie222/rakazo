@@ -70,6 +70,9 @@ export const JA_MESSAGES: Record<string, string> = {
   "Search bots": "ボットを検索",
   "About {label}": "{label}について",
   "Manage other bots": "他のボットを管理",
+  Replies: "返信",
+  Chat: "チャット",
+  Messages: "メッセージ",
   "Allow cross-space bot communication": "スペースをまたいだボット間の通信を許可",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "サイドバーの整理とボットの編集ができます。指示、モデル、ルーティン、グループの編集には承認が必要です。",

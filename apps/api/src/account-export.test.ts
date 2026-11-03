@@ -64,6 +64,7 @@ const botRecord = (id: string): Extract<AccountExportRecord, { type: "bot" }> =>
   crossSpaceCommunication: false,
   dailyCheckIns: false,
   fleetManagement: true,
+  replyMode: "chat",
   createdAt,
 });
 

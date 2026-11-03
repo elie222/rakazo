@@ -171,7 +171,12 @@ import {
   runtimeFallbackModel,
 } from "./run-model.js";
 import { createReplyState } from "./run-progress.js";
-import { DELEGATED_EMPTY_NOTICE, runAllowsSilentEmpty, runReplyGuidance } from "./run-replies.js";
+import {
+  DELEGATED_EMPTY_NOTICE,
+  runAllowsSilentEmpty,
+  runReplyGuidance,
+  runReplyMode,
+} from "./run-replies.js";
 import {
   notifyRoutineRetryAttemptsExhausted,
   retryRoutineRun,
@@ -1182,6 +1187,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const pageBrowserAllowed =
           graphical && browser.describe().capabilities.page && !heldForTakeover;
         const disabledBuiltinTools = disabledBuiltinToolSet(bot.disabledBuiltinTools);
+        const replyMode = runReplyMode(run.trigger, bot.replyMode, disabledBuiltinTools);
         const userComputerOwnerId = userComputerOwner({
           trigger: run.trigger,
           sourceRole: sourceMessage?.role,
@@ -1442,6 +1448,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           script,
           allowSilentEmptyRun,
           emptyResponseText,
+          replyMode,
           state,
           settleRunningHelpers: settleHelpers,
           stopHeartbeatAfterCompletion,
@@ -1708,7 +1715,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 pluginLine,
                 agentSkillsLine,
                 taughtSkillsLine,
-                replyGuidance: runReplyGuidance(run.trigger),
+                replyGuidance: runReplyGuidance(run.trigger, replyMode),
                 disabledBuiltinTools: isStrategicInitiativeRun(run)
                   ? new Set(
                       builtinAgentTools

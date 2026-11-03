@@ -1219,6 +1219,7 @@ msgid "Chart failed to render: {error}"
 msgstr "图表渲染失败：{error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Chat"
 msgstr ""
 
@@ -3759,6 +3760,10 @@ msgstr "消息…"
 msgid "Messaged {peer}"
 msgstr "已发给 {peer}"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Messages"
+msgstr ""
+
 #: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr "消息"
@@ -4899,6 +4904,10 @@ msgstr "替换密钥"
 #: src/components/VaultSettings.tsx
 msgid "Replace value"
 msgstr "替换值"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Replies"
+msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"

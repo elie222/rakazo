@@ -1219,6 +1219,7 @@ msgid "Chart failed to render: {error}"
 msgstr "Grafiek kon niet worden weergegeven: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Chat"
 msgstr ""
 
@@ -3759,6 +3760,10 @@ msgstr "Bericht…"
 msgid "Messaged {peer}"
 msgstr "{peer} een bericht gestuurd"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Messages"
+msgstr ""
+
 #: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr "Berichten"
@@ -4899,6 +4904,10 @@ msgstr "Sleutel vervangen"
 #: src/components/VaultSettings.tsx
 msgid "Replace value"
 msgstr "Waarde vervangen"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Replies"
+msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"

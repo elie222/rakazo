@@ -395,6 +395,7 @@ export function botsRoutes(ctx: RouterContext) {
             ...(input.fleetManagement !== undefined
               ? { fleetManagement: input.fleetManagement }
               : {}),
+            ...(input.replyMode !== undefined ? { replyMode: input.replyMode } : {}),
             ...(input.disabledBuiltinTools !== undefined
               ? { disabledBuiltinTools: input.disabledBuiltinTools }
               : {}),

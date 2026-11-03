@@ -60,6 +60,9 @@ export const ZH_MESSAGES: Record<string, string> = {
   "{count} messages with {peer}": "与 {peer} 的 {count} 条消息",
   "About {label}": "关于{label}",
   "Manage other bots": "管理其他机器人",
+  Replies: "回复",
+  Chat: "聊天",
+  Messages: "消息",
   "Allow cross-space bot communication": "允许跨空间机器人通信",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "整理侧边栏并编辑机器人。更改群组、指令、模型和例行任务需要你的批准。",

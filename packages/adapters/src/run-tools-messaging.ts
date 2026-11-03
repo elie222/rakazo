@@ -88,7 +88,11 @@ export const messagingTools: ToolHandlers = {
     await showNarrationStatus(ctx, await publishMidTurnNarration(ctx));
     // A mid-task message handled meanwhile may have granted a new allowance; keep it.
     reply.steeringReplyPending ||= answering;
-    if (!canPublishDurableProgress(reply) && !canPostLongTaskHeadsUp(ctx)) {
+    if (
+      ctx.replyMode === "chat" &&
+      !canPublishDurableProgress(reply) &&
+      !canPostLongTaskHeadsUp(ctx)
+    ) {
       return call.finish({
         ok: true,
         note: midTurnProgressBudgetUsed(progressSinceBudgetStart(reply))

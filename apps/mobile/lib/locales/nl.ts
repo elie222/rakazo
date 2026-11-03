@@ -61,6 +61,9 @@ export const NL_MESSAGES: Record<string, string> = {
   "{count} messages with {peer}": "{count} berichten met {peer}",
   "About {label}": "Over {label}",
   "Manage other bots": "Andere bots beheren",
+  Replies: "Antwoorden",
+  Chat: "Chat",
+  Messages: "Berichten",
   "Allow cross-space bot communication":
     "Communicatie tussen bots in verschillende ruimtes toestaan",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":

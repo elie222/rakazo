@@ -52,6 +52,7 @@ function sourceRecords(): AccountExportRecord[] {
       crossSpaceCommunication: false,
       dailyCheckIns: false,
       fleetManagement: false,
+      replyMode: "messages",
       createdAt: at,
     },
     {
@@ -80,6 +81,7 @@ function sourceRecords(): AccountExportRecord[] {
       crossSpaceCommunication: false,
       dailyCheckIns: false,
       fleetManagement: true,
+      replyMode: "chat",
       createdAt: at,
     },
     {
@@ -418,6 +420,7 @@ describePostgres("account import (PostgreSQL)", () => {
     expect(child.parentBotId).toBe(parent.id);
     expect(child.pinned).toBe(true);
     expect(child.fleetManagement).toBe(false);
+    expect(child.replyMode).toBe("messages");
     expect(child.dailyCheckIns).toBe(false);
     expect(parent.dailyCheckIns).toBe(false);
     expect(child.disabledBuiltinTools).toEqual(["browser"]);
