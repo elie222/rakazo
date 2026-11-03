@@ -272,7 +272,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "No matching bots": "Geen overeenkomende bots",
   "No messages yet": "Nog geen berichten",
   "No results": "Geen resultaten",
-  Now: "Nu",
   Personal: "Persoonlijk",
   Recent: "Recent",
   Search: "Zoeken",
@@ -693,6 +692,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Live working status": "Live werkstatus",
   More: "Meer",
   "Needs attention": "Heeft aandacht nodig",
+  Unread: "Ongelezen",
   "Notification settings": "Meldingsinstellingen",
   "Get notified when this Bot finishes or needs input":
     "Ontvang een melding wanneer deze bot klaar is of invoer nodig heeft",

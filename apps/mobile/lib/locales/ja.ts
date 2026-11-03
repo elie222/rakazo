@@ -258,7 +258,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "No matching bots": "一致するボットはありません",
   "No messages yet": "まだメッセージはありません",
   "No results": "結果はありません",
-  Now: "たった今",
   Personal: "個人",
   Recent: "最近",
   Search: "検索",
@@ -680,6 +679,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Live working status": "作業状況をライブ表示",
   More: "その他",
   "Needs attention": "要対応",
+  Unread: "未読",
   "Notification settings": "通知設定",
   "Get notified when this Bot finishes or needs input":
     "このボットが完了したときや入力が必要なときに通知を受け取る",

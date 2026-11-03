@@ -12,7 +12,7 @@ import { canDeleteInboxSpace, inboxItemKey } from "../lib/inbox-spaces";
 import { useThemedStyles } from "../lib/native";
 import type { useInboxChatActions } from "../lib/use-inbox-chat-actions";
 import { createHomeStyles } from "./home-styles";
-import { ArchivedChatsRow, BotRow, GroupRow, PinnedTiles, SectionChevron } from "./inbox-rows";
+import { ArchivedChatsRow, BotRow, GroupRow, PinnedTiles, SectionToggle } from "./inbox-rows";
 import { NativeSymbol } from "./native-symbol";
 
 // Swipe actions and the context menu are iOS list behaviour; other platforms keep the long-press
@@ -159,22 +159,12 @@ export function useInboxRenderItem({
           </View>
         ) : (
           <View style={styles.sectionHeadingRow}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={
-                item.collapsed
-                  ? t("Expand {name}", { name: item.title })
-                  : t("Collapse {name}", { name: item.title })
-              }
-              accessibilityState={{ expanded: !item.collapsed }}
-              accessibilityValue={item.collapsed ? { text: String(item.count ?? 0) } : undefined}
+            <SectionToggle
+              title={item.title}
+              count={item.collapsed ? (item.count ?? 0) : undefined}
+              collapsed={item.collapsed === true}
               onPress={() => toggleCollapsed(item.key)}
-              style={({ pressed }) => [styles.sectionToggle, pressed && styles.rowPressed]}
-            >
-              <Text style={styles.sectionTitle}>{item.title}</Text>
-              {item.collapsed ? <Text style={styles.sectionCount}>{item.count ?? 0}</Text> : null}
-              <SectionChevron collapsed={item.collapsed === true} />
-            </Pressable>
+            />
             {sharing || !item.sectionId ? null : Platform.OS === "android" ? (
               // A plain button, like the create control: the Android menu trigger can collapse to
               // zero width on an older binary, which would hide the only way to delete an empty section.

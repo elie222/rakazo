@@ -1,4 +1,5 @@
 export * from "./action-approval.js";
+export * from "./activity-sections.js";
 export * from "./agent-import/index.js";
 export * from "./agent-skill.js";
 export * from "./ai-consent.js";
