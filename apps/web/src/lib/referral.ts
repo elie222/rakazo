@@ -1,3 +1,4 @@
+import type { BillingStatus } from "@rakazo/contracts";
 import { rpc } from "./rpc";
 
 const STORAGE_KEY = "rakazo:referral";
@@ -13,18 +14,23 @@ export function captureReferral(search: string): void {
   }
 }
 
-export async function claimStoredReferral(): Promise<void> {
-  let code: string | null;
+/**
+ * Billing status, with any stored invite code sent along: the server claims it first, so an
+ * invited friend's first status already offers the longer trial. The code is kept until a
+ * request carrying it succeeds.
+ */
+export async function loadBillingStatus(): Promise<BillingStatus> {
+  let code: string | null = null;
   try {
     code = window.localStorage.getItem(STORAGE_KEY);
   } catch {
-    return;
+    // Storage can be unavailable; billing still loads.
   }
-  if (!code) return;
-  try {
-    await rpc.billing.claimReferral({ code });
-    window.localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // Retried on the next launch.
+  const status = await rpc.billing.status(code ? { referralCode: code } : undefined);
+  if (code) {
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } catch {}
   }
+  return status;
 }

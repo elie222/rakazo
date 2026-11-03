@@ -7,12 +7,10 @@ import { useSearchParams } from "react-router-dom";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import { peekInitialBootstrap } from "../lib/bootstrap";
 import { lazyComponent } from "../lib/preload-recovery";
-import { claimStoredReferral } from "../lib/referral";
+import { loadBillingStatus } from "../lib/referral";
 import { rpc } from "../lib/rpc";
 import type { SupportChat } from "../lib/support-chat";
 import { useSupportChat } from "../lib/support-chat";
-
-const REFERRAL_CLAIM_WAIT_MS = 5_000;
 
 const PaywallPage = lazyComponent(() =>
   import("../pages/Paywall").then((module) => module.PaywallPage),
@@ -73,41 +71,12 @@ export function SubscriptionGate({
 
   useEffect(() => {
     let active = true;
-    // Only the newest billing read may show, so a slow first read cannot undo the longer trial.
-    let newest = 0;
-    let shown = 0;
     fetchAuthCapabilities()
-      .then(async (capabilities): Promise<GateState | null> => {
+      .then(async (capabilities): Promise<GateState> => {
         if (!capabilities.billing) return { kind: "open" };
         const me = await loadMe();
         if (!me.billingEnabled) return { kind: "open" };
-        // Claimed first, so an invited friend's status already offers the longer trial; a claim
-        // that hangs never holds the app back for more than a few seconds.
-        let claimed = false;
-        const claim = claimStoredReferral().then(() => {
-          claimed = true;
-        });
-        await Promise.race([
-          claim,
-          new Promise((resolve) => setTimeout(resolve, REFERRAL_CLAIM_WAIT_MS)),
-        ]);
-        // A slow claim that lands later refreshes billing, so the longer trial still shows.
-        if (!claimed) {
-          void claim.then(() => {
-            const read = ++newest;
-            return rpc.billing
-              .status()
-              .then((later) => {
-                if (active && read === newest) {
-                  shown = read;
-                  setState(gateFor(later));
-                }
-              })
-              .catch(() => undefined);
-          });
-        }
-        const read = ++newest;
-        const status = await rpc.billing.status();
+        const status = await loadBillingStatus();
         if (active && capabilities.crispWebsiteId) {
           setSupportChat({
             crispWebsiteId: capabilities.crispWebsiteId,
@@ -115,13 +84,11 @@ export function SubscriptionGate({
             name: me.name,
           });
         }
-        // A later read already showed; keep it.
-        return shown > read ? null : gateFor(status);
+        return gateFor(status);
       })
-      // A failure must not undo a newer read that already showed.
-      .catch((): GateState | null => (shown > 0 ? null : { kind: "open" }))
+      .catch((): GateState => ({ kind: "open" }))
       .then((next) => {
-        if (active && next) setState(next);
+        if (active) setState(next);
       });
     return () => {
       active = false;
