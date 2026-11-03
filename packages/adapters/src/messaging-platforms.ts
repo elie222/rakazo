@@ -688,9 +688,8 @@ function sendblueGroupName(raw: unknown): string | null {
   return typeof name === "string" && name ? name : null;
 }
 
-/** A message on this line that names no known network is treated as plain SMS, the weakest one. */
-function sendblueTransport(raw: unknown): string {
-  const service =
-    typeof raw === "object" && raw !== null ? (raw as { service?: unknown }).service : null;
-  return service === "iMessage" || service === "RCS" ? service : "SMS";
+function sendblueTransport(raw: unknown): string | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const service = (raw as { service?: unknown }).service;
+  return service === "iMessage" || service === "SMS" || service === "RCS" ? service : null;
 }
