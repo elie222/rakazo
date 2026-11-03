@@ -13,7 +13,7 @@ import {
 import { MemoryPushTokenStore } from "./push-token-store.test-support.js";
 
 const loadPushToken = async (store: MemoryPushTokenStore, userId: string) =>
-  (await store.load(userId))?.token;
+  (await store.list(userId))[0]?.token;
 
 afterEach(async () => {
   vi.unstubAllGlobals();
@@ -99,6 +99,59 @@ describe("expo push", () => {
     );
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(JSON.parse(String(init.body))).toMatchObject({ badge: 4 });
+  });
+
+  it("pushes to every device the user is signed in on until that device signs out", async () => {
+    const tokens = new MemoryPushTokenStore();
+    await tokens.save("user-1", "ExponentPushToken[phone]", "session-phone");
+    await tokens.save("user-1", "ExponentPushToken[tablet]", "session-tablet");
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(jsonResponse({ data: { status: "ok", id: "ticket" } })),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const push = new ExpoPushProvider(tokens, {
+      sessionExpiresAt: async () => new Date(Date.now() + 60_000),
+    });
+    const message = {
+      kind: "completion",
+      title: "Done",
+      body: "",
+      botId: "b",
+      threadId: "t",
+    } as const;
+    const sentTo = () =>
+      fetchMock.mock.calls.map(([, init]) => JSON.parse(String((init as RequestInit).body)).to);
+
+    await expect(push.deliver(message, notifyContext)).resolves.toBe("delivered");
+    expect(sentTo().sort()).toEqual(["ExponentPushToken[phone]", "ExponentPushToken[tablet]"]);
+
+    fetchMock.mockClear();
+    await tokens.endSession("user-1", "session-phone");
+    await expect(push.deliver(message, notifyContext)).resolves.toBe("delivered");
+    expect(sentTo()).toEqual(["ExponentPushToken[tablet]"]);
+  });
+
+  it("delivers to the other devices when one device's push fails", async () => {
+    const tokens = new MemoryPushTokenStore();
+    await tokens.save("user-1", "ExponentPushToken[phone]");
+    await tokens.save("user-1", "ExponentPushToken[tablet]");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) =>
+        String(init.body).includes("phone")
+          ? jsonResponse({ data: { status: "error", message: "bad request" } }, 400)
+          : jsonResponse({ data: { status: "ok", id: "ticket" } }),
+      ),
+    );
+    const push = new ExpoPushProvider(tokens, { retryDelaysMs: [] });
+    await expect(
+      push.deliver(
+        { kind: "completion", title: "Done", body: "", botId: "b", threadId: "t" },
+        notifyContext,
+      ),
+    ).resolves.toBe("delivered");
   });
 
   it("posts to Expo when a token is registered", async () => {
