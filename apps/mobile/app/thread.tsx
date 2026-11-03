@@ -148,7 +148,8 @@ export default function ThreadRoute() {
         />
       </View>
     );
-  if (!currentOwner) return <ActivityIndicator color={tokens.foreground} />;
+  if (!currentOwner)
+    return <ActivityIndicator accessibilityLabel={t("Loading…")} color={tokens.foreground} />;
   if (request.action === "show" && !focusSync.switchFailed)
     return (
       <View style={styles.thread}>

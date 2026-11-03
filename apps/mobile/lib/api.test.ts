@@ -1301,6 +1301,49 @@ describe("mobile API authentication", () => {
     expect(await snapshotSessionToken()).toEqual({ ok: true, value: "" });
   });
 
+  it("clears the deleted account's primary session and Space when saved-account removal fails", async () => {
+    const store = new Map([["rakazo.session_token", "family-token"]]);
+    mockSecureStore(store);
+    await saveSessionToken("family-token");
+    await selectSpace("family-space");
+    vi.mocked(forgetSavedToken).mockRejectedValueOnce(new Error("storage locked"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ success: true })),
+    );
+
+    const failure = await deleteAccount("password12").catch((error: unknown) => error);
+
+    expect(store.has("rakazo.session_token")).toBe(false);
+    expect(await snapshotSessionToken()).toEqual({ ok: true, value: "" });
+    expect(store.has("rakazo.space_id")).toBe(false);
+    expect(selectedSpaceId()).toBeNull();
+    expect(forgetSavedToken).toHaveBeenCalledExactlyOnceWith(currentApiBase(), "family-token");
+    expect(failure).toEqual(new Error("Could not clear the local session"));
+  });
+
+  it("preserves a newer login when deleted-account cleanup fails", async () => {
+    const store = new Map([["rakazo.session_token", "family-token"]]);
+    mockSecureStore(store);
+    await saveSessionToken("family-token");
+    await selectSpace("family-space");
+    vi.mocked(forgetSavedToken).mockImplementationOnce(async () => {
+      await saveSessionToken("work-token");
+      await selectSpace("work-space");
+      throw new Error("storage locked");
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ success: true })),
+    );
+
+    await expect(deleteAccount("password12")).rejects.toThrow("Could not clear the local session");
+
+    expect(await snapshotSessionToken()).toEqual({ ok: true, value: "work-token" });
+    expect(selectedSpaceId()).toBe("work-space");
+    expect(forgetSavedToken).toHaveBeenCalledExactlyOnceWith(currentApiBase(), "family-token");
+  });
+
   it("quarantines the bearer and reports failure when no local credential write succeeds", async () => {
     const store = new Map([["rakazo.session_token", "family-token"]]);
     mockSecureStore(store);

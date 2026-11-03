@@ -250,6 +250,7 @@ suite("saved account sessions and notifications (PostgreSQL)", () => {
     const invalid = await request("/api/accounts", {
       headers: { authorization: "Bearer invalid", cookie: cookie() },
     });
+    expect(invalid.status).toBe(401);
     expect(await invalid.json()).toEqual({ activeUserId: null, accounts: [] });
   });
 

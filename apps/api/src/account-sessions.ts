@@ -43,7 +43,8 @@ async function accountActivity(prisma: PrismaClient, userId: string) {
     const notifications: AccountNotification[] = [];
     const since = new Date(Date.now() - 24 * 60 * 60_000);
     let before: { createdAt: Date; id: string } | undefined;
-    while (notifications.length < 50) {
+    // Bound each account's poll even when its recent events produce no eligible alerts.
+    for (let page = 0; page < 5 && notifications.length < 50; page++) {
       const events = await prisma.event.findMany({
         where: {
           spaceId: { in: spaceIds },
@@ -191,6 +192,8 @@ export function mountAccountSessions(
           image: active.user.image ?? null,
         }
       : null;
+    if (c.req.header("authorization") && !current)
+      return c.json({ activeUserId: null, accounts: [] } satisfies AccountSessions, 401);
     // Native bearer requests select exactly that identity even if an HTTP host also attaches cookies.
     const proven = c.req.header("authorization") ? (current ? [current] : []) : saved;
     if (

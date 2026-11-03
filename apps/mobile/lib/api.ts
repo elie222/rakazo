@@ -938,11 +938,17 @@ export async function deleteAccount(password?: string, token?: string) {
     throw new Error(
       authResponseErrorText(response.status, body, invalidJson, t("Could not delete account")),
     );
-  await forgetSavedToken(apiBase, accountToken);
-  if (sessionGeneration !== currentSessionGeneration() || apiBase !== currentApiBase()) return;
-  await clearSessionToken();
-  if (currentSessionGeneration() !== sessionGeneration + 1 || apiBase !== currentApiBase()) return;
-  await clearSpace();
+  let localFailed = false;
+  await forgetSavedToken(apiBase, accountToken).catch(() => {
+    localFailed = true;
+  });
+  if (sessionGeneration === currentSessionGeneration() && apiBase === currentApiBase()) {
+    if (!(await clearSessionToken())) localFailed = true;
+    if (currentSessionGeneration() === sessionGeneration + 1 && apiBase === currentApiBase()) {
+      if (!(await clearSpace())) localFailed = true;
+    }
+  }
+  if (localFailed) throw new Error(t("Could not clear the local session"));
 }
 
 const sessionRejectedListeners = new Set<() => void>();

@@ -102,6 +102,8 @@ export async function refreshAccountSummaries(): Promise<AccountSummary[]> {
         const { response, body } = await accountJson(apiBase, account.token, "/api/accounts");
         if (response.status === 401) {
           await forgetSavedToken(apiBase, account.token);
+          if (!(await loadSavedAccounts(apiBase)).some((row) => row.userId === account.userId))
+            unreadCounts.delete(`${apiBase} ${account.userId}`);
           return null;
         }
         const data = body as {
@@ -125,8 +127,9 @@ export async function refreshAccountSummaries(): Promise<AccountSummary[]> {
 /** The app icon counts unread chats across every saved login. */
 export async function refreshAppBadge(): Promise<void> {
   const generation = appBadgeGeneration();
+  const hadSavedAccounts = (await loadSavedAccounts(currentApiBase())).length > 0;
   const accounts = await refreshAccountSummaries();
-  if (!accounts.length && (await loadSessionToken())) return;
+  if (!accounts.length && !hadSavedAccounts && (await loadSessionToken())) return;
   if (generation === appBadgeGeneration())
     await syncAppBadge(accounts.reduce((sum, row) => sum + row.unread, 0));
 }
@@ -175,7 +178,6 @@ export async function selectNotificationAccount(
   }
   await rememberCurrentAccount().catch(() => undefined);
   const rows = await loadSavedAccounts(server);
-  if (!userId && !rows.length) return (await loadSessionToken()) ? "selected" : "signed-out";
   // Older deliveries have no account. They are safe only with one saved login.
   const target = userId ?? (rows.length === 1 ? rows[0]?.userId : undefined);
   return target &&

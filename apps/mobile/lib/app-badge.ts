@@ -7,6 +7,7 @@ type InboxChats = {
 
 let written: number | null = null;
 let generation = 0;
+let writes = Promise.resolve();
 
 /** Unread chats across the inbox Spaces. */
 export function unreadChatCount(spaces: readonly InboxChats[]): number {
@@ -29,11 +30,15 @@ export function forgetAppBadge(): void {
 }
 
 /** Puts the count on the app icon, writing only when it changes. iOS ignores it without permission. */
-export async function syncAppBadge(count: number): Promise<void> {
-  if (count === written) return;
-  written = count;
-  const set = await Notifications.setBadgeCountAsync(count).catch(() => false);
-  if (!set && written === count) written = null;
+export function syncAppBadge(count: number): Promise<void> {
+  const currentGeneration = generation;
+  const next = writes.then(async () => {
+    if (currentGeneration !== generation || count === written) return;
+    const set = await Notifications.setBadgeCountAsync(count).catch(() => false);
+    if (currentGeneration === generation) written = set ? count : null;
+  });
+  writes = next.catch(() => undefined);
+  return next;
 }
 
 /** Capture when an inbox request starts; pre-foreground responses cannot overwrite a push. */

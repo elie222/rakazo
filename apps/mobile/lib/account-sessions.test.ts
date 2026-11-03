@@ -9,10 +9,10 @@ import {
   selectSavedAccount,
   signOutAllAccounts,
 } from "./account-sessions";
-import { forgetAppBadge } from "./app-badge";
+import { forgetAppBadge, syncAppBadge } from "./app-badge";
 import { openNotificationResponse } from "./open-notification";
 import { pendingSessionTokens } from "./pending-session-revocations";
-import { loadSavedAccounts, rememberSavedAccount } from "./saved-accounts";
+import { forgetSavedToken, loadSavedAccounts, rememberSavedAccount } from "./saved-accounts";
 
 const state = vi.hoisted(() => ({
   token: "family-token",
@@ -119,6 +119,34 @@ it("returns local recovery identities without credentials", async () => {
     { userId: "work", email: "work@example.test", unread: 0 },
   ]);
   expect(fetch).not.toHaveBeenCalled();
+});
+
+it.each([200, 401])(
+  "rejects an identity-less legacy notification when the stored primary session is invalid (%s)",
+  async (status) => {
+    state.disk.clear();
+    vi.mocked(fetch).mockResolvedValue(Response.json(null, { status }));
+    expect(await selectNotificationAccount()).toBe("signed-out");
+    expect(state.token).toBe("family-token");
+    expect(state.save).not.toHaveBeenCalled();
+    expect(await loadSavedAccounts(apiBase)).toEqual([]);
+  },
+);
+
+it("adopts and verifies a valid legacy login before opening an identity-less notification", async () => {
+  state.disk.clear();
+  expect(await selectNotificationAccount()).toBe("selected");
+  expect(await loadSavedAccounts(apiBase)).toEqual([
+    expect.objectContaining({ userId: "family", token: "family-token" }),
+  ]);
+  expect(state.token).toBe("family-token");
+  expect(state.save).not.toHaveBeenCalled();
+  expect(fetch).toHaveBeenCalledTimes(2);
+  for (const [url, init] of vi.mocked(fetch).mock.calls) {
+    expect(url).toBe(`${apiBase}/api/auth/get-session`);
+    expect(init?.method).toBe("GET");
+    expect(bearer(init)).toBe("Bearer family-token");
+  }
 });
 
 it("preserves the first legacy login's notification preferences without copying them to another account", async () => {
@@ -282,6 +310,50 @@ it("refreshes every login's unread count and the icon badge", async () => {
   ]);
 });
 
+it("drops a revoked login's cached unread count while preserving another offline login", async () => {
+  forgetAppBadge();
+  await refreshAppBadge();
+  expect(state.badge).toHaveBeenLastCalledWith(5);
+  vi.mocked(fetch).mockImplementation(async (_url, init) => {
+    if (bearer(init) === "Bearer family-token") return Response.json({}, { status: 401 });
+    throw new Error("offline");
+  });
+  await refreshAppBadge();
+  expect(await loadAccountSummaries()).toEqual([
+    { userId: "work", email: "work@example.test", unread: 3 },
+  ]);
+  expect(state.badge).toHaveBeenLastCalledWith(3);
+  await rememberSavedAccount(apiBase, account("family", "replacement-family-token"));
+  expect(await loadAccountSummaries()).toEqual([
+    { userId: "work", email: "work@example.test", unread: 3 },
+    { userId: "family", email: "family@example.test", unread: 0 },
+  ]);
+});
+
+it("clears the icon when the last saved account is confirmed revoked", async () => {
+  await forgetSavedToken(apiBase, "work-token");
+  forgetAppBadge();
+  await refreshAppBadge();
+  expect(state.badge).toHaveBeenLastCalledWith(2);
+  vi.mocked(fetch).mockResolvedValue(Response.json({}, { status: 401 }));
+  await refreshAppBadge();
+  expect(await loadAccountSummaries()).toEqual([]);
+  expect(state.token).toBe("family-token");
+  expect(state.badge).toHaveBeenLastCalledWith(0);
+});
+
+it("preserves the existing icon badge when a legacy login cannot be adopted offline", async () => {
+  state.disk.clear();
+  forgetAppBadge();
+  await syncAppBadge(6);
+  state.badge.mockClear();
+  vi.mocked(fetch).mockRejectedValue(new Error("offline"));
+  await refreshAppBadge();
+  expect(await loadAccountSummaries()).toEqual([]);
+  expect(state.token).toBe("family-token");
+  expect(state.badge).not.toHaveBeenCalled();
+});
+
 it("does not overwrite the icon with counts fetched before the app returned to the foreground", async () => {
   let release!: () => void;
   const waiting = new Promise<void>((resolve) => {
@@ -300,6 +372,8 @@ it("does not overwrite the icon with counts fetched before the app returned to t
 });
 
 it("a late revoked response cannot delete a replacement bearer for the same account", async () => {
+  await refreshAccountSummaries();
+  vi.mocked(fetch).mockClear();
   let release!: () => void;
   const waiting = new Promise<void>((resolve) => {
     release = resolve;
@@ -309,16 +383,19 @@ it("a late revoked response cannot delete a replacement bearer for the same acco
       await waiting;
       return Response.json({}, { status: 401 });
     }
-    return Response.json({ accounts: [{ userId: "family", unread: 1 }] });
+    const userId = userFor(init);
+    return Response.json({ accounts: [{ userId, unread: userId === "family" ? 1 : 7 }] });
   });
   const refreshing = refreshAccountSummaries();
   await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
   await rememberSavedAccount(apiBase, account("work", "replacement-work-token"));
+  await refreshAccountSummaries();
   release();
   await refreshing;
   expect((await loadSavedAccounts(apiBase)).find((row) => row.userId === "work")?.token).toBe(
     "replacement-work-token",
   );
+  expect((await loadAccountSummaries()).find((row) => row.userId === "work")?.unread).toBe(7);
 });
 
 it("sign-out-all revokes each other saved bearer and signs the active one out", async () => {

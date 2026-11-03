@@ -84,3 +84,60 @@ it("returns the configured server origin without exposing a session credential",
     serverOrigin: "https://api.example.test",
   });
 });
+
+it("rejects an expired native bearer instead of reporting an empty successful account feed", async () => {
+  const app = new Hono();
+  mountAccountSessions(app, {
+    auth: {
+      api: { getSession: async () => null, listSavedAccounts: async () => [] },
+    } as never,
+    prisma: {} as never,
+    trustedOrigin: () => true,
+  });
+  const response = await app.request("https://api.example.test/api/accounts", {
+    headers: { authorization: "Bearer expired" },
+  });
+  expect(response.status).toBe(401);
+  expect(await response.json()).toEqual({ activeUserId: null, accounts: [] });
+});
+
+it("bounds account-feed work when recent events all have notifications disabled", async () => {
+  const app = new Hono();
+  const events = vi.fn(async () => {
+    if (events.mock.calls.length > 5) throw new Error("Account feed exceeded its scan bound");
+    return Array.from({ length: 100 }, (_, index) => ({
+      id: `event-${events.mock.calls.length}-${index}`,
+      createdAt: new Date(Date.now() - events.mock.calls.length * 1000 - index),
+      type: "thread.message.created",
+      payload: { role: "bot" },
+      runId: null,
+      thread: {
+        bot: { name: "Fixture", userId: "family", archivedAt: null, notifyOnFinish: false },
+        group: null,
+      },
+    }));
+  });
+  mountAccountSessions(app, {
+    auth: {
+      api: {
+        getSession: async () => null,
+        listSavedAccounts: async () => [
+          { userId: "family", sessionId: "family-session", email: "family@example.test" },
+        ],
+      },
+    } as never,
+    prisma: {
+      $queryRaw: async () => [{ count: 7 }],
+      spaceMember: { findMany: async () => [{ spaceId: "family-space" }] },
+      event: { findMany: events },
+      run: { findMany: async () => [] },
+    } as never,
+    trustedOrigin: () => true,
+  });
+  const response = await app.request("https://api.example.test/api/accounts");
+  expect(response.status).toBe(200);
+  expect(events).toHaveBeenCalledTimes(5);
+  expect(await response.json()).toMatchObject({
+    accounts: [{ userId: "family", unread: 7, notifications: [] }],
+  });
+});
