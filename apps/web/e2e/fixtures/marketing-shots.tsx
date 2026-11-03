@@ -117,7 +117,11 @@ function CreateShot() {
   }, []);
   return (
     <main data-ready={ready ? "true" : "false"} className="min-h-screen bg-background">
-      <CreateBotDialog onCreate={async () => undefined} onCancel={() => undefined} />
+      <CreateBotDialog
+        avatarSet="organic"
+        onCreate={async () => undefined}
+        onCancel={() => undefined}
+      />
     </main>
   );
 }

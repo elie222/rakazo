@@ -86,14 +86,17 @@ describe("account preferences", () => {
         return { count: 1 };
       },
     );
+    const botUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
     const prisma = {
       user: {
         update,
         updateMany,
         findUniqueOrThrow: vi.fn().mockResolvedValue(user),
       },
+      bot: { updateMany: botUpdateMany },
       userModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
+      $transaction: (run: (tx: unknown) => Promise<unknown>) => run(prisma),
     } as unknown as PrismaClient;
     const deps = {
       prisma,
@@ -112,7 +115,14 @@ describe("account preferences", () => {
       email: "user@rakazo.test",
       isDeploymentOwner: true,
     } satisfies Actor;
-    return { update, updateMany, deps, actor, handler: new RPCHandler(createRouter(deps)) };
+    return {
+      update,
+      updateMany,
+      botUpdateMany,
+      deps,
+      actor,
+      handler: new RPCHandler(createRouter(deps)),
+    };
   }
 
   it("records only validated screens under the authenticated actor", async () => {
@@ -323,6 +333,30 @@ describe("account preferences", () => {
     expect(update).toHaveBeenCalledWith({ where: { id: "user-1" }, data: {} });
     await expect(response.json()).resolves.toEqual({
       json: expect.objectContaining({ avatarStyle: "organic" }),
+    });
+  });
+
+  it("saves the bot style and restyles only bots not pinned to another set", async () => {
+    const { update, botUpdateMany, actor, handler } = preferencesDeps("organic");
+
+    const response = await handle(
+      handler,
+      new Request("http://127.0.0.1/rpc/preferences/update", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { botAvatarSet: "rakazo" } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+
+    expect(response.status).toBe(200);
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { botAvatarSet: "rakazo" },
+    });
+    expect(botUpdateMany).toHaveBeenCalledWith({
+      where: { userId: "user-1", avatarSetPinned: false, avatarSet: { not: "rakazo" } },
+      data: { avatarSet: "rakazo" },
     });
   });
 

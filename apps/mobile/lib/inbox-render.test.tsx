@@ -630,9 +630,10 @@ it("adds a bot made from the inbox's Create menu to the inbox roster before open
     refreshBots: async () => undefined,
     openChat: (destination) => calls.push(`open ${JSON.stringify(destination)}`),
   });
+  // The server gives the bot the account's set, so the inbox sends none.
   expect(ui.rpc).toHaveBeenCalledWith(
     "bots/create",
-    expect.objectContaining({ avatarSet: "organic" }),
+    expect.not.objectContaining({ avatarSet: expect.anything() }),
   );
   // The session is taken before the requests, so a bot that lands after a switch is dropped.
   expect(calls.slice(0, 5)).toEqual([

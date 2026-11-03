@@ -717,6 +717,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "This device": "Dieses Gerät",
   "Agent messages": "Agent-Nachrichten",
   Appearance: "Erscheinungsbild",
+  "Bot style": "Bot-Stil",
+  "Couldn't update bot style": "Bot-Stil konnte nicht aktualisiert werden",
   Archived: "Archiviert",
   Cancel: "Abbrechen",
   "Could not change language": "Sprache konnte nicht geändert werden",

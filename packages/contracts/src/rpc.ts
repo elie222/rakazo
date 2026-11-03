@@ -33,6 +33,7 @@ import {
   TicketSchema,
   UpdateTicketInput,
 } from "./board.js";
+import { BotAvatarSetSchema } from "./bot-avatar.js";
 import {
   BotSecretMetadata,
   BotSecretPutInput,
@@ -335,6 +336,8 @@ export const appContract = {
         z
           .object({
             avatarStyle: AvatarStyleSchema.optional(),
+            /** Restyles every bot not pinned to another set, and is what new bots get. */
+            botAvatarSet: BotAvatarSetSchema.optional(),
             timezone: TimeZoneSchema.nullable().optional(),
             /** The language the app runs in, so emails can be written in it. */
             locale: AppLocaleSchema.optional(),
@@ -342,6 +345,7 @@ export const appContract = {
           .refine(
             (input) =>
               input.avatarStyle !== undefined ||
+              input.botAvatarSet !== undefined ||
               input.timezone !== undefined ||
               input.locale !== undefined,
             { message: "Nothing to update" },

@@ -272,6 +272,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   Sent: "已发送",
   " (unread)": "（未读）",
   Appearance: "外观",
+  "Bot style": "机器人样式",
+  "Couldn't update bot style": "无法更新机器人样式",
   Dark: "深色",
   Light: "浅色",
   System: "跟随系统",

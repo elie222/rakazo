@@ -563,6 +563,32 @@ export default function Account() {
           />
         </View>
 
+        {me?.botAvatarSet ? (
+          <View accessibilityLabel={t("Bot style")} style={styles.section}>
+            <SettingsLabel>{t("Bot style")}</SettingsLabel>
+            <NativeSegmentedControl
+              accessibilityLabel={t("Bot style")}
+              onChange={(botAvatarSet) => {
+                const previous = me.botAvatarSet;
+                setMe((current) => (current ? { ...current, botAvatarSet } : current));
+                rpc("preferences/update", { botAvatarSet })
+                  .then(setMe)
+                  .catch(() => {
+                    setMe((current) =>
+                      current ? { ...current, botAvatarSet: previous } : current,
+                    );
+                    Alert.alert(t("Couldn't update bot style"));
+                  });
+              }}
+              options={[
+                { value: "organic", label: t("Original") },
+                { value: "rakazo", label: t("Rakazo") },
+              ]}
+              value={me.botAvatarSet}
+            />
+          </View>
+        ) : null}
+
         <SettingsGroup>
           <SettingsRow
             accessibilityRole="button"

@@ -169,6 +169,15 @@ export function SettingsOverlays({
             const nextMe = await rpc.preferences.update({ timezone });
             setBootstrapMe((prev) => (prev ? { ...prev, timezone: nextMe.timezone } : nextMe));
           }}
+          botAvatarSet={bootstrapMe?.botAvatarSet}
+          onBotAvatarSetChange={async (botAvatarSet) => {
+            const nextMe = await rpc.preferences.update({ botAvatarSet });
+            setBootstrapMe((prev) =>
+              prev ? { ...prev, botAvatarSet: nextMe.botAvatarSet } : nextMe,
+            );
+            // Unpinned bots were restyled with it.
+            await refreshSpaces();
+          }}
           onAccountImported={refreshSpaces}
           onImportAgent={() => {
             setOverlay(null);

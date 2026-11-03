@@ -149,13 +149,25 @@ export function accountRoutes(ctx: RouterContext) {
     },
     preferences: {
       update: authed.preferences.update.handler(async ({ context, input }): Promise<Me> => {
-        await deps.prisma.user.update({
-          where: { id: context.actor.userId },
-          // An avatar style from an older app is accepted and ignored: there is only one.
-          data: {
-            ...(input.timezone === undefined ? {} : { timezone: input.timezone }),
-            ...(input.locale === undefined ? {} : { locale: input.locale }),
-          },
+        const userId = context.actor.userId;
+        const botAvatarSet = input.botAvatarSet;
+        await deps.prisma.$transaction(async (tx) => {
+          await tx.user.update({
+            where: { id: userId },
+            // An avatar style from an older app is accepted and ignored: there is only one.
+            data: {
+              ...(input.timezone === undefined ? {} : { timezone: input.timezone }),
+              ...(input.locale === undefined ? {} : { locale: input.locale }),
+              ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
+            },
+          });
+          // Every bot the user has not pinned to another set follows the new default.
+          if (botAvatarSet !== undefined) {
+            await tx.bot.updateMany({
+              where: { userId, avatarSetPinned: false, avatarSet: { not: botAvatarSet } },
+              data: { avatarSet: botAvatarSet },
+            });
+          }
         });
         return meDto(deps, context.actor);
       }),

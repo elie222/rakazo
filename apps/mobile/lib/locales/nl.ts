@@ -710,6 +710,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "This device": "Dit apparaat",
   "Agent messages": "Agentberichten",
   Appearance: "Weergave",
+  "Bot style": "Botstijl",
+  "Couldn't update bot style": "Kon de botstijl niet bijwerken",
   Archived: "Gearchiveerd",
   Cancel: "Annuleren",
   Close: "Sluiten",

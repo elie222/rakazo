@@ -586,7 +586,15 @@ export function createRepos(
             where: { spaceId: actor.spaceId, userId: actor.userId },
             _max: { position: true },
           });
-          const avatarSet = input.avatarSet ?? DEFAULT_NEW_BOT_AVATAR_SET;
+          // A bot follows its owner's default set unless created with another, which pins it.
+          const owner = await tx.user.findUnique({
+            where: { id: actor.userId },
+            select: { botAvatarSet: true },
+          });
+          const defaultSet = owner
+            ? resolveBotAvatarSet(owner.botAvatarSet)
+            : DEFAULT_NEW_BOT_AVATAR_SET;
+          const avatarSet = input.avatarSet ?? defaultSet;
           // Only Original balances existing looks; seeded logo colours need no roster read.
           const avatar = chooseBotAvatar(
             avatarSet === "organic"
@@ -617,6 +625,7 @@ export function createRepos(
               fleetManagement: input.fleetManagement,
               color: avatar.color,
               avatarSet,
+              avatarSetPinned: avatarSet !== defaultSet,
               position: (positions._max.position ?? -1) + 1,
               parentBotId: input.parentBotId ?? null,
               computerId: teamComputer.id,

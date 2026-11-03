@@ -405,6 +405,16 @@ export function botsRoutes(ctx: RouterContext) {
         if (!modelChange.ok) throw new ORPCError("BAD_REQUEST", { message: modelChange.error });
         const thinkingLevel = input.thinkingLevel;
         if (!existing.thread) throw new IsolationError();
+        // Picking a set on one bot pins it unless it is the owner's default, which unpins it.
+        const avatarSetPinned =
+          input.avatarSet === undefined
+            ? undefined
+            : await deps.prisma.user
+                .findUniqueOrThrow({
+                  where: { id: context.actor.userId },
+                  select: { botAvatarSet: true },
+                })
+                .then((user) => input.avatarSet !== resolveBotAvatarSet(user.botAvatarSet));
         await commitBotUpdate({
           prisma: deps.prisma,
           notify: (threadId, seq) => deps.events.notify(threadId, seq),
@@ -424,6 +434,7 @@ export function botsRoutes(ctx: RouterContext) {
             notifyOnFinish: input.notifyOnFinish,
             color: input.color,
             avatarSet: input.avatarSet,
+            avatarSetPinned,
             pinned: input.pinned,
             memoryScope: input.memoryScope,
             sectionId: input.sectionId,
