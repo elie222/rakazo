@@ -54,7 +54,7 @@ export function InviteDialog({
           </li>
           <li className="flex items-center gap-3">
             <CalendarPlus aria-hidden="true" className="size-5 shrink-0 text-muted-foreground" />
-            <Trans>You get a free month when they start their trial.</Trans>
+            <Trans>You get a free month when they start their trial with a new card.</Trans>
           </li>
         </ul>
         {referral.rewards > 0 ? (

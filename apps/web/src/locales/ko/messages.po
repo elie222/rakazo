@@ -6686,8 +6686,8 @@ msgid "You declined"
 msgstr ""
 
 #: src/components/InviteDialog.tsx
-msgid "You get a free month when they start their trial."
-msgstr "친구가 체험을 시작하면 1개월 무료를 받아요."
+msgid "You get a free month when they start their trial with a new card."
+msgstr "친구가 새 카드로 체험을 시작하면 나는 한 달 무료를 받아요."
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "You have control"

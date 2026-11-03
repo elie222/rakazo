@@ -93,7 +93,7 @@ export function ChatHeader({
             </Button>
           </IconTooltip>
         ) : null}
-        {referral ? (
+        {referral && !inGroup && active ? (
           <IconTooltip label={t`Invite a friend`}>
             <Button
               variant="floating"

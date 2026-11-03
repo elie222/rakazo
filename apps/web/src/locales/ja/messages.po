@@ -6686,8 +6686,8 @@ msgid "You declined"
 msgstr "辞退しました"
 
 #: src/components/InviteDialog.tsx
-msgid "You get a free month when they start their trial."
-msgstr "友だちがトライアルを始めると、あなたに1か月分の無料期間が付与されます。"
+msgid "You get a free month when they start their trial with a new card."
+msgstr "友だちが新しいカードでトライアルを始めると、あなたは1か月無料になります。"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "You have control"

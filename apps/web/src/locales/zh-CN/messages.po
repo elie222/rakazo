@@ -6686,8 +6686,8 @@ msgid "You declined"
 msgstr "你已拒接"
 
 #: src/components/InviteDialog.tsx
-msgid "You get a free month when they start their trial."
-msgstr "对方开始试用后，你将获得 1 个月免费。"
+msgid "You get a free month when they start their trial with a new card."
+msgstr "对方用新卡开始试用后，你将获得一个月免费。"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "You have control"

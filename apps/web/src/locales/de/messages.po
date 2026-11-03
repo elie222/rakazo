@@ -6686,8 +6686,8 @@ msgid "You declined"
 msgstr "Du hast abgelehnt"
 
 #: src/components/InviteDialog.tsx
-msgid "You get a free month when they start their trial."
-msgstr "Du bekommst einen Gratismonat, wenn sie ihre Testphase starten."
+msgid "You get a free month when they start their trial with a new card."
+msgstr "Du bekommst einen Gratismonat, wenn sie ihre Testphase mit einer neuen Karte starten."
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "You have control"

@@ -12,6 +12,8 @@ import { rpc } from "../lib/rpc";
 import type { SupportChat } from "../lib/support-chat";
 import { useSupportChat } from "../lib/support-chat";
 
+const REFERRAL_CLAIM_WAIT_MS = 5_000;
+
 const PaywallPage = lazyComponent(() =>
   import("../pages/Paywall").then((module) => module.PaywallPage),
 );
@@ -76,8 +78,12 @@ export function SubscriptionGate({
         if (!capabilities.billing) return { kind: "open" };
         const me = await loadMe();
         if (!me.billingEnabled) return { kind: "open" };
-        // Claimed first, so an invited friend's status already offers the longer trial.
-        await claimStoredReferral();
+        // Claimed first, so an invited friend's status already offers the longer trial; a claim
+        // that hangs never holds the app back for more than a few seconds.
+        await Promise.race([
+          claimStoredReferral(),
+          new Promise((resolve) => setTimeout(resolve, REFERRAL_CLAIM_WAIT_MS)),
+        ]);
         const status = await rpc.billing.status();
         if (active && capabilities.crispWebsiteId) {
           setSupportChat({

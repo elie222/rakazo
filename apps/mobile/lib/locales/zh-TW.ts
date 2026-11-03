@@ -1250,7 +1250,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Invite a friend": "邀請朋友",
   "Give a friend {weeks} weeks free": "送朋友 {weeks} 週免費",
   "They get {weeks} weeks free.": "對方可免費使用 {weeks} 週。",
-  "You get a free month when they start their trial.": "對方開始試用後，你將獲得 1 個月免費。",
+  "You get a free month when they start their trial with a new card.":
+    "對方用新卡開始試用後，你將獲得一個月免費。",
   "Share link": "分享連結",
   "1 free month earned": "已獲得 1 個月免費",
   "{count} free months earned": "已獲得 {count} 個月免費",

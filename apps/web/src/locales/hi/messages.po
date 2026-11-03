@@ -6686,8 +6686,8 @@ msgid "You declined"
 msgstr "आपने कॉल अस्वीकार की"
 
 #: src/components/InviteDialog.tsx
-msgid "You get a free month when they start their trial."
-msgstr "जब वे अपना ट्रायल शुरू करते हैं, तो आपको एक महीना मुफ़्त मिलता है।"
+msgid "You get a free month when they start their trial with a new card."
+msgstr "जब वे नए कार्ड से अपना ट्रायल शुरू करते हैं, तो आपको एक महीना मुफ़्त मिलता है।"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "You have control"

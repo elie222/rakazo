@@ -62,12 +62,12 @@ afterEach(() => {
   writeText.mockClear();
 });
 
-function renderHeader() {
+function renderHeader({ inGroup = false } = {}) {
   act(() =>
     root.render(
       <ChatHeader
-        inGroup={false}
-        active={{ id: "bot-1", name: "Helper", color: "#3EC5A8" } as Bot}
+        inGroup={inGroup}
+        active={inGroup ? undefined : ({ id: "bot-1", name: "Helper", color: "#3EC5A8" } as Bot)}
         activeGroup={undefined}
         activeSnapshot={null}
         phoneCallsEnabled={false}
@@ -90,6 +90,12 @@ it("shows no gift when the account cannot invite", () => {
   expect(gift()).toBeNull();
 });
 
+it("shows the gift only in a bot chat, as mobile does", () => {
+  billing.status = { referral: { url: "https://example.test/sign-up?ref=abc", rewards: 0 } };
+  renderHeader({ inGroup: true });
+  expect(gift()).toBeNull();
+});
+
 it("opens the invite with both rewards and copies the link", async () => {
   billing.status = { referral: { url: "https://example.test/sign-up?ref=abc", rewards: 2 } };
   renderHeader();
@@ -97,7 +103,9 @@ it("opens the invite with both rewards and copies the link", async () => {
   const dialog = container.querySelector('[role="dialog"]')!;
   expect(dialog.textContent).toContain("Give a friend 2 weeks free");
   expect(dialog.textContent).toContain("They get 2 weeks free.");
-  expect(dialog.textContent).toContain("You get a free month when they start their trial.");
+  expect(dialog.textContent).toContain(
+    "You get a free month when they start their trial with a new card.",
+  );
   expect(dialog.textContent).toContain("2 free months earned");
   const copy = [...dialog.querySelectorAll("button")].find(
     (button) => button.textContent === "Copy link",

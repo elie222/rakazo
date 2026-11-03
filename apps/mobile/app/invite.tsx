@@ -75,7 +75,7 @@ export default function InviteScreen() {
             color={tokens.mutedForeground}
           />
           <Text style={styles.rowText}>
-            {t("You get a free month when they start their trial.")}
+            {t("You get a free month when they start their trial with a new card.")}
           </Text>
         </View>
       </View>
