@@ -14,6 +14,8 @@ type Row = {
   ciphertext: string;
   title?: string;
   note?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
 };
 type Where = Record<string, unknown>;
 
@@ -37,6 +39,9 @@ export const accountVault = { userId: "user-1", spaceId: null };
 
 export function fakeDatabase() {
   let rows: Row[] = [];
+  // A clock that moves on every write, as updatedAt does, so a changed row is told apart.
+  let tick = Date.parse("2026-09-01T00:00:00.000Z");
+  const now = () => new Date((tick += 1000));
   // Spaces that customized "credentials" and so use their own vault.
   const ownVaults = new Set<string>();
   const vaultCredential = {
@@ -53,14 +58,15 @@ export function fakeDatabase() {
       async ({ where }: { where: Where }) => rows.filter((r) => matches(r, where)).length,
     ),
     create: vi.fn(async ({ data }: { data: Row }) => {
-      rows.push({ ...data });
+      const at = now();
+      rows.push({ createdAt: at, updatedAt: at, ...data });
     }),
     update: vi.fn(async ({ where, data }: { where: { id: string }; data: Partial<Row> }) => {
-      Object.assign(rows.find((row) => row.id === where.id)!, data);
+      Object.assign(rows.find((row) => row.id === where.id)!, data, { updatedAt: now() });
     }),
     updateMany: vi.fn(async ({ where, data }: { where: Where; data: Partial<Row> }) => {
       const matched = rows.filter((row) => matches(row, where));
-      for (const row of matched) Object.assign(row, data);
+      for (const row of matched) Object.assign(row, data, { updatedAt: now() });
       return { count: matched.length };
     }),
     deleteMany: vi.fn(async ({ where }: { where: Where }) => {

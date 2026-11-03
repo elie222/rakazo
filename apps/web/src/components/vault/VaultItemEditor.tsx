@@ -215,7 +215,11 @@ function EditorForm({
   const [expiry, setExpiry] = useState(initial?.card ? expiryText(initial.card) : "");
   const [cvc, setCvc] = useState(initial?.card?.cvc ?? "");
   const [cardName, setCardName] = useState(initial?.card?.name ?? "");
-  const [billing, setBilling] = useState(initial?.card?.billing ?? "");
+  // A billing contact removed since the card was saved reads as none, so a save drops it.
+  const [billing, setBilling] = useState(() => {
+    const saved = initial?.card?.billing ?? "";
+    return contacts?.some((contact) => contact.name === saved) ? saved : "";
+  });
   const [contact, setContact] = useState<ContactInput>({
     ...EMPTY_CONTACT,
     ...Object.fromEntries(

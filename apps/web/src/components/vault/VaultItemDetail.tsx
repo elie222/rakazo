@@ -230,10 +230,12 @@ export function VaultItemDetail({
           {card.name}
         </DetailRow>,
       );
-    if (card.billing)
+    // A billing contact removed since the card was saved shows as no billing address.
+    const billingTitle = card.billing ? contactTitles.get(card.billing) : undefined;
+    if (billingTitle)
       rows.push(
         <DetailRow key="billing" label={t`Billing address`}>
-          {contactTitles.get(card.billing) ?? card.billing}
+          {billingTitle}
         </DetailRow>,
       );
   }

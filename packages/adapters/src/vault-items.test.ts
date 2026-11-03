@@ -191,6 +191,11 @@ describe("what the bot sees", () => {
 });
 
 describe("filling a saved card", () => {
+  const savedAt = (db: ReturnType<typeof fakeDatabase>, name = "visa") =>
+    db
+      .rows()
+      .find((row) => row.name === name)!
+      .updatedAt!.toISOString();
   const fill = (
     db: ReturnType<typeof fakeDatabase>,
     field: string,
@@ -203,6 +208,7 @@ describe("filling a saved card", () => {
       name: "visa",
       field: field as "number",
       site,
+      savedAt: savedAt(db),
     });
 
   it("types each field only on the approved checkout's origin", async () => {
@@ -231,8 +237,26 @@ describe("filling a saved card", () => {
         name: "home",
         field: "number",
         site: "https://shop.example.test",
+        savedAt: savedAt(db, "home"),
       }),
     ).toEqual({ error: expect.stringContaining("No card") });
+  });
+
+  it("refuses a card replaced after the user approved it", async () => {
+    const db = await vaultWithCard();
+    const approved = savedAt(db);
+    await save(db, "visa", JSON.stringify({ ...fakeCard, number: "5555555555554444" }), card);
+    expect(
+      await resolveVaultCardFill({
+        prisma: db.prisma,
+        secretStore,
+        scope,
+        name: "visa",
+        field: "number",
+        site: "https://shop.example.test",
+        savedAt: approved,
+      }),
+    ).toEqual({ error: expect.stringContaining("changed after the user approved") });
   });
 });
 
@@ -261,7 +285,12 @@ describe("approving a saved card", () => {
   });
 
   it("asks once, naming the card and the site, and keeps only a well-formed approval", () => {
-    const use = { card: "visa", site: "https://shop.example.test", title: "Visa ·· 4242" };
+    const use = {
+      card: "visa",
+      site: "https://shop.example.test",
+      title: "Visa ·· 4242",
+      savedAt: "2026-09-01T00:00:01.000Z",
+    };
     expect(cardUseSummary(use)).toEqual({
       onceOnly: true,
       title: "Pay with Visa ·· 4242 on shop.example.test?",

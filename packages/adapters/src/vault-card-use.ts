@@ -5,21 +5,23 @@ import { purchaseCardSummary } from "./purchase-gate.js";
 
 /**
  * A saved card a person approved typing into one checkout: carried in the persisted request, so a
- * replay types exactly that card on exactly that site. `title` is what the approval card showed.
+ * replay types exactly that card on exactly that site. `title` is what the approval card showed, and
+ * `savedAt` is when the card was last saved, so one replaced while the approval waited is not typed.
  */
-export type VaultCardUse = { card: string; site: string; title: string };
+export type VaultCardUse = { card: string; site: string; title: string; savedAt: string };
 
 /** A card use as the persisted request holds it, or nothing when it is not one. */
 export function vaultCardUseOf(value: unknown): VaultCardUse | undefined {
   if (!value || typeof value !== "object") return undefined;
-  const { card, site, title } = value as Record<string, unknown>;
+  const { card, site, title, savedAt } = value as Record<string, unknown>;
   if (
     !BotSecretName.safeParse(card).success ||
     !OneTimeCodeTarget.safeParse({ origin: site }).success ||
-    typeof title !== "string"
+    typeof title !== "string" ||
+    typeof savedAt !== "string"
   )
     return undefined;
-  return { card: card as string, site: new URL(site as string).origin, title };
+  return { card: card as string, site: new URL(site as string).origin, title, savedAt };
 }
 
 /** The site a fill_card step names, reduced to its origin, so a page URL names its site. */

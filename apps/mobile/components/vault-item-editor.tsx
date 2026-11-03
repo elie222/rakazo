@@ -65,7 +65,12 @@ export function VaultItemEditor({
       { id: 0, label: t("Username"), value: item?.preview?.username ?? "", hidden: false },
       { id: 1, label: t("Password"), value: "", hidden: true },
     ];
-    return item ? itemDraft(item, fields, revealed) : emptyDraft(fields);
+    if (!item) return emptyDraft(fields);
+    const draft = itemDraft(item, fields, revealed);
+    // A billing contact removed since the card was saved reads as none, so a save drops it.
+    return contacts.some((contact) => contact.key === draft.billing)
+      ? draft
+      : { ...draft, billing: "" };
   });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);

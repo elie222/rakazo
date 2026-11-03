@@ -407,7 +407,7 @@ export async function prepareToolRequest(
         const [item] = await listVaultItems(deps.prisma, deps.secretStore, run, wantedCard.card);
         if (BotSecretAuth.safeParse(item?.auth).data?.type !== "card")
           return { error: "No card is saved under this name. Check list_secrets." };
-        cardUse = { ...wantedCard, title: item!.title };
+        cardUse = { ...wantedCard, title: item!.title, savedAt: item!.updatedAt.toISOString() };
       }
       args = { ...args, cardApproval: cardUse };
       request.cardUse = cardUse;

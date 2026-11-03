@@ -221,6 +221,7 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
                   name: step.card,
                   field: step.field,
                   site: step.site,
+                  savedAt: approvedCard.savedAt,
                 });
                 if ("error" in resolved) return resolved;
                 addRunSecrets(ctx, resolved.redactions);

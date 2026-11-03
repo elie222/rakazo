@@ -1446,6 +1446,8 @@ export async function resolveVaultCardFill(input: {
   name: string;
   field: PurchaseCardField;
   site: string;
+  /** When the approved card was last saved; a card replaced since then is not typed. */
+  savedAt: string;
 }): Promise<{ text: string; origin: string; redactions: string[] } | { error: string }> {
   const target = OneTimeCodeTarget.safeParse({ origin: input.site });
   if (!target.success) return { error: "site must be the checkout page's HTTPS origin." };
@@ -1455,6 +1457,12 @@ export async function resolveVaultCardFill(input: {
   });
   if (!row || BotSecretAuth.safeParse(row.auth).data?.type !== "card") {
     return { error: "No card is saved under this name. Check list_secrets." };
+  }
+  if (row.updatedAt.toISOString() !== input.savedAt) {
+    return {
+      error:
+        "This card changed after the user approved it, so nothing was typed. Call browser_act again to ask them.",
+    };
   }
   const card = decodeCardSecret(await input.secretStore.load(row.ciphertext, row.id));
   const origin = new URL(target.data.origin).origin;
@@ -1475,5 +1483,8 @@ export async function resolveVaultCardFill(input: {
       : undefined;
   return postalCode
     ? { text: postalCode, origin, redactions }
-    : { error: "This card has no billing postal code." };
+    : {
+        error:
+          "This card has no billing postal code saved. Type the postal code of the user's billing address yourself.",
+      };
 }

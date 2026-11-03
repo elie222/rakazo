@@ -285,7 +285,8 @@ describe("a run remembers the sites it typed an approved wallet purchase into", 
 });
 
 describe("browser_act types a saved card only where the user approved it", () => {
-  async function fillSavedCard(cardApproval?: unknown) {
+  /** `approval` names a card and site; it is bound to the card as saved unless it says otherwise. */
+  async function fillSavedCard(approval?: Record<string, unknown>) {
     const db = fakeDatabase();
     const secretStore = new EncryptedSecretStore("test-only-encryption-key");
     const scope = { userId: "u", spaceId: "space" };
@@ -333,7 +334,17 @@ describe("browser_act types a saved card only where the user approved it", () =>
       ctx as never,
       {
         name: "browser_act",
-        args: { actions: [action], ...(cardApproval ? { cardApproval } : {}) },
+        args: {
+          actions: [action],
+          ...(approval
+            ? {
+                cardApproval: {
+                  savedAt: db.rows()[0]!.updatedAt!.toISOString(),
+                  ...approval,
+                },
+              }
+            : {}),
+        },
         finish: async (r: unknown) => r,
       } as never,
     );
@@ -359,6 +370,16 @@ describe("browser_act types a saved card only where the user approved it", () =>
       site: "https://example.test",
       title: "Visa ·· 4242",
     });
+    expect(
+      (
+        await fillSavedCard({
+          card: "visa",
+          site: "https://example.test",
+          title: "Visa ·· 4242",
+          savedAt: "2026-01-01T00:00:00.000Z",
+        })
+      ).seen,
+    ).toContain("changed after the user approved");
     expect(seen).not.toContain("not approved");
     expect(seen).not.toContain("could not");
     expect(seen).not.toContain("4242424242424242");
