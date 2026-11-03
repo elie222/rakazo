@@ -594,12 +594,9 @@ async function inspectSafeRemoteUrl(
     throw egressRefused(hostname, new Error("Connector URL targets a private host"));
   }
   const literal = literalAddresses(hostname);
-  if (url.protocol === "http:" && isLocalhostOrLoopbackIp(hostname)) {
-    return { url, addresses: literal ?? [] };
-  }
   const addresses = literal ?? (await resolve(hostname));
   try {
-    assertAllowedAddresses(addresses, policy);
+    assertSafeRemoteAddresses(addresses, hostname, policy);
   } catch (error) {
     throw egressRefused(hostname, error);
   }

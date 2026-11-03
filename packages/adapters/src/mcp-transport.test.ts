@@ -446,7 +446,7 @@ describe("MCP transport seam", () => {
     async (host) => {
       const origin = `http://${host}:8123`;
       const fetchImpl = vi.fn(async () => Response.json({ ok: true }));
-      const resolveHostname = vi.fn();
+      const resolveHostname = async () => [{ address: "127.0.0.1", family: 4 }];
       const safeFetch = secureFetch(
         new URL(`${origin}/mcp`),
         { allowHttpLocalhost: true, allowPrivateEndpoint: true },
@@ -461,7 +461,6 @@ describe("MCP transport seam", () => {
           safeFetch(`${origin}/token`, { method: "POST", body: "fake-token-body" }),
         ).resolves.toHaveProperty("ok", true);
         expect(fetchImpl).toHaveBeenCalledTimes(2);
-        expect(resolveHostname).not.toHaveBeenCalled();
       } finally {
         await safeFetch.close();
       }
@@ -482,13 +481,33 @@ describe("MCP transport seam", () => {
       new URL("http://localhost:8123/mcp"),
       { allowHttpLocalhost: true, allowPrivateEndpoint: true },
       {},
-      { fetch: fetchImpl, resolveHostname: vi.fn() },
+      { fetch: fetchImpl, resolveHostname: async () => [{ address: "127.0.0.1", family: 4 }] },
     );
     try {
       await expect(safeFetch("http://localhost:8123/mcp")).rejects.toThrow(
-        "MCP redirects are not permitted",
+        "Connector redirects are not allowed",
       );
       expect(cancels).toBe(1);
+    } finally {
+      await safeFetch.close();
+    }
+  });
+
+  it("refuses local OAuth credentials when localhost resolves outside loopback", async () => {
+    const fetch = vi.fn();
+    const safeFetch = secureFetch(
+      new URL("http://localhost:8123/mcp"),
+      { allowHttpLocalhost: true, allowPrivateEndpoint: true, allowLocalHttpCredentials: true },
+      {},
+      { fetch, resolveHostname: async () => [{ address: "10.0.0.1", family: 4 }] },
+    );
+    try {
+      await expect(
+        safeFetch("http://localhost:8123/token", {
+          headers: { authorization: "Bearer fake-oauth-token" },
+        }),
+      ).rejects.toThrow("private address");
+      expect(fetch).not.toHaveBeenCalled();
     } finally {
       await safeFetch.close();
     }
@@ -843,6 +862,7 @@ describe("MCP transport seam", () => {
             seen = Object.fromEntries(request.headers.entries());
             return Response.json({ ok: true });
           }),
+          resolveHostname: async () => [{ address: "127.0.0.1", family: 4 }],
         },
       );
 

@@ -3,10 +3,14 @@ import { createServer as createHttpsServer } from "node:https";
 import type { AddressInfo, Socket } from "node:net";
 import { connect, isIP } from "node:net";
 import { getCACertificates, setDefaultCACertificates } from "node:tls";
+import type { Dispatcher } from "undici";
+import { EnvHttpProxyAgent } from "undici";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { secureFetch } from "./mcp-transport.js";
 import type { ResolveHostname } from "./network-address.js";
 import { TEST_TLS_CERT, TEST_TLS_KEY } from "./proxy-dispatcher.test-support.js";
 import { createSafeRemoteFetch } from "./remote-mcp.js";
+import { dispatcherFetch } from "./undici-fetch.js";
 import { fetchSafeWebText } from "./web-ssrf.js";
 
 const publicResolver: ResolveHostname = async () => [{ address: "203.0.113.10", family: 4 }];
@@ -86,6 +90,7 @@ describe.each(["web", "remote"] as const)("%s proxy transport", (kind) => {
     for (const socket of sockets) socket.destroy();
     await Promise.all([target, proxy].map((server) => new Promise((done) => server.close(done))));
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
   });
 
   async function request(
@@ -168,21 +173,41 @@ describe.each(["web", "remote"] as const)("%s proxy transport", (kind) => {
       expect(requests).toHaveLength(1);
     });
 
-    it("delivers private HTTP credentials directly without NO_PROXY", async () => {
+    it("keeps local OAuth credentials direct with a proxy-aware global fetch", async () => {
       let authorization: string | undefined;
       const server = createHttpServer((incoming, response) => {
         authorization = incoming.headers.authorization;
         response.end("direct");
       });
       await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+      // Model the proxy-aware global fetch installed by NODE_USE_ENV_PROXY=1.
+      const ambientDispatcher = new EnvHttpProxyAgent();
+      const proxyAwareFetch = vi.fn<typeof globalThis.fetch>((input, init) =>
+        dispatcherFetch(input, {
+          ...init,
+          dispatcher: ambientDispatcher,
+        } as RequestInit & { dispatcher: Dispatcher }),
+      );
+      vi.stubGlobal("fetch", proxyAwareFetch);
+      const endpoint = new URL(`http://localhost:${(server.address() as AddressInfo).port}/token`);
+      const fetch = secureFetch(
+        endpoint,
+        { allowHttpLocalhost: true, allowPrivateEndpoint: true, allowLocalHttpCredentials: true },
+        {},
+        { resolveHostname: async () => [{ address: "127.0.0.1", family: 4 }] },
+      );
       try {
-        const endpoint = `http://localhost:${(server.address() as AddressInfo).port}/mcp`;
-        expect(
-          await request(endpoint, async () => [{ address: "127.0.0.1", family: 4 }], true),
-        ).toBe("direct");
+        const response = await fetch(endpoint, {
+          headers: { authorization: "Bearer fake-proxy-test-credential" },
+          signal: AbortSignal.timeout(2000),
+        });
+        expect(await response.text()).toBe("direct");
         expect(authorization).toBe("Bearer fake-proxy-test-credential");
+        expect(proxyAwareFetch).not.toHaveBeenCalled();
         expect(tunnels).toEqual([]);
       } finally {
+        await fetch.close();
+        await ambientDispatcher.close();
         await new Promise((done) => server.close(done));
       }
     });
