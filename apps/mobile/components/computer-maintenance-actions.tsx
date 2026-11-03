@@ -87,13 +87,18 @@ export function ComputerMaintenanceActions({
           },
         ]
       : []),
-    {
-      id: "recover",
-      title: t("Recover computer"),
-      explanation: t("Recreate a computer that is not working."),
-      destructive: false,
-      onPress: () => confirm("recover"),
-    },
+    // Recover rebuilds the computer's system, which only computers that can update have.
+    ...(computer?.canUpdate
+      ? [
+          {
+            id: "recover",
+            title: t("Recover computer"),
+            explanation: t("Recreate a computer that is not working."),
+            destructive: false,
+            onPress: () => confirm("recover"),
+          },
+        ]
+      : []),
     {
       id: "reset",
       title: t("Reset computer"),
