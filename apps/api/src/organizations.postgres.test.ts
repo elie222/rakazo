@@ -320,6 +320,23 @@ describePostgres("organizations (PostgreSQL)", () => {
     });
   });
 
+  it("deletes only one of two organizations removed at once, leaving the other's billing live", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    const customers = [await subscribe(ada), await subscribe(asUser(ada, work.id))];
+
+    const results = await Promise.allSettled([
+      client(ada).organizations.remove({ organizationId: ada.spaceId }),
+      client(ada).organizations.remove({ organizationId: work.id }),
+    ]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const live = customers[results[0].status === "fulfilled" ? 1 : 0];
+    expect(emulator.subscriptions.filter((sub) => sub.customerId === live)).toEqual([
+      expect.objectContaining({ status: "active" }),
+    ]);
+  });
+
   it("never deletes an organization someone else is a member of", async () => {
     const ada = await signup();
     const grace = await signup();

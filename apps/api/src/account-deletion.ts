@@ -8,7 +8,6 @@ import {
 } from "@rakazo/adapters";
 import type { Prisma } from "@rakazo/db";
 import {
-  assertOrganizationDeletable,
   claimOrganizationForDeletion,
   claimSpacesLeavingWithAccount,
   deleteClaimedSpace,
@@ -16,6 +15,7 @@ import {
   deletePageShareSecrets,
   keepOrganizationTrialUse,
   recordComputerRunEnd,
+  releaseOrganizationDeletionClaim,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { BillingService } from "./billing.js";
@@ -62,22 +62,26 @@ export async function deleteAccountContent(deps: SpaceDeletionDeps, userId: stri
 }
 
 /**
- * Its subscriptions are cancelled before the claim hides it from the owner's list, so a billing
- * failure leaves everything in place; any later failure leaves the Spaces claimed, and deleting
- * again finishes.
+ * Claiming hides the organization from the owner's list. Its subscriptions are cancelled before
+ * anything is destroyed, and a billing failure releases the claim, so the organization stays as it
+ * was; any later failure leaves the Spaces claimed, and deleting again finishes.
  */
 export async function deleteOrganization(
   deps: SpaceDeletionDeps & { billing?: Pick<BillingService, "cancelForDeletedOrganization"> },
   userId: string,
   organizationId: string,
 ): Promise<void> {
-  await assertOrganizationDeletable(deps.prisma, { userId, organizationId });
-  await keepOrganizationTrialUse(deps.prisma, organizationId);
-  await deps.billing?.cancelForDeletedOrganization(organizationId);
   const { claimId, spaceIds } = await claimOrganizationForDeletion(deps.prisma, {
     userId,
     organizationId,
   });
+  try {
+    await keepOrganizationTrialUse(deps.prisma, organizationId);
+    await deps.billing?.cancelForDeletedOrganization(organizationId);
+  } catch (error) {
+    await releaseOrganizationDeletionClaim(deps.prisma, { organizationId, claimId });
+    throw error;
+  }
   const inOrganization = { spaceId: { in: spaceIds } };
   await deleteClaimedSpaces(deps, {
     userId,

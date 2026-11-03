@@ -123,36 +123,9 @@ export async function renameOrganization(
 }
 
 /**
- * Only the owner deletes an organization, never one shared with anyone else, and never the last
- * one they own.
+ * Claims every Space of an organization only its owner belongs to, unless it is the last one they
+ * own, which hides it from the list. A retry keeps the claims it already holds.
  */
-export async function assertOrganizationDeletable(
-  db: PrismaClient | Prisma.TransactionClient,
-  input: { userId: string; organizationId: string },
-): Promise<void> {
-  const [owner, otherMembers, otherOwned] = await Promise.all([
-    db.member.findFirst({
-      where: { organizationId: input.organizationId, userId: input.userId, role: OWNER },
-      select: { id: true },
-    }),
-    db.member.count({
-      where: { organizationId: input.organizationId, userId: { not: input.userId } },
-    }),
-    db.member.count({
-      where: {
-        userId: input.userId,
-        role: OWNER,
-        organizationId: { not: input.organizationId },
-        organization: LIVE,
-      },
-    }),
-  ]);
-  if (!owner) throw new IsolationError();
-  if (otherMembers > 0) throw new SharedOrganizationError();
-  if (otherOwned === 0) throw new CannotDeleteLastOrganizationError();
-}
-
-/** Claims every Space of a deletable organization, which hides it from the list. A retry keeps the claims it already holds. */
 export async function claimOrganizationForDeletion(
   prisma: PrismaClient,
   input: { userId: string; organizationId: string },
@@ -162,7 +135,26 @@ export async function claimOrganizationForDeletion(
     prisma.$transaction(
       async (tx) => {
         await lockUserOrganizations(tx, input.userId);
-        await assertOrganizationDeletable(tx, input);
+        const [owner, otherMembers, otherOwned] = await Promise.all([
+          tx.member.findFirst({
+            where: { organizationId: input.organizationId, userId: input.userId, role: OWNER },
+            select: { id: true },
+          }),
+          tx.member.count({
+            where: { organizationId: input.organizationId, userId: { not: input.userId } },
+          }),
+          tx.member.count({
+            where: {
+              userId: input.userId,
+              role: OWNER,
+              organizationId: { not: input.organizationId },
+              organization: LIVE,
+            },
+          }),
+        ]);
+        if (!owner) throw new IsolationError();
+        if (otherMembers > 0) throw new SharedOrganizationError();
+        if (otherOwned === 0) throw new CannotDeleteLastOrganizationError();
         const spaces = await tx.space.findMany({
           where: { organizationId: input.organizationId },
           select: { id: true },
@@ -174,6 +166,17 @@ export async function claimOrganizationForDeletion(
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),
   );
+}
+
+/** Undoes a claim before anything was torn down, so the organization is listed again. */
+export async function releaseOrganizationDeletionClaim(
+  prisma: PrismaClient,
+  input: { organizationId: string; claimId: string },
+): Promise<void> {
+  await prisma.space.updateMany({
+    where: { organizationId: input.organizationId, deletionClaimId: input.claimId },
+    data: { deletingAt: null, deletionClaimId: null },
+  });
 }
 
 /** Deletes the organization once its Spaces are gone; the rest of its rows go by cascade. */
