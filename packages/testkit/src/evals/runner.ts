@@ -191,8 +191,8 @@ export async function runTrial(
       const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
         name: "Assistant",
         title: "",
-        description: "",
-        instructions: "",
+        description: scenario.group?.roles?.Assistant ?? "",
+        instructions: scenario.group?.instructions?.Assistant ?? "",
         notifyOnFinish: wakesRoutines(scenario),
       });
       botId = bot.id;
@@ -245,17 +245,24 @@ export async function runTrial(
         peer = { id: created.id, name: scenario.peer.name };
       }
       if (scenario.group) {
-        // Members only author seeded history; no step mentions them, so they never run a model.
+        // Without roles, members only author seeded history and never run a model.
+        const { roles } = scenario.group;
         const memberIds = new Map<string, string>();
         for (const name of scenario.group.members) {
           const member = await rpc<{ id: string }>(app, cookie, "bots/create", {
             name,
             title: "",
-            description: "",
-            instructions: "",
+            description: roles?.[name] ?? "",
+            instructions: scenario.group.instructions?.[name] ?? "",
             notifyOnFinish: false,
           });
           await discardBotIntroRun(trial, cookie, member.id);
+          if (roles)
+            await rpc(app, cookie, "bots/update", {
+              botId: member.id,
+              modelProvider: options.connection.provider,
+              modelId: options.connection.modelId,
+            });
           memberIds.set(name, member.id);
         }
         const created = await rpc<{ id: string; threadId: string }>(app, cookie, "groups/create", {
@@ -411,6 +418,8 @@ export async function runTrial(
     phase = "product";
     let lastText = "";
     const replies: string[] = [];
+    let unaddressedMessageId: string | null = null;
+    let memberReplies: Record<string, string> | undefined;
     const settingsSnapshot = async (): Promise<SettingsSnapshot> => {
       const bot = await prisma.bot.findUniqueOrThrow({
         where: { id: botId },
@@ -463,16 +472,24 @@ export async function runTrial(
       let runId: string;
       let scheduled: RoutineEvidence["scheduled"];
       if ("ask" in step) {
-        runId = (
-          await rpc<{ runId: string }>(
-            app,
-            cookie,
-            "threads/send",
-            group
-              ? { groupId: group.id, text: step.ask, mentions: [{ kind: "bot", id: botId }] }
-              : { botId, text: step.ask },
-          )
-        ).runId;
+        const sent = await rpc<{ runId: string }>(
+          app,
+          cookie,
+          "threads/send",
+          group
+            ? {
+                groupId: group.id,
+                text: step.ask,
+                ...(step.unaddressed ? {} : { mentions: [{ kind: "bot", id: botId }] }),
+              }
+            : { botId, text: step.ask },
+        );
+        runId = sent.runId;
+        if (step.unaddressed && group)
+          ({ sourceMessageId: unaddressedMessageId } = await prisma.run.findUniqueOrThrow({
+            where: { id: runId },
+            select: { sourceMessageId: true },
+          }));
       } else if ("fromPeer" in step) {
         if (!peer) throw new EvalFailure("harness", "A fromPeer step needs the case's peer bot");
         await deliverPeerMessage(prisma, handles.jobs, peer, botId, step.fromPeer);
@@ -718,6 +735,58 @@ export async function runTrial(
         lastText = [lastText, clarification].filter(Boolean).join("\n");
       }
       replies.push(lastText);
+      if (unaddressedMessageId && group) {
+        // Handoffs start more runs after the first one ends; wait until every member is done.
+        const memberBotIds = [botId, ...group.memberIds.values()];
+        const settled = await poll(async () => {
+          if (handles?.awaitIdle) await withinDeadline(handles.awaitIdle(), deadline);
+          const runs = await prisma.run.findMany({
+            where: { botId: { in: memberBotIds }, createdAt: { gte: new Date(requestStarted) } },
+            select: { status: true, error: true },
+          });
+          return runs.every(
+            (run) => isTerminal(run.status as RunStatus) || WAITING_STATUSES.includes(run.status),
+          )
+            ? runs
+            : undefined;
+        }, deadline);
+        const failed = settled.find(
+          (run) => run.status !== "completed" && !WAITING_STATUSES.includes(run.status),
+        );
+        if (failed)
+          throw new EvalFailure("product", failed.error ?? "A member run did not complete");
+        const { seq } = await prisma.message.findUniqueOrThrow({
+          where: { id: unaddressedMessageId },
+          select: { seq: true },
+        });
+        unaddressedMessageId = null;
+        const after = await rpc<{
+          messages: Array<{
+            role: string;
+            seq: number;
+            botId?: string | null;
+            blocks: ClarificationBlock[];
+          }>;
+        }>(app, cookie, "threads/get", { groupId: group.id });
+        const names = new Map([...group.memberIds].map(([name, id]) => [id, name]));
+        names.set(botId, "Assistant");
+        memberReplies = Object.fromEntries([...names.values()].map((name) => [name, ""]));
+        for (const message of after.messages) {
+          if (message.role !== "bot" || message.seq <= seq || !message.botId) continue;
+          const name = names.get(message.botId) ?? message.botId;
+          // A handoff card is a post too, so a detour through another member shows in the count.
+          const text = message.blocks
+            .flatMap((b) =>
+              b.kind === "text" || b.kind === "ask"
+                ? [b.text ?? ""]
+                : b.kind === "handoff"
+                  ? ["(handoff)"]
+                  : [],
+            )
+            .join("\n");
+          memberReplies[name] = [memberReplies[name], text].filter(Boolean).join("\n");
+        }
+      }
       if ("fromPeer" in step) {
         const returned = (
           await prisma.message.findMany({
@@ -792,6 +861,7 @@ export async function runTrial(
     const evidence: Evidence = {
       text: lastText,
       replies,
+      memberReplies,
       routineRuns,
       peerExchanges,
       files,
@@ -830,6 +900,7 @@ export async function runTrial(
           : {}),
         ...(routineRuns.length ? { "routine-observations": JSON.stringify(routineRuns) } : {}),
         ...(peerExchanges.length ? { "peer-exchanges": JSON.stringify(peerExchanges) } : {}),
+        ...(memberReplies ? { "member-replies": JSON.stringify(memberReplies) } : {}),
         ...(evidence.toolCalls.length ? { "tool-calls": JSON.stringify(evidence.toolCalls) } : {}),
         "memory-snapshot": evidence.memory,
       }).map(([key, value]) => [key, value === null ? null : redact(value, secrets)]),
@@ -872,6 +943,12 @@ export async function runTrial(
     if (handles) {
       try {
         if (handles.awaitIdle) await withinDeadline(handles.awaitIdle(), deadline);
+      } catch {
+        result.cleanupFailed = true;
+      }
+      try {
+        // Stopping each bot covers only its own chat; a member's run can still wait in the group.
+        if (group) await rpc(handles.app, cookie, "threads/stop", { groupId: group.id });
       } catch {
         result.cleanupFailed = true;
       }
