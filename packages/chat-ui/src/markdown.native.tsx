@@ -13,7 +13,16 @@ import Markdown, {
 } from "@ronradtke/react-native-markdown-display";
 import { Highlight, themes } from "prism-react-renderer";
 import type { ComponentType, ReactNode } from "react";
-import { createContext, Fragment, memo, useCallback, useContext, useMemo, useState } from "react";
+import {
+  createContext,
+  Fragment,
+  memo,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { StyleProp, TextStyle, ViewStyle } from "react-native";
 import {
   Alert,
@@ -716,6 +725,7 @@ function SidewaysScrollView({
   style?: StyleProp<ViewStyle>;
   children?: ReactNode;
 }) {
+  const touchStart = useRef({ x: 0, y: 0 });
   const [viewportWidth, setViewportWidth] = useState(0);
   const [measuredWidth, setMeasuredWidth] = useState(0);
   const measured = contentWidth === undefined;
@@ -747,8 +757,15 @@ function SidewaysScrollView({
         contentContainerStyle={{ flexGrow: measured ? 1 : 0 }}
       >
         <View
-          // A table or code block won't scroll while an ancestor, like a pressable bubble, holds the touch.
-          onStartShouldSetResponder={() => overflows}
+          onTouchStart={({ nativeEvent }) => {
+            touchStart.current = { x: nativeEvent.pageX, y: nativeEvent.pageY };
+          }}
+          // Keep still presses with the bubble; take horizontal drags before its pressable can.
+          onMoveShouldSetResponderCapture={({ nativeEvent }) => {
+            const dx = Math.abs(nativeEvent.pageX - touchStart.current.x);
+            const dy = Math.abs(nativeEvent.pageY - touchStart.current.y);
+            return overflows && dx > 5 && dx > dy;
+          }}
           style={
             measured
               ? { flexGrow: 1 }
