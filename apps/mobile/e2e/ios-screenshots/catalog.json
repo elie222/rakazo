@@ -97,6 +97,12 @@
     "screens": ["skills", "skill", "plugin"]
   },
   {
+    "id": "memory",
+    "title": "Memory",
+    "flow": "flows/memory.yaml",
+    "screens": ["memory", "memory-note"]
+  },
+  {
     "id": "workspace",
     "title": "Workspace",
     "flow": "flows/workspace.yaml",

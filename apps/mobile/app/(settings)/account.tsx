@@ -717,6 +717,7 @@ export default function Account() {
                 : []),
               { title: t("Integrations"), href: "/integrations" },
               { title: t("Skills"), href: "/skills" },
+              { title: t("Memory"), href: "/memory" },
               ...(messagingEnabled ? [{ title: t("Messaging"), href: "/messaging" } as const] : []),
               { title: t("AI data sharing"), href: "/ai-data-sharing" },
             ] as const
