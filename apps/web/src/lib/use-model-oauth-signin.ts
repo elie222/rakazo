@@ -182,11 +182,12 @@ export function useModelOAuthSignIn(options: {
         const popup = window.open("about:blank", "_blank");
         if (popup) {
           popup.opener = null;
-          const referrer = popup.document.createElement("meta");
-          referrer.name = "referrer";
-          referrer.content = "no-referrer";
-          popup.document.head.append(referrer);
-          popup.location.replace(started.verificationUri);
+          // A noreferrer link suppresses the navigation request's Referer header.
+          const link = popup.document.createElement("a");
+          link.href = started.verificationUri;
+          link.rel = "noreferrer";
+          popup.document.body.append(link);
+          link.click();
         } else {
           setPopupBlocked(true);
         }

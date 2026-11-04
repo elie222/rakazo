@@ -53,18 +53,14 @@ afterEach(() => {
 
 it("reports an opened tab without treating noopener's null result as a block", async () => {
   const document = window.document.implementation.createHTMLDocument();
-  const popup = {
-    opener: window,
-    document,
-    location: {
-      replace: vi.fn(() => {
-        expect(popup.opener).toBeNull();
-        expect(document.querySelector('meta[name="referrer"]')?.getAttribute("content")).toBe(
-          "no-referrer",
-        );
-      }),
-    },
-  };
+  const popup = { opener: window, document };
+  const navigate = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+    this: HTMLAnchorElement,
+  ) {
+    expect(popup.opener).toBeNull();
+    expect(this.rel).toBe("noreferrer");
+    expect(this.href).toBe(verificationUri);
+  });
   // A browser opens the tab but returns null when noopener/noreferrer is requested.
   vi.spyOn(window, "open").mockImplementation((_url, _target, features) =>
     features?.includes("noopener") || features?.includes("noreferrer")
@@ -75,7 +71,7 @@ it("reports an opened tab without treating noopener's null result as a block", a
     void latest.startSubscriptionSignIn({ provider: "subscription" });
   });
   expect(latest.popupBlocked).toBe(false);
-  expect(popup.location.replace).toHaveBeenCalledWith(verificationUri);
+  expect(navigate).toHaveBeenCalledOnce();
   expect(onError).not.toHaveBeenCalled();
 });
 
