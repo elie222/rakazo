@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   authErrorMessage,
   credentialIssue,
+  errorHelpUrl,
   isAbandonedRequest,
   isConnectionFailure,
   isNetworkFailure,
@@ -198,5 +199,23 @@ describe("isConnectionFailure", () => {
     );
     expect(isAbandonedRequest(new Error("boom"))).toBe(false);
     expect(isAbandonedRequest(null)).toBe(false);
+  });
+});
+
+describe("errorHelpUrl", () => {
+  it("looks up a documented code independently of its message", () => {
+    expect(errorHelpUrl({ code: "MCP_OAUTH_REDIRECT_MISMATCH", message: "Localized copy" })).toBe(
+      "https://rakazo.com/docs/troubleshooting/#mcp-oauth-redirect-mismatch",
+    );
+  });
+
+  it.each([
+    null,
+    "MCP_OAUTH_REDIRECT_MISMATCH",
+    { code: "BAD_REQUEST" },
+    { code: "toString" },
+    { code: "UNKNOWN", helpUrl: "https://untrusted.example.test" },
+  ])("does not invent a guide or accept an external link: %j", (error) => {
+    expect(errorHelpUrl(error)).toBeUndefined();
   });
 });

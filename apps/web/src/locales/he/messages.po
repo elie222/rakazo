@@ -6713,6 +6713,10 @@ msgstr "תקופת הניסיון מסתיימת {day}"
 msgid "Trials get fewer hours to prevent abuse."
 msgstr "בתקופת ניסיון יש פחות שעות כדי למנוע ניצול לרעה."
 
+#: src/components/ErrorNotice.tsx
+msgid "Troubleshoot"
+msgstr ""
+
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "אתרים מהימנים"

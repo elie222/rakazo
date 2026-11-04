@@ -6713,6 +6713,10 @@ msgstr "Okres próbny kończy się {day}"
 msgid "Trials get fewer hours to prevent abuse."
 msgstr "Okres próbny ma mniej godzin, aby zapobiegać nadużyciom."
 
+#: src/components/ErrorNotice.tsx
+msgid "Troubleshoot"
+msgstr "Rozwiązywanie problemów"
+
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "Zaufane witryny"

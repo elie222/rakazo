@@ -8,6 +8,7 @@ import type { CredentialField } from "@rakazo/core";
 import {
   authErrorMessage,
   CALL_NOT_RINGING_ERROR,
+  errorHelpUrl,
   MAX_PASSWORD_LENGTH,
   MODEL_IMAGE_INPUT_ERROR,
   MODEL_IMAGE_INPUT_UNKNOWN,
@@ -76,3 +77,10 @@ export function authErrorText(error: unknown, fallback: string): string {
     password: credentialIssueText("password"),
   });
 }
+
+/** Keep the documented error code's help link when turning a failure into UI copy. */
+export function errorDetails(error: unknown, fallback?: string) {
+  return { message: errorText(error, fallback), helpUrl: errorHelpUrl(error) };
+}
+
+export type ErrorDetails = ReturnType<typeof errorDetails>;
