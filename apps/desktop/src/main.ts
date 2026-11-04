@@ -728,6 +728,29 @@ async function installUpdate() {
   return state;
 }
 
+async function persistHostChoice(computerHost: "docker" | "this-mac") {
+  const origin = new URL(localStack.webUrl()).origin;
+  const token = await readStackToken(stackDir(app.getPath("userData")));
+  if (!token || !(await localStack.matchesDesiredStack()))
+    throw new Error(t("Local server is unavailable"));
+  await saveLocalComputerHost({ origin, token }, computerHost, (input, init) =>
+    net.fetch(input instanceof URL ? input.href : input, {
+      ...init,
+      bypassCustomProtocolHandlers: true,
+    }),
+  );
+}
+
+/** Saves Docker as the local server's choice, so Settings and bots agree access is off. */
+async function revokeLocalComputerAccess() {
+  try {
+    await persistHostChoice("docker");
+  } finally {
+    await hostComputer?.revoke();
+    installApplicationMenu();
+  }
+}
+
 function installApplicationMenu() {
   const computerAccess: Electron.MenuItemConstructorOptions = {
     label: t("Computer Access…"),
@@ -737,12 +760,7 @@ function installApplicationMenu() {
   const revokeComputerAccess: Electron.MenuItemConstructorOptions = {
     label: t("Revoke Local Computer Access"),
     visible: remoteServerOrigin() === null && hostComputer?.isEnabled() === true,
-    click: () => {
-      void hostComputer
-        ?.revoke()
-        .finally(() => installApplicationMenu())
-        .catch(() => undefined);
-    },
+    click: () => void revokeLocalComputerAccess().catch(() => undefined),
   };
   // Cmd+, is the macOS Settings chord, and no page keydown can see it: the OS takes
   // it first, so the menu item is the only place it can be registered.
@@ -1489,18 +1507,6 @@ app.whenReady().then(async () => {
     currentSetup?.mode === "new" &&
     appWindowTargets.get(mainWindow!) === localStack.webUrl() &&
     safeOrigin(event.senderFrame.url) === safeOrigin(localStack.webUrl());
-  const persistHostChoice = async (computerHost: "docker" | "this-mac") => {
-    const origin = new URL(localStack.webUrl()).origin;
-    const token = await readStackToken(stackDir(app.getPath("userData")));
-    if (!token || !(await localStack.matchesDesiredStack()))
-      throw new Error(t("Local server is unavailable"));
-    await saveLocalComputerHost({ origin, token }, computerHost, (input, init) =>
-      net.fetch(input instanceof URL ? input.href : input, {
-        ...init,
-        bypassCustomProtocolHandlers: true,
-      }),
-    );
-  };
   ipcMain.handle("desktop.computer.requestAccess", async (event) => {
     if (!isManagedComputerRequest(event) || !hostComputer)
       throw new Error(t("Local computer access requires an app-managed local instance."));
@@ -1534,14 +1540,7 @@ app.whenReady().then(async () => {
     }
   });
   ipcMain.handle("desktop.computer.revokeAccess", async (event) => {
-    if (isManagedComputerRequest(event)) {
-      try {
-        await persistHostChoice("docker");
-      } finally {
-        await hostComputer?.revoke();
-        installApplicationMenu();
-      }
-    }
+    if (isManagedComputerRequest(event)) await revokeLocalComputerAccess();
   });
   /** The remote server's own page in the app window, never a frame or another window. */
   const remoteDeviceOrigin = (event: Electron.IpcMainInvokeEvent) => {

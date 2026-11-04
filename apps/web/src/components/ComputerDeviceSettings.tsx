@@ -19,8 +19,8 @@ async function thisComputerAccess(
   if (device && paired) return { allowed: paired.allowed, setAllowed: device.setAllowed };
   const computer = desktop?.computer;
   if (!computer?.managesHostChoice) return null;
-  const me = await rpc.me().catch(() => null);
-  if (!me?.canChooseHostComputer) return null;
+  const me = await rpc.me();
+  if (!me.canChooseHostComputer) return null;
   return {
     allowed: me.computerHost === "this-mac",
     setAllowed: (allowed) => (allowed ? computer.requestAccess() : computer.revokeAccess()),
@@ -39,10 +39,11 @@ export function ComputerDeviceSettings() {
   const load = useCallback(async () => {
     const [listed, local] = await Promise.all([
       listUserDevices().catch(() => null),
-      thisComputerAccess(desktop),
+      // A failed profile read keeps the last known switch rather than hiding it.
+      thisComputerAccess(desktop).catch(() => undefined),
     ]);
     if (listed) setDevices(listed);
-    setThisComputer(local);
+    if (local !== undefined) setThisComputer(local);
   }, [desktop]);
 
   useEffect(() => {

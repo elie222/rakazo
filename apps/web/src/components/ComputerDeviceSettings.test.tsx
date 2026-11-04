@@ -190,3 +190,32 @@ it("stays hidden on a server that does not run bots on this computer", async () 
   await act(async () => root.render(<ComputerDeviceSettings />));
   expect(host.innerHTML).toBe("");
 });
+
+it("keeps the local switch when a later profile read fails", async () => {
+  vi.mocked(listUserDevices).mockResolvedValue([]);
+  vi.mocked(rpc.me)
+    .mockResolvedValueOnce({ canChooseHostComputer: true, computerHost: "this-mac" } as Awaited<
+      ReturnType<typeof rpc.me>
+    >)
+    .mockRejectedValue(new Error("offline"));
+  const computer = {
+    managesHostChoice: true,
+    requestAccess: vi.fn(async () => true),
+    revokeAccess: vi.fn(async () => {
+      throw new Error("Local server is unavailable");
+    }),
+    onConfigure: () => () => undefined,
+  };
+  window.rakazoDesktop = {
+    platform: "darwin",
+    computer,
+    device: { state: async () => null, setAllowed: vi.fn() },
+  } as unknown as RakazoDesktop;
+  await act(async () => root.render(<ComputerDeviceSettings />));
+  await act(async () =>
+    host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]')!.click(),
+  );
+  const toggle = host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]');
+  expect(toggle?.checked).toBe(true);
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe("Could not change");
+});
