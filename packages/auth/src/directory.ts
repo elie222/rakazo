@@ -56,11 +56,13 @@ export async function createDirectory(
       const email = resource.primaryEmail.toLowerCase();
       // Messaging addresses belong to chat-app accounts; creating one is refused below.
       if (isMessagingEmail(email)) return { action: "create" };
-      const existing = await database.findOne<{ id: string }>({
+      const existing = await database.findOne<{ id: string; emailVerified: boolean }>({
         model: "user",
         where: [{ field: "email", value: email }],
       });
-      return existing
+      // Only a proven mailbox is the directory's person: anyone could have signed up with the
+      // address first. Creating over an unverified account fails as a duplicate instead.
+      return existing?.emailVerified
         ? { action: "link", userId: existing.id, profile: "preserve" }
         : { action: "create" };
     },

@@ -92,6 +92,12 @@ function setup(options: Partial<AuthEnv> = {}, hasMembership = true) {
           : null,
       ),
     },
+    user: {
+      findUnique: vi.fn(
+        async ({ where }: { where: { id: string } }) =>
+          rows("user").find((row) => row.id === where.id) ?? null,
+      ),
+    },
     scimUser: {
       findFirst: vi.fn(async ({ where }: { where: { userId: string } }) =>
         provisionedUsers.has(where.userId) ? { id: `scim-${where.userId}` } : null,
@@ -1585,6 +1591,15 @@ describe("directory accounts", () => {
       // An emailed code leaves no login row, only the workspace the first sign-in made.
       "someone already signed in to it",
       () => signedInUsers.add(provisionedAccount()),
+      undefined,
+    ],
+    [
+      // Nothing is linked to an account while it is off, so turning it back on adds no login.
+      "the account is deactivated",
+      () => {
+        const userId = provisionedAccount();
+        rows("user").find((row) => row.id === userId)!.deactivatedAt = now();
+      },
       undefined,
     ],
     [

@@ -19,7 +19,7 @@ import { protectedComputerLifecycleRefusal } from "./desktop-command-guard.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { routineRunModelPin } from "./model-selection.js";
 import { findPendingRoutineTick, routineTimerNonce } from "./routine-coalescing.js";
-import { tickRoutineWatch } from "./routine-watch.js";
+import { nextRoutineWatchAt, parseRoutineWatch, tickRoutineWatch } from "./routine-watch.js";
 import { isUniqueViolation } from "./run-messages.js";
 import { notifyRun } from "./run-notifications.js";
 import { listAgentSkillRecords } from "./skill-tools.js";
@@ -129,16 +129,20 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     return;
   if (await deferFutureRoutine(deps.jobs, routineId, scheduledAt)) return;
   if (await accountDeactivated(deps.prisma, routine.userId)) {
-    // A deactivated owner's routine skips this occurrence without running. A recurring one
-    // keeps its schedule, so it runs again once the owner is back; a one-time one is spent.
-    const nextRunAt = isOneShotRoutineCrons(routine.crons)
-      ? null
-      : nextRoutineRunDateAcross(
-          routine.crons,
-          scheduledAt,
-          new Date(Date.now()),
-          routine.timezone,
-        );
+    // A deactivated owner's routine skips this occurrence without running. A recurring or
+    // watching one keeps its schedule, so it runs again once the owner is back; a one-time
+    // one is spent.
+    const watch = parseRoutineWatch(routine.watch);
+    const nextRunAt = watch
+      ? nextRoutineWatchAt(watch, new Date(Math.max(Date.now(), scheduledAt.getTime())))
+      : isOneShotRoutineCrons(routine.crons)
+        ? null
+        : nextRoutineRunDateAcross(
+            routine.crons,
+            scheduledAt,
+            new Date(Date.now()),
+            routine.timezone,
+          );
     const skipped = await deps.prisma.routine.updateMany({
       where: { id: routine.id, active: true, nextRunAt: scheduledAt },
       data: { nextRunAt, ...(nextRunAt ? {} : { active: false }) },

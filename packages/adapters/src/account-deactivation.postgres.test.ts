@@ -155,4 +155,28 @@ describePostgres("a deactivated account's work (PostgreSQL)", () => {
     await executor().wakeRoutine(routine.id, due.toISOString());
     expect(await system.run.count({ where: { routineId: routine.id } })).toBe(1);
   });
+
+  it("keeps a watching routine's checks scheduled while its owner is deactivated", async () => {
+    const erin = await person();
+    const due = new Date(Date.now() - 1_000);
+    const routine = await system.routine.create({
+      data: {
+        ...erin,
+        name: "watch a file",
+        prompt: "tell me what changed",
+        crons: [],
+        watch: { kind: "files", paths: ["notes.md"], everyMinutes: 15 },
+        active: true,
+        nextRunAt: due,
+      },
+    });
+    await deactivate(erin);
+
+    await executor().wakeRoutine(routine.id, due.toISOString());
+
+    const skipped = await system.routine.findUniqueOrThrow({ where: { id: routine.id } });
+    expect(skipped.active).toBe(true);
+    expect(skipped.nextRunAt!.getTime()).toBeGreaterThanOrEqual(due.getTime() + 15 * 60_000);
+    expect(await system.run.count({ where: { routineId: routine.id } })).toBe(0);
+  });
 });

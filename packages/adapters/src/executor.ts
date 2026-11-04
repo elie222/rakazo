@@ -331,7 +331,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           run.userId,
           runId,
         ))
-          await deps.events.notify(threadId, seq).catch(() => undefined);
+          await deps.events.notify(threadId, seq).catch((error) => {
+            getLogger().error("deactivated account run cancellation notification", error);
+          });
         return;
       }
       let { resumeCheckpoint, heldForTakeover, takeoverResume } = takeoverContinuePlan(run);

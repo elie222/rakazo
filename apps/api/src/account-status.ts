@@ -31,8 +31,9 @@ export async function settleDirectoryChange(
       select: { deactivatedAt: true },
     });
     if (!user || change.active === Boolean(user.deactivatedAt)) return;
-    if (!change.active) await endDeactivatedAccess(deps, change.userId);
+    // Recorded first: a failed cleanup fails the request, and its retry is no change.
     if (change.changed) await recordAccountStatus(change.userId, change.active, "directory");
+    if (!change.active) await endDeactivatedAccess(deps, change.userId);
   });
 }
 
@@ -51,8 +52,8 @@ export async function setAccountActive(
       where: { id: userId, deactivatedAt: active ? { not: null } : null },
       data: { deactivatedAt: active ? null : new Date() },
     });
-    if (!active) await endDeactivatedAccess(deps, userId);
     if (count) await recordAccountStatus(userId, active, by);
+    if (!active) await endDeactivatedAccess(deps, userId);
     return count > 0;
   });
 }
@@ -67,7 +68,7 @@ function recordAccountStatus(userId: string, active: boolean, by: AccountStatusA
 
 /**
  * Ends what a deactivated account had going: sign-ins, paired computers, notification
- * registrations and runs. Its bots, chats, memory, files and connections stay. Sign-in and
+ * registrations, views of its bots' screens, and runs. Its bots, chats, memory, files and connections stay. Sign-in and
  * new runs are refused separately for as long as the account stays deactivated.
  */
 export async function endDeactivatedAccess(deps: AccountStatusDeps, userId: string) {
@@ -76,6 +77,8 @@ export async function endDeactivatedAccess(deps: AccountStatusDeps, userId: stri
   await revokeUserDevices(deps.devices, userId);
   await deps.pushTokens.remove(userId);
   await prisma.callPushDevice.deleteMany({ where: { userId } });
+  // Screen links issued before now stop working; people still allowed get new ones.
+  await prisma.bot.updateMany({ where: { userId }, data: { screenGeneration: { increment: 1 } } });
   for (const { threadId, seq } of await cancelDeactivatedAccountRuns(prisma, userId))
     await deps.events.notify(threadId, seq).catch((error) => {
       getLogger().error("deactivated account run cancellation notification", error);

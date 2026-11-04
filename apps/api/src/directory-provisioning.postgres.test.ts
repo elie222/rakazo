@@ -173,6 +173,7 @@ describePostgres("directory provisioning over SCIM (PostgreSQL)", () => {
       { name: "Helper", description: "", instructions: "", notifyOnFinish: false },
     );
     const thread = await system.thread.findFirstOrThrow({ where: { botId: bot.id } });
+    const { screenGeneration } = await system.bot.findUniqueOrThrow({ where: { id: bot.id } });
     const queuedRun = {
       userId: ada.id,
       spaceId: membership.spaceId,
@@ -206,8 +207,10 @@ describePostgres("directory provisioning over SCIM (PostgreSQL)", () => {
     const refused = await signInWithCode(address);
     expect(refused.status).toBe(403);
     expect(await refused.json()).toMatchObject({ code: "ACCOUNT_DEACTIVATED" });
-    // Ada's content stays.
-    expect(await system.bot.count({ where: { id: bot.id } })).toBe(1);
+    // Ada's content stays, and screen links issued to her stop working.
+    expect(await system.bot.findUniqueOrThrow({ where: { id: bot.id } })).toMatchObject({
+      screenGeneration: screenGeneration + 1,
+    });
     const space = await system.space.findUniqueOrThrow({ where: { id: membership.spaceId } });
     expect(
       await system.auditEvent.findFirst({
@@ -255,6 +258,18 @@ describePostgres("directory provisioning over SCIM (PostgreSQL)", () => {
     ]);
   });
 
+  it("leaves an account whose email nobody proved to the operator", async () => {
+    const address = "squatted@example.test";
+    expect(
+      (await auth("/sign-up/email", { email: address, password: "test-password-123", name: "X" }))
+        .status,
+    ).toBe(200);
+    const refused = await scim("POST", "/Users", userResource(address, "directory-squatted"));
+    expect(refused.status).toBe(409);
+    expect(await system.scimUser.count({ where: { primaryEmail: address } })).toBe(0);
+    expect((await accountOf(address)).deactivatedAt).toBeNull();
+  });
+
   it("refuses to provision a chat-app address", async () => {
     const address = "someone@messaging.invalid";
     const refused = await scim("POST", "/Users", userResource(address, "directory-chat"));
@@ -293,6 +308,8 @@ describePostgres("directory provisioning over SCIM (PostgreSQL)", () => {
     const daveSignedUp = await auth("/sign-up/email", { ...bystander, name: "Dave" });
     const daveCookie = cookieOf(daveSignedUp);
     const carol = await accountOf(credentials.email);
+    // Carol opened the link in her verification email.
+    await system.user.update({ where: { id: carol.id }, data: { emailVerified: true } });
 
     const linked = await scim("POST", "/Users", {
       ...userResource(credentials.email, "directory-carol"),

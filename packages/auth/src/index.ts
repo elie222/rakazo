@@ -221,11 +221,13 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
    */
   const claimable = async (userId: string) => {
     if (!env.directoryProvisioning) return false;
-    const [subject, membership] = await Promise.all([
+    const [subject, membership, user] = await Promise.all([
       prisma.scimSubject.findUnique({ where: { userId }, select: { profileSourceId: true } }),
       prisma.spaceMember.findFirst({ where: { userId }, select: { userId: true } }),
+      prisma.user.findUnique({ where: { id: userId }, select: { deactivatedAt: true } }),
     ]);
-    return Boolean(subject?.profileSourceId) && !membership;
+    // A deactivated account takes no new login, so nothing is linked while it is off.
+    return Boolean(subject?.profileSourceId) && !membership && !user?.deactivatedAt;
   };
   // SSO-only deployments keep every email credential closed, codes included.
   const emailCodeSignIn = Boolean(env.email) && env.passwordAuth !== false;

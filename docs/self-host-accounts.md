@@ -231,7 +231,9 @@ group requests are refused. Rotating it means changing the value and restarting 
   through [SSO](#openid-connect-sso) (the first SSO sign-in with the same verified email claims the
   account) or with an emailed sign-in code.
 - **A person who already has an account** keeps it: the directory takes it over by email without
-  changing its name, email or logins, and can then turn it off.
+  changing its name, email or logins, and can then turn it off. Only an account whose email was
+  verified is taken over. Anyone could have signed up first with an address nobody proved, so
+  the directory gets a conflict for it, and the operator decides what to do with that account.
 - **Turning a person off** (`active: false`) or **deleting** them deactivates the account at once.
   It ends every sign-in and paired computer, removes notification registrations, cancels runs
   they started, skips their routines, and refuses any new sign-in or run. Their bots, chats,
