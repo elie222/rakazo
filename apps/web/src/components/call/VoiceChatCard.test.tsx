@@ -82,8 +82,8 @@ describe("VoiceChatCard", () => {
           title: "Saved call",
           farewell: "Talk soon",
           transcript: [
-            { role: "user" as const, text: "Hello there" },
-            { role: "bot" as const, text: "How can I help?" },
+            { role: "user" as const, text: "Hello there", startMs: 0, endMs: 1000 },
+            { role: "bot" as const, text: "How can I help?", startMs: 1000, endMs: 2500 },
           ],
         },
       ],
