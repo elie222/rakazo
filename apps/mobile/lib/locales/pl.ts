@@ -848,6 +848,7 @@ export const PL_MESSAGES: Record<string, string> = {
   "Could not clear the local session": "Nie udało się usunąć lokalnej sesji",
   "Could not clear the previous server session": "Nie udało się usunąć sesji poprzedniego serwera",
   "Could not clear the previous space": "Nie udało się usunąć poprzedniej przestrzeni",
+  "Could not save the previous server session": "Nie udało się zapisać sesji poprzedniego serwera",
   "Could not save the server URL": "Nie udało się zapisać adresu serwera",
   "Could not send reset email": "Nie udało się wysłać wiadomości do resetowania hasła",
   "The server changed while starting the request":
