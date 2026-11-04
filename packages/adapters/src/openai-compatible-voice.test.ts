@@ -162,6 +162,12 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
       split,
     );
     expect(parseOpenAiCompatibleVoiceSecret(again).apiKey).toBe("local-test-key");
+    // A client that does not know the field sends a new key with the main address only.
+    const rekeyed = parseOpenAiCompatibleVoiceSecret(
+      serializeAsOwner({ baseUrl: "http://192.168.1.20:8880", apiKey: "new-test-key" }, split),
+    );
+    expect(rekeyed).toMatchObject({ apiKey: "new-test-key" });
+    expect(rekeyed.sttBaseUrl).toBeUndefined();
   });
 
   it("checks the transcription server like the main server", () => {

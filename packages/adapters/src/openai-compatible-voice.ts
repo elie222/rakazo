@@ -72,7 +72,8 @@ function modelIdOrDefault(value: string | undefined, fallback: string, label: st
  * gets /v1 like model connections do; public hosts stay behind the same gate, and so
  * does a separate transcription server. Blank fields keep the previous key and models,
  * but only for the same server, so a key is never carried to a new address. An omitted
- * transcription server keeps the previous one; blank means the main server transcribes.
+ * transcription server keeps the previous one unless a new key is entered, so a key only
+ * reaches addresses sent with it; blank means the main server transcribes.
  */
 export function serializeOpenAiCompatibleVoiceSecret(
   input: {
@@ -89,7 +90,12 @@ export function serializeOpenAiCompatibleVoiceSecret(
   const baseUrl = normalizeOpenAiCompatibleBaseUrl(input.baseUrl);
   const previous = previousPlaintext ? tryParseSecret(previousPlaintext) : undefined;
   const same = previous?.baseUrl === baseUrl ? previous : undefined;
-  const sttInput = input.sttBaseUrl === undefined ? same?.sttBaseUrl : input.sttBaseUrl.trim();
+  const sttInput =
+    input.sttBaseUrl !== undefined
+      ? input.sttBaseUrl.trim()
+      : input.apiKey?.trim()
+        ? undefined
+        : same?.sttBaseUrl;
   const sttUrl = sttInput ? assertAllowedOpenAiCompatibleUrl(sttInput, policy) : undefined;
   const sttBaseUrl = sttInput ? normalizeOpenAiCompatibleBaseUrl(sttInput) : undefined;
   const separateStt = sttBaseUrl && sttBaseUrl !== baseUrl ? sttBaseUrl : undefined;
