@@ -2794,6 +2794,13 @@ th .pricing-hint__tip {
   transform: none;
 }
 
+/* The last column sits at the scroll edge, so its hints open leftward. */
+td:last-child .pricing-hint__tip {
+  right: 0;
+  left: auto;
+  transform: none;
+}
+
 .pricing-hint:hover .pricing-hint__tip,
 .pricing-hint:focus .pricing-hint__tip {
   opacity: 1;
