@@ -744,13 +744,9 @@ async function persistHostChoice(computerHost: "docker" | "this-mac") {
 /** Saves Docker as the local server's choice, so Settings and bots agree access is off. */
 async function revokeLocalComputerAccess() {
   // Access ends at once; the save only follows it, so a slow server never prolongs it.
-  const revoking = hostComputer?.revoke();
-  try {
-    await persistHostChoice("docker");
-  } finally {
-    await revoking;
-    installApplicationMenu();
-  }
+  const results = await Promise.allSettled([hostComputer?.revoke(), persistHostChoice("docker")]);
+  installApplicationMenu();
+  for (const result of results) if (result.status === "rejected") throw result.reason;
 }
 
 function installApplicationMenu() {
