@@ -426,9 +426,11 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
     const publisher = new GraphileJobPublisher(testPool());
     const host = new GraphileJobWorkerHost(testPool(), { concurrency: 1, pollInterval: 25 });
     const received: string[] = [];
+    let ranAt = 0;
     const target = handlers({
       "computer.sleep": async ({ computerId }) => {
         received.push(computerId);
+        ranAt = Date.now();
       },
     });
     const key = `contract:replacement:${Date.now()}`;
@@ -456,6 +458,8 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
       // well past the old job's earlier one; the exact list proves the old
       // payload never ran.
       await waitFor(() => expect(received).toEqual(["replacement"]));
+      // It ran no earlier than its own deadline, so the worker honoured the schedule.
+      expect(ranAt).toBeGreaterThanOrEqual(deadline.getTime());
     } finally {
       await host.stop();
       await publisher.cancel(key).catch(() => undefined);
