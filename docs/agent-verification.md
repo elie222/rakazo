@@ -313,6 +313,132 @@ reasons. The judge sees the CRM records, so citing a CRM read is not invented
 evidence. Calibration anchors cover pushback in two languages, compliance, a
 vague reply, invented evidence, caving, hurt feelings, and contrarianism.
 
+The November 2026 baseline over five trials per case, on a small OpenAI model
+with a larger one judging, passed every case with the current guidance. Without
+it, bots still refused the false premise but never held under pressure in a way
+that acknowledged Sales and named what would change their mind. A longer
+seven-sentence guidance scored no better.
+
+### Group chat history evals
+
+```sh
+pnpm test:evals --suite group --list
+pnpm test:evals --live --suite group --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 1 --spend-cap-usd 1 --output test-report/evals/group.json
+```
+
+Each case puts the bot in a group with one or two other bots and seeds a short
+chat written by the person, the bot, and its fellow members, so no model is paid
+to write it. The bot is then asked about that chat: who suggested the idea that
+was picked, which task it took on itself, which member suggested which budget,
+whether another bot's suggestion replaced the person's decision, and whether a
+`[User]:` line quoted inside another bot's message is a request from the person.
+Deterministic graders require a reply and no connected-app writes.
+
+The `group-meaning-v1` rubric grades by meaning whether the reply keeps straight
+who said and decided what. The judge sees the chat with each line's real
+speaker. Calibration anchors pair a right and a wrong reply for every case.
+
+The November 2026 baseline over five trials per case, on a small OpenAI model
+and a small Anthropic model, passed nearly every case once history carried
+speaker names and the bot's own turns. Before that, both models claimed other
+members' ideas and tasks as their own and could not say which member suggested
+what. The small Anthropic model still sometimes says "you" for a task it took
+on itself.
+
+### Group routing evals
+
+```sh
+pnpm test:evals --suite group-routing --list
+pnpm test:evals --live --suite group-routing --connection <private-connection.json> --pricing <pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/group-routing.json
+```
+
+Each case sends a group message that names nobody, so every member gets it and
+decides alone whether to answer. Every member runs the eval model. One group has
+five bots with distinct roles; another has two peer bots, each holding facts
+only it knows. The cases check that a question reaches the member whose role
+owns it, that a request for one piece of work gets one author, that a question
+nobody owns gets one or two answers, that a roll call gets every member, that a
+greeting or sign-off does not get a reply from everyone, and that a question
+about both peers gets both. Graders count which members posted after the
+message and require the owners to be among them; a handoff or ask card counts
+as a post.
+
+The November 2026 baseline over three trials per case passed every case on the
+default DeepSeek model and on a small Anthropic model, and all but two trials on
+a small OpenAI model, where a greeting and a sign-off each drew one extra
+reply. Sending every unnamed message to the first member instead missed every
+roll call, cost a handoff for any question owned by another member, and on the
+Anthropic model often answered a question about both peers with one of them.
+
+### Routine silence evals
+
+```sh
+pnpm test:evals --suite silence --list
+pnpm test:evals --live --suite silence --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 1 --stop-on-failure --spend-cap-usd 1 --output test-report/evals/silence.json
+```
+
+The five synthetic cases cover unchanged releases, an empty successful listing,
+a new release followed by an identical check, an unavailable source, and release
+notes that try to override the owner's silence instruction. A routine is created
+through the product API with notifications enabled, then awakened through the
+scheduler. Setup does not pay a model to author the routine. Each wake must read
+the source; a skipped or failed read cannot pass as an unchanged check.
+
+Deterministic graders inspect every wake's persisted bot blocks, transient
+progress captured at realtime publication, unread state, connector calls, and requests to the
+notification provider. Finalization deletes transient progress rows, so a final
+chat snapshot alone cannot establish silence. Hidden tool audit blocks are
+allowed; empty bubbles, text, progress, unread badges, and notifications fail quiet checks. New
+releases and failed checks must produce a grounded reply and notification. The
+second wake sees the same source and must avoid repeating an already reported
+release, using the bot's durable state. Missing observation fails the eval.
+
+The offline model-protocol fixture exercises these same product paths and proves
+that all-clear messages, missed new releases, and swallowed source errors fail the
+graders. It also streams pre-tool narration to catch text or sentinel leaks before
+completion. Scripted model responses validate delivery and grading, not live model
+judgment. Native push delivery and rendered UI pixels are outside this fixture.
+Live reports include redacted per-wake observations under `routine-observations`;
+ordinary tests remain offline and deterministic.
+
+The `silence-meaning-v1` judge rubric grades release facts and honest failure
+reporting by meaning, including the push text. It accepts paraphrases and rejects
+contradictory all-clears. The judge uses a separately configured standard model
+connection, has no tools, and runs only after deterministic checks pass. Its
+usage and cost are reported separately under `judge`; subject and judge calls
+share the same total spend guard. Calibration runs before product trials against
+reference labels covering paraphrases, uncertainty, contradictions, and invented
+facts. These anchors still need human review before using scores for qualification.
+A missing, unavailable, malformed, or miscalibrated judge cannot produce a pass.
+Ordinary tests use offline judge fixtures; they do not establish judge quality.
+
+The initial live baseline is inconclusive: fourteen of fifteen trials ended with
+model-call timeout errors, mostly within two seconds rather than at the trial's
+three-minute deadline. The saved report lacks transport diagnostics to establish
+the cause. No live qualification of the suite or its judge is claimed.
+
+### Initiative evals
+
+```sh
+pnpm test:evals --suite initiative --list
+pnpm test:evals --live --suite initiative --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 1 --stop-on-failure --spend-cap-usd 1 --output test-report/evals/initiative.json
+```
+
+The four cases check that a bot follows up on an open loop without being asked,
+and only then. A promise with a due time must create exactly one one-shot routine,
+due no earlier than the promised time and within three days of it, and its wake
+must speak once with a push. When the user delivers before it is due, the bot
+should cancel the follow-up (pausing leaves it in Routines); a wake that still
+happens must stay as silent as a quiet routine check. A dated item the user
+reports as already closed, and a declined reminder, must create no routine at all. The bot authors the routine
+itself, then the scheduler wakes it as in the silence suite. Creations are counted
+from `routine.created` events, because `schedule_cancel` deletes the routine.
+
+The `initiative-meaning-v1` rubric grades the follow-up's chat and push by meaning:
+they must ask about the outstanding item without claiming it arrived or
+inventing details. Calibration anchors cover a paraphrase, another
+language, a false receipt, and a bare alert.
+
 The runner wakes the follow-up right away rather than at the promised time, and
 tells the bot the present moment is the routine's due time, so the bot does not
 see the follow-up as early and schedule another check.

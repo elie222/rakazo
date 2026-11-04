@@ -79,8 +79,10 @@ describe.skipIf(!databaseAvailable)("routine silence eval through the product", 
               JSON.stringify(request.messages),
             );
             const toldAt = new Date(told?.[1] ?? told?.[2] ?? "");
-            expect(toldAt.getUTCMinutes()).toBe(0);
-            expect(toldAt.getTime()).toBeGreaterThanOrEqual(Date.now() - 1_000);
+            const due = new Date();
+            due.setUTCHours(9, 0, 0, 0);
+            if (due.getTime() < Date.now() - 60_000) due.setUTCDate(due.getUTCDate() + 1);
+            expect(Math.abs(toldAt.getTime() - due.getTime())).toBeLessThan(60_000);
             if (index === 1 && replies[0] === releaseReply)
               expect(JSON.stringify(request.messages)).toContain(releaseReply);
           },
