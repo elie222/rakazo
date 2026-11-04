@@ -72,6 +72,7 @@ function perform(effect: () => Promise<void>): void {
   }
 }
 
+// Android's view feedback honors the system touch settings and supplies native effects.
 export function hapticSelection(): void {
   perform(() =>
     Platform.OS === "android"

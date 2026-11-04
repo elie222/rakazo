@@ -21,6 +21,8 @@ type FeedbackBoundary = {
   ready: Promise<number | null>;
 };
 
+const FEEDBACK_HEAD_BUDGET_MS = 250;
+
 /**
  * Streams the chat's live events while the app is in the foreground. Returning to the same chat
  * resumes from the last applied event, so pinned and expanded windows catch up without a gap;
@@ -90,36 +92,55 @@ export function useThreadLiveSubscription({
     if ((!botId && !groupId) || !foreground || !focused || readOnly || !getHapticsEnabled()) return;
     const abort = new AbortController();
     const generation = currentSessionGeneration();
+    let settleFirst!: (cursor: number | null) => void;
     const boundary: FeedbackBoundary = {
       cursor: null,
       pending: new Map(),
-      // Establish a server-side boundary without changing a pinned or expanded history window.
-      ready: rpc("threads/head", groupId ? { groupId } : { botId: botId! }, {
-        signal: abort.signal,
-      })
-        .then((head) => head.cursor)
-        .catch(() => null),
+      ready: new Promise((resolve) => {
+        settleFirst = resolve;
+      }),
     };
     feedbackBoundary.current = boundary;
-    void boundary.ready.then((cursor) => {
-      if (
-        abort.signal.aborted ||
-        generation !== currentSessionGeneration() ||
-        feedbackBoundary.current !== boundary
-      )
-        return;
-      if (cursor === null) {
-        feedbackBoundary.current = null;
-      } else {
-        boundary.cursor = cursor;
-        for (const seq of boundary.pending.values()) {
-          if (visible.current && seq > cursor) hapticSuccess();
+    const current = () =>
+      !abort.signal.aborted &&
+      generation === currentSessionGeneration() &&
+      feedbackBoundary.current === boundary &&
+      visible.current;
+    void (async () => {
+      let backoff = 250;
+      while (current() && getHapticsEnabled()) {
+        let failure: unknown;
+        try {
+          // The boundary never changes a pinned or expanded history window.
+          const head = await rpc("threads/head", groupId ? { groupId } : { botId: botId! }, {
+            signal: abort.signal,
+            timeoutMs: FEEDBACK_HEAD_BUDGET_MS,
+          });
+          if (!current()) return;
+          boundary.cursor = head.cursor;
+          for (const seq of boundary.pending.values()) {
+            if (seq > head.cursor) hapticSuccess();
+          }
+          boundary.pending.clear();
+          return;
+        } catch (error) {
+          failure = error;
+          // A failed lookup has no reliable capture point; skip that feedback window.
+          boundary.pending.clear();
+        } finally {
+          // Only the first attempt participates in bootstrap. Retries never hold up live chat.
+          settleFirst(boundary.cursor);
         }
+        if (!current() || !isRetryableError(failure)) break;
+        await abortableDelay(retryDelayMs(failure, backoff), abort.signal);
+        backoff = Math.min(backoff * 2, 5_000);
       }
       boundary.pending.clear();
-    });
+      if (feedbackBoundary.current === boundary) feedbackBoundary.current = null;
+    })();
     return () => {
       abort.abort();
+      settleFirst(null);
       boundary.pending.clear();
       if (feedbackBoundary.current === boundary) feedbackBoundary.current = null;
     };
@@ -168,14 +189,17 @@ export function useThreadLiveSubscription({
       if (!resuming) {
         // A newer initial snapshot may already contain a reply completed after the head was
         // captured. Replay that interval for feedback without projecting it over the snapshot.
-        for (;;) {
-          const boundary = feedbackBoundary.current;
-          if (!boundary) break;
-          const floor = await boundary.ready;
+        const boundary = feedbackBoundary.current;
+        if (boundary) {
+          const floor =
+            boundary.cursor ??
+            (await Promise.race([
+              boundary.ready,
+              abortableDelay(FEEDBACK_HEAD_BUDGET_MS, abort.signal).then(() => null),
+            ]));
           if (abort.signal.aborted || sessionGeneration !== currentSessionGeneration()) return;
-          if (feedbackBoundary.current !== boundary) continue;
-          if (floor !== null) cursor = Math.min(cursor, floor);
-          break;
+          if (feedbackBoundary.current === boundary && floor !== null)
+            cursor = Math.min(cursor, floor);
         }
       }
       liveCursor.current = cursor;
