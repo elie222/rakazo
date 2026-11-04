@@ -74,8 +74,10 @@ import { scheduleRoutineRetry } from "./run-routines.js";
 import { applyTool } from "./run-tools.js";
 import { withRuntimeCleanup } from "./runtime-stream.js";
 import {
+  couldBecomeNoResponse,
   isNoResponseReply,
   isPlaceholderReply,
+  isPlaceholderText,
   peerReplyWithoutSentinel,
   stripNoResponseReply,
   stripStrayNoResponse,
@@ -308,6 +310,11 @@ async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) 
   });
 }
 
+/** Text a member a group message named nobody for may still turn into its silent ending. */
+function mayBeSilentEnding(ctx: RunContext, text: string) {
+  return ctx.groupReplyOptional && (couldBecomeNoResponse(text) || isPlaceholderText(text));
+}
+
 /**
  * The run's person wrote while the bot worked: the next note may answer them at once, each time.
  * The budget restart for unprompted updates stays capped. Webhooks, external chats and other
@@ -328,7 +335,11 @@ async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
     await flushProgress(ctx);
     const before = extractNarrationText(reply.messageSegments, reply.currentTextSegment).text;
     const text = redactSecretsAfter(reply.narrationSoFar, before, ctx.secrets).trim();
-    if (text.length <= USER_PROGRESS_MESSAGE_MAX_LENGTH && canPublishDurableNarration(ctx))
+    if (
+      text.length <= USER_PROGRESS_MESSAGE_MAX_LENGTH &&
+      canPublishDurableNarration(ctx) &&
+      !mayBeSilentEnding(ctx, text)
+    )
       await publishMidTurnNarration(ctx);
     reply.steeringReplyPending = true;
     return;
@@ -338,7 +349,7 @@ async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
   await flushProgress(ctx);
   const before = extractNarrationText(reply.messageSegments, reply.currentTextSegment);
   const text = redactSecretsAfter(reply.narrationSoFar, before.text, ctx.secrets).trim();
-  if (text && runPromotesMidTurnNarration(run.trigger)) {
+  if (text && runPromotesMidTurnNarration(run.trigger) && !mayBeSilentEnding(ctx, text)) {
     reply.narrationSoFar += before.text;
     reply.messageSegments = before.remaining;
     reply.currentTextSegment = "";

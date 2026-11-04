@@ -337,6 +337,15 @@ function groupSendTargets(
   return { botIds: resolveGroupTargetBotIds(targeting), namesNobody: !named };
 }
 
+export function latestWaitingRun<T extends { status: string; updatedAt: Date }>(runs: T[]) {
+  return runs
+    .filter((run) => run.status === "waiting_input")
+    .reduce<T | undefined>(
+      (latest, run) => (!latest || run.updatedAt > latest.updatedAt ? run : latest),
+      undefined,
+    );
+}
+
 /** The bot whose message a send replies to, if any. */
 export async function replyParentBotId(
   prisma: Pick<PrismaClient, "message">,
@@ -1066,7 +1075,7 @@ export async function sendThreadMessage(
       const members = await lockAndLoadGroupMembers(tx, actor, target);
       const memberBotIds = members.map((member) => member.botId);
       const mentionTargets = splitMentionTargets(input.mentions);
-      const { botIds: targetBotIds, namesNobody } = groupSendTargets(members, input, repliedBotId);
+      let { botIds: targetBotIds, namesNobody } = groupSendTargets(members, input, repliedBotId);
       const { blocks: attachmentBlocks, artifacts } = await resolveGroupSendAttachments(
         { prisma: tx, maxAttachmentsPerMessage: deps.maxAttachmentsPerMessage },
         actor,
@@ -1082,7 +1091,7 @@ export async function sendThreadMessage(
       // Group ownership is locked first, then the thread, as in the normal write path.
       await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
       routineRuns = (await startRoutines?.(tx)) ?? [];
-      const activeRuns = await tx.run.findMany({
+      let activeRuns = await tx.run.findMany({
         where: {
           threadId: target.threadId,
           botId: { in: targetBotIds },
@@ -1098,8 +1107,16 @@ export async function sendThreadMessage(
           modelId: true,
           modelPinned: true,
           thinkingLevel: true,
+          updatedAt: true,
         },
       });
+      // A plain message while members wait on the user answers the latest question only.
+      const asking = latestWaitingRun(activeRuns);
+      if (namesNobody && asking) {
+        targetBotIds = [asking.botId];
+        namesNobody = false;
+        activeRuns = activeRuns.filter((run) => run.botId === asking.botId);
+      }
       if (input.imageHandling === "confirm") {
         for (const botId of targetBotIds) {
           await assertImageRecipients(tx, actor, target, input.text, attachmentBlocks, {

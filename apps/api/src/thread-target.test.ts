@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ThreadTarget } from "./thread-target.js";
 import {
   cancelSupersededQueuedRuns,
+  latestWaitingRun,
   reactToThreadMessage,
   replyParentBotId,
   sendTargetBotIds,
@@ -4477,5 +4478,23 @@ describe("sendTargetBotIds", () => {
       where: { id: "m-1", threadId: "thread-1", role: "bot" },
       select: { botId: true },
     });
+  });
+});
+
+describe("latestWaitingRun", () => {
+  it("picks the most recent question among members waiting on the user", () => {
+    const run = (id: string, status: string, minute: number) => ({
+      id,
+      status,
+      updatedAt: new Date(2026, 0, 1, 9, minute),
+    });
+    expect(
+      latestWaitingRun([
+        run("a", "waiting_input", 1),
+        run("b", "waiting_input", 5),
+        run("c", "running", 9),
+      ])?.id,
+    ).toBe("b");
+    expect(latestWaitingRun([run("c", "running", 9)])).toBeUndefined();
   });
 });

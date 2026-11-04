@@ -1756,6 +1756,16 @@ describe("a group member the message named nobody for", () => {
     expect(result.messages).toEqual([]);
   });
 
+  it("keeps a possible silent ending out of the chat when a follow-up steers it", async () => {
+    const result = await turn(true, [
+      text("NO_RESPONSE"),
+      { type: "steered", fromRunUser: true },
+      text("NO_RESPONSE"),
+      done,
+    ]);
+    expect(result.messages).toEqual([]);
+  });
+
   it("cannot hand off a message every member already received", async () => {
     const offered = async (optional: boolean) =>
       (

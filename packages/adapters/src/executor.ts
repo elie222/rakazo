@@ -29,7 +29,6 @@ import {
   promptInvokesSkill,
   redactSecrets,
   renderBotDirectory,
-  renderGroupMembersContext,
   userRunError,
   userTurnMessageForRun,
 } from "@rakazo/core";
@@ -91,7 +90,7 @@ import { formatCurrentTimeInstruction } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type { FleetRun } from "./fleet-tools.js";
-import { loadBotGroupDirectory, loadGroupRoster } from "./group-handoff.js";
+import { loadBotGroupDirectory, loadGroupContext } from "./group-handoff.js";
 import {
   formatCompactedSummary,
   formatRecalledMemory,
@@ -781,13 +780,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           ),
         );
         const currentRunRequiresImageInput = confirmedRunImages.length > 0;
-        const groupRoster = thread.groupId
-          ? await loadGroupRoster(deps.prisma, thread.groupId)
-          : undefined;
         // The send decided whether the message named this member; one it named nobody for
         // reached every member, and each may end its turn without a reply.
         const groupReplyOptional =
-          groupRoster !== undefined && run.trigger === "user" && run.groupReplyOptional;
+          Boolean(thread.groupId) && run.trigger === "user" && run.groupReplyOptional;
         const allowSilentPeerMessage = botMessageAllowsSilence(
           peerMessage?.intent,
           peerMessage?.repliesToRequest,
@@ -1141,13 +1137,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           resolved.acceptsImages,
         );
         const acceptsImages = deps.runtime.describe().capabilities.scripted || modelSeesImages;
-        const groupContext = groupRoster
-          ? [
-              renderGroupMembersContext(groupRoster.name, groupRoster.members, bot),
-              groupReplyOptional ? GROUP_UNADDRESSED_REPLY_GUIDANCE : undefined,
-            ]
-              .filter(Boolean)
-              .join("\n")
+        const groupContext = thread.groupId
+          ? await loadGroupContext(deps.prisma, thread.groupId, {
+              id: bot.id,
+              name: bot.name,
+            })
           : undefined;
         const hasMessagingIdentity = deps.messaging
           ? await deps.messaging.hasIdentity(bot.id)
@@ -1712,7 +1706,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               contextStrategy: deps.contextStrategy,
               instructions: userTurnInstructions({
                 botInstructions: runIdentityInstruction(bot, run.trigger),
-                groupContext,
+                groupContext: groupReplyOptional
+                  ? [groupContext, GROUP_UNADDRESSED_REPLY_GUIDANCE].filter(Boolean).join("\n")
+                  : groupContext,
                 messagingContext,
                 redactedMemoryContext: memoryContext
                   ? redactSecrets(memoryContext, runSecrets)

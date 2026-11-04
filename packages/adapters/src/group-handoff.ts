@@ -6,6 +6,7 @@ import {
   botMessageHopExhausted,
   nextBotMessageHop,
   renderBotGroupDirectory,
+  renderGroupMembersContext,
   resolveBotAddress,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
@@ -240,7 +241,11 @@ export async function handoffToGroupBot(
   };
 }
 
-export async function loadGroupRoster(prisma: PrismaClient, groupId: string) {
+export async function loadGroupContext(
+  prisma: PrismaClient,
+  groupId: string,
+  self: { id: string; name: string },
+): Promise<string | undefined> {
   const group = await prisma.chatGroup.findUnique({
     where: { id: groupId },
     include: {
@@ -253,9 +258,12 @@ export async function loadGroupRoster(prisma: PrismaClient, groupId: string) {
       },
     },
   });
-  return group
-    ? { name: group.name, members: group.members.map((member) => member.bot) }
-    : undefined;
+  if (!group) return undefined;
+  return renderGroupMembersContext(
+    group.name,
+    group.members.map((member) => member.bot),
+    self,
+  );
 }
 
 /** Only the current bot's active groups in the same owner/space are discoverable. */
