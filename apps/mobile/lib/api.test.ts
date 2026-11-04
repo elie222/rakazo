@@ -1419,6 +1419,58 @@ describe("mobile API authentication", () => {
     await resetApiBase();
   });
 
+  it("keeps a revocation recorded while an unreadable list is being dropped", async () => {
+    const store = new Map<string, string>([
+      ["rakazo.session_token", "session-token"],
+      ["rakazo.pending_sign_out", "not a record list"],
+    ]);
+    mockSecureStore(store);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Promise.reject(new Error("offline"))),
+    );
+    // The launch flush's first store read waits while a sign-out records its revocation;
+    // dropping the unreadable list that read saw must not take the new record with it.
+    let pendingListReads = 0;
+    let resumeFirstRead: (() => void) | undefined;
+    const firstReadStarted = new Promise<void>((resolveStarted) => {
+      vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+        if (key !== "rakazo.pending_sign_out") return store.get(key) ?? null;
+        const stored = store.get(key) ?? null;
+        pendingListReads += 1;
+        if (pendingListReads === 1) {
+          resolveStarted();
+          await new Promise<void>((resolve) => {
+            resumeFirstRead = resolve;
+          });
+        }
+        return stored;
+      });
+    });
+
+    const flushing = flushPendingSignOut(true);
+    await firstReadStarted;
+    await signOut();
+    resumeFirstRead?.();
+    await flushing;
+
+    expect(pendingSignOutRecords(store)).toEqual([
+      { apiBase: "http://127.0.0.1:3100", token: "session-token" },
+    ]);
+  });
+
+  it("drops a stored record list this app cannot read", async () => {
+    const store = new Map<string, string>([["rakazo.pending_sign_out", "not a record list"]]);
+    mockSecureStore(store);
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await flushPendingSignOut(true);
+
+    expect(store.has("rakazo.pending_sign_out")).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   describe.each(["/rpc/notifications/unregisterPush", "/api/auth/sign-out"])(
     "redirected revocation response from %s",
     (redirectedPath) => {

@@ -1062,11 +1062,24 @@ async function readPendingSignOuts(): Promise<PendingSignOutRead> {
     return { ok: true, records };
   } catch {
     // A list this app cannot read is dropped; the sessions expire server-side regardless.
-    try {
-      await SecureStore.deleteItemAsync(PENDING_SIGN_OUT_KEY);
-    } catch {
-      // Reading it again next time reaches the same conclusion.
-    }
+    // The drop waits for its turn in the write queue and runs only while the store still
+    // holds this unreadable value, so a revocation recorded after this read survives it.
+    // The step is not awaited: this read can itself run inside a queued step, and the
+    // queue never waits on itself.
+    void queuePendingSignOutWrite(async () => {
+      let current: string | null = null;
+      try {
+        current = await SecureStore.getItemAsync(PENDING_SIGN_OUT_KEY);
+      } catch {
+        return;
+      }
+      if (current !== stored) return;
+      try {
+        await SecureStore.deleteItemAsync(PENDING_SIGN_OUT_KEY);
+      } catch {
+        // Reading it again next time reaches the same conclusion.
+      }
+    });
     return { ok: true, records: [] };
   }
 }
