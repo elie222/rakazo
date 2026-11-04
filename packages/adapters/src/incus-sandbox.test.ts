@@ -645,6 +645,33 @@ describe("IncusSandboxProvider", () => {
     expect([...fake.instances.keys()].sort()).toEqual([result.providerRef, "other-bot"].sort());
   });
 
+  it("still starts when removing an earlier instance fails", async () => {
+    const fake = new FakeIncus();
+    fake.instances.set("orphan", running());
+    const request = fake.request.bind(fake);
+    vi.spyOn(fake, "request").mockImplementation(async (method, path, body, signal) => {
+      if (method === "PUT" && path.startsWith("/1.0/instances/orphan/"))
+        throw new IncusError("Instance is busy", 500);
+      return request(method, path, body, signal);
+    });
+    await expect(
+      providerFor(fake).provision({ botId: "bot-a", homePath: "/unused" }, context),
+    ).resolves.toMatchObject({ fresh: true });
+  });
+
+  it("still starts when listing earlier instances fails", async () => {
+    const fake = new FakeIncus();
+    const request = fake.request.bind(fake);
+    vi.spyOn(fake, "request").mockImplementation(async (method, path, body, signal) => {
+      if (method === "GET" && path.startsWith("/1.0/instances?recursion=1&filter="))
+        throw new Error("connect ECONNRESET");
+      return request(method, path, body, signal);
+    });
+    await expect(
+      providerFor(fake).provision({ botId: "bot-a", homePath: "/unused" }, context),
+    ).resolves.toMatchObject({ fresh: true });
+  });
+
   it("deletes an instance that stays after stopping", async () => {
     const fake = new FakeIncus();
     fake.instances.set("box", { ...running(), ephemeral: false });

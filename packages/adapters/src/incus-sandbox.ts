@@ -379,6 +379,7 @@ export class IncusSandboxProvider implements SandboxProvider {
   /**
    * Removes this bot's instances other than its stored one, such as one whose start died before
    * its name was saved. The caller's claim on the computer means no other start is using them.
+   * This never blocks a start; every start that creates an instance tries again.
    */
   private async removeOrphans(
     botId: string,
@@ -387,15 +388,27 @@ export class IncusSandboxProvider implements SandboxProvider {
   ): Promise<void> {
     // The filter language has no quoting for other characters; bot ids use none of them.
     if (!/^[A-Za-z0-9_-]+$/.test(botId)) return;
-    const { metadata } = await this.request(
-      "GET",
-      `/1.0/instances?recursion=1&filter=${encodeURIComponent(`config.${BOT_ID_KEY} eq ${botId}`)}`,
-      signal,
-    );
-    for (const instance of (metadata ?? []) as IncusInstance[]) {
+    let instances: IncusInstance[];
+    try {
+      const filter = encodeURIComponent(`config.${BOT_ID_KEY} eq ${botId}`);
+      const { metadata } = await this.request(
+        "GET",
+        `/1.0/instances?recursion=1&filter=${filter}`,
+        signal,
+      );
+      instances = (metadata ?? []) as IncusInstance[];
+    } catch (error) {
+      signal.throwIfAborted();
+      getLogger().warn("list Incus instances left by earlier starts", { error });
+      return;
+    }
+    for (const instance of instances) {
       if (!instance.name || instance.name === keep || instance.config?.[BOT_ID_KEY] !== botId)
         continue;
-      await this.remove(instance.name, signal).catch(() => {});
+      await this.remove(instance.name, signal).catch((error) => {
+        signal.throwIfAborted();
+        getLogger().warn("remove Incus instance left by an earlier start", { error });
+      });
     }
   }
 
