@@ -1,4 +1,8 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Speaker on": "Динамик включён",
+  "Speaker off": "Динамик выключен",
+  "Could not change speaker": "Не удалось переключить динамик",
+  "That audio output is unavailable.": "Этот аудиовыход недоступен.",
   "Add rule": "Добавить правило",
   "Tool name": "Название инструмента",
   Address: "Адрес",

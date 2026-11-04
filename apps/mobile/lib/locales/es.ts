@@ -1,4 +1,8 @@
 export const ES_MESSAGES: Record<string, string> = {
+  "Speaker on": "Altavoz activado",
+  "Speaker off": "Altavoz desactivado",
+  "Could not change speaker": "No se pudo cambiar el altavoz",
+  "That audio output is unavailable.": "Esa salida de audio no está disponible.",
   "Add rule": "Añadir regla",
   "Tool name": "Nombre de la herramienta",
   Title: "Título",

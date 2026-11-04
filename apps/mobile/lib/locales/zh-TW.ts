@@ -1,4 +1,8 @@
 export const ZH_TW_MESSAGES: Record<string, string> = {
+  "Speaker on": "揚聲器已開啟",
+  "Speaker off": "揚聲器已關閉",
+  "Could not change speaker": "無法切換揚聲器",
+  "That audio output is unavailable.": "此音訊輸出無法使用。",
   "Add rule": "新增規則",
   "Tool name": "工具名稱",
   Address: "地址",

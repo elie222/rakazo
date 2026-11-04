@@ -1,4 +1,8 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "Speaker on": "Lautsprecher an",
+  "Speaker off": "Lautsprecher aus",
+  "Could not change speaker": "Lautsprecher konnte nicht umgeschaltet werden",
+  "That audio output is unavailable.": "Diese Audioausgabe ist nicht verfügbar.",
   "Add rule": "Regel hinzufügen",
   "Tool name": "Tool-Name",
   Address: "Adresse",
