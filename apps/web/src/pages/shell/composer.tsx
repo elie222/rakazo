@@ -493,6 +493,11 @@ const ComposerBody = memo(function Composer({
   async function send(imageHandling?: "file") {
     if (!canSend || sending || disabled) return;
     const revision = editRevision.current;
+    // Recovery rebuilds the draft from text alone, so only a plain-text send —
+    // no reply target, no attachments, no skill — can share its nonce with a
+    // retry. Anything else keeps the words without a nonce.
+    const nonceRecoverable =
+      !replyTarget && pendingAttachments.length === 0 && selectedSkill === null;
     const clientNonce =
       retryNonce.current ??
       // A chat reopened before its unsettled send failed has not edited since
@@ -524,15 +529,20 @@ const ComposerBody = memo(function Composer({
     } catch {
       settleComposerDraftSubmission(draftKey, submission, false);
       // A rejected callback leaves acceptance unknown; do not restore a possible
-      // send. The saved draft still holds the words: keep the nonce with them so
-      // an unchanged retry is recognized instead of duplicated.
-      if (readComposerDraft(draftKey) === draft) writeComposerRetryNonce(draftKey, clientNonce);
+      // send. The saved draft still holds the words; only a recoverable plain
+      // text send keeps its nonce with them, so the retry is not mistaken for
+      // a reply-linked or otherwise different message.
+      if (nonceRecoverable && readComposerDraft(draftKey) === draft)
+        writeComposerRetryNonce(draftKey, clientNonce);
       return;
     }
     // Restore only an untouched draft, retaining its nonce for an unchanged retry.
+    // This composer still carries the reply and attachments the send carried, so
+    // the in-memory nonce is safe here; the stored one is only for plain text.
     if (editRevision.current !== revision) return;
     retryNonce.current = clientNonce;
-    if (readComposerDraft(draftKey) === draft) writeComposerRetryNonce(draftKey, clientNonce);
+    if (nonceRecoverable && readComposerDraft(draftKey) === draft)
+      writeComposerRetryNonce(draftKey, clientNonce);
     commitComposition(submitted, false);
     setSelectedSkill(selectedSkill);
   }

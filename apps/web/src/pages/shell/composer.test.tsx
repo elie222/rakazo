@@ -1220,6 +1220,53 @@ it("does not retry a changed payload with a dictation's nonce", async () => {
   }
 });
 
+it("keeps a reply-linked dictation's words without its nonce", async () => {
+  const nonces: string[] = [];
+  let fail!: (error: Error) => void;
+  const onSend = vi.fn((_text: string, _mentions: unknown[], clientNonce: string) => {
+    nonces.push(clientNonce);
+    return new Promise<boolean>((_resolve, reject) => {
+      fail = reject;
+    });
+  });
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  try {
+    renderComposer(onSend, {
+      phoneCallsEnabled: true,
+      replyTarget: { id: "m-9", blocks: [] } as unknown as ThreadMessage,
+    });
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    act(() => onFinal("spoken words"));
+    await act(async () => {});
+    // Leaving during the send drops the armed reply; the answer never arrives.
+    act(() => root?.unmount());
+    container?.remove();
+    await act(async () => {
+      fail(new Error("offline"));
+    });
+    expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("spoken words");
+    expect(localStorage.getItem("rakazo.composerNonce.bot:bot-1")).toBeNull();
+    const reopened = renderComposer(
+      vi.fn(async (_text: string, _mentions: unknown[], clientNonce: string) => {
+        nonces.push(clientNonce);
+        return true;
+      }),
+    );
+    expect(reopened.value).toBe("spoken words");
+    pressEnter(reopened);
+    await act(async () => {});
+    // The retry cannot rebuild the reply the original carried, so it must not
+    // reuse the original nonce: a committed first send would swallow it.
+    expect(nonces[1]).not.toBe(nonces[0]);
+  } finally {
+    listen.mockRestore();
+  }
+});
+
 it("reuses the stored nonce when a send that lost its answer is retried from the saved draft", async () => {
   const nonces: string[] = [];
   let fail!: (error: Error) => void;
