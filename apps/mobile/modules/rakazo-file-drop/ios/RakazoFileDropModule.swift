@@ -120,13 +120,17 @@ public class RakazoFileDropModule: Module {
     sendEvent("onDropStarted", [:])
     worker.async {
       let directory = Self.root.appendingPathComponent(UUID().uuidString, isDirectory: true)
-      let files = kept.compactMap { self.copy($0, into: directory, maxBytes: maxBytes) }
-      if files.isEmpty { try? FileManager.default.removeItem(at: directory) }
+      let files = kept.map { self.copy($0, into: directory, maxBytes: maxBytes) }
+      if !files.contains(where: { $0["uri"] != nil }) {
+        try? FileManager.default.removeItem(at: directory)
+      }
       self.sendEvent("onFilesDropped", ["files": files, "skipped": skipped])
     }
   }
 
-  private func copy(_ provider: NSItemProvider, into directory: URL, maxBytes: Int) -> [String: Any]? {
+  /// An image that cannot be loaded or saved comes back without a uri, so the chat reports it.
+  private func copy(_ provider: NSItemProvider, into directory: URL, maxBytes: Int) -> [String: Any] {
+    let failed: [String: Any] = ["name": "image", "mimeType": "image/jpeg", "size": 0.0]
     let registered = provider.registeredTypeIdentifiers.compactMap { UTType($0) }
     var type = registered.first { Self.keptTypes.contains($0) }
     var data = type.flatMap { load(provider, $0) }
@@ -137,7 +141,7 @@ public class RakazoFileDropModule: Module {
         source.count > maxBytes ? source : UIImage(data: source)?.jpegData(compressionQuality: 0.9)
       }
     }
-    guard let data, let type, let ext = type.preferredFilenameExtension else { return nil }
+    guard let data, let type, let ext = type.preferredFilenameExtension else { return failed }
     let name = "image.\(ext)"
     let mimeType = type.preferredMIMEType ?? "image/jpeg"
     // Too large even to resize: the chat reports it as over the limit without a copy.
@@ -149,7 +153,7 @@ public class RakazoFileDropModule: Module {
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
       try data.write(to: destination)
     } catch {
-      return nil
+      return failed
     }
     var file: [String: Any] = [
       "uri": destination.absoluteString,

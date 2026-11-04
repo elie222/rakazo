@@ -267,7 +267,11 @@ export async function readDroppedFiles(
         skipped.push({ name, reason });
         continue;
       }
-      if (!uri) continue;
+      if (!uri) {
+        // A file the native side could not copy is reported like one that cannot be read.
+        skipped.push({ name, reason: "permission denied" });
+        continue;
+      }
       const read = await readUriAsBase64(uri, maxBytes).catch(() => null);
       if (!read) {
         // A copy that vanished or cannot be read costs that file only.
