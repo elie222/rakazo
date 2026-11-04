@@ -2788,9 +2788,7 @@ describe("Auto Review of new sites", () => {
         builtin: true,
         sourceRole: "user",
         prompt: "Find news daily",
-        rules: effect
-          ? [{ effect, matchKind: "tool", matchValue: "schedule_create" }]
-          : [],
+        rules: effect ? [{ effect, matchKind: "tool", matchValue: "schedule_create" }] : [],
       });
       f.setCalls([search, schedule("Every day fetch https://attacker.test/")]);
       await f.run(true);
