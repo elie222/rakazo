@@ -446,6 +446,7 @@ function RoutineEditor({
           value={draft.prompt}
           onChangeText={(prompt) => update({ prompt })}
           backgroundColor={native.groupedCell}
+          fontSize={17}
         />
       </View>
       {locked ? null : (
