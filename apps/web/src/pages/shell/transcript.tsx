@@ -38,7 +38,11 @@ import { ActiveBotGlyph } from "../../components/ai/CollaborationMarker";
 import { VoiceChatCard } from "../../components/call/VoiceChatCard";
 import type { ArtifactTarget } from "../../lib/artifact-open";
 import { projectPageCards } from "../../lib/page-cards";
-import { lastSelectedText, quoteDraftForSelection } from "../../lib/quote-selection";
+import {
+  isDetachedRange,
+  lastSelectedText,
+  quoteDraftForSelection,
+} from "../../lib/quote-selection";
 import type { createSpaceRpc } from "../../lib/rpc";
 import { messageHasVisibleBlocks } from "../../lib/tool-activity-view";
 import { TRANSCRIPT_CONTENT_PADDING } from "../../lib/transcript-layout";
@@ -243,10 +247,7 @@ export const Transcript = memo(function Transcript({
   // stale placement either way.
   useLayoutEffect(() => {
     setQuoteDraft((prev) =>
-      prev &&
-      (prev.range.collapsed ||
-        !document.contains(prev.range.commonAncestorContainer) ||
-        prev.range.toString() !== prev.rangeText)
+      prev && (isDetachedRange(prev.range) || prev.range.toString() !== prev.rangeText)
         ? null
         : prev,
     );
