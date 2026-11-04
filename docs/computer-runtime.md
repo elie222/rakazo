@@ -15,8 +15,9 @@ Pi runs in the Rakazo API/worker process. It is not installed in, or executed by
 ## Computer-use model
 
 Settings → Models has a **Computer-use model** list next to the main and approval models.
-It is one more model role: account-wide unless a Space overrides models, with backups taken
-in order. Left empty, the main model works the screen itself, as before. It is meant for a
+It is one more model role: account-wide unless a Space overrides models. When a run starts,
+the first choice that can run is used; a provider outage during screen work does not switch to
+the next one. Left empty, the main model works the screen itself, as before. It is meant for a
 main model that cannot see, such as a text-only or self-hosted one.
 
 When it is set, the main model gets `enter_computer_mode` instead of the graphical tools.
