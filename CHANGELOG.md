@@ -11,9 +11,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - On iPhone and iPad, an image pasted into a chat's message field is added as an attachment, as on web. Text copied with it still goes into the field. This needs the new app build.
+- On iPhone and iPad, Rakazo appears in the share sheet. Share a link, text, photos or files from any app, pick a bot, and it lands in that bot's message field as a draft. This needs the new app build.
 - More keyboard shortcuts on web and desktop: start a group chat, connect apps, open the chat's details panel, jump to the message box and dictate. Cmd/Ctrl+/ lists every shortcut, as do **Keyboard shortcuts** in the command menu and **Help** in the desktop app.
 - Cmd/Ctrl+F in the desktop app finds text in the open chat, highlighting every match and stepping through them. Searching bots moves to Cmd/Ctrl+Shift+F.
 - The web app is fully translated into Turkish. Before, large parts of it fell back to English.
+- When the desktop app runs its own local server, **Settings** now shows the **Let bots use this computer** switch, as it does when connected to another server.
 - Self-hosters can make DeepSeek the deployment's default model with `PI_DEFAULT_PROVIDER=deepseek` and `DEEPSEEK_API_KEY` ([self-hosted models](docs/self-host-models.md)).
 - The long-wait "still needs an answer" reminder, and the notice that a waiting chat was stopped, now show as browser and desktop alerts, not only on phones.
 
