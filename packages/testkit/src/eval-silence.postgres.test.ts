@@ -79,10 +79,12 @@ describe.skipIf(!databaseAvailable)("routine silence eval through the product", 
               JSON.stringify(request.messages),
             );
             const toldAt = new Date(told?.[1] ?? told?.[2] ?? "");
-            const due = new Date();
+            const due = new Date(toldAt);
             due.setUTCHours(9, 0, 0, 0);
-            if (due.getTime() < Date.now() - 60_000) due.setUTCDate(due.getUTCDate() + 1);
-            expect(Math.abs(toldAt.getTime() - due.getTime())).toBeLessThan(60_000);
+            expect(toldAt.getTime() - due.getTime()).toBeGreaterThanOrEqual(0);
+            expect(toldAt.getTime() - due.getTime()).toBeLessThan(60_000);
+            expect(toldAt.getTime()).toBeGreaterThan(Date.now() - 60_000);
+            expect(toldAt.getTime()).toBeLessThan(Date.now() + 86_400_000);
             if (index === 1 && replies[0] === releaseReply)
               expect(JSON.stringify(request.messages)).toContain(releaseReply);
           },
