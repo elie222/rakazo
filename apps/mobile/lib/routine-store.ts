@@ -149,15 +149,17 @@ export async function saveBotRoutine(
   try {
     await queryClient.cancelQueries({ queryKey, exact: true });
     const context = await requestContext;
+    if (hashKey(routinesQuery(botId).queryKey) !== scope) throw new Error("Space changed");
     const saved =
       "create" in request
         ? await rpc("routines/create", request.create, { requestContext: context })
         : await rpc("routines/update", request.update, { requestContext: context });
     if (hashKey(routinesQuery(botId).queryKey) === scope) {
+      // An update only replaces its row, so a routine deleted meanwhile stays gone.
       await writeSaved(queryClient, queryKey, (rows) =>
-        rows?.some((row) => row.id === saved.id)
-          ? rows.map((row) => (row.id === saved.id ? saved : row))
-          : [...(rows ?? []), saved],
+        "create" in request
+          ? [...(rows ?? []), saved]
+          : (rows ?? []).map((row) => (row.id === saved.id ? saved : row)),
       );
     }
     return saved;
