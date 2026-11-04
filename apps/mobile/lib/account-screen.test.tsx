@@ -9,7 +9,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Account from "../app/(settings)/account";
 import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode, signOut } from "./api";
 import { replaceWithSignIn } from "./auth-routing";
-import { endCallBeforeSignOut } from "./call-session";
+import { endCallBeforeSessionEnd } from "./call-session";
 import { promptAccountDeletion } from "./delete-account-prompt";
 import { registerSettingsSheet } from "./settings-sheet";
 
@@ -204,7 +204,7 @@ vi.mock("./archived-chats", () => ({
   loadArchivedChats: vi.fn(async () => ({ bots: [], groups: [] })),
 }));
 vi.mock("./auth-routing", () => ({ replaceWithSignIn: vi.fn() }));
-vi.mock("./call-session", () => ({ endCallBeforeSignOut: vi.fn(async () => undefined) }));
+vi.mock("./call-session", () => ({ endCallBeforeSessionEnd: vi.fn(async () => undefined) }));
 vi.mock("./delete-account-prompt", () => ({ promptAccountDeletion: vi.fn() }));
 vi.mock("./i18n", () => {
   // Stable across renders, as the real hook's is.
@@ -557,7 +557,7 @@ it("hides Messaging when no chat app is connected to the server", async () => {
 it("hangs up the active call before signing out", async () => {
   const view = await renderAccount();
   const order: string[] = [];
-  vi.mocked(endCallBeforeSignOut).mockImplementationOnce(async () => {
+  vi.mocked(endCallBeforeSessionEnd).mockImplementationOnce(async () => {
     order.push("hang-up");
   });
   vi.mocked(signOut).mockImplementationOnce(async () => {

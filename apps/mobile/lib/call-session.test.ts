@@ -4,7 +4,7 @@ import type { CallClip, CallDeps, CallEnded, DictationHandlers } from "./call-se
 import {
   ExpectedTurnFailure,
   endCall,
-  endCallBeforeSignOut,
+  endCallBeforeSessionEnd,
   getSnapshot,
   SIGN_OUT_HANG_UP_MS,
   setCallProviderTranscribe,
@@ -205,7 +205,7 @@ describe("mobile call session", () => {
     startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
     await flush();
     let finished = false;
-    const hangingUp = endCallBeforeSignOut().then(() => {
+    const hangingUp = endCallBeforeSessionEnd().then(() => {
       finished = true;
     });
     await flush();
@@ -224,7 +224,7 @@ describe("mobile call session", () => {
     await flush();
     vi.useFakeTimers();
     try {
-      const hangingUp = endCallBeforeSignOut();
+      const hangingUp = endCallBeforeSessionEnd();
       let finished = false;
       void hangingUp.then(() => {
         finished = true;
@@ -1798,7 +1798,7 @@ describe("mobile call on a session change", () => {
     startCall({ botId: "bot-1", botName: "Ada" }, deps);
     await flush();
 
-    await endCallBeforeSignOut();
+    await endCallBeforeSessionEnd();
     await clearSessionToken();
 
     expect(rpc).toHaveBeenCalledWith(

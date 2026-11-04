@@ -26,6 +26,7 @@ import {
   applyMobileThreadEvent,
   blockText,
   captureApiRequestContext,
+  configureSessionEndHangUp,
   rpc,
   subscribeThread,
 } from "./api";
@@ -314,15 +315,16 @@ export function endCall(): void {
   emit();
 }
 
-/** How long a sign-out waits for a call's server hang-up before it signs out anyway. */
+/** How long a sign-out or server switch waits for the hang-up before it continues anyway. */
 export const SIGN_OUT_HANG_UP_MS = 3_000;
 
 /**
  * Hangs up while the session still exists, waiting at most `SIGN_OUT_HANG_UP_MS` for pending
- * sends and the hang-up. The sign-out that follows revokes the session, so a hang-up still
- * queued after that is dropped: by then its request may carry no one's or another user's token.
+ * sends and the hang-up. What follows — a sign-out or a server switch — discards the session,
+ * so a hang-up still queued after that is dropped: by then its request may carry no one's or
+ * another user's token.
  */
-export async function endCallBeforeSignOut(): Promise<void> {
+export async function endCallBeforeSessionEnd(): Promise<void> {
   endCall();
   let timer: ReturnType<typeof setTimeout> | undefined;
   await Promise.race([
@@ -333,6 +335,9 @@ export async function endCallBeforeSignOut(): Promise<void> {
   ]);
   clearTimeout(timer);
 }
+
+// A server switch discards the old server's session; the call hangs up on it first.
+configureSessionEndHangUp(endCallBeforeSessionEnd);
 
 export function toggleMute(): void {
   if (!state) return;
