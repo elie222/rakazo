@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 public class RakazoFileDropModule: Module {
   private struct Limits {
     var enabled = false
+    var maxBytes = 0
     var maxFiles = 0
   }
 
@@ -18,6 +19,10 @@ public class RakazoFileDropModule: Module {
 
   private static let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
     .appendingPathComponent("dropped", isDirectory: true)
+  // Matches the composer's testID, so other text fields keep their normal paste.
+  private static let composerID = "chat-composer"
+  // Room for a photo that is over the attachment limit until the chat resizes it.
+  private static let resizeHeadroom = 4
   // Formats attachments accept as they are; anything else is re-encoded as JPEG.
   private static let keptTypes: [UTType] = [.png, .jpeg, .gif, .webP]
   private let worker = DispatchQueue(label: "rakazo.file-drop")
@@ -27,9 +32,11 @@ public class RakazoFileDropModule: Module {
 
     Events("onFilesDropped", "onDropStarted")
 
-    // Size limits are applied when the chat reads the files, after large photos are resized.
     Function("setDropTarget") { (enabled: Bool, maxBytes: Double, maxFiles: Int) in
-      let next = Limits(enabled: enabled && maxBytes.isFinite && maxBytes > 0, maxFiles: max(0, maxFiles))
+      let usable = enabled && maxBytes.isFinite && maxBytes > 0
+      let next = Limits(
+        enabled: usable, maxBytes: usable ? Int(min(maxBytes, Double(Int.max / 8))) : 0,
+        maxFiles: max(0, maxFiles))
       DispatchQueue.main.async { Self.limits = next }
     }
     AsyncFunction("release") { (uri: String) in
@@ -56,8 +63,16 @@ public class RakazoFileDropModule: Module {
   }
 
   private static func acceptsImages(_ view: AnyObject) -> Bool {
-    limits.enabled && limits.maxFiles > 0 && (view as? UITextView)?.isEditable == true
-      && UIPasteboard.general.hasImages
+    guard limits.enabled, limits.maxFiles > 0, let textView = view as? UITextView,
+      textView.isEditable, isComposer(textView)
+    else { return false }
+    return UIPasteboard.general.hasImages
+  }
+
+  // React Native puts the testID on the text view or on the component view around it.
+  private static func isComposer(_ view: UIView) -> Bool {
+    sequence(first: view, next: { $0.superview }).prefix(3)
+      .contains { $0.accessibilityIdentifier == composerID }
   }
 
   /// Wraps paste on React Native's multiline text view. Only that class changes; other
@@ -87,7 +102,7 @@ public class RakazoFileDropModule: Module {
           original(view, pasteAction, sender)
           return
         }
-        module.attach(pasteboard.itemProviders, maxFiles: RakazoFileDropModule.limits.maxFiles)
+        module.attach(pasteboard.itemProviders, limits: RakazoFileDropModule.limits)
         if pasteboard.hasStrings { original(view, pasteAction, sender) }
       }
       class_replaceMethod(
@@ -95,30 +110,39 @@ public class RakazoFileDropModule: Module {
     }
   }()
 
-  private func attach(_ providers: [NSItemProvider], maxFiles: Int) {
+  private func attach(_ providers: [NSItemProvider], limits: Limits) {
     let images = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.image.identifier) }
     guard !images.isEmpty else { return }
-    let kept = Array(images.prefix(maxFiles))
+    let kept = Array(images.prefix(limits.maxFiles))
+    let maxBytes = limits.maxBytes * Self.resizeHeadroom
     // Bound the names included in the notice, as Android does.
     let skipped = Array(repeating: "image", count: min(images.count - kept.count, 6))
     sendEvent("onDropStarted", [:])
     worker.async {
       let directory = Self.root.appendingPathComponent(UUID().uuidString, isDirectory: true)
-      let files = kept.compactMap { self.copy($0, into: directory) }
+      let files = kept.compactMap { self.copy($0, into: directory, maxBytes: maxBytes) }
       if files.isEmpty { try? FileManager.default.removeItem(at: directory) }
       self.sendEvent("onFilesDropped", ["files": files, "skipped": skipped])
     }
   }
 
-  private func copy(_ provider: NSItemProvider, into directory: URL) -> [String: Any]? {
+  private func copy(_ provider: NSItemProvider, into directory: URL, maxBytes: Int) -> [String: Any]? {
     let registered = provider.registeredTypeIdentifiers.compactMap { UTType($0) }
     var type = registered.first { Self.keptTypes.contains($0) }
     var data = type.flatMap { load(provider, $0) }
     if data == nil {
       type = .jpeg
-      data = load(provider, .image).flatMap { UIImage(data: $0)?.jpegData(compressionQuality: 0.9) }
+      data = load(provider, .image).flatMap { source in
+        source.count > maxBytes ? source : UIImage(data: source)?.jpegData(compressionQuality: 0.9)
+      }
     }
     guard let data, let type, let ext = type.preferredFilenameExtension else { return nil }
+    let name = "image.\(ext)"
+    let mimeType = type.preferredMIMEType ?? "image/jpeg"
+    // Too large even to resize: the chat reports it as over the limit without a copy.
+    if data.count > maxBytes {
+      return ["name": name, "mimeType": mimeType, "size": Double(data.count)]
+    }
     let destination = directory.appendingPathComponent(UUID().uuidString)
     do {
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -128,8 +152,8 @@ public class RakazoFileDropModule: Module {
     }
     var file: [String: Any] = [
       "uri": destination.absoluteString,
-      "name": "image.\(ext)",
-      "mimeType": type.preferredMIMEType ?? "image/jpeg",
+      "name": name,
+      "mimeType": mimeType,
       "size": Double(data.count),
     ]
     // Lets the chat shrink a large photo the same way it does one picked from the library.

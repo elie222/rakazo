@@ -30,6 +30,7 @@ const state = vi.hoisted(() => ({
   base64: vi.fn(),
   optionalNativeModule: vi.fn(),
   loadManipulator: vi.fn(),
+  deleted: [] as string[],
 }));
 
 vi.mock("expo-file-system", () => ({
@@ -42,6 +43,9 @@ vi.mock("expo-file-system", () => ({
     }
     base64() {
       return state.base64(this.uri);
+    }
+    delete() {
+      state.deleted.push(this.uri);
     }
   },
 }));
@@ -101,6 +105,7 @@ beforeEach(async () => {
   state.render.mockResolvedValue({ saveAsync: state.save });
   state.save.mockResolvedValue({ uri: "file:///fake/photo-resized.jpg" });
   state.base64.mockResolvedValue("aGVsbG8=");
+  state.deleted.length = 0;
 });
 
 afterEach(() => vi.restoreAllMocks());
@@ -303,4 +308,25 @@ it("shrinks a large pasted photo before checking its size", async () => {
   expect(state.base64).toHaveBeenCalledExactlyOnceWith("file:///fake/photo-resized.jpg");
   expect(result.skipped).toEqual([]);
   expect(result.attachments[0]).toMatchObject({ name: "image.jpg", mimeType: "image/jpeg" });
+  expect(state.deleted).toEqual(["file:///fake/photo-resized.jpg"]);
+});
+
+it("does not resize a pasted photo once the draft is full", async () => {
+  const result = await readDroppedFiles(
+    [
+      {
+        uri: "file:///cache/dropped/paste",
+        name: "image.jpeg",
+        mimeType: "image/jpeg",
+        size: 1024,
+        width: 8000,
+        height: 6000,
+      },
+    ],
+    ATTACHMENT_MAX_COUNT,
+  );
+  expect(state.manipulate).not.toHaveBeenCalled();
+  expect(result.skipped).toEqual([
+    { name: "image.jpeg", reason: `max ${ATTACHMENT_MAX_COUNT} attachments` },
+  ]);
 });

@@ -240,13 +240,17 @@ export async function readDroppedFiles(
     reason: attachmentCountSkipReason(maxCount),
   }));
   const attachments: PickedAttachment[] = [];
+  // Resized copies live outside the dropped-file cache, so they are deleted here.
+  const resized: string[] = [];
   try {
     for (const file of files) {
       let { uri, name, size } = file;
       let mimeType = inferAttachmentMimeType(name, file.mimeType || undefined);
-      if (uri && file.width && file.height && mimeType?.startsWith("image/")) {
+      const full = existingCount + attachments.length >= maxCount;
+      if (!full && uri && file.width && file.height && mimeType?.startsWith("image/")) {
         const prepared = await prepareImage(uri, name, mimeType, file.width, file.height);
         if (prepared.uri !== uri) {
+          resized.push(prepared.uri);
           ({ uri, name } = prepared);
           mimeType = inferAttachmentMimeType(name, prepared.mimeType ?? undefined);
           size = new File(uri).info().size ?? 0;
@@ -282,9 +286,10 @@ export async function readDroppedFiles(
       attachments.push(pickedAttachment({ name, mimeType, size, contentBase64, previewUri }));
     }
   } finally {
-    await Promise.allSettled(
-      files.flatMap((file) => (file.uri ? [releaseDroppedFile(file.uri)] : [])),
-    );
+    await Promise.allSettled([
+      ...files.flatMap((file) => (file.uri ? [releaseDroppedFile(file.uri)] : [])),
+      ...resized.map(async (uri) => new File(uri).delete()),
+    ]);
   }
   return { attachments, skipped };
 }
