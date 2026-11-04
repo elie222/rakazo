@@ -93,7 +93,7 @@ export async function provisionMessagingIdentity(
   }
 
   const membership = await prisma.spaceMember.findFirst({
-    where: { userId: user.id },
+    where: { userId: user.id, space: { deletingAt: null } },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
   const spaceId = membership?.spaceId ?? (await bootstrapUserSpace(prisma, user, env)).spaceId;
