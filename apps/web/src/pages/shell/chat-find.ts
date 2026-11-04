@@ -9,6 +9,8 @@ function fold(text: string) {
   return text.toLocaleLowerCase().replaceAll("ς", "σ");
 }
 
+const SPACE = /\s/;
+
 /** One code unit of a message's lowercased text and the source character it came from. */
 type Unit = { node: Text; start: number; end: number } | null;
 
@@ -22,15 +24,29 @@ function searchable(node: Text) {
 /**
  * Lowercases a message's visible text one character at a time, remembering where each
  * resulting code unit came from, so a match maps back to the DOM even when lowercasing
- * changes a character's length or the match crosses a link or bold text.
+ * changes a character's length or the match crosses a link or bold text. Whitespace collapses
+ * the way the page shows it, except in code blocks.
  */
 function messageText(message: Element) {
-  const walker = message.ownerDocument.createTreeWalker(message, NodeFilter.SHOW_TEXT);
+  const walker = message.ownerDocument.createTreeWalker(
+    message,
+    NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
+  );
   let text = "";
   const units: Unit[] = [];
   let block: Element | null = null;
-  for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null) {
+  for (let current = walker.nextNode(); current; current = walker.nextNode()) {
+    if (current.nodeType === Node.ELEMENT_NODE) {
+      // A line break shows as one, so the words either side of it never form a match.
+      if ((current as Element).tagName === "BR") {
+        text += "\n";
+        units.push(null);
+      }
+      continue;
+    }
+    const node = current as Text;
     if (!searchable(node)) continue;
+    const preserved = Boolean(node.parentElement?.closest("pre"));
     const nodeBlock = node.parentElement?.closest(BLOCK) ?? null;
     // Separate paragraphs, so the end of one and the start of the next never form a match.
     if (block && nodeBlock !== block) {
@@ -41,6 +57,14 @@ function messageText(message: Element) {
     const value = node.nodeValue ?? "";
     for (let at = 0; at < value.length; ) {
       const char = String.fromCodePoint(value.codePointAt(at) ?? 0);
+      if (!preserved && SPACE.test(char)) {
+        if (!SPACE.test(text.at(-1) ?? "")) {
+          text += " ";
+          units.push({ node, start: at, end: at + char.length });
+        }
+        at += char.length;
+        continue;
+      }
       const lower = fold(char);
       for (let unit = 0; unit < lower.length; unit++) {
         units.push({ node, start: at, end: at + char.length });

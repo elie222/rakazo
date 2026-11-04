@@ -33,6 +33,19 @@ describe("findTextRanges", () => {
     expect(found(transcript("<p>alpha</p><p>beta</p>"), "alphabeta")).toEqual([]);
   });
 
+  it("matches whitespace the way the page shows it, but keeps code blocks exact", () => {
+    const root = transcript("<p>alpha\n  beta</p>", "<pre>one  two</pre>");
+    expect(found(root, "alpha beta")).toEqual(["alpha\n  beta"]);
+    expect(found(root, "one two")).toEqual([]);
+    expect(found(root, "one  two")).toEqual(["one  two"]);
+  });
+
+  it("never joins words across a line break", () => {
+    const root = transcript("<p>hello<br>world</p>");
+    expect(found(root, "helloworld")).toEqual([]);
+    expect(found(root, "world")).toEqual(["world"]);
+  });
+
   it("keeps searching text whose lowercase is longer", () => {
     // İ lowercases to two code units.
     const root = transcript("<p>İstanbul trip plan</p>");

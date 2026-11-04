@@ -76,8 +76,14 @@ export function ChatFindBar({
     };
     // A streaming reply changes the transcript many times a second; rescanning a few times a
     // second keeps the count current without searching on every token.
-    const observer = new MutationObserver(() => {
-      timer ??= setTimeout(refresh, REFRESH_MS);
+    // The bar sits in the column it watches; its own count changing is not a change to the chat.
+    const observer = new MutationObserver((records) => {
+      const chatChanged = records.some((record) => {
+        const target =
+          record.target instanceof Element ? record.target : record.target.parentElement;
+        return !target?.closest('[data-testid="chat-find"]');
+      });
+      if (chatChanged) timer ??= setTimeout(refresh, REFRESH_MS);
     });
     observer.observe(transcript, { childList: true, subtree: true, characterData: true });
     return () => {
