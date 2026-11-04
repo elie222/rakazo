@@ -88,7 +88,13 @@ export function ChatFindBar({
       });
       if (chatChanged) timer ??= setTimeout(refresh, REFRESH_MS);
     });
-    observer.observe(transcript, { childList: true, subtree: true, characterData: true });
+    observer.observe(transcript, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      // Opening or closing a disclosure (a tool step) changes which text is visible.
+      attributeFilter: ["hidden", "open", "aria-expanded", "data-open", "data-closed"],
+    });
     return () => {
       observer.disconnect();
       clearTimeout(timer);
