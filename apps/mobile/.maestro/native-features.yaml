@@ -196,11 +196,3 @@ tags:
 - extendedWaitUntil:
     notVisible: "Hang up"
     timeout: 15000
-
-# Wiping app data while Android still tears down the call screens' task kills the next
-# flow's fresh launch, so stop the app and give that teardown time to finish.
-- stopApp
-- extendedWaitUntil:
-    visible: "Android finished removing the call task"
-    timeout: 15000
-    optional: true

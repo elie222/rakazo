@@ -106,6 +106,7 @@ async function main() {
       let flowFailed = false;
       let flowError: unknown;
       try {
+        await settleApp();
         if (window) resizeEmulator(window.size, window.density);
         await runFlow(flow, fixture);
       } catch (error) {
@@ -137,6 +138,15 @@ async function main() {
     await handles.stop().catch(() => undefined);
     await rm(DATA_DIR, { recursive: true, force: true });
   }
+}
+
+/**
+ * Stop the app left by the previous flow and let Android finish removing its task. A flow
+ * that clears app data during that teardown has its fresh launch killed with the old task.
+ */
+async function settleApp() {
+  execFileSync("adb", ["shell", "am", "force-stop", "com.rakazo.app"], { stdio: "inherit" });
+  await new Promise((resolve) => setTimeout(resolve, 10_000));
 }
 
 function resizeEmulator(size: string, density: string) {
