@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { commitBotUpdate } from "./bot-update.js";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
-import { runAsSystem, runAsTenant } from "./row-security.js";
+import { installDbContext, runAsSystem, runAsTenant } from "./row-security.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =
@@ -133,6 +133,14 @@ describePostgres("commitBotUpdate against a moving default avatar set (PostgreSQ
     }
   }
 
+  /**
+   * A barrier client checked out as the job system, as the runtime role sees it.
+   * The lock probes below run against row-level-security tables, which hide
+   * their rows from a context-free connection, so the probe would lock nothing;
+   * the settings the checkout applies stay on the client for its transaction.
+   */
+  const barrierClient = (reason: string) => runAsSystem(reason, () => db.pool.connect());
+
   /** An operation set whose failures are handled at once and drained at cleanup. */
   function started() {
     const ops: Array<Promise<unknown>> = [];
@@ -181,7 +189,7 @@ describePostgres("commitBotUpdate against a moving default avatar set (PostgreSQ
 
   it("leaves the bot on the newest default when a newer save lands while the restyle waits on the thread lock", async () => {
     const ops = started();
-    const holder = await db.pool.connect();
+    const holder = await barrierClient("thread lock barrier");
     try {
       // Request A saves the default rakazo, then its restyle reads the owner's row
       // and waits on the thread lock with the share held.
@@ -220,7 +228,7 @@ describePostgres("commitBotUpdate against a moving default avatar set (PostgreSQ
 
   it("holds off a newer save of the default until the restyle's bot write commits", async () => {
     const ops = started();
-    const holder = await db.pool.connect();
+    const holder = await barrierClient("bot row lock barrier");
     try {
       await runAsSystem("test fixture", () =>
         prisma.user.update({ where: { id: ids.userId }, data: { botAvatarSet: "rakazo" } }),
@@ -260,10 +268,13 @@ describePostgres("commitBotUpdate against a moving default avatar set (PostgreSQ
   it("does not deadlock when a timezone save and a routine wake hold the user and the thread", async () => {
     const ops = started();
     // The probe legs and their monitor get their own pool: the app pool's four
-    // connections must stay free for the restyle's transaction.
+    // connections must stay free for the restyle's transaction. The pool carries
+    // the database contexts, so each leg runs as the job system would under the
+    // runtime role; a context-free leg sees no routines to lock.
     const side = new Pool({ connectionString: databaseUrl, max: 4 });
-    const routineWake = await side.connect();
-    const zoneSave = await side.connect();
+    installDbContext(side);
+    const routineWake = await runAsSystem("routine wake probe leg", () => side.connect());
+    const zoneSave = await runAsSystem("timezone save probe leg", () => side.connect());
     const monitor = await side.connect();
     const deadlocks = async () => {
       const { rows } = await monitor.query<{ deadlocks: string }>(
