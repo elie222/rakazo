@@ -229,10 +229,12 @@ vi.mock("./delete-account-prompt", () => ({ promptAccountDeletion: vi.fn() }));
 const haptics = vi.hoisted(() => ({
   enabled: true,
   listeners: new Set<() => void>(),
+  load: vi.fn(async () => undefined),
   save: vi.fn(async (_value: boolean) => undefined),
 }));
 vi.mock("./haptics", () => ({
   getHapticsEnabled: () => haptics.enabled,
+  loadHapticsPreference: haptics.load,
   setHapticsEnabled: (value: boolean) => {
     haptics.enabled = value;
     for (const listener of haptics.listeners) listener();
@@ -323,6 +325,7 @@ beforeEach(() => {
   haptics.enabled = true;
   haptics.listeners.clear();
   haptics.save.mockReset().mockResolvedValue(undefined);
+  haptics.load.mockReset().mockResolvedValue(undefined);
   vi.mocked(fetchAccountSecurity).mockResolvedValue(security());
 });
 
@@ -391,6 +394,33 @@ it("shows a device haptics switch that follows and saves the local preference", 
   await view.press("Haptics");
   expect(haptics.save).toHaveBeenLastCalledWith(false);
   expect(toggle?.getAttribute("aria-checked")).toBe("false");
+});
+
+it("requests the cached haptics loader on each settings visit without repeating it on rerenders", async () => {
+  const first = await renderAccount();
+  expect(haptics.load).toHaveBeenCalledOnce();
+  await first.press("Haptics");
+  expect(haptics.load).toHaveBeenCalledOnce();
+  await act(async () => root?.unmount());
+  root = undefined;
+  first.screen.remove();
+  await renderAccount();
+  expect(haptics.load).toHaveBeenCalledTimes(2);
+});
+
+it("reflects a saved off choice recovered by the settings focus loader", async () => {
+  haptics.load.mockImplementationOnce(async () => {
+    haptics.enabled = false;
+    for (const listener of haptics.listeners) listener();
+  });
+  const view = await renderAccount();
+  expect(
+    view.screen
+      .querySelector('[role="switch"][aria-label="Haptics"]')
+      ?.getAttribute("aria-checked"),
+  ).toBe("false");
+  expect(haptics.load).toHaveBeenCalledOnce();
+  expect(haptics.save).not.toHaveBeenCalled();
 });
 
 it("keeps a failed off choice in memory and offers a native retry of that same choice", async () => {

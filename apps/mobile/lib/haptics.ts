@@ -27,23 +27,26 @@ export function subscribeHaptics(listener: () => void): () => void {
 
 export function loadHapticsPreference(): Promise<void> {
   if (loadTask) return loadTask;
-  loadTask = (async () => {
+  // Cache the task before storage runs, including adapters that can throw synchronously.
+  loadTask = Promise.resolve().then(async () => {
     try {
       const stored = await SecureStore.getItemAsync(STORAGE_KEY);
       if (!changedLocally) enabled = stored !== "false";
-    } catch {
-      // Keep the default or an explicit choice when device storage is unavailable.
-    } finally {
       loaded = true;
+    } catch {
+      // Allow a later retry without enabling feedback or undoing an explicit choice.
+      loadTask = undefined;
+    } finally {
       notify();
     }
-  })();
+  });
   return loadTask;
 }
 
 export function setHapticsEnabled(value: boolean): Promise<void> {
   enabled = value;
   changedLocally = true;
+  loaded = true;
   notify();
   // Keep rapid toggles in order on disk without delaying the switch or feedback gate.
   const writing = writeTask.then(() => SecureStore.setItemAsync(STORAGE_KEY, String(value)));

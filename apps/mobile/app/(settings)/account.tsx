@@ -50,7 +50,12 @@ import {
 import { useApprovalSettings } from "../../lib/approval-settings";
 import { archivedChatCounts, loadArchivedChats } from "../../lib/archived-chats";
 import { replaceWithSignIn } from "../../lib/auth-routing";
-import { getHapticsEnabled, setHapticsEnabled, subscribeHaptics } from "../../lib/haptics";
+import {
+  getHapticsEnabled,
+  loadHapticsPreference,
+  setHapticsEnabled,
+  subscribeHaptics,
+} from "../../lib/haptics";
 import { dateLocaleForUi, useI18n } from "../../lib/i18n";
 import type { LiveNotificationSettings } from "../../lib/live-notifications";
 import {
@@ -303,6 +308,7 @@ export default function Account() {
 
   useFocusEffect(
     useCallback(() => {
+      void loadHapticsPreference();
       void loadTrustedLinkSites().catch(() => undefined);
     }, []),
   );

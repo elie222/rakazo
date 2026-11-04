@@ -109,6 +109,7 @@ describe("mobile haptics", () => {
     const { loadHapticsPreference } = await import("./haptics");
     const first = loadHapticsPreference();
     expect(loadHapticsPreference()).toBe(first);
+    await Promise.resolve();
     expect(storage.getItemAsync).toHaveBeenCalledOnce();
     read.resolve(null);
     await first;
@@ -265,10 +266,106 @@ describe("mobile haptics", () => {
     expect(reloaded.getHapticsEnabled()).toBe(false);
   });
 
-  it("keeps the default after a storage read fails", async () => {
+  it("keeps feedback gated when a stored off preference cannot be read", async () => {
+    values.set("rakazo.haptics", "false");
     storage.getItemAsync.mockRejectedValue(new Error("storage unavailable"));
     const haptics = await import("./haptics");
     await expect(haptics.loadHapticsPreference()).resolves.toBeUndefined();
+    haptics.hapticSelection();
+    haptics.hapticImpact();
+    haptics.hapticSuccess();
+    expectNoFeedback();
+    expect(values.get("rakazo.haptics")).toBe("false");
+  });
+
+  it("allows an explicit on choice to recover from an unread saved preference", async () => {
+    values.set("rakazo.haptics", "false");
+    storage.getItemAsync.mockRejectedValue(new Error("storage unavailable"));
+    const haptics = await import("./haptics");
+    await haptics.loadHapticsPreference();
+    haptics.hapticSelection();
+    expectNoFeedback();
+    await haptics.setHapticsEnabled(true);
+    haptics.hapticSelection();
+    haptics.hapticImpact();
+    haptics.hapticSuccess();
+    expect(feedback.selectionAsync).toHaveBeenCalledOnce();
+    expect(feedback.impactAsync).toHaveBeenCalledExactlyOnceWith("light");
+    expect(feedback.notificationAsync).toHaveBeenCalledExactlyOnceWith("success");
+    expect(values.get("rakazo.haptics")).toBe("true");
+  });
+
+  it.each([false, true])(
+    "honors an explicit %s choice before a late read failure",
+    async (value) => {
+      let failRead!: (error: Error) => void;
+      storage.getItemAsync.mockReturnValue(
+        new Promise<never>((_resolve, reject) => {
+          failRead = reject;
+        }),
+      );
+      const save = deferred<void>();
+      storage.setItemAsync.mockReturnValue(save.promise);
+      const haptics = await import("./haptics");
+      const loading = haptics.loadHapticsPreference();
+      const writing = haptics.setHapticsEnabled(value);
+      haptics.hapticSelection();
+      expect(feedback.selectionAsync).toHaveBeenCalledTimes(value ? 1 : 0);
+      await Promise.resolve();
+      failRead(new Error("late read failure"));
+      await loading;
+      expect(haptics.getHapticsEnabled()).toBe(value);
+      haptics.hapticSuccess();
+      expect(feedback.notificationAsync).toHaveBeenCalledTimes(value ? 1 : 0);
+      save.resolve();
+      await writing;
+    },
+  );
+
+  it.each(["false", "true"])(
+    "retries an unread saved %s preference and caches its successful read",
+    async (stored) => {
+      values.set("rakazo.haptics", stored);
+      storage.getItemAsync.mockRejectedValueOnce(new Error("temporarily unavailable"));
+      const haptics = await import("./haptics");
+      await haptics.loadHapticsPreference();
+      haptics.hapticSelection();
+      expectNoFeedback();
+      const retry = haptics.loadHapticsPreference();
+      expect(haptics.loadHapticsPreference()).toBe(retry);
+      await retry;
+      expect(haptics.getHapticsEnabled()).toBe(stored === "true");
+      haptics.hapticSelection();
+      expect(feedback.selectionAsync).toHaveBeenCalledTimes(stored === "true" ? 1 : 0);
+      await haptics.loadHapticsPreference();
+      expect(storage.getItemAsync).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it("can retry storage that throws synchronously without caching the failed task", async () => {
+    values.set("rakazo.haptics", "false");
+    storage.getItemAsync.mockImplementationOnce(() => {
+      throw new Error("sync storage failure");
+    });
+    const haptics = await import("./haptics");
+    const first = haptics.loadHapticsPreference();
+    expect(haptics.loadHapticsPreference()).toBe(first);
+    await first;
+    haptics.hapticSelection();
+    expectNoFeedback();
+    await haptics.loadHapticsPreference();
+    expect(haptics.getHapticsEnabled()).toBe(false);
+    expect(storage.getItemAsync).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a newer explicit choice when retrying an earlier failed read", async () => {
+    values.set("rakazo.haptics", "false");
+    storage.getItemAsync.mockRejectedValueOnce(new Error("temporarily unavailable"));
+    const haptics = await import("./haptics");
+    await haptics.loadHapticsPreference();
+    const retry = haptics.loadHapticsPreference();
+    const saving = haptics.setHapticsEnabled(true);
+    await Promise.all([retry, saving]);
     expect(haptics.getHapticsEnabled()).toBe(true);
     haptics.hapticSelection();
     expect(feedback.selectionAsync).toHaveBeenCalledOnce();
