@@ -9,6 +9,12 @@ import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
 import { HostAwareSandbox } from "./host-aware-sandbox.js";
 
+// The plan's size is read from billing, which these Prisma doubles do not model.
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@rakazo/db")>()),
+  planComputerSize: vi.fn(async () => "standard"),
+}));
+
 const context = {
   operationId: "test",
   traceId: "test",

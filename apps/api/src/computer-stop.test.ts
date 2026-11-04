@@ -9,6 +9,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
 
+// The plan's size is read from billing, which these Prisma doubles do not model.
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@rakazo/db")>()),
+  planComputerSize: vi.fn(async () => "standard"),
+}));
+
 function deferred() {
   let resolve!: () => void;
   const promise = new Promise<void>((done) => {
