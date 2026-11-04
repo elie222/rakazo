@@ -1,10 +1,11 @@
 import { expect, it, vi } from "vitest";
 import type { ExecutorDeps } from "./executor-deps.js";
+import type * as ModelSelectionModule from "./model-selection.js";
 import { resolveConnectedModelKey } from "./run-model.js";
 
 const { validate } = vi.hoisted(() => ({ validate: vi.fn(async () => "stop-before-credentials") }));
 vi.mock("./model-selection.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./model-selection.js")>()),
+  ...(await importOriginal<typeof ModelSelectionModule>()),
   validateConnectedModelChoice: validate,
 }));
 it("validates live-only models against the caller's account catalog before reading credentials", async () => {

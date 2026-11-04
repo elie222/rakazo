@@ -536,7 +536,12 @@ function toAgentTool(
                 };
               }
               if (tool.name === FIND_TOOL) {
-                const found = findTools(deferred, args);
+                // Outside computer mode, screen tools are reached by entering it, not by search.
+                const findable =
+                  host.computerModeAllowed && (host.depth !== 0 || !host.computerModeAllowed())
+                    ? deferred.filter((candidate) => !COMPUTER_MODE_TOOLS.has(candidate.name))
+                    : deferred;
+                const found = findTools(findable, args);
                 return {
                   content: [{ type: "text", text: JSON.stringify(found) }],
                   details: found,

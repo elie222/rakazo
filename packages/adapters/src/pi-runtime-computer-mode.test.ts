@@ -417,6 +417,33 @@ it("runs the user's own screen tools only in computer mode", async () => {
     "main",
   ]);
 });
+it("finds screen tools only in computer mode", async () => {
+  const input = request();
+  input.tools = builtinAgentTools.filter((t) => ["open_path", "launch_app"].includes(t.name));
+  script([
+    ["find_tool", { query: "open a file" }],
+    ["enter_computer_mode", { goal: "Open it" }],
+    ["find_tool", { query: "open a file" }],
+    ["leave_computer_mode", { summary: "Done" }],
+    [undefined],
+  ]);
+  await run(input);
+  const findResults = fake.stream.mock.calls
+    .map(
+      (c) =>
+        (
+          c[1] as {
+            messages: Array<{ role: string; toolName?: string; content: Array<{ text?: string }> }>;
+          }
+        ).messages,
+    )
+    .at(-1)!
+    .filter((message) => message.role === "toolResult" && message.toolName === "find_tool")
+    .map((message) => message.content.map((part) => part.text ?? "").join(""));
+  expect(findResults).toHaveLength(2);
+  expect(findResults[0]).not.toContain("open_path");
+  expect(findResults[1]).toContain("open_path");
+});
 it("switches main -> computer -> main before any GUI effect, preserving namespace and effort", async () => {
   const input = request();
   script([
