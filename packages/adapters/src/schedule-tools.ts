@@ -16,6 +16,7 @@ import {
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { runAsSystemInTransaction } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 
 import { localDateTime } from "./current-time.js";
 import { validateRoutineWatch } from "./routine-watch.js";
@@ -359,9 +360,15 @@ export async function changeUserTimezone(
       }
     });
   });
-  // Enqueue after the commit, like every routine write; the reconciler repairs a miss.
+  // Enqueue after the commit, like every routine write. The save is committed by now, so
+  // a failing enqueue is logged instead of thrown: the reconciler repairs the missed
+  // wake, and the caller keeps the successful save. Every wakeup is attempted.
   for (const routine of woken) {
-    await deps.jobs.enqueue(routineWakeupJob(routine.id, routine.nextRunAt));
+    await deps.jobs
+      .enqueue(routineWakeupJob(routine.id, routine.nextRunAt))
+      .catch((error: unknown) => {
+        getLogger().error("timezone move wakeup enqueue", error);
+      });
   }
 }
 

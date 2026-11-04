@@ -1556,6 +1556,43 @@ describe("changeUserTimezone", () => {
     expect(rows).toHaveLength(0);
   });
 
+  it("keeps the committed save when a wakeup enqueue fails, and tries the rest", async () => {
+    const { deps, rows } = account([
+      {
+        spaceId: base.spaceId,
+        botId: base.botId,
+        userId: base.userId,
+        name: "One",
+        crons: ["0 9 * * 1"],
+        timezone: "Africa/Cairo",
+        active: true,
+        watch: null,
+        nextRunAt: new Date("2026-11-09T07:00:00.000Z"),
+      },
+      {
+        spaceId: base.spaceId,
+        botId: base.botId,
+        userId: base.userId,
+        name: "Two",
+        crons: ["0 9 * * 1"],
+        timezone: "Africa/Cairo",
+        active: true,
+        watch: null,
+        nextRunAt: new Date("2026-11-09T07:00:00.000Z"),
+      },
+    ]);
+    const jobs = deps.jobs as unknown as { enqueue: ReturnType<typeof vi.fn> };
+    jobs.enqueue.mockImplementation(async (job: { payload: { routineId: string } }) => {
+      if (job.payload.routineId === "routine-1") throw new Error("queue down");
+    });
+
+    await expect(changeUserTimezone(deps, "user-1", "Europe/London")).resolves.toBeUndefined();
+
+    // Both wakeups were attempted and the move itself stands.
+    expect(jobs.enqueue).toHaveBeenCalledTimes(2);
+    for (const row of rows) expect(row.timezone).toBe("Europe/London");
+  });
+
   it("only clears the account when the zone is cleared; routines cannot hold no zone", async () => {
     const { deps, rows, user } = account();
     await createScheduleFromTool(deps, {
