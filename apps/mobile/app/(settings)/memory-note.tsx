@@ -73,9 +73,10 @@ export default function MemoryNoteScreen() {
   }, [closing, router]);
 
   const dirty = Boolean(note) && draft !== note?.content;
-  // A note deleted elsewhere keeps its draft on screen, read-only, with nothing left to save.
+  // A note deleted elsewhere keeps its draft on screen, read-only, with nothing left to save,
+  // and leaving still asks before the draft is lost.
   const writable = state === "ready" && !busy && !closing;
-  usePreventRemove(dirty && state === "ready" && !closing, ({ data }) => {
+  usePreventRemove(dirty && !closing, ({ data }) => {
     // A save in flight decides the outcome; discarding now could not stop it.
     if (busy) return;
     Alert.alert(t("Discard changes?"), undefined, [

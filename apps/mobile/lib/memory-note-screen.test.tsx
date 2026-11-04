@@ -321,8 +321,11 @@ it.each([
   expect(editor()?.readOnly).toBe(true);
   expect(mocks.options.headerRight).toBeUndefined();
   expect(button("Delete")).toBeUndefined();
-  expect(mocks.preventRemove.active).toBe(false);
   expect(mocks.alert).not.toHaveBeenCalled();
+  // Leaving still asks before the draft on screen is lost.
+  expect(mocks.preventRemove.active).toBe(true);
+  act(() => mocks.preventRemove.onRemove?.({ data: { action: { type: "GO_BACK" } } }));
+  expect(lastAlert().title).toBe("Discard changes?");
 });
 
 it("treats deleting a note already deleted elsewhere as done", async () => {
