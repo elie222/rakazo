@@ -56,7 +56,8 @@ describe("built-in tool bridge", () => {
       "write_file",
     ]);
     // request_secret carries the card and contact kinds; update_bot carries instructions paging.
-    expect(definitionBytes(listed)).toBeLessThanOrEqual(31_878);
+    // 32_002 = 31_878 plus ask_user's detail argument with its usage sentence.
+    expect(definitionBytes(listed)).toBeLessThanOrEqual(32_002);
     expect(deferred.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["render_plot", "create_space", "generate_secret", "scratchpad_add"]),
     );

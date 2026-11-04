@@ -346,6 +346,8 @@ function toAgentTool(
         const options = Array.isArray(raw.options) ? raw.options.map(String) : raw.options;
         return {
           question: String(raw.question ?? "What should I use?"),
+          // The content the user is deciding about, shown on the card under the question.
+          ...(typeof raw.detail === "string" && raw.detail ? { detail: raw.detail } : {}),
           // Keep a missing/invalid options value as-is so schema minItems can reject it;
           // coercing to [] would look like a valid empty list upstream.
           options,
@@ -495,6 +497,9 @@ function toAgentTool(
                   type: "ask",
                   ...(host.request.onCheckpoint ? { executionId } : {}),
                   text: String(args.question ?? "What should I use?"),
+                  ...(typeof args.detail === "string" && args.detail
+                    ? { detail: args.detail }
+                    : {}),
                   actions: options.map((label, index) => ({
                     id: `choice-${index + 1}`,
                     label,

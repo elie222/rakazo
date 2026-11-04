@@ -882,6 +882,56 @@ describe("text written before a question", () => {
     expect(pauseRunForInput).toHaveBeenCalledOnce();
   });
 
+  it("shows the content being decided on as plain text, redacted and capped", async () => {
+    const detail = `To: person@example.test\nThe token is fake-secret-value.\n${"body ".repeat(1_200)}`;
+    const { pauseRunForInput } = await runTurn("", false, "", ["fake-secret-value"], "fyi", {
+      runtimeEvents: [
+        { type: "tool", name: "ask_user", args: {}, executionId: "ask-1" },
+        {
+          type: "ask",
+          text: "Send this email?",
+          detail,
+          actions: [
+            { id: "choice-1", label: "Send it" },
+            { id: "choice-2", label: "Show me first" },
+          ],
+        },
+      ],
+    });
+    expect(pauseRunForInput).toHaveBeenCalledOnce();
+    const blocks = (pauseRunForInput.mock.calls[0] as unknown as [{ blocks: MessageBlock[] }])[0]
+      .blocks;
+    const ask = blocks.find((block) => block.kind === "ask");
+    expect(ask).toMatchObject({ text: "Send this email?", detailFormat: "text" });
+    if (ask?.kind !== "ask") throw new Error("expected ask block");
+    expect(ask.detail).toContain("To: person@example.test");
+    expect(ask.detail).toContain("The token is [redacted].");
+    expect(ask.detail?.length).toBeLessThanOrEqual(4_001);
+  });
+
+  it("keeps a detail-less ask block exactly as it was", async () => {
+    const { pauseRunForInput } = await runTurn("", false, "", [], "fyi", {
+      runtimeEvents: [
+        { type: "tool", name: "ask_user", args: {}, executionId: "ask-1" },
+        { type: "ask", text: "Which order?", actions: [{ id: "choice-1", label: "Art first" }] },
+      ],
+    });
+    expect(pauseRunForInput).toHaveBeenCalledOnce();
+    expect(pauseRunForInput).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blocks: [
+          {
+            kind: "ask",
+            text: "Which order?",
+            detail: undefined,
+            status: "pending",
+            actions: [{ id: "choice-1", label: "Art first" }],
+          },
+        ],
+      }),
+    );
+  });
+
   it("posts the text on runs that may finish silently", async () => {
     const { messages, pauseRunForInput } = await runTurn("", false, undefined, [], "fyi", {
       trigger: "reaction",
