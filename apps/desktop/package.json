@@ -23,14 +23,14 @@
     "@rakazo/logging": "workspace:*",
     "@sentry/electron": "8.3.0",
     "electron-updater": "6.8.11",
-    "koffi": "3.3.4"
+    "koffi": "3.3.6"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",
     "@rakazo/adapters": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
-    "electron": "45.0.0",
+    "electron": "45.2.2",
     "electron-builder": "26.15.3",
     "esbuild": "0.28.2",
     "typescript": "7.0.2",
