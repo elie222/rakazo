@@ -1248,10 +1248,13 @@ export class McpOAuthBroker {
     if (!row) return;
     const material = await this.read(row.ciphertext, row.id);
     delete material.oauth;
-    // Raise the authorization generation, so a flow still exchanging its code when the
-    // disconnect lands cannot store the tokens it receives afterwards.
-    material.oauthGeneration = (material.oauthGeneration ?? 0) + 1;
-    await this.replaceMaterial(server.id, material, input, { incrementRevision: true });
+    // The generation is raised from the stored value inside each retry of the write, so
+    // this disconnect ends every flow still in flight, including one that began after an
+    // earlier disconnect committed.
+    await this.replaceMaterial(server.id, material, input, {
+      incrementRevision: true,
+      raiseGeneration: true,
+    });
   }
 
   private async loadMaterial(
@@ -1415,6 +1418,8 @@ export class McpOAuthBroker {
       onPersisted?: ProviderOptions["onPersisted"];
       storedRefreshToken?: string | null;
       replaceCleared?: boolean;
+      /** Raise the stored authorization generation from the value each retry re-reads. */
+      raiseGeneration?: boolean;
       onKept?: (grant: TokenGrant) => void;
     } = {},
   ): Promise<TokenGrant | undefined> {
@@ -1459,13 +1464,24 @@ export class McpOAuthBroker {
           // A disconnect removed the state altogether, and this write must not bring it back.
           kept = { tokens: storedOAuth?.tokens, obtainedAt: storedOAuth?.obtainedAt };
           options.onKept?.(kept);
-          if (storedOAuth) applyGrant(nextMaterial.oauth, kept);
+          if (superseded && storedOAuth) {
+            // The stored state belongs to a newer authorization, so keep it whole: its client
+            // and discovery too, not just its grant, or a later refresh pairs one flow's
+            // tokens with another's client.
+            nextMaterial.oauth = structuredClone(storedOAuth);
+          } else if (storedOAuth) applyGrant(nextMaterial.oauth, kept);
           else delete nextMaterial.oauth;
         }
       } else delete nextMaterial.oauth;
-      // Never lower the stored generation, so a superseded flow cannot undo a disconnect.
-      nextMaterial.oauthGeneration =
-        Math.max(material.oauthGeneration ?? 0, nextMaterial.oauthGeneration ?? 0) || undefined;
+      if (options.raiseGeneration) {
+        // Raised from what this attempt re-read, so a disconnect that commits after another
+        // one still ends flows that began after the earlier disconnect.
+        nextMaterial.oauthGeneration = (nextMaterial.oauthGeneration ?? 0) + 1;
+      } else {
+        // Never lower the stored generation, so a superseded flow cannot undo a disconnect.
+        nextMaterial.oauthGeneration =
+          Math.max(material.oauthGeneration ?? 0, nextMaterial.oauthGeneration ?? 0) || undefined;
+      }
       const hasMaterial = Boolean(
         nextMaterial.secret ||
           nextMaterial.args?.length ||

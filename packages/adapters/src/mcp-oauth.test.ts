@@ -393,6 +393,7 @@ describe("MCP OAuth", () => {
       stored,
       replaceStored,
       beginSession,
+      secrets,
       server,
       context,
       lockSettings,
@@ -791,6 +792,102 @@ describe("MCP OAuth", () => {
         userId: shared.context.userId,
       }),
     ).rejects.toThrow("MCP OAuth session is invalid or expired");
+  });
+
+  it("keeps a reconnection's client when the earlier flow's tokens land late", async () => {
+    const redirectUri = "http://127.0.0.1:5173/mcp/oauth/callback";
+    const discoveryState = {
+      authorizationServerUrl: "https://auth.example.test",
+      authorizationServerMetadata: {
+        issuer: "https://auth.example.test",
+        authorization_endpoint: "https://auth.example.test/authorize",
+        token_endpoint: "https://auth.example.test/token",
+        response_types_supported: ["code"],
+      },
+    };
+    const shared = sharedCredentials({
+      oauth: {
+        codeVerifier: "verifier-a",
+        redirectUri,
+        clientInformation: { client_id: "client-a" },
+        discoveryState,
+      },
+    });
+    const offline = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    const { provider: stale, broker } = await shared.startProcess(offline);
+
+    await broker.disconnect({ serverId: "server-1", ...shared.context });
+    // A fresh authorization connects with its own dynamically registered client.
+    const reconnected: OAuthMaterial = {
+      oauthGeneration: 1,
+      oauth: {
+        redirectUri,
+        tokens: {
+          access_token: "access-b",
+          refresh_token: "refresh-b",
+          token_type: "Bearer",
+          expires_in: 7200,
+        },
+        obtainedAt: Date.now() - 3 * 60 * 60 * 1000,
+        clientInformation: { client_id: "client-b" },
+        discoveryState,
+      },
+    };
+    await shared.replaceStored(reconnected);
+
+    await stale.saveTokens({
+      access_token: "issued-a",
+      refresh_token: "issued-a-refresh",
+      token_type: "Bearer",
+    });
+
+    expect(await shared.stored()).toEqual(reconnected);
+
+    // The next refresh must send the stored client with the stored refresh token.
+    const server = rotatingAuthServer("refresh-b");
+    const { provider } = await shared.startProcess(server.fetch);
+    await expect(provider.tokens()).resolves.toMatchObject({ access_token: "access-1" });
+    expect(server.requests[0]?.get("client_id")).toBe("client-b");
+    expect(server.requests[0]?.get("refresh_token")).toBe("refresh-b");
+  });
+
+  it("ends a reconnection that began before a late second disconnect", async () => {
+    const shared = sharedCredentials({
+      oauth: { codeVerifier: "verifier", redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback" },
+    });
+    const offline = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    const { broker } = await shared.startProcess(offline);
+    // What the second disconnect races past: an earlier disconnect already committed
+    // (generation 1) and a fresh authorization connected at that generation.
+    const reconnected: OAuthMaterial = {
+      oauthGeneration: 1,
+      oauth: {
+        codeVerifier: "verifier-b",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+      },
+    };
+    let flowB: Awaited<ReturnType<typeof shared.startProcess>> | undefined;
+    let parked = true;
+    const put = shared.secrets.put;
+    shared.secrets.put = vi.fn(async (plaintext: string) => {
+      if (parked) {
+        // Between the disconnect's read and its commit, the reconnect lands.
+        parked = false;
+        await shared.replaceStored(reconnected);
+        flowB = await shared.startProcess(offline);
+      }
+      return put(plaintext);
+    });
+
+    await broker.disconnect({ serverId: "server-1", ...shared.context });
+    await flowB!.provider.saveTokens({ access_token: "issued-b", token_type: "Bearer" });
+
+    expect(await shared.stored()).toEqual({ oauthGeneration: 2 });
+    expect(await broker.statusFor(shared.server, shared.context)).toBe("none");
   });
 
   it.each(["disconnect", "client changed", "server mismatch", "server gone", "endpoint changed"])(
