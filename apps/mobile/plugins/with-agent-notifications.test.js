@@ -72,3 +72,38 @@ it("lists the extension for EAS signing with the communication entitlement", () 
   });
   expect(app.ios.entitlements["com.apple.developer.usernotifications.communication"]).toBe(true);
 });
+
+it("gives the extension its own Info.plist reference and a bundle name", () => {
+  const directory = mkdtempSync(join(tmpdir(), "rakazo-notification-plist-"));
+  try {
+    const file = join(directory, "project.pbxproj");
+    writeFileSync(
+      file,
+      execFileSync("tar", [
+        "-xOf",
+        join(expoRoot, "template.tgz"),
+        "package/ios/HelloWorld.xcodeproj/project.pbxproj",
+      ]),
+    );
+    const project = xcode.project(file);
+    project.parseSync();
+    // Another extension's group already holds a file named Info.plist, as the widget's does.
+    const widget = project.addPbxGroup(["Info.plist"], "Widget", "Widget");
+    addNotificationExtension(project, directory, { ios: { bundleIdentifier: "test.example.app" } });
+    const groups = Object.values(project.hash.project.objects.PBXGroup).filter(
+      (group) => typeof group === "object",
+    );
+    const notifications = groups.find((group) => group.name === "AgentNotifications");
+    const plist = notifications.children.find((child) => child.comment === "Info.plist");
+    expect(plist.value).not.toBe(widget.pbxGroup.children[0].value);
+    const members = groups.filter((group) =>
+      group.children?.some((child) => child.value === plist.value),
+    );
+    expect(members).toHaveLength(1);
+    expect(readFileSync(join(directory, "AgentNotifications/Info.plist"), "utf8")).toContain(
+      "<key>CFBundleName</key>",
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
