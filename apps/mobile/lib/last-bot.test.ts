@@ -74,6 +74,25 @@ describe("last bot shortcut target", () => {
     expect(JSON.parse(saved.get("rakazo.last_bot_id") ?? "null").spaceId).toBeNull();
   });
 
+  it("keeps the later chat when the first identity response is delayed", async () => {
+    const started = deferred();
+    const release = deferred();
+    vi.mocked(fetchMobileJson).mockImplementationOnce(async () => {
+      started.resolve();
+      await release.promise;
+      return { response: Response.json({}), body: { user: { id: "account-a" } } };
+    });
+    const researcher = saveLastBotId("researcher", "research-space");
+    await started.promise;
+    const writer = saveLastBotId("writer", "writing-space");
+    // Let every ready response and write finish before releasing the first identity response.
+    await setImmediate();
+    release.resolve();
+    await Promise.all([researcher, writer]);
+    expect(await loadLastBotId()).toBe("writer");
+    expect(JSON.parse(saved.get("rakazo.last_bot_id") ?? "null").spaceId).toBe("writing-space");
+  });
+
   it.each(["sign-in", "sign-out", "server"])("clears the last bot on %s", async (change) => {
     await saveLastBotId("researcher", "shared-space");
     if (change === "sign-in") await saveSessionToken("other-account-session");

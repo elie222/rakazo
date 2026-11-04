@@ -38,10 +38,10 @@ async function currentOwner() {
 export async function saveLastBotId(botId: string, spaceId: string | null) {
   if (!botId.trim()) return;
   const generation = currentSessionGeneration();
-  const owner = await currentOwner();
-  if (!owner || generation !== currentSessionGeneration()) return;
   return enqueueWrite(async () => {
     if (generation !== currentSessionGeneration()) return;
+    const owner = await currentOwner();
+    if (!owner || generation !== currentSessionGeneration()) return;
     await SecureStore.setItemAsync(LAST_BOT_KEY, JSON.stringify({ ...owner, botId, spaceId }));
   });
 }
