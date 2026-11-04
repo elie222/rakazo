@@ -168,6 +168,7 @@ export function voiceCredentialPlaintext(input: {
   plaintext: string;
   baseUrl?: string;
   sttBaseUrl?: string;
+  sttApiKey?: string;
   ttsModel?: string;
   sttModel?: string;
   /** The stored secret for this provider; blank fields keep its key and models. */
@@ -190,6 +191,7 @@ export function voiceCredentialPlaintext(input: {
         baseUrl: input.baseUrl ?? "",
         sttBaseUrl: input.sttBaseUrl,
         apiKey: input.plaintext,
+        sttApiKey: input.sttApiKey,
         ttsModel: input.ttsModel,
         sttModel: input.sttModel,
       },
@@ -271,6 +273,7 @@ export async function persistVoiceCredential(
     speechModel?: string;
     baseUrl?: string;
     sttBaseUrl?: string;
+    sttApiKey?: string;
     ttsModel?: string;
     sttModel?: string;
     /** Which copy the connection becomes the default voice in; omitted is what applies. */

@@ -512,6 +512,7 @@ export function accountRoutes(ctx: RouterContext) {
           speechModel: input.speechModel,
           baseUrl: input.baseUrl,
           sttBaseUrl: input.sttBaseUrl,
+          sttApiKey: input.sttApiKey,
           ttsModel: input.ttsModel,
           sttModel: input.sttModel,
           scope: input.scope,

@@ -731,6 +731,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Speech model": "Spraakmodel",
   "Transcription model": "Transcriptiemodel",
   "Transcription server URL": "Server-URL voor transcriptie",
+  "Transcription API key": "API-sleutel voor transcriptie",
   Reconnect: "Opnieuw verbinden",
   "This device": "Dit apparaat",
   "Agent messages": "Agentberichten",

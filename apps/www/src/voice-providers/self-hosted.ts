@@ -242,7 +242,7 @@ export const selfHosted: VoiceProvider = {
     {
       question: "Can I use a local Whisper server for speech to text?",
       answer:
-        "Yes, if it answers `/v1/audio/transcriptions` the way OpenAI does. Speaches and mlx-audio both do. Set **Transcription model** to the model name your server expects. If it runs apart from your speech server, enter its address as **Transcription server URL**.",
+        "Yes, if it answers `/v1/audio/transcriptions` the way OpenAI does. Speaches and mlx-audio both do. Set **Transcription model** to the model name your server expects. If it runs apart from your speech server, enter its address as **Transcription server URL** and, if it needs one, its **Transcription API key**.",
     },
     {
       question: "Is self-hosting Whisper cheaper than the Whisper API?",

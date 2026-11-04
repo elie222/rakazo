@@ -76,6 +76,7 @@ export function VoiceSettingsOverlay({
   const ttsModelId = useId();
   const sttModelId = useId();
   const sttBaseUrlId = useId();
+  const sttApiKeyId = useId();
   const providerSelectId = useId();
   const [catalog, setCatalog] = useState<VoiceCatalogEntry[]>(cached?.catalog ?? []);
   const [credentials, setCredentials] = useState<VoiceCredential[]>(cached?.credentials ?? []);
@@ -100,6 +101,7 @@ export function VoiceSettingsOverlay({
   const [ttsModel, setTtsModel] = useState(cached?.credential?.ttsModel ?? "");
   const [sttModel, setSttModel] = useState(cached?.credential?.sttModel ?? "");
   const [sttBaseUrl, setSttBaseUrl] = useState(cached?.credential?.sttEndpoint ?? "");
+  const [sttApiKey, setSttApiKey] = useState("");
   const speechModelSave = useRef<string | null>(null);
   const voicesRequest = useRef(0);
   const [loading, setLoading] = useState(!cached);
@@ -181,6 +183,7 @@ export function VoiceSettingsOverlay({
 
   async function chooseProvider(nextProvider: string) {
     setApiKey("");
+    setSttApiKey("");
     setError(null);
     setNotice(null);
     const cred = credentials.find((entry) => entry.provider === nextProvider);
@@ -251,10 +254,12 @@ export function VoiceSettingsOverlay({
               ttsModel: ttsModel.trim() || undefined,
               sttModel: sttModel.trim() || undefined,
               sttBaseUrl: sttBaseUrl.trim(),
+              sttApiKey: sttApiKey.trim(),
             }
           : {}),
       });
       setApiKey("");
+      setSttApiKey("");
       await refresh(selected.id);
       setNotice(t`Connected ${selected.name}.`);
     } catch (err) {
@@ -272,6 +277,7 @@ export function VoiceSettingsOverlay({
     try {
       await rpc.voice.disconnect({ provider: providerId });
       setApiKey("");
+      setSttApiKey("");
       await refresh(providerId);
     } catch (err) {
       setError(errorText(err, t`Could not disconnect this voice provider`));
@@ -488,6 +494,21 @@ export function VoiceSettingsOverlay({
                       placeholder={baseUrl.trim() || "http://192.168.1.10:8880/v1"}
                     />
                   </Field>
+                  {sttBaseUrl.trim() ? (
+                    <Field className="mt-5">
+                      <FieldLabel htmlFor={sttApiKeyId}>
+                        <Trans>Transcription API key</Trans>
+                      </FieldLabel>
+                      <Input
+                        id={sttApiKeyId}
+                        type="password"
+                        autoComplete="new-password"
+                        value={sttApiKey}
+                        onChange={(event) => setSttApiKey(event.target.value)}
+                        placeholder={t`Optional`}
+                      />
+                    </Field>
+                  ) : null}
                 </>
               ) : null}
               {keyless && credential ? null : (

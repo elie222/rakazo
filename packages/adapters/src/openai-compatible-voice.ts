@@ -54,6 +54,8 @@ export interface OpenAiCompatibleVoiceSecret {
   /** A separate transcription server. Absent when `baseUrl` also transcribes. */
   sttBaseUrl?: string;
   apiKey?: string;
+  /** Sent only to `sttBaseUrl`; `apiKey` never reaches the transcription server. */
+  sttApiKey?: string;
   ttsModel: string;
   sttModel: string;
 }
@@ -70,16 +72,17 @@ function modelIdOrDefault(value: string | undefined, fallback: string, label: st
 /**
  * Validate the connection form and return the secret plaintext to store. The base URL
  * gets /v1 like model connections do; public hosts stay behind the same gate, and so
- * does a separate transcription server. Blank fields keep the previous key and models,
- * but only for the same server, so a key is never carried to a new address. An omitted
- * transcription server keeps the previous one unless a new key is entered, so a key only
- * reaches addresses sent with it; blank means the main server transcribes.
+ * does a separate transcription server, which has its own key. Blank fields keep the
+ * previous keys and models, but only for the same server, so a key is never carried to
+ * a new address. An omitted transcription server keeps the previous one; blank means the
+ * main server transcribes.
  */
 export function serializeOpenAiCompatibleVoiceSecret(
   input: {
     baseUrl: string;
     sttBaseUrl?: string;
     apiKey?: string;
+    sttApiKey?: string;
     ttsModel?: string;
     sttModel?: string;
   },
@@ -90,27 +93,28 @@ export function serializeOpenAiCompatibleVoiceSecret(
   const baseUrl = normalizeOpenAiCompatibleBaseUrl(input.baseUrl);
   const previous = previousPlaintext ? tryParseSecret(previousPlaintext) : undefined;
   const same = previous?.baseUrl === baseUrl ? previous : undefined;
-  const sttInput =
-    input.sttBaseUrl !== undefined
-      ? input.sttBaseUrl.trim()
-      : input.apiKey?.trim()
-        ? undefined
-        : same?.sttBaseUrl;
+  const sttInput = input.sttBaseUrl === undefined ? same?.sttBaseUrl : input.sttBaseUrl.trim();
   const sttUrl = sttInput ? assertAllowedOpenAiCompatibleUrl(sttInput, policy) : undefined;
   const sttBaseUrl = sttInput ? normalizeOpenAiCompatibleBaseUrl(sttInput) : undefined;
   const separateStt = sttBaseUrl && sttBaseUrl !== baseUrl ? sttBaseUrl : undefined;
-  const apiKey =
-    input.apiKey?.trim() || (same?.sttBaseUrl === separateStt ? same?.apiKey : undefined);
-  if (apiKey && !API_KEY_PATTERN.test(apiKey)) {
-    throw new Error("That API key has characters a key cannot contain.");
+  const apiKey = input.apiKey?.trim() || same?.apiKey;
+  const sttApiKey = separateStt
+    ? input.sttApiKey?.trim() ||
+      (previous?.sttBaseUrl === separateStt ? previous.sttApiKey : undefined)
+    : undefined;
+  for (const key of [apiKey, sttApiKey]) {
+    if (key && !API_KEY_PATTERN.test(key)) {
+      throw new Error("That API key has characters a key cannot contain.");
+    }
   }
   assertHttpsForKeyedOpenAiCompatibleUrl(url, apiKey);
-  if (sttUrl) assertHttpsForKeyedOpenAiCompatibleUrl(sttUrl, apiKey);
+  if (sttUrl) assertHttpsForKeyedOpenAiCompatibleUrl(sttUrl, sttApiKey);
   const secret: OpenAiCompatibleVoiceSecret = {
     kind: "openai_compatible",
     baseUrl,
     ...(separateStt ? { sttBaseUrl: separateStt } : {}),
     ...(apiKey ? { apiKey } : {}),
+    ...(sttApiKey ? { sttApiKey } : {}),
     ttsModel: modelIdOrDefault(
       input.ttsModel || same?.ttsModel,
       DEFAULT_COMPATIBLE_TTS_MODEL,
@@ -151,6 +155,9 @@ export function parseOpenAiCompatibleVoiceSecret(plaintext: string): OpenAiCompa
       ? { sttBaseUrl: record.sttBaseUrl }
       : {}),
     ...(typeof record.apiKey === "string" && record.apiKey ? { apiKey: record.apiKey } : {}),
+    ...(typeof record.sttApiKey === "string" && record.sttApiKey
+      ? { sttApiKey: record.sttApiKey }
+      : {}),
     ttsModel: typeof record.ttsModel === "string" ? record.ttsModel : DEFAULT_COMPATIBLE_TTS_MODEL,
     sttModel: typeof record.sttModel === "string" ? record.sttModel : DEFAULT_COMPATIBLE_STT_MODEL,
   };
@@ -290,8 +297,12 @@ export function parseCompatibleVoiceList(body: unknown): VoiceInfo[] {
 }
 
 function headers(secret: OpenAiCompatibleVoiceSecret, extra?: Record<string, string>) {
+  return bearer(secret.apiKey, extra);
+}
+
+function bearer(apiKey: string | undefined, extra?: Record<string, string>) {
   return {
-    ...(secret.apiKey ? { authorization: `Bearer ${secret.apiKey}` } : {}),
+    ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
     ...extra,
   };
 }
@@ -416,6 +427,7 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
     context: AdapterContext,
   ): Promise<{ text: string }> {
     const secret = parseOpenAiCompatibleVoiceSecret(request.apiKey);
+    const apiKey = secret.sttBaseUrl ? secret.sttApiKey : secret.apiKey;
     const form = new FormData();
     form.set("model", secret.sttModel);
     // mlx-audio streams NDJSON unless asked for the OpenAI shape.
@@ -430,14 +442,14 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
     const url = endpoint(secret, "audio/transcriptions", secret.sttBaseUrl);
     const res = await this.fetch(url, {
       method: "POST",
-      headers: headers(secret),
+      headers: bearer(apiKey),
       body: form,
       signal: voiceDeadline(request.signal ?? context.signal, TRANSCRIBE_DEADLINE_MS),
     });
     const raw = await readVoiceText(res);
     const type = mediaType(res);
     if (!res.ok) {
-      throw serverError(res.status, "transcribing", parseJson(raw), secret.apiKey);
+      throw serverError(res.status, "transcribing", parseJson(raw), apiKey);
     }
     if (type && type !== "text/plain" && type !== "application/json") {
       throw new Error(`${PROVIDER_NAME} did not return a transcript.`);

@@ -274,7 +274,13 @@ it("connects a self-hosted speech server by URL without a key", async () => {
     expect(connect()?.disabled).toBe(false);
     const sttServer = labelledInput(container, "Transcription server URL");
     expect(sttServer.placeholder).toBe("http://100.64.0.10:8810");
+    const sttKeyField = () =>
+      [...container.querySelectorAll("label")].find(
+        (label) => label.textContent === "Transcription API key",
+      );
+    expect(sttKeyField()).toBeUndefined();
     await type(sttServer, " http://100.64.0.11:9000 ");
+    await type(labelledInput(container, "Transcription API key"), " stt-test-key ");
     await act(async () => {
       connect()?.click();
     });
@@ -288,6 +294,7 @@ it("connects a self-hosted speech server by URL without a key", async () => {
       ttsModel: undefined,
       sttModel: undefined,
       sttBaseUrl: "http://100.64.0.11:9000",
+      sttApiKey: "stt-test-key",
     });
   } finally {
     await act(async () => root.unmount());

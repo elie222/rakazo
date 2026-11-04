@@ -143,31 +143,38 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
     expect(parseOpenAiCompatibleVoiceSecret(cleared).sttBaseUrl).toBeUndefined();
   });
 
-  it("does not carry a saved key to a new transcription server", () => {
-    const moved = parseOpenAiCompatibleVoiceSecret(
-      serializeAsOwner(
-        { baseUrl: "http://192.168.1.20:8880", sttBaseUrl: "http://192.168.1.30:9000" },
-        keyed,
-      ),
-    );
-    expect(moved.apiKey).toBeUndefined();
-    expect(moved.ttsModel).toBe("kokoro");
+  it("keeps each key with its own server", () => {
     const split = serializeAsOwner({
       baseUrl: "http://192.168.1.20:8880",
       sttBaseUrl: "http://192.168.1.30:9000",
-      apiKey: "local-test-key",
+      apiKey: "main-test-key",
+      sttApiKey: "stt-test-key",
     });
-    const again = serializeAsOwner(
-      { baseUrl: "http://192.168.1.20:8880", sttBaseUrl: "http://192.168.1.30:9000" },
-      split,
-    );
-    expect(parseOpenAiCompatibleVoiceSecret(again).apiKey).toBe("local-test-key");
-    // A client that does not know the field sends a new key with the main address only.
+    expect(parseOpenAiCompatibleVoiceSecret(split)).toMatchObject({
+      apiKey: "main-test-key",
+      sttApiKey: "stt-test-key",
+    });
+    // A client that does not know the fields keeps the transcription server and its key.
     const rekeyed = parseOpenAiCompatibleVoiceSecret(
       serializeAsOwner({ baseUrl: "http://192.168.1.20:8880", apiKey: "new-test-key" }, split),
     );
-    expect(rekeyed).toMatchObject({ apiKey: "new-test-key" });
-    expect(rekeyed.sttBaseUrl).toBeUndefined();
+    expect(rekeyed).toMatchObject({
+      apiKey: "new-test-key",
+      sttBaseUrl: "http://192.168.1.30:9000/v1",
+      sttApiKey: "stt-test-key",
+    });
+    const moved = parseOpenAiCompatibleVoiceSecret(
+      serializeAsOwner(
+        { baseUrl: "http://192.168.1.20:8880", sttBaseUrl: "http://192.168.1.31:9000" },
+        split,
+      ),
+    );
+    expect(moved.apiKey).toBe("main-test-key");
+    expect(moved.sttApiKey).toBeUndefined();
+    const single = parseOpenAiCompatibleVoiceSecret(
+      serializeAsOwner({ baseUrl: "http://192.168.1.20:8880", sttApiKey: "stt-test-key" }),
+    );
+    expect(single.sttApiKey).toBeUndefined();
   });
 
   it("checks the transcription server like the main server", () => {
@@ -185,9 +192,17 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
       serializeAsOwner({
         baseUrl: "http://127.0.0.1:8810",
         sttBaseUrl: "http://speech.example.com",
-        apiKey: "local-test-key",
+        sttApiKey: "stt-test-key",
       }),
     ).toThrow(/must use HTTPS/);
+    // The main key never goes to the transcription server, so it does not need HTTPS there.
+    expect(() =>
+      serializeAsOwner({
+        baseUrl: "http://127.0.0.1:8810",
+        sttBaseUrl: "http://speech.example.com",
+        apiKey: "local-test-key",
+      }),
+    ).not.toThrow();
   });
 
   it("rejects a key that could break the Authorization header", () => {
@@ -465,6 +480,8 @@ describe("OpenAiCompatibleVoiceProvider", () => {
     const split = serializeAsOwner({
       baseUrl: "http://192.168.1.20:8880",
       sttBaseUrl: "http://192.168.1.30:9000",
+      apiKey: "main-test-key",
+      sttApiKey: "stt-test-key",
     });
     const fetchMock = vi
       .fn()
@@ -478,7 +495,22 @@ describe("OpenAiCompatibleVoiceProvider", () => {
     );
     await provider(fetchMock).synthesize({ text: "hi", voiceId: "af_heart", apiKey: split }, ctx);
     expect(calledUrl(fetchMock, 0)).toBe("http://192.168.1.30:9000/v1/audio/transcriptions");
+    expect(calledInit(fetchMock, 0).headers).toEqual({ authorization: "Bearer stt-test-key" });
     expect(calledUrl(fetchMock, 1)).toBe("http://192.168.1.20:8880/v1/audio/speech");
+    expect(calledInit(fetchMock, 1).headers).toMatchObject({
+      authorization: "Bearer main-test-key",
+    });
+    const keylessStt = serializeAsOwner({
+      baseUrl: "http://192.168.1.20:8880",
+      sttBaseUrl: "http://192.168.1.30:9000",
+      apiKey: "main-test-key",
+    });
+    const sttOnly = vi.fn().mockResolvedValue(new Response('{"text":"hi"}'));
+    await provider(sttOnly).transcribe(
+      { audio: new Uint8Array([1]), mimeType: "audio/webm", apiKey: keylessStt },
+      ctx,
+    );
+    expect(calledInit(sttOnly).headers).toEqual({});
   });
 
   it("accepts a plain-text transcript body", async () => {

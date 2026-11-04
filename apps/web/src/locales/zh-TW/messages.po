@@ -6687,6 +6687,10 @@ msgid "Transcript"
 msgstr "文字紀錄"
 
 #: src/pages/VoiceSettingsOverlay.tsx
+msgid "Transcription API key"
+msgstr "轉錄 API 金鑰"
+
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Transcription model"
 msgstr "轉錄模型"
 

@@ -6686,6 +6686,10 @@ msgid "Transcript"
 msgstr "Transcripción"
 
 #: src/pages/VoiceSettingsOverlay.tsx
+msgid "Transcription API key"
+msgstr "Clave de API de transcripción"
+
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Transcription model"
 msgstr "Modelo de transcripción"
 

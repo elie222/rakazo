@@ -749,6 +749,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Speech model": "語音模型",
   "Transcription model": "轉錄模型",
   "Transcription server URL": "轉錄伺服器網址",
+  "Transcription API key": "轉錄 API 金鑰",
   Reconnect: "重新連線",
   Starting: "正在啟動",
   "Starting…": "正在啟動…",

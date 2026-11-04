@@ -1459,6 +1459,8 @@ export const appContract = {
             baseUrl: z.string().max(2048).optional(),
             /** Blank means the server at `baseUrl` transcribes; omitted keeps the saved one. */
             sttBaseUrl: z.string().max(2048).optional(),
+            /** Sent only to the transcription server; blank keeps the saved one. */
+            sttApiKey: z.string().max(4096).optional(),
             ttsModel: z.string().max(200).optional(),
             sttModel: z.string().max(200).optional(),
             /** Where the connection becomes the default voice. */

@@ -104,6 +104,7 @@ export default function VoiceSettings() {
   const [ttsModel, setTtsModel] = useState(cached?.credential?.ttsModel ?? "");
   const [sttModel, setSttModel] = useState(cached?.credential?.sttModel ?? "");
   const [sttBaseUrl, setSttBaseUrl] = useState(cached?.credential?.sttEndpoint ?? "");
+  const [sttApiKey, setSttApiKey] = useState("");
   // Fields typed into since the last load; an opening refresh keeps them.
   const edited = useRef(new Set<VoiceField>());
   // Every load and action bumps this, so an older refresh never lands over a newer choice.
@@ -309,6 +310,7 @@ export default function VoiceSettings() {
         }
       }
       setApiKey("");
+      setSttApiKey("");
       setVoiceId(cred?.voiceId ?? "");
       setSpeechModel(cred?.speechModel ?? "");
       setVoices([]);
@@ -353,10 +355,12 @@ export default function VoiceSettings() {
               ttsModel: ttsModel.trim() || undefined,
               sttModel: sttModel.trim() || undefined,
               sttBaseUrl: sttBaseUrl.trim(),
+              sttApiKey: sttApiKey.trim(),
             }
           : {}),
       });
       setApiKey("");
+      setSttApiKey("");
       await load(selected.id);
     } catch (err) {
       setError(errorText(err, t("Could not connect")));
@@ -373,6 +377,7 @@ export default function VoiceSettings() {
     try {
       await rpc("voice/disconnect", { provider: providerId });
       setApiKey("");
+      setSttApiKey("");
       await load(providerId);
     } catch (err) {
       setError(errorText(err, t("Could not disconnect")));
@@ -603,6 +608,22 @@ export default function VoiceSettings() {
                   style={styles.input}
                   textContentType="URL"
                 />
+                {sttBaseUrl.trim() ? (
+                  <TextInput
+                    accessibilityLabel={t("Transcription API key")}
+                    autoCapitalize="none"
+                    autoComplete="off"
+                    autoCorrect={false}
+                    importantForAutofill="no"
+                    value={sttApiKey}
+                    onChangeText={setSttApiKey}
+                    placeholder={t("Optional")}
+                    placeholderTextColor={native.tertiaryLabel}
+                    secureTextEntry
+                    style={styles.input}
+                    textContentType="none"
+                  />
+                ) : null}
               </>
             ) : null}
             {keyless && credential ? null : (

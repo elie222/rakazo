@@ -6686,6 +6686,10 @@ msgid "Transcript"
 msgstr "תמליל"
 
 #: src/pages/VoiceSettingsOverlay.tsx
+msgid "Transcription API key"
+msgstr "מפתח API לתמלול"
+
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Transcription model"
 msgstr "מודל תמלול"
 

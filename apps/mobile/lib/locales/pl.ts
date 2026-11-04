@@ -729,6 +729,7 @@ export const PL_MESSAGES: Record<string, string> = {
   "Speech model": "Model mowy",
   "Transcription model": "Model transkrypcji",
   "Transcription server URL": "Adres URL serwera transkrypcji",
+  "Transcription API key": "Klucz API transkrypcji",
   Reconnect: "Połącz ponownie",
   "This device": "To urządzenie",
   "Agent messages": "Wiadomości agentów",

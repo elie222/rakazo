@@ -6686,6 +6686,10 @@ msgid "Transcript"
 msgstr "文字起こし"
 
 #: src/pages/VoiceSettingsOverlay.tsx
+msgid "Transcription API key"
+msgstr "文字起こしAPIキー"
+
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Transcription model"
 msgstr "文字起こしモデル"
 

@@ -6686,6 +6686,10 @@ msgid "Transcript"
 msgstr "대화 기록"
 
 #: src/pages/VoiceSettingsOverlay.tsx
+msgid "Transcription API key"
+msgstr "전사 API 키"
+
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Transcription model"
 msgstr ""
 
