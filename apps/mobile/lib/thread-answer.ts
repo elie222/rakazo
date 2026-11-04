@@ -1,5 +1,6 @@
 import type { LoginFieldInput, RpcInput } from "@rakazo/contracts";
 import type { MobileMessage } from "./api";
+import { hapticSuccess } from "./haptics";
 
 export type ThreadAnswerContext = {
   botId: string | undefined;
@@ -32,5 +33,8 @@ export async function answerThreadMessage(
     ...(dismiss ? { dismiss: true as const } : {}),
   });
   // The answer is saved once the server accepts it; a failed refresh only delays the card.
-  if (isCurrentTarget(botId, groupId)) await refresh().catch(() => undefined);
+  if (isCurrentTarget(botId, groupId)) {
+    hapticSuccess();
+    await refresh().catch(() => undefined);
+  }
 }

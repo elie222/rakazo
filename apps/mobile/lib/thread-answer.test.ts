@@ -1,7 +1,11 @@
 import type { LoginFieldInput } from "@rakazo/contracts";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { hapticSuccess } from "./haptics";
 import type { ThreadAnswerContext } from "./thread-answer";
 import { answerThreadMessage } from "./thread-answer";
+
+vi.mock("./haptics", () => ({ hapticSuccess: vi.fn() }));
+beforeEach(() => vi.clearAllMocks());
 
 function setup(refresh: () => Promise<void>, overrides: Partial<ThreadAnswerContext> = {}) {
   const rpc = vi.fn(async (_proc: string, _body: Record<string, unknown>) => undefined as unknown);
@@ -48,6 +52,7 @@ describe("mobile ask answers", () => {
     // Saved to the Vault unless the person turned that off.
     expect(h.rpc.mock.lastCall![1]).not.toHaveProperty("remember");
     expect(h.refresh).toHaveBeenCalledTimes(1);
+    expect(hapticSuccess).toHaveBeenCalledTimes(1);
   });
 
   it("sends remember false for a login used for this run only", async () => {
@@ -106,6 +111,7 @@ describe("mobile ask answers", () => {
     h.rpc.mockRejectedValueOnce(new Error("offline"));
     await expect(h.answerMessage(message, "example-password")).rejects.toThrow("offline");
     expect(h.refresh).not.toHaveBeenCalled();
+    expect(hapticSuccess).not.toHaveBeenCalled();
   });
 
   it("skips the refresh after the viewer has moved to another thread", async () => {
@@ -113,6 +119,7 @@ describe("mobile ask answers", () => {
     await h.answerMessage(message, "yes");
     expect(h.rpc).toHaveBeenCalledTimes(1);
     expect(h.refresh).not.toHaveBeenCalled();
+    expect(hapticSuccess).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -124,5 +131,6 @@ describe("mobile ask answers", () => {
     await h.answerMessage(target, "yes");
     expect(h.rpc).not.toHaveBeenCalled();
     expect(h.markRead).not.toHaveBeenCalled();
+    expect(hapticSuccess).not.toHaveBeenCalled();
   });
 });

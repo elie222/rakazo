@@ -50,6 +50,7 @@ import { loadAppearancePreference, mobileTokens } from "../lib/appearance";
 import { replaceWithSignIn } from "../lib/auth-routing";
 import { AvatarScreenFocus } from "../lib/avatar-life";
 import { installClientUpdates, watchForegroundUpdates } from "../lib/client-update";
+import { loadHapticsPreference } from "../lib/haptics";
 import { bootstrapI18n, useI18n } from "../lib/i18n";
 import { startIncomingCalls } from "../lib/incoming-calls";
 import { loadLinkFavicon } from "../lib/link-favicons";
@@ -352,6 +353,7 @@ function LayoutContent() {
         ),
         trackMobileStartup("streaming", loadResponseStreamingPreference()),
         trackMobileStartup("images", loadRemoteImagesPreference()),
+        trackMobileStartup("haptics", loadHapticsPreference()),
         trackMobileStartup("inbox", loadInboxWidth()),
       ]).catch(() => undefined),
       trackMobileStartup("language", bootstrapI18n()).catch(() => undefined),

@@ -36,6 +36,7 @@ const ui = vi.hoisted(() => ({
   setSearchInbox: vi.fn(),
   addToSearchInbox: vi.fn(),
   searchInboxSession: vi.fn(),
+  hapticSuccess: vi.fn(),
   loadCollapsedSections: vi.fn(),
   saveCollapsedSections: vi.fn(),
 }));
@@ -121,6 +122,7 @@ vi.mock("expo-router", () => {
   };
 });
 vi.mock("./api", () => ({ rpc: ui.rpc }));
+vi.mock("./haptics", () => ({ hapticSuccess: ui.hapticSuccess }));
 vi.mock("./native", () => ({
   native: {},
   useThemedStyles: (factory: () => unknown) => useMemo(factory, [factory]),
@@ -228,6 +230,7 @@ const rowLabels = () =>
   Array.from(container.querySelectorAll("button"), (button) => button.getAttribute("aria-label"));
 
 beforeEach(() => {
+  ui.hapticSuccess.mockClear();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   Object.assign(ui, {
     focused: true,
@@ -636,11 +639,42 @@ it("adds a bot made from the inbox's Create menu to the inbox roster before open
     expect.not.objectContaining({ avatarSet: expect.anything() }),
   );
   // The session is taken before the requests, so a bot that lands after a switch is dropped.
-  expect(calls.slice(0, 5)).toEqual([
+  expect(calls.slice(0, 6)).toEqual([
     "session",
     "bots/list",
     "bots/create",
+    "session",
     `roster ${JSON.stringify({ kind: "bot", bot })} ${JSON.stringify(askedIn)}`,
     `open ${JSON.stringify({ pathname: "/thread", params: { botId: bot.id, name: bot.name } })}`,
   ]);
+  expect(ui.hapticSuccess).toHaveBeenCalledOnce();
+});
+
+it("does not confirm a failed inbox bot creation with success feedback", async () => {
+  ui.searchInboxSession.mockReturnValue({ generation: 7, apiBase: "http://api.test" });
+  ui.rpc.mockReset().mockImplementation(async (method: string) => {
+    if (method === "bots/create") throw new Error("Creation failed");
+    return [];
+  });
+  await expect(
+    createInboxBot({ refreshBots: async () => undefined, openChat: vi.fn() }),
+  ).rejects.toThrow("Creation failed");
+  expect(ui.hapticSuccess).not.toHaveBeenCalled();
+});
+
+it.each([
+  { generation: 8, apiBase: "http://api.test" },
+  { generation: 7, apiBase: "http://other.test" },
+])("does not confirm an inbox bot created in an obsolete session: %j", async (current) => {
+  ui.searchInboxSession
+    .mockReset()
+    .mockReturnValueOnce({ generation: 7, apiBase: "http://api.test" })
+    .mockReturnValue(current);
+  ui.rpc
+    .mockReset()
+    .mockImplementation(async (method: string) =>
+      method === "bots/create" ? { id: "bot-new", name: "New Bot" } : [],
+    );
+  await createInboxBot({ refreshBots: async () => undefined, openChat: vi.fn() });
+  expect(ui.hapticSuccess).not.toHaveBeenCalled();
 });

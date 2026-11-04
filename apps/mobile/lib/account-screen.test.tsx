@@ -163,8 +163,29 @@ vi.mock("../components/settings-group", () => ({
       },
       title,
     ),
-  SettingsSwitch: ({ title }: { title: string }) =>
-    createElement("button", { type: "button" }, title),
+  SettingsSwitch: ({
+    label,
+    value,
+    disabled,
+    onChange,
+  }: {
+    label: string;
+    value: boolean;
+    disabled?: boolean;
+    onChange: (value: boolean) => void;
+  }) =>
+    createElement(
+      "button",
+      {
+        type: "button",
+        role: "switch",
+        "aria-label": label,
+        "aria-checked": value,
+        disabled,
+        onClick: () => onChange(!value),
+      },
+      label,
+    ),
   useStackedSettings: () => false,
 }));
 vi.mock("./api", () => ({
@@ -204,6 +225,19 @@ vi.mock("./archived-chats", () => ({
 }));
 vi.mock("./auth-routing", () => ({ replaceWithSignIn: vi.fn() }));
 vi.mock("./delete-account-prompt", () => ({ promptAccountDeletion: vi.fn() }));
+const haptics = vi.hoisted(() => ({
+  enabled: true,
+  listeners: new Set<() => void>(),
+  save: vi.fn(async (_value: boolean) => undefined),
+}));
+vi.mock("./haptics", () => ({
+  getHapticsEnabled: () => haptics.enabled,
+  setHapticsEnabled: haptics.save,
+  subscribeHaptics: (listener: () => void) => {
+    haptics.listeners.add(listener);
+    return () => haptics.listeners.delete(listener);
+  },
+}));
 vi.mock("./i18n", () => {
   // Stable across renders, as the real hook's is.
   const i18n = { t: (text: string) => text, locale: "en" };
@@ -281,6 +315,12 @@ beforeEach(() => {
   account.me = { userId: "user-1", name: "Tester", email: "tester@example.test" };
   account.rules = [];
   account.messaging = { enabled: true };
+  haptics.enabled = true;
+  haptics.listeners.clear();
+  haptics.save.mockImplementation(async (value) => {
+    haptics.enabled = value;
+    for (const listener of haptics.listeners) listener();
+  });
   vi.mocked(fetchAccountSecurity).mockResolvedValue(security());
 });
 
@@ -335,6 +375,21 @@ async function renderAccount() {
     alert: () => screen.querySelector('[role="alert"]')?.textContent ?? null,
   };
 }
+
+it("shows a device haptics switch that follows and saves the local preference", async () => {
+  haptics.enabled = false;
+  const view = await renderAccount();
+  const toggle = view.screen.querySelector<HTMLButtonElement>(
+    '[role="switch"][aria-label="Haptics"]',
+  );
+  expect(toggle?.getAttribute("aria-checked")).toBe("false");
+  await view.press("Haptics");
+  expect(haptics.save).toHaveBeenLastCalledWith(true);
+  expect(toggle?.getAttribute("aria-checked")).toBe("true");
+  await view.press("Haptics");
+  expect(haptics.save).toHaveBeenLastCalledWith(false);
+  expect(toggle?.getAttribute("aria-checked")).toBe("false");
+});
 
 it("asks for the current password, shows a failed delete, and signs out after a successful one", async () => {
   const view = await renderAccount();

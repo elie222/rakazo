@@ -50,6 +50,7 @@ import {
 import { useApprovalSettings } from "../../lib/approval-settings";
 import { archivedChatCounts, loadArchivedChats } from "../../lib/archived-chats";
 import { replaceWithSignIn } from "../../lib/auth-routing";
+import { getHapticsEnabled, setHapticsEnabled, subscribeHaptics } from "../../lib/haptics";
 import { dateLocaleForUi, useI18n } from "../../lib/i18n";
 import type { LiveNotificationSettings } from "../../lib/live-notifications";
 import {
@@ -178,6 +179,11 @@ export default function Account() {
     subscribeRemoteImages,
     getCachedRemoteImagesEnabled,
     () => false,
+  );
+  const hapticsEnabled = useSyncExternalStore(
+    subscribeHaptics,
+    getHapticsEnabled,
+    getHapticsEnabled,
   );
   const loadRemoteImagesLabel = t("Load web images automatically");
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -623,6 +629,11 @@ export default function Account() {
             onPress={() => router.push("/language")}
             title={t("Language")}
             value={UI_LOCALE_LABELS[locale]}
+          />
+          <SettingsSwitch
+            label={t("Haptics")}
+            value={hapticsEnabled}
+            onChange={(value) => void setHapticsEnabled(value)}
           />
         </SettingsGroup>
 

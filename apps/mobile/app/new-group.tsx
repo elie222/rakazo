@@ -16,6 +16,7 @@ import { NativeActionButton } from "../components/native-action-button";
 import { SheetCloseButton } from "../components/sheet-close-button";
 import type { MobileBot } from "../lib/api";
 import { rpc } from "../lib/api";
+import { hapticSuccess } from "../lib/haptics";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
@@ -71,6 +72,9 @@ export default function NewGroup() {
         name: name.trim() || defaultGroupName(picked.map((bot) => bot.name)),
         botIds: selected,
       });
+      const current = searchInboxSession();
+      if (current.generation === askedIn.generation && current.apiBase === askedIn.apiBase)
+        hapticSuccess();
       addToSearchInbox({ kind: "group", group }, askedIn);
       router.replace({
         pathname: "/group-thread",

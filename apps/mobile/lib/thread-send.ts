@@ -16,6 +16,7 @@ import { currentApiBase, loadSessionToken, rpc, selectedSpaceId } from "./api";
 import { findSwitchTarget } from "./bot-switch";
 import { chatSettingsRoute } from "./chat-settings-route";
 import { cancelFocusPrompt } from "./focus-prompt";
+import { hapticImpact, hapticSuccess } from "./haptics";
 import { useI18n } from "./i18n";
 import { resumeLiveNotifications } from "./live-notifications";
 import { takePageReply } from "./pages";
@@ -152,6 +153,7 @@ export function useThreadSend({
       return;
     }
     preparingSend.current = true;
+    hapticImpact();
     try {
       await prepareUnsentSends();
     } catch (error) {
@@ -241,6 +243,7 @@ export function useThreadSend({
       !navigation.isFocused()
     )
       return;
+    hapticSuccess();
     if (reroutedToGroup && groupTarget) {
       router.push({
         pathname: "/group-thread",

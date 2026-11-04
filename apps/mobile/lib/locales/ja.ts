@@ -1,4 +1,5 @@
 export const JA_MESSAGES: Record<string, string> = {
+  Haptics: "触覚フィードバック",
   "Add rule": "ルールを追加",
   "Tool name": "ツール名",
   Address: "住所",

@@ -1,5 +1,9 @@
 import { AiConsentBlocked, callIdFromClientNonce, INTERIM_BARGE_IN_MS } from "@rakazo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { hapticImpact, hapticSuccess } from "./haptics";
+
+vi.mock("./haptics", () => ({ hapticImpact: vi.fn(), hapticSuccess: vi.fn() }));
+
 import type { CallClip, CallDeps, CallEnded, DictationHandlers } from "./call-session";
 import {
   ExpectedTurnFailure,
@@ -179,6 +183,27 @@ function fakes(opts: { onDevice?: boolean } = {}) {
 afterEach(() => endCall());
 
 describe("mobile call session", () => {
+  it("confirms connection and hang-up once, without buzzing for an absent or aborted call", async () => {
+    vi.mocked(hapticImpact).mockClear();
+    vi.mocked(hapticSuccess).mockClear();
+    endCall();
+    expect(hapticImpact).not.toHaveBeenCalled();
+    const fake = fakes();
+    startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+    await flush();
+    expect(hapticSuccess).toHaveBeenCalledTimes(1);
+    expect(hapticImpact).not.toHaveBeenCalled();
+    endCall();
+    endCall();
+    expect(hapticImpact).toHaveBeenCalledTimes(1);
+    const opening = deferred<void>();
+    startCall({ botId: "bot-2", botName: "Bob" }, { ...fake.deps, cue: () => opening.promise });
+    endCall();
+    opening.resolve();
+    await flush();
+    expect(hapticSuccess).toHaveBeenCalledTimes(1);
+  });
+
   it("retains an answered incoming call's id through speech, messages and hang-up", async () => {
     const fake = fakes();
     const id = startCall(

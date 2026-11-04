@@ -10,6 +10,12 @@ import { rpc } from "./api";
 import type { CallDeps } from "./call-session";
 import { endCall, startCall } from "./call-session";
 
+vi.mock("./haptics", () => ({
+  hapticImpact: vi.fn(),
+  hapticSelection: vi.fn(),
+  hapticSuccess: vi.fn(),
+}));
+
 const { activeTags, platform, sessionChange, startBackground, stopBackground, useKeepAwake } =
   vi.hoisted(() => ({
     activeTags: new Set<string>(),

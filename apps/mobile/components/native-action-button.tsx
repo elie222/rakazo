@@ -1,5 +1,6 @@
 import { ActivityIndicator, Platform, Pressable, Text } from "react-native";
 import type { mobileTokens } from "../lib/appearance";
+import { hapticImpact } from "../lib/haptics";
 import { native, useMobileTokens } from "../lib/native";
 import type { ActionProminence, NativeActionButtonProps } from "../lib/native-controls";
 import { actionAccessibilityState, actionFills, actionProminence } from "../lib/native-controls";
@@ -25,6 +26,11 @@ export function NativeActionButton({
 }: NativeActionButtonProps) {
   const tokens = useMobileTokens();
   const inactive = disabled || busy;
+  const press = () => {
+    if (inactive) return;
+    hapticImpact();
+    onPress();
+  };
   const stretches = actionFills(prominence, fill);
   const small = size === "compact";
   const effectiveProminence = actionProminence(prominence, selected);
@@ -47,7 +53,7 @@ export function NativeActionButton({
       disabled={inactive}
       hitSlop={compact ? 8 : undefined}
       android_ripple={androidRipple(withAlpha(colors.label, 0.2))}
-      onPress={onPress}
+      onPress={inactive ? undefined : press}
       style={({ pressed }) => [
         {
           flexDirection: "row",

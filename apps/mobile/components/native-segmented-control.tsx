@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { Platform } from "react-native";
 import { isComposeViewAvailable } from "../lib/compose-available";
+import { hapticSelection } from "../lib/haptics";
 import type { NativeSegmentedControlProps } from "../lib/native-controls";
 import type ComposeSegmentedControlComponent from "./native-segmented-control-compose";
 import { SegmentedPills } from "./segmented-pills";
@@ -19,7 +20,12 @@ const requiredViews = [
 
 /** Android segmented control. iOS uses a SwiftUI segmented picker. */
 export function NativeSegmentedControl<T extends string>(props: NativeSegmentedControlProps<T>) {
-  const fallback = <SegmentedPills {...props} />;
+  const select = (value: T) => {
+    if (props.disabled || value === props.value) return;
+    hapticSelection();
+    props.onChange(value);
+  };
+  const fallback = <SegmentedPills {...props} onChange={select} />;
   if (
     props.options.length >= 4 ||
     Platform.OS !== "android" ||
@@ -28,7 +34,7 @@ export function NativeSegmentedControl<T extends string>(props: NativeSegmentedC
     return fallback;
   return (
     <Suspense fallback={fallback}>
-      <ComposeSegmentedControl {...props} />
+      <ComposeSegmentedControl {...props} onChange={select} />
     </Suspense>
   );
 }

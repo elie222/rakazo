@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ApiModule from "./api";
 import type { MobileSnapshot } from "./api";
 import { applyMobileThreadEvent, rpc, subscribeThread } from "./api";
+import { hapticSuccess } from "./haptics";
 import type { ThreadJumpAnchor } from "./thread-jump";
 import { useThreadLiveSubscription } from "./thread-live";
 import type { PinnedThreadWindow } from "./thread-window";
@@ -22,6 +23,7 @@ vi.mock("./user-error", () => ({ errorText: String }));
 vi.mock("./ai-consent", () => ({}));
 vi.mock("./live-notifications", () => ({}));
 vi.mock("expo-secure-store", () => ({}));
+vi.mock("./haptics", () => ({ getHapticsEnabled: () => true, hapticSuccess: vi.fn() }));
 
 type LiveEvent = { type: string; seq: number; runId?: string };
 const ref = <T>(current: T) => ({ current });
@@ -103,7 +105,8 @@ describe("thread foreground subscription", () => {
   it("keeps group member status right in older history, where no refresh corrects it", async () => {
     const actual = await vi.importActual<typeof ApiModule>("./api");
     vi.mocked(applyMobileThreadEvent).mockImplementation(actual.applyMobileThreadEvent);
-    let deliver: (event: LiveEvent & { botId?: string }) => void = () => {};
+    vi.mocked(rpc).mockResolvedValue({ cursor: 10, threadId: "thread-1" } as never);
+    let deliver: (event: LiveEvent & { botId?: string; createdAt?: string }) => void = () => {};
     vi.mocked(subscribeThread).mockImplementation(async (_target, _cursor, onEvent, signal) => {
       deliver = onEvent as unknown as typeof deliver;
       await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve()));
@@ -127,6 +130,7 @@ describe("thread foreground subscription", () => {
       useThreadLiveSubscription({
         groupId: "group-1",
         foreground: true,
+        focused: true,
         readOnly: false,
         sessionEpoch: 1,
         historyEpoch: ref(0),
@@ -155,9 +159,107 @@ describe("thread foreground subscription", () => {
     await act(async () => {});
     expect(status()).toBe("waiting_input");
     deliver({ type: "run.started", seq: 13, botId: "bot-1", runId: "run-1" });
-    deliver({ type: "run.completed", seq: 14, botId: "bot-1", runId: "run-1" });
+    deliver({
+      type: "run.completed",
+      seq: 14,
+      botId: "bot-1",
+      runId: "run-1",
+      createdAt: new Date().toISOString(),
+    });
     await act(async () => {});
     expect(status()).toBe("idle");
+    expect(snapRef.current?.run).toBeNull();
+    expect(hapticSuccess).toHaveBeenCalledTimes(1);
+    expect(refresh).not.toHaveBeenCalled();
+    act(() => root.unmount());
+  });
+
+  it("confirms live completions once and suppresses failures, hidden chats and catch-up events", async () => {
+    const actual = await vi.importActual<typeof ApiModule>("./api");
+    vi.mocked(applyMobileThreadEvent).mockImplementation(actual.applyMobileThreadEvent);
+    type Event = Parameters<Parameters<typeof subscribeThread>[2]>[0];
+    let deliver: (event: Event) => void = () => {};
+    vi.mocked(subscribeThread).mockImplementation(async (_target, _cursor, onEvent, signal) => {
+      deliver = onEvent;
+      await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve()));
+    });
+    const snapRef = ref<MobileSnapshot | null>({
+      botId: "bot-1",
+      threadId: "thread-1",
+      cursor: 10,
+      messages: [],
+      run: null,
+      activeRuns: [],
+    } as unknown as MobileSnapshot);
+    const refresh = vi.fn(async () => snapRef.current ?? undefined);
+    let headCursor = 10;
+    vi.mocked(rpc).mockImplementation(
+      async () => ({ cursor: headCursor, threadId: "thread-1" }) as never,
+    );
+    const refreshMentionBots = vi.fn(async () => {});
+    const markReadIfVisible = vi.fn();
+    const root = createRoot(document.createElement("div"));
+    function Probe({ focused, foreground }: { focused: boolean; foreground: boolean }) {
+      useThreadLiveSubscription({
+        botId: "bot-1",
+        focused,
+        foreground,
+        readOnly: false,
+        sessionEpoch: 1,
+        historyEpoch: ref(0),
+        expandedHistoryThread: ref("thread-1"),
+        pinnedAroundRef: ref(null),
+        jumpScrollTarget: ref(null),
+        jumpAnchor: ref({ release: vi.fn() } as unknown as ThreadJumpAnchor),
+        snapRef,
+        readVisibleTarget: ref(null),
+        showSavedThread: vi.fn(),
+        refresh,
+        commitSnap: (next) => {
+          snapRef.current = next;
+        },
+        setError: vi.fn(),
+        refreshMentionBots,
+        markReadIfVisible,
+      });
+      return null;
+    }
+    const render = (focused: boolean, foreground = true) =>
+      act(async () => root.render(createElement(Probe, { focused, foreground })));
+    await render(true);
+    refresh.mockClear();
+    const event = (type: string, seq: number, runId: string): Event => ({
+      type,
+      seq,
+      runId,
+      botId: "bot-1",
+      // Device and server clocks can disagree in either direction.
+      createdAt: seq % 2 ? "1970-01-01T00:00:00Z" : "2099-01-01T00:00:00Z",
+    });
+    deliver(event("run.started", 11, "run-1"));
+    deliver(event("thread.progress", 12, "run-1"));
+    expect(hapticSuccess).not.toHaveBeenCalled();
+    deliver(event("run.completed", 13, "run-1"));
+    expect(snapRef.current?.run).toBeNull();
+    expect(hapticSuccess).toHaveBeenCalledTimes(1);
+    deliver(event("run.completed", 13, "run-1"));
+    deliver(event("run.completed", 14, "run-1"));
+    deliver(event("run.failed", 15, "run-2"));
+    deliver(event("run.cancelled", 16, "run-3"));
+    expect(hapticSuccess).toHaveBeenCalledTimes(1);
+    await render(false);
+    expect(subscribeThread).toHaveBeenCalledTimes(1);
+    deliver(event("run.completed", 18, "hidden-run"));
+    headCursor = 19;
+    await render(true, false);
+    deliver(event("run.completed", 19, "aborted-stream"));
+    await render(true);
+    deliver(event("run.completed", 19, "background-run"));
+    expect(hapticSuccess).toHaveBeenCalledTimes(1);
+    deliver(event("run.started", 20, "run-4"));
+    deliver(event("run.completed", 21, "run-4"));
+    expect(hapticSuccess).toHaveBeenCalledTimes(2);
+    await act(async () => {});
     expect(refresh).not.toHaveBeenCalled();
     act(() => root.unmount());
   });

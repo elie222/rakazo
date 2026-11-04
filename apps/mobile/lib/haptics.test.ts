@@ -1,0 +1,306 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { native, values, storage, feedback } = vi.hoisted(() => {
+  const values = new Map<string, string>();
+  return {
+    native: {
+      Platform: { OS: "ios", Version: 34 },
+      AppState: { currentState: "active" as string | null },
+    },
+    values,
+    storage: {
+      getItemAsync: vi.fn(async (key: string) => values.get(key) ?? null),
+      setItemAsync: vi.fn(async (key: string, value: string) => {
+        values.set(key, value);
+      }),
+    },
+    feedback: {
+      selectionAsync: vi.fn(async () => undefined),
+      impactAsync: vi.fn(async (_style: string) => undefined),
+      notificationAsync: vi.fn(async (_type: string) => undefined),
+      performAndroidHapticsAsync: vi.fn(async (_type: string) => undefined),
+      AndroidHaptics: {
+        Segment_Tick: "segment-tick",
+        Context_Click: "context-click",
+        Clock_Tick: "clock-tick",
+        Confirm: "confirm",
+      },
+      ImpactFeedbackStyle: { Light: "light" },
+      NotificationFeedbackType: { Success: "success" },
+    },
+  };
+});
+
+vi.mock("react-native", () => native);
+vi.mock("expo-secure-store", () => storage);
+vi.mock("expo-haptics", () => feedback);
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+function expectNoFeedback(): void {
+  expect(feedback.selectionAsync).not.toHaveBeenCalled();
+  expect(feedback.impactAsync).not.toHaveBeenCalled();
+  expect(feedback.notificationAsync).not.toHaveBeenCalled();
+  expect(feedback.performAndroidHapticsAsync).not.toHaveBeenCalled();
+}
+
+describe("mobile haptics", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    values.clear();
+    native.Platform.OS = "ios";
+    native.Platform.Version = 34;
+    native.AppState.currentState = "active";
+    storage.getItemAsync.mockReset().mockImplementation(async (key) => values.get(key) ?? null);
+    storage.setItemAsync.mockReset().mockImplementation(async (key, value) => {
+      values.set(key, value);
+    });
+    for (const method of [
+      feedback.selectionAsync,
+      feedback.impactAsync,
+      feedback.notificationAsync,
+      feedback.performAndroidHapticsAsync,
+    ]) {
+      method.mockReset().mockResolvedValue(undefined);
+    }
+  });
+
+  it("defaults to enabled but stays silent until the saved preference has loaded", async () => {
+    const haptics = await import("./haptics");
+    expect(haptics.getHapticsEnabled()).toBe(true);
+    haptics.hapticSelection();
+    haptics.hapticImpact();
+    haptics.hapticSuccess();
+    expectNoFeedback();
+
+    await haptics.loadHapticsPreference();
+    expect(haptics.getHapticsEnabled()).toBe(true);
+    expect(haptics.hapticSelection()).toBeUndefined();
+    expect(feedback.selectionAsync).toHaveBeenCalledOnce();
+  });
+
+  it("keeps startup taps silent while a disabled preference is still being read", async () => {
+    const read = deferred<string | null>();
+    storage.getItemAsync.mockReturnValue(read.promise);
+    const haptics = await import("./haptics");
+    const loading = haptics.loadHapticsPreference();
+    haptics.hapticSelection();
+    haptics.hapticImpact();
+    haptics.hapticSuccess();
+    expectNoFeedback();
+    read.resolve("false");
+    await loading;
+    expect(haptics.getHapticsEnabled()).toBe(false);
+    haptics.hapticSelection();
+    haptics.hapticImpact();
+    haptics.hapticSuccess();
+    expectNoFeedback();
+  });
+
+  it("shares a single initial storage read", async () => {
+    const read = deferred<string | null>();
+    storage.getItemAsync.mockReturnValue(read.promise);
+    const { loadHapticsPreference } = await import("./haptics");
+    const first = loadHapticsPreference();
+    expect(loadHapticsPreference()).toBe(first);
+    expect(storage.getItemAsync).toHaveBeenCalledOnce();
+    read.resolve(null);
+    await first;
+    await loadHapticsPreference();
+    expect(storage.getItemAsync).toHaveBeenCalledOnce();
+  });
+
+  it("uses selection, light impact, and success feedback on iOS", async () => {
+    const haptics = await import("./haptics");
+    await haptics.loadHapticsPreference();
+    expect(haptics.hapticSelection()).toBeUndefined();
+    expect(haptics.hapticImpact()).toBeUndefined();
+    expect(haptics.hapticSuccess()).toBeUndefined();
+    expect(feedback.selectionAsync).toHaveBeenCalledOnce();
+    expect(feedback.impactAsync).toHaveBeenCalledExactlyOnceWith("light");
+    expect(feedback.notificationAsync).toHaveBeenCalledExactlyOnceWith("success");
+    expect(feedback.performAndroidHapticsAsync).not.toHaveBeenCalled();
+  });
+
+  it("uses Android system haptic constants instead of the vibrator-backed iOS APIs", async () => {
+    native.Platform.OS = "android";
+    const haptics = await import("./haptics");
+    await haptics.loadHapticsPreference();
+    haptics.hapticSelection();
+    haptics.hapticImpact();
+    haptics.hapticSuccess();
+    expect(feedback.performAndroidHapticsAsync.mock.calls).toEqual([
+      ["segment-tick"],
+      ["context-click"],
+      ["confirm"],
+    ]);
+    expect(feedback.selectionAsync).not.toHaveBeenCalled();
+    expect(feedback.impactAsync).not.toHaveBeenCalled();
+    expect(feedback.notificationAsync).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [24, ["clock-tick", "context-click", "context-click"]],
+    [29, ["clock-tick", "context-click", "context-click"]],
+    [33, ["clock-tick", "context-click", "confirm"]],
+  ] as const)("uses supported system feedback on Android API %s", async (api, expected) => {
+    native.Platform.OS = "android";
+    native.Platform.Version = api;
+    const haptics = await import("./haptics");
+    await haptics.loadHapticsPreference();
+    haptics.hapticSelection();
+    haptics.hapticImpact();
+    haptics.hapticSuccess();
+    expect(feedback.performAndroidHapticsAsync.mock.calls.map(([type]) => type)).toEqual(expected);
+    expect(feedback.selectionAsync).not.toHaveBeenCalled();
+    expect(feedback.impactAsync).not.toHaveBeenCalled();
+    expect(feedback.notificationAsync).not.toHaveBeenCalled();
+  });
+
+  it.each(["background", "inactive", "unknown", null])(
+    "stays silent when the app state is %s",
+    async (state) => {
+      const haptics = await import("./haptics");
+      await haptics.loadHapticsPreference();
+      native.AppState.currentState = state;
+      haptics.hapticSelection();
+      haptics.hapticImpact();
+      haptics.hapticSuccess();
+      expectNoFeedback();
+    },
+  );
+
+  it("does nothing on unsupported platforms", async () => {
+    native.Platform.OS = "web";
+    const haptics = await import("./haptics");
+    await haptics.loadHapticsPreference();
+    haptics.hapticSelection();
+    haptics.hapticImpact();
+    haptics.hapticSuccess();
+    expectNoFeedback();
+  });
+
+  it("applies a toggle immediately while the device save is pending", async () => {
+    const save = deferred<void>();
+    storage.setItemAsync.mockReturnValue(save.promise);
+    const haptics = await import("./haptics");
+    await haptics.loadHapticsPreference();
+    const listener = vi.fn();
+    const unsubscribe = haptics.subscribeHaptics(listener);
+    const pending = haptics.setHapticsEnabled(false);
+    expect(haptics.getHapticsEnabled()).toBe(false);
+    expect(listener).toHaveBeenCalledOnce();
+    haptics.hapticSelection();
+    expectNoFeedback();
+    save.resolve();
+    await pending;
+    unsubscribe();
+    await haptics.setHapticsEnabled(true);
+    expect(listener).toHaveBeenCalledOnce();
+    haptics.hapticSelection();
+    expect(feedback.selectionAsync).toHaveBeenCalledOnce();
+  });
+
+  it("notifies subscribers when a saved preference has loaded", async () => {
+    values.set("rakazo.haptics", "false");
+    const haptics = await import("./haptics");
+    const listener = vi.fn();
+    haptics.subscribeHaptics(listener);
+    await haptics.loadHapticsPreference();
+    expect(listener).toHaveBeenCalledOnce();
+    expect(haptics.getHapticsEnabled()).toBe(false);
+  });
+
+  it("never lets a stale initial read undo a choice made during that read", async () => {
+    const read = deferred<string | null>();
+    storage.getItemAsync.mockReturnValue(read.promise);
+    const haptics = await import("./haptics");
+    const loading = haptics.loadHapticsPreference();
+    await haptics.setHapticsEnabled(false);
+    read.resolve("true");
+    await loading;
+    expect(haptics.getHapticsEnabled()).toBe(false);
+    haptics.hapticSuccess();
+    expectNoFeedback();
+  });
+
+  it("keeps an explicit choice made before the initial read starts", async () => {
+    storage.getItemAsync.mockResolvedValue("true");
+    const haptics = await import("./haptics");
+    await haptics.setHapticsEnabled(false);
+    await haptics.loadHapticsPreference();
+    expect(haptics.getHapticsEnabled()).toBe(false);
+  });
+
+  it("serializes rapid saves so the final choice survives a reload", async () => {
+    const firstSave = deferred<void>();
+    storage.setItemAsync.mockImplementationOnce(async (key, value) => {
+      await firstSave.promise;
+      values.set(key, value);
+    });
+    const haptics = await import("./haptics");
+    await haptics.loadHapticsPreference();
+    const first = haptics.setHapticsEnabled(false);
+    const second = haptics.setHapticsEnabled(true);
+    const third = haptics.setHapticsEnabled(false);
+    expect(haptics.getHapticsEnabled()).toBe(false);
+    await Promise.resolve();
+    expect(storage.setItemAsync).toHaveBeenCalledTimes(1);
+    firstSave.resolve();
+    await Promise.all([first, second, third]);
+    expect(storage.setItemAsync.mock.calls).toEqual([
+      ["rakazo.haptics", "false"],
+      ["rakazo.haptics", "true"],
+      ["rakazo.haptics", "false"],
+    ]);
+    vi.resetModules();
+    const reloaded = await import("./haptics");
+    await reloaded.loadHapticsPreference();
+    expect(reloaded.getHapticsEnabled()).toBe(false);
+  });
+
+  it("keeps the default after a storage read fails", async () => {
+    storage.getItemAsync.mockRejectedValue(new Error("storage unavailable"));
+    const haptics = await import("./haptics");
+    await expect(haptics.loadHapticsPreference()).resolves.toBeUndefined();
+    expect(haptics.getHapticsEnabled()).toBe(true);
+    haptics.hapticSelection();
+    expect(feedback.selectionAsync).toHaveBeenCalledOnce();
+  });
+
+  it("keeps memory after a failed save and still persists the next toggle", async () => {
+    storage.setItemAsync.mockRejectedValueOnce(new Error("storage unavailable"));
+    const haptics = await import("./haptics");
+    await haptics.loadHapticsPreference();
+    await expect(haptics.setHapticsEnabled(false)).resolves.toBeUndefined();
+    expect(haptics.getHapticsEnabled()).toBe(false);
+    await haptics.setHapticsEnabled(true);
+    expect(values.get("rakazo.haptics")).toBe("true");
+  });
+
+  it("swallows synchronous and rejected native failures", async () => {
+    const haptics = await import("./haptics");
+    await haptics.loadHapticsPreference();
+    feedback.selectionAsync.mockImplementationOnce(() => {
+      throw new Error("native module unavailable");
+    });
+    feedback.impactAsync.mockRejectedValueOnce(new Error("native request failed"));
+    feedback.notificationAsync.mockRejectedValueOnce(new Error("unsupported device"));
+    expect(() => {
+      haptics.hapticSelection();
+      haptics.hapticImpact();
+      haptics.hapticSuccess();
+    }).not.toThrow();
+    await Promise.resolve();
+    native.Platform.OS = "android";
+    feedback.performAndroidHapticsAsync.mockRejectedValueOnce(new Error("unsupported device"));
+    expect(haptics.hapticSelection()).toBeUndefined();
+    await Promise.resolve();
+  });
+});

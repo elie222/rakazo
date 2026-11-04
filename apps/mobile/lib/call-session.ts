@@ -38,6 +38,7 @@ import {
 } from "./call-sounds";
 import type { DictationGiveUp } from "./dictation";
 import * as dictation from "./dictation";
+import { hapticImpact, hapticSuccess } from "./haptics";
 import { deviceLanguage, getActiveUiLocale, t } from "./i18n";
 import { reportMobileError } from "./monitoring";
 import { currentSessionGeneration, subscribeSessionGeneration } from "./session";
@@ -254,6 +255,7 @@ async function openCall(openedCallId: string, greeting?: string): Promise<void> 
   opening = true;
   await deps.cue("start").catch(() => undefined);
   if (!state || callId !== openedCallId) return;
+  hapticSuccess();
   opening = false;
   if (greeting) speakAndListen(greeting);
   else void listen();
@@ -277,6 +279,7 @@ export function endCall(): void {
     callSends.closeAfterSends(closingCallId, () => closeServerCall(botId, closingCallId));
   }
   if (state) {
+    hapticImpact();
     deps.waitSound("release");
     // A reply can still be playing when the caller hangs up: cut it with the call.
     deps.stopSpeaking();

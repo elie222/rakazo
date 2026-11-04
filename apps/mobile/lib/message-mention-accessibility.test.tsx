@@ -6,6 +6,12 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MobileSnapshot } from "./api";
 
+vi.mock("./haptics", () => ({
+  hapticImpact: vi.fn(),
+  hapticSelection: vi.fn(),
+  hapticSuccess: vi.fn(),
+}));
+
 const surfaces = vi.hoisted(() => [] as Record<string, unknown>[]);
 
 vi.mock("react-native", () => ({

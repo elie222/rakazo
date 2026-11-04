@@ -9,6 +9,7 @@ import type { RefObject } from "react";
 import { useEffect, useRef } from "react";
 import type { MobileSnapshot } from "./api";
 import { applyMobileThreadEvent, rpc, subscribeThread } from "./api";
+import { getHapticsEnabled, hapticSuccess } from "./haptics";
 import { currentSessionGeneration } from "./session";
 import type { ThreadJumpAnchor } from "./thread-jump";
 import type { PinnedThreadWindow } from "./thread-window";
@@ -23,6 +24,7 @@ export function useThreadLiveSubscription({
   botId,
   groupId,
   foreground,
+  focused = false,
   readOnly,
   sessionEpoch,
   messageId,
@@ -43,6 +45,7 @@ export function useThreadLiveSubscription({
   botId?: string;
   groupId?: string;
   foreground: boolean;
+  focused?: boolean;
   readOnly: boolean;
   sessionEpoch: number;
   /** A pending search jump, which loads its own page instead of the latest one. */
@@ -64,10 +67,34 @@ export function useThreadLiveSubscription({
   const liveSubscribed = useRef(false);
   const liveCursor = useRef<number | null>(null);
   const liveSubscriptionGeneration = useRef(0);
+  const completedRuns = useRef(new Set<string>());
+  const feedbackCursor = useRef<number | null>(null);
+  const visible = useRef(false);
+  visible.current = foreground && focused;
 
   useEffect(() => {
     liveCursor.current = null;
+    completedRuns.current.clear();
   }, [botId, groupId, sessionEpoch]);
+
+  useEffect(() => {
+    feedbackCursor.current = null;
+    if ((!botId && !groupId) || !foreground || !focused || readOnly || !getHapticsEnabled()) return;
+    const abort = new AbortController();
+    const generation = currentSessionGeneration();
+    // Establish a server-side boundary without changing a pinned or expanded history window.
+    void rpc("threads/head", groupId ? { groupId } : { botId: botId! }, { signal: abort.signal })
+      .then((head) => {
+        if (!abort.signal.aborted && generation === currentSessionGeneration()) {
+          feedbackCursor.current = head.cursor;
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      abort.abort();
+      feedbackCursor.current = null;
+    };
+  }, [botId, groupId, foreground, focused, readOnly, sessionEpoch]);
 
   useEffect(() => {
     // Resume the same chat from its applied cursor so pinned and expanded windows catch up.
@@ -118,6 +145,7 @@ export function useThreadLiveSubscription({
             cursor,
             (event) => {
               if (abort.signal.aborted || sessionGeneration !== currentSessionGeneration()) return;
+              const newEvent = (event.seq ?? -1) > cursor;
               cursor = Math.max(cursor, event.seq ?? -1);
               retryMs = 250;
               if (event.type === "thread.cleared") {
@@ -140,6 +168,22 @@ export function useThreadLiveSubscription({
               }
               if (isRunTerminalEvent(event)) {
                 void refreshMentionBots();
+              }
+              if (
+                event.type === "run.completed" &&
+                event.runId &&
+                !completedRuns.current.has(event.runId)
+              ) {
+                completedRuns.current.add(event.runId);
+                // Resumed streams also replay completions from before this chat was visible.
+                if (
+                  newEvent &&
+                  visible.current &&
+                  feedbackCursor.current !== null &&
+                  (event.seq ?? -1) > feedbackCursor.current
+                ) {
+                  hapticSuccess();
+                }
               }
               if (isRunTerminalEvent(event) || event.type === "run.waiting_input") {
                 // Reconcile run ownership for ask cards first seen through live events.
