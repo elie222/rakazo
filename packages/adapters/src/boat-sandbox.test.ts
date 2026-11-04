@@ -2133,6 +2133,23 @@ describe("BoatSandboxProvider", () => {
       error: "CDP not ready on port 9241: refused",
     });
 
+    // An older computer image refuses a command it does not know with exit 2.
+    api.withInput = () => ({
+      exitCode: 2,
+      stdout: JSON.stringify({
+        ok: false,
+        error: "unknown command: purchase_check",
+        fallback: "computer_act",
+      }),
+    });
+    await expect(
+      browser.purchaseCheck(
+        computer,
+        { desktop: true, enter: false, points: [{ x: 10, y: 10 }], unplaced: false },
+        context,
+      ),
+    ).resolves.toEqual({ purchase: null });
+
     api.withInput = () => ({ exitCode: 1, stdout: "Traceback" });
     await expect(
       browser.act(computer, { actions: [{ kind: "click", ref: "e1" }] }, context),
