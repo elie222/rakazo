@@ -3,6 +3,7 @@ import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-s
 import { beforeEach, expect, it, vi } from "vitest";
 import type * as AutoReviewModule from "./auto-review.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
+import { PINNED_COMPUTER_MODEL_LOST_RUN_ERROR } from "./computer-model-settings.js";
 import { createRunExecutor } from "./executor.js";
 import type * as ModelRolesModule from "./model-roles.js";
 import type * as ModelSelectionModule from "./model-selection.js";
@@ -536,7 +537,7 @@ it.each([
     });
     await f.run();
     expect(f.finalizeRun).toHaveBeenLastCalledWith(
-      expect.objectContaining({ error: "Pinned computer mode model is unavailable" }),
+      expect.objectContaining({ error: PINNED_COMPUTER_MODEL_LOST_RUN_ERROR }),
     );
     expect(resolveModelKey).not.toHaveBeenCalled();
     expect(fake.stream).not.toHaveBeenCalled();

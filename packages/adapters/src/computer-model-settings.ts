@@ -55,6 +55,9 @@ const LOST_PIN_MESSAGES = new Set([
   "Backup model credential is no longer available",
 ]);
 
+export const PINNED_COMPUTER_MODEL_LOST_RUN_ERROR =
+  "A model this paused task was using is no longer connected, so it cannot continue. Reconnect the account or start the task again.";
+
 /** A paused computer turn's model or account is gone for good, not briefly unreachable. */
 export function isLostPinnedModel(error: unknown): boolean {
   return (

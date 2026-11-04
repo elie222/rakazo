@@ -165,3 +165,45 @@ it.each([false, true])(
     }
   },
 );
+
+// Screenshots from computer mode stay in the transcript. A text-only main model must not
+// receive them after leave_computer_mode: Pi's serializer replaces each image with text.
+it("sends a text-only main model placeholders, not screenshots, after computer mode", async () => {
+  const target = computerTarget(claude);
+  const textOnly = { ...target.model, input: ["text" as const] };
+  const screenshot = "c2NyZWVuc2hvdC1maXh0dXJlLWJ5dGVz";
+  const observe = assistant(codex, "computer_observe");
+  const messages: Message[] = [
+    { role: "user", content: "Use the computer", timestamp: 0 },
+    ...exchange(claude, "enter_computer_mode"),
+    observe,
+    {
+      role: "toolResult",
+      toolCallId: (observe.content[1] as { id: string }).id,
+      toolName: "computer_observe",
+      content: [
+        { type: "text", text: "Observed the desktop" },
+        { type: "image", data: screenshot, mimeType: "image/png" },
+      ],
+      isError: false,
+      timestamp: 3,
+    },
+    ...exchange(codex, "leave_computer_mode"),
+  ];
+  let payload = "";
+  const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    payload = await new Request(input, init).text();
+    return new Response(
+      JSON.stringify({ error: { message: "fixture stop", type: "invalid_request_error" } }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    );
+  });
+  await target.models
+    .streamSimple(textOnly, { messages }, { apiKey: claude.apiKey, fetch, transport: "sse" })
+    .result();
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(payload).toContain("Observed the desktop");
+  expect(payload).not.toContain(screenshot);
+  expect(payload).not.toContain('"type":"image"');
+  expect(payload).toContain("image omitted");
+});

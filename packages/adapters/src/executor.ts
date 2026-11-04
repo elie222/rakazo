@@ -81,6 +81,7 @@ import {
 import {
   computerCheckpointResolver,
   isLostPinnedModel,
+  PINNED_COMPUTER_MODEL_LOST_RUN_ERROR,
   resolveComputerRunModel,
 } from "./computer-model-settings.js";
 import { teamBotWorkspaceDirectory } from "./computer-support.js";
@@ -573,7 +574,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           } catch (error) {
             // A paused turn whose model or account is gone cannot resume; retrying will not help.
             if (!isLostPinnedModel(error)) throw error;
-            pinnedComputerFailure = (error as Error).message;
+            pinnedComputerFailure = PINNED_COMPUTER_MODEL_LOST_RUN_ERROR;
           }
         }
         const messagingSource =
