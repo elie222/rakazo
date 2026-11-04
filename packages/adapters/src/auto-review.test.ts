@@ -183,6 +183,7 @@ describe("parseAutoReviewJudgeText", () => {
       reason: "Sends email outside scope.",
     });
     expect(parseAutoReviewJudgeText("not json")).toEqual({ decision: "error" });
+    expect(parseAutoReviewJudgeText('{"decision":"pass"')).toEqual({ decision: "error" });
   });
 
   it("strips em dashes from reasons", () => {

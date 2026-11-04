@@ -13,10 +13,13 @@ describe("parseModelJson", () => {
     expect(parseModelJson(text, Verdict)).toEqual({ pass: true, reason: "ok" });
   });
 
-  it.each(["", "Chat reply asks about the lease. Verdict: pass", '{"pass":"yes","reason":"ok"}'])(
-    "rejects %j",
-    (text) => {
-      expect(parseModelJson(text, Verdict)).toBeUndefined();
-    },
-  );
+  it.each([
+    "",
+    "Chat reply asks about the lease. Verdict: pass",
+    '{"pass":"yes","reason":"ok"}',
+    '{"pass":true,"reason":"ok"',
+    '```json\n{"pass": true, "reason": "ok"',
+  ])("rejects %j", (text) => {
+    expect(parseModelJson(text, Verdict)).toBeUndefined();
+  });
 });
