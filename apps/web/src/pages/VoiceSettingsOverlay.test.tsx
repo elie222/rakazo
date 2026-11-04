@@ -124,11 +124,12 @@ it("selects an available provider when the saved self-hosted provider is hidden"
   }
 });
 
-it("saves a Fish speech model on the existing provider pane", async () => {
+it("saves a speech model on the existing pane of a provider that takes one", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   voice.catalog.mockResolvedValue([
-    { id: "fish-audio", name: "Fish Audio", description: "", transcribe: true },
-    { id: "elevenlabs", name: "ElevenLabs", description: "", transcribe: true },
+    { id: "fish-audio", name: "Fish Audio", description: "", transcribe: true, speechModel: true },
+    { id: "elevenlabs", name: "ElevenLabs", description: "", transcribe: true, speechModel: true },
+    { id: "openai", name: "OpenAI", description: "", transcribe: true },
   ]);
   voice.credentials.mockResolvedValue([fish, eleven]);
   voice.status.mockResolvedValue({
@@ -144,7 +145,7 @@ it("saves a Fish speech model on the existing provider pane", async () => {
       : [{ id: "voice-1", label: "Aria" }],
   );
   voice.setSpeechModel.mockImplementation(async ({ speechModel }: { speechModel: string }) => ({
-    ...fish,
+    ...eleven,
     speechModel,
   }));
 
@@ -172,7 +173,7 @@ it("saves a Fish speech model on the existing provider pane", async () => {
     expect(input?.placeholder).toBe("Optional");
 
     await act(async () => {
-      chooseProvider("elevenlabs");
+      chooseProvider("openai");
     });
     await act(async () => {
       await Promise.resolve();
@@ -180,27 +181,27 @@ it("saves a Fish speech model on the existing provider pane", async () => {
     expect(speechModelInput(container)).toBeUndefined();
 
     await act(async () => {
-      chooseProvider("fish-audio");
+      chooseProvider("elevenlabs");
     });
     await act(async () => {
       await Promise.resolve();
     });
-    const fishInput = speechModelInput(container);
-    if (!fishInput) throw new Error("Missing speech model field");
+    const elevenInput = speechModelInput(container);
+    if (!elevenInput) throw new Error("Missing speech model field");
     await act(async () => {
-      fishInput.focus();
+      elevenInput.focus();
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-      setter?.call(fishInput, "s1");
-      fishInput.dispatchEvent(new Event("input", { bubbles: true }));
+      setter?.call(elevenInput, "eleven_v4");
+      elevenInput.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () => {
-      fishInput.blur();
+      elevenInput.blur();
     });
 
     expect(voice.setSpeechModel).toHaveBeenCalledWith({
       scope: "account",
-      provider: "fish-audio",
-      speechModel: "s1",
+      provider: "elevenlabs",
+      speechModel: "eleven_v4",
     });
   } finally {
     await act(async () => root.unmount());

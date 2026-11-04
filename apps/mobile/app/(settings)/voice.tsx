@@ -344,7 +344,7 @@ export default function VoiceSettings() {
         apiKey: apiKey.trim(),
         // The server drops this voice when the address or speech model really changed.
         voiceId: voiceId || undefined,
-        ...(selected.id === "fish-audio" ? { speechModel: speechModel.trim() } : {}),
+        ...(selected.speechModel ? { speechModel: speechModel.trim() } : {}),
         ...(selfHosted
           ? {
               baseUrl: baseUrl.trim(),
@@ -379,7 +379,7 @@ export default function VoiceSettings() {
   }
 
   async function saveSpeechModel() {
-    if (!credential || selected?.id !== "fish-audio" || pending !== null) return;
+    if (!credential || !selected?.speechModel || pending !== null) return;
     const next = speechModel.trim();
     if (next === (credential.speechModel ?? "")) return;
     if (speechModelSave.current === next) return;
@@ -608,7 +608,7 @@ export default function VoiceSettings() {
                 prominence="destructive"
               />
             ) : null}
-            {credential && selected.id === "fish-audio" ? (
+            {credential && selected.speechModel ? (
               <>
                 <Text style={styles.fieldLabel}>{t("Speech model")}</Text>
                 <TextInput

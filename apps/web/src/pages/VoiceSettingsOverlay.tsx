@@ -241,7 +241,7 @@ export function VoiceSettingsOverlay({
         apiKey: apiKey.trim(),
         // The server drops this voice when the address or speech model really changed.
         voiceId: voiceId || undefined,
-        ...(selected.id === "fish-audio" ? { speechModel: speechModel.trim() } : {}),
+        ...(selected.speechModel ? { speechModel: speechModel.trim() } : {}),
         ...(selfHosted
           ? {
               baseUrl: baseUrl.trim(),
@@ -293,7 +293,7 @@ export function VoiceSettingsOverlay({
   }
 
   async function saveSpeechModel() {
-    if (!credential || selected?.id !== "fish-audio") return;
+    if (!credential || !selected?.speechModel) return;
     const next = speechModel.trim();
     if (next === credential.speechModel) return;
     if (speechModelSave.current === next) return;
@@ -560,7 +560,7 @@ export function VoiceSettingsOverlay({
                   </NativeSelect>
                 )}
               </Field>
-              {selected.id === "fish-audio" ? (
+              {selected.speechModel ? (
                 <Field className="mt-6">
                   <FieldLabel htmlFor={speechModelId}>
                     <Trans>Speech model</Trans>
