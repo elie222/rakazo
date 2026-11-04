@@ -1,0 +1,35 @@
+---
+import type { RichPart } from "../grok-alternative";
+import { richParts } from "../grok-alternative";
+import type { InlinePart } from "../inline-code";
+import { splitInlineCode } from "../inline-code";
+
+/** Renders `code` spans and [label](href) links inside a sentence. */
+type Props = {
+  text: string;
+};
+
+const { text } = Astro.props;
+const parts: Array<RichPart | InlinePart> = splitInlineCode(text).flatMap(
+  (part): Array<RichPart | InlinePart> => (part.kind === "code" ? [part] : richParts(part.value)),
+);
+---
+
+{
+  parts.map((part) =>
+    part.kind === "code" ? (
+      <code>{part.value}</code>
+    ) : part.kind === "link" ? (
+      <a
+        href={part.href}
+        {...(part.href.startsWith("http") && !part.href.startsWith("https://rakazo.com")
+          ? { target: "_blank", rel: "noopener noreferrer" }
+          : {})}
+      >
+        {part.label}
+      </a>
+    ) : (
+      part.value
+    ),
+  )
+}

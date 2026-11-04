@@ -1,10 +1,12 @@
 ---
-import type { Sandbox } from "../../sandboxes";
+import ArticleText from "../../components/ArticleText.astro";
 import Button from "../../components/Button.astro";
 import CaptionedImage from "../../components/CaptionedImage.astro";
-import InlineCode from "../../components/InlineCode.astro";
+import SandboxCard from "../../components/SandboxCard.astro";
+import { SandboxScene } from "../../components/SandboxScene";
 import SiteFrame from "../../components/SiteFrame.astro";
 import { ogPublicPath } from "../../og-pages";
+import type { Sandbox } from "../../sandboxes";
 import {
   COMPUTER_PROVIDERS_DOCS_PATH,
   SANDBOXES,
@@ -36,33 +38,54 @@ const others = SANDBOXES.filter((other) => other.slug !== sandbox.slug);
   ogImage={ogPublicPath(`sandbox-${sandbox.slug}`)}
   markdownAlternate={`${sandboxPath(sandbox.slug).slice(0, -1)}.md`}
 >
-  <p class="alt-crumb"><a href={SANDBOXES_PATH}>Sandboxes</a></p>
+  <p class="alt-crumb"><a href={SANDBOXES_PATH}>Sandboxes for AI agents</a></p>
   <h1>{sandbox.h1}</h1>
   <p class="page-updated">Updated {SANDBOXES_UPDATED}.</p>
-  {sandbox.intro.map((paragraph) => <p><InlineCode text={paragraph} /></p>)}
+  {sandbox.intro.map((paragraph) => <p><ArticleText text={paragraph} /></p>)}
 
-  <CaptionedImage
-    src={sandbox.image.webp}
-    avif={sandbox.image.avif}
-    alt={sandbox.image.alt}
-    caption={sandbox.image.caption}
-    width={sandbox.image.width}
-    height={sandbox.image.height}
-    loading="eager"
-  />
+  <SandboxScene {...sandbox.scene} />
 
-  <h2>What your bots get</h2>
-  <ul>
-    {sandbox.works.map((item) => <li><InlineCode text={item} /></li>)}
-  </ul>
+  {
+    sandbox.sections.map((section) => (
+      <section class="sandbox-section">
+        <h2>{section.heading}</h2>
+        {section.paragraphs?.map((paragraph) => (
+          <p>
+            <ArticleText text={paragraph} />
+          </p>
+        ))}
+        {section.bullets && (
+          <ul>
+            {section.bullets.map((item) => (
+              <li>
+                <ArticleText text={item} />
+              </li>
+            ))}
+          </ul>
+        )}
+        {section.steps && (
+          <ol class="sandbox-steps">
+            {section.steps.map((step) => (
+              <li>
+                <ArticleText text={step} />
+              </li>
+            ))}
+          </ol>
+        )}
+        {section.image && (
+          <CaptionedImage
+            src={sandbox.image.webp}
+            avif={sandbox.image.avif}
+            alt={sandbox.image.alt}
+            caption={sandbox.image.caption}
+            width={sandbox.image.width}
+            height={sandbox.image.height}
+          />
+        )}
+      </section>
+    ))
+  }
 
-  <h2>Limits</h2>
-  <ul>
-    {sandbox.limits.map((item) => <li><InlineCode text={item} /></li>)}
-  </ul>
-
-  <h2>Set it up</h2>
-  {sandbox.setup.map((paragraph) => <p><InlineCode text={paragraph} /></p>)}
   <div class="alt-actions">
     <Button href={COMPUTER_PROVIDERS_DOCS_PATH}>Computer providers guide</Button>
     <Button href={GITHUB_URL} variant="secondary" external>View on GitHub</Button>
@@ -73,15 +96,18 @@ const others = SANDBOXES.filter((other) => other.slug !== sandbox.slug);
     sandbox.faq.map((item, index) => (
       <section aria-labelledby={`faq-${index}`}>
         <h3 id={`faq-${index}`}>{item.question}</h3>
-        <p><InlineCode text={item.answer} /></p>
+        <p>
+          <ArticleText text={item.answer} />
+        </p>
       </section>
     ))
   }
 
-  <h2>Other places to run bot computers</h2>
-  <ul>
-    {others.map((other) => <li><a href={sandboxPath(other.slug)}>{other.name}</a></li>)}
+  <h2>More sandboxes for AI agents</h2>
+  <ul class="sandbox-cards">
+    {others.map((other) => <SandboxCard sandbox={other} />)}
   </ul>
+  <p class="sandbox-all"><a href={SANDBOXES_PATH}>Compare all sandboxes</a></p>
 
   <h2>Sources</h2>
   <ul class="source-list">
