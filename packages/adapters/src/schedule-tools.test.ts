@@ -1,7 +1,9 @@
+import { routineWakeupJob } from "@rakazo/adapter-kit";
 import { ONCE_ROUTINE_CRON } from "@rakazo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cancelScheduleFromTool,
+  changeUserTimezone,
   commandWatchFromTool,
   compactScheduleInput,
   createScheduleFromTool,
@@ -1250,5 +1252,232 @@ describe("updateScheduleFromTool", () => {
       error: "A watch checks on its own interval; cancel it and create a schedule.",
     });
     await expect(update({ name: "Inbox" })).resolves.toMatchObject({ ok: true, name: "Inbox" });
+  });
+});
+
+describe("changeUserTimezone", () => {
+  beforeEach(() => vi.useFakeTimers({ now: new Date("2026-11-04T12:00:00.000Z") }));
+  afterEach(() => vi.useRealTimers());
+
+  /** A user on Africa/Cairo whose routines live in an in-memory table. */
+  function account(seeded: Record<string, unknown>[] = []) {
+    const user = { id: "user-1", timezone: "Africa/Cairo" as string | null };
+    const rows: Record<string, unknown>[] = seeded.map((row, index) => ({
+      id: `routine-${index + 1}`,
+      ...row,
+    }));
+    const enqueue = vi.fn(async () => undefined);
+    const matches = (row: Record<string, unknown>, where: Record<string, unknown>) =>
+      Object.entries(where).every(([key, value]) => row[key] === value);
+    const prisma = {
+      user: {
+        findUnique: async ({ where }: { where: { id: string } }) =>
+          where.id === user.id ? { timezone: user.timezone } : null,
+        update: async ({
+          where,
+          data,
+        }: {
+          where: { id: string };
+          data: Record<string, unknown>;
+        }) => {
+          if (where.id !== user.id) throw new Error("unknown user");
+          Object.assign(user, data);
+          return { ...user };
+        },
+      },
+      bot: { findFirst: async () => ({ computer: null }) },
+      connection: { findMany: async () => [] },
+      routine: {
+        create: async ({ data }: { data: Record<string, unknown> }) => {
+          const row = { id: `routine-${rows.length + 1}`, ...data };
+          rows.push(row);
+          return row;
+        },
+        findMany: async ({ where }: { where: Record<string, unknown> }) =>
+          rows.filter((row) => matches(row, where)),
+        updateMany: async ({
+          where,
+          data,
+        }: {
+          where: Record<string, unknown>;
+          data: Record<string, unknown>;
+        }) => {
+          let count = 0;
+          for (const [index, row] of rows.entries()) {
+            if (!matches(row, where)) continue;
+            rows[index] = { ...row, ...data };
+            count += 1;
+          }
+          return { count };
+        },
+      },
+      $transaction: async (run: (client: unknown) => Promise<unknown>) => run(prisma),
+    };
+    const deps = {
+      prisma,
+      events: { append: async () => undefined },
+      jobs: { enqueue, cancel: async () => undefined },
+    } as unknown as Parameters<typeof createScheduleFromTool>[0];
+    return { deps, rows, user, enqueue };
+  }
+  const base = {
+    spaceId: "ws-1",
+    botId: "bot-1",
+    userId: "user-1",
+    threadId: "thread-1",
+    prompt: "Check",
+  };
+
+  it("moves a routine that took the account zone, keeping its local schedule", async () => {
+    const { deps, rows, user, enqueue } = account();
+    const created = await createScheduleFromTool(deps, {
+      ...base,
+      name: "Weekly",
+      schedule: { cron: "0 9 * * 1" },
+    });
+    expect(created).toMatchObject({ ok: true, timezone: "Africa/Cairo" });
+    const pinned = await createScheduleFromTool(deps, {
+      ...base,
+      name: "Pinned",
+      timezone: "Asia/Tokyo",
+      schedule: { cron: "0 9 * * 1" },
+    });
+    expect(pinned).toMatchObject({ ok: true, timezone: "Asia/Tokyo" });
+
+    await changeUserTimezone(deps, "user-1", "Europe/London");
+
+    // Monday 09:00 held in London, not Cairo's 07:00 UTC; the pinned routine stays.
+    expect(rows.find((row) => row.name === "Weekly")).toMatchObject({
+      timezone: "Europe/London",
+      nextRunAt: new Date("2026-11-09T09:00:00.000Z"),
+    });
+    expect(rows.find((row) => row.name === "Pinned")).toMatchObject({
+      timezone: "Asia/Tokyo",
+      nextRunAt: new Date("2026-11-09T00:00:00.000Z"),
+    });
+    expect(user.timezone).toBe("Europe/London");
+    expect(enqueue).toHaveBeenCalledWith(
+      routineWakeupJob("routine-1", new Date("2026-11-09T09:00:00.000Z")),
+    );
+  });
+
+  it("keeps the pending run's local time when moving to a zone ahead", async () => {
+    const { deps, rows } = account();
+    await createScheduleFromTool(deps, {
+      ...base,
+      name: "Weekly",
+      schedule: { cron: "0 9 * * 1" },
+    });
+
+    await changeUserTimezone(deps, "user-1", "Asia/Tokyo");
+
+    expect(rows[0]).toMatchObject({
+      timezone: "Asia/Tokyo",
+      nextRunAt: new Date("2026-11-09T00:00:00.000Z"),
+    });
+  });
+
+  it("keeps a one-shot's saved instant; only its zone label moves", async () => {
+    const { deps, rows } = account();
+    await createScheduleFromTool(deps, {
+      ...base,
+      name: "Once",
+      schedule: { runAt: "2026-11-09T09:00" },
+    });
+    expect(rows[0]!.nextRunAt).toEqual(new Date("2026-11-09T07:00:00.000Z"));
+
+    await changeUserTimezone(deps, "user-1", "Europe/London");
+
+    expect(rows[0]).toMatchObject({
+      timezone: "Europe/London",
+      nextRunAt: new Date("2026-11-09T07:00:00.000Z"),
+    });
+  });
+
+  it("keeps a watch on its own rhythm; only its zone label moves", async () => {
+    const { deps, rows } = account();
+    await createScheduleFromTool(deps, {
+      ...base,
+      name: "Watch",
+      schedule: { watch: { kind: "files", paths: ["inbox"] } },
+    });
+    const nextRunAt = rows[0]!.nextRunAt;
+
+    await changeUserTimezone(deps, "user-1", "Europe/London");
+
+    expect(rows[0]).toMatchObject({ timezone: "Europe/London", nextRunAt });
+  });
+
+  it.each([
+    { case: "several crons", crons: ["0 9 * * 1", "0 12 * * 1"], nextRunAt: null },
+    { case: "an inactive routine", crons: ["0 9 * * 1"], nextRunAt: null, active: false },
+  ])("moves only the zone label of $case", async ({ crons, nextRunAt, active }) => {
+    const { deps, rows } = account([
+      {
+        spaceId: base.spaceId,
+        botId: base.botId,
+        userId: base.userId,
+        name: "Weekly",
+        crons,
+        timezone: "Africa/Cairo",
+        active: active ?? true,
+        watch: null,
+        nextRunAt,
+      },
+    ]);
+
+    await changeUserTimezone(deps, "user-1", "Europe/London");
+
+    expect(rows[0]).toMatchObject({ timezone: "Europe/London", crons, nextRunAt });
+  });
+
+  it("moves nothing when the account had no saved zone", async () => {
+    const { deps, rows, user } = account([
+      {
+        spaceId: base.spaceId,
+        botId: base.botId,
+        userId: base.userId,
+        name: "Weekly",
+        crons: ["0 9 * * 1"],
+        timezone: "UTC",
+        active: true,
+        watch: null,
+        nextRunAt: new Date("2026-11-09T09:00:00.000Z"),
+      },
+    ]);
+    user.timezone = null;
+
+    await changeUserTimezone(deps, "user-1", "Europe/London");
+
+    expect(user.timezone).toBe("Europe/London");
+    expect(rows[0]).toMatchObject({ timezone: "UTC" });
+  });
+
+  it("leaves the account as it was when the zone does not change", async () => {
+    const { deps, rows, user } = account();
+    await createScheduleFromTool(deps, {
+      ...base,
+      name: "Weekly",
+      schedule: { cron: "0 9 * * 1" },
+    });
+
+    await changeUserTimezone(deps, "user-1", "Africa/Cairo");
+
+    expect(user.timezone).toBe("Africa/Cairo");
+    expect(rows[0]).toMatchObject({ timezone: "Africa/Cairo" });
+  });
+
+  it("only clears the account when the zone is cleared; routines cannot hold no zone", async () => {
+    const { deps, rows, user } = account();
+    await createScheduleFromTool(deps, {
+      ...base,
+      name: "Weekly",
+      schedule: { cron: "0 9 * * 1" },
+    });
+
+    await changeUserTimezone(deps, "user-1", null);
+
+    expect(user.timezone).toBeNull();
+    expect(rows[0]).toMatchObject({ timezone: "Africa/Cairo" });
   });
 });

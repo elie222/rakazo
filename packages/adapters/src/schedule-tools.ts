@@ -263,6 +263,87 @@ export async function userTimeZone(prisma: PrismaClient, userId: string): Promis
   return timezone && TimeZoneSchema.safeParse(timezone).success ? timezone : "UTC";
 }
 
+/**
+ * Save the account timezone and move the routines that took it: every routine of the user
+ * whose zone is the previous account zone keeps its local schedule in the new one, exactly
+ * as a schedule_update zone change keeps it. A routine pinned to another zone stays, and so
+ * does one stored while the account had no zone, which may be pinned to UTC on purpose.
+ * Clearing the zone (`null`) only clears the account: a routine cannot hold no zone.
+ * `timezone` is the already-validated zone the caller wants saved.
+ */
+export async function changeUserTimezone(
+  deps: Pick<ScheduleToolDeps, "prisma" | "jobs">,
+  userId: string,
+  timezone: string | null,
+): Promise<void> {
+  const woken: { id: string; nextRunAt: Date }[] = [];
+  await deps.prisma.$transaction(async (tx) => {
+    const user = await tx.user.findUnique({ where: { id: userId }, select: { timezone: true } });
+    if (!user || user.timezone === timezone) return;
+    await tx.user.update({ where: { id: userId }, data: { timezone } });
+    if (!timezone || !user.timezone) return;
+    const routines = await tx.routine.findMany({ where: { userId, timezone: user.timezone } });
+    for (const routine of routines) {
+      const nextRunAt = nextRunAtAfterTimezoneMove(routine, timezone);
+      const movedNext = nextRunAt?.getTime() !== routine.nextRunAt?.getTime();
+      // The zone and the timing it was computed from are part of the write, so a run that
+      // fired meanwhile keeps its advance and the routine keeps its old zone.
+      const { count } = await tx.routine.updateMany({
+        where: {
+          id: routine.id,
+          userId,
+          timezone: user.timezone,
+          ...(movedNext ? { nextRunAt: routine.nextRunAt } : {}),
+        },
+        data: { timezone, ...(movedNext ? { nextRunAt } : {}) },
+      });
+      if (count === 1 && movedNext && routine.active && nextRunAt) {
+        woken.push({ id: routine.id, nextRunAt });
+      }
+    }
+  });
+  // Enqueue after the commit, like every routine write; the reconciler repairs a miss.
+  for (const routine of woken) {
+    await deps.jobs.enqueue(routineWakeupJob(routine.id, routine.nextRunAt));
+  }
+}
+
+/**
+ * The next run after a routine's zone moves with the account: an active repeat keeps its
+ * local time in the new zone. Anything else keeps its pending instant — a one-shot is an
+ * absolute time, a watch checks on its own interval, and a row with several crons or no
+ * crons follows the new zone from its pending occurrence, which the next tick computes.
+ */
+function nextRunAtAfterTimezoneMove(
+  routine: {
+    crons: string[];
+    timezone: string;
+    nextRunAt: Date | null;
+    active: boolean;
+    watch: unknown;
+  },
+  timezone: string,
+): Date | null {
+  if (
+    !routine.active ||
+    routine.watch != null ||
+    isOneShotRoutineCrons(routine.crons) ||
+    routine.crons.length !== 1
+  ) {
+    return routine.nextRunAt;
+  }
+  const cron = routine.crons[0] ?? "";
+  let timing: Record<string, unknown> = { cron };
+  const due = routine.nextRunAt;
+  if (due && due.getTime() > Date.now()) {
+    const moved = carriedRunAtForTimezone(cron, due, routine.timezone, timezone);
+    if (moved.carried) return moved.carried;
+    if (moved.startAt) timing = { cron, startAt: moved.startAt };
+  }
+  const resolved = resolveScheduleTiming(timing, timezone);
+  return resolved.ok ? resolved.nextRunAt : routine.nextRunAt;
+}
+
 /** Each routine is an unattended model run, so a looping bot must not stack them. */
 export const MAX_ACTIVE_ROUTINES_PER_BOT = 50;
 
@@ -494,6 +575,28 @@ export async function listSchedulesFromTool(
 const TIMING_FIELDS = ["cron", "every", "unit", "runAt", "delayMinutes", "delaySeconds"] as const;
 
 /**
+ * The pending occurrence a timezone move keeps. A new timezone alone keeps the next run's
+ * local time, so a start set for later holds. In a timezone behind, the first run is the
+ * first one from when it was due (`startAt` restarts it there), so none is skipped. An
+ * uneven step recurs from its last run: by its fixed gap, which no timezone moves, or by
+ * local days, so it keeps its local time either way.
+ */
+function carriedRunAtForTimezone(
+  cron: string,
+  due: Date,
+  fromTimezone: string,
+  toTimezone: string,
+): { carried: Date | null; startAt?: string } {
+  const local = zonedDateTime(wallClock(due, fromTimezone), toTimezone);
+  const step = unevenInterval(cron);
+  if (step && step.unit !== "days") return { carried: due };
+  if (local && (step || local.getTime() <= due.getTime())) {
+    return { carried: local.getTime() > Date.now() ? local : null };
+  }
+  return { carried: null, startAt: due.toISOString() };
+}
+
+/**
  * Edit one of this bot's routines in place: name, prompt, timing (with startAt), or active.
  * Scoped like cancel, so another bot's or another thread's routine reads as not found.
  */
@@ -554,7 +657,7 @@ export async function updateScheduleFromTool(
   const active = input.active ?? existing.active;
   let crons = existing.crons;
   let nextRunAt = existing.nextRunAt;
-  let carried: Date | undefined;
+  let carried: Date | null = null;
   const oneShot = isOneShotRoutineCrons(existing.crons);
   if (retime) {
     let timing = input.schedule;
@@ -569,18 +672,11 @@ export async function updateScheduleFromTool(
       }
       const cron = existing.crons[0] ?? "";
       timing = { ...input.schedule, cron };
-      // A new timezone alone keeps the next run's local time, so a start set for later holds.
-      // In a timezone behind, the first run is the first one from when it was due, so none is
-      // skipped. An uneven step recurs from its last run: by its fixed gap, which no timezone
-      // moves, or by local days, so it keeps its local time either way.
       const due = existing.nextRunAt;
       if (!isScheduleValueProvided(input.schedule.startAt) && due && due.getTime() > Date.now()) {
-        const local = zonedDateTime(wallClock(due, existing.timezone), timezone);
-        const step = unevenInterval(cron);
-        if (step && step.unit !== "days") carried = due;
-        else if (local && (step || local <= due)) {
-          if (local.getTime() > Date.now()) carried = local;
-        } else timing = { ...timing, startAt: due.toISOString() };
+        const moved = carriedRunAtForTimezone(cron, due, existing.timezone, timezone);
+        carried = moved.carried;
+        if (moved.startAt) timing = { ...timing, startAt: moved.startAt };
       }
     }
     const resolved = resolveScheduleTiming(timing, timezone);
