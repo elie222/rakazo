@@ -22,6 +22,7 @@ describe("ending a deactivated account's access", () => {
       prisma: {
         session: { deleteMany: step("sessions", true) },
         callPushDevice: { deleteMany: step("call pushes") },
+        messagingLinkCode: { deleteMany: step("link codes") },
         bot: { updateMany: step("screens") },
         userDevice: { findMany: vi.fn(async () => []) },
       },
@@ -31,7 +32,7 @@ describe("ending a deactivated account's access", () => {
     } as unknown as AccountStatusDeps;
 
     await expect(endDeactivatedAccess(deps, "user-1")).rejects.toThrow(AggregateError);
-    expect(calls).toEqual(["sessions", "pushes", "call pushes", "screens", "notify"]);
+    expect(calls).toEqual(["sessions", "pushes", "call pushes", "link codes", "screens", "notify"]);
   });
 
   it("disconnects the other computers when one fails", async () => {

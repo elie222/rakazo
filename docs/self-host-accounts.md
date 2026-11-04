@@ -236,7 +236,8 @@ group requests are refused. Rotating it means changing the value and restarting 
   the directory gets a conflict for it, and the operator decides what to do with that account.
 - **Turning a person off** (`active: false`) or **deleting** them deactivates the account at once.
   It ends every sign-in and paired computer, removes notification registrations, cancels runs
-  they started, skips their routines, and refuses any new sign-in or run. Their bots, chats,
+  they started, skips their routines, and refuses any new sign-in, run, webhook delivery or
+  message from their linked chat apps. Their bots, chats,
   memory, files and connections stay. Turning them back on restores sign-in, and routines resume
   from their next scheduled time.
 - **Adding a deleted person again** with the same external id finds their existing account.

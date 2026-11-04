@@ -86,11 +86,13 @@ function recordAccountStatus(userId: string, active: boolean, by: AccountStatusA
  */
 export async function endDeactivatedAccess(deps: AccountStatusDeps, userId: string) {
   const { prisma } = deps;
-  const steps = [
+  const steps: Array<() => Promise<unknown>> = [
     () => prisma.session.deleteMany({ where: { userId } }),
     () => revokeUserDevices(deps.devices, userId),
     () => deps.pushTokens.remove(userId),
     () => prisma.callPushDevice.deleteMany({ where: { userId } }),
+    // A pending code would otherwise link a chat app to the account after this.
+    () => prisma.messagingLinkCode.deleteMany({ where: { userId } }),
     // Screen links issued before now stop working; people still allowed get new ones.
     () =>
       prisma.bot.updateMany({ where: { userId }, data: { screenGeneration: { increment: 1 } } }),
@@ -102,7 +104,8 @@ export async function endDeactivatedAccess(deps: AccountStatusDeps, userId: stri
     },
   ];
   const failures: unknown[] = [];
-  for (const step of steps) await step().catch((error: unknown) => failures.push(error));
+  for (const step of steps)
+    await (async () => step())().catch((error: unknown) => failures.push(error));
   if (failures.length)
     throw new AggregateError(failures, "Could not finish ending a deactivated account's access");
 }

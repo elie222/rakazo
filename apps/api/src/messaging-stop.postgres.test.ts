@@ -115,6 +115,23 @@ describe.skipIf(!enabled)("a linked owner's stop command (PostgreSQL)", () => {
   const userMessages = () =>
     system.message.count({ where: { threadId: identity.threadId, role: "user" } });
 
+  it("ignores a deactivated owner's chat app: no command, message or turn", async () => {
+    const running = await work();
+    await system.user.update({
+      where: { id: identity.userId },
+      data: { deactivatedAt: new Date() },
+    });
+    const messages = await system.message.count({ where: { threadId: identity.threadId } });
+
+    await text("stop", "deactivated-stop");
+    await text("hello", "deactivated-hello");
+
+    expect(await status(running.id)).toBe("running");
+    expect(await system.message.count({ where: { threadId: identity.threadId } })).toBe(messages);
+    expect(await runs()).toBe(1);
+    expect(await replies()).toEqual([]);
+  });
+
   it("stops running work, answers once and notes it in the app", async () => {
     const running = await work();
     await text("stop", "h-stop");

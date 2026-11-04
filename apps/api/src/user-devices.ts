@@ -108,13 +108,14 @@ export async function revokeUserDevices(store: DeviceStore, userId: string) {
   const devices = await runAsSystem("find a user's devices", () =>
     store.prisma.userDevice.findMany({
       where: { userId, revokedAt: null },
-      select: { id: true, sessionId: true },
+      select: { id: true },
     }),
   );
   const failures: unknown[] = [];
+  // Without a session to match: a computer moved to a new sign-in meanwhile goes too.
   for (const device of devices)
-    await revokeDevice(store, device.id, userId, "session", device.sessionId).catch(
-      (error: unknown) => failures.push(error),
+    await revokeDevice(store, device.id, userId, "session").catch((error: unknown) =>
+      failures.push(error),
     );
   if (failures.length) throw new AggregateError(failures, "Could not disconnect every computer");
 }
