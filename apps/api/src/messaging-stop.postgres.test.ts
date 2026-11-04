@@ -130,6 +130,19 @@ describe.skipIf(!enabled)("a linked owner's stop command (PostgreSQL)", () => {
     expect(await system.message.count({ where: { threadId: identity.threadId } })).toBe(messages);
     expect(await runs()).toBe(1);
     expect(await replies()).toEqual([]);
+
+    // In a group, too: no memberships, invitations or relays come from them.
+    await text("hello all", "deactivated-group", {
+      isDirect: false,
+      threadId: `group-${identity.address}`,
+      channelName: "Team",
+      participants: [identity.address, `other-${identity.address}`],
+    });
+    expect(
+      await system.messagingChannelMember.count({
+        where: { channel: { threadId: `group-${identity.address}` } },
+      }),
+    ).toBe(0);
   });
 
   it("stops running work, answers once and notes it in the app", async () => {

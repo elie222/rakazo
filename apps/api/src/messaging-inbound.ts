@@ -785,6 +785,13 @@ async function handleChannelEvent(
     return;
   }
 
+  // A deactivated sender's message does nothing: no invitations, memberships or relays.
+  const sender = await deps.prisma.messagingIdentity.findUnique({
+    where: { provider_address: { provider: event.provider, address: event.from } },
+    select: { userId: true },
+  });
+  if (sender && (await accountDeactivated(deps.prisma, sender.userId))) return;
+
   const participants = [...event.participants];
   if (!participants.includes(event.from)) participants.push(event.from);
 

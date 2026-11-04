@@ -113,6 +113,16 @@ async function notifyFailedRoutineRun(
   );
 }
 
+/** The occurrence after `scheduledAt` for a timed routine; null once a one-time one has fired. */
+function nextScheduledRunAt(
+  routine: { crons: string[]; timezone: string },
+  scheduledAt: Date,
+): Date | null {
+  return isOneShotRoutineCrons(routine.crons)
+    ? null
+    : nextRoutineRunDateAcross(routine.crons, scheduledAt, new Date(Date.now()), routine.timezone);
+}
+
 export async function wakeRoutine(deps: ExecutorDeps, routineId: string, scheduledFor: string) {
   const scheduledAt = new Date(scheduledFor);
   if (!Number.isFinite(scheduledAt.getTime())) return;
@@ -135,14 +145,7 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     const watch = parseRoutineWatch(routine.watch);
     const nextRunAt = watch
       ? nextRoutineWatchAt(watch, new Date(Math.max(Date.now(), scheduledAt.getTime())))
-      : isOneShotRoutineCrons(routine.crons)
-        ? null
-        : nextRoutineRunDateAcross(
-            routine.crons,
-            scheduledAt,
-            new Date(Date.now()),
-            routine.timezone,
-          );
+      : nextScheduledRunAt(routine, scheduledAt);
     const skipped = await deps.prisma.routine.updateMany({
       where: { id: routine.id, active: true, nextRunAt: scheduledAt },
       data: { nextRunAt, ...(nextRunAt ? {} : { active: false }) },
@@ -198,16 +201,7 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
   // legacy row accepted before cron validation was added) fires the
   // already-due run once, then nextRunAt stays null and the routine
   // pauses rather than crash-looping the wakeup job.
-  const nextRunAt = watchTick?.run
-    ? watchTick.nextRunAt
-    : isOneShotRoutineCrons(routine.crons)
-      ? null
-      : nextRoutineRunDateAcross(
-          routine.crons,
-          scheduledAt,
-          new Date(Date.now()),
-          routine.timezone,
-        );
+  const nextRunAt = watchTick?.run ? watchTick.nextRunAt : nextScheduledRunAt(routine, scheduledAt);
   const skillRecords = await listAgentSkillRecords(deps.prisma, {
     spaceId: routine.spaceId,
     userId: routine.userId,

@@ -326,15 +326,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
       }
       // Every way work reaches a bot ends here, so a deactivated account's run stops before it starts.
       if (await accountDeactivated(deps.prisma, run.userId)) {
-        for (const { threadId, seq } of await cancelDeactivatedAccountRuns(
-          deps.prisma,
-          run.userId,
-          runId,
-        ))
+        const cancelled = await cancelDeactivatedAccountRuns(deps.prisma, run.userId, runId);
+        for (const { threadId, seq } of cancelled)
           await deps.events.notify(threadId, seq).catch((error) => {
             getLogger().error("deactivated account run cancellation notification", error);
           });
-        return;
+        // Nothing cancelled: the owner is back (or the run already ended), so carry on.
+        if (cancelled.length) return;
       }
       let { resumeCheckpoint, heldForTakeover, takeoverResume } = takeoverContinuePlan(run);
 

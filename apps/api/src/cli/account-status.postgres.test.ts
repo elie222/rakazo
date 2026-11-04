@@ -200,4 +200,16 @@ describePostgres("the operator's account status command (PostgreSQL)", () => {
     ).toBeNull();
     expect(await system.session.count({ where: { userId: user.id } })).toBe(1);
   });
+
+  it("finds an account whose stored email has capitals", async () => {
+    const user = await system.user.create({
+      data: { id: randomUUID(), name: "Jo", email: "Jo.Capital@Example.test", emailVerified: true },
+    });
+    expect((await command("deactivate", "jo.capital@example.test")).stdout.trim()).toBe(
+      "Deactivated",
+    );
+    expect(
+      (await system.user.findUniqueOrThrow({ where: { id: user.id } })).deactivatedAt,
+    ).toBeInstanceOf(Date);
+  });
 });

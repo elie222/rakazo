@@ -2852,6 +2852,41 @@ description: Prepare standup notes
     expect(row).toEqual({ status: "queued", checkpoint: "takeover" });
   });
 
+  it("claims a run after all when its owner is reactivated while it was being refused", async () => {
+    // Deactivated at the first look, active again by the time the cancel takes its lock.
+    const findUser = vi
+      .fn()
+      .mockResolvedValueOnce({ deactivatedAt: new Date() })
+      .mockResolvedValue({ deactivatedAt: null });
+    const updateMany = vi.fn(async () => ({ count: 0 }));
+    const prisma = {
+      user: { findUnique: findUser },
+      run: {
+        findUnique: vi.fn(async () => ({
+          id: "run-1",
+          botId: "bot-1",
+          threadId: "thread-1",
+          userId: "user-1",
+          status: "queued",
+          checkpoint: null,
+          leaseFence: 0,
+        })),
+        findMany: vi.fn(async () => [{ threadId: "thread-1" }]),
+        updateMany,
+      },
+      $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+        callback({ $queryRaw: vi.fn(async () => []), user: { findUnique: findUser } }),
+      ),
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({ prisma } as Parameters<typeof createRunExecutor>[0]);
+
+    await executor.continueRun("run-1", "worker-1");
+
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "leased" }) }),
+    );
+  });
+
   it("restores a takeover checkpoint when a switching computer requeues the run", async () => {
     const updateMany = vi.fn(
       async (args: {
