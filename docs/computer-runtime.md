@@ -168,12 +168,13 @@ warns that unsaved work may be lost.
 The reconciler republishes queued operations after a missed enqueue. Jobs already
 claimed are never destructively replayed. A worker that stops heartbeating for ten
 minutes is marked interrupted and stays reserved, because its provider calls may still
-be running. If that worker settles, it records the outcome as usual. If it never does,
-the reconciler records the operation as failed an hour after it was marked
-interrupted and frees the computer, assuming by then that the provider calls have
-ended. It cannot tell what a save or teardown the worker left unfinished started from,
+be running. If that worker settles, it records the outcome as usual. If it has not
+settled an hour after it was marked interrupted, the reconciler records the operation
+as failed and frees the computer, assuming by then that the provider calls have ended.
+The reconciler cannot know which state an unfinished save or teardown started from,
 so a computer with its machine still attached is quarantined, as after a stop the
-provider could not confirm, and bots wait for Recover instead of reconnecting. A
-computer left mid-boot becomes an error. Recover is then available. Progress reports
+provider could not confirm, and bots cannot use it until Recover, Update or Reset
+replaces it. Any other computer left mid-save, mid-teardown or mid-boot becomes an
+error. Recover is then available. Progress reports
 actual lifecycle stages rather than estimated percentages; workspace files and
 browser profiles are portable, while system packages outside the workspace are not.

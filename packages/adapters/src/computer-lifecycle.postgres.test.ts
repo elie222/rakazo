@@ -601,6 +601,8 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
     ["booting", null, "error"],
     ["running", "fake-old", "running"],
     ["stopped", null, "stopped"],
+    ["quarantined", "fake-old", "quarantined"],
+    ["error", "fake-old", "error"],
   ] as const)(
     "releases a %s computer with machine %s left by a vanished update as %s",
     async (left, providerRef, expected) => {

@@ -676,8 +676,8 @@ export async function reconcileComputerUpdates(deps: Pick<Deps, "prisma" | "jobs
         // Only this update can hold a booting or suspending claim under its reservation, and
         // Recover refuses both. Unlike its worker, this cannot tell what the claim started
         // from, so a machine still attached may be running or half destroyed: quarantine it,
-        // as after an unconfirmed stop, so bots wait for Recover. A boot ends as an error,
-        // as provisionComputer's failure write leaves it.
+        // as after an unconfirmed stop, so no bot uses it until it is replaced. Any other
+        // claim ends as an error, as provisionComputer's failure write leaves a boot.
         const reserved = { id: update.computerId, maintenanceId: update.id };
         await tx.computer.updateMany({
           where: { ...reserved, state: "suspending", providerRef: { not: null } },
