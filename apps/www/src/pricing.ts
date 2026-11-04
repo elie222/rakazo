@@ -7,6 +7,7 @@ import {
   MODEL_CREDIT_AMOUNTS,
   sandboxAllowanceHours,
   TRIAL_DAYS,
+  TRIAL_SANDBOX_ALLOWANCE_CENTS,
 } from "@rakazo/contracts";
 import { APP_URL, SELF_HOST_GUIDE_PATH } from "./site";
 
@@ -186,7 +187,14 @@ export const PRICING_COMPARISON = {
     { feature: "Hosted in the EU", cells: [false, ...TIERS.map(() => true), true] },
     {
       feature: "Free trial",
-      cells: [false, ...TIERS.map(() => `${TRIAL_DAYS} days`), false],
+      cells: [
+        false,
+        ...TIERS.map(() => ({
+          label: `${TRIAL_DAYS} days`,
+          detail: `Includes ${computerHours(TRIAL_SANDBOX_ALLOWANCE_CENTS)} cloud computer hours`,
+        })),
+        false,
+      ],
     },
     { feature: "Open source", cells: included(true) },
   ] satisfies { feature: string; hint?: string; cells: PricingCell[] }[],
