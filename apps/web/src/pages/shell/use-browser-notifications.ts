@@ -33,7 +33,10 @@ export function useBrowserNotifications(botsRef: RefObject<Bot[]>) {
         show: (title, body, tag) =>
           void notificationIcon(currentBot)
             .then((icon) => new Notification(title, { body, tag, ...(icon ? { icon } : {}) }))
-            .catch(() => undefined),
+            .catch(() => {
+              notifiedBrowserEvents.current.delete(pending.event.id);
+              pendingBrowserNotifications.current.set(pending.event.threadId, pending);
+            }),
       },
     );
     return result !== "pending";
