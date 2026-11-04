@@ -448,8 +448,9 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
         replaceKey: key,
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      expect(received).toEqual([]);
+      // The replacement ran at its own later deadline, so the worker has polled
+      // well past the old job's earlier one; the exact list proves the old
+      // payload never ran.
       await waitFor(() => expect(received).toEqual(["replacement"]));
     } finally {
       await host.stop();
@@ -473,8 +474,21 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
         replaceKey: key,
       });
       await publisher.cancel(key);
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      expect(target["computer.sleep"]).not.toHaveBeenCalled();
+      // A sentinel due after the cancelled job proves the worker has polled past
+      // the cancelled job's deadline, so its silence is real, not a missed poll.
+      await publisher.enqueue({
+        name: "computer.sleep",
+        payload: { computerId: "sentinel" },
+        availableAt: new Date(Date.now() + 450),
+      });
+      await waitFor(() =>
+        expect(target["computer.sleep"]).toHaveBeenCalledWith(
+          expect.objectContaining({ computerId: "sentinel" }),
+        ),
+      );
+      expect(target["computer.sleep"]).not.toHaveBeenCalledWith(
+        expect.objectContaining({ computerId: "cancelled" }),
+      );
     } finally {
       await host.stop();
       await publisher.close();
