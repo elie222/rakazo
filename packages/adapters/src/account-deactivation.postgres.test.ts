@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { BackgroundJob } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import {
   appendEvent,
@@ -22,6 +23,7 @@ describePostgres("a deactivated account's work (PostgreSQL)", () => {
   let system: PrismaClient;
   const identities: Identity[] = [];
   const notify = vi.fn(async () => undefined);
+  const enqueue = vi.fn(async (_job: BackgroundJob) => undefined);
 
   beforeAll(() => {
     db = createDb(url!);
@@ -64,7 +66,7 @@ describePostgres("a deactivated account's work (PostgreSQL)", () => {
     createRunExecutor({
       prisma: system,
       jobs: {
-        enqueue: async () => undefined,
+        enqueue,
         cancel: async () => undefined,
         close: async () => undefined,
       },
@@ -130,6 +132,7 @@ describePostgres("a deactivated account's work (PostgreSQL)", () => {
       },
     });
     await deactivate(dana);
+    enqueue.mockClear();
 
     await executor().wakeRoutine(routine.id, due.toISOString());
 
@@ -137,6 +140,10 @@ describePostgres("a deactivated account's work (PostgreSQL)", () => {
     const skipped = await system.routine.findUniqueOrThrow({ where: { id: routine.id } });
     expect(skipped.active).toBe(true);
     expect(skipped.nextRunAt!.getTime()).toBeGreaterThan(due.getTime());
+    // Its next occurrence is still woken on time.
+    expect(enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "routine.wakeup", availableAt: skipped.nextRunAt }),
+    );
 
     await deactivate(dana, null);
     await executor().wakeRoutine(routine.id, skipped.nextRunAt!.toISOString());

@@ -1009,11 +1009,28 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       const response = await directoryChanges.run(changes, () =>
         directory.handler(withClientIp(c.req.raw, requestClientIp(c))),
       );
-      for (const change of changes)
-        await settleDirectoryChange(
-          { prisma, pushTokens, devices: deviceSessions, events },
-          change,
-        ).catch((error) => getLogger().error("directory account change", error));
+      // A retried write reports an account again; the last report per account stands.
+      const latest = new Map(changes.map((change) => [change.userId, change]));
+      try {
+        for (const change of latest.values())
+          await settleDirectoryChange(
+            { prisma, pushTokens, devices: deviceSessions, events },
+            change,
+          );
+      } catch (error) {
+        // The directory change committed. Failing the request makes the provider retry it,
+        // and the retry finishes ending the account's access.
+        getLogger().error("directory account change", error);
+        return c.json(
+          {
+            schemas: ["urn:ietf:params:scim:api:messages:2.0:Error"],
+            status: "500",
+            detail: "Could not finish the change; retry it",
+          },
+          500,
+          { "content-type": "application/scim+json" },
+        );
+      }
       return response;
     });
   }

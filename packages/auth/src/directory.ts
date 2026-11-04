@@ -9,10 +9,15 @@ import { APIError } from "better-auth/api";
 /** The one directory a deployment provisions from. */
 export const DIRECTORY_CONNECTION_ID = "directory";
 
-/** An account the directory turned off or back on, inside a SCIM request that may still fail. */
+/**
+ * The directory's word on an account, inside a SCIM request that may still fail: on or off,
+ * and whether that changed it. An account kept off is reported again, so a retried request
+ * can finish ending its access.
+ */
 export interface DirectoryAccountChange {
   userId: string;
   active: boolean;
+  changed: boolean;
 }
 
 /** Shared with the main auth config so both read and write the same user field. */
@@ -48,9 +53,12 @@ export async function createDirectory(
   const { scim } = await import("@better-auth/scim");
   const identity: SCIMOptions["identity"] = {
     resolveUser: async ({ resource }, { database }) => {
+      const email = resource.primaryEmail.toLowerCase();
+      // Messaging addresses belong to chat-app accounts; creating one is refused below.
+      if (isMessagingEmail(email)) return { action: "create" };
       const existing = await database.findOne<{ id: string }>({
         model: "user",
-        where: [{ field: "email", value: resource.primaryEmail.toLowerCase() }],
+        where: [{ field: "email", value: email }],
       });
       return existing
         ? { action: "link", userId: existing.id, profile: "preserve" }
@@ -61,13 +69,15 @@ export async function createDirectory(
         model: "user",
         where: [{ field: "id", value: userId }],
       });
-      if (!user || active === !user.deactivatedAt) return;
-      await database.update({
-        model: "user",
-        where: [{ field: "id", value: userId }],
-        update: { deactivatedAt: active ? null : new Date() },
-      });
-      options.onAccountChange({ userId, active });
+      if (!user) return;
+      const changed = active === Boolean(user.deactivatedAt);
+      if (changed)
+        await database.update({
+          model: "user",
+          where: [{ field: "id", value: userId }],
+          update: { deactivatedAt: active ? null : new Date() },
+        });
+      if (changed || !active) options.onAccountChange({ userId, active, changed });
     },
   };
   const userData = async (user: { email?: string; name?: string }) => {

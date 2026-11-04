@@ -16,6 +16,7 @@ export interface AccountStatusDeps {
 /**
  * Finishes a directory change once its SCIM request committed. The account row says what
  * happened: a change in a request that rolled back finds it as before and does nothing.
+ * Ending a deactivated account's access is repeatable; only a real change is recorded.
  */
 export async function settleDirectoryChange(
   deps: AccountStatusDeps,
@@ -28,6 +29,7 @@ export async function settleDirectoryChange(
     });
     if (!user || change.active === Boolean(user.deactivatedAt)) return;
     if (!change.active) await endDeactivatedAccess(deps, change.userId);
+    if (!change.changed) return;
     await recordSecurityEvent({
       type: change.active ? "auth.account.reactivated" : "auth.account.deactivated",
       userId: change.userId,

@@ -45,14 +45,14 @@ import { passkeyRelyingParty } from "./passkey.js";
 import type { TokenKey } from "./token-storage.js";
 import { encryptStoredOAuthTokens, openIdToken, sealIdToken } from "./token-storage.js";
 
+export type { Directory, DirectoryAccountChange } from "./directory.js";
+export { createDirectory } from "./directory.js";
 export {
   emailLocale,
   passwordResetEmail,
   signInCodeEmail,
   verificationEmail,
 } from "./email.js";
-export type { Directory, DirectoryAccountChange } from "./directory.js";
-export { createDirectory } from "./directory.js";
 export type { HomeDeletionReason } from "./home-deletion-email.js";
 export { homeDeletionEmail } from "./home-deletion-email.js";
 export type { OidcConfig } from "./oidc.js";
@@ -215,17 +215,17 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       await prisma.scimUser.findFirst({ where: { userId, active: true }, select: { id: true } }),
     );
   /**
-   * The directory created this account and nobody has signed in to it yet: it has no login
-   * of any kind. Its first SSO sign-in with the same verified email claims it.
+   * The directory created this account and nobody has signed in to it yet. Every first
+   * sign-in, by any method, gives the account its workspace, so one without a workspace has
+   * never been used. Its first SSO sign-in with the same verified email claims it.
    */
   const claimable = async (userId: string) => {
     if (!env.directoryProvisioning) return false;
-    const [subject, logins, passkeys] = await Promise.all([
+    const [subject, membership] = await Promise.all([
       prisma.scimSubject.findUnique({ where: { userId }, select: { profileSourceId: true } }),
-      prisma.account.count({ where: { userId } }),
-      prisma.passkey.count({ where: { userId } }),
+      prisma.spaceMember.findFirst({ where: { userId }, select: { userId: true } }),
     ]);
-    return Boolean(subject?.profileSourceId) && logins === 0 && passkeys === 0;
+    return Boolean(subject?.profileSourceId) && !membership;
   };
   // SSO-only deployments keep every email credential closed, codes included.
   const emailCodeSignIn = Boolean(env.email) && env.passwordAuth !== false;

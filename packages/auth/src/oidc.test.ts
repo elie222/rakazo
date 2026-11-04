@@ -33,6 +33,8 @@ let userInfoClaims: Record<string, unknown>;
 let directorySubjects: Map<string, string | null>;
 /** Users the directory currently provisions. */
 let provisionedUsers: Set<string>;
+/** Users who have a workspace, which every first sign-in creates. */
+let signedInUsers: Set<string>;
 const codes = new Map<
   string,
   { challenge: string; nonce: string; claims: Record<string, unknown> }
@@ -65,7 +67,9 @@ function setup(options: Partial<AuthEnv> = {}, hasMembership = true) {
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
     spaceMember: {
-      findFirst: vi.fn(async () => (hasMembership ? { id: "existing-space" } : null)),
+      findFirst: vi.fn(async ({ where }: { where: { userId: string } }) =>
+        hasMembership || signedInUsers.has(where.userId) ? { id: "existing-space" } : null,
+      ),
     },
     member: { findMany: vi.fn(async () => []) },
     messagingIdentity: { deleteMany: vi.fn(async () => ({})) },
@@ -93,18 +97,8 @@ function setup(options: Partial<AuthEnv> = {}, hasMembership = true) {
         provisionedUsers.has(where.userId) ? { id: `scim-${where.userId}` } : null,
       ),
     },
-    passkey: {
-      deleteMany: vi.fn(async () => ({})),
-      count: vi.fn(
-        async ({ where }: { where: { userId: string } }) =>
-          rows("passkey").filter((row) => row.userId === where.userId).length,
-      ),
-    },
+    passkey: { deleteMany: vi.fn(async () => ({})) },
   };
-  (prisma.account as Record<string, unknown>).count = vi.fn(
-    async ({ where }: { where: { userId: string } }) =>
-      rows("account").filter((row) => row.userId === where.userId).length,
-  );
   prisma.$transaction = vi.fn(async (operations: (tx: unknown) => Promise<unknown>) =>
     operations(prisma),
   );
@@ -254,6 +248,7 @@ beforeEach(() => {
   userInfoClaims = { sub: "subject-1", email: "sso@example.test", email_verified: true };
   directorySubjects = new Map();
   provisionedUsers = new Set();
+  signedInUsers = new Set();
   codes.clear();
   vi.stubGlobal(
     "fetch",
@@ -1551,7 +1546,7 @@ describe("directory accounts", () => {
   });
 
   it("claims an account the directory made on its first SSO sign-in", async () => {
-    setup({ directoryProvisioning: true });
+    setup({ directoryProvisioning: true }, false);
     const userId = provisionedAccount();
     const response = await signIn();
     expect(response.headers.get("location")).toBe(`${origin}/app`);
@@ -1587,19 +1582,9 @@ describe("directory accounts", () => {
       { sub: "subject-1", email: "sso@example.test", email_verified: false },
     ],
     [
+      // An emailed code leaves no login row, only the workspace the first sign-in made.
       "someone already signed in to it",
-      () => {
-        const userId = provisionedAccount();
-        rows("account").push({
-          id: "credential-1",
-          userId,
-          providerId: "credential",
-          accountId: userId,
-          password: "hash",
-          createdAt: now(),
-          updatedAt: now(),
-        });
-      },
+      () => signedInUsers.add(provisionedAccount()),
       undefined,
     ],
     [
@@ -1611,7 +1596,7 @@ describe("directory accounts", () => {
       undefined,
     ],
   ])("does not claim the account when %s", async (_case, seed, claims) => {
-    setup({ directoryProvisioning: true });
+    setup({ directoryProvisioning: true }, false);
     seed();
     const response = await signIn(claims);
     expect(response.headers.get("location")).toContain("error=account_not_linked");
@@ -1619,7 +1604,7 @@ describe("directory accounts", () => {
   });
 
   it("never links by email without directory provisioning", async () => {
-    setup();
+    setup({}, false);
     provisionedAccount();
     const response = await signIn();
     expect(response.headers.get("location")).toContain("error=account_not_linked");

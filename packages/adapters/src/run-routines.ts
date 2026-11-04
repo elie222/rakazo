@@ -129,14 +129,22 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     return;
   if (await deferFutureRoutine(deps.jobs, routineId, scheduledAt)) return;
   if (await accountDeactivated(deps.prisma, routine.userId)) {
-    // A deactivated owner's routine skips this occurrence and keeps its schedule for reactivation.
+    // A deactivated owner's routine skips this occurrence without running. A recurring one
+    // keeps its schedule, so it runs again once the owner is back; a one-time one is spent.
     const nextRunAt = isOneShotRoutineCrons(routine.crons)
       ? null
-      : nextRoutineRunDateAcross(routine.crons, scheduledAt, new Date(Date.now()), routine.timezone);
-    await deps.prisma.routine.updateMany({
+      : nextRoutineRunDateAcross(
+          routine.crons,
+          scheduledAt,
+          new Date(Date.now()),
+          routine.timezone,
+        );
+    const skipped = await deps.prisma.routine.updateMany({
       where: { id: routine.id, active: true, nextRunAt: scheduledAt },
       data: { nextRunAt, ...(nextRunAt ? {} : { active: false }) },
     });
+    if (skipped.count && nextRunAt)
+      await deps.jobs.enqueue(routineWakeupJob(routine.id, nextRunAt));
     return;
   }
   const bot = await deps.prisma.bot.findUnique({

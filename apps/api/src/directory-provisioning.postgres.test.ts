@@ -173,26 +173,17 @@ describePostgres("directory provisioning over SCIM (PostgreSQL)", () => {
       { name: "Helper", description: "", instructions: "", notifyOnFinish: false },
     );
     const thread = await system.thread.findFirstOrThrow({ where: { botId: bot.id } });
+    const queuedRun = {
+      userId: ada.id,
+      spaceId: membership.spaceId,
+      botId: bot.id,
+      threadId: thread.id,
+    };
     const task = await system.task.create({
-      data: {
-        userId: ada.id,
-        spaceId: membership.spaceId,
-        botId: bot.id,
-        threadId: thread.id,
-        prompt: "fixture",
-        status: "queued",
-      },
+      data: { ...queuedRun, prompt: "fixture", status: "queued" },
     });
     const queued = await system.run.create({
-      data: {
-        userId: ada.id,
-        spaceId: membership.spaceId,
-        botId: bot.id,
-        threadId: thread.id,
-        taskId: task.id,
-        trigger: "chat",
-        status: "queued",
-      },
+      data: { ...queuedRun, taskId: task.id, trigger: "chat", status: "queued" },
     });
 
     // Some providers replace the whole user with active: false.
@@ -230,6 +221,26 @@ describePostgres("directory provisioning over SCIM (PostgreSQL)", () => {
       targetLabel: address,
     });
 
+    // Repeating the change finishes anything that slipped past the first one (the session
+    // above, a run started meanwhile) and records nothing new.
+    const lateTask = await system.task.create({
+      data: { ...queuedRun, prompt: "fixture", status: "queued" },
+    });
+    const late = await system.run.create({
+      data: { ...queuedRun, taskId: lateTask.id, trigger: "chat", status: "queued" },
+    });
+    expect(await system.session.count({ where: { userId: ada.id } })).toBe(1);
+    const again = await scim(
+      "PUT",
+      `/Users/${resource.id}`,
+      userResource(address, "directory-ada", false),
+    );
+    expect(again.status).toBe(200);
+    expect(await system.session.count({ where: { userId: ada.id } })).toBe(0);
+    expect((await system.run.findUniqueOrThrow({ where: { id: late.id } })).status).toBe(
+      "cancelled",
+    );
+
     // Others patch with a capitalized op and a string boolean.
     const on = await scim("PATCH", `/Users/${resource.id}`, {
       schemas: [PATCH_SCHEMA],
@@ -242,6 +253,14 @@ describePostgres("directory provisioning over SCIM (PostgreSQL)", () => {
       "auth.account.deactivated",
       "auth.account.reactivated",
     ]);
+  });
+
+  it("refuses to provision a chat-app address", async () => {
+    const address = "someone@messaging.invalid";
+    const refused = await scim("POST", "/Users", userResource(address, "directory-chat"));
+    expect(refused.status).toBeGreaterThanOrEqual(400);
+    expect(refused.status).toBeLessThan(500);
+    expect(await system.user.count({ where: { email: address } })).toBe(0);
   });
 
   it("keeps a deleted person's account and finds it again when they come back", async () => {

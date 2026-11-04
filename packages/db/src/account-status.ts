@@ -56,15 +56,29 @@ async function cancelInThread(
   if (!(await accountDeactivated(tx, userId))) return null;
   const runs = await tx.run.findMany({
     where: { ...where, threadId },
-    select: { id: true, taskId: true, userId: true, spaceId: true, botId: true, status: true },
+    select: {
+      id: true,
+      taskId: true,
+      userId: true,
+      spaceId: true,
+      botId: true,
+      status: true,
+      leaseExpiresAt: true,
+    },
   });
-  const cancelled = await cancelRunsInTransaction(tx, runs, new Date());
+  const now = new Date();
+  const cancelled = await cancelRunsInTransaction(tx, runs, now);
   if (!cancelled.length) return null;
   const ids = cancelled.map((run) => run.id);
-  // A leased or running run belongs to a worker, which releases its computer once it sees
-  // the cancellation. A waiting or queued run has no worker to do that.
+  // A live worker releases its run's computer once it sees the cancellation. A waiting or
+  // queued run has no worker, and one whose lease ran out lost its worker.
   const idle = cancelled
-    .filter((run) => run.status !== "leased" && run.status !== "running")
+    .filter(
+      (run) =>
+        (run.status !== "leased" && run.status !== "running") ||
+        !run.leaseExpiresAt ||
+        run.leaseExpiresAt <= now,
+    )
     .map((run) => run.id);
   if (idle.length) {
     await expireComputerExecutionLeases(tx, { runId: { in: idle } });
