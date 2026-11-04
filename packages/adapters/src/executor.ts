@@ -29,6 +29,7 @@ import {
   promptInvokesSkill,
   redactSecrets,
   renderBotDirectory,
+  renderGroupMembersContext,
   userRunError,
   userTurnMessageForRun,
 } from "@rakazo/core";
@@ -90,7 +91,7 @@ import { formatCurrentTimeInstruction } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type { FleetRun } from "./fleet-tools.js";
-import { loadBotGroupDirectory, loadGroupContext } from "./group-handoff.js";
+import { loadBotGroupDirectory, loadGroupRoster } from "./group-handoff.js";
 import {
   formatCompactedSummary,
   formatRecalledMemory,
@@ -172,7 +173,12 @@ import {
   runtimeFallbackModel,
 } from "./run-model.js";
 import { createReplyState } from "./run-progress.js";
-import { DELEGATED_EMPTY_NOTICE, runAllowsSilentEmpty, runReplyGuidance } from "./run-replies.js";
+import {
+  DELEGATED_EMPTY_NOTICE,
+  GROUP_UNADDRESSED_REPLY_GUIDANCE,
+  runAllowsSilentEmpty,
+  runReplyGuidance,
+} from "./run-replies.js";
 import {
   notifyRoutineRetryAttemptsExhausted,
   retryRoutineRun,
@@ -189,7 +195,7 @@ import { historyMyChatsAllowed } from "./run-tools-memory.js";
 import type { UserComputerState } from "./run-tools-user-computer.js";
 import { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from "./run-tools-user-computer.js";
 import { createRunTrustLoaders } from "./run-trust.js";
-import { completeRun, consumeRunEvents, failRun } from "./run-turn.js";
+import { completeRun, consumeRunEvents, failRun, handoffEndedTurn } from "./run-turn.js";
 import {
   claimRunSteering,
   loadCurrentTurnImages,
@@ -775,6 +781,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           ),
         );
         const currentRunRequiresImageInput = confirmedRunImages.length > 0;
+        const groupRoster = thread.groupId
+          ? await loadGroupRoster(deps.prisma, thread.groupId)
+          : undefined;
+        // The send decided whether the message named this member; one it named nobody for
+        // reached every member, and each may end its turn without a reply.
+        const groupReplyOptional =
+          groupRoster !== undefined && run.trigger === "user" && run.groupReplyOptional;
         const allowSilentPeerMessage = botMessageAllowsSilence(
           peerMessage?.intent,
           peerMessage?.repliesToRequest,
@@ -1128,11 +1141,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           resolved.acceptsImages,
         );
         const acceptsImages = deps.runtime.describe().capabilities.scripted || modelSeesImages;
-        const groupContext = thread.groupId
-          ? await loadGroupContext(deps.prisma, thread.groupId, {
-              id: bot.id,
-              name: bot.name,
-            })
+        const groupContext = groupRoster
+          ? [
+              renderGroupMembersContext(groupRoster.name, groupRoster.members, bot),
+              groupReplyOptional ? GROUP_UNADDRESSED_REPLY_GUIDANCE : undefined,
+            ]
+              .filter(Boolean)
+              .join("\n")
           : undefined;
         const hasMessagingIdentity = deps.messaging
           ? await deps.messaging.hasIdentity(bot.id)
@@ -1224,7 +1239,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             paymentWalletEnabled,
             messagingChannelRun: nonOwnerChatRun,
             voiceCall,
-            disabledBuiltinTools: bot.disabledBuiltinTools,
+            // Every member already got a message that names nobody, so a handoff only repeats it.
+            disabledBuiltinTools: groupReplyOptional
+              ? [...(bot.disabledBuiltinTools ?? []), "handoff_to_bot"]
+              : bot.disabledBuiltinTools,
             fleetManagement: bot.fleetManagement,
             followUpFromUser: sourceMessage?.role === "user",
             userComputer: userComputer === "connected",
@@ -1446,6 +1464,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           scripted,
           script,
           allowSilentEmptyRun,
+          groupReplyOptional,
           emptyResponseText,
           state,
           settleRunningHelpers: settleHelpers,
@@ -1861,8 +1880,17 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           if (await consumeRunEvents(ctx, runtimeEvents)) return;
           if (await interruptedByShutdown()) return;
           await completeRun(ctx);
-        } catch (caughtError) {
+        } catch (turnError) {
           if (await interruptedByShutdown()) return;
+          let caughtError = turnError;
+          if (handoffEndedTurn(state, caughtError)) {
+            try {
+              await completeRun(ctx);
+              return;
+            } catch (completionError) {
+              caughtError = completionError;
+            }
+          }
           await failRun(ctx, caughtError, {
             ownCredential: resolved.ownCredential,
             active: activeModel,

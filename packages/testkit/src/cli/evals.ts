@@ -22,6 +22,7 @@ import {
   GROUP_JUDGE_CALIBRATION,
   GROUP_JUDGE_VERSION,
 } from "../evals/group.js";
+import { GROUP_ROUTING_EVAL_CASES, GROUP_ROUTING_FIXTURE_VERSION } from "../evals/group-routing.js";
 import { HISTORY_FIXTURE_VERSION } from "../evals/history-fixtures.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "../evals/history-observer.js";
 import { observeSyntheticHistory } from "../evals/history-observer.js";
@@ -129,11 +130,15 @@ async function main() {
       fixtureVersion: GROUP_FIXTURE_VERSION,
       judge: { version: GROUP_JUDGE_VERSION, calibration: GROUP_JUDGE_CALIBRATION },
     },
+    "group-routing": {
+      cases: GROUP_ROUTING_EVAL_CASES,
+      fixtureVersion: GROUP_ROUTING_FIXTURE_VERSION,
+    },
     "tool-choice": { cases: TOOL_CHOICE_CASES, fixtureVersion: TOOL_CHOICE_FIXTURE_VERSION },
   };
   if (!Object.hasOwn(suites, values.suite!))
     throw new Error(
-      "Unknown suite; use product, history, group, silence, initiative, deliberation, memory, tool-choice, or approval",
+      "Unknown suite; use product, history, group, group-routing, silence, initiative, deliberation, memory, tool-choice, or approval",
     );
   const suite = suites[values.suite!]!;
   const suiteJudge = suite.judge;
