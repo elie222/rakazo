@@ -399,9 +399,6 @@ function SpaceShell() {
     activeBotId,
   });
   const read = useChatRead({ rpc, active, groupId, activeGroup, setBots, setGroups });
-  // Set once the composer hook below runs; a remote bot.deleted discards that
-  // chat's pending attachments. A ref keeps the sync input stable.
-  const discardDeletedChatRef = useRef<(threadKey: string) => void>(() => {});
   const {
     refreshThread,
     refreshGroupThread,
@@ -429,7 +426,6 @@ function SpaceShell() {
     notifyBrowserForEvent,
     markBotReadIfVisible: read.markBotReadIfVisible,
     markGroupReadOnReply: read.markGroupReadOnReply,
-    onBotDeleted: (botId) => discardDeletedChatRef.current(botId),
   });
   const {
     editorProps: routineEditorProps,
@@ -651,7 +647,6 @@ function SpaceShell() {
     clearReadBoundary: read.clearReadBoundary,
     flushPendingBrowserNotifications,
   });
-  discardDeletedChatRef.current = composer.discardThreadAttachments;
   const { sending, sendError, stopRun } = composer;
   function openChatSettings(kind: "bot" | "group", id: string) {
     const destKey =

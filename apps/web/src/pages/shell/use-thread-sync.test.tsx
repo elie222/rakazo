@@ -88,52 +88,12 @@ function syncInput({
     notifyBrowserForEvent: vi.fn(),
     markBotReadIfVisible: vi.fn(),
     markGroupReadOnReply: vi.fn(),
-    onBotDeleted: vi.fn(),
   } as unknown as Parameters<typeof useThreadSync>[0];
 }
 
 afterEach(() => {
   vi.clearAllMocks();
   vi.unstubAllGlobals();
-});
-
-it("discards a deleted bot's attachments, not an archived bot's", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const input = syncInput({
-    inGroup: false,
-    get: vi.fn(async () => ({}) as ThreadSnapshot),
-    refreshBots: vi.fn(async () => undefined),
-    commitSnapshot: vi.fn(),
-  });
-  function Probe() {
-    useThreadSync(input);
-    return null;
-  }
-  const root = createRoot(document.createElement("div"));
-  await act(async () => root.render(createElement(Probe)));
-  const subscription = vi.mocked(runThreadSubscription).mock.calls[0]![0];
-  const snapshot = {
-    threadId: "thread-1",
-    cursor: 1,
-    messages: [],
-    run: null,
-  } as unknown as ThreadSnapshot;
-  const deliver = (event: Partial<ProductEvent>) =>
-    subscription.onEvent(event as ProductEvent, snapshot);
-  await act(async () => {
-    // Archiving must not touch the chat's attachments; restore keeps the id.
-    deliver({ type: "bot.archived", botId: "bot-1", payload: {} });
-  });
-  expect(input.onBotDeleted).not.toHaveBeenCalled();
-  await act(async () => {
-    deliver({ type: "bot.deleted", botId: "bot-1", payload: { botId: "bot-2" } });
-  });
-  expect(input.onBotDeleted).toHaveBeenCalledWith("bot-2");
-  await act(async () => {
-    deliver({ type: "bot.deleted", botId: "bot-1", payload: {} });
-  });
-  expect(input.onBotDeleted).toHaveBeenCalledWith("bot-1");
-  act(() => root.unmount());
 });
 
 it.each([false, true])(
