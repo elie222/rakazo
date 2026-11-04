@@ -130,9 +130,10 @@ public class RakazoFileDropModule: Module {
     let registered = provider.registeredTypeIdentifiers.compactMap { UTType($0) }
     var type = registered.first { Self.keptTypes.contains($0) }
     var data = type.flatMap { load(provider, $0) }
-    if data == nil {
+    // Other formats, like HEIC, load as registered and are converted to JPEG.
+    if data == nil, let other = registered.first(where: { $0.conforms(to: .image) }) {
       type = .jpeg
-      data = load(provider, .image).flatMap { source in
+      data = load(provider, other).flatMap { source in
         source.count > maxBytes ? source : UIImage(data: source)?.jpegData(compressionQuality: 0.9)
       }
     }
