@@ -429,8 +429,10 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
     let ranAt = 0;
     const target = handlers({
       "computer.sleep": async ({ computerId }) => {
+        // Database time: the clock Graphile compares `run_at` against.
+        const { rows } = await testPool().query<{ now: Date }>("select clock_timestamp() as now");
+        ranAt = rows[0]!.now.getTime();
         received.push(computerId);
-        ranAt = Date.now();
       },
     });
     const key = `contract:replacement:${Date.now()}`;
