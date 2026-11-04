@@ -612,7 +612,7 @@ export async function sleepComputerIfIdle(
       });
     } else if (
       error instanceof WorkspaceTooLargeError &&
-      deps.sandbox.describe().capabilities.persistentHome
+      (await providerKeepsHome(deps.sandbox, ref).catch(() => false))
     ) {
       // The provider's disk is the source of truth and survives the stop; this save is only a
       // backup, and the next start prefers the newer disk over the older backup.
@@ -887,6 +887,16 @@ async function postComputerNote(
       }
     }
   }
+}
+
+/** Whether the provider running `computer` keeps its disk when it stops. */
+export function providerKeepsHome(
+  sandbox: SandboxProvider,
+  computer: ComputerRef,
+): Promise<boolean> {
+  return (
+    sandbox.keepsHome?.(computer) ?? Promise.resolve(sandbox.describe().capabilities.persistentHome)
+  );
 }
 
 /** A running computer, or one whose suspend claim was abandoned while it was still up. */
