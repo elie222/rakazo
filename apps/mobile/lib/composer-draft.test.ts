@@ -5,8 +5,8 @@ import { readComposerDraft, writeComposerDraft } from "./composer-draft";
 vi.mock("./api", () => ({ currentApiBase: () => "https://api.example.test" }));
 
 const files = vi.hoisted(() => new Map<string, string>());
-/** Each copy step throws while true, like a transient storage failure. */
-const failing = vi.hoisted(() => ({ copy: false }));
+/** Copy steps throw while `copy` is true; file creation is silent while `create` is, as on iOS. */
+const failing = vi.hoisted(() => ({ copy: false, create: false }));
 vi.mock("expo-file-system", () => {
   class Directory {
     uri: string;
@@ -50,6 +50,7 @@ vi.mock("expo-file-system", () => {
     }
     override create(options?: { overwrite?: boolean }) {
       if (this.exists && !options?.overwrite) throw new Error("File exists");
+      if (failing.create) return;
       files.set(this.uri, "");
     }
     override delete() {
@@ -83,6 +84,7 @@ function legacyDraft(body: string) {
 beforeEach(() => {
   files.clear();
   failing.copy = false;
+  failing.create = false;
 });
 
 it("keeps drafts in documents, not the cache", () => {
@@ -123,4 +125,10 @@ it("reads the draft from the cache while the copy to documents fails", () => {
   // The composer's automatic save of what it read cannot erase the draft.
   expect(writeComposerDraft(scope, "Unsent draft", [])).toBe(true);
   expect(readComposerDraft(scope).text).toBe("Unsent draft");
+});
+it("does not save drafts when the clean-launch marker cannot be verified", () => {
+  failing.create = true;
+  expect(writeComposerDraft(scope, "First draft", [])).toBe(false);
+  expect(files.has(draftPath("document"))).toBe(false);
+  expect(readComposerDraft(scope).text).toBe("");
 });

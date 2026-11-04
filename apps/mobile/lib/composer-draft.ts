@@ -100,7 +100,12 @@ function deleteLeftover(entry: File | Directory): void {
 // saved since.
 function migrateLegacyDrafts(): void {
   if (!legacyRoot().exists) {
-    if (!legacyDone().exists) legacyDone().create();
+    if (!legacyDone().exists) {
+      legacyDone().create();
+      // iOS can fail to create a file without an error; without the marker, a cache copy a
+      // downgrade later leaves behind would replace drafts saved in the meantime.
+      if (!legacyDone().exists) throw new Error("DRAFT_STORAGE_UNAVAILABLE");
+    }
     return;
   }
   if (!legacyDone().exists) {
