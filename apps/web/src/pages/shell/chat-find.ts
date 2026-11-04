@@ -1,6 +1,14 @@
 const MESSAGE = "[data-message-id]";
 const BLOCK = "p,li,div,pre,h1,h2,h3,h4,h5,h6,td,th,blockquote";
 
+/**
+ * Lowercase for matching. Greek sigma lowercases to a final form at the end of a word, which
+ * a character-by-character fold never sees, so both forms fold to the same letter.
+ */
+function fold(text: string) {
+  return text.toLocaleLowerCase().replaceAll("ς", "σ");
+}
+
 /** One code unit of a message's lowercased text and the source character it came from. */
 type Unit = { node: Text; start: number; end: number } | null;
 
@@ -33,7 +41,7 @@ function messageText(message: Element) {
     const value = node.nodeValue ?? "";
     for (let at = 0; at < value.length; ) {
       const char = String.fromCodePoint(value.codePointAt(at) ?? 0);
-      const lower = char.toLocaleLowerCase();
+      const lower = fold(char);
       for (let unit = 0; unit < lower.length; unit++) {
         units.push({ node, start: at, end: at + char.length });
       }
@@ -46,7 +54,7 @@ function messageText(message: Element) {
 
 /** Every case-insensitive match of `query` in the chat messages under `root`, in document order. */
 export function findTextRanges(root: ParentNode, query: string): Range[] {
-  const needle = query.toLocaleLowerCase();
+  const needle = fold(query);
   if (!needle.trim()) return [];
   const ranges: Range[] = [];
   for (const message of root.querySelectorAll(MESSAGE)) {

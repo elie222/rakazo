@@ -40,6 +40,11 @@ describe("findTextRanges", () => {
     expect(found(root, "İstanbul")).toEqual(["İstanbul"]);
   });
 
+  it("matches Greek text whose sigma takes its final form", () => {
+    const root = transcript("<p>ΟΣ and οσ and ος</p>");
+    expect(found(root, "ΟΣ")).toEqual(["ΟΣ", "οσ", "ος"]);
+  });
+
   it("only searches message text, not buttons, hidden text or other transcript chrome", () => {
     const root = document.createElement("div");
     root.innerHTML =

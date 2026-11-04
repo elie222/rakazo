@@ -9,8 +9,13 @@ const MATCHES = "rk-find";
 const CURRENT = "rk-find-current";
 const REFRESH_MS = 250;
 
+/** Centers the match itself, which may sit deep inside a code block taller than the view. */
 function reveal(range: Range) {
-  range.startContainer.parentElement?.scrollIntoView({ block: "center" });
+  const scroller = range.startContainer.parentElement?.closest('[data-testid="transcript"]');
+  if (!scroller) return;
+  const match = range.getBoundingClientRect();
+  const view = scroller.getBoundingClientRect();
+  scroller.scrollTop += match.top - view.top - (view.height - match.height) / 2;
 }
 
 function setHighlights(all: Range[], current: Range | undefined) {
