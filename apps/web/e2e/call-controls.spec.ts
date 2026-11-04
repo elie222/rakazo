@@ -42,10 +42,11 @@ test("a completed live call shows its saved spoken transcript", async ({ page },
   await page.goto("/app");
   await page.waitForURL(/\/app\/[^/]+$/);
   const botId = page.url().split("/").at(-1);
-  await page.route("**/rpc/threads/get", async (route) => {
+  await page.route("**/rpc/bootstrap", async (route) => {
     const response = await route.fetch();
     const body = await response.json();
-    const snap = body.json;
+    const snap = body.json.thread;
+    expect(snap).not.toBeNull();
     snap.messages.push({
       id: "saved-live-call",
       threadId: snap.threadId,
@@ -77,6 +78,7 @@ test("a completed live call shows its saved spoken transcript", async ({ page },
   });
   await page.reload();
   const card = page.getByTestId("voice-chat-card");
+  await expect(card).toBeVisible();
   await card.getByRole("button", { name: /Show transcript/ }).click();
   await expect(card).toContainText("Can we plan the day together?");
   await expect(card).toContainText("Of course. What would you like to start with?");
