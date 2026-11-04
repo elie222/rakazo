@@ -7,11 +7,11 @@ import type {
 import { MediaGenerationError } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { messageBlockForArtifact } from "@rakazo/core";
-import type { ExternalEffect, PrismaClient } from "@rakazo/db";
+import type { ExternalEffect, Prisma, PrismaClient } from "@rakazo/db";
 import { z } from "zod";
 import { mediaPromptSchema, validateGeneratedMedia } from "./media-generation-provider.js";
 
-const JOB_KIND = "media_generation_job";
+export const MEDIA_JOB_KIND = "media_generation_job";
 const savedJob = z.object({
   provider: z.string(),
   jobId: z.string().optional(),
@@ -27,12 +27,16 @@ export async function generateMediaFromTool(options: {
   prisma: PrismaClient;
   context: AdapterContext;
   run: { id: string; threadId: string; botId: string; userId: string; spaceId: string };
+  /** Saved with a new job so background delivery skips a chat that was cleared since. */
+  threadGeneration?: number;
   attach: (
     output: GeneratedMedia,
     name: string,
     job: { id: string; result: { provider: string; jobId?: string } },
   ) => Promise<{ artifactId: string; block: MessageBlock }>;
   publish: (block: MessageBlock, jobId: string, artifactId: string) => Promise<unknown>;
+  /** Commits with a video's provider failure, so whatever follows it cannot be lost. */
+  onSettled?: (tx: Prisma.TransactionClient, status: "failed") => Promise<void>;
 }) {
   const { provider, prisma, context, run, args } = options;
   const video = options.name === "generate_video";
@@ -55,7 +59,7 @@ export async function generateMediaFromTool(options: {
       reservation = await prisma.externalEffect.findFirst({
         where: {
           id: args.jobId,
-          kind: JOB_KIND,
+          kind: MEDIA_JOB_KIND,
           spaceId: run.spaceId,
           run: { userId: run.userId, botId: run.botId, threadId: run.threadId },
         },
@@ -76,7 +80,7 @@ export async function generateMediaFromTool(options: {
       const prior = await prisma.externalEffect.findFirst({
         where: {
           runId: run.id,
-          kind: JOB_KIND,
+          kind: MEDIA_JOB_KIND,
           request: { path: ["executionId"], equals: options.executionId },
         },
       });
@@ -110,13 +114,16 @@ export async function generateMediaFromTool(options: {
               data: {
                 spaceId: run.spaceId,
                 runId: run.id,
-                kind: JOB_KIND,
+                kind: MEDIA_JOB_KIND,
                 idempotencyKey: `media:${run.id}:${slot}`,
                 status: "media_submitting",
                 request: {
                   tool: options.name,
                   prompt: input.data.prompt,
                   executionId: options.executionId,
+                  ...(options.threadGeneration === undefined
+                    ? {}
+                    : { threadGeneration: options.threadGeneration }),
                 },
                 result: { provider: provider.id },
               },
@@ -171,30 +178,36 @@ export async function generateMediaFromTool(options: {
             output: await provider.generateImage(mediaPromptSchema.parse(args), context),
           };
     } catch (error) {
+      // Release only this check's claim; a finished or failed job stays settled.
       if (polling)
         await prisma.externalEffect.updateMany({
-          where: { id: reservation.id, status: { not: "media_completed" } },
+          where: { id: reservation.id, status: "media_polling" },
           data: { status: "media_pending" },
         });
       throw error;
     }
     if (video && "id" in output) {
-      await prisma.externalEffect.updateMany({
-        where: {
-          id: reservation.id,
-          status: { not: "media_completed" },
-          result: { equals: saved },
-        },
-        data: {
-          status:
-            output.status === "failed"
-              ? "media_failed"
-              : output.status === "completed"
-                ? "media_polling"
-                : "media_pending",
-          result: { provider: provider.id, jobId: output.id },
-        },
-      });
+      const settle = async (tx: Prisma.TransactionClient) => {
+        const updated = await tx.externalEffect.updateMany({
+          where: {
+            id: reservation.id,
+            status: polling ? "media_polling" : "media_submitting",
+            result: { equals: saved },
+          },
+          data: {
+            status:
+              output.status === "failed"
+                ? "media_failed"
+                : output.status === "completed"
+                  ? "media_polling"
+                  : "media_pending",
+            result: { provider: provider.id, jobId: output.id },
+          },
+        });
+        if (updated.count && output.status === "failed") await options.onSettled?.(tx, "failed");
+      };
+      if (output.status === "failed" && options.onSettled) await prisma.$transaction(settle);
+      else await settle(prisma);
     }
     if (output.status !== "completed")
       return {
@@ -202,16 +215,29 @@ export async function generateMediaFromTool(options: {
         status: output.status,
         ...("progress" in output ? { progress: output.progress } : {}),
       };
-    validateGeneratedMedia(output.output, video ? "video/mp4" : "image/png");
-    context.signal.throwIfAborted();
-    const attached = await options.attach(
-      output.output,
-      `generated-${reservation.id}.${video ? "mp4" : "png"}`,
-      {
-        id: reservation.id,
-        result: { provider: provider.id, ...("id" in output ? { jobId: output.id } : {}) },
-      },
-    );
+    const fetched = {
+      provider: provider.id,
+      ...("id" in output ? { jobId: output.id } : {}),
+    };
+    let attached: { artifactId: string; block: MessageBlock };
+    try {
+      validateGeneratedMedia(output.output, video ? "video/mp4" : "image/png");
+      context.signal.throwIfAborted();
+      attached = await options.attach(
+        output.output,
+        `generated-${reservation.id}.${video ? "mp4" : "png"}`,
+        { id: reservation.id, result: fetched },
+      );
+    } catch (error) {
+      // A finished video that could not be stored releases its claim, so a later check retries
+      // it and the deadline can still report it failed.
+      if (video && "id" in output)
+        await prisma.externalEffect.updateMany({
+          where: { id: reservation.id, status: "media_polling", result: { equals: fetched } },
+          data: { status: "media_pending" },
+        });
+      throw error;
+    }
     await options.publish(attached.block, reservation.id, attached.artifactId);
     return { status: "completed", artifactId: attached.artifactId };
   } catch (error) {

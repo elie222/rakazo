@@ -4,6 +4,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { composerHoldsUnsavedWork } from "../../lib/composer-draft";
 import type { PageSession } from "../../lib/pages";
 import { createPageSession } from "../../lib/pages";
 import type { createSpaceRpc } from "../../lib/rpc";
@@ -35,19 +36,21 @@ let navigate: ReturnType<typeof vi.fn>;
 let root: Root;
 let latest: ReturnType<typeof useComposerActions>;
 let pageSession: PageSession;
+let activeChat: string;
 
 function ref<T>(current: T) {
   return { current };
 }
 
-function Harness() {
+function Harness({ extras }: { extras?: Record<string, unknown> }) {
   latest = useComposerActions({
+    ...extras,
     rpc: rpc as unknown as ReturnType<typeof createSpaceRpc>,
     pageSession,
-    activeId: "bot-1",
+    activeId: activeChat,
     inGroup: false,
     groupId: undefined,
-    activeBotId: ref<string | undefined>("bot-1"),
+    activeBotId: ref<string | undefined>(activeChat),
     activeGroupId: ref<string | undefined>(undefined),
     botsRef: ref<Bot[]>([]),
     bootstrapMe: me,
@@ -62,8 +65,13 @@ function Harness() {
     commitComputer: () => undefined,
     clearReadBoundary: () => undefined,
     flushPendingBrowserNotifications: () => undefined,
-  });
+  } as Parameters<typeof useComposerActions>[0]);
   return null;
+}
+
+function switchChat(activeId: string) {
+  activeChat = activeId;
+  act(() => root.render(<Harness />));
 }
 
 async function flush() {
@@ -76,6 +84,7 @@ beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   me = null;
   navigate = vi.fn();
+  activeChat = "bot-1";
   pageSession = createPageSession();
   rpc = {
     routines: { testRun: vi.fn() },
@@ -149,6 +158,83 @@ it("keeps an attachment added while a send is in flight", async () => {
     expect.objectContaining({ artifactIds: ["artifact-a.txt"] }),
   );
   expect(latest.activePendingAttachments.map((pending) => pending.file)).toEqual([fileB]);
+});
+
+it("discards a deleted chat's attachments with their previews and unsaved-work flag", () => {
+  const file = new File(["a"], "photo.png", { type: "image/png" });
+  const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:preview-a");
+  const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+  try {
+    act(() => void latest.onAttachmentPick([file]));
+    expect(composerHoldsUnsavedWork()).toBe(true);
+    act(() => latest.discardThreadAttachments("bot-1"));
+    expect(latest.activePendingAttachments).toEqual([]);
+    expect(revoke).toHaveBeenCalledWith("blob:preview-a");
+    expect(composerHoldsUnsavedWork()).toBe(false);
+  } finally {
+    create.mockRestore();
+    revoke.mockRestore();
+  }
+});
+
+it("keeps an attachment and its preview when the chat is archived and restored", () => {
+  const file = new File(["a"], "photo.png", { type: "image/png" });
+  const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:preview-a");
+  const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+  try {
+    act(() => void latest.onAttachmentPick([file]));
+    // Archiving drops the chat from the active roster and restore brings the
+    // same id back. The roster-driven cleanup used to discard the file here;
+    // only a confirmed deletion may.
+    act(() => root.render(<Harness extras={{ rosterChatIds: new Set() }} />));
+    switchChat("bot-2");
+    switchChat("bot-1");
+    const restored = latest.activePendingAttachments;
+    expect(restored.map((pending) => pending.file)).toEqual([file]);
+    expect(restored[0]!.previewUrl).toBe("blob:preview-a");
+    expect(revoke).not.toHaveBeenCalled();
+    expect(composerHoldsUnsavedWork()).toBe(true);
+  } finally {
+    create.mockRestore();
+    revoke.mockRestore();
+  }
+});
+
+it("keeps unsent attachments when switching chats and back", () => {
+  const file = new File(["a"], "photo.png", { type: "image/png" });
+  const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:preview-a");
+  const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+  try {
+    act(() => void latest.onAttachmentPick([file]));
+    const preview = latest.activePendingAttachments[0]!.previewUrl;
+    expect(preview).toBe("blob:preview-a");
+    switchChat("bot-2");
+    expect(latest.activePendingAttachments).toEqual([]);
+    switchChat("bot-1");
+    const restored = latest.activePendingAttachments;
+    expect(restored.map((pending) => pending.file)).toEqual([file]);
+    expect(restored[0]!.previewUrl).toBe("blob:preview-a");
+    expect(revoke).not.toHaveBeenCalled();
+  } finally {
+    create.mockRestore();
+    revoke.mockRestore();
+  }
+});
+
+it("does not send another chat's attachments from the open chat", async () => {
+  const file = new File(["a"], "a.txt", { type: "text/plain" });
+  act(() => void latest.onAttachmentPick([file]));
+  switchChat("bot-2");
+  rpc.threads.send.mockResolvedValue({ runId: "run-1", taskId: "task-1" });
+  await act(async () => {
+    await latest.sendMessage("hello", [], "nonce-2");
+  });
+  expect(rpc.artifacts.create).not.toHaveBeenCalled();
+  expect(rpc.threads.send).toHaveBeenCalledWith(
+    expect.objectContaining({ text: "hello", artifactIds: undefined }),
+  );
+  switchChat("bot-1");
+  expect(latest.activePendingAttachments.map((pending) => pending.file)).toEqual([file]);
 });
 
 const digest = { kind: "routine" as const, id: "routine-1", name: "digest" };

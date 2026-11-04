@@ -485,6 +485,45 @@ it("saves an edited output limit without sending a half-typed replacement key", 
   }
 });
 
+it("renaming a connection keeps unsaved form fields", async () => {
+  models.credentials.mockResolvedValue([deepseekCredential]);
+  models.rename.mockResolvedValue(undefined);
+
+  const view = await renderSettings();
+  try {
+    await manage();
+    const limit = view.container.querySelector<HTMLInputElement>(
+      'input[aria-label="Maximum output tokens"]',
+    );
+    if (!limit) throw new Error("Missing output limit field");
+    await typeInto(limit, "8192");
+    const nameLabel = [...view.container.querySelectorAll("label")].find(
+      (entry) => entry.textContent === "Name",
+    );
+    const nameInput = nameLabel?.htmlFor
+      ? view.container.querySelector<HTMLInputElement>(`#${CSS.escape(nameLabel.htmlFor)}`)
+      : null;
+    if (!nameInput) throw new Error("Missing connection name field");
+    await typeInto(nameInput, "Renamed");
+    models.credentials.mockResolvedValue([{ ...deepseekCredential, label: "Renamed" }]);
+    const nameForm = nameInput.closest("form");
+    const nameSave = nameForm?.querySelector('button[type="submit"]');
+    if (!(nameSave instanceof HTMLButtonElement)) throw new Error("Missing name save button");
+    await click(nameSave);
+    await act(async () => {
+      for (let index = 0; index < 5; index += 1) await new Promise((done) => setTimeout(done, 0));
+    });
+    expect(models.rename).toHaveBeenCalledWith({
+      credentialId: "cred-deepseek",
+      label: "Renamed",
+    });
+    expect(titles(view.container)).toEqual(["DeepSeek (Renamed)"]);
+    expect(limit.value).toBe("8192");
+  } finally {
+    await view.unmount();
+  }
+});
+
 it("leaves the key field empty until a key is saved", async () => {
   const view = await renderSettings();
   try {

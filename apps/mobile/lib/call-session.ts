@@ -13,6 +13,7 @@ import {
   isRetryableError,
   latestSpokenCallReply,
   newClientId,
+  readJsonObjectWithin,
   recognitionLocaleTag,
   retryDelayMs,
   spokenMemory,
@@ -40,6 +41,7 @@ import type { DictationGiveUp } from "./dictation";
 import * as dictation from "./dictation";
 import { deviceLanguage, getActiveUiLocale, t } from "./i18n";
 import { reportMobileError } from "./monitoring";
+import { fetchServer } from "./server-headers";
 import { currentSessionGeneration, subscribeSessionGeneration } from "./session";
 import { errorText, voiceAccountErrorText } from "./user-error";
 import type { SpeechOwner } from "./voice";
@@ -769,23 +771,30 @@ function deleteQuietly(uri: string | null): void {
   }
 }
 
+/** Matches the web client's cap on a transcription response. */
+const MAX_TRANSCRIPTION_RESPONSE_BYTES = 64 * 1024;
+
 async function transcribeClip(
   clip: CallClip,
   signal: AbortSignal,
   requestContext: ApiRequestContext,
 ): Promise<string> {
   const { apiBase, headers } = requestContext;
-  const res = await fetch(`${apiBase}/api/voice/transcribe`, {
-    method: "POST",
-    headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
-    body: JSON.stringify({ audioBase64: clip.base64, mimeType: clip.mimeType }),
+  const res = await fetchServer(
+    `${apiBase}/api/voice/transcribe`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
+      body: JSON.stringify({ audioBase64: clip.base64, mimeType: clip.mimeType }),
+      signal,
+    },
+    apiBase,
+  );
+  const body = await readJsonObjectWithin<{ text?: string; error?: string; code?: string }>(res, {
+    maxBytes: MAX_TRANSCRIPTION_RESPONSE_BYTES,
+    tooLargeMessage: t("Could not transcribe that."),
     signal,
   });
-  const body = (await res.json().catch(() => ({}))) as {
-    text?: string;
-    error?: string;
-    code?: string;
-  };
   if (!res.ok) {
     throw new ExpectedTurnFailure(
       voiceAccountErrorText(body) ?? errorText(body.error ?? "", t("Could not transcribe that.")),

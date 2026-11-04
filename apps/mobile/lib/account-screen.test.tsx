@@ -462,6 +462,7 @@ it.each([false, true])(
         "Vault",
         "Integrations",
         "Skills",
+        "Memory",
         "Messaging",
         "AI data sharing",
       ];
@@ -478,6 +479,7 @@ it.each([false, true])(
       for (const [title, href] of [
         ["Models", "/models"],
         ["Vault", "/vault"],
+        ["Memory", "/memory"],
         ["Messaging", "/messaging"],
       ]) {
         events.length = 0;
