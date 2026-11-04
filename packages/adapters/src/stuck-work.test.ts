@@ -326,15 +326,33 @@ describe("reconcileStuckWork", () => {
     const { jobs } = publisher();
     const { provider, send } = notifications();
     send.mockRejectedValueOnce(new Error("push down"));
+    const publishChatAlert = vi.fn(async () => undefined);
+    const events = { publishChatAlert } as unknown as ThreadEvents;
 
-    await reconcileStuckWork({ prisma, jobs, notifications: provider, now, batchSize: 100 });
+    await reconcileStuckWork({
+      prisma,
+      jobs,
+      events,
+      notifications: provider,
+      now,
+      batchSize: 100,
+    });
 
     expect(send).toHaveBeenCalledTimes(1);
     expect(stamps).toHaveLength(0);
+    expect(publishChatAlert).not.toHaveBeenCalled();
 
-    await reconcileStuckWork({ prisma, jobs, notifications: provider, now, batchSize: 100 });
+    await reconcileStuckWork({
+      prisma,
+      jobs,
+      events,
+      notifications: provider,
+      now,
+      batchSize: 100,
+    });
 
     expect(send).toHaveBeenCalledTimes(2);
+    expect(publishChatAlert).toHaveBeenCalledTimes(1);
     expect(stamps).toEqual([
       expect.objectContaining({
         runId: run.id,

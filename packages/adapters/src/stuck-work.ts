@@ -220,9 +220,10 @@ async function remindStuckRun(
     botId: run.botId,
     threadId: run.threadId,
   };
-  publishChatAlert(deps.events, run, message, run.thread.groupId);
   const delivery = await sendStuckNotice(deps.notifications, run, message);
   if (delivery === "delivered") {
+    // After the push, so a failed push that is retried does not alert open apps twice.
+    publishChatAlert(deps.events, run, message, run.thread.groupId);
     await withTransactionRetry(() =>
       deps.prisma.$transaction((tx) => markStuckNoticeDelivered(tx, claimId, run)),
     );
