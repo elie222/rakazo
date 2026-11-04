@@ -768,9 +768,9 @@ function installApplicationMenu() {
     stackRunning: localStack.managedStackRunning(),
     stop: () => {
       hostComputer?.activate(false);
-      installApplicationMenu();
-      void localStack.stop();
+      return localStack.stop();
     },
+    rebuildMenu: () => installApplicationMenu(),
   });
   const isMac = process.platform === "darwin";
   // The page handles these chords itself and stops them, so a key press runs them once; the menu
@@ -1405,11 +1405,8 @@ app.whenReady().then(async () => {
         ...events,
       }),
   });
-  // Must exist before the stack controller: its state events refresh the stop item.
-  const stopStackMenu = new StackStopMenuAvailability(
-    () => ({ mode: currentSetup?.mode ?? null, running: localStack.managedStackRunning() }),
-    () => installApplicationMenu(),
-  );
+  // Must exist before the stack controller: its lifecycle transitions refresh the stop item.
+  const stopStackMenu = new StackStopMenuAvailability(() => installApplicationMenu());
   localStack = new LocalStackController({
     hostComputer: hostComputer?.connection,
     platform: process.platform,
@@ -1436,8 +1433,9 @@ app.whenReady().then(async () => {
       if (setupWindow !== null && !setupWindow.isDestroyed()) {
         setupWindow.webContents.send("desktop.setup.stack.changed", state);
       }
-      // A stack can start or stop without a server switch; refresh the stop item on flips.
-      stopStackMenu.stackChanged();
+      // A stack can start or stop without a server switch; its phase transitions refresh
+      // the stop item.
+      stopStackMenu.stackChanged(state.phase);
     },
   });
   currentSetup = await readSetup(userDataDir);
