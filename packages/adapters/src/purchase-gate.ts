@@ -55,8 +55,10 @@ export function purchaseCardSummary(purchase: PurchaseApproval): FleetCardSummar
   if (!purchase.site) {
     return {
       onceOnly: true,
-      title: "Complete a payment on this page?",
-      lines: ["The page could not be checked, so this may complete a payment."],
+      title: "Allow this page action?",
+      lines: [
+        "The page or site could not be verified. Review the action before allowing it; it may submit a payment.",
+      ],
     };
   }
   return {

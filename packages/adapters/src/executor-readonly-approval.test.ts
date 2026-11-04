@@ -3771,7 +3771,7 @@ describe("a click that completes a purchase on a website", () => {
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
   });
 
-  it("asks when the check fails, and approves no click by itself", async () => {
+  it("returns an inspection error without a payment prompt or a click when the check fails", async () => {
     const page = pageBrowser();
     page.provider.purchaseCheck = async () => {
       throw new Error("Page browser timed out");
@@ -3780,9 +3780,15 @@ describe("a click that completes a purchase on a website", () => {
     f.setCalls([payCall()]);
     await f.run();
     expect(page.acts).toEqual([]);
-    expect(isApprovalPausedResult(f.results[0])).toBe(true);
-    const [{ blocks }] = f.pauseRunForInput.mock.calls[0] as unknown as [{ blocks: unknown[] }];
-    expect(blocks[0]).toMatchObject({ text: "Complete a payment on this page?" });
+    expect(f.results[0]).toMatchObject({ error: expect.stringContaining("nothing was pressed") });
+    expect(isApprovalPausedResult(f.results[0])).toBe(false);
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    // A fresh successful inspection lets the bot resume ordinary work without user approval.
+    page.provider.purchaseCheck = async () => ({ purchase: null });
+    f.setCalls([payCall(undefined, "call-retry")]);
+    await f.run();
+    expect(page.acts).toHaveLength(1);
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
   });
 
   it("refuses it in a webhook run, which has nobody to ask", async () => {
