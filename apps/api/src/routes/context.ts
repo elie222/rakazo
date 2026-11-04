@@ -288,7 +288,13 @@ export function createRouterContext(deps: RouterDeps) {
         choice.modelId,
         resolution,
       );
-      if (!credential && (choice.credentialId || !(entry && "managed" in entry && entry.managed)))
+      // Computer mode runs only on the member's own connections.
+      if (
+        !credential &&
+        (role === "computer" ||
+          choice.credentialId ||
+          !(entry && "managed" in entry && entry.managed))
+      )
         throw new ORPCError("BAD_REQUEST", { message: "Connect that model provider first" });
       // Another account of the provider listing the model does not make it run on this one;
       // the catalog names the connections that can, as the picker shows.

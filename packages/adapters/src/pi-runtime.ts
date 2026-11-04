@@ -86,6 +86,7 @@ import { observedPiStream } from "./pi-usage.js";
 import type { RuntimeContextDecision } from "./runtime-context.js";
 import { createRuntimeContextPolicy } from "./runtime-context.js";
 import { deliverFinishedShells } from "./shell-command-stream.js";
+import { withoutThinkingFrom } from "./thinking-signatures.js";
 import type { ComputerModeCheckpoint } from "./turn-checkpoint.js";
 import {
   restoreTurnCheckpoint,
@@ -262,6 +263,10 @@ export class PiAgentRuntime implements AgentRuntime {
         };
         const computer = request.computerModel ? computerTarget(request.computerModel) : undefined;
         let mode = savedMode?.mode ?? "main";
+        // Where the current computer-mode span began; a resumed span is not known, so it is all.
+        let computerFrom = 0;
+        // The last finished span, whose reasoning is not the main model's, even on the same model id.
+        let computerSpan: [number, number] | undefined;
         let mainTarget = initialModelTarget;
         let computerMode: ComputerModeCheckpoint | undefined = computer
           ? {
@@ -536,10 +541,12 @@ export class PiAgentRuntime implements AgentRuntime {
                   },
                 };
                 mode = "computer";
+                computerFrom = agent.state.messages.length;
                 fallbackState = computerFallbackState!;
                 setTarget(computer);
               } else {
                 mode = "main";
+                computerSpan = [computerFrom, agent.state.messages.length];
                 fallbackState = mainFallbackState;
                 setTarget(mainTarget);
               }
@@ -549,7 +556,6 @@ export class PiAgentRuntime implements AgentRuntime {
                 main: computerSelection(mainTarget.config),
                 computer: computerSelection(computer.config),
               };
-              // Returning keeps the main model's own reasoning; Pi drops the computer model's.
               if (mode === "computer")
                 fallbackState.messagesBeforeSwitch = agent.state.messages.length;
               tools = modeTools();
@@ -611,7 +617,14 @@ export class PiAgentRuntime implements AgentRuntime {
           prepareNextTurnWithContext: async (turn) => {
             const update = computer
               ? {
-                  context: { ...turn.context, tools },
+                  context: {
+                    ...turn.context,
+                    tools,
+                    messages:
+                      mode === "main" && computerSpan
+                        ? withoutThinkingFrom(turn.context.messages, ...computerSpan)
+                        : turn.context.messages,
+                  },
                   model: activeStreamTarget.model,
                   thinkingLevel: thinkingLevelFor(
                     activeStreamTarget.model,

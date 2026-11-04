@@ -448,6 +448,7 @@ it("keeps the main model's own reasoning after computer work", async () => {
   );
   await run(input);
   expect(sent.at(-1)).toContain("main plan");
+  expect(sent.at(-1)).not.toContain("computer plan");
 });
 it("finds screen tools only in computer mode", async () => {
   const input = request();
