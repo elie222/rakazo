@@ -1222,9 +1222,13 @@ async function deliverPendingSignOut(record: PendingSignOut): Promise<"delivered
         controller.signal,
         "Request timed out",
       );
-      // React Native can follow redirects regardless of the requested redirect policy.
-      if (response.redirected || (response.url && response.url !== `${record.apiBase}${path}`))
+      // Native fetch can follow redirects. A same-origin answer may have renewed the session,
+      // so record its progress; another origin (or an unknown redirect target) proves nothing.
+      if (response.url) {
+        if (new URL(response.url).origin !== new URL(record.apiBase).origin) return "retry";
+      } else if (response.redirected) {
         return "retry";
+      }
       if (response.status >= 200 && response.status < 300) return "delivered";
       // A sign-out 401 means the session is invalid; the RPC also uses it for missing membership.
       // Other answers — a refusing proxy, throttling, a server failure — retry.
