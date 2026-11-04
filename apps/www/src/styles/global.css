@@ -2668,6 +2668,144 @@ button.product-demo__dock-icon {
   color: var(--ink);
 }
 
+.pricing-compare {
+  margin-top: 112px;
+}
+
+.pricing-compare__wrap {
+  margin-top: 44px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--surface);
+}
+
+.pricing-compare__table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+.pricing-compare__table th,
+.pricing-compare__table td {
+  padding: 14px 24px;
+  white-space: pre-line;
+  border-bottom: 1px solid var(--line);
+  color: var(--body);
+  font-weight: 400;
+  text-align: center;
+}
+
+.pricing-compare__table tbody tr:last-child th,
+.pricing-compare__table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.pricing-compare__table th:first-child {
+  text-align: left;
+}
+
+.pricing-compare__table thead th {
+  padding-block: 18px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.pricing-compare__table thead th:not(:first-child) {
+  width: 15%;
+}
+
+/* Rules after the feature names and either side of the own-model tiers. */
+.pricing-compare__table tr > :nth-child(2),
+.pricing-compare__table tr > :nth-child(3),
+.pricing-compare__table tr > :last-child {
+  border-left: 1px solid var(--line);
+}
+
+.pricing-compare__plan {
+  display: block;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.pricing-compare__price {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.pricing-compare__table svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+  margin-inline: auto;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.pricing-compare__yes {
+  stroke: var(--blue);
+}
+
+.pricing-compare__no {
+  stroke: var(--muted);
+  stroke-width: 1.5;
+}
+
+.pricing-hint {
+  position: relative;
+  border-bottom: 1px dotted var(--muted);
+  cursor: help;
+}
+
+.pricing-hint:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.pricing-hint__tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  z-index: 1;
+  width: max-content;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--surface);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%);
+  transition: opacity 120ms;
+}
+
+th .pricing-hint__tip {
+  left: 0;
+  transform: none;
+}
+
+/* The last column sits at the scroll edge, so its hints open leftward. */
+td:last-child .pricing-hint__tip {
+  right: 0;
+  left: auto;
+  transform: none;
+}
+
+.pricing-hint:hover .pricing-hint__tip,
+.pricing-hint:focus .pricing-hint__tip {
+  opacity: 1;
+}
+
 @media (max-width: 1000px) {
   .pricing__plans {
     grid-template-columns: minmax(0, 1fr);
