@@ -176,7 +176,7 @@ public class RakazoFileDropModule: Module {
       result = data
       done.signal()
     }
-    done.wait()
-    return result
+    // A provider that never answers costs its image only, not every later paste.
+    return done.wait(timeout: .now() + 30) == .success ? result : nil
   }
 }
