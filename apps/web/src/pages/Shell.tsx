@@ -376,8 +376,16 @@ function SpaceShell() {
     navigate,
     redirectKeepingOverlay,
   });
-  const { notifyBrowserForEvent, flushPendingBrowserNotifications } =
-    useBrowserNotifications(botsRef);
+  const { notifyBrowserForEvent, flushPendingBrowserNotifications } = useBrowserNotifications(
+    botsRef,
+    {
+      rpc,
+      activeBotId,
+      activeGroupId,
+      openChat: (alert) =>
+        navigate(alert.groupId ? `/app/g/${alert.groupId}` : `/app/${alert.botId}`),
+    },
+  );
   const { speakingMessageId, speakMessage } = useReadAloud({
     active,
     snapshot,

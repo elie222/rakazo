@@ -1,6 +1,7 @@
 import type { ProductAnalytics, RealtimeFanout } from "@rakazo/adapter-kit";
 import type {
   BotSecretDestination,
+  ChatAlert,
   LoginFieldInput,
   MessageBlock,
   OneTimeCodeTarget,
@@ -42,6 +43,7 @@ import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { getLogger } from "@rakazo/logging";
 import { saveApprovalRule, storedBatchActions } from "./approval-settings.js";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
+import { createChatAlerts } from "./chat-alerts.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
 import { contentEncryptionOf } from "./content-encryption.js";
@@ -105,6 +107,8 @@ export function transientRunEventsWhere(): Prisma.EventWhereInput {
 export interface ThreadEvents {
   notifyIncomingCalls?(userId: string): Promise<void>;
   followIncomingCalls?(userId: string, signal?: AbortSignal): AsyncGenerator<void>;
+  publishChatAlert?(userId: string, alert: ChatAlert): Promise<void>;
+  followChatAlerts?(userId: string, signal?: AbortSignal): AsyncGenerator<ChatAlert>;
   answerRunInput(input: AnswerRunInput): Promise<boolean>;
   append(input: AppendEventInput): Promise<ProductEvent>;
   claimSteering(input: ClaimSteeringInput): Promise<ClaimedSteeringMessage[]>;
@@ -356,7 +360,10 @@ export function createThreadEvents(
     analytics?: ProductAnalytics;
   } = {},
 ): ThreadEvents {
+  const chatAlerts = createChatAlerts(realtime);
   return {
+    publishChatAlert: chatAlerts.publish,
+    followChatAlerts: chatAlerts.follow,
     notifyIncomingCalls: async (userId) => {
       await realtime?.publish(`incoming-calls:${userId}`, "");
     },

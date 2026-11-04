@@ -7,7 +7,7 @@ import {
   PushSessionEndedError,
   settleCallRequest,
 } from "@rakazo/adapters";
-import type { ActionApprovalRule, Actor, Me, SettingsScope } from "@rakazo/contracts";
+import type { ActionApprovalRule, Actor, ChatAlert, Me, SettingsScope } from "@rakazo/contracts";
 import {
   approvalModeFromPreference,
   approvalPreferenceFromMode,
@@ -315,6 +315,39 @@ export function accountRoutes(ctx: RouterContext) {
       }),
     },
     notifications: {
+      subscribe: authed.notifications.subscribe.handler(async function* ({ context }) {
+        if (!deps.events.followChatAlerts) throw new ORPCError("NOT_FOUND");
+        const { spaceId, userId } = context.actor;
+        const alerts = deps.events.followChatAlerts(userId, context.signal);
+        let pending: Promise<IteratorResult<ChatAlert>> | undefined;
+        let authorizedAt = Date.now();
+        try {
+          while (!context.signal?.aborted) {
+            pending ??= alerts.next();
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const next = await Promise.race([
+              pending,
+              new Promise<"heartbeat">((resolve) => {
+                timer = setTimeout(() => resolve("heartbeat"), HEARTBEAT_MS);
+              }),
+            ]).finally(() => clearTimeout(timer));
+            if (context.stillAuthorized && Date.now() - authorizedAt >= SESSION_RECHECK_MS) {
+              if (!(await context.stillAuthorized())) throw new ORPCError("UNAUTHORIZED");
+              authorizedAt = Date.now();
+            }
+            if (next === "heartbeat") {
+              yield { type: "heartbeat" as const };
+              continue;
+            }
+            pending = undefined;
+            if (next.done) return;
+            if (next.value.spaceId !== spaceId) continue;
+            yield { type: "alert" as const, alert: next.value };
+          }
+        } finally {
+          void alerts.return(undefined).catch(() => {});
+        }
+      }),
       subscribeCalls: authed.notifications.subscribeCalls.handler(async function* ({ context }) {
         if (!deps.env?.phoneCallsEnabled || !deps.events.followIncomingCalls)
           throw new ORPCError("NOT_FOUND");

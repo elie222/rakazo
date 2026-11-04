@@ -13,6 +13,8 @@ import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { notificationIdentity } from "./notification-identity.js";
 
+const COMPLETION_NOTIFICATION_MAX_CHARS = 180;
+
 export async function runNotificationsEnabled(
   prisma: PrismaClient,
   run: { spaceId: string; userId: string; botId: string; threadId: string },
@@ -67,7 +69,7 @@ export async function notifyRun(
   options: { retryOnFailure?: boolean } = {},
 ) {
   if (
-    !deps.notifications ||
+    (!deps.notifications && !deps.events.publishChatAlert) ||
     (isBackgroundRunTrigger(run.trigger) && message.kind !== "help" && message.kind !== "takeover")
   )
     return;
@@ -78,6 +80,19 @@ export async function notifyRun(
     return null;
   });
   if (!notice?.enabled) return;
+  // Open apps alert from this too. Not awaited, so it never holds up the push.
+  void deps.events
+    .publishChatAlert?.(run.userId, {
+      kind: message.kind,
+      title: truncatePlainText(message.title, COMPLETION_NOTIFICATION_MAX_CHARS),
+      body: truncatePlainText(message.body, COMPLETION_NOTIFICATION_MAX_CHARS),
+      spaceId: run.spaceId,
+      botId: message.botId,
+      threadId: message.threadId,
+      ...(notice.groupId ? { groupId: notice.groupId } : {}),
+    })
+    .catch((error) => getLogger().error("chat alert publish", error));
+  if (!deps.notifications) return;
   // The icon shows what the inbox shows: unread chats across the user's Spaces. Without a
   // count the push leaves the badge as it is.
   const badge = await countUnreadInboxChats(deps.prisma, {
@@ -124,8 +139,6 @@ export function completionNotificationBody(assembled: string, blocks: MessageBlo
     .map((block) => block.text)
     .join("");
 }
-
-const COMPLETION_NOTIFICATION_MAX_CHARS = 180;
 
 /** Push body: Markdown stripped, then truncated so a cut cannot land inside a marker. */
 export function completionNotificationPreview(text: string): string {
