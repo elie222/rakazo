@@ -15,7 +15,7 @@ import {
   attachmentSizeLabel,
 } from "@rakazo/contracts";
 import {
-  attachmentExtensionForMimeType,
+  attachmentComputerPath,
   inferAttachmentMimeType,
   messageBlockForArtifact,
   validateAttachmentMimeType,
@@ -144,7 +144,7 @@ function threadFileMetadata(
     name: row.name,
     mimeType: row.mimeType,
     size: row.size,
-    path: `attachments/${row.id}${attachmentExtensionForMimeType(row.mimeType)}`,
+    path: attachmentComputerPath(row.id, row.mimeType),
   };
 }
 
@@ -251,6 +251,29 @@ export async function materializeRecentThreadFiles(
     input,
     ATTACHMENT_MAX_COUNT,
   );
+}
+
+/** Earlier files one run copies after history tools list them; later ones are skipped. */
+export const EARLIER_FILES_PER_RUN = 20;
+
+/** Files history tools listed this run, each queued once and at most `limit` in all. */
+export function createEarlierFileQueue(limit = EARLIER_FILES_PER_RUN) {
+  const queued = new Set<string>();
+  const pending: Array<Extract<MessageBlock, { kind: "file" | "image" }>> = [];
+  return {
+    add(files: ReadonlyArray<Extract<MessageBlock, { kind: "file" | "image" }>>) {
+      for (const file of files) {
+        if (queued.has(file.artifactId)) continue;
+        if (queued.size >= limit) {
+          getLogger().warn("earlier file not copied: run copy limit reached");
+          return;
+        }
+        queued.add(file.artifactId);
+        pending.push(file);
+      }
+    },
+    take: () => pending.splice(0),
+  };
 }
 
 /**

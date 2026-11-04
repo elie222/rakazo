@@ -10,6 +10,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   attachWorkspaceFileToThread,
+  createEarlierFileQueue,
   currentTurnFilesInstruction,
   materializeCurrentTurnFiles,
   materializeRecentThreadFiles,
@@ -562,5 +563,23 @@ describe("recent thread files", () => {
         '- "screenshot.png" (image/png, 3 bytes): "attachments/image-1.png"',
       ].join("\n"),
     );
+  });
+});
+
+describe("earlier file queue", () => {
+  const file = (artifactId: string) => ({
+    kind: "file" as const,
+    artifactId,
+    name: `${artifactId}.md`,
+    mimeType: "text/markdown",
+    size: 1,
+  });
+
+  it("queues each listed file once and stops at the run limit", () => {
+    const queue = createEarlierFileQueue(2);
+    queue.add([file("a"), file("a"), file("b")]);
+    expect(queue.take().map((f) => f.artifactId)).toEqual(["a", "b"]);
+    queue.add([file("a"), file("c")]);
+    expect(queue.take()).toEqual([]);
   });
 });

@@ -340,6 +340,26 @@ postgres("history retrieval (PostgreSQL)", () => {
     await pool.query("DELETE FROM messages WHERE id IN ('file-captioned','file-bare')");
     await pool.query("DELETE FROM artifacts WHERE id = 'art-foreign'");
   });
+  it("keeps a message with many files within the response budget and counts the omitted ones", async () => {
+    // 100 files with long names, as a deployment that raises the per-message limit allows.
+    await pool.query(`
+      INSERT INTO artifacts SELECT 'many-' || n, 'synthetic-space', 'synthetic-user', 'synthetic-bot', NULL, NULL,
+        repeat('n', 200) || n || '.md', 'text/markdown', 1, now() FROM generate_series(1,100) n;
+      INSERT INTO messages VALUES ('many-files','synthetic-thread',12100,'user',NULL,NULL,now(),
+        (SELECT jsonb_agg(jsonb_build_object('kind','file','artifactId','many-' || n,
+          'name', repeat('n', 200) || n || '.md','mimeType','text/markdown','size',1)) FROM generate_series(1,100) n));
+    `);
+    const read = await readHistory(prisma, scope, { messageId: "many-files", limit: 1 });
+    expect(Buffer.byteLength(JSON.stringify(read))).toBeLessThanOrEqual(10_000);
+    const [message] = read.messages as Array<{
+      attachments?: unknown[];
+      omittedAttachments?: number;
+    }>;
+    expect(message!.attachments!.length).toBeGreaterThan(0);
+    expect(message!.attachments!.length + message!.omittedAttachments!).toBe(100);
+    await pool.query("DELETE FROM messages WHERE id = 'many-files'");
+    await pool.query("DELETE FROM artifacts WHERE id LIKE 'many-%'");
+  });
   it("does not index credential prompts or tool metadata", async () => {
     await pool.query(`INSERT INTO messages VALUES
       ('secret-metadata','synthetic-thread',11000,'system',NULL,NULL,now(),

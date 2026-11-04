@@ -225,6 +225,7 @@ import {
 import { TASK_CATALOG_GUIDANCE } from "./task-catalog.js";
 import { parsePlaybook } from "./teaching-session.js";
 import {
+  createEarlierFileQueue,
   currentTurnFilesInstruction,
   listCurrentTurnFiles,
   listRecentThreadFiles,
@@ -1147,7 +1148,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         );
         const pendingTurnFiles: MessageBlock[][] = [turnBlocks ?? []];
         // Files from earlier messages that history tools surfaced this run.
-        const pendingEarlierFiles: Array<Extract<MessageBlock, { kind: "file" | "image" }>> = [];
+        const earlierFiles = createEarlierFileQueue();
         let copyingTurnFiles = Promise.resolve();
         // Serialize copies before each tool, including attachments received while a boot is in flight.
         const getRunComputer = async (reason: "tool" | "takeover" | "script", tool?: string) => {
@@ -1182,12 +1183,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                     workspaceCheckpoint.markFiles(files);
                     pendingTurnFiles.shift();
                   }
-                  if (artifacts && pendingEarlierFiles.length) {
-                    await materializeEarlierFiles(
-                      { ...deps, artifacts },
-                      pendingEarlierFiles.splice(0),
-                      { context, computer: async () => computer, computerMode },
-                    );
+                  const earlier = earlierFiles.take();
+                  if (artifacts && earlier.length) {
+                    await materializeEarlierFiles({ ...deps, artifacts }, earlier, {
+                      context,
+                      computer: async () => computer,
+                      computerMode,
+                    });
                   }
                 });
               await copyingTurnFiles;
@@ -1553,9 +1555,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             lease: computerLease,
             lazy: runComputer,
             get: getRunComputer,
-            copyEarlierFiles: (files) => {
-              pendingEarlierFiles.push(...files);
-            },
+            copyEarlierFiles: earlierFiles.add,
             checkpoint: workspaceCheckpoint,
             hostEnvironment,
             graphical,

@@ -50,7 +50,16 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
     name === "search_history"
       ? await searchHistory(deps.prisma, scope, HistorySearchInputSchema.parse(args))
       : await readHistory(deps.prisma, scope, HistoryReadInputSchema.parse(args));
-  // Earlier files the bot can now see are copied before its next computer tool.
+  const redacted = redactConnectorPayload(response, ctx.secrets);
+  // Redaction can expand short synthetic credentials; never let Pi clip the JSON.
+  if (Buffer.byteLength(JSON.stringify(redacted), "utf8") > 11_000) {
+    return call.finish({
+      untrusted: true,
+      error:
+        "Redacted history exceeds the response budget. Retry with limit 1 or a narrower linked run.",
+    });
+  }
+  // Files the bot can now see are copied before its next computer tool.
   ctx.computer.copyEarlierFiles(
     response.messages.flatMap((message) =>
       (message.attachments ?? []).map((file) => ({
@@ -62,15 +71,6 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
       })),
     ),
   );
-  const redacted = redactConnectorPayload(response, ctx.secrets);
-  // Redaction can expand short synthetic credentials; never let Pi clip the JSON.
-  if (Buffer.byteLength(JSON.stringify(redacted), "utf8") > 11_000) {
-    return call.finish({
-      untrusted: true,
-      error:
-        "Redacted history exceeds the response budget. Retry with limit 1 or a narrower linked run.",
-    });
-  }
   return call.finish(redacted);
 }
 

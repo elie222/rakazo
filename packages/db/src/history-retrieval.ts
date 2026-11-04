@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { HistoryReadInput, HistorySearchInput } from "@rakazo/contracts";
 import { HistoryQueriesSchema } from "@rakazo/contracts";
-import { attachmentExtensionForMimeType, shortenedTextLength, textBoundary } from "@rakazo/core";
+import { attachmentComputerPath, shortenedTextLength, textBoundary } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import { searchTerms } from "./content-crypto.js";
@@ -61,7 +61,25 @@ function bounded<T extends { messages: ReturnType<typeof reference>[] }>(respons
           : best,
       undefined,
     );
-    if (!longest) throw new Error("History metadata exceeds response budget");
+    if (!longest) {
+      // Text is as short as it goes: drop files from the message listing the most, and say how
+      // many are left out so a narrower read can list them.
+      const crowded = (response.messages as AttachedReference[]).reduce<
+        AttachedReference | undefined
+      >(
+        (best, ref) =>
+          ref.attachments?.length &&
+          (!best || ref.attachments.length > (best.attachments?.length ?? 0))
+            ? ref
+            : best,
+        undefined,
+      );
+      if (!crowded?.attachments) throw new Error("History metadata exceeds response budget");
+      crowded.attachments.pop();
+      crowded.omittedAttachments = (crowded.omittedAttachments ?? 0) + 1;
+      if (!crowded.attachments.length) delete crowded.attachments;
+      continue;
+    }
     longest.text = longest.text.slice(0, shortenedTextLength(longest.text));
     longest.truncated = true;
     longest.nextTextOffset = longest.textOffset + longest.text.length;
@@ -231,7 +249,7 @@ async function messageAttachments(
                 name: row.name,
                 mimeType: row.mimeType,
                 size: row.size,
-                path: `attachments/${row.id}${attachmentExtensionForMimeType(row.mimeType)}`,
+                path: attachmentComputerPath(row.id, row.mimeType),
               },
             ]
           : [];
@@ -239,6 +257,12 @@ async function messageAttachments(
     ]),
   );
 }
+
+type AttachedReference = ReturnType<typeof reference> & {
+  attachments?: HistoryAttachment[];
+  /** Files the response budget left out; reading this message alone lists more. */
+  omittedAttachments?: number;
+};
 
 function withAttachments<T extends { messageId: string }>(
   ref: T,
