@@ -63,7 +63,7 @@ function running(botId = "bot-a", address = "10.0.0.8"): Instance {
   return {
     status: "Running",
     ephemeral: true,
-    config: { "user.rakazo-bot-id": botId },
+    config: { "user.rakazo-bot-id": botId, "user.rakazo-handed-out": "true" },
     state: {
       network: {
         lo: { addresses: [{ family: "inet", address: "127.0.0.1", scope: "local" }] },
@@ -88,6 +88,8 @@ class FakeIncus implements IncusClient {
   failCreate?: (name: string) => void;
   /** Holds instance creation until it settles, as an image download does. */
   createGate?: Promise<void>;
+  /** Holds an exec's control stream; Incus starts the command without it. */
+  controlGate?: Promise<void>;
   private readonly operations = new Map<string, Promise<Record<string, unknown>>>();
   private readonly secrets = new Map<string, { exec: Exec; fd: string }>();
   private next = 0;
@@ -116,6 +118,10 @@ class FakeIncus implements IncusClient {
     if (!instance)
       throw new IncusError(`Failed to fetch instance "${name}": Instance not found`, 404);
     if (method === "GET" && !parts[2]) return { metadata: { name, ...structuredClone(instance) } };
+    if (method === "PATCH" && !parts[2]) {
+      Object.assign(instance.config, (body as { config: Record<string, string> }).config);
+      return { metadata: {} };
+    }
     if (method === "PUT" && parts[2] === "state") {
       if (instance.status !== "Running")
         throw new IncusError("The instance is already stopped", 400);
@@ -141,6 +147,7 @@ class FakeIncus implements IncusClient {
     const entry = this.secrets.get(url.searchParams.get("secret") ?? "");
     if (!entry) throw new Error("unknown websocket secret");
     const { exec, fd } = entry;
+    if (fd === "control") await this.controlGate;
     exec.handlers.set(fd, handlers);
     queueMicrotask(() => this.maybeStart(exec));
     return {
@@ -506,12 +513,13 @@ describe("IncusSandboxProvider", () => {
     expect(fake.requests.some((entry) => entry.method === "DELETE")).toBe(true);
   });
 
-  it("removes an instance whose start was cancelled once Incus has created it", async () => {
+  it("reports an instance a cancelled start left behind as fresh, so its workspace is restored", async () => {
     const fake = new FakeIncus();
     let release!: () => void;
     fake.createGate = new Promise((resolve) => (release = resolve));
     const controller = new AbortController();
-    const provisioning = providerFor(fake).provision(
+    const provider = providerFor(fake);
+    const cancelled = provider.provision(
       { botId: "bot-a", homePath: "/unused" },
       { ...context, signal: controller.signal },
     );
@@ -519,12 +527,24 @@ describe("IncusSandboxProvider", () => {
       expect(fake.requests.some((entry) => entry.path.startsWith("/1.0/instances?"))).toBe(true),
     );
     controller.abort();
-    await expect(provisioning).rejects.toThrow();
+    await expect(cancelled).rejects.toThrow();
+    // Incus goes on to create and start the instance.
     release();
-    await vi.waitFor(() =>
-      expect(fake.requests.some((entry) => entry.method === "PUT")).toBe(true),
+    await vi.waitFor(() => expect(fake.instances.size).toBe(1));
+    const [name] = fake.instances.keys();
+
+    const next = await provider.provision(
+      { botId: "bot-a", homePath: "/unused", providerKind: "incus", providerRef: name },
+      context,
     );
-    expect(fake.instances.size).toBe(0);
+    expect(next).toMatchObject({ providerRef: name, fresh: true });
+    expect(fake.instances.get(name!)?.config["user.rakazo-handed-out"]).toBe("true");
+    await expect(
+      provider.provision(
+        { botId: "bot-a", homePath: "/unused", providerKind: "incus", providerRef: name },
+        context,
+      ),
+    ).resolves.toMatchObject({ fresh: false });
   });
 
   it("removes a new instance that does not become ready", async () => {
@@ -672,6 +692,35 @@ describe("IncusSandboxProvider", () => {
       await vi.advanceTimersByTimeAsync(6_000);
       expect(fake.execs[0]?.closed.has("1")).toBe(false);
       await vi.advanceTimersByTimeAsync(1_000);
+      expect(fake.execs[0]?.closed).toEqual(new Set(["0", "1", "2", "control"]));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("signals a command cancelled before its control stream connected", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      let release!: () => void;
+      const fake = new FakeIncus(() => "hang");
+      fake.controlGate = new Promise((resolve) => (release = resolve));
+      fake.instances.set("box", running());
+      const controller = new AbortController();
+      const result = collect(
+        providerFor(fake).execute(
+          computer,
+          { argv: ["sleep", "30"] },
+          { ...context, signal: controller.signal },
+        ),
+      );
+      // The command has started on its data streams.
+      await vi.waitFor(() => expect(fake.execs[0]?.handlers.size).toBe(3));
+      controller.abort();
+      expect((await result).at(-1)).toEqual({ type: "exit", code: 130 });
+      expect(fake.execs[0]?.closed.size).toBe(0);
+      release();
+      await vi.waitFor(() => expect(fake.execs[0]?.signals).toEqual([15]));
+      await vi.advanceTimersByTimeAsync(7_000);
       expect(fake.execs[0]?.closed).toEqual(new Set(["0", "1", "2", "control"]));
     } finally {
       vi.useRealTimers();

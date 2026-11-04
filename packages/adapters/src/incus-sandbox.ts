@@ -61,6 +61,9 @@ const IMAGE_COMMAND = "/usr/bin/env -u LD_PRELOAD /usr/local/bin/rakazo-computer
 // Names the bot that owns an instance. An instance carrying another bot's value is never
 // reused or replaced.
 const BOT_ID_KEY = "user.rakazo-bot-id";
+// Set once provision has returned the instance. One without it, such as an instance a cancelled
+// start went on to create, has never had the workspace restored into it.
+const HANDED_OUT_KEY = "user.rakazo-handed-out";
 
 export interface IncusSandboxOptions {
   /** HTTPS address of the Incus API, such as `https://incus.example.test:8443`. */
@@ -99,7 +102,7 @@ export interface IncusSocketHandlers {
 export interface IncusClient {
   /** Resolves a successful response and rejects with `IncusError` for an error response. */
   request(
-    method: "GET" | "POST" | "PUT" | "DELETE",
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
     path: string,
     body: unknown,
     signal: AbortSignal,
@@ -220,25 +223,32 @@ export class IncusSandboxProvider implements SandboxProvider {
     if (instance && instance.status !== "Running")
       instance = await this.settle(instance, name, signal);
 
-    let fresh = false;
+    let created = false;
     if (!instance) {
       try {
         await this.create(name, request.botId, signal);
-        fresh = true;
+        created = true;
       } catch (error) {
         // Incus reports a taken name as a generic failure; another start for this bot may
         // have created the instance first.
-        const existing = await this.instance(name, signal);
-        if (!existing) throw error;
-        this.assertOwner(existing, name, request.botId);
+        instance = await this.instance(name, signal);
+        if (!instance) throw error;
+        this.assertOwner(instance, name, request.botId);
       }
     }
 
     try {
       await this.waitForReady(name, request.botId, context);
     } catch (error) {
-      if (fresh) await this.remove(name, AbortSignal.timeout(STOP_TIMEOUT_MS)).catch(() => {});
+      if (created) await this.remove(name, AbortSignal.timeout(STOP_TIMEOUT_MS)).catch(() => {});
       throw error;
+    }
+    // Reported fresh until handed out, so the caller restores the workspace into it.
+    const fresh = instance?.config?.[HANDED_OUT_KEY] !== "true";
+    if (fresh) {
+      await this.request("PATCH", instancePath(name), signal, {
+        config: { [HANDED_OUT_KEY]: "true" },
+      });
     }
     return { id: name, botId: request.botId, kind: "incus", providerRef: name, fresh };
   }
@@ -402,31 +412,13 @@ export class IncusSandboxProvider implements SandboxProvider {
   }
 
   private async create(name: string, botId: string, signal: AbortSignal): Promise<void> {
-    const accepted = await this.request(
+    const response = await this.request(
       "POST",
       "/1.0/instances",
       signal,
       this.instanceSpec(name, botId),
     );
-    try {
-      expectSuccess(await this.waitOperation(accepted, signal, CREATE_TIMEOUT_MS));
-    } catch (error) {
-      // Incus finishes creating and starting the instance after the caller gives up.
-      if (signal.aborted) void this.discard(accepted, name, botId);
-      throw error;
-    }
-  }
-
-  /** Removes an instance whose start was abandoned, once Incus has finished creating it. */
-  private async discard(accepted: IncusResponse, name: string, botId: string): Promise<void> {
-    try {
-      await this.waitOperation(accepted, AbortSignal.timeout(CREATE_TIMEOUT_MS), CREATE_TIMEOUT_MS);
-      const signal = AbortSignal.timeout(STOP_TIMEOUT_MS);
-      const instance = await this.instance(name, signal);
-      if (instance?.config?.[BOT_ID_KEY] === botId) await this.remove(name, signal);
-    } catch {
-      // The next start for this bot finds and replaces whatever is left.
-    }
+    expectSuccess(await this.waitOperation(response, signal, CREATE_TIMEOUT_MS));
   }
 
   /**
@@ -530,7 +522,7 @@ export class IncusSandboxProvider implements SandboxProvider {
   }
 
   private request(
-    method: "GET" | "POST" | "PUT" | "DELETE",
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
     path: string,
     signal: AbortSignal,
     body?: unknown,
@@ -581,8 +573,8 @@ export class IncusSandboxProvider implements SandboxProvider {
     let done = false;
     let exited = false;
     let failure: unknown;
-    const sockets: IncusSocket[] = [];
-    let control: IncusSocket | undefined;
+    const connecting: Promise<IncusSocket>[] = [];
+    let control: Promise<IncusSocket> | undefined;
     const requests = new AbortController();
     const notify = () => {
       wake?.();
@@ -619,8 +611,8 @@ export class IncusSandboxProvider implements SandboxProvider {
     stdin?.on("error", fail);
 
     let operation = "";
-    const connect = async (secret: string, handlers: Partial<IncusSocketHandlers>) => {
-      const socket = await this.client.websocket(
+    const connect = (secret: string, handlers: Partial<IncusSocketHandlers>) => {
+      const socket = this.client.websocket(
         withProject(`${operation}/websocket?secret=${encodeURIComponent(secret)}`, this.project),
         {
           message: handlers.message ?? (() => {}),
@@ -628,8 +620,7 @@ export class IncusSandboxProvider implements SandboxProvider {
           error: fail,
         },
       );
-      sockets.push(socket);
-      if (done) socket.close();
+      connecting.push(socket);
       return socket;
     };
 
@@ -674,19 +665,14 @@ export class IncusSandboxProvider implements SandboxProvider {
           if (data.byteLength) push({ type: "stdout", data });
           else if (!binary) end();
         });
-        const [input, connected] = await Promise.all([terminal.socket, stream("control").socket]);
-        control = connected;
+        control = stream("control").socket;
+        const [input] = await Promise.all([terminal.socket, control]);
         outputs = terminal.ended.then(() => input.close());
       } else {
         const out = stream("1", (data) => data.byteLength && push({ type: "stdout", data }));
         const err = stream("2", (data) => data.byteLength && push({ type: "stderr", data }));
-        const [input, , , connected] = await Promise.all([
-          stream("0").socket,
-          out.socket,
-          err.socket,
-          stream("control").socket,
-        ]);
-        control = connected;
+        control = stream("control").socket;
+        const [input] = await Promise.all([stream("0").socket, out.socket, err.socket, control]);
         outputs = Promise.all([out.ended, err.ended]);
         if (stdin) {
           for await (const chunk of stdin) {
@@ -717,15 +703,29 @@ export class IncusSandboxProvider implements SandboxProvider {
       signal.removeEventListener("abort", abort);
       requests.abort();
       stdin?.destroy();
-      const closeAll = () => {
-        for (const socket of sockets) socket.close();
-      };
-      if (!exited && control) {
-        control.send(JSON.stringify({ command: "signal", signal: 15 })).catch(() => {});
-        setTimeout(closeAll, TERMINATE_GRACE_MS).unref();
-      } else closeAll();
+      void closeStreams(connecting, exited ? undefined : control);
     }
   }
+}
+
+/**
+ * Closes an exec's streams, including any still connecting. A command that has not finished is
+ * sent SIGTERM first, and its streams stay open while the timeout wrapper stops its process group.
+ */
+async function closeStreams(
+  connecting: Promise<IncusSocket>[],
+  control: Promise<IncusSocket> | undefined,
+): Promise<void> {
+  const opened = (await Promise.allSettled(connecting)).flatMap((result) =>
+    result.status === "fulfilled" ? [result.value] : [],
+  );
+  if (control) {
+    await control
+      .then((socket) => socket.send(JSON.stringify({ command: "signal", signal: 15 })))
+      .catch(() => {});
+    await new Promise((resolve) => setTimeout(resolve, TERMINATE_GRACE_MS).unref());
+  }
+  for (const socket of opened) socket.close();
 }
 
 /** undici for requests and ws for exec streams, both authenticated by the client certificate. */
@@ -742,7 +742,7 @@ class IncusHttpClient implements IncusClient {
   }
 
   async request(
-    method: "GET" | "POST" | "PUT" | "DELETE",
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
     path: string,
     body: unknown,
     signal: AbortSignal,
