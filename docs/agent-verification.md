@@ -481,6 +481,33 @@ The offline model-protocol fixture runs the same product path and proves that an
 appended Berlin beside London and a claimed save after a full-memory refusal
 fail, while a rewrite and a consolidate-then-save pass.
 
+### Earlier file recall evals
+
+```sh
+pnpm test:evals --suite recall --list
+pnpm test:evals --live --suite recall --strategy retrieval --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/recall.json
+```
+
+Each case seeds 1,000 synthetic messages, with a lease the user uploaded at
+message 30, far outside the messages a run loads. The bot is asked for the
+lease's notice period once with the upload captioned and once with a bare file,
+and a third case asks about a contract that was never shared. Deterministic
+checks require a history lookup in the graded step and, for the lease, a read of
+the file at its `attachments/` path. The `recall-meaning-v1` judge then checks
+that the answer gives the lease's period and names the file it came from, or
+that a never-shared contract is admitted rather than invented. Calibration
+labels cover a sourced answer, a request to resend, a generic guess, a wrong
+period, an honest miss and an invented fee.
+
+The November 2026 baseline used one small model for both the bot and the judge,
+with three trials per case. Before history results listed attachments, the bot
+searched in every trial but read the lease in none, because it had no path to
+open. With the change it read the lease and gave the right period in all six
+trials, and named the source in five. Every trial admitted the never-shared
+contract on both versions; two further trials stalled waiting on the provider
+and are not counted. The offline protocol fixture checks the seeding and
+the grading path for both a read and an unread lease.
+
 ### Long conversation and cost evals
 
 List seeded long-chat cases without a database or model connection:

@@ -32,6 +32,8 @@ export type Evidence = {
   /** For an unaddressed group step: what each member posted afterwards, by name; empty if nothing. */
   memberReplies?: Record<string, string>;
   files: Record<string, string | null>;
+  /** Files seeded into history, by name: their computer path and content there after the trial. */
+  seededAttachments?: Record<string, { path: string; content: string | null }>;
   records: EvalServices["records"];
   notes: EvalServices["notes"];
   calls: ServiceCall[];
