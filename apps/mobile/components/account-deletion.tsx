@@ -128,21 +128,28 @@ export function useAccountDeletion({
   }
 
   const dialog = open ? (
-    <Modal transparent animationType="fade" onRequestClose={close}>
+    <Modal
+      transparent={Platform.OS !== "ios"}
+      animationType={Platform.OS === "ios" ? "slide" : "fade"}
+      presentationStyle={Platform.OS === "ios" ? "pageSheet" : "overFullScreen"}
+      onRequestClose={close}
+    >
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.dialogOverlay}
+        style={Platform.OS === "ios" ? styles.sheet : styles.dialogOverlay}
       >
-        <Pressable
-          accessibilityLabel={t("Cancel")}
-          style={StyleSheet.absoluteFill}
-          onPress={close}
-        />
+        {Platform.OS !== "ios" ? (
+          <Pressable
+            accessibilityLabel={t("Cancel")}
+            style={StyleSheet.absoluteFill}
+            onPress={close}
+          />
+        ) : null}
         <ScrollView
           bounces={false}
           contentContainerStyle={styles.dialog}
           keyboardShouldPersistTaps="handled"
-          style={styles.dialogScroll}
+          style={Platform.OS === "ios" ? styles.sheetScroll : styles.dialogScroll}
         >
           <Text style={styles.dialogTitle}>{t("Delete your account?")}</Text>
           <Text style={styles.dialogBody}>
@@ -204,17 +211,19 @@ export function useAccountDeletion({
             </Text>
           ) : null}
           <View style={styles.dialogActions}>
-            <Pressable accessibilityRole="button" onPress={close} style={styles.dialogAction}>
-              <Text style={styles.dialogCancel}>{t("Cancel")}</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
+            <NativeActionButton
+              label={t("Cancel")}
+              disabled={pending}
+              onPress={close}
+              prominence="plain"
+            />
+            <NativeActionButton
+              label={t("Delete")}
               disabled={disabled}
               onPress={() => void submit(password)}
-              style={styles.dialogAction}
-            >
-              <Text style={[styles.dialogDelete, disabled && styles.disabled]}>{t("Delete")}</Text>
-            </Pressable>
+              prominence="destructive"
+              fill={false}
+            />
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -227,11 +236,19 @@ export function useAccountDeletion({
 function createStyles() {
   const tokens = mobileTokens();
   return StyleSheet.create({
+    sheet: {
+      flex: 1,
+      paddingTop: 12,
+      backgroundColor: native.page,
+    },
+    sheetScroll: {
+      flex: 1,
+    },
     dialogOverlay: {
       flex: 1,
       justifyContent: "center",
       padding: 24,
-      backgroundColor: "rgba(0, 0, 0, 0.62)",
+      backgroundColor: tokens.overlay,
     },
     dialogScroll: {
       flexGrow: 0,
@@ -271,24 +288,6 @@ function createStyles() {
       justifyContent: "flex-end",
       alignItems: "center",
       gap: 12,
-    },
-    dialogAction: {
-      minHeight: 48,
-      justifyContent: "center",
-      paddingHorizontal: 8,
-    },
-    dialogCancel: {
-      color: native.label,
-      fontSize: 16,
-      fontWeight: "600",
-    },
-    dialogDelete: {
-      color: tokens.destructive,
-      fontSize: 16,
-      fontWeight: "600",
-    },
-    disabled: {
-      opacity: 0.45,
     },
   });
 }
