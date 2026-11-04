@@ -119,6 +119,14 @@ export function ChatFindBar({
     <search
       className="flex items-center gap-1 rounded-xl border border-border bg-popover p-1 shadow-md"
       data-testid="chat-find"
+      onKeyDown={(event) => {
+        // Escape first cancels a half-typed IME word; only a plain Escape closes the bar.
+        if (event.key !== "Escape" || event.nativeEvent.isComposing || event.keyCode === 229) {
+          return;
+        }
+        event.preventDefault();
+        onClose();
+      }}
     >
       <Input
         ref={inputRef}
@@ -132,9 +140,6 @@ export function ChatFindBar({
           if (event.key === "Enter" && !event.nativeEvent.isComposing) {
             event.preventDefault();
             step(event.shiftKey ? -1 : 1);
-          } else if (event.key === "Escape") {
-            event.preventDefault();
-            onClose();
           }
         }}
         className="h-8 w-56 border-0 bg-transparent shadow-none focus-visible:ring-0"
