@@ -345,13 +345,22 @@ describeIntegration("reusable credential lifecycle", () => {
           `Bearer ${key}-rotated`,
         );
         const count = fetch.mock.calls.length;
-        await nextRun([{ name: "forget_secret", args: { name: destination.name } }, request]);
+        const forgotten = await nextRun([
+          { name: "forget_secret", args: { name: destination.name } },
+          request,
+        ]);
+        // The deletion alone does not prove the run finished: the trailing use request and
+        // its writes can still be pending. Wait for the run itself, then assert the effects.
         await vi.waitFor(
           async () => {
-            expect(await db.vaultCredential.count({ where: { userId: seeded.me.userId } })).toBe(0);
+            expect(await db.run.findUniqueOrThrow({ where: { id: forgotten } })).toMatchObject({
+              status: "completed",
+              error: null,
+            });
           },
           { timeout: 15_000 },
         );
+        expect(await db.vaultCredential.count({ where: { userId: seeded.me.userId } })).toBe(0);
         expect(fetch).toHaveBeenCalledTimes(count);
         const [messages, events, effects, tasks] = await Promise.all([
           db.message.findMany({ where: { threadId: seeded.thread.id } }),
