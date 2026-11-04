@@ -246,10 +246,11 @@ export async function materializeRecentThreadFiles(
     maxTurns: number;
   },
 ): Promise<MaterializedThreadFile[]> {
+  // Every computer start copies these again, so they need no checkpoint.
   return materializeEarlierFiles(
     deps,
     recentAttachmentBlocks(history, messages, input),
-    input,
+    { ...input, markWorkspaceDirty: undefined },
     ATTACHMENT_MAX_COUNT,
   );
 }
@@ -299,6 +300,7 @@ export function createEarlierFileQueue(limit = EARLIER_FILES_PENDING) {
 /**
  * Copy files from earlier messages onto the computer, keeping copies already there. Each
  * file that cannot be copied is logged and skipped so it never blocks the tool that asked.
+ * A new copy marks the workspace dirty when the caller passes markWorkspaceDirty.
  */
 export async function materializeEarlierFiles(
   deps: Parameters<typeof materializeCurrentTurnFiles>[0],
@@ -310,14 +312,7 @@ export async function materializeEarlierFiles(
   for (const block of blocks) {
     if (materialized.length >= limit) break;
     try {
-      materialized.push(
-        ...(await materializeThreadFiles(
-          deps,
-          [block],
-          { ...input, markWorkspaceDirty: undefined },
-          true,
-        )),
-      );
+      materialized.push(...(await materializeThreadFiles(deps, [block], input, true)));
     } catch (error) {
       if (input.context.signal.aborted) throw error;
       getLogger().warn("earlier thread attachment was not copied to the computer", {

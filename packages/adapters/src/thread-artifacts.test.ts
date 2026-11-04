@@ -13,6 +13,7 @@ import {
   createEarlierFileQueue,
   currentTurnFilesInstruction,
   materializeCurrentTurnFiles,
+  materializeEarlierFiles,
   materializeRecentThreadFiles,
   recentThreadFilesInstruction,
 } from "./thread-artifacts.js";
@@ -563,6 +564,61 @@ describe("recent thread files", () => {
         '- "screenshot.png" (image/png, 3 bytes): "attachments/image-1.png"',
       ].join("\n"),
     );
+  });
+});
+
+describe("files listed by history tools", () => {
+  it("marks the workspace dirty for a new copy so the run checkpoint keeps it", async () => {
+    const block = {
+      kind: "file" as const,
+      artifactId: "lease",
+      name: "lease.md",
+      mimeType: "text/markdown",
+      size: 5,
+    };
+    const writeFile = vi.fn();
+    const markWorkspaceDirty = vi.fn();
+    const deps = {
+      prisma: {
+        artifact: {
+          findMany: vi.fn().mockResolvedValue([{ ...block, id: "lease", storageKey: "stored" }]),
+        },
+      } as unknown as PrismaClient,
+      artifacts: { get: vi.fn().mockResolvedValue(new Uint8Array(5)) } as unknown as ArtifactStore,
+      sandbox: {
+        readFile: vi.fn().mockRejectedValue(new Error("missing")),
+        writeFile,
+      } as unknown as SandboxProvider,
+    };
+    const input = {
+      context: {
+        operationId: "run",
+        traceId: "run",
+        spaceId: "space",
+        userId: "user",
+        botId: "bot",
+        signal: new AbortController().signal,
+      },
+      computer: async () => ({ id: "computer", kind: "fake", providerRef: "fake" }) as ComputerRef,
+      computerMode: "dedicated" as const,
+      markWorkspaceDirty,
+    };
+    const files = await materializeEarlierFiles(deps, [block], input);
+    expect(files.map((file) => file.path)).toEqual(["attachments/lease.md"]);
+    expect(writeFile).toHaveBeenCalledOnce();
+    expect(markWorkspaceDirty).toHaveBeenCalledOnce();
+    // Recent-turn files are copied again on every computer start, so they stay out of it.
+    markWorkspaceDirty.mockClear();
+    await materializeRecentThreadFiles(
+      deps,
+      [{ id: "m", role: "user" }],
+      [{ id: "m", blocks: [block] }],
+      {
+        ...input,
+        maxTurns: 3,
+      },
+    );
+    expect(markWorkspaceDirty).not.toHaveBeenCalled();
   });
 });
 

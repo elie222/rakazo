@@ -1188,10 +1188,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   if (artifacts && earlier.length) {
                     earlierFiles.copiedTo(
                       earlier,
+                      // Saved with the run's checkpoint, so a resumed attempt still has them.
                       await materializeEarlierFiles({ ...deps, artifacts }, earlier, {
                         context,
                         computer: async () => computer,
                         computerMode,
+                        markWorkspaceDirty: workspaceCheckpoint.markDirty,
                       }),
                     );
                   }
