@@ -70,4 +70,42 @@ describe("device timezone report", () => {
       zone.mockRestore();
     }
   });
+
+  it("retries after a failed report, so a blip cannot pin the account to UTC", async () => {
+    const zone = fakeDeviceZone("Pacific/Auckland");
+    try {
+      const { reportDeviceTimeZone } = await load();
+      vi.mocked(rpc).mockRejectedValueOnce(new Error("offline"));
+      await expect(reportDeviceTimeZone("user-1")).rejects.toThrow("offline");
+      // The next poll or foreground return sends the report again.
+      await reportDeviceTimeZone("user-1");
+      expect(vi.mocked(rpc)).toHaveBeenCalledTimes(2);
+      // A success after the retry keeps later calls quiet again.
+      await reportDeviceTimeZone("user-1");
+      expect(vi.mocked(rpc)).toHaveBeenCalledTimes(2);
+    } finally {
+      zone.mockRestore();
+    }
+  });
+
+  it("stays quiet while a report is still in flight", async () => {
+    const zone = fakeDeviceZone("Pacific/Auckland");
+    try {
+      const { reportDeviceTimeZone } = await load();
+      let resolve!: () => void;
+      vi.mocked(rpc).mockReturnValueOnce(
+        new Promise<void>((settle) => {
+          resolve = settle;
+        }) as never,
+      );
+      const first = reportDeviceTimeZone("user-1");
+      const duplicate = reportDeviceTimeZone("user-1");
+      await duplicate;
+      expect(vi.mocked(rpc)).toHaveBeenCalledTimes(1);
+      resolve();
+      await first;
+    } finally {
+      zone.mockRestore();
+    }
+  });
 });

@@ -556,6 +556,17 @@ describe("account preferences", () => {
     expect(me.timezone).toBe("Europe/London");
   });
 
+  it("a device report that changes nothing writes nothing", async () => {
+    const setup = preferencesDeps("organic", "Pacific/Auckland", "device");
+    const client = createRouterClient(createRouter(setup.deps), {
+      context: { actor: setup.actor } as never,
+    });
+
+    await client.preferences.adoptTimezone({ timezone: "Pacific/Auckland" });
+
+    expect(setup.update).not.toHaveBeenCalled();
+  });
+
   it("switchTo returns a hand-picked zone to the device", async () => {
     const setup = preferencesDeps("organic", "Europe/London", "manual");
     const client = createRouterClient(createRouter(setup.deps), {

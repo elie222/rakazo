@@ -322,7 +322,9 @@ export async function changeUserTimezone(
         // A device report never displaces a zone picked by hand; the lock keeps this
         // check and the write together, so a concurrent manual choice always wins.
         (source === "device" && user.timezoneSource === "manual") ||
-        (user.timezone === timezone && user.timezoneSource === timezoneSource && !fields)
+        (user.timezone === timezone &&
+          user.timezoneSource === timezoneSource &&
+          Object.keys(fields).length === 0)
       )
         return;
       await tx.user.update({

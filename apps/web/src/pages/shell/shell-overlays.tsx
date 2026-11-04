@@ -99,6 +99,7 @@ export function SettingsOverlays({
   refetchSession,
   bootstrapMe,
   setBootstrapMe,
+  noteTimezoneChoice,
   messagingEnabled,
   memoryConfig,
   peerConversation,
@@ -122,6 +123,8 @@ export function SettingsOverlays({
   refetchSession: () => Promise<unknown>;
   bootstrapMe: Me | null | undefined;
   setBootstrapMe: (update: (prev: Me | null | undefined) => Me | null | undefined) => void;
+  /** Marks a manual timezone save, so delayed device reports never repaint its zone. */
+  noteTimezoneChoice: () => void;
   messagingEnabled: boolean;
   memoryConfig: SpaceMemoryConfig | null | undefined;
   peerConversation: { peerBotId: string; peerBotName: string } | null;
@@ -171,6 +174,7 @@ export function SettingsOverlays({
             const nextMe = followsDevice
               ? await rpc.preferences.adoptTimezone({ timezone, switchTo: true })
               : await rpc.preferences.update({ timezone });
+            noteTimezoneChoice();
             setBootstrapMe((prev) => (prev ? { ...prev, timezone: nextMe.timezone } : nextMe));
           }}
           botAvatarSet={bootstrapMe?.botAvatarSet}

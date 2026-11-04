@@ -13,11 +13,17 @@ let reported: { userId: string; timezone: string } | null = null;
  * zone by hand; the server keeps that choice. Called on the inbox load and whenever the
  * app returns to the foreground, so a zone the system changed while it was away lands
  * too. Quiet unless the zone moved since the last report of this launch; a failed report
- * waits for the next zone change or launch.
+ * is forgotten, so the next poll or foreground return tries again.
  */
 export async function reportDeviceTimeZone(userId: string): Promise<void> {
   const timezone = deviceTimeZone();
   if (reported?.userId === userId && reported.timezone === timezone) return;
-  reported = { userId, timezone };
-  await rpc("preferences/adoptTimezone", { timezone });
+  const attempt = { userId, timezone };
+  reported = attempt;
+  try {
+    await rpc("preferences/adoptTimezone", { timezone });
+  } catch (error) {
+    if (reported === attempt) reported = null;
+    throw error;
+  }
 }

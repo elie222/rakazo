@@ -15,7 +15,6 @@ import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { takeInitialBootstrap } from "../../lib/bootstrap";
 import { linkedBotRoute } from "../../lib/bootstrap-target";
-import { localTimezone } from "../../lib/local-timezone";
 import { markOnce } from "../../lib/performance";
 import type { ChatTarget } from "../../lib/query";
 import { lastChatKey, queryClient, seedOnLeave, spaceSeedKey } from "../../lib/query";
@@ -23,6 +22,7 @@ import type { createSpaceRpc } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
 import type { RosterDropTarget } from "./roster-drop";
 import { resolveRosterDrop } from "./roster-drop";
+import { useDeviceTimezoneReport } from "./use-device-timezone-report";
 import type { useShellNavigation } from "./use-shell-navigation";
 import { firstThreadRoute } from "./use-shell-navigation";
 import type { ThreadState } from "./use-thread-state";
@@ -194,6 +194,21 @@ export function useSpaceRoster({
     );
   }
 
+  /** Applies the server's zone after a device report, keeping every other local field. */
+  const applyReportedTimezone = useCallback(
+    (nextMe: Me) => {
+      setBootstrapMe((current) =>
+        current && current.timezone !== nextMe.timezone
+          ? { ...current, timezone: nextMe.timezone }
+          : (current ?? nextMe),
+      );
+    },
+    [setBootstrapMe],
+  );
+  // The account follows this device's zone until the user picks one by hand; manual saves
+  // order older device reports out.
+  const noteTimezoneChoice = useDeviceTimezoneReport(rpc, bootstrapMe, applyReportedTimezone);
+
   return {
     groups,
     setGroups,
@@ -214,6 +229,7 @@ export function useSpaceRoster({
     setInitialLoadFailed,
     bootstrapMe,
     setBootstrapMe,
+    noteTimezoneChoice,
     callsEnabledRef,
     botsRefreshApplied,
     botsRefreshInFlight,
@@ -232,7 +248,6 @@ export type SpaceRoster = ReturnType<typeof useSpaceRoster>;
  * revisit paints at once.
  */
 export function useSpaceBootstrap({
-  rpc,
   roster,
   thread,
   commitComputer,
@@ -247,7 +262,6 @@ export function useSpaceBootstrap({
   redirectKeepingOverlay,
   openSpaceChat,
 }: {
-  rpc: ReturnType<typeof createSpaceRpc>;
   roster: SpaceRoster;
   thread: ThreadState;
   commitComputer: (next: ComputerStatus | null) => void;
@@ -332,36 +346,6 @@ export function useSpaceBootstrap({
     };
   }, []);
 
-  /** Applies the server's zone after a device report, keeping every other local field. */
-  const applyReportedTimezone = useCallback(
-    (nextMe: Me) => {
-      setBootstrapMe((current) =>
-        current && current.timezone !== nextMe.timezone
-          ? { ...current, timezone: nextMe.timezone }
-          : (current ?? nextMe),
-      );
-    },
-    [setBootstrapMe],
-  );
-
-  // A zone the device changed while the tab was away still lands when the app comes back:
-  // the shell re-reports on foreground, and the server keeps a zone picked by hand.
-  const bootstrapMeRef = useRef(bootstrapMe);
-  bootstrapMeRef.current = bootstrapMe;
-  useEffect(() => {
-    const report = () => {
-      const me = bootstrapMeRef.current;
-      const deviceTimezone = localTimezone();
-      if (document.visibilityState !== "visible" || !me || me.timezone === deviceTimezone) return;
-      void rpc.preferences
-        .adoptTimezone({ timezone: deviceTimezone })
-        .then(applyReportedTimezone)
-        .catch(() => {});
-    };
-    document.addEventListener("visibilitychange", report);
-    return () => document.removeEventListener("visibilitychange", report);
-  }, [rpc, applyReportedTimezone]);
-
   useEffect(() => {
     let cancelled = false;
     const appliedAtStart = botsRefreshApplied.current;
@@ -372,17 +356,6 @@ export function useSpaceBootstrap({
         if (cancelled) return;
         const groupList = bootstrap.groups;
         setBootstrapMe(bootstrap.me);
-        // The account follows this device's zone until the user picks one by hand; the
-        // server keeps a hand-picked zone, and a failure just leaves bots on the saved one.
-        const deviceTimezone = localTimezone();
-        if (bootstrap.me.timezone !== deviceTimezone) {
-          void rpc.preferences
-            .adoptTimezone({ timezone: deviceTimezone })
-            .then((nextMe) => {
-              if (!cancelled) applyReportedTimezone(nextMe);
-            })
-            .catch(() => {});
-        }
         // Skip list/route writes only if a later refreshBots() successfully
         // committed (failed refreshes bump epoch but not botsRefreshApplied).
         const applyBotLists = appliedAtStart === botsRefreshApplied.current;
