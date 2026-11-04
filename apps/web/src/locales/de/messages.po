@@ -1288,6 +1288,10 @@ msgstr "Modell wechseln"
 msgid "Change password"
 msgstr "Passwort ändern"
 
+#: src/pages/Auth.tsx
+msgid "Change server"
+msgstr "Server wechseln"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Changing…"
 msgstr "Wird geändert…"

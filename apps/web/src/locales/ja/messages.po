@@ -1288,6 +1288,10 @@ msgstr "モデルを変更"
 msgid "Change password"
 msgstr "パスワードを変更"
 
+#: src/pages/Auth.tsx
+msgid "Change server"
+msgstr "サーバを変更"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Changing…"
 msgstr "変更中…"
