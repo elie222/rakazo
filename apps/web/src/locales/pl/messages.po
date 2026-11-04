@@ -3250,7 +3250,7 @@ msgstr "Bezpłatny plan kończy się {day}"
 
 #: src/lib/cron.ts
 msgid "Friday"
-msgstr "Piątek"
+msgstr "piątek"
 
 #: src/pages/ActivityList.tsx
 msgid "From"
@@ -4115,7 +4115,7 @@ msgstr "Lista modeli działa. {modelCount, plural, one {Dostępny jest # model.}
 
 #: src/lib/cron.ts
 msgid "Monday"
-msgstr "Poniedziałek"
+msgstr "poniedziałek"
 
 #: src/lib/billing.ts
 msgid "month"
@@ -5534,7 +5534,7 @@ msgstr "Tak samo jak główny model"
 
 #: src/lib/cron.ts
 msgid "Saturday"
-msgstr "Sobota"
+msgstr "sobota"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/ComputerProviderSettings.tsx
@@ -6205,7 +6205,7 @@ msgstr "Wymagana subskrypcja"
 
 #: src/lib/cron.ts
 msgid "Sunday"
-msgstr "Niedziela"
+msgstr "niedziela"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -6551,7 +6551,7 @@ msgstr "Ten tydzień"
 
 #: src/lib/cron.ts
 msgid "Thursday"
-msgstr "Czwartek"
+msgstr "czwartek"
 
 #: src/pages/RoutineSchedule.tsx
 msgid "Time of day"
@@ -6676,7 +6676,7 @@ msgstr "Ponów test."
 
 #: src/lib/cron.ts
 msgid "Tuesday"
-msgstr "Wtorek"
+msgstr "wtorek"
 
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
@@ -6978,7 +6978,7 @@ msgstr "Webhook"
 
 #: src/lib/cron.ts
 msgid "Wednesday"
-msgstr "Środa"
+msgstr "środa"
 
 #: src/lib/billing.ts
 msgid "week"

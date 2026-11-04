@@ -1,4 +1,4 @@
-import { translate } from "@rakazo/core";
+import { polishPluralCategory, translate } from "@rakazo/core";
 import { useSyncExternalStore } from "react";
 import { DE_MESSAGES, PEER_MESSAGE_FORMS as DE_PEER_FORMS } from "./locales/de";
 import { ES_MESSAGES, PEER_MESSAGE_FORMS as ES_PEER_FORMS } from "./locales/es";
@@ -169,13 +169,7 @@ export function peerExchangeLabel(
 
 function pluralCategory(locale: UiLocale, count: number): Intl.LDMLPluralRule {
   if (locale === "zh-CN") return "other";
-  if (locale === "pl") {
-    if (!Number.isInteger(count)) return "other";
-    if (count === 1) return "one";
-    const mod10 = count % 10;
-    const mod100 = count % 100;
-    return mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? "few" : "many";
-  }
+  if (locale === "pl") return polishPluralCategory(count);
   if (locale === "ru") {
     const mod10 = count % 10;
     const mod100 = count % 100;

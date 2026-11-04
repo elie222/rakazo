@@ -54,7 +54,7 @@ export function cronLabels(locale: string): CronLabels {
       t`Thursday`,
       t`Friday`,
       t`Saturday`,
-    ].map((name) => (locale === "pl" ? name.toLocaleLowerCase("pl") : name)),
+    ],
     interval: (n, unit) => {
       if (locale === "ru") return russianInterval(n, unit);
       if (locale === "pl") return polishInterval(n, unit);

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { CronPreset, CronUnit } from "./cron.js";
 import {
   CRON_INTERVAL_MAX,
@@ -18,11 +18,36 @@ import {
   nextRoutineRunDateAcross,
   ONCE_ROUTINE_CRON,
   polishInterval,
+  polishPluralCategory,
   presetFromCron,
   resolveRoutineNextRunAt,
   russianInterval,
   zonedDateTime,
 } from "./cron.js";
+
+describe("polishPluralCategory", () => {
+  const counts = [0, 1, 2, 4, 5, 12, 14, 21, 22, 101, 102, 112, 0.5, 1.5, 2.2, 12.25];
+  const pluralRules = new Intl.PluralRules("pl");
+
+  it.each([...counts, ...counts.map((count) => -count)])(
+    "matches Polish Intl cardinal rules for %s",
+    (count) => {
+      expect(polishPluralCategory(count)).toBe(pluralRules.select(count));
+    },
+  );
+
+  it("works when the native runtime has no Intl.PluralRules", () => {
+    vi.stubGlobal("Intl", {});
+    try {
+      expect(polishPluralCategory(1)).toBe("one");
+      expect(polishPluralCategory(-22)).toBe("few");
+      expect(polishPluralCategory(112)).toBe("many");
+      expect(polishPluralCategory(-1.5)).toBe("other");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
 
 describe("zonedDateTime", () => {
   it("reads a wall-clock time or date without an offset in the timezone", () => {

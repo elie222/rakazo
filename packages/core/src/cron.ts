@@ -250,17 +250,24 @@ export function russianInterval(value: number, unit: CronUnit): { lead: string; 
   };
 }
 
+/** Polish cardinal categories without depending on Intl.PluralRules on native runtimes. */
+export function polishPluralCategory(count: number): "one" | "few" | "many" | "other" {
+  const absolute = Math.abs(count);
+  if (!Number.isInteger(absolute)) return "other";
+  if (absolute === 1) return "one";
+  const mod10 = absolute % 10;
+  const mod100 = absolute % 100;
+  return mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? "few" : "many";
+}
+
 /** Polish intervals use the accusative singular and counted plural case forms. */
 export function polishInterval(value: number, unit: CronUnit): { lead: string; detail: string } {
   const forms = {
-    minutes: ["minutę", "minuty", "minut"],
-    hours: ["godzinę", "godziny", "godzin"],
-    days: ["dzień", "dni", "dni"],
+    minutes: { one: "minutę", few: "minuty", many: "minut", other: "minuty" },
+    hours: { one: "godzinę", few: "godziny", many: "godzin", other: "godziny" },
+    days: { one: "dzień", few: "dni", many: "dni", other: "dnia" },
   } as const;
-  const mod10 = value % 10;
-  const mod100 = value % 100;
-  const few = mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14);
-  const form = forms[unit][value === 1 ? 0 : few ? 1 : 2];
+  const form = forms[unit][polishPluralCategory(value)];
   return { lead: "Co", detail: value === 1 ? form : `${value} ${form}` };
 }
 
