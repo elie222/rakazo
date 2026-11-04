@@ -5,7 +5,12 @@ import type { RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { ThreadComposerHandle } from "../components/thread-composer";
 import { t, useI18n } from "./i18n";
-import { isIncomingShareCurrent, retryIncomingShare, takeIncomingShare } from "./incoming-share";
+import {
+  isIncomingShareCurrent,
+  releaseIncomingShareFiles,
+  retryIncomingShare,
+  takeIncomingShare,
+} from "./incoming-share";
 import type { PickedAttachment } from "./pick-attachments";
 import {
   pickDocuments,
@@ -206,6 +211,8 @@ export function useIncomingShareImport({
             : null,
         );
         if (share.text) composerRef.current?.insert(share.text);
+        // The files put back for another attempt are the pending share's, so they stay.
+        releaseIncomingShareFiles(share.files);
       } finally {
         importingShare.current = false;
         setShareImporting(false);
