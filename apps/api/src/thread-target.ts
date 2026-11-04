@@ -337,11 +337,15 @@ function groupSendTargets(
   return { botIds: resolveGroupTargetBotIds(targeting), namesNobody: !named };
 }
 
-export function latestWaitingRun<T extends { status: string; updatedAt: Date }>(runs: T[]) {
+export function latestWaitingRun<T extends { id: string; status: string; updatedAt: Date }>(
+  runs: T[],
+) {
+  const later = (a: T, b: T) =>
+    a.updatedAt.getTime() - b.updatedAt.getTime() || a.id.localeCompare(b.id);
   return runs
     .filter((run) => run.status === "waiting_input")
     .reduce<T | undefined>(
-      (latest, run) => (!latest || run.updatedAt > latest.updatedAt ? run : latest),
+      (latest, run) => (!latest || later(run, latest) > 0 ? run : latest),
       undefined,
     );
 }
@@ -1111,8 +1115,8 @@ export async function sendThreadMessage(
         },
       });
       // A plain message while members wait on the user answers the latest question only.
-      const asking = latestWaitingRun(activeRuns);
-      if (namesNobody && asking) {
+      const asking = namesNobody ? latestWaitingRun(activeRuns) : undefined;
+      if (asking) {
         targetBotIds = [asking.botId];
         namesNobody = false;
         activeRuns = activeRuns.filter((run) => run.botId === asking.botId);

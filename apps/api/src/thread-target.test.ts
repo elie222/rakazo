@@ -4501,5 +4501,8 @@ describe("latestWaitingRun", () => {
       ])?.id,
     ).toBe("b");
     expect(latestWaitingRun([run("c", "running", 9)])).toBeUndefined();
+    const tied = [run("x", "waiting_input", 3), run("y", "waiting_input", 3)];
+    expect(latestWaitingRun(tied)?.id).toBe("y");
+    expect(latestWaitingRun([...tied].reverse())?.id).toBe("y");
   });
 });
