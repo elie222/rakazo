@@ -1950,35 +1950,86 @@ describe("createMessagingInboundHandler channel routing", () => {
     expect(joined.status).toBe("approved");
   });
 
-  it("re-invites a rejoining member whose roster time did not advance past the LEAVE", async () => {
-    const member = {
-      id: "cm-rj",
+  it("keeps a leaver out and a peer in when an older roster follows the LEAVE", async () => {
+    const leaver = {
+      id: "cm-a",
       channelId: "ch-1",
       address: "+15551111111",
       identityId: "mi-1",
       status: "approved",
     };
-    const deps = createDeps({ members: [member], approvedMember: member });
+    const peer = {
+      id: "cm-b",
+      channelId: "ch-1",
+      address: "+15552222222",
+      identityId: null,
+      status: "approved",
+    };
+    const deps = createDeps({ members: [leaver, peer], approvedMember: leaver });
     const handle = createMessagingInboundHandler(deps);
-    const at = new Date("2026-11-04T10:01:00.000Z");
-    // A platform that repeats the same roster time (a truncated clock, or one
-    // timestamp reused across events) on every event of the group.
-    const roster = (handleId: string) => ({
+    // The newest roster names both; the channel settles on its time.
+    await handle({
       ...groupEvent,
-      handle: handleId,
+      handle: "handle-settled",
       participants: ["+15551111111", "+15552222222"],
-      rosterAt: at,
+      rosterAt: new Date("2026-11-04T10:02:00.000Z"),
+    });
+    await handle({ ...dmEvent, content: "LEAVE" });
+    expect(leaver.status).toBe("left");
+
+    // A delayed delivery of a roster from before the settled one, naming only
+    // the leaver: it must not re-invite them or sweep the peer out.
+    await handle({
+      ...groupEvent,
+      handle: "handle-old",
+      participants: ["+15551111111"],
+      rosterAt: new Date("2026-11-04T10:01:00.000Z"),
     });
 
-    // Discovery settles the roster's version, then the owner leaves by command.
-    await handle(roster("handle-first"));
-    await handle({ ...dmEvent, content: "LEAVE" });
-    expect(member.status).toBe("left");
+    expect(leaver.status).toBe("left");
+    expect(peer.status).toBe("approved");
+    expect(deps.outboundRows.some((row) => row.idempotencyKey === "invite:ch-1:mi-1")).toBe(false);
+  });
 
-    // Back in the group on a later event that carries the same roster time:
-    // the leave invalidated the settled version, so the roster must re-invite.
-    await handle(roster("handle-back"));
-    expect(member.status).toBe("invited");
+  it("keeps a leaver out and a peer in when an equal-time roster follows the LEAVE", async () => {
+    const leaver = {
+      id: "cm-a",
+      channelId: "ch-1",
+      address: "+15551111111",
+      identityId: "mi-1",
+      status: "approved",
+    };
+    const peer = {
+      id: "cm-b",
+      channelId: "ch-1",
+      address: "+15552222222",
+      identityId: null,
+      status: "approved",
+    };
+    const deps = createDeps({ members: [leaver, peer], approvedMember: leaver });
+    const handle = createMessagingInboundHandler(deps);
+    const settled = new Date("2026-11-04T10:02:00.000Z");
+    await handle({
+      ...groupEvent,
+      handle: "handle-settled",
+      participants: ["+15551111111", "+15552222222"],
+      rosterAt: settled,
+    });
+    await handle({ ...dmEvent, content: "LEAVE" });
+    expect(leaver.status).toBe("left");
+
+    // A conflicting roster claiming the same time as the settled one: not
+    // newer, so it changes no membership either.
+    await handle({
+      ...groupEvent,
+      handle: "handle-equal",
+      participants: ["+15551111111"],
+      rosterAt: settled,
+    });
+
+    expect(leaver.status).toBe("left");
+    expect(peer.status).toBe("approved");
+    expect(deps.outboundRows.some((row) => row.idempotencyKey === "invite:ch-1:mi-1")).toBe(false);
   });
 
   it("sanitizes attacker-controlled channel names before storing them", async () => {
