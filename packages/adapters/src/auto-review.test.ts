@@ -397,6 +397,37 @@ describe("runAutoReviewJudge instructions", () => {
   });
 });
 
+describe("runAutoReviewJudge unreadable verdict", () => {
+  const judge = (replies: string[]) => {
+    const run = vi.fn(() =>
+      (async function* () {
+        yield { type: "done", text: replies.shift() } as never;
+      })(),
+    );
+    const result = runAutoReviewJudge({
+      runtime: { describe: () => ({ capabilities: { scripted: false } }), run } as never,
+      checker: { provider: "openrouter", model: "x" },
+      prompt: "test",
+      runId: "run",
+      spaceId: "ws",
+      userId: "user",
+      botId: "bot",
+      threadId: "thread",
+    });
+    return { run, result };
+  };
+
+  it("asks the checker once more before giving up", async () => {
+    const recovered = judge(["I think this is fine.", '{"decision":"pass","reason":"Fits."}']);
+    expect(await recovered.result).toMatchObject({ decision: "pass", reason: "Fits." });
+    expect(recovered.run).toHaveBeenCalledTimes(2);
+
+    const unreadable = judge(["I think this is fine.", "Still fine."]);
+    expect((await unreadable.result).decision).toBe("error");
+    expect(unreadable.run).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("runAutoReviewJudge timeout", () => {
   afterEach(() => vi.restoreAllMocks());
 
