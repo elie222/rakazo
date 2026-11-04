@@ -1884,17 +1884,21 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 if (!roleModel && !fallbackModelIds.has(fallbackKey(provider, modelId))) {
                   throw new Error("Model is not selected");
                 }
-                const updated = await deps.prisma.run.updateMany({
-                  where: {
-                    id: runId,
-                    status: "running",
-                    leaseOwner: workerId,
-                    leaseFence: fence,
-                  },
-                  data: { modelProvider: provider, modelId },
-                });
-                if (updated.count !== 1) {
-                  throw new Error("Run lease was lost before the backup model could be used");
+                // The run's model is what retries and pins rerun; computer mode is a detour from it.
+                const detour = computerModel?.provider === provider && computerModel.id === modelId;
+                if (!detour) {
+                  const updated = await deps.prisma.run.updateMany({
+                    where: {
+                      id: runId,
+                      status: "running",
+                      leaseOwner: workerId,
+                      leaseFence: fence,
+                    },
+                    data: { modelProvider: provider, modelId },
+                  });
+                  if (updated.count !== 1) {
+                    throw new Error("Run lease was lost before the backup model could be used");
+                  }
                 }
                 activeModel["model.provider"] = provider;
                 activeModel["model.id"] = modelId;

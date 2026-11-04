@@ -401,7 +401,7 @@ async function runWithModel(
 
 describe("computer settings reach the shared API/worker executor", () => {
   it("hands screen work to the chosen model without changing main effort", async () => {
-    const { request } = await runWithModel(TEXT_ONLY_MODEL, undefined, false, false, true, {
+    const { prisma, request } = await runWithModel(TEXT_ONLY_MODEL, undefined, false, false, true, {
       computer: { defaultModelId: VISION_MODEL },
     });
     expect(request.model).toMatchObject({
@@ -412,12 +412,20 @@ describe("computer settings reach the shared API/worker executor", () => {
     expect(request.computerModel).toMatchObject({ id: VISION_MODEL, connectionId: "main-conn" });
     expect(request.tools?.some((tool) => tool.name === "computer_observe")).toBe(true);
     expect(request.currentTurnImages).toBeUndefined();
+    prisma.run.updateMany.mockClear();
     await expect(
       request.onModelChange?.(request.computerModel!.provider, request.computerModel!.id),
     ).resolves.toBeUndefined();
+    // Retries and pins rerun the run's model, so computer mode never becomes it.
+    expect(prisma.run.updateMany).not.toHaveBeenCalled();
     await expect(
       request.onModelChange?.(request.model.provider, request.model.id),
     ).resolves.toBeUndefined();
+    expect(prisma.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { modelProvider: request.model.provider, modelId: TEXT_ONLY_MODEL },
+      }),
+    );
     await expect(request.onModelChange?.("unselected", "model")).rejects.toThrow(/not selected/);
   });
   it("does not switch when the computer-use model is the main model", async () => {
