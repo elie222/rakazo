@@ -327,10 +327,10 @@ export async function rememberOrganizationSpace(
 }
 
 export async function clearSpace(): Promise<boolean> {
-  await clearStoredValue(ORGANIZATION_SPACES_KEY);
+  const organizationsCleared = await clearStoredValue(ORGANIZATION_SPACES_KEY);
   const spaceCleared = await clearStoredValue(SPACE_KEY);
   const rollbackCleared = await clearStoredValue(SPACE_ROLLBACK_KEY);
-  if (!spaceCleared || !rollbackCleared) return false;
+  if (!organizationsCleared || !spaceCleared || !rollbackCleared) return false;
   cachedSpaceId = "";
   bumpSpaceSelectionGeneration();
   return true;
