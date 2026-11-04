@@ -12,7 +12,11 @@ function fakeAccount(ownerStartedRun = true, tainted = false, nextApprovedTool?:
   const routines: Record<string, unknown>[] = [];
   const enqueue = vi.fn(async () => undefined);
   const matches = (row: Record<string, unknown>, where: Record<string, unknown>) =>
-    Object.entries(where).every(([key, value]) => row[key] === value);
+    Object.entries(where).every(([key, value]) =>
+      value && typeof value === "object" && "in" in value
+        ? (value.in as unknown[]).includes(row[key])
+        : row[key] === value,
+    );
   const prisma = {
     user: {
       findUnique: async ({ where }: { where: { id: Id } }) => ({
@@ -45,7 +49,16 @@ function fakeAccount(ownerStartedRun = true, tainted = false, nextApprovedTool?:
       },
     },
     $transaction: async (run: (client: unknown) => Promise<unknown>) => run(prisma),
-    $queryRaw: async () => [],
+    $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const sql = strings.join("?");
+      if (sql.includes("FOR SHARE")) return [{ timezone: users.starter.timezone }];
+      if (sql.includes('"routines"')) {
+        return routines
+          .filter((row) => matches(row, { userId: values[0], timezone: values[1] }))
+          .map((row) => ({ id: row.id }));
+      }
+      return [];
+    },
   };
   const ctx = {
     deps: {

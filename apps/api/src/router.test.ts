@@ -93,7 +93,11 @@ describe("account preferences", () => {
     const botFindMany = vi.fn().mockResolvedValue([]);
     const routines: Record<string, unknown>[] = [];
     const matches = (row: Record<string, unknown>, where: Record<string, unknown>) =>
-      Object.entries(where).every(([key, value]) => row[key] === value);
+      Object.entries(where).every(([key, value]) =>
+        value && typeof value === "object" && "in" in value
+          ? (value.in as unknown[]).includes(row[key])
+          : row[key] === value,
+      );
     const prisma = {
       user: {
         update,
@@ -125,7 +129,16 @@ describe("account preferences", () => {
         ),
       },
       $transaction: vi.fn(async (run: (client: unknown) => Promise<unknown>) => run(prisma)),
-      $queryRaw: vi.fn(async () => []),
+      $queryRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sql = strings.join("?");
+        if (sql.includes("FOR SHARE")) return [{ timezone: user.timezone }];
+        if (sql.includes('"routines"')) {
+          return routines
+            .filter((row) => matches(row, { userId: values[0], timezone: values[1] }))
+            .map((row) => ({ id: row.id }));
+        }
+        return [];
+      }),
       userModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;

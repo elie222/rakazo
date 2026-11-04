@@ -20,6 +20,20 @@ import {
 const noRoutines = async () => [];
 const impossibleOffsetDates = ["2030-02-30T10:00Z", "2030-04-31T10:00+05:30"];
 
+/**
+ * A prisma fake whose account zone answers the share lock a creation takes inside its
+ * insert transaction. `timezone` is the saved account zone, or null for none.
+ */
+function accountZonePrisma(prisma: Record<string, unknown>, timezone: string | null) {
+  const client = {
+    ...prisma,
+    $transaction: async (run: (client: unknown) => Promise<unknown>) => run(client),
+    $queryRaw: async (strings: TemplateStringsArray) =>
+      strings.join("?").includes("FOR SHARE") ? [{ timezone }] : [],
+  };
+  return client;
+}
+
 describe("resolveScheduleTiming", () => {
   beforeEach(() => vi.useFakeTimers({ now: new Date("2026-10-20T00:11:59.999Z") }));
   afterEach(() => vi.useRealTimers());
@@ -379,13 +393,7 @@ describe("schedule tool persistence", () => {
       ...args.data,
     }));
     const deps = {
-      prisma: {
-        user: noTimezone,
-        routine: {
-          create,
-          findMany,
-        },
-      },
+      prisma: accountZonePrisma({ routine: { create, findMany } }, null),
       events: { append: vi.fn() },
       jobs: { enqueue: vi.fn() },
     } as unknown as Parameters<typeof createScheduleFromTool>[0];
@@ -467,11 +475,13 @@ describe("schedule tool persistence", () => {
       nextRunAt: args.data.nextRunAt,
     }));
     const deps = {
-      prisma: {
-        user: noTimezone,
-        bot: { findFirst: vi.fn(async () => ({ computer: null })) },
-        routine: { create, findMany: noRoutines },
-      },
+      prisma: accountZonePrisma(
+        {
+          bot: { findFirst: vi.fn(async () => ({ computer: null })) },
+          routine: { create, findMany: noRoutines },
+        },
+        null,
+      ),
       events: { append },
       jobs: { enqueue, cancel: vi.fn(async () => undefined) },
     } as unknown as Parameters<typeof createScheduleFromTool>[0];
@@ -514,10 +524,7 @@ describe("schedule tool persistence", () => {
       ...args.data,
     }));
     const deps = {
-      prisma: {
-        user: { findUnique: vi.fn(async () => ({ timezone: saved })) },
-        routine: { create, findMany: noRoutines },
-      },
+      prisma: accountZonePrisma({ routine: { create, findMany: noRoutines } }, saved),
       events: { append: vi.fn(async () => undefined) },
       jobs: { enqueue: vi.fn(async () => undefined) },
     } as unknown as Parameters<typeof createScheduleFromTool>[0];
@@ -551,7 +558,7 @@ describe("schedule tool persistence", () => {
       ...args.data,
     }));
     const deps = {
-      prisma: { user: noTimezone, routine: { create, findMany: noRoutines } },
+      prisma: accountZonePrisma({ routine: { create, findMany: noRoutines } }, null),
       events: { append },
       jobs: { enqueue, cancel: vi.fn(async () => undefined) },
     } as unknown as Parameters<typeof createScheduleFromTool>[0];
@@ -587,19 +594,21 @@ describe("schedule tool persistence", () => {
     const cancel = vi.fn(async () => undefined);
     const remove = vi.fn(async () => undefined);
     const deps = {
-      prisma: {
-        user: noTimezone,
-        routine: {
-          findMany: noRoutines,
-          create: vi.fn(async () => ({
-            id: "routine-1",
-            name: "Morning joke",
-            crons: ["*/1 * * * *"],
-            nextRunAt: new Date(),
-          })),
-          delete: remove,
+      prisma: accountZonePrisma(
+        {
+          routine: {
+            findMany: noRoutines,
+            create: vi.fn(async () => ({
+              id: "routine-1",
+              name: "Morning joke",
+              crons: ["*/1 * * * *"],
+              nextRunAt: new Date(),
+            })),
+            delete: remove,
+          },
         },
-      },
+        null,
+      ),
       events: {
         append: vi.fn(async () => {
           throw new Error("event failed");
@@ -626,19 +635,21 @@ describe("schedule tool persistence", () => {
   it("rolls back routine when enqueue fails", async () => {
     const remove = vi.fn(async () => undefined);
     const deps = {
-      prisma: {
-        user: noTimezone,
-        routine: {
-          findMany: noRoutines,
-          create: vi.fn(async () => ({
-            id: "routine-1",
-            name: "Morning joke",
-            crons: ["*/1 * * * *"],
-            nextRunAt: new Date(),
-          })),
-          delete: remove,
+      prisma: accountZonePrisma(
+        {
+          routine: {
+            findMany: noRoutines,
+            create: vi.fn(async () => ({
+              id: "routine-1",
+              name: "Morning joke",
+              crons: ["*/1 * * * *"],
+              nextRunAt: new Date(),
+            })),
+            delete: remove,
+          },
         },
-      },
+        null,
+      ),
       events: { append: vi.fn(async () => undefined) },
       jobs: {
         enqueue: vi.fn(async () => {
@@ -665,22 +676,24 @@ describe("schedule tool persistence", () => {
   it("deactivates when enqueue fails and delete also fails", async () => {
     const update = vi.fn(async () => undefined);
     const deps = {
-      prisma: {
-        user: noTimezone,
-        routine: {
-          findMany: noRoutines,
-          create: vi.fn(async () => ({
-            id: "routine-1",
-            name: "Morning joke",
-            crons: ["*/1 * * * *"],
-            nextRunAt: new Date(),
-          })),
-          delete: vi.fn(async () => {
-            throw new Error("delete failed");
-          }),
-          update,
+      prisma: accountZonePrisma(
+        {
+          routine: {
+            findMany: noRoutines,
+            create: vi.fn(async () => ({
+              id: "routine-1",
+              name: "Morning joke",
+              crons: ["*/1 * * * *"],
+              nextRunAt: new Date(),
+            })),
+            delete: vi.fn(async () => {
+              throw new Error("delete failed");
+            }),
+            update,
+          },
         },
-      },
+        null,
+      ),
       events: { append: vi.fn(async () => undefined) },
       jobs: {
         enqueue: vi.fn(async () => {
@@ -709,24 +722,26 @@ describe("schedule tool persistence", () => {
 
   it("propagates when enqueue rollback cannot deactivate", async () => {
     const deps = {
-      prisma: {
-        user: noTimezone,
-        routine: {
-          findMany: noRoutines,
-          create: vi.fn(async () => ({
-            id: "routine-1",
-            name: "Morning joke",
-            crons: ["*/1 * * * *"],
-            nextRunAt: new Date(),
-          })),
-          delete: vi.fn(async () => {
-            throw new Error("delete failed");
-          }),
-          update: vi.fn(async () => {
-            throw new Error("deactivate failed");
-          }),
+      prisma: accountZonePrisma(
+        {
+          routine: {
+            findMany: noRoutines,
+            create: vi.fn(async () => ({
+              id: "routine-1",
+              name: "Morning joke",
+              crons: ["*/1 * * * *"],
+              nextRunAt: new Date(),
+            })),
+            delete: vi.fn(async () => {
+              throw new Error("delete failed");
+            }),
+            update: vi.fn(async () => {
+              throw new Error("deactivate failed");
+            }),
+          },
         },
-      },
+        null,
+      ),
       events: { append: vi.fn(async () => undefined) },
       jobs: {
         enqueue: vi.fn(async () => {
@@ -832,12 +847,14 @@ describe("schedule_create with a watch", () => {
       create,
       enqueue,
       deps: {
-        prisma: {
-          user: { findUnique: vi.fn(async () => null) },
-          connection: { findMany: vi.fn(async () => []) },
-          bot: { findFirst: vi.fn(async () => ({ computer: null })) },
-          routine: { create, findMany: noRoutines },
-        },
+        prisma: accountZonePrisma(
+          {
+            connection: { findMany: vi.fn(async () => []) },
+            bot: { findFirst: vi.fn(async () => ({ computer: null })) },
+            routine: { create, findMany: noRoutines },
+          },
+          null,
+        ),
         events: { append: vi.fn(async () => undefined) },
         jobs: { enqueue, cancel: vi.fn(async () => undefined) },
       } as unknown as Parameters<typeof createScheduleFromTool>[0],
@@ -1268,7 +1285,11 @@ describe("changeUserTimezone", () => {
     }));
     const enqueue = vi.fn(async () => undefined);
     const matches = (row: Record<string, unknown>, where: Record<string, unknown>) =>
-      Object.entries(where).every(([key, value]) => row[key] === value);
+      Object.entries(where).every(([key, value]) =>
+        value && typeof value === "object" && "in" in value
+          ? (value.in as unknown[]).includes(row[key])
+          : row[key] === value,
+      );
     const prisma = {
       user: {
         findUnique: async ({ where }: { where: { id: string } }) =>
@@ -1311,8 +1332,19 @@ describe("changeUserTimezone", () => {
           return { count };
         },
       },
+      // The row locks of changeUserTimezone and the share lock of a creation: answer each
+      // with what the real database would return, bound parameters included.
       $transaction: async (run: (client: unknown) => Promise<unknown>) => run(prisma),
-      $queryRaw: async () => [],
+      $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sql = strings.join("?");
+        if (sql.includes("FOR SHARE")) return [{ timezone: user.timezone }];
+        if (sql.includes('"routines"')) {
+          return rows
+            .filter((row) => matches(row, { userId: values[0], timezone: values[1] }))
+            .map((row) => ({ id: row.id }));
+        }
+        return [];
+      },
     };
     const deps = {
       prisma,

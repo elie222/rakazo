@@ -265,6 +265,19 @@ export async function userTimeZone(prisma: PrismaClient, userId: string): Promis
 }
 
 /**
+ * The account zone under a share lock, for an insert sharing this transaction: a
+ * concurrent zone change either committed first (the fresh row starts in the new zone) or
+ * waits for this transaction's lock, and the change then moves the fresh row too.
+ */
+async function sharedAccountZone(tx: Prisma.TransactionClient, userId: string): Promise<string> {
+  const [row] = await tx.$queryRaw<
+    Array<{ timezone: string | null }>
+  >`SELECT timezone FROM "user" WHERE id = ${userId} FOR SHARE`;
+  const timezone = row?.timezone;
+  return timezone && TimeZoneSchema.safeParse(timezone).success ? timezone : "UTC";
+}
+
+/**
  * Save the account timezone and move the routines that took it: every routine of the user
  * whose zone is the previous account zone keeps its local schedule in the new one, exactly
  * as a schedule_update zone change keeps it. A routine pinned to another zone stays, and so
@@ -291,9 +304,15 @@ export async function changeUserTimezone(
       if (!timezone || !user.timezone) return;
       // Lock the rows about to move, so a run firing meanwhile cannot advance one between
       // the read and the write: its claim lands after the commit and re-derives from the
-      // moved schedule.
-      await tx.$queryRaw`SELECT id FROM "routines" WHERE "userId" = ${userId} AND timezone = ${user.timezone} FOR UPDATE`;
-      const routines = await tx.routine.findMany({ where: { userId, timezone: user.timezone } });
+      // moved schedule. The read takes only the locked ids: a routine inserted after the
+      // locking snapshot is not locked here, and its creator read the zone under a share
+      // lock this change waited for, so it already carries the new zone.
+      const locked = await tx.$queryRaw<
+        Array<{ id: string }>
+      >`SELECT id FROM "routines" WHERE "userId" = ${userId} AND timezone = ${user.timezone} FOR UPDATE`;
+      const routines = await tx.routine.findMany({
+        where: { id: { in: locked.map((row) => row.id) }, userId, timezone: user.timezone },
+      });
       for (const routine of routines) {
         const nextRunAt = nextRunAtAfterTimezoneMove(routine, timezone);
         const movedNext = nextRunAt?.getTime() !== routine.nextRunAt?.getTime();
@@ -421,37 +440,49 @@ export async function createScheduleFromTool(
     };
   }
 
-  const parsedTimezone = TimeZoneSchema.safeParse(
-    input.timezone ?? (await userTimeZone(deps.prisma, input.userId)),
-  );
-  if (!parsedTimezone.success) {
-    return { error: parsedTimezone.error.issues.map((issue) => issue.message).join("; ") };
+  if (input.timezone !== undefined) {
+    const parsedTimezone = TimeZoneSchema.safeParse(input.timezone);
+    if (!parsedTimezone.success) {
+      return { error: parsedTimezone.error.issues.map((issue) => issue.message).join("; ") };
+    }
   }
-  const timezone = parsedTimezone.data;
   if (input.schedule.watch !== undefined) {
-    return createWatchFromTool(deps, { ...input, name, prompt, timezone });
+    return createWatchFromTool(deps, { ...input, name, prompt });
   }
-  const resolved = resolveScheduleTiming(input.schedule, timezone);
-  if (!resolved.ok) return { error: resolved.error };
-
-  const row = await deps.prisma.routine.create({
-    data: {
-      spaceId: input.spaceId,
-      botId: routineBotId,
-      userId: input.userId,
-      threadId: routineThreadId,
-      name,
-      prompt,
-      crons: [resolved.cron],
-      timezone,
-      notify: true,
-      active: true,
-      nextRunAt: resolved.nextRunAt,
-    },
-  });
+  // A named zone needs no coordination with a zone change. The account's zone is read
+  // under a share lock in the same transaction as the insert, so the two cannot cross.
+  let wakeAt: Date | undefined;
+  const insertRoutine = (client: Pick<Prisma.TransactionClient, "routine">, timezone: string) => {
+    const resolved = resolveScheduleTiming(input.schedule, timezone);
+    if (!resolved.ok) return { error: resolved.error } as const;
+    wakeAt = resolved.nextRunAt;
+    return client.routine.create({
+      data: {
+        spaceId: input.spaceId,
+        botId: routineBotId,
+        userId: input.userId,
+        threadId: routineThreadId,
+        name,
+        prompt,
+        crons: [resolved.cron],
+        timezone,
+        notify: true,
+        active: true,
+        nextRunAt: resolved.nextRunAt,
+      },
+    });
+  };
+  const row =
+    input.timezone !== undefined
+      ? await insertRoutine(deps.prisma, input.timezone)
+      : await deps.prisma.$transaction(async (tx) => {
+          const timezone = await sharedAccountZone(tx, input.userId);
+          return insertRoutine(tx, timezone);
+        });
+  if ("error" in row) return { error: row.error };
 
   try {
-    await deps.jobs.enqueue(routineWakeupJob(row.id, resolved.nextRunAt));
+    await deps.jobs.enqueue(routineWakeupJob(row.id, wakeAt!));
   } catch {
     try {
       await deps.prisma.routine.delete({ where: { id: row.id } });
@@ -483,7 +514,7 @@ export async function createScheduleFromTool(
     name: row.name,
     cron: row.crons[0],
     nextRunAt: row.nextRunAt?.toISOString() ?? null,
-    oneShot: resolved.oneShot,
+    oneShot: isOneShotRoutineCrons(row.crons),
     ...describeRoutineTiming(row),
   };
 }
@@ -498,7 +529,7 @@ async function createWatchFromTool(
     threadId: string;
     name: string;
     prompt: string;
-    timezone: string;
+    timezone?: string;
     schedule: Record<string, unknown>;
   },
 ) {
@@ -531,22 +562,32 @@ async function createWatchFromTool(
     return { error: error instanceof Error ? error.message : "Invalid change trigger." };
   }
   const nextRunAt = new Date(Date.now() + 2_000);
-  const row = await deps.prisma.routine.create({
-    data: {
-      spaceId: input.spaceId,
-      botId: input.botId,
-      userId: input.userId,
-      threadId: input.threadId,
-      name: input.name,
-      prompt: input.prompt,
-      crons: [],
-      timezone: input.timezone,
-      notify: true,
-      active: true,
-      watch: parsed.data as Prisma.InputJsonValue,
-      nextRunAt,
-    },
-  });
+  // As with a timed routine, a defaulted zone is read under a share lock in the same
+  // transaction as the insert, so a zone change cannot cross the creation.
+  const insertWatch = (client: Pick<Prisma.TransactionClient, "routine">, timezone: string) =>
+    client.routine.create({
+      data: {
+        spaceId: input.spaceId,
+        botId: input.botId,
+        userId: input.userId,
+        threadId: input.threadId,
+        name: input.name,
+        prompt: input.prompt,
+        crons: [],
+        timezone,
+        notify: true,
+        active: true,
+        watch: parsed.data as Prisma.InputJsonValue,
+        nextRunAt,
+      },
+    });
+  const row =
+    input.timezone !== undefined
+      ? await insertWatch(deps.prisma, input.timezone)
+      : await deps.prisma.$transaction(async (tx) => {
+          const timezone = await sharedAccountZone(tx, input.userId);
+          return insertWatch(tx, timezone);
+        });
   try {
     await deps.jobs.enqueue(routineWakeupJob(row.id, nextRunAt));
   } catch {

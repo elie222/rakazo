@@ -1,7 +1,7 @@
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, runAsSystem, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { changeUserTimezone } from "./schedule-tools.js";
+import { changeUserTimezone, createScheduleFromTool } from "./schedule-tools.js";
 
 // Needs DATABASE_URL as the runtime login and DATABASE_MIGRATION_URL as the owner,
 // as `pnpm test:integration` provides.
@@ -21,6 +21,7 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
     name,
     spaceId: `tz-move-space-${name}-${suffix}`,
     botId: `tz-move-bot-${name}-${suffix}`,
+    threadId: `tz-move-thread-${name}-${suffix}`,
   }));
   let owner: ReturnType<typeof createDb>;
   let system: PrismaClient;
@@ -31,7 +32,12 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
     close: vi.fn(async () => undefined),
   };
 
-  beforeAll(() => runAsSystem("test fixture", seed));
+  beforeAll(async () => {
+    await runAsSystem("test fixture", seed);
+    // Occurrences are built against this moment, whatever day the suite runs on. Only
+    // Date is faked: the I/O and barrier waits below stay on real timers.
+    vi.useFakeTimers({ now: new Date("2026-11-05T12:00:00.000Z"), toFake: ["Date"] });
+  });
 
   async function seed() {
     owner = createDb(migrationUrl!);
@@ -57,10 +63,14 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
       await o.bot.create({
         data: { id: space.botId, spaceId: space.spaceId, userId, name: space.name, color: "#000" },
       });
+      await o.thread.create({
+        data: { id: space.threadId, spaceId: space.spaceId, userId, botId: space.botId },
+      });
     }
   }
 
   afterAll(async () => {
+    vi.useRealTimers();
     if (!owner) return;
     await system.organization.deleteMany({ where: { id: organizationId } });
     await system.user.deleteMany({ where: { id: { in: [userId, otherUserId] } } });
@@ -83,7 +93,7 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
         timezone: "Africa/Cairo",
         notify: true,
         active: true,
-        // A far-future Monday 09:00 Cairo, so no fixture depends on the wall clock.
+        // A future Monday 09:00 Cairo relative to the frozen clock.
         nextRunAt: new Date("2026-11-09T07:00:00.000Z"),
       },
     });
@@ -92,6 +102,30 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
   async function resetAccount() {
     await system.routine.deleteMany({ where: { userId: { in: [userId, otherUserId] } } });
     await system.user.update({ where: { id: userId }, data: { timezone: "Africa/Cairo" } });
+    jobs.enqueue.mockClear();
+  }
+
+  /** A promise whose settlement a barrier step can assert is still pending. */
+  function tracked(promise: Promise<unknown>) {
+    const state = { settled: false };
+    void promise.then(
+      () => {
+        state.settled = true;
+      },
+      () => {
+        state.settled = true;
+      },
+    );
+    return state;
+  }
+
+  /** Real-timer wait; the barrier steps must still be blocked when it ends. */
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 300));
+
+  function save(userIdArg: string, timezone: string, space: (typeof spaces)[number]) {
+    return runAsTenant({ spaceId: space.spaceId, userId }, () =>
+      changeUserTimezone({ prisma: app.prisma, jobs }, userIdArg, timezone),
+    );
   }
 
   it("moves the user's routines in every space, and only theirs", async () => {
@@ -104,9 +138,7 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
 
     // The save arrives while the user works in one space; the other space's routines
     // are invisible in that tenant scope.
-    await runAsTenant({ spaceId: spaces[0]!.spaceId, userId }, () =>
-      changeUserTimezone({ prisma: app.prisma, jobs }, userId, "Europe/London"),
-    );
+    await save(userId, "Europe/London", spaces[0]!);
 
     const rows = await system.routine.findMany({
       where: { id: { in: [...mine.map((routine) => routine.id), foreign.id] } },
@@ -135,16 +167,28 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
     await weeklyRoutine(spaces[0]!, userId, "A");
     await weeklyRoutine(spaces[1]!, userId, "B");
 
-    // Both saves start before either commits: the one that loses the user-row lock
-    // still sees the winner's zone as the previous one.
-    const first = runAsTenant({ spaceId: spaces[0]!.spaceId, userId }, () =>
-      changeUserTimezone({ prisma: app.prisma, jobs }, userId, "Europe/London"),
-    );
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    const second = runAsTenant({ spaceId: spaces[1]!.spaceId, userId }, () =>
-      changeUserTimezone({ prisma: app.prisma, jobs }, userId, "Asia/Tokyo"),
-    );
-    await Promise.all([first, second]);
+    // A barrier holds the user's routines, so the first save is provably mid-transaction
+    // (past the account write, waiting on the rows) when the second one starts and waits
+    // in turn. Both overlap; neither may strand the routines on an intermediate zone.
+    await runAsSystem("overlap barrier", async () => {
+      const client = await app.pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query('SELECT id FROM routines WHERE "userId" = $1 FOR UPDATE', [userId]);
+        const first = save(userId, "Europe/London", spaces[0]!);
+        const firstState = tracked(first);
+        await settle();
+        expect(firstState.settled).toBe(false);
+        const second = save(userId, "Asia/Tokyo", spaces[1]!);
+        const secondState = tracked(second);
+        await settle();
+        expect(secondState.settled).toBe(false);
+        await client.query("COMMIT");
+        await Promise.all([first, second]);
+      } finally {
+        client.release();
+      }
+    });
 
     const user = await system.user.findUniqueOrThrow({
       where: { id: userId },
@@ -166,15 +210,13 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
     // the zone save is between its read and its write. The claim runs as the job
     // system would, on the runtime login.
     const claimed = new Date("2026-11-16T07:00:00.000Z"); // next Monday 09:00 Cairo
-    await runAsSystem("routine claim fixture", async () => {
+    await runAsSystem("routine claim barrier", async () => {
       const client = await app.pool.connect();
       try {
         await client.query("BEGIN");
         await client.query("SELECT id FROM routines WHERE id = $1 FOR UPDATE", [routine.id]);
-        const moving = runAsTenant({ spaceId: spaces[0]!.spaceId, userId }, () =>
-          changeUserTimezone({ prisma: app.prisma, jobs }, userId, "Europe/London"),
-        );
-        await new Promise((resolve) => setTimeout(resolve, 250));
+        const moving = save(userId, "Europe/London", spaces[0]!);
+        await settle();
         await client.query('UPDATE routines SET "nextRunAt" = $2 WHERE id = $1', [
           routine.id,
           claimed,
@@ -190,5 +232,55 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
     expect(row.timezone).toBe("Europe/London");
     // The claimed occurrence's local time holds: Monday 09:00 London.
     expect(row.nextRunAt?.toISOString()).toBe("2026-11-16T09:00:00.000Z");
+  });
+
+  it("moves a routine created from the account zone while the save is in flight", async () => {
+    await resetAccount();
+    const fixture = await weeklyRoutine(spaces[0]!, userId, "A");
+
+    // The same barrier holds the fixture routine, so the zone save is mid-transaction
+    // while a bot creates a routine that takes the account zone: the creation must not
+    // freeze the zone the save is replacing.
+    await runAsSystem("creation barrier", async () => {
+      const client = await app.pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT id FROM routines WHERE id = $1 FOR UPDATE", [fixture.id]);
+        const moving = save(userId, "Europe/London", spaces[0]!);
+        await settle();
+        const created = runAsTenant({ spaceId: spaces[0]!.spaceId, userId }, () =>
+          createScheduleFromTool(
+            {
+              prisma: app.prisma,
+              jobs,
+              events: { append: async () => undefined },
+            } as unknown as Parameters<typeof createScheduleFromTool>[0],
+            {
+              spaceId: spaces[0]!.spaceId,
+              botId: spaces[0]!.botId,
+              userId,
+              threadId: spaces[0]!.threadId,
+              name: "Fresh",
+              prompt: "Check",
+              schedule: { cron: "0 9 * * 1" },
+            },
+          ),
+        );
+        await client.query("COMMIT");
+        await Promise.all([moving, created]);
+      } finally {
+        client.release();
+      }
+    });
+
+    const rows = await system.routine.findMany({
+      where: { userId },
+      orderBy: { name: "asc" },
+    });
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.timezone).toBe("Europe/London");
+      expect(row.nextRunAt?.toISOString()).toBe("2026-11-09T09:00:00.000Z");
+    }
   });
 });
