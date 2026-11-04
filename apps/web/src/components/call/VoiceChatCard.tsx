@@ -55,20 +55,28 @@ export function VoiceChatCard({
           : duration;
   const summary = missed || ringing ? (request?.reason ?? "") : voiceChatSummary(group);
   // The opening was spoken, not posted: show it as the call's first bot turn.
-  const transcript = [
-    ...(request && !missed && !ringing && request.opening
-      ? [{ id: `${group.key}:opening`, role: "bot", text: request.opening }]
-      : []),
-    ...group.messages.map((message) => ({
-      id: message.id,
-      role: message.role,
-      // The request and the marker are the card's own lines, never transcript turns.
-      text:
-        message === group.marker || callRequestBlock(message.blocks)
-          ? ""
-          : speechFromBlocks(message.blocks).trim(),
-    })),
-  ];
+  const marker = group.marker?.blocks[0];
+  const savedTranscript = marker?.kind === "voice_call" ? marker.transcript : undefined;
+  const transcript = savedTranscript
+    ? savedTranscript.map((line, index) => ({
+        id: `${group.key}:spoken:${index}`,
+        role: line.role,
+        text: line.text,
+      }))
+    : [
+        ...(request && !missed && !ringing && request.opening
+          ? [{ id: `${group.key}:opening`, role: "bot", text: request.opening }]
+          : []),
+        ...group.messages.map((message) => ({
+          id: message.id,
+          role: message.role,
+          // The request and the marker are the card's own lines, never transcript turns.
+          text:
+            message === group.marker || callRequestBlock(message.blocks)
+              ? ""
+              : speechFromBlocks(message.blocks).trim(),
+        })),
+      ];
   const expandable = transcript.some((line) => line.text);
   const Icon = !request ? Phone : missed ? PhoneMissed : PhoneIncoming;
   return (

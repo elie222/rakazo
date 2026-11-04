@@ -1738,6 +1738,7 @@ export const ModelCatalogEntrySchema = z.object({
 export type ModelCatalogEntry = z.infer<typeof ModelCatalogEntrySchema>;
 
 export const VoiceCatalogEntrySchema = z.object({
+  conversational: z.boolean().optional(),
   id: z.string(),
   name: z.string(),
   description: z.string(),
@@ -1770,6 +1771,7 @@ export const VoiceCredentialSchema = z.object({
 export type VoiceCredential = z.infer<typeof VoiceCredentialSchema>;
 
 export const VoiceStatusSchema = z.object({
+  conversational: z.boolean().optional(),
   configured: z.boolean(),
   ready: z.boolean(),
   transcribe: z.boolean(),

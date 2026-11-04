@@ -109,4 +109,6 @@ export * from "./ui-locale.js";
 export * from "./unread-divider.js";
 export * from "./user-error.js";
 export * from "./voice-chat-groups.js";
+export * from "./voice-conversation.js";
+export * from "./voice-media.js";
 export * from "./voice-response.js";

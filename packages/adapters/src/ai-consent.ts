@@ -5,6 +5,7 @@ import { listPiCatalog } from "./pi-models.js";
 import { voiceCatalogEntry } from "./voice-factory.js";
 
 const PRIVACY_URLS: Record<string, string> = {
+  "openai-live": "https://openai.com/policies/privacy-policy/",
   cursor: "https://cursor.com/privacy",
   openrouter: "https://openrouter.ai/privacy",
   openai: "https://openai.com/policies/privacy-policy/",

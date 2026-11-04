@@ -729,6 +729,7 @@ export interface SpeechClip {
 }
 
 export interface VoiceCapabilities {
+  conversational?: boolean;
   catalog: boolean;
   synthesize: boolean;
   transcribe: boolean;

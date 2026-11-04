@@ -18,6 +18,15 @@ export function VoiceChatCard({ group }: { group: VoiceChatGroup<MobileMessage> 
   const tokens = useMobileTokens();
   const [open, setOpen] = useState(false);
   const summary = voiceChatSummary(group);
+  const marker = group.marker?.blocks[0];
+  const savedTranscript = marker?.kind === "voice_call" ? marker.transcript : undefined;
+  const transcript = savedTranscript
+    ? savedTranscript.map((line, index) => ({
+        id: `${group.key}:spoken:${index}`,
+        role: line.role,
+        blocks: [{ kind: "text" as const, text: line.text }],
+      }))
+    : group.messages;
   return (
     <View style={[styles.card, { backgroundColor: native.fill }]}>
       <Pressable
@@ -43,7 +52,7 @@ export function VoiceChatCard({ group }: { group: VoiceChatGroup<MobileMessage> 
       </Pressable>
       {open ? (
         <View style={styles.transcript}>
-          {group.messages.map((message) => {
+          {transcript.map((message) => {
             // The marker is the card's summary line, never a transcript turn.
             if (message === group.marker) return null;
             const text = speechFromBlocks(message.blocks).trim();

@@ -97,6 +97,7 @@ import type {
   WorkspaceDirectoryRequest,
   WorkspaceExportLimits,
 } from "./types.js";
+import type { VoiceConversation, VoiceConversationRequest } from "./voice-conversation.js";
 
 export interface SandboxProvider {
   /** Providers tied to one external desktop reject references belonging to another connection. */
@@ -540,6 +541,7 @@ export interface ExecutionRunner {
 }
 
 export interface VoiceProvider {
+  converse?(request: VoiceConversationRequest, context: AdapterContext): Promise<VoiceConversation>;
   describe(): AdapterDescriptor<VoiceCapabilities>;
   verify(apiKey: string, context: AdapterContext): Promise<VoiceVerifyResult>;
   listVoices(apiKey: string, context: AdapterContext): Promise<VoiceInfo[]>;

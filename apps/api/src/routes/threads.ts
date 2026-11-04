@@ -47,6 +47,7 @@ import {
   threadHead,
   threadSnapshot,
 } from "../thread-target.js";
+import { converseWithBot } from "../voice-conversation.js";
 import { mapBotSecretInputError } from "./bots.js";
 import { releaseComputerControl } from "./computer.js";
 import type { RouterContext } from "./context.js";
@@ -530,6 +531,9 @@ export function threadsRoutes(ctx: RouterContext) {
           throw new ORPCError("CONFLICT", { message: "This call is no longer ringing." });
         return { ok: true as const };
       }),
+      converse: callsEnabled.threads.converse.handler(({ context, input }) =>
+        converseWithBot(deps, context.actor, input, send, context.signal, context.stillAuthorized),
+      ),
       endCall: callsEnabled.threads.endCall.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         if (target.kind !== "bot") throw new IsolationError();

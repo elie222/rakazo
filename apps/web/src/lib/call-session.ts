@@ -18,10 +18,12 @@ import {
   speechFromBlocks,
   spokenDecision,
   spokenMemory,
+  VoiceTranscript,
 } from "@rakazo/core";
 import { getGlobalBroadcastChannel } from "better-auth/client";
 import { useSyncExternalStore } from "react";
 import { pickUp } from "./call-pickup.js";
+import { conversationalCall } from "./conversational-call.js";
 import { dictation } from "./dictation.js";
 import {
   newLogoAvatarActivitySource,
@@ -69,6 +71,8 @@ export const SIGN_OUT_HANG_UP_MS = 3_000;
  */
 export const SIGNED_IN_USER_KEY = "rakazo.signedInUser";
 let state: CallState | null = null;
+let liveCall: ReturnType<typeof conversationalCall> | null = null;
+let conversational = false;
 /** The signed-in user this page belongs to; undefined until the session first resolves. */
 let identity: string | null | undefined;
 /** Other tabs' sign-outs and account changes are watched once a user is signed in. */
@@ -154,6 +158,7 @@ export function startCall(call: {
   botColor?: string;
   botAvatarSet?: BotAvatarSet;
   transcribe?: boolean;
+  conversational?: boolean;
   /** The bot called and the user picked up: no ringing, and the bot speaks first. */
   answered?: { callId: string; opening: string };
 }): void {
@@ -183,6 +188,40 @@ export function startCall(call: {
     heard: "",
     exchanges: [],
   };
+  conversational = call.conversational === true;
+  if (conversational) {
+    const currentCallId = callId;
+    const transcript = new VoiceTranscript();
+    liveCall = conversationalCall(
+      { botId: call.botId, callId },
+      (event) => {
+        if (!state || callId !== currentCallId) return;
+        if (event.type === "ready")
+          set({ phase: "listening", connectedAt: state.connectedAt ?? Date.now() });
+        if (event.type === "transcript") {
+          transcript.append(event);
+          set({
+            phase: event.role === "bot" ? "speaking" : "listening",
+            caption: event.role === "bot" ? event.text : state.caption,
+            heard: event.role === "user" ? event.text : state.heard,
+            exchanges: transcript.entries().map(({ role, text }) => ({ role, text })),
+          });
+        }
+        if (event.type === "closed") dropCall();
+      },
+      (error) => {
+        if (state && callId === currentCallId)
+          set({
+            phase: "listening",
+            muted: true,
+            caption: errorText(error, "Could not connect the call."),
+          });
+      },
+    );
+    emit();
+    void liveCall.start();
+    return;
+  }
   unsubSpeech = speaker.subscribe((speech) => {
     if (!state || state.phase === "ringing") return;
     if (openingPending && speech.status === "idle") openingPending = false;
@@ -241,7 +280,7 @@ export function startCall(call: {
 export function endCall(): void {
   // A caller hang-up closes the call server-side, which files the marker and the wrap-up
   // run. The bot's own end_call already did that, so only tell the server when it did not.
-  if (state && !botEndedCall) {
+  if (state && !botEndedCall && !conversational) {
     const { botId, connectedAt } = state;
     const closingCallId = callId;
     const epoch = sessionEpoch;
@@ -264,6 +303,9 @@ export function endCall(): void {
 
 /** Stops the call on this device only. */
 function dropCall(): void {
+  liveCall?.close();
+  liveCall = null;
+  conversational = false;
   pickup?.abort();
   pickup = null;
   openingPending = false;
@@ -389,6 +431,12 @@ function publishSignedInUser(userId: string | null): void {
 }
 
 export function toggleMute(): void {
+  if (liveCall && state) {
+    const muted = !state.muted;
+    liveCall.mute(muted);
+    set({ muted, heard: "" });
+    return;
+  }
   if (!state) return;
   const muted = !state.muted;
   set({ muted });

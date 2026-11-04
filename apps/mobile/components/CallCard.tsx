@@ -5,13 +5,19 @@ import { useKeepAwake } from "expo-keep-awake";
 import { useRouter } from "expo-router";
 import type { ComponentProps } from "react";
 import { useEffect, useRef, useState } from "react";
-import { Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { rpc } from "../lib/api";
 import { startCallBackground, stopCallBackground } from "../lib/call-background";
 import type { CallPhase } from "../lib/call-session";
-import { endCall, toggleMute, toggleTranscript, useCallSession } from "../lib/call-session";
+import {
+  endCall,
+  toggleMute,
+  toggleSpeaker,
+  toggleTranscript,
+  useCallSession,
+} from "../lib/call-session";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import { currentSessionGeneration, subscribeSessionGeneration } from "../lib/session";
@@ -188,6 +194,22 @@ export function CallCard() {
           border={tokens.border}
           onPress={toggleTranscript}
         />
+        {call.speaker !== undefined ? (
+          <RoundButton
+            label={call.speaker ? t("Speaker on") : t("Speaker off")}
+            ios="speaker.wave.2"
+            android="volume-high-outline"
+            selected={call.speaker}
+            disabled={call.speakerChanging}
+            color={tokens.foreground}
+            border={tokens.border}
+            onPress={() =>
+              void toggleSpeaker().catch(() =>
+                Alert.alert(t("Could not change speaker"), t("That audio output is unavailable.")),
+              )
+            }
+          />
+        ) : null}
         <RoundButton
           label={call.muted ? t("Unmute") : t("Mute")}
           ios={call.muted ? "mic.slash" : "mic"}
@@ -240,6 +262,7 @@ function RoundButton({
   border,
   background,
   selected,
+  disabled,
   onPress,
 }: {
   label: string;
@@ -249,6 +272,7 @@ function RoundButton({
   border: string;
   background?: string;
   selected?: boolean;
+  disabled?: boolean;
   onPress: () => void;
 }) {
   return (
@@ -260,6 +284,7 @@ function RoundButton({
       color={color}
       tint={background}
       selected={selected}
+      disabled={disabled}
       onPress={onPress}
       fallbackStyle={[
         styles.buttonFallback,

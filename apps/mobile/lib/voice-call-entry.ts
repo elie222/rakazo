@@ -1,9 +1,9 @@
 import { displayName } from "@rakazo/core";
-export type VoiceCallStatus = { ready: boolean; transcribe: boolean };
+export type VoiceCallStatus = { ready: boolean; transcribe: boolean; conversational?: boolean };
 
 export type VoiceCallPlan =
   | { kind: "device"; transcribe: false }
-  | { kind: "provider"; transcribe: boolean }
+  | { kind: "provider"; transcribe: boolean; conversational?: boolean }
   | { kind: "settings" }
   | { kind: "dictation" };
 
@@ -43,7 +43,11 @@ export async function resolveVoiceCallPlan(deps: VoiceCallPlanDeps): Promise<Voi
     if (!canDictate) return { kind: "dictation" };
   }
 
-  return { kind: "provider", transcribe: status.transcribe };
+  return {
+    kind: "provider",
+    transcribe: status.transcribe,
+    ...(status.conversational ? { conversational: true } : {}),
+  };
 }
 
 /** True only when the provider is ready to transcribe. Any other outcome is false. */
