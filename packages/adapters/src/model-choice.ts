@@ -15,7 +15,7 @@ export type ModelChoiceResult =
 const CANDIDATE_LIMIT = 5;
 /** Errors echo the query back to the model; a huge one must not inflate the tool result. */
 const ECHOED_QUERY_LIMIT = 200;
-const echoedQuery = (query: string) =>
+export const echoedQuery = (query: string) =>
   query.length > ECHOED_QUERY_LIMIT ? `${query.slice(0, ECHOED_QUERY_LIMIT)}…` : query;
 
 /** The catalog models this user's connections, or hosted credits, can run. */

@@ -6,7 +6,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { findDefaultVoiceCredential } from "@rakazo/db";
 import type { FleetPrepareDeps } from "./fleet-tools.js";
 import { modelLabel } from "./fleet-tools.js";
-import { connectedModelChoices, resolveModelChoice, words } from "./model-choice.js";
+import { connectedModelChoices, echoedQuery, resolveModelChoice, words } from "./model-choice.js";
 import { prepareAllowedThinkingLevels, validateBotModelChange } from "./model-selection.js";
 import { OPENAI_COMPATIBLE_VOICE_PROVIDER_ID } from "./openai-compatible-voice.js";
 import { createVoiceProvider } from "./voice-factory.js";
@@ -95,12 +95,7 @@ export async function readOwnBotSettings(
       : {}),
   });
   const whole = settings(bot.instructions, null);
-  if (
-    bot.instructions.length <= INSTRUCTIONS_PAGE_SIZE &&
-    JSON.stringify(whole).length <= SERIALIZED_PAGE_LIMIT
-  ) {
-    return whole;
-  }
+  if (JSON.stringify(whole).length <= SERIALIZED_PAGE_LIMIT) return whole;
   const total = bot.instructions.length;
   const paged = (end: number) =>
     settings(bot.instructions.slice(instructionsOffset, end), {
@@ -157,11 +152,6 @@ export async function listDefaultVoices(
 }
 
 const VOICES_SHOWN = 10;
-/** Errors echo the query back to the model; a huge one must not inflate the tool result. */
-const ECHOED_QUERY_LIMIT = 200;
-const echoedQuery = (query: string) =>
-  query.length > ECHOED_QUERY_LIMIT ? `${query.slice(0, ECHOED_QUERY_LIMIT)}…` : query;
-
 /** A voice by id or name as people say it; "default" follows the account's voice. */
 export function resolveVoiceChoice(
   voices: readonly VoiceInfo[],

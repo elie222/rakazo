@@ -161,6 +161,13 @@ describe("readOwnBotSettings", () => {
     });
   });
 
+  it("returns longer instructions whole while the result still fits", async () => {
+    const mid = { ...bot, instructions: "x".repeat(9_000) };
+    const settings = await readSettings(mid);
+    expect(settings.instructions).toBe(mid.instructions);
+    expect(settings).not.toHaveProperty("instructionsLength");
+  });
+
   it("keeps short instructions in one page with no paging fields", async () => {
     const settings = await readSettings(bot, 5);
     expect(settings.instructions).toBe("Cite sources.");
