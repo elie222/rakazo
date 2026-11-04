@@ -150,6 +150,9 @@ export function useComputerState({
     // one, whose failure would cancel the first. A new frame or screen URL re-runs this
     // effect and starts the next cycle.
     let reconnectPending = false;
+    // The reconnect's screen read left. Only its completion releases the hold then, so the
+    // drop it answers for still suppresses duplicates while it is out.
+    let reconnectReadOut = false;
     const stopped = new AbortController();
     const onMessage = (event: MessageEvent) => {
       if (event.source !== screenFrame.contentWindow) return;
@@ -160,6 +163,9 @@ export function useComputerState({
       if (wuying && message.rakazoScreen === "connected") {
         // The SDK can rejoin by itself, and a fresh read would sign that session out again.
         clearTimeout(reconnect);
+        // A reconnected screen releases a retry it kept queued; a read already out holds
+        // until it completes.
+        if (!reconnectReadOut) reconnectPending = false;
         liveWuyingUrl.current = screenUrl;
       }
       if (
@@ -186,7 +192,16 @@ export function useComputerState({
           const delay = screenReconnect().delayMs();
           clearTimeout(reconnect);
           reconnect = setTimeout(() => {
-            if (botId && !stopped.signal.aborted) void refreshComputerScreen(botId);
+            if (botId && !stopped.signal.aborted) {
+              // A read that ends with the frame and its URL unchanged — the provider
+              // rejoined the same session — re-runs nothing, so the read itself releases
+              // the hold.
+              reconnectReadOut = true;
+              void refreshComputerScreen(botId).finally(() => {
+                reconnectPending = false;
+                reconnectReadOut = false;
+              });
+            }
           }, delay);
           return;
         }

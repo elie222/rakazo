@@ -214,6 +214,57 @@ it("keeps one reconnect while its screen read is still pending", async () => {
   expect(code()).toBe("code-2");
 });
 
+it("reconnects again after a reconnection cancels a queued retry", async () => {
+  await read();
+  await report("connected");
+  await report("disconnected");
+  // The SDK rejoined by itself, so the queued retry is cancelled without a read.
+  await report("connected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  expect(screenUrl).toHaveBeenCalledTimes(1);
+  // A later drop still reconnects rather than waiting in a stuck hold.
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2_000);
+  });
+  expect(screenUrl).toHaveBeenCalledTimes(2);
+  expect(code()).toBe("code-2");
+  expect(state.screenLoadError).toBeNull();
+});
+
+it("reconnects again after its read ends on an already rejoined screen", async () => {
+  await read();
+  await report("connected");
+  let release: (() => void) | undefined;
+  screenUrl.mockImplementationOnce(
+    () =>
+      new Promise<{ url: string }>((resolve) => {
+        release = () => resolve({ url: screenUrlFactory() });
+      }),
+  );
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  // The provider rejoined the same session while the read was out; the completed read
+  // keeps the live URL, so nothing re-runs the effect.
+  await report("connected");
+  await act(async () => {
+    release?.();
+  });
+  expect(code()).toBe("code-1");
+  // A later drop still reconnects.
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2_000);
+  });
+  expect(screenUrl).toHaveBeenCalledTimes(3);
+  expect(code()).toBe("code-3");
+  expect(state.screenLoadError).toBeNull();
+});
+
 it("closes the computer view on Escape, but not on the Escape that ends an IME composition", async () => {
   function Controls() {
     state = useComputerState({
