@@ -4,8 +4,9 @@ import { resolveBotWorkspacePath } from "./computer-support.js";
 import { desktopGuardApplies, desktopProtectionGuardMessage } from "./desktop-command-guard.js";
 import { protectedActivateScriptWriteRefusal } from "./desktop-guard-words.js";
 import { generateMediaFromTool } from "./media-generation-tools.js";
+import { mediaDelivery, scheduleMediaPoll } from "./media-video-poll.js";
 import type { RunContext } from "./run-context.js";
-import { persistMessageInTransaction, publishMessage } from "./run-messages.js";
+import { publishMessage } from "./run-messages.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import { recordComputerAction } from "./run-tools-computer.js";
 import { attachWorkspaceFileToThread } from "./thread-artifacts.js";
@@ -26,7 +27,7 @@ function runWorkspace(ctx: RunContext, call: ToolCall): RunWorkspace {
 
 /** Generate an image or video, or with recoverOnly, only resume a job an earlier attempt started. */
 export async function callMediaTool(ctx: RunContext, call: ToolCall, recoverOnly = false) {
-  const { deps, run, bot, thread, context } = ctx;
+  const { deps, run, thread, context } = ctx;
   const { name, args, executionId, applied } = call;
   const mediaGeneration = ctx.providers.mediaGeneration;
   if (
@@ -36,8 +37,7 @@ export async function callMediaTool(ctx: RunContext, call: ToolCall, recoverOnly
     !deps.artifacts
   )
     return { error: "Media generation is unavailable." };
-  const artifacts = deps.artifacts;
-  return generateMediaFromTool({
+  const result = await generateMediaFromTool({
     name,
     args,
     executionId: applied?.effect.id ?? executionId,
@@ -46,53 +46,23 @@ export async function callMediaTool(ctx: RunContext, call: ToolCall, recoverOnly
     prisma: deps.prisma,
     context,
     run,
-    attach: (output, fileName, job) =>
-      attachWorkspaceFileToThread(
-        { prisma: deps.prisma, artifacts, maxUploadSizeBytes: deps.maxUploadSizeBytes },
-        {
-          spaceId: run.spaceId,
-          userId: run.userId,
-          botId: bot.id,
-          groupId: thread.groupId ?? undefined,
-          runId: run.id,
-          filePath: fileName,
-          bytes: output.bytes,
-          operationId: executionId,
-          onAttached: async (tx, artifact) => {
-            const checkpointed = await tx.externalEffect.updateMany({
-              where: {
-                id: job.id,
-                status: { not: "media_completed" },
-                result: { equals: job.result },
-              },
-              data: {
-                status: "media_polling",
-                result: { ...job.result, artifactId: artifact.id },
-              },
-            });
-            if (!checkpointed.count) throw new Error("Media attachment was already checkpointed");
-          },
-        },
-      ),
-    publish: async (block, jobId, artifactId) => {
-      const committed = await deps.prisma.$transaction(async (tx) => {
-        // Commit completion with the message so a restarted poll cannot post twice.
-        const claimed = await tx.externalEffect.updateMany({
-          where: { id: jobId, status: { not: "media_completed" } },
-          data: {
-            status: "media_completed",
-            result: { provider: mediaGeneration.id, artifactId },
-          },
-        });
-        if (!claimed.count) return null;
-        return persistMessageInTransaction(tx, run, "bot", [block]);
-      });
-      if (committed)
-        await deps.events
-          .notify(run.threadId, committed.eventSeq, committed.firstResponseRunId)
-          .catch(() => undefined);
-    },
+    threadGeneration: thread.historyCompactionGeneration,
+    ...mediaDelivery({ ...deps, artifacts: deps.artifacts }, run, {
+      providerId: mediaGeneration.id,
+      groupId: thread.groupId ?? undefined,
+      operationId: executionId,
+    }),
   });
+  // The run may end before the video does, so a background poll posts it when it is ready.
+  if (
+    result &&
+    "jobId" in result &&
+    result.jobId &&
+    "status" in result &&
+    (result.status === "queued" || result.status === "running")
+  )
+    await scheduleMediaPoll(deps.jobs, result.jobId);
+  return result;
 }
 
 async function generateMedia(ctx: RunContext, call: ToolCall) {

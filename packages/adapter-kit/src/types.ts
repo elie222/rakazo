@@ -778,6 +778,8 @@ export interface BackgroundJobPayloads {
   /** Reconcile durable remote-agent intent; scope is loaded from the database. */
   "cloud_agent.poll": { agentId: string };
   "purchase.poll": { purchaseId: string };
+  /** Check a submitted video and post it when ready; the ID is the bot-visible job ID. */
+  "media.poll": { jobId: string };
   /** Read an Expo push receipt; the token is identified by its digest, never stored. */
   "push.receipt": { userId: string; ticketId: string; tokenDigest: string };
 }
