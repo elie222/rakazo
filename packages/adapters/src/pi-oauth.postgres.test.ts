@@ -39,12 +39,8 @@ describePostgres("model OAuth refresh (PostgreSQL contract)", () => {
     };
   }
 
-  it("spends a rotating refresh token once when the kick, a run start and a running run race across processes", async () => {
-    const a = await instance();
-    const b = await instance();
-    const c = await instance();
-    // Separate module graphs: no in-process lock is shared, only the database lock.
-    expect(new Set([a, b, c].map((p) => p.oauth.withModelCredentialLock)).size).toBe(3);
+  // A user, space and stored ChatGPT sign-in whose token is due for a refresh.
+  async function seed(owner: Awaited<ReturnType<typeof instance>>) {
     const id = randomUUID();
     users.push(id);
     const scope = { userId: id, spaceId: id };
@@ -55,7 +51,7 @@ describePostgres("model OAuth refresh (PostgreSQL contract)", () => {
       expires: Date.now() - 1,
       accountId: "acct",
     };
-    const fixture = asSystem(a.prisma);
+    const fixture = asSystem(owner.prisma);
     await fixture.user.create({
       data: { id, name: "OAuth test", email: `${id}@example.test`, emailVerified: true },
     });
@@ -65,7 +61,7 @@ describePostgres("model OAuth refresh (PostgreSQL contract)", () => {
     await fixture.space.create({
       data: { id, organizationId: id, name: "OAuth test", isDefault: true },
     });
-    const plaintext = a.oauth.serializeModelSecret({ kind: "oauth", credential });
+    const plaintext = owner.oauth.serializeModelSecret({ kind: "oauth", credential });
     const stored = await secrets.put(plaintext, {
       operationId: "test",
       traceId: "test",
@@ -79,6 +75,17 @@ describePostgres("model OAuth refresh (PostgreSQL contract)", () => {
     const connection = await fixture.userModelCredential.create({
       data: { userId: id, provider: "openai-codex", label: "Codex", secretId: stored.id },
     });
+    return { scope, credential, plaintext, stored, connection };
+  }
+
+  it("spends a rotating refresh token once when the kick, a run start and a running run race across processes", async () => {
+    const a = await instance();
+    const b = await instance();
+    const c = await instance();
+    // Separate module graphs: no in-process lock is shared, only the database lock.
+    expect(new Set([a, b, c].map((p) => p.oauth.withModelCredentialLock)).size).toBe(3);
+    const { scope, credential, plaintext, stored, connection } = await seed(a);
+    const fixture = asSystem(a.prisma);
 
     // The provider rotates refresh tokens and rejects a spent one.
     const sent: string[] = [];
@@ -128,6 +135,37 @@ describePostgres("model OAuth refresh (PostgreSQL contract)", () => {
     const row = await fixture.secret.findUniqueOrThrow({ where: { id: stored.id } });
     expect(a.oauth.parseModelSecret(await secrets.load(row.ciphertext, stored.id))).toMatchObject({
       credential: { refresh: "rt-1" },
+    });
+  });
+
+  it("commits a reconnect marker when the provider rejects the stored token", async () => {
+    const owner = await instance();
+    const { scope, plaintext, stored, connection } = await seed(owner);
+    const oauth = {
+      refresh: vi.fn(async () => {
+        throw new Error('OpenAI Codex token refresh failed (400): {"error":"invalid_grant"}');
+      }),
+      toAuth: vi.fn(async (held: OAuthCredential) => ({ apiKey: held.access })),
+    };
+
+    await expect(
+      runAsTenant(scope, () =>
+        owner.oauth.resolveStoredModelAuth(
+          owner.prisma,
+          secrets,
+          scope,
+          { id: connection.id, secretId: stored.id },
+          plaintext,
+          "openai-codex",
+          { oauth },
+        ),
+      ),
+    ).rejects.toThrow(owner.oauth.OAUTH_RECONNECT_REQUIRED_ERROR);
+    const row = await asSystem(owner.prisma).secret.findUniqueOrThrow({ where: { id: stored.id } });
+    expect(
+      owner.oauth.parseModelSecret(await secrets.load(row.ciphertext, stored.id)),
+    ).toMatchObject({
+      reconnectRequired: true,
     });
   });
 });
