@@ -194,13 +194,9 @@ export function useComposerActions({
 
   useEffect(() => () => cancelFocusPrompt(), []);
 
+  // Switching chats keeps other chats' pending attachments with their previews;
+  // only the open chat's files are shown and sent (activePendingAttachments).
   useEffect(() => {
-    const threadKey = inGroup ? groupId : activeId;
-    setPendingAttachments((current) => {
-      const stale = current.filter((attachment) => attachment.threadKey !== threadKey);
-      revokePendingAttachmentPreviews(stale);
-      return attachmentsForThread(current, threadKey);
-    });
     clearReply();
     setAttachmentNotice(null);
     setSendError(null);
@@ -316,6 +312,15 @@ export function useComposerActions({
   const removeAttachment = useCallback((attachment: PendingAttachment) => {
     revokePendingAttachmentPreviews([attachment]);
     setPendingAttachments((current) => current.filter((item) => item.id !== attachment.id));
+  }, []);
+  /** A deleted chat's files can never be sent: drop them and release their previews. */
+  const discardThreadAttachments = useCallback((threadKey: string) => {
+    setPendingAttachments((current) => {
+      const discarded = attachmentsForThread(current, threadKey);
+      if (!discarded.length) return current;
+      revokePendingAttachmentPreviews(discarded);
+      return current.filter((attachment) => !discarded.includes(attachment));
+    });
   }, []);
   const sendMessage = useCallback(
     async (
@@ -582,6 +587,7 @@ export function useComposerActions({
     fileInputRef,
     onAttachmentPick,
     removeAttachment,
+    discardThreadAttachments,
     replyTarget: activeReplyTarget,
     replyQuote: activeReplyQuote,
     setReplyTarget,
