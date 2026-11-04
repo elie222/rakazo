@@ -1471,6 +1471,50 @@ describe("mobile API authentication", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("retries a revocation recorded while the flush's deciding read waits", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Promise.reject(new Error("offline"))),
+    );
+    // The flush's deciding read — the one that may mark the store absent — waits while a
+    // sign-out records its revocation; the empty store the read saw first must not silence
+    // the retries that answered requests later trigger.
+    let pendingListReads = 0;
+    const decidingReadStarted = new Promise<void>((resolveStarted) => {
+      vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+        if (key !== "rakazo.pending_sign_out") return store.get(key) ?? null;
+        const stored = store.get(key) ?? null;
+        pendingListReads += 1;
+        if (pendingListReads === 3) {
+          resolveStarted();
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        return stored;
+      });
+    });
+
+    const flushing = flushPendingSignOut(true);
+    await decidingReadStarted;
+    const signingOut = signOut();
+    await signingOut;
+    await flushing;
+
+    expect(pendingSignOutRecords(store)).toEqual([
+      { apiBase: "http://127.0.0.1:3100", token: "session-token" },
+    ]);
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    await flushPendingSignOut();
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
+      "http://127.0.0.1:3100/api/auth/sign-out",
+    ]);
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
   describe.each(["/rpc/notifications/unregisterPush", "/api/auth/sign-out"])(
     "redirected revocation response from %s",
     (redirectedPath) => {

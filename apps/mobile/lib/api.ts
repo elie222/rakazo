@@ -1298,9 +1298,16 @@ export async function flushPendingSignOut(force = false): Promise<void> {
       lastPendingSignOutFlushAt = Date.now();
       await reconcileProvisionalSignOuts();
       await prunePendingSignOuts();
-      const read = await readPendingSignOuts();
+      // This read decides whether later non-forced flushes may skip the store, so it takes
+      // its turn in the write queue: an out-of-queue read can resume after a queued sign-out
+      // recorded a revocation and still report the store it saw first, silencing retries.
+      // Delivery stays outside the queue, like every network call.
+      const read = await queuePendingSignOutWrite(async () => {
+        const current = await readPendingSignOuts();
+        if (current.ok) pendingSignOutAbsent = current.records.length === 0;
+        return current;
+      });
       if (!read.ok) return;
-      pendingSignOutAbsent = read.records.length === 0;
       for (const record of read.records) {
         // A provisional record belongs to a switch that has not committed; it is not delivered.
         if (record.provisional) continue;
