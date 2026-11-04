@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-04
+
+### Added
+
+- On iPhone and iPad, an image pasted into a chat's message field is added as an attachment, as on web. Text copied with it still goes into the field. This needs the new app build.
+- More keyboard shortcuts on web and desktop: start a group chat, connect apps, open the chat's details panel, jump to the message box and dictate. Cmd/Ctrl+/ lists every shortcut, as do **Keyboard shortcuts** in the command menu and **Help** in the desktop app.
+- The long-wait "still needs an answer" reminder, and the notice that a waiting chat was stopped, now show as browser and desktop alerts, not only on phones.
+
+### Changed
+
+- A group message that names no bot now reaches every bot in the group, instead of only the first ([groups](docs/groups.md)). Each bot decides whether the message is for it, and a bot with nothing to add stays quiet. Replying to a bot's message or tagging a bot still sends to that bot alone. An untagged message can now start a run for each bot in the group, up to ten.
+
+### Fixed
+
+- Pressing Stop ends a quiet model call or a long-running tool within about a second. Before, it could keep running, and billing, for up to a minute.
+- Connector and category approval rules now apply to tools named with a hyphen, like `<app>-<action>`, and loading a connected app's tool description no longer asks for approval.
+- Switching to another chat on web no longer deletes attachments you picked but hadn't sent, and archiving a chat keeps them for when it's restored.
+- Renaming a model connection no longer resets unsaved edits in the same form.
+- Voice calls that use provider transcription now send a server's configured extra headers, so servers behind a gateway that needs them can transcribe calls.
+- On self-hosted Docker setups, a computer still running an older image no longer asks for payment approval on every browser click.
+
 ## [0.7.0] - 2026-11-04
 
 ### Security
