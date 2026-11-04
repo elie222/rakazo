@@ -13,6 +13,9 @@ export interface AccountStatusDeps {
   events: Pick<ThreadEvents, "notify">;
 }
 
+/** Who turned an account off or on: the identity provider over SCIM, or the operator's command. */
+export type AccountStatusActor = "directory" | "operator";
+
 /**
  * Finishes a directory change once its SCIM request committed. The account row says what
  * happened: a change in a request that rolled back finds it as before and does nothing.
@@ -29,12 +32,36 @@ export async function settleDirectoryChange(
     });
     if (!user || change.active === Boolean(user.deactivatedAt)) return;
     if (!change.active) await endDeactivatedAccess(deps, change.userId);
-    if (!change.changed) return;
-    await recordSecurityEvent({
-      type: change.active ? "auth.account.reactivated" : "auth.account.deactivated",
-      userId: change.userId,
-      metadata: { by: "directory" },
+    if (change.changed) await recordAccountStatus(change.userId, change.active, "directory");
+  });
+}
+
+/**
+ * Turns an account off or back on outside the directory. Returns whether that changed it;
+ * deactivating an account that already is off still finishes ending its access.
+ */
+export async function setAccountActive(
+  deps: AccountStatusDeps,
+  userId: string,
+  active: boolean,
+  by: AccountStatusActor,
+): Promise<boolean> {
+  return runAsSystem("change an account's status", async () => {
+    const { count } = await deps.prisma.user.updateMany({
+      where: { id: userId, deactivatedAt: active ? { not: null } : null },
+      data: { deactivatedAt: active ? null : new Date() },
     });
+    if (!active) await endDeactivatedAccess(deps, userId);
+    if (count) await recordAccountStatus(userId, active, by);
+    return count > 0;
+  });
+}
+
+function recordAccountStatus(userId: string, active: boolean, by: AccountStatusActor) {
+  return recordSecurityEvent({
+    type: active ? "auth.account.reactivated" : "auth.account.deactivated",
+    userId,
+    metadata: { by },
   });
 }
 

@@ -1,0 +1,72 @@
+// `docker compose exec api node dist/cli/account-status.js deactivate|reactivate <email>`:
+// turns an account off or back on, as the identity provider would over SCIM.
+import {
+  contentKeyProviderFromEnv,
+  PostgresRealtimeFanout,
+  PrismaPushTokenStore,
+  UserDevices,
+  unwrapEnvFromKeyManager,
+  userDeviceForwardSecret,
+} from "@rakazo/adapters";
+import {
+  createDb,
+  createThreadEvents,
+  installAuditEventStore,
+  installSecurityEventStore,
+  runAsSystem,
+} from "@rakazo/db";
+import { setAccountActive } from "../account-status.js";
+import { loadEnv } from "../env.js";
+
+const [action, address] = process.argv.slice(2);
+if ((action !== "deactivate" && action !== "reactivate") || !address) {
+  process.stderr.write("Usage: account-status.js deactivate|reactivate <email>\n");
+  process.exit(2);
+}
+
+await unwrapEnvFromKeyManager();
+const env = loadEnv();
+const { prisma, pool } = createDb(env.databaseUrl, { keyProvider: contentKeyProviderFromEnv() });
+installSecurityEventStore(prisma);
+installAuditEventStore(prisma);
+// Publishing only: open chats of other people hear that the account's runs stopped.
+const realtime = new PostgresRealtimeFanout({
+  connectionString: env.realtimeDatabaseUrl,
+  publisher: pool,
+});
+try {
+  const email = address.trim().toLowerCase();
+  const user = await runAsSystem("find an account by email", () =>
+    prisma.user.findUnique({ where: { email }, select: { id: true } }),
+  );
+  if (!user) {
+    process.stderr.write("No account has that email\n");
+    process.exitCode = 1;
+  } else {
+    const active = action === "reactivate";
+    const changed = await setAccountActive(
+      {
+        prisma,
+        pushTokens: new PrismaPushTokenStore(prisma, env.encryptionKey),
+        devices: {
+          prisma,
+          devices: new UserDevices({
+            prisma,
+            forwardSecret: userDeviceForwardSecret(env.encryptionKey),
+          }),
+        },
+        events: createThreadEvents(prisma, realtime),
+      },
+      user.id,
+      active,
+      "operator",
+    );
+    process.stdout.write(
+      `${changed ? (active ? "Reactivated" : "Deactivated") : active ? "Already active" : "Already deactivated"}\n`,
+    );
+  }
+} finally {
+  await realtime.close();
+  await prisma.$disconnect();
+  await pool.end();
+}

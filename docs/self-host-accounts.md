@@ -239,6 +239,13 @@ group requests are refused. Rotating it means changing the value and restarting 
   from their next scheduled time.
 - **Adding a deleted person again** with the same external id finds their existing account.
 
+Without an identity provider, the operator can do the same from the API container:
+
+```bash
+docker compose --env-file .env -f docker-compose.images.yml exec api \
+  node dist/cli/account-status.js deactivate person@example.com   # or reactivate
+```
+
 Deactivation and reactivation are recorded as `auth.account.deactivated` and
 `auth.account.reactivated` [security events](./self-host-observability.md#security-events) and in
 each of the person's organizations' [audit log](./self-host-audit-log.md). The directory never

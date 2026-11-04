@@ -44,7 +44,7 @@ const FAILURE_TYPES = new Set<SecurityEventType>([
 ]);
 /** Deployment-wide signals with no account or organization to attribute them to. */
 const NOT_AUDITED = new Set<SecurityEventType>([...FAILURE_TYPES, "deployment.settings.changed"]);
-/** Done to an account by the directory, not by the account itself. */
+/** Done to an account by the directory or the operator (`metadata.by`), not by the account itself. */
 const DONE_TO_ACCOUNT = new Set<SecurityEventType>([
   "auth.account.deactivated",
   "auth.account.reactivated",
@@ -98,7 +98,7 @@ export async function recordSecurityEvent(input: SecurityEventInput): Promise<vo
     }
   }
   if (event.userId && !NOT_AUDITED.has(event.type)) {
-    const { kind, runId } = event.metadata;
+    const { kind, runId, by } = event.metadata;
     const userId = event.userId;
     await withSecurityRequest(
       { ip: event.ip ?? undefined, userAgent: event.userAgent ?? undefined },
@@ -107,7 +107,7 @@ export async function recordSecurityEvent(input: SecurityEventInput): Promise<vo
           action: event.type,
           ...(DONE_TO_ACCOUNT.has(event.type)
             ? {
-                actor: { type: "system", label: "directory" },
+                actor: { type: "system", label: typeof by === "string" ? by : "system" },
                 target: { type: "user", id: userId },
               }
             : {
